@@ -81,6 +81,18 @@ test('an inferred entry stays pending however high its weight or many its tags',
   assert.doesNotMatch(line, /你已确认|已确认（/);
 });
 
+test('a flagged entry says its weight waits for review, confirmed or not', async () => {
+  const { app } = receiptApp([
+    entry({ weight: { percent: 50, basis: { confirmation_status: 'confirmed', confirmed_by_person: true,
+      qualified_use_count: 4, distinct_task_count: 2, source_count: 2, negative_evidence_count: 1, requires_attention: true } } }),
+    entry({ item_id: 'item-2', weight: { percent: 6, basis: { confirmation_status: 'pending', confirmed_by_person: false,
+      qualified_use_count: 0, distinct_task_count: 0, source_count: 1, negative_evidence_count: 1, requires_attention: true } } })
+  ]);
+  const [, person, pending] = (await readTurnReceipt(app, saved())).lines;
+  assert.match(person, /｜权重50%（你已确认·待复核）｜/);
+  assert.match(pending, /｜权重6%（用0次·1个来源·待复核）｜/);
+});
+
 test('long contents are cut with an ellipsis and Markdown in saved text cannot break the line', async () => {
   const { app } = receiptApp([entry({ content: `[x](javascript:alert(1)) ${'长'.repeat(80)}\nnext` })]);
   const [, line] = (await readTurnReceipt(app, saved())).lines;

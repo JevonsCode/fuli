@@ -36,7 +36,7 @@ await window.openai.sendFollowUpMessage({ prompt, title })
 
 The setup action envelope contains only `action`, `personal_space_id`, scope, optional project, and depth inputs. It must not invent a `review_id`, `candidate_key`, `item_id`, or `item_kind`. Every candidate action envelope contains `personal_space_id`, `review_id`, `candidate_key`, `item_id`, and `item_kind`, plus only the fields needed for that action. Treat a valid envelope as a continuation of the active review, not as a new `/flreview` invocation.
 
-Each candidate card shows its content, current scope and source projects, confirmation state, `current_quadrant`, selection reasons, relevant evidence counts, utility, and confidence. Provider order is authoritative; do not invent a second score. Render these actions:
+Each candidate card shows its content, current scope and source projects, confirmation state, `current_quadrant`, selection reasons, relevant evidence counts, and `weight_percent` (the knowledge weight search ranks by; `low_weight` means it is at or below 50%). Provider order is authoritative; do not invent a second score. Render these actions:
 
 - **确认保留**
 - **修改**

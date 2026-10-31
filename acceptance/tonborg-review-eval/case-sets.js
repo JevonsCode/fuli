@@ -20,14 +20,14 @@ const MIN_COPY_CHARS = 8;
 // The Provider fields a case does not vary: a pending, newly changed item
 // with no attention flag, so the host's protected-item rule never decides it.
 const CANDIDATE_DEFAULTS = Object.freeze({ item_kind: 'entity', priority: 2, reasons: ['changed_since_last'],
-  confirmation_status: 'pending', current_quadrant: 'known_known', utility_score: 0.5, confidence_score: 0.5,
+  confirmation_status: 'pending', current_quadrant: 'known_known', utility_score: 0.5, confidence_score: 0.5, weight_percent: 13,
   qualified_use_count: 0, distinct_task_count: 1, negative_evidence_count: 0, requires_attention: false,
   last_feedback_kind: null, distinct_session_count: 1 });
 const VARIED_FIELDS = Object.freeze(['project_ids', 'profile_aspect', 'preference_scope', 'preference_project_id', 'changed_at']);
 // The wire order of graph-provider KnowledgeReviewCandidate, which the model reads.
 const PROVIDER_FIELD_ORDER = Object.freeze(['candidate_key', 'item_id', 'item_kind', 'title', 'content', 'priority', 'reasons',
   'confirmation_status', 'current_quadrant', 'project_ids', 'profile_aspect', 'preference_scope', 'preference_project_id',
-  'utility_score', 'confidence_score', 'qualified_use_count', 'distinct_task_count', 'negative_evidence_count',
+  'utility_score', 'confidence_score', 'weight_percent', 'qualified_use_count', 'distinct_task_count', 'negative_evidence_count',
   'requires_attention', 'last_feedback_kind', 'distinct_session_count', 'changed_at', 'ai_review_evidence_token']);
 
 export function normalizedText(text) {

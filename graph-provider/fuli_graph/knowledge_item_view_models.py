@@ -67,11 +67,12 @@ class KnowledgeWeightBasis(StrictModel):
     distinct_task_count: int = 0
     source_count: int = 0
     negative_evidence_count: int = 0
+    requires_attention: bool = False
 
 
 class KnowledgeItemWeight(StrictModel):
-    """The display weight and what it was computed from; never an authorization."""
-    percent: int = Field(ge=10, le=100)
+    """The weight search ranks by and what it was computed from; never an authorization."""
+    percent: int = Field(ge=0, le=100)
     basis: KnowledgeWeightBasis
 
 

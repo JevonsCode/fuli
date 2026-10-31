@@ -1,0 +1,3866 @@
+{
+  "items": [
+    {
+      "id": "s01a",
+      "name": "backup restore destination",
+      "type": "Knowledge",
+      "summary": "Restore backups into an isolated staging directory before replacing the live store.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.3,
+      "qualified_use_count": 9,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s01-source-0"
+      ],
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "s01b",
+      "name": "backup restore destination",
+      "type": "Knowledge",
+      "summary": "Restore backups into an isolated staging directory before replacing the live store.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.7,
+      "qualified_use_count": 30,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 1,
+      "requires_attention": true,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s01-source-0",
+        "s01-source-1"
+      ],
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "s01c",
+      "name": "backup restore destination",
+      "type": "Knowledge",
+      "summary": "Restore backups directly over the live store without checking.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 1,
+      "utility_score": 1,
+      "qualified_use_count": 60,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 3,
+      "requires_attention": true,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s01-source-0",
+        "s01-source-1",
+        "s01-source-2"
+      ],
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "s01d",
+      "name": "backup restore destination",
+      "type": "Knowledge",
+      "summary": "Backups are created before a store migration.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0,
+      "qualified_use_count": 0,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": true,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s01-source-0",
+        "s01-source-1",
+        "s01-source-2",
+        "s01-source-3"
+      ],
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "s02a",
+      "name": "release signing key",
+      "type": "Knowledge",
+      "summary": "The release signing key is held by the release operator.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.7,
+      "qualified_use_count": 2,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s02-source-0",
+        "s02-source-1",
+        "s02-source-2",
+        "s02-source-3",
+        "s02-source-4"
+      ],
+      "created_at": "2026-01-02T00:00:00Z"
+    },
+    {
+      "id": "s02b",
+      "name": "release signing key",
+      "type": "Knowledge",
+      "summary": "The release signing key is held by the release operator.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 1,
+      "qualified_use_count": 9,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-02T00:00:00Z"
+    },
+    {
+      "id": "s02c",
+      "name": "release signing key",
+      "type": "Knowledge",
+      "summary": "The release signing key is committed to the repository.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0,
+      "qualified_use_count": 30,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s02-source-0"
+      ],
+      "created_at": "2026-01-02T00:00:00Z"
+    },
+    {
+      "id": "s02d",
+      "name": "release signing key",
+      "type": "Knowledge",
+      "summary": "Release artifacts have checksums for verification.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.3,
+      "qualified_use_count": 60,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s02-source-0",
+        "s02-source-1"
+      ],
+      "created_at": "2026-01-02T00:00:00Z"
+    },
+    {
+      "id": "s03a",
+      "name": "mobile pairing expiry",
+      "type": "Knowledge",
+      "summary": "The mobile pairing code expires after five minutes.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 1,
+      "qualified_use_count": 0,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s03-source-0",
+        "s03-source-1",
+        "s03-source-2"
+      ],
+      "created_at": "2026-01-03T00:00:00Z"
+    },
+    {
+      "id": "s03b",
+      "name": "mobile pairing expiry",
+      "type": "Knowledge",
+      "summary": "The mobile pairing code expires after five minutes.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0,
+      "qualified_use_count": 2,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s03-source-0",
+        "s03-source-1",
+        "s03-source-2",
+        "s03-source-3"
+      ],
+      "created_at": "2026-01-03T00:00:00Z"
+    },
+    {
+      "id": "s03c",
+      "name": "mobile pairing expiry",
+      "type": "Knowledge",
+      "summary": "The mobile pairing code never expires.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.3,
+      "qualified_use_count": 9,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s03-source-0",
+        "s03-source-1",
+        "s03-source-2",
+        "s03-source-3",
+        "s03-source-4"
+      ],
+      "created_at": "2026-01-03T00:00:00Z"
+    },
+    {
+      "id": "s03d",
+      "name": "mobile pairing expiry",
+      "type": "Knowledge",
+      "summary": "A mobile pairing session uses a six digit code.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.7,
+      "qualified_use_count": 30,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-03T00:00:00Z"
+    },
+    {
+      "id": "s04a",
+      "name": "router domestic traffic",
+      "type": "Knowledge",
+      "summary": "Domestic traffic uses the direct router route.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0,
+      "qualified_use_count": 60,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s04-source-0"
+      ],
+      "created_at": "2026-01-04T00:00:00Z"
+    },
+    {
+      "id": "s04b",
+      "name": "router domestic traffic",
+      "type": "Knowledge",
+      "summary": "Domestic traffic uses the direct router route.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.3,
+      "qualified_use_count": 0,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s04-source-0",
+        "s04-source-1"
+      ],
+      "created_at": "2026-01-04T00:00:00Z"
+    },
+    {
+      "id": "s04c",
+      "name": "router domestic traffic",
+      "type": "Knowledge",
+      "summary": "Domestic traffic always uses the overseas proxy.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.7,
+      "qualified_use_count": 2,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s04-source-0",
+        "s04-source-1",
+        "s04-source-2"
+      ],
+      "created_at": "2026-01-04T00:00:00Z"
+    },
+    {
+      "id": "s04d",
+      "name": "router domestic traffic",
+      "type": "Knowledge",
+      "summary": "The router also has a separate AI traffic rule.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 1,
+      "qualified_use_count": 9,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s04-source-0",
+        "s04-source-1",
+        "s04-source-2",
+        "s04-source-3"
+      ],
+      "created_at": "2026-01-04T00:00:00Z"
+    },
+    {
+      "id": "s05a",
+      "name": "invoice approval threshold",
+      "type": "Knowledge",
+      "summary": "Invoices above 5000 require manager approval.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.3,
+      "qualified_use_count": 30,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s05-source-0",
+        "s05-source-1",
+        "s05-source-2",
+        "s05-source-3",
+        "s05-source-4"
+      ],
+      "created_at": "2026-01-05T00:00:00Z"
+    },
+    {
+      "id": "s05b",
+      "name": "invoice approval threshold",
+      "type": "Knowledge",
+      "summary": "Invoices above 5000 require manager approval.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.7,
+      "qualified_use_count": 60,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-05T00:00:00Z"
+    },
+    {
+      "id": "s05c",
+      "name": "invoice approval threshold",
+      "type": "Knowledge",
+      "summary": "Invoices above 5000 are automatically approved.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 1,
+      "qualified_use_count": 0,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 3,
+      "requires_attention": true,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s05-source-0"
+      ],
+      "created_at": "2026-01-05T00:00:00Z"
+    },
+    {
+      "id": "s05d",
+      "name": "invoice approval threshold",
+      "type": "Knowledge",
+      "summary": "Invoices include the supplier and purchase order.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0,
+      "qualified_use_count": 2,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s05-source-0",
+        "s05-source-1"
+      ],
+      "created_at": "2026-01-05T00:00:00Z"
+    },
+    {
+      "id": "s06a",
+      "name": "incident escalation owner",
+      "type": "Knowledge",
+      "summary": "The on call engineer escalates a severe incident to the incident lead.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.7,
+      "qualified_use_count": 9,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s06-source-0",
+        "s06-source-1",
+        "s06-source-2"
+      ],
+      "created_at": "2026-01-06T00:00:00Z"
+    },
+    {
+      "id": "s06b",
+      "name": "incident escalation owner",
+      "type": "Knowledge",
+      "summary": "The on call engineer escalates a severe incident to the incident lead.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 1,
+      "qualified_use_count": 30,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s06-source-0",
+        "s06-source-1",
+        "s06-source-2",
+        "s06-source-3"
+      ],
+      "created_at": "2026-01-06T00:00:00Z"
+    },
+    {
+      "id": "s06c",
+      "name": "incident escalation owner",
+      "type": "Knowledge",
+      "summary": "The on call engineer waits until the next week to escalate a severe incident.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0,
+      "qualified_use_count": 60,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s06-source-0",
+        "s06-source-1",
+        "s06-source-2",
+        "s06-source-3",
+        "s06-source-4"
+      ],
+      "created_at": "2026-01-06T00:00:00Z"
+    },
+    {
+      "id": "s06d",
+      "name": "incident escalation owner",
+      "type": "Knowledge",
+      "summary": "The incident lead maintains the incident timeline.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.3,
+      "qualified_use_count": 0,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": true,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-06T00:00:00Z"
+    },
+    {
+      "id": "s07a",
+      "name": "customer export format",
+      "type": "Knowledge",
+      "summary": "Customer exports are delivered as UTF-8 CSV files.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 1,
+      "qualified_use_count": 2,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s07-source-0"
+      ],
+      "created_at": "2026-01-07T00:00:00Z"
+    },
+    {
+      "id": "s07b",
+      "name": "customer export format",
+      "type": "Knowledge",
+      "summary": "Customer exports are delivered as UTF-8 CSV files.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0,
+      "qualified_use_count": 9,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": true,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s07-source-0",
+        "s07-source-1"
+      ],
+      "created_at": "2026-01-07T00:00:00Z"
+    },
+    {
+      "id": "s07c",
+      "name": "customer export format",
+      "type": "Knowledge",
+      "summary": "Customer exports are delivered only as screenshots.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.3,
+      "qualified_use_count": 30,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s07-source-0",
+        "s07-source-1",
+        "s07-source-2"
+      ],
+      "created_at": "2026-01-07T00:00:00Z"
+    },
+    {
+      "id": "s07d",
+      "name": "customer export format",
+      "type": "Knowledge",
+      "summary": "The customer export contains an account identifier.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.7,
+      "qualified_use_count": 60,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s07-source-0",
+        "s07-source-1",
+        "s07-source-2",
+        "s07-source-3"
+      ],
+      "created_at": "2026-01-07T00:00:00Z"
+    },
+    {
+      "id": "s08a",
+      "name": "garden watering schedule",
+      "type": "Knowledge",
+      "summary": "Water the greenhouse plants every Tuesday morning.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0,
+      "qualified_use_count": 0,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s08-source-0",
+        "s08-source-1",
+        "s08-source-2",
+        "s08-source-3",
+        "s08-source-4"
+      ],
+      "created_at": "2026-01-08T00:00:00Z"
+    },
+    {
+      "id": "s08b",
+      "name": "garden watering schedule",
+      "type": "Knowledge",
+      "summary": "Water the greenhouse plants every Tuesday morning.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.3,
+      "qualified_use_count": 2,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-08T00:00:00Z"
+    },
+    {
+      "id": "s08c",
+      "name": "garden watering schedule",
+      "type": "Knowledge",
+      "summary": "Water the greenhouse plants only in December.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.7,
+      "qualified_use_count": 9,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s08-source-0"
+      ],
+      "created_at": "2026-01-08T00:00:00Z"
+    },
+    {
+      "id": "s08d",
+      "name": "garden watering schedule",
+      "type": "Knowledge",
+      "summary": "The greenhouse has a rainwater collection tank.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 1,
+      "qualified_use_count": 30,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s08-source-0",
+        "s08-source-1"
+      ],
+      "created_at": "2026-01-08T00:00:00Z"
+    },
+    {
+      "id": "s09a",
+      "name": "database migration rollback",
+      "type": "Knowledge",
+      "summary": "Keep the pre-migration backup until rollback has been verified.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.3,
+      "qualified_use_count": 60,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s09-source-0",
+        "s09-source-1",
+        "s09-source-2"
+      ],
+      "created_at": "2026-01-09T00:00:00Z"
+    },
+    {
+      "id": "s09b",
+      "name": "database migration rollback",
+      "type": "Knowledge",
+      "summary": "Keep the pre-migration backup until rollback has been verified.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.7,
+      "qualified_use_count": 0,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s09-source-0",
+        "s09-source-1",
+        "s09-source-2",
+        "s09-source-3"
+      ],
+      "created_at": "2026-01-09T00:00:00Z"
+    },
+    {
+      "id": "s09c",
+      "name": "database migration rollback",
+      "type": "Knowledge",
+      "summary": "Delete the pre-migration backup before running the migration.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 1,
+      "qualified_use_count": 2,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 3,
+      "requires_attention": true,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s09-source-0",
+        "s09-source-1",
+        "s09-source-2",
+        "s09-source-3",
+        "s09-source-4"
+      ],
+      "created_at": "2026-01-09T00:00:00Z"
+    },
+    {
+      "id": "s09d",
+      "name": "database migration rollback",
+      "type": "Knowledge",
+      "summary": "The migration records its schema version.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0,
+      "qualified_use_count": 9,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-09T00:00:00Z"
+    },
+    {
+      "id": "s10a",
+      "name": "meeting notes location",
+      "type": "Knowledge",
+      "summary": "Save the team meeting notes in the shared project notebook.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.7,
+      "qualified_use_count": 30,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s10-source-0"
+      ],
+      "created_at": "2026-01-10T00:00:00Z"
+    },
+    {
+      "id": "s10b",
+      "name": "meeting notes location",
+      "type": "Knowledge",
+      "summary": "Save the team meeting notes in the shared project notebook.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 1,
+      "qualified_use_count": 60,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s10-source-0",
+        "s10-source-1"
+      ],
+      "created_at": "2026-01-10T00:00:00Z"
+    },
+    {
+      "id": "s10c",
+      "name": "meeting notes location",
+      "type": "Knowledge",
+      "summary": "Save the team meeting notes only on a personal desktop.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 1,
+      "utility_score": 0,
+      "qualified_use_count": 0,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s10-source-0",
+        "s10-source-1",
+        "s10-source-2"
+      ],
+      "created_at": "2026-01-10T00:00:00Z"
+    },
+    {
+      "id": "s10d",
+      "name": "meeting notes location",
+      "type": "Knowledge",
+      "summary": "The meeting agenda includes decisions and action items.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.3,
+      "qualified_use_count": 2,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s10-source-0",
+        "s10-source-1",
+        "s10-source-2",
+        "s10-source-3"
+      ],
+      "created_at": "2026-01-10T00:00:00Z"
+    },
+    {
+      "id": "s11a",
+      "name": "support response language",
+      "type": "Knowledge",
+      "summary": "Reply to this customer in French.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 1,
+      "qualified_use_count": 9,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s11-source-0",
+        "s11-source-1",
+        "s11-source-2",
+        "s11-source-3",
+        "s11-source-4"
+      ],
+      "created_at": "2026-01-11T00:00:00Z"
+    },
+    {
+      "id": "s11b",
+      "name": "support response language",
+      "type": "Knowledge",
+      "summary": "Reply to this customer in French.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0,
+      "qualified_use_count": 30,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-11T00:00:00Z"
+    },
+    {
+      "id": "s11c",
+      "name": "support response language",
+      "type": "Knowledge",
+      "summary": "Reply to this customer only in Japanese.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.3,
+      "qualified_use_count": 60,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s11-source-0"
+      ],
+      "created_at": "2026-01-11T00:00:00Z"
+    },
+    {
+      "id": "s11d",
+      "name": "support response language",
+      "type": "Knowledge",
+      "summary": "The customer reported a delayed shipment.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.7,
+      "qualified_use_count": 0,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 1,
+      "requires_attention": true,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s11-source-0",
+        "s11-source-1"
+      ],
+      "created_at": "2026-01-11T00:00:00Z"
+    },
+    {
+      "id": "s12a",
+      "name": "api retry policy",
+      "type": "Knowledge",
+      "summary": "Retry transient API failures with exponential backoff.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0,
+      "qualified_use_count": 2,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s12-source-0",
+        "s12-source-1",
+        "s12-source-2"
+      ],
+      "created_at": "2026-01-12T00:00:00Z"
+    },
+    {
+      "id": "s12b",
+      "name": "api retry policy",
+      "type": "Knowledge",
+      "summary": "Retry transient API failures with exponential backoff.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.3,
+      "qualified_use_count": 9,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s12-source-0",
+        "s12-source-1",
+        "s12-source-2",
+        "s12-source-3"
+      ],
+      "created_at": "2026-01-12T00:00:00Z"
+    },
+    {
+      "id": "s12c",
+      "name": "api retry policy",
+      "type": "Knowledge",
+      "summary": "Retry every API failure immediately without a limit.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.7,
+      "qualified_use_count": 30,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s12-source-0",
+        "s12-source-1",
+        "s12-source-2",
+        "s12-source-3",
+        "s12-source-4"
+      ],
+      "created_at": "2026-01-12T00:00:00Z"
+    },
+    {
+      "id": "s12d",
+      "name": "api retry policy",
+      "type": "Knowledge",
+      "summary": "API requests include a request identifier.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 1,
+      "qualified_use_count": 60,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-12T00:00:00Z"
+    },
+    {
+      "id": "s13a",
+      "name": "library opening hours",
+      "type": "Knowledge",
+      "summary": "The library opens at nine on weekdays.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.3,
+      "qualified_use_count": 0,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s13-source-0"
+      ],
+      "created_at": "2026-01-13T00:00:00Z"
+    },
+    {
+      "id": "s13b",
+      "name": "library opening hours",
+      "type": "Knowledge",
+      "summary": "The library opens at nine on weekdays.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.7,
+      "qualified_use_count": 2,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 1,
+      "requires_attention": true,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s13-source-0",
+        "s13-source-1"
+      ],
+      "created_at": "2026-01-13T00:00:00Z"
+    },
+    {
+      "id": "s13c",
+      "name": "library opening hours",
+      "type": "Knowledge",
+      "summary": "The library opens at midnight on weekdays.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 1,
+      "utility_score": 1,
+      "qualified_use_count": 9,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 3,
+      "requires_attention": true,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s13-source-0",
+        "s13-source-1",
+        "s13-source-2"
+      ],
+      "created_at": "2026-01-13T00:00:00Z"
+    },
+    {
+      "id": "s13d",
+      "name": "library opening hours",
+      "type": "Knowledge",
+      "summary": "The library closes on public holidays.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0,
+      "qualified_use_count": 30,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s13-source-0",
+        "s13-source-1",
+        "s13-source-2",
+        "s13-source-3"
+      ],
+      "created_at": "2026-01-13T00:00:00Z"
+    },
+    {
+      "id": "s14a",
+      "name": "project archive retention",
+      "type": "Knowledge",
+      "summary": "Keep archived project records for seven years.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.7,
+      "qualified_use_count": 60,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s14-source-0",
+        "s14-source-1",
+        "s14-source-2",
+        "s14-source-3",
+        "s14-source-4"
+      ],
+      "created_at": "2026-01-14T00:00:00Z"
+    },
+    {
+      "id": "s14b",
+      "name": "project archive retention",
+      "type": "Knowledge",
+      "summary": "Keep archived project records for seven years.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 1,
+      "qualified_use_count": 0,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-14T00:00:00Z"
+    },
+    {
+      "id": "s14c",
+      "name": "project archive retention",
+      "type": "Knowledge",
+      "summary": "Delete archived project records after one day.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0,
+      "qualified_use_count": 2,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s14-source-0"
+      ],
+      "created_at": "2026-01-14T00:00:00Z"
+    },
+    {
+      "id": "s14d",
+      "name": "project archive retention",
+      "type": "Knowledge",
+      "summary": "Project records include the final owner.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.3,
+      "qualified_use_count": 9,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s14-source-0",
+        "s14-source-1"
+      ],
+      "created_at": "2026-01-14T00:00:00Z"
+    },
+    {
+      "id": "s15a",
+      "name": "conference room capacity",
+      "type": "Knowledge",
+      "summary": "The north conference room seats twelve people.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 1,
+      "qualified_use_count": 30,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s15-source-0",
+        "s15-source-1",
+        "s15-source-2"
+      ],
+      "created_at": "2026-01-15T00:00:00Z"
+    },
+    {
+      "id": "s15b",
+      "name": "conference room capacity",
+      "type": "Knowledge",
+      "summary": "The north conference room seats twelve people.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0,
+      "qualified_use_count": 60,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s15-source-0",
+        "s15-source-1",
+        "s15-source-2",
+        "s15-source-3"
+      ],
+      "created_at": "2026-01-15T00:00:00Z"
+    },
+    {
+      "id": "s15c",
+      "name": "conference room capacity",
+      "type": "Knowledge",
+      "summary": "The north conference room seats two hundred people.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.3,
+      "qualified_use_count": 0,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s15-source-0",
+        "s15-source-1",
+        "s15-source-2",
+        "s15-source-3",
+        "s15-source-4"
+      ],
+      "created_at": "2026-01-15T00:00:00Z"
+    },
+    {
+      "id": "s15d",
+      "name": "conference room capacity",
+      "type": "Knowledge",
+      "summary": "The north conference room has a projector.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.7,
+      "qualified_use_count": 2,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-15T00:00:00Z"
+    },
+    {
+      "id": "s16a",
+      "name": "password reset channel",
+      "type": "Knowledge",
+      "summary": "Send password reset links through the verified email address.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0,
+      "qualified_use_count": 9,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s16-source-0"
+      ],
+      "created_at": "2026-01-16T00:00:00Z"
+    },
+    {
+      "id": "s16b",
+      "name": "password reset channel",
+      "type": "Knowledge",
+      "summary": "Send password reset links through the verified email address.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.3,
+      "qualified_use_count": 30,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s16-source-0",
+        "s16-source-1"
+      ],
+      "created_at": "2026-01-16T00:00:00Z"
+    },
+    {
+      "id": "s16c",
+      "name": "password reset channel",
+      "type": "Knowledge",
+      "summary": "Publish password reset links in the public forum.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.7,
+      "qualified_use_count": 60,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s16-source-0",
+        "s16-source-1",
+        "s16-source-2"
+      ],
+      "created_at": "2026-01-16T00:00:00Z"
+    },
+    {
+      "id": "s16d",
+      "name": "password reset channel",
+      "type": "Knowledge",
+      "summary": "Password reset links expire after use.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 1,
+      "qualified_use_count": 0,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 3,
+      "requires_attention": true,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s16-source-0",
+        "s16-source-1",
+        "s16-source-2",
+        "s16-source-3"
+      ],
+      "created_at": "2026-01-16T00:00:00Z"
+    },
+    {
+      "id": "s17a",
+      "name": "deployment health check",
+      "type": "Knowledge",
+      "summary": "Check the health endpoint after deploying the service.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.3,
+      "qualified_use_count": 2,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s17-source-0",
+        "s17-source-1",
+        "s17-source-2",
+        "s17-source-3",
+        "s17-source-4"
+      ],
+      "created_at": "2026-01-17T00:00:00Z"
+    },
+    {
+      "id": "s17b",
+      "name": "deployment health check",
+      "type": "Knowledge",
+      "summary": "Check the health endpoint after deploying the service.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.7,
+      "qualified_use_count": 9,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-17T00:00:00Z"
+    },
+    {
+      "id": "s17c",
+      "name": "deployment health check",
+      "type": "Knowledge",
+      "summary": "Skip all checks after deploying the service.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 1,
+      "qualified_use_count": 30,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 3,
+      "requires_attention": true,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s17-source-0"
+      ],
+      "created_at": "2026-01-17T00:00:00Z"
+    },
+    {
+      "id": "s17d",
+      "name": "deployment health check",
+      "type": "Knowledge",
+      "summary": "The deployment records the revision identifier.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0,
+      "qualified_use_count": 60,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s17-source-0",
+        "s17-source-1"
+      ],
+      "created_at": "2026-01-17T00:00:00Z"
+    },
+    {
+      "id": "s18a",
+      "name": "design review participants",
+      "type": "Knowledge",
+      "summary": "Invite the designer and accessibility reviewer to the design review.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.7,
+      "qualified_use_count": 0,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s18-source-0",
+        "s18-source-1",
+        "s18-source-2"
+      ],
+      "created_at": "2026-01-18T00:00:00Z"
+    },
+    {
+      "id": "s18b",
+      "name": "design review participants",
+      "type": "Knowledge",
+      "summary": "Invite the designer and accessibility reviewer to the design review.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 1,
+      "qualified_use_count": 2,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s18-source-0",
+        "s18-source-1",
+        "s18-source-2",
+        "s18-source-3"
+      ],
+      "created_at": "2026-01-18T00:00:00Z"
+    },
+    {
+      "id": "s18c",
+      "name": "design review participants",
+      "type": "Knowledge",
+      "summary": "Exclude the accessibility reviewer from the design review.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0,
+      "qualified_use_count": 9,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s18-source-0",
+        "s18-source-1",
+        "s18-source-2",
+        "s18-source-3",
+        "s18-source-4"
+      ],
+      "created_at": "2026-01-18T00:00:00Z"
+    },
+    {
+      "id": "s18d",
+      "name": "design review participants",
+      "type": "Knowledge",
+      "summary": "The design review considers keyboard navigation.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.3,
+      "qualified_use_count": 30,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-18T00:00:00Z"
+    },
+    {
+      "id": "s19a",
+      "name": "warehouse reorder point",
+      "type": "Knowledge",
+      "summary": "Reorder packing boxes when stock falls below 200.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 1,
+      "qualified_use_count": 60,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s19-source-0"
+      ],
+      "created_at": "2026-01-19T00:00:00Z"
+    },
+    {
+      "id": "s19b",
+      "name": "warehouse reorder point",
+      "type": "Knowledge",
+      "summary": "Reorder packing boxes when stock falls below 200.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0,
+      "qualified_use_count": 0,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": true,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s19-source-0",
+        "s19-source-1"
+      ],
+      "created_at": "2026-01-19T00:00:00Z"
+    },
+    {
+      "id": "s19c",
+      "name": "warehouse reorder point",
+      "type": "Knowledge",
+      "summary": "Reorder packing boxes only after stock exceeds 2000.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.3,
+      "qualified_use_count": 2,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s19-source-0",
+        "s19-source-1",
+        "s19-source-2"
+      ],
+      "created_at": "2026-01-19T00:00:00Z"
+    },
+    {
+      "id": "s19d",
+      "name": "warehouse reorder point",
+      "type": "Knowledge",
+      "summary": "Packing boxes are stored in aisle four.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.7,
+      "qualified_use_count": 9,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s19-source-0",
+        "s19-source-1",
+        "s19-source-2",
+        "s19-source-3"
+      ],
+      "created_at": "2026-01-19T00:00:00Z"
+    },
+    {
+      "id": "s20a",
+      "name": "travel reimbursement receipt",
+      "type": "Knowledge",
+      "summary": "Attach the original receipt to each travel reimbursement.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0,
+      "qualified_use_count": 30,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s20-source-0",
+        "s20-source-1",
+        "s20-source-2",
+        "s20-source-3",
+        "s20-source-4"
+      ],
+      "created_at": "2026-01-20T00:00:00Z"
+    },
+    {
+      "id": "s20b",
+      "name": "travel reimbursement receipt",
+      "type": "Knowledge",
+      "summary": "Attach the original receipt to each travel reimbursement.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.3,
+      "qualified_use_count": 60,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-20T00:00:00Z"
+    },
+    {
+      "id": "s20c",
+      "name": "travel reimbursement receipt",
+      "type": "Knowledge",
+      "summary": "Travel reimbursement never needs a receipt.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.7,
+      "qualified_use_count": 0,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s20-source-0"
+      ],
+      "created_at": "2026-01-20T00:00:00Z"
+    },
+    {
+      "id": "s20d",
+      "name": "travel reimbursement receipt",
+      "type": "Knowledge",
+      "summary": "Travel reimbursement uses the expense form.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 1,
+      "qualified_use_count": 2,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s20-source-0",
+        "s20-source-1"
+      ],
+      "created_at": "2026-01-20T00:00:00Z"
+    },
+    {
+      "id": "s21a",
+      "name": "data retention logs",
+      "type": "Knowledge",
+      "summary": "Delete routine application logs after thirty days.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.3,
+      "qualified_use_count": 9,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s21-source-0",
+        "s21-source-1",
+        "s21-source-2"
+      ],
+      "created_at": "2026-01-21T00:00:00Z"
+    },
+    {
+      "id": "s21b",
+      "name": "data retention logs",
+      "type": "Knowledge",
+      "summary": "Delete routine application logs after thirty days.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.7,
+      "qualified_use_count": 30,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s21-source-0",
+        "s21-source-1",
+        "s21-source-2",
+        "s21-source-3"
+      ],
+      "created_at": "2026-01-21T00:00:00Z"
+    },
+    {
+      "id": "s21c",
+      "name": "data retention logs",
+      "type": "Knowledge",
+      "summary": "Keep routine application logs forever.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 1,
+      "qualified_use_count": 60,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 3,
+      "requires_attention": true,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s21-source-0",
+        "s21-source-1",
+        "s21-source-2",
+        "s21-source-3",
+        "s21-source-4"
+      ],
+      "created_at": "2026-01-21T00:00:00Z"
+    },
+    {
+      "id": "s21d",
+      "name": "data retention logs",
+      "type": "Knowledge",
+      "summary": "Application logs exclude credentials.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0,
+      "qualified_use_count": 0,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": true,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-21T00:00:00Z"
+    },
+    {
+      "id": "s22a",
+      "name": "train ticket collection",
+      "type": "Knowledge",
+      "summary": "Collect the train ticket from the station machine.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.7,
+      "qualified_use_count": 2,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s22-source-0"
+      ],
+      "created_at": "2026-01-22T00:00:00Z"
+    },
+    {
+      "id": "s22b",
+      "name": "train ticket collection",
+      "type": "Knowledge",
+      "summary": "Collect the train ticket from the station machine.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 1,
+      "qualified_use_count": 9,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s22-source-0",
+        "s22-source-1"
+      ],
+      "created_at": "2026-01-22T00:00:00Z"
+    },
+    {
+      "id": "s22c",
+      "name": "train ticket collection",
+      "type": "Knowledge",
+      "summary": "Collect the train ticket from the airport baggage belt.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 1,
+      "utility_score": 0,
+      "qualified_use_count": 30,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s22-source-0",
+        "s22-source-1",
+        "s22-source-2"
+      ],
+      "created_at": "2026-01-22T00:00:00Z"
+    },
+    {
+      "id": "s22d",
+      "name": "train ticket collection",
+      "type": "Knowledge",
+      "summary": "The station machine accepts the booking code.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.3,
+      "qualified_use_count": 60,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s22-source-0",
+        "s22-source-1",
+        "s22-source-2",
+        "s22-source-3"
+      ],
+      "created_at": "2026-01-22T00:00:00Z"
+    },
+    {
+      "id": "s23a",
+      "name": "code review ownership",
+      "type": "Knowledge",
+      "summary": "The module owner reviews changes to the payment adapter.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 1,
+      "qualified_use_count": 0,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s23-source-0",
+        "s23-source-1",
+        "s23-source-2",
+        "s23-source-3",
+        "s23-source-4"
+      ],
+      "created_at": "2026-01-23T00:00:00Z"
+    },
+    {
+      "id": "s23b",
+      "name": "code review ownership",
+      "type": "Knowledge",
+      "summary": "The module owner reviews changes to the payment adapter.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0,
+      "qualified_use_count": 2,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-23T00:00:00Z"
+    },
+    {
+      "id": "s23c",
+      "name": "code review ownership",
+      "type": "Knowledge",
+      "summary": "The module owner is barred from reviewing the payment adapter.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.3,
+      "qualified_use_count": 9,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s23-source-0"
+      ],
+      "created_at": "2026-01-23T00:00:00Z"
+    },
+    {
+      "id": "s23d",
+      "name": "code review ownership",
+      "type": "Knowledge",
+      "summary": "The payment adapter has contract tests.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.7,
+      "qualified_use_count": 30,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s23-source-0",
+        "s23-source-1"
+      ],
+      "created_at": "2026-01-23T00:00:00Z"
+    },
+    {
+      "id": "s24a",
+      "name": "report publication date",
+      "type": "Knowledge",
+      "summary": "Publish the quarterly report on the first Monday of April.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0,
+      "qualified_use_count": 60,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s24-source-0",
+        "s24-source-1",
+        "s24-source-2"
+      ],
+      "created_at": "2026-01-24T00:00:00Z"
+    },
+    {
+      "id": "s24b",
+      "name": "report publication date",
+      "type": "Knowledge",
+      "summary": "Publish the quarterly report on the first Monday of April.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.3,
+      "qualified_use_count": 0,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s24-source-0",
+        "s24-source-1",
+        "s24-source-2",
+        "s24-source-3"
+      ],
+      "created_at": "2026-01-24T00:00:00Z"
+    },
+    {
+      "id": "s24c",
+      "name": "report publication date",
+      "type": "Knowledge",
+      "summary": "Publish the quarterly report on the last Friday of December.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.7,
+      "qualified_use_count": 2,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s24-source-0",
+        "s24-source-1",
+        "s24-source-2",
+        "s24-source-3",
+        "s24-source-4"
+      ],
+      "created_at": "2026-01-24T00:00:00Z"
+    },
+    {
+      "id": "s24d",
+      "name": "report publication date",
+      "type": "Knowledge",
+      "summary": "The quarterly report includes a revenue chart.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 1,
+      "qualified_use_count": 9,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-24T00:00:00Z"
+    },
+    {
+      "id": "s25a",
+      "name": "office visitor access",
+      "type": "Knowledge",
+      "summary": "Visitors sign in at reception before entering the office.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.3,
+      "qualified_use_count": 30,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s25-source-0"
+      ],
+      "created_at": "2026-01-25T00:00:00Z"
+    },
+    {
+      "id": "s25b",
+      "name": "office visitor access",
+      "type": "Knowledge",
+      "summary": "Visitors sign in at reception before entering the office.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.7,
+      "qualified_use_count": 60,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 1,
+      "requires_attention": true,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s25-source-0",
+        "s25-source-1"
+      ],
+      "created_at": "2026-01-25T00:00:00Z"
+    },
+    {
+      "id": "s25c",
+      "name": "office visitor access",
+      "type": "Knowledge",
+      "summary": "Visitors may enter the office without signing in.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 1,
+      "utility_score": 1,
+      "qualified_use_count": 0,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 3,
+      "requires_attention": true,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s25-source-0",
+        "s25-source-1",
+        "s25-source-2"
+      ],
+      "created_at": "2026-01-25T00:00:00Z"
+    },
+    {
+      "id": "s25d",
+      "name": "office visitor access",
+      "type": "Knowledge",
+      "summary": "Reception can issue a temporary visitor badge.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0,
+      "qualified_use_count": 2,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s25-source-0",
+        "s25-source-1",
+        "s25-source-2",
+        "s25-source-3"
+      ],
+      "created_at": "2026-01-25T00:00:00Z"
+    },
+    {
+      "id": "s26a",
+      "name": "sensor calibration interval",
+      "type": "Knowledge",
+      "summary": "Calibrate the temperature sensor every six months.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.7,
+      "qualified_use_count": 9,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s26-source-0",
+        "s26-source-1",
+        "s26-source-2",
+        "s26-source-3",
+        "s26-source-4"
+      ],
+      "created_at": "2026-01-26T00:00:00Z"
+    },
+    {
+      "id": "s26b",
+      "name": "sensor calibration interval",
+      "type": "Knowledge",
+      "summary": "Calibrate the temperature sensor every six months.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 1,
+      "qualified_use_count": 30,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-26T00:00:00Z"
+    },
+    {
+      "id": "s26c",
+      "name": "sensor calibration interval",
+      "type": "Knowledge",
+      "summary": "Calibrate the temperature sensor once every fifty years.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0,
+      "qualified_use_count": 60,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s26-source-0"
+      ],
+      "created_at": "2026-01-26T00:00:00Z"
+    },
+    {
+      "id": "s26d",
+      "name": "sensor calibration interval",
+      "type": "Knowledge",
+      "summary": "The temperature sensor is mounted near the intake.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.3,
+      "qualified_use_count": 0,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": true,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s26-source-0",
+        "s26-source-1"
+      ],
+      "created_at": "2026-01-26T00:00:00Z"
+    },
+    {
+      "id": "s27a",
+      "name": "contract renewal notice",
+      "type": "Knowledge",
+      "summary": "Send the renewal notice sixty days before contract expiry.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 1,
+      "qualified_use_count": 2,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s27-source-0",
+        "s27-source-1",
+        "s27-source-2"
+      ],
+      "created_at": "2026-01-27T00:00:00Z"
+    },
+    {
+      "id": "s27b",
+      "name": "contract renewal notice",
+      "type": "Knowledge",
+      "summary": "Send the renewal notice sixty days before contract expiry.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0,
+      "qualified_use_count": 9,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s27-source-0",
+        "s27-source-1",
+        "s27-source-2",
+        "s27-source-3"
+      ],
+      "created_at": "2026-01-27T00:00:00Z"
+    },
+    {
+      "id": "s27c",
+      "name": "contract renewal notice",
+      "type": "Knowledge",
+      "summary": "Send the renewal notice sixty days after contract expiry.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.3,
+      "qualified_use_count": 30,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s27-source-0",
+        "s27-source-1",
+        "s27-source-2",
+        "s27-source-3",
+        "s27-source-4"
+      ],
+      "created_at": "2026-01-27T00:00:00Z"
+    },
+    {
+      "id": "s27d",
+      "name": "contract renewal notice",
+      "type": "Knowledge",
+      "summary": "The contract names a renewal contact.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.7,
+      "qualified_use_count": 60,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-27T00:00:00Z"
+    },
+    {
+      "id": "s28a",
+      "name": "photo backup copies",
+      "type": "Knowledge",
+      "summary": "Keep two independent copies of the photo archive.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0,
+      "qualified_use_count": 0,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s28-source-0"
+      ],
+      "created_at": "2026-01-28T00:00:00Z"
+    },
+    {
+      "id": "s28b",
+      "name": "photo backup copies",
+      "type": "Knowledge",
+      "summary": "Keep two independent copies of the photo archive.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.3,
+      "qualified_use_count": 2,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s28-source-0",
+        "s28-source-1"
+      ],
+      "created_at": "2026-01-28T00:00:00Z"
+    },
+    {
+      "id": "s28c",
+      "name": "photo backup copies",
+      "type": "Knowledge",
+      "summary": "Keep the photo archive on one drive only.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 1,
+      "utility_score": 0.7,
+      "qualified_use_count": 9,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s28-source-0",
+        "s28-source-1",
+        "s28-source-2"
+      ],
+      "created_at": "2026-01-28T00:00:00Z"
+    },
+    {
+      "id": "s28d",
+      "name": "photo backup copies",
+      "type": "Knowledge",
+      "summary": "The photo archive is organized by year.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 1,
+      "qualified_use_count": 30,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s28-source-0",
+        "s28-source-1",
+        "s28-source-2",
+        "s28-source-3"
+      ],
+      "created_at": "2026-01-28T00:00:00Z"
+    },
+    {
+      "id": "s29a",
+      "name": "queue worker concurrency",
+      "type": "Knowledge",
+      "summary": "Run at most four queue workers for this job.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.3,
+      "qualified_use_count": 60,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s29-source-0",
+        "s29-source-1",
+        "s29-source-2",
+        "s29-source-3",
+        "s29-source-4"
+      ],
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "s29b",
+      "name": "queue worker concurrency",
+      "type": "Knowledge",
+      "summary": "Run at most four queue workers for this job.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.85,
+      "utility_score": 0.7,
+      "qualified_use_count": 0,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "s29c",
+      "name": "queue worker concurrency",
+      "type": "Knowledge",
+      "summary": "Run at least four hundred queue workers for this job.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 1,
+      "qualified_use_count": 2,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 3,
+      "requires_attention": true,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s29-source-0"
+      ],
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "s29d",
+      "name": "queue worker concurrency",
+      "type": "Knowledge",
+      "summary": "Queue workers record failed attempts.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0,
+      "qualified_use_count": 9,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [
+        "s29-source-0",
+        "s29-source-1"
+      ],
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "s30a",
+      "name": "billing currency preference",
+      "type": "Knowledge",
+      "summary": "Show the invoice total in euros for this account.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 0.6,
+      "utility_score": 0.7,
+      "qualified_use_count": 30,
+      "distinct_task_count": 1,
+      "negative_evidence_count": 1,
+      "requires_attention": false,
+      "last_used_at": "2026-04-01T00:00:00Z",
+      "evidence_ids": [
+        "s30-source-0",
+        "s30-source-1",
+        "s30-source-2"
+      ],
+      "created_at": "2026-01-02T00:00:00Z"
+    },
+    {
+      "id": "s30b",
+      "name": "billing currency preference",
+      "type": "Knowledge",
+      "summary": "Show the invoice total in euros for this account.",
+      "confirmation_status": "agent_confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "agent"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z",
+        "agent_policy_version": "agent-usage-v1"
+      },
+      "confidence_score": 0.85,
+      "utility_score": 1,
+      "qualified_use_count": 60,
+      "distinct_task_count": 3,
+      "negative_evidence_count": 3,
+      "requires_attention": false,
+      "last_used_at": "2024-01-01T00:00:00Z",
+      "evidence_ids": [
+        "s30-source-0",
+        "s30-source-1",
+        "s30-source-2",
+        "s30-source-3"
+      ],
+      "created_at": "2026-01-02T00:00:00Z"
+    },
+    {
+      "id": "s30c",
+      "name": "billing currency preference",
+      "type": "Knowledge",
+      "summary": "Show the invoice total only in yen for this account.",
+      "confirmation_status": "confirmed",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        },
+        "confirmed_by": {
+          "kind": "user"
+        },
+        "confirmed_at": "2026-01-02T00:00:00Z"
+      },
+      "confidence_score": 1,
+      "utility_score": 0,
+      "qualified_use_count": 0,
+      "distinct_task_count": 7,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": null,
+      "evidence_ids": [
+        "s30-source-0",
+        "s30-source-1",
+        "s30-source-2",
+        "s30-source-3",
+        "s30-source-4"
+      ],
+      "created_at": "2026-01-02T00:00:00Z"
+    },
+    {
+      "id": "s30d",
+      "name": "billing currency preference",
+      "type": "Knowledge",
+      "summary": "The invoice also shows a tax line.",
+      "confirmation_status": "pending",
+      "confirmation_basis_json": {
+        "existence_reason": "Synthetic statement for an offline benchmark.",
+        "quadrant_reason": "Explicit scenario evidence.",
+        "proposed_by": {
+          "kind": "agent"
+        }
+      },
+      "confidence_score": 0.35,
+      "utility_score": 0.3,
+      "qualified_use_count": 2,
+      "distinct_task_count": 0,
+      "negative_evidence_count": 0,
+      "requires_attention": false,
+      "last_used_at": "2026-10-01T00:00:00Z",
+      "evidence_ids": [],
+      "created_at": "2026-01-02T00:00:00Z"
+    }
+  ],
+  "queries": [
+    {
+      "id": "s01",
+      "query": "backup restore destination",
+      "judgments": {
+        "s01a": 3,
+        "s01b": 3,
+        "s01c": 0,
+        "s01d": 1
+      }
+    },
+    {
+      "id": "s02",
+      "query": "release signing key",
+      "judgments": {
+        "s02a": 3,
+        "s02b": 3,
+        "s02c": 0,
+        "s02d": 1
+      }
+    },
+    {
+      "id": "s03",
+      "query": "mobile pairing expiry",
+      "judgments": {
+        "s03a": 3,
+        "s03b": 3,
+        "s03c": 0,
+        "s03d": 1
+      }
+    },
+    {
+      "id": "s04",
+      "query": "router domestic traffic",
+      "judgments": {
+        "s04a": 3,
+        "s04b": 3,
+        "s04c": 0,
+        "s04d": 1
+      }
+    },
+    {
+      "id": "s05",
+      "query": "invoice approval threshold",
+      "judgments": {
+        "s05a": 3,
+        "s05b": 3,
+        "s05c": 0,
+        "s05d": 1
+      }
+    },
+    {
+      "id": "s06",
+      "query": "incident escalation owner",
+      "judgments": {
+        "s06a": 3,
+        "s06b": 3,
+        "s06c": 0,
+        "s06d": 1
+      }
+    },
+    {
+      "id": "s07",
+      "query": "customer export format",
+      "judgments": {
+        "s07a": 3,
+        "s07b": 3,
+        "s07c": 0,
+        "s07d": 1
+      }
+    },
+    {
+      "id": "s08",
+      "query": "garden watering schedule",
+      "judgments": {
+        "s08a": 3,
+        "s08b": 3,
+        "s08c": 0,
+        "s08d": 1
+      }
+    },
+    {
+      "id": "s09",
+      "query": "database migration rollback",
+      "judgments": {
+        "s09a": 3,
+        "s09b": 3,
+        "s09c": 0,
+        "s09d": 1
+      }
+    },
+    {
+      "id": "s10",
+      "query": "meeting notes location",
+      "judgments": {
+        "s10a": 3,
+        "s10b": 3,
+        "s10c": 0,
+        "s10d": 1
+      }
+    },
+    {
+      "id": "s11",
+      "query": "support response language",
+      "judgments": {
+        "s11a": 3,
+        "s11b": 3,
+        "s11c": 0,
+        "s11d": 1
+      }
+    },
+    {
+      "id": "s12",
+      "query": "api retry policy",
+      "judgments": {
+        "s12a": 3,
+        "s12b": 3,
+        "s12c": 0,
+        "s12d": 1
+      }
+    },
+    {
+      "id": "s13",
+      "query": "library opening hours",
+      "judgments": {
+        "s13a": 3,
+        "s13b": 3,
+        "s13c": 0,
+        "s13d": 1
+      }
+    },
+    {
+      "id": "s14",
+      "query": "project archive retention",
+      "judgments": {
+        "s14a": 3,
+        "s14b": 3,
+        "s14c": 0,
+        "s14d": 1
+      }
+    },
+    {
+      "id": "s15",
+      "query": "conference room capacity",
+      "judgments": {
+        "s15a": 3,
+        "s15b": 3,
+        "s15c": 0,
+        "s15d": 1
+      }
+    },
+    {
+      "id": "s16",
+      "query": "password reset channel",
+      "judgments": {
+        "s16a": 3,
+        "s16b": 3,
+        "s16c": 0,
+        "s16d": 1
+      }
+    },
+    {
+      "id": "s17",
+      "query": "deployment health check",
+      "judgments": {
+        "s17a": 3,
+        "s17b": 3,
+        "s17c": 0,
+        "s17d": 1
+      }
+    },
+    {
+      "id": "s18",
+      "query": "design review participants",
+      "judgments": {
+        "s18a": 3,
+        "s18b": 3,
+        "s18c": 0,
+        "s18d": 1
+      }
+    },
+    {
+      "id": "s19",
+      "query": "warehouse reorder point",
+      "judgments": {
+        "s19a": 3,
+        "s19b": 3,
+        "s19c": 0,
+        "s19d": 1
+      }
+    },
+    {
+      "id": "s20",
+      "query": "travel reimbursement receipt",
+      "judgments": {
+        "s20a": 3,
+        "s20b": 3,
+        "s20c": 0,
+        "s20d": 1
+      }
+    },
+    {
+      "id": "s21",
+      "query": "data retention logs",
+      "judgments": {
+        "s21a": 3,
+        "s21b": 3,
+        "s21c": 0,
+        "s21d": 1
+      }
+    },
+    {
+      "id": "s22",
+      "query": "train ticket collection",
+      "judgments": {
+        "s22a": 3,
+        "s22b": 3,
+        "s22c": 0,
+        "s22d": 1
+      }
+    },
+    {
+      "id": "s23",
+      "query": "code review ownership",
+      "judgments": {
+        "s23a": 3,
+        "s23b": 3,
+        "s23c": 0,
+        "s23d": 1
+      }
+    },
+    {
+      "id": "s24",
+      "query": "report publication date",
+      "judgments": {
+        "s24a": 3,
+        "s24b": 3,
+        "s24c": 0,
+        "s24d": 1
+      }
+    },
+    {
+      "id": "s25",
+      "query": "office visitor access",
+      "judgments": {
+        "s25a": 3,
+        "s25b": 3,
+        "s25c": 0,
+        "s25d": 1
+      }
+    },
+    {
+      "id": "s26",
+      "query": "sensor calibration interval",
+      "judgments": {
+        "s26a": 3,
+        "s26b": 3,
+        "s26c": 0,
+        "s26d": 1
+      }
+    },
+    {
+      "id": "s27",
+      "query": "contract renewal notice",
+      "judgments": {
+        "s27a": 3,
+        "s27b": 3,
+        "s27c": 0,
+        "s27d": 1
+      }
+    },
+    {
+      "id": "s28",
+      "query": "photo backup copies",
+      "judgments": {
+        "s28a": 3,
+        "s28b": 3,
+        "s28c": 0,
+        "s28d": 1
+      }
+    },
+    {
+      "id": "s29",
+      "query": "queue worker concurrency",
+      "judgments": {
+        "s29a": 3,
+        "s29b": 3,
+        "s29c": 0,
+        "s29d": 1
+      }
+    },
+    {
+      "id": "s30",
+      "query": "billing currency preference",
+      "judgments": {
+        "s30a": 3,
+        "s30b": 3,
+        "s30c": 0,
+        "s30d": 1
+      }
+    }
+  ]
+}

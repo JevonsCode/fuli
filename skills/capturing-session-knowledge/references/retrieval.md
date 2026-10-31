@@ -130,9 +130,16 @@ knowledge to capture.
 
 The current `agent-usage-v1` policy requires at least five idempotent material-use events across
 at least three distinct tasks in the current content generation, with no open knowledge or
-preference conflict. It maintains utility and confidence as separate scores and caps
-Agent-confirmed confidence below human/source confirmation. Agents report qualifying use; they
-do not calculate, override, or claim the promotion themselves.
+preference conflict. Agents report qualifying use; they do not calculate, override, or claim
+the promotion themselves.
+
+Every item has one knowledge weight (0-100%), the number the console and turn receipts show and
+the factor search ranks by (relevance × weight × scope distance, then tag matches). Confirmation
+sets its band: user or authoritative-source confirmation 100%, `agent_confirmed` 70-95%, pending
+10-69%. Within a band it rises with qualified use, distinct tasks and real sources, fades as use
+grows old, and drops with negative feedback; an item flagged for attention is halved. The weight
+never grants authority: confirmation status alone decides retrieval, conflicts and promotion.
+Stored utility and confidence scores are kept as usage history and no longer rank results.
 
 For “why was this code written?” questions, use stored evidence relationships and a separately configured Git MCP together. Never invent a commit, PRD link, or missing history. For “what errors happened today?” questions, obtain current data from a monitoring/log MCP; use Fuli only for runbooks, architecture, prior causes, and other durable context.
 

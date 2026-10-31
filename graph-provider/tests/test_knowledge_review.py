@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
@@ -8,8 +9,7 @@ from pydantic import ValidationError
 from fuli_graph.knowledge_review import (
     _CONFLICT_ITEM_QUERY,
     _DEFERRED_ITEM_QUERY,
-    LOW_CONFIDENCE_SCORE,
-    LOW_UTILITY_SCORE,
+    LOW_WEIGHT_PERCENT,
     REPEATED_SESSION_COUNT,
     build_review_candidates,
     finish_knowledge_review,
@@ -44,14 +44,13 @@ def test_candidate_order_matches_review_policy_and_keeps_all_reasons():
             created_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
             requires_attention=True,
             negative_evidence_count=2,
-            utility_score=LOW_UTILITY_SCORE,
             project_ids=['project-a'],
         ),
         item_row(
             'low',
             created_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
-            utility_score=LOW_UTILITY_SCORE,
-            confidence_score=LOW_CONFIDENCE_SCORE,
+            confirmation_status='pending',
+            confirmation_basis_json=None,
             project_ids=['project-a'],
         ),
         item_row(
@@ -75,6 +74,34 @@ def test_candidate_order_matches_review_policy_and_keeps_all_reasons():
         'recent', 'conflict', 'low', 'repeated'
     ]
     assert candidates[1].reasons == ['conflict_or_attention', 'low_weight']
+
+
+def test_low_weight_reads_the_knowledge_weight_not_stored_confidence_or_utility():
+    watermark = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    rows = [
+        # A person's confirmation is 100% however low the old scores sit.
+        item_row('confirmed-low-scores', utility_score=0.0, confidence_score=0.1,
+                 project_ids=['project-a']),
+        # Pending without use stays low however high the old scores sit.
+        item_row('pending-high-scores', confirmation_status='pending', project_ids=['project-a'],
+                 confirmation_basis_json=None, utility_score=1.0, confidence_score=1.0),
+        # Attention halves even a person's 100%.
+        item_row('confirmed-attention', requires_attention=True, project_ids=['project-a']),
+    ]
+
+    candidates = {
+        candidate.item_id: candidate
+        for candidate in build_review_candidates(
+            rows, scope='all', personal_project_id=None, previous_completed_at=watermark,
+            conflict_item_keys=set(), decided_candidate_keys=set(),
+        )
+    }
+
+    assert 'confirmed-low-scores' not in candidates
+    assert candidates['pending-high-scores'].weight_percent <= LOW_WEIGHT_PERCENT
+    assert candidates['pending-high-scores'].reasons == ['low_weight']
+    assert candidates['confirmed-attention'].weight_percent == 50
+    assert candidates['confirmed-attention'].reasons == ['conflict_or_attention', 'low_weight']
 
 
 def test_first_review_scans_every_in_scope_item_and_completed_items_stay_out_of_run():
@@ -585,6 +612,13 @@ def item_row(item_id, **overrides):
         'project_ids': [],
         'session_ids': [],
         'confirmation_status': 'confirmed',
+        'confirmation_basis_json': json.dumps({
+            'existence_reason': 'A synthetic reviewed statement.',
+            'quadrant_reason': 'Recorded for this test.',
+            'proposed_by': {'kind': 'agent'},
+            'confirmed_by': {'kind': 'user'},
+            'confirmed_at': '2026-06-01T00:00:00Z',
+        }),
         'current_quadrant': 'known_known',
         'utility_score': 0.7,
         'confidence_score': 0.8,
