@@ -183,7 +183,7 @@ watchEffect(() => {
 .app-round.is-active { color: var(--color-on-accent); background: var(--color-accent); }
 .app-badge {
   position: absolute; top: -2px; right: -2px; display: grid; min-width: 16px; height: 16px; padding: 0 4px; place-items: center;
-  border-radius: var(--radius-pill); color: #fff; background: var(--color-danger); box-shadow: 0 0 0 2px var(--color-surface);
+  border-radius: var(--radius-pill); color: var(--color-surface); background: var(--color-danger); box-shadow: 0 0 0 2px var(--color-surface);
   font-size: 10px; font-weight: var(--weight-strong); line-height: 1; font-variant-numeric: tabular-nums;
 }
 .app-feedback-row { flex: 0 0 auto; padding: 0 var(--page-gutter) 8px; }
