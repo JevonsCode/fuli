@@ -8,8 +8,10 @@ import 'package:ffi/ffi.dart';
 // send it. The names are the ones FuliTray.exe used, so updates and older
 // versions on either side find each other (src/desktop/windows-update-lock.js):
 // the mutex `Global\FuliTray-<user SID>-<instanceKey>`, held while the client
-// runs; `<name>-open`, set by a second launch to show this client's window;
-// `<name>-exit`, set by an update to close this client.
+// runs; `<name>-open`, set by a second launch to show this client's window or
+// to say that its fuli:// link waits in the client's inbox (link_inbox.dart);
+// `<name>-exit`, set by an update to close this client. The events carry no
+// payload, so they stay the same for every version.
 
 const _waitObject0 = 0;
 const _waitAbandoned = 0x80;
@@ -56,7 +58,8 @@ class WindowsInstance {
   Timer? _poll;
 
   /// Takes the lock of [instanceKey] (windows-controller.js `context`), or,
-  /// with [handOver], asks the client that holds it to show its window.
+  /// with [handOver], signals the client that holds it (its window, or a
+  /// link left in its inbox).
   static (InstanceClaim, WindowsInstance?) claim(String instanceKey, {bool handOver = true}) => using((arena) {
         final name = 'Global\\FuliTray-${_userSid()}-$instanceKey';
         final mutex = _createMutex(nullptr, 0, name.toNativeUtf16(allocator: arena));
@@ -72,7 +75,7 @@ class WindowsInstance {
         return (_handOver('$name-open'.toNativeUtf16(allocator: arena)), null);
       });
 
-  /// Calls [onOpen] when a second launch asks for the window and [onExit]
+  /// Calls [onOpen] when a second launch signals and [onExit]
   /// when an update asks this client to close.
   void listen({required void Function() onOpen, required void Function() onExit}) {
     _poll?.cancel();

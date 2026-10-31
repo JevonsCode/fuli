@@ -17,6 +17,7 @@ dependencies:
   ffi: ^2.2.0
   flutter_inappwebview: ^6.1.5
   screen_retriever: ^0.2.2
+  app_links: ^7.0.0
 
 dev_dependencies:
   flutter_test:

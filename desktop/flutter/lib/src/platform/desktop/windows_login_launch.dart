@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'windows_registry.dart';
 
 const _runKey = r'HKCU\Software\Microsoft\Windows\CurrentVersion\Run';
@@ -15,13 +13,6 @@ const _choiceValue = 'LaunchAtLogin';
 /// points it at itself again.
 class WindowsLoginLaunch {
   WindowsLoginLaunch({required this.packageRoot, RegRunner reg = runReg}) : _reg = reg;
-
-  /// The installed package this client runs from (the launcher's folder, one
-  /// above the client's), or null for a package that was never installed.
-  static WindowsLoginLaunch? forClient(String exeDir) {
-    final root = Directory(exeDir).parent.path;
-    return File('$root\\installed-context.json').existsSync() ? WindowsLoginLaunch(packageRoot: root) : null;
-  }
 
   final String packageRoot;
   final RegRunner _reg;

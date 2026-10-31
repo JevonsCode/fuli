@@ -21,6 +21,12 @@ A Windows and macOS app for people who do not use a terminal: one window and a t
   (`runtime\node\node.exe src\desktop\windows-controller.js start|stop|status|change-port|context`) on Windows,
   `fuli start|stop|status --json` through the login shell on macOS.
 - The console port is `ports.console` in the data directory's `runtime-settings.json` (default 2727).
+- `fuli://` links (`lib/src/platform/fuli_link.dart`) only navigate, so they keep working when the
+  port changes or a chat app drops `http://127.0.0.1` links: `fuli://status` (or `fuli://`) shows
+  this window; `fuli://<path>?<query>` opens `http://127.0.0.1:<console port>/<path>?<query>` in the
+  browser. Only plain console paths pass: no other host, port, user info or fragment, no `.`/`..`
+  segments or encoded slashes, printable ASCII only (percent-encode the rest), at most 2048
+  characters. Anything else is ignored. A start for a console link keeps the window hidden.
 - Checks every 15 s while the window is visible and every 120 s while hidden, backing off when the
   console does not answer. One OS notification when FULI gets worse; closing the window hides it.
 
@@ -34,9 +40,23 @@ It is the tray app of the Windows package (`docs/windows-first-install.md`, 「D
   running start, stop or port change has finished.
 - `--background` starts it with the tray icon only; the window stays hidden until the client
   shows it (`windows/runner/flutter_window.cpp`).
+- `fuli://` is registered for the current user by an installed client
+  (`windows_url_scheme.dart`: `HKCU\Software\Classes\fuli`, opening `"<package>\Fuli.exe" "%1"`);
+  updates, rollbacks and uninstall follow or remove it (`src/desktop/windows-desktop-client.js`).
+  The launcher passes the link on. A launch with a link leaves it in
+  `%LOCALAPPDATA%\FULI Desktop\links\<instanceKey>\` (`link_inbox.dart`, one file per link, written
+  then renamed) and only then signals the running client, which takes every waiting link: the
+  shared `-open` event carries no payload, so older versions and updates keep the same names, and
+  coalesced signals lose no link. A starting client takes links left while none ran (an update held
+  the lock); links older than five minutes are dropped.
 - Launch at login is on for an installed FULI until 「开机时启动」 in the tray menu turns it off
   (`windows_login_launch.dart`). The tray menu also has 「换一个端口」.
 - Notifications use an app identity registered under the current user, not a Start-menu shortcut.
+
+## On macOS
+
+`fuli` is declared in `macos/Runner/Info.plist` (`CFBundleURLTypes`); macOS registers it when the
+app is installed and hands links to the running app, received through `app_links`.
 
 ## Layout
 

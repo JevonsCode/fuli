@@ -64,7 +64,7 @@ export function installedWindowsFixture(t) {
   const desktopClient = {
     close: async dataDir => { client.events.push(['close', dataDir]); return client.state; },
     reopen: installRoot => client.events.push(['reopen', installRoot]),
-    followSwitch: async (installRoot, packageRoot) => { client.events.push(['followSwitch', installRoot, packageRoot]); return 'unchanged'; },
+    followSwitch: async (installRoot, packageRoot) => { client.events.push(['followSwitch', installRoot, packageRoot]); return { loginLaunch: 'unchanged', urlScheme: 'unchanged' }; },
     unregister: async installRoot => { client.events.push(['unregister', installRoot]); return 'removed'; }
   };
   return { ...f, current, source, calls, client, options: { source, env: f.env },

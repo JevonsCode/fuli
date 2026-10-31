@@ -15,7 +15,7 @@ export async function runWindowsUninstallCommand(args = [], dependencies = {}) {
     expectedInstallationId: plan.current.installationId }, { write });
   write('已卸载 / Uninstalled. 数据保留在 / Data kept at: ' + result.dataDir);
   if (result.status === 'removing_after_exit') write('程序文件将在此窗口关闭后几秒内删除。 / Program files are removed a few seconds after this window closes.');
-  if (result.registrations === 'failed') write('开机启动项或桌面客户端设置没有删除；请在 Windows 设置的「启动应用」里检查 FULI。 / The launch-at-login entry or desktop client settings were not removed; check FULI under Startup apps in Windows Settings.');
+  if (result.registrations === 'failed') write('开机启动项、fuli:// 链接或桌面客户端设置没有删除；请在 Windows 设置的「启动应用」里检查 FULI。 / The launch-at-login entry, the fuli:// link handler or desktop client settings were not removed; check FULI under Startup apps in Windows Settings.');
   for (const path of result.keptShortcuts) write('已保留被修改的快捷方式 / Kept a changed shortcut: ' + path);
   if (result.leftover) write('程序目录中还有其他文件，已保留 / Other files remain in: ' + result.leftover);
   write('重启已打开的 Claude Code / Codex 会话以卸下 Fuli。 / Restart open client sessions to unload Fuli.');
