@@ -25,7 +25,7 @@ test('a platform resolves to its release asset name, URL and checksum', () => {
     url: 'https://github.com/JevonsCode/agent-session-launcher/releases/download/v0.4.0/agent-session-launcher-windows-x64.exe'
   });
   assert.equal(agentKitAsset('agent-installer', 'darwin', 'arm64').url,
-    'https://github.com/JevonsCode/agent-installer/releases/download/v0.2.0/agent-installer-macos-arm64');
+    'https://github.com/JevonsCode/agent-installer/releases/download/v0.2.1/agent-installer-macos-arm64');
   assert.equal(agentKitAsset('agent-installer', 'linux', 'arm64').name, 'agent-installer-linux-arm64');
   assert.equal(agentKitAsset('agent-installer', 'win32', 'arm64'), null, 'no Windows arm64 build is published');
   assert.throws(() => agentKitAsset('agent-other', 'linux', 'x64'), /Unknown agent kit component/);
