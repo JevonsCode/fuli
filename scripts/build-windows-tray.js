@@ -175,7 +175,7 @@ export async function buildWindowsTray({ assetBundle, client, output, dataDir, c
 }
 
 // FuliNode.exe, the stable command of an installed FULI's client configurations
-// (rec#11 D-77): a console program, so it shares its caller's console and stdio.
+// (rec#11 D-80): a console program, so it shares its caller's console and stdio.
 export async function compileWindowsNodeLauncher(compiler, output, scratch) {
   const manifest = join(scratch, 'node-launcher.manifest');
   await writeFile(manifest, WINDOWS_MANIFEST);

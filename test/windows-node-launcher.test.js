@@ -34,7 +34,7 @@ test('placing copies the installed version\'s launcher, keeps one a package lack
   assert.equal(installedWindowsNodeLauncher(root), join(root, WINDOWS_NODE_LAUNCHER));
   assert.equal(readFileSync(join(root, WINDOWS_NODE_LAUNCHER), 'utf8'), 'launcher 1');
   assert.equal(placeWindowsNodeLauncher(root, join(root, 'versions', 'a')), 'current');
-  // A version from before D-77 leaves the launcher: it runs any version's installation.json.
+  // A version from before D-80 leaves the launcher: it runs any version's installation.json.
   assert.equal(placeWindowsNodeLauncher(root, join(root, 'versions', 'old')), 'kept');
   assert.equal(readFileSync(join(root, WINDOWS_NODE_LAUNCHER), 'utf8'), 'launcher 1');
   const crashed = join(root, `${WINDOWS_NODE_LAUNCHER}.${randomUUID()}.new`);

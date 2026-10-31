@@ -7,7 +7,7 @@ using System.Text;
 using System.Web.Script.Serialization;
 
 // FuliNode.exe: the stable command of an installed FULI's client configurations
-// (rec#11 D-77). Install, update and rollback copy it to the installation root,
+// (rec#11 D-80). Install, update and rollback copy it to the installation root,
 // beside installation.json, and a client names it with a package-relative script:
 //
 //   "<install root>\FuliNode.exe" src\mcp-server.js --runtime-config ...

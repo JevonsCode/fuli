@@ -27,7 +27,7 @@ test('first install keeps candidate bytes, binds installed default data and refu
   assert.equal(resolveSetupPaths({ platform: 'win32', packageRoot: installed.packageRoot,
     env: { ...f.env, FULI_DATA_DIR: join(f.root, 'decoy') } }).dataDir, installed.dataDir);
   for (const path of installed.shortcuts) assert.equal(readFileSync(path, 'utf8'), join(installed.packageRoot, 'Fuli.exe'));
-  // The stable command of client configurations, from the installed package (rec#11 D-77).
+  // The stable command of client configurations, from the installed package (rec#11 D-80).
   assert.equal(readFileSync(join(installed.installRoot, 'FuliNode.exe'), 'utf8'), 'node launcher 0.12.4');
   assert.throws(() => installWindowsForCurrentUser(f.options, f.deps), /already exists/);
   const moved = installed.packageRoot + '-moved';

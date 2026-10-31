@@ -125,7 +125,7 @@ stopped state.
 
 Agent client configurations of an installed copy (MCP entries, Claude Code, Codex
 and Cursor hooks, the OpenCode plugin file) never name a version folder (rec#11
-D-77). They run `FuliNode.exe` at the installation root with a script relative to
+D-80). They run `FuliNode.exe` at the installation root with a script relative to
 the package:
 
 ```

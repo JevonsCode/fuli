@@ -1,6 +1,6 @@
 import { jsonMcpPort } from '../json-mcp.js';
 
-// Google Antigravity (rec#11 D-77): the desktop app and its `agy` CLI read one
+// Google Antigravity (rec#11 D-80): the desktop app and its `agy` CLI read one
 // MCP file, ~/.gemini/config/mcp_config.json, beside their own state folders
 // (~/.gemini/antigravity, ~/.gemini/antigravity-cli). No hooks are known, so
 // FULI connects MCP only.

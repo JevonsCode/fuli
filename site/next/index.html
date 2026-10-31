@@ -252,6 +252,8 @@
 <li data-i18n="next.c.features.4">FLA 自己的工作台：有任务或工作流的 FLA，首页第一个标签就是工作台，看得到派给它的任务看板和它自己的工作流。工作流由它从经常重复的工作里提议，你确认后才生效；不会自动执行，也不会塞进上下文。</li>
 <li data-i18n="next.c.features.5">「#FLA 姓名」也能叫内置角色 Bole、Jefa、Tonborg 和 Astro；句中随口提到 #FLA 不再误弹选人；叫不到时说明原因和处理办法。控制台里 Bole、Tonborg 的负责项目可以保存了。</li>
 <li data-i18n="next.c.features.6">知识检索可以先看索引（标题和大致 Token 数），再按 ID 读选中的几条全文，更省 Token。</li>
+          <li data-i18n="next.c.features.7">回执链接改成 fuli://（装了桌面客户端时）：点开由客户端用 FULI 当前的端口打开对应页面，换端口后旧链接照样能用；「关闭提醒」写明页面位置。</li>
+          <li data-i18n="next.c.features.8">新增支持的客户端 Antigravity：应用和 agy 命令行共用一份配置，在「设置 → 客户端」接入。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.changes">变化</h3><ul>
           <li data-i18n="next.c.changes.1">旧的 FuliTray 托盘不再提供，桌面和开始菜单的 Fuli 快捷方式打开新客户端；想回到旧托盘，可以用 Rollback-Fuli 回到更新前的版本。</li>
@@ -259,6 +261,7 @@
 <li data-i18n="next.c.changes.3">会话折叠改为保留 Claude Code、Codex 自己压缩对话时写的摘要，不再按关键词挑句子。</li>
 <li data-i18n="next.c.changes.4">开始使用共享组件 agent-session-launcher / agent-installer（这一版只读，不改任何客户端配置）；ID 含特殊字符的会话不再显示「打开会话」链接。</li>
 <li data-i18n="next.c.changes.5">修复某些 Windows 更新之后 FULI 无法启动、更新失败也无法回滚的问题；依赖安全更新。</li>
+          <li data-i18n="next.c.changes.6">Windows 安装版的客户端配置改用安装目录里固定的 FuliNode.exe，更新、回退之后不用重新接入。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.upgrade">升级前要知道</h3><ul>
           <li data-i18n="next.c.upgrade.1">新增两个本地存储（agent-workflows.sqlite、session-clients/），第一次使用时创建；从 0.22.1 升级不需要确认迁移。</li>

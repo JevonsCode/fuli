@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 // FuliNode.exe (desktop/windows/FuliNodeLauncher.cs) at the installation root,
 // beside installation.json: the stable command of an installed FULI's client
-// configurations (rec#11 D-77). It runs the version installation.json names, so
+// configurations (rec#11 D-80). It runs the version installation.json names, so
 // install, update and rollback only copy the launcher of the version they
 // install; no client configuration is rewritten.
 export const WINDOWS_NODE_LAUNCHER = 'FuliNode.exe';
@@ -13,13 +13,13 @@ export const WINDOWS_NODE_LAUNCHER = 'FuliNode.exe';
 const LAUNCHER_LEFTOVER = /^FuliNode\.exe\.[a-f0-9-]{36}\.(?:new|old)$/;
 
 // The launcher clients run for this installation, or null before one was placed
-// (a version from before D-77 installed it), when clients keep absolute paths.
+// (a version from before D-80 installed it), when clients keep absolute paths.
 export function installedWindowsNodeLauncher(installRoot) {
   const path = join(installRoot, WINDOWS_NODE_LAUNCHER);
   return existsSync(path) ? path : null;
 }
 
-// The launcher a verified package ships, or null for a version from before D-77.
+// The launcher a verified package ships, or null for a version from before D-80.
 export function packagedWindowsNodeLauncher(packageRoot) {
   const path = join(packageRoot, WINDOWS_NODE_LAUNCHER);
   return existsSync(path) ? readFileSync(path) : null;
