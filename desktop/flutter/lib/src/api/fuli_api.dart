@@ -13,6 +13,26 @@ abstract interface class FuliApi {
   Future<UpdateStatus?> readUpdate();
   Future<MigrationPlan> migrationPlan();
   Future<ApplyOutcome> applyMigration(String digest);
+
+  /// Requests Agents left for the person that are still open, newest first.
+  Future<List<AttentionNotice>> openAttention();
+}
+
+/// One open request from an Agent, as much as a notification shows.
+class AttentionNotice {
+  const AttentionNotice({required this.id, required this.title});
+  final String id;
+  final String title;
+
+  static List<AttentionNotice> listFromJson(Object? json) {
+    final items = json is Map ? json['items'] : null;
+    if (items is! List) return const [];
+    return [
+      for (final item in items)
+        if (item is Map && item['requestId'] is String && item['title'] is String)
+          AttentionNotice(id: item['requestId'] as String, title: item['title'] as String),
+    ];
+  }
 }
 
 /// The console did not answer at all (not running, port closed, timed out).

@@ -8,7 +8,9 @@ import { ApplicationError, ApplicationErrorCode } from '../app/application-error
 // it at once and the receipt says so with a link to rename, move or undo it;
 // with 'ask' it is only proposed and the person decides in the console. "Not
 // yet" and an undo both wait for more conversations. Every rule reads stored
-// triage counts; no model is called.
+// triage counts; no model is called. Forming also moves what the topic's
+// sessions held in their temporary projects into it, and an undo moves back
+// what nobody changed since (the Provider's topic_knowledge_migration).
 export const PROPOSAL_MIN_CONVERSATIONS = 3;
 export const PROPOSAL_MIN_DAYS = 2;
 export const PROPOSAL_ASK_AGAIN_AFTER = 3;
@@ -58,8 +60,8 @@ export async function promoteTopic(application, topic, { sourceApplication = 'ot
   const link = `${receiptConsoleUrl(application)}/employees/assistant?${new URLSearchParams({
     promoted: formed.personal_project_id, topic: stats.topic })}`;
   return { ...formed, status: 'promoted', proposed_by: 'employee.assistant',
-    notice: `FULI：话题「${stats.topic}」聊了 ${stats.count} 次、跨 ${stats.days} 天，已升级为项目「${stats.topic}」。`
-      + `[改名、换上级或撤销](<${link}>)`,
+    notice: `FULI：话题「${stats.topic}」聊了 ${stats.count} 次、跨 ${stats.days} 天，已升级为项目「${stats.topic}」`
+      + `${formed.knowledge_moved ? `，搬了 ${formed.knowledge_moved} 条知识` : ''}。[改名、换上级或撤销](<${link}>)`,
     guidance: 'Add notice to the end of your reply, unchanged. The person can rename, move or undo it at its link.' };
 }
 
@@ -76,8 +78,9 @@ export async function acceptTopicProposal(application, { topic, sourceApplicatio
 }
 
 // Undo of a formation: the topic's conversations are open again and count as
-// declined at that size; a project Astro created by itself is archived (kept,
-// restorable), one that already existed is left as it was.
+// declined at that size; the knowledge that moved in with them goes back unless
+// someone changed it since; a project Astro created by itself is archived
+// (kept, restorable), one that already existed is left as it was.
 export async function undoTopicPromotion(application, { topic, personalProjectId }) {
   const name = typeof topic === 'string' ? topic.trim() : '';
   if (!name || typeof personalProjectId !== 'string' || !personalProjectId) {
@@ -93,6 +96,7 @@ export async function undoTopicPromotion(application, { topic, personalProjectId
     profile: { ...project.profile, lifecycle: 'archived' } });
   return { status: 'reopened', topic: reopened.topic, personal_project_id: personalProjectId,
     conversations: reopened.conversation_ids.length, project_archived: archive,
+    knowledge_returned: reopened.knowledge.returned, knowledge_kept: reopened.knowledge.kept,
     ask_again_at: reopened.declined_count + PROPOSAL_ASK_AGAIN_AFTER };
 }
 
@@ -106,7 +110,8 @@ async function formTopicProject(application, stats, existing, reason, sourceAppl
     personal_space_id: spaceId, topic: stats.topic, personal_project_id: projectId });
   return { personal_project_id: projectId, topic: stats.topic, reason, created: !existing,
     lead_agent_id: lead?.agent?.agent_id ?? null, lead_status: lead?.status ?? 'unavailable',
-    conversations: attached.conversation_ids.length };
+    conversations: attached.conversation_ids.length, knowledge_moved: attached.knowledge.moved,
+    knowledge_kept: attached.knowledge.kept };
 }
 
 export async function declineTopicProposal(application, { topic }) {

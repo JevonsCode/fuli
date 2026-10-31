@@ -89,6 +89,8 @@ export const agentRedesignMessages = {
       undoError: "「{topic}」没有撤销成功，请重试",
       undone: "已撤销：「{topic}」的项目已归档，会话回到未归属；再多聊几次才会再升级。",
       undoneKept: "已撤销：会话回到未归属，原来就有的项目「{topic}」保持不变。",
+      knowledgeReturned: "搬进去的 {returned} 条知识已回到原会话暂存。",
+      knowledgeReturnedKept: "搬进去的 {returned} 条知识已回到原会话暂存；{kept} 条之后改过，留在原处。",
     },
     workStatus: {
       label: "工作状态",
@@ -213,6 +215,8 @@ export const agentRedesignMessages = {
       undoError: "Could not undo “{topic}”. Try again",
       undone: "Undone: the project for “{topic}” is archived and its conversations are unassigned again. It grows again only after a few more conversations.",
       undoneKept: "Undone: the conversations are unassigned again; your existing project “{topic}” is unchanged.",
+      knowledgeReturned: "{returned} knowledge items that moved in went back to their sessions.",
+      knowledgeReturnedKept: "{returned} knowledge items that moved in went back to their sessions; {kept} changed since and stay where they are.",
     },
   },
 } as const;
