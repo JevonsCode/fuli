@@ -118,7 +118,11 @@ export function createSystemService({
     formatOperations: () => readFormatOperations(paths.dataDir), graphStage: () => runtimeBroker.status().stage,
     hookTrustUnreadable: [CODEX_HOOK_TRUST_CLIENT],
     liveProcesses: () => liveMcpProcesses(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
-    lastUpdate: () => update.status(), internalDetails: () => ({ installerShadow: installerShadow.latest() }) });
+    lastUpdate: () => update.status(), internalDetails: () => ({ installerShadow: installerShadow.latest() }),
+    portMoves: () => {
+      const state = readJson(paths.graphRuntimeStatePath, null);
+      return state?.portMoves ? { movedAt: state.startedAt, moves: state.portMoves } : null;
+    } });
 
   return {
     getSettings,

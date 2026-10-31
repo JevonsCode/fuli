@@ -13,6 +13,7 @@ import {
   readRuntimeSettings,
   runtimeSettingsWithOverrides
 } from '../system/runtime-settings.js';
+import { portMoveSentence } from '../system/blocked-port-recovery.js';
 import { parseLocalRuntimeOptions } from './local-runtime-options.js';
 import { copyableValueStyle, writeLine } from './terminal-io.js';
 
@@ -101,7 +102,7 @@ export function formatLocalRuntimeResult(command, result, copy = String) {
 }
 
 function formatStartedRuntime(title, result, copy) {
-  const lines = [title, `Management UI: ${copy(result.url)}`];
+  const lines = [title, ...(result.portMoves ?? []).map(portMoveSentence), `Management UI: ${copy(result.url)}`];
   const agentSetupNotice = formatAgentSetupNotice(result.agentSetupCheck);
   if (agentSetupNotice) lines.push(agentSetupNotice);
   if (result.lan === true) {

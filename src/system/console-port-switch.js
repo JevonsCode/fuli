@@ -31,7 +31,8 @@ export async function switchConsolePort(paths, {
   return { previousPort: current.ports.console, port: ports.console, backupPath };
 }
 
-function backupRuntimeSettings(paths, at) {
+// A dated copy of the settings file, kept before FULI rewrites its ports.
+export function backupRuntimeSettings(paths, at) {
   if (!existsSync(paths.runtimeSettingsPath)) return null;
   mkdirSync(paths.runtimeSettingsBackupDir, { recursive: true, mode: 0o700 });
   const stamp = at.toISOString().replaceAll(':', '-').replaceAll('.', '-');

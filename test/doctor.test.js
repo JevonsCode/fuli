@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -94,6 +94,35 @@ test('the doctor names each finding with who fixes it, and a blocking one degrad
   assert.deepEqual(liveMcpProcesses(runtimeConfigPath, { isAlive }).map(({ pid }) => pid).sort(), [101, 102, 103]);
 });
 
+test('ports the running console moved by itself are one info item named after that start', async (t) => {
+  const moves = [{ key: 'console', from: 2727, to: 2734, reason: 'reserved' }];
+  const moved = await doctor(t, { portMoves: () => ({ movedAt: '2026-10-27T08:00:00.000Z', moves }) }).check();
+  assert.equal(moved.overall, 'ok');
+  assert.deepEqual(moved.items, [{ id: 'ports_moved:2026-10-27T08:00:00.000Z', kind: 'ports_moved', severity: 'info',
+    fix: 'person', data: { movedAt: '2026-10-27T08:00:00.000Z', moves } }]);
+
+  assert.deepEqual((await doctor(t, { portMoves: () => null }).check()).items, []);
+  const unreadable = await doctor(t, { portMoves: () => { throw new Error('unreadable'); } }).check();
+  assert.deepEqual(unreadable.unchecked, ['runtime']);
+});
+
+test('the console reads the moved ports from its runtime state', async (t) => {
+  const root = dataDir(t);
+  const moves = [{ key: 'console', from: 2727, to: 2734, reason: 'reserved' }];
+  writeFileSync(join(root, 'graph-runtime-state.json'), JSON.stringify({ version: 4, pid: 1, url: 'http://127.0.0.1:2734',
+    port: 2734, startedAt: '2026-10-27T08:00:00.000Z', portMoves: moves }));
+  const paths = { dataDir: root, graphRuntimeConfigPath: join(root, 'graph-runtime.json'),
+    graphRuntimeStatePath: join(root, 'graph-runtime-state.json') };
+  const service = createSystemService({ paths, packageRoot: '.', settingsApplier: {}, resourceMonitor: {}, runtimeBroker: {},
+    clientObserver: { observe: () => ({ clients: [] }) }, clientInstaller: async () => assert.fail('nothing to connect'),
+    versionChecker: { peek: () => null, check: async () => assert.fail('the doctor never waits on the network') },
+    update: { status: () => null, kind: () => 'npm' },
+    previewDataFormats: async () => ({ digest: null, stores: [], blocked: [], undoable: [] }) });
+  const answer = await service.doctor();
+  assert.deepEqual(answer.unchecked, []);
+  assert.deepEqual(answer.items.filter(({ kind }) => kind === 'ports_moved').map(({ id, data }) => ({ id, data })),
+    [{ id: 'ports_moved:2026-10-27T08:00:00.000Z', data: { movedAt: '2026-10-27T08:00:00.000Z', moves } }]);
+});
 const SLEEPING_GRAPH = { store: 'graph', kind: 'neo4j', action: 'unavailable', steps: [], reason: 'its provider is not answering' };
 const WAITING_GRAPH = { store: 'graph', kind: 'neo4j', action: 'apply', automatic: [],
   step: { id: 'graph/12-builtin-occupations', count: 4 }, digest: 'b'.repeat(64) };
@@ -316,7 +345,8 @@ test('the repair request also passes the console\'s Host, Origin and JSON policy
 
 test('the system service reads its own sources: this data directory\'s live servers and the cached version only', async (t) => {
   const root = dataDir(t);
-  const paths = { dataDir: root, graphRuntimeConfigPath: join(root, 'graph-runtime.json') };
+  const paths = { dataDir: root, graphRuntimeConfigPath: join(root, 'graph-runtime.json'),
+    graphRuntimeStatePath: join(root, 'graph-runtime-state.json') };
   // This test process stands in for a live MCP server of an older FULI.
   registerMcpProcess(paths.graphRuntimeConfigPath, { sourceApplication: 'codex', version: '0.0.1', pid: process.pid });
   let clients = [client('codex', 'changed')];

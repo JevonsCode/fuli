@@ -29,6 +29,11 @@ export const doctorMessages = {
       updateFailed: '更新没有完成：{reason}',
     },
     otherClient: '其他 Agent',
+    portsMoved: {
+      consoleReserved: '端口 {from} 被系统保留，FULI 已自动改用 {to}，不用你做什么。',
+      consoleInUse: '端口 {from} 被别的程序占用，FULI 已自动改用 {to}，不用你做什么。',
+      services: '有端口不能用，FULI 已自动给图谱服务换了端口，不用你做什么。',
+    },
   },
   'en-US': {
     summary: '{count} things need you',
@@ -58,5 +63,10 @@ export const doctorMessages = {
       updateFailed: 'The update did not finish: {reason}',
     },
     otherClient: 'Other Agent',
+    portsMoved: {
+      consoleReserved: 'Port {from} is reserved by the system, so FULI moved to port {to} by itself. Nothing to do.',
+      consoleInUse: 'Another program uses port {from}, so FULI moved to port {to} by itself. Nothing to do.',
+      services: 'Some ports could not be used, so FULI moved its graph services to other ports by itself. Nothing to do.',
+    },
   },
 }

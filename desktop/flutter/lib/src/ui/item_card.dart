@@ -11,6 +11,7 @@ const _knownKinds = {
   'sessions_outdated',
   'update_available',
   'update_left_work',
+  'ports_moved',
 };
 
 /// One doctor item the person acts on or reads: a tinted mark, a plain

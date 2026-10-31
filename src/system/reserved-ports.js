@@ -39,7 +39,7 @@ function netshExcludedRanges() {
   return execFileSync('netsh', NETSH_ARGS, { encoding: 'utf8', windowsHide: true, timeout: NETSH_TIMEOUT_MS });
 }
 
-function reservedRange(port, ranges) {
+export function reservedRange(port, ranges) {
   return ranges.find(({ start, end }) => port >= start && port <= end) ?? null;
 }
 

@@ -16,6 +16,7 @@ import { setupMigrationNotice } from '../data-format/format-notices.js';
 import { knowledgeReconciliationMessage } from '../knowledge-hard-delete/reconcile-local.js';
 import { formatShadowedLaunchers, inspectUpdateInstallation } from './update-installation.js';
 import { quoteShellArgument } from './shell-argument.js';
+import { portMoveSentence } from '../system/blocked-port-recovery.js';
 
 export async function runSetupCommand(args, dependencies = {}) {
   const options = parseSetupOptions(args);
@@ -129,6 +130,7 @@ export function formatSetupResult(result, plan, copy = String) {
       ? 'Fuli setup needs knowledge recovery before local stores are ready.'
       : 'Fuli started, but one or more Agents are not connected.'];
   if (result.knowledgeRecovery) lines.push(knowledgeReconciliationMessage(result.knowledgeRecovery));
+  lines.push(...(result.runtime.portMoves ?? []).map(portMoveSentence));
   if (result.runtime.url) lines.push(`Open: ${copy(result.runtime.url)}`);
   if (result.runtime.lan === true) {
     lines.push(

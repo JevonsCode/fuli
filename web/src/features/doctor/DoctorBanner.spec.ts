@@ -115,6 +115,35 @@ describe('DoctorBanner', () => {
     expect(wrapper.find('[data-doctor-repair]').exists()).toBe(true)
   })
 
+  it('says once that FULI moved its port by itself, not on the next read or the next visit', async () => {
+    window.localStorage.clear()
+    const moved = item('ports_moved:2026-10-27T08:00:00.000Z', 'ports_moved', 'info', 'person',
+      { movedAt: '2026-10-27T08:00:00.000Z', moves: [{ key: 'console', from: 2727, to: 2734, reason: 'reserved' }] })
+    api.getJson.mockResolvedValue(report('ok', [moved]))
+    const first = mountBanner()
+    await flushPromises()
+    expect(first.store.feedback).toEqual({ tone: 'success', message: '端口 2727 被系统保留，FULI 已自动改用 2734，不用你做什么。' })
+    expect(first.wrapper.find('[data-doctor-banner]').exists()).toBe(false)
+    first.store.feedback = null
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(first.store.feedback).toBeNull()
+    first.wrapper.unmount()
+
+    const again = mountBanner()
+    await flushPromises()
+    expect(again.store.feedback).toBeNull()
+    again.wrapper.unmount()
+
+    // A later start that moves again is said again; graph services alone get one sentence.
+    api.getJson.mockResolvedValue(report('ok', [item('ports_moved:2026-10-30T08:00:00.000Z', 'ports_moved', 'info', 'person',
+      { moves: [{ key: 'personalProvider', from: 8787, to: 8789, reason: 'reserved' }] })]))
+    const later = mountBanner()
+    await flushPromises()
+    expect(later.store.feedback?.message).toBe('有端口不能用，FULI 已自动给图谱服务换了端口，不用你做什么。')
+    later.wrapper.unmount()
+    window.localStorage.clear()
+  })
+
   it('reads again every minute and keeps the last answer when a read fails', async () => {
     api.getJson.mockResolvedValueOnce(report('needs_person', [OUTDATED]))
     const { wrapper } = mountBanner()

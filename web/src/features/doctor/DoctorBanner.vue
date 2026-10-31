@@ -8,7 +8,7 @@ import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { UiNotice } from '@/ui'
 import {
-  attentionItems, canRepair, doctorItemView, readDoctor, repairDoctor,
+  attentionItems, canRepair, doctorItemView, portsMovedNotice, readDoctor, repairDoctor,
   type DoctorReport, type DoctorRepairResult,
 } from './model'
 
@@ -17,6 +17,8 @@ import {
 // need no decision. It reads the doctor while the console is open; a failed
 // read keeps the last answer, and a first read that fails shows nothing.
 const POLL_MS = 60_000
+// The last port move this browser was told about (the doctor's ports_moved id).
+const PORT_MOVE_STORAGE_KEY = 'fuli.doctor.port-move'
 
 const store = useConsoleStore()
 const report = ref<DoctorReport | null>(null)
@@ -24,6 +26,7 @@ const open = ref(false)
 const repairing = ref(false)
 const failure = ref('')
 let reading = false
+let announcedPortMove = ''
 let timer: ReturnType<typeof setInterval> | undefined
 
 const items = computed(() => attentionItems(report.value))
@@ -33,8 +36,24 @@ const shown = computed(() => report.value !== null && report.value.overall !== '
 async function refresh() {
   if (reading || repairing.value || document.visibilityState === 'hidden') return
   reading = true
-  try { report.value = await readDoctor() } catch { /* keep the last answer; the next read tries again */ }
+  try {
+    report.value = await readDoctor()
+    announcePortMove(report.value)
+  } catch { /* keep the last answer; the next read tries again */ }
   finally { reading = false }
+}
+
+// FULI moved a port by itself when it started: said once in the shell's
+// feedback line, not again on the next read or the next visit.
+function announcePortMove(answer: DoctorReport) {
+  const notice = portsMovedNotice(answer)
+  if (!notice || notice.id === announcedPortMove) return
+  announcedPortMove = notice.id
+  try {
+    if (window.localStorage.getItem(PORT_MOVE_STORAGE_KEY) === notice.id) return
+    window.localStorage.setItem(PORT_MOVE_STORAGE_KEY, notice.id)
+  } catch { /* storage unavailable: this page still says it only once */ }
+  store.notify(notice.message)
 }
 
 // A full success is said in the shell's feedback line; what failed stays
