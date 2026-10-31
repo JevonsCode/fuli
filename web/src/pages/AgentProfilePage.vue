@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import ActivityOriginBadge from "@/features/agent-profile/ActivityOriginBadge.vue";
-import { agentAvatarUrl } from "@/features/agent-profile/agent-avatar";
+import AgentAvatarPicker from "@/features/agent-profile/AgentAvatarPicker.vue";
+import AgentNameEditor from "@/features/agent-profile/AgentNameEditor.vue";
 import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-color";
 import { computed, defineAsyncComponent, defineComponent, h, onMounted, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
@@ -144,7 +145,8 @@ const activeTab = computed<ProfileTab>({
 const tabsReady = computed(() => Boolean(route.query.tab) || workKnown.value);
 // The shell's one H1 is this Agent's real name; the route title is only the
 // fallback while it loads or when the Agent is unavailable.
-usePageTitle(() => (agent.value ? agentDisplayName(agent.value) : ""));
+// The header shows the name, where the person can rename the Agent.
+usePageTitle(() => (agent.value ? agentDisplayName(agent.value) : ""), { inPage: true });
 // "← 全部 Agent" goes Back when the directory opened this page, restoring its
 // filters, scroll and focused card.
 const openedFromDirectory = /^\/project-agents(\?|$)/;
@@ -361,13 +363,14 @@ onMounted(() => {
         {{ t("agentProfiles.unavailable") }}
       </p>
       <template v-else>
-        <!-- The name is the page's H1 (in the top bar), so the summary card
-             carries only what the name does not say. -->
+        <!-- The header carries the page's H1: the name, renamed where it stands,
+             beside the portrait the person can change. -->
         <Card as="header" class="agent-resume-header">
-          <span class="agent-portrait agent-identity" :style="agentIdentityStyle(agent.agentId)" aria-hidden="true">
-            <img :src="agentAvatarUrl(agent.agentId)" alt="" />
+          <span class="agent-portrait agent-identity" :style="agentIdentityStyle(agent.agentId)">
+            <AgentAvatarPicker :agent-id="agent.agentId" :space-id="agent.personalSpaceId" :name="agentDisplayName(agent)" />
           </span>
           <div class="agent-resume-intro grid min-w-0 flex-[1_1_360px] gap-2">
+            <AgentNameEditor :agent="agent" @saved="saved" />
             <div class="agent-resume-name-row flex-wrap justify-start gap-2">
               <span v-if="agent.employeeNumber" class="ui-badge fla-employee-number">FLA {{ agent.employeeNumber }}</span>
               <span class="ui-badge agent-profile-membership" :class="`is-${agent.profile.status}`">

@@ -15,6 +15,9 @@ const ROLE_AGENT_IDS = new Set([...BUILT_IN_ROLE_IDS, 'fuli-project-hr'])
 const ROLE_CAPABILITIES = new Set(['fuli.employee:jefa', 'fuli.employee:bole', 'fuli.employee:tonborg'])
 const NOT_FLA_TYPES = new Set(['coordinator', 'hr', 'temporary'])
 
+/** Whether this Agent is one of FULI's built-in roles, which keep their own name for `#FLA` when renamed. */
+export const isBuiltInRole = (agentId: string) => BUILT_IN_ROLE_IDS.has(agentId)
+
 /** 'fla': alone or in a group; 'role': a built-in role, alone only. */
 export type MentionKind = 'fla' | 'role'
 export type MentionPhrasingKey = 'continue' | 'pair' | 'recommend'
