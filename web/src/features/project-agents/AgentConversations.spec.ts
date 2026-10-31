@@ -4,7 +4,7 @@ const { getJson, postJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), pos
 vi.mock('@/api/client', () => ({ getJson, postJson, putJson }))
 import AgentConversations from './AgentConversations.vue'
 import { setLocale } from '@/i18n'
-import { UiSelectStub } from '@/test-support/UiSelectStub'
+import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 
 const policy = { compact_after_kb: 64, context_budget: 2000, enabled: true }
 const conversation = { id: 'conversation-a', summary: 'Prepare a new page', status: 'completed', revision: 2,
@@ -13,7 +13,7 @@ const conversation = { id: 'conversation-a', summary: 'Prepare a new page', stat
 const scope = { personalSpaceId: 'space', agentId: 'agent', personalProjectId: 'project-a' }
 function render() {
   return mount(AgentConversations, { props: { personalSpaceId: 'space', agentId: 'agent',
-    projects: [{ id: 'project-a', name: 'Project A' }, { id: 'project-b', name: 'Project B' }] }, global: { stubs: { UiSelect: UiSelectStub } } })
+    projects: [{ id: 'project-a', name: 'Project A' }, { id: 'project-b', name: 'Project B' }] }, global: { stubs: { ...optionSelectStubs } } })
 }
 async function open(wrapper: ReturnType<typeof render>, selector?: string) {
   // The panel itself is always shown and loads on display; only nested settings still open.

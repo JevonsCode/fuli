@@ -8,7 +8,7 @@
 .bole-controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
 .bole-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .bole-search { flex: 1 1 220px; width: auto; }
-.bole-filters .project-scope-picker { flex: 0 1 260px; min-width: 0; }
+.bole-filters .bole-project-filter { flex: 0 1 260px; min-width: 0; }
 .bole-role-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .bole-role-segmented { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 .bole-role-segmented > :deep(button) { flex: 0 0 auto; white-space: nowrap; }
@@ -43,6 +43,6 @@
 
 @media (max-width: 700px) {
   .bole-search { flex-basis: 100%; }
-  .bole-filters .project-scope-picker { flex: 1 1 180px; }
+  .bole-filters .bole-project-filter { flex: 1 1 180px; }
   .bole-summary { margin-left: 0; }
 }

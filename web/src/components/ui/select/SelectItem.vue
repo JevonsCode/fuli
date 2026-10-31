@@ -25,7 +25,7 @@ const forwardedProps = useForwardProps(delegatedProps)
     v-bind="forwardedProps"
     :class="
       cn(
-        `focus:bg-accent focus:text-accent-foreground [&_svg:not([class*='text-'])]:text-muted-foreground relative flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2`,
+        `data-[state=checked]:bg-muted focus:bg-accent focus:text-accent-foreground [&_svg:not([class*='text-'])]:text-muted-foreground relative flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2`,
         props.class,
       )
     "
@@ -41,5 +41,8 @@ const forwardedProps = useForwardProps(delegatedProps)
     <SelectItemText>
       <slot />
     </SelectItemText>
+    <span v-if="$slots.meta" class="min-w-0 truncate text-xs text-muted-foreground">
+      <slot name="meta" />
+    </span>
   </SelectItem>
 </template>

@@ -9,6 +9,7 @@ const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi
 vi.mock('@/api/client', () => ({ getJson, postJson }))
 import EmployeeScopeDialog from './EmployeeScopeDialog.vue'
 import { employeeCatalogLoading, employeeTemplates, refreshEmployeeCatalog, type EmployeeTemplate } from './catalog'
+import { setOption, isChosen, optionByValue, selectionCount, selectionAction } from '@/test-support/option-pickers'
 
 const projects: PersonalProject[] = [{
   project_id: 'project-a', personal_space_id: 'space-a',
@@ -69,7 +70,7 @@ describe('employee project scope', () => {
       profile: { name: '会话项目 / Conversation project', sources: [], boundaries: [] },
     }
     const { wrapper } = await setup([fallback, ...projects])
-    const labels = wrapper.findAll('label').map(label => label.text()).filter(text => /项目/.test(text))
+    const labels = wrapper.findAll('[role="option"]').map(option => option.text()).filter(text => /项目/.test(text))
     const formal = labels.findIndex(text => text.includes('招募验收项目'))
     const session = labels.findIndex(text => text.startsWith('会话项目 · '))
     expect(formal).toBeGreaterThanOrEqual(0)
@@ -90,15 +91,15 @@ describe('employee project scope', () => {
     const { wrapper } = await setup()
     expect(wrapper.get('[data-scope="all"]').attributes('aria-checked')).toBe('true')
     expect(wrapper.text()).toContain('以后的项目')
-    expect(wrapper.get('.project-scope-picker').find('select').exists()).toBe(false)
+    expect(wrapper.get('[data-slot="option-listbox"]').find('select').exists()).toBe(false)
     expect(wrapper.find('select:not([aria-hidden="true"])').exists()).toBe(false)
-    expect(wrapper.findAll('.employee-title-settings .ui-select')).toHaveLength(2)
-    expect(wrapper.get('.project-scope-count').text()).toContain('2 / 共 2')
-    await wrapper.get('input[value="project-b"]').setValue(false)
+    expect(wrapper.findAll('.employee-title-settings [data-slot="option-select"]')).toHaveLength(2)
+    expect(selectionCount(wrapper)).toContain('2 / 共 2')
+    await setOption(wrapper, 'project-b', false)
     expect(wrapper.text()).not.toContain('将移出')
     const future = { ...projects[0]!, project_id: 'future-project', profile: { ...projects[0]!.profile, name: 'Future project' } }
     await wrapper.setProps({ projects: [...projects, future] })
-    expect((wrapper.get('input[value="future-project"]').element as HTMLInputElement).checked).toBe(true)
+    expect(isChosen(wrapper, 'future-project')).toBe(true)
     postJson.mockRejectedValue(new Error('Synthetic response'))
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -116,7 +117,7 @@ describe('employee project scope', () => {
     expect(wrapper.get('[data-scope="selected"]').attributes('aria-checked')).toBe('true')
     const future = { ...projects[0]!, project_id: 'future-project', profile: { ...projects[0]!.profile, name: 'Future project' } }
     await wrapper.setProps({ projects: [...projects, future] })
-    expect((wrapper.get('input[value="future-project"]').element as HTMLInputElement).checked).toBe(false)
+    expect(isChosen(wrapper, 'future-project')).toBe(false)
     postJson.mockRejectedValue(new Error('Synthetic response'))
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -129,7 +130,7 @@ describe('employee project scope', () => {
     const { wrapper } = await setup(projects, { templateId: 'bole' })
     expect(wrapper.get('h2').text()).toBe('管理 Bole 的项目')
     await wrapper.get('[data-scope="selected"]').trigger('click')
-    await wrapper.get('input[value="project-b"]').setValue(false)
+    await setOption(wrapper, 'project-b', false)
     postJson.mockImplementation(async () => {
       entry.management = { mode: 'selected', projectIds: ['project-a'], excludedProjectIds: [], titleMode: 'suggest', titleStyle: 'emoji' }
       entry.assignments = [{ assignmentId: 'assignment-a', agentId: 'employee.bole', personalSpaceId: 'space-a', personalProjectId: 'project-a', responsibility: 'AR', status: 'active', assignedAt: '2026-10-31T00:00:00Z', updatedAt: '2026-10-31T00:00:00Z' }]
@@ -144,13 +145,13 @@ describe('employee project scope', () => {
     expect(wrapper.text()).toContain('负责范围已保存')
     // Read back: the saved selection is the new baseline at its new version.
     expect(wrapper.get('[data-scope="selected"]').attributes('aria-checked')).toBe('true')
-    expect((wrapper.get('input[value="project-b"]').element as HTMLInputElement).checked).toBe(false)
+    expect(isChosen(wrapper, 'project-b')).toBe(false)
     expect(wrapper.get('footer a').attributes('href')).toBe('/employees/bole?project=project-a')
   })
 
   it('says why FULI keeps a built-in Agent\'s scope when the save is refused', async () => {
     const { wrapper } = await setup()
-    await wrapper.get('input[value="project-a"]').setValue(true)
+    await setOption(wrapper, 'project-a', true)
     postJson.mockRejectedValueOnce(new Error(JSON.stringify({ code: 'system_managed_employee' })))
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -164,18 +165,18 @@ describe('employee project scope', () => {
     entry.management = { mode: 'selected', projectIds: [], excludedProjectIds: [], titleMode: 'auto', titleStyle: 'emoji' }
     const { wrapper } = await setup()
     expect(wrapper.get('[data-scope="selected"]').attributes('aria-checked')).toBe('true')
-    expect(wrapper.get('.project-scope-count').text()).toContain('0 / 共 2')
+    expect(selectionCount(wrapper)).toContain('0 / 共 2')
     expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
     await wrapper.get('[data-scope="all"]').trigger('click')
-    expect(wrapper.get('.project-scope-count').text()).toContain('2 / 共 2')
+    expect(selectionCount(wrapper)).toContain('2 / 共 2')
     expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined()
   })
 
   it('uses a custom project picker, saves the exact project, then exposes the workbench and sidebar entry', async () => {
     const { wrapper, router } = await setup()
     expect(wrapper.find('select').exists()).toBe(false)
-    expect(wrapper.find('.project-scope-trigger').exists()).toBe(false)
-    await wrapper.get('input[value="project-a"]').setValue(true)
+    expect(wrapper.find('input[role="combobox"]').exists()).toBe(false)
+    await setOption(wrapper, 'project-a', true)
     postJson.mockImplementation(async () => {
       entry.agentId = 'employee.jefa'
       entry.agentStatus = 'active'
@@ -215,10 +216,10 @@ describe('employee project scope', () => {
 
   it('selects all available projects, excludes individually, and never submits archived projects', async () => {
     const { wrapper } = await setup()
-    expect(wrapper.find('input[value="archived"]').exists()).toBe(false)
-    await wrapper.get('.project-scope-all input').setValue(true)
-    expect(wrapper.get('.project-scope-count').text()).toContain('2 / 共 2')
-    await wrapper.get('input[value="project-b"]').setValue(false)
+    expect(Boolean(optionByValue(wrapper, 'archived'))).toBe(false)
+    await selectionAction(wrapper, 'all')
+    expect(selectionCount(wrapper)).toContain('2 / 共 2')
+    await setOption(wrapper, 'project-b', false)
     postJson.mockRejectedValue(new Error('Synthetic failure preserves selection'))
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -235,7 +236,7 @@ describe('employee project scope', () => {
     }))
     const { wrapper } = await setup()
     expect(wrapper.find('footer a').exists()).toBe(true)
-    await wrapper.get('input[value="project-b"]').setValue(false)
+    await setOption(wrapper, 'project-b', false)
     expect(wrapper.text()).toContain('将移出 1 个项目')
     expect(wrapper.find('footer a').exists()).toBe(false)
     expect(wrapper.get('button[type="submit"]').text()).toBe('保存负责范围')
@@ -250,8 +251,8 @@ describe('employee project scope', () => {
     entry.assignments = []
     await wrapper.findAll('button').find((button) => button.text() === '重新读取负责范围')!.trigger('click')
     await flushPromises()
-    expect(wrapper.get('.project-scope-count').text()).toContain('0 / 共 2')
-    await wrapper.get('input[value="project-a"]').setValue(true)
+    expect(selectionCount(wrapper)).toContain('0 / 共 2')
+    await setOption(wrapper, 'project-a', true)
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(postJson.mock.calls[1]![1]).toMatchObject({ personalProjectIds: ['project-a'], expectedAssignmentsVersion: 'version-2' })
@@ -263,8 +264,8 @@ describe('employee project scope', () => {
     entry.assignments = [{ assignmentId: 'ended', personalProjectId: 'project-b', agentId: 'employee.jefa', personalSpaceId: 'space-a', status: 'ended', responsibility: '管理', assignedAt: '', updatedAt: '' }]
     const { wrapper } = await setup(projects)
     expect(wrapper.get('h2').text()).toBe('管理 Jefa 的项目')
-    expect(wrapper.get('.project-scope-count').text()).toContain('0 / 共 2')
-    expect(wrapper.findAll('.project-scope-list input').every((input) => !(input.element as HTMLInputElement).checked)).toBe(true)
+    expect(selectionCount(wrapper)).toContain('0 / 共 2')
+    expect(wrapper.findAll('[data-slot="option-listbox"] [role="option"]').every((option) => option.attributes('aria-selected') === 'false')).toBe(true)
     expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
   })
 
@@ -272,7 +273,7 @@ describe('employee project scope', () => {
     entry.agentId = 'employee.jefa'
     entry.agentStatus = 'active'
     const { wrapper } = await setup()
-    await wrapper.get('input[value="project-a"]').setValue(true)
+    await setOption(wrapper, 'project-a', true)
     entry.assignmentsVersion = 'version-elsewhere'
     entry.assignments = [{ assignmentId: 'new', personalProjectId: 'project-b', agentId: 'employee.jefa', personalSpaceId: 'space-a', status: 'active', responsibility: '管理', assignedAt: '', updatedAt: '' }]
     await refreshEmployeeCatalog('space-a')

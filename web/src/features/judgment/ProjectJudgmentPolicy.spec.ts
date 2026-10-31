@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { getJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson, putJson }))
 
+import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import ProjectJudgmentPolicy from './ProjectJudgmentPolicy.vue'
 import type { JudgmentPolicy } from './judgment-types'
 
@@ -21,7 +22,7 @@ describe('ProjectJudgmentPolicy', () => {
   })
 
   it('shows the default a project uses, gives it its own, changes it and returns it to the default', async () => {
-    const wrapper = mount(ProjectJudgmentPolicy, { props })
+    const wrapper = mount(ProjectJudgmentPolicy, { props, global: { stubs: optionSelectStubs } })
     await flushPromises()
     expect(getJson).toHaveBeenCalledWith('/api/judgment/policy?personalSpaceId=space&personalProjectId=ledger')
     expect(wrapper.get('[data-project-judgment-default]').text()).toMatch(/自主处理 · 质量优先 · Claude Code|Autonomous · Quality priority · Claude Code/)
@@ -47,7 +48,7 @@ describe('ProjectJudgmentPolicy', () => {
   it('names the project in the pending save and keeps one indicator for it', async () => {
     let answer: (value: unknown) => void = () => {}
     putJson.mockImplementationOnce(() => new Promise(resolve => { answer = resolve }))
-    const wrapper = mount(ProjectJudgmentPolicy, { props: { ...props, policy: { ...inherited, inherited: false, revision: 4 } } })
+    const wrapper = mount(ProjectJudgmentPolicy, { props: { ...props, policy: { ...inherited, inherited: false, revision: 4 } }, global: { stubs: optionSelectStubs } })
     expect(getJson).not.toHaveBeenCalled()
     await wrapper.get('[data-select="judgment-quality"]').setValue('economy')
     expect(wrapper.get('[data-project-judgment-saving]').text()).toContain('家庭账本')
@@ -60,7 +61,7 @@ describe('ProjectJudgmentPolicy', () => {
   it('reads the policy again after a stale write and says so', async () => {
     putJson.mockRejectedValueOnce({ status: 409 })
     getJson.mockResolvedValueOnce({ ...inherited, inherited: false, revision: 6 })
-    const wrapper = mount(ProjectJudgmentPolicy, { props: { ...props, policy: { ...inherited, inherited: false, revision: 5 } } })
+    const wrapper = mount(ProjectJudgmentPolicy, { props: { ...props, policy: { ...inherited, inherited: false, revision: 5 } }, global: { stubs: optionSelectStubs } })
     await wrapper.get('[data-select="judgment-mode"]').setValue('shared')
     await flushPromises()
     expect(getJson).toHaveBeenCalledTimes(1)

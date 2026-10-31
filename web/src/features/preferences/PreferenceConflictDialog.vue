@@ -5,7 +5,6 @@ import { patchJson, postJson } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
 import UiSegmented from '@/ui/UiSegmented.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { formatTime, latestItemValue } from '@/features/knowledge/model'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
@@ -16,6 +15,7 @@ import {
   type PreferenceConflict,
   type PreferenceConflictAction,
 } from './preference-conflicts'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 const props = defineProps<{
   conflict: PreferenceConflict | null
@@ -371,7 +371,7 @@ function fail(message: string) {
           <UiSegmented v-model="splitItem" :label="t('preferences.dialog.splitRecordAria')"
             :options="[{ value: 'left', label: 'A' }, { value: 'right', label: 'B' }]" />
         </div>
-        <UiSelect v-model="splitProjectId" field :label="t('preferences.dialog.projectOnly')" :placeholder="t('preferences.dialog.chooseProject')" :options="splitProjectOptions" />
+        <OptionCombobox v-model="splitProjectId" field :label="t('preferences.dialog.projectOnly')" :placeholder="t('preferences.dialog.chooseProject')" :options="splitProjectOptions" />
       </section>
 
       <section class="conflict-impact-preview">

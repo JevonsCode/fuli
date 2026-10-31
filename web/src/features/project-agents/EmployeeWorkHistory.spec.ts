@@ -3,14 +3,14 @@ import { beforeEach, expect, it, vi } from 'vitest'
 const { getJson } = vi.hoisted(() => ({ getJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ getJson }))
 import EmployeeWorkHistory from './EmployeeWorkHistory.vue'
-import { UiSelectStub } from '@/test-support/UiSelectStub'
+import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 
 beforeEach(() => getJson.mockReset())
 const record = (summary: string) => ({ taskContextToken: 'synthetic-task', status: 'incomplete',
   sourceApplication: 'cursor', createdAt: '2026-09-16T00:00:00Z', summary })
 function mountHistory() {
   return mount(EmployeeWorkHistory, { props: { personalSpaceId: 'space', agentId: 'agent',
-    projects: [{ id: 'project-a', name: 'Project A' }, { id: 'project-b', name: 'Project B' }] }, global: { stubs: { UiSelect: UiSelectStub } } })
+    projects: [{ id: 'project-a', name: 'Project A' }, { id: 'project-b', name: 'Project B' }] }, global: { stubs: { ...optionSelectStubs } } })
 }
 async function open(wrapper: ReturnType<typeof mountHistory>) {
   wrapper.get('details').element.open = true

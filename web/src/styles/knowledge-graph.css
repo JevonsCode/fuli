@@ -271,6 +271,6 @@
 .knowledge-filter-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 720px) { .knowledge-filter-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 720px) {
-  .graph-toolbar > .ui-select { width: 100%; }
+  .graph-toolbar > :is([data-slot=option-select], [data-slot=option-combobox]) { width: 100%; }
   .graph-toolbar .search-form { flex: 1 1 160px; min-width: 0; }
 }

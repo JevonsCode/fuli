@@ -3,10 +3,10 @@ import { Button } from '@/components/ui/button'
 import { ref, watch } from 'vue'
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
 import type { ConversationSourceApplication } from '@/types'
 import { sourceLabel } from './task-labels'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 const props = defineProps<{
   personalSpaceId: string
@@ -67,7 +67,7 @@ function status(value: string) {
 <template>
   <details class="employee-work-history" @toggle="toggle">
     <summary>{{ t('projectAgents.workHistory.title') }}</summary>
-    <UiSelect v-model="projectId" field :label="t('projectAgents.conversations.scope')" :options="[{ value: '', label: t('projectAgents.conversations.global') }, ...projects.map(project => ({ value: project.id, label: project.name }))]" />
+    <OptionCombobox v-model="projectId" field :label="t('projectAgents.conversations.scope')" :options="[{ value: '', label: t('projectAgents.conversations.global') }, ...projects.map(project => ({ value: project.id, label: project.name }))]" />
     <GrowthLoading v-if="loading" variant="compact" :label="t('projectAgents.workHistory.loading')" />
     <div v-else-if="error" role="alert">
       <p>{{ error }}</p><Button size="sm" variant="ghost" @click="load">{{ t('projectAgents.retry') }}</Button>

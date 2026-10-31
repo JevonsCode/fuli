@@ -10,7 +10,6 @@ vi.mock('@/api/client', () => ({
   postJson,
 }))
 
-import UiSelect from '@/ui/UiSelect.vue'
 import KnowledgeEditDialog from './KnowledgeEditDialog.vue'
 import { knowledgeItemFromNode } from './model'
 
@@ -65,14 +64,12 @@ describe('KnowledgeEditDialog', () => {
     })
 
     const replacementSelect = wrapper
-      .findAllComponents({ name: 'UiSelect' })
+      .findAllComponents({ name: 'OptionCombobox' })
       .find((component) => component.props('label') === '选择当前有效的内容')
     expect(replacementSelect).toBeDefined()
-    await replacementSelect!.get('[role="combobox"]').trigger('click')
-    const replacementOption = replacementSelect!
-      .findAll('.ui-select__option')
-      .find((option) => option.text().includes('当前交付口径'))
-    await replacementOption!.trigger('click')
+    const replacementOption = (replacementSelect!.props('options') as Array<{ value: string, label: string }>)
+      .find((option) => option.label.includes('当前交付口径'))
+    replacementSelect!.vm.$emit('update:modelValue', replacementOption!.value)
 
     const reasonLabel = wrapper
       .findAll('label')
@@ -122,13 +119,11 @@ describe('KnowledgeEditDialog', () => {
     })
 
     const quadrant = wrapper
-      .findAllComponents({ name: 'UiSelect' })
+      .findAllComponents({ name: 'OptionSelect' })
       .find((component) => component.props('label') === '当前分类')
-    await quadrant!.get('[role="combobox"]').trigger('click')
-    await quadrant!
-      .findAll('.ui-select__option')
-      .find((option) => option.text().includes('未知的已知'))!
-      .trigger('click')
+    const unknownKnown = (quadrant!.props('options') as Array<{ value: string, label: string }>)
+      .find((option) => option.label.includes('未知的已知'))
+    quadrant!.vm.$emit('update:modelValue', unknownKnown!.value)
     const reason = wrapper
       .findAll('label')
       .find((label) => label.text().includes('纠正原因'))

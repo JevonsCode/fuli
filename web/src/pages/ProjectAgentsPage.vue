@@ -5,12 +5,13 @@ import BackToTop from '@/components/BackToTop.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { OptionCombobox } from '@/components/ui/combobox'
 import { focusReturnTarget, useFocusReturn } from '@/composables/useFocusReturn'
 import { useRoutePeek } from '@/composables/useRoutePeek'
 import { useScrollRestoration } from '@/composables/useScrollRestoration'
 import AgentPeek from '@/features/agent-profile/AgentPeek.vue'
 import { employeeTemplateIdForAgent, employeeTemplates } from '@/features/employees/catalog'
-import ProjectScopePicker from '@/features/employees/ProjectScopePicker.vue'
+import { projectSelectOptions } from '@/features/employees/project-options'
 import { currentAssignmentsFor, currentWorkEntry } from '@/features/project-agents/agent-roster-records'
 import { mentionPartner } from '@/features/agent-profile/profile-model'
 import { linkedTaskOwner } from '@/features/project-agents/linked-task-owner'
@@ -257,7 +258,7 @@ function recordSaved(record: ProjectAgentRecord) {
            in reach on tall screens and scrolls away on short ones. -->
       <div class="project-agents-toolbar">
         <div class="project-agents-filters">
-          <ProjectScopePicker v-model="filterProjectIds" class="project-agents-project-filter" compact :projects="projectOptions" :label="t('employees.filterLabel')" :hint="t('employees.filterHint')" :empty-label="t('employees.filterEmpty')" />
+          <OptionCombobox v-model="filterProjectIds" class="project-agents-project-filter" multiple :options="projectSelectOptions(projectOptions)" :label="t('employees.filterLabel')" :hint="t('employees.filterHint')" :placeholder="t('employees.filterEmpty')" />
           <label class="project-agents-search">
             <span class="ui-sr-only">{{ t('projectAgents.searchLabel') }}</span>
             <input v-model="search" type="search" maxlength="160" :placeholder="t('projectAgents.searchPlaceholder')" />
@@ -359,7 +360,6 @@ function recordSaved(record: ProjectAgentRecord) {
 .project-agents-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1 1 560px; }
 .project-agents-project-filter { flex: 0 1 280px; min-width: 220px; }
 /* One control height across the toolbar. */
-.project-agents-project-filter :deep(.project-scope-trigger) { min-height: var(--control-height); padding-block: 0; }
 .project-agents-search { flex: 1 1 200px; min-width: 180px; max-width: 360px; }
 .project-agents-search input {
   width: 100%; min-height: var(--control-height); border: 1px solid var(--color-border-strong); border-radius: var(--radius-control);

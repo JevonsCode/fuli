@@ -52,7 +52,7 @@ describe('AgentOccupationEditor', () => {
     expect(design.attributes('aria-pressed')).toBe('false')
     expect(design.text()).toContain('主角色')
     await wrapper.get('[data-occupation-tag="data"]').trigger('click')
-    const select = wrapper.findComponent({ name: 'UiSelect' })
+    const select = wrapper.findComponent({ name: 'OptionSelect' })
     await select.vm.$emit('update:modelValue', 'data')
     await wrapper.get('form').trigger('submit')
     await flushPromises()

@@ -4,8 +4,8 @@ import { ApiError, getJson, postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import { Button } from '@/components/ui/button'
-import UiSelect from '@/ui/UiSelect.vue'
 import { t } from '@/i18n'
+import { OptionSelect } from '@/components/ui/select'
 
 type ClientId = 'codex' | 'claude_code'
 
@@ -217,7 +217,7 @@ function shareState(projectId: string) {
         <h4>{{ t('settings.peer.host') }}</h4>
         <p v-if="!status.addresses.length">{{ t('settings.peer.noAddress') }}</p>
         <div v-else class="peer-fields">
-          <UiSelect control-id="peer-host-address" :model-value="hostAddress" :options="addressOptions"
+          <OptionSelect control-id="peer-host-address" :model-value="hostAddress" :options="addressOptions"
             :label="t('settings.peer.hostAddress')" @update:model-value="hostAddress = $event" />
           <label>
             <span>{{ t('settings.peer.hostName') }}</span>
@@ -348,7 +348,7 @@ function shareState(projectId: string) {
 .peer-block { display: grid; gap: 12px; margin: 16px 0; min-width: 0; }
 .peer-block h4 { font-size: 13px; font-weight: 650; }
 .peer-fields { align-items: end; }
-.peer-fields :deep(.ui-select) { min-width: 0; flex: 1 1 180px; }
+.peer-fields :deep(:is([data-slot=option-select], [data-slot=option-combobox])) { min-width: 0; flex: 1 1 180px; }
 .peer-identity { margin: 12px 0; }
 .peer-identity div { min-width: 0; flex: 1 1 160px; }
 .peer-identity dt { color: var(--color-muted); font-size: 12px; }

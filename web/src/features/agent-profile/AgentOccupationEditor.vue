@@ -2,7 +2,6 @@
 import { Button } from '@/components/ui/button'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, ref, watch } from "vue";
-import UiSelect from "@/ui/UiSelect.vue";
 import { t } from "@/i18n";
 import type { AgentOccupationKey, ProjectAgentRecord } from "@/types";
 import { occupationDescription, occupationEntry, useOccupationCatalog } from "@/features/occupations/occupation-catalog";
@@ -12,6 +11,7 @@ import {
   occupationLabels,
   saveAgentOccupation,
 } from "./agent-occupation";
+import { OptionSelect } from '@/components/ui/select'
 
 const props = defineProps<{ agent: ProjectAgentRecord }>();
 const emit = defineEmits<{ saved: [agent: ProjectAgentRecord] }>();
@@ -82,14 +82,14 @@ async function save() {
   <form v-else class="agent-occupation-editor" data-occupation-editor @submit.prevent="save">
     <h3>{{ t("agentRedesign.occupation.title") }}</h3>
     <p class="ui-meta">{{ t("agentRedesign.occupation.note") }}</p>
-    <UiSelect
+    <OptionSelect
       v-model="role"
       field
       :label="t('agentRedesign.occupation.role')"
       :options="roleOptions"
       :disabled="saving"
       @update:model-value="saved = false"
-    />
+ />
     <fieldset class="agent-occupation-tags" :disabled="saving">
       <legend>
         {{ t("agentRedesign.occupation.tags") }}

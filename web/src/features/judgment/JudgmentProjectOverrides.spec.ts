@@ -35,7 +35,7 @@ describe('JudgmentProjectOverrides', () => {
     expect(rows()).toEqual(['ledger'])
     expect(wrapper.get('[data-project-judgment="ledger"]').text()).toContain('家庭账本')
     // Only this space's projects without their own policy can be added.
-    const choices = wrapper.get('[data-select="judgment-override-project"]').findAll('option').map(option => option.text())
+    const choices = wrapper.getComponent({ name: 'OptionCombobox' }).props('options').map((option: { label: string }) => option.label)
     expect(choices).toEqual(['小说连载'])
 
     await wrapper.get('[data-action="add-project-policy"]').trigger('click')

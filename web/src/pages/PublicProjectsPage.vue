@@ -12,13 +12,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { focusReturnTarget } from '@/composables/useFocusReturn'
 import { useRoutePeek } from '@/composables/useRoutePeek'
 import UiDialog from '@/ui/UiDialog.vue'
-import UiSelect from '@/ui/UiSelect.vue'
 import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_FULL, formatDateTime } from '@/lib/date-time'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { knowledgePath } from '@/router/paths'
 import { useConsoleStore } from '@/stores/console'
 import type { ProjectRelease, PublicProject } from '@/types'
+import { OptionSelect } from '@/components/ui/select'
+import { OptionCombobox } from '@/components/ui/combobox'
 
 type ProjectRelation = {
   id: string
@@ -390,32 +391,30 @@ function formatDate(value?: string) {
         </p>
         <form v-if="relationOpen" class="compact-relation-form grid items-end gap-3 px-5 @min-[720px]:grid-cols-3" @submit.prevent="createRelation">
           <label class="grid min-w-0 gap-1 text-xs text-muted-foreground">{{ t('pages.publicProjects.sourceProject') }}
-            <UiSelect
+            <OptionCombobox
               v-model="relationSource"
               :options="maintainableOptions"
               :label="t('pages.publicProjects.sourceProjectLabel')"
               :placeholder="t('pages.publicProjects.chooseProject')"
-              searchable
               required
-              @change="relationTarget = ''"
-            />
+              @update:model-value="relationTarget = ''"
+ />
           </label>
           <label class="grid min-w-0 gap-1 text-xs text-muted-foreground">{{ t('pages.publicProjects.relation') }}
-            <UiSelect
+            <OptionSelect
               v-model="relationType"
               :options="relationTypeOptions"
               :label="t('pages.publicProjects.relationTypeLabel')"
-            />
+ />
           </label>
           <label class="grid min-w-0 gap-1 text-xs text-muted-foreground">{{ t('pages.publicProjects.targetProject') }}
-            <UiSelect
+            <OptionCombobox
               v-model="relationTarget"
               :options="relationTargetOptions"
               :label="t('pages.publicProjects.targetProjectLabel')"
               :placeholder="t('pages.publicProjects.chooseProject')"
-              searchable
               required
-            />
+ />
           </label>
           <div class="compact-relation-preview grid gap-1 rounded-md border bg-secondary px-3 py-2.5 text-xs @min-[720px]:col-span-3" aria-live="polite">
             <span class="font-semibold text-muted-foreground">{{ t('pages.publicProjects.preview') }}</span>

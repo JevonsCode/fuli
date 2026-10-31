@@ -11,7 +11,7 @@ vi.mock('@/api/client', () => ({ deleteJson, getJson, postJson }))
 
 import { peekItemValue } from '@/composables/useRoutePeek'
 import { useConsoleStore } from '@/stores/console'
-import { UiSelectStub } from '@/test-support/UiSelectStub'
+import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import PublicProjectsPage from './PublicProjectsPage.vue'
 
 describe('PublicProjectsPage', () => {
@@ -91,7 +91,7 @@ describe('PublicProjectsPage', () => {
     const wrapper = mount(PublicProjectsPage, {
       global: {
         plugins: [pinia, router],
-        stubs: { UiSelect: UiSelectStub, PublishQueue: true },
+        stubs: { ...optionSelectStubs, PublishQueue: true },
       },
     })
 
@@ -181,7 +181,7 @@ describe('PublicProjectsPage', () => {
       attachTo: document.body,
       global: {
         plugins: [pinia, router],
-        stubs: { UiSelect: UiSelectStub, PublishQueue: true },
+        stubs: { ...optionSelectStubs, PublishQueue: true },
       },
     })
 
@@ -262,7 +262,7 @@ describe('PublicProjectsPage', () => {
       attachTo: document.body,
       global: {
         plugins: [pinia, router],
-        stubs: { UiSelect: UiSelectStub, PublishQueue: true },
+        stubs: { ...optionSelectStubs, PublishQueue: true },
       },
     })
 
@@ -306,7 +306,7 @@ describe('PublicProjectsPage', () => {
     }
     const router = await readyRouter()
     await router.push({ path: '/', query: { item: peekItemValue({ spaceId: 'https://provider.example', id: 'project-a' }) } })
-    const wrapper = mount(PublicProjectsPage, { global: { plugins: [pinia, router], stubs: { UiSelect: UiSelectStub, PublishQueue: true } } })
+    const wrapper = mount(PublicProjectsPage, { global: { plugins: [pinia, router], stubs: { ...optionSelectStubs, PublishQueue: true } } })
     await flushPromises()
     expect(details().text()).toContain('项目 A')
     expect(details().text()).toContain('首次发布')
@@ -371,7 +371,7 @@ describe('PublicProjectsPage', () => {
     const wrapper = mount(PublicProjectsPage, {
       global: {
         plugins: [pinia, router],
-        stubs: { UiSelect: UiSelectStub, PublishQueue: true },
+        stubs: { ...optionSelectStubs, PublishQueue: true },
       },
     })
 

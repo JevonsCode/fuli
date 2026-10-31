@@ -22,6 +22,11 @@ if (typeof HTMLDialogElement !== 'undefined') {
   }
 }
 
+// jsdom does no layout; reka-ui's listbox scrolls the highlighted option into view.
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value() {} })
+}
+
 beforeEach(() => {
   window.localStorage.clear()
   setLocale('zh-CN', { persist: false })

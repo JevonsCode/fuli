@@ -16,7 +16,6 @@ vi.mock('@/api/client', () => ({
   patchJson,
 }))
 
-import UiSelect from '@/ui/UiSelect.vue'
 import { useConsoleStore } from '@/stores/console'
 import PersonalProfilePage from './PersonalProfilePage.vue'
 
@@ -402,7 +401,7 @@ describe('PersonalProfilePage', () => {
     await finishProfileLoading()
 
     expect(wrapper.findAll('.personal-profile-row')).toHaveLength(3)
-    const scope = wrapper.getComponent({ name: 'UiSelect' })
+    const scope = wrapper.getComponent({ name: 'OptionCombobox' })
     expect(scope.props('options')).toEqual(expect.arrayContaining([
       expect.objectContaining({ value: 'all', label: '全部范围' }),
       expect.objectContaining({ value: 'global', label: '个人全局' }),
@@ -410,12 +409,11 @@ describe('PersonalProfilePage', () => {
       expect.objectContaining({ value: 'project:project-b', label: '项目 B' }),
     ]))
     const chooseScope = async (label: string) => {
-      await scope.get('[role="combobox"]').trigger('click')
-      const option = scope
-        .findAll('.ui-select__option')
-        .find((candidate) => candidate.text().includes(label))
+      const option = (scope.props('options') as Array<{ value: string, label: string }>)
+        .find((candidate) => candidate.label.includes(label))
       expect(option).toBeDefined()
-      await option!.trigger('click')
+      scope.vm.$emit('update:modelValue', option!.value)
+      await flushPromises()
     }
 
     await chooseScope('项目 A')
