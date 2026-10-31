@@ -37,6 +37,16 @@ void main() {
     expect(request.headers.keys.map((key) => key.toLowerCase()), isNot(contains('origin')));
   });
 
+  test('reads the open requests Agents left, keeping only what a notification shows', () async {
+    final api = apiAnswering((_) => json({'items': [
+      {'requestId': 'r1', 'title': 'Pick a staging host', 'status': 'open'},
+      {'requestId': 'r2'},
+    ]}));
+    final open = await api.openAttention();
+    expect(requests.single.url.toString(), 'http://127.0.0.1:$port/api/agent-attention?status=open&limit=20');
+    expect(open.map((notice) => (notice.id, notice.title)), [('r1', 'Pick a staging host')]);
+  });
+
   test('POSTs JSON bodies with a JSON content type', () async {
     final api = apiAnswering((request) => switch (request.url.path) {
           '/api/system/doctor/repair' => json({

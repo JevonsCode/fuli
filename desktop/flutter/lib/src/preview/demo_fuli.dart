@@ -22,6 +22,7 @@ class DemoFuliApi implements FuliApi {
   bool reachable = true;
   String? latest;
   MigrationPlan plan;
+  List<AttentionNotice> attention = const [];
   final List<String> requests = [];
   final List<String> _updateSteps = ['downloading', 'verifying', 'installing'];
   int _updateRead = 0;
@@ -29,6 +30,12 @@ class DemoFuliApi implements FuliApi {
   void _call(String request) {
     requests.add(request);
     if (!reachable) throw const FuliUnreachable('connection refused');
+  }
+
+  @override
+  Future<List<AttentionNotice>> openAttention() async {
+    _call('attention');
+    return attention;
   }
 
   @override

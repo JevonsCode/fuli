@@ -34,6 +34,11 @@ class Strings {
   // A file the console exported, saved by the client
   String get fileSaved => _t('已保存到下载文件夹', 'Saved to Downloads');
 
+  // A request an Agent left for the person
+  String get attentionTitle => _t('Agent 需要你', 'An Agent needs you');
+  String attentionMany(int count) =>
+      _t('$count 个新的请求等你处理', '$count new requests are waiting for you');
+
   // Buttons and menu
   String get autoRepair => _t('自动修复', 'Fix automatically');
   String autoRepairHint(int count) =>
