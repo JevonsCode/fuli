@@ -120,8 +120,12 @@ class Strings {
     return switch (item.kind) {
       'client_outdated' => _t('$client 接入 FULI 的设置已过期，需要重新接入。',
           "$client's FULI connection is out of date and needs to be connected again."),
-      'data_format_waiting' => _t('$store 的数据要换成新格式，FULI 等你看过后确认。',
-          '$store data needs a new format; FULI waits for you to review and confirm it.'),
+      // lastSeenAt: the graph's answer from before it went idle; it still blocks every write.
+      'data_format_waiting' => text('lastSeenAt').isNotEmpty
+          ? _t('$store 的数据要换成新格式，FULI 等你看过后确认。这是它空闲前的状态；确认之前 FULI 写不进去。',
+              '$store data needs a new format; FULI waits for you to review and confirm it. This is what it reported before going idle; FULI cannot write to it until you confirm.')
+          : _t('$store 的数据要换成新格式，FULI 等你看过后确认。',
+              '$store data needs a new format; FULI waits for you to review and confirm it.'),
       'data_format_blocked' => _t('$store 的数据格式 FULI 不能自动处理，请在控制台的「数据格式迁移」里查看原因。',
           'FULI cannot change the $store data format by itself; see why under Data format in the console.'),
       'sessions_outdated' => _sessionsOutdated(clientName(text('client')), data['count'], text('runningVersion')),
@@ -130,8 +134,6 @@ class Strings {
           ? _t('上次更新没有完成。', 'The last update did not finish.')
           : _t('更新到 v${text('version')} 后，还有 Agent 没有重新接入 FULI。',
               'After the update to v${text('version')}, some Agents have not reconnected to FULI.'),
-      'codex_hooks_review' => _t('FULI 给 Codex 的钩子有变化。在 Codex 里输入 /hooks 查看并信任后，Codex 才会自动带上 FULI。',
-          "FULI's Codex hooks changed. Type /hooks in Codex to review and trust them so Codex brings FULI in automatically."),
       _ => _t('FULI 发现一件需要处理的事，打开控制台可以看到详情。', 'FULI found something to take care of; open the console for details.'),
     };
   }

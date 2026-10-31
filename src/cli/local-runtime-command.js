@@ -202,7 +202,18 @@ function formatStatus(result, copy) {
     lines.push(`Adaptive memory: ${stages[result.adaptiveRuntime.stage] ??
       result.adaptiveRuntime.stage}`);
   }
+  if (result.version) lines.push(versionLine(result.version, result.console.status === 'ready'));
   return lines.join('\n');
+}
+
+// Status reads the running console's last npm answer and never asks npm itself.
+function versionLine(version, consoleReady) {
+  if (version.updateAvailable === true) {
+    return `Version: ${version.installed} · v${version.latest} is available; run fuli update`;
+  }
+  if (version.updateAvailable === false) return `Version: ${version.installed} (latest)`;
+  return `Version: ${version.installed} (not compared with npm: ${consoleReady
+    ? 'the console has no answer yet' : 'the console is not running'})`;
 }
 
 function providerLabel(status, labels) {

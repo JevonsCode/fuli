@@ -26,6 +26,8 @@ import { agentKitPorts } from '../agent-kits/ports.js';
 import { sessionClientRecords } from '../agent-kits/session-clients.js';
 import { createSessionOffers } from '../agent-kits/session-offers.js';
 import { createInstallerShadow, runInstallerShadow } from '../agent-kits/installer-shadow.js';
+import { CODEX_HOOK_TRUST_CLIENT } from '../agents/codex/hook-trust.js';
+import { readFormatOperations } from '../data-format/operations-log.js';
 
 export function createSystemService({
   paths,
@@ -113,6 +115,8 @@ export function createSystemService({
     manifestPath: paths.installerManifestPath, context: expectedIntegration(paths, runtimeConfigPath),
     discover: discoverAgents, inspect: inspectAgentInstallations }) });
   const doctor = createDoctor({ observeClients, previewDataFormats,
+    formatOperations: () => readFormatOperations(paths.dataDir), graphStage: () => runtimeBroker.status().stage,
+    hookTrustUnreadable: [CODEX_HOOK_TRUST_CLIENT],
     liveProcesses: () => liveMcpProcesses(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
     lastUpdate: () => update.status(), internalDetails: () => ({ installerShadow: installerShadow.latest() }) });
 
@@ -131,6 +135,8 @@ export function createSystemService({
     resources: () => resourceMonitor.sample(),
     // updateKind: how the console's one-click update installs it (console-update.js).
     versionStatus: async () => ({ ...await versionChecker.check(), updateKind: update.kind() }),
+    // The checker's last answer without asking npm (`fuli status`); 'unchecked' before its first.
+    cachedVersionStatus: () => versionChecker.peek() ?? { status: 'unchecked' },
     updateStatus: () => update.status(),
     startUpdate: async ({ stopProcesses } = {}) => {
       const version = await versionChecker.check();

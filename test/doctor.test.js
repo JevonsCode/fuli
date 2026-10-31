@@ -87,21 +87,31 @@ test('the doctor names each finding with who fixes it, and a blocking one degrad
         data: { updateId: 'u1', status: 'updated', clients: 'not_reconnected', version: VERSION } },
       { id: 'update_available', kind: 'update_available', severity: 'info', fix: 'person', data: { latest: '0.23.0' } }
     ],
-    unchecked: []
+    unchecked: [],
+    uncheckedReasons: {}
   });
   // The exited server's record went away on the way.
   assert.deepEqual(liveMcpProcesses(runtimeConfigPath, { isAlive }).map(({ pid }) => pid).sort(), [101, 102, 103]);
 });
 
-test('info alone leaves FULI ok; a sleeping graph is no finding; a source that fails is named, not hidden', async (t) => {
+const SLEEPING_GRAPH = { store: 'graph', kind: 'neo4j', action: 'unavailable', steps: [], reason: 'its provider is not answering' };
+const WAITING_GRAPH = { store: 'graph', kind: 'neo4j', action: 'apply', automatic: [],
+  step: { id: 'graph/12-builtin-occupations', count: 4 }, digest: 'b'.repeat(64) };
+
+test('info alone leaves FULI ok; a graph never seen answering is unchecked with why; a failing source is named', async (t) => {
   const quiet = doctor(t, {
-    previewDataFormats: () => previewMigrations({ dataDir: dataDir(t), graph: graph({ store: 'graph', kind: 'neo4j',
-      action: 'unavailable', steps: [], reason: 'its provider is not answering' }) }),
+    previewDataFormats: () => previewMigrations({ dataDir: dataDir(t), graph: graph(SLEEPING_GRAPH) }),
+    graphStage: () => 'provider-sleeping',
     latestVersion: () => ({ status: 'ready', latestVersion: '0.23.0', updateAvailable: true })
   });
   const answer = await quiet.check();
   assert.equal(answer.overall, 'ok');
   assert.deepEqual(answer.items.map(({ kind }) => kind), ['update_available']);
+  assert.deepEqual(answer.unchecked, ['graph_format']);
+  assert.deepEqual(answer.uncheckedReasons, { graph_format: 'graph_sleeping' });
+  const broken = doctor(t, { previewDataFormats: () => previewMigrations({ dataDir: dataDir(t), graph: graph(SLEEPING_GRAPH) }),
+    graphStage: () => 'awake' });
+  assert.deepEqual((await broken.check()).uncheckedReasons, { graph_format: 'graph_not_answering' });
 
   const failing = doctor(t, {
     observeClients: () => { throw new Error('unreadable'); },
@@ -129,6 +139,60 @@ test('a blocked store degrades FULI; an update journal of another version is no 
       reason: 'written by a newer FULI (format 5); upgrade FULI or restore a backup' } }]);
   const failedElsewhere = doctor(t, { lastUpdate: () => ({ id: 'u4', status: 'failed', fromVersion: '0.21.0', error: 'x' }) });
   assert.deepEqual((await failedElsewhere.check()).items, []);
+});
+
+test('a graph step seen waiting stays a finding while the provider sleeps, until a graph operation is recorded', async (t) => {
+  const root = dataDir(t);
+  let answer = WAITING_GRAPH;
+  let operations = [];
+  let clock = new Date('2026-10-31T09:00:00.000Z');
+  const checkup = doctor(t, {
+    previewDataFormats: () => previewMigrations({ dataDir: root, graph: graph(answer) }),
+    formatOperations: () => operations,
+    graphStage: () => 'sleeping',
+    now: () => clock
+  });
+  const seen = await checkup.check();
+  assert.deepEqual(seen.items.map(({ id }) => id), ['data_format_waiting:graph (personal)']);
+  assert.deepEqual(seen.unchecked, []);
+
+  answer = SLEEPING_GRAPH;
+  clock = new Date('2026-10-31T10:00:00.000Z');
+  const asleep = await checkup.check();
+  assert.equal(asleep.overall, 'degraded');
+  assert.deepEqual(asleep.items, [{ id: 'data_format_waiting:graph (personal)', kind: 'data_format_waiting', severity: 'blocking',
+    fix: 'person', data: { store: 'graph', label: 'graph (personal)', steps: ['graph/12-builtin-occupations'],
+      lastSeenAt: '2026-10-31T09:00:00.000Z' } }]);
+  assert.deepEqual(asleep.uncheckedReasons, { graph_format: 'graph_sleeping' });
+
+  // A local store's operation says nothing about the graph.
+  operations = [{ kind: 'applied', store: 'roundtable', label: 'roundtable', migrationId: 'rt-0004', at: '2026-10-31T09:30:00.000Z' }];
+  assert.equal((await checkup.check()).items.length, 1);
+  // Confirmed in the console after it was seen: the remembered answer is stale.
+  operations.push({ kind: 'applied', store: 'graph', label: 'graph (personal)', migrationId: 'graph/12-builtin-occupations',
+    at: '2026-10-31T09:40:00.000Z' });
+  const confirmed = await checkup.check();
+  assert.deepEqual(confirmed.items, []);
+  assert.deepEqual(confirmed.unchecked, ['graph_format']);
+  // A graph that answers with nothing waiting replaces what was remembered.
+  answer = null;
+  assert.deepEqual((await checkup.check()).unchecked, []);
+});
+
+test('a client whose host keeps its hook trust unreadable is named unchecked, never guessed', async (t) => {
+  const checkup = doctor(t, {
+    hookTrustUnreadable: ['codex'],
+    observeClients: () => ({ clients: [client('codex', 'connected'), client('claude_code', 'connected')] })
+  });
+  const answer = await checkup.check();
+  assert.equal(answer.overall, 'ok');
+  assert.deepEqual(answer.items, []);
+  assert.deepEqual(answer.unchecked, ['hook_trust:codex']);
+  assert.deepEqual(answer.uncheckedReasons, { 'hook_trust:codex': 'host_trust_unreadable' });
+  // Without FULI's integration there are no FULI hooks to trust.
+  const absent = doctor(t, { hookTrustUnreadable: ['codex'],
+    observeClients: () => ({ clients: [client('codex', 'not_connected')] }) });
+  assert.deepEqual((await absent.check()).unchecked, []);
 });
 
 // A client installer and update journal in memory: what each repair did.
@@ -226,6 +290,18 @@ test('the doctor is read like any console read; its repair only from this comput
   assert.equal(repairs, 1);
 });
 
+test('the version route answers from the cache when asked to, and only then', async () => {
+  const cached = { status: 'ready', latestVersion: '0.24.0', updateAvailable: true };
+  const system = { cachedVersionStatus: () => cached, versionStatus: async () => ({ status: 'ready', fresh: true }) };
+  const call = async (path) => {
+    const { request, response, sent } = exchange('GET', path);
+    assert.equal(await handleApiRequest({ request, response, app: {}, system }), true);
+    return sent;
+  };
+  assert.deepEqual(await call('/api/system/version?cached=1'), [200, cached]);
+  assert.deepEqual(await call('/api/system/version'), [200, { status: 'ready', fresh: true }]);
+});
+
 test('the repair request also passes the console\'s Host, Origin and JSON policy', () => {
   const authority = '127.0.0.1:4567';
   const refused = (headers) => {
@@ -259,6 +335,9 @@ test('the system service reads its own sources: this data directory\'s live serv
   const answer = await system.doctor();
   assert.equal(answer.version, FULI_VERSION);
   assert.deepEqual(answer.items.map(({ id }) => id), ['client_outdated:codex', 'sessions_outdated:codex:0.0.1']);
+  assert.deepEqual(answer.unchecked, ['hook_trust:codex']);
+  // `fuli status` reads the same cached answer: before the first one, nothing is known.
+  assert.deepEqual(system.cachedVersionStatus(), { status: 'unchecked' });
   const repaired = await system.repairDoctor();
   assert.deepEqual(repaired.results, [{ id: 'client_outdated:codex', outcome: 'fixed' }]);
   assert.deepEqual(connects, ['codex']);

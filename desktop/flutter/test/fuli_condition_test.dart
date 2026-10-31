@@ -12,7 +12,7 @@ const en = Strings(chinese: false);
 FuliSnapshot snapshot(FuliCondition condition, {List<DoctorItem> items = const [], bool running = true}) =>
     FuliSnapshot(condition: condition, port: 4100, installed: true, running: running, items: items);
 
-const warning = DoctorItem(id: 'w', kind: 'codex_hooks_review', severity: DoctorSeverity.warning, fix: DoctorFix.person);
+const warning = DoctorItem(id: 'w', kind: 'sessions_outdated', severity: DoctorSeverity.warning, fix: DoctorFix.person);
 const info = DoctorItem(id: 'i', kind: 'update_available', severity: DoctorSeverity.info, fix: DoctorFix.person);
 
 void main() {
