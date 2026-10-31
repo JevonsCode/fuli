@@ -96,32 +96,6 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(var(-
 .ui-list-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
 @media (max-width: 720px) { .ui-list-row { flex-direction: column; gap: 10px; } }
 
-/* Conversation pages (圆桌): one canvas that shows either the list of
-   conversations, as cards that add columns on wide screens, or the open
-   conversation with a way back; never both side by side (D-03). */
-.ui-conversation { display: flex; flex: 1; flex-direction: column; gap: 12px; min-height: 0; }
-.ui-conversation-list { display: grid; align-content: start; gap: 10px; min-width: 0; }
-.ui-conversation-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; min-height: 32px; color: var(--color-muted); font-size: var(--text-meta); }
-.ui-conversation-head > span { min-width: 0; overflow-wrap: anywhere; }
-.ui-conversation-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 12px; }
-.ui-conversation-item { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 16px 18px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); color: var(--color-ink); text-align: left; text-decoration: none; cursor: pointer; transition: border-color var(--motion-fast), box-shadow var(--motion-fast); }
-.ui-conversation-item:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-sm); }
-.ui-conversation-item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
-.ui-conversation-item-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; color: var(--color-muted); font-size: var(--text-meta); }
-.ui-conversation-item-meta > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ui-conversation-item-meta > :not(:first-child) { flex-shrink: 0; }
-.ui-conversation-item-title { font-size: var(--text-card-title); font-weight: var(--weight-strong); line-height: var(--leading-heading); overflow-wrap: anywhere; }
-.ui-conversation-item-sub { display: -webkit-box; overflow: hidden; color: var(--color-muted); font-size: var(--text-control); line-height: var(--leading-prose); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-/* Sized by its content, up to the canvas; a long conversation scrolls inside. */
-.ui-conversation-detail { display: flex; flex: 0 1 auto; max-height: 100%; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
-.ui-conversation-detail-head { display: grid; flex: 0 0 auto; gap: 6px; padding: 18px 28px 14px; border-bottom: 1px solid var(--color-border); }
-.ui-conversation-detail-head h2 { width: fit-content; max-width: 100%; margin: 0; font-size: var(--text-section); font-weight: var(--weight-strong); overflow-wrap: anywhere; }
-.ui-conversation-detail-body { flex: 1; min-height: 0; padding: 20px 28px 32px; overflow-y: auto; overscroll-behavior: contain; }
-@media (max-width: 480px) {
-  .ui-conversation-detail-head { padding: 14px 16px 12px; }
-  .ui-conversation-detail-body { padding: 16px 16px 24px; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; }
 }

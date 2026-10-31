@@ -5,6 +5,7 @@ import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-colo
 import { t } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import type { RoundtableChatPage } from './roundtable-api'
+import { chatRunMarks } from './chat-runs'
 import { chatRoomName } from './roundtable-model'
 import { gapToEnd, scrollToEnd, TAIL_FOLLOW_PX } from './roundtable-scroll'
 import RoundtableSeats from './RoundtableSeats.vue'
@@ -19,7 +20,6 @@ const props = defineProps<{
   laterFailed?: boolean
   laterStuck?: boolean
   newMessages?: boolean
-  wide?: boolean
 }>()
 const emit = defineEmits<{ later: [] }>()
 const byAddress = computed(() => new Map(props.room.members.map(member => [member.address, member])))
@@ -36,6 +36,7 @@ const senderAvatar = (address: string) => {
   return id ? agentAvatarUrl(id) : undefined
 }
 const initial = (address: string) => senderName(address).trim().slice(0, 1).toUpperCase()
+const marks = computed(() => chatRunMarks(props.room.messages.map(message => ({ from: message.from, at: message.createdAt }))))
 
 const body = ref<HTMLElement | null>(null)
 const unseen = ref<{ id: string; count: number } | null>(null)
@@ -77,59 +78,52 @@ onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { captu
 </script>
 
 <template>
-  <article class="ui-conversation-detail" data-testid="roundtable-chat">
-    <header class="ui-conversation-detail-head">
-      <h2 tabindex="-1" class="roundtable-chat-title" data-roundtable-detail-title>{{ chatRoomName(room) }}</h2>
-      <p class="ui-list-meta">
-        <span>{{ t(`roundtable.chat.kinds.${room.kind}`) }}</span>
-        <span>{{ t('roundtable.shownMessages', { count: room.messages.length }) }}</span>
-        <span>{{ time(room.createdAt) }}</span>
-      </p>
-      <details class="roundtable-chat-fold" :open="wide">
+  <article class="rt-chat" data-testid="roundtable-chat">
+    <header class="rt-chat-head">
+      <span class="rt-chat-faces" aria-hidden="true">
+        <span v-for="seat in seats.slice(0, 4)" :key="seat.key" :style="agentIdentityStyle(seat.person.agentId)"><img
+          v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" alt="" /><template v-else>{{ (seat.person.name ?? '?').slice(0, 1) }}</template></span>
+      </span>
+      <h2 tabindex="-1" class="rt-chat-title" data-roundtable-detail-title>{{ chatRoomName(room) }}</h2>
+      <p class="rt-chat-meta">{{ t(`roundtable.chat.kinds.${room.kind}`) }} · {{ t('roundtable.shownMessages', { count: room.messages.length }) }} · {{ time(room.createdAt) }}</p>
+      <details class="rt-chat-people">
         <summary>{{ t('roundtable.participants', { count: seats.length }) }}</summary>
         <RoundtableSeats :seats="seats" />
       </details>
     </header>
-    <div ref="body" class="ui-conversation-detail-body">
-      <ol v-if="room.messages.length" class="roundtable-chat-messages">
-        <li v-for="message in room.messages" :key="message.messageId" class="roundtable-chat-message" tabindex="-1"
+    <div ref="body" class="rt-chat-body">
+      <ol v-if="room.messages.length" class="rt-bubbles">
+        <li v-for="(message, index) in room.messages" :key="message.messageId" class="rt-msg" :class="{ 'is-run-start': marks[index]!.runStart }" tabindex="-1"
           :data-message-id="message.messageId" data-roundtable-chat-message>
-          <span class="roundtable-chat-avatar" :style="agentIdentityStyle(sender(message.from)?.agentId ?? null)" aria-hidden="true"><img v-if="senderAvatar(message.from)" :src="senderAvatar(message.from)" alt="" /><template v-else>{{ initial(message.from) }}</template></span>
-          <div class="roundtable-chat-bubble">
-            <p class="roundtable-chat-byline">
-              <strong>{{ senderName(message.from) }}</strong>
-              <time class="ui-meta" :datetime="message.createdAt">{{ time(message.createdAt) }}</time>
-            </p>
-            <p class="roundtable-chat-body">{{ message.body }}</p>
+          <p v-if="marks[index]!.separator" class="rt-sep"><time :datetime="message.createdAt">{{ time(message.createdAt) }}</time></p>
+          <div class="rt-msg-row">
+            <span v-if="marks[index]!.runStart" class="rt-face roundtable-chat-avatar" :style="agentIdentityStyle(sender(message.from)?.agentId ?? null)" aria-hidden="true"><img
+              v-if="senderAvatar(message.from)" :src="senderAvatar(message.from)" alt="" /><template v-else>{{ initial(message.from) }}</template></span>
+            <span v-else class="rt-face-gap" aria-hidden="true" />
+            <div class="rt-msg-col">
+              <p v-if="marks[index]!.runStart" class="rt-byline"><strong>{{ senderName(message.from) }}</strong></p>
+              <p v-else class="ui-sr-only">{{ senderName(message.from) }}</p>
+              <p class="rt-bubble roundtable-chat-body" :title="time(message.createdAt)">{{ message.body }}</p>
+            </div>
           </div>
         </li>
       </ol>
-      <p v-else class="ui-meta">{{ t('roundtable.chat.empty') }}</p>
-      <p v-if="laterFailed" role="alert" class="inline-error roundtable-chat-more">{{ t('roundtable.loadFailed') }}</p>
-      <p v-if="laterStuck" role="status" class="ui-meta roundtable-chat-more" data-roundtable-later-stuck>{{ t('roundtable.laterStuck') }}</p>
-      <p v-if="newMessages" role="status" class="roundtable-chat-more" data-roundtable-new-messages>{{ t('roundtable.newMessages') }}</p>
-      <Button v-if="room.hasMore || newMessages" class="roundtable-chat-more" size="sm" variant="ghost" :loading="loadingLater"
-        :loading-label="t('roundtable.loadingLater')" data-roundtable-later @click="later">
-        {{ newMessages ? t('roundtable.loadNewMessages') : t('roundtable.laterMessages') }}</Button>
-      <Button variant="outline" v-if="unseen" class="roundtable-chat-jump" size="sm" data-roundtable-jump @click="jumpToUnseen">
+      <p v-else class="rt-chat-empty">{{ t('roundtable.chat.empty') }}</p>
+      <p v-if="laterFailed" role="alert" class="rt-chat-more rt-status" data-tone="danger">{{ t('roundtable.loadFailed') }}</p>
+      <p v-if="laterStuck" role="status" class="rt-chat-more rt-status" data-roundtable-later-stuck>{{ t('roundtable.laterStuck') }}</p>
+      <p v-if="newMessages" role="status" class="rt-chat-more rt-status" data-roundtable-new-messages>{{ t('roundtable.newMessages') }}</p>
+      <div v-if="room.hasMore || newMessages" class="rt-chat-more">
+        <Button size="sm" variant="ghost" :loading="loadingLater" :loading-label="t('roundtable.loadingLater')" data-roundtable-later @click="later">
+          {{ newMessages ? t('roundtable.loadNewMessages') : t('roundtable.laterMessages') }}</Button>
+      </div>
+      <Button v-if="unseen" variant="outline" class="rt-chat-jump" size="sm" data-roundtable-jump @click="jumpToUnseen">
         {{ t('roundtable.jumpToNew', { count: unseen.count }) }}</Button>
     </div>
   </article>
 </template>
 
+<style scoped src="./roundtable-chat.css"></style>
 <style scoped>
-.roundtable-chat-title { overflow-wrap: anywhere; }
-.roundtable-chat-fold summary { cursor: pointer; color: var(--color-muted); font-size: 12px; }
-.roundtable-chat-messages { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; }
-.roundtable-chat-message { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; max-width: 760px; }
-.roundtable-chat-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
-.roundtable-chat-avatar { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: var(--agent-identity, var(--color-accent)); background: var(--agent-identity-soft, var(--color-accent-soft)); font-size: 12px; font-weight: 650; }
-.roundtable-chat-bubble { min-width: 0; }
-.roundtable-chat-byline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 6px; }
-.roundtable-chat-byline strong { font-size: 14px; font-weight: 600; }
-.roundtable-chat-body { margin: 0; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 4px 12px 12px 12px; background: var(--color-bg); color: var(--color-ink); font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
-.roundtable-chat-more { margin-top: 16px; }
-.roundtable-chat-jump { position: sticky; bottom: 12px; display: flex; margin: 16px auto 0; }
-.roundtable-chat-message:focus { outline: none; }
-.roundtable-chat-message:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; border-radius: 8px; }
+.rt-msg:focus { outline: none; }
+.rt-msg:focus-visible .rt-bubble { outline: 2px solid var(--color-focus); outline-offset: 3px; }
 </style>
