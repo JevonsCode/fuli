@@ -55,6 +55,13 @@ async function smokeMacosDmg(dmg) {
     assert.equal(before.status, 'not_configured', JSON.stringify(before));
     started = true;
     const start = reply(await controller('start'));
+    if (!start.ok) {
+      // The controller keeps the CLI's stdout to itself; setup again shows what it reported.
+      const again = await command(join(packageRoot, 'runtime', 'node', 'bin', 'node'), [join(packageRoot, 'src', 'cli.js'),
+        'setup', '--yes', '--skip-agents', '--personal-only', '--runtime-mode', 'native', '--data-dir', dataDir],
+      { env, cwd: packageRoot }).catch(error => ({ stdout: '', stderr: error.message }));
+      process.stdout.write('--- setup again\n' + again.stdout + '\n' + again.stderr + '\n');
+    }
     assert.equal(start.ok, true, 'start failed: ' + start.error);
     assert.equal(start.status, 'running');
     step('First start set FULI up in native mode from the bundled runtime and reached running');
