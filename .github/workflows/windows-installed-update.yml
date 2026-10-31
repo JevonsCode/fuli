@@ -1,0 +1,47 @@
+name: Windows installed update
+
+on:
+  # Release branches need this even when their PR does not itself bump package.json.
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installed-update:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      SMOKE_ROOT: ${{ runner.temp }}\fuli-update
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: npm ci
+      - name: Install and start previous release
+        id: previous
+        run: node acceptance/windows-installed-update.js prepare
+      - name: Build this commit's tray package
+        if: steps.previous.outputs.update_available == 'true'
+        id: tray
+        uses: ./.github/actions/windows-tray
+      - name: Update and verify health and MCP
+        if: steps.previous.outputs.update_available == 'true'
+        run: node acceptance/windows-installed-update.js update "${{ steps.tray.outputs.release }}"
+      - name: Stop isolated installation
+        if: always()
+        run: node acceptance/windows-installed-update.js stop
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installed-update-logs
+          path: |
+            ${{ env.SMOKE_ROOT }}/smoke.log
+            ${{ env.SMOKE_ROOT }}/data/**/logs/**/*.log
+          if-no-files-found: warn
+          retention-days: 7
