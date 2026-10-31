@@ -7,12 +7,13 @@ import { SPRING } from '@/lib/motion'
 import { UiIcon } from '@/ui'
 import type { NavDestination } from './nav-destinations'
 
-// The floating dock (sketch 2026-10-31): round icon buttons in one capsule,
-// left-aligned with the page. Names show as tooltips and are the links'
-// accessible names. Pinned FLAs rise above the FLAs button. On the workbench
-// the dock stays open; elsewhere it folds to the current destination and
-// opens again on hover or keyboard focus. The ink pill behind the current
-// destination glides to the next one on the shared spring.
+// The floating dock (sketch 2026-10-31, direction A): round icon buttons in
+// one frosted-glass capsule like the macOS dock, left-aligned with the page.
+// Names show as tooltips and are the links' accessible names. Pinned FLAs rise
+// above the FLAs button. On the workbench the dock stays open; elsewhere it
+// folds to the current destination and opens again on hover or keyboard focus.
+// The current icon is ink over a gold dot, and the dot glides to the next one
+// on the spring.
 defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; spaceId: string; folded: boolean }>()
 </script>
 
@@ -38,26 +39,27 @@ defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; space
 .app-dock {
   /* Left-aligned with the page canvas, which centres on very wide screens. */
   position: fixed; bottom: 20px; left: max(var(--page-gutter), calc((100vw - var(--canvas-max)) / 2)); z-index: var(--z-nav);
-  padding: 6px; border: 1px solid var(--edge-glass); border-radius: var(--radius-pill);
-  background: var(--surface-glass-strong); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-  box-shadow: var(--shadow-sm), var(--shadow-lg);
+  padding: 5px; border: 1px solid var(--edge-glass); border-radius: var(--radius-pill);
+  background: var(--surface-glass); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: 0 0 0 .5px rgb(var(--shadow-rgb) / 10%), 0 10px 30px -10px rgb(var(--shadow-rgb) / 28%);
 }
 .app-dock-items { display: flex; gap: 4px; margin: 0; padding: 0; list-style: none; }
-.app-dock-item { position: relative; display: flex; max-width: 46px; }
-.app-dock-active { position: absolute; top: 0; left: 0; width: 46px; height: 46px; border-radius: 50%; background: var(--color-accent); box-shadow: 0 8px 16px -8px rgb(var(--shadow-rgb) / 60%); }
+.app-dock-item { position: relative; display: flex; max-width: 44px; }
+.app-dock-active { position: absolute; bottom: 6px; left: calc(50% - 2px); width: 4px; height: 4px; border-radius: 50%; background: var(--color-gold); }
 .app-dock-link {
-  position: relative; display: grid; width: 46px; height: 46px; place-items: center; border-radius: 50%;
+  position: relative; display: grid; width: 44px; height: 44px; place-items: center; border-radius: 50%;
   color: var(--color-muted); text-decoration: none;
   transition: color var(--motion-medium) var(--motion-ease-out), background var(--motion-fast), transform var(--motion-spring) var(--motion-ease-spring);
 }
 .app-dock-link:hover { color: var(--color-ink); background: var(--surface-glass-strong); }
 .app-dock-link:hover:not([aria-current]) { transform: translateY(-2px); }
 .app-dock-link:active { transform: scale(.92); }
-.app-dock-item.is-active .app-dock-link { color: var(--color-on-accent); background: transparent; }
+.app-dock-item.is-active .app-dock-link { color: var(--color-ink); }
 /* Names float above the button on hover and focus. */
 .app-dock-link[data-tip]::after {
   content: attr(data-tip); position: absolute; bottom: calc(100% + 10px); left: 50%; padding: 4px 10px; transform: translateX(-50%);
   border: 1px solid var(--edge-glass); border-radius: var(--radius-pill); color: var(--color-ink); background: var(--surface-glass-strong);
+  backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); box-shadow: var(--shadow-md);
   font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; opacity: 0; pointer-events: none;
   transition: opacity var(--motion-fast), translate var(--motion-spring) var(--motion-ease-spring); translate: 0 4px;
 }
@@ -81,7 +83,7 @@ defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; space
 @media (max-width: 720px) {
   .app-dock { bottom: calc(12px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); }
   /* A phone has no hover: the dock stays open. */
-  .app-dock.is-folded:not(:hover, :focus-within) .app-dock-item:not(.is-active) { max-width: 46px; overflow: visible; opacity: 1; }
+  .app-dock.is-folded:not(:hover, :focus-within) .app-dock-item:not(.is-active) { max-width: 44px; overflow: visible; opacity: 1; }
   .app-dock.is-folded:not(:hover, :focus-within) .app-dock-items { gap: 4px; }
 }
 @media (prefers-reduced-motion: reduce) { .app-dock-link, .app-dock-link::after, .app-dock-pins, .app-dock-item { transition: none; } }

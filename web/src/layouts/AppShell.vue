@@ -150,42 +150,33 @@ watchEffect(() => {
 <style scoped>
 /* The page root (.view) is the scroll container: body never scrolls, so the
    main column keeps a fixed height and lets the routed page take the rest.
-   The frame paints the wash every glass panel sits on: static gradients, so
-   only the dock and the pins capsule pay for a live blur. */
-.app-frame {
-  display: flex; flex-direction: column; height: 100dvh; overflow: hidden; color: var(--color-ink);
-  background:
-    radial-gradient(42% 55% at 10% 90%, var(--backdrop-2) 0%, transparent 70%),
-    radial-gradient(45% 50% at 90% 10%, var(--backdrop-1) 0%, transparent 70%),
-    radial-gradient(40% 45% at 70% 98%, var(--backdrop-3) 0%, transparent 70%),
-    radial-gradient(35% 40% at 28% 6%, var(--backdrop-3) 0%, transparent 70%),
-    var(--color-bg);
-}
+   The page itself is plain: surfaces and type carry the design (direction A). */
+.app-frame { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; color: var(--color-ink); background: var(--color-bg); }
 .app-main { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 /* Every page keeps its last lines clear of the floating dock. */
 .app-main :deep(.view) { padding-bottom: var(--dock-clearance); }
 .app-topbar { flex: 0 0 auto; padding: 12px var(--page-gutter) 8px; }
 .app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; max-width: var(--canvas-max); min-height: 44px; margin-inline: auto; }
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
-.app-wordmark { color: var(--color-ink); font-size: 18px; font-weight: 700; letter-spacing: -.02em; white-space: nowrap; }
+.app-wordmark { color: var(--color-ink); font-size: 15px; font-weight: var(--weight-strong); letter-spacing: -.01em; white-space: nowrap; }
 .app-runtime { display: inline-flex; align-items: center; gap: 6px; --runtime: var(--status-error); }
 .app-runtime.is-ready { --runtime: var(--color-success); }
 .app-runtime-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--runtime); }
 .app-runtime-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .app-runtime-text.is-visible { position: static; width: auto; height: auto; overflow: visible; clip-path: none; color: var(--runtime); font-size: var(--text-meta); font-weight: var(--weight-medium); }
-.app-title { min-width: 0; margin: 0; font-size: var(--text-title); font-weight: var(--weight-strong); line-height: var(--leading-title); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.app-title { min-width: 0; margin: 0; font-size: var(--text-title); font-weight: var(--weight-strong); line-height: var(--leading-title); letter-spacing: -.02em; overflow-wrap: anywhere; }
 .app-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-/* Round glass buttons for the top-right destinations. */
+/* Quiet round buttons for the top-right destinations; only the current one is ink. */
 .app-round {
-  position: relative; display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid var(--edge-glass); border-radius: 50%;
-  color: var(--color-muted); background: var(--surface-glass-strong); text-decoration: none; box-shadow: var(--shadow-xs);
+  position: relative; display: grid; width: 36px; height: 36px; place-items: center; border-radius: 50%;
+  color: var(--color-ink-soft); background: transparent; text-decoration: none;
   transition: color var(--motion-fast), background var(--motion-fast);
 }
-.app-round:hover { color: var(--color-ink); }
+.app-round:hover { color: var(--color-ink); background: var(--color-surface-hover); }
 .app-round.is-active { color: var(--color-on-accent); background: var(--color-accent); }
 .app-badge {
-  position: absolute; top: -2px; right: -2px; display: grid; min-width: 16px; height: 16px; padding: 0 4px; place-items: center;
-  border-radius: var(--radius-pill); color: var(--color-surface); background: var(--color-danger); box-shadow: 0 0 0 2px var(--color-surface);
+  position: absolute; top: 2px; right: 2px; display: grid; min-width: 16px; height: 16px; padding: 0 4px; place-items: center;
+  border-radius: var(--radius-pill); color: var(--color-on-accent); background: var(--color-accent); box-shadow: 0 0 0 2px var(--color-bg);
   font-size: 10px; font-weight: var(--weight-strong); line-height: 1; font-variant-numeric: tabular-nums;
 }
 .app-feedback-row { flex: 0 0 auto; padding: 0 var(--page-gutter) 8px; }

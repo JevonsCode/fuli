@@ -2,26 +2,26 @@
 name: Console
 description: A calm, precise workspace for human and Agent collaboration.
 colors:
-  background: "#f6f7f9"
+  background: "#f2f2ef"
   surface: "#ffffff"
-  ink: "#1d2129"
-  muted: "#606b7d"
-  accent: "#2563eb"
-  accent-soft: "#edf3ff"
-  border: "#e2e5ea"
-  control-border: "#8791a2"
+  ink: "#17171a"
+  muted: "#66666d"
+  accent: "#17171a"
+  gold: "#a8824a"
+  border: "#e6e6e1"
+  control-border: "#c4c4bd"
 typography:
   body:
-    fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Inter Variable, Noto Sans SC Variable, sans-serif"
     fontSize: "14px"
     lineHeight: 1.5
   title:
-    fontSize: "25px"
-    fontWeight: 650
+    fontSize: "22px"
+    fontWeight: 600
     lineHeight: 1.25
 rounded:
-  control: "10px"
-  card: "16px"
+  control: "8px"
+  card: "14px"
   dialog: "20px"
 spacing:
   small: "8px"
@@ -35,7 +35,7 @@ The console is an operational workspace. Short titles, clear actions, real statu
 
 ## Colors
 
-The theme layers in `web/src/styles/theme/` are the source of truth; the one skin is 墨与金 (ink and gold, 2026-11-01). Panels are translucent glass over a pre-blurred paper-grey wash; ink marks the main action and the current destination; champagne gold carries progress, links and the warm shadows. Success, warning and danger colors communicate state. Use the chart palette only to distinguish graph categories. Muted text has at least 4.8:1 contrast on the main light surfaces; form boundaries use the dedicated control border.
+The theme layers in `web/src/styles/theme/` are the source of truth; the one skin is direction A 「素」 (Jevons picked it on 2026-11-01 over an ink-stage-on-glass direction), in the spirit of Apple's own apps and Linear. The page is a plain neutral grey; content sits on white surfaces split by hairlines, grouped into inset lists; ink marks the main action and the current destination; gold means progress and nothing else (deep gold for links). There is no gradient wash or texture on the page: the character comes from type, spacing and restraint. Glass is kept for what floats over the page (the dock, its pins and their tooltips), so they read as above it. Shadows are a cool near-black and only lift what is selected or floating. Success, warning and danger colors communicate state. Use the chart palette only to distinguish graph categories. Muted text has at least 4.8:1 contrast on the main light surfaces; form boundaries use the dedicated control border.
 
 ## Typography
 
@@ -43,7 +43,7 @@ The console bundles Inter and Noto Sans SC (SIL OFL 1.1, `@fontsource-variable`)
 
 ## Layout
 
-The client shell has a top bar (brand and service dot, the page's one H1, section tabs, then waiting requests and settings at the right), one scrolling content region, and a floating dock of round icon buttons left-aligned with the page: 工作台, FLAs, 圆桌, 沉淀, 项目. Names are tooltips and accessible names. The dock stays open on the workbench and folds to the current destination elsewhere, opening on hover or focus. Pinned FLAs rise in their own capsule above the FLAs button; right-click offers the profile, its Workbench and Workflow when it has them, and unpinning. Only the dock and the pins capsule use a live blur.
+The client shell has a top bar (brand and service dot, the page's one 22px H1, section tabs as words with an ink rule under the current one, then quiet round buttons for waiting requests and settings at the right), one scrolling content region, and a floating frosted-glass dock (like the macOS dock: translucent white with a live blur of what scrolls beneath) of round icon buttons left-aligned with the page: 工作台, FLAs, 圆桌, 沉淀, 项目. The current icon is ink over a gold dot that glides between buttons. Names are tooltips and accessible names. The dock stays open on the workbench and folds to the current destination elsewhere, opening on hover or focus. Pinned FLAs rise in their own glass capsule above the FLAs button; right-click offers the profile, its Workbench and Workflow when it has them, and unpinning.
 
 Pages rebuilt on the D-03 layout (home, the Agent directory and profile, settings, and the memory pages: knowledge, preferences, taste and organize) share one work canvas: centred, at most 1840px wide, with the top bar's title lined up with it. Wider screens add columns instead of stretching a card: collections use one to four columns by canvas width, and tables show their low-priority columns. Forms keep one 896px column. There is no list-beside-detail split: a name opens the record's own page, and a quick look opens a centred dialog whose `?item=` keeps it in the URL. Back restores the collection's filters, scroll and focus. The top bar is the only H1; a record page shows the record's name there, section tabs use state words, and no section repeats the title.
 
