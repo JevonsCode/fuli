@@ -1,5 +1,4 @@
 import { computed, effectScope, onScopeDispose, ref, shallowRef, watch, type Ref } from 'vue'
-import { ApiError } from '@/api/client'
 import { isRunning, isTeamWork, readTeamSheets, type TeamSheet } from './team-sheets'
 
 export type TeamWorkState = 'loading' | 'ready' | 'failed' | 'unsupported'
@@ -41,7 +40,7 @@ function open(spaceId: string): Source {
         state.value = 'ready'
       } catch (cause) {
         if (controller !== current || current.signal.aborted) return
-        if (cause instanceof ApiError && cause.status === 404) state.value = 'unsupported'
+        if ((cause as { status?: unknown } | null)?.status === 404) state.value = 'unsupported'
         // A failed refresh keeps what was shown; only a first read reports failure.
         else if (state.value !== 'ready') state.value = 'failed'
       }
