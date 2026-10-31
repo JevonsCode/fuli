@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { windowsDesktopClient } from './windows-desktop-client.js';
 import { windowsInstallPathsOverlap } from './windows-installation-context.js';
 import { readWindowsShortcut } from './windows-installation.js';
+import { removeWindowsNodeLauncher } from './windows-node-launcher.js';
 import { assertInstallationUnchanged, requireInstalledCli, runInstalledCli } from './windows-installation-switch.js';
 import { readCurrentWindowsInstallation } from './windows-update.js';
 import { acquireWindowsUpdateLock } from './windows-update-lock.js';
@@ -13,7 +14,8 @@ const SLOT = /^[a-f0-9-]{36}$/;
 
 // Removes the per-user application: the desktop client closes, services stop,
 // Agent client integrations are removed, then the record, own shortcuts, the
-// client's Windows entries and version slots. Data is never touched.
+// client's Windows entries, the client-configuration launcher and version slots.
+// Data is never touched.
 export function planWindowsUninstall({ installRoot, env = process.env, readShortcut = readWindowsShortcut } = {}) {
   const installed = readCurrentWindowsInstallation({ installRoot, env, readShortcut, keepForeignShortcuts: true });
   const versions = join(installed.installRoot, 'versions');
@@ -59,6 +61,8 @@ export async function uninstallWindowsInstallation(options, {
       } catch { keptShortcuts.push(path); }
     }
     const registrations = await desktopClient.unregister(plan.installRoot);
+    // A client session still open runs the launcher; it is removed once that ends.
+    const heldFiles = removeWindowsNodeLauncher(plan.installRoot);
     const pending = [];
     for (const slot of plan.slots) {
       // The running node.exe locks its own slot; it is removed once this process exits.
@@ -67,10 +71,11 @@ export async function uninstallWindowsInstallation(options, {
     }
     const containers = [plan.versions, plan.installRoot];
     for (const path of containers) removeIfEmpty(path);
-    if (pending.length) await removeAfterExit(pending, containers);
-    return { status: pending.length ? 'removing_after_exit' : 'removed', applicationVersion: current.applicationVersion,
+    const deferred = pending.length + heldFiles.length > 0;
+    if (deferred) await removeAfterExit(pending, containers, heldFiles);
+    return { status: deferred ? 'removing_after_exit' : 'removed', applicationVersion: current.applicationVersion,
       dataDir: current.dataDir, installRoot: plan.installRoot, keptShortcuts, registrations,
-      leftover: existsSync(plan.installRoot) && !pending.length ? plan.installRoot : null };
+      leftover: existsSync(plan.installRoot) && !deferred ? plan.installRoot : null };
   } finally { await lock.release(); }
 }
 
@@ -84,12 +89,13 @@ function removeIfEmpty(path) {
 // has no console and exits at once, and a direct child dies with Node's job, so
 // cmd's start launches it as a grandchild outside that job. This process must not
 // exit before cmd does: closing Node's job while cmd is still starting kills both.
-function removeWindowsDirectoriesAfterExit(directories, containers) {
-  const input = Buffer.from(JSON.stringify({ directories, containers })).toString('base64');
+function removeWindowsDirectoriesAfterExit(directories, containers, files) {
+  const input = Buffer.from(JSON.stringify({ directories, containers, files })).toString('base64');
   const script = '$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("' + input + '")) | ConvertFrom-Json; '
     + 'for($i=0;$i -lt 30;$i++){ Start-Sleep -Seconds 2; $left=@($p.directories | Where-Object { [IO.Directory]::Exists($_) }); '
     + 'foreach($d in $left){ try { [IO.Directory]::Delete($d,$true) } catch {} }; '
-    + 'if(-not @($p.directories | Where-Object { [IO.Directory]::Exists($_) }).Count){ break } }; '
+    + 'foreach($f in @($p.files | Where-Object { [IO.File]::Exists($_) })){ try { [IO.File]::Delete($f) } catch {} }; '
+    + 'if(-not @($p.directories | Where-Object { [IO.Directory]::Exists($_) }).Count -and -not @($p.files | Where-Object { [IO.File]::Exists($_) }).Count){ break } }; '
     + 'foreach($c in $p.containers){ try { if([IO.Directory]::Exists($c) -and -not [IO.Directory]::EnumerateFileSystemEntries($c).GetEnumerator().MoveNext()){ [IO.Directory]::Delete($c,$false) } } catch {} }';
   const system = join(process.env.SystemRoot, 'System32');
   return new Promise(resolve => {

@@ -52,6 +52,7 @@ Run `Install-Fuli.cmd` in the resulting directory and confirm its displayed path
 No administrator permission is requested. Defaults:
 
 - Application: `%LOCALAPPDATA%\Programs\Fuli\versions\<installation-id>`.
+- Client-configuration launcher: `%LOCALAPPDATA%\Programs\Fuli\FuliNode.exe` (see below).
 - Data: `%LOCALAPPDATA%\Fuli`, created only by an explicit first start from the desktop client.
 - Shortcuts: current user's Windows Desktop and Start menu Programs folders.
 
@@ -107,3 +108,38 @@ rerunning refuses it instead of adopting or deleting it. Retain it for inspectio
 or move it aside manually before retrying. Data is never removed. The desktop
 client's 「退出」 leaves Fuli running; 「停止 FULI」 requires the runtime to confirm a
 stopped state.
+
+## Client configurations
+
+Agent client configurations of an installed copy (MCP entries, Claude Code, Codex
+and Cursor hooks, the OpenCode plugin file) never name a version folder (rec#11
+D-77). They run `FuliNode.exe` at the installation root with a script relative to
+the package:
+
+```
+"%LOCALAPPDATA%\Programs\Fuli\FuliNode.exe" src\mcp-server.js --runtime-config ...
+```
+
+`FuliNode.exe` (`desktop/windows/FuliNodeLauncher.cs`, a console program) reads
+`installation.json` beside it at every launch and runs that version's
+`runtime\node\node.exe` with the script inside that version. Arguments, working
+directory, environment, standard input/output/error and the exit code pass through
+unchanged, so stdio MCP and lifecycle hooks behave as if node had been started
+directly; node runs in a job that ends with the launcher (a hook timeout that kills
+the launcher ends node too). It refuses an absolute script, one outside the package,
+and a record naming a folder outside `versions\`. Without an `installation.json`
+beside it (a package or slot copy), it runs its own folder.
+
+Install, update and rollback copy the launcher of the version they install to the
+root before anything stops; a launcher a client is still running is renamed aside
+and removed once it is free. Any version's launcher runs any version's
+`installation.json`, so a rollback to a version from before the launcher keeps the
+installed one. Uninstall removes it (after the clients still running it exit).
+Setup in an installed copy writes this form only when the launcher is present;
+npm installs and uninstalled packages keep this Node and absolute paths. Clients
+connected with absolute version paths are reported outdated (`client_outdated`) and
+are migrated by the next `setup --connected-only`, update or 体检 repair; after that
+an update or rollback leaves client configurations unchanged. The OpenCode plugin
+file imports `plugin.js` from the version `installation.json` names when OpenCode
+loads it. Clients FULI does not manage, such as a hand-written configuration, can
+use the same command (`fuli connect` prints it).

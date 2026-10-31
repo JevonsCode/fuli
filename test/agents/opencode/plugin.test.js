@@ -3,14 +3,14 @@
 // real-process cases start only FULI's own Node with synthetic scripts in a
 // temporary directory; no OpenCode, FULI data directory or Provider is used.
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { fuliOpenCodePlugin } from '../../../src/agents/opencode/plugin.js';
-import { openCodePluginSource } from '../../../src/agents/opencode/plugin-file.js';
+import { isFuliOpenCodePlugin, openCodePluginSource } from '../../../src/agents/opencode/plugin-file.js';
 import { loadClientDescriptorPacks } from '../../../src/setup/agents/descriptor-packs.js';
 
 const CONFIG = Object.freeze({ nodePath: '/runtime/node', hookPath: '/pkg/src/agents/opencode/lifecycle-hook.js',
@@ -415,4 +415,41 @@ test('the file setup writes loads as an OpenCode V2 plugin: a default export wit
   const { default: plugin } = await import(pathToFileURL(file).href);
   assert.equal(plugin.id, 'fuli');
   assert.equal(typeof plugin.setup, 'function');
+});
+
+test('an installed Windows copy\'s plugin file loads the plugin of the version installation.json names', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'p63-opencode-installed-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const slot = (name, plugin) => {
+    const directory = path.join(root, 'versions', name, 'src', 'agents', 'opencode');
+    mkdirSync(directory, { recursive: true });
+    if (plugin) writeFileSync(path.join(directory, 'plugin.js'), plugin);
+    else copyFileSync(new URL('../../../src/agents/opencode/plugin.js', import.meta.url), path.join(directory, 'plugin.js'));
+    return path.join(root, 'versions', name);
+  };
+  const pack = loadClientDescriptorPacks().find(({ id }) => id === 'opencode');
+  // The context src/setup/paths.js gives an installed copy: its launcher and package-relative scripts.
+  const launcher = path.join(root, 'FuliNode.exe');
+  const source = openCodePluginSource({ nodePath: launcher, runtimeConfigPath: '/data/graph-runtime.json',
+    mcpServerPath: path.join('src', 'mcp-server.js') }, pack.lifecycleHooks);
+  assert.ok(isFuliOpenCodePlugin(source));
+  assert.ok(source.includes(JSON.stringify(path.join(root, 'installation.json'))));
+  assert.ok(source.includes(JSON.stringify(path.join('src', 'agents', 'opencode', 'lifecycle-hook.js'))), 'the launcher runs the hook of the current version');
+  assert.ok(source.includes(JSON.stringify(launcher)));
+  assert.ok(!source.includes('versions'), 'no version folder is written into the client configuration');
+  const file = path.join(root, 'opencode', 'index.js');
+  mkdirSync(path.dirname(file));
+  writeFileSync(file, source);
+  const load = async (packageRoot) => {
+    writeFileSync(path.join(root, 'installation.json'), JSON.stringify({ packageRoot }));
+    return (await import(`${pathToFileURL(file).href}?packageRoot=${encodeURIComponent(packageRoot)}`)).default;
+  };
+  const current = await load(slot('a'));
+  assert.equal(current.id, 'fuli');
+  assert.equal(typeof current.setup, 'function');
+  // Each load reads the record afresh: an update or rollback needs no rewrite of this file.
+  const next = await load(slot('b', 'export const fuliOpenCodePlugin = (config) => ({ id: "version b", config });\n'));
+  assert.equal(next.id, 'version b');
+  assert.equal(next.config.nodePath, launcher);
+  assert.equal(next.config.hookPath, path.join('src', 'agents', 'opencode', 'lifecycle-hook.js'));
 });

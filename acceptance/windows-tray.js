@@ -43,11 +43,19 @@ try {
     assert.equal(exe.readUInt16LE(pe + 4), 0x8664, name + ' is Windows x64');
     assert.equal(exe.readUInt16LE(pe + 24 + 68), 2, name + ' uses the GUI subsystem, without a console window');
   }
+  // The client-configuration launcher: a console program sharing its caller's stdio.
+  // Without an installation.json beside it, it runs this package's own node.
+  const nodeLauncher = await readFile(join(bundle, 'FuliNode.exe'));
+  assert.equal(nodeLauncher.readUInt16LE(nodeLauncher.readUInt32LE(0x3c) + 24 + 68), 3, 'FuliNode.exe uses the console subsystem');
+  const launched = await new Promise((resolveLaunch, reject) => execFile(join(bundle, 'FuliNode.exe'), ['src\\cli.js', '--version'],
+    { cwd: sandbox, env, windowsHide: true, encoding: 'utf8', timeout: 60_000 },
+    (error, stdout) => error ? reject(error) : resolveLaunch(stdout.trim())));
+  assert.equal(launched, JSON.parse(await readFile(join(bundle, 'package.json'), 'utf8')).version);
   const initial = await action('status');
   assert.equal(initial.ok, true);
   assert.equal(initial.status, 'not_configured');
   assert.equal(existsSync(context.dataDir), false);
-  check('complete candidate hashes and x64 GUI launcher and desktop client verified; status leaves a fresh external data directory absent');
+  check('complete candidate hashes, x64 GUI launcher and desktop client, and the console client-configuration launcher verified; status leaves a fresh external data directory absent');
 
   await mkdir(context.dataDir);
   await writeFile(join(context.dataDir, 'runtime-settings.json'), JSON.stringify({ ...DEFAULT_RUNTIME_SETTINGS,

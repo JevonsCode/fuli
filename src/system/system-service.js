@@ -122,7 +122,7 @@ export function createSystemService({
     startSettingsApply: (id) => settingsApplier.start(id),
     settingsApplyStatus: () => settingsApplier.status(),
     clientConnection: () => Object.fromEntries(['standard', 'vscode', 'server'].map((format) => [
-      format, clientConnectionConfig({ mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
+      format, clientConnectionConfig({ nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath }, format)
     ])),
     clientConnectionStatus: observeClients,
     // Whether the console offers to open recorded sessions (session-offers.js).
@@ -160,7 +160,7 @@ export function createSystemService({
 function expectedIntegration(paths, runtimeConfigPath) {
   return {
     dataDir: paths.dataDir,
-    nodePath: process.execPath,
+    nodePath: paths.clientNodePath,
     mcpServerPath: paths.mcpServerPath,
     runtimeConfigPath,
     sessionSkillPath: paths.sessionSkillPath,

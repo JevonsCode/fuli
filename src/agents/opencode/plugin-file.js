@@ -1,4 +1,4 @@
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { OPENCODE_LIFECYCLE_MARKER } from './plugin.js';
 
@@ -21,8 +21,31 @@ export function openCodePluginSource(context, hooks) {
     events: hooks.events.map(({ event }) => event),
     timeoutMs: Math.max(1000, hooks.timeoutSec * 1000 - 2000)
   };
-  return `${HEADER}\nimport { fuliOpenCodePlugin } from ${JSON.stringify(pathToFileURL(join(directory, 'plugin.js')).href)};\n\n`
+  const plugin = join(directory, 'plugin.js');
+  return `${HEADER}\n${isAbsolute(plugin) ? packagedImport(plugin) : installedImport(context.nodePath, plugin)}\n`
     + `export default fuliOpenCodePlugin(${JSON.stringify(config, null, 2)});\n`;
+}
+
+function packagedImport(plugin) {
+  return `import { fuliOpenCodePlugin } from ${JSON.stringify(pathToFileURL(plugin).href)};\n`;
+}
+
+// Package-relative scripts are an installed Windows copy's: nodePath is the
+// launcher beside its installation.json (src/setup/paths.js, rec#11 D-77). The
+// hook runs through that launcher, and the plugin module is imported from the
+// version installation.json names when OpenCode loads the file, so an update or
+// rollback leaves this file as it is.
+function installedImport(launcher, plugin) {
+  const record = join(dirname(launcher), 'installation.json');
+  return [
+    "import { readFileSync } from 'node:fs';",
+    "import { join } from 'node:path';",
+    "import { pathToFileURL } from 'node:url';",
+    '',
+    `const { packageRoot } = JSON.parse(readFileSync(${JSON.stringify(record)}, 'utf8'));`,
+    `const { fuliOpenCodePlugin } = await import(pathToFileURL(join(packageRoot, ${JSON.stringify(plugin)})).href);`,
+    ''
+  ].join('\n');
 }
 
 export function isFuliOpenCodePlugin(text) {

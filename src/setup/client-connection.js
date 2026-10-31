@@ -2,7 +2,7 @@ import { toolNamesForProfile } from '../mcp/tool-profiles.js';
 import { normalizeMcpSourceApplication } from '../mcp/session-id.js';
 
 // Configuration only: no client discovery, file writes, credentials or model calls.
-export function clientConnectionConfig({ nodePath = process.execPath, mcpServerPath, runtimeConfigPath }, format = 'standard', {
+export function clientConnectionConfig({ nodePath, mcpServerPath, runtimeConfigPath }, format = 'standard', {
   profile = 'chat',
   sourceApplication = 'other'
 } = {}) {

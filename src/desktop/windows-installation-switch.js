@@ -3,6 +3,7 @@ import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { writeTextFileAtomic } from '../storage/json-file.js';
 import { canonicalWindowsInstallPath, installationSha256, windowsInstallPathsOverlap } from './windows-installation-context.js';
+import { placeWindowsNodeLauncher } from './windows-node-launcher.js';
 import { stopInstalledFuli } from './windows-running-fuli.js';
 import { backupWindowsGraph, prepareWindowsUpdateRuntime, restoreWindowsUpdateRuntime } from './windows-update-runtime.js';
 
@@ -52,6 +53,9 @@ export async function stopAndSwitchWindowsInstallation(plan, staged, packageRoot
     lock.assertHeld();
     assertInstallationUnchanged(plan.recordPath, plan.record);
     for (const shortcut of plan.shortcuts) assertInstallationUnchanged(shortcut.path, shortcut.bytes);
+    // Client configurations run the version installation.json names through this
+    // launcher, so it is placed before anything stops and outlives a restored switch.
+    placeWindowsNodeLauncher(plan.installRoot, packageRoot);
     write('Stopping the running Fuli ' + plan.current.applicationVersion + '...');
     await stopInstalledFuli(plan, { ...stopping, runCli, write });
     lock.assertHeld();

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { installedWindowsFixture as fixture } from './fixtures/windows-installation.js';
@@ -19,6 +19,16 @@ test('update preview is read-only; successful switch preserves data and keeps th
   assert.equal(f.calls[0].root, f.current.packageRoot);
   assert.equal(f.calls[0].args[0], 'stop');
   for (const path of next.shortcuts) assert.equal(readFileSync(path, 'utf8'), join(next.packageRoot, 'Fuli.exe'));
+  assert.equal(readFileSync(join(next.installRoot, 'FuliNode.exe'), 'utf8'), 'node launcher 0.12.5');
+});
+
+test('an update from a version without the client launcher places it; a restored switch keeps the newer one', async t => {
+  const f = fixture(t);
+  rmSync(join(f.current.installRoot, 'FuliNode.exe'));
+  await assert.rejects(updateWindowsInstallation(f.options, { ...f.deps, runCli: async (root, args) =>
+    ({ code: args[0] === 'start' && root !== f.current.packageRoot ? 1 : 0 }) }), /restored/);
+  // Any version's launcher runs the version installation.json names, so the restored record needs no other launcher.
+  assert.equal(readFileSync(join(f.current.installRoot, 'FuliNode.exe'), 'utf8'), 'node launcher 0.12.5');
 });
 
 test('failed start stops the new version before restoring the old receipt and runtime', async t => {
