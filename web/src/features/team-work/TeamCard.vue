@@ -5,9 +5,10 @@ import { agentProfilePath } from '@/features/agent-profile/profile-model'
 import { agentManagementPath } from '@/features/project-agents/orchestration-filters'
 import { statusTone } from '@/features/project-agents/task-labels'
 import { t } from '@/i18n'
+import { Button } from '@/components/ui/button'
 import { UiIcon } from '@/ui'
 import TeamFaces from './TeamFaces.vue'
-import { currentStep, fill, sharesFor, stepsOf, type TeamSheet } from './team-sheets'
+import { currentStepOf, fill, sharesFor, stepsOf, type TeamSheet } from './team-sheets'
 
 // 团队卡片: one task several FLAs do together. Folded, it shows who is on it
 // (rings = each share's recorded progress), what is happening now and the
@@ -30,16 +31,17 @@ const faces = computed(() => shares.value.map(share => ({
   agentId: share.agentId,
   lead: share.agentId === props.sheet.leadAgentId,
   fill: fill(share.progress),
-  working: Boolean(currentStep(props.sheet, share.agentId)),
+  working: Boolean(currentStepOf(props.sheet, share)),
 })))
 // What is happening now: the first share with a step in progress.
 const now = computed(() => {
   for (const share of shares.value) {
-    const step = currentStep(props.sheet, share.agentId)
+    const step = currentStepOf(props.sheet, share)
     if (step) return t('teamWork.card.now', { name: props.nameOf(share.agentId), step: step.title })
   }
   return ''
 })
+const currentIds = computed(() => new Set(shares.value.map(share => currentStepOf(props.sheet, share)?.id).filter(Boolean)))
 const known = (key: string, fallback: string) => { const label = t(key); return label === key ? fallback : label }
 const statusLabel = (status: string) => known(`projectAgents.taskStatus.${status}`, status)
 const roleLabel = (role: string | null) => (role ? known(`teamWork.card.roles.${role}`, '') : '')
@@ -48,13 +50,14 @@ const total = computed(() => fill(props.sheet.progress))
 
 <template>
   <article class="team-card" :class="{ 'is-open': open }" :data-team-card="sheet.taskId" data-term="work.teamCard">
-    <button type="button" class="team-head" :aria-expanded="open" :aria-controls="bodyId" @click="open = !open">
+    <Button variant="ghost" class="team-head" :aria-expanded="open" :aria-controls="bodyId" @click="open = !open">
       <TeamFaces :faces="faces" />
       <span class="team-text">
         <span class="team-title">{{ sheet.title }}</span>
         <span class="team-meta">
-          <template v-if="sheet.personalProjectId">{{ projectName(sheet.personalProjectId) }} · </template>{{ t('teamWork.card.flas', { count: sheet.shares.length }) }}<template v-if="now"> · <span class="team-now">{{ now }}</span></template>
+          <template v-if="sheet.personalProjectId">{{ projectName(sheet.personalProjectId) }} · </template>{{ t('teamWork.card.flas', { count: sheet.shares.length }) }}
         </span>
+        <span v-if="now || sheet.blocker" class="team-now" :class="{ 'is-blocked': sheet.blocker }"><span class="team-now-dot" aria-hidden="true" />{{ sheet.blocker ? (sheet.blocker.summary || t('teamWork.card.blocked')) : now }}</span>
       </span>
       <span class="team-total">
         <template v-if="total !== null">
@@ -65,11 +68,10 @@ const total = computed(() => fill(props.sheet.progress))
         <span v-else class="team-status" :data-tone="statusTone(sheet.status)">{{ statusLabel(sheet.status) }}</span>
       </span>
       <UiIcon name="chevron-down" :size="16" class="team-chevron" />
-    </button>
+    </Button>
     <!-- Opens by its height on the shared motion; interrupting it just reverses. -->
     <div :id="bodyId" class="team-body" :inert="!open">
       <div class="team-body-inner">
-        <p v-if="sheet.blocker" class="team-blocker" role="status">{{ sheet.blocker.summary || t('teamWork.card.blocked') }}</p>
         <ol class="team-shares" :aria-label="t('teamWork.card.shares')">
           <li v-for="share in shares" :key="share.agentId" class="team-share" :class="{ 'is-self': share.agentId === viewerAgentId }" :data-team-share="share.agentId">
             <div class="team-share-head">
@@ -86,7 +88,7 @@ const total = computed(() => fill(props.sheet.progress))
             </div>
             <p v-if="share.assignment" class="team-share-assignment">{{ share.assignment }}</p>
             <ul v-if="stepsOf(sheet, share.agentId).length" class="team-steps">
-              <li v-for="step in stepsOf(sheet, share.agentId)" :key="step.id" class="team-step" :data-step-status="step.status">
+              <li v-for="step in stepsOf(sheet, share.agentId)" :key="step.id" class="team-step" :class="{ 'is-current': currentIds.has(step.id) }" :data-step-status="step.status">
                 <span class="team-check" aria-hidden="true"><UiIcon v-if="step.status === 'completed'" name="check" :size="11" /></span>
                 <span class="team-step-title">{{ step.title }}</span>
                 <span class="ui-sr-only">{{ statusLabel(step.status) }}</span>
@@ -108,14 +110,19 @@ const total = computed(() => fill(props.sheet.progress))
 /* Open, the card lifts a little: the one being read stands apart without a side bar. */
 .team-card.is-open { box-shadow: 0 0 0 1px var(--color-border), var(--shadow-md); }
 .team-head {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto 16px; align-items: center; gap: 14px; width: 100%; padding: 14px 16px;
-  border: 0; border-radius: inherit; color: var(--color-ink); background: none; font: inherit; text-align: left; cursor: pointer;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto 16px; align-items: center; gap: 14px; width: 100%; height: auto; padding: 14px 16px;
+  border-radius: inherit; color: var(--color-ink); font-weight: var(--weight-regular); text-align: left; white-space: normal;
 }
 .team-head:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
 .team-text { display: grid; gap: 2px; min-width: 0; }
 .team-title { overflow: hidden; font-size: var(--text-body); font-weight: var(--weight-strong); text-overflow: ellipsis; white-space: nowrap; }
 .team-meta { overflow: hidden; color: var(--color-muted); font-size: var(--text-meta); text-overflow: ellipsis; white-space: nowrap; }
-.team-now { color: var(--color-ink-soft); }
+/* What is happening now, under the title: a gold dot that breathes, red and still when the task is blocked. */
+.team-now { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--color-ink-soft); font-size: var(--text-meta); text-overflow: ellipsis; white-space: nowrap; }
+.team-now-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--color-gold); animation: team-dot var(--motion-pulse) ease-in-out infinite; }
+.team-now.is-blocked { color: var(--color-danger); }
+.team-now.is-blocked .team-now-dot { background: var(--color-danger); animation: none; }
+@keyframes team-dot { 50% { opacity: .35; transform: scale(.8); } }
 .team-total, .team-share-state { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .team-bar { position: relative; width: 72px; height: 5px; overflow: hidden; border-radius: 5px; background: var(--color-surface-hover); }
 .team-bar.is-small { width: 56px; height: 4px; }
@@ -127,11 +134,10 @@ const total = computed(() => fill(props.sheet.progress))
 .team-status[data-tone="success"] { color: var(--color-success); }
 .team-chevron { color: var(--color-faint); transition: transform var(--motion-move); }
 .is-open .team-chevron { transform: rotate(180deg); }
-.team-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--motion-move); }
+.team-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--motion-enter); }
 .is-open .team-body { grid-template-rows: 1fr; }
 .team-body-inner { display: grid; gap: 10px; min-height: 0; overflow: hidden; padding: 0 16px; }
 .is-open .team-body-inner { padding-bottom: 14px; }
-.team-blocker { margin: 0; padding: 8px 12px; border-radius: var(--radius-control); color: var(--color-warning); background: var(--color-warning-soft); font-size: var(--text-control); }
 .team-shares { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .team-share { display: grid; gap: 4px; padding: 10px 12px; border-radius: var(--radius-control); }
 .team-share + .team-share { box-shadow: 0 -1px 0 var(--color-border); }
@@ -146,11 +152,14 @@ const total = computed(() => fill(props.sheet.progress))
 .team-steps { display: grid; gap: 4px; margin: 2px 0 0; padding: 0; list-style: none; }
 .team-step { display: flex; align-items: center; gap: 8px; color: var(--color-ink-soft); font-size: var(--text-control); }
 .team-check { display: grid; flex: none; width: 16px; height: 16px; place-items: center; border-radius: 50%; color: var(--color-on-accent); box-shadow: inset 0 0 0 1.5px var(--color-control-border); }
-.team-step[data-step-status="completed"] .team-check { background: var(--color-accent); box-shadow: none; }
+/* A finished step: the ink check pops in on the spring. */
+.team-step[data-step-status="completed"] .team-check { background: var(--color-accent); box-shadow: none; animation: team-check-pop var(--motion-spring) var(--motion-ease-spring); }
+@keyframes team-check-pop { from { transform: scale(.4); } }
 .team-step[data-step-status="completed"] .team-step-title { color: var(--color-muted); text-decoration: line-through; text-decoration-color: var(--color-faint); }
-.team-step[data-step-status="in_progress"] .team-check { box-shadow: inset 0 0 0 1.5px var(--color-gold); animation: team-step-breathe var(--motion-pulse) ease-in-out infinite; }
-.team-step[data-step-status="in_progress"] .team-step-title { color: var(--color-ink); font-weight: var(--weight-medium); }
-@keyframes team-step-breathe { 50% { box-shadow: inset 0 0 0 1.5px var(--color-gold), 0 0 0 4px var(--color-gold-soft); } }
+/* The step being done now: a gold ring with a dot inside that breathes. */
+.team-step.is-current .team-check { box-shadow: inset 0 0 0 1.5px var(--color-gold); }
+.team-step.is-current .team-check::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--color-gold); animation: team-dot var(--motion-pulse) ease-in-out infinite; }
+.team-step.is-current .team-step-title { color: var(--color-ink); font-weight: var(--weight-medium); }
 .team-note { margin: 0; color: var(--color-muted); font-size: var(--text-meta); }
 .team-open { display: inline-flex; align-items: center; gap: 2px; justify-self: end; color: var(--color-link); font-size: var(--text-control); text-decoration: none; }
 @media (max-width: 640px) {

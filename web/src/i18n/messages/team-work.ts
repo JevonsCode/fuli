@@ -17,10 +17,7 @@ export const teamWorkMessages = {
     island: {
       region: 'FLA 一起在做的任务',
       label: '{count} 位 FLA 正在一起做「{title}」',
-      more: '还有 {count} 个',
-      previous: '上一个任务',
-      next: '下一个任务',
-      close: '收起',
+      fold: '收起',
     },
   },
   'en-US': {
@@ -40,10 +37,7 @@ export const teamWorkMessages = {
     island: {
       region: 'Tasks FLAs are doing together',
       label: '{count} FLAs are working on “{title}”',
-      more: '{count} more',
-      previous: 'Previous task',
-      next: 'Next task',
-      close: 'Fold',
+      fold: 'Fold',
     },
   },
 }

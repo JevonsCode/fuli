@@ -48,7 +48,8 @@ describe('团队卡片', () => {
     const faces = wrapper.findAll('.team-face')
     expect(faces).toHaveLength(3)
     expect(faces[0]!.classes()).toContain('is-lead')
-    expect(faces.map(face => face.find('.team-ring').exists())).toEqual([true, true, false])
+    expect(faces.map(face => face.find('.team-ring-fill').exists())).toEqual([true, true, false])
+    expect(faces[2]!.find('.team-ring-track.is-unrecorded').exists()).toBe(true)
     expect(faces[1]!.classes()).toContain('is-working')
     expect(wrapper.text()).toContain('Aster 正在Write script')
     expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('2')
@@ -76,22 +77,25 @@ describe('悬浮岛', () => {
     return wrapper
   }
 
-  it('says who is working on what together, and opens into the team card', async () => {
+  it('floats one capsule per task, and opens one into its team card while the others step aside', async () => {
     getJson.mockImplementation(async (url: string) => {
       if (url.startsWith('/api/workbenches?')) return { partial: false, workbenches: [sheet(), sheet({ taskId: 'task-2', title: 'Second synthetic task' })] }
       if (url.startsWith('/api/project-agents/')) return { agentId: url.split('/')[3]!.split('?')[0], profile: { name: names[url.split('/')[3]!.split('?')[0]!] ?? 'X' } }
       throw new Error(`Unexpected request: ${url}`)
     })
     const island = await mountIsland()
-    const pill = island.get('[data-team-island-pill]')
+    const capsules = island.findAll('[data-team-island]')
+    expect(capsules.map(capsule => capsule.attributes('data-team-island'))).toEqual(['task-1', 'task-2'])
+    const pill = capsules[0]!.get('[data-team-island-pill]')
     expect(pill.text()).toContain('3 位 FLA 正在一起做「Synthetic export upgrade」')
     expect(pill.text()).toContain('2/5')
-    expect(pill.text()).toContain('还有 1 个')
     await pill.trigger('click')
-    expect(pill.attributes('aria-expanded')).toBe('true')
+    // Open, the capsule is the card: its title is said once.
     expect(island.find('[data-team-card="task-1"]').exists()).toBe(true)
-    await island.get('[aria-label="下一个任务"]').trigger('click')
-    expect(island.find('[data-team-card="task-2"]').exists()).toBe(true)
+    expect(island.find('[data-team-island="task-1"] [data-team-island-pill]').exists()).toBe(false)
+    expect(island.get('[data-team-island="task-2"]').classes()).toContain('is-aside')
+    await island.get('[data-widget="team-island"]').trigger('keydown', { key: 'Escape' })
+    expect(island.find('[data-team-card="task-1"]').exists()).toBe(false)
   })
 
   it('is not there when nothing runs together, nor when the server cannot say', async () => {

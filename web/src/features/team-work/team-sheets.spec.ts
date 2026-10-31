@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { currentStep, fill, isTeamWork, sharesFor, stepsOf, type TeamSheet } from './team-sheets'
+import { currentStepOf, fill, isTeamWork, sharesFor, stepsOf, type TeamSheet } from './team-sheets'
 
 const share = (agentId: string) => ({ agentId, role: null, status: 'running', assignment: null, progress: null })
 const sheet = (overrides: Partial<TeamSheet> = {}): TeamSheet => ({
@@ -29,8 +29,12 @@ describe('team sheets', () => {
 
   it('gives each share its own steps and the one it is doing now', () => {
     expect(stepsOf(sheet(), 'a').map(step => step.id)).toEqual(['s1', 's2'])
-    expect(currentStep(sheet(), 'a')?.title).toBe('Write script')
-    expect(currentStep(sheet(), 'b')).toBeNull()
+    const shares = sheet().shares
+    expect(currentStepOf(sheet(), shares[0]!)?.title).toBe('Write script')
+    expect(currentStepOf(sheet(), shares[2]!)).toBeNull()
+    // The server's own word wins when it gives one.
+    expect(currentStepOf(sheet(), { ...shares[0]!, currentStepId: null })).toBeNull()
+    expect(currentStepOf(sheet(), { ...shares[0]!, currentStepId: 's1' })?.title).toBe('Map fields')
   })
 
   it('fills only from a recorded count', () => {

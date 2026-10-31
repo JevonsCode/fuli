@@ -5,7 +5,15 @@ import { getJson } from '@/api/client'
 // a share without them shows its status and nothing else.
 export interface TeamProgress { completed: number; total: number }
 export interface TeamStep { id: string; title: string; status: string; agentId?: string | null }
-export interface TeamShare { agentId: string; role: string | null; status: string; assignment: string | null; progress: TeamProgress | null }
+export interface TeamShare {
+  agentId: string
+  role: string | null
+  status: string
+  assignment: string | null
+  progress: TeamProgress | null
+  /** The plan step this share is doing now, if any. */
+  currentStepId?: string | null
+}
 export interface TeamSheet {
   taskId: string
   personalProjectId: string | null
@@ -41,7 +49,11 @@ const leadFirst = (sheet: TeamSheet) => [...sheet.shares.filter(share => share.a
 
 /** A share's own to-do list: the plan's steps it holds, in plan order. */
 export const stepsOf = (sheet: TeamSheet, agentId: string) => sheet.steps.filter(step => step.agentId === agentId)
-/** The step a share is doing now, if its plan says so. */
-export const currentStep = (sheet: TeamSheet, agentId: string) => stepsOf(sheet, agentId).find(step => step.status === 'in_progress') ?? null
+/** The step a share is doing now: the one the server names, else the plan's step in progress. */
+export function currentStepOf(sheet: TeamSheet, share: TeamShare) {
+  const steps = stepsOf(sheet, share.agentId)
+  if (share.currentStepId !== undefined) return steps.find(step => step.id === share.currentStepId) ?? null
+  return steps.find(step => step.status === 'in_progress') ?? null
+}
 /** 0–1 from a recorded count, or null when nothing is recorded. */
 export const fill = (progress: TeamProgress | null) => (progress && progress.total > 0 ? progress.completed / progress.total : null)
