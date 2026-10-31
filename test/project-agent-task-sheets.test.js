@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { listAgentWorkbenches, taskSheet } from '../src/graphiti/project-agent-task-sheets.js';
+import { listAgentWorkbenches, listTeamWorkbenches, taskSheet } from '../src/graphiti/project-agent-task-sheets.js';
 import { projectAgentTaskEventRecord, providerProjectAgentTaskActivity } from '../src/graphiti/project-agent-mapping.js';
 
 // Synthetic tasks only (rec#11 D-82).
@@ -27,6 +27,7 @@ test('a task sheet counts each share from the newest plan and never invents a nu
   assert.equal(sheet.role, 'collaborator');
   assert.deepEqual(sheet.progress, { completed: 2, total: 4 });
   assert.equal(sheet.unassignedSteps, 1);
+  assert.deepEqual(sheet.shares.map(share => share.currentStepId), ['b', null]);
   assert.deepEqual(sheet.shares.map(share => [share.agentId, share.status, share.assignment, share.progress]), [
     ['lead', 'running', 'Plan and review', { completed: 1, total: 2 }],
     ['helper', 'completed', 'Order seeds', { completed: 1, total: 1 }]]);
@@ -46,6 +47,18 @@ test('an FLA\'s workbenches are its tasks, cancelled ones left out', async () =>
   assert.deepEqual(result.workbenches.map(sheet => [sheet.taskId, sheet.role]), [['t1', null], ['t3', 'coordinator']]);
   assert.equal(result.partial, false);
   await assert.rejects(listAgentWorkbenches(app, { personalSpaceId: 'space' }), /agentId is required/);
+});
+
+test('team workbenches are the open tasks two or more FLAs share', async () => {
+  const solo = task({ taskId: 'solo', participants: [task().participants[0]] });
+  const app = { listProjectAgentTasks: async input => {
+    assert.deepEqual(input, { personalSpaceId: 'space', limit: 200 });
+    return [task(), solo, task({ taskId: 'newer', updatedAt: '2026-11-01T05:00:00Z' }),
+      task({ taskId: 'done', status: 'completed' }), task({ taskId: 'off', status: 'cancelled' })]; } };
+  const result = await listTeamWorkbenches(app, { personalSpaceId: 'space' });
+  assert.deepEqual(result.workbenches.map(sheet => sheet.taskId), ['newer', 't1']);
+  assert.equal(result.workbenches[0].role, null);
+  assert.equal(result.workbenches[0].shares.length, 2);
 });
 
 test('a plan step owner travels as agent_id to the Provider and agentId back', () => {
