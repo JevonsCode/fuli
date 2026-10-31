@@ -1,39 +1,52 @@
 /*
  * Theme layer 2 · Semantic tokens: what a colour means (page, panel, text,
  * muted text, border, accent, danger, success, focus, status). This file is
- * the default skin, jade (墨与玉: warm paper, deep ink, one brand accent), in
- * light mode. skins.css re-points these names per skin; the reserved dark
- * block below re-points them per mode, so skin and mode stay separate axes.
- * Component tokens (components.css) and page CSS read only these names.
+ * the one skin, 墨与金 (ink and gold, chosen 2026-11-01): paper-grey page,
+ * glass panels, ink for the main action and a line of champagne gold for
+ * progress, links and shadows, in light mode. The reserved dark block below
+ * re-points the same names. Component tokens (components.css) and page CSS
+ * read only these names.
  */
 :root {
   color-scheme: light;
-  --color-bg: #f6f5f1;
-  --color-surface: #fffefb;
-  --color-surface-subtle: #f0eee8;
-  --color-surface-hover: #f3f1ec;
-  --color-sidebar: #f1efe9;
-  --color-ink: #1b1f1d;
-  --color-ink-soft: #3a403c;
-  --color-muted: #626c66; /* 4.5:1 or more on the sidebar and subtle surfaces */
-  --color-faint: #959c97;
-  --color-border: #e5e2da;
-  --color-border-strong: #d2cec4;
-  --color-control-border: #c9c5ba;
-  --color-accent: #0f6b55;
-  --color-accent-hover: #0b5a47;
-  --color-accent-soft: #e5f0eb;
-  --color-accent-line: #9cc7b6;
+  --color-bg: #ecebe6;
+  --color-surface: #fbfaf7;
+  --color-surface-subtle: #f2f0ea;
+  --color-surface-hover: #f5f3ee;
+  --color-sidebar: #efede7;
+  --color-ink: #1d1b18;
+  --color-ink-soft: #3d3933;
+  --color-muted: #5c5852; /* 4.5:1 or more on the page and subtle surfaces */
+  --color-faint: #9d978d;
+  --color-border: #e3dfd5;
+  --color-border-strong: #d3cdbf;
+  --color-control-border: #cbc4b5;
+  /* The main action is ink; gold carries progress, links and shadows. */
+  --color-accent: #1d1b18;
+  --color-accent-hover: #34302a;
+  --color-accent-soft: #ede5d3;
+  --color-accent-line: #d9c49a;
+  --color-gold: #b08d57;
+  --color-gold-soft: #ede5d3;
+  /* Deep gold: 4.5:1 on the page, so a link reads as a link next to ink text. */
+  --color-link: #7d5f2e;
   --color-focus: var(--color-accent);
+  /* The page is a pre-blurred wash of these; panels are translucent glass over it. */
+  --backdrop-1: #e0dccf;
+  --backdrop-2: #d9d9d5;
+  --backdrop-3: #e6dec9;
+  --surface-glass: rgb(255 255 255 / 62%);
+  --surface-glass-strong: rgb(255 255 255 / 82%);
+  --edge-glass: rgb(255 255 255 / 70%);
   --color-success: #2f7a52;
   --color-success-soft: #e8f2ec;
   --color-warning: #8a5a12;
   --color-warning-soft: #f8f0e0;
   --color-danger: #a8392e;
   --color-danger-soft: #f8e9e6;
-  --color-on-accent: #ffffff;
+  --color-on-accent: #f3e6c8;
   --color-chart-blue: #2f5f8a;
-  --color-chart-teal: #0f6b55;
+  --color-chart-teal: #3f7462;
   --color-chart-violet: #6b4f8f;
   --color-chart-amber: #a8691c;
   --color-chart-rose: #a3445f;
@@ -42,11 +55,11 @@
   --color-overlay: rgb(24 28 26 / 32%);
   /* Every modal scrim (native <dialog> and shadcn-vue Dialog) blurs the page the same. */
   --overlay-blur: 2px;
-  /* The one ink every shadow in base.css is built from. */
-  --shadow-rgb: 27 31 29;
-  --glow-accent: 0 0 0 3px var(--color-accent-soft);
+  /* The one ink every shadow in base.css is built from: a warm gold-brown, so shadows read as gold, not grey. */
+  --shadow-rgb: 120 92 46;
+  --glow-accent: 0 0 0 3px var(--color-gold-soft);
   /* State is read from colour and motion first, text second. */
-  --status-working: var(--color-accent);
+  --status-working: var(--color-gold);
   --status-waiting: var(--color-warning);
   --status-idle: var(--color-faint);
   --status-error: var(--color-danger);
@@ -61,9 +74,8 @@
   --identity-7: #2c4672; --identity-7-soft: #e8ecf3;
 }
 
-/* 墨空: the same jade becomes the glow colour so the constellation and status
-   rings light up. Reserved, not offered: it applies only with
-   data-theme="dark", which nothing sets yet. */
+/* Reserved dark mode, not offered: it applies only with data-theme="dark",
+   which nothing sets yet. */
 @media all {
   :root[data-theme="dark"] {
     color-scheme: dark;

@@ -4,7 +4,10 @@
  * Skins never change these; they re-point the semantic tokens in semantic.css.
  */
 :root {
-  --font-ui: "PingFang SC", "Hiragino Sans GB", -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  /* Inter and Noto Sans SC ship with the console (SIL OFL 1.1, @fontsource-variable);
+     Latin and digits take Inter, Chinese falls through to Noto Sans SC. System
+     fonts are fallbacks only and are never bundled. */
+  --font-ui: "Inter Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
   /* One type scale (Bringhurst: few sizes, each step a clear role). Size
      leads the hierarchy; weight only separates a heading from its text, so
@@ -36,6 +39,9 @@
   --radius-card: 12px;
   --radius-dialog: 16px;
   --radius-pill: 999px;
+  /* The client shell: the stage and the right column are large glass panels. */
+  --radius-shell: 28px;
+  --radius-panel: 22px;
   /* Shadow geometry. The ink is the semantic --shadow-rgb, so a skin re-tints every shadow in one place. */
   --shadow-xs: 0 1px 2px rgb(var(--shadow-rgb) / 12%);
   --shadow-sm: 0 1px 3px rgb(var(--shadow-rgb) / 10%);
@@ -48,6 +54,12 @@
   --motion-pulse: 2400ms;
   --motion-blink: 1400ms;
   --motion-ease: cubic-bezier(.2, .8, .2, 1);
+  /* Lively motion (2026-11-01): a spring with a small overshoot for things
+     that appear or move, a soft ease-out for what leaves. linear() is the
+     CSS spring; motion-v uses the matching SPRING in lib/motion.ts. */
+  --motion-spring: 460ms;
+  --motion-ease-spring: linear(0, .009, .035 2.1%, .141 4.4%, .723 12.9%, .938 16.7%, 1.017 20.4%, 1.041 24.4%, 1.036 28.6%, 1.013 37.2%, .998 45.4%, 1);
+  --motion-ease-out: cubic-bezier(.22, 1, .36, 1);
   --z-nav: 20;
   --z-popover: 40;
   --z-dialog: 50;

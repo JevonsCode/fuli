@@ -4,7 +4,6 @@
  *
  *   base.css        base tokens (font, type, spacing, radius, shadow, motion)
  *   semantic.css    semantic tokens for the default skin, plus reserved dark
- *   skins.css       other skins: re-point semantic tokens only
  *   components.css  shadcn-vue component tokens, mapped from semantic tokens
  *   elements.css    element defaults, in the base layer
  *
@@ -59,7 +58,6 @@
 
 @import "./base.css";
 @import "./semantic.css";
-@import "./skins.css";
 @import "./components.css";
 @import "./elements.css" layer(base);
 
@@ -73,11 +71,12 @@
   --shadow-*: initial;
 
   /* FULI motion for overlays (no tw-animate-css); reduced motion zeroes it. */
-  --animate-overlay-in: fade-in var(--motion-medium) var(--motion-ease);
-  --animate-dialog-in: dialog-in var(--motion-medium) var(--motion-ease);
-  --animate-popover-in: fade-in var(--motion-fast) var(--motion-ease);
+  --animate-overlay-in: fade-in var(--motion-medium) var(--motion-ease-out);
+  --animate-dialog-in: dialog-in var(--motion-spring) var(--motion-ease-spring);
+  --animate-popover-in: popover-in var(--motion-spring) var(--motion-ease-spring);
   @keyframes fade-in { from { opacity: 0; } }
-  @keyframes dialog-in { from { opacity: 0; scale: .98; } }
+  @keyframes dialog-in { from { opacity: 0; scale: .96; translate: 0 8px; } }
+  @keyframes popover-in { from { opacity: 0; scale: .94; translate: 0 4px; } }
 }
 
 @theme inline reference {

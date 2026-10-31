@@ -4,8 +4,9 @@ import { activeDestination, activeSection, navDestinations } from './nav-destina
 const all = navDestinations({ spaceId: 'personal-1', publicProjects: true })
 
 describe('nav destinations', () => {
-  it('keeps six destinations and hides sections the capabilities do not allow', () => {
-    expect(all.map(d => d.key)).toEqual(['constellation', 'agents', 'chat', 'projects', 'memory', 'settings'])
+  it('puts five destinations in the dock in sketch order, settings in the top bar, and hides sections the capabilities do not allow', () => {
+    expect(all.filter(d => d.placement === 'dock').map(d => d.key)).toEqual(['constellation', 'agents', 'chat', 'memory', 'projects'])
+    expect(all.filter(d => d.placement === 'top').map(d => d.key)).toEqual(['settings'])
     const limited = navDestinations({ spaceId: 'personal-1', publicProjects: false })
     expect(limited.find(d => d.key === 'projects')?.sections.map(s => s.key)).toEqual(['myProjects'])
     expect(all.find(d => d.key === 'memory')?.sections.map(s => s.key)).toEqual(['knowledge', 'preferences', 'organize', 'tags'])

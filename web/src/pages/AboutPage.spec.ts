@@ -22,8 +22,8 @@ describe('AboutPage', () => {
     expect(wrapper.text()).toContain('至少 5 次有效使用、覆盖 3 个任务')
     expect(wrapper.text()).toContain('“全部”只是筛选条件')
     expect(wrapper.findAll('details')).toHaveLength(0)
-    expect(wrapper.findAll('.credit-grid a')).toHaveLength(11)
-    expect(wrapper.findAll('.credit-grid img')).toHaveLength(11)
+    expect(wrapper.findAll('.credit-grid a')).toHaveLength(13)
+    expect(wrapper.findAll('.credit-grid img')).toHaveLength(13)
     const vue = wrapper.get('[data-credit="Vue.js"]')
     expect(vue.get('small').text()).toBe('界面框架')
     // A logo that fails to load becomes a quiet initial tile, never a broken image.

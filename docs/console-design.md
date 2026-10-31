@@ -35,15 +35,15 @@ The console is an operational workspace. Short titles, clear actions, real statu
 
 ## Colors
 
-`web/src/styles/tokens.css` is the source of truth. Use neutral surfaces and blue for actions and selection. Success, warning and danger colors communicate state. Use the chart palette only to distinguish graph categories. Muted text has at least 4.8:1 contrast on the main light surfaces; form boundaries use the dedicated control border.
+The theme layers in `web/src/styles/theme/` are the source of truth; the one skin is 墨与金 (ink and gold, 2026-11-01). Panels are translucent glass over a pre-blurred paper-grey wash; ink marks the main action and the current destination; champagne gold carries progress, links and the warm shadows. Success, warning and danger colors communicate state. Use the chart palette only to distinguish graph categories. Muted text has at least 4.8:1 contrast on the main light surfaces; form boundaries use the dedicated control border.
 
 ## Typography
 
-Use the system font stack. Primary content is 14–16px, page titles 25px and secondary labels 12px. Keep long content inside its detail view. Do not add instructional eyebrows or repeat the page title within its first section.
+The console bundles Inter and Noto Sans SC (SIL OFL 1.1, `@fontsource-variable`); system fonts are fallbacks only and are never bundled. Primary content is 14–16px, page titles 25px and secondary labels 12px. Keep long content inside its detail view. Do not add instructional eyebrows or repeat the page title within its first section.
 
 ## Layout
 
-Desktop uses a 224px sidebar, a concise top bar and one scrolling content region. At 920px and below, navigation becomes a keyboard-accessible drawer.
+The client shell has a top bar (brand and service dot, the page's one H1, section tabs, then waiting requests and settings at the right), one scrolling content region, and a floating dock of round icon buttons left-aligned with the page: 工作台, FLAs, 圆桌, 沉淀, 项目. Names are tooltips and accessible names. The dock stays open on the workbench and folds to the current destination elsewhere, opening on hover or focus. Pinned FLAs rise in their own capsule above the FLAs button; right-click offers the profile, its Workbench and Workflow when it has them, and unpinning. Only the dock and the pins capsule use a live blur.
 
 Pages rebuilt on the D-03 layout (home, the Agent directory and profile, settings, and the memory pages: knowledge, preferences, taste and organize) share one work canvas: centred, at most 1840px wide, with the top bar's title lined up with it. Wider screens add columns instead of stretching a card: collections use one to four columns by canvas width, and tables show their low-priority columns. Forms keep one 896px column. There is no list-beside-detail split: a name opens the record's own page, and a quick look opens a centred dialog whose `?item=` keeps it in the URL. Back restores the collection's filters, scroll and focus. The top bar is the only H1; a record page shows the record's name there, section tabs use state words, and no section repeats the title.
 
@@ -56,6 +56,10 @@ The About page uses its dark ink treatment across the full page. Keep the closin
 ## Elevation & Depth
 
 Cards use a light border without decorative shadow. A selected or previewed card lifts: full surface, a stronger hairline and a light shadow, never a side accent bar; the focus ring stays a separate outline. Reserve the shared popover and dialog shadows for floating surfaces. Avoid nested boxes around ordinary list rows.
+
+## Motion
+
+Motion is lively but brief. Things that appear or move use one spring with a small overshoot (`--motion-ease-spring` in CSS, `SPRING` for motion-v in `web/src/lib/motion.ts`); things that leave use a soft ease-out. Page changes cross-fade and rise through the View Transitions API while the top bar and dock stay put; an in-page tab change does not animate. The dock's ink pill glides to the current destination (a motion-v shared layout), pinned FLAs rise one after another, and popovers and dialogs pop in on the spring. GSAP is not used: its licence is not an open-source one. The system setting and the in-app switch both turn all of it off.
 
 ## Shapes
 

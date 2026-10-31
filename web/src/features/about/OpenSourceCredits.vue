@@ -58,6 +58,18 @@ const credits = computed(() => [
     logo: 'https://raw.githubusercontent.com/colinhacks/zod/main/packages/docs/public/logo/logo_square.png',
   },
   {
+    name: 'Inter',
+    role: t('about.credits.roles.inter'),
+    url: 'https://rsms.me/inter/',
+    logo: 'https://github.com/rsms.png',
+  },
+  {
+    name: 'Noto Sans SC',
+    role: t('about.credits.roles.notoSansSc'),
+    url: 'https://fonts.google.com/noto/specimen/Noto+Sans+SC',
+    logo: 'https://github.com/notofonts.png',
+  },
+  {
     name: 'FastAPI',
     role: t('about.credits.roles.fastapi'),
     url: 'https://fastapi.tiangolo.com/',

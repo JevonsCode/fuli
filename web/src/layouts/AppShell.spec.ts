@@ -31,6 +31,9 @@ beforeEach(() => {
     if (url === '/api/agent-pins?personalSpaceId=personal-1') return { revision: 1, agentIds: pinnedIds }
     if (url === '/api/project-agents/agent-a?personalSpaceId=personal-1')
       return { agentId: 'agent-a', personalSpaceId: 'personal-1', profile: { name: 'Ada', displayName: 'Ada' } }
+    if (url === '/api/project-agent-tasks?personalSpaceId=personal-1&agentId=agent-a&limit=200')
+      return { tasks: [{ taskId: 't-1', personalSpaceId: 'personal-1', status: 'running', ownerAgentId: 'agent-a', participants: [] }] }
+    if (url === '/api/agent-workflows?personalSpaceId=personal-1&agentId=agent-a') return { workflows: [] }
     if (url === '/api/system/doctor') return { checkedAt: '', version: '0.20.0', overall: 'ok', items: [], unchecked: [] }
     if (url === '/api/system/version') return { status: 'unavailable', currentVersion: '0.20.0', latestVersion: null, updateAvailable: false, packageUrl: '', checkedAt: '' }
     throw new Error(`Unexpected request: ${url}`)
@@ -72,19 +75,13 @@ async function setup(path: string, capabilities: Record<string, boolean> = {}, e
 describe('AppShell', () => {
   it('names the memory destination once while the active tab names the page', async () => {
     const { wrapper, router } = await setup('/preferences')
-    expect(wrapper.get('h1').text()).toBe('记忆')
+    expect(wrapper.get('h1').text()).toBe('沉淀')
     expect(wrapper.get('[data-section="preferences"]').attributes('aria-current')).toBe('page')
-    expect(wrapper.find('[data-design-lab-open]').exists()).toBe(false)
     // An opened knowledge item is still inside 知识: the H1 does not repeat the tab.
     await router.push('/knowledge/personal/space-1/directory/entity/item-1')
     await flushPromises()
-    expect(wrapper.get('h1').text()).toBe('记忆')
+    expect(wrapper.get('h1').text()).toBe('沉淀')
     expect(wrapper.get('[data-section="knowledge"]').attributes('aria-current')).toBe('page')
-    wrapper.unmount()
-  })
-  it('keeps the floating design lab off conversation pages so it never covers a message', async () => {
-    const { wrapper } = await setup('/roundtables/chat/room-1')
-    expect(wrapper.find('[data-design-lab-open]').exists()).toBe(false)
     wrapper.unmount()
   })
   it('marks the active destination and shows only the sections current capabilities allow', async () => {
@@ -122,50 +119,75 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('names the destination, not the active tab, and keeps the 对话 heading on a selected conversation', async () => {
+  it('names the destination, not the active tab, and keeps the 圆桌 heading on a selected conversation', async () => {
     const { wrapper, router } = await setup('/roundtables')
-    expect(wrapper.get('.app-title').text()).toBe('对话')
-    expect(wrapper.findAll('[data-section]').map(tab => tab.text())).toEqual(['圆桌', '待决策'])
+    expect(wrapper.get('.app-title').text()).toBe('圆桌')
+    expect(wrapper.findAll('[data-section]').map(tab => tab.text())).toEqual(['讨论', '待决策'])
     await router.push('/roundtables/thread-1')
     await flushPromises()
-    expect(wrapper.get('.app-title').text()).toBe('对话')
+    expect(wrapper.get('.app-title').text()).toBe('圆桌')
     wrapper.unmount()
   })
 
-  it('lists pinned Agents under Agents and marks the current one without tinting both rows', async () => {
+  it('puts the five main destinations in the dock in sketch order and settings in the top bar', async () => {
+    const { wrapper, router } = await setup('/')
+    const dock = wrapper.get('.app-dock')
+    expect(dock.findAll('[data-destination]').map(link => link.attributes('data-destination'))).toEqual(['constellation', 'agents', 'chat', 'memory', 'projects'])
+    expect(dock.findAll('[data-destination]').map(link => link.attributes('aria-label'))).toEqual(['工作台', 'FLAs', '圆桌', '沉淀', '项目'])
+    expect(wrapper.get('.app-topbar [data-destination="settings"]').attributes('href')).toBe('/settings')
+    // One ink pill sits behind the current destination and moves with it.
+    expect(dock.findAll('.app-dock-active')).toHaveLength(1)
+    expect(dock.find('.app-dock-item.is-active .app-dock-active').exists()).toBe(true)
+    // Open on the workbench, folded to the current destination anywhere else.
+    expect(dock.attributes('data-folded')).toBe('false')
+    await router.push('/preferences')
+    await flushPromises()
+    expect(dock.attributes('data-folded')).toBe('true')
+    expect(dock.findAll('.app-dock-active')).toHaveLength(1)
+    expect(dock.find('.app-dock-item.is-active [data-destination="memory"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('shows pinned FLAs above the FLAs button and marks the current one', async () => {
     pinnedIds = ['agent-a']
     const { wrapper, router } = await setup('/agents/personal-1/agent-a')
-    const pinned = wrapper.get('[data-pinned-agent="agent-a"]')
-    expect(pinned.get('.pinned-rail-name').text()).toBe('Ada')
+    const pinned = wrapper.get('.app-dock [data-pinned-agent="agent-a"]')
     expect(pinned.attributes('href')).toBe('/agents/personal-1/agent-a')
+    expect(pinned.attributes('aria-label')).toContain('Ada')
     expect(pinned.attributes('aria-current')).toBe('page')
-    expect(wrapper.get('[data-destination="agents"]').classes()).toContain('has-active-child')
     await router.push('/project-agents')
     await flushPromises()
     expect(wrapper.get('[data-pinned-agent="agent-a"]').attributes('aria-current')).toBeUndefined()
-    expect(wrapper.get('[data-destination="agents"]').classes()).not.toContain('has-active-child')
     wrapper.unmount()
   })
 
-  it('keeps the version in the footer and names the service only when it is not ready', async () => {
+  it('offers a pinned FLA its profile, its Workbench only when it has one, and unpinning from the right-click menu', async () => {
+    pinnedIds = ['agent-a']
+    const { wrapper } = await setup('/project-agents')
+    await wrapper.get('[data-pinned-agent="agent-a"]').trigger('contextmenu', { clientX: 40, clientY: 600 })
+    await flushPromises()
+    const menu = document.querySelector('[data-pin-menu]')
+    expect(menu?.textContent).toContain('Ada')
+    const actions = () => [...document.querySelectorAll('[data-pin-action]')].map(item => item.getAttribute('data-pin-action'))
+    expect(actions()).toEqual(['home', 'workbench', 'unpin'])
+    wrapper.unmount()
+  })
+
+  it('shows the version on the service dot and names the service only when it is not ready', async () => {
     const { wrapper, store } = await setup('/')
-    expect(wrapper.find('.nav-rail-brand [data-version]').exists()).toBe(false)
-    expect(wrapper.get('.nav-rail-foot [data-version]').text()).toMatch(/^v[0-9]/)
-    expect(wrapper.get('.nav-rail-runtime-text').classes()).not.toContain('is-visible')
+    expect(wrapper.get('[data-runtime]').attributes('title')).toMatch(/ · v[0-9]/)
+    expect(wrapper.get('.app-runtime-text').classes()).not.toContain('is-visible')
     store.runtimeStatus = 'error'
     await flushPromises()
-    expect(wrapper.get('.nav-rail-runtime-text').classes()).toContain('is-visible')
-    expect(wrapper.find('.nav-rail-foot [data-version]').exists()).toBe(false)
-    await wrapper.get('[data-nav-toggle]').trigger('click')
-    expect(wrapper.get('nav').attributes('data-expanded')).toBe('false')
-    expect(wrapper.get('[data-nav-toggle]').attributes('aria-label')).toBe('展开侧边栏')
+    expect(wrapper.get('.app-runtime-text').classes()).toContain('is-visible')
     wrapper.unmount()
   })
 
-  it('badges 对话 with the waiting count and hides the badge at zero', async () => {
+  it('badges the waiting requests in the top bar and hides the badge at zero', async () => {
     attentionTotal = 12
     const { wrapper } = await setup('/')
     expect(wrapper.get('[data-attention-badge]').text()).toBe('9+')
+    expect(wrapper.get('[data-shell-inbox]').attributes('aria-label')).toBe('12 件事在等你')
     wrapper.unmount()
     attentionTotal = 0
     const quiet = await setup('/')
@@ -199,8 +221,8 @@ describe('AppShell', () => {
     ])
     expect(wrapper.get('h1').text()).toBe('Ada Lovelace')
     expect(wrapper.find('.section-tabs').exists()).toBe(false)
-    // The rail still says where the page belongs.
-    expect(wrapper.get('[data-destination="agents"]').classes()).toContain('is-active')
+    // The dock still says where the page belongs.
+    expect(wrapper.get('[data-destination="agents"]').attributes('aria-current')).toBe('page')
     await router.push('/project-agents')
     await flushPromises()
     expect(wrapper.findAll('[data-section]').length).toBeGreaterThan(1)
@@ -218,20 +240,9 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('keeps the floating design lab off pages with a sticky save bar', async () => {
-    const { wrapper, router } = await setup('/settings', {}, [
-      { path: '/settings', component: { template: '<div />' }, meta: { title: '设置', layout: 'form', saveBar: true } },
-    ])
-    expect(wrapper.find('[data-design-lab-open]').exists()).toBe(false)
-    await router.push('/project-agents')
-    await flushPromises()
-    expect(wrapper.find('[data-design-lab-open]').exists()).toBe(true)
-    wrapper.unmount()
-  })
-
   it('names section tabs by state words, never repeating the page title', async () => {
     const { wrapper } = await setup('/project-agents')
-    expect(wrapper.get('h1').text()).toBe('Agents')
+    expect(wrapper.get('h1').text()).toBe('FLAs')
     expect(wrapper.findAll('[data-section]').map(tab => tab.text())).toEqual(['全部', '编排', '职业', '服务'])
     wrapper.unmount()
   })

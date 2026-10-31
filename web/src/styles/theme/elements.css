@@ -25,7 +25,7 @@ h1, h2, h3, p { margin: 0; }
 h1 { font-size: var(--text-title); font-weight: var(--weight-strong); line-height: var(--leading-title); letter-spacing: -.02em; }
 h2 { font-size: var(--text-section); font-weight: var(--weight-strong); line-height: var(--leading-heading); letter-spacing: -.01em; }
 h3 { font-size: var(--text-card-title); font-weight: var(--weight-strong); line-height: var(--leading-heading); }
-a { color: var(--color-accent); }
+a { color: var(--color-link); }
 
 :where(button, input, select, textarea) { font: inherit; color: inherit; }
 :where(button, a, input, select, textarea, summary, [tabindex]):focus-visible {

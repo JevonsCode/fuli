@@ -1,11 +1,13 @@
 import type { IconName } from '@/ui'
 import { knowledgePath, personalProjectsPath } from '@/router/paths'
 
-// The six top-level destinations (Fable 5.1 decision, 2026-10-18). Each owns
-// the routes under it; its sections become tabs in the top bar, so every page
-// stays reachable without a long text sidebar.
+// The top-level destinations (client redesign, 2026-11-01). Five live in the
+// floating dock in sketch order: 工作台, FLAs, 圆桌, 沉淀, 项目; settings sits in
+// the top bar. Each owns the routes under it; its sections become tabs in the
+// top bar, so every page stays reachable without a long text sidebar.
 export interface NavSection { key: string; to: string; owns: readonly string[] }
-export interface NavDestination { key: string; icon: IconName; to: string; owns: readonly string[]; exact?: boolean; sections: readonly NavSection[] }
+export type NavPlacement = 'dock' | 'top'
+export interface NavDestination { key: string; icon: IconName; to: string; owns: readonly string[]; exact?: boolean; placement: NavPlacement; sections: readonly NavSection[] }
 
 export interface NavContext { spaceId: string; publicProjects: boolean }
 
@@ -13,8 +15,8 @@ export function navDestinations({ spaceId, publicProjects }: NavContext): NavDes
   const projects = personalProjectsPath(spaceId, 'graph')
   const knowledge = knowledgePath('personal', spaceId, 'directory')
   return [
-    { key: 'constellation', icon: 'constellation', to: '/', owns: ['/'], exact: true, sections: [] },
-    { key: 'agents', icon: 'agents', to: '/project-agents', owns: ['/project-agents', '/agents/', '/employees/'], sections: [
+    { key: 'constellation', icon: 'constellation', to: '/', owns: ['/'], exact: true, placement: 'dock', sections: [] },
+    { key: 'agents', icon: 'agents', to: '/project-agents', owns: ['/project-agents', '/agents/', '/employees/'], placement: 'dock', sections: [
       { key: 'agentDirectory', to: '/project-agents', owns: ['/project-agents', '/agents/', '/employees/'] },
       // The one entry to team management: assign work, staff projects, automation rules.
       { key: 'orchestrate', to: '/project-agents/manage', owns: ['/project-agents/manage'] },
@@ -22,21 +24,21 @@ export function navDestinations({ spaceId, publicProjects }: NavContext): NavDes
       // 服务管理: services FLAs started and their workbenches (rec#11 D-71).
       { key: 'services', to: '/project-agents/services', owns: ['/project-agents/services'] },
     ] },
-    { key: 'chat', icon: 'chat', to: '/roundtables', owns: ['/roundtables', '/inbox'], sections: [
+    { key: 'chat', icon: 'chat', to: '/roundtables', owns: ['/roundtables', '/inbox'], placement: 'dock', sections: [
       { key: 'roundtables', to: '/roundtables', owns: ['/roundtables'] },
       { key: 'askedYou', to: '/inbox', owns: ['/inbox'] },
     ] },
-    { key: 'projects', icon: 'project', to: projects, owns: ['/personal/', '/public-projects'], sections: [
-      { key: 'myProjects', to: projects, owns: ['/personal/'] },
-      ...(publicProjects ? [{ key: 'publicProjects', to: '/public-projects', owns: ['/public-projects'] }] : []),
-    ] },
-    { key: 'memory', icon: 'memory', to: knowledge, owns: ['/knowledge', '/preferences', '/organize', '/tags'], sections: [
+    { key: 'memory', icon: 'memory', to: knowledge, owns: ['/knowledge', '/preferences', '/organize', '/tags'], placement: 'dock', sections: [
       { key: 'knowledge', to: knowledge, owns: ['/knowledge'] },
       { key: 'preferences', to: '/preferences', owns: ['/preferences'] },
       { key: 'organize', to: '/organize', owns: ['/organize'] },
       { key: 'tags', to: '/tags', owns: ['/tags'] },
     ] },
-    { key: 'settings', icon: 'settings', to: '/settings', owns: ['/settings', '/connections', '/about'], sections: [
+    { key: 'projects', icon: 'project', to: projects, owns: ['/personal/', '/public-projects'], placement: 'dock', sections: [
+      { key: 'myProjects', to: projects, owns: ['/personal/'] },
+      ...(publicProjects ? [{ key: 'publicProjects', to: '/public-projects', owns: ['/public-projects'] }] : []),
+    ] },
+    { key: 'settings', icon: 'settings', to: '/settings', owns: ['/settings', '/connections', '/about'], placement: 'top', sections: [
       { key: 'settings', to: '/settings', owns: ['/settings'] },
       { key: 'connections', to: '/connections', owns: ['/connections'] },
       { key: 'about', to: '/about', owns: ['/about'] },

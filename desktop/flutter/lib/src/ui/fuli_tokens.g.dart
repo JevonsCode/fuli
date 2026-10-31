@@ -6,31 +6,34 @@ import 'package:flutter/animation.dart';
 import 'package:flutter/painting.dart';
 
 abstract final class FuliColors {
-  static const bg = Color(0xFFF6F5F1);
-  static const surface = Color(0xFFFFFEFB);
-  static const surfaceSubtle = Color(0xFFF0EEE8);
-  static const surfaceHover = Color(0xFFF3F1EC);
-  static const sidebar = Color(0xFFF1EFE9);
-  static const ink = Color(0xFF1B1F1D);
-  static const inkSoft = Color(0xFF3A403C);
-  static const muted = Color(0xFF626C66);
-  static const faint = Color(0xFF959C97);
-  static const border = Color(0xFFE5E2DA);
-  static const borderStrong = Color(0xFFD2CEC4);
-  static const controlBorder = Color(0xFFC9C5BA);
-  static const accent = Color(0xFF0F6B55);
-  static const accentHover = Color(0xFF0B5A47);
-  static const accentSoft = Color(0xFFE5F0EB);
-  static const accentLine = Color(0xFF9CC7B6);
+  static const bg = Color(0xFFECEBE6);
+  static const surface = Color(0xFFFBFAF7);
+  static const surfaceSubtle = Color(0xFFF2F0EA);
+  static const surfaceHover = Color(0xFFF5F3EE);
+  static const sidebar = Color(0xFFEFEDE7);
+  static const ink = Color(0xFF1D1B18);
+  static const inkSoft = Color(0xFF3D3933);
+  static const muted = Color(0xFF5C5852);
+  static const faint = Color(0xFF9D978D);
+  static const border = Color(0xFFE3DFD5);
+  static const borderStrong = Color(0xFFD3CDBF);
+  static const controlBorder = Color(0xFFCBC4B5);
+  static const accent = Color(0xFF1D1B18);
+  static const accentHover = Color(0xFF34302A);
+  static const accentSoft = Color(0xFFEDE5D3);
+  static const accentLine = Color(0xFFD9C49A);
+  static const gold = Color(0xFFB08D57);
+  static const goldSoft = Color(0xFFEDE5D3);
+  static const link = Color(0xFF7D5F2E);
   static const success = Color(0xFF2F7A52);
   static const successSoft = Color(0xFFE8F2EC);
   static const warning = Color(0xFF8A5A12);
   static const warningSoft = Color(0xFFF8F0E0);
   static const danger = Color(0xFFA8392E);
   static const dangerSoft = Color(0xFFF8E9E6);
-  static const onAccent = Color(0xFFFFFFFF);
+  static const onAccent = Color(0xFFF3E6C8);
   static const chartBlue = Color(0xFF2F5F8A);
-  static const chartTeal = Color(0xFF0F6B55);
+  static const chartTeal = Color(0xFF3F7462);
   static const chartViolet = Color(0xFF6B4F8F);
   static const chartAmber = Color(0xFFA8691C);
   static const chartRose = Color(0xFFA3445F);
@@ -72,28 +75,30 @@ abstract final class FuliSize {
   static const radiusCard = 12.0;
   static const radiusDialog = 16.0;
   static const radiusPill = 999.0;
+  static const radiusShell = 28.0;
+  static const radiusPanel = 22.0;
 }
 
 abstract final class FuliShadow {
   static const xs = [
-    BoxShadow(color: Color(0x1F1B1F1D), offset: Offset(0.0, 1.0), blurRadius: 2.0),
+    BoxShadow(color: Color(0x1F785C2E), offset: Offset(0.0, 1.0), blurRadius: 2.0),
   ];
   static const sm = [
-    BoxShadow(color: Color(0x1A1B1F1D), offset: Offset(0.0, 1.0), blurRadius: 3.0),
+    BoxShadow(color: Color(0x1A785C2E), offset: Offset(0.0, 1.0), blurRadius: 3.0),
   ];
   static const md = [
-    BoxShadow(color: Color(0x121B1F1D), offset: Offset(0.0, 6.0), blurRadius: 20.0),
+    BoxShadow(color: Color(0x12785C2E), offset: Offset(0.0, 6.0), blurRadius: 20.0),
   ];
   static const lg = [
-    BoxShadow(color: Color(0x171B1F1D), offset: Offset(0.0, 12.0), blurRadius: 32.0),
+    BoxShadow(color: Color(0x17785C2E), offset: Offset(0.0, 12.0), blurRadius: 32.0),
   ];
   static const popover = [
-    BoxShadow(color: Color(0x0F1B1F1D), offset: Offset(0.0, 1.0), blurRadius: 2.0),
-    BoxShadow(color: Color(0x1A1B1F1D), offset: Offset(0.0, 12.0), blurRadius: 32.0),
+    BoxShadow(color: Color(0x0F785C2E), offset: Offset(0.0, 1.0), blurRadius: 2.0),
+    BoxShadow(color: Color(0x1A785C2E), offset: Offset(0.0, 12.0), blurRadius: 32.0),
   ];
   static const dialog = [
-    BoxShadow(color: Color(0x0F1B1F1D), offset: Offset(0.0, 2.0), blurRadius: 6.0),
-    BoxShadow(color: Color(0x291B1F1D), offset: Offset(0.0, 24.0), blurRadius: 64.0),
+    BoxShadow(color: Color(0x0F785C2E), offset: Offset(0.0, 2.0), blurRadius: 6.0),
+    BoxShadow(color: Color(0x29785C2E), offset: Offset(0.0, 24.0), blurRadius: 64.0),
   ];
 }
 
