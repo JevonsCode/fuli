@@ -64,7 +64,7 @@ const emit = defineEmits<{ select: [task: ProjectAgentTaskRecord]; retryRequests
       <OverviewReadStatus :state="tasksState" :label="t('overview.work.loading')" :failed="t('overview.work.loadFailed')" @retry="emit('retryTasks')" />
       <ul v-if="running.length" class="workbench-rows">
         <li v-for="task in running" :key="taskKey(task)">
-          <button type="button" class="workbench-row workbench-pick" :aria-label="t('overview.stage.switchTo', { title: title(task) })" data-workbench-pick @click="emit('select', task)">
+          <Button variant="ghost" class="workbench-row workbench-pick" :aria-label="t('overview.stage.switchTo', { title: title(task) })" data-workbench-pick @click="emit('select', task)">
             <span class="workbench-face" :style="agentIdentityStyle(task.leadAgentId ?? task.ownerAgentId)" aria-hidden="true">
               <img v-if="task.leadAgentId || task.ownerAgentId" :src="agentAvatarUrl(task.leadAgentId ?? task.ownerAgentId ?? '')" alt="" />
             </span>
@@ -73,7 +73,7 @@ const emit = defineEmits<{ select: [task: ProjectAgentTaskRecord]; retryRequests
               <span class="workbench-meta">{{ owner(task) }}</span>
             </span>
             <Badge :variant="taskStatusTone(task.status)">{{ statusLabel(task.status) }}</Badge>
-          </button>
+          </Button>
         </li>
       </ul>
     </section>
@@ -99,7 +99,7 @@ const emit = defineEmits<{ select: [task: ProjectAgentTaskRecord]; retryRequests
 .workbench-feed { display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; padding: 0 6px 112px 0; overflow: auto; overscroll-behavior: contain; }
 .workbench-card {
   display: grid; gap: 6px; padding: 16px 18px; border: 1px solid var(--edge-glass); border-radius: var(--radius-panel);
-  background: var(--surface-glass); box-shadow: inset 0 1px 0 rgb(255 255 255 / 90%), var(--shadow-sm), var(--shadow-md);
+  background: var(--surface-glass); box-shadow: inset 0 1px 0 var(--edge-glass), var(--shadow-sm), var(--shadow-md);
 }
 .workbench-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
 .workbench-card-head h2 { margin: 0; font-size: var(--text-section); }
@@ -115,7 +115,7 @@ const emit = defineEmits<{ select: [task: ProjectAgentTaskRecord]; retryRequests
 .workbench-done-mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; color: var(--color-gold); background: var(--color-gold-soft); font-weight: var(--weight-strong); }
 /* A row that puts its work on the stage: the whole row is the button. */
 .workbench-pick {
-  margin: 0 -8px; padding: 10px 8px; width: calc(100% + 16px); border: 0; border-radius: 12px; color: inherit; background: none; text-align: left; font: inherit;
+  height: auto; justify-content: stretch; margin: 0 -8px; padding: 10px 8px; width: calc(100% + 16px); border: 0; border-radius: 12px; color: inherit; background: none; text-align: left; font: inherit; white-space: normal;
   transition: background var(--motion-fast), transform var(--motion-spring) var(--motion-ease-spring);
 }
 .workbench-pick:hover { background: var(--surface-glass-strong); }

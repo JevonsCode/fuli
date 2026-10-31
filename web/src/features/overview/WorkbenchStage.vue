@@ -98,7 +98,7 @@ const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
 .workbench-stage {
   display: flex; min-width: 0; min-height: 0; padding: 24px 28px; overflow: hidden;
   border: 1px solid var(--edge-glass); border-radius: var(--radius-shell);
-  background: var(--surface-glass); box-shadow: inset 0 1px 0 rgb(255 255 255 / 90%), var(--shadow-sm), var(--shadow-lg);
+  background: var(--surface-glass); box-shadow: inset 0 1px 0 var(--edge-glass), var(--shadow-sm), var(--shadow-lg);
 }
 .workbench-stage-body { display: flex; flex: 1; flex-direction: column; gap: 20px; min-width: 0; min-height: 0; }
 .workbench-stage-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
