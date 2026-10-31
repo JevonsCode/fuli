@@ -35,13 +35,16 @@ export const PROJECT_AGENT_TOOL_DEFINITIONS = [
   {
     name: 'upsert_project_agent',
     title: 'WRITE · Create or update a project Agent',
-    description: 'Create or update one model-independent long-lived Agent bound to an existing local personal project. The profile is a lightweight project directory record: name, responsibility, capabilities, initial preferences, and status. This does not start a model or copy project knowledge into the Agent.',
+    description: 'Create or update one model-independent long-lived Agent bound to an existing local personal project. A new Agent needs occupation.role, one built-in role key (engineering, testing, qa_automation, design, …); tags are optional and must already be active in the person\'s occupation catalog. This does not start a model or copy project knowledge into the Agent.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: nullableStringSchema(),
       agentId: boundedString(128),
       profile: projectAgentProfile,
-      occupation: projectAgentOccupation
+      occupation: {
+        ...projectAgentOccupation,
+        description: 'role: one built-in role key. tags: optional; each must already be active in the person\'s occupation catalog.'
+      }
     }, ['personalSpaceId', 'agentId', 'profile'])
   },
   {

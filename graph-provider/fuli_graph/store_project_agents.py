@@ -225,10 +225,8 @@ class StoreProjectAgents:
                     [request.occupation.role, *request.occupation.tags])
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    'new Agents require occupation.role; archived Agents require a dedicated restore operation; project leads must hand off before deactivation'
-                ),
-        )
+                detail=await self._upsert_denial(request, node_id),
+            )
         if request.personal_project_id:
             if not await self._upsert_legacy_assignment(request, updated_at):
                 raise HTTPException(
@@ -247,6 +245,34 @@ class StoreProjectAgents:
                 request.personal_project_id
             ),
         )
+
+    async def _upsert_denial(self, request: ProjectAgentUpsert, node_id: str) -> str:
+        """The one rule that kept the profile upsert from writing this Agent."""
+        records, _, _ = await self.runtime.driver.execute_query(
+            '''
+            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
+            OPTIONAL MATCH (agent:FuliProjectAgent {id: $id})
+            RETURN agent IS NOT NULL AS agent_exists,
+                   agent.status AS status,
+                   EXISTS {
+                     MATCH (space)-[:CONTAINS_PROJECT]->(:FuliPersonalProject)
+                           -[:HAS_PROJECT_AGENT_COORDINATION_POLICY]->(policy)
+                     WHERE policy.team_lead_agent_id = agent.agent_id
+                   } AS project_lead
+            ''',
+            personal_space_id=request.personal_space_id, id=node_id,
+        )
+        row = records[0] if records else {}
+        if not row.get('agent_exists'):
+            return (
+                'new Agents require occupation.role, one of the built-in '
+                'roles: ' + ', '.join(BUILTIN_OCCUPATION_KEYS)
+            )
+        if row.get('status') == 'archived':
+            return 'archived Agents require a dedicated restore operation'
+        if row.get('project_lead'):
+            return 'project leads must hand off before deactivation'
+        return 'every occupation role and tag must be active in this personal space'
 
     async def _upsert_legacy_assignment(
         self,

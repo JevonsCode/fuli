@@ -509,9 +509,10 @@ async def test_project_agent_upsert_cannot_reactivate_an_archived_identity():
         [{'project': {'project_id': 'project-a'}}],
         [{'agent_id': 'activity-agent', 'profile_json': project_agent_profile().model_dump_json()}],
         [],
+        [{'agent_exists': True, 'status': 'archived', 'project_lead': False}],
     ])
 
-    with pytest.raises(HTTPException, match='dedicated restore operation'):
+    with pytest.raises(HTTPException, match='dedicated restore operation') as denied:
         await StoreStub(driver).upsert_project_agent(
             {'id': 'principal-1'},
             ProjectAgentUpsert(
@@ -522,10 +523,12 @@ async def test_project_agent_upsert_cannot_reactivate_an_archived_identity():
             ),
         )
 
-    assert len(driver.calls) == 3
+    assert 'new Agents require' not in denied.value.detail
+    assert len(driver.calls) == 4
     identity_query = driver.calls[2][0]
     assert 'agent._profile_upsert_lock' in identity_query
     assert "agent.status <> 'archived'" in identity_query
+    assert 'agent_exists' in driver.calls[3][0]
 
 
 @pytest.mark.asyncio

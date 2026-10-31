@@ -155,7 +155,10 @@ const BASELINE = Object.freeze({
   // and entry are unchanged.
   // rec#11 D-80 Antigravity's own source application: "antigravity" joins each source enum the full
   // profile lists (about 14 B each): 196,089 -> 196,369 B (+280 B), measured. Chat is unchanged.
-  fullToolSchemaBytes: 196369,
+  // upsert_project_agent says a new Agent needs a built-in occupation.role and active catalog tags
+  // (no Agent-specific tool is added): 196,369 -> 196,560 B (+191 B), computed from the changed
+  // description and occupation property; chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 196560,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
