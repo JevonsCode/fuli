@@ -8,7 +8,7 @@ import {
 import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
 
 // Synthetic Provider boundary: stored topic counts, days and declines only.
-function application(topics, { promotion } = {}) {
+function application(topics, { promotion, moved = 0, returned = 0 } = {}) {
   const calls = [];
   const registered = new Map();
   return { config: { personal: { spaceId: 'space' } }, consoleUrl: 'http://127.0.0.1:2797', calls, registered,
@@ -29,8 +29,9 @@ function application(topics, { promotion } = {}) {
           && (!input.topic || key(item.topic) === key(input.topic))).slice(0, input.limit) };
         if (operation === 'decline') return { topic: input.topic, declined_count: 4 };
         if (operation === 'reopen') return { topic: input.topic, personal_project_id: input.personal_project_id,
-          conversation_ids: ['a', 'b', 'c'], declined_count: 4 };
-        return { personal_project_id: input.personal_project_id, conversation_ids: ['a', 'b', 'c'] };
+          conversation_ids: ['a', 'b', 'c'], declined_count: 4, knowledge: { returned, kept: moved - returned } };
+        return { personal_project_id: input.personal_project_id, conversation_ids: ['a', 'b', 'c'],
+          knowledge: { moved, kept: 0 } };
       }
     } };
 }
@@ -67,7 +68,7 @@ test('accepting forms a project, staffs a lead and attaches every conversation o
   const formed = await acceptTopicProposal(app, { topic: 'garden' });
   assert.deepEqual(formed, { status: 'formed', personal_project_id: 'garden', topic: 'Garden',
     reason: '你同意了 Astro 的建议：话题「Garden」累计 4 个会话、跨 3 天', created: true, lead_agent_id: 'lead-garden',
-    lead_status: 'ready', conversations: 3 });
+    lead_status: 'ready', conversations: 3, knowledge_moved: 0, knowledge_kept: 0 });
   const create = app.calls.find(([kind]) => kind === 'create')[1];
   assert.equal(create.createOnly, true);
   assert.match(create.profile.purpose, /AI 草稿/);
@@ -98,7 +99,7 @@ test('undo reopens the topic and archives only a project Astro created by itself
   await topicOutcome(app, 'garden');
   const undone = await undoTopicPromotion(app, { topic: 'Garden', personalProjectId: 'garden' });
   assert.deepEqual(undone, { status: 'reopened', topic: 'Garden', personal_project_id: 'garden', conversations: 3,
-    project_archived: true, ask_again_at: 7 });
+    project_archived: true, knowledge_returned: 0, knowledge_kept: 0, ask_again_at: 7 });
   assert.equal(app.registered.get('garden').profile.lifecycle, 'archived');
   assert.deepEqual(app.calls.find(([kind]) => kind === 'reopen')[1],
     { personal_space_id: 'space', topic: 'Garden', personal_project_id: 'garden' });
@@ -108,6 +109,17 @@ test('undo reopens the topic and archives only a project Astro created by itself
   assert.equal((await undoTopicPromotion(own, { topic: 'Garden', personalProjectId: 'garden' })).project_archived, false);
   assert.equal(own.registered.get('garden').profile.lifecycle, 'active');
   await assert.rejects(undoTopicPromotion(own, { topic: 'Garden' }), /topic and its project/);
+});
+
+test('the notice says how much knowledge moved in, and the undo how much came back (D-86)', async () => {
+  const app = application([topic('Garden', 3, 2)], { promotion: 'auto', moved: 5, returned: 4 });
+  const promoted = await topicOutcome(app, 'garden');
+  assert.equal(promoted.knowledge_moved, 5);
+  assert.match(promoted.notice, /^FULI：话题「Garden」聊了 3 次、跨 2 天，已升级为项目「Garden」，搬了 5 条知识。\[改名、换上级或撤销\]/);
+  const undone = await undoTopicPromotion(app, { topic: 'Garden', personalProjectId: 'garden' });
+  assert.deepEqual([undone.knowledge_returned, undone.knowledge_kept], [4, 1]);
+  const accepted = await acceptTopicProposal(application([topic('Garden', 4, 3)], { moved: 2 }), { topic: 'garden' });
+  assert.equal(accepted.knowledge_moved, 2);
 });
 
 test('declining remembers the count, and an unknown topic changes nothing', async () => {

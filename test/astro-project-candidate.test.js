@@ -126,7 +126,8 @@ function harness({ role = null, replies = [], model = true, projects = PROJECTS,
       if (operation === 'form') {
         const formed = open(input.topic);
         formed.forEach(label => { label.formed_project_id = input.personal_project_id; });
-        return { personal_project_id: input.personal_project_id, conversation_ids: formed.map(() => CONVERSATION) };
+        return { personal_project_id: input.personal_project_id, conversation_ids: formed.map(() => CONVERSATION),
+          knowledge: { moved: 0, kept: 0 } };
       }
       if (operation === 'read') {
         if (triageReadError) throw triageReadError;
