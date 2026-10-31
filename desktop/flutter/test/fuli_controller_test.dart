@@ -46,13 +46,35 @@ void main() {
         wait: (duration) async => waits.add(duration),
       );
 
+  test('announces each new request an Agent leaves once, and not the ones open at the first check', () async {
+    final api = DemoFuliApi()..attention = [const AttentionNotice(id: 'r1', title: 'Pick a staging host')];
+    final controller = controllerFor(api, FixedRuntime(const RuntimeReport(RuntimeState.running)));
+    await controller.refresh();
+    expect(notifier.bodies, isEmpty);
+    api.attention = [
+      const AttentionNotice(id: 'r2', title: 'Approve the schema change'),
+      const AttentionNotice(id: 'r1', title: 'Pick a staging host'),
+    ];
+    await controller.refresh();
+    expect(notifier.bodies, ['Approve the schema change']);
+    await controller.refresh();
+    expect(notifier.bodies, hasLength(1));
+    api.attention = [
+      const AttentionNotice(id: 'r3', title: 'A'),
+      const AttentionNotice(id: 'r4', title: 'B'),
+      const AttentionNotice(id: 'r2', title: 'Approve the schema change'),
+    ];
+    await controller.refresh();
+    expect(notifier.bodies.last, zh.attentionMany(2));
+  });
+
   test('reads the doctor at the port the runtime resolved', () async {
     final api = DemoFuliApi(items: [codexOutdated]);
     final ports = <int>[];
     final controller = controllerFor(api, FixedRuntime(const RuntimeReport(RuntimeState.running), port: 4123), ports: ports);
     await controller.refresh();
 
-    expect(ports, [4123]);
+    expect(ports.toSet(), {4123});
     expect(controller.consoleUri.toString(), 'http://127.0.0.1:4123/');
     final snapshot = controller.snapshot!;
     expect(snapshot.condition, FuliCondition.needsPerson);
@@ -71,7 +93,7 @@ void main() {
     expect(snapshot.version, '0.22.0');
     expect(snapshot.items.single.kind, 'update_available');
     expect(snapshot.items.single.data['latest'], '0.23.0');
-    expect(api.requests, ['doctor', 'health', 'version']);
+    expect(api.requests, ['doctor', 'health', 'version', 'attention']);
   });
 
   test('an unreachable console is told apart by the runtime', () async {

@@ -101,3 +101,15 @@ test('a linked request is read by exact identity in its space, not from a page o
   assert.equal(handled, true);
   assert.deepEqual(sent.body, { seen: { personalSpaceId: 'space', requestId: 'request-101' } });
 });
+
+test('the open-request list defaults to this console\'s own space for the desktop client', async () => {
+  const seen = [];
+  const app = { config: { personal: { spaceId: 'own-space' } }, listAgentAttention: input => { seen.push(input); return { items: [] }; } };
+  const response = { writeHead() {}, setHeader() {}, end() {} };
+  for (const query of ['status=open&limit=20', 'personalSpaceId=other&status=open']) {
+    await handleAgentAttentionRequest({ request: { method: 'GET' }, response, app,
+      url: new URL(`http://fuli.test/api/agent-attention?${query}`) });
+  }
+  assert.deepEqual(seen.map(input => [input.personalSpaceId, input.status, input.limit]),
+    [['own-space', 'open', 20], ['other', 'open', 100]]);
+});

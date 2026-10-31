@@ -8,6 +8,7 @@ import '../doctor/doctor_report.dart';
 import '../l10n/strings.dart';
 import '../platform/ports.dart';
 import '../runtime/fuli_runtime.dart';
+import 'attention_watch.dart';
 import 'fuli_condition.dart';
 import 'notification_gate.dart';
 
@@ -56,6 +57,7 @@ class FuliController extends ChangeNotifier {
   final Future<void> Function(Duration) _wait;
   final DateTime Function() _now;
   final _gate = NotificationGate();
+  final _attention = AttentionWatch();
 
   FuliSnapshot? _snapshot;
   String? _pending;
@@ -110,7 +112,24 @@ class FuliController extends ChangeNotifier {
     final snapshot = await _inspect();
     if (_disposed) return;
     _show(snapshot);
+    if (snapshot.reached && snapshot.running) await _announceAttention(apiFor(snapshot.port));
     _schedule();
+  }
+
+  // Each new request an Agent leaves for the person is one notification; a
+  // burst becomes one. An older FULI without the route says nothing.
+  Future<void> _announceAttention(FuliApi api) async {
+    final List<AttentionNotice> open;
+    try {
+      open = await api.openAttention();
+    } on Object {
+      return;
+    }
+    final fresh = _attention.observe(open);
+    if (_disposed || fresh.isEmpty) return;
+    unawaited(fresh.length == 1
+        ? notifier.notify(strings.attentionTitle, fresh.single.title)
+        : notifier.notify(strings.attentionTitle, strings.attentionMany(fresh.length)));
   }
 
   void _show(FuliSnapshot snapshot) {

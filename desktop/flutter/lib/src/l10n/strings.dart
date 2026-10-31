@@ -31,6 +31,11 @@ class Strings {
   String get noAnswer => _t('FULI 在运行，但控制台没有应答。', 'FULI is running, but its console does not answer.');
   String consoleError(String detail) => _t('控制台回答出错：$detail', 'The console answered with an error: $detail');
 
+  // A request an Agent left for the person
+  String get attentionTitle => _t('Agent 需要你', 'An Agent needs you');
+  String attentionMany(int count) =>
+      _t('$count 个新的请求等你处理', '$count new requests are waiting for you');
+
   // Buttons and menu
   String get autoRepair => _t('自动修复', 'Fix automatically');
   String autoRepairHint(int count) =>
