@@ -19,13 +19,19 @@ The package's tray app is the FULI desktop client: `client\FULI.exe` with its en
 plugin DLLs and `data\` folder, started by `Fuli.exe` at the package root. The
 launcher stays at the root because shortcuts, the launch-at-login entry and older
 versions' one-click updates open `<package>\Fuli.exe`; it accepts only
-`--background`. The retired FuliTray.exe is no longer built.
+`--background` or one `fuli://` link (printable ASCII, no quotes, backslashes or
+spaces, at most 2048 characters), which it passes to the client. The retired
+FuliTray.exe is no longer built.
 
 - One client per Windows user and data directory. It holds the mutex
   `Global\FuliTray-<user SID>-<instanceKey>` (`instanceKey` from
   `windows-controller.js context`), the same name the old tray used, so updates and
   older versions on either side find each other. A second launch sets
-  `<name>-open` (the running client shows its window) and exits.
+  `<name>-open` (the running client shows its window) and exits. A launch with a
+  `fuli://` link first leaves it as one file in
+  `%LOCALAPPDATA%\FULI Desktop\links\<instanceKey>\`; the running client takes every
+  waiting link when signalled, and a starting client takes those left while none ran.
+  Links older than five minutes are dropped.
 - Updates set `<name>-exit`; the client finishes a running start, stop or port change,
   then exits. `Update-Fuli.cmd`, `Rollback-Fuli.cmd` and the console's one-click
   update close a running client first and open the installed version's client
@@ -38,6 +44,12 @@ versions' one-click updates open `<package>\Fuli.exe`; it accepts only
   it installs, or removes it when that version has no desktop client (the old tray
   takes no arguments). Uninstall removes the entry, the client settings key and the
   notification identity `HKCU\Software\Classes\AppUserModelId\FULI`.
+- `fuli://` links open the installed client: `HKCU\Software\Classes\fuli` (`URL Protocol`)
+  with `shell\open\command` = `"<package>\Fuli.exe" "%1"`. Each installed client start
+  points it at its own version; updates and rollbacks follow it like the launch-at-login
+  entry, and uninstall removes the key when it opens this installation. A rollback to a
+  version whose client predates `fuli://` keeps the key on that launcher, which refuses
+  the link with its message until a newer client registers again.
 - Windows notifications use that registered identity, never a Start-menu shortcut:
   stamping one into `Fuli.lnk` would change the installer's shortcut, and updates
   refuse a changed shortcut.

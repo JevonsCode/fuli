@@ -83,6 +83,10 @@ class FuliController extends ChangeNotifier {
 
   FuliApi get _api => apiFor(_snapshot?.port ?? 2727);
 
+  /// The port the console listens on: the one `fuli status` reported when it
+  /// differs, else `ports.console` from the settings file.
+  Future<int> consolePort() async => _runtimePort ?? await runtime.consolePort();
+
   /// Checks now and keeps checking on the poll schedule.
   void startPolling() {
     _polling = true;
@@ -130,7 +134,7 @@ class FuliController extends ChangeNotifier {
 
   Future<FuliSnapshot> _inspect({bool retried = false}) async {
     final installed = await runtime.locate();
-    final port = _runtimePort ?? await runtime.consolePort();
+    final port = await consolePort();
     final api = apiFor(port);
     try {
       final report = await api.doctor();

@@ -11,24 +11,39 @@ import { windowsDesktopClient, withWindowsClientClosed } from '../src/desktop/wi
 // touches the real HKCU, a real client or a real installation.
 
 const RUN = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+const SCHEME = 'HKCU\\Software\\Classes\\fuli';
+const SCHEME_COMMAND = SCHEME + '\\shell\\open\\command';
+const login = root => `"${join(root, 'Fuli.exe')}" --background`;
+const link = root => `"${join(root, 'Fuli.exe')}" "%1"`;
 
+// Values are '<key>|<name>' (the default value has an empty name); a key
+// without values is '<key>'. Deleting a key removes everything under it.
 function fakeReg(values = {}) {
   const calls = [];
   const reg = async (args) => {
     calls.push(args);
     const [verb, key] = args;
-    const name = args[args.indexOf('/v') + 1];
-    const id = args.includes('/v') ? key + '|' + name : key;
+    const name = args.includes('/ve') ? '' : args.includes('/v') ? args[args.indexOf('/v') + 1] : null;
+    const id = name === null ? key : key + '|' + name;
     if (verb === 'query') {
+      if (name === null) return Object.keys(values).some(k => k === key || k.startsWith(key + '|') || k.startsWith(key + '\\')) ? { code: 0, stdout: `\r\n${key}\r\n` } : { code: 1, stdout: '' };
       if (!(id in values)) return { code: 1, stdout: '' };
-      return { code: 0, stdout: args.includes('/v') ? `\r\n${key}\r\n    ${name}    REG_SZ    ${values[id]}\r\n\r\n` : `\r\n${key}\r\n` };
+      return { code: 0, stdout: `\r\n${key}\r\n    ${name || '(Default)'}    REG_SZ    ${values[id]}\r\n\r\n` };
     }
     if (verb === 'add') { values[id] = args[args.indexOf('/d') + 1]; return { code: 0, stdout: '' }; }
-    if (verb === 'delete') { delete values[id]; return { code: 0, stdout: '' }; }
+    if (verb === 'delete') {
+      for (const k of Object.keys(values)) {
+        if (k === id || (name === null && (k.startsWith(key + '|') || k.startsWith(key + '\\')))) delete values[k];
+      }
+      return { code: 0, stdout: '' };
+    }
     return { code: 1, stdout: '' };
   };
   return { reg, calls, values };
 }
+
+// The scheme as the client registers it (windows_url_scheme.dart).
+const scheme = root => ({ [SCHEME + '|']: 'URL:FULI', [SCHEME + '|URL Protocol']: '', [SCHEME_COMMAND + '|']: link(root) });
 
 function installRoot(t) {
   const root = mkdtempSync(join(tmpdir(), 'fuli-desktop-client-'));
@@ -42,22 +57,22 @@ function installRoot(t) {
   return { root, install, slot };
 }
 
-test('a launch-at-login entry of this installation follows the switch to the installed client', async (t) => {
+test('the entries of this installation follow the switch to the installed client', async (t) => {
   const f = installRoot(t);
   const before = f.slot('old'), after = f.slot('new');
   writeFileSync(join(after, 'client', 'FULI.exe'), '');
-  const registry = fakeReg({ [RUN + '|FULI']: `"${join(before, 'Fuli.exe')}" --background` });
-  assert.equal(await windowsDesktopClient.followSwitch(f.install, after, registry), 'retargeted');
-  assert.equal(registry.values[RUN + '|FULI'], `"${join(after, 'Fuli.exe')}" --background`);
-  assert.equal(await windowsDesktopClient.followSwitch(f.install, after, registry), 'unchanged');
+  const registry = fakeReg({ [RUN + '|FULI']: login(before), ...scheme(before) });
+  assert.deepEqual(await windowsDesktopClient.followSwitch(f.install, after, registry), { loginLaunch: 'retargeted', urlScheme: 'retargeted' });
+  assert.deepEqual(registry.values, { [RUN + '|FULI']: login(after), ...scheme(after) });
+  assert.deepEqual(await windowsDesktopClient.followSwitch(f.install, after, registry), { loginLaunch: 'unchanged', urlScheme: 'unchanged' });
 });
 
-test('switching to a version without the desktop client removes the entry: the old tray takes no arguments', async (t) => {
+test('switching to a version without the desktop client removes the entries: the old tray takes no arguments', async (t) => {
   const f = installRoot(t);
   const before = f.slot('new'), kept = f.slot('old');
-  const registry = fakeReg({ [RUN + '|FULI']: `"${join(before, 'Fuli.exe')}" --background` });
-  assert.equal(await windowsDesktopClient.followSwitch(f.install, kept, registry), 'removed');
-  assert.equal(RUN + '|FULI' in registry.values, false);
+  const registry = fakeReg({ [RUN + '|FULI']: login(before), ...scheme(before) });
+  assert.deepEqual(await windowsDesktopClient.followSwitch(f.install, kept, registry), { loginLaunch: 'removed', urlScheme: 'removed' });
+  assert.deepEqual(registry.values, {}, 'the whole fuli scheme key goes');
 });
 
 test('no entry, or an entry that starts another FULI, is left alone; a refused write is reported, never thrown', async (t) => {
@@ -65,29 +80,47 @@ test('no entry, or an entry that starts another FULI, is left alone; a refused w
   const target = f.slot('new');
   writeFileSync(join(target, 'client', 'FULI.exe'), '');
   const empty = fakeReg();
-  assert.equal(await windowsDesktopClient.followSwitch(f.install, target, empty), 'unchanged');
-  assert.deepEqual(empty.calls.map(([verb]) => verb), ['query']);
+  assert.deepEqual(await windowsDesktopClient.followSwitch(f.install, target, empty), { loginLaunch: 'unchanged', urlScheme: 'unchanged' });
+  assert.deepEqual(empty.calls.map(([verb]) => verb), ['query', 'query']);
 
-  const foreign = fakeReg({ [RUN + '|FULI']: `"${join(f.root, 'elsewhere', 'Fuli.exe')}" --background` });
-  assert.equal(await windowsDesktopClient.followSwitch(f.install, target, foreign), 'unchanged');
-  assert.equal(foreign.values[RUN + '|FULI'], `"${join(f.root, 'elsewhere', 'Fuli.exe')}" --background`);
+  const elsewhere = join(f.root, 'elsewhere');
+  const foreign = fakeReg({ [RUN + '|FULI']: login(elsewhere), ...scheme(elsewhere) });
+  assert.deepEqual(await windowsDesktopClient.followSwitch(f.install, target, foreign), { loginLaunch: 'unchanged', urlScheme: 'unchanged' });
+  assert.deepEqual(foreign.values, { [RUN + '|FULI']: login(elsewhere), ...scheme(elsewhere) });
 
-  const refusing = fakeReg({ [RUN + '|FULI']: `"${join(f.slot('old'), 'Fuli.exe')}" --background` });
-  const reg = async (args) => args[0] === 'add' ? { code: 1, stdout: '' } : refusing.reg(args);
-  assert.equal(await windowsDesktopClient.followSwitch(f.install, target, { reg }), 'failed');
+  const old = f.slot('old');
+  const refusing = fakeReg({ [RUN + '|FULI']: login(old), ...scheme(old) });
+  const reg = async (args) => args[0] === 'add' && args[1] === SCHEME_COMMAND ? { code: 1, stdout: '' } : refusing.reg(args);
+  assert.deepEqual(await windowsDesktopClient.followSwitch(f.install, target, { reg }), { loginLaunch: 'retargeted', urlScheme: 'failed' },
+    'each entry is reported on its own');
 });
 
-test('uninstall removes this installation\'s entry, the client settings and its notification identity', async (t) => {
+test('the scheme command is read from the default value whatever its localized name', async (t) => {
+  const f = installRoot(t);
+  const before = f.slot('old'), after = f.slot('new');
+  writeFileSync(join(after, 'client', 'FULI.exe'), '');
+  const registry = fakeReg(scheme(before));
+  const reg = async (args) => {
+    const result = await registry.reg(args);
+    return args.includes('/ve') && args[0] === 'query' ? { ...result, stdout: result.stdout.replace('(Default)', '(默认)') } : result;
+  };
+  assert.equal((await windowsDesktopClient.followSwitch(f.install, after, { reg })).urlScheme, 'retargeted');
+  assert.equal(registry.values[SCHEME_COMMAND + '|'], link(after));
+});
+
+test('uninstall removes this installation\'s entries, the client settings and its notification identity', async (t) => {
   const f = installRoot(t);
   const settings = 'HKCU\\Software\\Fuli\\DesktopClient';
   const identity = 'HKCU\\Software\\Classes\\AppUserModelId\\FULI';
-  const registry = fakeReg({ [RUN + '|FULI']: `"${join(f.slot('a'), 'Fuli.exe')}" --background`, [settings]: '', [identity]: '' });
+  const slot = f.slot('a');
+  const registry = fakeReg({ [RUN + '|FULI']: login(slot), ...scheme(slot), [settings]: '', [identity]: '' });
   assert.equal(await windowsDesktopClient.unregister(f.install, registry), 'removed');
   assert.deepEqual(registry.values, {});
 
-  const foreign = fakeReg({ [RUN + '|FULI']: `"${join(f.root, 'elsewhere', 'Fuli.exe')}" --background` });
+  const elsewhere = join(f.root, 'elsewhere');
+  const foreign = fakeReg({ [RUN + '|FULI']: login(elsewhere), ...scheme(elsewhere) });
   assert.equal(await windowsDesktopClient.unregister(f.install, foreign), 'removed');
-  assert.equal(RUN + '|FULI' in foreign.values, true, 'another FULI keeps its entry');
+  assert.deepEqual(foreign.values, { [RUN + '|FULI']: login(elsewhere), ...scheme(elsewhere) }, 'another FULI keeps its entries');
   assert.equal(foreign.calls.some(([verb]) => verb === 'delete'), false, 'absent keys are not deleted');
 });
 
@@ -114,7 +147,7 @@ test('a switch closes an open client first, reopens it afterwards even on failur
   const plan = { installRoot: 'C:\\Fuli', current: { dataDir: 'D:\\data' } };
   const fake = (state, events) => ({
     close: async dataDir => { events.push(['close', dataDir]); return state; },
-    followSwitch: async (root, packageRoot) => { events.push(['follow', packageRoot]); return 'retargeted'; },
+    followSwitch: async (root, packageRoot) => { events.push(['follow', packageRoot]); return { loginLaunch: 'retargeted', urlScheme: 'retargeted' }; },
     reopen: root => events.push(['reopen', root])
   });
   const events = [];
@@ -122,7 +155,7 @@ test('a switch closes an open client first, reopens it afterwards even on failur
     events.push(['change']);
     return { packageRoot: 'C:\\Fuli\\versions\\new' };
   });
-  assert.deepEqual(result, { packageRoot: 'C:\\Fuli\\versions\\new', desktopClient: 'reopened', loginLaunch: 'retargeted' });
+  assert.deepEqual(result, { packageRoot: 'C:\\Fuli\\versions\\new', desktopClient: 'reopened', loginLaunch: 'retargeted', urlScheme: 'retargeted' });
   assert.deepEqual(events, [['close', 'D:\\data'], ['change'], ['follow', 'C:\\Fuli\\versions\\new'], ['reopen', 'C:\\Fuli']]);
 
   const failed = [];
