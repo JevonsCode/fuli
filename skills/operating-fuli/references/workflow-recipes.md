@@ -43,5 +43,6 @@ The following controls are deliberately local-user-only unless the current inter
 - Jefa work-item completion that records explicit human acceptance
 - marking a blocked task as unblocked (「标记为已解除」): suggest the person uses the button on the task card or task detail; an Agent ends a block only by continuing in the session that reported it
 - permanently deleting knowledge or a fact (「删除…」, rec#11 D-88): suggest the person opens the item in the console, where 「删除…」 is one click away on the item, its page and each of its facts, and the dialog offers 取消 / 导出并删除 / 确定删除; preview and full-text export are also console-only, with no Agent tool
+- the 诊断包 (diagnostics bundle, `GET /api/system/diagnostics`): a console-only read from this computer; it carries this computer's redacted logs and environment, so suggest the person opens 设置 › 系统 › 诊断包 (or the desktop tray's 「导出诊断包…」), previews it and exports it; never fetch it for them
 
 Explain the precise UI action when one of these boundaries blocks the request. Never work around it through direct HTTP, storage, browser scripting, or a shell command.
