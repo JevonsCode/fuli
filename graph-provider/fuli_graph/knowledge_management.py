@@ -873,6 +873,10 @@ def _next_snapshot(previous: dict, request: KnowledgeRevisionCreate, changed_at:
         value['confirmationBasis'] = basis
         value['epistemicStatus'] = 'confirmed'
         value['confidenceScore'] = 1.0
+        # A person's confirmation ends the attention flag; the negative
+        # evidence that raised it stays as history.
+        if request.operation_actor == 'human':
+            value['requiresAttention'] = False
     elif request.action == 'update':
         content_changed = False
         if request.item_kind == 'entity':
@@ -911,6 +915,8 @@ def _next_snapshot(previous: dict, request: KnowledgeRevisionCreate, changed_at:
             value['confirmationStatus'] = request.confirmation_status
             value['confirmationBasis'] = request.confirmation_basis.model_dump(mode='json')
             value['confirmationStateExplicit'] = True
+            if request.confirmation_status == 'confirmed' and request.operation_actor == 'human':
+                value['requiresAttention'] = False
         elif content_changed or classification_changed:
             value['confirmationStatus'] = 'pending'
             value['confirmationBasis'] = _pending_confirmation_basis(
@@ -931,10 +937,13 @@ def _next_snapshot(previous: dict, request: KnowledgeRevisionCreate, changed_at:
             value['distinctTaskCount'] = 0
             value['lastUsedAt'] = None
         if content_changed or classification_changed:
+            # Feedback judged the old content, which the revision keeps; only a
+            # person answers the attention flag it raised.
             value['negativeEvidenceCount'] = 0
-            value['requiresAttention'] = False
             value['lastFeedbackKind'] = None
             value['lastFeedbackAt'] = None
+            if request.operation_actor == 'human':
+                value['requiresAttention'] = False
         if request.reasoning_summary is not None:
             value['reasoningSummary'] = request.reasoning_summary or None
         if request.profile_aspect is not None:

@@ -197,6 +197,8 @@ async def test_explicit_human_confirmation_lifts_the_block_with_new_evidence_and
     item = graph.items[OLD_STYLE]
     assert item['fuli_confirmation_status'] == 'confirmed'
     assert item.get('fuli_negative_feedback_block_json') is None
+    assert item['fuli_requires_attention'] is False
+    assert item['fuli_negative_evidence_count'] == 1, 'the flag clears, the negative evidence stays as history'
     assert json.loads(item['fuli_confirmation_basis_json'])['confirmed_by']['kind'] == 'user'
     assert revision.previous['negativeFeedbackBlock'] == block
     assert revision.current['negativeFeedbackBlock'] is None
@@ -281,6 +283,8 @@ async def test_single_confirmation_read_before_a_rejection_is_refused(item_kind)
     assert json.loads(graph.revisions[0]['previous_json'])['negativeFeedbackBlock'] == block
     assert graph.items[OLD_STYLE]['fuli_negative_feedback_block_json'] is None
     assert graph.items[OLD_STYLE]['fuli_confirmation_status'] == 'confirmed'
+    assert graph.items[OLD_STYLE]['fuli_requires_attention'] is False
+    assert graph.items[OLD_STYLE]['fuli_negative_evidence_count'] == 1, 'the flag clears, history stays'
 
 
 @pytest.mark.asyncio
@@ -321,6 +325,8 @@ async def test_batch_confirmation_read_before_a_rejection_is_refused_whole(rejec
     assert json.loads(revision['current_json'])['negativeFeedbackBlock'] is None
     assert graph.items[rejected]['fuli_negative_feedback_block_json'] is None
     assert graph.items[rejected]['fuli_confirmation_status'] == 'confirmed'
+    assert graph.items[rejected]['fuli_requires_attention'] is False
+    assert graph.items[rejected]['fuli_negative_evidence_count'] == 1, 'the flag clears, history stays'
 
 
 async def use(store, task_id, item_id, use_kind, item_kind='entity'):
@@ -680,6 +686,7 @@ class MemoryGraph:
         if not all(valid(row) for row in p['items']):
             return []
         clears_block = 'item.fuli_negative_feedback_block_json = NULL' in query
+        clears_attention = '$clear_attention' in query and p.get('clear_attention') is True
         for row in p['items']:
             item = self.items[row['item_id']]
             _bump(query, item)
@@ -687,6 +694,8 @@ class MemoryGraph:
                         fuli_confirmation_basis_json=row['confirmation_basis_json'])
             if clears_block:
                 item['fuli_negative_feedback_block_json'] = None
+            if clears_attention:
+                item['fuli_requires_attention'] = False
             self.revisions.append({
                 'action': 'batch_confirm', 'item_id': row['item_id'],
                 'previous_json': row['previous_json'], 'current_json': row['current_json'],

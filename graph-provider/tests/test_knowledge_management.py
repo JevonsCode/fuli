@@ -174,6 +174,57 @@ async def test_single_confirmation_records_server_time_without_changing_content(
 
 
 @pytest.mark.asyncio
+async def test_a_persons_confirmation_clears_attention_and_keeps_the_negative_evidence_count():
+    driver = SequentialDriver([
+        [{
+            'name': 'Design preference',
+            'summary': 'Use a clean selected state.',
+            'invalid_at': None,
+            'classification_state_explicit': True,
+            'origin_quadrant': 'known_known',
+            'current_quadrant': 'known_known',
+            'epistemic_status': 'observed',
+            'confirmation_status': 'pending',
+            'confirmation_state_explicit': False,
+            'negative_evidence_count': 2,
+            'requires_attention': True,
+            'last_feedback_kind': 'rejected',
+        }],
+        [],  # no earlier versions: this confirmation reviews no rewrite
+        [{'item_id': 'written'}],  # the compare-and-set write matched
+        [],  # the revision record
+        [{'human_change_version': 1}],  # the human-change audit
+    ])
+    request = KnowledgeRevisionCreate(
+        personal_space_id='personal-space',
+        item_kind='entity',
+        action='confirm',
+        operation_actor='human',
+        reason='The person confirmed the item after reviewing the rejection.',
+        confirmation_status='confirmed',
+        confirmation_basis={
+            'existence_reason': 'The user explicitly stated this preference.',
+            'quadrant_reason': 'It was explicitly expressed.',
+            'proposed_by': {'kind': 'agent', 'label': 'Codex'},
+            'confirmed_by': {'kind': 'user', 'label': 'Current user'},
+            'confirmed_at': datetime(2020, 1, 1, tzinfo=timezone.utc),
+        },
+    )
+
+    result = await revise_knowledge_item(
+        StoreStub(driver), {'id': 'principal-1'}, 'entity-1', request
+    )
+
+    _, update_parameters = driver.calls[2]
+    assert update_parameters['confirmation_status'] == 'confirmed'
+    assert update_parameters['requires_attention'] is False
+    assert update_parameters['negative_evidence_count'] == 2
+    assert update_parameters['last_feedback_kind'] == 'rejected'
+    assert result.current['requiresAttention'] is False
+    assert result.current['negativeEvidenceCount'] == 2
+
+
+@pytest.mark.asyncio
 async def test_single_confirmation_requires_an_explicit_discovery_quadrant():
     driver = SequentialDriver([[
         {
@@ -316,6 +367,8 @@ async def test_batch_confirmation_updates_one_source_group_with_individual_revis
     assert query.count("ORDER BY 'relationship:' + row.item_id") == 1
     assert parameters['group_kind'] == 'source'
     assert parameters['group_value'] == 'episode-1'
+    assert parameters['clear_attention'] is False
+    assert 'WHEN $clear_attention THEN false' in query
     assert all('"confirmed_by"' in row['confirmation_basis_json']
                for row in parameters['items'])
     assert result.confirmed_count == 2
@@ -387,6 +440,7 @@ async def test_batch_confirmation_lifts_a_negative_feedback_block_and_keeps_it_i
     assert query.count('item.fuli_negative_feedback_block_json = NULL') == 2
     assert json.loads(blocked['previous_json'])['negativeFeedbackBlock'] == block
     assert json.loads(blocked['current_json'])['negativeFeedbackBlock'] is None
+    assert json.loads(blocked['current_json'])['requiresAttention'] is True
     assert json.loads(unrelated['previous_json'])['negativeFeedbackBlock'] is None
 
 

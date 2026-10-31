@@ -99,8 +99,10 @@ def version_value(previous: dict, next_value: dict, *, explicit_confirmation: bo
     only a person lifts. A caller that named a confirmation keeps it."""
     value = {**next_value, 'invalidAt': None, 'replacedByItemId': None, 'replacedByItemKind': None,
              'usageGeneration': 1, 'utilityScore': 0.0, 'qualifiedUseCount': 0, 'distinctTaskCount': 0,
-             'lastUsedAt': None, 'negativeEvidenceCount': 0, 'requiresAttention': False,
-             'lastFeedbackKind': None, 'lastFeedbackAt': None}
+             'lastUsedAt': None, 'negativeEvidenceCount': 0, 'lastFeedbackKind': None, 'lastFeedbackAt': None,
+             # Feedback judged the old content, which its revision keeps; only a
+             # person answers the attention flag it raised.
+             'requiresAttention': previous.get('requiresAttention') is True and changed_by != 'user'}
     if explicit_confirmation:
         return value
     quadrant_reason = (previous.get('confirmationBasis') or {}).get('quadrant_reason') or reason
