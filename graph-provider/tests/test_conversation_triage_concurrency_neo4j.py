@@ -5,6 +5,7 @@ nodes this test creates are touched and removed.
 """
 import asyncio
 import os
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -34,6 +35,23 @@ class TransactionDriver:
         return await rows.data(), None, None
 
 
+class SessionDriver:
+    """The raw driver as the store's runtime port: one-off queries and one
+    explicit transaction (forming a topic runs in one, D-86)."""
+
+    def __init__(self, driver):
+        self._driver = driver
+
+    async def execute_query(self, query, **params):
+        return await self._driver.execute_query(query, **params)
+
+    @asynccontextmanager
+    async def transaction(self):
+        async with self._driver.session() as session:
+            async with await session.begin_transaction() as transaction:
+                yield transaction
+
+
 def store(driver, space):
     class Store(StoreConversationTriage):
         def _require_personal(self):
@@ -46,7 +64,7 @@ def store(driver, space):
             return {}
 
     triage = Store()
-    triage.runtime = SimpleNamespace(driver=driver)
+    triage.runtime = SimpleNamespace(driver=SessionDriver(driver))
     return triage
 
 
