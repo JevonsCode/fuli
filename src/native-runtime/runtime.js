@@ -42,6 +42,7 @@ import { nonEmptyText } from '../validation/values.js';
 import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { isProcessAlive } from '../local-runtime/processes.js';
 import { parseProviderEnv } from '../setup/provider-env.js';
+import { nativeInstanceLogPaths } from '../setup/paths.js';
 
 export const NATIVE_NEO4J_VERSION = '5.26.28';
 export const NATIVE_NEO4J_SHA256 =
@@ -268,7 +269,7 @@ export function createNativeGraphServices({
       python: descriptor.providerPython,
       sourcePath: descriptor.providerSource ?? null,
       port: spec.providerPort,
-      logPath: join(spec.instanceDir, 'logs', 'provider.log'),
+      logPath: nativeInstanceLogPaths(spec.instanceDir).provider,
       environment: {
         ...process.env,
         PYTHONDONTWRITEBYTECODE: '1',
@@ -300,7 +301,7 @@ export function createNativeGraphServices({
       args: ['console'],
       memory: spec.memory,
       pidPath: join(spec.instanceDir, 'run', 'neo4j.pid'),
-      logPath: join(spec.instanceDir, 'logs', 'neo4j-console.log'),
+      logPath: nativeInstanceLogPaths(spec.instanceDir).database,
       environment: neo4jEnvironment(spec)
     };
   }

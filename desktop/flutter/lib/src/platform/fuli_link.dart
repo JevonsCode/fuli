@@ -17,6 +17,9 @@ const _pchar = r"(?:[A-Za-z0-9\-._~!$&'()*+,;=:@]|%[0-9A-Fa-f]{2})";
 final _shape = RegExp('^[Ff][Uu][Ll][Ii]://([A-Za-z0-9-]*)((?:/$_pchar*)*)(?:\\?((?:$_pchar|[/?])*))?\$');
 final _unsafeSegment = RegExp(r'[/\\\x00-\x1f\x7f]');
 
+// The settings page's 诊断包 card, which the tray's 导出诊断包… opens.
+const diagnosticsLink = 'fuli://settings?tab=system&setting=diagnostics';
+
 class FuliLink {
   const FuliLink._(this.text, this.segments, this.query);
 

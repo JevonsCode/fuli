@@ -96,6 +96,14 @@ export function resolveSetupPaths({
   };
 }
 
+// Where a native graph instance's provider and Neo4j console write their output.
+export function nativeInstanceLogPaths(instanceDir) {
+  return {
+    provider: join(instanceDir, 'logs', 'provider.log'),
+    database: join(instanceDir, 'logs', 'neo4j-console.log')
+  };
+}
+
 // Where `fuli graph export` backups of a data directory are kept.
 export function graphBackupDirectory(dataDir) {
   return join(dataDir, 'backups', 'graph');

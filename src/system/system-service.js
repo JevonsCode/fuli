@@ -20,6 +20,7 @@ import { createSettingsApplier } from './settings-apply.js';
 import { consoleUpdate } from './console-update.js';
 import { createDoctor } from './doctor.js';
 import { createDoctorRepair } from './doctor-repair.js';
+import { createDiagnosticsBundle } from './diagnostics-bundle.js';
 import { liveMcpProcesses } from '../mcp/process-registry.js';
 import { inspectAgentInstallations } from '../setup/agent-installation-status.js';
 import { agentKitPorts } from '../agent-kits/ports.js';
@@ -124,6 +125,11 @@ export function createSystemService({
       return state?.portMoves ? { movedAt: state.startedAt, moves: state.portMoves } : null;
     } });
 
+  // The 诊断包 a person previews and exports (diagnostics-bundle.js); reading
+  // settings for it never syncs the launcher's configuration as getSettings does.
+  const diagnostics = createDiagnosticsBundle({ paths, doctor: () => doctor.check(), installKind: () => update.kind(),
+    settings: () => ({ configured: configuredSettings(), active: activeSettings() }) });
+
   return {
     getSettings,
     updateSettings,
@@ -148,6 +154,7 @@ export function createSystemService({
     },
     // FULI's 体检 and its repair of what needs no person (doctor.js, doctor-repair.js).
     doctor: () => doctor.check(),
+    diagnostics,
     repairDoctor: createDoctorRepair({ check: doctor.check, connectClient: clientInstaller, observeClients,
       recordClientsReconnected: (id) => update.recordClientsReconnected(id) }),
     runtimeStatus: () => runtimeBroker.status(),

@@ -47,6 +47,7 @@ class Strings {
   String get stopFuli => _t('停止 FULI', 'Stop FULI');
   String get openFuli => _t('打开 FULI', 'Open FULI');
   String get quit => _t('退出', 'Quit');
+  String get exportDiagnostics => _t('导出诊断包…', 'Export diagnostics bundle…');
   String get installPage => _t('打开安装页', 'Open the install page');
   // Windows tray menu only
   String get changePort => _t('换一个端口', 'Use another port');

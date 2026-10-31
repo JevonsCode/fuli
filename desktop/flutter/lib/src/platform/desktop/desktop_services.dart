@@ -77,6 +77,7 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
     strings: strings,
     onOpen: window.show,
     onToggle: () => controller.snapshot?.running == true ? controller.stop() : controller.start(),
+    onExportDiagnostics: () => unawaited(follow(FuliLink.parse(diagnosticsLink)!)),
     onQuit: quit,
     onChangePort: runtime.canChangePort ? controller.changePort : null,
     onLaunchAtLogin: loginLaunch == null
