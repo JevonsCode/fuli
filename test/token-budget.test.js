@@ -165,7 +165,9 @@ const BASELINE = Object.freeze({
   // and workbenches; pause all matching; resume a pause) sharing one five-field filter:
   // 196,744 -> 198,559 B (+1,815 B), measured. Chat reaches them through
   // list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 198559,
+  // rec#11 D-89 rename_project_agent: any Agent's shown name, built-in roles included:
+  // 198,559 -> 199,378 B (+819 B), measured; chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 199378,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

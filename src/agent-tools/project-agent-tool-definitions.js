@@ -48,6 +48,16 @@ export const PROJECT_AGENT_TOOL_DEFINITIONS = [
     }, ['personalSpaceId', 'agentId', 'profile'])
   },
   {
+    name: 'rename_project_agent',
+    title: 'WRITE · Rename an Agent',
+    description: 'Only when the person asks: change the name any Agent is shown and called by, FULI\'s own roles (Jefa, Bole, Tonborg, Astro) included. Identity, role and memory stay with agentId. A name another Agent uses, or a role\'s built-in name, is refused with free alternatives. displayName null gives a built-in role its own name back; a role is still called by its built-in name too.',
+    inputSchema: objectSchema({
+      personalSpaceId: id,
+      agentId: boundedString(128),
+      displayName: { ...nullableStringSchema(), minLength: 1, maxLength: 64 }
+    }, ['personalSpaceId', 'agentId', 'displayName'])
+  },
+  {
     name: 'get_agent_naming_style',
     title: 'READ · Get the Agent naming style',
     description: 'Before proposing a new Agent\'s displayName: the person\'s saved naming style, or null (generated names). Only the person changes it.',

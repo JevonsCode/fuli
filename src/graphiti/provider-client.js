@@ -340,6 +340,9 @@ export class GraphitiProviderClient {
   verifyTaskCheckpoint(query) {
     return this.#request(`/v1/task-context-sessions/checkpoint?${new URLSearchParams(query)}`);
   }
+  renameProjectAgent(agentId, input) {
+    return this.#request(`/v1/project-agents/${encodeURIComponent(agentId)}/name`, { method: 'PUT', body: input });
+  }
   updateProjectAgentOccupation(agentId, input) {
     return this.#request(`/v1/project-agents/${encodeURIComponent(agentId)}/occupation`, {
       method: 'PUT', body: input

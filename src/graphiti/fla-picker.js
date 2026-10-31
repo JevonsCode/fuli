@@ -47,10 +47,15 @@ export function flaCandidates(roster, projects, personalSpaceId) {
 // project (projectId undefined outside one), Astro globally. They are named
 // only exactly, with `#FLA <name>`, never listed in the picker; the Provider
 // and the role's own project scope still decide whether one may work there.
+// A role the person renamed still answers to its built-in name (rec#11 D-89).
 export function roleCandidates(roster, projects, personalSpaceId, currentProjectId) {
   const current = projects.find(project => project.project_id === currentProjectId);
-  return inSpace(roster, personalSpaceId).filter(isFixedRole).map(agent => ({ ...candidate(agent,
-    { project: agent.agent_id === ASSISTANT_AGENT_ID ? null : current, assignment: null }), role: true }));
+  return inSpace(roster, personalSpaceId).filter(isFixedRole).map(agent => {
+    const role = { ...candidate(agent, { project: agent.agent_id === ASSISTANT_AGENT_ID ? null : current, assignment: null }),
+      role: true };
+    const builtIn = agent.profile?.name;
+    return builtIn && identityKey(builtIn) !== identityKey(role.name) ? { ...role, aliases: [builtIn] } : role;
+  });
 }
 
 function inSpace(roster, personalSpaceId) {
@@ -100,9 +105,10 @@ export function rankCandidates(candidates, { currentProjectId = null, recentAgen
 
 // The candidates whose whole name opens the query, longest name first:
 // `@Jamie Ash 继续` names "Jamie Ash" even when "Jamie" exists too.
+// A built-in role's own name (aliases) counts as one of its names.
 export function namedAtOpening(query, candidates) {
   const text = identityKey(query);
-  const matches = candidates.map(item => ({ item, key: identityKey(item.name) }))
+  const matches = candidates.flatMap(item => [item.name, ...(item.aliases ?? [])].map(name => ({ item, key: identityKey(name) })))
     .filter(({ key }) => key && text.startsWith(key) && nameEnds(key, text.slice(key.length)));
   const longest = Math.max(0, ...matches.map(({ key }) => key.length));
   return matches.filter(({ key }) => key.length === longest).map(({ item }) => item);

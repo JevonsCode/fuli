@@ -157,6 +157,7 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   list_knowledge_spaces: UNSCOPED,
   upsert_personal_project: UNSCOPED,
   upsert_project_agent: UNSCOPED,
+  rename_project_agent: UNSCOPED,
   list_project_agents: UNSCOPED,
   get_project_agent_context: UNSCOPED,
   get_project_agent: UNSCOPED,

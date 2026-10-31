@@ -113,6 +113,15 @@ export async function getProjectAgent(application, input) {
   ));
 }
 
+// Any Agent's shown name, FULI's own roles included (rec#11 D-89); null gives a
+// role its built-in name back. Identity stays the agentId.
+export async function renameProjectAgent(application, input) {
+  return projectAgentRecord(await application.personal.renameProjectAgent(input.agentId, {
+    personal_space_id: input.personalSpaceId,
+    display_name: input.displayName ?? null
+  }));
+}
+
 // Only an explicit person edit sets the occupation; it is never inferred.
 export async function updateProjectAgentOccupation(application, input) {
   return projectAgentRecord(await application.personal.updateProjectAgentOccupation(

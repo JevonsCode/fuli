@@ -311,3 +311,19 @@ class ProjectAgentRecord(StrictModel):
     name_suggestion: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class ProjectAgentRename(StrictModel):
+    """The name a person calls one Agent by; None gives a built-in role its own name back."""
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    display_name: str | None = Field(default=None, min_length=1, max_length=64)
+
+    @field_validator('display_name')
+    @classmethod
+    def one_line(cls, value):
+        if value is None:
+            return value
+        value = value.strip()
+        if not value or any(ord(character) < 32 or ord(character) == 127 for character in value):
+            raise ValueError('a name is one line of visible text')
+        return value
