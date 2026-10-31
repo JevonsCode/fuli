@@ -66,3 +66,15 @@ test('a verified public archive is reused after extraction failure', requiresUni
   await installNativeNeo4j(f.input, { download });
   assert.equal(downloads, 1, 'retry should not download the same verified public artifact twice');
 });
+
+test('the macOS app installs from its bundled archive without downloading and verifies it the same way', requiresUnixNativeAssets, async t => {
+  const f = await fixture(t);
+  const bundled = join(f.root, 'bundled.tar.gz');
+  const download = async () => assert.fail('must not download');
+  await writeFile(bundled, 'tampered');
+  await assert.rejects(installNativeNeo4j({ ...f.input, bundledArchive: bundled }, { download }), /checksum/i);
+  await rm(join(f.runtime, 'downloads'), { recursive: true });
+  await writeFile(bundled, f.bytes);
+  await installNativeNeo4j({ ...f.input, bundledArchive: bundled }, { download });
+  assert.match(await readFile(join(f.home, 'bin', 'neo4j'), 'utf8'), /exit 0/);
+});

@@ -1,6 +1,6 @@
 // Start, stop and inspect FULI through its own entry points (the Windows tray
-// controller, or the `fuli` CLI). This client never starts or stops FULI's
-// processes itself.
+// controller, the controller inside the macOS app, or the `fuli` CLI). This
+// client never starts or stops FULI's processes itself.
 
 enum RuntimeState { running, stopped, degraded, notConfigured, unknown, notFound }
 

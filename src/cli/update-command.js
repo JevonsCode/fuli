@@ -17,6 +17,7 @@ import {
   updateEnvironment
 } from './update-installation.js';
 import { readWindowsInstallation } from '../desktop/windows-installation-context.js';
+import { readMacosNativeBundle } from '../native-runtime/macos-assets.js';
 import {
   compareSemanticVersions,
   parseSemanticVersion
@@ -34,6 +35,9 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
   const packageRoot = dependencies.packageRoot ?? resolve(dirname(fileURLToPath(import.meta.url)), '../..');
   if (platform === 'win32' && readWindowsInstallation(packageRoot)) {
     throw new Error('The npm update command is not supported for a Windows per-user installation. Exit the Fuli tray, then run Update-Fuli.cmd from the newer verified candidate; use --preview to inspect it first. Keep the application and data directories.');
+  }
+  if (platform === 'darwin' && readMacosNativeBundle(packageRoot)) {
+    throw new Error('The FULI app is updated by replacing it, not through npm. Quit FULI, open the newer FULI .dmg and drag FULI.app to Applications again; the data directory stays where it is.');
   }
   const nodePath = dependencies.nodePath ?? process.execPath;
   const originalEnv = dependencies.env ?? process.env;

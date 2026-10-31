@@ -10,6 +10,7 @@ import '../../app/fuli_controller.dart';
 import '../../app/tray_view.dart';
 import '../../l10n/strings.dart';
 import '../../runtime/fuli_runtime.dart';
+import '../../runtime/macos_app_runtime.dart';
 import '../../runtime/shell_cli_runtime.dart';
 import '../../runtime/windows_tray_runtime.dart';
 import '../fuli_link.dart';
@@ -112,9 +113,15 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
   return AppServices(controller: controller, strings: strings, opener: opener, consoleView: console?.build);
 }
 
-FuliRuntime _runtime(String exeDir) => Platform.isWindows
-    ? WindowsTrayRuntime(exeDir: exeDir, env: Platform.environment)
-    : ShellCliRuntime(os: Platform.operatingSystem, env: Platform.environment);
+// Windows: the tray package's controller. macOS: the FULI inside this app
+// when it was built with one (the .dmg), otherwise the `fuli` CLI.
+FuliRuntime _runtime(String exeDir) {
+  if (Platform.isWindows) return WindowsTrayRuntime(exeDir: exeDir, env: Platform.environment);
+  final bundled = Platform.isMacOS ? bundledFuliRoot(exeDir) : null;
+  return bundled != null
+      ? MacosAppRuntime(root: bundled, env: Platform.environment)
+      : ShellCliRuntime(os: Platform.operatingSystem, env: Platform.environment);
+}
 
 // One client per installation's data directory. A launch leaves its link in
 // the inbox first: a second launch then signals the running client and

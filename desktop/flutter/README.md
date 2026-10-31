@@ -18,8 +18,10 @@ A Windows and macOS app for people who do not use a terminal: one window and a t
   preview and applies it with its digest; 「更新到 vX」 starts `POST /api/system/update` and follows
   its steps.
 - Starts and stops FULI only through FULI's own entry points: the tray controller
-  (`runtime\node\node.exe src\desktop\windows-controller.js start|stop|status|change-port|context`) on Windows,
-  `fuli start|stop|status --json` through the login shell on macOS.
+  (`runtime\node\node.exe src\desktop\windows-controller.js start|stop|status|change-port|context`) on Windows;
+  on macOS the controller inside the app (`Contents/Resources/fuli/runtime/node/bin/node
+  src/desktop/macos-controller.js start|stop|status`, `macos_app_runtime.dart`), or, for a client
+  built without FULI inside, `fuli start|stop|status --json` through the login shell.
 - The console port is `ports.console` in the data directory's `runtime-settings.json` (default 2727).
 - `fuli://` links (`lib/src/platform/fuli_link.dart`) only navigate, so they keep working when the
   port changes or a chat app drops `http://127.0.0.1` links: `fuli://status` (or `fuli://`) shows
@@ -55,6 +57,10 @@ It is the tray app of the Windows package (`docs/windows-first-install.md`, 「D
 
 ## On macOS
 
+It ships as FULI.app in a .dmg with FULI, Node, Java 21, Neo4j and the Provider's Python inside
+(`docs/macos-app.md`, built by `scripts/build-macos-app.js`): drag it to Applications and open it.
+The first 「启动 FULI」 sets FULI up in native mode; data stays in `~/Library/Application Support/Fuli`.
+
 `fuli` is declared in `macos/Runner/Info.plist` (`CFBundleURLTypes`); macOS registers it when the
 app is installed and hands links to the running app, received through `app_links`.
 
@@ -87,4 +93,7 @@ on `windows-latest` and `flutter build macos --release` on `macos-latest` for ch
 `desktop/flutter/`. The builds are unsigned workflow artifacts (`fuli-desktop-windows`,
 `fuli-desktop-macos`), not release assets. Releases ship the Windows build inside the tray package
 (`.github/actions/windows-tray`); the same workflow builds that package for pull requests that touch
-the desktop code (`fuli-windows-tray`).
+the desktop code (`fuli-windows-tray`). It also builds the macOS .dmg (`.github/actions/macos-app`,
+artifact `fuli-macos-dmg`) and smoke-tests it: mount, copy FULI.app out, start FULI from it with a
+temporary HOME and no Node, Java or Python on PATH, stop it, launch the client. Unsigned unless the
+Developer ID secrets exist (`docs/macos-app.md`, 「Signing」); not a release asset yet.

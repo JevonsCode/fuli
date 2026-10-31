@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fuli_desktop/src/runtime/console_port.dart';
 import 'package:fuli_desktop/src/runtime/fuli_runtime.dart';
+import 'package:fuli_desktop/src/runtime/macos_app_runtime.dart';
 import 'package:fuli_desktop/src/runtime/runtime_output.dart';
 import 'package:fuli_desktop/src/runtime/tray_install.dart';
 
@@ -145,6 +146,39 @@ void main() {
       writeFile(['Programs', 'Fuli', 'versions', 'x', 'runtime', 'node', 'node.exe'], '');
       expect(await locateTrayInstall(exeDir: path(['elsewhere', 'app']), env: {'LOCALAPPDATA': temp.path}), isNull);
       expect(await locateTrayInstall(exeDir: path(['elsewhere', 'app']), env: const {}), isNull);
+    });
+  });
+
+  // The app layout scripts/build-macos-app.js produces; '/' paths as on macOS.
+  group('macOS app runtime', () {
+    String appPath(List<String> parts) => [temp.path, 'FULI.app', 'Contents', ...parts].join('/');
+
+    test('finds FULI inside the app only when its Node and controller are there', () {
+      final exeDir = appPath(['MacOS']);
+      expect(bundledFuliRoot(exeDir), isNull);
+      writeFile(['FULI.app', 'Contents', 'Resources', 'fuli', 'runtime', 'node', 'bin', 'node'], '');
+      expect(bundledFuliRoot(exeDir), isNull);
+      writeFile(['FULI.app', 'Contents', 'Resources', 'fuli', 'src', 'desktop', 'macos-controller.js'], '');
+      expect(bundledFuliRoot(exeDir), appPath(['Resources', 'fuli']));
+    });
+
+    test('runs the bundled controller and reads its answer', () async {
+      final root = appPath(['Resources', 'fuli']);
+      // A stand-in Node that answers like macos-controller.js, echoing the action it got.
+      writeFile(['FULI.app', 'Contents', 'Resources', 'fuli', 'runtime', 'node', 'bin', 'node'],
+          '#!/bin/sh\nprintf \'{"ok":true,"action":"%s","status":"running","state":{"status":"running","console":{"url":"http://127.0.0.1:4311/"}}}\\n\' "\$2"\n');
+      await Process.run('chmod', ['+x', macosNodePathOf(root)]);
+      final runtime = MacosAppRuntime(root: root, env: {'HOME': temp.path});
+      final report = await runtime.start();
+      expect(report.state, RuntimeState.running);
+      expect(report.consolePort, 4311);
+      expect(runtime.canChangePort, isFalse);
+      expect(await runtime.consolePort(), defaultConsolePort);
+    }, skip: Platform.isWindows ? 'needs a POSIX shell' : false);
+
+    test('reports a missing runtime as not found', () async {
+      final report = await MacosAppRuntime(root: appPath(['Resources', 'fuli']), env: const {}).status();
+      expect(report.state, RuntimeState.notFound);
     });
   });
 }

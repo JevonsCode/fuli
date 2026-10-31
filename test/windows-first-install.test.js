@@ -374,7 +374,7 @@ test('an explicitly adopted Fuli data directory is bound unchanged and its conta
   assert.deepEqual(readdirSync(dataDir).sort(), ['backups', 'graph-runtime.json', 'runtime-settings.json']);
   const context = loadTrayContext({ packageRoot: installed.packageRoot, env: f.env });
   assert.equal(context.dataDir, dataDir);
-  const { runTrayAction } = await import('../src/desktop/windows-controller.js');
+  const { runTrayAction } = await import('../src/desktop/desktop-controller.js');
   const calls = [];
   const result = await runTrayAction('start', context, { runCli: async (_context, args) => {
     calls.push(args);

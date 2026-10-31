@@ -2,32 +2,20 @@ import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
 import { AGENT_KIT_COMPONENTS } from '../agent-kits/pins.js';
+import { bundlePath, readBundleManifest } from './bundle-manifest.js';
 
 export function readWindowsNativeBundle(packageRoot) {
-  const path = join(packageRoot, 'native-bundle.json');
-  if (!existsSync(path)) return null;
-  const manifest = JSON.parse(readFileSync(path, 'utf8'));
+  const found = readBundleManifest(packageRoot);
+  if (!found) return null;
+  const { manifest, root } = found;
   if (manifest.version !== 1 || manifest.platform !== 'win32' || manifest.arch !== 'x64'
       || manifest.providerPackaging !== 'embedded') {
     throw new Error('The Windows portable bundle manifest is not supported.');
   }
-  const root = realpathSync(packageRoot);
   const paths = Object.fromEntries(['neo4jHome', 'javaHome', 'providerPython', 'providerSource', 'dataDir']
     .map(key => [key, bundlePath(root, manifest[key], key)]));
   return { ...paths, ...bundledAgentKits(root, manifest.agentKits), bundleRoot: root,
     providerPackaging: 'embedded', assetSource: 'portable' };
-}
-
-function bundlePath(root, value, key) {
-  if (typeof value !== 'string' || !value.trim() || isAbsolute(value)) {
-    throw new Error('Portable bundle paths must be relative: ' + key);
-  }
-  const resolved = resolve(root, value);
-  const local = relative(root, resolved);
-  if (!local || local.startsWith('..') || isAbsolute(local)) {
-    throw new Error('Portable bundle paths must stay inside the bundle: ' + key);
-  }
-  return resolved;
 }
 
 // The shared client components' executables (src/agent-kits/pins.js). A

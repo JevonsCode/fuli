@@ -1,17 +1,23 @@
 name: Desktop client
 
-# The Flutter desktop client (desktop/flutter), and the Windows tray package
+# The Flutter desktop client (desktop/flutter), the Windows tray package
 # that ships it (.github/actions/windows-tray, the same build a release
-# attaches). Builds are workflow artifacts for testing, not release assets;
-# they are unsigned.
+# attaches) and the macOS .dmg (.github/actions/macos-app). Builds are
+# workflow artifacts for testing, not release assets; they are unsigned
+# (the .dmg is signed only when the Developer ID secrets exist).
 on:
   pull_request:
     paths:
       - desktop/**
       - scripts/build-windows-*.js
       - scripts/package-windows-tray-release.js
+      - scripts/*macos*.js
+      - scripts/bundle-build.js
       - src/desktop/**
+      - src/native-runtime/macos-assets.js
+      - src/native-runtime/bundle-manifest.js
       - .github/actions/windows-tray/**
+      - .github/actions/macos-app/**
       - .github/workflows/desktop-client.yml
   push:
     branches:
@@ -20,8 +26,13 @@ on:
       - desktop/**
       - scripts/build-windows-*.js
       - scripts/package-windows-tray-release.js
+      - scripts/*macos*.js
+      - scripts/bundle-build.js
       - src/desktop/**
+      - src/native-runtime/macos-assets.js
+      - src/native-runtime/bundle-manifest.js
       - .github/actions/windows-tray/**
+      - .github/actions/macos-app/**
       - .github/workflows/desktop-client.yml
   workflow_dispatch:
 
@@ -118,5 +129,45 @@ jobs:
         with:
           name: fuli-windows-tray
           path: ${{ steps.tray.outputs.release }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # The macOS .dmg (.github/actions/macos-app): FULI.app with Node, Java 21,
+  # Neo4j and the Provider's Python inside, for Apple silicon. Unsigned unless
+  # the Developer ID secrets exist. The smoke test mounts it, copies FULI.app
+  # out, and starts FULI from it with a temporary HOME, ephemeral ports and no
+  # Node, Java, Python or uv on PATH. Not attached to releases yet.
+  macos-dmg:
+    needs: test
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: npm ci
+      - id: mac
+        uses: ./.github/actions/macos-app
+        with:
+          certificate-p12: ${{ secrets.MACOS_CERT_P12 }}
+          certificate-password: ${{ secrets.MACOS_CERT_PASSWORD }}
+          apple-id: ${{ secrets.APPLE_ID }}
+          team-id: ${{ secrets.APPLE_TEAM_ID }}
+          app-password: ${{ secrets.APPLE_APP_PASSWORD }}
+      - name: Install and start FULI from the disk image
+        shell: bash
+        run: |
+          dmg="$(ls "${{ steps.mac.outputs.release }}"/*.dmg)"
+          ls -l "${{ steps.mac.outputs.release }}"
+          node scripts/macos-app-smoke.js "$dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fuli-macos-dmg
+          path: ${{ steps.mac.outputs.release }}
           if-no-files-found: error
           retention-days: 7

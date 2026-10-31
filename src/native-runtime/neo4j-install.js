@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { access, lstat, mkdir, mkdtemp, realpath, rename, rm } from 'node:fs/promises';
+import { access, copyFile, lstat, mkdir, mkdtemp, realpath, rename, rm } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -7,7 +7,9 @@ import { sha256File } from '../security/digest.js';
 import { downloadResumable } from './resumable-download.js';
 
 // Immutable, versioned assets only. Instance data lives outside this directory.
-export async function installNativeNeo4j({ paths, home, url, sha256 }, {
+// bundledArchive: the same pinned archive shipped with the macOS app
+// (macos-assets.js), copied instead of downloaded and verified the same way.
+export async function installNativeNeo4j({ paths, home, url, sha256, bundledArchive = null }, {
   download = downloadFile, extract = extractArchive
 } = {}) {
   let root = resolve(paths.nativeRuntimeDir);
@@ -36,7 +38,7 @@ export async function installNativeNeo4j({ paths, home, url, sha256 }, {
     let cached = false;
     try { cached = (await lstat(archive)).isFile() && await sha256File(archive) === sha256; }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
-    if (!cached) await download(url, archive);
+    if (!cached) await (bundledArchive ? copyFile(bundledArchive, archive) : download(url, archive));
     if (await sha256File(archive) !== sha256) throw new Error('The downloaded Neo4j archive failed checksum verification.');
     stage = await mkdtemp(join(root, '.neo4j-stage-'));
     const unpacked = join(stage, 'unpacked');

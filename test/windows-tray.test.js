@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
-import { loadTrayContext, runTrayAction, trayStateLabel, validateTrayDataDir } from '../src/desktop/windows-controller.js';
+import { loadTrayContext, validateTrayDataDir } from '../src/desktop/windows-controller.js';
+import { runTrayAction, trayStateLabel } from '../src/desktop/desktop-controller.js';
 import { refreshEmbeddedProvider } from '../scripts/build-windows-tray.js';
 
 async function fixture(t) {
@@ -71,6 +72,20 @@ test('first explicit start/open scopes setup, skips Agent integration, then open
   assert.equal(result.ok, true);
   assert.deepEqual(calls[0], ['setup', '--yes', '--skip-agents', '--personal-only', '--runtime-mode', 'native', '--data-dir', f.dataDir]);
   assert.deepEqual(calls.map(args => args[0]), ['setup', 'status', 'open', 'status']);
+});
+
+test('a first setup that reports partial still counts when FULI runs; one that failed does not', async t => {
+  const f = await fixture(t);
+  const start = (setup, state) => runTrayAction('start', f.context, { portBlocked: async () => false,
+    runCli: async (context, args) => args[0] === 'setup' ? setup : reply(state) });
+  const partial = { code: 1, stdout: 'Knowledge recovery is pending.', stderr: '' };
+  assert.equal((await start(partial, running)).ok, true);
+  const stillStopped = await start(partial, stopped);
+  assert.equal(stillStopped.ok, false);
+  assert.match(stillStopped.error, /running state/);
+  const failed = await start({ code: 1, stdout: '', stderr: 'Native Neo4j did not open its local Bolt port.' }, running);
+  assert.equal(failed.ok, false);
+  assert.match(failed.error, /Bolt port/);
 });
 
 test('opening an already running selection preserves its processes; open-only never starts', async t => {
