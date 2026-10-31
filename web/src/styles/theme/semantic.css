@@ -32,6 +32,11 @@
   /* Deep gold: 4.5:1 on the page, so a link reads as a link next to ink text. */
   --color-link: #7a5a28;
   --color-focus: var(--color-accent);
+  /* Frosted glass (Jevons, 11-01: the dock looks like macOS, not a black bar):
+     only what floats over the page uses it, with a live blur behind. */
+  --surface-glass: rgb(255 255 255 / 58%);
+  --surface-glass-strong: rgb(255 255 255 / 82%);
+  --edge-glass: rgb(255 255 255 / 80%);
   --color-success: #2e7d5b;
   --color-success-soft: #e8f2ec;
   --color-warning: #8a5a12;
