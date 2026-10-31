@@ -455,10 +455,10 @@ async function openReplacement(item: KnowledgeItem) {
 .organizer-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--radius-control);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
   overflow: clip;
-  background: var(--color-surface);
+  background: var(--card);
 }
 
 .organizer-directory {
@@ -493,18 +493,19 @@ async function openReplacement(item: KnowledgeItem) {
   border: 0;
   border-bottom: 1px solid var(--color-border);
   color: var(--color-ink);
-  background: var(--color-surface);
+  background: transparent;
   text-align: left;
 }
 
 .organizer-row:hover {
-  background: var(--color-surface);
+  background: var(--surface-glass-strong);
 }
 
 /* The open row lifts as a card while its quick look is up (never a side bar). */
 .organizer-row.selected {
   position: relative;
   z-index: 1;
+  background: var(--color-surface);
   box-shadow: inset 0 0 0 1px var(--color-border-strong), var(--shadow-md);
 }
 
