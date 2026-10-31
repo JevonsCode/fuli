@@ -936,6 +936,14 @@ def _next_snapshot(previous: dict, request: KnowledgeRevisionCreate, changed_at:
             value['qualifiedUseCount'] = 0
             value['distinctTaskCount'] = 0
             value['lastUsedAt'] = None
+        if content_changed or classification_changed:
+            # Feedback judged the old content, which the revision keeps; only a
+            # person answers the attention flag it raised.
+            value['negativeEvidenceCount'] = 0
+            value['lastFeedbackKind'] = None
+            value['lastFeedbackAt'] = None
+            if request.operation_actor == 'human':
+                value['requiresAttention'] = False
         if request.reasoning_summary is not None:
             value['reasoningSummary'] = request.reasoning_summary or None
         if request.profile_aspect is not None:

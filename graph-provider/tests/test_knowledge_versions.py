@@ -69,10 +69,9 @@ def test_a_persons_new_version_is_their_own_confirmed_statement_and_starts_unuse
     assert value['confirmationBasis']['quadrant_reason'] == 'Stated in a task.'
     assert value['negativeFeedbackBlock'] is None, 'the person states it, so the block does not carry'
     assert (value['usageGeneration'], value['qualifiedUseCount'], value['utilityScore'],
-            value['negativeEvidenceCount']) == (1, 0, 0.0, 1)
+            value['negativeEvidenceCount']) == (1, 0, 0.0, 0)
     assert value['requiresAttention'] is False, 'the person answered the attention flag'
-    assert (value['lastFeedbackKind'], value['lastFeedbackAt']) == (
-        'rejected', '2026-10-20T08:00:00+00:00')
+    assert (value['lastFeedbackKind'], value['lastFeedbackAt']) == (None, None)
     assert value['invalidAt'] is None and value['replacedByItemId'] is None
 
 
@@ -84,9 +83,7 @@ def test_an_agents_new_version_waits_for_a_person_and_keeps_the_block_and_attent
                                           'proposed_by': {'kind': 'agent'}}
     assert value['negativeFeedbackBlock'] == PREVIOUS['negativeFeedbackBlock']
     assert value['qualifiedUseCount'] == 0
-    assert value['negativeEvidenceCount'] == 1
-    assert (value['lastFeedbackKind'], value['lastFeedbackAt']) == (
-        'rejected', '2026-10-20T08:00:00+00:00')
+    assert value['negativeEvidenceCount'] == 0, 'feedback judged the old content'
     assert value['requiresAttention'] is True, 'only a person clears what negative feedback raised'
 
 
