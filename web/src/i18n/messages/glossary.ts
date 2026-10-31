@@ -15,7 +15,7 @@ export const glossaryMessages = {
       section: '页面',
       memory: '记忆',
       occupation: '职业',
-      tonborg: 'Tonborg 判断',
+      tonborg: '@:{\'roleNames.tonborg\'} 判断',
       setting: '设置',
     },
     memory: {
@@ -26,21 +26,21 @@ export const glossaryMessages = {
     },
     occupation: {
       catalog: '职业是 Agent 的角色类型：显示为它的职业标签，招聘时也按职业找合适的 Agent。',
-      hr: 'Bole 的职业：记录有哪些 Agent、各自在做什么，按需招募并保留招募记录。以前叫 AR。',
+      hr: '@:{\'roleNames.bole\'} 的职业：记录有哪些 Agent、各自在做什么，按需招募并保留招募记录。以前叫 AR。',
       archived: '归档不是删除：新的选择里不再出现，已经是这个职业的 Agent 保持不变，随时可以恢复。',
       active: '在用的职业会出现在给 Agent 选职业和招聘的选项里。',
       agentCountLabel: 'Agent 数',
       agentCount: '有多少个未归档的 Agent 以这个职业为角色或职业标签。',
     },
     tonborg: {
-      manual: 'Tonborg 只分析、给建议，不替你执行；每一项都由你确认。',
-      shared: 'Tonborg 按你已经确认过的做法处理常规事项，拿不准时问你。',
-      autonomous: 'Tonborg 自己处理常规审核和执行选择，必要时再找你；有风险的操作始终要你确认。',
-      escalate: 'Tonborg 判断这一项不能自己决定，需要你看一下再定。',
+      manual: '@:{\'roleNames.tonborg\'} 只分析、给建议，不替你执行；每一项都由你确认。',
+      shared: '@:{\'roleNames.tonborg\'} 按你已经确认过的做法处理常规事项，拿不准时问你。',
+      autonomous: '@:{\'roleNames.tonborg\'} 自己处理常规审核和执行选择，必要时再找你；有风险的操作始终要你确认。',
+      escalate: '@:{\'roleNames.tonborg\'} 判断这一项不能自己决定，需要你看一下再定。',
     },
     setting: {
       agentNamingStyle: '你用一句话写下想要的 Agent 名字风格。之后新建 Agent 时，负责招聘的 Agent 按它起名，FULI 只保证名字不和已有 Agent 重复；重名就换一个同风格的，实在想不出会告诉你。已有 Agent 不改名；留空就用默认名字。',
-      topicPromotion: '还没归到项目的对话，如果同一个话题 2 天里聊了 3 次以上，开着这项时 Astro 直接把它建成项目、配好负责人，并在回执里告诉你；你可以点链接改名、换上级或撤销（撤销后项目归档，话题再多聊几次才会再升级）。关掉时只提建议，由你在控制台决定。',
+      topicPromotion: '还没归到项目的对话，如果同一个话题 2 天里聊了 3 次以上，开着这项时 @:{\'roleNames.astro\'} 直接把它建成项目、配好负责人，并在回执里告诉你；你可以点链接改名、换上级或撤销（撤销后项目归档，话题再多聊几次才会再升级）。关掉时只提建议，由你在控制台决定。',
       diagnostics: '一个 JSON 文件，装着开发者排查 FULI 问题需要的东西：版本和安装方式、系统和 Node 版本、不含个人内容的设置、体检结果和每个日志的最后约 400 行。用户目录、用户名、邮箱、令牌、密钥和网址参数在离开这台电脑前就被隐藏；不含知识、对话记录、记忆和项目内容。在设置的「系统」里生成，先预览再导出。',
     },
     destination: {
@@ -71,7 +71,7 @@ export const glossaryMessages = {
     review: {
       confirmed: '由你或权威来源确认，Agent 会按原样使用。',
       agent_confirmed: '多次被实际用到并有证据支持，由 Agent 确认；你随时可以改。',
-      ai_reviewed: 'Tonborg 已自动审过；值得你判断的会在会话里直接问你。',
+      ai_reviewed: '@:{\'roleNames.tonborg\'} 已自动审过；值得你判断的会在会话里直接问你。',
       pending: '刚记下，还在积累使用和证据，权重会随之上升。',
     },
     profile: {
@@ -120,7 +120,7 @@ export const glossaryMessages = {
       section: 'Page',
       memory: 'Memory',
       occupation: 'Occupation',
-      tonborg: 'Tonborg judgment',
+      tonborg: '@:{\'roleNames.tonborg\'} judgment',
       setting: 'Setting',
     },
     memory: {
@@ -131,21 +131,21 @@ export const glossaryMessages = {
     },
     occupation: {
       catalog: 'An occupation is an Agent\'s role type: it shows as the Agent\'s occupation chip, and recruitment matches Agents by it.',
-      hr: 'Bole\'s occupation: keeps track of which Agents exist and what they work on, recruits when needed and keeps the recruitment records. Formerly called AR.',
+      hr: '@:{\'roleNames.bole\'}\'s occupation: keeps track of which Agents exist and what they work on, recruits when needed and keeps the recruitment records. Formerly called AR.',
       archived: 'Archiving is not deleting: the occupation leaves new choices, Agents that already have it keep it, and you can restore it anytime.',
       active: 'Active occupations appear when you choose an Agent\'s occupation and when recruiting.',
       agentCountLabel: 'Agents',
       agentCount: 'How many Agents, archived ones aside, have this occupation as their role or an occupation tag.',
     },
     tonborg: {
-      manual: 'Tonborg only analyzes and recommends; it applies nothing, and you confirm every item.',
-      shared: 'Tonborg handles routine items the way you already confirmed, and asks you when unsure.',
-      autonomous: 'Tonborg handles routine reviews and execution choices itself and comes to you when needed; risky actions always need you.',
-      escalate: 'Tonborg judged it should not decide this item itself; it needs your look before it goes ahead.',
+      manual: '@:{\'roleNames.tonborg\'} only analyzes and recommends; it applies nothing, and you confirm every item.',
+      shared: '@:{\'roleNames.tonborg\'} handles routine items the way you already confirmed, and asks you when unsure.',
+      autonomous: '@:{\'roleNames.tonborg\'} handles routine reviews and execution choices itself and comes to you when needed; risky actions always need you.',
+      escalate: '@:{\'roleNames.tonborg\'} judged it should not decide this item itself; it needs your look before it goes ahead.',
     },
     setting: {
       agentNamingStyle: 'A sentence describing the names you want for Agents. When a new Agent is created, the recruiting Agent names it in this style and FULI only makes sure no other Agent already has the name; on a clash it picks another in the same style, and tells you if it cannot find one. Existing Agents keep their names; leave it empty for the default names.',
-      topicPromotion: 'When conversations that belong to no project keep returning to one topic (3 times over 2 days), Astro forms the project and its lead by itself and says so in the receipt; its link lets you rename it, move it under another project or undo it (an undo archives the project, and the topic needs a few more conversations before it grows again). Turned off, Astro only suggests and you decide in the console.',
+      topicPromotion: 'When conversations that belong to no project keep returning to one topic (3 times over 2 days), @:{\'roleNames.astro\'} forms the project and its lead by itself and says so in the receipt; its link lets you rename it, move it under another project or undo it (an undo archives the project, and the topic needs a few more conversations before it grows again). Turned off, @:{\'roleNames.astro\'} only suggests and you decide in the console.',
       diagnostics: 'One JSON file with what the developers need to diagnose FULI: its version and install kind, the OS and Node versions, settings without personal values, the health check and about the last 400 lines of each log. Home folder, user name, emails, tokens, keys and URL parameters are hidden before anything leaves this computer; it holds no knowledge, conversations, memory or project content. Create it under Settings › System, preview it, then export it.',
     },
     destination: {
@@ -176,7 +176,7 @@ export const glossaryMessages = {
     review: {
       confirmed: 'Confirmed by you or an authoritative source; Agents use it as is.',
       agent_confirmed: 'Used repeatedly with supporting evidence, so an Agent confirmed it. You can change it anytime.',
-      ai_reviewed: 'Reviewed automatically by Tonborg; anything worth your judgment is asked in the session.',
+      ai_reviewed: 'Reviewed automatically by @:{\'roleNames.tonborg\'}; anything worth your judgment is asked in the session.',
       pending: 'Newly captured and still gathering use and evidence; its weight rises as they accumulate.',
     },
     profile: {
@@ -192,7 +192,7 @@ export const glossaryMessages = {
       paused: 'Paused; it resumes where it stopped.',
       blocked: 'Blocked on something someone else must handle.',
       awaiting_review: 'Done and waiting for acceptance.',
-      awaiting_recruitment: 'Needs an occupation nobody has yet; it starts once Bole recruits one.',
+      awaiting_recruitment: 'Needs an occupation nobody has yet; it starts once @:{\'roleNames.bole\'} recruits one.',
       none: 'No task in progress.',
       ended: 'The task has ended.',
       unblock: 'When a block was solved outside FULI and the session that reported it will not continue, you mark it as unblocked. The task goes back to running, its open decision requests close, and the block stays in the task history. Agents cannot do this.',

@@ -184,7 +184,7 @@ export const settingsMessages = {
     },
     topicPromotion: {
       title: '话题自动升级为项目',
-      description: '同一个话题 2 天里聊了 3 次以上，Astro 直接建项目并在回执里告诉你，可以改名或撤销。关掉后只提建议。',
+      description: '同一个话题 2 天里聊了 3 次以上，@:{\'roleNames.astro\'} 直接建项目并在回执里告诉你，可以改名或撤销。关掉后只提建议。',
     },
     conversationLaunchers: {
       title: '会话打开方式',
@@ -445,7 +445,7 @@ export const settingsMessages = {
     },
     topicPromotion: {
       title: 'Topics grow into projects',
-      description: 'When one topic comes up 3 times over 2 days, Astro forms its project and tells you in the receipt, where you can rename or undo it. Turned off, it only suggests.',
+      description: 'When one topic comes up 3 times over 2 days, @:{\'roleNames.astro\'} forms its project and tells you in the receipt, where you can rename or undo it. Turned off, it only suggests.',
     },
     conversationLaunchers: {
       title: 'Conversation openers',
