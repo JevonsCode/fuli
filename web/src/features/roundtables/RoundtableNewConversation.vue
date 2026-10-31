@@ -99,7 +99,7 @@ onBeforeUnmount(() => controller.abort())
 </template>
 
 <style scoped>
-.roundtable-new { display: grid; gap: 12px; padding: 16px 0 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
+.roundtable-new { display: grid; gap: 12px; padding: 16px 0 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); }
 .roundtable-new > :not(.roundtable-composer) { margin: 0 20px; }
 .roundtable-new-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .roundtable-new-agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 8px; margin: 0; padding: 0; border: 0; }

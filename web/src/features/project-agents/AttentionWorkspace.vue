@@ -121,7 +121,7 @@ async function respond(item: AgentAttention, answer: AttentionAnswer) {
 <template>
   <div ref="root" class="attention-page-body">
     <div class="attention-toolbar flex flex-wrap items-center gap-2">
-      <span class="attention-page-count text-sm text-muted-foreground" role="status">{{ attention.agentId ? names[attention.agentId] || t('attention.agentFallback') : t('attention.all') }} · {{ t('attention.count', { count: pendingCount }) }}</span>
+      <span class="attention-page-count text-sm text-muted-foreground" :class="{ 'ui-sr-only': !pendingCount && !attention.agentId }" role="status">{{ attention.agentId ? names[attention.agentId] || t('attention.agentFallback') : t('attention.all') }} · {{ t('attention.count', { count: pendingCount }) }}</span>
       <div class="ml-auto flex items-center gap-2">
         <GrowthLoading v-if="attention.loading && attention.items.length" variant="inline" :label="t('attention.loading')" />
         <Button v-if="attention.agentId" as-child variant="outline" size="sm"><RouterLink :to="inboxLocation()">{{ t('attention.all') }}</RouterLink></Button>

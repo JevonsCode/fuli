@@ -58,6 +58,16 @@ async function type(value: string) {
 }
 
 describe('Inbox page', () => {
+  it('says an empty queue once: the count is left to screen readers', async () => {
+    open = []
+    const { wrapper } = await setup('/inbox')
+    expect(wrapper.find('.attention-empty').exists()).toBe(true)
+    expect(wrapper.get('.attention-page-count').classes()).toContain('ui-sr-only')
+    open = [request('request-a')]
+    const listed = await setup('/inbox')
+    expect(listed.wrapper.get('.attention-page-count').classes()).not.toContain('ui-sr-only')
+  })
+
   it('opens a linked request as a quick look and keeps an unsent reply across navigation', async () => {
     const { router, wrapper } = await setup('/inbox?agent=agent-a&request=request-b')
     // The link becomes the request's quick look in place: ?item=<space>/<request>.
