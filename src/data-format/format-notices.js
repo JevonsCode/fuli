@@ -115,7 +115,7 @@ function applicationFormatNotice(application) {
 }
 
 export async function receiptFormatNotices(application, options = {}) {
-  const closeUrl = `${receiptConsoleUrl(application).replace(/\/$/, '')}/settings/data-format`;
+  const closeUrl = `${receiptConsoleUrl(application)}/settings/data-format`;
   const notice = await applicationFormatNotice(application)?.({ ...options, closeUrl });
   return notice ? [notice] : [];
 }
