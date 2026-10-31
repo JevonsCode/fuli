@@ -1,6 +1,6 @@
 .graph-stage {
   position: relative; min-width: 0; min-height: 520px; display: grid;
-  grid-template-columns: minmax(0, 1fr); overflow: hidden; background: var(--color-surface);
+  grid-template-columns: minmax(0, 1fr); overflow: hidden; background: var(--card);
 }
 /* Parent projects sit above the graph, never in a column beside it (D-03). */
 .graph-stage.has-parent-projects {
@@ -12,7 +12,7 @@
 #knowledge-graph:active { cursor: grabbing; }
 .project-hierarchy-aside {
   position: relative; z-index: 4; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px;
-  padding: 10px 16px; border-bottom: 1px solid var(--color-border); background: var(--color-surface);
+  padding: 10px 16px; border-bottom: 1px solid var(--color-border);
 }
 .project-hierarchy-aside header {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 3px 8px;

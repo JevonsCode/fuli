@@ -27,6 +27,8 @@
   --form-measure: 1040px;
   --measure: 72ch;
   --page-gutter: clamp(20px, 2.4vw, 56px);
+  /* Room a page leaves under its last line for the floating dock. */
+  --dock-clearance: calc(40px + 72px);
 }
 
 /* Reserved dark values (see styles/theme/semantic.css). */

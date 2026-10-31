@@ -40,8 +40,11 @@ describe('ProjectHistoryPreview', () => {
     })
     const wrapper = mount(ProjectHistoryPreview, { props: { spaceId: 'space-1' } })
     expect(getJson).not.toHaveBeenCalled()
+    // The bar names the preview; what it does and does not touch is said once, in the dialog.
+    expect(wrapper.text()).not.toContain(t('projectHistory.hint'))
 
     await wrapper.get('[data-generate]').trigger('click')
+    expect(dialog().text()).toContain(t('projectHistory.hint'))
     expect(dialog().get('[role="status"]').attributes('aria-label')).toBe(t('projectHistory.loadingProjects'))
     release()
     await flushPromises()
