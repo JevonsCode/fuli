@@ -85,7 +85,6 @@ export const projectAgentMessages = {
       active: '{count} 个可用',
       assignments: '{count} 个分配',
       projects: '分布在 {count} 个项目',
-      noOnlineClaim: '配置不等于在线；以实际上报为准',
     },
     team: {
       autoGrow: '新员工自动归组',
@@ -498,7 +497,6 @@ export const projectAgentMessages = {
       active: '{count} available',
       assignments: '{count} assignments',
       projects: 'Across {count} projects',
-      noOnlineClaim: 'Configured is not online; only reports count',
     },
     coordination: {
       aria: 'Agent collaboration policy for {project}',

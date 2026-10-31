@@ -186,7 +186,6 @@ async function confirmDelete() {
 <template>
   <section class="view agent-services-view">
     <div class="mx-auto flex w-full max-w-(--layout-max) flex-col gap-3">
-      <p class="page-lede m-0 text-sm text-muted-foreground">{{ t('agentServices.lede') }}</p>
       <div class="flex flex-wrap items-center gap-2">
         <label class="agent-services-search">
           <span class="ui-sr-only">{{ t('agentServices.search') }}</span>

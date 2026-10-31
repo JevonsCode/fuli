@@ -267,7 +267,7 @@ function recordSaved(record: ProjectAgentRecord) {
         <div class="project-agents-summary">
           <GrowthLoading v-if="roster.loading.value && agents.length" variant="inline" :label="t('projectAgents.loading')" />
           <p v-if="!pageLoading && !pageError" class="project-agents-header-meta" aria-live="polite">
-            <strong>{{ t('projectAgents.stats.active', { count: activeCount }) }}</strong> · {{ t('projectAgents.stats.total', { count: agents.length }) }} · {{ t('projectAgents.stats.assignments', { count: assignmentCount }) }} · {{ t('projectAgents.stats.projects', { count: representedProjectCount }) }}<span class="project-agents-header-note">{{ t('projectAgents.stats.noOnlineClaim') }}</span>
+            <strong>{{ t('projectAgents.stats.active', { count: activeCount }) }}</strong> · {{ t('projectAgents.stats.total', { count: agents.length }) }} · {{ t('projectAgents.stats.assignments', { count: assignmentCount }) }} · {{ t('projectAgents.stats.projects', { count: representedProjectCount }) }}
           </p>
           <Button class="project-agents-actions-start" size="sm" variant="ghost" :disabled="!spaceId" @click="openCreate">{{ t('projectAgents.add') }}</Button>
         </div>
@@ -349,12 +349,17 @@ function recordSaved(record: ProjectAgentRecord) {
 .project-agents-view { scrollbar-gutter: stable; }
 .project-agents-toolbar {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px;
-  padding-block: 4px 0; background: var(--color-bg);
+  padding-block: 4px 0;
 }
-/* Tall screens keep the filters in reach while reading a long roster; short
-   ones give that height back to the cards. */
+/* Tall screens keep the filters in reach while reading a long roster, on a
+   floating panel the cards pass under (opaque: only the dock blurs live);
+   short ones give that height back. */
 @media (min-height: 820px) {
-  .project-agents-toolbar { position: sticky; top: -12px; z-index: 2; padding-block: 16px 12px; margin-block: -12px -12px; }
+  .project-agents-toolbar {
+    position: sticky; top: 4px; z-index: 2; padding: 10px 14px;
+    border: 1px solid var(--edge-glass); border-radius: var(--radius-panel);
+    background: var(--color-surface); box-shadow: inset 0 1px 0 var(--edge-glass), var(--shadow-sm);
+  }
 }
 .project-agents-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1 1 560px; }
 .project-agents-project-filter { flex: 0 1 280px; min-width: 220px; }
@@ -373,7 +378,6 @@ function recordSaved(record: ProjectAgentRecord) {
 .project-agents-actions-start { margin-inline-start: auto; }
 .project-agents-header-meta { margin: 0; color: var(--color-muted); font-size: 12px; }
 .project-agents-header-meta strong { color: var(--color-ink); font-weight: 700; }
-.project-agents-header-note { margin-inline-start: 12px; }
 .project-agents-state {
   min-height: 200px; display: grid; place-content: center; justify-items: center; gap: 8px;
   color: var(--color-muted); font-size: 14px; text-align: center;

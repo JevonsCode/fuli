@@ -22,7 +22,7 @@
 .bole-alert { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 8px 12px; border-radius: var(--radius-control); background: var(--color-danger-soft); color: var(--color-danger); font-size: 13px; }
 
 
-.bole-card { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); transition: border-color var(--motion-fast); }
+.bole-card { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); transition: border-color var(--motion-fast); }
 .bole-card:hover { border-color: var(--color-border-strong); }
 
 .bole-agent-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }

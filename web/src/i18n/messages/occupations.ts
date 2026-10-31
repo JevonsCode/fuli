@@ -1,7 +1,6 @@
 export const occupationsMessages = {
   'zh-CN': {
     title: '职业',
-    lede: '本空间的职业表，Agent 的职业从这里选。内置职业随 FULI 提供，不能删除；自定义职业由你添加。',
     statsAria: '按状态筛选职业',
     stats: { all: '全部', active: '在用', archived: '已归档', custom: '自定义' },
     search: '搜索职业名称或职责',
@@ -74,7 +73,6 @@ export const occupationsMessages = {
   },
   'en-US': {
     title: 'Occupations',
-    lede: "This space's occupation table; an Agent's occupation is chosen from it. Built-in ones ship with FULI and cannot be deleted; you add custom ones.",
     statsAria: 'Filter occupations by status',
     stats: { all: 'All', active: 'Active', archived: 'Archived', custom: 'Custom' },
     search: 'Search names or duties',

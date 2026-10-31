@@ -46,7 +46,7 @@
 /* Rows inside a section: hairline-separated, no nested cards. */
 .project-agent-assignment-list, .project-agent-task-list, .project-agent-learning-list, .project-agent-recruitment-list { display: grid; gap: 12px; margin-top: 12px; }
 .project-agent-task-list { min-width: 0; grid-template-columns: minmax(0, 1fr); }
-.project-agent-assignment-card, .project-agent-learning-card, .project-agent-recruitment-card { min-width: 0; padding: 14px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); }
+.project-agent-assignment-card, .project-agent-learning-card, .project-agent-recruitment-card { min-width: 0; padding: 14px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); }
 .project-agent-assignment-card header strong, .project-agent-learning-card header strong, .project-agent-recruitment-card header strong { min-width: 0; color: var(--color-ink); font-size: 14px; overflow-wrap: anywhere; }
 .project-agent-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
 .project-agent-assignment-card p, .project-agent-learning-card p { margin: 8px 0 0; font-size: 14px; line-height: 1.55; }

@@ -148,7 +148,6 @@ watch(peekKey, async (key) => {
     <div class="@container mx-auto flex w-full max-w-(--layout-max) flex-col gap-3">
       <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
         <UiStatRow :items="stats" :label="t('occupations.statsAria')" data-occupation-status-filter @select="key => filter = key as OccupationFilter" />
-        <p class="page-lede m-0 text-sm text-muted-foreground" data-term="occupation.catalog">{{ t('occupations.lede') }}</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <label class="occupations-search">

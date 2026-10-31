@@ -49,7 +49,7 @@ describe('glossary terms', () => {
 
   it('keeps the term ids other pages tag with data-term', () => {
     const ids = new Set(GLOSSARY_TERMS.map(term => term.id))
-    for (const id of ['occupation.catalog', 'occupation.archived', 'occupation.active', 'occupation.agentCount',
+    for (const id of ['occupation.archived', 'occupation.active', 'occupation.agentCount',
       'memory.current', 'memory.history', 'memory.all', 'memory.preferenceCount',
       'tonborg.escalate', 'tonborg.autonomous', 'tonborg.shared', 'tonborg.manual',
       'work.blocked', 'section.orchestrate', 'section.roundtables', 'section.askedYou']) expect(ids.has(id), id).toBe(true)

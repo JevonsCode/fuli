@@ -1,7 +1,6 @@
 export const agentServicesMessages = {
   'zh-CN': {
     title: '服务',
-    lede: 'FLA 启动的长期运行服务和各 Agent 的工作台。状态每次读取时实时检查。',
     search: '搜索用途、地址、命令或 PID',
     filter: { agent: 'FLA', project: '项目', kind: '类型', state: '状态', allAgents: '全部 FLA', allProjects: '全部项目', allKinds: '全部类型', allStates: '全部状态' },
     kind: { workbench: '工作台', agent_service: 'Agent 启动的服务' },
@@ -65,7 +64,6 @@ export const agentServicesMessages = {
   },
   'en-US': {
     title: 'Services',
-    lede: 'Long-running services FLAs started and each Agent\'s workbench. The state is checked live on every read.',
     search: 'Search purpose, address, command or PID',
     filter: { agent: 'FLA', project: 'Project', kind: 'Kind', state: 'State', allAgents: 'All FLAs', allProjects: 'All projects', allKinds: 'All kinds', allStates: 'All states' },
     kind: { workbench: 'Workbench', agent_service: 'Agent-started service' },

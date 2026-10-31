@@ -557,12 +557,17 @@ function handleProjectCreated(project: PersonalProject) {
 .agents-directory { scrollbar-gutter: stable; }
 .agents-directory-toolbar {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px;
-  padding-block: 4px 16px; background: var(--color-bg);
+  padding-block: 4px 16px;
 }
-/* Tall screens keep the filters in reach while reading a long roster; short
-   ones give that height back to the cards. */
+/* Tall screens keep the filters in reach while reading a long roster, on a
+   floating panel the cards pass under (opaque: only the dock blurs live);
+   short ones give that height back. */
 @media (min-height: 820px) {
-  .agents-directory-toolbar { position: sticky; top: -12px; z-index: 2; padding-top: 16px; margin-top: -12px; }
+  .agents-directory-toolbar {
+    position: sticky; top: 4px; z-index: 2; margin-bottom: 16px; padding: 10px 14px;
+    border: 1px solid var(--edge-glass); border-radius: var(--radius-panel);
+    background: var(--color-surface); box-shadow: inset 0 1px 0 var(--edge-glass), var(--shadow-sm);
+  }
 }
 .agents-directory-notice {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;

@@ -397,7 +397,7 @@ onBeforeUnmount(() => {
           @reset="emit('reset-project-filter')"
         />
         <label class="employee-all-projects-search">
-          <span>{{ t('employees.allProjects.search') }}</span>
+          <span class="ui-sr-only">{{ t('employees.allProjects.search') }}</span>
           <input v-model="query" type="search" :placeholder="t('employees.allProjects.searchPlaceholder')" />
         </label>
       </div>
@@ -517,7 +517,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.employee-all-projects { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; gap: 14px; padding: 14px 24px 24px; overflow: hidden; background: var(--color-surface); color: var(--color-ink); }
+.employee-all-projects { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; gap: 14px; padding: 14px 24px 24px; overflow: hidden; background: var(--card); color: var(--color-ink); }
 .employee-all-projects-header { display: flex; flex: 0 0 auto; align-items: end; justify-content: space-between; gap: 24px; }
 .employee-all-projects-heading { min-width: 0; }
 .employee-all-projects-heading h2 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spacing: -0.02em; }
@@ -525,7 +525,7 @@ onBeforeUnmount(() => {
 .employee-all-projects-controls { display: flex; flex: 0 1 660px; align-items: end; justify-content: flex-end; gap: 10px; min-width: 0; }
 .employee-all-projects-filter { flex: 0 1 270px; min-width: 240px; }
 .employee-all-projects-filter :deep(.project-scope-trigger) { min-height: 40px; }
-.employee-all-projects-search { display: grid; flex: 1 1 300px; min-width: 180px; gap: 5px; color: var(--color-ink); font-size: 12px; }
+.employee-all-projects-search { position: relative; display: grid; flex: 1 1 300px; min-width: 180px; }
 .employee-all-projects-search input { width: 100%; min-height: 40px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); font: inherit; font-size: 14px; padding: 8px 11px; }
 .employee-all-projects-search input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .employee-all-projects-notice { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; padding: 8px 12px; border-radius: 10px; background: var(--color-warning-soft); color: var(--color-warning); font-size: 13px; }

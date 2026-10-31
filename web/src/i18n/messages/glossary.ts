@@ -25,7 +25,6 @@ export const glossaryMessages = {
       all: '当前有效和历史加在一起的全部内容。',
     },
     occupation: {
-      catalog: '职业是 Agent 的角色类型：显示为它的职业标签，招聘时也按职业找合适的 Agent。',
       hr: 'Bole 的职业：记录有哪些 Agent、各自在做什么，按需招募并保留招募记录。以前叫 AR。',
       archived: '归档不是删除：新的选择里不再出现，已经是这个职业的 Agent 保持不变，随时可以恢复。',
       active: '在用的职业会出现在给 Agent 选职业和招聘的选项里。',
@@ -128,7 +127,6 @@ export const glossaryMessages = {
       all: 'Current and historical content together.',
     },
     occupation: {
-      catalog: 'An occupation is an Agent\'s role type: it shows as the Agent\'s occupation chip, and recruitment matches Agents by it.',
       hr: 'Bole\'s occupation: keeps track of which Agents exist and what they work on, recruits when needed and keeps the recruitment records. Formerly called AR.',
       archived: 'Archiving is not deleting: the occupation leaves new choices, Agents that already have it keep it, and you can restore it anytime.',
       active: 'Active occupations appear when you choose an Agent\'s occupation and when recruiting.',
