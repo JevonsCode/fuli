@@ -23,7 +23,8 @@ export function windowsInstallationFixture(t) {
     'runtime/python/python.exe': '', 'runtime/python/python312.zip': '',
     'runtime/python/python312._pth': 'python312.zip\n.\nLib/site-packages\nimport site\n',
     'runtime/python/Lib/site-packages/fuli_graph/app.py': '', 'runtime/node/node.exe': '',
-    'node_modules/example/index.js': '', 'src/cli.js': '', 'src/desktop/windows-controller.js': '', 'Fuli.exe': '', 'client/FULI.exe': ''
+    'node_modules/example/index.js': '', 'src/cli.js': '', 'src/desktop/windows-controller.js': '', 'Fuli.exe': '', 'client/FULI.exe': '',
+    'FuliNode.exe': 'node launcher 0.12.4'
   };
   for (const [name, text] of Object.entries(files)) {
     mkdirSync(dirname(join(source, name)), { recursive: true }); writeFileSync(join(source, name), text);
@@ -55,6 +56,7 @@ export function installedWindowsFixture(t) {
   const source = join(f.root, 'upgrade');
   cpSync(f.source, source, { recursive: true });
   writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'fuli-context', version: '0.12.5' }));
+  writeFileSync(join(source, 'FuliNode.exe'), 'node launcher 0.12.5');
   const inventory = JSON.parse(readFileSync(join(source, 'tray-files.sha256.json')));
   for (const entry of inventory) entry[1] = installationSha256(readFileSync(join(source, entry[0])));
   writeFileSync(join(source, 'tray-files.sha256.json'), JSON.stringify(inventory));

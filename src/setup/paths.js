@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { stablePackageRoot } from './stable-package-root.js';
 import { readWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { readWindowsInstallation } from '../desktop/windows-installation-context.js';
+import { installedWindowsNodeLauncher } from '../desktop/windows-node-launcher.js';
 
 const DEFAULT_PACKAGE_ROOT = stablePackageRoot(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
 
@@ -19,6 +20,11 @@ export function resolveSetupPaths({
   const root = resolve(packageRoot);
   const bundle = platform === 'win32' ? readWindowsNativeBundle(root) : null;
   const installed = bundle ? readWindowsInstallation(root) : null;
+  // An installed Windows copy's clients run the stable launcher at its installation
+  // root with package-relative scripts: it starts the version installation.json
+  // names, so an update or rollback changes no client configuration (rec#11 D-77).
+  // Elsewhere, and before an installation has the launcher, this Node runs this package.
+  const launcher = installed ? installedWindowsNodeLauncher(installed.installRoot) : null;
   const resolvedDataDir = resolve(cwd, dataDir ?? installed?.dataDir ?? nonEmpty(env.FULI_DATA_DIR)
     ?? bundle?.dataDir ?? defaultDataDir({ platform, env, homeDir }));
   const nativeRuntimeDir = join(resolvedDataDir, 'native-runtime');
@@ -76,7 +82,10 @@ export function resolveSetupPaths({
     graphBackupDir: graphBackupDirectory(resolvedDataDir),
     logPath: join(resolvedDataDir, 'logs', 'runtime.log'),
     serverPath: join(root, 'src', 'server.js'),
-    mcpServerPath: join(root, 'src', 'mcp-server.js'),
+    // What client configurations run: the MCP entry and lifecycle hooks name this
+    // command and scripts beside mcpServerPath.
+    clientNodePath: launcher ?? process.execPath,
+    mcpServerPath: launcher ? join('src', 'mcp-server.js') : join(root, 'src', 'mcp-server.js'),
     graphSetupPath: join(root, 'src', 'graphiti', 'setup.js'),
     graphComposePath: join(root, 'compose.graphiti.yml'),
     sessionSkillPath: join(root, 'skills', 'capturing-session-knowledge'),

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { installedWindowsFixture } from './fixtures/windows-installation.js';
@@ -32,7 +33,22 @@ test('rollback switches the record and shortcuts back to the kept version withou
     [['new', 'stop'], ['old', 'start'], ['old', 'status'], ['old', 'setup'], ['old', 'status']]);
   assert.equal(readFileSync(join(f.current.dataDir, 'sentinel'), 'utf8'), 'existing user data');
   assert.ok(existsSync(f.next.packageRoot), 'the newer version stays installed until uninstall');
+  assert.equal(readFileSync(join(f.current.installRoot, 'FuliNode.exe'), 'utf8'), 'node launcher 0.12.4');
   await assert.rejects(rollbackWindowsInstallation(f.rollback, f.deps), /nothing to roll back/);
+});
+
+test('rollback to a version from before the client launcher keeps the installed launcher', async t => {
+  const f = await updated(t);
+  // A kept version whose package had no launcher: its inventory never listed one.
+  const inventoryPath = join(f.current.packageRoot, 'tray-files.sha256.json');
+  const receiptPath = join(f.current.packageRoot, 'installed-context.json');
+  const inventory = JSON.stringify(JSON.parse(readFileSync(inventoryPath, 'utf8')).filter(([name]) => name !== 'FuliNode.exe'));
+  rmSync(join(f.current.packageRoot, 'FuliNode.exe'));
+  writeFileSync(inventoryPath, inventory);
+  writeFileSync(receiptPath, JSON.stringify({ ...JSON.parse(readFileSync(receiptPath, 'utf8')),
+    inventorySha256: createHash('sha256').update(inventory).digest('hex') }));
+  assert.equal((await rollbackWindowsInstallation(f.rollback, f.deps)).applicationVersion, '0.12.4');
+  assert.equal(readFileSync(join(f.current.installRoot, 'FuliNode.exe'), 'utf8'), 'node launcher 0.12.5');
 });
 
 test('rollback clears the newer runtime descriptor so the older version records its own', async t => {

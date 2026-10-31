@@ -9,6 +9,7 @@ const PATHS = Object.freeze({
   graphRuntimeConfigPath: '/data/graph-runtime.json',
   graphRuntimeStatePath: '/data/graph-runtime-state.json',
   runtimeSettingsPath: '/data/runtime-settings.json',
+  clientNodePath: '/runtime/node',
   mcpServerPath: '/package/src/mcp-server.js'
 });
 
@@ -38,6 +39,7 @@ test('connection status delegates to its observer and never changes the export',
   const service = createSystemService({ paths: PATHS, resourceMonitor: {}, runtimeBroker: {}, versionChecker: {},
     clientObserver: { observe: () => ({ scope: 'configuration', clients: [] }) } });
   assert.deepEqual(service.clientConnectionStatus(), { scope: 'configuration', clients: [] });
+  assert.equal(service.clientConnection().server.command, PATHS.clientNodePath);
   assert.equal(service.clientConnection().server.args[0], PATHS.mcpServerPath);
 });
 

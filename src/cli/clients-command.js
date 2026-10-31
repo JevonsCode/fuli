@@ -89,7 +89,7 @@ export async function runClientsCommand(args, { env = process.env, write = conso
   const environment = { env, homeDir, pathApi: platformPath(platform), fileExists: existsSync, commandExists: () => false };
   const agent = adapter.detect(environment);
   const readText = path => path && existsSync(path) ? readFileSync(path, 'utf8') : '';
-  const context = { nodePath: process.execPath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath: runtimePath };
+  const context = { nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath: runtimePath };
   // A client that is not installed or configured (no agent) has no files to change.
   const connected = Boolean(agent) && adapter.status(agent, context, { readText, readJson: (path, options) => { const value = readText(path); return value ? parseMcpJson(value, options) : {}; }, bootstrapCurrent: () => false }).registration.present;
   return changeClientPack({ dataDir: paths.dataDir, pack, rollback: action === 'rollback', agent: connected ? clientPackTarget(pack, environment) : null, context, confirm, write, writeFile });

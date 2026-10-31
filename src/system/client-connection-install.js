@@ -16,7 +16,7 @@ export function createClientInstaller({ paths, runtimeConfigPath = paths.graphRu
     busy = true;
     try {
       const result = await install(agent, {
-        dataDir: paths.dataDir, defaultToolProfile: 'chat', nodePath: process.execPath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath,
+        dataDir: paths.dataDir, defaultToolProfile: 'chat', nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath,
         sessionSkillPath: paths.sessionSkillPath, projectSkillPath: paths.projectSkillPath,
         reviewSkillPath: paths.reviewSkillPath, operationSkillPath: paths.operationSkillPath,
         sessionCommandSkillPath: paths.sessionCommandSkillPath

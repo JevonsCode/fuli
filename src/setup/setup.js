@@ -31,8 +31,7 @@ export function planLocalSetup(options, {
   settingsExist = existsSync,
   readReservedRanges = readReservedPortRanges,
   platform = process.platform,
-  hostTotalMemory = totalmem,
-  nodePath = process.execPath
+  hostTotalMemory = totalmem
 } = {}) {
   const paths = resolvePaths({ dataDir: options.dataDir, env });
   const savedRuntimeSettings = paths.runtimeSettingsPath
@@ -70,7 +69,7 @@ export function planLocalSetup(options, {
     }),
     adaptiveRuntimeSettings,
     agents: inspectInstallations(agents, {
-      nodePath,
+      nodePath: paths.clientNodePath,
       mcpServerPath: paths.mcpServerPath,
       dataDir: paths.dataDir, runtimeConfigPath: paths.graphRuntimeConfigPath,
       sessionSkillPath: paths.sessionSkillPath,
@@ -127,7 +126,7 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
     onProgress: dependencies.onProgress
   });
   const context = {
-    nodePath: dependencies.nodePath ?? process.execPath,
+    nodePath: plan.paths.clientNodePath,
     mcpServerPath: plan.paths.mcpServerPath,
     dataDir: plan.paths.dataDir, runtimeConfigPath: plan.paths.graphRuntimeConfigPath,
     sessionSkillPath: plan.paths.sessionSkillPath,

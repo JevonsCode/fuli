@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative } from 'node:path';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { fileIdentity } from '../system/file-identity.js';
 import { canonicalWindowsInstallPath, installationSha256, windowsInstallPathsOverlap } from './windows-installation-context.js';
+import { WINDOWS_NODE_LAUNCHER, packagedWindowsNodeLauncher } from './windows-node-launcher.js';
 
 function powershell(script) {
   return execFileSync(join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
@@ -191,6 +192,9 @@ export function installWindowsForCurrentUser(options,
     }
     ownFile(join(packageRoot, 'tray-files.sha256.json'), inventory.bytes);
     resolveWindowsNativeBundle(readWindowsNativeBundle(packageRoot));
+    // The stable command client configurations name (windows-node-launcher.js).
+    const launcher = packagedWindowsNodeLauncher(packageRoot);
+    if (launcher) ownFile(join(plan.installRoot, WINDOWS_NODE_LAUNCHER), launcher);
     const receipt = { version: 1, kind: 'windows-user-installation', installationId,
       installRoot: plan.installRoot, packageRoot, dataDir: plan.dataDir, inventorySha256: plan.inventorySha256 };
     ownFile(join(packageRoot, 'installed-context.json'), JSON.stringify(receipt, null, 2) + '\n');

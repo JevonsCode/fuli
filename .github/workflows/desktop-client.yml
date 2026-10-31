@@ -109,7 +109,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           $zip = Get-ChildItem "${{ steps.tray.outputs.release }}" -Filter *.zip | Select-Object -First 1
           $names = & "$env:SystemRoot\System32\tar.exe" -tf $zip.FullName | ForEach-Object { $_ -replace '^\./', '' }
-          foreach ($required in 'Fuli.exe', 'client/FULI.exe', 'client/flutter_windows.dll', 'client/data/app.so') {
+          foreach ($required in 'Fuli.exe', 'FuliNode.exe', 'client/FULI.exe', 'client/flutter_windows.dll', 'client/data/app.so') {
             if ($names -notcontains $required) { throw "The tray package is missing $required" }
           }
           if ($names | Where-Object { $_ -match '(?i)FuliTray|ControllerRunner' }) { throw 'The retired C# tray is still packaged' }

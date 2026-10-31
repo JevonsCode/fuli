@@ -50,7 +50,6 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
     ? checkAgentSetup({
       paths,
       env,
-      nodePath: dependencies.nodePath ?? process.execPath,
       discover: dependencies.discoverAgents ?? discoverAgents,
       inspect: dependencies.inspectAgentInstallations ?? inspectAgentInstallations
     })
@@ -117,13 +116,13 @@ function formatStartedRuntime(title, result, copy) {
   return lines.join('\n');
 }
 
-function checkAgentSetup({ paths, env, nodePath, discover, inspect }) {
+function checkAgentSetup({ paths, env, discover, inspect }) {
   try {
     const agents = discover({ env, dataDir: paths.dataDir }).filter(({ available }) => available);
     if (!agents.length) return { status: 'checked', agents: [] };
     const inspected = inspect(agents, {
       dataDir: paths.dataDir,
-      nodePath,
+      nodePath: paths.clientNodePath,
       mcpServerPath: paths.mcpServerPath,
       runtimeConfigPath: paths.graphRuntimeConfigPath,
       sessionSkillPath: paths.sessionSkillPath,
