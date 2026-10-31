@@ -14,7 +14,7 @@ import {
 
 function temporaryRoot(t, prefix) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), prefix)));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  t.after(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   return root;
 }
 
