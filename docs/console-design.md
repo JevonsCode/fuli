@@ -53,6 +53,12 @@ Graph labels follow zoom level. Below 0.72, retain project names and reveal othe
 
 The About page uses its dark ink treatment across the full page. Keep the closing section visible rather than collapsible, with its official-site link.
 
+## Widgets
+
+Movable pieces are widgets (Jevons 11-01: modular, easy to move, open to a person's own workbench later). A widget reads its own data, takes only the context its slot passes, and assumes nothing about where it sits. `web/src/widgets/registry.ts` names each widget and the slots it may sit in; `web/src/widgets/layout.ts` says which widgets each slot shows (one code default today, shaped as plain data a saved layout can replace); pages and the shell render a `WidgetSlot`. Moving a widget is a layout change. Slots today: `workbench.feed` (团队卡片), `shell.aboveDock` (悬浮岛) and `fla.overview`.
+
+团队卡片 shows one task several FLAs do together: overlapping portraits (the lead slightly larger), a thin ring per portrait filled to that share's recorded progress (no ring without recorded steps), and a soft breath on whoever is doing a step now. Opening it, by height on the shared motion, lists each share's to-do steps and bar. The 悬浮岛 floats above the dock on every page only while such a task runs: 「3 位 FLA 正在一起做「…」 5/8」. Hover or click grows it upward into the same card, with switching when several run; Esc or a click elsewhere folds it back. On 工作台, 进行中 no longer repeats a task that has a team card.
+
 ## Elevation & Depth
 
 Cards use a light border without decorative shadow. A selected or previewed card lifts: full surface, a stronger hairline and a light shadow, never a side accent bar; the focus ring stays a separate outline. Reserve the shared popover and dialog shadows for floating surfaces. Avoid nested boxes around ordinary list rows.
