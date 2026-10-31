@@ -244,9 +244,11 @@ const BASELINE = Object.freeze({
   codexReviewGuidanceBytes: 101,
   // Data-format completion reminders add the remaining count and local dismissal link:
   // 37 -> 104 characters, only for up to seven task receipts per completed migration.
+  // The link text names the page (关闭提醒：[设置 → 数据格式迁移]), since Claude Desktop shows a
+  // local link's text without the link: 104 -> 116.
   migrationReceiptNoneChars: 0,
   migrationReceiptPendingChars: 59,
-  migrationReceiptAppliedChars: 104,
+  migrationReceiptAppliedChars: 116,
   // rec#20 part 2: the link to a session's batch migration, with its separator. Nothing waits, or
   // the session already worked in this project: no bytes. The session's first task in a formal
   // project while its temporary project holds items: one line with the count (152 chars with a
