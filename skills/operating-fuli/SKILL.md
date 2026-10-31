@@ -12,7 +12,7 @@ Operate FULI through its structured Agent interfaces. Treat the UI and Agent too
 1. Establish the exact scope from the current task. Resolve real `personalSpaceId`, `personalProjectId`, item IDs, and versions through read tools. Never guess an identifier or infer one from a display name.
 2. Call `list_agent_interfaces` before the first mutation. Use its catalog to determine whether the UI capability is `agent` accessible or intentionally `local_user_only`.
 3. Inspect the exact input schema for the selected tool. Prefer one domain-specific tool over generic HTTP, shell, database, or browser access.
-4. Read the current record immediately before changing it. Preserve fields the user did not ask to change.
+4. Read the current record immediately before changing it. Before `upsert_personal_project`, call `list_personal_projects` with the exact `projectId` to read its full profile and check that the result is not truncated. Preserve fields the user did not ask to change.
 5. Check the safety boundary below. Stop if the action needs missing user authority or is marked `local_user_only`.
 6. Execute the smallest scoped mutation. Supply `expectedRevision`, `expectedUpdatedAt`, `idempotencyKey`, or request IDs whenever the tool supports them.
 7. Re-read through the corresponding structured read tool. Report the actual resulting scope, version, status, and any partial failure.
@@ -25,7 +25,8 @@ If an expected capability is absent from `list_agent_interfaces`, report an Agen
 - Never change device/runtime settings or complete human confirmation queues on the user's behalf when the catalog marks them `local_user_only`.
 - Never mark a Jefa work item complete through its human-acceptance workbench route; use an Agent task-update tool only for non-acceptance workflow changes. A custom column that stands for `done` is the same acceptance: never move a task there.
 - Set a project's own project manager or board (custom columns, external board link) only on the person's request; a project with an external board is tracked at its link, so do not mirror its tasks on Jefa's board.
-- Require explicit user authorization for deletes, publication, subscription changes, destructive conflict decisions, or changes that affect another project. An unambiguous request already authorizes that exact action; do not ask again unless the target or consequences remain unclear.
+- By default there is no approval step: the person sets direction and you carry it out, keeping each action traceable and reversible (re-read, report, undo) instead of asking first. Add a confirmation only where the person said they must confirm it.
+- Require explicit user authorization for deletes, publication, destructive conflict decisions, or changes that affect another project. An unambiguous request already authorizes that exact action; do not ask again unless the target or consequences remain unclear.
 - Use environment-variable references for connector secrets. Never request, print, store, or copy secret values into knowledge records, logs, Skill files, or tool arguments that expect only a reference.
 - Stay inside the exact FULI workspace and registered project scopes. Do not use home-directory-wide discovery as a fallback.
 - Record every long-running server you start with `report_agent_service` and update it when you stop it. Stopping a service through FULI, deleting its record and clearing its log are the person's actions in the console.

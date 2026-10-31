@@ -107,12 +107,20 @@ export function deletedState(result: HardDeleteResult): HardDeletedState {
   return { outcome: result.outcome, deletedAt: result.deleted_at ?? null, result }
 }
 
-const CONFIRMATION_WORDS = new Set(['删除', 'delete'])
+/** rec#11 D-88: the dialog's 确定删除 is the person's second confirmation; the
+ * provider still checks this word, so no delete is sent without it. */
+export const DELETE_CONFIRMATION = '删除'
 
-/** The person typed 删除 / delete or the item's title (the provider checks it again). */
-export function confirmationMatches(preview: Pick<HardDeletePreview, 'title'>, typed: string) {
-  const value = typed.trim()
-  return Boolean(value) && (CONFIRMATION_WORDS.has(value) || value === preview.title.trim())
+/** What 导出并删除 saves on this computer before the delete: everything the
+ * dialog listed, with sources as the excerpts it showed. */
+export function deletionExport(preview: Pick<HardDeletePreview, 'preview_id' | 'title'> & { item_kind: HardDeleteKind },
+  spaceId: string, exportedAt: Date) {
+  const { preview_id: _previewId, ...listed } = preview
+  const stamp = exportedAt.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-')
+  const name = preview.title.trim().replace(/[\\/:*?"<>|\s]+/g, '-').slice(0, 48).replace(/^-+|-+$/g, '') || preview.item_kind
+  const value = { format: 'fuli-deleted-knowledge', version: 1, exported_at: exportedAt.toISOString(),
+    personal_space_id: spaceId, source_text: 'excerpts', ...listed }
+  return { filename: `fuli-deleted-${name}-${stamp}.json`, json: `${JSON.stringify(value, null, 2)}\n` }
 }
 
 /** The record counts worth a line in the preview, in a stable order. */

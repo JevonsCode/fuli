@@ -62,8 +62,8 @@ export const KNOWLEDGE_SPACE_DEFINITIONS = [
   },
   {
     name: 'list_personal_projects',
-    description: 'List local personal project profiles and their current evidence-backed coverage summaries.',
-    inputSchema: objectSchema({ personalSpaceId: id })
+    description: 'List local personal project profiles and their coverage summaries, optionally for one exact projectId.',
+    inputSchema: objectSchema({ personalSpaceId: id, projectId: boundedString(128) })
   }
 ];
 

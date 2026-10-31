@@ -90,3 +90,13 @@ test('a bound session recovers its conversation as itself; a new one gets only a
   assert.equal(fresh.recovery, null);
   assert.deepEqual(queries.map(query => [query.operation, query.session_id]), [['begin', 'native-b']]);
 });
+
+// rec#11 D-84: every FLA's entry guidance carries the no-default-approval standard.
+test('continuity guidance tells an FLA to act without default approvals and keep actions reversible', () => {
+  const { continuity_guidance: guidance } = entryRules().sections;
+  assert.match(guidance, /no approval step by default/);
+  assert.match(guidance, /traceable and reversible instead of asking first/);
+  assert.match(guidance, /confirm only what the person said they must confirm/);
+  assert.match(guidance, /local-person-only actions to them/);
+  assert.ok(entryRulesMarkdown().includes(guidance));
+});

@@ -7,8 +7,6 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
 import { evidenceApplicationLabel, evidenceKindLabel, itemEditPath, versionStatusLabel, versionTone,
   type KnowledgeItemSummary } from '@/features/knowledge-quick-edit/model'
 import { currentLocale, t } from '@/i18n'
@@ -18,14 +16,15 @@ import SourceDeleteSelections from './SourceDeleteSelections.vue'
 import SourceDeleteMemory from './SourceDeleteMemory.vue'
 import { sourcePreviewDetails, sourceSelection, type SourceDeletePreview, type SourceDeleteSelection,
   type SourceDeleteTarget } from './source-delete-model'
-import { confirmationMatches, deletedState, draftSubmissionStarted, hardDeletedFrom, ledgerDamage, recordCounts, refusedByGraph, stalePreview,
-  type HardDeletePreview, type HardDeletedState } from './model'
+import { DELETE_CONFIRMATION, deletedState, deletionExport, draftSubmissionStarted, hardDeletedFrom, ledgerDamage, recordCounts,
+  refusedByGraph, stalePreview, type HardDeletePreview, type HardDeletedState } from './model'
 
-// rec#5 C9: the second step of a permanent delete. It lists exactly what goes,
-// what stays and what rests on it, then asks the person to type 删除. The
-// delete names this preview; if anything changed meanwhile the provider
-// refuses it (409) and the dialog lists again from what is stored now.
-const props = defineProps<{ item: KnowledgeItemSummary | SourceDeleteTarget; spaceId: string }>()
+// rec#5 C9, rec#11 D-88: the one confirmation of a permanent delete. It lists
+// exactly what goes, what stays and what rests on it, then offers 取消 /
+// 导出并删除 / 确定删除. The delete names this preview; if anything changed
+// meanwhile the provider refuses it (409) and the dialog lists again from what
+// is stored now.
+const props = defineProps<{ item: Pick<KnowledgeItemSummary, 'item_kind' | 'item_id'> | SourceDeleteTarget; spaceId: string }>()
 const emit = defineEmits<{ deleted: [state: HardDeletedState]; cancel: []; pending: [value: boolean] }>()
 
 const rawPreview = ref<HardDeletePreview | SourceDeletePreview | null>(null)
@@ -41,13 +40,12 @@ const reloading = ref(false)
 const reloadCause = ref<'selection' | 'submission' | 'changed'>('changed')
 const deleting = ref(false)
 watch(deleting, value => emit('pending', value), { flush: 'sync' })
-const typed = ref('')
 const notice = ref('')
 const error = ref('')
 let request = 0
 
 const ready = computed(() => previewValid.value && Boolean(preview.value) && !loading.value && !reloading.value
-  && !preview.value?.drafts?.submitting && confirmationMatches(preview.value!, typed.value))
+  && !preview.value?.drafts?.submitting)
 const records = computed(() => preview.value ? recordCounts(preview.value.counts) : [])
 const publicProjects = computed(() => [...new Set((preview.value?.publications ?? [])
   .map(publication => publication.project_name || publication.project_id))].join(' / '))
@@ -78,7 +76,6 @@ async function load(again = false, cause: 'selection' | 'submission' | 'changed'
 function select(key: string, checked: boolean) {
   if (!sourcePreview.value || deleting.value) return
   selection.value = sourceSelection(selection.value, key, checked, sourcePreview.value.default_items.some(row => row.key === key))
-  typed.value = ''
   notice.value = t('knowledgeHardDelete.source.selectionChanged')
   void load(true, 'selection')
 }
@@ -86,31 +83,46 @@ function select(key: string, checked: boolean) {
 function resetSelection() {
   if (!sourcePreview.value || deleting.value) return
   selection.value = { include: [...sourcePreview.value.include], exclude: [...sourcePreview.value.exclude] }
-  typed.value = ''
   void load(true, 'selection')
 }
 
 function recheckSubmissions() {
   if (deleting.value || reloading.value) return
-  typed.value = ''
   notice.value = ''
   void load(true, 'submission')
 }
 
-async function submit() {
-  if (!preview.value || !ready.value || deleting.value) return
+// 导出并删除 saves what this preview lists as a local file first; a delete
+// follows only once the browser has been handed the file.
+function saveExport(listed: HardDeletePreview | SourceDeletePreview) {
+  const { filename, json } = deletionExport(listed, props.spaceId, new Date())
+  const url = URL.createObjectURL(new Blob([json], { type: 'application/json;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url; link.download = filename
+  document.body.append(link); link.click(); link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+async function submit(exportFirst = false) {
+  if (!preview.value || !ready.value || deleting.value || !rawPreview.value) return
   deleting.value = true
   error.value = ''
   notice.value = ''
   try {
+    if (exportFirst) saveExport(rawPreview.value)
+  } catch (cause) {
+    error.value = t('knowledgeHardDelete.dialog.exportFailed', { error: apiErrorReason(cause) })
+    deleting.value = false
+    return
+  }
+  try {
     emit('deleted', deletedState(sourceTarget.value && sourcePreview.value
-      ? await confirmSourceDelete(props.spaceId, sourceTarget.value, sourcePreview.value, typed.value)
-      : await confirmHardDelete(props.spaceId, rawPreview.value as HardDeletePreview, typed.value)))
+      ? await confirmSourceDelete(props.spaceId, sourceTarget.value, sourcePreview.value, DELETE_CONFIRMATION)
+      : await confirmHardDelete(props.spaceId, rawPreview.value as HardDeletePreview, DELETE_CONFIRMATION)))
   } catch (cause) {
     const deleted = hardDeletedFrom(cause, props.item.item_kind)
     if (deleted) { emit('deleted', deleted); return }
     if (stalePreview(cause) || draftSubmissionStarted(cause)) {
-      typed.value = ''
       notice.value = t('knowledgeHardDelete.dialog.stale')
       await load(true)
       return
@@ -131,7 +143,6 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id, sourceTarg
   sourceTarget.value?.sessionId], () => {
   rawPreview.value = null
   selection.value = { include: [], exclude: [] }
-  typed.value = ''
   notice.value = ''
   void load()
 }, { immediate: true })
@@ -247,18 +258,13 @@ watch(() => [props.spaceId, props.item.item_kind, props.item.item_id, sourceTarg
       <p class="m-0 text-foreground" data-hard-delete-disclosure>{{ t('knowledgeHardDelete.dialog.disclosure') }}</p>
     </section>
 
-    <form class="grid gap-3" @submit.prevent="submit">
-      <Field>
-        <FieldLabel for="hard-delete-confirm">{{ t('knowledgeHardDelete.dialog.confirmLabel') }}</FieldLabel>
-        <Input id="hard-delete-confirm" v-model="typed" autocomplete="off" maxlength="512" :disabled="deleting || reloading"
-          data-hard-delete-confirm />
-        <FieldDescription v-if="!sourcePreview">{{ t('knowledgeHardDelete.dialog.confirmHelp') }}</FieldDescription>
-      </Field>
+    <form class="grid gap-3" @submit.prevent="submit()">
       <p v-if="error" role="alert" class="m-0 text-destructive" data-hard-delete-error>{{ error }}</p>
       <Button v-if="error && sourcePreview && !previewValid" type="button" variant="outline" :disabled="reloading" data-source-reset-selection @click="resetSelection">{{ t('knowledgeHardDelete.source.resetSelection') }}</Button>
       <DialogFooter class="flex flex-wrap justify-end gap-2">
         <Button type="button" variant="outline" :disabled="deleting" @click="emit('cancel')">{{ t('knowledgeHardDelete.dialog.cancel') }}</Button>
-        <Button type="submit" variant="destructive" :disabled="!ready || reloading" :loading="deleting"
+        <Button type="button" variant="outline" :disabled="!ready || deleting" data-hard-delete-export @click="submit(true)">{{ t('knowledgeHardDelete.dialog.exportAndDelete') }}</Button>
+        <Button type="submit" variant="destructive" :disabled="!ready" :loading="deleting"
           :loading-label="t(sourceTarget ? 'knowledgeHardDelete.source.deleting' : 'knowledgeHardDelete.dialog.deleting')" data-hard-delete-submit>{{ t('knowledgeHardDelete.dialog.submit') }}</Button>
       </DialogFooter>
     </form>

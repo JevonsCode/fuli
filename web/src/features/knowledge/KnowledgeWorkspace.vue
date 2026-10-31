@@ -745,6 +745,13 @@ async function selectItem(item: KnowledgeItem) {
 
 // Closing the quick look goes Back when opening it pushed the entry on
 // screen; a deep link or a jump between items drops the item instead.
+// rec#11 D-88: a deleted item closes its quick look; a deleted fact of the
+// open item leaves it open. Either way the graph is read again.
+async function knowledgeDeleted(target: { id: string }) {
+  if (selectedItem.value?.id === target.id) await closePeek()
+  await loadGraph()
+}
+
 async function closePeek() {
   if (peekPushed) {
     peekPushed = false
@@ -1221,6 +1228,7 @@ function queryValues(value: unknown) {
       :current-project-id="projectId"
       :can-publish-project="store.state?.capabilities?.publishProject"
       :can-manage-project="Boolean(manageableSelectedProject)"
+      :space-id="store.activePersonalSpace?.id ?? spaceId"
       :mode="mode"
       @confirm="confirmingItem = $event"
       @edit="editingItem = $event"
@@ -1231,6 +1239,7 @@ function queryValues(value: unknown) {
       @open-graph="openItemInMode($event, 'graph')"
       @open-replacement="openReplacement"
       @manage-project="manageProjectMaterial"
+      @deleted="knowledgeDeleted"
       @close="closePeek"
     />
     </template>

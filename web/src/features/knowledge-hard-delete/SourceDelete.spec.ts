@@ -54,12 +54,6 @@ async function open(value = target) {
   return wrapper
 }
 const dialog = () => document.body.querySelector<HTMLElement>('[data-source-delete-dialog], [data-hard-delete-dialog]')!
-async function type(value: string) {
-  const input = dialog().querySelector<HTMLInputElement>('[data-hard-delete-confirm]')!
-  input.value = value
-  input.dispatchEvent(new Event('input'))
-  await flushPromises()
-}
 async function choose(key: string) {
   dialog().querySelector<HTMLButtonElement>(`[data-source-row="${key}"] [role="checkbox"]`)!.click()
   await flushPromises()
@@ -71,7 +65,7 @@ beforeEach(() => { vi.resetAllMocks(); document.body.innerHTML = ''; setLocale('
 afterEach(() => { for (const wrapper of wrappers.splice(0)) wrapper.unmount() })
 
 describe('source deletion uses the authoritative two-layer preview', () => {
-  it('repreviews canonical row keys, clears confirmation, and sends only the latest digest and selection', async () => {
+  it('repreviews canonical row keys, holds confirmation while listing, and sends only the latest digest and selection', async () => {
     let finish!: (value: SourceDeletePreview) => void
     postJson.mockResolvedValueOnce(preview()).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
       .mockResolvedValueOnce({ outcome: 'complete', ...target, counts })
@@ -79,41 +73,38 @@ describe('source deletion uses the authoritative two-layer preview', () => {
     expect(dialog().textContent).toContain('Older version')
     expect(dialog().querySelectorAll('[data-source-layer]')).toHaveLength(2)
     expect(dialog().querySelector('[data-source-basis-changed]')).not.toBeNull()
-    await type('delete')
     expect(disabled()).toBe(false)
     await choose('entity:other')
     expect(disabled()).toBe(true)
-    expect(dialog().querySelector<HTMLInputElement>('[data-hard-delete-confirm]')!.value).toBe('')
     expect(postJson.mock.calls[1]).toEqual(['/api/knowledge/episode/source%2Fopaque/hard-delete/preview',
       { personalSpaceId: 'space', include: ['entity:other'], exclude: [] }])
     await submit()
     expect(postJson).toHaveBeenCalledTimes(2)
     finish(preview({ preview_id: 'digest-2', include: ['entity:other'] }))
     await flushPromises()
-    expect(disabled()).toBe(true)
-    await type('delete'); await submit()
+    expect(disabled()).toBe(false)
+    await submit()
     expect(postJson.mock.calls[2]).toEqual(['/api/knowledge/episode/source%2Fopaque/hard-delete',
-      { personalSpaceId: 'space', include: ['entity:other'], exclude: [], previewId: 'digest-2', confirmation: 'delete' }])
+      { personalSpaceId: 'space', include: ['entity:other'], exclude: [], previewId: 'digest-2', confirmation: '删除' }])
     expect(document.body.textContent).not.toContain('SYNTHETIC SOURCE BODY')
   })
 
   it('a rejected selection never permits confirming the previous preview', async () => {
     postJson.mockResolvedValueOnce(preview()).mockRejectedValueOnce(new ApiError('invalid selection', 400, '{"code":"invalid_selection"}'))
-    await open(); await type('delete'); await choose('entity:head')
+    await open(); await choose('entity:head')
     expect(postJson.mock.calls[1]?.[1]).toEqual({ personalSpaceId: 'space', include: [], exclude: ['entity:head'] })
-    await type('delete'); await submit()
+    await submit()
     expect(disabled()).toBe(true)
     expect(postJson).toHaveBeenCalledTimes(2)
     expect(dialog().querySelector('[data-hard-delete-error]')).not.toBeNull()
   })
 
-  it('a graph change requires a new preview and another typed confirmation', async () => {
+  it('a graph change requires a new preview and another click, never a resend', async () => {
     postJson.mockResolvedValueOnce(preview()).mockRejectedValueOnce(new ApiError('changed', 409, '{"code":"hard_delete_preview_stale"}'))
       .mockResolvedValueOnce(preview({ preview_id: 'changed-digest' }))
-    await open(); await type('delete'); await submit()
+    await open(); await submit()
     expect(postJson).toHaveBeenCalledTimes(3)
-    expect(disabled()).toBe(true)
-    expect(dialog().querySelector<HTMLInputElement>('[data-hard-delete-confirm]')!.value).toBe('')
+    expect(disabled()).toBe(false)
   })
 
   it('disables selected attached relationships while allowing endpoint retention', async () => {
@@ -129,11 +120,11 @@ describe('source deletion uses the authoritative two-layer preview', () => {
     const session: SourceDeleteTarget = { item_kind: 'session', item_id: 'opaque-provider-target', sourceApplication: 'codex', sessionId: 'synthetic-session' }
     postJson.mockResolvedValueOnce(preview({ ...session, source_application: 'codex', fuli_session_id: 'synthetic-session' }))
       .mockResolvedValueOnce({ outcome: 'complete', ...session, counts }).mockResolvedValueOnce({ outcome: 'complete' })
-    await open(session); await type('delete'); await submit()
+    await open(session); await submit()
     expect(postJson.mock.calls[0]).toEqual(['/api/knowledge/session/opaque-provider-target/hard-delete/preview',
       { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: 'synthetic-session', include: [], exclude: [] }])
     expect(postJson.mock.calls[1]?.[1]).toEqual({ personalSpaceId: 'space', sourceApplication: 'codex', sessionId: 'synthetic-session',
-      include: [], exclude: [], previewId: 'digest-1', confirmation: 'delete' })
+      include: [], exclude: [], previewId: 'digest-1', confirmation: '删除' })
     await hardDeleteStatus('space', session)
     expect(postJson.mock.calls[2]).toEqual(['/api/knowledge/session/opaque-provider-target/hard-delete/status', { personalSpaceId: 'space' }])
   })
@@ -175,7 +166,7 @@ it('clears item content and source excerpts after a source deletion with unknown
   const wrapper = mount(KnowledgeItemEditPage, { attachTo: document.body, global: { plugins: [pinia, route] } }); wrappers.push(wrapper)
   await flushPromises()
   await wrapper.get('[data-source-delete-open="episode"]').trigger('click'); await flushPromises()
-  await type('delete'); await submit()
+  await submit()
   expect(wrapper.find('[data-source-deleted-page]').exists()).toBe(true)
   expect(document.body.textContent).not.toContain('SYNTHETIC ITEM BODY')
   expect(document.body.textContent).not.toContain('SYNTHETIC SOURCE BODY')
@@ -208,13 +199,12 @@ it('deletes a whole session with no visible records using its Provider target an
   await flushPromises()
   expect(wrapper.get('[data-session-records]').element.lastElementChild?.hasAttribute('data-hard-delete-section')).toBe(true)
   expect(wrapper.find('[data-source-delete-open="session"]').exists()).toBe(false)
-  await wrapper.get('[data-hard-delete-toggle] button').trigger('click')
   await wrapper.get('[data-hard-delete-open]').trigger('click'); await flushPromises()
-  await type('delete'); await submit()
+  await submit()
   expect(wrapper.find('[data-source-deleted-page]').exists()).toBe(true)
   expect(wrapper.find('[data-session-total]').exists()).toBe(false)
   expect(postJson.mock.calls[1]).toEqual(['/api/knowledge/session/opaque-session/hard-delete', {
-    personalSpaceId: 'space', sourceApplication: 'codex', sessionId: 'session-one', include: [], exclude: [], previewId: 'digest-1', confirmation: 'delete',
+    personalSpaceId: 'space', sourceApplication: 'codex', sessionId: 'session-one', include: [], exclude: [], previewId: 'digest-1', confirmation: '删除',
   }])
 })
 
@@ -231,10 +221,9 @@ it.each(['source', 'item'])('keeps the %s delete mounted while confirmation is p
     wrapper = mount(KnowledgeHardDeleteSection, { props: { item: normal as never, spaceId: 'space' }, attachTo: document.body,
       global: { plugins: [await router()] } })
     wrappers.push(wrapper)
-    await wrapper.get('[data-hard-delete-toggle] button').trigger('click')
     await wrapper.get('[data-hard-delete-open]').trigger('click'); await flushPromises()
   }
-  await type('delete'); await submit()
+  await submit()
   const close = dialog().querySelector<HTMLButtonElement>('button.absolute')
   close?.click()
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -277,8 +266,7 @@ it.each(['zh-CN', 'en-US'] as const)('orders source sections and distinguishes s
   }] })
   let finish!: (value: SourceDeletePreview) => void
   postJson.mockResolvedValueOnce(value).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
-  await open(); await type('delete')
-  const area = dialog().querySelector('[data-hard-delete-preview]')!
+  await open();  const area = dialog().querySelector('[data-hard-delete-preview]')!
   const sequence = [...area.children].filter(node => node.matches('section,form')).map(node => node.tagName === 'FORM' ? 'confirm'
     : node.hasAttribute('data-source-layer') ? node.getAttribute('data-source-layer') : [...node.attributes].find(attr => attr.name.startsWith('data-hard-delete'))?.name)
   expect(sequence).toEqual(['data-hard-delete-publications', 'data-hard-delete-sources', 'default_items', 'affected_items', 'data-hard-delete-records', 'data-hard-delete-kept', 'confirm'])
@@ -295,20 +283,19 @@ it.each(['zh-CN', 'en-US'] as const)('orders source sections and distinguishes s
   expect(area.querySelector('a')).toBeNull()
   await choose('entity:other')
   expect(area.textContent).toContain(locale === 'zh-CN' ? '正在按新选择重新列出将删除的内容' : 'Listing what will be deleted for the new selection')
-  expect(area.textContent).toContain(locale === 'zh-CN' ? '选择已改变，确认已清空；请按新列表重新输入。' : 'Selection changed and the confirmation was cleared; type it again for the new list.')
+  expect(area.textContent).toContain(locale === 'zh-CN' ? '选择已改变，下面是按新选择列出的内容。' : 'The selection changed; the list below follows it.')
   const selected = preview({ include: ['entity:other'] }); selected.affected_items[0]!.selected = true
   finish(selected); await flushPromises()
   const row = area.querySelector('[data-source-row="entity:other"]')!
   expect(row.textContent).toContain(locale === 'zh-CN' ? '已加入删除：这条知识的全部版本会一起删除；它另外 1 段来源不在范围内，会保留。' : 'Added to the deletion: every version of this knowledge will be deleted; its other 1 sources are outside this scope and stay.')
   expect(row.querySelector('label')!.textContent).not.toContain(locale === 'zh-CN' ? '删除后保留' : 'remain after deletion')
-  expect(disabled()).toBe(true)
+  expect(disabled()).toBe(false)
 })
 
 it.each(['zh-CN', 'en-US'] as const)('blocks submitting drafts but permits unknown submissions in %s', async locale => {
   setLocale(locale, { persist: false })
   postJson.mockResolvedValueOnce(preview({ drafts: { pending: 0, submitted: 0, submitting: 2, unknown: 3 } }))
-  const wrapper = await open(); await type('delete')
-  const sources = dialog().querySelector('[data-hard-delete-sources]')!
+  const wrapper = await open();  const sources = dialog().querySelector('[data-hard-delete-sources]')!
   expect(sources.querySelector('[data-drafts-submitting]')!.textContent).toBe(locale === 'zh-CN'
     ? '2 份公开草稿正在提交，提交结束前不能删除。' : '2 public drafts are being submitted; delete after they finish.')
   expect(sources.querySelector('[data-drafts-unknown]')!.textContent).toBe(locale === 'zh-CN'
@@ -319,7 +306,7 @@ it.each(['zh-CN', 'en-US'] as const)('blocks submitting drafts but permits unkno
   wrapper.unmount()
   postJson.mockResolvedValueOnce(preview({ drafts: { pending: 0, submitted: 0, submitting: 0, unknown: 1 } }))
     .mockResolvedValueOnce({ outcome: 'complete', ...target, counts })
-  await open(); await type('delete'); expect(disabled()).toBe(false); await submit()
+  await open(); expect(disabled()).toBe(false); await submit()
   expect(postJson.mock.calls.at(-1)?.[0]).toContain('/hard-delete')
 })
 
@@ -344,25 +331,23 @@ it('distinguishes several source actions by the saved turn and time', async () =
 })
 
 
-it.each(['zh-CN', 'en-US'] as const)('rechecks public submission results through a fresh preview and clears typed confirmation in %s', async locale => {
+it.each(['zh-CN', 'en-US'] as const)('rechecks public submission results through a fresh preview before confirming in %s', async locale => {
   setLocale(locale, { persist: false })
   let finish!: (value: SourceDeletePreview) => void
   postJson.mockResolvedValueOnce(preview({ drafts: { pending: 0, submitted: 0, submitting: 0, unknown: 1 } }))
     .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
     .mockResolvedValueOnce({ outcome: 'complete', ...target, counts })
-  await open(); await type('delete')
-  expect(disabled()).toBe(false)
+  await open();  expect(disabled()).toBe(false)
   const recheck = dialog().querySelector<HTMLButtonElement>('[data-drafts-recheck] button')!
   expect(recheck.textContent).toBe(locale === 'zh-CN' ? '重新确认提交结果' : 'Recheck submission result')
   recheck.click(); await flushPromises()
   expect(disabled()).toBe(true)
-  expect(dialog().querySelector<HTMLInputElement>('[data-hard-delete-confirm]')!.value).toBe('')
   expect(dialog().querySelector('[data-drafts-recheck]')!.textContent).toContain(locale === 'zh-CN' ? '正在重新确认公开草稿提交结果' : 'Rechecking public draft submission results')
   expect(postJson.mock.calls[1]).toEqual(['/api/knowledge/episode/source%2Fopaque/hard-delete/preview', { personalSpaceId: 'space', include: [], exclude: [] }])
   finish(preview({ preview_id: 'reconciled-digest', drafts: { pending: 0, submitted: 1, submitting: 0, unknown: 0 } })); await flushPromises()
   expect(dialog().querySelector('[data-drafts-recheck]')).toBeNull()
-  expect(disabled()).toBe(true)
-  await type('delete'); await submit()
+  expect(disabled()).toBe(false)
+  await submit()
   expect(postJson.mock.calls[2]?.[1].previewId).toBe('reconciled-digest')
 })
 
@@ -371,9 +356,8 @@ it('repreviews a submission that starts after the shown preview instead of leavi
   postJson.mockResolvedValueOnce(preview({ drafts: { pending: 1, submitted: 0, submitting: 0, unknown: 0 } }))
     .mockRejectedValueOnce(new ApiError('submission started', 409, '{"code":"hard_delete_draft_submitting"}'))
     .mockResolvedValueOnce(preview({ preview_id: 'now-submitting', drafts: { pending: 0, submitted: 0, submitting: 1, unknown: 0 } }))
-  await open(); await type('delete'); await submit()
+  await open(); await submit()
   expect(postJson).toHaveBeenCalledTimes(3)
-  expect(dialog().querySelector<HTMLInputElement>('[data-hard-delete-confirm]')!.value).toBe('')
   expect(disabled()).toBe(true)
   expect(dialog().querySelector('[data-drafts-submitting]')!.textContent).toContain('1 份公开草稿正在提交')
   expect(dialog().querySelector('[data-drafts-recheck]')).not.toBeNull()
@@ -398,11 +382,10 @@ describe('source working-memory deletion preview', () => {
   it('removes a later group from include without excluding any exact-source snapshot', async () => {
     postJson.mockResolvedValueOnce(preview({ include: [later.key], agent_memory: { scrubbed: [scope], later: [{ ...later, selected: true }] } }))
       .mockResolvedValueOnce(preview({ preview_id: 'kept-memory', agent_memory: { scrubbed: [scope], later: [later] } }))
-    await open(); await type('delete')
-    dialog().querySelector<HTMLButtonElement>('[data-source-memory-later] [role="checkbox"]')!.click()
+    await open();    dialog().querySelector<HTMLButtonElement>('[data-source-memory-later] [role="checkbox"]')!.click()
     await flushPromises()
     expect(postJson.mock.calls[1]?.[1]).toEqual({ personalSpaceId: 'space', include: [], exclude: [] })
-    expect(disabled()).toBe(true)
+    expect(disabled()).toBe(false)
     expect(dialog().querySelector('[data-source-memory] [role="checkbox"]')).toBeNull()
   })
   it('describes session memory and the live-context limitation in English', async () => {
@@ -421,14 +404,12 @@ describe('source working-memory deletion preview', () => {
     postJson.mockResolvedValueOnce(preview({ agent_memory: { scrubbed: [scope], later: [later] } }))
       .mockResolvedValueOnce(preview({ preview_id: 'memory-digest', include: [later.key], agent_memory: { scrubbed: [scope], later: [{ ...later, selected: true }] } }))
       .mockResolvedValueOnce({ outcome: 'complete', ...target, counts })
-    await open(); await type('delete')
-    dialog().querySelector<HTMLButtonElement>('[data-source-memory-later] [role="checkbox"]')!.click()
+    await open();    dialog().querySelector<HTMLButtonElement>('[data-source-memory-later] [role="checkbox"]')!.click()
     await flushPromises()
     expect(postJson.mock.calls[1]?.[1]).toEqual({ personalSpaceId: 'space', include: [later.key], exclude: [] })
-    expect(disabled()).toBe(true)
-    expect(dialog().querySelector<HTMLInputElement>('[data-hard-delete-confirm]')!.value).toBe('')
-    await type('delete'); await submit()
-    expect(postJson.mock.calls[2]?.[1]).toEqual({ personalSpaceId: 'space', include: [later.key], exclude: [], previewId: 'memory-digest', confirmation: 'delete' })
+    expect(disabled()).toBe(false)
+    await submit()
+    expect(postJson.mock.calls[2]?.[1]).toEqual({ personalSpaceId: 'space', include: [later.key], exclude: [], previewId: 'memory-digest', confirmation: '删除' })
   })
 })
 

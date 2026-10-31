@@ -1,19 +1,26 @@
 import { describe, expect, it } from 'vitest'
 
 import { ApiError } from '@/api/client'
-import { confirmationMatches, hardDeletedFrom, ledgerDamage, recordCounts, refusedByGraph, stalePreview, type HardDeleteCounts } from './model'
+import { deletionExport, hardDeletedFrom, ledgerDamage, recordCounts, refusedByGraph, stalePreview, type HardDeleteCounts,
+  type HardDeletePreview } from './model'
 
 const zero = { items: 0, versions: 0, relationships: 0, episodes: 0, kept_episodes: 0, dependents: 0, mentions: 0,
   revisions: 0, feedback: 0, usage: 0, change_audits: 0, tags: 0, assignments: 0, references: 0, review_decisions: 0,
   conflicts: 0, promotions: 0, decision_snapshots: 0 } satisfies HardDeleteCounts
 
 describe('hard delete model (rec#5 C9)', () => {
-  it('confirms with 删除, delete or the exact title, never with anything else', () => {
-    const preview = { title: 'Deploy with a synthetic key' }
-    expect(confirmationMatches(preview, ' 删除 ')).toBe(true)
-    expect(confirmationMatches(preview, 'delete')).toBe(true)
-    expect(confirmationMatches(preview, 'Deploy with a synthetic key')).toBe(true)
-    for (const typed of ['', '  ', 'ok', 'Delete', 'Deploy']) expect(confirmationMatches(preview, typed)).toBe(false)
+  it('exports what the dialog listed, without the preview id, under a safe dated name (D-88)', () => {
+    const preview = { preview_id: 'p-1', item_kind: 'entity', item_id: 'syn-1', title: 'Deploy: with a/synthetic key',
+      items: [{ item_kind: 'entity', item_id: 'syn-1', role: 'item', title: 'Deploy', content: 'Use the staging key', status: 'current' }],
+      removed_episodes: [{ episode_id: 'ep-1', excerpt: 'User: use the staging key', other_items: 0 }],
+      kept_episodes: [], dependents: [], counts: zero } as unknown as HardDeletePreview
+    const { filename, json } = deletionExport(preview, 'space-1', new Date('2026-11-01T03:04:05Z'))
+    expect(filename).toBe('fuli-deleted-Deploy-with-a-synthetic-key-20261101-030405.json')
+    const value = JSON.parse(json)
+    expect(value).toMatchObject({ format: 'fuli-deleted-knowledge', version: 1, personal_space_id: 'space-1',
+      source_text: 'excerpts', item_id: 'syn-1', items: preview.items, removed_episodes: preview.removed_episodes })
+    expect(value).not.toHaveProperty('preview_id')
+    expect(deletionExport({ ...preview, title: '  ' }, 's', new Date(0)).filename).toBe('fuli-deleted-entity-19700101-000000.json')
   })
 
   it('lists only the record counts that are not zero, in a stable order', () => {

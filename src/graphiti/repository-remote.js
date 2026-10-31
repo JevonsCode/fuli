@@ -1,6 +1,9 @@
 // A repository's identity by its origin remote, read from Git's own files as
 // text: a separate clone under another folder name is still the same project.
 
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 const REPOSITORY_SOURCE_KINDS = new Set(['repository', 'frontend_repository', 'backend_repository']);
 const SECTION = /^\s*\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]\s*(.*)$/;
 const URL_ENTRY = /^\s*url\s*=\s*(.*)$/i;
@@ -20,12 +23,35 @@ export function linkedGitDirectory(gitMarkerPath, { readText, pathApi }) {
 // The normalised origin URL of the repository rooted at repositoryRoot, or null.
 // A worktree's remotes live in the common directory its commondir names.
 export function originRemoteKey(repositoryRoot, { readText, pathApi }) {
+  const url = originRemoteUrl(repositoryRoot, { readText, pathApi });
+  return url ? remoteKey(url) : null;
+}
+
+// Read once using the same Git directory and config rules as remote matching.
+function originRemoteUrl(repositoryRoot, { readText, pathApi }) {
   const gitMarker = pathApi.join(repositoryRoot, '.git');
   const gitDirectory = linkedGitDirectory(gitMarker, { readText, pathApi }) ?? gitMarker;
   const commonDirectory = readText(pathApi.join(gitDirectory, 'commondir')).trim();
   const configDirectory = commonDirectory ? pathApi.resolve(gitDirectory, commonDirectory) : gitDirectory;
-  const url = originUrl(readText(pathApi.join(configDirectory, 'config')));
-  return url ? remoteKey(url) : null;
+  return originUrl(readText(pathApi.join(configDirectory, 'config')));
+}
+
+// A source suitable for a newly registered profile, without remote credentials.
+export function originRemoteSource(repositoryRoot) {
+  const remote = originRemoteUrl(repositoryRoot, { pathApi: path, readText: readTextOrEmpty });
+  if (!remote) return null;
+  const safeRemote = remote.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, '$1')
+    .replace(/^[^/@:]+:[^/@]+@(?=[^/]+:)/, '');
+  const key = remoteKey(safeRemote);
+  const normalizable = /^(?:https?|ssh):\/\//i.test(safeRemote) || SCP_FORM.test(safeRemote);
+  const uri = normalizable && key ? `https://${key}` : safeRemote;
+  const titlePath = key?.split('/').slice(1).join('/') ?? uri.replace(/\\/g, '/');
+  const title = titlePath.replace(/\/+$/, '').replace(/\.git$/i, '').split('/').filter(Boolean).slice(-2).join('/') || uri;
+  return { key: 'origin-remote', kind: 'repository', title, uri, sensitivity: 'normal' };
+}
+
+function readTextOrEmpty(filePath) {
+  try { return readFileSync(filePath, 'utf8'); } catch { return ''; }
 }
 
 // The registered projects whose profile records a repository source at remote.

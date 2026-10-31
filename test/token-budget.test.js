@@ -158,9 +158,10 @@ const BASELINE = Object.freeze({
   // upsert_project_agent says a new Agent needs a built-in occupation.role and active catalog tags
   // (no Agent-specific tool is added): 196,369 -> 196,560 B (+191 B), computed from the changed
   // description and occupation property; chat, instructions and entry are unchanged.
+  // Exact projectId selection on list_personal_projects: 196,560 -> 196,632 B (+72 B), measured.
   // rec#11 D-82 task sheets: an execution-plan step may name its participant (agentId):
-  // 196,560 -> 196,672 B (+112 B), measured; chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 196672,
+  // 196,632 -> 196,744 B (+112 B), measured; chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 196744,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
