@@ -186,6 +186,8 @@
   transition: fill .12s, stroke .12s, stroke-width .12s;
 }
 .graph-node.project-node .graph-node-shape { fill: var(--color-ink); stroke: var(--color-surface); stroke-width: 2.5; }
+/* A project led by an FLA shows the lead's portrait in place of the folder mark. */
+.graph-project-lead { pointer-events: none; }
 .graph-project-icon {
   fill: none; stroke: var(--color-surface); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
   pointer-events: none;

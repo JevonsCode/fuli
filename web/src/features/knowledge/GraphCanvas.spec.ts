@@ -9,14 +9,20 @@ const controller = vi.hoisted(() => ({
   clearSelection: vi.fn(),
   focusByNames: vi.fn(),
   selectItem: vi.fn(),
+  showProjectLeads: vi.fn(),
   destroy: vi.fn(),
 }))
+const loadProjectLeads = vi.hoisted(() => vi.fn(async () => new Map([['fuli', 'agent-lead']])))
 const renderKnowledgeGraph = vi.hoisted(() => vi.fn(() => controller))
 
 vi.mock('./graph-runtime', () => ({
   renderKnowledgeGraph,
+  isProjectNode: (node: { type?: string }) => node?.type === 'PersonalProject',
 }))
+vi.mock('@/features/projects/project-leads', () => ({ loadProjectLeads }))
+vi.mock('@/stores/console', () => ({ useConsoleStore: () => ({ activePersonalSpace: { id: 'space-a' } }) }))
 
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { setLocale } from '@/i18n'
 import GraphCanvas from './GraphCanvas.vue'
 
@@ -29,6 +35,19 @@ afterEach(() => {
 })
 
 describe('GraphCanvas', () => {
+  it('shows each project node\'s lead portrait once the leads are read', async () => {
+    const wrapper = mount(GraphCanvas, { props: { graph: { nodes: [
+      { id: 'personal-project:node-1', name: 'fuli', type: 'PersonalProject', attributes: { projectId: 'fuli' } },
+      { id: 'entity-1', name: 'note', type: 'Entity' },
+    ], edges: [] } } })
+    await vi.waitFor(() => expect(controller.showProjectLeads).toHaveBeenCalled())
+    expect(loadProjectLeads).toHaveBeenCalledWith('space-a', ['fuli'])
+    const avatarFor = (controller.showProjectLeads.mock.calls[0] as unknown[])[0] as (node: object) => string | null
+    expect(avatarFor({ type: 'PersonalProject', attributes: { projectId: 'fuli' } })).toBe(agentAvatarUrl('agent-lead'))
+    expect(avatarFor({ type: 'PersonalProject', attributes: { projectId: 'other' } })).toBeNull()
+    wrapper.unmount()
+  })
+
   it('passes the project visibility policy through to the renderer', async () => {
     const wrapper = mount(GraphCanvas, { props: {
       graph: { nodes: [], edges: [] }, projectVisibility: 'provided',
