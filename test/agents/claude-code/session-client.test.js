@@ -46,5 +46,5 @@ test('the Claude Code hook cannot reach the session launcher or its executables'
   // client-detection's pure mapping (it imports nothing; the installer is passed in) are reachable.
   assert.deepEqual(reached.filter((path) => path.startsWith('src/agent-kits/')).sort(),
     ['src/agent-kits/client-detection.js', 'src/agent-kits/pins.js', 'src/agent-kits/session-clients.js']);
-  assert.doesNotMatch(readFileSync(join(ROOT, 'src', 'agent-kits', 'client-detection.js'), 'utf8'), /^s*import/m);
+  assert.doesNotMatch(readFileSync(join(ROOT, 'src', 'agent-kits', 'client-detection.js'), 'utf8'), /^\s*import\b/m);
 });
