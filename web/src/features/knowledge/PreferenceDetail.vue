@@ -7,7 +7,7 @@ import type { ConversationLauncherConfiguration, KnowledgeGraph, KnowledgeItem }
 import KnowledgeRecords from './KnowledgeRecords.vue'
 import { agentConfirmationBlockingText, agentConfirmationProgressText, showsAgentConfirmationProgress } from './agent-confirmation-progress'
 import { classificationExplanation, confirmationActorLabel, endpointId, formatTime, humanChangeStatusLabel, isManagementKnowledgeItem, knowledgeItems, knowledgeReviewState, reviewStateLabel } from './model'
-const props = defineProps<{ item: KnowledgeItem; graph: KnowledgeGraph | null; editable?: boolean; scopeLabel?: string; statusLabel?: string; conversationLaunchers?: ConversationLauncherConfiguration }>()
+const props = defineProps<{ item: KnowledgeItem; graph: KnowledgeGraph | null; editable?: boolean; scopeLabel?: string; statusLabel?: string; conversationLaunchers?: ConversationLauncherConfiguration; confirming?: boolean }>()
 const emit = defineEmits<{ confirm: [item: KnowledgeItem]; edit: [item: KnowledgeItem]; openReplacement: [item: KnowledgeItem] }>()
 const bodyElement = ref<HTMLElement | null>(null)
 const fullText = ref(false)
@@ -77,7 +77,7 @@ watch(() => props.item.body, () => { fullText.value = false; void nextTick(sched
         <p v-else>{{ t(item.replacedByItemId ? 'knowledge.workspace.inspector.replacementOutOfScope' : 'knowledge.workspace.inspector.missingReplacement') }}</p>
       </div>
       <div v-if="editable && !managed" class="preference-actions">
-        <Button v-if="canConfirm" size="lg" class="inspector-confirm-action" @click="emit('confirm', item)">{{ t('knowledge.workspace.inspector.confirmPreference') }}</Button>
+        <Button v-if="canConfirm" size="lg" class="inspector-confirm-action" :loading="confirming" :loading-label="t('knowledge.dialogs.confirm.confirming', { subject: t('knowledge.dialogs.confirm.preferenceSubject') })" @click="emit('confirm', item)">{{ t('knowledge.workspace.inspector.confirmPreference') }}</Button>
         <Button variant="outline" size="lg" class="inspector-edit-action" @click="emit('edit', item)">{{ t('knowledge.workspace.inspector.correctPreference') }}</Button>
       </div>
       <p ref="bodyElement" class="preference-body" :class="{ 'is-preview': longText && !fullText }">{{ item.body }}</p>

@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import MeLink from '@/components/MeLink.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -204,7 +205,7 @@ watch(() => props.tagId, () => { detail.value = null; void load() }, { immediate
             <Badge v-if="entry.alias" variant="outline">{{ entry.alias }}</Badge>
             <Badge v-if="entry.undone" variant="outline">{{ t('knowledgeTags.detail.undone') }}</Badge>
             <span class="ml-auto text-xs text-muted-foreground">
-              {{ entry.actor_kind === 'human' ? t('knowledgeTags.detail.byHuman') : t('knowledgeTags.detail.byAgent') }} · {{ when(entry.created_at) }}
+              <MeLink v-if="entry.actor_kind === 'human'" /><template v-else>{{ t('knowledgeTags.detail.byAgent') }}</template> · {{ when(entry.created_at) }}
             </span>
           </div>
           <p v-if="entry.reason" class="m-0 text-xs text-muted-foreground [overflow-wrap:anywhere]">{{ entry.reason }}</p>

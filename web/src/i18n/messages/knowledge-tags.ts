@@ -52,7 +52,6 @@ export const knowledgeTagsMessages = {
       undone: '已撤销',
       undo: '撤销这次改动',
       byAgent: 'Agent',
-      byHuman: '你',
       none: '无',
     },
     actions: {
@@ -209,7 +208,6 @@ export const knowledgeTagsMessages = {
       undone: 'Undone',
       undo: 'Undo this change',
       byAgent: 'Agent',
-      byHuman: 'You',
       none: 'None',
     },
     actions: {

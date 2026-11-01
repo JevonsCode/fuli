@@ -212,7 +212,7 @@ describe('KnowledgeItemEditPage', () => {
     expect(rows[0].text()).toContain('当前版本')
     // The same formatter in the runner's time zone, so the spec holds in any zone.
     const shown = formatDateTime('2026-10-21T02:00:00Z', currentLocale(), DATE_TIME_MINUTE, { missing: '—' })
-    expect(rows[0].get('[data-version-who]').text()).toBe(`${shown} · 你`)
+    expect(rows[0].get('[data-version-who]').text()).toBe(`${shown} · 我`)
     expect(rows[0].get('[data-version-evidence]').text()).toBe('你明确说的 · 你已确认')
     expect(rows[0].text()).toContain('原因：My words')
     expect(rows[0].find('[aria-current="true"]').exists()).toBe(true)

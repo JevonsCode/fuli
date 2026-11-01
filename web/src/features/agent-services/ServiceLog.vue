@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import MeLink from '@/components/MeLink.vue'
 import { formatDate } from '@/features/project-agents/task-labels'
 import { t } from '@/i18n'
 import type { ServiceLog } from './agent-services'
@@ -23,7 +24,7 @@ defineProps<{ log: ServiceLog | null; loading: boolean; error: string; name: str
       <li v-for="entry in log.entries" :key="entry.id" class="grid gap-1" :data-service-log-entry="entry.action">
         <div class="flex flex-wrap items-baseline gap-x-2 text-sm">
           <span class="font-semibold">{{ t(`agentServices.log.action.${entry.action}`) }}</span>
-          <span class="text-muted-foreground">{{ t(`agentServices.log.actor.${entry.actor}`) }}</span>
+          <span class="text-muted-foreground"><MeLink v-if="entry.actor === 'person'" /><template v-else>{{ t(`agentServices.log.actor.${entry.actor}`) }}</template></span>
           <span class="ml-auto text-xs tabular-nums text-muted-foreground">{{ formatDate(entry.at) }}</span>
         </div>
         <p v-if="logDetailText(entry)" class="m-0 text-xs text-muted-foreground [overflow-wrap:anywhere]">{{ logDetailText(entry) }}</p>

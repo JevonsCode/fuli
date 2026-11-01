@@ -6,7 +6,7 @@ export const roundtableMessages = {
       open: 'Agent 怎么开始对话', hint: '复制下面一句，粘贴到你和 Agent 的对话里。',
       discuss: '请 2–4 位 FLA 一起讨论', pair: '指定两位 FLA 讨论', relay: '让一位 FLA 去问另一位', continue: '让一位 FLA 接着在这里做',
     },
-    you: '你',
+    you: "@:{'common.me.name'}",
     composer: {
       label: '消息', placeholder: '输入消息，Enter 发送，Shift+Enter 换行', send: '发送', sending: '正在发送消息…',
       modeLabel: '对方怎么回复', modes: { board: '留言板', instant: '即时对话' },
@@ -70,7 +70,7 @@ export const roundtableMessages = {
       open: 'How Agents start talking', hint: 'Copy a line and paste it into your chat with an Agent.',
       discuss: 'Invite 2–4 FLAs to discuss', pair: 'Have two named FLAs discuss', relay: 'Have one FLA ask another', continue: 'Have one FLA carry on here',
     },
-    you: 'You',
+    you: "@:{'common.me.name'}",
     composer: {
       label: 'Message', placeholder: 'Type a message; Enter sends, Shift+Enter adds a line', send: 'Send', sending: 'Sending message…',
       modeLabel: 'How they reply', modes: { board: 'Message board', instant: 'Instant chat' },

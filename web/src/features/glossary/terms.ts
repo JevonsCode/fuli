@@ -19,6 +19,8 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
   // FULI's own words: an Agent, the team, a group discussion.
   ...['fla', 'flas', 'flg'].map(key =>
     term('concept', key, `glossary.concept.${key}.label`, `glossary.concept.${key}.body`)),
+  // The current person (MeLink); tagged because 我 also starts many sentences.
+  taggedTerm('concept', 'me', 'common.me.name', 'glossary.concept.me'),
   ...['known_known', 'known_unknown', 'unknown_known', 'unknown_unknown'].map(key =>
     term('quadrant', key, `knowledge.domain.quadrants.${key}`, `knowledge.domain.quadrants.descriptions.${key}`)),
   ...['confirmed', 'agent_confirmed', 'ai_reviewed', 'pending'].map(key =>

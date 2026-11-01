@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import MeLink from '@/components/MeLink.vue'
 import { Button } from '@/components/ui/button'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
@@ -38,8 +39,7 @@ const more = computed(() => Math.max(0, props.entries.length - shown.value))
 // Each step's place in the list sets when it rises, so they arrive in order.
 const order = computed(() => new Map(visible.value.map((entry, index) => [entry.id, index])))
 const gapAfter = (entries: readonly TimelineEntry[], index: number) => timelineGap(entries[index]!, entries[index + 1])
-const actor = (entry: TimelineEntry) => entry.agentId ? props.agentName(entry.agentId)
-  : entry.actorKind === 'human' ? t('overview.stage.you') : t('overview.stage.system')
+const actor = (entry: TimelineEntry) => entry.agentId ? props.agentName(entry.agentId) : t('overview.stage.system')
 // The day is its heading, so an event shows only its time of day.
 const timeOf = (at: string | null) => {
   const date = at ? new Date(at) : null
@@ -68,7 +68,7 @@ function toggle(id: string) {
           <div class="timeline-body">
             <p class="timeline-head">
               <time :datetime="entry.at ?? undefined" class="timeline-time">{{ timeOf(entry.at) }}</time>
-              <strong class="timeline-actor">{{ actor(entry) }}</strong>
+              <strong class="timeline-actor"><MeLink v-if="!entry.agentId && entry.actorKind === 'human'" /><template v-else>{{ actor(entry) }}</template></strong>
               <span v-if="entry.crew.length" class="timeline-crew" :title="t('overview.timeline.crew', { names: crewNames(entry) })" data-timeline-crew>
                 <span v-for="id in entry.crew.slice(0, CREW_FACES)" :key="id" class="timeline-crew-face" :style="agentIdentityStyle(id)" aria-hidden="true">
                   <img :src="agentAvatarUrl(id)" alt="" />

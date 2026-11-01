@@ -4,6 +4,7 @@ import { router } from '@/router'
 import base from '../../styles.css?raw'
 import tokens from '../styles/tokens.css?raw'
 import shell from './AppShell.vue?raw'
+import toast from './FeedbackToast.vue?raw'
 
 // Every page keeps the workbench's width and side margins (Jevons 11-01): the
 // shell's .view sets them once, and no route or page narrows its own page.
@@ -24,11 +25,11 @@ describe('one page width', () => {
     expect(router.getRoutes().filter(route => 'layout' in route.meta).map(route => route.path)).toEqual([])
   })
 
-  it('sets the width once: the page, the top bar and the feedback line share the side margin', () => {
+  it('sets the width once: the page, the top bar and the floating feedback share the side margin', () => {
     expect(tokens).toMatch(/--page-inline: max\(var\(--page-gutter\), calc\(\(100% - var\(--canvas-max\)\) \/ 2\)\);/)
     expect(base).toMatch(/\.view \{[^}]*padding: 12px var\(--page-inline\) 40px;[^}]*scrollbar-gutter: stable;/)
     expect(shell).toMatch(/\.app-topbar \{[^}]*padding: 12px calc\(var\(--page-inline\) \+ var\(--scrollbar-size\)\) 8px var\(--page-inline\);/)
-    expect(shell).toMatch(/\.app-feedback-row \{[^}]*padding: 0 calc\(var\(--page-inline\) \+ var\(--scrollbar-size\)\) 8px var\(--page-inline\);/)
+    expect(toast).toContain('position: fixed; top: 64px; right: calc(var(--page-inline) + var(--scrollbar-size));')
     expect(shell).not.toMatch(/data-layout|--layout-max/)
   })
 

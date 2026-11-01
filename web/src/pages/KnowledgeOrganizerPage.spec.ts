@@ -50,7 +50,6 @@ describe('KnowledgeOrganizerPage', () => {
         plugins: [pinia],
         stubs: {
           KnowledgeBatchConfirmDialog: true,
-          KnowledgeConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeInspector: true,
         },
@@ -128,7 +127,6 @@ describe('KnowledgeOrganizerPage', () => {
         plugins: [pinia],
         stubs: {
           KnowledgeBatchConfirmDialog: true,
-          KnowledgeConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeInspector: true,
         },
@@ -216,7 +214,6 @@ describe('KnowledgeOrganizerPage', () => {
         plugins: [pinia],
         stubs: {
           KnowledgeBatchConfirmDialog: true,
-          KnowledgeConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeInspector: true,
         },
@@ -281,7 +278,6 @@ describe('KnowledgeOrganizerPage', () => {
         plugins: [pinia],
         stubs: {
           KnowledgeBatchConfirmDialog: true,
-          KnowledgeConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeInspector: true,
         },
