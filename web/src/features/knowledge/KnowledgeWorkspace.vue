@@ -61,6 +61,7 @@ import {
   type PersonalProjectDiscovery,
 } from './project-discovery'
 import Breadcrumb from '@/components/Breadcrumb.vue'
+import { allProjectsCrumb } from './all-projects-crumb'
 import ProjectHistoryPreview from '@/features/project-history/ProjectHistoryPreview.vue'
 import { isProjectNode } from './graph-runtime'
 import { separateParentProjects } from './project-hierarchy'
@@ -130,9 +131,6 @@ const projectId = computed(() => {
   const value = route.params.projectId
   return typeof value === 'string' && value ? value : null
 })
-// Inside one project, the way back to all projects: Back when the project was
-// opened from the projects graph or directory, otherwise the projects graph.
-const ALL_PROJECTS_PATH = /^\/personal\/[^/]+\/projects\/(graph|directory)(?:[?#]|$)/
 const overviewAvailable = computed(() => props.personalProjectsOnly && Boolean(projectId.value))
 const mode = computed<KnowledgeMode>(() => {
   if (route.params.mode === 'graph') return 'graph'
@@ -1017,7 +1015,7 @@ function queryValues(value: unknown) {
     :class="{ 'graph-canvas-active': mode === 'graph', 'is-project-overview': mode === 'overview', 'is-directory': mode === 'directory' }"
   >
     <div class="knowledge-canvas">
-    <Breadcrumb v-if="overviewAvailable" :parent="{ label: t('knowledge.workspace.projectPeek.allProjects'), to: `/personal/${spaceId}/projects/graph`, from: ALL_PROJECTS_PATH }" />
+    <Breadcrumb v-if="overviewAvailable" :parent="allProjectsCrumb(spaceId)" />
     <div class="knowledge-view-heading">
       <!-- The view is part of the URL; the tabs only change the route. -->
       <Tabs :model-value="mode" class="knowledge-mode-tabs" @update:model-value="changeMode($event as KnowledgeMode)">
