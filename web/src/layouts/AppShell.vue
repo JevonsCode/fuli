@@ -167,7 +167,8 @@ watchEffect(() => {
    space below the block instead, so no gap opens in the middle of the page. */
 .app-main :deep(.view) { padding-bottom: var(--dock-clearance); }
 .app-main :deep(.view:not(:last-child)) { padding-bottom: 0; }
-.app-topbar { flex: 0 0 auto; padding: 12px var(--page-gutter) 8px; }
+/* The top bar is its own layer above the page, so what it opens (the doctor's panel) floats over the page's cards instead of under them. */
+.app-topbar { position: relative; z-index: var(--z-popover); flex: 0 0 auto; padding: 12px var(--page-gutter) 8px; }
 .app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; max-width: var(--canvas-max); min-height: 44px; margin-inline: auto; }
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .app-wordmark { color: var(--color-ink); font-size: 15px; font-weight: var(--weight-strong); letter-spacing: -.01em; white-space: nowrap; }
