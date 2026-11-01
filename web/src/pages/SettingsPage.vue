@@ -15,6 +15,9 @@ import ClientConnectionSettings from '@/features/settings/ClientConnectionSettin
 import ClientLinksSettings from '@/features/settings/ClientLinksSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
 import DiagnosticsSettings from '@/features/settings/DiagnosticsSettings.vue'
+import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
+import { offersUpdate, useChannelVersionStatus } from '@/features/update/version-status'
+import { FULI_VERSION } from '@/version'
 import AgentNamingStyleField from '@/features/settings/AgentNamingStyleField.vue'
 import CaptureProjectSettings from '@/features/capture/CaptureProjectSettings.vue'
 import SettingsRestartNotice from '@/features/settings/SettingsRestartNotice.vue'
@@ -63,6 +66,9 @@ const autoSave = useSettingsAutoSave({
   ready: () => !applying.value && checkFields().every(field => field.hasAttribute('data-restart-field')),
 })
 const { state: autoSaveState, failure: saveFailure } = autoSave
+// 版本: the newest release on the update channel the form holds.
+const { status: versionStatus, failed: versionFailed } = useChannelVersionStatus(computed(() => form.value?.updateChannel))
+const versionCheckedAt = (value: string) => formatDateTime(value, locale.value, { dateStyle: 'medium', timeStyle: 'short' }, { missing: '—' })
 const saveCapsuleState = computed(() => applying.value ? 'applying' : autoSaveState.value)
 const pendingRestart = computed(() => form.value && settings.value
   ? pendingRestartFields(form.value, settings.value.active)
@@ -71,7 +77,7 @@ const pendingRestart = computed(() => form.value && settings.value
 // A few topic tabs over one form (D-03): the tab is part of the URL, every tab
 // stays mounted so unsaved edits survive switching, and a search looks
 // through all of them at once.
-const SETTINGS_TABS = ['memory', 'clients', 'network', 'system'] as const
+const SETTINGS_TABS = ['memory', 'clients', 'network', 'system', 'version'] as const
 type SettingsTab = typeof SETTINGS_TABS[number]
 const tabFrom = (value: unknown): SettingsTab => SETTINGS_TABS.find(tab => tab === value) ?? 'memory'
 const activeTab = ref<SettingsTab>(tabFrom(route.query.tab))
@@ -734,6 +740,37 @@ function checkFields(): ValidatedField[] {
               </Card>
               </PageColumns>
             </TabsContent>
+
+            <!-- Version -->
+            <TabsContent value="version" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="version">
+              <PageColumns>
+                <Card as="section" id="version" class="settings-card" aria-labelledby="settings-version-title" data-version-settings>
+                  <CardHeader><CardTitle id="settings-version-title" as="h2">{{ t('settings.version.title') }}</CardTitle></CardHeader>
+                  <div class="setting-list">
+                    <div class="setting-row">
+                      <span><strong>{{ t('settings.version.current') }}</strong></span>
+                      <span class="version-number" data-current-version>v{{ FULI_VERSION }}</span>
+                    </div>
+                    <label class="setting-row">
+                      <span><strong>{{ t('settings.version.beta') }}</strong><small>{{ t('settings.version.betaMeta') }}</small></span>
+                      <Switch :model-value="form.updateChannel === 'beta'" :aria-label="t('settings.version.beta')" data-update-channel
+                        @update:model-value="value => form && (form.updateChannel = value ? 'beta' : 'stable')" />
+                    </label>
+                    <div class="setting-row version-latest" aria-live="polite" data-version-latest>
+                      <GrowthLoading v-if="!versionStatus && !versionFailed" variant="inline" :label="t('settings.version.checking')" />
+                      <span v-else-if="versionFailed || versionStatus?.status === 'unavailable'"><strong>{{ t('settings.version.unavailable') }}</strong></span>
+                      <template v-else-if="offersUpdate(versionStatus)">
+                        <span><strong>{{ t('settings.version.available', { version: versionStatus.latestVersion }) }}</strong>
+                          <small>{{ t('settings.version.checkedAt', { time: versionCheckedAt(versionStatus.checkedAt) }) }}</small></span>
+                        <ConsoleUpdate :version="versionStatus.latestVersion" :kind="versionStatus.updateKind ?? 'npm'" />
+                      </template>
+                      <span v-else-if="versionStatus"><strong>{{ t('settings.version.upToDate') }}</strong>
+                        <small>{{ t('settings.version.checkedAt', { time: versionCheckedAt(versionStatus.checkedAt) }) }}</small></span>
+                    </div>
+                  </div>
+                </Card>
+              </PageColumns>
+            </TabsContent>
           </fieldset>
           <p v-if="loadError" class="settings-error" role="alert">{{ loadError }}</p>
         </form>
@@ -837,6 +874,8 @@ function checkFields(): ValidatedField[] {
 /* A row's name sits under the card title: body size, medium weight. */
 .setting-row strong { color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); }
 .setting-row small { color: var(--color-muted); font-size: 12px; }
+.version-number { font-variant-numeric: tabular-nums; font-weight: var(--weight-medium); }
+.version-latest { min-height: var(--control-height); cursor: default; }
 .setting-note { margin: 0; padding: 4px 0 4px 20px; color: var(--color-muted); font-size: 12px; }
 .setting-row-nested { padding-left: 20px; border-top-style: dashed; }
 .select-row .settings-select { flex: 0 0 180px; width: 180px; min-width: 0; }

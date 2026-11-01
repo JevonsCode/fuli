@@ -68,7 +68,7 @@ test('update installs latest globally and runs setup from the newly installed pa
         calls.push({ kind: 'captured', command, args: commandArgs });
         if (command !== 'npm') return { status: 0, stdout: '9.8.7\n' };
         return commandArgs[0] === 'view'
-          ? { status: 0, stdout: '"9.8.7"\n' }
+          ? { status: 0, stdout: '{"latest":"9.8.7","beta":"9.8.7-beta.1"}\n' }
           : { status: 0, stdout: '/opt/npm/lib/node_modules\n' };
       },
       fileExists: (path) => {
@@ -86,7 +86,7 @@ test('update installs latest globally and runs setup from the newly installed pa
       {
         kind: 'captured',
         command: 'npm',
-        args: ['view', 'fuli-context@latest', 'version', '--json']
+        args: ['view', 'fuli-context', 'dist-tags', '--json']
       },
       { kind: 'captured', command: 'npm', args: ['root', '--global'] },
       { kind: 'stop', command: 'stop', args: ['--data-dir', 'D:/Fuli Data'] },

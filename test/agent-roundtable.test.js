@@ -66,6 +66,8 @@ test('an Agent asks another Agent, which answers from its latest conversation', 
   assert.deepEqual(summary.participants.map((person) => person.name), ['Milo Reed', 'Nova Lane']);
   assert.equal(summary.waiting, false);
   assert.deepEqual(summary.waitingFor, []);
+  // Agents' own threads have no delivery mode of the person's; the answered ask is not running.
+  assert.deepEqual([summary.mode, summary.replying], [null, false]);
 });
 
 test('employee numbers find and address the same identity across clients', async () => {

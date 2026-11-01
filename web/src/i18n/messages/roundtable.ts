@@ -1,7 +1,11 @@
 export const roundtableMessages = {
   'zh-CN': {
     threads: '对话',
-    sections: { mine: '你的对话', flas: 'FLA 之间' },
+    list: { instant: '即时对话', board: '留言板', collapse: '收起对话列表', expand: '展开对话列表', none: '选择一段对话' },
+    prompts: {
+      open: 'Agent 怎么开始对话', hint: '复制下面一句，粘贴到你和 Agent 的对话里。',
+      discuss: '请 2–4 位 FLA 一起讨论', pair: '指定两位 FLA 讨论', relay: '让一位 FLA 去问另一位', continue: '让一位 FLA 接着在这里做',
+    },
     you: "@:{'common.me.name'}",
     composer: {
       label: '消息', placeholder: '输入消息，Enter 发送，Shift+Enter 换行', send: '发送', sending: '正在发送消息…',
@@ -18,16 +22,9 @@ export const roundtableMessages = {
       failed: '没有送到 {name}：{reason}',
     },
     instantBlocked: '{name} 现在不能即时回复：{reason}。发给 {name} 的消息会留在留言板。',
-    start: {
-      open: '新对话', title: '和 FLA 对话', cancel: '取消', who: '和谁对话（可以选几位一起）',
-      to: '发给', search: '搜索 FLA', remove: '不发给 {name}', noMatch: '没有找到「{query}」。',
-      loading: '正在读取可以对话的 FLA…', loadFailed: '可以对话的 FLA 没有读取成功。', none: '还没有可以对话的 FLA。',
-      project: '这段对话属于哪个项目', chooseProject: '选择项目', noSharedProject: '选中的 FLA 不在同一个项目里，请分开对话。',
-    },
     chat: { kinds: { direct: '私聊', group: '群聊' }, memberCount: '{count} 位', empty: '这个群里还没有人发言。', more: '还有更早之后的消息没有显示。', remoteUnavailable: '另一台电脑上的群暂时读不到。' },
     count: '{count} 段对话',
     empty: '还没有对话',
-    emptyHint: '可以在这里给你的 FLA 发消息。Agent 在客户端里调用 message_agent 或 agent_chat 时，它们之间的对话也会出现在这里。',
     loading: '正在读取 Agent 之间的对话…',
     loadFailed: '对话读取失败',
     loadFailedHint: 'Agent 之间的提问和群聊都没有读取成功，已有的对话不会因此丢失。',
@@ -68,7 +65,11 @@ export const roundtableMessages = {
   },
   'en-US': {
     threads: 'Conversations',
-    sections: { mine: 'Your conversations', flas: 'Between FLAs' },
+    list: { instant: 'Instant chat', board: 'Message board', collapse: 'Collapse conversation list', expand: 'Expand conversation list', none: 'Choose a conversation' },
+    prompts: {
+      open: 'How Agents start talking', hint: 'Copy a line and paste it into your chat with an Agent.',
+      discuss: 'Invite 2–4 FLAs to discuss', pair: 'Have two named FLAs discuss', relay: 'Have one FLA ask another', continue: 'Have one FLA carry on here',
+    },
     you: "@:{'common.me.name'}",
     composer: {
       label: 'Message', placeholder: 'Type a message; Enter sends, Shift+Enter adds a line', send: 'Send', sending: 'Sending message…',
@@ -85,16 +86,9 @@ export const roundtableMessages = {
       failed: 'Not delivered to {name}: {reason}',
     },
     instantBlocked: '{name} cannot reply instantly right now: {reason}. Messages to {name} stay on the board.',
-    start: {
-      open: 'New conversation', title: 'Talk with your FLAs', cancel: 'Cancel', who: 'Who to talk with (pick several for a group)',
-      to: 'To', search: 'Search FLAs', remove: 'Remove {name}', noMatch: 'Nothing matches “{query}”.',
-      loading: 'Loading the FLAs you can talk with…', loadFailed: 'Could not load the FLAs you can talk with.', none: 'There are no FLAs to talk with yet.',
-      project: 'Which project this conversation belongs to', chooseProject: 'Choose a project', noSharedProject: 'The chosen FLAs do not share a project; talk with them separately.',
-    },
     chat: { kinds: { direct: 'Direct', group: 'Group' }, memberCount: '{count} members', empty: 'No one has spoken in this room yet.', more: 'Later messages are not shown yet.', remoteUnavailable: 'Rooms on the other computer are unavailable right now.' },
     count: '{count} conversations',
     empty: 'No conversations yet',
-    emptyHint: 'Message your FLAs here. When Agents call message_agent or agent_chat in a client, their conversations appear here too.',
     loading: 'Loading Agent conversations…',
     loadFailed: 'Could not load conversations',
     loadFailedHint: 'Neither the asks between Agents nor the chat rooms could be read; nothing already recorded is lost.',

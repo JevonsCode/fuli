@@ -149,3 +149,14 @@ test('the update route reads the state from anywhere the console serves, and sta
   assert.equal(starts, 1);
   assert.deepEqual(inputs, [{ stopProcesses: ['40:133'] }]);
 });
+
+test('an npm update started from the beta channel installs from it', async (t) => {
+  const root = dataDir(t);
+  const update = consoleUpdate(root, { platform: 'linux', spawnWorker: fakeWorker([]) });
+  const { id } = update.start({ version: '99.0.0-beta.1', channel: 'beta' });
+  const calls = [];
+  await runConsoleUpdate({ dataDir: root }, id, { env: {},
+    update: async (args) => { calls.push(args); return { status: 'updated', previousVersion: FULI_VERSION, version: '99.0.0-beta.1' }; },
+    control: { consoleRunning: async () => assert.fail('not checked after a success'), start: async () => assert.fail('setup starts it') } });
+  assert.deepEqual(calls, [['--yes', '--beta', '--data-dir', root]]);
+});
