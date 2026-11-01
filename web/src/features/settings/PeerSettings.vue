@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ApiError, getJson, postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiDisclosure from '@/components/UiDisclosure.vue'
 import { Button } from '@/components/ui/button'
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { t } from '@/i18n'
 import { OptionSelect } from '@/components/ui/select'
 
@@ -106,9 +106,7 @@ async function load() {
   finally { loading.value = false }
 }
 
-function opened(event: Event) {
-  if ((event.target as HTMLDetailsElement).open && !status.value && !loading.value && !error.value) void load()
-}
+onMounted(load)
 
 async function run(kind: string, work: () => Promise<PeerStatus | void>) {
   if (busy.value) return
@@ -200,153 +198,160 @@ function shareState(projectId: string) {
 </script>
 
 <template>
-  <UiDisclosure class="settings-card peer-settings" :title="t('settings.peer.title')" @toggle="opened">
-    <p>{{ t('settings.peer.description') }}</p>
-    <GrowthLoading v-if="loading" variant="compact" :label="t('settings.peer.loading')" />
-    <div v-if="error" class="peer-alert" role="alert">
-      <span>{{ error }}</span>
-      <Button variant="outline" size="sm" data-retry-peer :loading="loading" :loading-label="t('settings.peer.loading')" @click="load">
-        {{ t('settings.peer.retry') }}
-      </Button>
-    </div>
-
-    <template v-if="status && !paired">
-      <p>{{ t('settings.peer.off') }}</p>
-      <p v-if="status.remoteRemovalPending" role="status">{{ t('settings.peer.removalPending') }}</p>
-      <section class="peer-block">
-        <h4>{{ t('settings.peer.host') }}</h4>
-        <p v-if="!status.addresses.length">{{ t('settings.peer.noAddress') }}</p>
-        <div v-else class="peer-fields">
-          <OptionSelect control-id="peer-host-address" :model-value="hostAddress" :options="addressOptions"
-            :label="t('settings.peer.hostAddress')" @update:model-value="hostAddress = $event" />
-          <label>
-            <span>{{ t('settings.peer.hostName') }}</span>
-            <input v-model="hostName" type="text" maxlength="60" :disabled="Boolean(busy)" />
-          </label>
-          <Button data-host-peer :disabled="!hostAddress"
-            :loading="busy === 'host'" :loading-label="t('settings.peer.hosting')" @click="host">
-            {{ t('settings.peer.hostAction') }}
-          </Button>
-        </div>
-      </section>
-      <section class="peer-block">
-        <h4>{{ t('settings.peer.join') }}</h4>
-        <label>
-          <span>{{ t('settings.peer.invitation') }}</span>
-          <textarea v-model="joinInvitation" rows="3" spellcheck="false" :disabled="Boolean(busy)"
-            :placeholder="t('settings.peer.invitationPlaceholder')" :aria-label="t('settings.peer.invitation')" />
-        </label>
-        <label>
-          <span>{{ t('settings.peer.joinName') }}</span>
-          <input v-model="joinName" type="text" maxlength="60" :disabled="Boolean(busy)" />
-        </label>
-        <div v-if="joiningDevice" class="peer-identity" data-invitation-preview>
-          <div><strong>{{ joiningDevice.name }}</strong><p>{{ joiningDevice.url }}</p></div>
-          <div><p>{{ t('settings.peer.coordinatorFingerprint') }}</p><code>{{ joiningDevice.shortFingerprint }}</code></div>
-          <p>{{ t('settings.peer.compare') }}</p>
-        </div>
-        <Button size="sm" data-join-peer :disabled="!joinInvitation.trim() || status.remoteRemovalPending"
-          :loading="busy === 'join' || busy === 'preview'" :loading-label="t(joiningDevice ? 'settings.peer.joining' : 'settings.peer.previewing')" @click="join">
-          {{ t(joiningDevice ? 'settings.peer.joinAction' : 'settings.peer.previewAction') }}
+  <Card as="section" id="peer" class="settings-card peer-settings" aria-labelledby="settings-peer-title" data-peer-settings>
+    <CardHeader>
+      <CardTitle id="settings-peer-title" as="h2">{{ t('settings.peer.title') }}</CardTitle>
+      <CardDescription>{{ t('settings.peer.description') }}</CardDescription>
+    </CardHeader>
+    <div class="peer-body">
+      <GrowthLoading v-if="loading" variant="compact" :label="t('settings.peer.loading')" />
+      <div v-if="error" class="peer-alert" role="alert">
+        <span>{{ error }}</span>
+        <Button variant="outline" size="sm" data-retry-peer :loading="loading" :loading-label="t('settings.peer.loading')" @click="load">
+          {{ t('settings.peer.retry') }}
         </Button>
-      </section>
-    </template>
+      </div>
 
-    <template v-if="status && paired">
-      <dl class="peer-identity">
-        <div>
-          <dt>{{ t('settings.peer.fingerprint') }}</dt>
-          <dd>{{ status.device?.shortFingerprint }}</dd>
-        </div>
-        <div>
-          <dt>{{ t('settings.peer.coordinatorFingerprint') }}</dt>
-          <dd>{{ status.coordinator?.shortFingerprint }}</dd>
-        </div>
-      </dl>
-
-      <section v-if="coordinator" class="peer-block">
-        <Button variant="outline" size="sm" data-invite-peer :loading="busy === 'invite'" :loading-label="t('settings.peer.inviting')" @click="invite">
-          {{ t('settings.peer.invite') }}
-        </Button>
-        <p>{{ t('settings.peer.inviteHint') }}</p>
-        <template v-if="invitation">
-          <textarea :value="invitation.invitation" readonly rows="4" spellcheck="false" :aria-label="t('settings.peer.invitation')" />
-          <div class="peer-actions">
-            <Button variant="outline" size="sm" data-copy-invite @click="copyInvite">{{ t('settings.peer.copyInvite') }}</Button>
-            <p v-if="inviteFeedback" role="status">{{ t(`settings.peer.${inviteFeedback === 'copied' ? 'copied' : 'copyManual'}`) }}</p>
-          </div>
-        </template>
-      </section>
-
-      <section class="peer-block">
-        <h4>{{ t('settings.peer.shares') }}</h4>
-        <p>{{ t('settings.peer.sharesHint') }}</p>
-        <p v-if="!status.shareable.length">{{ t('settings.peer.noProjects') }}</p>
-        <ul v-else class="peer-shares">
-          <li v-for="project in status.shareable" :key="project.projectId">
-            <label class="peer-share-title">
-              <input type="checkbox" :checked="drafts[project.projectId]?.selected"
-                :disabled="!project.lead || Boolean(busy)"
-                @change="toggleProject(project, ($event.target as HTMLInputElement).checked)" />
-              <strong>{{ project.projectName }}</strong>
+      <template v-if="status && !paired">
+        <p>{{ t('settings.peer.off') }}</p>
+        <p v-if="status.remoteRemovalPending" role="status">{{ t('settings.peer.removalPending') }}</p>
+        <section class="peer-block">
+          <h3 class="ui-group-label">{{ t('settings.peer.host') }}</h3>
+          <p v-if="!status.addresses.length">{{ t('settings.peer.noAddress') }}</p>
+          <div v-else class="peer-fields">
+            <OptionSelect control-id="peer-host-address" :model-value="hostAddress" :options="addressOptions"
+              :label="t('settings.peer.hostAddress')" @update:model-value="hostAddress = $event" />
+            <label>
+              <span>{{ t('settings.peer.hostName') }}</span>
+              <input v-model="hostName" type="text" maxlength="60" :disabled="Boolean(busy)" />
             </label>
-            <small>{{ project.lead ? t('settings.peer.lead', { name: project.lead.name }) : t('settings.peer.noLead') }}</small>
-            <p v-if="shareState(project.projectId) === 'lead_changed'" class="peer-note">{{ t('settings.peer.leadChanged') }}</p>
-            <p v-if="shareState(project.projectId) === 'lead_unavailable'" class="peer-note">{{ t('settings.peer.leadUnavailable') }}</p>
-            <fieldset v-if="drafts[project.projectId]?.selected && project.lead" :disabled="Boolean(busy)">
-              <legend>{{ t('settings.peer.clients') }}</legend>
-              <label v-for="client in project.clients" :key="client">
-                <input type="checkbox" :checked="drafts[project.projectId]?.clients.includes(client)"
-                  @change="toggleClient(project.projectId, client, ($event.target as HTMLInputElement).checked)" />
-                {{ clientLabel(client) }}
-              </label>
-            </fieldset>
-            <label v-if="drafts[project.projectId]?.selected && project.lead">
-              <span>{{ t('settings.peer.folder') }}</span>
-              <input v-model="drafts[project.projectId].folder" type="text" :disabled="Boolean(busy)" />
-              <small>{{ t('settings.peer.folderHint') }}</small>
-            </label>
-          </li>
-        </ul>
-        <Button v-if="status.shareable.length" size="sm" data-save-shares
-          :loading="busy === 'shares'" :loading-label="t('settings.peer.savingShares')" @click="saveShares">
-          {{ t('settings.peer.saveShares') }}
-        </Button>
-      </section>
-
-      <section v-if="coordinator && otherDevices.length" class="peer-block">
-        <h4>{{ t('settings.peer.devices') }}</h4>
-        <ul class="peer-devices">
-          <li v-for="device in otherDevices" :key="device.nodeId">
-            <div>
-              <strong>{{ device.name }}</strong>
-              <small>{{ device.shortFingerprint }} · {{ device.online ? t('settings.peer.online') : t('settings.peer.offline') }}</small>
-            </div>
-            <Button size="sm" variant="destructive" :data-revoke="device.nodeId"
-              :loading="busy === `revoke:${device.nodeId}`" :loading-label="t('settings.peer.revoking')"
-              @click="revoke(device.nodeId)">
-              {{ t('settings.peer.revoke') }}
+            <Button data-host-peer :disabled="!hostAddress"
+              :loading="busy === 'host'" :loading-label="t('settings.peer.hosting')" @click="host">
+              {{ t('settings.peer.hostAction') }}
             </Button>
-          </li>
-        </ul>
-      </section>
+          </div>
+        </section>
+        <section class="peer-block">
+          <h3 class="ui-group-label">{{ t('settings.peer.join') }}</h3>
+          <label>
+            <span>{{ t('settings.peer.invitation') }}</span>
+            <textarea v-model="joinInvitation" rows="3" spellcheck="false" :disabled="Boolean(busy)"
+              :placeholder="t('settings.peer.invitationPlaceholder')" :aria-label="t('settings.peer.invitation')" />
+          </label>
+          <label>
+            <span>{{ t('settings.peer.joinName') }}</span>
+            <input v-model="joinName" type="text" maxlength="60" :disabled="Boolean(busy)" />
+          </label>
+          <div v-if="joiningDevice" class="peer-identity" data-invitation-preview>
+            <div><strong>{{ joiningDevice.name }}</strong><p>{{ joiningDevice.url }}</p></div>
+            <div><p>{{ t('settings.peer.coordinatorFingerprint') }}</p><code>{{ joiningDevice.shortFingerprint }}</code></div>
+            <p>{{ t('settings.peer.compare') }}</p>
+          </div>
+          <Button size="sm" data-join-peer :disabled="!joinInvitation.trim() || status.remoteRemovalPending"
+            :loading="busy === 'join' || busy === 'preview'" :loading-label="t(joiningDevice ? 'settings.peer.joining' : 'settings.peer.previewing')" @click="join">
+            {{ t(joiningDevice ? 'settings.peer.joinAction' : 'settings.peer.previewAction') }}
+          </Button>
+        </section>
+      </template>
 
-      <p>{{ t('settings.peer.disableHint') }}</p>
-      <Button variant="outline" size="sm" data-disable-peer :loading="busy === 'disable'" :loading-label="t('settings.peer.disabling')" @click="disable">
-        {{ t('settings.peer.disable') }}
-      </Button>
-    </template>
-  </UiDisclosure>
+      <template v-if="status && paired">
+        <dl class="peer-identity">
+          <div>
+            <dt>{{ t('settings.peer.fingerprint') }}</dt>
+            <dd>{{ status.device?.shortFingerprint }}</dd>
+          </div>
+          <div>
+            <dt>{{ t('settings.peer.coordinatorFingerprint') }}</dt>
+            <dd>{{ status.coordinator?.shortFingerprint }}</dd>
+          </div>
+        </dl>
+
+        <section v-if="coordinator" class="peer-block">
+          <Button variant="outline" size="sm" data-invite-peer :loading="busy === 'invite'" :loading-label="t('settings.peer.inviting')" @click="invite">
+            {{ t('settings.peer.invite') }}
+          </Button>
+          <p>{{ t('settings.peer.inviteHint') }}</p>
+          <template v-if="invitation">
+            <textarea :value="invitation.invitation" readonly rows="4" spellcheck="false" :aria-label="t('settings.peer.invitation')" />
+            <div class="peer-actions">
+              <Button variant="outline" size="sm" data-copy-invite @click="copyInvite">{{ t('settings.peer.copyInvite') }}</Button>
+              <p v-if="inviteFeedback" role="status">{{ t(`settings.peer.${inviteFeedback === 'copied' ? 'copied' : 'copyManual'}`) }}</p>
+            </div>
+          </template>
+        </section>
+
+        <section class="peer-block">
+          <h3 class="ui-group-label">{{ t('settings.peer.shares') }}</h3>
+          <p>{{ t('settings.peer.sharesHint') }}</p>
+          <p v-if="!status.shareable.length">{{ t('settings.peer.noProjects') }}</p>
+          <ul v-else class="peer-shares">
+            <li v-for="project in status.shareable" :key="project.projectId">
+              <label class="peer-share-title">
+                <input type="checkbox" :checked="drafts[project.projectId]?.selected"
+                  :disabled="!project.lead || Boolean(busy)"
+                  @change="toggleProject(project, ($event.target as HTMLInputElement).checked)" />
+                <strong>{{ project.projectName }}</strong>
+              </label>
+              <small>{{ project.lead ? t('settings.peer.lead', { name: project.lead.name }) : t('settings.peer.noLead') }}</small>
+              <p v-if="shareState(project.projectId) === 'lead_changed'" class="peer-note">{{ t('settings.peer.leadChanged') }}</p>
+              <p v-if="shareState(project.projectId) === 'lead_unavailable'" class="peer-note">{{ t('settings.peer.leadUnavailable') }}</p>
+              <fieldset v-if="drafts[project.projectId]?.selected && project.lead" :disabled="Boolean(busy)">
+                <legend>{{ t('settings.peer.clients') }}</legend>
+                <label v-for="client in project.clients" :key="client">
+                  <input type="checkbox" :checked="drafts[project.projectId]?.clients.includes(client)"
+                    @change="toggleClient(project.projectId, client, ($event.target as HTMLInputElement).checked)" />
+                  {{ clientLabel(client) }}
+                </label>
+              </fieldset>
+              <label v-if="drafts[project.projectId]?.selected && project.lead">
+                <span>{{ t('settings.peer.folder') }}</span>
+                <input v-model="drafts[project.projectId].folder" type="text" :disabled="Boolean(busy)" />
+                <small>{{ t('settings.peer.folderHint') }}</small>
+              </label>
+            </li>
+          </ul>
+          <Button v-if="status.shareable.length" size="sm" data-save-shares
+            :loading="busy === 'shares'" :loading-label="t('settings.peer.savingShares')" @click="saveShares">
+            {{ t('settings.peer.saveShares') }}
+          </Button>
+        </section>
+
+        <section v-if="coordinator && otherDevices.length" class="peer-block">
+          <h3 class="ui-group-label">{{ t('settings.peer.devices') }}</h3>
+          <ul class="peer-devices">
+            <li v-for="device in otherDevices" :key="device.nodeId">
+              <div>
+                <strong>{{ device.name }}</strong>
+                <small>{{ device.shortFingerprint }} · {{ device.online ? t('settings.peer.online') : t('settings.peer.offline') }}</small>
+              </div>
+              <Button size="sm" variant="destructive" :data-revoke="device.nodeId"
+                :loading="busy === `revoke:${device.nodeId}`" :loading-label="t('settings.peer.revoking')"
+                @click="revoke(device.nodeId)">
+                {{ t('settings.peer.revoke') }}
+              </Button>
+            </li>
+          </ul>
+        </section>
+
+        <p>{{ t('settings.peer.disableHint') }}</p>
+        <Button variant="outline" size="sm" data-disable-peer :loading="busy === 'disable'" :loading-label="t('settings.peer.disabling')" @click="disable">
+          {{ t('settings.peer.disable') }}
+        </Button>
+      </template>
+    </div>
+  </Card>
 </template>
 
 <style scoped>
-.peer-settings p, .peer-settings small { color: var(--color-muted); font-size: 13px; line-height: 1.6; }
-.peer-settings p { margin: 12px 0; }
+.peer-body { padding-inline: 24px; }
+.peer-body > :first-child { margin-top: 0; }
+.peer-body > :last-child { margin-bottom: 0; }
+.peer-body p, .peer-body small { color: var(--color-muted); font-size: 13px; line-height: 1.6; }
+.peer-body p { margin: 12px 0; }
 .peer-alert, .peer-actions, .peer-identity, .peer-fields, .peer-share-title, .peer-devices li {
   display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
 }
 .peer-block { display: grid; gap: 12px; margin: 16px 0; min-width: 0; }
-.peer-block h4 { font-size: 13px; font-weight: 650; }
 .peer-fields { align-items: end; }
 .peer-fields :deep(:is([data-slot=option-select], [data-slot=option-combobox])) { min-width: 0; flex: 1 1 180px; }
 .peer-identity { margin: 12px 0; }

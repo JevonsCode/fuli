@@ -20,13 +20,6 @@ function server(routes: Record<string, unknown>) {
   return { fetch, body }
 }
 
-async function open(wrapper: ReturnType<typeof mount>) {
-  const details = wrapper.get('details')
-  ;(details.element as HTMLDetailsElement).open = true
-  await details.trigger('toggle')
-  await flushPromises()
-}
-
 it('checks for an update, shows its diff by client and applies exactly that version', async () => {
   const diff = { fromVersion: 1, toVersion: 2, added: [{ id: 'synthetic', name: 'Synthetic Client' }],
     changed: [{ id: 'cursor', name: 'Cursor', fields: ['noSessionLink'] }], removed: [{ id: 'kiro', name: 'Kiro' }] }
@@ -36,8 +29,11 @@ it('checks for an update, shows its diff by client and applies exactly that vers
     'POST /api/client-links/apply': state({ source: 'updated', history: [{ ...diff, appliedAt: '2026-10-27T08:01:00Z', automatic: false }] }),
   })
   const wrapper = mount(ClientLinksSettings)
-  expect(fetch).not.toHaveBeenCalled()
-  await open(wrapper)
+  await flushPromises()
+  // A plain card that reads its list at once, with no disclosure to open.
+  expect(wrapper.find('details').exists()).toBe(false)
+  expect(wrapper.get('[data-slot="card-title"]').text()).toBe('会话链接')
+  expect(fetch.mock.calls.map(([url]) => url)).toContain('/api/client-links')
   expect(wrapper.get('[data-client-link="cursor"]').text()).toContain('没有可核实的会话链接')
   expect(wrapper.get('[data-client-link="codex"]').text()).toContain('在 Codex 中打开')
   await wrapper.get('[data-client-links-check]').trigger('click')
@@ -60,7 +56,7 @@ it('says an invalid online list was refused, offers nothing to apply and saves t
     'PUT /api/client-links/auto-update': state({ autoUpdate: true }),
   })
   const wrapper = mount(ClientLinksSettings)
-  await open(wrapper)
+  await flushPromises()
   await wrapper.get('[data-client-links-check]').trigger('click')
   await flushPromises()
   expect(wrapper.get('[data-client-links-result]').text()).toContain('已拒绝')
