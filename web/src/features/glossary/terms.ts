@@ -16,8 +16,8 @@ const taggedTerm = (group: GlossaryGroup, key: string, labelKey: string, bodyKey
 const { destinations, sections } = messages['zh-CN'].shell
 
 export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
-  // FULI's own words: an Agent, the team, a group discussion.
-  ...['fla', 'flas', 'flg'].map(key =>
+  // FULI's own words: an Agent, the team, a group discussion, a reply's receipt.
+  ...['fla', 'flas', 'flg', 'receipt'].map(key =>
     term('concept', key, `glossary.concept.${key}.label`, `glossary.concept.${key}.body`)),
   ...['known_known', 'known_unknown', 'unknown_known', 'unknown_unknown'].map(key =>
     term('quadrant', key, `knowledge.domain.quadrants.${key}`, `knowledge.domain.quadrants.descriptions.${key}`)),
