@@ -10,6 +10,7 @@ import { handleSessionRecordsRequest } from './session-records-api-router.js';
 import { handleCaptureChangeRequest } from './capture-change-api-router.js';
 import { handleCaptureOnboardingRequest } from './capture-onboarding-api-router.js';
 import { parsePersonalDraftDecision } from '../graphiti/publication-draft-input.js';
+import { PERSON_WRITER } from '../graphiti/project-profile-authors.js';
 
 export async function handleGraphApiRequest({
   request,
@@ -216,7 +217,7 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/personal-projects' && request.method === 'PUT') {
-    sendJson(response, 200, await app.upsertPersonalProject(await readJson(request)));
+    sendJson(response, 200, await app.upsertPersonalProject({ ...(await readJson(request)), writer: PERSON_WRITER }));
     return true;
   }
   if (url.pathname === '/api/project-agents' && request.method === 'GET') {

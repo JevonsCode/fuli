@@ -13,6 +13,10 @@ export interface RoundtableThreadSummary {
   waiting: boolean
   /** Recipients of asks still open; absent from older servers. */
   waitingFor?: string[]
+  /** How the person's own conversation delivers; null for a thread only Agents wrote. Absent from older servers. */
+  mode?: RoundtableDelivery | null
+  /** An Agent is answering an ask in this thread right now. Absent from older servers. */
+  replying?: boolean
   last: { from: string | null; body: string } | null
 }
 export interface RoundtableMessage {
@@ -43,8 +47,6 @@ export interface RoundtableThread {
   mode?: RoundtableDelivery | null
   subscribers?: RoundtableSubscriber[]
 }
-/** Who the person can start a conversation with (find_agents' local directory). */
-export interface RoundtableDirectoryAgent { agentId: string; name: string; responsibility?: string | null; projects: string[] }
 
 // What the conversations page reads (src/agent-roundtable/http.js, packages/roundtable/src/roundtable/service.js).
 // The unions stay with the interfaces above, so a kind or status is checked as
@@ -53,7 +55,7 @@ export interface RoundtableDirectoryAgent { agentId: string; name: string; respo
 const personSchema = z.looseObject({ agentId: z.string().nullish(), name: z.string().nullish(), client: z.string().nullish() })
 const summarySchema = z.looseObject({
   id: z.string(), subject: z.string(), updatedAt: z.string(), participants: z.array(personSchema),
-  waiting: z.boolean(), waitingFor: z.array(z.string()).nullish(),
+  waiting: z.boolean(), waitingFor: z.array(z.string()).nullish(), mode: z.string().nullish(), replying: z.boolean().nullish(),
   last: z.looseObject({ from: z.string().nullish(), body: z.string() }).nullish(),
 })
 const messageSchema = z.looseObject({
@@ -70,11 +72,6 @@ const threadSchema = z.looseObject({
 })
 const threadsShape = shapeFor<{ threads: RoundtableThreadSummary[] }>(z.looseObject({ threads: z.array(summarySchema) }))
 const threadShape = shapeFor<RoundtableThread>(threadSchema)
-const directoryShape = shapeFor<{ agents: RoundtableDirectoryAgent[] }>(z.looseObject({
-  agents: z.array(z.looseObject({
-    agentId: z.string(), name: z.string(), responsibility: z.string().nullish(), projects: z.array(z.string()),
-  })),
-}))
 const memberSchema = z.looseObject({ address: z.string(), agentId: z.string().nullish(), name: z.string().nullish() })
 const roomSchema = z.looseObject({
   chatId: z.string(), kind: z.string(), title: z.string().nullish(), members: z.array(memberSchema), createdAt: z.string(),
@@ -93,14 +90,11 @@ const chatPageShape = shapeFor<RoundtableChatPage>(roomSchema.extend({
 export const listThreads = (signal?: AbortSignal) => getJson('/api/roundtable/threads', threadsShape, { signal })
 export const readThread = (id: string, signal?: AbortSignal) =>
   getJson(`/api/roundtable/threads/${encodeURIComponent(id)}`, threadShape, { signal })
-export const listDirectoryAgents = (signal?: AbortSignal) =>
-  getJson('/api/roundtable/agents', directoryShape, { signal })
 
-export interface RoundtablePost { to?: string[]; body: string; mode?: RoundtableDelivery; projectId?: string }
-/** The person's message: a new conversation without a thread, or the next post in one. */
-export const postMessage = (threadId: string | null, post: RoundtablePost) => threadId
-  ? postJson(`/api/roundtable/threads/${encodeURIComponent(threadId)}/messages`, post, threadShape)
-  : postJson('/api/roundtable/threads', post, threadShape)
+export interface RoundtablePost { to?: string[]; body: string; mode?: RoundtableDelivery }
+/** The person's next post in a conversation; Agents open conversations from their own chats. */
+export const postMessage = (threadId: string, post: RoundtablePost) =>
+  postJson(`/api/roundtable/threads/${encodeURIComponent(threadId)}/messages`, post, threadShape)
 export const setThreadMode = (threadId: string, mode: RoundtableDelivery) =>
   putJson(`/api/roundtable/threads/${encodeURIComponent(threadId)}/mode`, { mode }, threadShape)
 

@@ -199,7 +199,9 @@ describe('AppShell', () => {
 
   it('shows the version on the service dot and names the service only when it is not ready', async () => {
     const { wrapper, store } = await setup('/')
-    expect(wrapper.get('[data-runtime]').attributes('title')).toMatch(/ · v[0-9]/)
+    expect(wrapper.get('[data-runtime]').attributes('title')).not.toMatch(/v[0-9]/)
+    expect(wrapper.get('[data-app-version]').text()).toMatch(/^v[0-9]/)
+    expect(wrapper.get('[data-app-version]').attributes('href')).toBe('/settings?tab=version')
     expect(wrapper.get('.app-runtime-text').classes()).not.toContain('is-visible')
     store.runtimeStatus = 'error'
     await flushPromises()

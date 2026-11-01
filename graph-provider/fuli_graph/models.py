@@ -34,6 +34,7 @@ from .knowledge_audit_models import (
 from .model_base import StrictModel
 from .knowledge_weight_models import KnowledgeWeightView
 from .provider_values import json_object
+from .project_profile_authors import AuthoredField, ProjectFieldAuthor, default_field_authors
 from .model_validation import (
     complete_epistemic_state,
     normalize_provider_url,
@@ -344,6 +345,12 @@ class ProjectProfile(StrictModel):
     boundaries: list[str] = Field(default_factory=list, max_length=64)
     assessment: ProjectAssessment | None = None
     brief_draft: ProjectBriefDraft | None = None
+    authors: dict[AuthoredField, ProjectFieldAuthor] = Field(default_factory=dict)
+
+    @model_validator(mode='after')
+    def default_authors(self):
+        self.authors = default_field_authors(self)
+        return self
 
     @property
     def has_brief(self) -> bool:

@@ -4,6 +4,9 @@ import { isFetchBlockedPort } from '../server/blocked-ports.js';
 import { readJsonFile } from '../storage/json-file.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { deepFreeze } from '../validation/values.js';
+import { FULI_VERSION } from '../package-metadata.js';
+import { parseSemanticVersion } from '../semantic-version.js';
+import { UPDATE_CHANNELS } from './package-version-checker.js';
 import { normalizeNeedsPersonUrl } from '../notifications/needs-person.js';
 import { normalizeAgentNamingStyle } from '../agent-naming/naming-style.js';
 
@@ -11,6 +14,9 @@ export const RUNTIME_SETTINGS_VERSION = 1;
 export const RUNTIME_SETTINGS_FORMAT = jsonFormat({ store: 'runtime-settings', versions: [RUNTIME_SETTINGS_VERSION] });
 // rec#11 D-86: a recurring topic becomes a project by itself, or is only proposed.
 export const TOPIC_PROMOTION_MODES = Object.freeze(['auto', 'ask']);
+// Which releases the console offers (package-version-checker.js). A beta
+// installation follows beta until the person turns it off.
+const DEFAULT_UPDATE_CHANNEL = parseSemanticVersion(FULI_VERSION).prerelease.length ? 'beta' : 'stable';
 export const RESOURCE_REFRESH_OPTIONS = Object.freeze([5, 10, 30, 60]);
 export const GRAPH_RUNTIME_MODES = Object.freeze(['container', 'native']);
 export const CONVERSATION_LAUNCHER_APPLICATIONS = Object.freeze([
@@ -95,7 +101,8 @@ export const DEFAULT_RUNTIME_SETTINGS = deepFreeze({
   conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS,
   notifications: { needsPersonUrl: '' },
   agentNamingStyle: '',
-  topicPromotion: 'auto'
+  topicPromotion: 'auto',
+  updateChannel: DEFAULT_UPDATE_CHANNEL
 });
 
 export function readRuntimeSettings(path, {
@@ -161,6 +168,8 @@ export function normalizeRuntimeSettings(input, {
   const agentNamingStyle = normalizeAgentNamingStyle(input.agentNamingStyle ?? base.agentNamingStyle ?? '');
   const topicPromotion = input.topicPromotion ?? base.topicPromotion ?? 'auto';
   if (!TOPIC_PROMOTION_MODES.includes(topicPromotion)) throw new TypeError('topicPromotion must be auto or ask');
+  const updateChannel = input.updateChannel ?? base.updateChannel ?? DEFAULT_UPDATE_CHANNEL;
+  if (!UPDATE_CHANNELS.includes(updateChannel)) throw new TypeError('updateChannel must be stable or beta');
   return {
     version: RUNTIME_SETTINGS_VERSION,
     graphRuntimeMode,
@@ -170,7 +179,8 @@ export function normalizeRuntimeSettings(input, {
     conversationLaunchers,
     notifications,
     agentNamingStyle,
-    topicPromotion
+    topicPromotion,
+    updateChannel
   };
 }
 

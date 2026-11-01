@@ -52,12 +52,13 @@ export const KNOWLEDGE_SPACE_DEFINITIONS = [
   },
   {
     name: 'upsert_personal_project',
-    description: 'Create or update a local personal project profile, including evidence sources and an explainable display-only summary of evidence already present. Do not generate missing-item claims. This never publishes the project.',
+    description: 'Create or update a local personal project profile, including evidence sources and an explainable display-only summary of evidence already present. Do not generate missing-item claims. This never publishes the project. You may fill empty or Agent-written purpose, scope, technicalSummary and boundaries; a field a person wrote is kept and listed in refused_fields.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       projectId: boundedString(128),
       profile: projectProfile,
-      createOnly: { type: 'boolean', description: 'When true, fail with 409 instead of replacing an existing project with this projectId.' }
+      createOnly: { type: 'boolean', description: 'When true, fail with 409 instead of replacing an existing project with this projectId.' },
+      taskContextToken: { ...id, maxLength: 160, description: 'Current task token; records your FLA as the author of the fields you write.' }
     }, ['personalSpaceId', 'projectId', 'profile'])
   },
   {

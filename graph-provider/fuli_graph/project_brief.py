@@ -2,6 +2,7 @@
 import re
 
 from .models import ProjectBriefDraft
+from .project_profile_authors import ProjectFieldAuthor
 
 BRIEF_LIMIT = 240
 
@@ -41,6 +42,8 @@ def _draft(project, text, source):
     # The existing purpose editor can save/replace this draft. Keeping it in
     # the read projection does not grant a reader write authority or silently
     # convert generated evidence into a confirmed purpose.
-    return project.model_copy(update={'profile': project.profile.model_copy(update={
+    profile = project.profile
+    return project.model_copy(update={'profile': profile.model_copy(update={
         'purpose': text, 'brief_draft': ProjectBriefDraft(source=source),
+        'authors': {**profile.authors, 'purpose': ProjectFieldAuthor(kind='agent')},
     })})

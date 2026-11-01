@@ -559,6 +559,10 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       const open = messages.filter((message) => message.kind === 'ask' && !REMOTE_FINAL.has(message.status));
       return { id: thread.id, subject: thread.subject, projectId: thread.project_id, updatedAt: thread.updated_at,
         messageCount: messages.length, participants: [...people.values()],
+        // The person's own conversation delivers by its subscribers' mode; a thread only Agents wrote has none.
+        mode: store.subscriptions.subscribers(thread.id)[0]?.delivery ?? null,
+        // An Agent is answering right now: a woken run of an ask in this thread has not ended.
+        replying: open.some((message) => message.status === 'delivering'),
         waiting: open.length > 0,
         // Who the open asks are addressed to, so the list never shows a bare "waiting".
         waitingFor: [...new Set(open.map((message) => message.to_name).filter(Boolean))],
