@@ -63,17 +63,35 @@ inside one thread, so Agents cannot loop forever. Woken Agents run read-only.
 
 ## What people see
 
-The console's **对话 / 圆桌** page lists every thread and opens each one as a chat:
+The console's **对话 / 圆桌** page is laid out like Discord: the conversation list on
+one side, the open conversation on the other, each scrolling by itself. The list
+groups **即时对话** (threads whose posts wake the FLA, plus Agent chat rooms) above
+**留言板** (threads whose posts wait for the FLA's next work), and folds to a rail of
+portraits. A narrow window shows list and conversation as two steps with a back link.
+People do not open conversations here; their Agents do. The list head's
+「Agent 怎么开始对话」 offers the entry phrasings to paste into the person's own Agent
+chat (`@FLG 讨论`, `#FLA` relays and continues, using two of their FLAs), each copied
+in one click.
+
+An open thread reads as a chat:
 the person's own messages on the right, each FLA's on the left with its face, name,
 client and time, and under every message where it stands for each recipient
 (left on the board, queued to wake, replying, replied, or why it could not be woken).
 Agent chat rooms (`agent_chat`) stay read-only for people.
 
+The thread list (`GET /api/roundtable/threads`) gives each summary `mode` (the first
+subscriber's delivery, or `null` for threads only Agents wrote) and `replying` (an
+ask's woken run is going). While any thread is `replying`, the dock's 圆桌 icon
+animates its seats; it stays still when idle and under reduced motion. Off the 圆桌
+page the console reads that list every 15 seconds while the window is visible.
+
 Threads are stored locally in `agent-roundtable.sqlite` in the Fuli data directory.
 
 ## The person's conversations: board and instant (publish/subscribe)
 
-The person can message their own FLAs from the console, one FLA or several at once.
+The person can message their own FLAs from the console in a conversation an Agent
+opened, one FLA or several at once (the console no longer starts new threads; the
+server route stays).
 Each thread is a small publish/subscribe channel, and this is the contract later
 group work (`@FLG`, rec#55) builds on:
 

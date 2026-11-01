@@ -4,9 +4,12 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { singleLine } from '../text/single-line.js';
 import { findRepositoryRoot } from './project-path-context.js';
+import { authorTag } from './project-profile-authors.js';
 
 const BRIEF_LIMIT = 240;
 const README_BYTES = 64 * 1024;
+// The fields the summary is made of; each carries its author's short tag.
+const BRIEF_FIELDS = ['purpose', 'scope', 'boundaries'];
 
 // A display excerpt, never an inferred domain description or a new instruction.
 export function projectBrief(profile) {
@@ -14,7 +17,10 @@ export function projectBrief(profile) {
   const prefix = profile.brief_draft ? 'AI draft (editable): ' : '';
   const summary = excerpt(prefix + [profile.purpose, profile.scope, ...(profile.boundaries ?? [])]
     .filter(value => typeof value === 'string' && value.trim()).join(' · '));
-  return { name: profile.name, summary };
+  const authors = Object.fromEntries(BRIEF_FIELDS
+    .filter(field => profile.authors?.[field])
+    .map(field => [field, authorTag(profile.authors[field])]));
+  return { name: profile.name, summary, ...(Object.keys(authors).length ? { authors } : {}) };
 }
 
 export async function repositoryProjectDraft({ projectPath }) {

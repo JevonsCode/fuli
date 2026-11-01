@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed } from "vue";
 import { Button } from "@/components/ui/button";
+import { useClipboardCopy } from "@/composables/useClipboardCopy";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { t } from "@/i18n";
 import UiIcon from "@/ui/UiIcon.vue";
@@ -16,13 +17,10 @@ const props = withDefaults(
   { partner: null, size: "sm", kind: "fla" },
 );
 
-const COPIED_MS = 1800;
 const OPEN_DELAY_MS = 250;
 const CLOSE_DELAY_MS = 200;
 // "mention" for the button, a phrasing key for a row, or null.
-const copied = ref<string | null>(null);
-const failed = ref(false);
-let reset: ReturnType<typeof setTimeout> | undefined;
+const { copied, failed, copy: copyText } = useClipboardCopy();
 
 const mention = computed(() => flaMention(props.name));
 const phrasings = computed(() =>
@@ -31,25 +29,7 @@ const phrasings = computed(() =>
 const status = computed(() =>
   failed.value ? t("agentProfiles.mention.copyFailed") : copied.value ? t("agentProfiles.mention.copied") : "",
 );
-
-async function copy(id: string, text: string) {
-  clearTimeout(reset);
-  try {
-    const clipboard = globalThis.navigator?.clipboard;
-    if (!clipboard?.writeText) throw new Error("Clipboard unavailable");
-    await clipboard.writeText(clipboardText(text));
-    copied.value = id;
-    failed.value = false;
-  } catch {
-    copied.value = null;
-    failed.value = true;
-  }
-  reset = setTimeout(() => {
-    copied.value = null;
-    failed.value = false;
-  }, COPIED_MS);
-}
-onBeforeUnmount(() => clearTimeout(reset));
+const copy = (id: string, text: string) => copyText(id, clipboardText(text));
 </script>
 
 <template>

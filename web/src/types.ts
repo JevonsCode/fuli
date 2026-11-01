@@ -65,6 +65,15 @@ export interface PersonalSpace {
   [key: string]: unknown
 }
 
+export interface ProjectFieldAuthor {
+  kind: 'person' | 'agent' | 'both'
+  agent_id?: string | null
+  agent_name?: string | null
+  updated_at?: string | null
+}
+
+export type ProjectAuthoredField = 'purpose' | 'scope' | 'technical_summary' | 'boundaries'
+
 export interface ProjectProfile {
   name: string
   purpose?: string
@@ -74,6 +83,7 @@ export interface ProjectProfile {
   lifecycle?: string
   sources?: Array<Record<string, unknown>>
   boundaries?: string[]
+  authors?: Partial<Record<ProjectAuthoredField, ProjectFieldAuthor>>
   assessment?: {
     score: number
     confirmed: string[]
@@ -789,6 +799,8 @@ export interface RuntimeSettings {
   notifications: { needsPersonUrl: string }
   agentNamingStyle: string
   topicPromotion: 'auto' | 'ask'
+  // Which releases the console offers (设置 › 版本).
+  updateChannel: 'stable' | 'beta'
 }
 
 export interface SystemSettingsResult {

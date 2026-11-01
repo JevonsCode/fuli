@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { motion } from 'motion-v'
-import { ref } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
+import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { pointInBox, usePointerPresence } from '@/composables/usePointerPresence'
 import DockPins from '@/features/agent-profile/DockPins.vue'
 import { t } from '@/i18n'
 import { SPRING } from '@/lib/motion'
+import { motionPreference } from '@/lib/motion-preference'
 import { UiIcon } from '@/ui'
 import type { NavDestination } from './nav-destinations'
 
@@ -18,8 +20,12 @@ import type { NavDestination } from './nav-destinations'
 // pointer has left it for the intent delay (Jevons 11-01). Keyboard focus opens
 // it too; Esc or focus leaving folds it. Focus a click leaves on a link never
 // holds it open. The current icon is ink over a gold dot, and the dot glides
-// to the next one on the spring.
-defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; spaceId: string; folded: boolean }>()
+// to the next one on the spring. A destination with something happening right
+// now (`liveKey`: an Agent replying at the 圆桌) animates its icon gently; never
+// while motion is reduced.
+const props = defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; liveKey?: string | null; spaceId: string; folded: boolean }>()
+const systemReduced = useMediaQuery('(prefers-reduced-motion: reduce)')
+const animatedKey = computed(() => systemReduced.value || motionPreference.value === 'reduced' ? null : props.liveKey ?? null)
 
 const dock = ref<HTMLElement | null>(null)
 const open = ref(false)
@@ -67,7 +73,7 @@ function escape() {
       <li v-for="destination in destinations" :key="destination.key" class="app-dock-item"
         :class="{ 'is-active': destination.key === activeKey, 'has-pins': destination.key === 'agents' }">
         <motion.span v-if="destination.key === activeKey" layout-id="app-dock-active" class="app-dock-active" :transition="SPRING" aria-hidden="true" />
-        <RouterLink :to="destination.to" class="app-dock-link"
+        <RouterLink :to="destination.to" class="app-dock-link" :class="{ 'is-live': destination.key === animatedKey }"
           :aria-current="destination.key === activeKey ? 'page' : undefined" :aria-label="t(`shell.destinations.${destination.key}`)"
           :data-tip="t(`shell.destinations.${destination.key}`)"
           :data-destination="destination.key" :data-term="`destination.${destination.key}`">
@@ -109,6 +115,11 @@ function escape() {
 .app-dock-link:hover:not([aria-current]) { transform: translateY(-2px); }
 .app-dock-link:active { transform: scale(.92); }
 .app-dock-item.is-active .app-dock-link { color: var(--color-ink); }
+/* Live: the seats around the 圆桌 brighten one after another, like a turn going round. */
+.app-dock-link.is-live :deep(.roundtable-seats circle) {
+  animation: app-dock-seat var(--motion-pulse) ease-in-out infinite; animation-delay: calc(var(--seat, 0) * var(--motion-pulse) / 6);
+}
+@keyframes app-dock-seat { 0%, 100% { opacity: .4; } 18% { opacity: 1; } 40% { opacity: .4; } }
 /* Names float above the button on hover and focus. */
 .app-dock-link[data-tip]::after {
   content: attr(data-tip); position: absolute; bottom: calc(100% + 10px); left: 50%; padding: 4px 10px; transform: translateX(-50%);

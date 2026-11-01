@@ -79,7 +79,6 @@ describe('design system adoption', () => {
 const HAND_SIZED_ALLOWED = [
   'features/employees/EmployeeTaskBoard.vue .employee-all-projects-drag-handle',
   'features/preferences/PreferenceConflictDialog.vue .conflict-resolution-options > button',
-  'features/roundtables/RoundtableNewConversation.vue .rt-new-search',
   'features/roundtables/RoundtableComposer.vue .rt-compose-input',
   'styles/vue.css .locale-switcher button',
 ]

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { PERSON_WRITER, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
 
 const NEW_PROJECT = /^\s*(?:新项目|new project)\s*[:：]\s*([^\n\r,，。]{1,80})/i;
 const NAME_END = /^(?:$|[\s:：,，。.、!！?？])/;
@@ -17,7 +18,9 @@ export async function projectNamedInPrompt(application, taskPrompt) {
   if (requested) {
     const existing = projects.filter(project => sameName(project, requested));
     if (existing.length) return choice(existing, 'named_in_prompt');
-    return createNamedProject(application, spaceId, all, requested, requestedBrief(taskPrompt, requested));
+    const brief = requestedBrief(taskPrompt, requested);
+    return createNamedProject(application, spaceId, all, requested, brief,
+      brief.brief_draft ? UNNAMED_AGENT_WRITER : PERSON_WRITER);
   }
   return choice(namedAtOpening(projects, taskPrompt), 'named_in_prompt');
 }
@@ -53,10 +56,11 @@ export function projectDisplayName(project) {
   return project.profile?.name || project.project_id;
 }
 
-export async function createProjectNamed(application, name, purpose) {
+// `writer` is who the purpose comes from: the person by default, an Agent for its own draft.
+export async function createProjectNamed(application, name, purpose, writer = PERSON_WRITER) {
   const spaceId = application.config.personal.spaceId;
   return createNamedProject(application, spaceId,
-    await application.personal.listPersonalProjects(spaceId), name, { purpose });
+    await application.personal.listPersonalProjects(spaceId), name, { purpose }, writer);
 }
 
 // Display names only, for a compact triage candidate list.
@@ -82,7 +86,7 @@ function choice(projects, basis) {
 // The readable slug is used while it is free; a different name that slugs the
 // same way gets a name-derived suffix. A concurrent create of the same name
 // is the same project, so a create-only conflict re-reads before giving up.
-async function createNamedProject(application, spaceId, all, name, brief) {
+async function createNamedProject(application, spaceId, all, name, brief, writer) {
   const taken = new Map(all.map(project => [project.project_id, project]));
   const owns = project => nameable(project) && sameName(project, name);
   const readable = readableId(name);
@@ -92,7 +96,7 @@ async function createNamedProject(application, spaceId, all, name, brief) {
       continue;
     }
     try {
-      await application.upsertPersonalProject({ personalSpaceId: spaceId, projectId, createOnly: true,
+      await application.upsertPersonalProject({ personalSpaceId: spaceId, projectId, createOnly: true, writer,
         profile: { name, ...brief, lifecycle: 'active' } });
       return { personalProjectId: projectId, basis: 'created_from_prompt' };
     } catch (error) {

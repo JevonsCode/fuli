@@ -435,6 +435,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     reviewHumanChange: async (input) => calls.push(['review-human-change', input]),
     listKnowledgeSpaces: async () => calls.push(['spaces']),
     upsertPersonalProject: async (input) => calls.push(['upsert-project', input]),
+    agentProfileWriter: async () => ({ kind: 'agent' }),
     listPersonalProjects: async (input) => calls.push(['personal-projects', input]),
     upsertProjectAgent: async (input) => calls.push(['upsert-project-agent', input]),
     renameProjectAgent: async (input) => calls.push(['rename-project-agent', input]),

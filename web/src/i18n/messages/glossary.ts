@@ -11,6 +11,7 @@ export const glossaryMessages = {
       work: '工作状态',
       presence: 'Agent 状态',
       weight: '权重',
+      authorship: '档案作者',
       destination: '导航',
       section: '页面',
       memory: '记忆',
@@ -114,6 +115,11 @@ export const glossaryMessages = {
       agent: { label: 'Agent 确认权重', body: '70–95%：Agent 依据使用和证据确认，仍随使用、来源和反例变化。' },
       person: { label: '你确认', body: '100%：你亲自确认过，搜索按满权重排序；被标记待复核时减半。' },
     },
+    authorship: {
+      person: { label: '我写的', body: '100%：项目档案里这一项是你写的。Agent 以它为准，不会改写，只能请你在控制台修改。' },
+      both: { label: '我和 FLA', body: '90%：FLA 先写了草稿，你在上面改过、留下了大部分。Agent 同样不会改写。' },
+      agent: { label: 'FLA 写的', body: '50%：AI 草稿，可改。FLA 按自己的理解写，之后会继续更新；你改过之后，它不再改写。' },
+    },
   },
   'en-US': {
     toggle: 'Explain terms (or hold Alt)',
@@ -127,6 +133,7 @@ export const glossaryMessages = {
       work: 'Work status',
       presence: 'Agent status',
       weight: 'Weight',
+      authorship: 'Profile author',
       destination: 'Navigation',
       section: 'Page',
       memory: 'Memory',
@@ -229,6 +236,11 @@ export const glossaryMessages = {
       pending: { label: 'Pending weight', body: '10–69%: rises with qualified use, distinct tasks and sources, fades when unused, drops with counter-evidence. Search ranks by it.' },
       agent: { label: 'Agent-confirmed weight', body: '70–95%: confirmed by an Agent from use and evidence; still moves with use, sources and counter-evidence.' },
       person: { label: 'Confirmed by you', body: '100%: you confirmed it yourself, so search ranks it at full weight; halved while flagged for review.' },
+    },
+    authorship: {
+      person: { label: 'Written by me', body: '100%: you wrote this project profile field. Agents treat it as authoritative and never rewrite it; only you change it in the console.' },
+      both: { label: 'Me and an FLA', body: '90%: an FLA drafted it and you edited it, keeping much of the draft. Agents never rewrite it either.' },
+      agent: { label: 'Written by an FLA', body: '50%: an AI draft, editable. The FLA writes from its own understanding and keeps updating it; once you edit it, it stops rewriting it.' },
     },
   },
 } as const

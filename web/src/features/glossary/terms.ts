@@ -4,7 +4,7 @@ import { messages, SUPPORTED_LOCALES } from '@/i18n'
 // already show, so a click on visible text finds its term in either language.
 // A tagged term is found only through its element's data-term: its label is a
 // common word (全部, 我的, 知识) that also appears where it means something else.
-export type GlossaryGroup = 'quadrant' | 'review' | 'profile' | 'work' | 'presence' | 'weight' | 'destination' | 'section' | 'memory' | 'occupation' | 'tonborg' | 'setting' | 'concept'
+export type GlossaryGroup = 'quadrant' | 'review' | 'profile' | 'work' | 'presence' | 'weight' | 'authorship' | 'destination' | 'section' | 'memory' | 'occupation' | 'tonborg' | 'setting' | 'concept'
 export interface GlossaryTerm { id: string; group: GlossaryGroup; labelKey: string; bodyKey: string; tagged?: true }
 
 const term = (group: GlossaryGroup, key: string, labelKey: string, bodyKey: string): GlossaryTerm =>
@@ -37,6 +37,9 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     term('presence', key, `glossary.presence.${key}.label`, `glossary.presence.${key}.body`)),
   ...['pending', 'agent', 'person'].map(key =>
     term('weight', key, `glossary.weight.${key}.label`, `glossary.weight.${key}.body`)),
+  // Who wrote a project profile field; the author chip carries the id.
+  ...['person', 'both', 'agent'].map(key =>
+    taggedTerm('authorship', key, `glossary.authorship.${key}.label`, `glossary.authorship.${key}.body`)),
   ...Object.keys(destinations).map(key =>
     taggedTerm('destination', key, `shell.destinations.${key}`, `glossary.destination.${key}`)),
   ...Object.keys(sections).map(key =>

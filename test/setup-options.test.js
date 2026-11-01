@@ -119,3 +119,9 @@ test('uninstall options are intentionally limited to confirmation and data locat
   assert.throws(() => parseUninstallOptions(['--delete-data']), /Unknown uninstall option/);
   assert.throws(() => parseUninstallOptions(['--data-dir']), /Missing value/);
 });
+
+test('fuli update --beta follows the beta channel; setup has no channel', () => {
+  assert.equal(parseUpdateOptions(['--yes', '--beta']).beta, true);
+  assert.equal(parseUpdateOptions(['--yes']).beta, undefined);
+  assert.throws(() => parseSetupOptions(['--beta']), /Unknown setup option: --beta/);
+});
