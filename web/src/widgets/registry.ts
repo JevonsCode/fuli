@@ -20,6 +20,10 @@ export const WIDGETS = {
     component: defineAsyncComponent(() => import('@/features/team-work/TeamCardsWidget.vue')),
     slots: ['workbench.feed', 'fla.overview'],
   },
+  'fla-sheets': {
+    component: defineAsyncComponent(() => import('@/features/fla-page/FlaTaskSheets.vue')),
+    slots: ['fla.overview'],
+  },
   'team-island': {
     component: defineAsyncComponent(() => import('@/features/team-work/TeamIsland.vue')),
     slots: ['shell.aboveDock'],
