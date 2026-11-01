@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { currentWork, overviewOpenRequest, overviewOwnerId, overviewTaskHref, overviewTaskTitle } from '@/features/overview/overview-data'
 import { useOverviewData } from '@/features/overview/useOverviewData'
+import ProblemState from '@/features/problem/ProblemState.vue'
 import { recentlyDone, taskKey } from '@/features/overview/workbench-model'
 import WorkbenchFeed from '@/features/overview/WorkbenchFeed.vue'
 import WorkbenchStage from '@/features/overview/WorkbenchStage.vue'
@@ -64,6 +63,13 @@ async function retryScope() { if (scopeRetrying.value) return; scopeTimedOut.val
 onMounted(() => { if (store.runtimeStatus === 'idle') void store.refresh() })
 onBeforeUnmount(() => { clearScopeTimers(); clearTimeout(flyingTimer) })
 
+// The scope could not be read: say why in words, the way the person can act on it.
+const scopeProblem = computed(() => {
+  if (data.denied.value) return { title: t('overview.read.denied'), detail: '' }
+  if (scopeTimedOut.value || store.refreshError === 'timeout') return { title: t('problem.timeout.title'), detail: t('problem.timeout.detail') }
+  if (store.runtimeStatus !== 'ready') return { title: t('problem.serviceDown.title'), detail: t('problem.serviceDown.detail') }
+  return { title: t('problem.failed.title'), detail: t('problem.failed.detail') }
+})
 function projectName(id?: string | null) { return (id && projectNames.value.get(id)) || t('overview.missing.project') }
 function agentName(id?: string | null) {
   const record = id ? names.data?.records[id] : undefined
@@ -92,11 +98,8 @@ const next = computed(() => {
       <GrowthLoading :label="t('overview.read.scope')" />
       <p v-if="scopeSlow" role="status">{{ t('overview.read.slow') }}</p>
     </template>
-    <Card v-else-if="scopeTimedOut || !state || data.denied.value" class="overview-scope-error flex-row flex-wrap items-center gap-3 px-5" role="alert">
-      <p class="m-0 min-w-0 flex-1">{{ t(data.denied.value ? 'overview.read.denied' : scopeTimedOut || store.refreshError === 'timeout' ? 'overview.read.timeout' : 'overview.read.scopeFailed') }}</p>
-      <GrowthLoading v-if="scopeRetrying" variant="inline" :label="t('overview.read.scope')" />
-      <Button variant="outline" :disabled="scopeRetrying" @click="retryScope">{{ t('overview.read.reload') }}</Button>
-    </Card>
+    <ProblemState v-else-if="scopeTimedOut || !state || data.denied.value" class="overview-scope-error" :title="scopeProblem.title" :detail="scopeProblem.detail"
+      :error="store.refreshError === 'failed' ? store.refreshMessage || null : null" :retrying="scopeRetrying" :retrying-label="t('overview.read.scope')" @retry="retryScope" />
     <div v-else class="workbench">
       <GrowthLoading v-if="!tasks.data && tasks.loading" class="workbench-loading" variant="compact" :label="t('overview.work.loading')" />
       <WorkbenchStage v-else :task="staged" :space-id="activeSpaceId" :title="taskTitle" :project-name="projectName" :agent-name="agentName"

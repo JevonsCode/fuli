@@ -30,7 +30,12 @@ async function requestJson<T>(url: string, init?: RequestInit, shape?: ResponseS
       : detail || t('common.errors.requestFailed', { status: response.status })
     throw new ApiError(message, response.status, detail)
   }
-  const value: unknown = await response.json()
+  let value: unknown
+  try {
+    value = await response.json()
+  } catch {
+    throw new ApiError(t('problem.notJson'), response.status, JSON.stringify({ code: RESPONSE_NOT_JSON }))
+  }
   if (!shape) return value as T
   const checked = shape.schema.safeParse(value)
   if (checked.success) return checked.data as T
@@ -41,6 +46,8 @@ async function requestJson<T>(url: string, init?: RequestInit, shape?: ResponseS
 
 /** The code of an answer that did not have the shape the console checks for. */
 export const RESPONSE_INVALID = 'response_invalid'
+/** The code of an answer that was not JSON at all, such as a web page while the service starts. */
+export const RESPONSE_NOT_JSON = 'response_not_json'
 
 // The API's own { "code": "…" } for a request it refused, else null.
 export function apiErrorCode(error: unknown): string | null {
