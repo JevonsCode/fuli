@@ -76,6 +76,17 @@ succeeded.**
 
 ### 1. Install
 
+Pick one of two ways:
+
+- **Download the app (recommended, Windows):** get `FULI-Setup-<version>.exe` from the
+  [latest release](https://github.com/JevonsCode/fuli/releases) and double-click it. No terminal,
+  no administrator rights; Node.js, Java and the graph database are built in. On first launch FULI
+  finds the AI clients on your computer and connects them in one click, and offers start at login.
+  If FULI is already installed, the setup updates it and keeps your data. The installer is not
+  code-signed yet, so Windows may show "Windows protected your PC": choose "More info → Run anyway".
+  The macOS app is coming soon; use the terminal install below for now.
+- **Install from the terminal:** for developers, and for macOS / Linux.
+
 With Node.js 24.12+ and Docker Compose v2 available (default container mode; see
 [Installation](#installation) for macOS/Linux native mode), run:
 

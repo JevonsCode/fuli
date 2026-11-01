@@ -119,3 +119,11 @@ test('a stable version has no newer preview, so /next/ says so and links home in
   }
   assert.doesNotMatch(site.get('sitemap.xml'), /\/next\//);
 });
+
+test('the client download on both pages is the Windows setup of the packaged version', () => {
+  const setup = `https://github.com/JevonsCode/fuli/releases/download/v${version}/FULI-Setup-${version}.exe`;
+  for (const path of ['index.html', 'en/index.html', 'next/index.html', 'next/en/index.html']) {
+    const { document } = parseHTML(files.get(path));
+    assert.equal(document.querySelector('[data-download-windows]').href, setup, path);
+  }
+});

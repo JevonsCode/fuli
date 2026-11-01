@@ -243,7 +243,13 @@
       </section>
 
       <section class="start" id="start" aria-labelledby="start-title">
-        <h2 data-i18n="start.title" id="start-title">三条命令开始</h2>
+        <h2 data-i18n="start.title" id="start-title">两种安装方式</h2>
+        <div class="install-choice install-client">
+          <h3 data-i18n="start.clientTitle">下载客户端（推荐）</h3>
+          <p data-i18n="start.clientDescription">双击安装，不用终端。Node.js、图数据库都已内置，不用另装。第一次打开会找到你电脑上的 AI 客户端，一键接入。</p>
+          <p class="start-links"><a data-i18n="start.clientWindows" data-download-windows class="button" href="https://github.com/JevonsCode/fuli/releases">下载 Windows 版</a><span data-i18n="start.clientMac">macOS 版即将推出，现在可以用下面的终端方式。</span></p>
+        </div>
+        <h3 data-i18n="start.terminalTitle">用终端安装</h3>
         <p data-i18n="start.description">需要 Node.js 24.12+ 与 Docker（macOS / Linux 也可用原生模式）。安装无需模型。兼容 MCP 的客户端可通过标准配置接入，有适配器的客户端还支持自动配置。</p>
         <ol>
           <li><code>npm install --global fuli-context</code></li>
