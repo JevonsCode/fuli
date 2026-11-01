@@ -1,8 +1,7 @@
 import { dirname, join } from 'node:path';
 
 import { acquireFileLock } from '../storage/file-lock.js';
-import { readJsonFile } from '../storage/json-file.js';
-import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { jsonFormat, readJsonRecord, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 
 // The one question a new installation asks (rec#5 C10): "FULI 要在哪些项目里
 // 记录？" A record beside the capture settings says the question is open.
@@ -36,7 +35,6 @@ import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format
 export const CAPTURE_ONBOARDING_FORMAT = jsonFormat({ store: 'capture-onboarding', versions: [1] });
 export const CAPTURE_SCOPE_CHOICES = Object.freeze(['all', 'selected', 'off']);
 const SURFACES = Object.freeze(['console', 'terminal']);
-const UNREADABLE = Object.freeze({ status: 'unreadable' });
 const LOCK_FILE = 'capture-onboarding.lock';
 const LOCK_WAIT_MS = 5000;
 
@@ -47,7 +45,7 @@ const writeOnboardingRecord = (path, record) => writeVersionedJsonFileAtomic(pat
 export function createCaptureOnboarding(store, { writeRecord = writeOnboardingRecord } = {}) {
   const path = store.path ? join(dirname(store.path), 'capture-onboarding.json') : null;
   let memory = null;
-  const read = () => path ? readRecord(path) : memory;
+  const read = () => path ? readJsonRecord(path, CAPTURE_ONBOARDING_FORMAT) : memory;
   const write = record => {
     if (path) writeRecord(path, record);
     else memory = record;
@@ -114,16 +112,6 @@ export function createCaptureOnboarding(store, { writeRecord = writeOnboardingRe
       });
     }
   });
-}
-
-// A missing record is null; one this FULI cannot read never asks.
-function readRecord(path) {
-  try {
-    const record = readJsonFile(path, null);
-    return record === null || record?.version === 1 ? record : UNREADABLE;
-  } catch {
-    return UNREADABLE;
-  }
 }
 
 // The settings each answer saves. Choosing projects records them only, and

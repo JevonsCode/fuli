@@ -1,7 +1,7 @@
 import { computed, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 import { z } from 'zod'
-import { shapeFor } from '@/api/response-shape'
+import { shapeFor, shapeOf } from '@/api/response-shape'
 
 import { getJson, patchJson, postJson } from '@/api/client'
 import { t } from '@/i18n'
@@ -14,6 +14,7 @@ import type {
   CaptureScopeAnswer,
   CaptureScopeOutcome,
   ConsoleState,
+  FirstRunGuideOutcome,
   PersonalProject,
   RecallPolicy,
 } from '@/types'
@@ -58,6 +59,7 @@ const captureOnboardingShape = shapeFor<CaptureOnboardingState>(z.looseObject({
   ask: z.boolean(),
   capturePolicy: z.looseObject(capturePolicyFields),
 }))
+const firstRunGuideShape = shapeOf(z.looseObject({ open: z.boolean() }))
 const recallPolicyShape = shapeFor<RecallPolicy>(z.looseObject({
   answerFromConfirmed: z.boolean(),
   updatedAt: z.string().nullish(),
@@ -198,6 +200,18 @@ export const useConsoleStore = defineStore('console', () => {
     return read
   }
 
+  // The first-run guide: shown once per installation, opened again from 设置 › 客户端.
+  const firstRunGuideReopened = ref(false)
+  const firstRunGuideShown = computed(() => state.value?.firstRunGuide?.open === true || firstRunGuideReopened.value)
+  function reopenFirstRunGuide() { firstRunGuideReopened.value = true }
+  // Closed here at once; a close the server did not record leaves the guide for the next visit.
+  async function closeFirstRunGuide(outcome: FirstRunGuideOutcome) {
+    firstRunGuideReopened.value = false
+    if (state.value?.firstRunGuide?.open !== true) return
+    state.value = { ...state.value, firstRunGuide: { open: false } }
+    await postJson('/api/first-run-guide', { outcome }, firstRunGuideShape).catch(() => undefined)
+  }
+
   async function queueCaptureSave<T>(send: () => Promise<T>, savedPolicy: (answer: T) => CapturePolicy | null) {
     ++captureSaves
     capturesInFlight += 1
@@ -301,6 +315,9 @@ export const useConsoleStore = defineStore('console', () => {
     changeCapturePolicy,
     answerCaptureScope,
     readCaptureOnboarding,
+    firstRunGuideShown,
+    reopenFirstRunGuide,
+    closeFirstRunGuide,
     rememberCapturePolicy,
     updateAgentAccessPolicy,
     updateRecallPolicy,

@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, withDirectives } from 'vue'
 
-import { connectDesktopClient, DESKTOP_WINDOW_HANDLER, vWindowDrag } from './desktop-client'
+import { connectDesktopClient, DESKTOP_WINDOW_HANDLER, readLaunchAtLogin, saveLaunchAtLogin, vWindowDrag } from './desktop-client'
 
 type Desktop = {
   fuliDesktopClient?: unknown
@@ -13,8 +13,8 @@ const TopBar = defineComponent({
   render: () => withDirectives(h('header', { 'data-bar': '' }, [h('h1', { 'data-title': '' }, 'Synthetic'), h('button', { 'data-control': '' }, 'Refresh')]), [[vWindowDrag]]),
 })
 
-function inClient(platform = 'windows', captionStart = 0, captionEnd = 138) {
-  const callHandler = vi.fn(async () => undefined)
+function inClient(platform = 'windows', captionStart = 0, captionEnd = 138, answer: (...args: unknown[]) => unknown = () => undefined) {
+  const callHandler = vi.fn(async (...args: unknown[]) => answer(...args))
   Object.assign(window as Desktop, { fuliDesktopClient: { platform, captionStart, captionEnd }, flutter_inappwebview: { callHandler } })
   return callHandler
 }
@@ -100,5 +100,30 @@ describe('v-window-drag', () => {
     press(title, 'pointermove', { clientX: 60, clientY: 10, buttons: 1 })
     expect(down.defaultPrevented).toBe(false)
     bar.unmount()
+  })
+})
+
+describe('launch at login', () => {
+  it("reads and saves the Windows client's setting through its bridge", async () => {
+    let held = true
+    const callHandler = inClient('windows', 0, 138, (_name, request) => {
+      const { enabled } = request as { enabled?: boolean }
+      if (enabled !== undefined) held = enabled
+      return { available: true, enabled: held }
+    })
+    expect(await readLaunchAtLogin()).toBe(true)
+    expect(await saveLaunchAtLogin(false)).toBe(false)
+    expect(callHandler.mock.calls).toEqual([['fuliLaunchAtLogin', {}], ['fuliLaunchAtLogin', { enabled: false }]])
+  })
+
+  it('is not offered in a browser, on macOS, by a client without it, or when the client fails', async () => {
+    expect(await readLaunchAtLogin()).toBeNull()
+    const mac = inClient('macos', 78, 0, () => ({ available: true, enabled: true }))
+    expect(await readLaunchAtLogin()).toBeNull()
+    expect(mac).not.toHaveBeenCalled()
+    inClient('windows', 0, 138, () => ({ available: false }))
+    expect(await readLaunchAtLogin()).toBeNull()
+    inClient('windows', 0, 138, () => { throw new Error('reg.exe did not run') })
+    expect(await saveLaunchAtLogin(true)).toBeNull()
   })
 })

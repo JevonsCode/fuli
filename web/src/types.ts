@@ -49,6 +49,8 @@ export interface CaptureOnboardingState {
   capturePolicy: CapturePolicy
 }
 
+export type FirstRunGuideOutcome = 'finished' | 'skipped'
+
 export interface AgentAccessPolicy {
   enabled: boolean
   updatedAt?: string | null
@@ -726,6 +728,8 @@ export interface ConsoleState {
   subscriptions: Subscription[]
   capturePolicy?: CapturePolicy
   captureOnboarding?: { ask: boolean }
+  // The console's first-run guide: open once for a new installation until finished or skipped.
+  firstRunGuide?: { open: boolean }
   agentAccessPolicy?: AgentAccessPolicy
   recallPolicy?: RecallPolicy
   capabilities?: Partial<Record<CapabilityName, boolean>>
