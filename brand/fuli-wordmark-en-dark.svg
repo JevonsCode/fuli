@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 782 236" fill="none" role="img" aria-label="FULI Bespoke Geometric Wordmark (Pure White)">
+  <title>FULI Bespoke Geometric Wordmark (Pure White)</title>
+  <g class="fuli-wordmark-en" transform="translate(16 16)" fill="#FFFFFF">
+    <path class="fuli-letter fuli-letter--f" d="M 5 0 L 193 0 A 5 5 0 0 1 198 5 L 198 37 A 5 5 0 0 1 193 42 L 51.5 42 A 3.5 3.5 0 0 0 48 45.5 L 48 79.5 A 3.5 3.5 0 0 0 51.5 83 L 165 83 A 5 5 0 0 1 170 88 L 170 118 A 5 5 0 0 1 165 123 L 51.5 123 A 3.5 3.5 0 0 0 48 126.5 L 48 195 A 5 5 0 0 1 43 200 L 5 200 A 5 5 0 0 1 0 195 L 0 5 A 5 5 0 0 1 5 0 Z"/>
+    <path class="fuli-letter fuli-letter--u" d="M 231 0 L 269 0 A 5 5 0 0 1 274 5 L 274 110 C 274 145.5, 297 160.0, 338 160.0 C 379 160.0, 402 145.5, 402 110 L 402 5 A 5 5 0 0 1 407 0 L 445 0 A 5 5 0 0 1 450 5 L 450 113 C 450 173.5, 404 203.5, 338 203.5 C 272 203.5, 226 173.5, 226 113 L 226 5 A 5 5 0 0 1 231 0 Z"/>
+    <path class="fuli-letter fuli-letter--l" d="M 493 0 L 531 0 A 5 5 0 0 1 536 5 L 536 153.5 A 3.5 3.5 0 0 0 539.5 157 L 669 157 A 5 5 0 0 1 674 162 L 674 195 A 5 5 0 0 1 669 200 L 493 200 A 5 5 0 0 1 488 195 L 488 5 A 5 5 0 0 1 493 0 Z"/>
+    <path class="fuli-letter fuli-letter--i" d="M 707 0 L 745 0 A 5 5 0 0 1 750 5 L 750 195 A 5 5 0 0 1 745 200 L 707 200 A 5 5 0 0 1 702 195 L 702 5 A 5 5 0 0 1 707 0 Z"/>
+  </g>
+</svg>

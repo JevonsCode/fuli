@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { LOADING_ARCS } from '@/lib/brand'
+
 const props = withDefaults(defineProps<{
   label: string
   variant?: 'page' | 'compact' | 'inline'
@@ -22,9 +24,7 @@ const props = withDefaults(defineProps<{
           aria-hidden="true"
           focusable="false"
         >
-          <path class="growth-loading__arc growth-loading__arc--1" d="M24 5 A19 19 0 0 1 40.45 33.5" />
-          <path class="growth-loading__arc growth-loading__arc--2" d="M40.45 33.5 A19 19 0 0 1 7.55 33.5" />
-          <path class="growth-loading__arc growth-loading__arc--3" d="M7.55 33.5 A19 19 0 0 1 24 5" />
+          <path v-for="(arc, index) in LOADING_ARCS" :key="arc" class="growth-loading__arc" :class="`growth-loading__arc--${index + 1}`" :d="arc" />
         </svg>
       </span>
       <span class="growth-loading__label">{{ props.label }}</span>

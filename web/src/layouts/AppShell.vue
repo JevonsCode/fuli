@@ -13,7 +13,8 @@ import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
-import { t } from '@/i18n'
+import { currentLocale, t } from '@/i18n'
+import { fuliWordmarkUrl } from '@/lib/brand'
 import { SPRING, motionConfigReduced } from '@/lib/motion'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { useConsoleStore } from '@/stores/console'
@@ -107,7 +108,7 @@ watchEffect(() => {
       <div class="app-topbar-inner">
         <div class="app-brand">
           <BrandEasterEgg compact />
-          <span class="app-wordmark">{{ t('shell.brand') }}</span>
+          <img class="app-wordmark" :src="fuliWordmarkUrl(currentLocale())" :alt="t('shell.brand')" draggable="false" />
           <!-- The service dot says ready on its own; its words show only when the service is not ready. -->
           <span class="app-runtime" :class="{ 'is-ready': runtimeReady }" role="status"
             :title="`${t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')} · v${FULI_VERSION}`" data-runtime>
@@ -171,7 +172,7 @@ watchEffect(() => {
 .app-topbar { position: relative; z-index: var(--z-popover); flex: 0 0 auto; padding: 12px var(--page-gutter) 8px; }
 .app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; max-width: var(--canvas-max); min-height: 44px; margin-inline: auto; }
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
-.app-wordmark { color: var(--color-ink); font-size: 15px; font-weight: var(--weight-strong); letter-spacing: -.01em; white-space: nowrap; }
+.app-wordmark { display: block; width: auto; height: 15px; user-select: none; }
 .app-runtime { display: inline-flex; align-items: center; gap: 6px; --runtime: var(--status-error); }
 .app-runtime.is-ready { --runtime: var(--color-success); }
 .app-runtime-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--runtime); }
