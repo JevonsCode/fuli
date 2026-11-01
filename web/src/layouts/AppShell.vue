@@ -10,6 +10,7 @@ import { loadRoleNames } from '@/features/agent-profile/role-names'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
 import CaptureOnboardingDialog from '@/features/capture/CaptureOnboardingDialog.vue'
 import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
+import CopyFixPrompt from '@/features/problem/CopyFixPrompt.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
@@ -143,7 +144,10 @@ watchEffect(() => {
         <div class="app-feedback-inner">
           <UiNotice class="feedback-message" :tone="store.feedback.tone">
             {{ store.feedback.message }}
-            <template #actions><UiIconButton icon="close" size="sm" :label="t('common.actions.close')" @click="store.clearFeedback" /></template>
+            <template #actions>
+              <CopyFixPrompt v-if="store.feedback.tone === 'error'" :what="store.feedback.message" />
+              <UiIconButton icon="close" size="sm" :label="t('common.actions.close')" @click="store.clearFeedback" />
+            </template>
           </UiNotice>
         </div>
       </div>

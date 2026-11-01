@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setLocale } from '@/i18n'
 import { z } from 'zod'
-import { ApiError, RESPONSE_INVALID, apiErrorCode, apiErrorReason, getJson, postJson, putJson } from './client'
+import { ApiError, RESPONSE_INVALID, RESPONSE_NOT_JSON, apiErrorCode, apiErrorReason, getJson, postJson, putJson } from './client'
 import { shapeOf } from './response-shape'
 
 describe('API client errors', () => {
@@ -12,6 +12,14 @@ describe('API client errors', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('reads a web page where data was expected as words, never a JSON parse error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<!doctype html><html></html>', { status: 200 })))
+    const error = await getJson('/api/state').catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(ApiError)
+    expect((error as ApiError).message).toBe('本机服务没有返回数据（收到的是网页）。FULI 可能正在启动或更新。')
+    expect(apiErrorCode(error)).toBe(RESPONSE_NOT_JSON)
   })
 
   it('localizes an empty HTTP error response', async () => {

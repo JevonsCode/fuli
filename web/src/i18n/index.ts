@@ -10,6 +10,7 @@ import { knowledgeDomainMessages } from './messages/knowledge-domain'
 import { knowledgeDialogMessages } from './messages/knowledge-dialogs'
 import { knowledgeWorkspaceMessages } from './messages/knowledge-workspace'
 import { aboutMessages } from './messages/about'
+import { problemMessages } from './messages/problem'
 import { pageMessages } from './messages/pages'
 import { preferenceMessages } from './messages/preferences'
 import { projectMessages } from './messages/projects'
@@ -125,6 +126,7 @@ export const messages = {
     doctor: doctorMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
     about: aboutMessages['zh-CN'],
+    problem: problemMessages['zh-CN'],
     common: commonMessages['zh-CN'],
     console: consoleMessages['zh-CN'],
     knowledge: {
@@ -174,6 +176,7 @@ export const messages = {
     doctor: doctorMessages['en-US'],
     employees: employeeMessages['en-US'],
     about: aboutMessages['en-US'],
+    problem: problemMessages['en-US'],
     common: commonMessages['en-US'],
     console: consoleMessages['en-US'],
     knowledge: {

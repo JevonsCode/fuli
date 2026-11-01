@@ -281,14 +281,15 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('renders feedback and dismisses it from the close button', async () => {
+  it('renders feedback with a copy-for-AI button on an error, and dismisses it from the close button', async () => {
     const { wrapper, store } = await setup('/')
     store.reportError(new Error('读取失败，请重试。'))
     await flushPromises()
     const feedback = wrapper.get('.feedback-message')
     expect(feedback.attributes('role')).toBe('alert')
     expect(feedback.text()).toContain('读取失败')
-    await feedback.get('button').trigger('click')
+    expect(feedback.find('[data-copy-fix-prompt]').exists()).toBe(true)
+    await feedback.get('button[aria-label="关闭"]').trigger('click')
     expect(wrapper.find('.feedback-message').exists()).toBe(false)
     wrapper.unmount()
   })

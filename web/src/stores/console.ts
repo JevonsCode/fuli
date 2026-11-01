@@ -71,6 +71,8 @@ export const useConsoleStore = defineStore('console', () => {
   const state = shallowRef<ConsoleState | null>(null)
   const runtimeStatus = ref<RuntimeStatus>('idle')
   const refreshError = ref('')
+  // The last failed read's own message, for a page that shows it and the prompt the person copies.
+  const refreshMessage = ref('')
   let refreshVersion = 0
   let refreshController: AbortController | undefined
   const feedback = ref<{ message: string; tone: FeedbackTone } | null>(null)
@@ -96,6 +98,7 @@ export const useConsoleStore = defineStore('console', () => {
     refreshController = controller
     runtimeStatus.value = 'loading'
     refreshError.value = ''
+    refreshMessage.value = ''
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       const timeout = new Promise<never>((_resolve, reject) => {
@@ -115,6 +118,7 @@ export const useConsoleStore = defineStore('console', () => {
       const denied = error?.status === 401 || error?.status === 403
       if (denied) state.value = null
       refreshError.value = denied ? 'denied' : error?.code === 'scope_timeout' ? 'timeout' : 'failed'
+      refreshMessage.value = cause instanceof Error ? cause.message : ''
       runtimeStatus.value = 'error'
       reportError(denied ? new Error(t('common.errors.requestFailed', { status: error.status! })) : cause)
       return
@@ -284,6 +288,7 @@ export const useConsoleStore = defineStore('console', () => {
   return {
     state,
     runtimeStatus,
+    refreshMessage,
     refreshError,
     feedback,
     activePersonalSpace,
