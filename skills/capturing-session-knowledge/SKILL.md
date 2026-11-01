@@ -41,7 +41,9 @@ usage, collaborators, failures/blockers and meaningful work summaries still need
 checkpoint. Automatic closure never claims completed work or saved memory. An existing pending
 task is not proof that its Hook context reached this turn. If `task_lifecycle.status=not_started`,
 preferences are available but checkpoint ownership is not established; report the missing
-host identity or prompt rather than reusing an earlier token. A blocked transcript handoff
+host identity or prompt rather than reusing an earlier token. Such an entry lists working
+memory, team and managers only as their `read` calls (`get_project_agent_memory`,
+`get_project_team`, `list_employee_tools`); call one only when the task needs it. A blocked transcript handoff
 remains unverified even if the preference fallback and task-summary checkpoint succeed.
 
 ## Mandatory reply identity

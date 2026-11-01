@@ -2,6 +2,7 @@ import { containsEntryRules, DETAILS_GUIDANCE, entryRules, entryRulesReference, 
 import { preferenceScopeGuidance } from '../graphiti/collaboration-preference-workflow.js';
 import { copyPreferenceScope } from './preference-snapshot.js';
 import { preferenceInstructionView } from './preference-view.js';
+import { managerRead, memoryRead, teamRead } from './entry-detail-readers.js';
 
 const SUMMARY_PREVIEW = 800;
 const NOTE_COUNT_PREVIEW = 3;
@@ -73,7 +74,36 @@ export function compactTaskContext(value) {
   }
   if (share && result.project_agent_context) result.project_agent_context = withoutDefaults(result.project_agent_context,
     { flags: false, keep: AGENT_CONTEXT_STATES });
-  return copyPreferenceScope(value, result);
+  return copyPreferenceScope(value, share && withoutTaskToken(value) ? onDemandDetails(result) : result);
+}
+
+// get_collaboration_preferences without a native session or prompt creates no
+// task (task_lifecycle not_started), and its entry is re-read on every later
+// model step. Such a turn cannot checkpoint, staff a grouped team or title a
+// native session, so the details that serve those become the calls that read
+// them: the memory layers keep their revision, the team its size, each manager
+// its routing summary, and Tonborg the sentence assess_agent_action needs (it
+// reads the saved policy itself). The directory snapshot mirrors the memory
+// read. Preferences, conflicts, receipt, recall, IDs and lifecycle stay.
+function withoutTaskToken(value) {
+  return value.task_lifecycle?.status === 'not_started' && !value.taskContextToken && !value.task_context_token;
+}
+
+function onDemandDetails(value) {
+  const continuity = value.project_agent_context;
+  const managers = value.project_management_context?.managers;
+  const layer = (field, personalProjectId) => Object.hasOwn(continuity, field) ? { [field]: continuity[field]
+    && { revision: continuity[field].revision, view: 'omitted', read: memoryRead(value, personalProjectId) } } : {};
+  return { ...value,
+    ...(continuity ? { project_agent_context: { ...continuity, directorySnapshot: undefined, team_guidance: undefined,
+      ...layer('memory', value.context?.personal_project_id ?? null), ...layer('global_memory', null),
+      ...(continuity.team ? { team: { roster_total: continuity.team.roster_total ?? continuity.team.roster?.length ?? 0,
+        read: teamRead(value) } } : {}) } } : {}),
+    ...(managers ? { project_management_context: { ...value.project_management_context,
+      managers: managers.map(manager => withoutDefaults({ template_id: manager.template_id, agent_id: manager.agent_id,
+        name: manager.name, guidance: manager.guidance, read: managerRead(manager) })) } } : {}),
+    ...(value.judgment_context ? { judgment_context: { agentId: value.judgment_context.agentId,
+      guidance: value.judgment_context.guidance } } : {}) };
 }
 
 // Each manager's routing, title policy and tools; the board itself is read on
