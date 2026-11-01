@@ -12,6 +12,7 @@ import { computed, useId } from "vue"
 import GrowthLoading from "@/components/GrowthLoading.vue"
 import { t } from "@/i18n"
 import { cn } from "@/lib/class-names"
+import { FIELD_FOCUS_WITHIN, FIELD_LOOK } from "../field-look"
 import UiIcon from "@/ui/UiIcon.vue"
 import { fromItemValue, groupOptions, optionSearchText, toItemValue, type SelectOption } from "../select/option"
 import SelectionActions from "../select/SelectionActions.vue"
@@ -78,7 +79,8 @@ const placeholderText = computed(() => props.placeholder ?? t("ui.select.placeho
 
 function labelOf(itemValue: unknown) {
   if (typeof itemValue !== "string") return ""
-  return optionByItem.value.get(itemValue)?.label ?? fromItemValue(itemValue)
+  // Before the options arrive the field stays empty rather than showing a raw value.
+  return optionByItem.value.get(itemValue)?.label ?? (props.options.length ? fromItemValue(itemValue) : "")
 }
 
 function emitValues(values: string[]) {
@@ -92,8 +94,8 @@ function choose(next: unknown) {
 }
 
 const fieldClass = computed(() => cn(
-  "flex w-full min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden rounded-md border border-input bg-card px-2 text-base text-foreground transition-[border-color,box-shadow]",
-  "hover:border-border-strong focus-within:border-ring focus-within:ring-3 focus-within:ring-primary-soft",
+  FIELD_LOOK, FIELD_FOCUS_WITHIN,
+  "flex w-full min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden px-2 text-base",
   "data-[disabled]:cursor-not-allowed data-[disabled]:bg-muted data-[disabled]:text-muted-foreground",
   props.size === "sm" ? "min-h-(--control-height-sm) py-0.5 text-sm" : "min-h-(--control-height) py-1",
 ))

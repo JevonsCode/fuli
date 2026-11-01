@@ -32,11 +32,12 @@ defineEmits<{ select: [key: string] }>()
 
 <style scoped>
 .ui-stat-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ui-stat-row:has(button.ui-stat) { gap: 2px; width: fit-content; padding: 3px; border-radius: var(--radius-pill); background: var(--color-surface-subtle); }
 .ui-stat {
   --stat: var(--color-faint);
-  display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px 0 10px;
-  border: 1px solid var(--color-border); border-radius: var(--radius-pill);
-  color: var(--color-ink-soft); background: var(--color-surface); font: inherit; font-size: 13px; line-height: 1;
+  display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px 0 10px;
+  border: 0; border-radius: var(--radius-pill);
+  color: var(--color-ink-soft); background: transparent; font: inherit; font-size: 13px; line-height: 1;
 }
 .ui-stat i { width: 6px; height: 6px; border-radius: 50%; background: var(--stat); }
 .ui-stat strong { color: var(--color-ink); font-size: 13px; font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; }
@@ -44,8 +45,8 @@ defineEmits<{ select: [key: string] }>()
 .ui-stat.is-success { --stat: var(--color-success); }
 .ui-stat.is-warning { --stat: var(--color-warning); }
 .ui-stat.is-danger { --stat: var(--color-danger); }
-button.ui-stat { cursor: pointer; transition: border-color var(--motion-fast), background var(--motion-fast); }
-button.ui-stat:hover { border-color: var(--color-border-strong); }
-button.ui-stat[aria-pressed='true'] { border-color: var(--color-ink-soft); background: var(--color-surface-subtle); }
-button.ui-stat:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+button.ui-stat { cursor: pointer; transition: color var(--motion-fast), background var(--motion-fast), box-shadow var(--motion-fast); }
+button.ui-stat:hover { color: var(--color-ink); }
+button.ui-stat[aria-pressed='true'] { color: var(--color-ink); background: var(--color-surface); box-shadow: var(--shadow-xs); }
+button.ui-stat:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
 </style>
