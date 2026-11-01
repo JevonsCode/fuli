@@ -114,11 +114,11 @@ export const projectMessages = {
       failed: '项目创建失败',
     },
     profileAuthors: {
-      person: '你写的',
+      person: '我写的',
       agent: '{agent} 写的',
       unnamedAgent: 'AI',
-      both: '你和 {agent}',
-      you: '你',
+      both: '我和 {agent}',
+      you: '我',
       weight: {
         person: '权重 {weight}%：你写的，Agent 以它为准，不会改写',
         both: '权重 {weight}%：你在 AI 草稿上改过，Agent 不会改写',
@@ -396,11 +396,11 @@ export const projectMessages = {
       failed: 'Could not create the project',
     },
     profileAuthors: {
-      person: 'Written by you',
+      person: 'Written by me',
       agent: 'Written by {agent}',
       unnamedAgent: 'AI',
-      both: 'You and {agent}',
-      you: 'You',
+      both: 'Me and {agent}',
+      you: 'Me',
       weight: {
         person: 'Weight {weight}%: written by you; Agents treat it as authoritative and never rewrite it',
         both: 'Weight {weight}%: you edited an AI draft; Agents never rewrite it',

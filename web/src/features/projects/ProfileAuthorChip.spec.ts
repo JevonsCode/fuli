@@ -18,11 +18,11 @@ describe('ProfileAuthorChip', () => {
 
   it('shows the person alone, and both portraits for shared text', () => {
     const person = mount(ProfileAuthorChip, { props: { author: { kind: 'person' } } })
-    expect(person.text()).toContain('你写的')
+    expect(person.text()).toContain('我写的')
     expect(person.find('img').exists()).toBe(false)
     expect(person.get('[data-author]').attributes('title')).toContain('100%')
     const both = mount(ProfileAuthorChip, { props: { author: { kind: 'both', agent_id: 'agent-ada', agent_name: 'Ada' } } })
-    expect(both.get('.profile-author-label').text()).toBe('你和 Ada')
+    expect(both.get('.profile-author-label').text()).toBe('我和 Ada')
     expect(both.findAll('.ui-avatar')).toHaveLength(2)
     expect(both.get('[data-author]').attributes('title')).toContain('90%')
   })

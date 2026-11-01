@@ -105,9 +105,9 @@ describe('PersonalProjectProfileDialog', () => {
       } },
     })
     const chipOf = (name: string) => wrapper.get(`[name="${name}"]`).element.closest('label')!.querySelector('[data-author]')
-    expect(chipOf('project-purpose')?.textContent).toContain('你写的')
+    expect(chipOf('project-purpose')?.textContent).toContain('我写的')
     expect(chipOf('project-scope')?.textContent).toContain('Ada 写的')
-    expect(chipOf('project-boundaries')?.textContent).toContain('你和 Ada')
+    expect(chipOf('project-boundaries')?.textContent).toContain('我和 Ada')
     expect(chipOf('project-technical-summary')).toBeNull()
     await wrapper.get('form').trigger('submit')
     await flushPromises()
