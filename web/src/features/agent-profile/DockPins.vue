@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { pointInBox, usePointerPresence } from '@/composables/usePointerPresence'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { t } from '@/i18n'
 import type { ProjectAgentRecord } from '@/types'
@@ -14,7 +15,9 @@ import { useAgentRecords } from './useAgentRecords'
 
 // Pinned FLAs rise out of the dock's FLAs item in their own capsule. A click
 // opens the FLA's profile; right-click (or the context-menu key) offers its
-// profile, its Workbench and Workflow when it has them, and unpinning.
+// profile, its Workbench and Workflow when it has them, and unpinning. The
+// menu and the capsule close together (Jevons 11-01): when the pointer has left
+// both for the intent delay, on Esc, on a click elsewhere and after a choice.
 const props = defineProps<{ spaceId: string }>()
 
 const route = useRoute()
@@ -28,13 +31,65 @@ const isActive = (agentId: string) => route.path === agentProfilePath(props.spac
 // Read once per FLA while the console is open; a failed read is retried on the next open.
 type SurfaceState = { status: 'loading' } | { status: 'ready'; surfaces: AgentWorkSurfaces } | { status: 'error' }
 const surfaces = ref<Record<string, SurfaceState>>({})
-// The capsule stays up while a menu is open: focus has moved into the menu, outside the dock.
-const holding = ref(false)
+// The FLA whose menu is open. The capsule stays up while it is: the pointer and
+// focus are in the menu, outside the dock.
+const menuAgentId = ref<string | null>(null)
+const holding = computed(() => menuAgentId.value !== null)
+// A menu just closed under the pointer: the capsule closes too until the pointer leaves it.
+const dismissed = ref(false)
+const capsule = ref<HTMLElement | null>(null)
+// The gap a pointer crosses between the capsule and its menu, as tall as the dock's hover bridge.
+const HOVER_BRIDGE_PX = 14
+// How the open menu was opened. Opened by the pointer, closing it must not
+// return focus to its portrait: keyboard focus there would latch the capsule
+// open over the page. Opened from the keyboard, focus goes back as usual.
+let lastInput: 'pointer' | 'keyboard' = 'pointer'
+let openedBy: 'pointer' | 'keyboard' = 'pointer'
+const notePointer = () => { lastInput = 'pointer' }
+const noteKeyboard = () => { lastInput = 'keyboard' }
+onMounted(() => {
+  document.addEventListener('pointerdown', notePointer, true)
+  document.addEventListener('keydown', noteKeyboard, true)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', notePointer, true)
+  document.removeEventListener('keydown', noteKeyboard, true)
+})
 // A menu item that navigates away releases the hold even if the menu never reports closing.
-watch(() => route.fullPath, () => { holding.value = false })
+watch(() => route.fullPath, () => { menuAgentId.value = null })
+
+// Inside: the capsule, the open menu and the gap between them.
+function pointerNearCapsule(event: PointerEvent) {
+  const box = capsule.value?.getBoundingClientRect()
+  const menu = holding.value ? document.querySelector('[data-pin-menu][data-state="open"]')?.getBoundingClientRect() : null
+  const hull = box && menu
+    ? new DOMRect(Math.min(box.left, menu.left), Math.min(box.top, menu.top),
+      Math.max(box.right, menu.right) - Math.min(box.left, menu.left), Math.max(box.bottom, menu.bottom) - Math.min(box.top, menu.top))
+    : box
+  return pointInBox(event.clientX, event.clientY, hull, HOVER_BRIDGE_PX)
+}
+usePointerPresence({
+  active: computed(() => holding.value || dismissed.value),
+  inside: pointerNearCapsule,
+  leave: () => {
+    menuAgentId.value = null
+    dismissed.value = false
+  },
+})
+
+function returnFocus(event: Event) {
+  if (openedBy === 'pointer') event.preventDefault()
+}
 
 async function opened(open: boolean, agent: ProjectAgentRecord) {
-  holding.value = open
+  if (open) {
+    openedBy = lastInput
+    menuAgentId.value = agent.agentId
+    dismissed.value = false
+  } else if (menuAgentId.value === agent.agentId) {
+    menuAgentId.value = null
+    dismissed.value = openedBy === 'pointer'
+  }
   const current = surfaces.value[agent.agentId]
   if (!open || current?.status === 'ready' || current?.status === 'loading') return
   surfaces.value[agent.agentId] = { status: 'loading' }
@@ -54,9 +109,9 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
 </script>
 
 <template>
-  <ul v-if="spaceId && agents.length" class="dock-pins" :class="{ 'is-holding': holding }" :aria-label="agentPinsText('navigation.title', 'pin')">
+  <ul v-if="spaceId && agents.length" ref="capsule" class="dock-pins" :class="{ 'is-holding': holding, 'is-dismissed': dismissed && !holding }" :aria-label="agentPinsText('navigation.title', 'pin')">
     <li v-for="(agent, index) in agents" :key="agent.agentId" :style="{ '--pin-index': index }">
-      <ContextMenu @update:open="opened($event, agent)">
+      <ContextMenu :open="menuAgentId === agent.agentId" @update:open="opened($event, agent)">
         <ContextMenuTrigger as-child>
           <RouterLink class="dock-pin" :class="{ 'is-active': isActive(agent.agentId) }" :to="agentProfilePath(spaceId, agent.agentId)"
             :aria-current="isActive(agent.agentId) ? 'page' : undefined" :aria-label="`${agentDisplayName(agent)} · ${t('agentProfiles.profile')}`"
@@ -64,7 +119,7 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
             <img :src="agentAvatarUrl(agent.agentId)" alt="" />
           </RouterLink>
         </ContextMenuTrigger>
-        <ContextMenuContent data-pin-menu>
+        <ContextMenuContent data-pin-menu @close-auto-focus="returnFocus">
           <ContextMenuLabel>{{ agentDisplayName(agent) }}</ContextMenuLabel>
           <ContextMenuItem data-pin-action="home" @select="go(profile(agent.agentId))">{{ agentPinsText('menu.home', 'Open profile') }}</ContextMenuItem>
           <ContextMenuItem v-if="surfaces[agent.agentId]?.status === 'loading'" disabled>
