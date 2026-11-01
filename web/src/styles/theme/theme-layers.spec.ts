@@ -54,4 +54,11 @@ describe('theme layers', () => {
     expect(block(tailwind, '@theme')).toMatch(/--font-weight-\*:\s*initial/)
     for (const heading of ['h1', 'h2', 'h3']) expect(block(elements, heading), heading).toContain('font-weight: var(--weight-strong)')
   })
+
+  it('keeps every control, a link drawn as a button included, out of text selection', () => {
+    const start = elements.indexOf(':where(button,')
+    const rule = elements.slice(start, elements.indexOf('}', start))
+    for (const selector of ['button', '[data-slot="button"]', '[role="button"]', '[role="tab"]', 'summary', 'nav a']) expect(rule, selector).toContain(selector)
+    expect(rule).toContain('user-select: none')
+  })
 })
