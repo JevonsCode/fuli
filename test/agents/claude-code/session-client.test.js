@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import test from 'node:test';
@@ -42,7 +42,9 @@ test('the Claude Code hook cannot reach the session launcher or its executables'
     .map((path) => relative(ROOT, path).split(sep).join('/'));
   assert.ok(reached.includes('src/agents/claude-code/session-client.js'));
   assert.ok(reached.includes('src/agent-kits/session-clients.js'));
-  // Only the record store and the pinned versions (data the Windows bundle reader checks) are reachable.
+  // Only the record store, the pinned versions (data the Windows bundle reader checks) and
+  // client-detection's pure mapping (it imports nothing; the installer is passed in) are reachable.
   assert.deepEqual(reached.filter((path) => path.startsWith('src/agent-kits/')).sort(),
-    ['src/agent-kits/pins.js', 'src/agent-kits/session-clients.js']);
+    ['src/agent-kits/client-detection.js', 'src/agent-kits/pins.js', 'src/agent-kits/session-clients.js']);
+  assert.doesNotMatch(readFileSync(join(ROOT, 'src', 'agent-kits', 'client-detection.js'), 'utf8'), /^s*import/m);
 });
