@@ -221,7 +221,7 @@ const credits = computed(() => [
   place-items: center;
   width: 72px;
   height: 72px;
-  border-radius: 50%;
+  border-radius: 16px;
   background: var(--color-surface-subtle);
 }
 

@@ -24,6 +24,10 @@ The files keep the design delivery's names and folders, so an updated delivery c
 **Optical sizing.** Draw the master mark from 28 px up and the micro cut below 28 px (favicons, tray
 icons, 16 px loading). The minimum is 16 px.
 
+**Backdrop.** Wherever the mark sits on a backdrop (the app icon, the tray icons, a logo plate in the
+console or on the site), the backdrop is a rounded square with corners about 22.5 % of its side, like
+the app icon; never a disc.
+
 **Logo palette.** Ink `#18181B`, white `#FFFFFF` and the black-gold gradient belong to the mark, the
 wordmarks, the lockups and the app icon only. They are not interface colours; the console's UI tokens
 do not use them.
@@ -64,7 +68,7 @@ do not use them.
   them in the mark's `ink`; a wordmark in another fill or with a transform other than a translate
   is refused.
 - **Desktop client** (`desktop/flutter/`):
-  - `assets/tray/{ok,needs_person,broken}.{png,ico}`: the mark on a white disc with a green, amber or
+  - `assets/tray/{ok,needs_person,broken}.{png,ico}`: the mark on a white rounded square (the app icon's corners) with a green, amber or
     red status dot, drawn from the SVG marks (the micro cut where the mark is under 28 px);
   - `windows/runner/resources/app_icon.ico`: `png/app-icon/fuli-app.ico` as it is;
   - `assets/app/fuli.png`: the app icon's 256 px entry, for Windows notifications;

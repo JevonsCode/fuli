@@ -70,7 +70,7 @@ import { fuliMarkUrl } from '@/lib/brand'
   place-items: center;
   width: 68px;
   height: 68px;
-  border-radius: 50%;
+  border-radius: 15px;
   background: var(--color-surface-subtle);
 }
 

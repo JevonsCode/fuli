@@ -166,6 +166,17 @@ test('tray icons draw the micro mark below 28 px and the master from 28 px, with
   assert.equal(new Set(trays.map((bytes) => bytes.toString('base64'))).size, 3);
 });
 
+test('the tray mark sits on a rounded square like the app icon, never a disc', () => {
+  const read = syntheticBrand();
+  const micro = readMarkSvg(read('brand/svg/mark/fuli-mark-micro-color.svg').toString('utf8'));
+  const size = 40;
+  const icon = trayIcon(() => micro, size, 0x1f9a76);
+  const alpha = (x, y) => icon.data[(y * size + x) * 4 + 3];
+  // The very corner stays clear; a point near the left edge, outside the old disc, is filled.
+  assert.equal(alpha(0, 0), 0);
+  assert.equal(alpha(1, 10), 255);
+});
+
 test('the generator gives byte-identical files for the same brand', () => {
   const first = brandAssets(syntheticBrand());
   const second = brandAssets(syntheticBrand());
