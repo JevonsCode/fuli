@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
-import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
 import { getJson } from '@/api/client'
 import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
 import type { ConsoleUpdateKind } from '@/features/update/model'
 import { t } from '@/i18n'
+import { fuliLogoUrl } from '@/lib/brand'
 import { FULI_VERSION } from '@/version'
 
 interface PackageVersionStatus {

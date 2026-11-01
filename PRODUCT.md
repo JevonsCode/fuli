@@ -66,8 +66,8 @@ setup, not that they spend longer watching effects.
 
 ## Brand assets
 
-Fuli already has an established logo. Use the original artwork at
-`site/assets/fuli-logo.png`, identical to `web/assets/brand/fuli-logo.png`.
+Fuli already has an established logo. Its one source is `brand/fuli-logo.png`;
+`site/assets/fuli-logo.png` and `web/assets/brand/fuli-logo.png` are generated copies (`brand/README.md`).
 Website redesigns preserve this logo, its colors and proportions. Do not redraw it,
 replace it with an initial, recolor it, or create a new brand mark without an explicit request.
 
