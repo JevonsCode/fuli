@@ -16,6 +16,7 @@ import { taskKey } from './workbench-model'
 import { useTeamWork } from '@/features/team-work/useTeamWork'
 import { useConsoleStore } from '@/stores/console'
 import WidgetSlot from '@/widgets/WidgetSlot.vue'
+import UiIcon from '@/ui/UiIcon.vue'
 
 type ReadState = InstanceType<typeof OverviewReadStatus>['$props']['state']
 
@@ -97,7 +98,7 @@ const solo = computed(() => {
       <header class="workbench-card-head"><h2 id="workbench-done-heading">{{ t('overview.sections.recentlyDone') }}</h2></header>
       <TransitionGroup v-if="done.length" name="ui-list" tag="ul" class="workbench-rows">
         <li v-for="task in done" :key="taskKey(task)" class="workbench-row">
-          <span class="workbench-done-mark" aria-hidden="true">✓</span>
+          <span class="workbench-done-mark" aria-hidden="true"><UiIcon name="check" :size="16" /></span>
           <div class="workbench-row-text">
             <p class="workbench-row-title">{{ title(task) }}</p>
             <p v-if="task.resultSummary?.trim()" class="workbench-meta workbench-clamp">{{ task.resultSummary }}</p>

@@ -13,6 +13,7 @@ import AttentionPeek from './AttentionPeek.vue'
 import TaskBlockerNotice from './TaskBlockerNotice.vue'
 import type { AttentionAnswer, AttentionReplyDraft } from './attention-replies'
 import { inboxLocation, useAgentAttention, type AgentAttention, type AttentionPeekState } from './attention-store'
+import UiIcon from '@/ui/UiIcon.vue'
 
 // The inbox body: the queue as cards on one canvas; a request opens in a
 // centred quick look (Peek) with its reply. The page keeps which request is
@@ -130,7 +131,7 @@ async function respond(item: AgentAttention, answer: AttentionAnswer) {
     <p v-if="attention.lastReply" class="attention-outcome" :class="`is-${attention.lastReply.status}`" role="status">{{ replyOutcome }}</p>
     <div v-if="attention.error" role="alert" class="attention-error"><span>{{ t('attention.loadError') }}</span><Button variant="outline" size="sm" :disabled="attention.loading" @click="attention.refresh()">{{ t('attention.refresh') }}</Button></div>
     <GrowthLoading v-if="attention.loading && !attention.items.length" variant="page" :label="t('attention.loading')" />
-    <div v-else-if="!attention.items.length && !attention.error" class="attention-empty"><span aria-hidden="true">✓</span><p>{{ t('attention.empty') }}</p></div>
+    <div v-else-if="!attention.items.length && !attention.error" class="attention-empty"><span aria-hidden="true"><UiIcon name="check" :size="22" /></span><p>{{ t('attention.empty') }}</p></div>
     <template v-else-if="attention.items.length">
       <ul class="attention-request-list m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3 @min-[1400px]:grid-cols-4"
         :aria-label="t('attention.queue')" :aria-busy="attention.loading">
