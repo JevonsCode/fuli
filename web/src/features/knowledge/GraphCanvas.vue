@@ -2,7 +2,10 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { currentLocale, t } from '@/i18n'
-import { renderKnowledgeGraph, type GraphController, type ProjectDragEvent } from './graph-runtime'
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
+import { loadProjectLeads } from '@/features/projects/project-leads'
+import { useConsoleStore } from '@/stores/console'
+import { isProjectNode, renderKnowledgeGraph, type GraphController, type ProjectDragEvent } from './graph-runtime'
 import type { KnowledgeEdge, KnowledgeGraph, KnowledgeNode } from '@/types'
 
 const props = defineProps<{
@@ -22,6 +25,7 @@ const emit = defineEmits<{
   projectDrag: [event: ProjectDragEvent]
 }>()
 
+const store = useConsoleStore()
 const svg = ref<SVGSVGElement | null>(null)
 let controller: GraphController | null = null
 
@@ -64,6 +68,24 @@ async function render() {
     },
   })
   applySelection()
+  void showProjectLeads(controller)
+}
+
+// A project node carries its personal project id as attributes.projectId.
+const projectIdOf = (node: KnowledgeNode) => String(node.attributes?.projectId ?? '')
+
+// Each project node shows its lead's portrait once the leads are read; a
+// graph drawn again meanwhile ignores this answer.
+async function showProjectLeads(drawn: GraphController) {
+  const spaceId = store.activePersonalSpace?.id
+  const projectIds = props.graph.nodes.filter(isProjectNode).map(projectIdOf).filter(Boolean)
+  if (!spaceId || !projectIds.length) return
+  const leads = await loadProjectLeads(spaceId, projectIds)
+  if (drawn !== controller) return
+  drawn.showProjectLeads((node) => {
+    const lead = leads.get(projectIdOf(node))
+    return lead ? agentAvatarUrl(lead) : null
+  })
 }
 
 function applySelection() {
