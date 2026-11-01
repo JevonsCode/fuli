@@ -61,6 +61,8 @@ class FuliController extends ChangeNotifier {
 
   FuliSnapshot? _snapshot;
   String? _pending;
+  // The label of a start or port change, kept until the check after it.
+  String? _bringingUp;
   Notice? _notice;
   bool _visible = true;
   bool _polling = false;
@@ -80,6 +82,11 @@ class FuliController extends ChangeNotifier {
 
   /// The label of the operation running now; one at a time.
   String? get pending => _pending;
+
+  /// While a start or a port change runs, and until the check after it
+  /// finishes, what is being done: the window waits for the console instead
+  /// of showing the stopped FULI in between.
+  String? get bringingUp => _bringingUp;
   Notice? get notice => _notice;
   Uri get consoleUri => Uri.parse('http://127.0.0.1:${_snapshot?.port ?? 2727}/');
 
@@ -246,7 +253,7 @@ class FuliController extends ChangeNotifier {
 
   Future<void> start() {
     _stoppedByPerson = false;
-    return _operate(strings.starting, () async {
+    return _bringUp(strings.starting, () async {
       final report = await _call(runtime.start);
       final error = report.error;
       if (error == null) return;
@@ -267,7 +274,7 @@ class FuliController extends ChangeNotifier {
   Future<void> changePort() {
     if (!runtime.canChangePort) return Future.value();
     _stoppedByPerson = false;
-    return _operate(strings.changingPort, () async {
+    return _bringUp(strings.changingPort, () async {
       final report = await _call(runtime.changePort);
       // The settings file names the new port now.
       _runtimePort = null;
@@ -281,6 +288,17 @@ class FuliController extends ChangeNotifier {
   Future<void> runtimeIdle() async {
     final call = _runtimeCall;
     if (call != null) await call.then((_) {}, onError: (_) {});
+  }
+
+  Future<void> _bringUp(String label, Future<void> Function() body) async {
+    if (_pending != null) return;
+    _bringingUp = label;
+    try {
+      await _operate(label, body);
+    } finally {
+      _bringingUp = null;
+      if (!_disposed) notifyListeners();
+    }
   }
 
   Future<RuntimeReport> _call(Future<RuntimeReport> Function() action) => _runtimeCall = action();

@@ -106,11 +106,13 @@ class DemoFuliApi implements FuliApi {
 }
 
 class DemoRuntime implements FuliRuntime {
-  DemoRuntime(this.api, {this.installed = true, this.port = 2727});
+  DemoRuntime(this.api, {this.installed = true, this.port = 2727, this.startTakes});
 
   final DemoFuliApi api;
   bool installed;
   final int port;
+  // What a start waits for before FULI answers, as a real start takes a while.
+  final Future<void> Function()? startTakes;
 
   RuntimeState get _state => !installed
       ? RuntimeState.notFound
@@ -127,6 +129,7 @@ class DemoRuntime implements FuliRuntime {
 
   @override
   Future<RuntimeReport> start() async {
+    await startTakes?.call();
     api.reachable = true;
     return RuntimeReport(_state);
   }
@@ -145,9 +148,9 @@ class DemoRuntime implements FuliRuntime {
 }
 
 /// The preview scenarios, by name (?state=… in the web preview).
-(DemoFuliApi, DemoRuntime) demoScenario(String name) {
+(DemoFuliApi, DemoRuntime) demoScenario(String name, {Future<void> Function()? startTakes}) {
   final api = DemoFuliApi();
-  final runtime = DemoRuntime(api);
+  final runtime = DemoRuntime(api, startTakes: startTakes);
   switch (name) {
     case 'ok':
       break;

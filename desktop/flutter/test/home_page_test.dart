@@ -5,8 +5,10 @@ import 'package:fuli_desktop/src/app/fuli_controller.dart';
 import 'package:fuli_desktop/src/l10n/strings.dart';
 import 'package:fuli_desktop/src/preview/demo_fuli.dart';
 import 'package:fuli_desktop/src/ui/fuli_app.dart';
-import 'package:fuli_desktop/src/ui/home_page.dart';
+import 'package:fuli_desktop/src/ui/item_card.dart';
+import 'package:fuli_desktop/src/ui/status_actions.dart';
 
+import 'support/brand.dart';
 import 'support/fakes.dart';
 
 const zh = Strings(chinese: true);
@@ -15,7 +17,7 @@ void main() {
   late RecordingOpener opener;
 
   Future<(DemoFuliApi, FuliController)> showScenario(WidgetTester tester, String name,
-      {Widget Function(Uri)? consoleView}) async {
+      {Widget Function(Uri, VoidCallback)? consoleView}) async {
     opener = RecordingOpener();
     final (api, runtime) = demoScenario(name);
     final controller = FuliController(
@@ -25,18 +27,20 @@ void main() {
       strings: zh,
       wait: (_) async {},
     );
-    await tester.pumpWidget(FuliApp(services: AppServices(controller: controller, strings: zh, opener: opener, consoleView: consoleView)));
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: opener, consoleView: consoleView)));
     expect(find.text('正在检查 FULI…'), findsOneWidget);
     await controller.refresh();
     await tester.pump();
     return (api, controller);
   }
 
-  testWidgets('FULI works: the sentence, the version and the console button', (tester) async {
+  testWidgets('FULI works: the sentence, the folded version and the console button, nothing else', (tester) async {
     final (_, controller) = await showScenario(tester, 'ok');
 
     expect(find.text('FULI 正常工作'), findsOneWidget);
-    expect(find.text('已安装 v0.22.0'), findsOneWidget);
+    expect(find.byTooltip('已安装 v0.22.0'), findsOneWidget);
+    expect(find.text('已安装 v0.22.0'), findsNothing);
+    expect(find.byType(ItemCard), findsNothing);
     expect(find.text('停止 FULI'), findsOneWidget);
     expect(find.text('自动修复'), findsNothing);
 
@@ -48,7 +52,8 @@ void main() {
     await showScenario(tester, 'needs');
 
     expect(find.text('有 3 件事需要你'), findsOneWidget);
-    expect(find.text('1 件事可以自动修复'), findsOneWidget);
+    expect(find.byType(ItemCard), findsNWidgets(4));
+    expect(find.text('自动修复'), findsOneWidget);
     expect(find.text('Codex 接入 FULI 的设置已过期，需要重新接入。'), findsOneWidget);
     expect(find.text('有 2 个 Claude Code 会话还在用旧版 FULI（v0.21.0）。关掉并重新打开 Claude Code 即可。'), findsOneWidget);
     expect(find.text('查看并确认'), findsOneWidget);
@@ -124,12 +129,16 @@ void main() {
     expect(find.text('Knowledge 的数据格式 FULI 不能自动处理，请在控制台的「数据格式迁移」里查看原因。'), findsOneWidget);
   });
 
-  Widget console(Uri uri) => Text('console $uri');
+  Widget console(Uri uri, VoidCallback onLoaded) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => onLoaded());
+    return Text('console $uri');
+  }
 
   testWidgets('with a WebView the window is the console once it answers', (tester) async {
     final (_, controller) = await showScenario(tester, 'needs', consoleView: console);
 
     // The console's own banner shows the findings; no status page beside it.
+    await tester.pumpAndSettle();
     expect(find.text('console ${controller.consoleUri}'), findsOneWidget);
     expect(find.text('有 3 件事需要你'), findsNothing);
   });
@@ -140,8 +149,7 @@ void main() {
     expect(find.text('FULI 没有运行'), findsOneWidget);
     expect(find.text('打开控制台'), findsNothing);
     await tester.tap(find.text('启动 FULI'));
-    await tester.pump();
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.text('console ${controller.consoleUri}'), findsOneWidget);
   });
 }

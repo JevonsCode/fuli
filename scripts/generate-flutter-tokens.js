@@ -40,6 +40,13 @@ function colourLiteral(value) {
   return rgb ? argb(alphaOf(Number(rgb[4])), rgb.slice(1, 4).map(Number)) : null
 }
 
+// "rgb(var(--shadow-rgb) / 8%)" → the shadow ink at that alpha.
+function inkColour(value, ink) {
+  const match = /^rgb\(var\(--shadow-rgb\) \/ (\d+)%\)$/.exec(value)
+  if (!match) throw new Error(`expected rgb(var(--shadow-rgb) / n%), got ${value}`)
+  return argb(alphaOf(Number(match[1])), ink)
+}
+
 // "0 6px 20px rgb(var(--shadow-rgb) / 7%), …" → BoxShadows on the shadow ink.
 function shadowLayers(value, ink) {
   return value.split(/,(?![^(]*\))/).map((layer) => {
@@ -62,6 +69,8 @@ export function generate({ base = readFileSync(BASE_CSS, 'utf8'), semantic = rea
   const colours = pick(meaning, '--color-')
     .map(({ name, value }) => [camel(name.replace('--color-', '--')), colourLiteral(value)])
     .filter(([, colour]) => colour)
+  const meant = (name) => meaning.find((entry) => entry.name === name).value
+  const dockBlur = /blur\(([^)]+)\)/.exec(meant('--filter-dock'))[1]
   const ease = /cubic-bezier\(([^)]+)\)/.exec(scale.find(({ name }) => name === '--motion-ease').value)[1]
     .split(',').map((part) => dartNumber(Number(part)))
 
@@ -94,6 +103,13 @@ ${constants('--radius-', (value) => dartNumber(px(value))).join('\n')}
 abstract final class FuliShadow {
 ${pick(scale, '--shadow-').map(({ name, value }) =>
     `  static const ${camel(name.replace('--shadow-', '--'))} = [\n    ${shadowLayers(value, ink).join(',\n    ')},\n  ];`).join('\n')}
+}
+
+// The dock's frosted glass: every floating or pinned bar takes it.
+abstract final class FuliGlass {
+  static const surface = ${colourLiteral(meant('--surface-dock'))};
+  static const edge = ${inkColour(meant('--edge-dock'), ink)};
+  static const blur = ${dartNumber(px(dockBlur))};
 }
 
 abstract final class FuliMotion {
