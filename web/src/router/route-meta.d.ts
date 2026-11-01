@@ -6,9 +6,6 @@ declare module 'vue-router' {
     /** Catalog key (or plain text) for the shell's H1 and the browser title. */
     title?: string
     description?: string
-    /** Rebuilt pages: the wide work canvas, the readable content column, or
-     *  the narrower form column; a rule may choose by the route's params. */
-    layout?: import('@/layouts/page-layout').PageLayoutRule
     /** A page about one record (an Agent's profile): the H1 is its name alone,
      *  with no section tabs beside it; the page offers its own way back. */
     detail?: boolean

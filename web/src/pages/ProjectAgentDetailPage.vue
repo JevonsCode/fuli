@@ -287,7 +287,7 @@ async function cleanup(person: ProjectAgentRecord) {
 
 <template>
   <section ref="pageRoot" class="view project-agent-manage" :aria-label="title">
-    <div class="@container mx-auto grid w-full max-w-(--layout-max) gap-4">
+    <div class="@container grid w-full gap-4">
       <BackLink class="agent-profile-back" :to="collectionPath" :from="openedFromCollection">{{ t('shell.sections.orchestrate') }}</BackLink>
 
       <GrowthLoading v-if="pageLoading" :label="!store.state ? t('common.status.loadingConsole') : t('projectAgents.loading')" />

@@ -331,16 +331,16 @@ onBeforeUnmount(() => reading?.abort())
 
 .data-format-content {
   width: 100%;
-  max-width: var(--layout-max);
   display: grid;
   gap: 16px;
-  margin: 0 auto;
 }
 
 .data-format-lede,
 .data-format-restore,
 .data-format-presence,
 .data-format-external {
+  /* Prose keeps a reading measure; the page itself has the full width. */
+  max-width: var(--measure);
   margin: 0;
   color: var(--color-muted);
   font-size: 14px;

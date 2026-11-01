@@ -26,8 +26,8 @@ import AppDock from './AppDock.vue'
 import WidgetSlot from '@/widgets/WidgetSlot.vue'
 import SectionTabs from './SectionTabs.vue'
 import { activeDestination, activeSection, navDestinations } from './nav-destinations'
-import { pageLayout } from './page-layout'
 import { pageTitle } from './page-title'
+import { measureScrollbarSize } from './scrollbar-size'
 
 // The console frame (client redesign, 2026-11-01): a top bar with the brand,
 // the page's one H1, the active destination's sections and the top-right
@@ -60,9 +60,6 @@ const titleInPage = computed(() => pageTitle.value.path === route.path && pageTi
 const title = computed(() => recordTitle.value || (destination.value && destination.value.sections.length > 1 && section.value && !route.meta.detail
   ? t(`shell.destinations.${destination.value.key}`)
   : routeMetaText(route.meta.title, 'routes.overview.title')))
-// Rebuilt pages share one centred width; the top bar lines its title up with
-// it. A form page centres its fields at the narrower form measure inside it.
-const layout = computed(() => pageLayout(route))
 // A detail page names its record alone; the destination's tabs would read as
 // tabs of that record. The rail still marks where it belongs.
 const sectionTabs = computed(() => route.meta.detail ? [] : destination.value?.sections ?? [])
@@ -87,6 +84,7 @@ function refreshConsole() {
   if (!attention.loading) void attention.refresh()
 }
 onMounted(() => {
+  measureScrollbarSize()
   if (store.runtimeStatus === 'idle') void store.refresh()
   attentionTimer = setInterval(refreshAttention, 30000)
   document.addEventListener('visibilitychange', refreshAttention)
@@ -141,18 +139,16 @@ watchEffect(() => {
         </div>
       </div>
     </header>
-    <main class="app-main" :data-layout="layout">
+    <main class="app-main">
       <NavigationRecovery />
       <div v-if="store.feedback" class="app-feedback-row">
-        <div class="app-feedback-inner">
-          <UiNotice class="feedback-message" :tone="store.feedback.tone">
-            {{ store.feedback.message }}
-            <template #actions>
-              <CopyFixPrompt v-if="store.feedback.tone === 'error'" :what="store.feedback.message" />
-              <UiIconButton icon="close" size="sm" :label="t('common.actions.close')" @click="store.clearFeedback" />
-            </template>
-          </UiNotice>
-        </div>
+        <UiNotice class="feedback-message" :tone="store.feedback.tone">
+          {{ store.feedback.message }}
+          <template #actions>
+            <CopyFixPrompt v-if="store.feedback.tone === 'error'" :what="store.feedback.message" />
+            <UiIconButton icon="close" size="sm" :label="t('common.actions.close')" @click="store.clearFeedback" />
+          </template>
+        </UiNotice>
       </div>
       <RouterView v-slot="{ Component }"><component :is="Component" /></RouterView>
       <GlossaryLayer />
@@ -176,8 +172,10 @@ watchEffect(() => {
 .app-main :deep(.view) { padding-bottom: var(--dock-clearance); }
 .app-main :deep(.view:not(:last-child)) { padding-bottom: 0; }
 /* The top bar is its own layer above the page, so what it opens (the doctor's panel) floats over the page's cards instead of under them. */
-.app-topbar { position: relative; z-index: var(--z-popover); flex: 0 0 auto; padding: 12px var(--page-gutter) 8px; }
-.app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; max-width: var(--canvas-max); min-height: 44px; margin-inline: auto; }
+/* Every page has the workbench's width (tokens.css --page-inline); the top bar and the feedback line keep the
+   page's edges, adding the room the page's scrollbar takes on the right. */
+.app-topbar { position: relative; z-index: var(--z-popover); flex: 0 0 auto; padding: 12px calc(var(--page-inline) + var(--scrollbar-size)) 8px var(--page-inline); }
+.app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-height: 44px; }
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .app-wordmark { display: block; width: auto; height: 15px; user-select: none; }
 .app-runtime { display: inline-flex; align-items: center; gap: 6px; --runtime: var(--status-error); }
@@ -199,13 +197,8 @@ watchEffect(() => {
 .app-round.is-full { color: var(--color-ink); }
 .app-round :deep(.tray-papers) { transform-box: fill-box; animation: tray-papers-in var(--motion-enter); }
 @keyframes tray-papers-in { from { opacity: 0; transform: translateY(-5px); } }
-.app-feedback-row { flex: 0 0 auto; padding: 0 var(--page-gutter) 8px; }
-/* Canvas and form pages: the top bar and feedback line up with the page's
-   centred column. A long record name takes at most two lines. */
-.app-main[data-layout] { --layout-max: var(--canvas-max); }
-.app-main[data-layout="form"] { --layout-max: var(--form-measure); }
-.app-main[data-layout] .app-feedback-row { overflow: hidden; scrollbar-gutter: stable; }
-.app-main[data-layout] .app-feedback-inner { max-width: var(--canvas-max); margin-inline: auto; }
+.app-feedback-row { flex: 0 0 auto; padding: 0 calc(var(--page-inline) + var(--scrollbar-size)) 8px var(--page-inline); }
+/* A long record name takes at most two lines. */
 .app-title.is-screen-reader-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .app-title:not(.is-screen-reader-only) { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 @media (min-width: 721px) {

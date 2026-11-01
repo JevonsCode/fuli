@@ -19,7 +19,7 @@ defineProps<{ item: KnowledgeItemSummary & { basis_review?: BasisReview | null }
 
 <template>
   <Card as="section" class="gap-3 px-5" data-item-summary :aria-label="item.title">
-    <p v-if="item.content.trim() !== heading?.trim()" class="m-0 text-base leading-relaxed whitespace-pre-wrap break-words"
+    <p v-if="item.content.trim() !== heading?.trim()" class="m-0 max-w-(--measure) text-base leading-relaxed whitespace-pre-wrap break-words"
       data-item-content>{{ item.content }}</p>
     <div class="flex flex-wrap gap-1.5">
       <Badge v-if="versionStatus(item) !== 'current'" :variant="versionTone(versionStatus(item))" data-item-status>

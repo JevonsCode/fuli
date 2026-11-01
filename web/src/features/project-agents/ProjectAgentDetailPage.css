@@ -1,5 +1,4 @@
 /* One Agent's management page under 编排 (pages/ProjectAgentDetailPage.vue). */
-.project-agent-manage { scrollbar-gutter: stable; }
 .project-agents-state { min-height: 200px; display: grid; place-content: center; justify-items: center; gap: 8px; color: var(--color-muted); font-size: 14px; text-align: center; }
 .project-agents-state p { max-width: 52ch; margin: 0; line-height: 1.6; }
 .project-agents-state.is-error { color: var(--color-danger); }

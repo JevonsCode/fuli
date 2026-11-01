@@ -113,8 +113,8 @@ onBeforeUnmount(() => debounced.cancel())
 </script>
 
 <template>
-  <section class="view [scrollbar-gutter:stable]">
-    <div class="@container mx-auto flex w-full max-w-(--layout-max) flex-col gap-4" data-tag-vocabulary>
+  <section class="view">
+    <div class="@container flex w-full flex-col gap-4" data-tag-vocabulary>
       <Tabs v-model="tab">
         <TabsList :aria-label="t('knowledgeTags.tabs.label')">
           <TabsTrigger value="vocabulary" data-tag-tab="vocabulary">{{ t('knowledgeTags.tabs.vocabulary') }}</TabsTrigger>

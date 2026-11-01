@@ -82,7 +82,7 @@ function escape() {
 <style scoped>
 .app-dock {
   /* Left-aligned with the page canvas, which centres on very wide screens. */
-  position: fixed; bottom: 20px; left: max(var(--page-gutter), calc((100vw - var(--canvas-max)) / 2)); z-index: var(--z-nav);
+  position: fixed; bottom: 20px; left: var(--page-inline); z-index: var(--z-nav);
   padding: 5px; border: 1px solid var(--edge-dock); border-radius: var(--radius-pill);
   box-shadow: var(--shadow-glass);
 }

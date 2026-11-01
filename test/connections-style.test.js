@@ -5,25 +5,17 @@ import test from 'node:test';
 const connectionStyles = readFileSync('web/src/styles/connections.css', 'utf8');
 const styles = `${readFileSync('web/styles.css', 'utf8')}\n${connectionStyles}`;
 
-test('connection sections are cards on the form column and keep accessible help links', () => {
+test('connection sections are cards on the page width and keep accessible help links', () => {
   const page = readFileSync('web/src/pages/ConnectionsPage.vue', 'utf8');
-  // D-03: each section is a shared Card in the one form column; no hand-made dividers.
+  // D-03: each section is a shared Card; no hand-made dividers.
   assert.match(page, /<Card as="section" class="external-knowledge-section"/);
   assert.match(page, /<ConflictPolicyCard v-if="personalProjects.length" \/>/);
   const conflictCard = readFileSync('web/src/features/connections/ConflictPolicyCard.vue', 'utf8');
   assert.match(conflictCard, /<Card as="section" class="conflict-policy-section"/);
-  // rec#38: the page reads the shell's width; the route puts it in the form column.
-  assert.match(page, /max-w-\(--layout-max\)/);
-  assert.doesNotMatch(page, /--(canvas|column|form)-max/);
-  const routes = readFileSync('web/src/router/index.ts', 'utf8');
-  assert.match(routes, /path: '\/connections',[\s\S]*?layout: 'form',/);
-  const shell = readFileSync('web/src/layouts/AppShell.vue', 'utf8');
-  // Every page kind is centred at the one width (Jevons 10-27) and the top bar
-  // keeps it; only a form's content reads at the narrower form measure.
-  assert.match(shell, /\.app-main\[data-layout\] \{ --layout-max: var\(--canvas-max\); \}/);
-  assert.match(shell, /\.app-main\[data-layout="form"\] \{ --layout-max: var\(--form-measure\); \}/);
-  assert.match(shell, /\.app-main\[data-layout\] \.app-feedback-inner \{ max-width: var\(--canvas-max\);/);
-  assert.doesNotMatch(shell, /--(column|form)-max/);
+  // Every page keeps the workbench's width (Jevons 11-01): the page sets no width of its
+  // own, and on a wide window the two service cards sit side by side instead.
+  assert.doesNotMatch(page, /max-w-|--(canvas|layout|column|form)-max|--form-measure/);
+  assert.match(page, /class="service-connection-grid page-columns"/);
   assert.doesNotMatch(styles, /\.external-knowledge-section, \.conflict-policy-section/);
   const helpRule = styles.match(/\.section-help-link\s*\{(?<body>[^}]*)\}/);
 

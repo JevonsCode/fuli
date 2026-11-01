@@ -234,9 +234,8 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
 </template>
 
 <style scoped>
-.flas-view { scrollbar-gutter: stable; }
-/* One readable column, like a settings list: wide screens centre it instead of stretching rows. */
-.flas { display: flex; flex-direction: column; gap: 28px; width: 100%; max-width: 1120px; margin-inline: auto; }
+/* Inset grouped lists on the page's full width: a wider window shows more of each FLA's current work. */
+.flas { display: flex; flex-direction: column; gap: 28px; width: 100%; }
 .flas-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
 .flas-search {
   display: flex; flex: 0 1 360px; align-items: center; gap: 8px; min-width: 200px; height: 36px; padding: 0 14px;

@@ -7,8 +7,8 @@ import { t } from '@/i18n'
 
 <template>
   <!-- The shell's H1 says the page was not found; the card says why and offers the way home. -->
-  <section class="view [scrollbar-gutter:stable]">
-    <Card class="mx-auto w-full max-w-(--layout-max) items-start px-5" role="status">
+  <section class="view">
+    <Card class="w-full items-start px-5" role="status">
       <p class="m-0 text-sm text-muted-foreground">{{ t('common.errors.pageNotFoundCopy') }}</p>
       <Button as-child variant="outline"><RouterLink to="/">{{ t('common.actions.backHome') }}</RouterLink></Button>
     </Card>

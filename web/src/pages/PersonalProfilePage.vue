@@ -976,9 +976,9 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 </style>
 
 <style scoped>
-.vue-personal-profile { padding-bottom: calc(80px + env(safe-area-inset-bottom) + 16px); min-width: 0; scrollbar-gutter: stable; }
+.vue-personal-profile { padding-bottom: calc(80px + env(safe-area-inset-bottom) + 16px); min-width: 0; }
 /* One centred work canvas (D-03); a preference opens in a quick look over it. */
-.profile-canvas { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: var(--layout-max); margin-inline: auto; }
+.profile-canvas { display: flex; flex-direction: column; gap: 14px; width: 100%; }
 .personal-profile-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 12px; overflow: visible; border: 0; border-radius: 0; background: transparent; }
 .personal-profile-row { min-width: 0; scroll-margin-top: 80px; }
 /* The open row lifts as a card while its quick look is up (never a side bar). */

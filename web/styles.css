@@ -7,7 +7,8 @@ body { margin: 0; min-width: 320px; }
 .nav-icon { width: 18px; height: 18px; display: inline-block; background: currentColor; -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
 .nav-icon-personal-project { --icon: url('./assets/icons/personal-project.svg'); }
 .nav-icon-public-project { --icon: url('./assets/icons/public-project.svg'); }
-.view { min-width: 0; min-height: 0; flex: 1; padding: 12px var(--page-gutter) 40px; overflow: auto; }
+/* The page: the workbench's width and side margins on every route; its scrollbar always keeps its room, so the top bar's right edge (which adds --scrollbar-size) stays on the page's. */
+.view { min-width: 0; min-height: 0; flex: 1; padding: 12px var(--page-inline) 40px; overflow: auto; scrollbar-gutter: stable; }
 .view[data-view-panel=personal-profile] { display: flex; flex-direction: column; overflow: hidden; }
 .profile-aspect-mark {
   width: fit-content; border-radius: 999px; padding: 4px 8px; font-size: 12px; font-weight: 680;
@@ -23,10 +24,6 @@ body { margin: 0; min-width: 320px; }
 .subscription-row strong { display: block; font-size: 12px; }
 .subscription-row span { color: var(--color-muted); font-size: 12px; }
 
-/* The two services stack (rec#38): their cards differ in length and one opens its details. */
-.service-connection-grid {
-  display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px;
-}
 .service-connection-card {
   min-width: 0; padding: 18px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control);
   background: var(--color-surface);
@@ -114,7 +111,7 @@ body { margin: 0; min-width: 320px; }
 }
 
 .graph-view {
-  overflow: hidden; display: flex; flex-direction: column; scrollbar-gutter: stable;
+  overflow: hidden; display: flex; flex-direction: column;
 }
 .graph-view.graph-canvas-active { overflow: hidden; }
 /* One centred work canvas (D-03); an item opens in a quick look over it. */

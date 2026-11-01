@@ -273,18 +273,11 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('lines the top bar up with the canvas or form column of rebuilt pages only', async () => {
-    const { wrapper, router } = await setup('/canvas', {}, [
-      { path: '/canvas', component: { template: '<div />' }, meta: { title: '画布', layout: 'canvas' } },
-      { path: '/form', component: { template: '<div />' }, meta: { title: '表单', layout: 'form' } },
-    ])
-    expect(wrapper.get('.app-main').attributes('data-layout')).toBe('canvas')
-    await router.push('/form')
-    await flushPromises()
-    expect(wrapper.get('.app-main').attributes('data-layout')).toBe('form')
-    await router.push('/')
-    await flushPromises()
+  it('gives every page one width: the page carries no layout of its own, and the top bar keeps its edges', async () => {
+    const { wrapper } = await setup('/')
     expect(wrapper.get('.app-main').attributes('data-layout')).toBeUndefined()
+    // The page's scrollbar room was measured once and handed to the top bar and fixed controls.
+    expect(document.documentElement.style.getPropertyValue('--scrollbar-size')).toMatch(/^\d+px$/)
     wrapper.unmount()
   })
 

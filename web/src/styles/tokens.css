@@ -18,15 +18,20 @@
   --scene-space: #1b2a47; --scene-space-deep: #0b1222; --scene-space-ink: #e9efff; --scene-space-label: rgb(14 22 40 / 70%);
   --scene-ambient: #8fa2c8; --scene-sun: #fff2dc; --scene-rim: #7fb4ff; --scene-orbit: #bfd0ff; --scene-star: #dfe8ff;
   --scene-moon: #9fb4d6; --scene-moon-done: #6f7a86; --scene-glow: #ffffff;
-  /* Every page uses one centred width (Jevons, 10-27); wider screens add
-     columns inside a page instead of each page picking its own width. */
+  /* Every page has the workbench's width and side margins (Jevons 10-27,
+     11-01): full width with the page gutter, centred once the window is
+     wider than --canvas-max. A page that would read too wide adds columns
+     inside it instead of narrowing; only prose keeps --measure on the text.
+     --page-inline is that side margin on the shell's full width (the top
+     bar, the page and the floating controls all use it). */
   --canvas-max: 1888px;
-  /* A form's fields and settings rows inside that page: a label and its
-     control stay close on a wide screen. The page and its top bar keep
-     --canvas-max; only form content is centred at this measure. */
-  --form-measure: 1040px;
   --measure: 72ch;
   --page-gutter: clamp(20px, 2.4vw, 56px);
+  --page-inline: max(var(--page-gutter), calc((100% - var(--canvas-max)) / 2));
+  /* The page's scrollbar width (layouts/scrollbar-size.ts sets it; 0 with
+     overlay scrollbars): the top bar and the fixed controls leave the same
+     room on the right, so their edges stay on the page's edges. */
+  --scrollbar-size: 0px;
   /* Room a page leaves under its last line for the floating dock. */
   --dock-clearance: calc(40px + 72px);
 }

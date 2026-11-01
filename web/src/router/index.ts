@@ -1,7 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import type { PageLayoutRule } from '@/layouts/page-layout'
-
 import { updateDocumentTitle } from './meta'
 import { installNavigationRecovery } from './navigation-recovery'
 
@@ -16,32 +14,23 @@ export function legacyKnowledgeHashPath(hash: string) {
   }`
 }
 
-// rec#38: an open conversation, a project's overview and the Agents whose
-// workbench is a list read in the content column; boards, tables, graphs and
-// tile collections keep the canvas.
-const conversationLayout: PageLayoutRule = route => (route.params.threadId || route.params.chatId ? 'column' : 'canvas')
-const projectLayout: PageLayoutRule = route => (route.params.mode === 'overview' ? 'column' : 'canvas')
-// An installed employee's workbench is unknown here, so it keeps the canvas.
-const COLUMN_WORKBENCHES = new Set(['assistant', 'tonborg'])
-const workbenchLayout: PageLayoutRule = route => (COLUMN_WORKBENCHES.has(String(route.params.templateId)) ? 'column' : 'canvas')
-
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/reports/jefa', name: 'shared-jefa-report', component: () => import('@/pages/SharedJefaReportPage.vue'), meta: { publicReport: true, title: 'employees.share.title' } },
-    { path: '/roundtables/chat/:chatId', name: 'roundtable-chat', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title', layout: conversationLayout } },
-    { path: '/roundtables/:threadId?', name: 'roundtables', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title', layout: conversationLayout } },
+    { path: '/roundtables/chat/:chatId', name: 'roundtable-chat', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title' } },
+    { path: '/roundtables/:threadId?', name: 'roundtables', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title' } },
     {
       path: '/',
       name: 'overview',
       component: () => import('@/pages/OverviewPage.vue'),
-      meta: { title: 'routes.overview.title', layout: 'column' },
+      meta: { title: 'routes.overview.title' },
     },
     {
       path: '/preferences',
       name: 'personal-profile',
       component: () => import('@/pages/PersonalProfilePage.vue'),
-      meta: { title: 'routes.preferences.title', layout: 'column' },
+      meta: { title: 'routes.preferences.title' },
     },
     {
       path: '/personal/:spaceId/projects/:projectId/:mode/:itemKind/:itemId',
@@ -49,7 +38,6 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
-        layout: projectLayout,
       },
     },
     {
@@ -58,7 +46,6 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
-        layout: projectLayout,
         description: 'routes.personalProjects.description',
       },
     },
@@ -68,7 +55,6 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
-        layout: projectLayout,
         description: 'routes.personalProjects.description',
       },
     },
@@ -78,33 +64,32 @@ export const router = createRouter({
       component: () => import('@/pages/PersonalProjectsPage.vue'),
       meta: {
         title: 'routes.personalProjects.title',
-        layout: projectLayout,
       },
     },
     {
       path: '/organize',
       name: 'knowledge-organizer',
       component: () => import('@/pages/KnowledgeOrganizerPage.vue'),
-      meta: { title: 'routes.organizer.title', layout: 'canvas' },
+      meta: { title: 'routes.organizer.title' },
     },
     {
       path: '/project-agents',
       name: 'project-agents',
       component: () => import('@/features/flas/FlasPage.vue'),
-      meta: { title: 'routes.projectAgents.title', layout: 'canvas' },
+      meta: { title: 'routes.projectAgents.title' },
     },
-    { path: '/agents/:spaceId/:agentId', name: 'agent-profile', component: () => import('@/pages/AgentProfilePage.vue'), meta: { title: 'agentProfiles.profile', layout: 'column', detail: true } },
-    { path: '/project-agents/occupations', name: 'occupations', component: () => import('@/pages/OccupationsPage.vue'), meta: { title: 'occupations.title', layout: 'canvas' } },
-    { path: '/project-agents/services', name: 'agent-services', component: () => import('@/pages/AgentServicesPage.vue'), meta: { title: 'agentServices.title', layout: 'canvas' } },
-    { path: '/project-agents/apps', name: 'agent-apps', component: () => import('@/features/agent-apps/AgentAppsPage.vue'), meta: { title: 'agentApps.title', layout: 'canvas' } },
-    { path: '/project-agents/apps/:appId', name: 'agent-app', component: () => import('@/features/agent-apps/AppViewerPage.vue'), meta: { title: 'agentApps.title', layout: 'canvas', detail: true } },
-    { path: '/project-agents/manage', name: 'agent-management', component: () => import('@/pages/ProjectAgentsPage.vue'), meta: { title: 'shell.sections.orchestrate', layout: 'canvas' } },
-    { path: '/project-agents/manage/:spaceId/:agentId', name: 'agent-management-detail', component: () => import('@/pages/ProjectAgentDetailPage.vue'), meta: { title: 'projectAgents.pageTitle', layout: 'column', detail: true } },
+    { path: '/agents/:spaceId/:agentId', name: 'agent-profile', component: () => import('@/pages/AgentProfilePage.vue'), meta: { title: 'agentProfiles.profile', detail: true } },
+    { path: '/project-agents/occupations', name: 'occupations', component: () => import('@/pages/OccupationsPage.vue'), meta: { title: 'occupations.title' } },
+    { path: '/project-agents/services', name: 'agent-services', component: () => import('@/pages/AgentServicesPage.vue'), meta: { title: 'agentServices.title' } },
+    { path: '/project-agents/apps', name: 'agent-apps', component: () => import('@/features/agent-apps/AgentAppsPage.vue'), meta: { title: 'agentApps.title' } },
+    { path: '/project-agents/apps/:appId', name: 'agent-app', component: () => import('@/features/agent-apps/AppViewerPage.vue'), meta: { title: 'agentApps.title', detail: true } },
+    { path: '/project-agents/manage', name: 'agent-management', component: () => import('@/pages/ProjectAgentsPage.vue'), meta: { title: 'shell.sections.orchestrate' } },
+    { path: '/project-agents/manage/:spaceId/:agentId', name: 'agent-management-detail', component: () => import('@/pages/ProjectAgentDetailPage.vue'), meta: { title: 'projectAgents.pageTitle', detail: true } },
     {
       path: '/employees/:templateId',
       name: 'employee-workbench',
       component: () => import('@/pages/EmployeeWorkbenchPage.vue'),
-      meta: { title: 'routes.employeeWorkbench.title', layout: workbenchLayout, detail: true },
+      meta: { title: 'routes.employeeWorkbench.title', detail: true },
     },
     {
       path: '/public-projects',
@@ -113,14 +98,13 @@ export const router = createRouter({
       meta: {
         title: 'routes.publicProjects.title',
         description: 'routes.publicProjects.description',
-        layout: 'column',
       },
     },
     {
       path: '/knowledge',
       name: 'knowledge-default',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title', layout: 'canvas' },
+      meta: { title: 'routes.knowledge.title' },
     },
     // rec#20: a turn receipt's links. Static segments outrank the knowledge
     // workspace's parameters, so these never open a workspace view.
@@ -128,7 +112,7 @@ export const router = createRouter({
       path: '/knowledge/item/:spaceId/:itemKind(entity|relationship)/:itemId',
       name: 'knowledge-item-edit',
       component: () => import('@/pages/KnowledgeItemEditPage.vue'),
-      meta: { title: 'routes.knowledgeItem.title', layout: 'form', detail: true },
+      meta: { title: 'routes.knowledgeItem.title', detail: true },
     },
     {
       // rec#5 C6: one host session's records in the active space, short
@@ -137,7 +121,7 @@ export const router = createRouter({
       path: '/s/:sessionId',
       name: 'session-records',
       component: () => import('@/pages/SessionRecordsPage.vue'),
-      meta: { title: 'routes.sessionRecords.title', layout: 'column', detail: true },
+      meta: { title: 'routes.sessionRecords.title', detail: true },
     },
     {
       // rec#20 part 2: an Agent's link to move what the session held in its
@@ -147,7 +131,7 @@ export const router = createRouter({
       path: '/s/:sessionId/migrate',
       name: 'session-migration',
       component: () => import('@/features/session-migration/SessionMigrationPage.vue'),
-      meta: { title: 'routes.sessionMigration.title', layout: 'form', detail: true },
+      meta: { title: 'routes.sessionMigration.title', detail: true },
     },
     {
       // rec#11 D-07 part 2: the tag vocabulary, its review queue and the
@@ -156,37 +140,37 @@ export const router = createRouter({
       path: '/tags',
       name: 'tags',
       component: () => import('@/features/knowledge-tags/TagVocabularyPage.vue'),
-      meta: { title: 'routes.tags.title', layout: 'canvas' },
+      meta: { title: 'routes.tags.title' },
     },
     {
       path: '/knowledge/turn/:spaceId',
       name: 'knowledge-turn-receipt',
       component: () => import('@/pages/KnowledgeTurnReceiptPage.vue'),
-      meta: { title: 'routes.knowledgeTurn.title', layout: 'form', detail: true },
+      meta: { title: 'routes.knowledgeTurn.title', detail: true },
     },
     {
       path: '/knowledge/:scope/:spaceId/:projectId/:mode/:itemKind/:itemId',
       name: 'project-knowledge-item',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title', layout: 'canvas' },
+      meta: { title: 'routes.knowledge.title' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:mode/:itemKind/:itemId',
       name: 'knowledge-item',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title', layout: 'canvas' },
+      meta: { title: 'routes.knowledge.title' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:projectId/:mode',
       name: 'project-knowledge',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title', layout: 'canvas' },
+      meta: { title: 'routes.knowledge.title' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:mode',
       name: 'knowledge',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title', layout: 'canvas' },
+      meta: { title: 'routes.knowledge.title' },
     },
     {
       path: '/inbox',
@@ -194,7 +178,6 @@ export const router = createRouter({
       component: () => import('@/pages/InboxPage.vue'),
       meta: {
         title: 'attention.title',
-        layout: 'canvas',
       },
     },
     { path: '/review', redirect: '/public-projects' },
@@ -205,7 +188,6 @@ export const router = createRouter({
       meta: {
         title: 'routes.connections.title',
         description: 'routes.connections.description',
-        layout: 'form',
       },
     },
     {
@@ -214,7 +196,6 @@ export const router = createRouter({
       component: () => import('@/pages/SettingsPage.vue'),
       meta: {
         title: 'routes.settings.title',
-        layout: 'form',
         saveBar: true,
       },
     },
@@ -224,8 +205,6 @@ export const router = createRouter({
       component: () => import('@/pages/ModelSettingsPage.vue'),
       meta: {
         title: 'modelSettings.title',
-        // rec#38: one centred column of grouped lists, like the other settings pages.
-        layout: 'form',
         detail: true,
       },
     },
@@ -235,7 +214,6 @@ export const router = createRouter({
       component: () => import('@/pages/DataFormatPage.vue'),
       meta: {
         title: 'dataFormat.title',
-        layout: 'form',
         detail: true,
       },
     },
@@ -244,7 +222,7 @@ export const router = createRouter({
       path: '/capture-change/:previewId',
       name: 'capture-change',
       component: () => import('@/features/capture/CaptureChangePage.vue'),
-      meta: { title: 'capture.confirm.title', layout: 'form', detail: true },
+      meta: { title: 'capture.confirm.title', detail: true },
     },
     {
       path: '/about',
@@ -252,14 +230,13 @@ export const router = createRouter({
       component: () => import('@/pages/AboutPage.vue'),
       meta: {
         title: 'routes.about.title',
-        layout: 'form',
       },
     },
     {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('@/pages/NotFoundPage.vue'),
-      meta: { title: 'common.errors.pageNotFound', layout: 'form' },
+      meta: { title: 'common.errors.pageNotFound' },
     },
   ],
   scrollBehavior: (to, from, savedPosition) => savedPosition

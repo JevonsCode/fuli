@@ -497,9 +497,9 @@ function required(value: string, label: string) {
 </script>
 
 <template>
-  <section class="view connections-view [scrollbar-gutter:stable]">
-    <div class="mx-auto flex w-full max-w-(--layout-max) flex-col gap-4">
-    <div class="service-connection-grid" role="group" :aria-label="t('pages.connections.statusAria')">
+  <section class="view connections-view">
+    <div class="flex w-full flex-col gap-4">
+    <div class="service-connection-grid page-columns" role="group" :aria-label="t('pages.connections.statusAria')">
       <article class="service-connection-card" :data-status="personalReady ? 'ready' : 'error'">
         <header>
           <span class="service-connection-icon local" aria-hidden="true"><span class="nav-icon nav-icon-personal-project" /></span>
