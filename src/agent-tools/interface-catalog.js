@@ -135,6 +135,12 @@ const UI_MUTATION_PARITY = Object.freeze([
   local('POST /api/agent-apps/:appId/delete-code', 'Deleting an Agent app\'s code and pages is a local user decision; its data is kept.'),
   local('POST /api/agent-apps/:appId/data-deletion', 'Only the local user starts deleting an Agent app\'s data, which first offers an export.'),
   local('POST /api/agent-apps/:appId/delete-data', 'Permanently deleting an Agent app\'s data needs a second explicit confirmation from the local user.'),
+  local('POST /api/agent-apps/:appId/start', 'Starting an Agent app from the console is the local person\'s action on this computer; the run gate still refuses a version not confirmed at a terminal.'),
+  local('POST /api/agent-apps/:appId/stop', 'Stopping an Agent app from the console is the local person\'s action on this computer.'),
+  local('POST /api/agent-apps/:appId/confirm', 'Opening a terminal window for the typed app-name confirmation of an approval or rollback is the local person\'s button; the person answers in that window, and no Agent tool opens it.'),
+  local('POST /api/agent-apps/:appId/export', 'Exporting an Agent app\'s data into a new folder on this computer is the local person\'s action.'),
+  local('POST /api/agent-apps/:appId/reveal-export', 'Showing an export folder in the file manager is the local person\'s action on this computer.'),
+  local('POST /api/agent-apps/:appId/restart','Restarting an Agent app from the console is the local person\'s action on this computer; the run gate decides the start again.'),
 ]);
 
 export function agentInterfaceCatalog() {

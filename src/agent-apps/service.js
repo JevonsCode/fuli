@@ -9,6 +9,7 @@ import { fuliHostTools } from './host-tools/fuli-tools.js';
 import { createAppInstances } from './instances.js';
 import { createAppOperations } from './operations.js';
 import { createOwnerLeases } from './owner-lease.js';
+import { createAppPages } from './pages.js';
 import { createAppRemoval } from './removal.js';
 import { createTrustedRunner } from './trusted-runner.js';
 import { AgentAppStore } from './store.js';
@@ -25,7 +26,7 @@ export function agentAppRoot(runtimeConfigPath) {
 // The Agent app port. Agents reach submit/list/read through their FULI tools;
 // approve, disable, rollback, deletion and export belong to the local user's
 // CLI and HTTP routes; start, stop, authorizeCall and callTool are the app
-// runner and App Host (rec#7 PR②). resolveOwner is absent where no Agent can submit (the CLI).
+// runner and App Host (rec#7 PR②); pageFile serves a page to the console frame. resolveOwner is absent where no Agent can submit (the CLI).
 export function createAgentAppService(options) {
   return agentAppServiceOver(agentAppContext(options));
 }
@@ -38,6 +39,7 @@ export function agentAppServiceOver(context) {
     ...createAppVersions(context),
     ...createAppRemoval(context),
     ...createAppViews(context),
+    ...createAppPages(context),
     start: context.instances.start,
     stop: context.instances.stop,
     authorizeCall: host.authorizeCall,

@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
+import { handleAgentAppPageRequest } from './http/agent-app-page-router.js';
 import { handleApiRequest } from './http/api-router.js';
 import { mapHttpError } from './http/error-mapping.js';
 import { isCrossSiteNavigation, localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';
@@ -342,6 +343,9 @@ async function handleRequest({
   lanAuthorities,
   lanAccessToken
 }) {
+  // A page app's own files answer under their own, narrower policy: the page
+  // is a sandboxed opaque origin that the console policy would refuse.
+  if (await handleAgentAppPageRequest({ request, response, app, authority })) return;
   if (rejectRequestOutsidePolicy({
     request,
     response,
