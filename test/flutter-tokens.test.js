@@ -9,13 +9,14 @@ test('the desktop client tokens match the console theme', () => {
     'web/src/styles/theme changed: run `node scripts/generate-flutter-tokens.js`');
 });
 
-test('tokens carry the console colours, scales and shadows', () => {
+test('tokens carry the console colours, scales, shadows and the dock glass', () => {
   const dart = generate({
     base: ':root {\n  --text-body: 14px;\n  --weight-medium: 500;\n  --leading-prose: 1.6;\n  --space-4: 16px;\n'
       + '  --control-height: 36px;\n  --radius-card: 12px;\n  --shadow-md: 0 6px 20px rgb(var(--shadow-rgb) / 7%);\n'
       + '  --motion-fast: 140ms;\n  --motion-ease: cubic-bezier(.2, .8, .2, 1);\n}',
     semantic: ':root {\n  --color-accent: #0f6b55; /* brand */\n  --color-overlay: rgb(24 28 26 / 32%);\n'
-      + '  --color-focus: var(--color-accent);\n  --shadow-rgb: 27 31 29;\n}\n@media all { :root[data-theme="dark"] { --color-accent: #2fb38f; } }',
+      + '  --color-focus: var(--color-accent);\n  --shadow-rgb: 27 31 29;\n  --surface-dock: rgb(250 250 248 / 78%);\n'
+      + '  --filter-dock: blur(30px) saturate(190%);\n  --edge-dock: rgb(var(--shadow-rgb) / 8%);\n}\n@media all { :root[data-theme="dark"] { --color-accent: #2fb38f; } }',
   });
   assert.match(dart, /static const accent = Color\(0xFF0F6B55\);/);
   assert.match(dart, /static const overlay = Color\(0x52181C1A\);/);
@@ -24,5 +25,6 @@ test('tokens carry the console colours, scales and shadows', () => {
   assert.match(dart, /static const weightMedium = FontWeight\.w500;/);
   assert.match(dart, /static const radiusCard = 12\.0;/);
   assert.match(dart, /BoxShadow\(color: Color\(0x121B1F1D\), offset: Offset\(0\.0, 6\.0\), blurRadius: 20\.0\)/);
+  assert.match(dart, /static const surface = Color\(0xC7FAFAF8\);\n  static const edge = Color\(0x141B1F1D\);\n  static const blur = 30\.0;/);
   assert.match(dart, /static const ease = Cubic\(0\.2, 0\.8, 0\.2, 1\.0\);/);
 });
