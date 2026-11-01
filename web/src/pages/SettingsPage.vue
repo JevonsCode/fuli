@@ -749,7 +749,6 @@ function checkFields(): ValidatedField[] {
 .settings-search-note, .settings-search-empty { margin: 0; color: var(--color-muted); font-size: 13px; }
 .settings-form { display: grid; min-width: 0; gap: var(--space-4); }
 .settings-fields { display: grid; min-width: 0; border: 0; margin: 0; padding: 0; }
-.settings-panel { display: grid; gap: var(--space-4); }
 /* While searching every tab shows; panels other than the active one follow it. */
 .settings-tabs[data-searching] .settings-panel + .settings-panel { margin-top: var(--space-4); }
 

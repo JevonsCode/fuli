@@ -1,11 +1,19 @@
 /*
  * Every page keeps the workbench's width (Jevons 11-01). Cards that would
  * stretch across it sit side by side instead: two columns at most, one below
- * twice the minimum (and on phones). Each card keeps its own height; a card
- * marked .page-columns-wide spans both columns.
+ * twice the minimum (and on phones). Cards pack like a masonry, read down the
+ * left column then the right, so a short card leaves no gap under it. CSS
+ * columns rather than grid masonry, which Chromium/WebView2 has not shipped.
+ * A card marked .page-columns-wide spans both columns.
+ *
+ * Cards are spaced by a top margin on every card after the first: the
+ * browser drops it at the top of a column, so columns start level. A wide
+ * card carries the gap below itself instead, so the cards after it start
+ * level whether or not the browser keeps a margin next to a spanning card.
  */
-.page-columns {
-  display: grid; gap: var(--space-4); align-items: start;
-  grid-template-columns: repeat(auto-fill, minmax(max(min(100%, 520px), calc((100% - var(--space-4)) / 2)), 1fr));
-}
-.page-columns > .page-columns-wide { grid-column: 1 / -1; }
+.page-columns { columns: 2 520px; column-gap: var(--space-4); }
+.page-columns > * { break-inside: avoid; }
+.page-columns > * + * { margin-block-start: var(--space-4); }
+.page-columns > .page-columns-wide { column-span: all; }
+.page-columns > .page-columns-wide:not(:last-child) { margin-block-end: var(--space-4); }
+.page-columns > .page-columns-wide + * { margin-block-start: 0; }
