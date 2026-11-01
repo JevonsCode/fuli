@@ -15,6 +15,7 @@ import CopyFixPrompt from '@/features/problem/CopyFixPrompt.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
+import { useRoundtableLive } from '@/features/roundtables/roundtable-live'
 import { currentLocale, t } from '@/i18n'
 import { fuliWordmarkUrl } from '@/lib/brand'
 import { vWindowDrag } from '@/lib/desktop-client'
@@ -48,6 +49,9 @@ const settingsActive = computed(() => destination.value?.key === 'settings')
 // The dock stays open on the workbench and folds to the current destination
 // elsewhere. A page outside the dock (settings) has nothing to fold to, so the
 // dock stays open there instead of shrinking to an empty capsule.
+// The 圆桌 icon animates while an Agent is replying in one of its conversations.
+const roundtableLive = useRoundtableLive(activeSpaceId)
+const liveDockKey = computed(() => roundtableLive.value ? 'chat' : null)
 const dockFolded = computed(() => destination.value?.placement === 'dock' && destination.value.key !== 'constellation')
 const runtimeReady = computed(() => store.runtimeStatus === 'ready')
 // A page about one record names itself (an Agent's real name). Otherwise,
@@ -163,7 +167,7 @@ watchEffect(() => {
       <CaptureOnboardingDialog />
     </main>
     <WidgetSlot place="shell.aboveDock" />
-    <AppDock :destinations="dockDestinations" :active-key="destination?.key" :space-id="activeSpaceId" :folded="dockFolded" />
+    <AppDock :destinations="dockDestinations" :active-key="destination?.key" :live-key="liveDockKey" :space-id="activeSpaceId" :folded="dockFolded" />
   </div>
   </MotionConfig>
 </template>
