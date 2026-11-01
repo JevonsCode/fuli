@@ -4,6 +4,13 @@ export const ICONS = {
   constellation: '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8" stroke-dasharray="2 3"/><circle cx="19" cy="7" r="1.6"/><circle cx="5" cy="16" r="1.2"/>',
   agents: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M16 14.2c2.4.2 4 1.7 4.5 4.3"/>',
   chat: '<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4A2.5 2.5 0 0 1 4 13.5z"/>',
+  // 圆桌 from above: the table and six seats around it (Jevons 11-02). Each seat
+  // carries its turn (--seat) so the dock can pulse them in sequence while live.
+  roundtable: '<circle cx="12" cy="12" r="4.2"/><g class="roundtable-seats"><circle style="--seat:0" cx="12" cy="3.6" r="1.5"/><circle style="--seat:1" cx="19.3" cy="7.8" r="1.5"/><circle style="--seat:2" cx="19.3" cy="16.2" r="1.5"/><circle style="--seat:3" cx="12" cy="20.4" r="1.5"/><circle style="--seat:4" cx="4.7" cy="16.2" r="1.5"/><circle style="--seat:5" cx="4.7" cy="7.8" r="1.5"/></g>',
+  // 即时对话 wakes the Agent now; 留言板 waits on a pinned note until it next works.
+  instant: '<path d="M13 3 5 13.5h6.5L11 21l8-10.5h-6.5z"/>',
+  board: '<path d="M6 4.5h12A1.5 1.5 0 0 1 19.5 6v8.5L14 20H6a1.5 1.5 0 0 1-1.5-1.5V6A1.5 1.5 0 0 1 6 4.5z"/><path d="M19.5 14.5H15.5A1.5 1.5 0 0 0 14 16v4"/><path d="M8.5 9h7M8.5 12.5h4"/>',
+  sidebar: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/>',
   project: '<circle cx="12" cy="12" r="5"/><ellipse cx="12" cy="12" rx="10" ry="3.6" transform="rotate(-20 12 12)"/>',
   memory: '<path d="M12 3 3 7.5 12 12l9-4.5z"/><path d="m3 12 9 4.5 9-4.5"/><path d="m3 16.5 9 4.5 9-4.5"/>',
   // Lucide's `settings` gear (ISC License, credited with `check` below); the old rayed circle

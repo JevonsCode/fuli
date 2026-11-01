@@ -1,4 +1,4 @@
-import type { RoundtableMessage, RoundtablePerson, RoundtableThread } from './roundtable-api'
+import type { RoundtableMessage, RoundtablePerson, RoundtableThread, RoundtableThreadSummary } from './roundtable-api'
 
 /** Statuses after which an ask will not be answered by this delivery. */
 const SETTLED = new Set(['answered', 'failed', 'cancelled', 'expired', 'unknown'])
@@ -110,3 +110,14 @@ export function postRecipients(thread: Pick<RoundtableThread, 'messages' | 'subs
 export function chatRoomName(room: { title: string | null; members: { name: string | null; address: string }[] }) {
   return room.title?.trim() || room.members.map(member => member.name ?? member.address).join(' · ')
 }
+
+/** How a conversation in the list delivers a post: it wakes the Agent now, or waits on the board for its next work. */
+export type ConversationDelivery = 'instant' | 'board'
+
+/**
+ * The person's own conversation delivers as its subscribers do. A thread only
+ * Agents wrote is instant (message_agent wakes the recipient), and so is an
+ * Agent chat room (agent_chat wakes its members).
+ */
+export const threadDelivery = (thread: Pick<RoundtableThreadSummary, 'mode'>): ConversationDelivery =>
+  thread.mode === 'board' ? 'board' : 'instant'
