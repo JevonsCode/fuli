@@ -21,7 +21,7 @@ import {
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 
-// 模型与用量 (rec#8, rec#38): one centred column of grouped lists. Each
+// 模型与用量 (rec#8, rec#38): grouped lists on the page width. Each
 // built-in Agent is one row (name, state, model, one summary line) that opens
 // its settings and change history in place at full row width; editing is a centred form. Then
 // what Astro, Bole and Jefa suggested with their model and what Tonborg left
@@ -246,8 +246,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .model-settings-view { padding-top: clamp(16px, 3vw, 32px); padding-bottom: 96px; color: var(--color-ink); }
-/* One centred column; sections keep one rhythm (rec#38). */
-.model-settings-column { display: grid; gap: var(--space-8); width: 100%; max-width: var(--layout-max); margin-inline: auto; }
+/* Sections keep one rhythm (rec#38). */
+.model-settings-column { display: grid; gap: var(--space-8); width: 100%; }
 /* The back link stays its own width; align-self does that while the column lays out as a flex column around a loading (styles/vue.css). */
 .model-settings-column > :first-child { justify-self: start; align-self: start; margin-bottom: calc(var(--space-4) - var(--space-8)); }
 .model-role-list { min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); }

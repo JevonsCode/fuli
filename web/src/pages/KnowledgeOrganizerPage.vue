@@ -435,7 +435,6 @@ async function openReplacement(item: KnowledgeItem) {
    its header sticks to the top of the page (no scroll box inside the page). */
 .knowledge-organizer {
   padding-bottom: 20px;
-  scrollbar-gutter: stable;
 }
 
 /* One centred work canvas (D-03); an item opens in a quick look over it. */
@@ -444,8 +443,6 @@ async function openReplacement(item: KnowledgeItem) {
   flex-direction: column;
   gap: 12px;
   width: 100%;
-  max-width: var(--layout-max);
-  margin-inline: auto;
 }
 
 .organizer-search { flex: 1 1 260px; min-width: 200px; }

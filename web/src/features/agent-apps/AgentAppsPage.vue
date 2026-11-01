@@ -109,7 +109,7 @@ function changed() { void load() }
 </template>
 
 <style scoped>
-.apps { display: flex; flex-direction: column; gap: 28px; width: 100%; max-width: 1120px; margin-inline: auto; }
+.apps { display: flex; flex-direction: column; gap: 28px; width: 100%; }
 .apps-bar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-height: 36px; }
 .apps-count { margin-right: auto; color: var(--color-muted); font-size: var(--text-control); font-variant-numeric: tabular-nums; }
 .apps-empty { display: grid; justify-items: center; gap: 10px; margin: 0; padding: 48px 16px; border-radius: var(--radius-card); color: var(--color-muted); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border); text-align: center; }

@@ -7,5 +7,5 @@
 @media (max-width: 920px) {
   body { min-width: 0; }
 
-  .view { padding: 16px 20px 24px; }
+  .view { padding-block: 16px 24px; }
 }

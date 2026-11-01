@@ -54,7 +54,7 @@ onBeforeUnmount(() => { clearTimeout(timer); document.removeEventListener('point
 <style scoped>
 /* A row of capsules just above the dock, left-aligned with it like the pins. */
 .team-islands {
-  position: fixed; bottom: calc(20px + 58px + 10px); left: max(var(--page-gutter), calc((100vw - var(--canvas-max)) / 2)); z-index: var(--z-nav);
+  position: fixed; bottom: calc(20px + 58px + 10px); left: var(--page-inline); z-index: var(--z-nav);
   display: flex; align-items: flex-end; gap: 10px; max-width: calc(100vw - 2 * var(--page-gutter));
 }
 /* While one is open the others step aside (gone from the row, not from the page's reading order). */

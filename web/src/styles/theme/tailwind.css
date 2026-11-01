@@ -32,7 +32,7 @@
 @source "../../pages/SettingsPage.vue";
 /* Memory pages on the D-03 canvas: the knowledge quick look. */
 @source "../../features/knowledge/KnowledgePeek.vue";
-/* rec#20: a turn receipt's item quick edit and full list, on the form column. */
+/* rec#20: a turn receipt's item quick edit and full list. */
 @source "../../pages/KnowledgeItemEditPage.vue";
 @source "../../pages/KnowledgeTurnReceiptPage.vue";
 @source "../../features/knowledge-quick-edit";

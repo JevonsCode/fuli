@@ -383,7 +383,7 @@ function checkFields(): ValidatedField[] {
 
 <template>
   <section class="view settings-view" :aria-label="t('settings.aria')">
-    <div ref="searchRoot" class="settings-content mx-auto grid w-full max-w-(--layout-max) gap-4">
+    <div ref="searchRoot" class="settings-content grid w-full gap-4">
       <GrowthLoading v-if="loading && !form" :label="t('settings.loading')" />
       <Tabs v-if="form" v-model="activeTab" :unmount-on-hide="false" class="settings-tabs gap-4" :data-searching="searching || undefined">
         <div class="settings-tabbar flex flex-wrap items-end gap-x-4 gap-y-2 border-b">
@@ -405,7 +405,7 @@ function checkFields(): ValidatedField[] {
           @submit.prevent="autoSave.changed('choice')" @input.capture="noteTyping">
           <fieldset class="settings-fields" :disabled="applying">
             <!-- Memory and access -->
-            <TabsContent value="memory" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="memory">
+            <TabsContent value="memory" :force-mount="searching || undefined" class="settings-panel page-columns" data-settings-tab="memory">
               <Card as="section" class="settings-card behavior-card" aria-labelledby="settings-capture-title">
                 <CardHeader><CardTitle id="settings-capture-title" as="h2">{{ t('settings.groups.capture') }}</CardTitle></CardHeader>
                 <div class="setting-list">
@@ -475,8 +475,8 @@ function checkFields(): ValidatedField[] {
             </TabsContent>
 
             <!-- Clients -->
-            <TabsContent value="clients" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="clients">
-              <ClientConnectionSettings />
+            <TabsContent value="clients" :force-mount="searching || undefined" class="settings-panel page-columns" data-settings-tab="clients">
+              <ClientConnectionSettings class="page-columns-wide" />
               <ClientLinksSettings />
               <Card as="section" class="settings-card settings-advanced-card" aria-labelledby="settings-clients-advanced-title">
                 <CardHeader><CardTitle id="settings-clients-advanced-title" as="h2">{{ t('settings.groups.advanced') }}</CardTitle></CardHeader>
@@ -552,7 +552,7 @@ function checkFields(): ValidatedField[] {
             </TabsContent>
 
             <!-- Network -->
-            <TabsContent value="network" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="network">
+            <TabsContent value="network" :force-mount="searching || undefined" class="settings-panel page-columns" data-settings-tab="network">
               <Card as="section" class="settings-card" aria-labelledby="settings-lan-title">
                 <CardHeader><CardTitle id="settings-lan-title" as="h2">{{ t('settings.groups.lan') }}</CardTitle></CardHeader>
                 <div class="setting-list">
@@ -599,7 +599,7 @@ function checkFields(): ValidatedField[] {
             </TabsContent>
 
             <!-- System -->
-            <TabsContent value="system" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="system">
+            <TabsContent value="system" :force-mount="searching || undefined" class="settings-panel page-columns" data-settings-tab="system">
               <Card as="section" class="settings-card" aria-labelledby="settings-interface-title">
                 <CardHeader><CardTitle id="settings-interface-title" as="h2">{{ t('settings.groups.interface') }}</CardTitle></CardHeader>
                 <div class="setting-list">

@@ -303,7 +303,7 @@ async function confirmDelete() {
 <style scoped>
 /* The page is the one scroll container; the list grows with its rows. */
 .agent-services-view { padding-bottom: 16px; }
-.services { display: flex; flex-direction: column; gap: 28px; width: 100%; max-width: 1120px; margin-inline: auto; }
+.services { display: flex; flex-direction: column; gap: 28px; width: 100%; }
 .services-bar { display: flex; align-items: center; gap: 12px; min-height: 36px; }
 .services-bar :deep(.services-search) { flex: 0 1 320px; margin-right: auto; }
 .services-notice { margin: 0; font-size: var(--text-control); }

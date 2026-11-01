@@ -118,7 +118,7 @@ const next = computed(() => {
 .overview-view { display: flex; overflow: hidden; padding-bottom: 20px !important; overflow-wrap: anywhere; }
 .workbench {
   display: grid; flex: 1; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px;
-  width: 100%; max-width: var(--canvas-max); min-height: 0; margin-inline: auto;
+  width: 100%; min-height: 0;
 }
 .workbench > :first-child { margin-bottom: 76px; }
 .workbench-loading { margin: auto; }

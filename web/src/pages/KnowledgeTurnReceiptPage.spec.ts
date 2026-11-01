@@ -50,7 +50,7 @@ describe('KnowledgeTurnReceiptPage', () => {
 
   it('receipt links resolve to their own pages, never to a knowledge workspace view', () => {
     expect(appRouter.resolve('/knowledge/item/space/entity/abc').name).toBe('knowledge-item-edit')
-    expect(appRouter.resolve('/knowledge/item/space/relationship/abc').meta.layout).toBe('form')
+    expect(appRouter.resolve('/knowledge/item/space/relationship/abc').meta.detail).toBe(true)
     expect(appRouter.resolve('/knowledge/turn/space').name).toBe('knowledge-turn-receipt')
     expect(appRouter.resolve('/knowledge/personal/space/directory/entity/abc').name).toBe('knowledge-item')
     expect(appRouter.resolve('/knowledge/personal/space/project/directory').name).toBe('project-knowledge')

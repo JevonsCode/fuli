@@ -26,8 +26,8 @@ import AppDock from './AppDock.vue'
 import WidgetSlot from '@/widgets/WidgetSlot.vue'
 import SectionTabs from './SectionTabs.vue'
 import { activeDestination, activeSection, navDestinations } from './nav-destinations'
-import { pageLayout } from './page-layout'
 import { pageTitle } from './page-title'
+import { measureScrollbarSize } from './scrollbar-size'
 
 // The console frame (client redesign, 2026-11-01): a top bar with the brand,
 // the page's one H1, the active destination's sections and the top-right
@@ -60,9 +60,6 @@ const titleInPage = computed(() => pageTitle.value.path === route.path && pageTi
 const title = computed(() => recordTitle.value || (destination.value && destination.value.sections.length > 1 && section.value && !route.meta.detail
   ? t(`shell.destinations.${destination.value.key}`)
   : routeMetaText(route.meta.title, 'routes.overview.title')))
-// Rebuilt pages share one centred width; the top bar lines its title up with
-// it. A form page centres its fields at the narrower form measure inside it.
-const layout = computed(() => pageLayout(route))
 // A detail page names its record alone; the destination's tabs would read as
 // tabs of that record. The rail still marks where it belongs.
 const sectionTabs = computed(() => route.meta.detail ? [] : destination.value?.sections ?? [])
@@ -87,6 +84,7 @@ function refreshConsole() {
   if (!attention.loading) void attention.refresh()
 }
 onMounted(() => {
+  measureScrollbarSize()
   if (store.runtimeStatus === 'idle') void store.refresh()
   attentionTimer = setInterval(refreshAttention, 30000)
   document.addEventListener('visibilitychange', refreshAttention)
@@ -112,12 +110,16 @@ watchEffect(() => {
       <div class="app-topbar-inner">
         <div class="app-brand">
           <BrandEasterEgg compact />
-          <img class="app-wordmark" :src="fuliWordmarkUrl(currentLocale())" :alt="t('shell.brand')" draggable="false" />
-          <!-- The service dot says ready on its own; its words show only when the service is not ready. -->
-          <span class="app-runtime" :class="{ 'is-ready': runtimeReady }" role="status"
-            :title="`${t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')} · v${FULI_VERSION}`" data-runtime>
-            <span class="app-runtime-dot" aria-hidden="true" />
-            <span class="app-runtime-text" :class="{ 'is-visible': !runtimeReady }">{{ t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline') }}</span>
+          <!-- The official wordmark (复利 in Chinese, FULI in English), centred on the mark as in the
+               brand lockup; the service dot sits on its baseline. -->
+          <span class="app-brand-word">
+            <img class="app-wordmark" :src="fuliWordmarkUrl(currentLocale())" :alt="t('shell.brand')" draggable="false" data-wordmark />
+            <!-- The service dot says ready on its own; its words show only when the service is not ready. -->
+            <span class="app-runtime" :class="{ 'is-ready': runtimeReady }" role="status"
+              :title="`${t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')} · v${FULI_VERSION}`" data-runtime>
+              <span class="app-runtime-dot" aria-hidden="true" />
+              <span class="app-runtime-text" :class="{ 'is-visible': !runtimeReady }">{{ t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline') }}</span>
+            </span>
           </span>
         </div>
         <!-- Only a record's own name is shown; a destination is already named by the dock
@@ -141,18 +143,16 @@ watchEffect(() => {
         </div>
       </div>
     </header>
-    <main class="app-main" :data-layout="layout">
+    <main class="app-main">
       <NavigationRecovery />
       <div v-if="store.feedback" class="app-feedback-row">
-        <div class="app-feedback-inner">
-          <UiNotice class="feedback-message" :tone="store.feedback.tone">
-            {{ store.feedback.message }}
-            <template #actions>
-              <CopyFixPrompt v-if="store.feedback.tone === 'error'" :what="store.feedback.message" />
-              <UiIconButton icon="close" size="sm" :label="t('common.actions.close')" @click="store.clearFeedback" />
-            </template>
-          </UiNotice>
-        </div>
+        <UiNotice class="feedback-message" :tone="store.feedback.tone">
+          {{ store.feedback.message }}
+          <template #actions>
+            <CopyFixPrompt v-if="store.feedback.tone === 'error'" :what="store.feedback.message" />
+            <UiIconButton icon="close" size="sm" :label="t('common.actions.close')" @click="store.clearFeedback" />
+          </template>
+        </UiNotice>
       </div>
       <RouterView v-slot="{ Component }"><component :is="Component" /></RouterView>
       <GlossaryLayer />
@@ -176,11 +176,19 @@ watchEffect(() => {
 .app-main :deep(.view) { padding-bottom: var(--dock-clearance); }
 .app-main :deep(.view:not(:last-child)) { padding-bottom: 0; }
 /* The top bar is its own layer above the page, so what it opens (the doctor's panel) floats over the page's cards instead of under them. */
-.app-topbar { position: relative; z-index: var(--z-popover); flex: 0 0 auto; padding: 12px var(--page-gutter) 8px; }
-.app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; max-width: var(--canvas-max); min-height: 44px; margin-inline: auto; }
+/* Every page has the workbench's width (tokens.css --page-inline); the top bar and the feedback line keep the
+   page's edges, adding the room the page's scrollbar takes on the right. */
+.app-topbar { position: relative; z-index: var(--z-popover); flex: 0 0 auto; padding: 12px calc(var(--page-inline) + var(--scrollbar-size)) 8px var(--page-inline); }
+.app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-height: 44px; }
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
-.app-wordmark { display: block; width: auto; height: 15px; user-select: none; }
-.app-runtime { display: inline-flex; align-items: center; gap: 6px; --runtime: var(--status-error); }
+/* The brand lockup's proportions (brand/svg/lockup): the wordmark's glyphs stand at about 0.54 of the
+   mark's art (21px for the 38px mark; the files keep 16 of 232 units of clear space around the glyphs)
+   and start about a quarter of the art to its right. The status dot and its words sit on the glyphs'
+   baseline: the row aligns the dot's bottom to the image's bottom, then lifts it by that clear space, and its
+   words share that baseline. The row keeps the wordmark's height, so the words never move the brand. */
+.app-brand-word { --wordmark-height: 21px; display: inline-flex; align-items: baseline; gap: 8px; height: var(--wordmark-height); margin-left: -3px; }
+.app-wordmark { display: block; width: auto; height: var(--wordmark-height); user-select: none; -webkit-user-drag: none; }
+.app-runtime { position: relative; bottom: calc(var(--wordmark-height) * 16 / 232); display: inline-flex; align-items: baseline; gap: 6px; --runtime: var(--status-error); }
 .app-runtime.is-ready { --runtime: var(--color-success); }
 .app-runtime-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--runtime); }
 .app-runtime-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -199,13 +207,8 @@ watchEffect(() => {
 .app-round.is-full { color: var(--color-ink); }
 .app-round :deep(.tray-papers) { transform-box: fill-box; animation: tray-papers-in var(--motion-enter); }
 @keyframes tray-papers-in { from { opacity: 0; transform: translateY(-5px); } }
-.app-feedback-row { flex: 0 0 auto; padding: 0 var(--page-gutter) 8px; }
-/* Canvas and form pages: the top bar and feedback line up with the page's
-   centred column. A long record name takes at most two lines. */
-.app-main[data-layout] { --layout-max: var(--canvas-max); }
-.app-main[data-layout="form"] { --layout-max: var(--form-measure); }
-.app-main[data-layout] .app-feedback-row { overflow: hidden; scrollbar-gutter: stable; }
-.app-main[data-layout] .app-feedback-inner { max-width: var(--canvas-max); margin-inline: auto; }
+.app-feedback-row { flex: 0 0 auto; padding: 0 calc(var(--page-inline) + var(--scrollbar-size)) 8px var(--page-inline); }
+/* A long record name takes at most two lines. */
 .app-title.is-screen-reader-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .app-title:not(.is-screen-reader-only) { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 @media (min-width: 721px) {
@@ -217,6 +220,7 @@ watchEffect(() => {
   .app-topbar-inner { min-height: 36px; }
   .app-title { font-size: 19px; }
   .app-wordmark { display: none; }
+  .app-runtime { bottom: 0; }
   /* Brand, title and actions share the first row; the section tabs take their own. */
   .app-topbar-inner > .section-tabs { order: 3; flex-basis: 100%; }
 }

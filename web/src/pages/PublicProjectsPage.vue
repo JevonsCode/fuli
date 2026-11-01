@@ -332,7 +332,7 @@ function formatDate(value?: string) {
 
 <template>
   <section ref="scroller" class="view public-projects-view">
-    <div class="@container mx-auto flex w-full max-w-(--layout-max) flex-col gap-4">
+    <div class="@container flex w-full flex-col gap-4">
       <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
         <p class="public-space-stats m-0 ml-auto flex gap-4 text-sm text-muted-foreground" :aria-label="t('pages.publicProjects.overviewAria')">
           <span><strong class="mr-1 text-foreground">{{ projects.length }}</strong>{{ t('pages.publicProjects.discoverable') }}</span>
@@ -498,7 +498,3 @@ function formatDate(value?: string) {
     </UiDialog>
   </section>
 </template>
-
-<style scoped>
-.public-projects-view { scrollbar-gutter: stable; }
-</style>

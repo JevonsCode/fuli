@@ -40,7 +40,7 @@ const emit = defineEmits<{ retry: [] }>()
    this 36px capsule sits on its middle. Right-aligned with the page canvas the
    same way the dock is left-aligned, so the two never meet. */
 .settings-save-dock {
-  position: fixed; right: max(var(--page-gutter), calc((100vw - var(--canvas-max)) / 2)); bottom: 30px; z-index: var(--z-nav);
+  position: fixed; right: calc(var(--page-inline) + var(--scrollbar-size)); bottom: 30px; z-index: var(--z-nav);
   pointer-events: none;
 }
 .settings-save-capsule {
