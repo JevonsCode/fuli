@@ -73,8 +73,9 @@ watch(activeSpaceId, id => void loadAgentLooks(id), { immediate: true })
 // The names the built-in roles go by now, for every label that names one.
 watch(activeSpaceId, id => void loadRoleNames(id), { immediate: true })
 
-// The waiting-requests badge in the top bar stays fresh while the page is visible.
+// The waiting-requests tray in the top bar stays fresh while the page is visible.
 const attention = useAgentAttention()
+const inboxLabel = computed(() => attention.total ? t('shell.attentionWaiting', { count: attention.total }) : t('shell.sections.askedYou'))
 watch(activeSpaceId, id => attention.setSpace(id), { immediate: true })
 let attentionTimer: ReturnType<typeof setInterval> | undefined
 function refreshAttention() { if (document.visibilityState === 'visible' && !attention.loading && !attention.open) void attention.refresh() }
@@ -127,10 +128,10 @@ watchEffect(() => {
           <GlossaryToggle />
           <LocaleSwitcher />
           <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" data-shell-refresh @click="refreshConsole" />
-          <RouterLink to="/inbox" class="app-round" :aria-label="attention.total ? t('shell.attentionBadge', { count: attention.total }) : t('shell.sections.askedYou')"
-            :title="t('shell.sections.askedYou')" data-shell-inbox data-term="section.askedYou">
-            <UiIcon name="tray" :size="18" />
-            <span v-if="attention.total" class="app-badge" aria-hidden="true" data-attention-badge>{{ attention.total > 9 ? '9+' : attention.total }}</span>
+          <!-- 待决策 is a tray: empty when nothing waits, with papers in it when something does. -->
+          <RouterLink to="/inbox" class="app-round" :class="{ 'is-full': attention.total }" :aria-label="inboxLabel" :title="inboxLabel"
+            :data-attention="attention.total ? 'full' : 'empty'" data-shell-inbox data-term="section.askedYou">
+            <UiIcon :name="attention.total ? 'trayFull' : 'tray'" :size="18" />
           </RouterLink>
           <RouterLink to="/settings" class="app-round" :class="{ 'is-active': settingsActive }" :aria-current="settingsActive ? 'page' : undefined"
             :aria-label="t('shell.destinations.settings')" :title="t('shell.destinations.settings')" data-destination="settings" data-term="destination.settings">
@@ -190,11 +191,10 @@ watchEffect(() => {
 }
 .app-round:hover { color: var(--color-ink); background: var(--color-surface-hover); }
 .app-round.is-active { color: var(--color-on-accent); background: var(--color-accent); }
-.app-badge {
-  position: absolute; top: 2px; right: 2px; display: grid; min-width: 16px; height: 16px; padding: 0 4px; place-items: center;
-  border-radius: var(--radius-pill); color: var(--color-on-accent); background: var(--color-accent); box-shadow: 0 0 0 2px var(--color-bg);
-  font-size: 10px; font-weight: var(--weight-strong); line-height: 1; font-variant-numeric: tabular-nums;
-}
+/* A full tray reads in ink; its papers drop in when it fills (reduced motion zeroes this in primitives.css). */
+.app-round.is-full { color: var(--color-ink); }
+.app-round :deep(.tray-papers) { transform-box: fill-box; animation: tray-papers-in var(--motion-enter); }
+@keyframes tray-papers-in { from { opacity: 0; transform: translateY(-5px); } }
 .app-feedback-row { flex: 0 0 auto; padding: 0 var(--page-gutter) 8px; }
 /* Canvas and form pages: the top bar and feedback line up with the page's
    centred column. A long record name takes at most two lines. */
