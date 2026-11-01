@@ -60,3 +60,13 @@
 .project-agent-task-card header { align-items: flex-start; }
 .project-agent-task-card header small { margin-top: 3px; }
 .project-agent-task-clear-note { display: block; overflow-wrap: anywhere; }
+
+/* The card at a glance: title and one meta line on the left, status and the action on the right, across the full width. */
+.project-agent-task-card .task-card-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.task-card-title { display: grid; min-width: 0; gap: 2px; }
+.task-card-title strong { overflow: hidden; color: var(--color-ink); font-size: 15px; font-weight: var(--weight-strong); text-overflow: ellipsis; white-space: nowrap; }
+.task-card-meta { overflow: hidden; color: var(--color-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.task-card-side { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
+.task-card-side :deep(.task-blocker-clear) { margin: 0; }
+.project-agent-task-card .task-card-line { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
+.project-agent-task-card :deep(.task-blocker-line) { margin-top: 8px; }
