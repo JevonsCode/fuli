@@ -34,7 +34,18 @@ const surfaces = ref<Record<string, SurfaceState>>({})
 // The FLA whose menu is open. The capsule stays up while it is: the pointer and
 // focus are in the menu, outside the dock.
 const menuAgentId = ref<string | null>(null)
-const holding = computed(() => menuAgentId.value !== null)
+// A right press on a portrait holds the capsule from that moment: the menu
+// opens only on release, and the capsule must not start folding in between.
+const pressing = ref(false)
+let pressTimer: ReturnType<typeof setTimeout> | undefined
+function pressed(event: PointerEvent) {
+  if (event.button !== 2) return
+  pressing.value = true
+  clearTimeout(pressTimer)
+  // A press that opens no menu lets go on its own.
+  pressTimer = setTimeout(() => { pressing.value = false }, 1500)
+}
+const holding = computed(() => menuAgentId.value !== null || pressing.value)
 // A menu just closed under the pointer: the capsule closes too until the pointer leaves it.
 const dismissed = ref(false)
 const capsule = ref<HTMLElement | null>(null)
@@ -54,6 +65,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', notePointer, true)
   document.removeEventListener('keydown', noteKeyboard, true)
+  clearTimeout(pressTimer)
 })
 // A menu item that navigates away releases the hold even if the menu never reports closing.
 watch(() => route.fullPath, () => { menuAgentId.value = null })
@@ -82,6 +94,8 @@ function returnFocus(event: Event) {
 }
 
 async function opened(open: boolean, agent: ProjectAgentRecord) {
+  pressing.value = false
+  clearTimeout(pressTimer)
   if (open) {
     openedBy = lastInput
     menuAgentId.value = agent.agentId
@@ -111,11 +125,12 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
 <template>
   <ul v-if="spaceId && agents.length" ref="capsule" class="dock-pins" :class="{ 'is-holding': holding, 'is-dismissed': dismissed && !holding }" :aria-label="agentPinsText('navigation.title', 'pin')">
     <li v-for="(agent, index) in agents" :key="agent.agentId" :style="{ '--pin-index': index }">
-      <ContextMenu :open="menuAgentId === agent.agentId" @update:open="opened($event, agent)">
+      <!-- Not modal: a modal menu turns the page's pointer off, the capsule loses its hover and starts to fold before the menu holds it. -->
+      <ContextMenu :open="menuAgentId === agent.agentId" :modal="false" @update:open="opened($event, agent)">
         <ContextMenuTrigger as-child>
           <RouterLink class="dock-pin" :class="{ 'is-active': isActive(agent.agentId) }" :to="agentProfilePath(spaceId, agent.agentId)"
             :aria-current="isActive(agent.agentId) ? 'page' : undefined" :aria-label="`${agentDisplayName(agent)} · ${t('agentProfiles.profile')}`"
-            :data-name="agentDisplayName(agent)" :data-pinned-agent="agent.agentId" :style="agentIdentityStyle(agent.agentId)">
+            :data-name="agentDisplayName(agent)" :data-pinned-agent="agent.agentId" :style="agentIdentityStyle(agent.agentId)" @pointerdown="pressed">
             <img :src="agentAvatarUrl(agent.agentId)" alt="" />
           </RouterLink>
         </ContextMenuTrigger>
