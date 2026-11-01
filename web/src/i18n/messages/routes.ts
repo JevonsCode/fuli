@@ -55,6 +55,9 @@ export const routeMessages = {
     about: {
       title: '关于',
     },
+    howto: {
+      title: '常用操作',
+    },
     settings: {
       title: '设置',
     },
@@ -118,6 +121,9 @@ export const routeMessages = {
     },
     about: {
       title: 'About',
+    },
+    howto: {
+      title: 'How-to',
     },
     settings: {
       title: 'Settings',

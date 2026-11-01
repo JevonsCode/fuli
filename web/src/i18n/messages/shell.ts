@@ -6,7 +6,7 @@ export const shellMessages = {
       agentDirectory: '全部', orchestrate: '编排', occupations: '职业', services: '服务', apps: '应用',
       roundtables: '讨论', askedYou: '待决策', myProjects: '我的', publicProjects: '公开',
       knowledge: '知识', preferences: '偏好',organize: '知识整理', tags: '标签',
-      settings: '常规', connections: '连接', about: '关于',
+      settings: '常规', connections: '连接', about: '关于', howto: '常用操作',
     },
   },
   'en-US': {
@@ -16,7 +16,7 @@ export const shellMessages = {
       agentDirectory: 'All', orchestrate: 'Orchestrate', occupations: 'Occupations', services: 'Services', apps: 'Apps',
       roundtables: 'Discussions', askedYou: 'Decisions', myProjects: 'Mine', publicProjects: 'Public',
       knowledge: 'Knowledge', preferences: 'Preferences',organize: 'Organize', tags: 'Tags',
-      settings: 'General', connections: 'Connections', about: 'About',
+      settings: 'General', connections: 'Connections', about: 'About', howto: 'How-to',
     },
   },
 } as const

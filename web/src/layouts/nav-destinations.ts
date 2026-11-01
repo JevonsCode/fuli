@@ -40,10 +40,11 @@ export function navDestinations({ spaceId, publicProjects }: NavContext): NavDes
       { key: 'myProjects', to: projects, owns: ['/personal/'] },
       ...(publicProjects ? [{ key: 'publicProjects', to: '/public-projects', owns: ['/public-projects'] }] : []),
     ] },
-    { key: 'settings', icon: 'settings', to: '/settings', owns: ['/settings', '/connections', '/about'], placement: 'top', sections: [
+    { key: 'settings', icon: 'settings', to: '/settings', owns: ['/settings', '/connections', '/about', '/howto'], placement: 'top', sections: [
       { key: 'settings', to: '/settings', owns: ['/settings'] },
       { key: 'connections', to: '/connections', owns: ['/connections'] },
       { key: 'about', to: '/about', owns: ['/about'] },
+      { key: 'howto', to: '/howto', owns: ['/howto'] },
     ] },
   ]
 }

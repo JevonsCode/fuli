@@ -55,6 +55,8 @@ Graph labels follow zoom level. Below 0.72, retain project names and reveal othe
 
 The About page sits on the light canvas like every other page: the FULI promise, then one 我们的理念 section (each principle a headline and one sentence, two or three columns on wider screens), the label system and the open-source credits. A principle states only what the product does today. Keep the closing section visible rather than collapsible, with its official-site link.
 
+常用操作 (How-to, `/howto`) is the settings section after 关于, for new people: 这样跟 AI 说 (each move a card with its title, one line on when, the exact words with a copy button, and a small looping scene that rests on its finished picture under reduced motion), then 案例 (real cases as short timelines). The words and cases live in `web/src/features/howto/howto-content.ts`; every phrase uses only task-entry syntax (`#FLA`, `@FLG`), and `test/howto-phrasings.test.js` pastes each into the real parser.
+
 ## Widgets
 
 Movable pieces are widgets (Jevons 11-01: modular, easy to move, open to a person's own workbench later). A widget reads its own data, takes only the context its slot passes, and assumes nothing about where it sits. `web/src/widgets/registry.ts` names each widget and the slots it may sit in; `web/src/widgets/layout.ts` says which widgets each slot shows (one code default today, shaped as plain data a saved layout can replace); pages and the shell render a `WidgetSlot`. Moving a widget is a layout change. Slots today: `workbench.feed` (团队卡片), `shell.aboveDock` (悬浮岛) and `fla.overview`.

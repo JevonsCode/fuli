@@ -16,8 +16,8 @@ const taggedTerm = (group: GlossaryGroup, key: string, labelKey: string, bodyKey
 const { destinations, sections } = messages['zh-CN'].shell
 
 export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
-  // FULI's own words: an Agent, the team, a group discussion.
-  ...['fla', 'flas', 'flg'].map(key =>
+  // FULI's own words: an Agent, the team, a group discussion, a reply's receipt.
+  ...['fla', 'flas', 'flg', 'receipt'].map(key =>
     term('concept', key, `glossary.concept.${key}.label`, `glossary.concept.${key}.body`)),
   // The current person (MeLink); tagged because 我 also starts many sentences.
   taggedTerm('concept', 'me', 'common.me.name', 'glossary.concept.me'),
