@@ -4,7 +4,7 @@
 // `npx shadcn-vue@2.8.2 diff textarea`.
 // Local changes:
 // - `cn` comes from @/lib/class-names.
-// - The same FULI text-field look, focus halo, invalid and disabled states as
+// - The shared field look (../field-look.ts), invalid and disabled states as
 //   Input (see input/index.ts), with FULI's 1.6 reading line height. It still
 //   grows with its content (field-sizing-content) from a 64px minimum.
 // - Dark-mode utilities are dropped (dark mode is reserved, not offered).

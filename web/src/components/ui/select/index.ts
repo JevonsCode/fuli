@@ -4,9 +4,10 @@
 // Local changes:
 // - `cn` comes from @/lib/class-names; chevrons and the check mark are FULI's
 //   (UiIcon), not lucide.
-// - The trigger has the FULI text-field look of Input (control heights, card
-//   surface, 14px type, hover border, primary-soft focus halo, quiet disabled
-//   surface); the halo also shows while the list is open.
+// - The trigger has the shared field look (../field-look.ts, direction A):
+//   control heights, white surface with a hairline, 14px type, a small inline
+//   chevron, a darker hairline on hover and a soft neutral halo on focus and
+//   while the list is open; quiet disabled surface.
 // - FULI popover look, as DropdownMenu: card surface, hairline border, popover
 //   shadow, the control radius, --z-popover stacking instead of z-50, and a
 //   px minimum width (upstream's 8rem drifts with the 14px root).

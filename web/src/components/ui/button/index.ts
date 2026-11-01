@@ -22,9 +22,9 @@ export const buttonVariants = cva(
         default:
           "border-primary bg-primary text-primary-foreground hover:not-disabled:border-primary-hover hover:not-disabled:bg-primary-hover",
         destructive:
-          "border-border-strong bg-card text-destructive hover:not-disabled:border-destructive-soft hover:not-disabled:bg-destructive-soft",
+          "border-border bg-card text-destructive hover:not-disabled:border-destructive-soft hover:not-disabled:bg-destructive-soft",
         outline:
-          "border-border-strong bg-card text-foreground hover:not-disabled:border-input hover:not-disabled:bg-accent",
+          "border-border bg-card text-foreground hover:not-disabled:border-border-strong hover:not-disabled:bg-accent",
         secondary:
           "border-transparent bg-secondary text-secondary-foreground hover:not-disabled:bg-accent",
         ghost:

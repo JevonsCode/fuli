@@ -5,6 +5,7 @@ import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
 import { ComboboxTrigger, useForwardProps } from "reka-ui"
 import { cn } from "@/lib/class-names"
+import { FIELD_ICON_BUTTON } from "../field-look"
 
 const props = defineProps<ComboboxTriggerProps & { class?: HTMLAttributes["class"] }>()
 
@@ -17,7 +18,7 @@ const forwarded = useForwardProps(delegatedProps)
   <ComboboxTrigger
     data-slot="combobox-trigger"
     v-bind="forwarded"
-    :class="cn('', props.class)"
+    :class="cn(FIELD_ICON_BUTTON, props.class)"
   >
     <slot />
   </ComboboxTrigger>

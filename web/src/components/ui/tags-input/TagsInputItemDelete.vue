@@ -5,6 +5,7 @@ import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
 import { TagsInputItemDelete, useForwardProps } from "reka-ui"
 import { cn } from "@/lib/class-names"
+import { FIELD_ICON_BUTTON } from "../field-look"
 import UiIcon from "@/ui/UiIcon.vue"
 
 const props = defineProps<TagsInputItemDeleteProps & { class?: HTMLAttributes["class"] }>()
@@ -15,7 +16,7 @@ const forwardedProps = useForwardProps(delegatedProps)
 </script>
 
 <template>
-  <TagsInputItemDelete v-bind="forwardedProps" :class="cn('flex cursor-pointer rounded bg-transparent mr-1 text-muted-foreground hover:text-foreground', props.class)">
+  <TagsInputItemDelete v-bind="forwardedProps" :class="cn(FIELD_ICON_BUTTON, 'mr-1 rounded', props.class)">
     <slot>
       <UiIcon name="close" :size="12" />
     </slot>

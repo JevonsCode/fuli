@@ -5,6 +5,7 @@ import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
 import { TagsInputRoot, useForwardPropsEmits } from "reka-ui"
 import { cn } from "@/lib/class-names"
+import { FIELD_FOCUS_WITHIN, FIELD_LOOK } from "../field-look"
 
 const props = defineProps<TagsInputRootProps & { class?: HTMLAttributes["class"] }>()
 const emits = defineEmits<TagsInputRootEmits>()
@@ -17,8 +18,8 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 <template>
   <TagsInputRoot
     v-slot="slotProps" v-bind="forwarded" :class="cn(
-      'flex flex-wrap gap-1.5 items-center rounded-md border border-input bg-card px-2 py-1 text-sm transition-[border-color,box-shadow] outline-none',
-      'focus-within:border-ring focus-within:ring-primary-soft focus-within:ring-3',
+      FIELD_LOOK, FIELD_FOCUS_WITHIN,
+      'flex flex-wrap gap-1.5 items-center px-2 py-1 text-sm',
       'aria-invalid:ring-destructive-soft aria-invalid:border-destructive',
       props.class)"
   >
