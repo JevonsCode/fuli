@@ -16,8 +16,14 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       # The runner context is not available in job-level env, and the script wants a
-      # direct child of TEMP (not RUNNER_TEMP), so the path is set here.
-      - run: Add-Content $env:GITHUB_ENV "SMOKE_ROOT=$(Join-Path $env:TEMP 'fuli-update')"
+      # direct child of TEMP (not RUNNER_TEMP), so the path is set here. TEMP can be an
+      # 8.3 short path (C:\Users\RUNNER~1\...), which installed shortcuts never match;
+      # LOCALAPPDATA\Temp is the same folder under its long name.
+      - run: |
+          $temp = Join-Path $env:LOCALAPPDATA 'Temp'
+          Add-Content $env:GITHUB_ENV "TEMP=$temp"
+          Add-Content $env:GITHUB_ENV "TMP=$temp"
+          Add-Content $env:GITHUB_ENV "SMOKE_ROOT=$(Join-Path $temp 'fuli-update')"
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
