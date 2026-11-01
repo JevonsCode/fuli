@@ -1648,21 +1648,18 @@ namespace flutter_inappwebview_plugin
       auto scaled_x = static_cast<int>(x * scale_factor);
       auto scaled_y = static_cast<int>(y * scale_factor);
 
-      auto titleBarHeight = ((GetSystemMetrics(SM_CYCAPTION) + GetSystemMetrics(SM_CYFRAME)) * scale_factor) + GetSystemMetrics(SM_CXPADDEDBORDER);
-      auto borderWidth = (GetSystemMetrics(SM_CXBORDER) + GetSystemMetrics(SM_CXPADDEDBORDER)) * scale_factor;
-
-      RECT flutterWindowRect;
-      HWND flutterWindowHWnd = plugin->registrar->GetView()->GetNativeWindow();
-      GetWindowRect(flutterWindowHWnd, &flutterWindowRect);
-
+      // FULI patch: the parent window is a child of the Flutter view
+      // (in_app_webview_manager.cpp), so its position is the widget's offset
+      // in the view's client area and it follows the app window when it moves.
       HWND webViewHWnd;
       if (succeededOrLog(webViewController->get_ParentWindow(&webViewHWnd))) {
         ::SetWindowPos(webViewHWnd,
           nullptr,
-          static_cast<int>(flutterWindowRect.left + scaled_x - borderWidth),
-          static_cast<int>(flutterWindowRect.top + scaled_y - titleBarHeight),
+          scaled_x,
+          scaled_y,
           0, 0,
           SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
+        webViewController->NotifyParentWindowPositionChanged();
       }
     }
   }
