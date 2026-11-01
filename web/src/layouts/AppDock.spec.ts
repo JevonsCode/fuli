@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getJson } from '@/api/client'
 import { POINTER_INTENT_MS } from '@/composables/usePointerPresence'
+import { setMotionPreference } from '@/lib/motion-preference'
 import AppDock from './AppDock.vue'
 import { activeDestination, navDestinations } from './nav-destinations'
 
@@ -28,13 +29,13 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-async function setup(path: string) {
+async function setup(path: string, liveKey: string | null = null) {
   setActivePinia(createPinia())
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:any(.*)*', component: { template: '<div />' } }] })
   await router.push(path)
   const activeKey = () => activeDestination(destinations, router.currentRoute.value.path)?.key
   const wrapper = mount(AppDock, {
-    props: { destinations, activeKey: activeKey(), spaceId: SPACE, folded: true },
+    props: { destinations, activeKey: activeKey(), liveKey, spaceId: SPACE, folded: true },
     global: { plugins: [router] },
     attachTo: document.body,
   })
@@ -231,5 +232,38 @@ describe('AppDock pinned FLA menu', () => {
     expect(document.activeElement).toBe(pin.element)
     expect(capsule().classes()).not.toContain('is-dismissed')
     wrapper.unmount()
+  })
+})
+
+describe('AppDock live 圆桌', () => {
+  afterEach(() => { setMotionPreference('system') })
+  const liveLinks = (wrapper: Awaited<ReturnType<typeof setup>>['wrapper']) =>
+    wrapper.findAll('.app-dock-link.is-live').map(link => link.attributes('data-destination'))
+
+  it('draws the round table in the dock and animates it only while an Agent is replying', async () => {
+    const idle = await setup('/knowledge')
+    expect(idle.wrapper.find('[data-destination="chat"] .roundtable-seats').exists()).toBe(true)
+    expect(liveLinks(idle.wrapper)).toEqual([])
+    idle.wrapper.unmount()
+    const live = await setup('/knowledge', 'chat')
+    expect(liveLinks(live.wrapper)).toEqual(['chat'])
+    live.wrapper.unmount()
+  })
+
+  it('keeps the icon still while motion is reduced', async () => {
+    setMotionPreference('reduced')
+    const { wrapper } = await setup('/knowledge', 'chat')
+    expect(liveLinks(wrapper)).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('keeps the icon still when the system asks for reduced motion', async () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query === '(prefers-reduced-motion: reduce)', media: query,
+      addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+    try {
+      const { wrapper } = await setup('/knowledge', 'chat')
+      expect(liveLinks(wrapper)).toEqual([])
+      wrapper.unmount()
+    } finally { vi.unstubAllGlobals() }
   })
 })

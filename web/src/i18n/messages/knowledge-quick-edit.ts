@@ -99,7 +99,7 @@ export const knowledgeQuickEditMessages = {
       noRevisions: '还没有修改记录', session: '会话 {id}',
       versions: '版本', viewing: '正在看', reason: '原因：{reason}',
       releasedBases: '依据已过时，重新确认时解除 {count} 条',
-      by: { user: '你', agent: 'Agent', unknown: '来源未记录' },
+      by: { user: "@:{'common.me.name'}", agent: 'Agent', unknown: '来源未记录' },
       kinds: { human_knowledge_edit: '你在控制台修改', agent_knowledge_edit: 'Agent 修改' }, console: '控制台',
       actions: {
         confirm: '确认', update: '修改内容', invalidate: '停用', restore: '恢复', link_replacement: '关联替代',
@@ -219,7 +219,7 @@ export const knowledgeQuickEditMessages = {
       noRevisions: 'No changes yet', session: 'Session {id}',
       versions: 'Versions', viewing: 'Viewing', reason: 'Why: {reason}',
       releasedBases: '{count} outdated bases released when it was confirmed again',
-      by: { user: 'You', agent: 'Agent', unknown: 'Not recorded' },
+      by: { user: "@:{'common.me.name'}", agent: 'Agent', unknown: 'Not recorded' },
       kinds: { human_knowledge_edit: 'You edited it in the console', agent_knowledge_edit: 'Edited by an Agent' }, console: 'Console',
       actions: {
         confirm: 'Confirmed', update: 'Content changed', invalidate: 'Deactivated', restore: 'Restored',

@@ -113,6 +113,18 @@ export const projectMessages = {
       exists: '这个项目标识已被占用，请换一个名称',
       failed: '项目创建失败',
     },
+    profileAuthors: {
+      person: '我写的',
+      agent: '{agent} 写的',
+      unnamedAgent: 'AI',
+      both: '我和 {agent}',
+      you: '我',
+      weight: {
+        person: '权重 {weight}%：你写的，Agent 以它为准，不会改写',
+        both: '权重 {weight}%：你在 AI 草稿上改过，Agent 不会改写',
+        agent: '权重 {weight}%：AI 草稿，可改；Agent 会继续按理解更新',
+      },
+    },
     profileDialog: {
       materialTypes: {
         ProjectPurpose: '项目目标',
@@ -382,6 +394,18 @@ export const projectMessages = {
       nameRequired: 'Enter a project name',
       exists: 'This project ID is already taken; try another name',
       failed: 'Could not create the project',
+    },
+    profileAuthors: {
+      person: 'Written by me',
+      agent: 'Written by {agent}',
+      unnamedAgent: 'AI',
+      both: 'Me and {agent}',
+      you: 'Me',
+      weight: {
+        person: 'Weight {weight}%: written by you; Agents treat it as authoritative and never rewrite it',
+        both: 'Weight {weight}%: you edited an AI draft; Agents never rewrite it',
+        agent: 'Weight {weight}%: AI draft, editable; Agents keep updating it as they learn',
+      },
     },
     profileDialog: {
       materialTypes: {

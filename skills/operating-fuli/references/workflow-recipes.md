@@ -40,6 +40,7 @@ The following controls are deliberately local-user-only unless the current inter
 - device/runtime settings
 - the doctor's automatic repair of client connections
 - adding or removing a client described by hand (设置 › 客户端接入 › 手动接入): it writes the shared `agent-clients` extension directory on this computer; tell the person where to add it, or give them the standard MCP configuration from `fuli connect`
+- the first-run guide (「开始使用 FULI」: 一键接入 the AI clients found on this computer, 开机启动 in the Windows desktop client, then where FULI records): it opens once on a new installation; when the person wants to connect more clients or change start at login, point them to 设置 › 客户端 「打开入门引导」 (or the tray menu 「开机时启动」); no Agent tool connects clients or finishes the guide
 - human preference-conflict completion
 - preference-scope confirmation
 - batch knowledge confirmation

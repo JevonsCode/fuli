@@ -94,3 +94,30 @@ async def test_existing_legacy_project_can_be_renamed_or_archived_without_fabric
     assert project.profile.purpose is None
     assert project.profile.lifecycle == 'archived'
     assert store.runtime.driver.execute_query.call_args.kwargs['has_brief'] is False
+
+
+def test_profile_saved_before_authors_defaults_typed_fields_to_person_and_drafts_to_agent():
+    legacy = ProjectProfile(name='Legacy', purpose='Typed purpose', scope=' ', boundaries=['Local only'])
+    assert {name: record.kind for name, record in legacy.authors.items()} == {'purpose': 'person', 'boundaries': 'person'}
+    assert legacy.authors['purpose'].updated_at is None
+    draft = ProjectProfile(name='Draft', purpose='README excerpt', brief_draft={'source': 'readme'})
+    assert draft.authors['purpose'].kind == 'agent'
+
+
+def test_stored_authors_are_kept_and_an_emptied_field_drops_its_record():
+    profile = ProjectProfile(name='Sample', purpose='Agent text', authors={
+        'purpose': {'kind': 'agent', 'agent_id': 'agent-a', 'agent_name': 'Ada', 'updated_at': '2026-11-02T00:00:00Z'},
+        'scope': {'kind': 'person', 'updated_at': '2026-11-02T00:00:00Z'}})
+    assert profile.authors['purpose'].agent_name == 'Ada'
+    assert 'scope' not in profile.authors
+    with pytest.raises(ValidationError):
+        ProjectProfile(name='Sample', purpose='x', authors={'name': {'kind': 'person'}})
+    with pytest.raises(ValidationError):
+        ProjectProfile(name='Sample', purpose='x', authors={'purpose': {'kind': 'model'}})
+
+
+@pytest.mark.asyncio
+async def test_read_time_draft_is_authored_by_an_agent():
+    store = legacy_store({}, 'Track sample requests.')
+    project = await store.get_personal_project({'id': 'reader'}, 'space', 'sample')
+    assert project.profile.authors['purpose'].kind == 'agent'

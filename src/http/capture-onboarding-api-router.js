@@ -16,3 +16,11 @@ export async function handleCaptureOnboardingRequest({ request, response, url, a
   sendJson(response, 200, app.captureOnboarding.answer(await readJson(request), { surface: 'console' }));
   return true;
 }
+
+// The console's first-run guide (graphiti/first-run-guide.js): whether it is
+// open comes with /api/state; finishing or skipping it closes it for good.
+export async function handleFirstRunGuideRequest({ request, response, url, app }) {
+  if (url.pathname !== '/api/first-run-guide' || request.method !== 'POST' || !app.firstRunGuide) return false;
+  sendJson(response, 200, app.firstRunGuide.close(await readJson(request)));
+  return true;
+}

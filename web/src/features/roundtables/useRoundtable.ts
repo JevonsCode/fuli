@@ -8,6 +8,7 @@ import {
   type RoundtableChatPage, type RoundtableChatRoom, type RoundtableThread, type RoundtableThreadSummary,
 } from './roundtable-api'
 import { chatBubbles, deliveryInFlight } from './roundtable-model'
+import { reportThreads } from './roundtable-live'
 import { createReadScope, serialQueue, singleFlight, type ReadScope } from './roundtable-reads'
 
 /** What the page does around the data: focus the opened conversation, return to the list, forget the list place. */
@@ -46,6 +47,7 @@ export function useRoundtable(hooks: RoundtableHooks = {}) {
       const list = await scope.read(signal => listThreads(signal))
       if (scope !== lists) return
       threads.value = list.threads
+      reportThreads(list.threads)
       threadsState.value = 'ready'
       threadsStale.value = false
     } catch (cause) {
@@ -277,6 +279,7 @@ export function useRoundtable(hooks: RoundtableHooks = {}) {
     lists = createReadScope()
     resetDetail()
     threads.value = []
+    reportThreads([])
     chats.value = []
     localNext.value = null
     remoteNext.value = null
@@ -367,3 +370,5 @@ export function useRoundtable(hooks: RoundtableHooks = {}) {
     accessNotice, reloadAll, listLoading, empty, listsFailed, retryLists,
   }
 }
+
+export type Roundtable = ReturnType<typeof useRoundtable>

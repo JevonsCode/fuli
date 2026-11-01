@@ -4,7 +4,7 @@ import { messages, SUPPORTED_LOCALES } from '@/i18n'
 // already show, so a click on visible text finds its term in either language.
 // A tagged term is found only through its element's data-term: its label is a
 // common word (全部, 我的, 知识) that also appears where it means something else.
-export type GlossaryGroup = 'quadrant' | 'review' | 'profile' | 'work' | 'presence' | 'weight' | 'destination' | 'section' | 'memory' | 'occupation' | 'tonborg' | 'setting' | 'concept'
+export type GlossaryGroup = 'quadrant' | 'review' | 'profile' | 'work' | 'presence' | 'weight' | 'authorship' | 'destination' | 'section' | 'memory' | 'occupation' | 'tonborg' | 'setting' | 'concept'
 export interface GlossaryTerm { id: string; group: GlossaryGroup; labelKey: string; bodyKey: string; tagged?: true }
 
 const term = (group: GlossaryGroup, key: string, labelKey: string, bodyKey: string): GlossaryTerm =>
@@ -16,9 +16,11 @@ const taggedTerm = (group: GlossaryGroup, key: string, labelKey: string, bodyKey
 const { destinations, sections } = messages['zh-CN'].shell
 
 export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
-  // FULI's own words: an Agent, the team, a group discussion.
-  ...['fla', 'flas', 'flg'].map(key =>
+  // FULI's own words: an Agent, the team, a group discussion, a reply's receipt.
+  ...['fla', 'flas', 'flg', 'receipt'].map(key =>
     term('concept', key, `glossary.concept.${key}.label`, `glossary.concept.${key}.body`)),
+  // The current person (MeLink); tagged because 我 also starts many sentences.
+  taggedTerm('concept', 'me', 'common.me.name', 'glossary.concept.me'),
   ...['known_known', 'known_unknown', 'unknown_known', 'unknown_unknown'].map(key =>
     term('quadrant', key, `knowledge.domain.quadrants.${key}`, `knowledge.domain.quadrants.descriptions.${key}`)),
   ...['confirmed', 'agent_confirmed', 'ai_reviewed', 'pending'].map(key =>
@@ -37,6 +39,9 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
     term('presence', key, `glossary.presence.${key}.label`, `glossary.presence.${key}.body`)),
   ...['pending', 'agent', 'person'].map(key =>
     term('weight', key, `glossary.weight.${key}.label`, `glossary.weight.${key}.body`)),
+  // Who wrote a project profile field; the author chip carries the id.
+  ...['person', 'both', 'agent'].map(key =>
+    taggedTerm('authorship', key, `glossary.authorship.${key}.label`, `glossary.authorship.${key}.body`)),
   ...Object.keys(destinations).map(key =>
     taggedTerm('destination', key, `shell.destinations.${key}`, `glossary.destination.${key}`)),
   ...Object.keys(sections).map(key =>

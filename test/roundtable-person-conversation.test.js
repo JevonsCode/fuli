@@ -9,7 +9,7 @@ import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 // Synthetic FLAs only: the person's console messages through the real
 // roundtable, store and FULI host, with the client process faked at the wake port.
-function fixture({ clients = ['codex'], ownerGrants = true } = {}) {
+function fixture({ clients = ['codex'], ownerGrants = true, wake = null } = {}) {
   const store = createRoundtableStore();
   const woken = [];
   const grants = [];
@@ -29,7 +29,11 @@ function fixture({ clients = ['codex'], ownerGrants = true } = {}) {
   const host = createFuliRoundtableHost(app);
   if (!ownerGrants) delete host.issueOwnerDelegation;
   const service = createAgentRoundtable({ host, openStore: () => store, clientAvailable: () => true, locateCwd: () => process.cwd(),
-    wake: async input => { woken.push(input); return { body: `Reply ${woken.length}`, sessionId: `fork-session-${woken.length}` }; } });
+    wake: async input => {
+      woken.push(input);
+      if (wake) await wake(input);
+      return { body: `Reply ${woken.length}`, sessionId: `fork-session-${woken.length}` };
+    } });
   const until = async (check) => {
     for (let attempt = 0; attempt < 200; attempt += 1) {
       const value = check();
@@ -116,6 +120,23 @@ test('instant mode that cannot start a run says why and leaves the message on th
       assert.equal(f.woken.length, 0);
     } finally { await f.service.close(); }
   }
+});
+
+test('the list says how each conversation delivers and whether an FLA is answering right now', async () => {
+  let release;
+  const running = new Promise(resolve => { release = resolve; });
+  const f = fixture({ wake: () => running });
+  try {
+    const board = await f.service.ownerSend({ to: ['bo'], body: 'Board question', mode: 'board' });
+    const instant = await f.service.ownerSend({ to: ['ada'], body: 'Instant question', mode: 'instant' });
+    await f.until(() => f.woken.length === 1);
+    const summary = id => f.service.threads().threads.find(item => item.id === id);
+    assert.deepEqual([summary(board.id).mode, summary(board.id).replying], ['board', false]);
+    assert.deepEqual([summary(instant.id).mode, summary(instant.id).replying], ['instant', true]);
+    release();
+    await f.until(() => replies(f.service.thread({ threadId: instant.id })).length === 1);
+    assert.equal(summary(instant.id).replying, false);
+  } finally { release(); await f.service.close(); }
 });
 
 test('switching a thread to instant answers what is still waiting on the board', async () => {

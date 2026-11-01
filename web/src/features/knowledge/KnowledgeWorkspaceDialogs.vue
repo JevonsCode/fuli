@@ -3,19 +3,16 @@ import type { KnowledgeItem, PersonalProject } from '@/types'
 import KnowledgeProjectDialog from '@/features/projects/KnowledgeProjectDialog.vue'
 import PersonalProjectProfileDialog from '@/features/projects/PersonalProjectProfileDialog.vue'
 import PublishProjectDialog from '@/features/projects/PublishProjectDialog.vue'
-import KnowledgeConfirmDialog from './KnowledgeConfirmDialog.vue'
 import KnowledgeEditDialog from './KnowledgeEditDialog.vue'
 
 defineProps<{
   editingItem: KnowledgeItem | null
-  confirmingItem: KnowledgeItem | null
   projectActionItem: KnowledgeItem | null
   publishingProject: PersonalProject | null
   managingProject: PersonalProject | null
   managingMaterialType: string | null
   personalSpaceId: string
   editingProjectId: string | null
-  confirmingProjectId: string | null
   currentProjectId: string | null
   projects: PersonalProject[]
   replacementItems: KnowledgeItem[]
@@ -23,7 +20,6 @@ defineProps<{
 
 const emit = defineEmits<{
   'close-edit': []
-  'close-confirm': []
   'close-project-action': []
   'close-publish': []
   'close-profile': []
@@ -50,15 +46,6 @@ function profileSaved(project: PersonalProject) {
     :projects="projects"
     :replacement-items="replacementItems"
     @close="emit('close-edit')"
-    @saved="emit('refresh')"
-    @reload="emit('refresh')"
-    @access-denied="emit('access-denied')"
-  />
-  <KnowledgeConfirmDialog
-    :item="confirmingItem"
-    :personal-space-id="personalSpaceId"
-    :personal-project-id="confirmingProjectId"
-    @close="emit('close-confirm')"
     @saved="emit('refresh')"
     @reload="emit('refresh')"
     @access-denied="emit('access-denied')"

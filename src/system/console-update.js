@@ -44,14 +44,15 @@ export function consoleUpdate(dataDir, { packageRoot = PACKAGE_ROOT, platform = 
     },
     // version: the newer version found; a tray installation downloads exactly that one.
     // stopProcesses: "PID:created" of processes the last failed update named, which the person chose to stop.
-    start({ version = null, stopProcesses = [] } = {}) {
+    // channel: the update channel the version came from; an npm installation installs from it too.
+    start({ version = null, channel = 'stable', stopProcesses = [] } = {}) {
       const updateKind = kind();
       if (updateKind === 'windows-tray' && !version) throw new InvalidInputError('No newer FULI version was found to update to.');
       const named = new Set((job.read()?.blockers ?? []).map(({ pid, createdFileTime }) => pid + ':' + createdFileTime));
       if (!Array.isArray(stopProcesses) || stopProcesses.some(item => !named.has(item))) {
         throw new InvalidInputError('stopProcesses may name only processes the last update reported; reload and try again.');
       }
-      job.start(dataDir, { status: 'updating', kind: updateKind, fromVersion: FULI_VERSION,
+      job.start(dataDir, { status: 'updating', kind: updateKind, fromVersion: FULI_VERSION, channel,
         ...(updateKind === 'windows-tray' ? { targetVersion: version, stopPids: stopProcesses } : {}) },
       'The update could not start. Nothing was changed.');
       return status();
@@ -73,7 +74,7 @@ export async function runConsoleUpdate(paths, id, { update = runUpdateCommand, u
     const result = job.kind === 'windows-tray'
       ? await updateTray({ installation: installation(PACKAGE_ROOT), version: job.targetVersion, stopPids: job.stopPids,
         progress: step => record({ step }) })
-      : await update(['--yes', ...dataDirArgs], { env, write: () => {} });
+      : await update(['--yes', ...(job.channel === 'beta' ? ['--beta'] : []), ...dataDirArgs], { env, write: () => {} });
     // clients: a tray update reports whether it reconnected the connected
     // clients; an npm update fails instead when its setup does not finish.
     record({ status: result.status === 'updated' ? 'updated' : 'unchanged', version: result.version ?? null,

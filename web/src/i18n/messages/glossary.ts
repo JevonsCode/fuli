@@ -11,6 +11,7 @@ export const glossaryMessages = {
       work: '工作状态',
       presence: 'Agent 状态',
       weight: '权重',
+      authorship: '档案作者',
       destination: '导航',
       section: '页面',
       memory: '记忆',
@@ -23,6 +24,8 @@ export const glossaryMessages = {
       fla: { label: 'FLA', body: 'FuLi Agent：你在 FULI 里的一位 Agent，有名字、头像、职业和自己的记忆。它在 Claude Code、Codex 等客户端里替你干活，换个会话也接得上之前的工作。' },
       flas: { label: 'FLAs', body: '多位 FLA，也就是你的 Agent 团队。底部导航的 FLAs 页能看到每一位在做什么，悬停可以打开置顶的几位。' },
       flg: { label: 'FLG', body: 'FuLi Agents Group：在聊天里写「@FLG 问题」，邀请 2–4 位 FLA 一起讨论。可以点名，也可以让 FULI 按职业推荐，确认成员后开始。' },
+      receipt: { label: '回执', body: 'Agent 每次回复末尾的一行：这一轮由哪位 FLA 负责、记下了什么。点开链接能看到原话和记下的知识，记错了可以直接改。' },
+      me: '就是你。FULI 在记录和对话里用「我」指你自己，比如谁确认了、谁改了、谁发的消息。点「我」打开你的偏好页，先看品味。',
     },
     memory: {
       preferenceCount: { label: '偏好条数', body: '前一个数是按当前维度和范围列出的条数，后一个是全部偏好的总数（含历史）。偏好的条数没有上限。' },
@@ -74,6 +77,7 @@ export const glossaryMessages = {
       settings: 'FULI 的常规设置：记忆与访问、客户端、网络和系统。',
       connections: '本地知识库的状态、公共 Provider 和项目订阅。',
       about: 'FULI 是什么、它的核心概念，以及它用到的开源项目。',
+      howto: '新手上手：跟 AI 怎么说就能用上 FULI 的常用操作（每句都能一键复制），以及 FULI 真实用来做软件的案例。',
     },
     review: {
       confirmed: '由你或权威来源确认，Agent 会按原样使用。',
@@ -112,6 +116,11 @@ export const glossaryMessages = {
       agent: { label: 'Agent 确认权重', body: '70–95%：Agent 依据使用和证据确认，仍随使用、来源和反例变化。' },
       person: { label: '你确认', body: '100%：你亲自确认过，搜索按满权重排序；被标记待复核时减半。' },
     },
+    authorship: {
+      person: { label: '我写的', body: '100%：项目档案里这一项是你写的。Agent 以它为准，不会改写，只能请你在控制台修改。' },
+      both: { label: '我和 FLA', body: '90%：FLA 先写了草稿，你在上面改过、留下了大部分。Agent 同样不会改写。' },
+      agent: { label: 'FLA 写的', body: '50%：AI 草稿，可改。FLA 按自己的理解写，之后会继续更新；你改过之后，它不再改写。' },
+    },
   },
   'en-US': {
     toggle: 'Explain terms (or hold Alt)',
@@ -125,6 +134,7 @@ export const glossaryMessages = {
       work: 'Work status',
       presence: 'Agent status',
       weight: 'Weight',
+      authorship: 'Profile author',
       destination: 'Navigation',
       section: 'Page',
       memory: 'Memory',
@@ -137,6 +147,8 @@ export const glossaryMessages = {
       fla: { label: 'FLA', body: 'FuLi Agent: one of your Agents in FULI, with a name, portrait, occupation and memory of its own. It works for you in clients such as Claude Code and Codex, and picks up earlier work in a new session.' },
       flas: { label: 'FLAs', body: 'Several FLAs: your Agent team. The FLAs page in the dock shows what each one is doing; hover it to open the ones you pinned.' },
       flg: { label: 'FLG', body: 'FuLi Agents Group: write “@FLG question” in a chat to invite 2–4 FLAs to discuss it. Name them, or let FULI suggest some by occupation, then confirm the members to begin.' },
+      receipt: { label: 'Receipt', body: 'The line at the end of each Agent reply: which FLA owns this turn and what it recorded. Open its link to see the words and the knowledge kept, and fix anything recorded wrong.' },
+      me: 'That is you. Records and chats in FULI say “Me” for you: who confirmed, changed or sent something. Click “Me” to open your preferences, starting with taste.',
     },
     memory: {
       preferenceCount: { label: 'Preference count', body: 'The first number is how many preferences the chosen aspect and scope list; the second is how many there are in all, history included. There is no limit on how many preferences FULI keeps.' },
@@ -188,6 +200,7 @@ export const glossaryMessages = {
       settings: 'General FULI settings: memory and access, clients, network and system.',
       connections: 'The local knowledge base status, public Providers and project subscriptions.',
       about: 'What FULI is, its core ideas, and the open-source projects it builds on.',
+      howto: 'Getting started: what to say to your AI to use FULI\'s everyday moves (each one copies with a click), and real cases of FULI building software.',
     },
     review: {
       confirmed: 'Confirmed by you or an authoritative source; Agents use it as is.',
@@ -225,6 +238,11 @@ export const glossaryMessages = {
       pending: { label: 'Pending weight', body: '10–69%: rises with qualified use, distinct tasks and sources, fades when unused, drops with counter-evidence. Search ranks by it.' },
       agent: { label: 'Agent-confirmed weight', body: '70–95%: confirmed by an Agent from use and evidence; still moves with use, sources and counter-evidence.' },
       person: { label: 'Confirmed by you', body: '100%: you confirmed it yourself, so search ranks it at full weight; halved while flagged for review.' },
+    },
+    authorship: {
+      person: { label: 'Written by me', body: '100%: you wrote this project profile field. Agents treat it as authoritative and never rewrite it; only you change it in the console.' },
+      both: { label: 'Me and an FLA', body: '90%: an FLA drafted it and you edited it, keeping much of the draft. Agents never rewrite it either.' },
+      agent: { label: 'Written by an FLA', body: '50%: an AI draft, editable. The FLA writes from its own understanding and keeps updating it; once you edit it, it stops rewriting it.' },
     },
   },
 } as const

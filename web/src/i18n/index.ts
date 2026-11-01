@@ -10,6 +10,7 @@ import { knowledgeDomainMessages } from './messages/knowledge-domain'
 import { knowledgeDialogMessages } from './messages/knowledge-dialogs'
 import { knowledgeWorkspaceMessages } from './messages/knowledge-workspace'
 import { aboutMessages } from './messages/about'
+import { howtoMessages } from './messages/howto'
 import { problemMessages } from './messages/problem'
 import { pageMessages } from './messages/pages'
 import { preferenceMessages } from './messages/preferences'
@@ -42,6 +43,7 @@ import { sessionRecordsMessages } from './messages/session-records'
 import { sessionMigrationMessages } from './messages/session-migration'
 import { knowledgeTagsMessages } from './messages/knowledge-tags'
 import { captureMessages } from './messages/capture'
+import { firstRunMessages } from './messages/first-run'
 import { clientLinksMessages } from './messages/client-links'
 import { taskBlockerMessages } from './messages/task-blocker'
 import { taskReasonMessages } from './messages/task-reason'
@@ -121,6 +123,7 @@ export const messages = {
     sessionMigration: sessionMigrationMessages['zh-CN'],
     knowledgeTags: knowledgeTagsMessages['zh-CN'],
     capture: captureMessages['zh-CN'],
+    firstRun: firstRunMessages['zh-CN'],
     clientLinks: clientLinksMessages['zh-CN'],
     taskBlocker: taskBlockerMessages['zh-CN'],
     taskReason: taskReasonMessages['zh-CN'],
@@ -128,6 +131,7 @@ export const messages = {
     contextMenu: contextMenuMessages['zh-CN'],
     employees: employeeMessages['zh-CN'],
     about: aboutMessages['zh-CN'],
+    howto: howtoMessages['zh-CN'],
     problem: problemMessages['zh-CN'],
     common: commonMessages['zh-CN'],
     console: consoleMessages['zh-CN'],
@@ -172,6 +176,7 @@ export const messages = {
     sessionMigration: sessionMigrationMessages['en-US'],
     knowledgeTags: knowledgeTagsMessages['en-US'],
     capture: captureMessages['en-US'],
+    firstRun: firstRunMessages['en-US'],
     clientLinks: clientLinksMessages['en-US'],
     taskBlocker: taskBlockerMessages['en-US'],
     taskReason: taskReasonMessages['en-US'],
@@ -179,6 +184,7 @@ export const messages = {
     contextMenu: contextMenuMessages['en-US'],
     employees: employeeMessages['en-US'],
     about: aboutMessages['en-US'],
+    howto: howtoMessages['en-US'],
     problem: problemMessages['en-US'],
     common: commonMessages['en-US'],
     console: consoleMessages['en-US'],

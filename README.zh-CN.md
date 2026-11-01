@@ -481,7 +481,7 @@ Agent 上下文。
 - **项目间记忆**：用权重（有关系 / 常往来 / 密切）表示一个项目能从另一个项目取多少记忆。权重不授予权限。
 - **更省 Token**：任务入口更小，共享规则按需读取，长偏好分页读完，Stop Hook 直接收尾日常任务，省掉一次模型往返。
 - **控制台**：六个入口（工作台、Agents、对话、项目、记忆、设置），适配手机；按住 Alt / Option 点任意状态或名词就能看到解释。
-- **Windows**：安装版自带 Update-Fuli、Rollback-Fuli、Uninstall-Fuli，数据都会保留；管理页的「更新到 vX」会下载并校验发布的 Windows 安装包，一键完成同样的更新。
+- **Windows**：从发布页下载 `FULI-Setup-<版本>.exe` 双击即可为当前用户安装（不用终端、不要管理员；暂未签名，SmartScreen 会提示一次）。安装版自带 Update-Fuli、Rollback-Fuli、Uninstall-Fuli，数据都会保留；管理页的「更新到 vX」会下载并校验发布的 Windows 安装包，一键完成同样的更新。
 
 仍需与“已经证明”区分的内容：
 

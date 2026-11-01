@@ -1,23 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
-import { getJson } from '@/api/client'
 import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
-import type { ConsoleUpdateKind } from '@/features/update/model'
+import { readVersionStatus, type PackageVersionStatus } from '@/features/update/version-status'
 import { t } from '@/i18n'
 import { fuliMarkUrl } from '@/lib/brand'
 import { FULI_VERSION } from '@/version'
-
-interface PackageVersionStatus {
-  status: 'ready' | 'unavailable'
-  currentVersion: string
-  latestVersion: string | null
-  updateAvailable: boolean
-  packageUrl: string
-  checkedAt: string
-  // How the console's one-click update installs it (src/system/console-update.js).
-  updateKind?: ConsoleUpdateKind
-}
 
 // compact: the icon rail shows only the mark; the mark only pops and the effect ends on a short timer,
 // and an available update appears as a dot on the mark.
@@ -88,9 +76,7 @@ function handleBlur() {
 onMounted(() => {
   window.addEventListener('pointerdown', handleGlobalPointerDown, true)
   window.addEventListener('keydown', handleGlobalKeyDown, true)
-  void getJson<PackageVersionStatus>('/api/system/version', {
-    signal: versionRequestController.signal,
-  }).then((status) => {
+  void readVersionStatus(versionRequestController.signal).then((status) => {
     versionStatus.value = status
   }).catch(() => {
     // Version checks are advisory and must never interrupt the local console.

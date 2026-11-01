@@ -73,7 +73,8 @@ It is the tray app of the Windows package (`docs/windows-first-install.md`, 「D
   coalesced signals lose no link. A starting client takes links left while none ran (an update held
   the lock); links older than five minutes are dropped.
 - Launch at login is on for an installed FULI until 「开机时启动」 in the tray menu turns it off
-  (`windows_login_launch.dart`). The tray menu also has 「换一个端口」.
+  (`windows_login_launch.dart`); the console's first-run guide reads and sets the same choice
+  (`fuliLaunchAtLogin` in `console_webview.dart`). The tray menu also has 「换一个端口」.
 - Notifications use an app identity registered under the current user, not a Start-menu shortcut.
 
 ## On macOS

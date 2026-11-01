@@ -113,14 +113,16 @@ test('uninstall removes this installation\'s entries, the client settings and it
   const settings = 'HKCU\\Software\\Fuli\\DesktopClient';
   const identity = 'HKCU\\Software\\Classes\\AppUserModelId\\FULI';
   const slot = f.slot('a');
-  const registry = fakeReg({ [RUN + '|FULI']: login(slot), ...scheme(slot), [settings]: '', [identity]: '' });
+  const apps = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\FULI';
+  const registry = fakeReg({ [RUN + '|FULI']: login(slot), ...scheme(slot), [settings]: '', [identity]: '',
+    [apps + '|DisplayName']: 'FULI', [apps + '|InstallLocation']: f.install });
   assert.equal(await windowsDesktopClient.unregister(f.install, registry), 'removed');
-  assert.deepEqual(registry.values, {});
+  assert.deepEqual(registry.values, {}, 'the Installed apps entry of FULI-Setup.exe goes too');
 
   const elsewhere = join(f.root, 'elsewhere');
-  const foreign = fakeReg({ [RUN + '|FULI']: login(elsewhere), ...scheme(elsewhere) });
+  const foreign = fakeReg({ [RUN + '|FULI']: login(elsewhere), ...scheme(elsewhere), [apps + '|InstallLocation']: elsewhere });
   assert.equal(await windowsDesktopClient.unregister(f.install, foreign), 'removed');
-  assert.deepEqual(foreign.values, { [RUN + '|FULI']: login(elsewhere), ...scheme(elsewhere) }, 'another FULI keeps its entries');
+  assert.deepEqual(foreign.values, { [RUN + '|FULI']: login(elsewhere), ...scheme(elsewhere), [apps + '|InstallLocation']: elsewhere }, 'another FULI keeps its entries');
   assert.equal(foreign.calls.some(([verb]) => verb === 'delete'), false, 'absent keys are not deleted');
 });
 

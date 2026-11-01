@@ -26,7 +26,7 @@ export function navDestinations({ spaceId, publicProjects }: NavContext): NavDes
       // 应用: the apps FLAs built, approved and removed by the person (docs/agent-apps.md).
       { key: 'apps', to: '/project-agents/apps', owns: ['/project-agents/apps'] },
     ] },
-    { key: 'chat', icon: 'chat', to: '/roundtables', owns: ['/roundtables', '/inbox'], placement: 'dock', sections: [
+    { key: 'chat', icon: 'roundtable', to: '/roundtables', owns: ['/roundtables', '/inbox'], placement: 'dock', sections: [
       { key: 'roundtables', to: '/roundtables', owns: ['/roundtables'] },
       { key: 'askedYou', to: '/inbox', owns: ['/inbox'] },
     ] },
@@ -40,10 +40,11 @@ export function navDestinations({ spaceId, publicProjects }: NavContext): NavDes
       { key: 'myProjects', to: projects, owns: ['/personal/'] },
       ...(publicProjects ? [{ key: 'publicProjects', to: '/public-projects', owns: ['/public-projects'] }] : []),
     ] },
-    { key: 'settings', icon: 'settings', to: '/settings', owns: ['/settings', '/connections', '/about'], placement: 'top', sections: [
+    { key: 'settings', icon: 'settings', to: '/settings', owns: ['/settings', '/connections', '/about', '/howto'], placement: 'top', sections: [
       { key: 'settings', to: '/settings', owns: ['/settings'] },
       { key: 'connections', to: '/connections', owns: ['/connections'] },
       { key: 'about', to: '/about', owns: ['/about'] },
+      { key: 'howto', to: '/howto', owns: ['/howto'] },
     ] },
   ]
 }

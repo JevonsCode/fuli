@@ -49,6 +49,8 @@ export interface CaptureOnboardingState {
   capturePolicy: CapturePolicy
 }
 
+export type FirstRunGuideOutcome = 'finished' | 'skipped'
+
 export interface AgentAccessPolicy {
   enabled: boolean
   updatedAt?: string | null
@@ -65,6 +67,15 @@ export interface PersonalSpace {
   [key: string]: unknown
 }
 
+export interface ProjectFieldAuthor {
+  kind: 'person' | 'agent' | 'both'
+  agent_id?: string | null
+  agent_name?: string | null
+  updated_at?: string | null
+}
+
+export type ProjectAuthoredField = 'purpose' | 'scope' | 'technical_summary' | 'boundaries'
+
 export interface ProjectProfile {
   name: string
   purpose?: string
@@ -74,6 +85,7 @@ export interface ProjectProfile {
   lifecycle?: string
   sources?: Array<Record<string, unknown>>
   boundaries?: string[]
+  authors?: Partial<Record<ProjectAuthoredField, ProjectFieldAuthor>>
   assessment?: {
     score: number
     confirmed: string[]
@@ -716,6 +728,8 @@ export interface ConsoleState {
   subscriptions: Subscription[]
   capturePolicy?: CapturePolicy
   captureOnboarding?: { ask: boolean }
+  // The console's first-run guide: open once for a new installation until finished or skipped.
+  firstRunGuide?: { open: boolean }
   agentAccessPolicy?: AgentAccessPolicy
   recallPolicy?: RecallPolicy
   capabilities?: Partial<Record<CapabilityName, boolean>>
@@ -789,6 +803,8 @@ export interface RuntimeSettings {
   notifications: { needsPersonUrl: string }
   agentNamingStyle: string
   topicPromotion: 'auto' | 'ask'
+  // Which releases the console offers (设置 › 版本).
+  updateChannel: 'stable' | 'beta'
 }
 
 export interface SystemSettingsResult {

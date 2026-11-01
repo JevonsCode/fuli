@@ -507,7 +507,7 @@ describe('PersonalProfilePage', () => {
     expect(conflictAction?.text()).toContain('0')
   })
 
-  it('makes status totals actionable and opens confirmation for a pending preference', async () => {
+  it('makes status totals actionable and confirms a pending preference in one click', async () => {
     const graph = profileGraph()
     Object.assign(graph.nodes[0], {
       confirmation_status: 'pending',
@@ -565,10 +565,27 @@ describe('PersonalProfilePage', () => {
     expect(wrapper.get('.personal-profile-row').classes()).toContain('pending-review')
     expect(body().get('.inspector-confirm-action').text()).toBe('确认这条偏好')
 
+    // One click confirms: no second dialog, one request, and the status shown is the server's.
+    getJson.mockImplementation((url: string) =>
+      url.startsWith('/api/preference-conflicts') ? Promise.resolve([]) : Promise.resolve(profileGraph()))
     await body().get('.inspector-confirm-action').trigger('click')
+    await finishProfileLoading()
 
-    expect(wrapper.get('.knowledge-confirm-dialog').text()).toContain('确认这条偏好')
-    expect(wrapper.get('.knowledge-confirm-dialog').text()).toContain('全局品味')
+    expect(wrapper.find('.knowledge-confirm-dialog').exists()).toBe(false)
+    expect(patchJson).toHaveBeenCalledTimes(1)
+    expect(patchJson).toHaveBeenCalledWith('/api/knowledge/entity/global', expect.objectContaining({
+      personalSpaceId: 'personal-space',
+      personalProjectId: null,
+      action: 'confirm',
+      confirmationStatus: 'confirmed',
+      confirmationBasis: expect.objectContaining({
+        existenceReason: '用户明确表达了这条偏好。',
+        confirmedBy: { kind: 'user', label: '当前用户' },
+      }),
+    }))
+    expect(store.feedback).toMatchObject({ message: expect.stringMatching(/^已确认这条偏好：「.+」$/), tone: 'success', link: { to: expect.stringContaining("/knowledge/item/") } })
+    expect(body().get('.preference-context strong').text()).toBe('已确认')
+    expect(body().find('.inspector-confirm-action').exists()).toBe(false)
   })
 
   it('marks preferences whose earlier conflict was resolved by AI', async () => {

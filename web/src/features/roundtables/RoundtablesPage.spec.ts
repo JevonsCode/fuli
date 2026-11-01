@@ -17,6 +17,7 @@ vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typ
 
 import { setLocale } from '@/i18n'
 import RoundtablesPage from './RoundtablesPage.vue'
+import { useRoundtableListCollapse } from './roundtable-list-collapse'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 
 const thread = {
@@ -31,6 +32,12 @@ const detail = { id: 'thread-1', subject: thread.subject, projectId: 'app', crea
     from: { agentId: 'reviewer-1', name: 'Nova Lane', client: 'codex' }, to: { agentId: 'lead-1', name: 'Milo Reed', client: 'claude_code' } },
 ] }
 
+// jsdom has no matchMedia, so the page lays out wide unless a test narrows it.
+function narrowWindow() {
+  vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query === '(max-width: 767px)', media: query,
+    addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+}
+
 async function mountAt(path: string) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/roundtables/chat/:chatId', component: RoundtablesPage },
@@ -43,7 +50,12 @@ async function mountAt(path: string) {
 }
 
 describe('RoundtablesPage', () => {
-  beforeEach(() => { setLocale('zh-CN', { persist: false }); getJson.mockReset(); postJson.mockReset(); putJson.mockReset() })
+  beforeEach(() => {
+    setLocale('zh-CN', { persist: false }); getJson.mockReset(); postJson.mockReset(); putJson.mockReset()
+    const { collapsed } = useRoundtableListCollapse()
+    collapsed.value = false
+    localStorage.clear()
+  })
 
   it('gives each participant one stable identity colour across the participant chips and timeline', async () => {
     getJson.mockImplementation(async (url: string) => url === '/api/roundtable/threads' ? { threads: [thread] } : detail)
@@ -65,11 +77,13 @@ describe('RoundtablesPage', () => {
     getJson.mockImplementation(async (url: string) => url === '/api/roundtable/threads' ? { threads: [thread] } : detail)
     const wrapper = await mountAt('/roundtables')
     expect(wrapper.get('[data-testid="roundtable-thread"]').text()).toContain('Milo Reed · Nova Lane')
+    expect(wrapper.get('[data-roundtable-none]').text()).toBe('选择一段对话')
     await wrapper.vm.$router.push('/roundtables/thread-1')
     await flushPromises()
-    // One canvas: the open conversation replaces the list, with a way back to it.
-    expect(wrapper.find('[data-testid="roundtable-thread"]').exists()).toBe(false)
-    expect(wrapper.get('[data-breadcrumb-parent]').attributes('href')).toBe('/roundtables')
+    // A wide window keeps the list beside the open conversation, the open row marked; no back step.
+    expect(wrapper.get('[data-testid="roundtable-thread"] a').attributes('aria-current')).toBe('page')
+    expect(wrapper.find('[data-roundtable-back]').exists()).toBe(false)
+    expect(wrapper.find('[data-roundtable-none]').exists()).toBe(false)
     const timeline = wrapper.get('[data-testid="roundtable-timeline"]')
     expect(timeline.text()).toContain('Claude Code')
     expect(timeline.text()).toContain('Nova Lane 已回复')
@@ -156,25 +170,65 @@ describe('RoundtablesPage', () => {
     wrapper.unmount()
   })
 
-  it('offers a new conversation when there are none and says where Agent conversations come from', async () => {
+  it('shows how Agents start talking when there are no conversations, and offers no new conversation', async () => {
     getJson.mockImplementation(async (url: string) => url.startsWith('/api/roundtable/chats?') ? { chats: [], hasMore: false } : { threads: [] })
     const wrapper = await mountAt('/roundtables')
-    expect(wrapper.text()).toContain('还没有对话')
-    expect(wrapper.text()).toContain('message_agent')
-    expect(wrapper.get('[data-roundtable-start]').text()).toBe('新对话')
+    expect(wrapper.get('[data-roundtable-empty]').text()).toBe('还没有对话')
+    expect(wrapper.findAll('[data-roundtable-prompts]')).toHaveLength(1)
+    expect(wrapper.get('[data-roundtable-prompts]').text()).toBe('Agent 怎么开始对话')
+    expect(wrapper.text()).not.toContain('新对话')
     wrapper.unmount()
   })
 
-  it('offers one start action, in the list head, however short the list is', async () => {
-    getJson.mockImplementation(async (url: string) => url.startsWith('/api/roundtable/chats?') ? { chats: [], hasMore: false }
-      : url === '/api/roundtable/agents' ? { agents: [] } : { threads: [{ ...thread, id: 'thread-0' }, { ...thread, id: 'thread-1' }] })
-    const short = await mountAt('/roundtables')
-    // The count and the one start action share the list's head row; no tile repeats it.
-    expect(short.findAll('[data-roundtable-start]')).toHaveLength(1)
-    await short.get('[data-roundtable-list-head]').element.parentElement!.querySelector<HTMLElement>('[data-roundtable-start]')!.click()
-    await flushPromises()
-    expect(short.text()).toContain('和 FLA 对话')
-    short.unmount()
+  it('groups instant conversations and chat rooms apart from the message board', async () => {
+    const members = [{ address: 'local:lead-1', agentId: 'lead-1', name: 'Milo Reed', joinedSeq: 0 }]
+    const room = { chatId: 'room-1', kind: 'direct', title: 'Room', members, transport: 'local', createdAt: '2026-10-10T09:00:00Z', updatedAt: '2026-10-10T09:05:00Z' }
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/roundtable/chats?') ? { chats: [room], hasMore: false }
+      : { threads: [{ ...thread, id: 'board-1', subject: '留言', mode: 'board' }, { ...thread, id: 'instant-1', subject: '即时', mode: 'instant' }, { ...thread, id: 'agents-1', subject: 'Agent 之间', mode: null }] })
+    const wrapper = await mountAt('/roundtables')
+    const group = (delivery: string) => wrapper.get(`[data-roundtable-group="${delivery}"]`)
+    expect(wrapper.findAll('[data-roundtable-group]').map(item => item.attributes('data-roundtable-group'))).toEqual(['instant', 'board'])
+    expect(group('instant').get('h2').text()).toContain('即时对话')
+    expect(group('instant').findAll('[data-roundtable-key]').map(row => row.attributes('data-roundtable-key'))).toEqual(['thread:instant-1', 'thread:agents-1', 'chat:room-1'])
+    expect(group('board').get('h2').text()).toContain('留言板')
+    expect(group('board').findAll('a').map(row => row.attributes('data-delivery'))).toEqual(['board'])
+    wrapper.unmount()
+  })
+
+  it('folds the list to portraits named by their conversation, and remembers it', async () => {
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/roundtable/chats?') ? { chats: [], hasMore: false } : { threads: [thread] })
+    const wrapper = await mountAt('/roundtables')
+    const fold = wrapper.get('[data-roundtable-fold]')
+    expect(fold.attributes('aria-expanded')).toBe('true')
+    await fold.trigger('click')
+    const row = wrapper.get('[data-testid="roundtable-thread"] a')
+    expect(row.classes()).toContain('is-collapsed')
+    expect(row.attributes('aria-label')).toBe(thread.subject)
+    expect(row.attributes('title')).toBe(thread.subject)
+    expect(row.text()).toBe('')
+    expect(wrapper.get('[data-roundtable-fold]').attributes('aria-expanded')).toBe('false')
+    expect(localStorage.getItem('fuli.roundtable.listCollapsed')).toBe('1')
+    await wrapper.get('[data-roundtable-fold]').trigger('click')
+    expect(wrapper.get('[data-testid="roundtable-thread"]').text()).toContain(thread.subject)
+    expect(localStorage.getItem('fuli.roundtable.listCollapsed')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('shows list then conversation as two steps on a narrow window', async () => {
+    narrowWindow()
+    try {
+      getJson.mockImplementation(async (url: string) => url === '/api/roundtable/threads' ? { threads: [thread] }
+        : url.startsWith('/api/roundtable/chats?') ? { chats: [], hasMore: false } : detail)
+      const wrapper = await mountAt('/roundtables')
+      expect(wrapper.get('[data-roundtable-list]').attributes('style') ?? '').not.toContain('display: none')
+      expect(wrapper.find('[data-roundtable-fold]').exists()).toBe(false)
+      expect(wrapper.find('[data-roundtable-none]').exists()).toBe(false)
+      await wrapper.vm.$router.push('/roundtables/thread-1')
+      await flushPromises()
+      expect(wrapper.get('[data-roundtable-list]').attributes('style')).toContain('display: none')
+      expect(wrapper.get('[data-roundtable-back] [data-breadcrumb-parent]').attributes('href')).toBe('/roundtables')
+      wrapper.unmount()
+    } finally { vi.unstubAllGlobals() }
   })
 })
 
@@ -238,7 +292,7 @@ describe('RoundtablesPage on a phone and with paging', () => {
     const failed = wrapper.get('[data-roundtable-lists-failed]')
     expect(failed.attributes('role')).toBe('alert')
     expect(failed.findAll('button')).toHaveLength(1)
-    expect(wrapper.find('nav').exists()).toBe(false)
+    expect(wrapper.find('[data-roundtable-group]').exists()).toBe(false)
     down = false
     await failed.get('button').trigger('click')
     await flushPromises()
@@ -290,14 +344,16 @@ describe('RoundtablesPage on a phone and with paging', () => {
       { path: '/roundtables/chat/:chatId', component: RoundtablesPage },
       { path: '/roundtables/:threadId?', component: RoundtablesPage },
     ] })
+    narrowWindow()
     await router.push('/roundtables/gone')
     const wrapper = mount(RoundtablesPage, { global: { plugins: [router] }, attachTo: document.body })
     await flushPromises()
     expect(wrapper.text()).toContain('对话不存在或当前不可访问')
-    await wrapper.get('[data-breadcrumb-parent]').trigger('click')
+    await wrapper.get('[data-roundtable-back] [data-breadcrumb-parent]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/roundtables')
     wrapper.unmount()
+    vi.unstubAllGlobals()
   })
 
   it('shows an unconfirmed cleanup after a wake instead of assuming it was clean', async () => {

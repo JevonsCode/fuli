@@ -1,9 +1,13 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { afterEach, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+
+import { useConsoleStore } from '@/stores/console'
 import ClientConnectionSettings from './ClientConnectionSettings.vue'
 
 const server = { type: 'stdio', command: 'node', args: ['mcp-server.js'] }
 const configuration = { standard: { mcpServers: { fuli: server } }, vscode: { servers: { fuli: server } }, server }
+beforeEach(() => { setActivePinia(createPinia()) })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
 
 type Client = { id: string, label: string, detected: boolean, status: string, previouslyConnected: boolean,
@@ -271,5 +275,17 @@ it('adds a client by hand, shows why one was refused, and removes one FULI added
   await flushPromises()
   expect(calls.some(([url, options]) => url.endsWith('/custom-clients/acme-agent') && options?.method === 'DELETE')).toBe(true)
   expect(wrapper.find('[data-custom-client]').exists()).toBe(false)
+  wrapper.unmount()
+})
+
+it('opens the first-run guide again from 设置 › 客户端', async () => {
+  routed(() => Response.json(statusOf([{}])))
+  const wrapper = mount(ClientConnectionSettings)
+  await flushPromises()
+  const store = useConsoleStore()
+  expect(store.firstRunGuideShown).toBe(false)
+  await wrapper.get('[data-open-first-run-guide]').trigger('click')
+  expect(wrapper.get('[data-open-first-run-guide]').text()).toBe('打开入门引导')
+  expect(store.firstRunGuideShown).toBe(true)
   wrapper.unmount()
 })

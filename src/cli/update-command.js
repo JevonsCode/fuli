@@ -18,16 +18,13 @@ import {
 } from './update-installation.js';
 import { readWindowsInstallation } from '../desktop/windows-installation-context.js';
 import { readMacosNativeBundle } from '../native-runtime/macos-assets.js';
-import {
-  compareSemanticVersions,
-  parseSemanticVersion
-} from '../semantic-version.js';
+import { compareSemanticVersions } from '../semantic-version.js';
 import { confirmInTerminal, writeLine } from './terminal-io.js';
 import { platformPath } from '../system/platform-path.js';
+import { channelVersion } from '../system/package-version-checker.js';
 
 export { compareSemanticVersions } from '../semantic-version.js';
 
-const LATEST_PACKAGE = `${FULI_PACKAGE_NAME}@latest`;
 
 export async function runUpdateCommand(args = [], dependencies = {}) {
   const options = parseUpdateOptions(args);
@@ -51,8 +48,9 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
   const runInherited = dependencies.runInherited ?? spawnInherited;
   const runCaptured = dependencies.runCaptured ?? spawnCaptured;
   const fileExists = dependencies.fileExists ?? existsSync;
+  const channel = options.beta ? 'beta' : 'stable';
   const resolveLatestVersion = dependencies.resolveLatestVersion ??
-    (() => queryLatestVersion(npmCommand, runCaptured, env));
+    (() => queryLatestVersion(npmCommand, runCaptured, env, channel));
 
   write(formatUpdatePreview(options));
   const inspectInstallation = dependencies.inspectInstallation ?? inspectUpdateInstallation;
@@ -109,7 +107,7 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
   }
 
   const selectedPackage = `${FULI_PACKAGE_NAME}@${latestVersion}`;
-  write(`Installing ${selectedPackage} (npm latest)...`);
+  write(`Installing ${selectedPackage} (npm ${channel === 'beta' ? 'beta channel' : 'latest'})...`);
   const installed = runInherited(npmCommand, [
     'install',
     '--global',
@@ -175,7 +173,7 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
 export function formatUpdatePreview(options) {
   return [
     'Ready to update Fuli',
-    `npm package: ${LATEST_PACKAGE}`,
+    `npm package: ${FULI_PACKAGE_NAME}@${options.beta ? "beta channel (latest or beta, whichever is newer)" : "latest"}`,
     options.noStart
       ? 'If an upgrade is available: stop the local UI safely and keep it stopped'
       : 'If an upgrade is available: stop local services safely and restart with the new version',
@@ -219,28 +217,21 @@ function postInstallError(message, recoveryCommand) {
   ].join('\n'));
 }
 
-function queryLatestVersion(npmCommand, runCaptured, env) {
+// The newest release on the channel: npm's dist-tags, judged as the console's
+// version check judges them (package-version-checker.js).
+function queryLatestVersion(npmCommand, runCaptured, env, channel) {
   const result = runCaptured(
     npmCommand,
-    ['view', LATEST_PACKAGE, 'version', '--json'],
+    ['view', FULI_PACKAGE_NAME, 'dist-tags', '--json'],
     { env }
   );
   if (!processSucceeded(result)) {
     throw new Error([
-      `Could not check ${LATEST_PACKAGE} (${describeProcessFailure(result)}).`,
+      `Could not check the ${FULI_PACKAGE_NAME} releases (${describeProcessFailure(result)}).`,
       'Local services were not stopped, and no package was installed or changed.'
     ].join('\n'));
   }
-  const raw = String(result.stdout ?? '').trim();
-  let version = raw;
-  try {
-    const parsed = JSON.parse(raw);
-    if (typeof parsed === 'string') version = parsed;
-  } catch {
-    // npm can also return one unquoted version line.
-  }
-  parseSemanticVersion(version);
-  return version;
+  return channelVersion(JSON.parse(String(result.stdout ?? '').trim()), channel);
 }
 
 function formatSetupRecoveryCommand(args, platform, launcher) {

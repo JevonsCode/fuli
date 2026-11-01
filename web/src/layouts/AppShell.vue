@@ -11,17 +11,18 @@ import { loadRoleNames } from '@/features/agent-profile/role-names'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
 import CaptureOnboardingDialog from '@/features/capture/CaptureOnboardingDialog.vue'
 import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
-import CopyFixPrompt from '@/features/problem/CopyFixPrompt.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
+import { useRoundtableLive } from '@/features/roundtables/roundtable-live'
 import { currentLocale, t } from '@/i18n'
 import { fuliWordmarkUrl } from '@/lib/brand'
 import { vWindowDrag } from '@/lib/desktop-client'
 import { SPRING, motionConfigReduced } from '@/lib/motion'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { useConsoleStore } from '@/stores/console'
-import { UiIcon, UiIconButton, UiNotice } from '@/ui'
+import { UiIcon, UiIconButton } from '@/ui'
+import FeedbackToast from './FeedbackToast.vue'
 import { FULI_VERSION } from '@/version'
 import AppDock from './AppDock.vue'
 import WidgetSlot from '@/widgets/WidgetSlot.vue'
@@ -48,6 +49,9 @@ const settingsActive = computed(() => destination.value?.key === 'settings')
 // The dock stays open on the workbench and folds to the current destination
 // elsewhere. A page outside the dock (settings) has nothing to fold to, so the
 // dock stays open there instead of shrinking to an empty capsule.
+// The 圆桌 icon animates while an Agent is replying in one of its conversations.
+const roundtableLive = useRoundtableLive(activeSpaceId)
+const liveDockKey = computed(() => roundtableLive.value ? 'chat' : null)
 const dockFolded = computed(() => destination.value?.placement === 'dock' && destination.value.key !== 'constellation')
 const runtimeReady = computed(() => store.runtimeStatus === 'ready')
 // A page about one record names itself (an Agent's real name). Otherwise,
@@ -117,10 +121,13 @@ watchEffect(() => {
             <img class="app-wordmark" :src="fuliWordmarkUrl(currentLocale())" :alt="t('shell.brand')" draggable="false" data-wordmark />
             <!-- The service dot says ready on its own; its words show only when the service is not ready. -->
             <span class="app-runtime" :class="{ 'is-ready': runtimeReady }" role="status"
-              :title="`${t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')} · v${FULI_VERSION}`" data-runtime>
+              :title="t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')" data-runtime>
               <span class="app-runtime-dot" aria-hidden="true" />
               <span class="app-runtime-text" :class="{ 'is-visible': !runtimeReady }">{{ t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline') }}</span>
             </span>
+            <!-- The version beside the dot opens 设置 › 版本 (update channel and updates). -->
+            <RouterLink class="app-version" to="/settings?tab=version" :aria-label="t('shell.versionLink', { version: FULI_VERSION })"
+              draggable="false" data-app-version>v{{ FULI_VERSION }}</RouterLink>
           </span>
         </div>
         <!-- Only a record's own name is shown; a destination is already named by the dock
@@ -146,21 +153,13 @@ watchEffect(() => {
     </header>
     <main class="app-main">
       <NavigationRecovery />
-      <div v-if="store.feedback" class="app-feedback-row">
-        <UiNotice class="feedback-message" :tone="store.feedback.tone">
-          {{ store.feedback.message }}
-          <template #actions>
-            <CopyFixPrompt v-if="store.feedback.tone === 'error'" :what="store.feedback.message" />
-            <UiIconButton icon="close" size="sm" :label="t('common.actions.close')" @click="store.clearFeedback" />
-          </template>
-        </UiNotice>
-      </div>
+      <FeedbackToast />
       <RouterView v-slot="{ Component }"><component :is="Component" /></RouterView>
       <GlossaryLayer />
       <CaptureOnboardingDialog />
     </main>
     <WidgetSlot place="shell.aboveDock" />
-    <AppDock :destinations="dockDestinations" :active-key="destination?.key" :space-id="activeSpaceId" :folded="dockFolded" />
+    <AppDock :destinations="dockDestinations" :active-key="destination?.key" :live-key="liveDockKey" :space-id="activeSpaceId" :folded="dockFolded" />
   </div>
   </MotionConfig>
 </template>
@@ -198,6 +197,11 @@ watchEffect(() => {
 .app-wordmark { display: block; width: auto; height: var(--wordmark-height); user-select: none; -webkit-user-drag: none; }
 .app-runtime { display: inline-flex; align-items: center; gap: 6px; --runtime: var(--status-error); }
 .app-runtime.is-ready { --runtime: var(--color-success); }
+.app-version {
+  color: var(--color-muted); font-size: var(--text-meta); font-variant-numeric: tabular-nums; text-decoration: none;
+  user-select: none; border-radius: var(--radius-control, 6px);
+}
+.app-version:hover, .app-version:focus-visible { color: var(--color-ink); }
 .app-runtime-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--runtime); }
 .app-runtime-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .app-runtime-text.is-visible { position: static; width: auto; height: auto; overflow: visible; clip-path: none; color: var(--runtime); font-size: var(--text-meta); font-weight: var(--weight-medium); }
@@ -215,7 +219,6 @@ watchEffect(() => {
 .app-round.is-full { color: var(--color-ink); }
 .app-round :deep(.tray-papers) { transform-box: fill-box; animation: tray-papers-in var(--motion-enter); }
 @keyframes tray-papers-in { from { opacity: 0; transform: translateY(-5px); } }
-.app-feedback-row { flex: 0 0 auto; padding: 0 calc(var(--page-inline) + var(--scrollbar-size)) 8px var(--page-inline); }
 /* A long record name takes at most two lines. */
 .app-title.is-screen-reader-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .app-title:not(.is-screen-reader-only) { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

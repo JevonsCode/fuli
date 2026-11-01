@@ -46,6 +46,28 @@ export function connectDesktopClient(root: HTMLElement = document.documentElemen
   root.style.setProperty('--desktop-caption-end', client.captionEnd ? `${client.captionEnd + CAPTION_GAP}px` : '0px')
 }
 
+// Starting FULI when the person signs in to Windows: the client's own setting, shared with its tray menu
+// 「开机时启动」. Null where it is not offered: in a browser, on macOS, for a client that is not an
+// installed FULI, or when the client could not read or write it.
+const LOGIN_LAUNCH_HANDLER = 'fuliLaunchAtLogin'
+
+async function askLaunchAtLogin(request: { enabled?: boolean }): Promise<boolean | null> {
+  const bridge = desktopBridge()
+  if (desktopClient()?.platform !== 'windows' || !bridge) return null
+  try {
+    const answer = await bridge.callHandler(LOGIN_LAUNCH_HANDLER, request) as { available?: unknown, enabled?: unknown } | null
+    return answer?.available === true && typeof answer.enabled === 'boolean' ? answer.enabled : null
+  } catch {
+    return null
+  }
+}
+
+/** Whether FULI starts at login, or null where the desktop client does not offer it. */
+export const readLaunchAtLogin = () => askLaunchAtLogin({})
+
+/** Saves the choice; answers what the client holds afterwards, or null when it could not. */
+export const saveLaunchAtLogin = (enabled: boolean) => askLaunchAtLogin({ enabled })
+
 function askWindow(action: 'drag' | 'toggleMaximize'): void {
   void desktopBridge()?.callHandler(DESKTOP_WINDOW_HANDLER, action).catch(() => undefined)
 }

@@ -86,7 +86,7 @@ describe('knowledge quick edit model', () => {
       versionStatusLabel(status as never))).toEqual(['当前版本', '已被替代', '已过时', '依据已过时', '已停用'])
     expect(['current', 'outdated', 'basis_outdated', 'superseded', 'inactive'].map(status => versionTone(status as never)))
       .toEqual(['success', 'warning', 'warning', 'secondary', 'outline'])
-    expect([changedByLabel('user'), changedByLabel('agent'), changedByLabel(null)]).toEqual(['你', 'Agent', '来源未记录'])
+    expect([changedByLabel('user'), changedByLabel('agent'), changedByLabel(null)]).toEqual(['我', 'Agent', '来源未记录'])
   })
 
   it('rec#5 C8-3: only an outdated version without a newer one is confirmed again', () => {

@@ -12,7 +12,7 @@ Operate FULI through its structured Agent interfaces. Treat the UI and Agent too
 1. Establish the exact scope from the current task. Resolve real `personalSpaceId`, `personalProjectId`, item IDs, and versions through read tools. Never guess an identifier or infer one from a display name.
 2. Call `list_agent_interfaces` before the first mutation. Use its catalog to determine whether the UI capability is `agent` accessible or intentionally `local_user_only`.
 3. Inspect the exact input schema for the selected tool. Prefer one domain-specific tool over generic HTTP, shell, database, or browser access.
-4. Read the current record immediately before changing it. Before `upsert_personal_project`, call `list_personal_projects` with the exact `projectId` to read its full profile and check that the result is not truncated. Preserve fields the user did not ask to change.
+4. Read the current record immediately before changing it. Before `upsert_personal_project`, call `list_personal_projects` with the exact `projectId` to read its full profile and check that the result is not truncated. Preserve fields the user did not ask to change. Profile text fields a person wrote (`profile.authors` kind `person` or `both`) are never overwritten by an Agent; FULI returns them in `refused_fields`, so report them instead of retrying.
 5. Check the safety boundary below. Stop if the action needs missing user authority or is marked `local_user_only`.
 6. Execute the smallest scoped mutation. Supply `expectedRevision`, `expectedUpdatedAt`, `idempotencyKey`, or request IDs whenever the tool supports them.
 7. Re-read through the corresponding structured read tool. Report the actual resulting scope, version, status, and any partial failure.

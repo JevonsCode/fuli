@@ -10,6 +10,7 @@ describe('nav destinations', () => {
     const limited = navDestinations({ spaceId: 'personal-1', publicProjects: false })
     expect(limited.find(d => d.key === 'projects')?.sections.map(s => s.key)).toEqual(['myProjects'])
     expect(all.find(d => d.key === 'memory')?.sections.map(s => s.key)).toEqual(['knowledge', 'preferences', 'organize', 'tags'])
+    expect(all.find(d => d.key === 'settings')?.sections.map(s => s.key)).toEqual(['settings', 'connections', 'about', 'howto'])
   })
 
   it.each([
@@ -27,6 +28,7 @@ describe('nav destinations', () => {
     ['/organize', 'memory', 'organize'],
     ['/tags', 'memory', 'tags'],
     ['/about', 'settings', 'about'],
+    ['/howto', 'settings', 'howto'],
   ])('maps %s to %s / %s', (path, destination, section) => {
     const match = activeDestination(all, path)
     expect(match?.key).toBe(destination)

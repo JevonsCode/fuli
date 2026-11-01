@@ -8,8 +8,9 @@ import { handleAgentScoreCardRequest } from './agent-score-card-api-router.js';
 import { handleKnowledgeItemRequest } from './knowledge-item-api-router.js';
 import { handleSessionRecordsRequest } from './session-records-api-router.js';
 import { handleCaptureChangeRequest } from './capture-change-api-router.js';
-import { handleCaptureOnboardingRequest } from './capture-onboarding-api-router.js';
+import { handleCaptureOnboardingRequest, handleFirstRunGuideRequest } from './capture-onboarding-api-router.js';
 import { parsePersonalDraftDecision } from '../graphiti/publication-draft-input.js';
+import { PERSON_WRITER } from '../graphiti/project-profile-authors.js';
 
 export async function handleGraphApiRequest({
   request,
@@ -29,6 +30,7 @@ export async function handleGraphApiRequest({
   if (await handleSessionRecordsRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleCaptureChangeRequest({ request, response, url, app })) return true;
   if (await handleCaptureOnboardingRequest({ request, response, url, app })) return true;
+  if (await handleFirstRunGuideRequest({ request, response, url, app })) return true;
   if (url.pathname === '/api/agent-conversations/query' && request.method === 'POST') {
     sendJson(response, 200, await app.queryAgentConversations({ ...(await readJson(request)), ownerInspection: true }));
     return true;
@@ -216,7 +218,7 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/personal-projects' && request.method === 'PUT') {
-    sendJson(response, 200, await app.upsertPersonalProject(await readJson(request)));
+    sendJson(response, 200, await app.upsertPersonalProject({ ...(await readJson(request)), writer: PERSON_WRITER }));
     return true;
   }
   if (url.pathname === '/api/project-agents' && request.method === 'GET') {

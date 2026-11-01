@@ -233,6 +233,14 @@ export const router = createRouter({
       },
     },
     {
+      path: '/howto',
+      name: 'howto',
+      component: () => import('@/pages/HowtoPage.vue'),
+      meta: {
+        title: 'routes.howto.title',
+      },
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('@/pages/NotFoundPage.vue'),
