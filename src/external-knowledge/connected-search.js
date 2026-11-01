@@ -104,11 +104,18 @@ export class ConnectedKnowledgeSearch {
     };
   }
 
-  getConflictPolicy({ personalProjectId }) {
-    return this.policies.get(personalProjectId);
+  // With a project: the policy that applies to it and its source. Without:
+  // the default and the projects that chose differently.
+  getConflictPolicy({ personalProjectId } = {}) {
+    return personalProjectId === undefined || personalProjectId === null
+      ? this.policies.overview()
+      : this.policies.get(personalProjectId);
   }
 
+  // mode null removes the project's own choice; a project deleted since it
+  // chose can still be cleared.
   async updateConflictPolicy({ personalSpaceId, personalProjectId, mode }) {
+    if (mode === null) return this.policies.clear(personalProjectId);
     const projects = await this.app.listPersonalProjects({ personalSpaceId });
     if (!projects.some(({ project_id: id, id: fallback }) =>
       (id ?? fallback) === personalProjectId
@@ -116,6 +123,10 @@ export class ConnectedKnowledgeSearch {
       throw new TypeError('Conflict policy target must be an existing personal project');
     }
     return this.policies.set(personalProjectId, mode);
+  }
+
+  updateDefaultConflictPolicy({ mode }) {
+    return this.policies.setDefault(mode);
   }
 }
 

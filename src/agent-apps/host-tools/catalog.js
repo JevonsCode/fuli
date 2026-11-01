@@ -60,6 +60,7 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   delete_external_knowledge_binding: EGRESS,
   get_external_knowledge_conflict_policy: EGRESS,
   update_external_knowledge_conflict_policy: EGRESS,
+  update_default_external_knowledge_conflict_policy: EGRESS,
   search_connected_knowledge: EGRESS,
   // Federated search may pass the query to remote workspace clients.
   search_knowledge_graph: EGRESS,

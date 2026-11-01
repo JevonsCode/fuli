@@ -106,7 +106,7 @@ describe('ConnectionsPage', () => {
     wrapper.unmount()
   })
 
-  it('creates and syncs an MCP binding and persists the project conflict switch', async () => {
+  it('creates, retargets and syncs an MCP binding', async () => {
     getJson.mockImplementation((url: string) => {
       if (url === '/api/external-knowledge/connectors') {
         return Promise.resolve([
@@ -156,15 +156,11 @@ describe('ConnectionsPage', () => {
           },
         ])
       }
-      if (url.includes('/api/external-knowledge/conflict-policy')) {
-        return Promise.resolve({ personalProjectId: 'project-a', mode: 'ask_human' })
-      }
       return Promise.resolve([])
     })
     postJson.mockImplementation((url: string) => Promise.resolve(
       url.endsWith('/sync') ? { imported: 2 } : { id: 'binding-2' },
     ))
-    patchJson.mockResolvedValue({ personalProjectId: 'project-a', mode: 'agent_decide' })
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useConsoleStore()
@@ -189,11 +185,12 @@ describe('ConnectionsPage', () => {
       attachTo: document.body,
       global: {
         plugins: [pinia],
-        stubs: { ...optionSelectStubs },
+        stubs: { ...optionSelectStubs, ConflictPolicyCard: true },
       },
     })
     await flushPromises()
 
+    expect(wrapper.find('conflict-policy-card-stub').exists()).toBe(true)
     expect(wrapper.findAll('.external-binding-row')).toHaveLength(2)
     expect(wrapper.text()).toContain('2 个连接')
     expect(wrapper.get('.external-create-action').text()).toBe('添加连接')
@@ -204,9 +201,6 @@ describe('ConnectionsPage', () => {
       target: '_blank',
       rel: 'noreferrer',
     })
-    expect(wrapper.get('[data-testid="conflict-policy-help"]').attributes('href')).toBe(
-      'https://github.com/JevonsCode/fuli/blob/main/README.zh-CN.md#external-knowledge-conflict-policy',
-    )
     expect(wrapper.findAll('.external-binding-target-chip').map((chip) => chip.text())).toContain(
       'Project B · 仅实时',
     )
@@ -270,89 +264,16 @@ describe('ConnectionsPage', () => {
       {},
     )
 
-    await wrapper.get('[aria-label="知识冲突处理"]').setValue('agent_decide')
-    await flushPromises()
-    expect(patchJson).toHaveBeenCalledWith(
-      '/api/external-knowledge/conflict-policy?personalProjectId=project-a',
-      {
-        personalSpaceId: 'personal-1',
-        personalProjectId: 'project-a',
-        mode: 'agent_decide',
-      },
-    )
-
     setLocale('en-US', { persist: false })
     await flushPromises()
     expect(wrapper.get('[data-testid="external-knowledge-help"]').attributes('href')).toBe(
       'https://github.com/JevonsCode/fuli/blob/main/README.md#connect-external-knowledge',
     )
-    expect(wrapper.get('[data-testid="conflict-policy-help"]').attributes('href')).toBe(
-      'https://github.com/JevonsCode/fuli/blob/main/README.md#external-knowledge-conflict-policy',
-    )
     wrapper.unmount()
-  })
-
-  it('ignores a late policy from the previous project and prevents edits while loading', async () => {
-    let resolveFirst!: (value: unknown) => void
-    const first = new Promise((resolve) => { resolveFirst = resolve })
-    getJson.mockImplementation((url: string) => {
-      if (url.includes('conflict-policy')) return url.includes('project-a')
-        ? first : Promise.resolve({ mode: 'ask_human' })
-      return Promise.resolve([])
-    })
-    const wrapper = mountConflictPage()
-    await flushPromises()
-    const policyCall = getJson.mock.calls.find(([url]) => url.includes('conflict-policy'))!
-    expect(wrapper.get('[control-id="external-conflict-mode"]').attributes('disabled')).toBeDefined()
-    await wrapper.get('[control-id="external-conflict-project"]').setValue('project-b')
-    await flushPromises()
-    expect(policyCall[1].signal.aborted).toBe(true)
-    resolveFirst({ mode: 'agent_decide' })
-    await flushPromises()
-    expect((wrapper.get('[control-id="external-conflict-mode"]').element as HTMLSelectElement).value).toBe('ask_human')
-    await wrapper.get('[control-id="external-conflict-mode"]').setValue('agent_decide')
-    await flushPromises()
-    expect(patchJson).toHaveBeenCalledWith(
-      '/api/external-knowledge/conflict-policy?personalProjectId=project-b',
-      { personalSpaceId: 'personal-1', personalProjectId: 'project-b', mode: 'agent_decide' },
-    )
-    wrapper.unmount()
-  })
-
-  it('shows failed policy reads with retry and restores the saved mode after a failed write', async () => {
-    let failLoad = true
-    getJson.mockImplementation((url: string) => url.includes('conflict-policy')
-      ? failLoad ? Promise.reject(new Error('Synthetic read failure')) : Promise.resolve({ mode: 'ask_human' })
-      : Promise.resolve([]))
-    const wrapper = mountConflictPage()
-    await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('读取失败')
-    expect(useConsoleStore().feedback).toBeNull()
-    expect(wrapper.get('[control-id="external-conflict-mode"]').attributes('disabled')).toBeDefined()
-    failLoad = false
-    await wrapper.get('[role="alert"] button').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(useConsoleStore().feedback).toBeNull()
-    patchJson.mockRejectedValue(new Error('Synthetic save failure'))
-    await wrapper.get('[control-id="external-conflict-mode"]').setValue('agent_decide')
-    await flushPromises()
-    expect((wrapper.get('[control-id="external-conflict-mode"]').element as HTMLSelectElement).value).toBe('ask_human')
-    wrapper.unmount()
-  })
-
-  it('aborts pending policy reads on unmount', async () => {
-    getJson.mockImplementation((url: string) => url.includes('conflict-policy')
-      ? new Promise(() => {}) : Promise.resolve([]))
-    const wrapper = mountConflictPage()
-    await flushPromises()
-    const signal = getJson.mock.calls.find(([url]) => url.includes('conflict-policy'))![1].signal as AbortSignal
-    wrapper.unmount()
-    expect(signal.aborted).toBe(true)
   })
 
   it('submits a subscription once while its request is pending', async () => {
-    const wrapper = mountConflictPage()
+    const wrapper = mountPage()
     const store = useConsoleStore()
     let finishRefresh!: () => void
     vi.spyOn(store, 'refresh').mockImplementation(() => new Promise<void>((resolve) => { finishRefresh = resolve }))
@@ -377,7 +298,7 @@ describe('ConnectionsPage', () => {
   })
 })
 
-function mountConflictPage() {
+function mountPage() {
   const pinia = createPinia()
   setActivePinia(pinia)
   useConsoleStore().state = {
@@ -389,6 +310,6 @@ function mountConflictPage() {
     projects: [], subscriptions: [],
   }
   return mount(ConnectionsPage, { global: {
-    plugins: [pinia], stubs: { ...optionSelectStubs },
+    plugins: [pinia], stubs: { ...optionSelectStubs, ConflictPolicyCard: true },
   } })
 }

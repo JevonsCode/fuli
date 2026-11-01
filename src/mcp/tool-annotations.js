@@ -83,6 +83,7 @@ const WRITE_TOOLS = new Set([
   'update_external_knowledge_binding_targets',
   'delete_external_knowledge_binding',
   'update_external_knowledge_conflict_policy',
+  'update_default_external_knowledge_conflict_policy',
   'defer_preference_conflict',
   'delete_public_project',
   'recruit_employee',

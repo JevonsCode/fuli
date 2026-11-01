@@ -172,18 +172,24 @@ export const AGENT_INTERFACE_DEFINITIONS = [
   {
     name: 'get_external_knowledge_conflict_policy',
     title: 'READ · Get external knowledge conflict policy',
-    description: 'Read the conflict policy for one exact personal project.',
-    inputSchema: objectSchema({ personalProjectId: id }, ['personalProjectId']),
+    description: 'One project\'s effective conflict policy and its source (project or default); without personalProjectId, the default and each project\'s own choice.',
+    inputSchema: objectSchema({ personalProjectId: id }),
   },
   {
     name: 'update_external_knowledge_conflict_policy',
     title: 'WRITE · Update external knowledge conflict policy',
-    description: 'Set whether one exact personal project asks the human or lets the current Agent decide only the current response when external and graph knowledge conflict. This never confirms or rewrites either source.',
+    description: 'Set whether one exact personal project asks the human or lets the current Agent decide only the current response when external and graph knowledge conflict; mode null drops its own choice so the default applies. This never confirms or rewrites either source.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: id,
-      mode: enumSchema(['ask_human', 'agent_decide']),
+      mode: { type: ['string', 'null'], enum: ['ask_human', 'agent_decide', null] },
     }, ['personalSpaceId', 'personalProjectId', 'mode']),
+  },
+  {
+    name: 'update_default_external_knowledge_conflict_policy',
+    title: 'WRITE · Update default external knowledge conflict policy',
+    description: 'Set the conflict policy of every personal project without its own choice. Only on the person\'s explicit request; never confirms or rewrites either source.',
+    inputSchema: objectSchema({ mode: enumSchema(['ask_human', 'agent_decide']) }, ['mode']),
   },
   {
     name: 'defer_preference_conflict',

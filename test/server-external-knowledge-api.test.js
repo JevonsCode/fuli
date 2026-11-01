@@ -27,10 +27,13 @@ test('server exposes read-only knowledge bindings, sync, retrieval, and conflict
     deleteBinding: async (id) => ({ bindingId: id, status: 'deleted' })
   };
   const connectedKnowledge = {
-    getConflictPolicy: ({ personalProjectId }) => ({
-      personalProjectId,
-      mode: 'ask_human'
-    }),
+    getConflictPolicy: ({ personalProjectId }) => personalProjectId === null
+      ? { default: { mode: 'ask_human', updatedAt: null }, projects: [] }
+      : { personalProjectId, mode: 'ask_human', source: 'default' },
+    updateDefaultConflictPolicy: (input) => {
+      calls.push(['default-policy', input]);
+      return { mode: input.mode, updatedAt: null };
+    },
     updateConflictPolicy: async (input) => {
       calls.push(['policy', input]);
       return { personalProjectId: input.personalProjectId, mode: input.mode };
@@ -105,6 +108,16 @@ test('server exposes read-only knowledge bindings, sync, retrieval, and conflict
         mode: 'agent_decide'
       }
     })).body.mode, 'agent_decide');
+    assert.deepEqual(
+      (await getJson(`${url}/api/external-knowledge/conflict-policy`)).projects, []
+    );
+    assert.equal((await requestJson(`${url}/api/external-knowledge/conflict-policy/default`, {
+      method: 'PATCH',
+      body: { mode: 'agent_decide' }
+    })).body.mode, 'agent_decide');
+    assert.deepEqual(calls.find(([kind]) => kind === 'default-policy'), [
+      'default-policy', { mode: 'agent_decide' }
+    ]);
 
     assert.equal((await requestJson(`${url}/api/connected-knowledge/search`, {
       method: 'POST',

@@ -86,6 +86,8 @@ const HANDLERS = Object.freeze({
     connectedKnowledge(app).getConflictPolicy(input),
   update_external_knowledge_conflict_policy: (app, input) =>
     connectedKnowledge(app).updateConflictPolicy(input),
+  update_default_external_knowledge_conflict_policy: (app, input) =>
+    connectedKnowledge(app).updateDefaultConflictPolicy(input),
   defer_preference_conflict: (app, input) => app.deferPreferenceConflict({
     ...input,
     operationActor: 'agent'
