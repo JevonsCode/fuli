@@ -19,6 +19,7 @@ import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
 import { clearSessionTaskBlockers } from './task-blocker-progress.js';
+import { storedUnassignment } from './task-agent-assignment.js';
 
 export async function checkpointTaskKnowledge(application, {
   taskContextToken,
@@ -99,9 +100,12 @@ export async function checkpointTaskKnowledge(application, {
     await clearSessionTaskBlockers(application, { sourceApplication: task.sourceApplication,
       sessionIds: [task.sessionId], cause: 'session_activity', captureAllowed: captureCheck.allowed });
     const interaction = activeSealedWorkerRequest() ? {} : await checkpointHumanInteraction(application, task);
+    // A task without an owner says why, as its entry did.
+    const unassigned = task.projectAgentId ? null : storedUnassignment(task);
     return { ...interaction, ...result, conversation, ...(triaged ? { triage: triaged } : {}),
       agent_receipt: taskAgentReceipt(application, { projectId: task.personalProjectId,
         agentId: task.projectAgentId ?? null, name: team.name, role: team.role, sourceApplication: task.sourceApplication,
+        assignmentStatus: unassigned?.status ?? null, assignmentReason: unassigned?.reason ?? null,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
         persistence: conversation?.status ?? null, collaborators: team.collaborators,
         notices: [...namedFlaReceiptNotices(task), ...standingReceiptNotices(task), ...receiptNotices(captureCheck, [], { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application, { taskId: task.token })],

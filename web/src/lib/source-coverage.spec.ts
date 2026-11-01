@@ -12,6 +12,12 @@ describe('source coverage (rec#11 D-64)', () => {
     expect(coversClient(undefined, 'opencode')).toBe(false)
   })
 
+  it('shows Antigravity allowed for a profile saved before it had its own source', () => {
+    expect(coversClient(['codex', 'other'], 'antigravity')).toBe(true)
+    expect(coversClient(['codex'], 'antigravity')).toBe(false)
+    expect(coversClient(['antigravity'], 'other')).toBe(false)
+  })
+
   it('ignores only the legacy alias for an explicit client choice', () => {
     expect(coversClient(['other'], 'opencode', { explicit: ['opencode'] })).toBe(false)
     expect(coversClient(['other', 'opencode'], 'opencode', { explicit: ['opencode'] })).toBe(true)

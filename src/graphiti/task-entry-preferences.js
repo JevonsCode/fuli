@@ -4,7 +4,7 @@ import { groupDiscussionEntry } from './task-entry-group-discussion.js';
 import { beginTaskContext, beginTaskFromPreferences } from './agent-knowledge-workflows.js';
 import { getCollaborationPreferences as getCollaborationPreferencesWorkflow } from './collaboration-preference-workflow.js';
 import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-agent-task-entry.js';
-import { applyAgentAssignment } from './task-agent-assignment.js';
+import { applyAgentAssignment, unassignedMarkers } from './task-agent-assignment.js';
 import { triageCandidates } from './conversation-triage.js';
 import { withProjectCandidate } from './assistant-project-candidate.js';
 import { withBoardMatch } from './jefa-board-match.js';
@@ -118,7 +118,7 @@ async function entryPreferences(application, projectResolution, {
   const group = projectResolution.group ? await groupDiscussionEntry(application, projectResolution.group,
     fla?.selection ?? selected, projectResolution.personalProjectId ?? null) : null;
   const selection = group?.selection ?? fla?.selection ?? selected;
-  const routeMarkers = [...(fla?.markers ?? []), ...(group?.markers ?? [])];
+  const routeMarkers = [...(fla?.markers ?? []), ...(group?.markers ?? []), ...unassignedMarkers(selection)];
   // A rejected explicit role must not leak its private preferences via fallback.
   const selectedAgentId = selection ? selection.agent?.agentId ?? null : projectAgentId;
   const standing = standingOwnerEntry(projectResolution, selection);

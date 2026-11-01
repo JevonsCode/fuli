@@ -48,6 +48,19 @@ export function withRouteMarkers(assignment, markers) {
   return { ...base, match_basis: [...base.match_basis.slice(0, MATCH_BASIS_LIMIT - markers.length), ...markers] };
 }
 
+// Why the entry selected no Agent, as a route marker: the checkpoint receipt
+// then gives the entry's reason instead of a generic one.
+const UNASSIGNED = /^entry_unassigned:(\S+) (\S+)$/u;
+export function unassignedMarkers(selection) {
+  if (!selection?.status || selection.agent) return [];
+  return [`entry_unassigned:${markerField(selection.status)} ${markerField(selection.reason ?? null)}`];
+}
+
+export function storedUnassignment(task) {
+  const match = (task?.agentAssignment?.match_basis ?? []).map(item => UNASSIGNED.exec(item)).find(Boolean);
+  return match ? { status: markerValue(match[1]), reason: markerValue(match[2]) } : null;
+}
+
 const NO_VALUE = '-';
 // One space-free field of a route marker: IDs and names with spaces and %
 // escaped, `-` for none. markerValue reads it back (null for none or malformed).
