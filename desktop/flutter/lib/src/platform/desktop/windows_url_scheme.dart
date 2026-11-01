@@ -6,7 +6,8 @@ const _commandKey = '$_schemeKey\\shell\\open\\command';
 /// `fuli://` links open this client: the entry runs the package's Fuli.exe
 /// launcher with the link. Updates, rollbacks and uninstall keep it pointing
 /// at the installed version (src/desktop/windows-desktop-client.js), and every
-/// start of an installed client points it at itself again.
+/// start of the installed version's client points it at itself again
+/// (installed_package.dart).
 class WindowsUrlScheme {
   WindowsUrlScheme({required this.packageRoot, RegRunner reg = runReg}) : _reg = reg;
 

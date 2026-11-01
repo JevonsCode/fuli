@@ -9,8 +9,8 @@ const _choiceValue = 'LaunchAtLogin';
 /// installed FULI until they turn it off in the tray menu. The entry runs the
 /// package's Fuli.exe launcher with `--background` (tray icon only); updates,
 /// rollbacks and uninstall keep it pointing at the installed version
-/// (src/desktop/windows-desktop-client.js), and every start of the client
-/// points it at itself again.
+/// (src/desktop/windows-desktop-client.js), and every start of the installed
+/// version's client points it at itself again (installed_package.dart).
 class WindowsLoginLaunch {
   WindowsLoginLaunch({required this.packageRoot, RegRunner reg = runReg}) : _reg = reg;
 
