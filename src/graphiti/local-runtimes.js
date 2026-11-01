@@ -1,6 +1,11 @@
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createEmployeeService } from '../employees/service.js';
+import { createAppConsoleActions } from '../agent-apps/console-actions.js';
 import { agentAppRoot, createAgentAppService } from '../agent-apps/service.js';
+import { revealPath } from '../desktop/reveal-path.js';
+import { openTerminalWindow } from '../desktop/terminal-window.js';
 import { createAgentServices } from '../agent-services/port.js';
 import { callAgentTool, listAgentTools } from '../agent-tools.js';
 import { createAgentRoundtable } from '../../packages/roundtable/src/roundtable/service.js';
@@ -51,6 +56,15 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
     ownerKind: 'console',
     serviceLog: app.agentServices.workbench,
     callFuliTool: (name, input) => callAgentTool(app, name, input)
+  });
+  // The console's Apps buttons that open a terminal confirmation or export data (#346).
+  app.agentAppConsole = createAppConsoleActions({
+    agentApps: app.agentApps,
+    cli: [process.execPath, fileURLToPath(new URL('../cli.js', import.meta.url))],
+    runtimeConfigPath,
+    exportsRoot: join(homedir(), 'Downloads', 'FULI app exports'),
+    openTerminal: openTerminalWindow,
+    reveal: revealPath
   });
   app.modelBackends = openModelBackendRuntime(paths);
   ({ trust: app.modelTrust, history: app.modelSettingsHistory } = openRoleTrustAndHistory(paths, app.modelBackends));
