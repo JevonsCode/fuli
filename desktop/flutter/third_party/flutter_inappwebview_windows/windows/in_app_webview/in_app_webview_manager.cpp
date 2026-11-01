@@ -108,7 +108,10 @@ namespace flutter_inappwebview_plugin
     RECT bounds;
     GetClientRect(plugin->registrar->GetView()->GetNativeWindow(), &bounds);
 
-    auto hwnd = CreateWindowEx(0, windowClass_.lpszClassName, L"", 0, 0,
+    // FULI patch: a hidden child of the Flutter view, not an owned top-level
+    // window (style 0). WebView2 focuses its own windows under this one, which
+    // activated it and deactivated the app window on every click into the page.
+    auto hwnd = CreateWindowEx(0, windowClass_.lpszClassName, L"", WS_CHILD | WS_CLIPSIBLINGS, 0,
       0, bounds.right - bounds.left, bounds.bottom - bounds.top,
       plugin->registrar->GetView()->GetNativeWindow(),
       nullptr,

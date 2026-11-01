@@ -7,21 +7,37 @@ Only `CHANGELOG.md`, `LICENSE`, `README.md`, `analysis_options.yaml`,
 `lib/`, `pubspec.yaml` and `windows/` were copied; `example/` and `test/`
 were left out.
 
-**The patch** (one line, in `windows/in_app_webview/in_app_webview.cpp`,
-where the WebView2 settings are first applied):
+**The patches** (guarded by `desktop/flutter/test/vendored_webview_patches_test.dart`):
 
-```cpp
-webView2Settings->put_IsStatusBarEnabled(FALSE);
-```
+1. **No status bubble** (one line, in `windows/in_app_webview/in_app_webview.cpp`,
+   where the WebView2 settings are first applied):
 
-It hides WebView2's grey status bubble that shows a link's URL in the
-bottom-left corner on hover. 0.6.0 does not expose this setting.
+   ```cpp
+   webView2Settings->put_IsStatusBarEnabled(FALSE);
+   ```
 
-**Drop this copy** when a stable `flutter_inappwebview_windows` exposes
-`InAppWebViewSettings.statusBarEnabled` (it is in 0.7.0-beta.x /
-`flutter_inappwebview` 6.2.0-beta.x): remove the override, upgrade
-`flutter_inappwebview`, and pass `statusBarEnabled: false` in
-`lib/src/platform/desktop/console_webview.dart`.
+   It hides WebView2's grey status bubble that shows a link's URL in the
+   bottom-left corner on hover. 0.6.0 does not expose this setting.
+
+2. **The WebView keeps the app window active.** In
+   `windows/in_app_webview/in_app_webview_manager.cpp` the window each
+   WebView2 is created in is a hidden *child* of the Flutter view
+   (`WS_CHILD | WS_CLIPSIBLINGS`) instead of a hidden owned top-level window
+   (style `0`). WebView2 moves keyboard focus to its own windows under it on a
+   click; under a top-level window that activated it, so every click into the
+   page deactivated the client window (its shadow and title went inactive)
+   and the next click on the client flipped it back. `InAppWebView::setPosition`
+   (`in_app_webview.cpp`) now places that window at the widget's offset in the
+   view's client area instead of guessed screen coordinates, so it follows the
+   client window when it moves, and calls `NotifyParentWindowPositionChanged`
+   as WebView2 asks after its parent moves. Upstream (`master`, checked
+   2026-11-01) still creates a top-level window.
+
+**Drop this copy** only when a stable `flutter_inappwebview_windows` both
+exposes `InAppWebViewSettings.statusBarEnabled` (it is in 0.7.0-beta.x /
+`flutter_inappwebview` 6.2.0-beta.x) and creates the WebView's window as a
+child: remove the override, upgrade `flutter_inappwebview`, and pass
+`statusBarEnabled: false` in `lib/src/platform/desktop/console_webview.dart`.
 
 ---
 
