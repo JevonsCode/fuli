@@ -15,14 +15,9 @@ export const projectAgentMessages = {
       projectState: { temporary: '独立临时项目', identified: '已关联项目', unresolved: '项目尚未识别' },
       assignmentState: { assigned: '已记录任务分配', unreported: '尚未记录任务分配' },
       executionState: { unreported: '尚未收到工作进程报告', queued: '工作进程已排队', running: '工作进程报告运行中', ended: '已收到结束状态', reported: '已收到工作进程报告' },
-      temporaryHint: '这次任务使用独立的临时项目。',
-      summaryReason: {
-        assignedOnly: '已分配，等待客户端上报执行结果。',
-        unassigned: '还没有分配或执行记录。',
-        eventsOnly: '已收到执行事件，等待汇总。',
-      },
     },
-    taskDetails: '执行详情',
+    taskDetails: '详情',
+    card: { sharedBy: '{count} 个 FLA 一起做' },
     techDetails: '技术细节（任务 ID、策略、排班依据）',
     profileDetails: 'Agent 资料',
     conversations: {
@@ -230,8 +225,6 @@ export const projectAgentMessages = {
       sectionUnavailable: '该分区的真实数据暂时无法读取。',
       noAssignments: '尚未上报项目分配。',
       noTasks: '尚无任务历史。',
-      noExecutionSummary: '没有真实参与执行者。',
-      notReportedActualExecution: '实际执行证据未上报。',
     },
     strategy: {
       flexible: 'flexible',
@@ -417,14 +410,9 @@ export const projectAgentMessages = {
       projectState: { temporary: 'Isolated temporary project', identified: 'Project linked', unresolved: 'Project not identified' },
       assignmentState: { assigned: 'Task assignment recorded', unreported: 'No task assignment reported' },
       executionState: { unreported: 'No worker report received', queued: 'Worker queued', running: 'Worker reported running', ended: 'Terminal status received', reported: 'Worker report received' },
-      temporaryHint: 'This task uses an isolated temporary project.',
-      summaryReason: {
-        assignedOnly: 'Assigned; waiting for the client to report results.',
-        unassigned: 'No assignment or execution recorded yet.',
-        eventsOnly: 'Execution events received; waiting for a summary.',
-      },
     },
-    taskDetails: 'Execution details',
+    taskDetails: 'Details',
+    card: { sharedBy: '{count} FLAs share it' },
     techDetails: 'Technical details (task ID, strategy, staffing basis)',
     profileDetails: 'Agent profile',
     conversations: {
@@ -632,8 +620,6 @@ export const projectAgentMessages = {
       sectionUnavailable: 'Verified data for this section is temporarily unavailable.',
       noAssignments: 'No project assignments reported.',
       noTasks: 'No task history.',
-      noExecutionSummary: 'No real participating executor was reported.',
-      notReportedActualExecution: 'Actual execution evidence was not reported.',
     },
     strategy: {
       flexible: 'flexible',

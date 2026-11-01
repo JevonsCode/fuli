@@ -192,7 +192,8 @@ function stateLabel(state: string) {
     </UiNotice>
     <p v-if="retried?.mustDiscloseRecruitment && retried.clientNotice" role="note" class="task-run-risk" data-task-run-disclosure>{{ retried.clientNotice }}</p>
 
-    <div class="project-agent-section-heading">
+    <!-- An empty history says nothing: no heading, no count, no "no runs" line. -->
+    <div v-if="runs.length" class="project-agent-section-heading">
       <h5>{{ t('taskRuns.history') }}</h5>
       <span v-if="loaded">{{ t('taskRuns.loaded', { count: runs.length }) }} · {{ complete ? t('taskRuns.complete') : t('taskRuns.more') }}</span>
     </div>
@@ -200,7 +201,6 @@ function stateLabel(state: string) {
     <p v-else-if="historyError && !runs.length" role="alert" class="inline-error">
       {{ t('taskRuns.historyFailed') }} <Button size="sm" variant="ghost" @click="reload">{{ t('taskRuns.retryRead') }}</Button>
     </p>
-    <p v-else-if="loaded && !runs.length" class="project-agent-muted">{{ t('taskRuns.empty') }}</p>
     <ol v-if="runs.length" class="task-run-list">
       <li v-for="(run, index) in runs" :key="run.runId" class="task-run-item">
         <header>

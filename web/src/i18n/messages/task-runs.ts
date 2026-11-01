@@ -2,7 +2,7 @@ export const taskRunMessages = {
   'zh-CN': {
     history: '运行记录', loadingHistory: '正在读取这个任务的运行记录…', loadMore: '加载更多',
     loadingMore: '正在读取更多运行记录…', loaded: '已读取 {count} 条', complete: '本次读取完整', more: '还有更多',
-    empty: '暂无运行记录', historyFailed: '运行记录读取失败', retryRead: '重新读取',
+    historyFailed: '运行记录读取失败', retryRead: '重新读取',
     attempt: '第 {count} 次运行', agent: 'Agent', executor: '执行器', authority: '授权状态', result: '执行结果',
     processStopped: '进程停止已报告', processNotReported: '进程停止未报告', cleanupErrors: '清理有错误',
     evidence: '运行证据', runId: 'Run ID',
@@ -30,7 +30,7 @@ export const taskRunMessages = {
   'en-US': {
     history: 'Run history', loadingHistory: 'Loading this task’s run history…', loadMore: 'Load more',
     loadingMore: 'Loading more runs…', loaded: '{count} loaded', complete: 'Read in full', more: 'More available',
-    empty: 'No recorded runs', historyFailed: 'Could not load run history', retryRead: 'Read again',
+    historyFailed: 'Could not load run history', retryRead: 'Read again',
     attempt: 'Run {count}', agent: 'Agent', executor: 'Executor', authority: 'Authority', result: 'Result',
     processStopped: 'Process stop reported', processNotReported: 'Process stop not reported', cleanupErrors: 'Cleanup errors',
     evidence: 'Run evidence', runId: 'Run ID',
