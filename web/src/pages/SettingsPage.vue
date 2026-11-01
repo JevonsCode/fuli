@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import PageColumns from '@/components/PageColumns.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -12,6 +11,7 @@ import { apiErrorReason, getJson, putJson } from '@/api/client'
 import { Switch } from '@/components/ui/switch'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.vue'
+import PageColumns from '@/components/PageColumns.vue'
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
 import ClientLinksSettings from '@/features/settings/ClientLinksSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
@@ -24,6 +24,7 @@ import { waitForSettingsApply } from '@/features/settings/settings-apply'
 import { useSettingsAutoSave } from '@/features/settings/settings-autosave'
 import { PERSONAL_PORT_KEYS, pendingRestartFields, withoutRestartChanges } from '@/features/settings/settings-restart'
 import { captureSourceOff, withCaptureSource } from '@/features/capture/capture-sources'
+import { clientDetectionShape, shownCaptureClients, type ClientDetection } from '@/features/capture/capture-clients'
 import { fieldErrorMessage } from '@/features/settings/settings-field-error'
 import { matchingSections, settingSearchTerm, useSettingsSearch } from '@/features/settings/settings-search'
 import {
@@ -135,8 +136,11 @@ const conversationIdFormatOptions = computed(() => [
 ])
 const captureEnabled = computed(() => store.state?.capturePolicy?.enabled !== false)
 // Capture is per client; a client that is off still reads memory through its tools.
-const CAPTURE_CLIENTS = [['claude_code', 'Claude Code'], ['codex', 'Codex'], ['cursor', 'Cursor'], ['opencode', 'OpenCode']] as const
 const captureSources = computed(() => store.state?.capturePolicy ?? {})
+// The switches list the clients on this machine; a failed read keeps the full list.
+const clientDetection = ref<ClientDetection | null>(null)
+const detectingClients = ref(true)
+const captureClients = computed(() => shownCaptureClients(clientDetection.value, captureSources.value))
 const answerFromConfirmed = computed(() => store.state?.recallPolicy?.answerFromConfirmed !== false)
 const agentAccessEnabled = computed(() =>
   store.state?.agentAccessPolicy?.enabled !== false,
@@ -158,6 +162,7 @@ const recommendsNativeRuntime = computed(() =>
 
 onMounted(async () => {
   if (store.runtimeStatus === 'idle') void store.refresh()
+  void detectClients()
   await Promise.all([loadSettings(), loadResources()])
   loading.value = false
 })
@@ -185,6 +190,12 @@ watch(
   () => form.value?.resourceRefreshSeconds,
   () => startPolling(),
 )
+
+async function detectClients() {
+  try { clientDetection.value = await getJson('/api/system/client-connection/status', clientDetectionShape, { signal: saveController.signal }) }
+  catch { clientDetection.value = null }
+  finally { detectingClients.value = false }
+}
 
 async function loadSettings() {
   try {
@@ -408,333 +419,336 @@ function checkFields(): ValidatedField[] {
             <!-- Memory and access -->
             <TabsContent value="memory" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="memory">
               <PageColumns>
-                <Card as="section" class="settings-card behavior-card" aria-labelledby="settings-capture-title">
-                  <CardHeader><CardTitle id="settings-capture-title" as="h2">{{ t('settings.groups.capture') }}</CardTitle></CardHeader>
-                  <div class="setting-list">
-                    <label class="setting-row">
-                      <span><strong>{{ t('settings.behavior.capture') }}</strong><small>{{ t('settings.behavior.captureMeta') }}</small></span>
-                      <Switch :model-value="captureEnabled" :aria-label="t('settings.behavior.capture')" @update:model-value="toggleCapture" />
-                    </label>
-                    <template v-if="captureEnabled">
-                      <p class="setting-note">{{ t('settings.behavior.captureClientsMeta') }}</p>
-                      <label v-for="[source, label] in CAPTURE_CLIENTS" :key="source" class="setting-row setting-row-nested" :data-capture-source="source">
+              <Card as="section" class="settings-card behavior-card" aria-labelledby="settings-capture-title">
+                <CardHeader><CardTitle id="settings-capture-title" as="h2">{{ t('settings.groups.capture') }}</CardTitle></CardHeader>
+                <div class="setting-list">
+                  <label class="setting-row">
+                    <span><strong>{{ t('settings.behavior.capture') }}</strong><small>{{ t('settings.behavior.captureMeta') }}</small></span>
+                    <Switch :model-value="captureEnabled" :aria-label="t('settings.behavior.capture')" @update:model-value="toggleCapture" />
+                  </label>
+                  <template v-if="captureEnabled && (detectingClients || captureClients.length)">
+                    <p class="setting-note">{{ t('settings.behavior.captureClientsMeta') }}</p>
+                    <GrowthLoading v-if="detectingClients" variant="inline" class="setting-note" :label="t('settings.behavior.captureClientsLoading')" />
+                    <template v-else>
+                      <label v-for="[source, label] in captureClients" :key="source" class="setting-row setting-row-nested" :data-capture-source="source">
                         <span><strong>{{ label }}</strong></span>
                         <Switch :model-value="!captureSourceOff(captureSources, source)" :aria-label="label" @update:model-value="toggleClientCapture(source, $event)" />
                       </label>
                     </template>
-                    <label class="setting-row" data-recall-answer-from-confirmed>
-                      <span><strong>{{ t('settings.behavior.answerFromConfirmed') }}</strong><small>{{ t('settings.behavior.answerFromConfirmedMeta') }}</small></span>
-                      <Switch :model-value="answerFromConfirmed" :aria-label="t('settings.behavior.answerFromConfirmed')" @update:model-value="toggleAnswerFromConfirmed" />
-                    </label>
-                  </div>
-                </Card>
-                <Card as="section" class="settings-card" aria-labelledby="settings-capture-projects-title" data-capture-projects-card>
-                  <CardHeader>
-                    <CardTitle id="settings-capture-projects-title" as="h2">{{ t('capture.settings.title') }}</CardTitle>
-                    <CardDescription>{{ t('capture.settings.description') }}</CardDescription>
-                  </CardHeader>
-                  <CaptureProjectSettings class="px-5" />
-                </Card>
-                <Card as="section" class="settings-card" aria-labelledby="settings-access-title">
-                  <CardHeader><CardTitle id="settings-access-title" as="h2">{{ t('settings.groups.access') }}</CardTitle></CardHeader>
-                  <div class="setting-list">
-                    <label class="setting-row">
-                      <span><strong>{{ t('settings.behavior.agentAccess') }}</strong><small>{{ t('settings.behavior.agentAccessMeta') }}</small></span>
-                      <Switch :model-value="agentAccessEnabled" :aria-label="t('settings.behavior.agentAccess')" @update:model-value="toggleAgentAccess" />
-                    </label>
-                  </div>
-                </Card>
-                <Card v-if="form.agentNamingStyle !== undefined" as="section" class="settings-card" aria-labelledby="settings-agent-naming-title" data-agent-naming-card>
-                  <CardHeader>
-                    <CardTitle id="settings-agent-naming-title" as="h2">{{ t('settings.agentNaming.title') }}</CardTitle>
-                    <CardDescription id="settings-agent-naming-description">{{ t('settings.agentNaming.description') }}</CardDescription>
-                  </CardHeader>
-                  <AgentNamingStyleField v-model="form.agentNamingStyle" class="setting-list" />
-                </Card>
-                <Card v-if="form.topicPromotion !== undefined" as="section" class="settings-card" aria-labelledby="settings-topic-promotion-title" data-topic-promotion-card>
-                  <div class="setting-list">
-                    <label class="setting-row">
-                      <span><strong id="settings-topic-promotion-title">{{ t('settings.topicPromotion.title') }}</strong><small>{{ t('settings.topicPromotion.description') }}</small></span>
-                      <Switch :model-value="form.topicPromotion === 'auto'" :aria-label="t('settings.topicPromotion.title')"
-                        data-settings-field="topicPromotion" @update:model-value="form.topicPromotion = $event ? 'auto' : 'ask'" />
-                    </label>
-                  </div>
-                </Card>
-                <section class="settings-card judgment-settings-card">
-                  <JudgmentPolicySettings />
-                </section>
-                <Card as="section" class="settings-card" aria-labelledby="settings-models-title">
-                  <CardHeader>
-                    <CardTitle id="settings-models-title" as="h2">{{ t('modelSettings.title') }}</CardTitle>
-                    <CardDescription>{{ t('modelSettings.settingsEntry') }}</CardDescription>
-                    <CardAction>
-                      <Button as-child size="sm" variant="outline">
-                        <RouterLink to="/settings/models" data-open-model-settings>{{ t('modelSettings.open') }}</RouterLink>
-                      </Button>
-                    </CardAction>
-                  </CardHeader>
-                </Card>
+                  </template>
+                  <label class="setting-row" data-recall-answer-from-confirmed>
+                    <span><strong>{{ t('settings.behavior.answerFromConfirmed') }}</strong><small>{{ t('settings.behavior.answerFromConfirmedMeta') }}</small></span>
+                    <Switch :model-value="answerFromConfirmed" :aria-label="t('settings.behavior.answerFromConfirmed')" @update:model-value="toggleAnswerFromConfirmed" />
+                  </label>
+                </div>
+              </Card>
+              <Card as="section" class="settings-card" aria-labelledby="settings-capture-projects-title" data-capture-projects-card>
+                <CardHeader>
+                  <CardTitle id="settings-capture-projects-title" as="h2">{{ t('capture.settings.title') }}</CardTitle>
+                  <CardDescription>{{ t('capture.settings.description') }}</CardDescription>
+                </CardHeader>
+                <CaptureProjectSettings class="px-5" />
+              </Card>
+              <Card as="section" class="settings-card" aria-labelledby="settings-access-title">
+                <CardHeader><CardTitle id="settings-access-title" as="h2">{{ t('settings.groups.access') }}</CardTitle></CardHeader>
+                <div class="setting-list">
+                  <label class="setting-row">
+                    <span><strong>{{ t('settings.behavior.agentAccess') }}</strong><small>{{ t('settings.behavior.agentAccessMeta') }}</small></span>
+                    <Switch :model-value="agentAccessEnabled" :aria-label="t('settings.behavior.agentAccess')" @update:model-value="toggleAgentAccess" />
+                  </label>
+                </div>
+              </Card>
+              <Card v-if="form.agentNamingStyle !== undefined" as="section" class="settings-card" aria-labelledby="settings-agent-naming-title" data-agent-naming-card>
+                <CardHeader>
+                  <CardTitle id="settings-agent-naming-title" as="h2">{{ t('settings.agentNaming.title') }}</CardTitle>
+                  <CardDescription id="settings-agent-naming-description">{{ t('settings.agentNaming.description') }}</CardDescription>
+                </CardHeader>
+                <AgentNamingStyleField v-model="form.agentNamingStyle" class="setting-list" />
+              </Card>
+              <Card v-if="form.topicPromotion !== undefined" as="section" class="settings-card" aria-labelledby="settings-topic-promotion-title" data-topic-promotion-card>
+                <div class="setting-list">
+                  <label class="setting-row">
+                    <span><strong id="settings-topic-promotion-title">{{ t('settings.topicPromotion.title') }}</strong><small>{{ t('settings.topicPromotion.description') }}</small></span>
+                    <Switch :model-value="form.topicPromotion === 'auto'" :aria-label="t('settings.topicPromotion.title')"
+                      data-settings-field="topicPromotion" @update:model-value="form.topicPromotion = $event ? 'auto' : 'ask'" />
+                  </label>
+                </div>
+              </Card>
+              <section class="settings-card judgment-settings-card">
+                <JudgmentPolicySettings />
+              </section>
+              <Card as="section" class="settings-card" aria-labelledby="settings-models-title">
+                <CardHeader>
+                  <CardTitle id="settings-models-title" as="h2">{{ t('modelSettings.title') }}</CardTitle>
+                  <CardDescription>{{ t('modelSettings.settingsEntry') }}</CardDescription>
+                  <CardAction>
+                    <Button as-child size="sm" variant="outline">
+                      <RouterLink to="/settings/models" data-open-model-settings>{{ t('modelSettings.open') }}</RouterLink>
+                    </Button>
+                  </CardAction>
+                </CardHeader>
+              </Card>
               </PageColumns>
             </TabsContent>
 
             <!-- Clients -->
             <TabsContent value="clients" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="clients">
               <PageColumns>
-                <ClientConnectionSettings data-span="wide" />
-                <ClientLinksSettings />
-                <Card as="section" class="settings-card settings-advanced-card" aria-labelledby="settings-clients-advanced-title">
-                  <CardHeader><CardTitle id="settings-clients-advanced-title" as="h2">{{ t('settings.groups.advanced') }}</CardTitle></CardHeader>
-                  <Accordion v-model="openSections" type="multiple" :unmount-on-hide="false" class="settings-accordion">
-                    <AccordionItem id="conversation-launchers" value="launchers" class="conversation-launcher-card" data-settings-section="launchers">
-                      <AccordionTrigger>{{ t('settings.conversationLaunchers.title') }}</AccordionTrigger>
-                      <AccordionContent>
-                        <div class="conversation-launcher-list">
-                          <article v-for="application in conversationApplications" :key="application" class="conversation-launcher-row">
-                            <div class="conversation-launcher-heading">
+              <ClientConnectionSettings data-span="wide" />
+              <ClientLinksSettings />
+              <Card as="section" class="settings-card settings-advanced-card" aria-labelledby="settings-clients-advanced-title">
+                <CardHeader><CardTitle id="settings-clients-advanced-title" as="h2">{{ t('settings.groups.advanced') }}</CardTitle></CardHeader>
+                <Accordion v-model="openSections" type="multiple" :unmount-on-hide="false" class="settings-accordion">
+                  <AccordionItem id="conversation-launchers" value="launchers" class="conversation-launcher-card" data-settings-section="launchers">
+                    <AccordionTrigger>{{ t('settings.conversationLaunchers.title') }}</AccordionTrigger>
+                    <AccordionContent>
+                      <div class="conversation-launcher-list">
+                        <article v-for="application in conversationApplications" :key="application" class="conversation-launcher-row">
+                          <div class="conversation-launcher-heading">
+                            <span>
+                              <strong>{{ conversationApplicationLabel(application) }}</strong>
+                              <small>{{ t('settings.conversationLaunchers.sourceId', { id: application }) }}</small>
+                            </span>
+                            <label class="conversation-launcher-switch">
+                              <span>{{ t('settings.conversationLaunchers.enabled') }}</span>
+                              <Switch v-model="form.conversationLaunchers[application].enabled" :aria-label="t('settings.conversationLaunchers.enabled')" />
+                            </label>
+                          </div>
+                          <small v-if="form.conversationLaunchers[application].enabled && application === 'codex'" class="conversation-launcher-note">
+                            {{ t('settings.conversationLaunchers.idFormatMeta') }}
+                          </small>
+                          <div v-if="form.conversationLaunchers[application].enabled" class="conversation-launcher-fields">
+                            <label>
+                              <span>{{ t('settings.conversationLaunchers.idFormat') }}</span>
+                              <OptionSelect
+                                v-model="form.conversationLaunchers[application].idFormat"
+                                class="launcher-select"
+                                :control-id="`settings-conversation-${application}-id-format`"
+                                :options="conversationIdFormatOptions"
+                                :label="t('settings.conversationLaunchers.idFormat')"
+ />
+                            </label>
+                            <label>
+                              <span>{{ t('settings.conversationLaunchers.appName') }}</span>
+                              <input v-model.trim="form.conversationLaunchers[application].appName" type="text" maxlength="64" required
+                                :data-settings-field="`launchers.${application}.appName`"
+                                :aria-invalid="errorFor(`launchers.${application}.appName`) ? 'true' : undefined"
+                                :aria-describedby="errorFor(`launchers.${application}.appName`) ? fieldErrorId(`launchers.${application}.appName`) : undefined" />
+                              <small v-if="errorFor(`launchers.${application}.appName`)" :id="fieldErrorId(`launchers.${application}.appName`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.appName`) }}</small>
+                            </label>
+                            <label class="conversation-launcher-template">
                               <span>
-                                <strong>{{ conversationApplicationLabel(application) }}</strong>
-                                <small>{{ t('settings.conversationLaunchers.sourceId', { id: application }) }}</small>
+                                {{ t('settings.conversationLaunchers.urlTemplate') }}
+                                <small><code>{id}</code></small>
                               </span>
-                              <label class="conversation-launcher-switch">
-                                <span>{{ t('settings.conversationLaunchers.enabled') }}</span>
-                                <Switch v-model="form.conversationLaunchers[application].enabled" :aria-label="t('settings.conversationLaunchers.enabled')" />
-                              </label>
-                            </div>
-                            <small v-if="form.conversationLaunchers[application].enabled && application === 'codex'" class="conversation-launcher-note">
-                              {{ t('settings.conversationLaunchers.idFormatMeta') }}
-                            </small>
-                            <div v-if="form.conversationLaunchers[application].enabled" class="conversation-launcher-fields">
-                              <label>
-                                <span>{{ t('settings.conversationLaunchers.idFormat') }}</span>
-                                <OptionSelect
-                                  v-model="form.conversationLaunchers[application].idFormat"
-                                  class="launcher-select"
-                                  :control-id="`settings-conversation-${application}-id-format`"
-                                  :options="conversationIdFormatOptions"
-                                  :label="t('settings.conversationLaunchers.idFormat')"
-   />
-                              </label>
-                              <label>
-                                <span>{{ t('settings.conversationLaunchers.appName') }}</span>
-                                <input v-model.trim="form.conversationLaunchers[application].appName" type="text" maxlength="64" required
-                                  :data-settings-field="`launchers.${application}.appName`"
-                                  :aria-invalid="errorFor(`launchers.${application}.appName`) ? 'true' : undefined"
-                                  :aria-describedby="errorFor(`launchers.${application}.appName`) ? fieldErrorId(`launchers.${application}.appName`) : undefined" />
-                                <small v-if="errorFor(`launchers.${application}.appName`)" :id="fieldErrorId(`launchers.${application}.appName`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.appName`) }}</small>
-                              </label>
-                              <label class="conversation-launcher-template">
-                                <span>
-                                  {{ t('settings.conversationLaunchers.urlTemplate') }}
-                                  <small><code>{id}</code></small>
-                                </span>
-                                <input v-model.trim="form.conversationLaunchers[application].urlTemplate" type="text" maxlength="1024" spellcheck="false" required
-                                  :data-settings-field="`launchers.${application}.urlTemplate`"
-                                  :aria-invalid="errorFor(`launchers.${application}.urlTemplate`) ? 'true' : undefined"
-                                  :aria-describedby="errorFor(`launchers.${application}.urlTemplate`) ? fieldErrorId(`launchers.${application}.urlTemplate`) : undefined" />
-                                <small v-if="errorFor(`launchers.${application}.urlTemplate`)" :id="fieldErrorId(`launchers.${application}.urlTemplate`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.urlTemplate`) }}</small>
-                              </label>
-                            </div>
-                          </article>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                    <AccordionItem v-if="form.notifications" id="notifications" value="notifications" class="notifications-card" data-settings-section="notifications">
-                      <AccordionTrigger>{{ t('settings.notifications.title') }}</AccordionTrigger>
-                      <AccordionContent>
-                        <label class="notification-url">
-                          <span><strong>{{ t('settings.notifications.needsPersonUrl') }}</strong><small>{{ t('settings.notifications.needsPersonUrlMeta') }}</small></span>
-                          <input v-model.trim="form.notifications.needsPersonUrl" type="url" maxlength="2048" spellcheck="false"
-                            placeholder="http://127.0.0.1:9123/fuli" data-needs-person-url data-settings-field="notifications.needsPersonUrl"
-                            :aria-invalid="errorFor('notifications.needsPersonUrl') ? 'true' : undefined"
-                            :aria-describedby="errorFor('notifications.needsPersonUrl') ? fieldErrorId('notifications.needsPersonUrl') : undefined" />
-                          <small v-if="errorFor('notifications.needsPersonUrl')" :id="fieldErrorId('notifications.needsPersonUrl')" class="settings-field-error" data-settings-field-error>{{ errorFor('notifications.needsPersonUrl') }}</small>
-                        </label>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
-                </Card>
+                              <input v-model.trim="form.conversationLaunchers[application].urlTemplate" type="text" maxlength="1024" spellcheck="false" required
+                                :data-settings-field="`launchers.${application}.urlTemplate`"
+                                :aria-invalid="errorFor(`launchers.${application}.urlTemplate`) ? 'true' : undefined"
+                                :aria-describedby="errorFor(`launchers.${application}.urlTemplate`) ? fieldErrorId(`launchers.${application}.urlTemplate`) : undefined" />
+                              <small v-if="errorFor(`launchers.${application}.urlTemplate`)" :id="fieldErrorId(`launchers.${application}.urlTemplate`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.urlTemplate`) }}</small>
+                            </label>
+                          </div>
+                        </article>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem v-if="form.notifications" id="notifications" value="notifications" class="notifications-card" data-settings-section="notifications">
+                    <AccordionTrigger>{{ t('settings.notifications.title') }}</AccordionTrigger>
+                    <AccordionContent>
+                      <label class="notification-url">
+                        <span><strong>{{ t('settings.notifications.needsPersonUrl') }}</strong><small>{{ t('settings.notifications.needsPersonUrlMeta') }}</small></span>
+                        <input v-model.trim="form.notifications.needsPersonUrl" type="url" maxlength="2048" spellcheck="false"
+                          placeholder="http://127.0.0.1:9123/fuli" data-needs-person-url data-settings-field="notifications.needsPersonUrl"
+                          :aria-invalid="errorFor('notifications.needsPersonUrl') ? 'true' : undefined"
+                          :aria-describedby="errorFor('notifications.needsPersonUrl') ? fieldErrorId('notifications.needsPersonUrl') : undefined" />
+                        <small v-if="errorFor('notifications.needsPersonUrl')" :id="fieldErrorId('notifications.needsPersonUrl')" class="settings-field-error" data-settings-field-error>{{ errorFor('notifications.needsPersonUrl') }}</small>
+                      </label>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </Card>
               </PageColumns>
             </TabsContent>
 
             <!-- Network -->
             <TabsContent value="network" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="network">
               <PageColumns>
-                <Card as="section" class="settings-card" aria-labelledby="settings-lan-title">
-                  <CardHeader><CardTitle id="settings-lan-title" as="h2">{{ t('settings.groups.lan') }}</CardTitle></CardHeader>
-                  <div class="setting-list">
-                    <label class="setting-row">
-                      <span><strong>{{ t('settings.behavior.lanAccess') }}</strong><small>{{ t('settings.behavior.lanAccessMeta') }}</small></span>
-                      <Switch v-model="form.lanAccess" :aria-label="t('settings.behavior.lanAccess')" />
-                    </label>
-                  </div>
-                  <SettingsRestartNotice v-if="pendingRestart.has('lanAccess')" class="settings-restart" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
-                </Card>
-                <PeerSettings />
-                <Card as="section" class="settings-card settings-advanced-card" aria-labelledby="settings-network-advanced-title">
-                  <CardHeader><CardTitle id="settings-network-advanced-title" as="h2">{{ t('settings.groups.advanced') }}</CardTitle></CardHeader>
-                  <Accordion v-model="openSections" type="multiple" :unmount-on-hide="false" class="settings-accordion">
-                    <AccordionItem value="ports" class="ports-card" data-settings-section="ports">
-                      <AccordionTrigger>{{ t('settings.ports.title') }}</AccordionTrigger>
-                      <AccordionContent>
-                        <div class="port-section">
-                          <h3>{{ t('settings.ports.personal') }}</h3>
-                          <div class="port-grid">
-                            <label v-for="key in PERSONAL_PORT_KEYS" :key="key">
-                              <span>{{ t(`settings.ports.${key}`) }}</span>
-                              <input v-model.number="form.ports[key]" type="number" min="1" max="65535" required
-                                :data-settings-field="`ports.${key}`" data-restart-field
-                                :aria-invalid="errorFor(`ports.${key}`) ? 'true' : undefined"
-                                :aria-describedby="errorFor(`ports.${key}`) ? fieldErrorId(`ports.${key}`) : undefined" />
-                              <small v-if="errorFor(`ports.${key}`)" :id="fieldErrorId(`ports.${key}`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`ports.${key}`) }}</small>
-                              <small>{{ t('settings.ports.active', { port: activePort(key) }) }}</small>
-                            </label>
-                          </div>
-                          <SettingsRestartNotice v-if="pendingRestart.has('ports')" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
+              <Card as="section" class="settings-card" aria-labelledby="settings-lan-title">
+                <CardHeader><CardTitle id="settings-lan-title" as="h2">{{ t('settings.groups.lan') }}</CardTitle></CardHeader>
+                <div class="setting-list">
+                  <label class="setting-row">
+                    <span><strong>{{ t('settings.behavior.lanAccess') }}</strong><small>{{ t('settings.behavior.lanAccessMeta') }}</small></span>
+                    <Switch v-model="form.lanAccess" :aria-label="t('settings.behavior.lanAccess')" />
+                  </label>
+                </div>
+                <SettingsRestartNotice v-if="pendingRestart.has('lanAccess')" class="settings-restart" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
+              </Card>
+              <PeerSettings />
+              <Card as="section" class="settings-card settings-advanced-card" aria-labelledby="settings-network-advanced-title">
+                <CardHeader><CardTitle id="settings-network-advanced-title" as="h2">{{ t('settings.groups.advanced') }}</CardTitle></CardHeader>
+                <Accordion v-model="openSections" type="multiple" :unmount-on-hide="false" class="settings-accordion">
+                  <AccordionItem value="ports" class="ports-card" data-settings-section="ports">
+                    <AccordionTrigger>{{ t('settings.ports.title') }}</AccordionTrigger>
+                    <AccordionContent>
+                      <div class="port-section">
+                        <h3>{{ t('settings.ports.personal') }}</h3>
+                        <div class="port-grid">
+                          <label v-for="key in PERSONAL_PORT_KEYS" :key="key">
+                            <span>{{ t(`settings.ports.${key}`) }}</span>
+                            <input v-model.number="form.ports[key]" type="number" min="1" max="65535" required
+                              :data-settings-field="`ports.${key}`" data-restart-field
+                              :aria-invalid="errorFor(`ports.${key}`) ? 'true' : undefined"
+                              :aria-describedby="errorFor(`ports.${key}`) ? fieldErrorId(`ports.${key}`) : undefined" />
+                            <small v-if="errorFor(`ports.${key}`)" :id="fieldErrorId(`ports.${key}`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`ports.${key}`) }}</small>
+                            <small>{{ t('settings.ports.active', { port: activePort(key) }) }}</small>
+                          </label>
                         </div>
-                        <div class="port-section development-section">
-                          <div>
-                            <h3>{{ t('settings.ports.development') }}</h3>
-                            <span>{{ t('settings.ports.developing') }}</span>
-                          </div>
-                          <p>{{ t('settings.ports.developmentMeta') }}</p>
+                        <SettingsRestartNotice v-if="pendingRestart.has('ports')" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
+                      </div>
+                      <div class="port-section development-section">
+                        <div>
+                          <h3>{{ t('settings.ports.development') }}</h3>
+                          <span>{{ t('settings.ports.developing') }}</span>
                         </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
-                </Card>
+                        <p>{{ t('settings.ports.developmentMeta') }}</p>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </Card>
               </PageColumns>
             </TabsContent>
 
             <!-- System -->
             <TabsContent value="system" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="system">
               <PageColumns>
-                <Card as="section" class="settings-card" aria-labelledby="settings-interface-title">
-                  <CardHeader><CardTitle id="settings-interface-title" as="h2">{{ t('settings.groups.interface') }}</CardTitle></CardHeader>
-                  <div class="setting-list">
-                    <div class="setting-row select-row">
-                      <span><strong>{{ t('settings.behavior.language') }}</strong></span>
-                      <OptionSelect
-                        class="settings-select"
-                        control-id="settings-language"
-                        :model-value="locale"
-                        :options="localeOptions"
-                        :label="t('settings.behavior.language')"
-                        @update:model-value="updateLocale"
-   />
-                    </div>
-                    <label class="setting-row">
-                      <span><strong>{{ t('settings.behavior.reduceMotion') }}</strong><small>{{ t('settings.behavior.reduceMotionMeta') }}</small></span>
-                      <Switch data-reduce-motion :model-value="motionPreference === 'reduced'" :aria-label="t('settings.behavior.reduceMotion')" @update:model-value="toggleReducedMotion" />
-                    </label>
+              <Card as="section" class="settings-card" aria-labelledby="settings-interface-title">
+                <CardHeader><CardTitle id="settings-interface-title" as="h2">{{ t('settings.groups.interface') }}</CardTitle></CardHeader>
+                <div class="setting-list">
+                  <div class="setting-row select-row">
+                    <span><strong>{{ t('settings.behavior.language') }}</strong></span>
+                    <OptionSelect
+                      class="settings-select"
+                      control-id="settings-language"
+                      :model-value="locale"
+                      :options="localeOptions"
+                      :label="t('settings.behavior.language')"
+                      @update:model-value="updateLocale"
+ />
                   </div>
-                </Card>
-                <Card as="section" class="settings-card" aria-labelledby="settings-runtime-title">
-                  <CardHeader><CardTitle id="settings-runtime-title" as="h2">{{ t('settings.groups.runtime') }}</CardTitle></CardHeader>
-                  <div class="setting-list">
-                    <!-- Native is the default runtime; the choice only matters while an
-                         older container install still needs to move over. -->
-                    <div v-if="showsRuntimeMode" class="setting-row select-row">
-                      <span>
-                        <strong>{{ t('settings.behavior.runtimeMode') }}</strong>
-                        <small>{{ recommendsNativeRuntime
-                          ? t('settings.behavior.runtimeRecommendation')
-                          : t('settings.behavior.runtimeModeMeta', {
-                            mode: t(`settings.behavior.runtimeModes.${settings?.active.graphRuntimeMode ?? form.graphRuntimeMode}`),
-                          }) }}</small>
-                      </span>
-                      <OptionSelect
-                        class="settings-select"
-                        control-id="settings-runtime-mode"
-                        :model-value="form.graphRuntimeMode"
-                        :options="runtimeModeOptions"
-                        :label="t('settings.behavior.runtimeMode')"
-                        @update:model-value="updateRuntimeMode"
-   />
-                    </div>
-                    <div class="setting-row select-row">
-                      <span><strong>{{ t('settings.resources.refresh') }}</strong></span>
-                      <OptionSelect
-                        class="settings-select"
-                        control-id="settings-refresh-interval"
-                        :model-value="String(form.resourceRefreshSeconds)"
-                        :options="refreshOptions"
-                        :label="t('settings.resources.refresh')"
-                        @update:model-value="updateRefreshInterval"
-   />
-                    </div>
+                  <label class="setting-row">
+                    <span><strong>{{ t('settings.behavior.reduceMotion') }}</strong><small>{{ t('settings.behavior.reduceMotionMeta') }}</small></span>
+                    <Switch data-reduce-motion :model-value="motionPreference === 'reduced'" :aria-label="t('settings.behavior.reduceMotion')" @update:model-value="toggleReducedMotion" />
+                  </label>
+                </div>
+              </Card>
+              <Card as="section" class="settings-card" aria-labelledby="settings-runtime-title">
+                <CardHeader><CardTitle id="settings-runtime-title" as="h2">{{ t('settings.groups.runtime') }}</CardTitle></CardHeader>
+                <div class="setting-list">
+                  <!-- Native is the default runtime; the choice only matters while an
+                       older container install still needs to move over. -->
+                  <div v-if="showsRuntimeMode" class="setting-row select-row">
+                    <span>
+                      <strong>{{ t('settings.behavior.runtimeMode') }}</strong>
+                      <small>{{ recommendsNativeRuntime
+                        ? t('settings.behavior.runtimeRecommendation')
+                        : t('settings.behavior.runtimeModeMeta', {
+                          mode: t(`settings.behavior.runtimeModes.${settings?.active.graphRuntimeMode ?? form.graphRuntimeMode}`),
+                        }) }}</small>
+                    </span>
+                    <OptionSelect
+                      class="settings-select"
+                      control-id="settings-runtime-mode"
+                      :model-value="form.graphRuntimeMode"
+                      :options="runtimeModeOptions"
+                      :label="t('settings.behavior.runtimeMode')"
+                      @update:model-value="updateRuntimeMode"
+ />
                   </div>
-                  <SettingsRestartNotice v-if="pendingRestart.has('graphRuntimeMode')" class="settings-restart" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
-                </Card>
-                <Card as="section" class="settings-card" aria-labelledby="settings-data-format-title">
-                  <CardHeader>
-                    <CardTitle id="settings-data-format-title" as="h2">{{ t('dataFormat.title') }}</CardTitle>
-                    <CardDescription>{{ t('dataFormat.settingsEntry') }}</CardDescription>
-                    <CardAction>
-                      <Button as-child size="sm" variant="outline">
-                        <RouterLink to="/settings/data-format" data-open-data-format>{{ t('dataFormat.open') }}</RouterLink>
-                      </Button>
-                    </CardAction>
-                  </CardHeader>
-                </Card>
-                <Card as="section" class="settings-card resource-card" aria-labelledby="settings-resources-title">
-                  <CardHeader>
-                    <CardTitle id="settings-resources-title" as="h2">{{ t('settings.resources.title') }}</CardTitle>
-                    <CardDescription v-if="resources">{{ t('settings.resources.measuredAt', { time: formatTime(resources.sampledAt) }) }}</CardDescription>
-                    <CardAction>
-                      <Button size="sm" variant="ghost" :disabled="loadingResources" @click="loadResources">
-                        {{ t('common.actions.refresh') }}
-                      </Button>
-                    </CardAction>
-                  </CardHeader>
-                  <GrowthLoading v-if="loadingResources" :variant="resources ? 'inline' : 'compact'" :label="t('settings.resources.loading')" />
-                  <p v-if="resourceError" class="settings-error" role="alert">{{ resourceError }}</p>
-                  <template v-else-if="resources">
-                    <div class="resource-totals">
-                      <article>
-                        <span>{{ t('settings.resources.memory') }}</span>
-                        <strong>{{ formatBytes(resources.memory.usedBytes) }}</strong>
-                        <small>{{ t('settings.resources.available', { value: formatBytes(resources.memory.hostFreeBytes) }) }}</small>
-                      </article>
-                      <article>
-                        <span>{{ t('settings.resources.disk') }}</span>
-                        <strong>{{ formatBytes(resources.disk.usedBytes) }}</strong>
-                        <small>{{ t('settings.resources.available', { value: formatBytes(resources.disk.hostFreeBytes) }) }}</small>
-                      </article>
-                    </div>
-                    <Accordion v-model="openSections" type="multiple" :unmount-on-hide="false" class="settings-accordion">
-                      <AccordionItem value="usage" data-settings-section="usage">
-                        <AccordionTrigger>{{ t('ui.usageDetails') }}</AccordionTrigger>
-                        <AccordionContent>
-                          <div class="resource-breakdowns">
-                            <div class="resource-group">
-                              <h3>{{ t('settings.resources.memory') }}</h3>
-                              <div v-for="component in resources.memory.components" :key="component.id" class="resource-row">
-                                <div><span>{{ componentLabel(component) }}</span><strong>{{ formatBytes(component.bytes) }}</strong></div>
-                                <i><b :style="{ width: barWidth(component.bytes, memoryMax) }" /></i>
-                              </div>
-                            </div>
-                            <div class="resource-group">
-                              <h3>{{ t('settings.resources.disk') }}</h3>
-                              <div v-for="component in resources.disk.components" :key="component.id" class="resource-row">
-                                <div><span>{{ componentLabel(component) }}</span><strong>{{ formatBytes(component.bytes) }}</strong></div>
-                                <i><b :style="{ width: barWidth(component.bytes, diskMax) }" /></i>
-                              </div>
+                  <div class="setting-row select-row">
+                    <span><strong>{{ t('settings.resources.refresh') }}</strong></span>
+                    <OptionSelect
+                      class="settings-select"
+                      control-id="settings-refresh-interval"
+                      :model-value="String(form.resourceRefreshSeconds)"
+                      :options="refreshOptions"
+                      :label="t('settings.resources.refresh')"
+                      @update:model-value="updateRefreshInterval"
+ />
+                  </div>
+                </div>
+                <SettingsRestartNotice v-if="pendingRestart.has('graphRuntimeMode')" class="settings-restart" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
+              </Card>
+              <Card as="section" class="settings-card" aria-labelledby="settings-data-format-title">
+                <CardHeader>
+                  <CardTitle id="settings-data-format-title" as="h2">{{ t('dataFormat.title') }}</CardTitle>
+                  <CardDescription>{{ t('dataFormat.settingsEntry') }}</CardDescription>
+                  <CardAction>
+                    <Button as-child size="sm" variant="outline">
+                      <RouterLink to="/settings/data-format" data-open-data-format>{{ t('dataFormat.open') }}</RouterLink>
+                    </Button>
+                  </CardAction>
+                </CardHeader>
+              </Card>
+              <Card as="section" class="settings-card resource-card" aria-labelledby="settings-resources-title">
+                <CardHeader>
+                  <CardTitle id="settings-resources-title" as="h2">{{ t('settings.resources.title') }}</CardTitle>
+                  <CardDescription v-if="resources">{{ t('settings.resources.measuredAt', { time: formatTime(resources.sampledAt) }) }}</CardDescription>
+                  <CardAction>
+                    <Button size="sm" variant="ghost" :disabled="loadingResources" @click="loadResources">
+                      {{ t('common.actions.refresh') }}
+                    </Button>
+                  </CardAction>
+                </CardHeader>
+                <GrowthLoading v-if="loadingResources" :variant="resources ? 'inline' : 'compact'" :label="t('settings.resources.loading')" />
+                <p v-if="resourceError" class="settings-error" role="alert">{{ resourceError }}</p>
+                <template v-else-if="resources">
+                  <div class="resource-totals">
+                    <article>
+                      <span>{{ t('settings.resources.memory') }}</span>
+                      <strong>{{ formatBytes(resources.memory.usedBytes) }}</strong>
+                      <small>{{ t('settings.resources.available', { value: formatBytes(resources.memory.hostFreeBytes) }) }}</small>
+                    </article>
+                    <article>
+                      <span>{{ t('settings.resources.disk') }}</span>
+                      <strong>{{ formatBytes(resources.disk.usedBytes) }}</strong>
+                      <small>{{ t('settings.resources.available', { value: formatBytes(resources.disk.hostFreeBytes) }) }}</small>
+                    </article>
+                  </div>
+                  <Accordion v-model="openSections" type="multiple" :unmount-on-hide="false" class="settings-accordion">
+                    <AccordionItem value="usage" data-settings-section="usage">
+                      <AccordionTrigger>{{ t('ui.usageDetails') }}</AccordionTrigger>
+                      <AccordionContent>
+                        <div class="resource-breakdowns">
+                          <div class="resource-group">
+                            <h3>{{ t('settings.resources.memory') }}</h3>
+                            <div v-for="component in resources.memory.components" :key="component.id" class="resource-row">
+                              <div><span>{{ componentLabel(component) }}</span><strong>{{ formatBytes(component.bytes) }}</strong></div>
+                              <i><b :style="{ width: barWidth(component.bytes, memoryMax) }" /></i>
                             </div>
                           </div>
-                          <div class="resource-notes">
-                            <span>{{ t('settings.resources.diskMeasuredAt', { time: formatTime(resources.disk.measuredAt) }) }}</span>
-                            <span v-if="resources.status === 'partial'">{{ t('settings.resources.partial') }}</span>
-                            <span v-if="resources.disk.temporaryBytes">{{ t('settings.resources.temporary', { value: formatBytes(resources.disk.temporaryBytes) }) }}</span>
-                            <span>{{ t(resources.exclusions.includes('shared-container-vm-overhead')
-                              ? 'settings.resources.exclusionsContainer'
-                              : 'settings.resources.exclusionsNative') }}</span>
+                          <div class="resource-group">
+                            <h3>{{ t('settings.resources.disk') }}</h3>
+                            <div v-for="component in resources.disk.components" :key="component.id" class="resource-row">
+                              <div><span>{{ componentLabel(component) }}</span><strong>{{ formatBytes(component.bytes) }}</strong></div>
+                              <i><b :style="{ width: barWidth(component.bytes, diskMax) }" /></i>
+                            </div>
                           </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    </Accordion>
-                  </template>
-                </Card>
-                <DiagnosticsSettings />
+                        </div>
+                        <div class="resource-notes">
+                          <span>{{ t('settings.resources.diskMeasuredAt', { time: formatTime(resources.disk.measuredAt) }) }}</span>
+                          <span v-if="resources.status === 'partial'">{{ t('settings.resources.partial') }}</span>
+                          <span v-if="resources.disk.temporaryBytes">{{ t('settings.resources.temporary', { value: formatBytes(resources.disk.temporaryBytes) }) }}</span>
+                          <span>{{ t(resources.exclusions.includes('shared-container-vm-overhead')
+                            ? 'settings.resources.exclusionsContainer'
+                            : 'settings.resources.exclusionsNative') }}</span>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                </template>
+              </Card>
+              <DiagnosticsSettings />
               </PageColumns>
             </TabsContent>
           </fieldset>

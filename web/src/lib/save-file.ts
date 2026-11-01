@@ -4,15 +4,11 @@
 // blob link itself (WebView2 has no download event for the client, WKWebView
 // drops blob downloads). In a browser it is an ordinary download.
 
-interface DesktopBridge { callHandler(name: string, ...args: unknown[]): Promise<unknown> }
+import { desktopBridge } from './desktop-client'
+
 type SavedAnswer = { saved?: boolean, path?: string, error?: string } | null | undefined
 
 export const DESKTOP_SAVE_HANDLER = 'fuliSaveFile'
-
-function desktopBridge(): DesktopBridge | null {
-  const bridge = (window as { flutter_inappwebview?: DesktopBridge }).flutter_inappwebview
-  return typeof bridge?.callHandler === 'function' ? bridge : null
-}
 
 /** Resolves with where the client saved it, or null for a browser download; rejects if the client could not save. */
 export async function saveFile(name: string, content: string, type: string): Promise<string | null> {
