@@ -53,6 +53,20 @@ test('chat directory omits schemas and calls require exact discovery and origina
   });
 });
 
+test('chat lists no length or item bounds but still enforces and discovers them', async () => {
+  await connected({}, async client => {
+    const listed = JSON.stringify((await client.listTools()).tools.map(t => t.inputSchema));
+    assert.doesNotMatch(listed, /"(minLength|maxLength|minItems|maxItems)"/);
+    assert.match(listed, /"maximum":50/);
+    await assert.rejects(client.callTool({ name: 'search_current_project_knowledge',
+      arguments: { projectPath: '/synthetic/project', queries: Array.from({ length: 11 }, (_, i) => `q${i}`) } }),
+    /queries has more than the maximum of 10 items/);
+    const catalog = await client.callTool({ name: 'list_agent_interfaces',
+      arguments: { toolName: 'search_current_project_knowledge' } });
+    assert.equal(catalog.structuredContent.tools[0].inputSchema.properties.queries.maxItems, 10);
+  });
+});
+
 test('a restricted allow-list cannot expose or invoke tools outside its boundary', async () => {
   await connected({}, async client => {
     await client.callTool({ name: 'list_agent_interfaces', arguments: { toolName: 'update_capture_policy' } });

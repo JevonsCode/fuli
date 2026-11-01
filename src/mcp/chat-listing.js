@@ -28,10 +28,23 @@ export const CHAT_LISTING = Object.freeze({
 // The schema a chat client sees for a definition: compact properties swapped in.
 export function chatListedSchema(definition) {
   const properties = CHAT_LISTING[definition.name]?.properties;
-  const schema = properties ? { ...definition.inputSchema, properties: { ...definition.inputSchema.properties, ...properties } } : definition.inputSchema;
+  const schema = withoutBounds(properties ? { ...definition.inputSchema, properties: { ...definition.inputSchema.properties, ...properties } } : definition.inputSchema);
   if (!['search_knowledge_graph', 'search_current_project_knowledge'].includes(definition.name)) return schema;
   // Rare continuation arguments use the already-listed fuli_call dispatcher;
   // the default tools/list cost stays unchanged. Full discovery keeps cursor.
   const { cursor, ...listed } = schema.properties;
   return { ...schema, properties: listed };
+}
+
+// Length and item-count bounds stay out of the chat listing: OpenCode code
+// mode renders each one as a JSDoc tag in every later request. The call is
+// still checked against the full bounds, which list_agent_interfaces returns.
+// Integer ranges stay: without them zod lists the safe-integer range instead.
+const LISTED_BOUNDS = ['minLength', 'maxLength', 'minItems', 'maxItems'];
+function withoutBounds(schema) {
+  const listed = Object.fromEntries(Object.entries(schema).filter(([key]) => !LISTED_BOUNDS.includes(key)));
+  if (schema.properties) listed.properties = Object.fromEntries(Object.entries(schema.properties)
+    .map(([name, property]) => [name, withoutBounds(property)]));
+  if (schema.items) listed.items = withoutBounds(schema.items);
+  return listed;
 }
