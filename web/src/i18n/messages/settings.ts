@@ -177,10 +177,10 @@ export const settingsMessages = {
     },
     agentNaming: {
       title: 'Agent 取名风格',
-      description: '用一句话写你想要的名字风格，之后新建的 Agent 按它取名。建议 100 字左右；留空就用 FULI 默认的名字。已有 Agent 不会改名。',
-      placeholder: '例如：用两个字的植物名，像青禾、松风',
+      description: '这是 FULI 默认的取名规则，改成你想要的，之后新建的 Agent 就按它取名。建议 100 字左右；已有 Agent 不会改名。',
+      default: '像人一样的英文名：一个名加一个姓，比如 Lyra North、Milo Reed；不用职位名',
       count: '{count} / 建议 100 字',
-      clear: '清空',
+      reset: '恢复默认',
     },
     topicPromotion: {
       title: '话题自动升级为项目',
@@ -438,10 +438,10 @@ export const settingsMessages = {
     },
     agentNaming: {
       title: 'Agent naming style',
-      description: 'Describe the names you want in a sentence; Agents created from now on are named in that style. About 100 characters is suggested; leave it empty for FULI\'s default names. Existing Agents keep their names.',
-      placeholder: 'For example: two-syllable plant names, like Sage or Rowan',
+      description: 'This is FULI\'s default naming rule. Change it to what you want and Agents created from now on are named that way. About 100 characters is suggested; existing Agents keep their names.',
+      default: 'Person-like English names: a first name and a surname, like Lyra North or Milo Reed; no job titles',
       count: '{count} / about 100 suggested',
-      clear: 'Clear',
+      reset: 'Restore default',
     },
     topicPromotion: {
       title: 'Topics grow into projects',

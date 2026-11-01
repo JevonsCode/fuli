@@ -46,7 +46,8 @@ local-user-only) is free text, so only a model can follow it: the recruiting Age
 `get_agent_naming_style` right before it proposes a new Agent's `displayName`, and FULI only
 checks that the name is free. It is never added to a task entry. A clash means proposing another
 name in the same style; an Agent that cannot find one tells the person. No style means the
-generated names above. Existing Agents are never renamed
+generated names above; the settings field shows that rule as editable starting text, and leaving
+or restoring it saves no style. Existing Agents are never renamed
 automatically: when an Agent's shown name reads as a job title, reading it returns
 `nameSuggestion`, a free nickname the profile page offers as a one-click rename.
 
