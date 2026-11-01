@@ -88,3 +88,24 @@ export function timelineDays(entries: readonly TimelineEntry[], now = new Date()
   }
   return days
 }
+
+const HOUR = 3_600_000
+
+/**
+ * The quiet stretch between an entry and the older one under it, shown on the
+ * rail when it is an hour or more: how the work paced itself, read from the
+ * recorded times alone.
+ */
+export function timelineGap(newer: TimelineEntry, older: TimelineEntry | undefined): string | null {
+  const span = older?.at && newer.at ? Date.parse(newer.at) - Date.parse(older.at) : NaN
+  if (!(span >= HOUR)) return null
+  const hours = Math.floor(span / HOUR)
+  return t('overview.timeline.gap', { span: new Intl.NumberFormat(currentLocale(), { style: 'unit', unit: 'hour', unitDisplay: 'long' }).format(hours) })
+}
+
+/** How many entries each FLA recorded on the task. */
+export function timelineCounts(entries: readonly TimelineEntry[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const entry of entries) if (entry.agentId) counts.set(entry.agentId, (counts.get(entry.agentId) ?? 0) + 1)
+  return counts
+}

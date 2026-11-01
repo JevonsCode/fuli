@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { setLocale } from '@/i18n'
 import type { ProjectAgentTaskEvent, ProjectAgentTaskRecord } from '@/types'
 import WorkbenchTimeline from './WorkbenchTimeline.vue'
-import { taskTimeline, timelineDays } from './task-timeline'
+import { taskTimeline, timelineCounts, timelineDays, timelineGap } from './task-timeline'
 
 // Synthetic task events only.
 const event = (id: string, at: string, patch: Partial<ProjectAgentTaskEvent> = {}): ProjectAgentTaskEvent => ({
@@ -77,5 +77,37 @@ describe('the task timeline', () => {
     await wrapper.get('[data-timeline-earlier]').trigger('click')
     expect(wrapper.findAll('[data-timeline-entry]')).toHaveLength(11)
     expect(wrapper.find('[data-timeline-earlier]').exists()).toBe(false)
+  })
+})
+
+describe('the timeline as it plays', () => {
+  it('says the quiet stretch of an hour or more between two steps, and counts each FLA\'s steps', () => {
+    const entries = taskTimeline(task([
+      event('a', '2026-11-01T08:00:00Z'),
+      event('b', '2026-11-01T08:40:00Z'),
+      event('c', '2026-11-01T11:50:00Z', { agentId: 'agent-b' }),
+      event('d', '2026-11-01T12:00:00Z', { actorKind: 'system', agentId: null }),
+    ]))
+    expect(timelineGap(entries[1]!, entries[2])).toBe('隔了 3小时')
+    expect(timelineGap(entries[2]!, entries[3])).toBeNull()
+    expect(timelineGap(entries[0]!, entries[1])).toBeNull()
+    expect(timelineGap(entries[3]!, undefined)).toBeNull()
+    expect([...timelineCounts(entries)]).toEqual([['agent-b', 1], ['agent-a', 2]])
+  })
+
+  it('hangs an FLA\'s face on the rail, a dot for the system, and lets the newest step of live work breathe', () => {
+    const entries = taskTimeline(task([
+      event('a', '2026-11-01T08:00:00Z', { actorKind: 'system', agentId: null }),
+      event('b', '2026-11-01T10:00:00Z'),
+    ]))
+    const wrapper = mount(WorkbenchTimeline, { props: { entries, taskKey: 'task-a', agentName: () => 'Synthetic FLA', live: true } })
+    const newest = wrapper.get('[data-timeline-entry="b"]')
+    expect(newest.classes()).toContain('is-now')
+    expect(newest.find('.timeline-face img').exists()).toBe(true)
+    expect(wrapper.get('[data-timeline-entry="a"] .timeline-dot').attributes('data-actor')).toBe('system')
+    expect(wrapper.get('[data-timeline-gap]').text()).toBe('隔了 2小时')
+    wrapper.unmount()
+    const still = mount(WorkbenchTimeline, { props: { entries, taskKey: 'task-a', agentName: () => 'Synthetic FLA' } })
+    expect(still.find('.is-now').exists()).toBe(false)
   })
 })
