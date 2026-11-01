@@ -60,7 +60,7 @@ test('the doctor names each finding with who fixes it, and a blocking one degrad
   registerMcpProcess(runtimeConfigPath, { sourceApplication: 'codex', version: '0.20.0', pid: 105 }).recordSession('gone');
   const checkup = doctor(t, {
     observeClients: () => ({ clients: [
-      client('codex', 'changed'),
+      client('codex', 'changed', { since: '2026-10-27T10:00:00.000Z' }),
       client('opencode', 'skills_left', { previouslyConnected: true, manualOnly: true }),
       // Skills a client never connected to FULI has: no finding, never connected by a repair.
       client('cursor', 'skills_left'),
@@ -69,7 +69,9 @@ test('the doctor names each finding with who fixes it, and a blocking one degrad
     ] }),
     previewDataFormats: () => previewMigrations({ dataDir: root, graph: graph({ store: 'graph', kind: 'neo4j',
       action: 'apply', automatic: [], step: { id: 'graph-0007-backfill', count: 3 }, digest: 'a'.repeat(64) }) }),
-    liveProcesses: () => liveMcpProcesses(runtimeConfigPath, { isAlive }),
+    // The servers' start times are fixed so the oldest one names when they started.
+    liveProcesses: () => liveMcpProcesses(runtimeConfigPath, { isAlive })
+      .map(record => ({ ...record, startedAt: `2026-10-28T0${record.pid - 100}:00:00.000Z` })),
     latestVersion: () => ({ status: 'ready', currentVersion: VERSION, latestVersion: '0.23.0', updateAvailable: true }),
     lastUpdate: () => ({ id: 'u1', status: 'updated', kind: 'windows-tray', fromVersion: '0.21.0', version: VERSION,
       clients: 'not_reconnected' })
@@ -83,11 +85,11 @@ test('the doctor names each finding with who fixes it, and a blocking one degrad
       { id: 'data_format_waiting:graph (personal)', kind: 'data_format_waiting', severity: 'blocking', fix: 'person',
         data: { store: 'graph', label: 'graph (personal)', steps: ['graph-0007-backfill'] } },
       { id: 'client_outdated:codex', kind: 'client_outdated', severity: 'warning', fix: 'auto',
-        data: { clientId: 'codex', label: 'CODEX', status: 'changed' } },
+        data: { clientId: 'codex', label: 'CODEX', status: 'changed', since: '2026-10-27T10:00:00.000Z' } },
       { id: 'client_outdated:opencode', kind: 'client_outdated', severity: 'warning', fix: 'person',
         data: { clientId: 'opencode', label: 'OPENCODE', status: 'skills_left' } },
       { id: 'sessions_outdated:codex:0.21.0', kind: 'sessions_outdated', severity: 'warning', fix: 'person',
-        data: { client: 'codex', count: 3, runningVersion: '0.21.0', sessions: [
+        data: { client: 'codex', count: 3, runningVersion: '0.21.0', since: '2026-10-28T01:00:00.000Z', sessions: [
           { sourceApplication: 'codex', sessionId: 'thread-a' }, { sourceApplication: 'codex', sessionId: 'thread-b' }] } },
       { id: 'update_left_work', kind: 'update_left_work', severity: 'warning', fix: 'auto',
         data: { updateId: 'u1', status: 'updated', clients: 'not_reconnected', version: VERSION } },
@@ -98,6 +100,17 @@ test('the doctor names each finding with who fixes it, and a blocking one degrad
   });
   // The exited server's record went away on the way.
   assert.deepEqual(liveMcpProcesses(runtimeConfigPath, { isAlive }).map(({ pid }) => pid), [101, 102, 103, 104]);
+});
+
+test('an outdated item says since when: the oldest outdated server', async (t) => {
+  const processes = [
+    { pid: 1, version: '0.21.0', sourceApplication: 'codex', startedAt: '2026-10-28T05:00:00.000Z', sessionIds: [] },
+    { pid: 2, version: '0.21.0', sourceApplication: 'codex', startedAt: '2026-10-28T03:00:00.000Z', sessionIds: [] },
+    { pid: 3, version: '0.21.0', sourceApplication: 'cursor', sessionIds: [] },
+  ];
+  const { items } = await doctor(t, { liveProcesses: () => processes }).check();
+  const since = Object.fromEntries(items.filter(({ kind }) => kind === 'sessions_outdated').map(({ data }) => [data.client, data.since]));
+  assert.deepEqual(since, { codex: '2026-10-28T03:00:00.000Z', cursor: undefined });
 });
 
 test('an outdated item names at most 20 sessions', async (t) => {

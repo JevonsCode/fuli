@@ -63,6 +63,19 @@ describe('DoctorBanner', () => {
     expect(wrapper.findAllComponents(RouterLinkStub).map(link => link.props('to'))).toEqual(['/settings/data-format'])
   })
 
+  it('says since when each thing has been so, and nothing for one without a time', async () => {
+    const since = '2026-11-01T10:57:00.000Z'
+    api.getJson.mockResolvedValue(report('needs_person', [{ ...SESSIONS, data: { ...SESSIONS.data, since } }, OUTDATED]))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    const local = new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(since))
+    const minute = local.find(part => part.type === 'minute')!.value
+    const sessions = wrapper.get('[data-doctor-item="sessions_outdated:claude_code:0.21.0"] [data-doctor-since]').text()
+    expect(sessions).toMatch(new RegExp(`:${minute} 起$`))
+    expect(wrapper.find('[data-doctor-item="client_outdated:codex"] [data-doctor-since]').exists()).toBe(false)
+  })
+
   it('says when a waiting graph step was last seen while the graph is idle', async () => {
     const remembered = item('data_format_waiting:graph (personal)', 'data_format_waiting', 'blocking', 'person',
       { store: 'graph', label: 'graph (personal)', steps: ['graph/12-builtin-occupations'], lastSeenAt: '2026-10-31T09:00:00.000Z' })
