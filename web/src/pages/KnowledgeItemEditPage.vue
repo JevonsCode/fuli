@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import BackLink from '@/components/BackLink.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import PageColumns from '@/components/PageColumns.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -197,7 +198,7 @@ watch([spaceId, kind, itemId], () => {
         </Button>
       </div>
       <!-- The page's full width: the item's sections sit in two columns on a wide window. -->
-      <div class="page-columns">
+      <PageColumns>
         <KnowledgeBasisReview :item="item" :space-id="spaceId" @versioned="versioned" @failed="failed" />
         <template v-if="active">
           <KnowledgeScopeEditor :item="item" :space-id="spaceId" :projects="projects" @saved="saved" @failed="failed" />
@@ -221,7 +222,7 @@ watch([spaceId, kind, itemId], () => {
         <KnowledgeItemDependents :item="item" :space-id="spaceId" @saved="saved" @failed="failed" />
         <KnowledgeItemHistory :item="item" :space-id="spaceId" @open-version="openVersion" @source-deleted="sourceRemoved" />
         <KnowledgeHardDeleteSection :item="item" :space-id="spaceId" @deleted="removed" />
-      </div>
+      </PageColumns>
     </template>
   </div>
   <Dialog :open="Boolean(peekVersion)" @update:open="peekOpenChange">

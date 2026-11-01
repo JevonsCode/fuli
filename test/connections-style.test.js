@@ -15,7 +15,7 @@ test('connection sections are cards on the page width and keep accessible help l
   // Every page keeps the workbench's width (Jevons 11-01): the page sets no width of its
   // own, and on a wide window the two service cards sit side by side instead.
   assert.doesNotMatch(page, /max-w-|--(canvas|layout|column|form)-max|--form-measure/);
-  assert.match(page, /class="service-connection-grid page-columns"/);
+  assert.match(page, /<PageColumns role="group"/);
   assert.doesNotMatch(styles, /\.external-knowledge-section, \.conflict-policy-section/);
   const helpRule = styles.match(/\.section-help-link\s*\{(?<body>[^}]*)\}/);
 

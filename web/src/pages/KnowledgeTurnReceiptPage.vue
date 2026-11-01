@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import PageColumns from '@/components/PageColumns.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
@@ -52,8 +53,8 @@ watch([spaceId, episodes], () => { receipt.value = null; void load() }, { immedi
       <p v-if="receipt.deleted_count" class="m-0 text-sm text-muted-foreground" data-turn-deleted>
         {{ t('knowledgeHardDelete.receipt.deleted', { count: receipt.deleted_count }) }}
       </p>
-      <ol class="page-columns m-0 list-none p-0">
-        <li v-for="entry in receipt.entries" :key="`${entry.item_kind}:${entry.item_id}`" class="grid gap-2"
+      <PageColumns role="list">
+        <div v-for="entry in receipt.entries" :key="`${entry.item_kind}:${entry.item_id}`" role="listitem" class="grid gap-2"
           :data-turn-entry="entry.item_id">
           <div class="flex flex-wrap items-center gap-2">
             <Badge :variant="entry.change === 'created' ? 'default' : 'secondary'">{{ t(`knowledgeQuickEdit.turn.changed.${entry.change}`) }}</Badge>
@@ -62,8 +63,8 @@ watch([spaceId, episodes], () => { receipt.value = null; void load() }, { immedi
             </RouterLink>
           </div>
           <KnowledgeItemSummaryCard :item="entry" />
-        </li>
-      </ol>
+        </div>
+      </PageColumns>
     </template>
   </div>
   </section>

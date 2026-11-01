@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import PageColumns from '@/components/PageColumns.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -499,7 +500,7 @@ function required(value: string, label: string) {
 <template>
   <section class="view connections-view">
     <div class="flex w-full flex-col gap-4">
-    <div class="service-connection-grid page-columns" role="group" :aria-label="t('pages.connections.statusAria')">
+    <PageColumns role="group" :aria-label="t('pages.connections.statusAria')">
       <article class="service-connection-card" :data-status="personalReady ? 'ready' : 'error'">
         <header>
           <span class="service-connection-icon local" aria-hidden="true"><span class="nav-icon nav-icon-personal-project" /></span>
@@ -520,7 +521,7 @@ function required(value: string, label: string) {
           <div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ publicPurpose }}</dd></div>
         </dl>
       </article>
-    </div>
+    </PageColumns>
 
     <Card as="section" class="external-knowledge-section" aria-labelledby="external-knowledge-title">
       <div class="flex flex-wrap items-center gap-2 px-5">
