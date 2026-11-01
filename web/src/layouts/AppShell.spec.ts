@@ -188,15 +188,22 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('badges the waiting requests in the top bar and hides the badge at zero', async () => {
+  it('shows 待决策 as a full tray with papers while requests wait, and an empty tray otherwise', async () => {
     attentionTotal = 12
     const { wrapper } = await setup('/')
-    expect(wrapper.get('[data-attention-badge]').text()).toBe('9+')
-    expect(wrapper.get('[data-shell-inbox]').attributes('aria-label')).toBe('12 件事在等你')
+    const inbox = wrapper.get('[data-shell-inbox]')
+    expect(inbox.attributes('data-attention')).toBe('full')
+    expect(inbox.attributes('aria-label')).toBe('待决策：12 件事在等你')
+    expect(inbox.find('.tray-papers').exists()).toBe(true)
+    // The drawing says it, not a coloured count badge.
+    expect(inbox.text()).toBe('')
     wrapper.unmount()
     attentionTotal = 0
     const quiet = await setup('/')
-    expect(quiet.wrapper.find('[data-attention-badge]').exists()).toBe(false)
+    const empty = quiet.wrapper.get('[data-shell-inbox]')
+    expect(empty.attributes('data-attention')).toBe('empty')
+    expect(empty.attributes('aria-label')).toBe('待决策')
+    expect(empty.find('.tray-papers').exists()).toBe(false)
     quiet.wrapper.unmount()
   })
 
