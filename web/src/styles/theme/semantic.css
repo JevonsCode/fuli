@@ -37,6 +37,11 @@
   --surface-glass: rgb(255 255 255 / 58%);
   --surface-glass-strong: rgb(255 255 255 / 82%);
   --edge-glass: rgb(255 255 255 / 80%);
+  /* The dock's frosted glass (Jevons, 11-01): opaque enough, and blurred enough, that page text
+     scrolling beneath never competes with the icons; a solid surface where backdrop-filter is missing. */
+  --surface-dock: rgb(250 250 248 / 78%);
+  --filter-dock: blur(30px) saturate(190%);
+  --edge-dock: rgb(var(--shadow-rgb) / 8%);
   --color-success: #2e7d5b;
   --color-success-soft: #e8f2ec;
   --color-warning: #8a5a12;

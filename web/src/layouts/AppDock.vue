@@ -40,8 +40,8 @@ defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; space
 .app-dock {
   /* Left-aligned with the page canvas, which centres on very wide screens. */
   position: fixed; bottom: 20px; left: max(var(--page-gutter), calc((100vw - var(--canvas-max)) / 2)); z-index: var(--z-nav);
-  padding: 5px; border: 1px solid var(--edge-glass); border-radius: var(--radius-pill);
-  background: var(--surface-glass); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
+  padding: 5px; border: 1px solid var(--edge-dock); border-radius: var(--radius-pill);
+  background: var(--surface-dock); backdrop-filter: var(--filter-dock); -webkit-backdrop-filter: var(--filter-dock);
   box-shadow: 0 0 0 .5px rgb(var(--shadow-rgb) / 10%), 0 10px 30px -10px rgb(var(--shadow-rgb) / 28%);
 }
 .app-dock-items { display: flex; gap: 4px; margin: 0; padding: 0; list-style: none; }
@@ -97,6 +97,10 @@ defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; space
   /* A phone has no hover: the dock stays open. */
   .app-dock.is-folded:not(:hover, :has(:focus-visible)) .app-dock-item:not(.is-active) { max-width: 44px; overflow: visible; opacity: 1; }
   .app-dock.is-folded:not(:hover, :has(:focus-visible)) .app-dock-items { gap: 4px; }
+}
+/* Without backdrop-filter the glass would let text through: a solid surface instead. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .app-dock { background: var(--color-surface); }
 }
 @media (prefers-reduced-motion: reduce) { .app-dock-link, .app-dock-link::after, .app-dock-pins, .app-dock-item { transition: none; } }
 :root[data-motion="reduced"] .app-dock-link, :root[data-motion="reduced"] .app-dock-link::after, :root[data-motion="reduced"] .app-dock-pins, :root[data-motion="reduced"] .app-dock-item { transition: none; }
