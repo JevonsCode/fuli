@@ -11,6 +11,11 @@
 .app-topbar { view-transition-name: app-topbar; }
 .app-dock { view-transition-name: app-dock; }
 ::view-transition-group(app-topbar), ::view-transition-group(app-dock) { animation: none; }
+/* They show their new state at once. Cross-fading would squeeze the old snapshot
+   into the new box: a dock clicked while open folds afterwards, and its open
+   snapshot showed as a tiny row of icons over the folded button (Jevons 11-01). */
+::view-transition-old(app-topbar), ::view-transition-old(app-dock) { display: none; }
+::view-transition-new(app-topbar), ::view-transition-new(app-dock) { animation: none; }
 ::view-transition-old(root) { animation: page-out var(--motion-exit) both; }
 ::view-transition-new(root) { animation: page-in var(--motion-enter) both; }
 /* The transition's overlay covers the viewport and would swallow clicks while

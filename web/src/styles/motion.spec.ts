@@ -19,6 +19,11 @@ describe('motion system', () => {
     expect(rules).not.toMatch(/\b\d+m?s\b/)
   })
 
+  it('never shows a squeezed snapshot of the dock or top bar while a page changes', () => {
+    expect(rule('::view-transition-old(app-topbar), ::view-transition-old(app-dock)')).toContain('display: none')
+    expect(rule('::view-transition-new(app-topbar), ::view-transition-new(app-dock)')).toContain('animation: none')
+  })
+
   it('lets clicks through while a page transition runs', () => {
     expect(rule('::view-transition')).toContain('pointer-events: none')
   })
