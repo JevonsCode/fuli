@@ -10,6 +10,7 @@ import { formatDateTime } from '@/lib/date-time'
 import { connectActionKey, type Format, type ClientStatus, type ClientObservation, type ConnectionStatus,
   type ConnectionResult } from './client-connection-model'
 import { OptionSelect } from '@/components/ui/select'
+import UiIcon from '@/ui/UiIcon.vue'
 // Re-read configuration this often while the card is open and the page visible.
 const RECHECK_MS = 15_000
 
@@ -33,7 +34,8 @@ const options = computed(() => (['standard', 'vscode', 'server'] as const).map((
   value, label: t(`settings.connection.formats.${value}`),
 })))
 const clients = computed(() => (observation.value?.clients ?? []).filter((client) => client.status !== 'not_detected'))
-const icons: Record<ClientStatus, string> = { connected: '✓', changed: '!', skills_left: '!', removed: '×',
+// A connected client gets the shared check icon; the other states keep their plain marks.
+const icons: Record<Exclude<ClientStatus, 'connected'>, string> = { changed: '!', skills_left: '!', removed: '×',
   not_connected: '○', not_detected: '○', unknown: '?' }
 
 async function load() {
@@ -164,7 +166,7 @@ async function copy() {
       <ul v-if="observation">
         <li v-for="client in clients" :key="client.id" :data-client-status="client.status"
           :class="`client-status__item client-status__item--${client.status}`">
-          <span class="client-status__icon" aria-hidden="true">{{ icons[client.status] }}</span>
+          <span class="client-status__icon" aria-hidden="true"><UiIcon v-if="client.status === 'connected'" name="check" :size="14" /><template v-else>{{ icons[client.status] }}</template></span>
           <div>
             <strong>{{ client.label }}</strong>
             <span class="client-status__label">{{ t(`settings.connection.clients.status.${client.status}`) }}</span>
