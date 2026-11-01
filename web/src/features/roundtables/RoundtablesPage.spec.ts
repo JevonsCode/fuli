@@ -226,7 +226,7 @@ describe('RoundtablesPage', () => {
       await wrapper.vm.$router.push('/roundtables/thread-1')
       await flushPromises()
       expect(wrapper.get('[data-roundtable-list]').attributes('style')).toContain('display: none')
-      expect(wrapper.get('[data-roundtable-back]').attributes('href')).toBe('/roundtables')
+      expect(wrapper.get('[data-roundtable-back] [data-breadcrumb-parent]').attributes('href')).toBe('/roundtables')
       wrapper.unmount()
     } finally { vi.unstubAllGlobals() }
   })
@@ -349,7 +349,7 @@ describe('RoundtablesPage on a phone and with paging', () => {
     const wrapper = mount(RoundtablesPage, { global: { plugins: [router] }, attachTo: document.body })
     await flushPromises()
     expect(wrapper.text()).toContain('对话不存在或当前不可访问')
-    await wrapper.get('[data-roundtable-back]').trigger('click')
+    await wrapper.get('[data-roundtable-back] [data-breadcrumb-parent]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/roundtables')
     wrapper.unmount()

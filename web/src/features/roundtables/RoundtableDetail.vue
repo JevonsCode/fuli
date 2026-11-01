@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import BackLink from '@/components/BackLink.vue'
+import Breadcrumb from '@/components/Breadcrumb.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { currentLocale, t } from '@/i18n'
@@ -12,7 +12,7 @@ import type { Roundtable } from './useRoundtable'
 
 // The open conversation beside the list: a thread as a chat, an Agent room, or
 // where its read stands. On a narrow window the list and the conversation are
-// two steps, and "← 全部对话" goes back to the list (Back when the list opened it).
+// two steps, and the 全部对话 crumb goes back to the list (Back when the list opened it).
 defineProps<{ rt: Roundtable; narrow: boolean }>()
 const route = useRoute()
 const router = useRouter()
@@ -28,7 +28,7 @@ function time(value: string) {
 <template>
   <div class="rt-detail-pane">
     <template v-if="rt.hasSelection.value">
-      <BackLink v-if="narrow" class="rt-back" :to="listPath" :from="openedFromList" data-roundtable-back>{{ t('roundtable.back') }}</BackLink>
+      <Breadcrumb v-if="narrow" :parent="{ label: t('roundtable.back'), to: listPath, from: openedFromList }" data-roundtable-back />
       <RoundtableThreadChat v-if="rt.thread.value" :thread="rt.thread.value" :time="time" :stale="rt.detailStale.value" @updated="rt.threadUpdated" />
       <RoundtableRoom v-else-if="rt.room.value" :room="rt.room.value" :time="time" :loading-later="rt.loadingLater.value" :later-failed="rt.laterFailed.value"
         :later-stuck="rt.laterStuck.value" :new-messages="rt.newMessages.value" @later="rt.loadLater" />
@@ -52,8 +52,6 @@ function time(value: string) {
 
 <style scoped>
 .rt-detail-pane { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; }
-.rt-back { align-self: flex-start; color: var(--color-muted); font-size: var(--text-control); text-decoration: none; user-select: none; }
-.rt-back:hover { color: var(--color-ink); }
 .rt-detail-state { display: grid; align-content: start; gap: 10px; padding: 16px 4px; color: var(--color-muted); }
 .rt-detail-state p { margin: 0; }
 .rt-detail-none {

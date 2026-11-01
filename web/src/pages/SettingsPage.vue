@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -26,7 +25,7 @@ import { PERSONAL_PORT_KEYS, pendingRestartFields, withoutRestartChanges } from 
 import { captureSourceOff, withCaptureSource } from '@/features/capture/capture-sources'
 import { clientDetectionShape, shownCaptureClients, type ClientDetection } from '@/features/capture/capture-clients'
 import { fieldErrorMessage } from '@/features/settings/settings-field-error'
-import { matchingSections, settingSearchTerm, useSettingsSearch } from '@/features/settings/settings-search'
+import { linkedCard, settingSearchTerm, useSettingsSearch } from '@/features/settings/settings-search'
 import {
   CONVERSATION_SOURCE_APPLICATIONS,
   sourceApplicationName,
@@ -82,21 +81,6 @@ watch(activeTab, tab => {
   const { tab: _previous, ...query } = route.query
   void router.replace({ query: tab === 'memory' ? query : { ...query, tab } })
 })
-// Low-frequency items sit in Accordion sections. A search match or an invalid
-// field opens its section; the person's own choices are kept apart so a
-// cleared search closes only what the search opened. The 客户端 tab is made of
-// collapsible sections only, so its first one starts open: a tab never opens
-// on nothing but closed headings. Open sections are not remembered between visits.
-const DEFAULT_OPEN_SECTIONS = ['launchers']
-const openedSections = ref<string[]>([...DEFAULT_OPEN_SECTIONS])
-const searchSections = ref<string[]>([])
-const openSections = computed({
-  get: () => [...new Set([...openedSections.value, ...searchSections.value])],
-  set: (value: string[]) => {
-    openedSections.value = value
-    searchSections.value = searchSections.value.filter(section => value.includes(section))
-  },
-})
 const loadingResources = ref(false)
 const loadError = ref('')
 const searchRoot = ref<HTMLElement | null>(null)
@@ -104,9 +88,24 @@ const searchRoot = ref<HTMLElement | null>(null)
 const searchQuery = ref(settingSearchTerm(new URLSearchParams(window.location.search).get('setting'), t))
 const searchMatches = ref(0)
 const searching = computed(() => Boolean(searchQuery.value.trim()))
-useSettingsSearch(searchRoot, searchQuery, count => {
-  searchMatches.value = count
-  searchSections.value = searchRoot.value ? matchingSections(searchRoot.value, searchQuery.value) : []
+useSettingsSearch(searchRoot, searchQuery, count => { searchMatches.value = count })
+// A link to a card (#conversation-launchers, ?setting=…) shows its tab, then
+// scrolls to the card and marks it until the person moves on.
+const revealedCard = ref<HTMLElement | null>(null)
+async function revealLinkedCard() {
+  await nextTick()
+  const card = searchRoot.value && linkedCard(searchRoot.value, window.location.hash)
+  if (!card) return
+  const tab = card.closest<HTMLElement>('[data-settings-tab]')?.dataset.settingsTab
+  if (!searching.value && tab) activeTab.value = tabFrom(tab)
+  await nextTick()
+  card.scrollIntoView?.({ block: 'start' })
+  card.setAttribute('data-settings-linked', '')
+  revealedCard.value = card
+}
+watch([activeTab, searchQuery], () => {
+  revealedCard.value?.removeAttribute('data-settings-linked')
+  revealedCard.value = null
 })
 const resourceError = ref('')
 const saveController = new AbortController()
@@ -165,6 +164,7 @@ onMounted(async () => {
   void detectClients()
   await Promise.all([loadSettings(), loadResources()])
   loading.value = false
+  if (window.location.hash || searchQuery.value) void revealLinkedCard()
 })
 
 onBeforeUnmount(() => {
@@ -495,78 +495,71 @@ function checkFields(): ValidatedField[] {
             <TabsContent value="clients" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="clients">
               <PageColumns>
               <ClientConnectionSettings data-span="wide" />
-              <ClientLinksSettings />
-              <Card as="section" class="settings-card settings-advanced-card" aria-labelledby="settings-clients-advanced-title">
-                <CardHeader><CardTitle id="settings-clients-advanced-title" as="h2">{{ t('settings.groups.advanced') }}</CardTitle></CardHeader>
-                <Accordion v-model="openSections" type="multiple" :unmount-on-hide="false" class="settings-accordion">
-                  <AccordionItem id="conversation-launchers" value="launchers" class="conversation-launcher-card" data-settings-section="launchers">
-                    <AccordionTrigger>{{ t('settings.conversationLaunchers.title') }}</AccordionTrigger>
-                    <AccordionContent>
-                      <div class="conversation-launcher-list">
-                        <article v-for="application in conversationApplications" :key="application" class="conversation-launcher-row">
-                          <div class="conversation-launcher-heading">
-                            <span>
-                              <strong>{{ conversationApplicationLabel(application) }}</strong>
-                              <small>{{ t('settings.conversationLaunchers.sourceId', { id: application }) }}</small>
-                            </span>
-                            <label class="conversation-launcher-switch">
-                              <span>{{ t('settings.conversationLaunchers.enabled') }}</span>
-                              <Switch v-model="form.conversationLaunchers[application].enabled" :aria-label="t('settings.conversationLaunchers.enabled')" />
-                            </label>
-                          </div>
-                          <small v-if="form.conversationLaunchers[application].enabled && application === 'codex'" class="conversation-launcher-note">
-                            {{ t('settings.conversationLaunchers.idFormatMeta') }}
-                          </small>
-                          <div v-if="form.conversationLaunchers[application].enabled" class="conversation-launcher-fields">
-                            <label>
-                              <span>{{ t('settings.conversationLaunchers.idFormat') }}</span>
-                              <OptionSelect
-                                v-model="form.conversationLaunchers[application].idFormat"
-                                class="launcher-select"
-                                :control-id="`settings-conversation-${application}-id-format`"
-                                :options="conversationIdFormatOptions"
-                                :label="t('settings.conversationLaunchers.idFormat')"
- />
-                            </label>
-                            <label>
-                              <span>{{ t('settings.conversationLaunchers.appName') }}</span>
-                              <input v-model.trim="form.conversationLaunchers[application].appName" type="text" maxlength="64" required
-                                :data-settings-field="`launchers.${application}.appName`"
-                                :aria-invalid="errorFor(`launchers.${application}.appName`) ? 'true' : undefined"
-                                :aria-describedby="errorFor(`launchers.${application}.appName`) ? fieldErrorId(`launchers.${application}.appName`) : undefined" />
-                              <small v-if="errorFor(`launchers.${application}.appName`)" :id="fieldErrorId(`launchers.${application}.appName`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.appName`) }}</small>
-                            </label>
-                            <label class="conversation-launcher-template">
-                              <span>
-                                {{ t('settings.conversationLaunchers.urlTemplate') }}
-                                <small><code>{id}</code></small>
-                              </span>
-                              <input v-model.trim="form.conversationLaunchers[application].urlTemplate" type="text" maxlength="1024" spellcheck="false" required
-                                :data-settings-field="`launchers.${application}.urlTemplate`"
-                                :aria-invalid="errorFor(`launchers.${application}.urlTemplate`) ? 'true' : undefined"
-                                :aria-describedby="errorFor(`launchers.${application}.urlTemplate`) ? fieldErrorId(`launchers.${application}.urlTemplate`) : undefined" />
-                              <small v-if="errorFor(`launchers.${application}.urlTemplate`)" :id="fieldErrorId(`launchers.${application}.urlTemplate`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.urlTemplate`) }}</small>
-                            </label>
-                          </div>
-                        </article>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                  <AccordionItem v-if="form.notifications" id="notifications" value="notifications" class="notifications-card" data-settings-section="notifications">
-                    <AccordionTrigger>{{ t('settings.notifications.title') }}</AccordionTrigger>
-                    <AccordionContent>
-                      <label class="notification-url">
-                        <span><strong>{{ t('settings.notifications.needsPersonUrl') }}</strong><small>{{ t('settings.notifications.needsPersonUrlMeta') }}</small></span>
-                        <input v-model.trim="form.notifications.needsPersonUrl" type="url" maxlength="2048" spellcheck="false"
-                          placeholder="http://127.0.0.1:9123/fuli" data-needs-person-url data-settings-field="notifications.needsPersonUrl"
-                          :aria-invalid="errorFor('notifications.needsPersonUrl') ? 'true' : undefined"
-                          :aria-describedby="errorFor('notifications.needsPersonUrl') ? fieldErrorId('notifications.needsPersonUrl') : undefined" />
-                        <small v-if="errorFor('notifications.needsPersonUrl')" :id="fieldErrorId('notifications.needsPersonUrl')" class="settings-field-error" data-settings-field-error>{{ errorFor('notifications.needsPersonUrl') }}</small>
-                      </label>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
+              <Card v-if="form.notifications" as="section" id="notifications" class="settings-card notifications-card" aria-labelledby="settings-notifications-title">
+                <CardHeader><CardTitle id="settings-notifications-title" as="h2">{{ t('settings.notifications.title') }}</CardTitle></CardHeader>
+                <div class="setting-list">
+                  <label class="notification-url">
+                    <span><strong>{{ t('settings.notifications.needsPersonUrl') }}</strong><small>{{ t('settings.notifications.needsPersonUrlMeta') }}</small></span>
+                    <input v-model.trim="form.notifications.needsPersonUrl" type="url" maxlength="2048" spellcheck="false"
+                      placeholder="http://127.0.0.1:9123/fuli" data-needs-person-url data-settings-field="notifications.needsPersonUrl"
+                      :aria-invalid="errorFor('notifications.needsPersonUrl') ? 'true' : undefined"
+                      :aria-describedby="errorFor('notifications.needsPersonUrl') ? fieldErrorId('notifications.needsPersonUrl') : undefined" />
+                    <small v-if="errorFor('notifications.needsPersonUrl')" :id="fieldErrorId('notifications.needsPersonUrl')" class="settings-field-error" data-settings-field-error>{{ errorFor('notifications.needsPersonUrl') }}</small>
+                  </label>
+                </div>
               </Card>
+              <Card as="section" id="conversation-launchers" class="settings-card conversation-launcher-card" aria-labelledby="settings-launchers-title">
+                <CardHeader><CardTitle id="settings-launchers-title" as="h2">{{ t('settings.conversationLaunchers.title') }}</CardTitle></CardHeader>
+                <div class="setting-list conversation-launcher-list">
+                  <article v-for="application in conversationApplications" :key="application" class="conversation-launcher-row">
+                    <div class="conversation-launcher-heading">
+                      <span>
+                        <strong>{{ conversationApplicationLabel(application) }}</strong>
+                        <small>{{ t('settings.conversationLaunchers.sourceId', { id: application }) }}</small>
+                      </span>
+                      <label class="conversation-launcher-switch">
+                        <span>{{ t('settings.conversationLaunchers.enabled') }}</span>
+                        <Switch v-model="form.conversationLaunchers[application].enabled" :aria-label="t('settings.conversationLaunchers.enabled')" />
+                      </label>
+                    </div>
+                    <small v-if="form.conversationLaunchers[application].enabled && application === 'codex'" class="conversation-launcher-note">
+                      {{ t('settings.conversationLaunchers.idFormatMeta') }}
+                    </small>
+                    <div v-if="form.conversationLaunchers[application].enabled" class="conversation-launcher-fields">
+                      <label>
+                        <span>{{ t('settings.conversationLaunchers.idFormat') }}</span>
+                        <OptionSelect
+                          v-model="form.conversationLaunchers[application].idFormat"
+                          class="launcher-select"
+                          :control-id="`settings-conversation-${application}-id-format`"
+                          :options="conversationIdFormatOptions"
+                          :label="t('settings.conversationLaunchers.idFormat')"
+ />
+                      </label>
+                      <label>
+                        <span>{{ t('settings.conversationLaunchers.appName') }}</span>
+                        <input v-model.trim="form.conversationLaunchers[application].appName" type="text" maxlength="64" required
+                          :data-settings-field="`launchers.${application}.appName`"
+                          :aria-invalid="errorFor(`launchers.${application}.appName`) ? 'true' : undefined"
+                          :aria-describedby="errorFor(`launchers.${application}.appName`) ? fieldErrorId(`launchers.${application}.appName`) : undefined" />
+                        <small v-if="errorFor(`launchers.${application}.appName`)" :id="fieldErrorId(`launchers.${application}.appName`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.appName`) }}</small>
+                      </label>
+                      <label class="conversation-launcher-template">
+                        <span>
+                          {{ t('settings.conversationLaunchers.urlTemplate') }}
+                          <small><code>{id}</code></small>
+                        </span>
+                        <input v-model.trim="form.conversationLaunchers[application].urlTemplate" type="text" maxlength="1024" spellcheck="false" required
+                          :data-settings-field="`launchers.${application}.urlTemplate`"
+                          :aria-invalid="errorFor(`launchers.${application}.urlTemplate`) ? 'true' : undefined"
+                          :aria-describedby="errorFor(`launchers.${application}.urlTemplate`) ? fieldErrorId(`launchers.${application}.urlTemplate`) : undefined" />
+                        <small v-if="errorFor(`launchers.${application}.urlTemplate`)" :id="fieldErrorId(`launchers.${application}.urlTemplate`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.urlTemplate`) }}</small>
+                      </label>
+                    </div>
+                  </article>
+                </div>
+              </Card>
+              <ClientLinksSettings />
               </PageColumns>
             </TabsContent>
 
@@ -584,37 +577,32 @@ function checkFields(): ValidatedField[] {
                 <SettingsRestartNotice v-if="pendingRestart.has('lanAccess')" class="settings-restart" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
               </Card>
               <PeerSettings />
-              <Card as="section" class="settings-card settings-advanced-card" aria-labelledby="settings-network-advanced-title">
-                <CardHeader><CardTitle id="settings-network-advanced-title" as="h2">{{ t('settings.groups.advanced') }}</CardTitle></CardHeader>
-                <Accordion v-model="openSections" type="multiple" :unmount-on-hide="false" class="settings-accordion">
-                  <AccordionItem value="ports" class="ports-card" data-settings-section="ports">
-                    <AccordionTrigger>{{ t('settings.ports.title') }}</AccordionTrigger>
-                    <AccordionContent>
-                      <div class="port-section">
-                        <h3>{{ t('settings.ports.personal') }}</h3>
-                        <div class="port-grid">
-                          <label v-for="key in PERSONAL_PORT_KEYS" :key="key">
-                            <span>{{ t(`settings.ports.${key}`) }}</span>
-                            <input v-model.number="form.ports[key]" type="number" min="1" max="65535" required
-                              :data-settings-field="`ports.${key}`" data-restart-field
-                              :aria-invalid="errorFor(`ports.${key}`) ? 'true' : undefined"
-                              :aria-describedby="errorFor(`ports.${key}`) ? fieldErrorId(`ports.${key}`) : undefined" />
-                            <small v-if="errorFor(`ports.${key}`)" :id="fieldErrorId(`ports.${key}`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`ports.${key}`) }}</small>
-                            <small>{{ t('settings.ports.active', { port: activePort(key) }) }}</small>
-                          </label>
-                        </div>
-                        <SettingsRestartNotice v-if="pendingRestart.has('ports')" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
-                      </div>
-                      <div class="port-section development-section">
-                        <div>
-                          <h3>{{ t('settings.ports.development') }}</h3>
-                          <span>{{ t('settings.ports.developing') }}</span>
-                        </div>
-                        <p>{{ t('settings.ports.developmentMeta') }}</p>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
+              <Card as="section" id="ports" class="settings-card ports-card" aria-labelledby="settings-ports-title">
+                <CardHeader><CardTitle id="settings-ports-title" as="h2">{{ t('settings.ports.title') }}</CardTitle></CardHeader>
+                <div class="setting-list">
+                  <div class="port-section">
+                    <h3 class="ui-group-label">{{ t('settings.ports.personal') }}</h3>
+                    <div class="port-grid">
+                      <label v-for="key in PERSONAL_PORT_KEYS" :key="key">
+                        <span>{{ t(`settings.ports.${key}`) }}</span>
+                        <input v-model.number="form.ports[key]" type="number" min="1" max="65535" required
+                          :data-settings-field="`ports.${key}`" data-restart-field
+                          :aria-invalid="errorFor(`ports.${key}`) ? 'true' : undefined"
+                          :aria-describedby="errorFor(`ports.${key}`) ? fieldErrorId(`ports.${key}`) : undefined" />
+                        <small v-if="errorFor(`ports.${key}`)" :id="fieldErrorId(`ports.${key}`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`ports.${key}`) }}</small>
+                        <small>{{ t('settings.ports.active', { port: activePort(key) }) }}</small>
+                      </label>
+                    </div>
+                    <SettingsRestartNotice v-if="pendingRestart.has('ports')" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
+                  </div>
+                  <div class="port-section development-section">
+                    <div>
+                      <h3 class="ui-group-label">{{ t('settings.ports.development') }}</h3>
+                      <span>{{ t('settings.ports.developing') }}</span>
+                    </div>
+                    <p>{{ t('settings.ports.developmentMeta') }}</p>
+                  </div>
+                </div>
               </Card>
               </PageColumns>
             </TabsContent>
@@ -690,7 +678,8 @@ function checkFields(): ValidatedField[] {
                   </CardAction>
                 </CardHeader>
               </Card>
-              <Card as="section" class="settings-card resource-card" aria-labelledby="settings-resources-title">
+              <DiagnosticsSettings />
+              <Card as="section" class="settings-card resource-card" data-span="wide" aria-labelledby="settings-resources-title">
                 <CardHeader>
                   <CardTitle id="settings-resources-title" as="h2">{{ t('settings.resources.title') }}</CardTitle>
                   <CardDescription v-if="resources">{{ t('settings.resources.measuredAt', { time: formatTime(resources.sampledAt) }) }}</CardDescription>
@@ -715,40 +704,34 @@ function checkFields(): ValidatedField[] {
                       <small>{{ t('settings.resources.available', { value: formatBytes(resources.disk.hostFreeBytes) }) }}</small>
                     </article>
                   </div>
-                  <Accordion v-model="openSections" type="multiple" :unmount-on-hide="false" class="settings-accordion">
-                    <AccordionItem value="usage" data-settings-section="usage">
-                      <AccordionTrigger>{{ t('ui.usageDetails') }}</AccordionTrigger>
-                      <AccordionContent>
-                        <div class="resource-breakdowns">
-                          <div class="resource-group">
-                            <h3>{{ t('settings.resources.memory') }}</h3>
-                            <div v-for="component in resources.memory.components" :key="component.id" class="resource-row">
-                              <div><span>{{ componentLabel(component) }}</span><strong>{{ formatBytes(component.bytes) }}</strong></div>
-                              <i><b :style="{ width: barWidth(component.bytes, memoryMax) }" /></i>
-                            </div>
-                          </div>
-                          <div class="resource-group">
-                            <h3>{{ t('settings.resources.disk') }}</h3>
-                            <div v-for="component in resources.disk.components" :key="component.id" class="resource-row">
-                              <div><span>{{ componentLabel(component) }}</span><strong>{{ formatBytes(component.bytes) }}</strong></div>
-                              <i><b :style="{ width: barWidth(component.bytes, diskMax) }" /></i>
-                            </div>
-                          </div>
+                  <div class="resource-details">
+                    <div class="resource-breakdowns">
+                      <div class="resource-group">
+                        <h3 class="ui-group-label">{{ t('settings.resources.memory') }}</h3>
+                        <div v-for="component in resources.memory.components" :key="component.id" class="resource-row">
+                          <div><span>{{ componentLabel(component) }}</span><strong>{{ formatBytes(component.bytes) }}</strong></div>
+                          <i><b :style="{ width: barWidth(component.bytes, memoryMax) }" /></i>
                         </div>
-                        <div class="resource-notes">
-                          <span>{{ t('settings.resources.diskMeasuredAt', { time: formatTime(resources.disk.measuredAt) }) }}</span>
-                          <span v-if="resources.status === 'partial'">{{ t('settings.resources.partial') }}</span>
-                          <span v-if="resources.disk.temporaryBytes">{{ t('settings.resources.temporary', { value: formatBytes(resources.disk.temporaryBytes) }) }}</span>
-                          <span>{{ t(resources.exclusions.includes('shared-container-vm-overhead')
-                            ? 'settings.resources.exclusionsContainer'
-                            : 'settings.resources.exclusionsNative') }}</span>
+                      </div>
+                      <div class="resource-group">
+                        <h3 class="ui-group-label">{{ t('settings.resources.disk') }}</h3>
+                        <div v-for="component in resources.disk.components" :key="component.id" class="resource-row">
+                          <div><span>{{ componentLabel(component) }}</span><strong>{{ formatBytes(component.bytes) }}</strong></div>
+                          <i><b :style="{ width: barWidth(component.bytes, diskMax) }" /></i>
                         </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
+                      </div>
+                    </div>
+                    <div class="resource-notes">
+                      <span>{{ t('settings.resources.diskMeasuredAt', { time: formatTime(resources.disk.measuredAt) }) }}</span>
+                      <span v-if="resources.status === 'partial'">{{ t('settings.resources.partial') }}</span>
+                      <span v-if="resources.disk.temporaryBytes">{{ t('settings.resources.temporary', { value: formatBytes(resources.disk.temporaryBytes) }) }}</span>
+                      <span>{{ t(resources.exclusions.includes('shared-container-vm-overhead')
+                        ? 'settings.resources.exclusionsContainer'
+                        : 'settings.resources.exclusionsNative') }}</span>
+                    </div>
+                  </div>
                 </template>
               </Card>
-              <DiagnosticsSettings />
               </PageColumns>
             </TabsContent>
           </fieldset>
@@ -778,14 +761,10 @@ function checkFields(): ValidatedField[] {
 /* Card groups: shadcn Card surface; FULI rows inside. */
 .settings-card { min-width: 0; container-type: inline-size; }
 .settings-card :deep([data-slot="card-header"]) { padding-inline: 24px; }
-.setting-list, .settings-card > .settings-accordion { padding-inline: 24px; }
+.setting-list, .resource-details { padding-inline: 24px; }
 .judgment-settings-card { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); padding: 24px; }
-/* The LAN card renders its own disclosure; give it the same surface. */
-.settings-panel > :deep(.peer-settings) {
-  border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); padding: 20px 24px;
-}
-.settings-panel > :deep(.peer-settings) > summary { font-size: var(--text-section); }
-.settings-accordion :deep([data-slot="accordion-trigger"]) { font-size: var(--text-body); font-weight: var(--weight-medium); }
+/* A card a link opened (#conversation-launchers, ?setting=…) is marked until the person moves on. */
+.settings-content :deep(.settings-card[data-settings-linked]) { box-shadow: 0 0 0 2px var(--ring); }
 
 .resource-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding-inline: 24px; }
 .resource-totals article {
@@ -797,13 +776,13 @@ function checkFields(): ValidatedField[] {
 .resource-totals small { color: var(--color-muted); font-size: 12px; }
 .resource-breakdowns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
 .resource-group { display: grid; gap: 13px; }
-.resource-group h3, .port-section h3 { color: var(--color-ink); font-size: 12px; }
 .resource-row { display: grid; gap: 6px; }
 .resource-row > div { display: flex; justify-content: space-between; gap: 12px; color: var(--color-muted); font-size: 12px; }
 .resource-row strong { color: var(--color-ink); font-weight: 650; }
 .resource-row i { height: 5px; overflow: hidden; border-radius: 999px; background: var(--color-surface-subtle); }
 .resource-row b { display: block; height: 100%; border-radius: inherit; background: var(--color-muted); }
-.resource-notes { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 22px; color: var(--color-muted); font-size: 12px; }
+.resource-details { display: grid; gap: var(--space-4); }
+.resource-notes { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--color-muted); font-size: 12px; }
 
 .port-section { display: grid; gap: 13px; }
 .port-section + .port-section { margin-top: 25px; padding-top: 22px; border-top: 1px solid var(--color-border); }
@@ -821,9 +800,10 @@ function checkFields(): ValidatedField[] {
 .conversation-launcher-list { display: grid; }
 .conversation-launcher-row { padding: 16px 0; border-top: 1px solid var(--color-border); }
 .conversation-launcher-row:first-child { border-top: 0; padding-top: 0; }
+.conversation-launcher-row:last-child { padding-bottom: 0; }
 .conversation-launcher-heading { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .conversation-launcher-heading > span { display: grid; min-width: 0; gap: 4px; overflow-wrap: anywhere; }
-.conversation-launcher-heading strong { color: var(--color-ink); font-size: 13px; }
+.conversation-launcher-heading strong { color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); }
 .conversation-launcher-heading small { color: var(--color-muted); font-size: 12px; }
 .conversation-launcher-switch { display: flex; flex: 0 0 auto; align-items: center; gap: 9px; color: var(--color-muted); font-size: 12px; }
 .conversation-launcher-note { display: block; max-width: 760px; margin-top: 9px; color: var(--color-muted); font-size: 12px; line-height: 1.45; }
@@ -839,6 +819,7 @@ function checkFields(): ValidatedField[] {
 .conversation-launcher-fields input { width: 100%; min-width: 0; }
 .notification-url { display: grid; gap: 10px; }
 .notification-url > span { display: grid; gap: 4px; }
+.notification-url strong { color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); }
 .notification-url small { color: var(--color-muted); font-size: 12px; }
 .notification-url input { width: 100%; min-width: 0; }
 
@@ -887,7 +868,7 @@ function checkFields(): ValidatedField[] {
 }
 
 @media (max-width: 680px) {
-  .settings-card :deep([data-slot="card-header"]), .setting-list, .settings-card > .settings-accordion, .resource-totals { padding-inline: var(--space-4); }
+  .settings-card :deep([data-slot="card-header"]), .setting-list, .resource-details, .resource-totals { padding-inline: var(--space-4); }
   .settings-restart { margin-inline: var(--space-4); }
 }
 </style>

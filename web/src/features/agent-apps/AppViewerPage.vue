@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import BackLink from '@/components/BackLink.vue'
+import Breadcrumb from '@/components/Breadcrumb.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { usePageTitle } from '@/layouts/page-title'
@@ -28,14 +28,14 @@ watch(appId, () => void load(), { immediate: true })
 
 const title = computed(() => app.value?.versions.find(version => version.version === app.value?.version)?.title ?? app.value?.name ?? '')
 usePageTitle(title)
-// 「← 全部应用」 goes Back when the list opened this page, keeping its place.
+// The 全部应用 crumb goes Back when the list opened this page, keeping its place.
 const openedFromApps = /^\/project-agents\/apps(\?|$)/
 const runnable = computed(() => app.value?.status === 'active' && app.value.run.status === 'ready')
 </script>
 
 <template>
   <section class="view app-viewer" :aria-label="title || t('agentApps.title')">
-    <BackLink to="/project-agents/apps" :from="openedFromApps">{{ t('agentApps.viewer.back') }}</BackLink>
+    <Breadcrumb :parent="{ label: t('agentApps.viewer.back'), to: '/project-agents/apps', from: openedFromApps }" />
     <GrowthLoading v-if="state === 'loading'" :label="t('agentApps.viewer.loading')" />
     <div v-else-if="state === 'failed'" class="app-viewer-empty" role="alert">
       <p>{{ t('agentApps.viewer.failed') }}</p>
