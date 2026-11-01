@@ -245,8 +245,9 @@ describe('OverviewPage', () => {
       return new Promise(() => {})
     } })
     expect(wrapper.text()).toContain('任务 readable')
-    // Each FLA's share, with the owner's name, is behind the stage's FLA 分工 switch.
-    await wrapper.get('[data-workbench-stage] .ui-segmented [data-value="flas"]').trigger('click')
+    // With nothing recorded yet, each FLA's share (with the owner's name) is the stage's only view.
+    expect(wrapper.find('[data-workbench-timeline]').exists()).toBe(false)
+    expect(wrapper.find('[data-workbench-stage] .ui-segmented').exists()).toBe(false)
     expect(wrapper.text()).toContain('正在读取负责人姓名')
     await vi.advanceTimersByTimeAsync(30000)
     expect(wrapper.text()).toContain('负责人姓名暂不可用')

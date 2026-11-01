@@ -41,11 +41,13 @@ const flas = computed(() => (props.task ? taskFlas(props.task) : []))
 const timeline = computed(() => (props.task ? taskTimeline(props.task) : []))
 // FLA 分工 only when some FLA holds a part of the work.
 const views = computed(() => [
-  { value: 'timeline' as const, label: t('overview.stage.views.timeline'), count: timeline.value.length },
+  ...(timeline.value.length || !flas.value.length ? [{ value: 'timeline' as const, label: t('overview.stage.views.timeline'), count: timeline.value.length }] : []),
   ...(flas.value.length ? [{ value: 'flas' as const, label: t('overview.stage.views.flas'), count: flas.value.length }] : []),
 ])
 const view = ref<'timeline' | 'flas'>('timeline')
 watch(() => (props.task ? taskKey(props.task) : ''), () => { view.value = 'timeline' })
+// The view shown: the chosen one while it exists, else the only one there is.
+const active = computed(() => views.value.some(option => option.value === view.value) ? view.value : views.value[0]?.value)
 const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
 </script>
 
@@ -69,14 +71,13 @@ const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
           <TaskBlockerClear v-if="task.personalProjectId" :title="title(task)" :blocker="task.blocker" :updated-at="task.updatedAt"
             :scope="{ personalSpaceId: spaceId, personalProjectId: task.personalProjectId, taskId: task.taskId }" @cleared="emit('cleared')" />
         </div>
-        <!-- One full-width panel; its switch shows the timeline or each FLA's share, one at a time. -->
-        <section class="workbench-stage-lower" :aria-label="t('overview.stage.viewsAria')">
+        <!-- One full-width panel; its switch shows the timeline or each FLA's share, one at a time. Nothing recorded, no panel. -->
+        <section v-if="timeline.length || flas.length" class="workbench-stage-lower" :aria-label="t('overview.stage.viewsAria')">
           <UiSegmented v-if="views.length > 1" v-model="view" class="workbench-views" :options="views" :label="t('overview.stage.viewsAria')" />
-          <h3 v-else class="workbench-panel-title">{{ t('overview.stage.views.timeline') }}</h3>
+          <h3 v-else class="workbench-panel-title">{{ views[0]?.label }}</h3>
           <Transition name="workbench-view" mode="out-in">
-            <div v-if="view === 'timeline' || views.length === 1" key="timeline" class="workbench-view">
-              <WorkbenchTimeline v-if="timeline.length" :entries="timeline" :task-key="taskKey(task)" :agent-name="agentName" />
-              <p v-else class="workbench-empty">{{ t('overview.stage.noLog') }}</p>
+            <div v-if="active === 'timeline'" key="timeline" class="workbench-view">
+              <WorkbenchTimeline :entries="timeline" :task-key="taskKey(task)" :agent-name="agentName" />
             </div>
             <ul v-else key="flas" class="workbench-flas workbench-view" data-workbench-flas>
               <li v-for="fla in flas" :key="fla.agentId">
