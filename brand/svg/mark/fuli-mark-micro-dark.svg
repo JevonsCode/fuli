@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none" role="img" aria-label="FULI Logomark — Micro Optical (16px–24px Dark)">
+  <title>FULI Logomark — Micro Optical (16px–24px Dark)</title>
+  <defs>
+    <linearGradient id="fuli-micro-gold-dark" x1="40" y1="298" x2="242" y2="474" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#EBA83A"/>
+      <stop offset="36%" stop-color="#F3C668"/>
+      <stop offset="70%" stop-color="#F8E6BE"/>
+      <stop offset="96%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#FFFFFF"/>
+    </linearGradient>
+  </defs>
+  <g class="fuli-mark-group">
+    <path class="fuli-orbit-gold" fill="url(#fuli-micro-gold-dark)" d="M 28.20 300.70 L 52.00 292.60 A 4.00 4.00 0 0 1 56.40 295.40 A 202.00 202.00 0 0 0 400.38 382.10 L 454.50 383.80 A 236.00 236.00 0 0 1 25.10 305.50 A 4.00 4.00 0 0 1 28.20 300.70 Z"/>
+    <path class="fuli-orbit-upper" fill="#FFFFFF" d="M 60.22 246.00 A 237.00 237.00 0 0 1 286.00 33.21 A 5.64 5.64 0 0 0 286.00 21.92 A 236.00 236.00 0 0 0 20.54 272.00 A 4.00 4.00 0 0 0 25.20 275.20 L 61.00 264.50 L 60.22 246.00 Z"/>
+    <path class="fuli-wave" fill="#FFFFFF" d="M 55.00 248.00 L 60.22 246.00 C 104.00 222.00, 156.00 233.00, 200.00 266.00 C 248.00 302.00, 300.00 356.00, 356.00 356.00 C 416.00 356.00, 468.00 316.00, 486.20 236.00 A 2.48 2.48 0 0 1 491.15 236.00 A 236.00 236.00 0 0 1 448.00 393.10 L 400.38 382.10 C 388.00 385.50, 372.00 388.00, 354.00 388.00 C 294.00 388.00, 232.00 332.00, 188.00 298.00 C 148.00 267.30, 103.00 252.00, 61.00 264.50 L 55.00 266.30 Z"/>
+    <path class="fuli-bar fuli-bar--1" fill="#FFFFFF" d="M 272 221.2 A 7.2 7.2 0 0 1 279.2 214 L 304.8 214 A 7.2 7.2 0 0 1 312 221.2 L 312 312.19 A 3.5 3.5 0 0 1 306.85 315.28 Q 293.89 307.86 273.37 292.36 A 3.5 3.5 0 0 1 272 289.58 Z"/>
+    <path class="fuli-bar fuli-bar--2" fill="#FFFFFF" d="M 336 159.2 A 7.2 7.2 0 0 1 343.2 152 L 368.8 152 A 7.2 7.2 0 0 1 376 159.2 L 376 326.21 A 3.5 3.5 0 0 1 373.18 329.64 Q 356.14 332.8 338.54 328.75 A 3.5 3.5 0 0 1 336 325.38 Z"/>
+    <path class="fuli-bar fuli-bar--3" fill="#FFFFFF" d="M 400 90.99 A 7.2 7.2 0 0 1 411.02 84.88 L 436.62 100.88 A 7.2 7.2 0 0 1 440 106.99 L 440 283.19 A 3.5 3.5 0 0 1 439.43 285.11 Q 417.75 313.17 405.07 318.38 A 3.5 3.5 0 0 1 400 315.25 Z"/>
+  </g>
+</svg>

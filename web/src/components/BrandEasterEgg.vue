@@ -5,7 +5,7 @@ import { getJson } from '@/api/client'
 import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
 import type { ConsoleUpdateKind } from '@/features/update/model'
 import { t } from '@/i18n'
-import { fuliLogoUrl } from '@/lib/brand'
+import { fuliMarkUrl } from '@/lib/brand'
 import { FULI_VERSION } from '@/version'
 
 interface PackageVersionStatus {
@@ -124,7 +124,7 @@ onBeforeUnmount(() => {
       @blur="handleBlur"
     >
       <span class="brand-mark-wrap">
-        <img class="brand-mark" :src="fuliLogoUrl" alt="" aria-hidden="true" />
+        <img class="brand-mark" :src="fuliMarkUrl" alt="" aria-hidden="true" />
         <template v-if="isPlaying">
           <span v-if="!props.compact" :key="`ripple-${effectRun}`" class="brand-ripple" aria-hidden="true" />
         </template>

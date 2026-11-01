@@ -3,7 +3,7 @@ import AboutSectionHeading from './AboutSectionHeading.vue'
 import { computed, reactive } from 'vue'
 
 import { t } from '@/i18n'
-import { fuliLogoUrl } from '@/lib/brand'
+import { fuliMarkUrl } from '@/lib/brand'
 
 // Logos come from each project's own repository, as before; the browser
 // caches them. A logo that cannot load becomes a quiet initial tile.
@@ -114,7 +114,7 @@ const credits = computed(() => [
 
     <footer class="fuli-finale">
       <span class="finale-logo-plate">
-        <img :src="fuliLogoUrl" alt="" aria-hidden="true" />
+        <img :src="fuliMarkUrl" alt="" aria-hidden="true" />
       </span>
       <div class="finale-brand">
         <strong>{{ t('common.brand') }}</strong>

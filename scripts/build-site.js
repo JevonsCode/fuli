@@ -61,7 +61,7 @@ function renderPage(template, base, route, locale, catalog) {
   const description = document.querySelector('meta[name="description"]');
   add(document, 'meta', { name: 'twitter:title', 'data-i18n-content': title, content: document.title });
   add(document, 'meta', { name: 'twitter:description', 'data-i18n-content': description.getAttribute('data-i18n-content'), content: description.content });
-  add(document, 'meta', { name: 'twitter:image', content: SITE_URL + 'assets/fuli-logo.png' });
+  add(document, 'meta', { name: 'twitter:image', content: SITE_URL + 'assets/brand/fuli-mark-color-512.png' });
   for (const [language, alternate] of alternateRoutes) add(document, 'link', { rel: 'alternate', hreflang: language, href: SITE_URL + base + alternate });
   return { document, pageUrl };
 }
@@ -108,7 +108,7 @@ function noPreviewPages(version, files) {
     <title>${copy.title}</title>
     <meta name="robots" content="noindex, follow">
     <link rel="canonical" href="${home}">
-    <link rel="icon" href="${assets}assets/fuli-logo.png" type="image/png">
+    <link rel="icon" href="${assets}assets/brand/favicon.ico" sizes="any">
     <link rel="stylesheet" href="${assets}style.css">
   </head>
   <body>

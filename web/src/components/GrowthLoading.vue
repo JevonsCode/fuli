@@ -1,10 +1,20 @@
 <script setup lang="ts">
-import { LOADING_ARCS } from '@/lib/brand'
+import { computed, useId } from 'vue'
+
+import { FULI_MARK, markCut } from '@/lib/brand'
 
 const props = withDefaults(defineProps<{
   label: string
   variant?: 'page' | 'compact' | 'inline'
 }>(), { variant: 'page' })
+
+// The mark's drawn size per variant; it picks the optical cut (micro for inline).
+const MARK_PIXELS = { page: 48, compact: 28, inline: 16 } as const
+const gradientId = useId()
+const pixels = computed(() => MARK_PIXELS[props.variant])
+const cut = computed(() => markCut(pixels.value))
+const paths = computed(() => FULI_MARK[cut.value])
+const { ink } = FULI_MARK
 </script>
 
 <template>
@@ -15,16 +25,36 @@ const props = withDefaults(defineProps<{
     aria-live="polite"
     aria-atomic="true"
     :aria-label="props.label"
+    :style="{ '--growth-loading-size': `${pixels}px` }"
   >
     <span class="growth-loading__content">
       <span class="growth-loading__visual" aria-hidden="true">
+        <!-- The brand loading (brand/motion/fuli-motion.css): the rings breathe and the bars grow in turn. -->
         <svg
-          class="growth-loading__mark"
-          viewBox="0 0 48 48"
+          class="growth-loading__mark fuli-brand-svg is-motion-loading"
+          :data-cut="cut"
+          :viewBox="FULI_MARK.viewBox.join(' ')"
           aria-hidden="true"
           focusable="false"
         >
-          <path v-for="(arc, index) in LOADING_ARCS" :key="arc" class="growth-loading__arc" :class="`growth-loading__arc--${index + 1}`" :d="arc" />
+          <defs>
+            <linearGradient
+              :id="gradientId"
+              :x1="FULI_MARK.goldLine.x1"
+              :y1="FULI_MARK.goldLine.y1"
+              :x2="FULI_MARK.goldLine.x2"
+              :y2="FULI_MARK.goldLine.y2"
+              gradientUnits="userSpaceOnUse"
+            >
+              <stop v-for="[offset, color] in FULI_MARK.gold.light" :key="offset" :offset="offset" :stop-color="color" />
+            </linearGradient>
+          </defs>
+          <g class="fuli-mark-group">
+            <path class="fuli-orbit-gold" :fill="`url(#${gradientId})`" :d="paths.orbitGold" />
+            <path class="fuli-orbit-upper" :fill="ink" :d="paths.orbitUpper" />
+            <path class="fuli-wave" :fill="ink" :d="paths.wave" />
+            <path v-for="(bar, index) in paths.bars" :key="index" :class="`fuli-bar fuli-bar--${index + 1}`" :fill="ink" :d="bar" />
+          </g>
         </svg>
       </span>
       <span class="growth-loading__label">{{ props.label }}</span>
@@ -34,7 +64,6 @@ const props = withDefaults(defineProps<{
 
 <style scoped>
 .growth-loading {
-  --growth-loading-size: 48px;
   display: block;
   min-width: 0;
   color: var(--color-muted);
@@ -44,7 +73,6 @@ const props = withDefaults(defineProps<{
 }
 
 .growth-loading--compact {
-  --growth-loading-size: 28px;
   display: grid;
   place-items: center;
   min-height: 104px;
@@ -52,7 +80,6 @@ const props = withDefaults(defineProps<{
 }
 
 .growth-loading--inline {
-  --growth-loading-size: 16px;
   display: inline-flex;
   max-width: 100%;
   vertical-align: middle;
@@ -79,45 +106,8 @@ const props = withDefaults(defineProps<{
 }
 
 .growth-loading__mark {
-  display: block;
   width: 100%;
   height: 100%;
-  overflow: visible;
-}
-
-.growth-loading__arc {
-  --growth-loading-delay: 0s;
-  --growth-loading-start: 0deg;
-  --growth-loading-end: 0deg;
-  fill: none;
-  stroke: var(--color-accent);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 3.25;
-  opacity: .32;
-  transform: rotate(var(--growth-loading-start));
-  transform-box: view-box;
-  transform-origin: center;
-  animation: growth-loading-arc 2.4s cubic-bezier(.45, 0, .22, 1) var(--growth-loading-delay) infinite;
-  will-change: transform, opacity;
-}
-
-.growth-loading__arc--1 {
-  --growth-loading-start: -12deg;
-  --growth-loading-end: -18deg;
-  --growth-loading-delay: 0s;
-}
-
-.growth-loading__arc--2 {
-  --growth-loading-start: 10deg;
-  --growth-loading-end: 18deg;
-  --growth-loading-delay: .12s;
-}
-
-.growth-loading__arc--3 {
-  --growth-loading-start: -8deg;
-  --growth-loading-end: 24deg;
-  --growth-loading-delay: .24s;
 }
 
 .growth-loading__label {
@@ -130,38 +120,5 @@ const props = withDefaults(defineProps<{
 
 .growth-loading--inline .growth-loading__label {
   text-align: left;
-}
-
-@keyframes growth-loading-arc {
-  0%, 10% {
-    opacity: .32;
-    transform: rotate(var(--growth-loading-start));
-  }
-
-  38%, 60% {
-    opacity: 1;
-    transform: rotate(0deg);
-  }
-
-  84%, 100% {
-    opacity: .24;
-    transform: rotate(var(--growth-loading-end));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .growth-loading__arc {
-    opacity: 1;
-    transform: none;
-    animation: none;
-    will-change: auto;
-  }
-}
-
-:root[data-motion="reduced"] .growth-loading__arc {
-  opacity: 1;
-  transform: none;
-  animation: none;
-  will-change: auto;
 }
 </style>

@@ -55,7 +55,7 @@ FuliTray.exe is no longer built.
   refuse a changed shortcut.
 - The tray menu keeps the old tray's 「换一个端口」 (`windows-controller.js
   change-port`); a start that fails on a port Windows reserves says to use it.
-- Icons come from `brand/fuli-logo.png` with a green, amber or red status dot:
+- Icons come from the FULI mark in `brand/` with a green, amber or red status dot:
   `node scripts/build-brand-assets.js` (`brand/README.md`).
 
 ## Installation

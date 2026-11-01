@@ -6,7 +6,7 @@ import { compileStyle, parse } from '@vue/compiler-sfc';
 
 const MIRROR = ':root[data-motion="reduced"]';
 
-function webStyleSources(directory = 'web/src') {
+function webStyleSources(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) return webStyleSources(path);
@@ -19,15 +19,18 @@ function webStyleSources(directory = 'web/src') {
   });
 }
 
+// The console's own styles and the brand's generated motion stylesheet (web/assets/brand).
+const consoleStyleSources = () => ['web/src', 'web/assets'].flatMap((directory) => webStyleSources(directory));
+
 test('every system reduced-motion rule has an in-app reduce-motion mirror', () => {
-  const missing = webStyleSources()
+  const missing = consoleStyleSources()
     .filter(({ css }) => css.includes('prefers-reduced-motion: reduce') && !css.includes(MIRROR))
     .map(({ path }) => path);
   assert.deepEqual(missing, []);
 });
 
 test('in-app reduce-motion selectors stay reachable after scoped compilation', () => {
-  const unreachable = webStyleSources()
+  const unreachable = consoleStyleSources()
     .filter(({ css }) => css.includes(MIRROR))
     .flatMap(({ path, css, scoped }) => {
       const result = compileStyle({ source: css, filename: path, id: 'data-v-probe', scoped });

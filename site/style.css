@@ -267,5 +267,6 @@ html[lang="en"] .enhanced h2 { font-size: clamp(30px, 3.1vw, 46px); }
 .nav.is-dark .brand, .nav.is-dark nav a { color: #e1ece5; }
 .nav.is-dark .brand b { color: #8fa39b; }
 .nav.is-dark .nav-github { border-color: #2c3a36; background: #16201d; }
-.nav .brand img { border-radius: 50%; transition: background-color .35s; }
-.nav.is-dark .brand img { background: #e9f1ee; }
+/* Over the dark scene the nav swaps to the brand's dark mark (brand/svg/mark). */
+.brand-mark--dark, .nav.is-dark .brand-mark { display: none; }
+.nav.is-dark .brand-mark--dark { display: block; }

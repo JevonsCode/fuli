@@ -1,28 +1,66 @@
 # Brand
 
-Every FULI brand asset has its one source here, and the console takes them only through
-`web/src/lib/brand.ts` (the logo, the wordmark and the loading mark's arcs). Change the brand here.
+The FULI brand (Brand & Motion Guidelines v1.1) has its one source here. Everything else in the
+repository that shows the brand is a generated copy; change the brand here, never in a copy.
 
-`fuli-logo.png` is the one source of the FULI logo (512 x 512, transparent RGBA PNG). To change the
-logo, replace this file and run from the repository root:
+- Figma master file, where the brand evolves: <https://www.figma.com/design/mbP73Ul4mif5FsS2Fxws9U>
+- Figma Community page, public to view and duplicate: <https://www.figma.com/community/file/1698659778015746085>
 
-```
-node scripts/build-brand-assets.js
-```
+## What is here
 
-It regenerates, at the paths the console, the site and the desktop client already load:
+The files keep the design delivery's names and folders, so an updated delivery copies over them.
 
-- copies: `web/assets/brand/fuli-logo.png` (console, imported through `web/src/lib/brand.ts`; also its
-  favicon), `site/assets/fuli-logo.png` and `site/v0/assets/fuli-logo.png`;
-- `desktop/flutter/assets/tray/{ok,needs_person,broken}.{png,ico}`: the logo on a light disc with a
-  green, amber or red status dot;
-- `desktop/flutter/assets/app/fuli.png`, `desktop/flutter/windows/runner/resources/app_icon.ico` and
-  `desktop/flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_*.png`: the logo on a
-  light rounded square.
+| Path | What it is | Used by |
+| --- | --- | --- |
+| `svg/mark/fuli-mark-color.svg`, `fuli-mark-dark.svg` | The master mark for light and dark surfaces | console and site images; the mark data |
+| `svg/mark/fuli-mark-micro-color.svg`, `fuli-mark-micro-dark.svg` | The micro cut: a larger ring and wider channels for 16-24 px | tray icons, the console's inline loading; the mark data |
+| `svg/wordmark/fuli-wordmark-{en,zh}{,-dark}.svg` | The FULI and 复利 wordmarks | console top bar (the dark ones wait for a dark theme) |
+| `svg/lockup/fuli-lockup-bilingual-horizontal{,-dark}.svg` | Mark with 复利 FULI | the repository READMEs |
+| `png/mark/favicon.ico` | The favicon, micro cut at 16 and 24 px | console and site |
+| `png/mark/fuli-mark-color-512.png` | The mark as a raster | the site's link previews |
+| `png/app-icon/fuli-app.ico`, `fuli-app-icon-light-{512,1024}.png` | The light app icon (white rounded square) | Windows, macOS and notification icons |
+| `motion/fuli-motion.css` | The mark's motion: loading, entrance, resonance, ambient, and the reduced-motion fallback | the console's loading |
 
-- `fuli-wordmark-{en,zh}.svg` are copied to `web/assets/brand/` for the console's top bar; the `-dark`
-  variants wait for a dark theme.
+**Optical sizing.** Draw the master mark from 28 px up and the micro cut below 28 px (favicons, tray
+icons, 16 px loading). The minimum is 16 px.
 
-The loading mark's arcs live in `web/src/lib/brand.ts` (`LOADING_ARCS`), the one place GrowthLoading reads them.
+**Logo palette.** Ink `#18181B`, white `#FFFFFF` and the black-gold gradient belong to the mark, the
+wordmarks, the lockups and the app icon only. They are not interface colours; the console's UI tokens
+do not use them.
 
-`test/brand-assets.test.js` fails while any copy no longer matches its source here.
+## Changing the brand
+
+1. Change it in the Figma master file and export the delivery.
+2. Copy the changed files over the ones here, keeping their names and folders.
+3. From the repository root, run:
+
+   ```
+   node scripts/build-brand-assets.js
+   ```
+
+4. Commit `brand/` together with the regenerated copies. `test/brand-assets.test.js` fails while any copy
+   no longer matches its source here.
+
+## What gets generated where
+
+`scripts/build-brand-assets.js` writes, at the paths each client already loads:
+
+- **Console** (`web/`, read only through `web/src/lib/brand.ts`):
+  `web/assets/brand/fuli-mark-color.svg`, `fuli-wordmark-{en,zh}.svg`, `fuli-motion.css`, `fuli-mark.json`;
+  `web/public/favicon.ico` (also served at `/favicon.ico`).
+- **Site** (`site/`): `site/assets/brand/fuli-mark-color.svg`, `fuli-mark-dark.svg`, `favicon.ico`,
+  `fuli-mark-color-512.png`.
+- **Mark data**, read from `svg/mark/`, for clients that draw the mark themselves:
+  - `desktop/flutter/assets/brand/fuli-mark.json`, the desktop client's contract: `master` and `micro`,
+    each with `orbitGold`, `orbitUpper`, `wave` and `bars[3]` as SVG path data on the 512 view box;
+    `gold.light` and `gold.dark` stops as `[offset, colour]`; `ink` and `white`. Its keys and layout
+    are fixed; the client's tests read the same shape.
+  - `web/assets/brand/fuli-mark.json`, the console's: the same, plus `viewBox`, `goldLine` (the
+    gradient's line) and `microBelowPx` (28).
+- **Desktop client** (`desktop/flutter/`):
+  - `assets/tray/{ok,needs_person,broken}.{png,ico}`: the mark on a white disc with a green, amber or
+    red status dot, drawn from the SVG marks (the micro cut where the mark is under 28 px);
+  - `windows/runner/resources/app_icon.ico`: `png/app-icon/fuli-app.ico` as it is;
+  - `assets/app/fuli.png`: the app icon's 256 px entry, for Windows notifications;
+  - `macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_*.png`: the smallest ready app icon at
+    least that size, inside the transparent margin macOS expects.
