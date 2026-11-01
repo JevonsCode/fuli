@@ -5,6 +5,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import { ApiError, apiErrorReason } from '@/api/client'
 import BackLink from '@/components/BackLink.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import PageColumns from '@/components/PageColumns.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -237,8 +238,8 @@ watch([spaceId, sessionId, client, projectId], () => {
                 </Button>
               </span>
             </div>
-            <ul class="page-columns m-0 list-none p-0">
-              <li v-for="item in preview.items" :key="itemKey(item)" class="min-w-0">
+            <PageColumns role="list">
+              <div v-for="item in preview.items" :key="itemKey(item)" role="listitem" class="min-w-0">
                 <!-- A chosen item lifts as a card; there is no side accent. -->
                 <div class="flex min-w-0 items-start gap-3 rounded-lg border bg-card p-4 transition-[border-color,box-shadow]"
                   :class="chosen.has(itemKey(item)) ? 'border-border-strong shadow-md' : 'hover:border-border-strong'"
@@ -265,8 +266,8 @@ watch([spaceId, sessionId, client, projectId], () => {
                     </div>
                   </div>
                 </div>
-              </li>
-            </ul>
+              </div>
+            </PageColumns>
             <div v-if="preview.next_offset != null" class="flex flex-wrap items-center gap-3" data-migration-more>
               <Button type="button" variant="outline" size="sm" :loading="loadingMore"
                 :loading-label="t('sessionMigration.loadingMore')" @click="loadMore">

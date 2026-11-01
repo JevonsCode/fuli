@@ -11,6 +11,7 @@ import { apiErrorReason, getJson, putJson } from '@/api/client'
 import { Switch } from '@/components/ui/switch'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.vue'
+import PageColumns from '@/components/PageColumns.vue'
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
 import ClientLinksSettings from '@/features/settings/ClientLinksSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
@@ -416,7 +417,8 @@ function checkFields(): ValidatedField[] {
           @submit.prevent="autoSave.changed('choice')" @input.capture="noteTyping">
           <fieldset class="settings-fields" :disabled="applying">
             <!-- Memory and access -->
-            <TabsContent value="memory" :force-mount="searching || undefined" class="settings-panel page-columns" data-settings-tab="memory">
+            <TabsContent value="memory" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="memory">
+              <PageColumns>
               <Card as="section" class="settings-card behavior-card" aria-labelledby="settings-capture-title">
                 <CardHeader><CardTitle id="settings-capture-title" as="h2">{{ t('settings.groups.capture') }}</CardTitle></CardHeader>
                 <div class="setting-list">
@@ -486,11 +488,13 @@ function checkFields(): ValidatedField[] {
                   </CardAction>
                 </CardHeader>
               </Card>
+              </PageColumns>
             </TabsContent>
 
             <!-- Clients -->
-            <TabsContent value="clients" :force-mount="searching || undefined" class="settings-panel page-columns" data-settings-tab="clients">
-              <ClientConnectionSettings class="page-columns-wide" />
+            <TabsContent value="clients" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="clients">
+              <PageColumns>
+              <ClientConnectionSettings data-span="wide" />
               <ClientLinksSettings />
               <Card as="section" class="settings-card settings-advanced-card" aria-labelledby="settings-clients-advanced-title">
                 <CardHeader><CardTitle id="settings-clients-advanced-title" as="h2">{{ t('settings.groups.advanced') }}</CardTitle></CardHeader>
@@ -563,10 +567,12 @@ function checkFields(): ValidatedField[] {
                   </AccordionItem>
                 </Accordion>
               </Card>
+              </PageColumns>
             </TabsContent>
 
             <!-- Network -->
-            <TabsContent value="network" :force-mount="searching || undefined" class="settings-panel page-columns" data-settings-tab="network">
+            <TabsContent value="network" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="network">
+              <PageColumns>
               <Card as="section" class="settings-card" aria-labelledby="settings-lan-title">
                 <CardHeader><CardTitle id="settings-lan-title" as="h2">{{ t('settings.groups.lan') }}</CardTitle></CardHeader>
                 <div class="setting-list">
@@ -610,10 +616,12 @@ function checkFields(): ValidatedField[] {
                   </AccordionItem>
                 </Accordion>
               </Card>
+              </PageColumns>
             </TabsContent>
 
             <!-- System -->
-            <TabsContent value="system" :force-mount="searching || undefined" class="settings-panel page-columns" data-settings-tab="system">
+            <TabsContent value="system" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="system">
+              <PageColumns>
               <Card as="section" class="settings-card" aria-labelledby="settings-interface-title">
                 <CardHeader><CardTitle id="settings-interface-title" as="h2">{{ t('settings.groups.interface') }}</CardTitle></CardHeader>
                 <div class="setting-list">
@@ -741,6 +749,7 @@ function checkFields(): ValidatedField[] {
                 </template>
               </Card>
               <DiagnosticsSettings />
+              </PageColumns>
             </TabsContent>
           </fieldset>
           <p v-if="loadError" class="settings-error" role="alert">{{ loadError }}</p>
@@ -763,7 +772,6 @@ function checkFields(): ValidatedField[] {
 .settings-search-note, .settings-search-empty { margin: 0; color: var(--color-muted); font-size: 13px; }
 .settings-form { display: grid; min-width: 0; gap: var(--space-4); }
 .settings-fields { display: grid; min-width: 0; border: 0; margin: 0; padding: 0; }
-.settings-panel { display: grid; gap: var(--space-4); }
 /* While searching every tab shows; panels other than the active one follow it. */
 .settings-tabs[data-searching] .settings-panel + .settings-panel { margin-top: var(--space-4); }
 

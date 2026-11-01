@@ -61,7 +61,7 @@ describe('SessionMigrationPage', () => {
     expect(cards[0].classes()).toContain('shadow-md')
     expect(cards[0].text()).toContain('Agent 推断')
     expect(cards[0].text()).toContain('待确认')
-    expect(cards[1].text()).toContain('你已确认')
+    expect(wrapper.get('[data-migration-item="b"]').text()).toContain('你已确认')
     expect(wrapper.get('[data-migration-chosen]').text()).toBe('已选 3 / 3 条')
     // The person leaves b out.
     await wrapper.get('[data-migration-item="b"] [data-slot="checkbox"]').trigger('click')
