@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Badge } from '@/components/ui/badge'
-import { t } from '@/i18n'
+import { formatRelativeTime } from '@/lib/relative-time'
+import { currentLocale, t } from '@/i18n'
 import type { ProjectAgentRecord, ProjectAgentTaskRecord } from '@/types'
 import ProjectAgentTaskDiagnostics from './ProjectAgentTaskDiagnostics.vue'
 import TaskExecutionPlan from './TaskExecutionPlan.vue'
@@ -42,6 +43,13 @@ const props = defineProps<{
 const emit = defineEmits<{ changed: [] }>()
 const expanded = ref(props.linked)
 const execution = computed(() => actualExecution(props.task))
+const blocked = computed(() => props.task.status === 'blocked' && Boolean(props.task.blocker))
+// One quiet line under the title: the project, when it last changed and how many FLAs share it.
+const meta = computed(() => [
+  props.projectName,
+  formatRelativeTime(props.task.updatedAt, currentLocale()),
+  props.task.participants.length > 1 ? t('projectAgents.card.sharedBy', { count: props.task.participants.length }) : '',
+].filter(Boolean).join(' · '))
 const blockerClear = computed(() => lastBlockerClear(props.task))
 const scope = computed(() => props.task.personalProjectId
   ? { personalSpaceId: props.personalSpaceId, personalProjectId: props.task.personalProjectId, taskId: props.task.taskId }
@@ -61,37 +69,44 @@ function toggle(event: Event) {
 </script>
 
 <template>
+  <!-- One glance: what it is, where it stands, and the one thing to do. Everything
+       else (the full block, diagnostics, runs, evidence, IDs) waits under 详情. -->
   <article :id="`task-${task.taskId}`" class="ui-card project-agent-task-card" :class="{ 'is-linked': linked }">
-    <header>
-      <div><strong>{{ task.title }}</strong><small>{{ projectName }}</small></div>
-      <Badge :variant="taskStatusTone(task.status)" data-task-status>{{ taskStatusLabel(task.status) }}</Badge>
+    <header class="task-card-head">
+      <div class="task-card-title">
+        <strong>{{ task.title }}</strong>
+        <span class="task-card-meta" data-task-meta>{{ meta }}</span>
+      </div>
+      <div class="task-card-side">
+        <Badge :variant="taskStatusTone(task.status)" data-task-status>{{ taskStatusLabel(task.status) }}</Badge>
+        <TaskBlockerClear v-if="blocked && scope" :scope="scope" :title="task.title" :blocker="task.blocker!" :updated-at="task.updatedAt"
+          hint="tooltip" @cleared="emit('changed')" />
+      </div>
     </header>
-    <template v-if="task.status === 'blocked' && task.blocker">
-      <TaskBlockerNotice :blocker="task.blocker" :updated-at="task.updatedAt" />
-      <TaskBlockerClear v-if="scope" :scope="scope" :title="task.title" :blocker="task.blocker" :updated-at="task.updatedAt" @cleared="emit('changed')" />
-    </template>
-    <TaskReason v-else-if="task.resultSummary || task.failureReason" :reason="task.resultSummary || task.failureReason" :fallback="t('projectAgents.notReported')" />
-    <p v-if="blockerClear" class="project-agent-muted" data-blocker-cleared :data-cause="blockerClear.cause">
+    <TaskBlockerNotice v-if="blocked" compact :blocker="task.blocker!" :updated-at="task.updatedAt" />
+    <TaskReason v-else-if="task.resultSummary || task.failureReason" class="task-card-line" :reason="task.resultSummary || task.failureReason" :fallback="t('projectAgents.notReported')" />
+    <p v-if="blockerClear" class="project-agent-muted task-card-line" data-blocker-cleared :data-cause="blockerClear.cause">
       <template v-if="blockerClear.cause === 'person'">{{ t('taskBlocker.clearedByYou', { time: formatDate(blockerClear.at) }) }}</template>
       <template v-else>{{ t('taskBlocker.cleared', { time: formatDate(blockerClear.at), cause: t(`taskBlocker.causes.${blockerClear.cause}`) }) }}</template>
       <span v-if="blockerClear.note" class="project-agent-task-clear-note" data-blocker-clear-note>{{ t('taskBlocker.clearNote', { note: blockerClear.note }) }}</span>
     </p>
-    <ProjectAgentTaskDiagnostics :task="task" :project-name="projectName" />
-    <p v-if="participants.length" class="project-agent-task-people" data-task-participants>
-      {{ t('projectAgents.fields.collaborators') }} · {{ participants.map(participant => participant.label).join('、') }}
-    </p>
 
     <details class="ui-disclosure project-agent-task-details" :open="linked" data-task-details @toggle="toggle">
       <summary>{{ t('projectAgents.taskDetails') }}</summary>
+      <TaskBlockerNotice v-if="blocked" without-reason :blocker="task.blocker!" :updated-at="task.updatedAt" />
+      <ProjectAgentTaskDiagnostics :task="task" :project-name="projectName" />
+      <p v-if="participants.length" class="project-agent-task-people" data-task-participants>
+        {{ t('projectAgents.fields.collaborators') }} · {{ participants.map(participant => participant.label).join('、') }}
+      </p>
       <TaskExecutionPlan :task="task" :personal-space-id="personalSpaceId" :active="expanded" />
       <TaskRunControls :task="task" :personal-space-id="personalSpaceId" :active="expanded" @changed="emit('changed')" />
 
-      <section v-if="task.executionSummary !== undefined" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
+      <section v-if="task.executionSummary?.length" class="project-agent-execution-summary" :aria-label="t('projectAgents.fields.executionSummary')">
         <div class="project-agent-section-heading">
           <h5>{{ t('projectAgents.fields.executionSummary') }}</h5>
           <span>{{ task.executionSummary.length }}</span>
         </div>
-        <div v-if="task.executionSummary.length" class="project-agent-execution-summary-table-wrap" role="region" tabindex="0" :aria-label="t('projectAgents.fields.executionSummary')">
+        <div class="project-agent-execution-summary-table-wrap" role="region" tabindex="0" :aria-label="t('projectAgents.fields.executionSummary')">
           <table class="project-agent-execution-summary-table">
             <caption class="ui-sr-only">{{ t('projectAgents.fields.executionSummary') }}</caption>
             <thead>
@@ -141,7 +156,6 @@ function toggle(event: Event) {
             </tbody>
           </table>
         </div>
-        <p v-else class="project-agent-muted">{{ t('projectAgents.detail.noExecutionSummary') }}</p>
       </section>
 
       <section v-if="workerEvents.length" class="project-agent-worker-event-evidence" :aria-label="t('projectAgents.fields.workerEventEvidence')">
@@ -171,10 +185,9 @@ function toggle(event: Event) {
         </ul>
       </section>
 
-      <div class="project-agent-execution-line">
+      <div v-if="execution" class="project-agent-execution-line">
         <span>{{ t('projectAgents.fields.actualExecution') }}</span>
-        <strong v-if="execution">{{ execution.executor || execution.provider || t('projectAgents.notReported') }} / {{ execution.model || t('projectAgents.notReported') }} / {{ sourceLabel(execution.client) }}</strong>
-        <span v-else>{{ t('projectAgents.detail.notReportedActualExecution') }}</span>
+        <strong>{{ execution.executor || execution.provider || t('projectAgents.notReported') }} / {{ execution.model || t('projectAgents.notReported') }} / {{ sourceLabel(execution.client) }}</strong>
         <small v-if="execution?.rule || execution?.fallback">{{ execution?.rule || t('projectAgents.notReported') }} · {{ execution?.fallback || t('projectAgents.notReported') }}</small>
       </div>
 

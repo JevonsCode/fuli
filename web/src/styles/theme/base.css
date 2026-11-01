@@ -51,8 +51,6 @@
   --shadow-dialog: 0 2px 6px rgb(var(--shadow-rgb) / 6%), 0 24px 64px rgb(var(--shadow-rgb) / 16%);
   --motion-fast: 140ms;
   --motion-medium: 220ms;
-  /* Hover intent: how long the pointer rests before a hover-opened surface appears, so passing over never opens it. */
-  --motion-intent: 280ms;
   --motion-pulse: 2400ms;
   --motion-blink: 1400ms;
   --motion-ease: cubic-bezier(.2, .8, .2, 1);

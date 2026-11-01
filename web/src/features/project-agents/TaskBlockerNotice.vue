@@ -24,6 +24,8 @@ const props = defineProps<{
   compact?: boolean
   /** Lead the line with the red 阻塞 chip, where the card does not already show the status. */
   withStatus?: boolean
+  /** The full notice under a card that already says the reason on its one line. */
+  withoutReason?: boolean
 }>()
 
 const now = useNow()
@@ -70,7 +72,7 @@ async function copySession() {
     </span>
   </p>
   <section v-else class="task-blocker" :aria-label="t('taskBlocker.label')" data-task-blocker>
-    <TaskReason class="task-blocker-reason" :reason="blocker.reason" :fallback="t('taskBlocker.noReason')" data-blocker-reason />
+    <TaskReason v-if="!withoutReason" class="task-blocker-reason" :reason="blocker.reason" :fallback="t('taskBlocker.noReason')" data-blocker-reason />
     <p class="task-blocker-meta">
       <span data-blocker-since>{{ blocker.since ? t('taskBlocker.since', { time: formatDate(blocker.since) }) : t('taskBlocker.sinceUnknown') }}</span>
       <span data-blocker-where>{{ where }}</span>

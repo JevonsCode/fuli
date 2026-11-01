@@ -92,10 +92,12 @@ describe('ProjectAgentDetailPage', () => {
     const { wrapper } = await mountPage()
     await flushPromises()
     const diagnostics = wrapper.get('.project-agent-task-diagnostics')
-    expect(diagnostics.get('[data-task-project-state]').text()).toContain('独立临时项目')
-    expect(diagnostics.get('[data-task-assignment-state]').text()).toContain('已记录任务分配')
-    expect(diagnostics.get('[data-task-execution-state]').text()).toContain('尚未收到工作进程报告')
-    expect(diagnostics.element.closest('details')).toBeNull()
+    // One line of what is known; an unreported run says nothing.
+    expect(diagnostics.get('[data-task-diagnostic="project"]').text()).toBe('独立临时项目')
+    expect(diagnostics.get('[data-task-diagnostic="assignment"]').text()).toBe('已记录任务分配')
+    expect(diagnostics.find('[data-task-diagnostic="execution"]').exists()).toBe(false)
+    // The card shows one glance; the diagnostics wait under 详情.
+    expect(diagnostics.element.closest('details')).not.toBeNull()
     expect(wrapper.find('.project-agent-execution-summary-table').exists()).toBe(false)
   })
 
@@ -689,7 +691,7 @@ describe('ProjectAgentDetailPage', () => {
     },
   )
 
-  it('shows a reported empty execution summary without treating an unreported field as empty', async () => {
+  it('shows no execution summary section when none is reported or the reported one is empty', async () => {
     const task = {
       task_id: 'task-empty-summary', owner_agent_id: 'shared-agent', title: '等待执行者', personal_project_id: 'project-a', status: 'running', participants: [], execution_summary: [],
     }
@@ -708,7 +710,8 @@ describe('ProjectAgentDetailPage', () => {
     const { wrapper } = await mountPage()
     await flushPromises()
 
-    expect(wrapper.get('.project-agent-execution-summary').text()).toContain('没有真实参与执行者')
+    // Jevons 11-01: an empty section says nothing (简洁), reported-empty or not.
+    expect(wrapper.find('.project-agent-execution-summary').exists()).toBe(false)
 
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
