@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getJson } from '@/api/client'
 import { findTerm } from '@/features/glossary/terms'
+import { setLocale } from '@/i18n'
+import { fuliWordmarkUrl } from '@/lib/brand'
 import { useConsoleStore } from '@/stores/console'
 import AppShell from './AppShell.vue'
 import { usePageTitle } from './page-title'
@@ -175,6 +177,23 @@ describe('AppShell', () => {
     expect(menu?.textContent).toContain('Ada')
     const actions = () => [...document.querySelectorAll('[data-pin-action]')].map(item => item.getAttribute('data-pin-action'))
     expect(actions()).toEqual(['home', 'workbench', 'unpin'])
+    wrapper.unmount()
+  })
+
+  it('draws the brand with the official wordmark for the interface language, the service dot on its baseline row', async () => {
+    const { wrapper } = await setup('/')
+    const wordmark = wrapper.get('[data-wordmark]')
+    expect(wordmark.element.tagName).toBe('IMG')
+    expect(wordmark.attributes('src')).toBe(fuliWordmarkUrl('zh-CN'))
+    expect(wordmark.attributes('alt')).toBe('复利')
+    expect(wordmark.attributes('draggable')).toBe('false')
+    // The wordmark and the service dot share one row; no brand name is typed in the UI font.
+    expect(wrapper.get('.app-brand-word').element.contains(wrapper.get('[data-runtime]').element)).toBe(true)
+    expect(wrapper.get('.app-brand').text()).not.toContain('复利')
+    setLocale('en-US', { persist: false })
+    await flushPromises()
+    expect(wrapper.get('[data-wordmark]').attributes('src')).toBe(fuliWordmarkUrl('en-US'))
+    setLocale('zh-CN', { persist: false })
     wrapper.unmount()
   })
 
