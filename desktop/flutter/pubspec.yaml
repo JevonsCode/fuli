@@ -24,6 +24,11 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
 
+# WebView2's hover-URL status bubble off; see the vendored README.
+dependency_overrides:
+  flutter_inappwebview_windows:
+    path: third_party/flutter_inappwebview_windows
+
 flutter:
   uses-material-design: true
   assets:
