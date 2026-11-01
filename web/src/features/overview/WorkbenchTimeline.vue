@@ -9,8 +9,11 @@ import { timelineDays, type TimelineEntry } from './task-timeline'
 // The work's progress as a timeline: one rail of dots, newest first, grouped
 // by day. Each event has its time, who did it and one readable sentence; a
 // long one opens with 展开 and the stored text sits under 原始信息. Only the
-// dot marks a finish, a block or an unblock (no side bars). The latest few
-// show first; 显示更早的 adds more, so the panel never scrolls on its own.
+// dot marks a finish, a block or an unblock (no side bars). The other FLAs at
+// work at that moment stand after its actor as a small portrait stack:
+// up to three faces, then one dot of three dots for the rest; it fans out
+// under the pointer. The latest few show first; 显示更早的 adds more, so the
+// panel never scrolls on its own.
 const props = defineProps<{
   entries: readonly TimelineEntry[]
   taskKey: string
@@ -33,6 +36,8 @@ const timeOf = (at: string | null) => {
   return date && !Number.isNaN(date.getTime()) ? new Intl.DateTimeFormat(currentLocale(), { hour: '2-digit', minute: '2-digit' }).format(date) : ''
 }
 const isLong = (entry: TimelineEntry) => entry.reason.text.length > LONG
+const CREW_FACES = 3
+const crewNames = (entry: TimelineEntry) => new Intl.ListFormat(currentLocale(), { type: 'conjunction' }).format(entry.crew.map(id => props.agentName(id)))
 function toggle(id: string) {
   const next = new Set(expanded.value)
   if (!next.delete(id)) next.add(id)
@@ -53,6 +58,13 @@ function toggle(id: string) {
               <time :datetime="entry.at ?? undefined" class="timeline-time">{{ timeOf(entry.at) }}</time>
               <span v-if="entry.agentId" class="timeline-face" :style="agentIdentityStyle(entry.agentId)" aria-hidden="true"><img :src="agentAvatarUrl(entry.agentId)" alt="" /></span>
               <strong class="timeline-actor">{{ actor(entry) }}</strong>
+              <span v-if="entry.crew.length" class="timeline-crew" :title="t('overview.timeline.crew', { names: crewNames(entry) })" data-timeline-crew>
+                <span v-for="id in entry.crew.slice(0, CREW_FACES)" :key="id" class="timeline-crew-face" :style="agentIdentityStyle(id)" aria-hidden="true">
+                  <img :src="agentAvatarUrl(id)" alt="" />
+                </span>
+                <span v-if="entry.crew.length > CREW_FACES" class="timeline-crew-more" aria-hidden="true" data-timeline-crew-more><span /><span /><span /></span>
+                <span class="sr-only">{{ t('overview.timeline.crew', { names: crewNames(entry) }) }}</span>
+              </span>
             </p>
             <p class="timeline-text" :class="{ 'is-clamped': isLong(entry) && !expanded.has(entry.id) }">{{ entry.reason.text }}</p>
             <div v-if="isLong(entry) || entry.reason.raw || entry.reason.unknownCode" class="timeline-meta">
@@ -76,7 +88,8 @@ function toggle(id: string) {
 </template>
 
 <style scoped>
-.timeline { display: grid; gap: 14px; }
+/* The inset keeps the first dot's ring inside the scrolling stage, which clips at its edge. */
+.timeline { display: grid; gap: 14px; padding: 2px 0 2px 4px; }
 .timeline-day { display: grid; gap: 6px; }
 .timeline-day-label { margin: 0; color: var(--color-muted); font-size: var(--text-meta); font-weight: var(--weight-medium); }
 .timeline-list { position: relative; margin: 0; padding: 0; list-style: none; }
@@ -97,6 +110,21 @@ function toggle(id: string) {
 .timeline-face { display: grid; width: 20px; height: 20px; overflow: hidden; place-items: center; border-radius: 50%; background: var(--agent-identity-soft, var(--color-surface-hover)); }
 .timeline-face img { width: 100%; height: 100%; object-fit: cover; }
 .timeline-actor { color: var(--color-ink); font-weight: var(--weight-strong); }
+/* The crew: overlapping portraits ringed in the panel's white, the last on top. */
+.timeline-crew { display: flex; flex: none; align-items: center; padding-left: 2px; }
+.timeline-crew > :not(.sr-only) {
+  display: grid; width: 20px; height: 20px; overflow: hidden; place-items: center; border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--color-surface); transition: transform var(--motion-fast) var(--motion-ease);
+}
+.timeline-crew > :not(.sr-only) + :not(.sr-only) { margin-left: -6px; }
+.timeline-crew-face { background: var(--agent-identity-soft, var(--color-surface-hover)); }
+.timeline-crew-face img { width: 100%; height: 100%; object-fit: cover; }
+.timeline-crew-more { grid-auto-flow: column; gap: 2px; background: var(--color-surface-hover); }
+.timeline-crew-more span { width: 3px; height: 3px; border-radius: 50%; background: var(--color-muted); }
+/* Under the pointer the stack fans out, so each face can be seen. */
+.timeline-crew:hover > :nth-child(2) { transform: translateX(3px); }
+.timeline-crew:hover > :nth-child(3) { transform: translateX(6px); }
+.timeline-crew:hover > :nth-child(4) { transform: translateX(9px); }
 .timeline-text { margin: 0; color: var(--color-ink-soft); font-size: var(--text-control); line-height: var(--leading-prose); overflow-wrap: anywhere; }
 .timeline-entry:first-child .timeline-text { color: var(--color-ink); }
 .timeline-text.is-clamped { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -105,5 +133,7 @@ function toggle(id: string) {
 .timeline-raw summary { cursor: pointer; }
 .timeline-raw code { display: block; margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .timeline-earlier { justify-self: start; }
+@media (prefers-reduced-motion: reduce) { .timeline-crew > * { transition: none; } }
+:root[data-motion="reduced"] .timeline-crew > * { transition: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 </style>

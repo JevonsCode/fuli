@@ -23,6 +23,7 @@ export const overviewMessages = {
       collapse: '收起',
       earlier: '显示更早的 {count} 条',
       tones: { done: '已完成', blocked: '受阻', unblocked: '已解除阻塞' },
+      crew: '同时在干活：{names}',
     },
     done: {
       empty: '还没有完成的工作。',
@@ -71,6 +72,7 @@ export const overviewMessages = {
       collapse: 'Show less',
       earlier: 'Show {count} earlier',
       tones: { done: 'Done', blocked: 'Blocked', unblocked: 'Unblocked' },
+      crew: 'Also at work: {names}',
     },
     done: {
       empty: 'Nothing finished yet.',
