@@ -2,7 +2,34 @@
   height: 100%;
 }
 
+/* A page-sized loading (GrowthLoading's page variant, or the blank space a page
+   holds before it shows one) sits in the middle of the area it replaces
+   (Jevons 11-01): it takes the rest of the page's scroll area below whatever
+   the page already shows. While one is there, the page root lays out as a
+   column and each box around the loading grows into the free height. The
+   loading's own box also lays out as a column, so a back link or toolbar
+   above it keeps its height and the loading takes the rest; boxes further
+   out keep their display, so nothing above the loading moves when content
+   replaces it. The shell prefix outranks a page's own display for its root
+   (the workbench is a row, or a block on small windows). */
+.app-main .view:has(.view-loading) {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-main .view :has(.view-loading) {
+  flex: 1 0 auto;
+}
+
+.app-main .view :has(> .view-loading) {
+  display: flex;
+  flex-direction: column;
+}
+
 .view-loading {
+  flex: 1 0 auto;
+  align-self: stretch;
+  justify-self: stretch;
   min-height: 240px;
   display: grid;
   place-items: center;
