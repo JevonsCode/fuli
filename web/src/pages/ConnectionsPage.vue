@@ -594,8 +594,8 @@ function required(value: string, label: string) {
               </div>
             </div>
             <div class="external-binding-editor-actions">
-              <Button size="sm" variant="ghost" :disabled="externalBusy" @click="cancelEditingTargets">{{ t('common.actions.cancel') }}</Button>
-              <Button size="sm" :disabled="externalBusy || !editingProjectIds.length" @click="saveBindingTargets(binding)">{{ t('pages.connections.saveProjects') }}</Button>
+              <Button variant="ghost" :disabled="externalBusy" @click="cancelEditingTargets">{{ t('common.actions.cancel') }}</Button>
+              <Button :disabled="externalBusy || !editingProjectIds.length" @click="saveBindingTargets(binding)">{{ t('pages.connections.saveProjects') }}</Button>
             </div>
           </div>
         </article>

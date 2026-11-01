@@ -101,13 +101,13 @@ async function save(next: string | null) {
 
 <style scoped>
 .agent-name { display: grid; gap: 6px; min-width: 0; }
-.agent-name-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; min-height: 36px; }
+.agent-name-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; min-height: var(--control-height-md); }
 .agent-name-text { margin: 0; min-width: 0; color: var(--color-ink); font-size: var(--text-title); font-weight: var(--weight-strong); line-height: var(--leading-title); letter-spacing: -.02em; overflow-wrap: anywhere; }
 /* The pencil stays quiet until the name is pointed at or reached by keyboard. */
 .agent-name-edit { color: var(--color-ink-soft); opacity: .55; transition: opacity var(--motion-fast) var(--motion-ease); }
 .agent-name-row:hover .agent-name-edit, .agent-name-edit:focus-visible { opacity: 1; }
 .agent-name-restore { color: var(--color-ink-soft); }
-.agent-name-input { flex: 0 1 22rem; height: 36px; font-size: var(--text-title); font-weight: var(--weight-strong); }
+.agent-name-input { flex: 0 1 22rem; font-size: var(--text-title); font-weight: var(--weight-strong); }
 .agent-name-keys { color: var(--color-faint); font-size: var(--text-meta); }
 .agent-name-error { margin: 0; color: var(--color-danger); font-size: var(--text-meta); }
 .agent-name-free { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

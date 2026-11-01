@@ -30,7 +30,7 @@ describe('Select', () => {
   it('renders a named combobox trigger that shows the placeholder until a value is chosen', () => {
     const { wrapper } = mountSelect()
     const trigger = wrapper.get('[role="combobox"]')
-    expect(trigger.attributes()).toMatchObject({ 'data-slot': 'select-trigger', 'data-size': 'default', 'aria-label': '执行者', 'aria-expanded': 'false', 'type': 'button' })
+    expect(trigger.attributes()).toMatchObject({ 'data-slot': 'select-trigger', 'data-size': 'md', 'aria-label': '执行者', 'aria-expanded': 'false', 'type': 'button' })
     expect(trigger.attributes('data-placeholder')).toBeDefined()
     expect(trigger.text()).toContain('选择执行者')
     expect(listbox()).toBeNull()

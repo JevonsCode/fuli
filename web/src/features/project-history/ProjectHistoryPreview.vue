@@ -93,7 +93,7 @@ function mergeLabel(item: ProjectPreview) {
 <template>
   <!-- A quiet toolbar button (Jevons 11-01): the preview is a rare tool, never a bar pinned under the page. -->
   <span class="project-history">
-    <Button size="sm" variant="ghost" class="shrink-0" data-generate aria-haspopup="dialog" :title="t('projectHistory.title')" @click="start">
+    <Button variant="ghost" class="shrink-0" data-generate aria-haspopup="dialog" :title="t('projectHistory.title')" @click="start">
       {{ preview ? t('projectHistory.regenerate') : t('projectHistory.generate') }}
     </Button>
 

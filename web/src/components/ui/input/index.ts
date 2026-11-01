@@ -3,8 +3,10 @@
 // an upgrading dependency; compare with `npx shadcn-vue@2.8.2 diff input`.
 // Local changes:
 // - `cn` comes from @/lib/class-names.
-// - The shared field look (../field-look.ts, direction A): --control-height,
-//   white surface with a hairline, 14px type at every width (no md:text-sm),
+// - `size` sm | md | lg (default md) from the control size scale
+//   (../control-size.ts) sets the height, padding and type; it replaces the
+//   native `size` attribute, which no FULI field uses.
+// - The shared field look (../field-look.ts, direction A): white surface with a hairline, 14px type at every width (no md:text-sm),
 //   no resting shadow, a darker hairline on hover and a soft neutral halo on
 //   focus; aria-invalid turns the hairline to the danger colour.
 // - Disabled keeps pointer events (a title still shows) and uses the quiet

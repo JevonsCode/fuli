@@ -46,12 +46,14 @@ b, strong { font-weight: var(--weight-strong); }
 }
 :where(button):disabled { cursor: not-allowed; opacity: .45; }
 
-/* Text inputs */
+/* Text inputs. A one-line field is exactly the md control height (base.css):
+   its 1px border, 6px padding and 21px line (14px × 1.5) fit inside the
+   36px minimum. Input, Select and Combobox set their size from the scale. */
 :where(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), select, textarea) {
-  min-width: 0; min-height: var(--control-height); padding: 7px 11px;
+  min-width: 0; min-height: var(--control-height-md); padding: 6px var(--field-padding-md);
   border: 1px solid var(--color-control-border); border-radius: var(--radius-control);
   color: var(--color-ink); background: var(--color-surface);
-  font-size: 14px; line-height: 1.5;
+  font-size: var(--field-text-md); line-height: 1.5;
   transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
 }
 :where(input, textarea)::placeholder { color: var(--color-faint); opacity: 1; }

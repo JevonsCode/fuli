@@ -26,6 +26,6 @@ async function created(project: PersonalProject) {
 </script>
 
 <template>
-  <Button size="sm" variant="ghost" data-create-project @click="open = true">＋ {{ t('projects.createDialog.open') }}</Button>
+  <Button variant="ghost" data-create-project @click="open = true">＋ {{ t('projects.createDialog.open') }}</Button>
   <CreateProjectDialog :open="open" :personal-space-id="spaceId" :existing-project-ids="existingProjectIds" @close="open = false" @created="created" />
 </template>

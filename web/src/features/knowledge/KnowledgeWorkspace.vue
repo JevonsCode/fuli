@@ -1119,7 +1119,7 @@ function queryValues(value: unknown) {
       </form>
       <div class="graph-view-actions">
         <ProjectHistoryPreview v-if="personalProjectsOnly && !projectId && spaceId" :space-id="spaceId" />
-        <Button size="sm" variant="ghost"
+        <Button variant="ghost"
           v-if="
             personalProjectsOnly
               && activePersonalProject
@@ -1130,12 +1130,12 @@ function queryValues(value: unknown) {
           {{ t('knowledge.workspace.workspace.view.publishProject') }}
         </Button>
         <div v-if="mode === 'graph'" class="graph-controls" role="group" :aria-label="t('knowledge.workspace.workspace.view.graphControls')">
-          <Button size="sm" variant="ghost" :aria-label="t('knowledge.workspace.workspace.view.zoomOut')" @click="graphCanvas?.zoomOut()">−</Button>
-          <Button size="sm" variant="ghost" :aria-label="t('knowledge.workspace.workspace.view.zoomIn')" @click="graphCanvas?.zoomIn()">＋</Button>
-          <Button size="sm" variant="ghost" @click="graphCanvas?.fit()">{{ t('knowledge.workspace.workspace.view.fit') }}</Button>
-          <Button size="sm" variant="ghost" @click="graphCanvas?.reset()">{{ t('knowledge.workspace.workspace.view.reset') }}</Button>
+          <Button variant="ghost" :aria-label="t('knowledge.workspace.workspace.view.zoomOut')" @click="graphCanvas?.zoomOut()">−</Button>
+          <Button variant="ghost" :aria-label="t('knowledge.workspace.workspace.view.zoomIn')" @click="graphCanvas?.zoomIn()">＋</Button>
+          <Button variant="ghost" @click="graphCanvas?.fit()">{{ t('knowledge.workspace.workspace.view.fit') }}</Button>
+          <Button variant="ghost" @click="graphCanvas?.reset()">{{ t('knowledge.workspace.workspace.view.reset') }}</Button>
         </div>
-        <Button size="icon-sm" variant="ghost" :aria-label="t('common.actions.refresh')" :title="t('common.actions.refresh')" @click="loadGraph"><span aria-hidden="true">↻</span></Button>
+        <Button size="icon" variant="ghost" :aria-label="t('common.actions.refresh')" :title="t('common.actions.refresh')" @click="loadGraph"><span aria-hidden="true">↻</span></Button>
       </div>
     </div>
 

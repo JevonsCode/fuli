@@ -7,6 +7,9 @@
 // and, for multiple, `summary` text in place of the chips (a count). The
 // parts stay internal until a page needs its own item layout.
 // Local changes:
+// - OptionCombobox takes `size` sm | md | lg (default md) from the control
+//   size scale (../control-size.ts): the field is exactly that height, with
+//   or without chips.
 // - `cn` comes from @/lib/class-names; the chevron and check mark are FULI's
 //   (UiIcon), not lucide.
 // - ComboboxList has the FULI popover look, as Select and DropdownMenu: card

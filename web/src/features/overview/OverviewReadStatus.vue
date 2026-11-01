@@ -24,5 +24,5 @@ const emit = defineEmits<{ retry: [] }>()
 p { margin: 4px 0; }
 time, details { display: block; color: var(--color-muted); font-size: 12px; }
 summary { cursor: pointer; display: flex; align-items: center; }
-@media (pointer: coarse) { summary, .overview-read-error :deep(button) { min-height: 44px; } }
+@media (pointer: coarse) { summary, .overview-read-error :deep(button) { min-height: var(--control-height-lg); } }
 </style>

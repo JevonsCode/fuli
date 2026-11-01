@@ -12,6 +12,7 @@ import { computed, useId } from "vue"
 import GrowthLoading from "@/components/GrowthLoading.vue"
 import { t } from "@/i18n"
 import { cn } from "@/lib/class-names"
+import { FIELD_HEIGHT, type ControlSize } from "../control-size"
 import { FIELD_FOCUS_WITHIN, FIELD_LOOK } from "../field-look"
 import UiIcon from "@/ui/UiIcon.vue"
 import { fromItemValue, groupOptions, optionSearchText, toItemValue, type SelectOption } from "../select/option"
@@ -47,11 +48,11 @@ const props = withDefaults(defineProps<{
   required?: boolean
   name?: string
   controlId?: string
-  size?: "sm" | "default"
+  size?: ControlSize
   class?: HTMLAttributes["class"]
 }>(), {
   multiple: false, searchable: true, field: false, placeholder: undefined, allLabel: undefined, summary: undefined, maxChips: 2, hint: undefined,
-  disabled: false, loading: false, required: false, name: undefined, controlId: undefined, size: "default", class: undefined,
+  disabled: false, loading: false, required: false, name: undefined, controlId: undefined, size: "md", class: undefined,
 })
 
 const emit = defineEmits<{ "update:modelValue": [value: V] }>()
@@ -95,11 +96,12 @@ function choose(next: unknown) {
 
 const fieldClass = computed(() => cn(
   FIELD_LOOK, FIELD_FOCUS_WITHIN,
-  "flex w-full min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden px-2 text-base",
+  // px-2 here plus the input's px-1 is the field padding (12px at md).
+  "flex w-full min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden px-2 py-0",
   "data-[disabled]:cursor-not-allowed data-[disabled]:bg-muted data-[disabled]:text-muted-foreground",
-  props.size === "sm" ? "min-h-(--control-height-sm) py-0.5 text-sm" : "min-h-(--control-height) py-1",
+  FIELD_HEIGHT[props.size],
 ))
-const inputClass = "min-h-0 min-w-8 flex-1 border-0 bg-transparent p-1 shadow-none outline-none focus:shadow-none disabled:cursor-not-allowed disabled:bg-transparent read-only:cursor-pointer"
+const inputClass = "h-full min-h-0 min-w-8 flex-1 border-0 bg-transparent px-1 py-0 text-[length:inherit] shadow-none outline-none focus:shadow-none disabled:cursor-not-allowed disabled:bg-transparent read-only:cursor-pointer"
 </script>
 
 <template>
@@ -114,8 +116,8 @@ const inputClass = "min-h-0 min-w-8 flex-1 border-0 bg-transparent p-1 shadow-no
       open-on-click
       @update:model-value="choose"
     >
-      <ComboboxAnchor :as-child="multiple" :class="multiple ? undefined : fieldClass" :data-disabled="disabled ? '' : undefined">
-        <TagsInput v-if="multiple" :model-value="chips" :display-value="labelOf" :delimiter="NO_DELIMITER" :disabled="disabled" :class="fieldClass" @update:model-value="choose">
+      <ComboboxAnchor :as-child="multiple" :class="multiple ? undefined : fieldClass" :data-size="multiple ? undefined : size" :data-disabled="disabled ? '' : undefined">
+        <TagsInput v-if="multiple" :model-value="chips" :display-value="labelOf" :delimiter="NO_DELIMITER" :disabled="disabled" :class="fieldClass" :data-size="size" @update:model-value="choose">
           <span v-if="summary" class="min-w-0 truncate px-1 text-sm" data-select-summary>{{ summary }}</span>
           <span v-else-if="allChosen" class="min-w-0 truncate px-1 text-sm" data-select-all-label>{{ allLabel }}</span>
           <template v-else>

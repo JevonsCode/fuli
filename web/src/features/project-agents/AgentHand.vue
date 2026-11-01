@@ -21,7 +21,7 @@ function activate(event: Event) { if (!props.passive) { event.preventDefault(); 
 .agent-hand { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; padding: 4px 8px; min-height: 28px; border: 0; border-radius: var(--radius-control); background: var(--color-accent-soft); color: var(--color-accent); font: inherit; font-size: 12px; font-weight: 650; vertical-align: middle; }
 button.agent-hand { cursor: pointer; }
 button.agent-hand:hover { background: var(--color-accent); color: var(--color-on-accent); }
-@media (pointer: coarse) { button.agent-hand { min-width: 44px; min-height: 44px; } }
+@media (pointer: coarse) { button.agent-hand { min-width: var(--control-height-lg); min-height: var(--control-height-lg); } }
 .agent-hand svg { width: 15px; height: 15px; }
 .agent-hand:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 </style>

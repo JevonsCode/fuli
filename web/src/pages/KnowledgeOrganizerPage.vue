@@ -309,10 +309,10 @@ async function openReplacement(item: KnowledgeItem) {
       <template #end>
         <span class="organizer-result-summary">{{ t('knowledge.workspace.organizer.showing', {
           visible: visibleItems.length, total: activeQuadrantItems.length }) }}</span>
-        <Button variant="outline" v-if="confirmationGroups.length" class="batch-confirm-action" size="sm" @click="batchDialogOpen = true">
+        <Button variant="outline" v-if="confirmationGroups.length" class="batch-confirm-action" @click="batchDialogOpen = true">
           {{ t('knowledge.workspace.organizer.batchConfirm', { count: confirmationGroups.length }) }}
         </Button>
-        <UiIconButton icon="refresh" size="sm" :label="t('common.actions.refresh')" :disabled="loading || loadingMore" @click="load()" />
+        <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="loading || loadingMore" @click="load()" />
       </template>
     </UiToolbar>
 

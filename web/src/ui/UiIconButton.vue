@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
+import { ICON_GLYPH, type ControlSize } from '@/components/ui/control-size'
 import UiIcon from './UiIcon.vue'
 import type { IconName } from './icons'
 
@@ -11,18 +12,18 @@ withDefaults(defineProps<{
   icon: IconName
   label: string
   shape?: 'round' | 'square'
-  size?: 'sm' | 'md'
+  size?: ControlSize
   active?: boolean
   disabled?: boolean
 }>(), { shape: 'round', size: 'md', active: false, disabled: false })
 </script>
 
 <template>
-  <Button variant="ghost" :size="size === 'sm' ? 'icon-sm' : 'icon'"
+  <Button variant="ghost" :size="`icon-${size}`"
     :class="[shape === 'round' ? 'rounded-full' : '',
              'transition-[color,background-color,border-color,scale] active:not-disabled:scale-94',
              'aria-pressed:bg-primary-soft aria-pressed:text-primary']"
     :aria-label="label" :title="label" :aria-pressed="active || undefined" :disabled="disabled">
-    <UiIcon :name="icon" :size="size === 'sm' ? 16 : 18" />
+    <UiIcon :name="icon" :size="ICON_GLYPH[size]" />
   </Button>
 </template>

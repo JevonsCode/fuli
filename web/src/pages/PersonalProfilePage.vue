@@ -551,7 +551,7 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
  />
       <template #end>
         <span v-if="graph" data-profile-count data-term="memory.preferenceCount">{{ countText }}</span>
-        <UiIconButton icon="refresh" size="sm" :label="t('common.actions.refresh')" :disabled="loading" @click="load()" />
+        <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="loading" @click="load()" />
       </template>
     </UiToolbar>
 

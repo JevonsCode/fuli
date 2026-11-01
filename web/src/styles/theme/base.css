@@ -33,8 +33,31 @@
   --space-6: 24px;
   --space-8: 32px;
   --space-10: 40px;
-  --control-height: 36px;
+  /* One control size scale (Jevons 11-01): every button, field, picker
+     trigger, segmented control and icon button takes size sm | md | lg and
+     renders exactly that height, so controls of one size line up in a row.
+     Each size is a complete set: height, the icon-only square, and the
+     padding-inline and type of a button (--control-*) and of a field's text
+     (--field-*). md is the default; --control-height stays its alias. */
   --control-height-sm: 30px;
+  --control-height-md: 36px;
+  --control-height-lg: 44px;
+  --control-height: var(--control-height-md);
+  --control-square-sm: var(--control-height-sm);
+  --control-square-md: var(--control-height-md);
+  --control-square-lg: var(--control-height-lg);
+  --control-padding-sm: 10px;
+  --control-padding-md: 14px;
+  --control-padding-lg: 20px;
+  --control-text-sm: var(--text-meta);
+  --control-text-md: var(--text-control);
+  --control-text-lg: var(--text-body);
+  --field-padding-sm: 10px;
+  --field-padding-md: 12px;
+  --field-padding-lg: 14px;
+  --field-text-sm: var(--text-control);
+  --field-text-md: var(--text-body);
+  --field-text-lg: var(--text-card-title);
   --radius-control: 8px;
   --radius-card: 14px;
   --radius-dialog: 20px;

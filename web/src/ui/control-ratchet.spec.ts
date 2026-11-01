@@ -48,4 +48,50 @@ describe('design system adoption', () => {
     const heavy = Object.values(styles).reduce((sum, source) => sum + (source.match(/font-weight:\s*(6[1-9]\d|[7-9]\d\d|bold)/g)?.length ?? 0), 0)
     expect(heavy, 'use var(--weight-strong) (600) or var(--weight-medium) (500)').toBeLessThanOrEqual(HEAVY_WEIGHT_BASELINE)
   })
+
+  // Controls take their height from the size scale (theme/base.css,
+  // ui/control-size.spec.ts): a page picks size sm | md | lg and never sizes a
+  // control's height by hand, so the controls of a row stay one height
+  // (Jevons 11-01). A page rule may still use the tokens themselves; a glyph
+  // under 20px (a radio's dot, a chevron) is not a control's box.
+  it('never hand-sizes a control height on a page', () => {
+    const styles = import.meta.glob<string>(['../**/*.vue', '../**/*.css', '../../styles.css', '!../components/ui/**', '!../styles/theme/**'],
+      { query: '?raw', import: 'default', eager: true })
+    const offenders = Object.entries(styles).flatMap(([file, source]) => handSizedControls(source).map(rule => `${file.replace(/^\.\.\//, '')} ${rule}`))
+    expect(Object.keys(styles).length, 'the scan reads page styles').toBeGreaterThan(50)
+    expect(offenders.filter(rule => !HAND_SIZED_ALLOWED.some(allowed => rule.startsWith(allowed)))).toEqual([])
+    // Every exception still exists, so the list only shrinks.
+    for (const allowed of HAND_SIZED_ALLOWED) expect(offenders.some(rule => rule.startsWith(allowed)), allowed).toBe(true)
+  })
+
+  it('never gives a field or picker a height utility in a template', () => {
+    const offenders = Object.entries(templates).filter(([file]) => !file.startsWith('../components/ui/'))
+      .flatMap(([file, source]) => [...source.matchAll(/<(Input|OptionSelect|OptionCombobox|SelectTrigger|UiSegmented|UiIconButton)\b[^>]*\bclass="([^"]*)"/g)]
+        .filter(([, , classes]) => /(?:^|\s)!?(?:min-)?h-(?!control-|auto\b|full\b)\S+/.test(classes!))
+        .map(([tag]) => `${file} ${tag!.slice(0, 60)}`))
+    expect(offenders, 'pass size="sm" | "md" | "lg" instead').toEqual([])
+  })
 })
+
+// Controls of their own kind whose height is not a row control's (a card's
+// corner handle, a choice card, a To: chip row's bare search, a composer's
+// borderless textarea, the language switcher's tiny toggle).
+const HAND_SIZED_ALLOWED = [
+  'features/employees/EmployeeTaskBoard.vue .employee-all-projects-drag-handle',
+  'features/preferences/PreferenceConflictDialog.vue .conflict-resolution-options > button',
+  'features/roundtables/RoundtableNewConversation.vue .rt-new-search',
+  'features/roundtables/RoundtableComposer.vue .rt-compose-input',
+  'styles/vue.css .locale-switcher button',
+]
+const CONTROL_SELECTOR = /\binput\b(?!\[type=["']?(?:checkbox|radio))|\bselect\b|\btextarea\b|\bbutton\b|\[data-slot=["']?(?:button|input|select-trigger|option-select|option-combobox|combobox-anchor)|-(?:search|select|input|trigger|picker)\b|-picker\s*>\s*summary/
+const PIXEL_HEIGHT = /(?<![-\w])(?:min-)?height\s*:\s*(?:[2-9]\d|\d{3,})(?:\.\d+)?px/
+
+/** Innermost rules of a stylesheet (or a component's style blocks) that give a control a literal pixel height. */
+function handSizedControls(source: string) {
+  const css = (source.includes('<template') ? [...source.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(([, body]) => body).join('\n') : source)
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map(([, selector, body]) => [selector!.trim().split('\n').at(-1)!.trim(), body!] as const)
+    .filter(([selector, body]) => CONTROL_SELECTOR.test(selector) && PIXEL_HEIGHT.test(body))
+    .map(([selector]) => selector)
+}

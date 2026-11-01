@@ -8,7 +8,7 @@ describe('Button', () => {
     const primary = mount(Button, { slots: { default: 'Save' } }).get('button')
     expect(primary.attributes('data-slot')).toBe('button')
     expect(primary.attributes('data-variant')).toBe('default')
-    expect(primary.attributes('data-size')).toBe('default')
+    expect(primary.attributes('data-size')).toBe('md')
     expect(primary.attributes('type')).toBe('button')
     const submit = mount(Button, { props: { type: 'submit', variant: 'destructive', size: 'sm' } }).get('button')
     expect(submit.attributes()).toMatchObject({ 'type': 'submit', 'data-variant': 'destructive', 'data-size': 'sm' })

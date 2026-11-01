@@ -238,15 +238,15 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
 .flas { display: flex; flex-direction: column; gap: 28px; width: 100%; }
 .flas-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
 .flas-search {
-  display: flex; flex: 0 1 360px; align-items: center; gap: 8px; min-width: 200px; height: 36px; padding: 0 14px;
+  display: flex; flex: 0 1 360px; align-items: center; gap: 8px; min-width: 200px; height: var(--control-height-md); padding: 0 14px;
   border-radius: var(--radius-pill); color: var(--color-faint); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border);
   transition: box-shadow var(--motion-fast);
 }
 .flas-search:focus-within { box-shadow: 0 0 0 1px var(--color-border-strong), 0 0 0 4px var(--color-surface-hover); }
-.flas-search input { flex: 1; min-width: 0; border: 0; outline: 0; color: var(--color-ink); background: transparent; font: inherit; font-size: var(--text-body); }
+.flas-search input { flex: 1; min-width: 0; min-height: 0; padding: 0; border: 0; outline: 0; color: var(--color-ink); background: transparent; font: inherit; font-size: var(--text-body); }
 .flas-switch { display: inline-flex; padding: 3px; border-radius: var(--radius-pill); background: var(--color-surface-hover); }
 .flas-switch button {
-  height: 30px; padding: 0 14px; border: 0; border-radius: var(--radius-pill); color: var(--color-muted); background: transparent;
+  height: calc(var(--control-height-md) - 6px); padding: 0 14px; border: 0; border-radius: var(--radius-pill); color: var(--color-muted); background: transparent;
   font: inherit; font-size: var(--text-control); font-weight: var(--weight-medium); cursor: pointer; transition: color var(--motion-fast), background var(--motion-fast), box-shadow var(--motion-fast);
 }
 .flas-switch button[aria-checked="true"] { color: var(--color-ink); background: var(--color-surface); box-shadow: var(--shadow-xs); }

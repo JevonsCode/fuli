@@ -162,7 +162,7 @@ watch(() => props.tagId, () => { detail.value = null; void load() }, { immediate
             <span v-if="!group[1].length" class="text-muted-foreground">{{ t('knowledgeTags.detail.none') }}</span>
             <span v-for="other in group[1]" :key="other.id" class="inline-flex items-center gap-1">
               <Badge variant="secondary">{{ other.name }}</Badge>
-              <Button v-if="live" size="sm" variant="ghost" class="h-6 px-1.5 text-xs" :data-tag-unrelate="other.id"
+              <Button v-if="live" size="xs" variant="ghost" class="px-1.5" :data-tag-unrelate="other.id"
                 :aria-label="`${t('knowledgeTags.actions.unrelate')} ${other.name}`"
                 @click="open({ change: 'unrelate', target: other, relation: group[2] })">{{ t('knowledgeTags.actions.unrelate') }}</Button>
             </span>

@@ -64,8 +64,13 @@ export function generate({ base = readFileSync(BASE_CSS, 'utf8'), semantic = rea
   const ink = meaning.find(({ name }) => name === '--shadow-rgb').value.split(/\s+/).map(Number)
   const pick = (list, prefix) => list.filter(({ name }) => name.startsWith(prefix))
   // `strip` drops the prefix (--text-body → body); otherwise the full name stays (--radius-card → radiusCard).
+  // An alias (--control-height: var(--control-height-md)) resolves to the value it names.
+  const resolve = (value) => {
+    const alias = /^var\((--[\w-]+)\)$/.exec(value)?.[1]
+    return alias ? resolve(scale.find(({ name }) => name === alias).value) : value
+  }
   const constants = (prefix, render, strip = false) => pick(scale, prefix)
-    .map(({ name, value }) => `  static const ${camel(strip ? name.replace(prefix, '--') : name)} = ${render(value)};`)
+    .map(({ name, value }) => `  static const ${camel(strip ? name.replace(prefix, '--') : name)} = ${render(resolve(value))};`)
   const colours = pick(meaning, '--color-')
     .map(({ name, value }) => [camel(name.replace('--color-', '--')), colourLiteral(value)])
     .filter(([, colour]) => colour)
