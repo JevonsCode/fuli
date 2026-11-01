@@ -13,7 +13,7 @@ from uuid import uuid4
 import pytest
 
 from fuli_graph.conversation_triage_models import ConversationTriageWrite
-from fuli_graph.provider_values import stable_uuid
+from fuli_graph.provider_values import graphiti_group_id, stable_uuid
 from fuli_graph.store_conversation_triage import StoreConversationTriage
 from fuli_graph.system_agents import SYSTEM_ASSISTANT_AGENT_ID
 
@@ -58,7 +58,7 @@ def store(driver, space):
             return None
 
         async def authorize(self, *args):
-            return {'id': space}
+            return {'id': space, 'group_id': graphiti_group_id('synthetic-provider', 'personal', space)}
 
         async def get_personal_project(self, *args):
             return {}
