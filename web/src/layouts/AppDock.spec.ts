@@ -148,6 +148,22 @@ describe('AppDock pinned FLA menu', () => {
     wrapper.unmount()
   })
 
+  it('holds the capsule from the right press, and the open menu leaves the page under the pointer', async () => {
+    const { wrapper } = await setup('/project-agents')
+    const pin = wrapper.get<HTMLAnchorElement>('[data-pinned-agent="agent-a"]')
+    pin.element.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 2 }))
+    await flushPromises()
+    // Held before the menu opens, so the capsule never starts to fold in between.
+    expect(wrapper.get('.dock-pins').classes()).toContain('is-holding')
+    await pin.trigger('contextmenu', { clientX: 40, clientY: 600 })
+    await flushPromises()
+    expect(document.querySelector('[data-pin-menu]')).not.toBeNull()
+    // Not modal: the page keeps its pointer, so the capsule keeps its hover.
+    expect(document.body.style.pointerEvents).not.toBe('none')
+    expect(wrapper.get('.dock-pins').classes()).toContain('is-holding')
+    wrapper.unmount()
+  })
+
   it('keeps the capsule open while the menu is, then closes both once the pointer has left both', async () => {
     const { wrapper, pin, capsule } = await openMenu('pointer')
     expect(menu()).not.toBeNull()
