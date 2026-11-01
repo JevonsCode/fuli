@@ -93,7 +93,11 @@ export function withCodexTomlLifecycleHooks(source, { context = null, hooks = nu
     ? hooks.events.flatMap(({ event }) =>
       codexTomlCommandHookBlock(event, codexStopCommand(context, event), hooks.timeoutSec))
     : MCP_TOOL_HOOKS.flatMap(([event, tool, input]) => codexTomlHookBlock(event, tool, input, MCP_TOOL_TIMEOUT_SEC));
-  return `${[...lines, ...(lines.length ? [''] : []), ...blocks].join('\n')}\n`;
+  const result = [...lines, ...(lines.length ? [''] : []), ...blocks];
+  // One newline ends the file, as TOML writers (and agent-installer) leave it;
+  // a trailing blank line would read as a changed configuration forever.
+  while (result.length && !result.at(-1).trim()) result.pop();
+  return `${result.join('\n')}\n`;
 }
 
 export function withoutCodexTomlLifecycleHooks(source) {

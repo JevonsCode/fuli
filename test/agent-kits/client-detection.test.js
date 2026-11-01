@@ -121,3 +121,58 @@ test('the real installer finds FULI where FULI\'s writers put it, and a client d
   const pasted = (await detectClients(installer)).clients.find(({ id }) => id === 'acme-agent');
   assert.deepEqual([pasted.detected, pasted.connected], [true, true]);
 });
+
+// The person's own configuration, already there before FULI connects. Codex
+// keeps its hooks in config.toml here, which FULI's writer then follows, and
+// a client or editor may leave blank lines at the end of a file.
+const PERSONAL = Object.freeze({
+  '.codex/config.toml': 'model = "gpt-5"\n\n[[hooks.Stop]]\n\n[[hooks.Stop.hooks]]\ntype = "command"\ncommand = "echo stop"\n\n',
+  '.codex/AGENTS.md': '# Personal rules\n\n',
+  '.claude.json': '{\n  "theme": "dark",\n  "mcpServers": { "other": { "command": "other" } }\n}\n\n',
+  '.claude/settings.json': '{ "permissions": { "allow": ["Bash(ls)"] }, "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": "echo stop" }] }] } }\n',
+  '.cursor/mcp.json': '{ "mcpServers": { "other": { "command": "other" } } }\n',
+  '.cursor/hooks.json': '{ "version": 1, "hooks": { "stop": [{ "command": "echo stop" }] } }\n',
+  '.config/opencode/opencode.jsonc': '{\n  // the person\'s theme\n  "theme": "dark",\n  "mcp": { "other": { "type": "local", "command": ["other"] } },\n}\n',
+  '.gemini/settings.json': '{ "mcpServers": { "other": { "command": "other" } } }\n',
+  '.gemini/config/mcp_config.json': '{ "mcpServers": { "remote": { "url": "https://mcp.example.invalid/sse" } } }\n'
+});
+
+test('every client FULI writes reads as current to agent-installer, over the person\'s own configuration', async (t) => {
+  const executable = await realAgentKitExecutable('agent-installer');
+  if (!executable) { t.skip('the pinned installer cannot be downloaded here'); return; }
+  const { home, env } = isolateHomeEnvironment(t);
+  for (const [relative, text] of Object.entries(PERSONAL)) {
+    mkdirSync(dirname(join(home, relative)), { recursive: true });
+    writeFileSync(join(home, relative), text);
+  }
+  const root = mkdtempSync(join(tmpdir(), 'fuli-client-round-trip-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const dataDir = join(root, 'data');
+  const skills = join(REPOSITORY, 'skills');
+  const context = { dataDir, nodePath: process.execPath, mcpServerPath: join(REPOSITORY, 'src', 'mcp-server.js'),
+    runtimeConfigPath: join(dataDir, 'graph-runtime.json'), platform: process.platform,
+    sessionSkillPath: join(skills, 'capturing-session-knowledge'), projectSkillPath: join(skills, 'grilling-project'),
+    reviewSkillPath: join(skills, 'flreview'), operationSkillPath: join(skills, 'operating-fuli'),
+    sessionCommandSkillPath: join(skills, 'fuli') };
+  const targets = () => agentTargets({ platform: process.platform, env, homeDir: home, dataDir,
+    commandVersion: (command) => (command === 'opencode' ? '2.1.4' : null) });
+  const installer = createClientInstallerPort({ manifestPath: join(dataDir, 'agent-kits', 'fuli-installer.json'), context, targets,
+    extensionsDir: join(root, 'extensions'),
+    executables: agentKitExecutables({ nativeRuntimeDir: join(dataDir, 'native-runtime'), env: { FULI_AGENT_INSTALLER: executable } }) });
+  // Every client FULI has a writer for on this platform, written by that writer and checked by the installer.
+  const written = targets().filter((agent) => !agent.manualOnly);
+  for (const agent of written) {
+    mkdirSync(dirname(agent.configPath), { recursive: true });
+    const result = await installAgent(agent, context, { ...context, backupDir: join(dataDir, 'backups', 'agents') });
+    assert.equal(result.status === 'partial' ? result.message : result.status, 'connected', agent.id);
+  }
+  const answer = await detectClients(installer);
+  assert.equal(answer.status, 'available', answer.reason);
+  const byId = Object.fromEntries(answer.clients.map((client) => [client.id, client]));
+  for (const { id } of written) {
+    assert.deepEqual([byId[id]?.connected, byId[id]?.components], [true,
+      Object.fromEntries(Object.keys(byId[id]?.components ?? {}).map((component) => [component, 'current']))], id);
+  }
+  assert.match(readFileSync(join(home, '.codex', 'config.toml'), 'utf8'), /\[\[hooks\.UserPromptSubmit]]/,
+    'Codex hooks stay in config.toml where the person keeps them');
+});
