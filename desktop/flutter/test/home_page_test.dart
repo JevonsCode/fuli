@@ -5,8 +5,10 @@ import 'package:fuli_desktop/src/app/fuli_controller.dart';
 import 'package:fuli_desktop/src/l10n/strings.dart';
 import 'package:fuli_desktop/src/preview/demo_fuli.dart';
 import 'package:fuli_desktop/src/ui/fuli_app.dart';
+import 'package:fuli_desktop/src/ui/fuli_mark.dart';
 import 'package:fuli_desktop/src/ui/item_card.dart';
 import 'package:fuli_desktop/src/ui/status_actions.dart';
+import 'package:fuli_desktop/src/ui/wordmark.dart';
 
 import 'support/brand.dart';
 import 'support/fakes.dart';
@@ -38,6 +40,11 @@ void main() {
     final (_, controller) = await showScenario(tester, 'ok');
 
     expect(find.text('FULI 正常工作'), findsOneWidget);
+    // A Chinese client's top line shows 复利 right of the mark.
+    final wordmark = tester.getRect(find.byType(FuliWordmark));
+    final chinese = testBrand.chineseWordmark.viewBox;
+    expect(wordmark.width / wordmark.height, closeTo(chinese.width / chinese.height, .001));
+    expect(wordmark.left, greaterThan(tester.getRect(find.byType(FuliMark)).right));
     expect(find.byTooltip('已安装 v0.22.0'), findsOneWidget);
     expect(find.text('已安装 v0.22.0'), findsNothing);
     expect(find.byType(ItemCard), findsNothing);

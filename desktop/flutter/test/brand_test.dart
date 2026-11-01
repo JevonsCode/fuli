@@ -8,11 +8,13 @@ import 'package:fuli_desktop/src/ui/brand.dart';
 import 'package:fuli_desktop/src/ui/fuli_mark.dart';
 import 'package:fuli_desktop/src/ui/loading_mark.dart';
 import 'package:fuli_desktop/src/ui/svg_path.dart';
+import 'package:fuli_desktop/src/ui/wordmark.dart';
 
 import 'support/brand.dart';
 
-Widget _framed(Widget child, {bool still = false}) => FuliBrandScope(
+Widget _framed(Widget child, {bool still = false, bool chinese = false}) => FuliBrandScope(
       brand: testBrand,
+      chinese: chinese,
       child: MaterialApp(
         home: MediaQuery(data: MediaQueryData(disableAnimations: still), child: Center(child: child)),
       ),
@@ -53,7 +55,9 @@ void main() {
   });
 
   test('gradient offsets may come as fractions, percentages or "n%"', () {
-    final json = jsonDecode(File('test/fixtures/fuli-mark.json').readAsStringSync()) as Map<String, Object?>;
+    Map<String, Object?> fixture(String name) =>
+        jsonDecode(File('test/fixtures/$name').readAsStringSync()) as Map<String, Object?>;
+    final json = fixture('fuli-mark.json');
     json['gold'] = {
       'light': [
         [0, '#DC9A30'],
@@ -61,7 +65,7 @@ void main() {
         ['100%', '#18181B'],
       ],
     };
-    expect([for (final (at, _) in FuliBrand.fromJson(json).gold) at], [0, .34, 1]);
+    expect([for (final (at, _) in FuliBrand.fromJson(json, fixture('fuli-wordmark.json')).gold) at], [0, .34, 1]);
   });
 
   test('the shipped asset holds the same mark as the test fixture', () async {
@@ -69,6 +73,29 @@ void main() {
     final shipped = await FuliBrand.load(rootBundle);
     expect(shipped.gold, testBrand.gold);
     expect(shipped.master.wave.getBounds(), testBrand.master.wave.getBounds());
+    expect(shipped.chineseWordmark.viewBox, testBrand.chineseWordmark.viewBox);
+    expect(shipped.chineseWordmark.outline.getBounds(), testBrand.chineseWordmark.outline.getBounds());
+    expect(shipped.latinWordmark.viewBox, testBrand.latinWordmark.viewBox);
+    expect(shipped.latinWordmark.outline.getBounds(), testBrand.latinWordmark.outline.getBounds());
+  });
+
+  test('each wordmark is its letters inside the clear space of its view box', () {
+    for (final wordmark in [testBrand.chineseWordmark, testBrand.latinWordmark]) {
+      final letters = wordmark.outline.getBounds();
+      expect(letters.isEmpty, isFalse);
+      expect(wordmark.viewBox.deflate(15).contains(letters.topLeft), isTrue);
+      expect(wordmark.viewBox.deflate(15).contains(letters.bottomRight), isTrue);
+    }
+    // 复利 is two characters, FULI four letters: the Latin wordmark is the wider one.
+    expect(testBrand.latinWordmark.viewBox.width, greaterThan(testBrand.chineseWordmark.viewBox.width));
+  });
+
+  testWidgets('the wordmark is 复利 in Chinese and FULI otherwise, 15 px tall', (tester) async {
+    for (final (chinese, wordmark) in [(true, testBrand.chineseWordmark), (false, testBrand.latinWordmark)]) {
+      await tester.pumpWidget(_framed(const FuliWordmark(), chinese: chinese));
+      final box = wordmark.viewBox;
+      expect(tester.getSize(find.byType(FuliWordmark)), Size(15 * box.width / box.height, 15));
+    }
   });
 
   testWidgets('the mark is the master geometry from 28 px up and the micro one below', (tester) async {

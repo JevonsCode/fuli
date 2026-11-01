@@ -15,6 +15,7 @@ import { sameBytes, samePixels } from './brand/image-content.js';
 import { markContract, markDrawing } from './brand/mark-contract.js';
 import { readMarkSvg } from './brand/mark-svg.js';
 import { decodePng, encodePng } from './brand/png.js';
+import { readWordmarkSvg, wordmarkContract } from './brand/wordmark-svg.js';
 
 export const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MARKS = {
@@ -23,6 +24,7 @@ const MARKS = {
   micro: 'brand/svg/mark/fuli-mark-micro-color.svg',
   microDark: 'brand/svg/mark/fuli-mark-micro-dark.svg'
 };
+const WORDMARKS = { zh: 'brand/svg/wordmark/fuli-wordmark-zh.svg', en: 'brand/svg/wordmark/fuli-wordmark-en.svg' };
 const APP_ICO = 'brand/png/app-icon/fuli-app.ico';
 // The ready app icons above the ICO's largest entry.
 const APP_ICON_PNGS = ['brand/png/app-icon/fuli-app-icon-light-512.png', 'brand/png/app-icon/fuli-app-icon-light-1024.png'];
@@ -41,6 +43,8 @@ const COPIES = {
 };
 // The mark as data: the desktop client's contract and the console's drawing data.
 const MARK_CONTRACT = 'desktop/flutter/assets/brand/fuli-mark.json';
+// The wordmarks as data, for the desktop client's top line.
+const WORDMARK_CONTRACT = 'desktop/flutter/assets/brand/fuli-wordmark.json';
 const MARK_DRAWING = 'web/assets/brand/fuli-mark.json';
 // The optical sizing rule: the micro cut below 28 px, the master cut from 28 px.
 const MICRO_BELOW_PX = 28;
@@ -60,6 +64,8 @@ const readProjectFile = (path) => readFileSync(join(PROJECT_ROOT, path));
 // still matches; [read] gives a brand/ file's bytes by its project path.
 export function brandAssets(read = readProjectFile) {
   const marks = Object.fromEntries(Object.entries(MARKS).map(([cut, path]) => [cut, readMarkSvg(read(path).toString('utf8'))]));
+  const contract = markContract(marks);
+  const wordmarks = Object.fromEntries(Object.entries(WORDMARKS).map(([language, path]) => [language, readWordmarkSvg(read(path).toString('utf8'))]));
   const markFor = (pixels) => (pixels < MICRO_BELOW_PX ? marks.micro : marks.master);
   const json = (data) => Buffer.from(`${JSON.stringify(data, null, 2)}\n`);
   const appIcons = [
@@ -70,7 +76,8 @@ export function brandAssets(read = readProjectFile) {
   const appIconFor = (size) => decodePng((appIcons.find((icon) => icon.size >= size) ?? appIcons.at(-1)).bytes);
   const copies = [
     ...Object.entries(COPIES).flatMap(([source, paths]) => paths.map((path) => ({ path, bytes: read(source) }))),
-    { path: MARK_CONTRACT, bytes: json(markContract(marks)) },
+    { path: MARK_CONTRACT, bytes: json(contract) },
+    { path: WORDMARK_CONTRACT, bytes: json(wordmarkContract(wordmarks, contract.ink)) },
     { path: MARK_DRAWING, bytes: json(markDrawing(marks, MICRO_BELOW_PX)) }
   ].map((asset) => ({ ...asset, same: sameBytes }));
   const ico = (draw, sizes) => encodeIco(sizes.map((size) => ({ size, bytes: encodePng(draw(size)) })));

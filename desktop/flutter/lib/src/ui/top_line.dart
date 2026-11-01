@@ -4,14 +4,15 @@ import '../app/fuli_condition.dart';
 import 'fuli_mark.dart';
 import 'glass_bar.dart';
 import 'theme.dart';
+import 'wordmark.dart';
 
 const topLineHeight = 64.0;
 const _dot = 8.0;
 
-/// The window's top line: the FULI mark, then FULI's state in one sentence
+/// The window's top line: the FULI mark and the wordmark, then FULI's state in one sentence
 /// after a status dot. [version] (the installed version, in words) waits in
 /// the dot's tooltip.
-/// Without a [sentence] (while waiting) it is the mark alone, at the same place.
+/// Without a [sentence] (while waiting) it is the mark and the wordmark alone, at the same place.
 class TopLine extends StatelessWidget {
   const TopLine({super.key, this.condition, this.sentence, this.version});
 
@@ -31,6 +32,8 @@ class TopLine extends StatelessWidget {
       child: Row(
         children: [
           const FuliMark(),
+          const SizedBox(width: FuliSpace.space2),
+          const FuliWordmark(),
           if (sentence != null) ...[
             const SizedBox(width: FuliSpace.space6),
             _tooltip(

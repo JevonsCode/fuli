@@ -18,7 +18,7 @@ class FuliApp extends StatelessWidget {
       title: services.strings.appName,
       debugShowCheckedModeBanner: false,
       theme: fuliTheme(),
-      builder: (context, child) => FuliBrandScope(brand: brand, child: child!),
+      builder: (context, child) => FuliBrandScope(brand: brand, chinese: services.strings.chinese, child: child!),
       home: _Window(services: services),
     );
   }

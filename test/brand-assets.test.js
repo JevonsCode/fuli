@@ -9,6 +9,7 @@ import { encodeIco, decodeIco } from '../scripts/brand/ico.js';
 import { trayIcon } from '../scripts/brand/icon-art.js';
 import { readMarkSvg } from '../scripts/brand/mark-svg.js';
 import { decodePng, encodePng } from '../scripts/brand/png.js';
+import { readWordmarkSvg } from '../scripts/brand/wordmark-svg.js';
 
 function withTempDir(run) {
   const directory = mkdtempSync(join(tmpdir(), 'fuli-brand-'));
@@ -35,6 +36,16 @@ function syntheticMark({ fill, stops, barTop = 120 }) {
 </svg>`;
 }
 
+// A synthetic wordmark: one filled, translated group of plain shapes.
+function syntheticWordmark({ fill = '#111111', transform = 'translate(16 16)', width = 232 } = {}) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} 232">
+  <g class="fuli-wordmark" transform="${transform}" fill="${fill}">
+    <path d="M 0 0 L 90 0 L 90 200 L 0 200 Z"/>
+    <path d="M 110 0 L 200 0 L 200 200 L 110 200 Z"/>
+  </g>
+</svg>`;
+}
+
 function solidPng(size, rgba) {
   const data = new Uint8Array(size * size * 4);
   for (let at = 0; at < size * size; at++) data.set(at % (size + 1) === 0 ? [0, 0, 0, 0] : rgba, at * 4);
@@ -50,8 +61,8 @@ function syntheticBrand(overrides = {}) {
     'brand/svg/mark/fuli-mark-dark.svg': syntheticMark({ fill: '#FFFFFF', stops: dark }),
     'brand/svg/mark/fuli-mark-micro-color.svg': syntheticMark({ fill: '#111111', stops: light, barTop: 90 }),
     'brand/svg/mark/fuli-mark-micro-dark.svg': syntheticMark({ fill: '#FFFFFF', stops: dark, barTop: 90 }),
-    'brand/svg/wordmark/fuli-wordmark-en.svg': '<svg>FULI</svg>',
-    'brand/svg/wordmark/fuli-wordmark-zh.svg': '<svg>复利</svg>',
+    'brand/svg/wordmark/fuli-wordmark-en.svg': syntheticWordmark({ width: 400 }),
+    'brand/svg/wordmark/fuli-wordmark-zh.svg': syntheticWordmark(),
     'brand/motion/fuli-motion.css': '.fuli-brand-svg {}',
     'brand/png/mark/favicon.ico': encodeIco([{ size: 16, bytes: solidPng(16, [17, 17, 17, 255]) }]),
     'brand/png/mark/fuli-mark-color-512.png': solidPng(8, [17, 17, 17, 255]),
@@ -112,6 +123,27 @@ test('the mark contract holds both cuts, the golds and the colours of the SVG so
   assert.deepEqual([contract.ink, contract.white], ['#18181B', '#FFFFFF']);
   assert.deepEqual(contract.gold.light, [[0, '#DC9A30'], [0.34, '#B87B20'], [0.66, '#5C4018'], [0.88, '#241F1A'], [1, '#18181B']]);
   assert.deepEqual(contract.gold.dark, [[0, '#EBA83A'], [0.36, '#F3C668'], [0.7, '#F8E6BE'], [0.96, '#FFFFFF'], [1, '#FFFFFF']]);
+});
+
+test('the wordmark data holds both wordmarks, each view box in its paths\' own coordinates', () => {
+  const contract = JSON.parse(brandAssets().find(({ path }) => path === 'desktop/flutter/assets/brand/fuli-wordmark.json').bytes);
+  assert.deepEqual(Object.keys(contract), ['zh', 'en']);
+  for (const language of ['zh', 'en']) {
+    const source = readWordmarkSvg(brandFile(`brand/svg/wordmark/fuli-wordmark-${language}.svg`).toString('utf8'));
+    assert.deepEqual(contract[language], { viewBox: source.viewBox, paths: source.paths }, language);
+    assert.equal(source.fill, '#18181B');
+  }
+  // The group's translate(16 16) moves the view box instead of the paths.
+  assert.deepEqual(contract.zh.viewBox, [-16, -16, 452, 232]);
+  assert.equal(contract.zh.paths.length, 2);
+  assert.equal(contract.en.paths.length, 4);
+});
+
+test('a wordmark outside the logo ink or with a transform other than translate is refused', () => {
+  assert.throws(() => brandAssets(syntheticBrand({ 'brand/svg/wordmark/fuli-wordmark-zh.svg': syntheticWordmark({ fill: '#52525B' }) })),
+    /zh wordmark is filled #52525B, not the logo ink #111111/);
+  assert.throws(() => brandAssets(syntheticBrand({ 'brand/svg/wordmark/fuli-wordmark-en.svg': syntheticWordmark({ transform: 'scale(2)' }) })),
+    /not a plain translate/);
 });
 
 test('a mark whose light and dark files disagree is refused', () => {

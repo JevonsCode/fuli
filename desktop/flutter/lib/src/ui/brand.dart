@@ -6,10 +6,13 @@ import 'svg_path.dart';
 
 // The FULI brand in the client, in one place: the mark's geometry and its
 // logo colours, read from assets/brand/fuli-mark.json (generated from the
-// brand's mark SVGs, on a 512 x 512 view box). The logo colours belong to the
-// mark alone, never to the interface (the brand guidelines' scope rule).
+// brand's mark SVGs, on a 512 x 512 view box), and the 复利 and FULI wordmarks
+// from assets/brand/fuli-wordmark.json (generated from its wordmark SVGs). The
+// logo colours belong to the mark and the wordmarks alone, never to the
+// interface (the brand guidelines' scope rule).
 
 const fuliMarkAsset = 'assets/brand/fuli-mark.json';
+const fuliWordmarkAsset = 'assets/brand/fuli-wordmark.json';
 
 /// The side of the view box the mark's paths are drawn on.
 const fuliMarkViewBox = 512.0;
@@ -34,24 +37,50 @@ class MarkGeometry {
   final List<Path> bars;
 }
 
-/// The mark as the brand defines it, for a light surface (the client has no dark mode).
+/// One wordmark: its outline, drawn in the logo ink, on its view box (the
+/// brand's clear space around the letters included).
+class WordmarkGeometry {
+  WordmarkGeometry.fromJson(Map<String, Object?> json)
+      : viewBox = _rect(json['viewBox']! as List),
+        outline = [for (final path in json['paths']! as List) parseSvgPath(path as String)]
+            .fold(Path(), (outline, path) => outline..addPath(path, Offset.zero));
+
+  final Rect viewBox;
+  final Path outline;
+
+  static Rect _rect(List<Object?> box) {
+    final [x, y, width, height] = [for (final value in box) (value! as num).toDouble()];
+    return Rect.fromLTWH(x, y, width, height);
+  }
+}
+
+/// The mark and the wordmarks as the brand defines them, for a light surface
+/// (the client has no dark mode).
 class FuliBrand {
-  FuliBrand.fromJson(Map<String, Object?> json)
-      : master = MarkGeometry.fromJson(json['master']! as Map<String, Object?>),
-        micro = MarkGeometry.fromJson(json['micro']! as Map<String, Object?>),
-        gold = _stops((json['gold']! as Map)['light']! as List),
-        ink = _colour(json['ink']! as String);
+  FuliBrand.fromJson(Map<String, Object?> mark, Map<String, Object?> wordmarks)
+      : master = MarkGeometry.fromJson(mark['master']! as Map<String, Object?>),
+        micro = MarkGeometry.fromJson(mark['micro']! as Map<String, Object?>),
+        gold = _stops((mark['gold']! as Map)['light']! as List),
+        ink = _colour(mark['ink']! as String),
+        chineseWordmark = WordmarkGeometry.fromJson(wordmarks['zh']! as Map<String, Object?>),
+        latinWordmark = WordmarkGeometry.fromJson(wordmarks['en']! as Map<String, Object?>);
 
   final MarkGeometry master;
   final MarkGeometry micro;
   final List<(double, Color)> gold;
   final Color ink;
+  // 复利 and FULI.
+  final WordmarkGeometry chineseWordmark;
+  final WordmarkGeometry latinWordmark;
 
   /// The geometry drawn at [size] logical pixels.
   MarkGeometry at(double size) => size < 28 ? micro : master;
 
-  static Future<FuliBrand> load(AssetBundle bundle) async =>
-      FuliBrand.fromJson(jsonDecode(await bundle.loadString(fuliMarkAsset)) as Map<String, Object?>);
+  static Future<FuliBrand> load(AssetBundle bundle) async {
+    Future<Map<String, Object?>> read(String asset) async =>
+        jsonDecode(await bundle.loadString(asset)) as Map<String, Object?>;
+    return FuliBrand.fromJson(await read(fuliMarkAsset), await read(fuliWordmarkAsset));
+  }
 
   static Color _colour(String hex) => Color(0xFF000000 | int.parse(hex.replaceFirst('#', ''), radix: 16));
 
@@ -68,14 +97,23 @@ class FuliBrand {
   }
 }
 
-/// Hands the loaded brand to every mark below it.
+/// Hands the loaded brand to every mark below it, with the wordmark for the
+/// client's language: 复利 when it speaks Chinese, FULI otherwise.
 class FuliBrandScope extends InheritedWidget {
-  const FuliBrandScope({super.key, required this.brand, required super.child});
+  const FuliBrandScope({super.key, required this.brand, required this.chinese, required super.child});
 
   final FuliBrand brand;
+  final bool chinese;
 
-  static FuliBrand of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<FuliBrandScope>()!.brand;
+  static FuliBrandScope _of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<FuliBrandScope>()!;
+
+  static FuliBrand of(BuildContext context) => _of(context).brand;
+
+  static WordmarkGeometry wordmarkOf(BuildContext context) {
+    final scope = _of(context);
+    return scope.chinese ? scope.brand.chineseWordmark : scope.brand.latinWordmark;
+  }
 
   @override
-  bool updateShouldNotify(FuliBrandScope old) => old.brand != brand;
+  bool updateShouldNotify(FuliBrandScope old) => old.brand != brand || old.chinese != chinese;
 }

@@ -8,6 +8,10 @@ export 'fuli_tokens.g.dart';
 // generated from web/src/styles/theme/; this file only maps the tokens onto
 // Material widgets, the way components.css maps them onto shadcn-vue. Light only.
 
+// The bundled OFL fonts (pubspec.yaml): Inter for Latin, Noto Sans SC for Chinese.
+const _latinFont = 'Inter';
+const _chineseFonts = ['Noto Sans SC'];
+
 // 24 title, 16 section, 15 card title, 14 body, 13 control, 12 meta; 400/500/600 only.
 abstract final class TypeScale {
   static const title = TextStyle(
@@ -52,7 +56,13 @@ BoxDecoration cardDecoration({bool lifted = false}) => BoxDecoration(
     );
 
 ThemeData fuliTheme() {
-  const control = TextStyle(fontSize: FuliText.control, fontWeight: FuliText.weightMedium, height: 1.2);
+  // Button and tooltip styles replace the ambient text style, so they name the fonts too.
+  const control = TextStyle(
+      fontFamily: _latinFont,
+      fontFamilyFallback: _chineseFonts,
+      fontSize: FuliText.control,
+      fontWeight: FuliText.weightMedium,
+      height: 1.2);
   final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(FuliSize.radiusControl));
   const padding = EdgeInsets.symmetric(horizontal: FuliSpace.space4);
   const size = Size(0, FuliSize.controlHeight);
@@ -70,7 +80,8 @@ ThemeData fuliTheme() {
       outline: FuliColors.controlBorder,
       error: FuliColors.danger,
     ),
-    fontFamilyFallback: const ['PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans CJK SC'],
+    fontFamily: _latinFont,
+    fontFamilyFallback: _chineseFonts,
     splashFactory: NoSplash.splashFactory,
     visualDensity: VisualDensity.standard,
     filledButtonTheme: FilledButtonThemeData(
@@ -117,7 +128,8 @@ ThemeData fuliTheme() {
     progressIndicatorTheme: const ProgressIndicatorThemeData(color: FuliColors.accent),
     tooltipTheme: TooltipThemeData(
       decoration: BoxDecoration(color: FuliColors.ink, borderRadius: BorderRadius.circular(FuliSize.radiusControl)),
-      textStyle: const TextStyle(fontSize: FuliText.meta, color: FuliColors.surface),
+      textStyle: const TextStyle(
+          fontFamily: _latinFont, fontFamilyFallback: _chineseFonts, fontSize: FuliText.meta, color: FuliColors.surface),
     ),
   );
 }
