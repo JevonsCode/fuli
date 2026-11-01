@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { installPageTransitions, motionConfigReduced } from './motion'
+import { installPageTransitions, motionConfigReduced, PAGE_CHANGING } from './motion'
 import { setMotionPreference } from './motion-preference'
 
 const page = { template: '<div />' }
@@ -24,6 +24,20 @@ describe('page transitions', () => {
     expect(start).not.toHaveBeenCalled()
     await app.push('/a')
     expect(start).toHaveBeenCalledOnce()
+  })
+
+  it('names the top bar and dock only while a page changes, so their glass keeps blurring the page', async () => {
+    let during = false
+    start.mockImplementation((update: () => Promise<void>) => {
+      during = document.documentElement.classList.contains(PAGE_CHANGING)
+      return { finished: update() }
+    })
+    const app = router()
+    await app.push('/')
+    await app.push('/a')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(during).toBe(true)
+    expect(document.documentElement.classList.contains(PAGE_CHANGING)).toBe(false)
   })
 
   it('leaves an in-page query change and reduced motion alone', async () => {

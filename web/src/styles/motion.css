@@ -8,8 +8,10 @@
  * dock keep their place while the page fades out and the next one rises in
  * on the shared spring.
  */
-.app-topbar { view-transition-name: app-topbar; }
-.app-dock { view-transition-name: app-dock; }
+/* Named only while a page changes (lib/motion.ts): a named element is a backdrop
+   root, so a permanent name stopped the dock's glass from blurring the page. */
+.is-page-changing .app-topbar { view-transition-name: app-topbar; }
+.is-page-changing .app-dock { view-transition-name: app-dock; }
 ::view-transition-group(app-topbar), ::view-transition-group(app-dock) { animation: none; }
 /* They show their new state at once. Cross-fading would squeeze the old snapshot
    into the new box: a dock clicked while open folds afterwards, and its open
