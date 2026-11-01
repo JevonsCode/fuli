@@ -97,6 +97,7 @@ export const router = createRouter({
     { path: '/project-agents/occupations', name: 'occupations', component: () => import('@/pages/OccupationsPage.vue'), meta: { title: 'occupations.title', layout: 'canvas' } },
     { path: '/project-agents/services', name: 'agent-services', component: () => import('@/pages/AgentServicesPage.vue'), meta: { title: 'agentServices.title', layout: 'canvas' } },
     { path: '/project-agents/apps', name: 'agent-apps', component: () => import('@/features/agent-apps/AgentAppsPage.vue'), meta: { title: 'agentApps.title', layout: 'canvas' } },
+    { path: '/project-agents/apps/:appId', name: 'agent-app', component: () => import('@/features/agent-apps/AppViewerPage.vue'), meta: { title: 'agentApps.title', layout: 'canvas', detail: true } },
     { path: '/project-agents/manage', name: 'agent-management', component: () => import('@/pages/ProjectAgentsPage.vue'), meta: { title: 'shell.sections.orchestrate', layout: 'canvas' } },
     { path: '/project-agents/manage/:spaceId/:agentId', name: 'agent-management-detail', component: () => import('@/pages/ProjectAgentDetailPage.vue'), meta: { title: 'projectAgents.pageTitle', layout: 'column', detail: true } },
     {

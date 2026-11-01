@@ -85,3 +85,37 @@ export const readApp = (appId: string) => getJson(appPath(appId), shapeOf(appDet
 export const disableApp = (appId: string) => postJson(appPath(appId, 'disable'), {}, anyAnswer)
 /** Step one of removal: the code goes, the data stays. */
 export const deleteAppCode = (appId: string) => postJson(appPath(appId, 'delete-code'), {}, anyAnswer)
+
+// The person's lifecycle actions on one app (local console only).
+const lifecycleShape = shapeOf(z.looseObject({ status: z.string(), instance: instanceSchema.nullable() }))
+export const startApp = (appId: string) => postJson(appPath(appId, 'start'), {}, lifecycleShape)
+export const stopApp = (appId: string) => postJson(appPath(appId, 'stop'), {}, lifecycleShape)
+export const restartApp = (appId: string) => postJson(appPath(appId, 'restart'), {}, lifecycleShape)
+/** Opens FULI's own confirmation for this version in a window, where the person types the app's name. */
+export const confirmApp = (appId: string, action: 'approve' | 'rollback', version: string) =>
+  postJson(appPath(appId, 'confirm'), { action, version }, shapeOf(z.looseObject({ opened: z.boolean() })))
+
+const exportShape = shapeOf(z.looseObject({ path: z.string(), files: z.number(), bytes: z.number() }))
+export const exportAppData = (appId: string) => postJson(appPath(appId, 'export'), {}, exportShape)
+export const revealAppExport = (appId: string, path: string) => postJson(appPath(appId, 'reveal-export'), { path }, anyAnswer)
+
+const deletionOfferSchema = z.looseObject({ ticket: z.string(), expiresAt: z.string(), dataBytes: z.number(), dataFiles: z.number() })
+export type DataDeletionOffer = z.infer<typeof deletionOfferSchema>
+/** Step two begins: a short-lived ticket for the data exactly as it is now. */
+export const offerDataDeletion = (appId: string) => postJson(appPath(appId, 'data-deletion'), {}, shapeOf(deletionOfferSchema))
+/** Step two ends: the data goes, confirmed with the app id and the offer's ticket. */
+export const deleteAppData = (appId: string, ticket: string) => postJson(appPath(appId, 'delete-data'), { ticket, confirm: appId }, anyAnswer)
+
+/** What lets this app run: approve its newest waiting version, or confirm the active one again. */
+export function confirmationStep(app: Pick<AgentAppRow, 'status' | 'version' | 'pendingVersions' | 'run'>): { action: 'approve' | 'rollback'; version: string } | null {
+  const pending = app.pendingVersions.at(-1)
+  if (pending) return { action: 'approve', version: pending }
+  if (app.status === 'active' && app.version && app.run.status === 'run_refused'
+    && ['confirmation_required', 'reconfirmation_required', 'challenge_mismatch'].includes(app.run.reason ?? '')) {
+    return { action: 'rollback', version: app.version }
+  }
+  return null
+}
+
+/** Where a page app is served to the console: a sandboxed iframe only, never same-origin. */
+export const appPageUrl = (appId: string) => `/app-pages/${encodeURIComponent(appId)}/`
