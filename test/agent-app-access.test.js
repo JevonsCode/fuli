@@ -34,7 +34,10 @@ const LOCAL_ROUTES = [
   'POST /api/agent-apps/:appId/rollback',
   'POST /api/agent-apps/:appId/delete-code',
   'POST /api/agent-apps/:appId/data-deletion',
-  'POST /api/agent-apps/:appId/delete-data'
+  'POST /api/agent-apps/:appId/delete-data',
+  'POST /api/agent-apps/:appId/start',
+  'POST /api/agent-apps/:appId/stop',
+  'POST /api/agent-apps/:appId/restart'
 ];
 
 function fixture(t) {

@@ -4,7 +4,7 @@ import { ApplicationError } from '../app/application-error.js';
 import { refuseRemoteDecision } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
 
-const ROUTE = /^\/api\/agent-apps(?:\/([^/]+)(?:\/(approve|disable|rollback|delete-code|data-deletion|delete-data))?)?$/;
+const ROUTE = /^\/api\/agent-apps(?:\/([^/]+)(?:\/(approve|disable|rollback|delete-code|data-deletion|delete-data|start|stop|restart))?)?$/;
 const LOCAL_CONSOLE = Object.freeze({ entrypoint: 'http', user: 'local-console' });
 const version = z.string().min(1).max(32);
 const text = z.string().max(128);
@@ -15,7 +15,10 @@ const BODIES = Object.freeze({
   rollback: z.object({ version, confirmIrreversibleMigration: z.boolean().optional() }).strict(),
   'delete-code': z.object({}).strict(),
   'data-deletion': z.object({}).strict(),
-  'delete-data': z.object({ ticket: text.optional(), confirm: text.optional() }).strict()
+  'delete-data': z.object({ ticket: text.optional(), confirm: text.optional() }).strict(),
+  start: z.object({}).strict(),
+  stop: z.object({}).strict(),
+  restart: z.object({}).strict()
 });
 
 // Reads are open to the console. Writes approve, activate or remove Agent-written
@@ -53,8 +56,27 @@ export async function handleAgentAppApiRequest({ request, response, url, app }) 
       confirmIrreversibleMigration: body.confirmIrreversibleMigration }),
     'delete-code': () => agentApps.deleteCode({ appId, actor: LOCAL_CONSOLE }),
     'data-deletion': () => agentApps.prepareDataDeletion({ appId }),
-    'delete-data': () => agentApps.deleteData({ appId, ticket: body.ticket, confirm: body.confirm, actor: LOCAL_CONSOLE })
+    'delete-data': () => agentApps.deleteData({ appId, ticket: body.ticket, confirm: body.confirm, actor: LOCAL_CONSOLE }),
+    start: () => lifecycle(agentApps, appId, () => agentApps.start({ appId })),
+    stop: () => lifecycle(agentApps, appId, () => agentApps.stop({ appId })),
+    restart: () => lifecycle(agentApps, appId, async () => {
+      await agentApps.stop({ appId });
+      return agentApps.start({ appId });
+    })
   };
   sendJson(response, 200, await operations[action]());
   return true;
+}
+
+// Start, stop and restart from the console run the same instance lifecycle as
+// a start on demand: the run gate decides, so a version approved only in the
+// console is refused with the gate's own reason (confirmation_required,
+// reconfirmation_required, challenge_mismatch, runner_check_failed) and the
+// console shows the next step. A success answers with the instance as read() shows it.
+async function lifecycle(agentApps, appId, run) {
+  const outcome = await run();
+  if (outcome?.status === 'run_refused') {
+    throw new ApplicationError(outcome.reason, outcome.message, { status: 409 });
+  }
+  return { ...outcome, instance: agentApps.read({ appId }).instance };
 }

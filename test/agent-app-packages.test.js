@@ -133,7 +133,7 @@ test('an approved version records an unverified presence and the run gate refuse
     { digest: submitted.digest, entrypoint: 'cli', presence: 'unverified' });
   // Tokens exist only for a started instance; an unverified approval never starts.
   assert.deepEqual(Object.keys(service).sort(), ['approve', 'authorizeCall', 'callTool', 'close', 'deleteCode',
-    'deleteData', 'disable', 'exportData', 'list', 'prepareDataDeletion', 'read', 'rollback', 'start', 'stop', 'submit']);
+    'deleteData', 'disable', 'exportData', 'list', 'pageFile', 'prepareDataDeletion', 'read', 'rollback', 'start', 'stop', 'submit']);
   assert.equal((await service.start({ appId: submitted.appId })).reason, 'confirmation_required');
 
   await service.disable({ appId: submitted.appId, actor: { entrypoint: 'http', user: 'local-console' } });
