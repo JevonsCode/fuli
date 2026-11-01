@@ -758,12 +758,12 @@ function checkFields(): ValidatedField[] {
 .settings-card :deep([data-slot="card-header"]) { padding-inline: 24px; }
 .setting-list, .settings-card > .settings-accordion { padding-inline: 24px; }
 .judgment-settings-card { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); padding: 24px; }
-/* The two feature cards render their own disclosure; give them the same surface. */
-.settings-panel > :deep(.connection-settings), .settings-panel > :deep(.peer-settings) {
+/* The LAN card renders its own disclosure; give it the same surface. */
+.settings-panel > :deep(.peer-settings) {
   border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); padding: 20px 24px;
 }
-.settings-panel > :deep(.connection-settings) > summary, .settings-panel > :deep(.peer-settings) > summary { font-size: var(--text-section); }
-.settings-accordion :deep([data-slot="accordion-trigger"]) { font-size: 14px; }
+.settings-panel > :deep(.peer-settings) > summary { font-size: var(--text-section); }
+.settings-accordion :deep([data-slot="accordion-trigger"]) { font-size: var(--text-body); font-weight: var(--weight-medium); }
 
 .resource-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding-inline: 24px; }
 .resource-totals article {
@@ -831,7 +831,8 @@ function checkFields(): ValidatedField[] {
 .setting-row:first-child { padding-top: 0; border-top: 0; }
 .setting-row:last-child { padding-bottom: 0; }
 .setting-row > span { display: grid; min-width: 0; gap: 4px; }
-.setting-row strong { color: var(--color-ink); font-size: 14px; }
+/* A row's name sits under the card title: body size, medium weight. */
+.setting-row strong { color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); }
 .setting-row small { color: var(--color-muted); font-size: 12px; }
 .setting-note { margin: 0; padding: 4px 0 4px 20px; color: var(--color-muted); font-size: 12px; }
 .setting-row-nested { padding-left: 20px; border-top-style: dashed; }

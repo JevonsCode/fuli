@@ -44,7 +44,7 @@ abstract final class FuliColors {
 
 abstract final class FuliText {
   static const title = 22.0;
-  static const section = 16.0;
+  static const section = 18.0;
   static const cardTitle = 15.0;
   static const body = 14.0;
   static const control = 13.0;
