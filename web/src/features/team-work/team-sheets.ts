@@ -30,6 +30,10 @@ export interface TeamSheet {
 }
 export interface TeamSheets { partial: boolean; workbenches: TeamSheet[] }
 
+/** Every task one FLA takes part in, as the same sheets (its page's 任务单). */
+export const readAgentSheets = (personalSpaceId: string, agentId: string, signal?: AbortSignal) =>
+  getJson<TeamSheets>(`/api/project-agents/${encodeURIComponent(agentId)}/workbenches?${new URLSearchParams({ personalSpaceId })}`, { signal })
+
 /** Every open task two or more FLAs share in the space (one read for the home page and the island). */
 export const readTeamSheets = (personalSpaceId: string, signal?: AbortSignal) =>
   getJson<TeamSheets>(`/api/workbenches?${new URLSearchParams({ personalSpaceId })}`, { signal })

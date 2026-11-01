@@ -20,7 +20,7 @@ import AgentOccupationEditor from "@/features/agent-profile/AgentOccupationEdito
 import OccupationChip from "@/features/occupations/OccupationChip.vue";
 import { useOccupationCatalog } from "@/features/occupations/occupation-catalog";
 import AgentConversations from "@/features/project-agents/AgentConversations.vue";
-import FlaTaskSheets from "@/features/fla-page/FlaTaskSheets.vue";
+import WidgetSlot from "@/widgets/WidgetSlot.vue";
 import {
   agentDisplayName,
   agentResponsibility,
@@ -471,8 +471,9 @@ onMounted(() => {
 
           <TabsContent value="overview" class="agent-profile-panel" data-profile-panel="overview">
             <div class="agent-profile-primary-grid">
-              <!-- rec#11 D-82: every task this FLA takes part in, as a task sheet of shares. -->
-              <FlaTaskSheets :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :agent-name="agentDisplayName(agent)" :project-name="projectName" />
+              <!-- What sits here is the layout's call (widgets/layout.ts): by default this FLA's task sheets (rec#11 D-82). -->
+              <WidgetSlot place="fla.overview"
+                :context="{ spaceId: agent.personalSpaceId, agentId: agent.agentId, agentName: agentDisplayName(agent), projectName }" />
 
               <Card as="section" class="agent-resume-section agent-projects-section" aria-labelledby="agent-projects-heading">
                 <div class="agent-section-heading">

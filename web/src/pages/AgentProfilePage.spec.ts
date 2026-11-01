@@ -116,7 +116,7 @@ describe('Agent profile integration', () => {
     expect(wrapper.text()).toContain('Completed evidence')
   })
 
-  it('shows each task as a sheet of shares: the FLA’s own share first, bars only from a recorded plan', async () => {
+  it('shows each task as the shared team card: the FLA’s own share first, bars only from a recorded plan', async () => {
     const normal = getJson.getMockImplementation()!
     const share = (agentId: string, role: string, progress: { completed: number; total: number } | null) =>
       ({ agentId, role, status: 'running', assignment: `Synthetic share of ${agentId}`, progress })
@@ -127,15 +127,21 @@ describe('Agent profile integration', () => {
         shares: [share('beta', 'lead', { completed: 1, total: 2 }), share('alpha', 'collaborator', null)],
       }] }) : normal(url))
     const { wrapper } = await setup()
-    const sheet = wrapper.get('[data-task-sheet="sheet-1"]')
+    // The slot's widget is loaded on demand; wait for it and its read.
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    // The overview's slot holds the FLA's sheets by default, each the same 团队卡片 as the home page.
+    const sheet = wrapper.get('[data-widget="fla-sheets"] [data-team-card="sheet-1"]')
     expect(sheet.text()).toContain('Synthetic shared task')
     expect(sheet.text()).toContain('Synthetic active project')
+    // The first card is open, so this FLA's own list is in view.
+    expect(sheet.get('[aria-expanded]').attributes('aria-expanded')).toBe('true')
     // Not the lead: its own share comes first, and without a plan count it shows only its status.
-    expect(sheet.findAll('[data-share]').map(item => item.attributes('data-share'))).toEqual(['alpha', 'beta'])
-    expect(sheet.get('[data-share="alpha"]').find('[role="progressbar"]').exists()).toBe(false)
-    expect(sheet.get('[data-share="beta"] [role="progressbar"]').attributes('aria-valuenow')).toBe('1')
-    expect(sheet.get('[data-share="beta"]').text()).toContain('负责人')
-    expect(sheet.text()).toContain('还有 1 步没有分给任何人')
+    expect(sheet.findAll('[data-team-share]').map(item => item.attributes('data-team-share'))).toEqual(['alpha', 'beta'])
+    expect(sheet.get('[data-team-share="alpha"]').find('[role="progressbar"]').exists()).toBe(false)
+    expect(sheet.get('[data-team-share="beta"] [role="progressbar"]').attributes('aria-valuenow')).toBe('1')
+    expect(sheet.get('[data-team-share="beta"]').text()).toContain('负责人')
+    expect(sheet.text()).toContain('还有 1 步没人负责')
   })
   it('loads a fixed role workbench on a direct profile visit without a cached catalog', async () => {
     const normal = getJson.getMockImplementation()!
@@ -247,7 +253,10 @@ describe('Agent profile integration', () => {
     expect(postJson).toHaveBeenCalledWith('/api/agent-conversations/query', { personalSpaceId: 'space-a', personalProjectId: null, agentId: 'alpha', mode: 'list', limit: 20 })
     pending.resolve([assignment('alpha', 'ended')])
     await flushPromises()
-    expect(postJson.mock.calls.every(([, body]) => body.personalProjectId === null)).toBe(true)
+    // Every conversation query stays global (other reads on the page, such as a project's board, are not this test's concern).
+    const queries = postJson.mock.calls.filter(([url]) => url === '/api/agent-conversations/query')
+    expect(queries.length).toBeGreaterThan(0)
+    expect(queries.every(([, body]) => body.personalProjectId === null)).toBe(true)
     expect(details.find('[role="combobox"]').exists()).toBe(true)
     expect(details.find('[data-memory-settings]').exists()).toBe(true)
   })
