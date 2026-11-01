@@ -61,7 +61,7 @@ beforeEach(() => {
 describe('KnowledgeItemEditPage', () => {
   it('reads this one item and shows its stored state, with scope pending apart from content pending', async () => {
     const wrapper = await open()
-    expect(getJson).toHaveBeenCalledWith('/api/knowledge/entity/item-1?personalSpaceId=space')
+    expect(getJson).toHaveBeenCalledWith('/api/knowledge/entity/item-1?personalSpaceId=space', expect.objectContaining({ schema: expect.anything() }))
     // D-20: the content equals the H1 (the item title), so the card does not repeat it.
     expect(wrapper.find('[data-item-content]').exists()).toBe(false)
     expect(wrapper.get('[data-item-summary]').attributes('aria-label')).toBe('Prefer short status lines')
@@ -104,7 +104,7 @@ describe('KnowledgeItemEditPage', () => {
     await wrapper.get('[data-scope-editor] form').trigger('submit')
     await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/knowledge/entity/item-1/scope', { personalSpaceId: 'space',
-      expectedVersion: 4, reason: 'Applies everywhere', scope: 'global', projectIds: [] })
+      expectedVersion: 4, reason: 'Applies everywhere', scope: 'global', projectIds: [] }, expect.objectContaining({ schema: expect.anything() }))
     expect(getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/knowledge/entity')).length).toBe(2)
     wrapper.unmount()
   })
@@ -117,7 +117,7 @@ describe('KnowledgeItemEditPage', () => {
     await wrapper.get('[data-content-editor] form').trigger('submit')
     await flushPromises()
     expect(patchJson).toHaveBeenCalledWith('/api/knowledge/entity/item-1', expect.objectContaining({ action: 'update',
-      expectedVersion: 4, name: 'Status lines stay short' }))
+      expectedVersion: 4, name: 'Status lines stay short' }), expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.get('[data-edit-notice]').text()).toContain('刚被别处改过')
     expect(getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/knowledge/entity')).length).toBe(2)
     wrapper.unmount()
@@ -157,7 +157,7 @@ describe('KnowledgeItemEditPage', () => {
     await wrapper.get('[data-mark-outdated] form').trigger('submit')
     await flushPromises()
     expect(patchJson).toHaveBeenCalledWith('/api/knowledge/entity/item-1', { personalSpaceId: 'space', action: 'mark_outdated',
-      reason: 'No longer true', expectedVersion: 4 })
+      reason: 'No longer true', expectedVersion: 4 }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.get('[data-content-message]').text()).toBe('已标记过时 1 条依据它推出的结论已标为“依据已过时”。')
     wrapper.unmount()
     const historical = await open(view({ status: 'inactive', invalid_at: '2026-10-21T02:00:00Z' }))
@@ -181,7 +181,7 @@ describe('KnowledgeItemEditPage', () => {
     await wrapper.get('[data-content-editor] form').trigger('submit')
     await flushPromises()
     expect(patchJson).toHaveBeenCalledWith('/api/knowledge/entity/item-1', { personalSpaceId: 'space', action: 'update',
-      reason: 'Clearer', expectedVersion: 4, name: 'Status lines stay short', summary: 'Status lines stay short' })
+      reason: 'Clearer', expectedVersion: 4, name: 'Status lines stay short', summary: 'Status lines stay short' }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.vm.$route.fullPath).toBe('/knowledge/item/space/entity/item-2')
     expect(wrapper.get('[data-item-summary]').attributes('aria-label')).toBe('Status lines stay short')
     expect(wrapper.get('[data-edit-notice]').text()).toBe('已保存为新版本')
@@ -242,7 +242,7 @@ describe('KnowledgeItemEditPage', () => {
     await wrapper.get('[data-content-editor] form').trigger('submit')
     await flushPromises()
     expect(patchJson).toHaveBeenCalledWith('/api/knowledge/entity/item-1', expect.objectContaining({ action: 'update',
-      name: 'Prefer short status lines', reason: '其实还是这样' }))
+      name: 'Prefer short status lines', reason: '其实还是这样' }), expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.vm.$route.fullPath).toBe('/knowledge/item/space/entity/item-3')
     wrapper.unmount()
   })
@@ -303,7 +303,7 @@ describe('KnowledgeItemEditPage', () => {
     await wrapper.get('#content-reason').setValue('Clearer')
     await wrapper.get('[data-content-editor] form').trigger('submit')
     await flushPromises()
-    expect(patchJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-1', expect.objectContaining({ basisMeaning: 'changed' }))
+    expect(patchJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-1', expect.objectContaining({ basisMeaning: 'changed' }), expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.get('[data-edit-notice]').text()).toBe('已保存为新版本 2 条依据它的结论等你复核。')
     wrapper.unmount()
     const reworded = await open(view({ dependent_count: 1 }))
@@ -314,7 +314,7 @@ describe('KnowledgeItemEditPage', () => {
     await reworded.get('#content-reason').setValue('Wording')
     await reworded.get('[data-content-editor] form').trigger('submit')
     await flushPromises()
-    expect(patchJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-1', expect.objectContaining({ basisMeaning: 'wording_only' }))
+    expect(patchJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-1', expect.objectContaining({ basisMeaning: 'wording_only' }), expect.objectContaining({ schema: expect.anything() }))
     reworded.unmount()
     const alone = await open(view({ dependent_count: 0 }))
     expect(alone.find('[data-basis-meaning]').exists()).toBe(false)
@@ -338,7 +338,7 @@ describe('KnowledgeItemEditPage', () => {
     await wrapper.get('[data-basis-review-card] form').trigger('submit')
     await flushPromises()
     expect(patchJson).toHaveBeenCalledWith('/api/knowledge/entity/item-1', { personalSpaceId: 'space', action: 'reaffirm',
-      reason: 'Still true', expectedVersion: 4 })
+      reason: 'Still true', expectedVersion: 4 }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.vm.$route.fullPath).toBe('/knowledge/item/space/entity/item-3')
     wrapper.unmount()
     const hinted = await open(view({ basis_review: 'reworded' }))
@@ -356,7 +356,7 @@ describe('KnowledgeItemEditPage', () => {
     await wrapper.get('[data-item-dependents] form').trigger('submit')
     await flushPromises()
     expect(patchJson).toHaveBeenCalledWith('/api/knowledge/entity/item-1', { personalSpaceId: 'space',
-      action: 'mark_meaning_changed', reason: 'It did change the meaning', expectedVersion: 4 })
+      action: 'mark_meaning_changed', reason: 'It did change the meaning', expectedVersion: 4 }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.get('[data-review-message]').text()).toBe('3 条结论等你复核。')
     wrapper.unmount()
   })
@@ -369,7 +369,7 @@ describe('KnowledgeItemEditPage', () => {
     await wrapper.get('[data-attached-tags] button').trigger('click')
     await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/knowledge-tags', { action: 'detach', personalSpaceId: 'space',
-      personalProjectId: 'beta', tagId: 'tb', itemKind: 'entity', itemId: 'item-1' })
+      personalProjectId: 'beta', tagId: 'tb', itemKind: 'entity', itemId: 'item-1' }, expect.objectContaining({ schema: expect.anything() }))
     wrapper.unmount()
   })
 
@@ -379,7 +379,7 @@ describe('KnowledgeItemEditPage', () => {
     await wrapper.get('[data-attached-tags] button').trigger('click')
     await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/knowledge-tags', { action: 'detach', personalSpaceId: 'space',
-      personalProjectId: 'temporary-x', tagId: 't1', itemKind: 'entity', itemId: 'item-1' })
+      personalProjectId: 'temporary-x', tagId: 't1', itemKind: 'entity', itemId: 'item-1' }, expect.objectContaining({ schema: expect.anything() }))
     getJson.mockImplementation(async (url: string) => url.startsWith('/api/knowledge-tags')
       ? { candidates: [{ id: 't2', name: 'brevity', namespace: 'personal', status: 'active', match: 'exact' }] } : view())
     await wrapper.get('#tag-search').setValue('brevity')
@@ -387,7 +387,7 @@ describe('KnowledgeItemEditPage', () => {
     expect(wrapper.find('[data-tag-create]').exists()).toBe(false)
     await wrapper.get('[data-tag-choice="t2"]').trigger('click')
     await flushPromises()
-    expect(postJson).toHaveBeenLastCalledWith('/api/knowledge-tags', expect.objectContaining({ action: 'attach', tagId: 't2' }))
+    expect(postJson).toHaveBeenLastCalledWith('/api/knowledge-tags', expect.objectContaining({ action: 'attach', tagId: 't2' }), expect.objectContaining({ schema: expect.anything() }))
     wrapper.unmount()
   })
 
@@ -413,7 +413,7 @@ describe('KnowledgeItemEditPage', () => {
     expect(box.text()).toContain('fiction')
     expect(box.get('[data-tag-revival-confirm]').attributes('href')).toBe('/tags?tag=t9&change=revive')
     expect(postJson).toHaveBeenCalledTimes(1)
-    expect(postJson).not.toHaveBeenCalledWith('/api/knowledge-tags', expect.objectContaining({ action: 'attach' }))
+    expect(postJson).not.toHaveBeenCalledWith('/api/knowledge-tags', expect.objectContaining({ action: 'attach' }), expect.objectContaining({ schema: expect.anything() }))
     wrapper.unmount()
   })
 })

@@ -77,7 +77,7 @@ describe('source deletion uses the authoritative two-layer preview', () => {
     await choose('entity:other')
     expect(disabled()).toBe(true)
     expect(postJson.mock.calls[1]).toEqual(['/api/knowledge/episode/source%2Fopaque/hard-delete/preview',
-      { personalSpaceId: 'space', include: ['entity:other'], exclude: [] }])
+      { personalSpaceId: 'space', include: ['entity:other'], exclude: [] }, expect.objectContaining({ schema: expect.anything() })])
     await submit()
     expect(postJson).toHaveBeenCalledTimes(2)
     finish(preview({ preview_id: 'digest-2', include: ['entity:other'] }))
@@ -85,7 +85,7 @@ describe('source deletion uses the authoritative two-layer preview', () => {
     expect(disabled()).toBe(false)
     await submit()
     expect(postJson.mock.calls[2]).toEqual(['/api/knowledge/episode/source%2Fopaque/hard-delete',
-      { personalSpaceId: 'space', include: ['entity:other'], exclude: [], previewId: 'digest-2', confirmation: '删除' }])
+      { personalSpaceId: 'space', include: ['entity:other'], exclude: [], previewId: 'digest-2', confirmation: '删除' }, expect.objectContaining({ schema: expect.anything() })])
     expect(document.body.textContent).not.toContain('SYNTHETIC SOURCE BODY')
   })
 
@@ -122,11 +122,11 @@ describe('source deletion uses the authoritative two-layer preview', () => {
       .mockResolvedValueOnce({ outcome: 'complete', ...session, counts }).mockResolvedValueOnce({ outcome: 'complete' })
     await open(session); await submit()
     expect(postJson.mock.calls[0]).toEqual(['/api/knowledge/session/opaque-provider-target/hard-delete/preview',
-      { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: 'synthetic-session', include: [], exclude: [] }])
+      { personalSpaceId: 'space', sourceApplication: 'codex', sessionId: 'synthetic-session', include: [], exclude: [] }, expect.objectContaining({ schema: expect.anything() })])
     expect(postJson.mock.calls[1]?.[1]).toEqual({ personalSpaceId: 'space', sourceApplication: 'codex', sessionId: 'synthetic-session',
       include: [], exclude: [], previewId: 'digest-1', confirmation: '删除' })
     await hardDeleteStatus('space', session)
-    expect(postJson.mock.calls[2]).toEqual(['/api/knowledge/session/opaque-provider-target/hard-delete/status', { personalSpaceId: 'space' }])
+    expect(postJson.mock.calls[2]).toEqual(['/api/knowledge/session/opaque-provider-target/hard-delete/status', { personalSpaceId: 'space' }, expect.objectContaining({ schema: expect.anything() })])
   })
 })
 
@@ -171,7 +171,7 @@ it('clears item content and source excerpts after a source deletion with unknown
   expect(document.body.textContent).not.toContain('SYNTHETIC ITEM BODY')
   expect(document.body.textContent).not.toContain('SYNTHETIC SOURCE BODY')
   expect(postJson.mock.calls.filter(([path]) => path.endsWith('/hard-delete'))).toHaveLength(1)
-  expect(postJson.mock.calls.at(-1)).toEqual(['/api/knowledge/episode/source%2Fopaque/hard-delete/status', { personalSpaceId: 'space' }])
+  expect(postJson.mock.calls.at(-1)).toEqual(['/api/knowledge/episode/source%2Fopaque/hard-delete/status', { personalSpaceId: 'space' }, expect.objectContaining({ schema: expect.anything() })])
 })
 
 
@@ -205,7 +205,7 @@ it('deletes a whole session with no visible records using its Provider target an
   expect(wrapper.find('[data-session-total]').exists()).toBe(false)
   expect(postJson.mock.calls[1]).toEqual(['/api/knowledge/session/opaque-session/hard-delete', {
     personalSpaceId: 'space', sourceApplication: 'codex', sessionId: 'session-one', include: [], exclude: [], previewId: 'digest-1', confirmation: '删除',
-  }])
+  }, expect.objectContaining({ schema: expect.anything() })])
 })
 
 
@@ -241,7 +241,7 @@ it('recognizes the Provider source_hard_deleted response and checks status inste
   const wrapper = await open()
   expect(wrapper.emitted('deleted')?.[0]?.[0]).toMatchObject({ outcome: 'gone' })
   expect(dialog()).toBeNull()
-  expect(postJson.mock.calls[1]).toEqual(['/api/knowledge/episode/source%2Fopaque/hard-delete/status', { personalSpaceId: 'space' }])
+  expect(postJson.mock.calls[1]).toEqual(['/api/knowledge/episode/source%2Fopaque/hard-delete/status', { personalSpaceId: 'space' }, expect.objectContaining({ schema: expect.anything() })])
 })
 
 
@@ -343,7 +343,7 @@ it.each(['zh-CN', 'en-US'] as const)('rechecks public submission results through
   recheck.click(); await flushPromises()
   expect(disabled()).toBe(true)
   expect(dialog().querySelector('[data-drafts-recheck]')!.textContent).toContain(locale === 'zh-CN' ? '正在重新确认公开草稿提交结果' : 'Rechecking public draft submission results')
-  expect(postJson.mock.calls[1]).toEqual(['/api/knowledge/episode/source%2Fopaque/hard-delete/preview', { personalSpaceId: 'space', include: [], exclude: [] }])
+  expect(postJson.mock.calls[1]).toEqual(['/api/knowledge/episode/source%2Fopaque/hard-delete/preview', { personalSpaceId: 'space', include: [], exclude: [] }, expect.objectContaining({ schema: expect.anything() })])
   finish(preview({ preview_id: 'reconciled-digest', drafts: { pending: 0, submitted: 1, submitting: 0, unknown: 0 } })); await flushPromises()
   expect(dialog().querySelector('[data-drafts-recheck]')).toBeNull()
   expect(disabled()).toBe(false)

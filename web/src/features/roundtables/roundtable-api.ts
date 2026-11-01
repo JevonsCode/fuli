@@ -1,4 +1,6 @@
+import { z } from 'zod'
 import { getJson, postJson, putJson } from '@/api/client'
+import { shapeFor } from '@/api/response-shape'
 
 export interface RoundtablePerson { agentId: string | null; name: string | null; client: string | null }
 export interface RoundtableThreadSummary {
@@ -44,20 +46,63 @@ export interface RoundtableThread {
 /** Who the person can start a conversation with (find_agents' local directory). */
 export interface RoundtableDirectoryAgent { agentId: string; name: string; responsibility?: string | null; projects: string[] }
 
+// What the conversations page reads (src/agent-roundtable/http.js, packages/roundtable/src/roundtable/service.js).
+// The unions stay with the interfaces above, so a kind or status is checked as
+// text. People are nullable because an Agent or session may be unnamed; fields
+// the server added later (waitingFor, mode, subscribers, cleanup) may be absent.
+const personSchema = z.looseObject({ agentId: z.string().nullish(), name: z.string().nullish(), client: z.string().nullish() })
+const summarySchema = z.looseObject({
+  id: z.string(), subject: z.string(), updatedAt: z.string(), participants: z.array(personSchema),
+  waiting: z.boolean(), waitingFor: z.array(z.string()).nullish(),
+  last: z.looseObject({ from: z.string().nullish(), body: z.string() }).nullish(),
+})
+const messageSchema = z.looseObject({
+  id: z.string(), kind: z.string(), status: z.string(), body: z.string(), via: z.string().nullish(), error: z.string().nullish(),
+  createdAt: z.string(), from: personSchema, to: personSchema,
+  cleanup: z.looseObject({ status: z.string(), code: z.string().nullish() }).nullish(),
+})
+const threadSchema = z.looseObject({
+  id: z.string(), subject: z.string(), createdAt: z.string(), messages: z.array(messageSchema),
+  mode: z.string().nullish(),
+  subscribers: z.array(z.looseObject({
+    agentId: z.string(), name: z.string().nullish(), delivery: z.string(), instantBlocked: z.string().nullish(),
+  })).nullish(),
+})
+const threadsShape = shapeFor<{ threads: RoundtableThreadSummary[] }>(z.looseObject({ threads: z.array(summarySchema) }))
+const threadShape = shapeFor<RoundtableThread>(threadSchema)
+const directoryShape = shapeFor<{ agents: RoundtableDirectoryAgent[] }>(z.looseObject({
+  agents: z.array(z.looseObject({
+    agentId: z.string(), name: z.string(), responsibility: z.string().nullish(), projects: z.array(z.string()),
+  })),
+}))
+const memberSchema = z.looseObject({ address: z.string(), agentId: z.string().nullish(), name: z.string().nullish() })
+const roomSchema = z.looseObject({
+  chatId: z.string(), kind: z.string(), title: z.string().nullish(), members: z.array(memberSchema), createdAt: z.string(),
+})
+const chatListShape = shapeFor<RoundtableChatList>(z.looseObject({
+  chats: z.array(roomSchema), hasMore: z.boolean(), nextChat: z.string().nullish(),
+  remotePage: z.looseObject({ hasMore: z.boolean(), nextChat: z.string().nullish() }).nullish(),
+  remoteUnavailable: z.string().nullish(),
+}))
+const chatPageShape = shapeFor<RoundtableChatPage>(roomSchema.extend({
+  messages: z.array(z.looseObject({ messageId: z.string(), seq: z.number(), from: z.string(), body: z.string(), createdAt: z.string() })),
+  nextAfter: z.number(), hasMore: z.boolean(),
+}))
+
 /** The latest 50 asks; the server returns no total or cursor for them. */
-export const listThreads = (signal?: AbortSignal) => getJson<{ threads: RoundtableThreadSummary[] }>('/api/roundtable/threads', { signal })
+export const listThreads = (signal?: AbortSignal) => getJson('/api/roundtable/threads', threadsShape, { signal })
 export const readThread = (id: string, signal?: AbortSignal) =>
-  getJson<RoundtableThread>(`/api/roundtable/threads/${encodeURIComponent(id)}`, { signal })
+  getJson(`/api/roundtable/threads/${encodeURIComponent(id)}`, threadShape, { signal })
 export const listDirectoryAgents = (signal?: AbortSignal) =>
-  getJson<{ agents: RoundtableDirectoryAgent[] }>('/api/roundtable/agents', { signal })
+  getJson('/api/roundtable/agents', directoryShape, { signal })
 
 export interface RoundtablePost { to?: string[]; body: string; mode?: RoundtableDelivery; projectId?: string }
 /** The person's message: a new conversation without a thread, or the next post in one. */
 export const postMessage = (threadId: string | null, post: RoundtablePost) => threadId
-  ? postJson<RoundtableThread>(`/api/roundtable/threads/${encodeURIComponent(threadId)}/messages`, post)
-  : postJson<RoundtableThread>('/api/roundtable/threads', post)
+  ? postJson(`/api/roundtable/threads/${encodeURIComponent(threadId)}/messages`, post, threadShape)
+  : postJson('/api/roundtable/threads', post, threadShape)
 export const setThreadMode = (threadId: string, mode: RoundtableDelivery) =>
-  putJson<RoundtableThread>(`/api/roundtable/threads/${encodeURIComponent(threadId)}/mode`, { mode })
+  putJson(`/api/roundtable/threads/${encodeURIComponent(threadId)}/mode`, { mode }, threadShape)
 
 /** An Agent chat room (agent_chat): 1:1 or a group, read-only for people. */
 export interface RoundtableChatMember { address: string; agentId: string | null; name: string | null; node?: string; joinedSeq: number }
@@ -88,11 +133,11 @@ export function listChats(options: { transport?: 'local' | 'peer'; afterChat?: s
   const query = new URLSearchParams({ limit: '50' })
   if (options.transport) query.set('transport', options.transport)
   if (options.afterChat) query.set('afterChat', options.afterChat)
-  return getJson<RoundtableChatList>(`/api/roundtable/chats?${query}`, { signal })
+  return getJson(`/api/roundtable/chats?${query}`, chatListShape, { signal })
 }
 /** Messages after a sequence number, in order: later messages, not older ones. */
 export const readChat = (id: string, after = 0, signal?: AbortSignal) =>
-  getJson<RoundtableChatPage>(`/api/roundtable/chats/${encodeURIComponent(id)}?after=${after}&limit=100`, { signal })
+  getJson(`/api/roundtable/chats/${encodeURIComponent(id)}?after=${after}&limit=100`, chatPageShape, { signal })
 
 /** Appends a later page, keeping each message once and in sequence order. */
 export function appendChatPage(current: RoundtableChatPage, next: RoundtableChatPage): RoundtableChatPage {

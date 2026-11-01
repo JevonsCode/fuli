@@ -68,7 +68,7 @@ describe('JudgmentWorkbench', () => {
     const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
     await flushPromises()
 
-    expect(getJson).toHaveBeenCalledWith('/api/judgment/records?personalSpaceId=space-a&limit=30&filter=human')
+    expect(getJson).toHaveBeenCalledWith('/api/judgment/records?personalSpaceId=space-a&limit=30&filter=human', expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(1)
     await wrapper.get('.judgment-filter [data-value="all"]').trigger('click')
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(2)
@@ -128,7 +128,7 @@ describe('JudgmentWorkbench', () => {
     await reviewed.get('[data-action="undo"]').trigger('click')
     await flushPromises()
 
-    expect(postJson).toHaveBeenCalledWith('/api/judgment/undo', { personalSpaceId: 'space-a', decisionId: 'decision-b' })
+    expect(postJson).toHaveBeenCalledWith('/api/judgment/undo', { personalSpaceId: 'space-a', decisionId: 'decision-b' }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.text()).toContain('已撤回')
     expect(wrapper.find('[data-action="undo"]').exists()).toBe(false)
   })
@@ -203,7 +203,7 @@ describe('JudgmentWorkbench', () => {
     expect(postJson).toHaveBeenCalledWith('/api/judgment/feedback', {
       personalSpaceId: 'space-a', decisionId: 'decision-a', vote: 'up',
       reason: 'Keep the owner in the loop.', expectedRevision: 2,
-    })
+    }, expect.objectContaining({ schema: expect.anything() }))
 
     postJson.mockRejectedValueOnce({ status: 409 })
     await wrapper.get('[data-feedback="down"]').trigger('click')
@@ -229,7 +229,7 @@ describe('JudgmentWorkbench', () => {
     expect(review.textContent).toContain('运行一次判断')
     review.click()
     await flushPromises()
-    expect(postJson).toHaveBeenCalledWith('/api/judgment/review', expect.objectContaining({ personalSpaceId: 'space-a' }))
+    expect(postJson).toHaveBeenCalledWith('/api/judgment/review', expect.objectContaining({ personalSpaceId: 'space-a' }), expect.objectContaining({ schema: expect.anything() }))
     wrapper.unmount()
     target.remove()
   })
@@ -323,7 +323,7 @@ describe('JudgmentWorkbench', () => {
     await flushPromises()
 
     await wrapper.get('[data-feedback="up"]').trigger('click')
-    expect(postJson).toHaveBeenCalledWith('/api/judgment/feedback', expect.objectContaining({ vote: null, reason: 'Keep context' }))
+    expect(postJson).toHaveBeenCalledWith('/api/judgment/feedback', expect.objectContaining({ vote: null, reason: 'Keep context' }), expect.objectContaining({ schema: expect.anything() }))
 
     const editor = wrapper.get('[data-feedback-editor]')
     expect((editor.element as HTMLDetailsElement).open).toBe(false)
@@ -331,12 +331,12 @@ describe('JudgmentWorkbench', () => {
     await editor.get('[data-feedback-reason]').setValue('Use the current owner.')
     await editor.get('[data-save-reason]').trigger('click')
     await flushPromises()
-    expect(postJson).toHaveBeenLastCalledWith('/api/judgment/feedback', expect.objectContaining({ vote: null, reason: 'Use the current owner.' }))
+    expect(postJson).toHaveBeenLastCalledWith('/api/judgment/feedback', expect.objectContaining({ vote: null, reason: 'Use the current owner.' }), expect.objectContaining({ schema: expect.anything() }))
 
     await editor.get('[data-feedback-reason]').setValue('')
     await editor.get('[data-save-reason]').trigger('click')
     await flushPromises()
-    expect(postJson).toHaveBeenLastCalledWith('/api/judgment/feedback', expect.objectContaining({ vote: null, reason: '' }))
+    expect(postJson).toHaveBeenLastCalledWith('/api/judgment/feedback', expect.objectContaining({ vote: null, reason: '' }), expect.objectContaining({ schema: expect.anything() }))
   })
 
   it('shows actual source selection and keeps receipts and session IDs behind disclosure', async () => {
@@ -452,7 +452,7 @@ describe('paged, searchable record list', () => {
     const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
     await flushPromises()
 
-    expect(getJson).toHaveBeenLastCalledWith('/api/judgment/records?personalSpaceId=space-a&limit=30&filter=human&after=decision-1')
+    expect(getJson).toHaveBeenLastCalledWith('/api/judgment/records?personalSpaceId=space-a&limit=30&filter=human&after=decision-1', expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.get('[data-loading-more]').attributes('aria-label')).toBe('正在加载更多判断记录…')
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(2)
     nextPage.resolve({ records: [record({ id: 'decision-1' }), ...many(3).slice(2)], nextCursor: null })
@@ -472,7 +472,7 @@ describe('paged, searchable record list', () => {
     expect(search.attributes('aria-label')).toBe('搜索标题、结论、理由、项目或来源')
     await search.setValue('  Garden  ')
     await search.trigger('keydown', { key: 'Enter' })
-    expect(getJson).toHaveBeenLastCalledWith('/api/judgment/records?personalSpaceId=space-a&limit=30&filter=human&search=Garden')
+    expect(getJson).toHaveBeenLastCalledWith('/api/judgment/records?personalSpaceId=space-a&limit=30&filter=human&search=Garden', expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.getComponent(GrowthLoading).props()).toMatchObject({ variant: 'inline', label: '正在搜索判断记录…' })
     expect(wrapper.findAll('[data-decision-card]')).toHaveLength(2)
 
@@ -493,7 +493,7 @@ describe('paged, searchable record list', () => {
       expect(getJson).toHaveBeenCalledTimes(1)
       await vi.advanceTimersByTimeAsync(300)
       expect(getJson).toHaveBeenCalledTimes(2)
-      expect(getJson).toHaveBeenLastCalledWith('/api/judgment/records?personalSpaceId=space-a&limit=30&filter=human&search=riv')
+      expect(getJson).toHaveBeenLastCalledWith('/api/judgment/records?personalSpaceId=space-a&limit=30&filter=human&search=riv', expect.objectContaining({ schema: expect.anything() }))
     } finally {
       vi.useRealTimers()
     }

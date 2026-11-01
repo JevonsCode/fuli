@@ -53,7 +53,7 @@ describe('DataFormatPage', () => {
     expect(wrapper.get('[data-format-completed-notice]').text()).toContain('剩余 6 次')
     await wrapper.get('[data-dismiss-format-notices]').trigger('click')
     await flushPromises()
-    expect(api.postJson).toHaveBeenCalledWith('/api/data-format/dismiss-notices', { ids: [id] })
+    expect(api.postJson).toHaveBeenCalledWith('/api/data-format/dismiss-notices', { ids: [id] }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.find('[data-format-completed-notice]').exists()).toBe(false)
     expect(wrapper.findAll('[data-store-plan]')).toHaveLength(2)
   })
@@ -83,7 +83,7 @@ describe('DataFormatPage', () => {
     expect(notices).toHaveLength(2)
     await notices[0].get('[data-dismiss-format-notices]').trigger('click')
     await flushPromises()
-    expect(api.postJson).toHaveBeenCalledWith('/api/data-format/dismiss-notices', { ids: [first.id] })
+    expect(api.postJson).toHaveBeenCalledWith('/api/data-format/dismiss-notices', { ids: [first.id] }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.findAll('[data-format-completed-notice]')).toHaveLength(1)
     expect(wrapper.get('[data-format-completed-notice]').text()).toContain(second.migrationId)
   })
@@ -187,7 +187,7 @@ describe('DataFormatPage', () => {
     await apply.trigger('click')
     await flushPromises()
 
-    expect(api.postJson).toHaveBeenCalledWith('/api/data-format/apply', { digest: DIGEST })
+    expect(api.postJson).toHaveBeenCalledWith('/api/data-format/apply', { digest: DIGEST }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.text()).toContain('已应用 agent-apps/7-identity-keys')
     expect(wrapper.text()).toContain('已由另一次确认应用 graph/9-group-id-separators')
     expect(wrapper.text()).toContain('没有等待确认的数据格式迁移')
@@ -219,7 +219,7 @@ describe('DataFormatPage', () => {
     api.postJson.mockResolvedValueOnce({ pruned: [{ kind: 'pruned', store: 'graph' }, { kind: 'pruned', store: 'graph' }] })
     await wrapper.get('[data-prune-check]').trigger('click')
     await flushPromises()
-    expect(api.postJson).toHaveBeenLastCalledWith('/api/data-format/prune', {})
+    expect(api.postJson).toHaveBeenLastCalledWith('/api/data-format/prune', {}, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.find('[data-prune-unverified]').exists()).toBe(false)
     expect(wrapper.get('[data-prune-checked]').text()).toContain('共清理 2 份')
   })
@@ -239,7 +239,7 @@ describe('DataFormatPage', () => {
         tables: [{ table: 'task_schedule_runs', current: 9, backup: 2 }], laterMigrations: [] } })
       await wrapper.get('[data-restore-describe]').trigger('click')
       await flushPromises()
-      expect(api.getJson).toHaveBeenLastCalledWith('/api/data-format/restore?label=task-schedules.sqlite&backup=format-backups%2Fb1')
+      expect(api.getJson).toHaveBeenLastCalledWith('/api/data-format/restore?label=task-schedules.sqlite&backup=format-backups%2Fb1', expect.objectContaining({ schema: expect.anything() }))
       expect(wrapper.get('[data-restore-impact]').text()).toContain('task_schedule_runs：现在 9 行，备份里 2 行')
       expect(wrapper.get('[data-restore-confirm]').attributes('disabled')).toBeDefined()
 
@@ -249,7 +249,7 @@ describe('DataFormatPage', () => {
       await wrapper.get('[data-restore-confirm]').trigger('click')
       await flushPromises()
       expect(api.postJson).toHaveBeenLastCalledWith('/api/data-format/restore',
-        { label: 'task-schedules.sqlite', backupRef: 'format-backups/b1', currentDigest: 'digest-now' })
+        { label: 'task-schedules.sqlite', backupRef: 'format-backups/b1', currentDigest: 'digest-now' }, expect.objectContaining({ schema: expect.anything() }))
       expect(wrapper.text()).toContain('正在停止 FULI 并恢复「task-schedules.sqlite」')
 
       // FULI is down: the read fails, and the page keeps asking.
@@ -276,7 +276,7 @@ describe('DataFormatPage', () => {
     await flushPromises()
 
     expect(api.postJson).toHaveBeenCalledWith('/api/data-format/rollback',
-      { label: 'agent-roundtable.sqlite', migrationId: 'roundtable/9-x' })
+      { label: 'agent-roundtable.sqlite', migrationId: 'roundtable/9-x' }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.text()).toContain('已撤销 roundtable/9-x，存储回到版本 8')
   })
 })

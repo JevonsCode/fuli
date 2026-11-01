@@ -1,4 +1,6 @@
+import { z } from 'zod'
 import { ApiError, getJson, postJson } from '@/api/client'
+import { shapeFor } from '@/api/response-shape'
 import { shortUniqueIds } from '@/lib/short-ids'
 
 // The console's view of `fuli migrate preview` (rec#17 D-09 part 2): the
@@ -92,15 +94,63 @@ export function pruneAuditError(pruned: PruneEntry[] | undefined): string {
   return (pruned ?? []).find(entry => entry.auditError)?.auditError?.message ?? ''
 }
 
-export const readMigrationPlan = (signal?: AbortSignal) => getJson<MigrationPlan>('/api/data-format', { signal })
-export const applyMigrationPlan = (digest: string) => postJson<ApplyOutcome>('/api/data-format/apply', { digest })
+// What the page reads of each answer (src/data-format/migration-plan.js,
+// migration-operations.js, console-restore.js). The unions stay with the
+// interfaces here, so a kind is checked as text; a field the server may leave
+// out or null is optional.
+const stepSchema = z.looseObject({
+  id: z.string(), summary: z.string(), fromVersion: z.number(), toVersion: z.number(), count: z.number(),
+  sampleIds: z.array(z.string()),
+})
+const storePlanSchema = z.looseObject({
+  label: z.string(), store: z.string(), kind: z.string(), automatic: z.array(z.string()), step: stepSchema,
+  undo: z.string(), warning: z.string().nullish(), digest: z.string(),
+})
+const blockedSchema = z.looseObject({ label: z.string(), store: z.string(), steps: z.array(z.string()), reason: z.string() })
+const undoableSchema = z.looseObject({
+  label: z.string(), store: z.string(), migrationId: z.string(), fromVersion: z.number(), toVersion: z.number(),
+  reversible: z.boolean().nullish(),
+})
+const noticeSchema = z.looseObject({
+  active: z.array(z.looseObject({ id: z.string(), migrationId: z.string(), remaining: z.number() })),
+  unavailable: z.boolean().nullish(),
+})
+const pruneEntrySchema = z.looseObject({
+  kind: z.string(), store: z.string().nullish(),
+  auditError: z.looseObject({ code: z.string(), message: z.string() }).nullish(),
+})
+const planShape = shapeFor<MigrationPlan>(z.looseObject({
+  digest: z.string().nullable(),
+  stores: z.array(storePlanSchema),
+  blocked: z.array(blockedSchema),
+  undoable: z.array(undoableSchema),
+  // retentionPolicyOrNull() is null when the budget setting is invalid.
+  retention: z.looseObject({ keep: z.number(), maxBytes: z.number() }).nullish(),
+  notice: noticeSchema.nullish(),
+}))
+const outcomeShape = shapeFor<ApplyOutcome>(z.looseObject({
+  status: z.string(),
+  results: z.array(z.looseObject({
+    label: z.string(), status: z.string(), migrationId: z.string(), code: z.string().nullish(), message: z.string().nullish(),
+  })),
+  skipped: z.array(z.looseObject({ label: z.string(), migrationId: z.string() })),
+  pruned: z.array(pruneEntrySchema).nullish(),
+}))
+const noticeResultShape = shapeFor<{ notice: MigrationNotice }>(z.looseObject({ notice: noticeSchema }))
+const undoShape = shapeFor<{ status: string; version: number; pruned?: PruneEntry[] }>(z.looseObject({
+  status: z.string(), version: z.number(), pruned: z.array(pruneEntrySchema).nullish(),
+}))
+const pruneShape = shapeFor<{ pruned: PruneEntry[] }>(z.looseObject({ pruned: z.array(pruneEntrySchema) }))
+
+export const readMigrationPlan = (signal?: AbortSignal) => getJson('/api/data-format', planShape, { signal })
+export const applyMigrationPlan = (digest: string) => postJson('/api/data-format/apply', { digest }, outcomeShape)
 export const dismissMigrationNotices = (ids: string[]) =>
-  postJson<{ notice: MigrationNotice }>('/api/data-format/dismiss-notices', { ids })
+  postJson('/api/data-format/dismiss-notices', { ids }, noticeResultShape)
 export const undoMigration = (label: string, migrationId: string) =>
-  postJson<{ status: string; version: number; pruned?: PruneEntry[] }>('/api/data-format/rollback', { label, migrationId })
+  postJson('/api/data-format/rollback', { label, migrationId }, undoShape)
 
 // The person's check of a graph prune whose answer never came: the same prune again.
-export const pruneAgain = () => postJson<{ pruned: PruneEntry[] }>('/api/data-format/prune', {})
+export const pruneAgain = () => postJson('/api/data-format/prune', {}, pruneShape)
 
 // What a check of the prune found: still unverified, the graph out of reach, or checked.
 export function pruneCheckOutcome(pruned: PruneEntry[]): { kind: 'unverified' | 'unreached' | 'checked'; count: number } {
@@ -135,13 +185,36 @@ export interface RestoreStatus {
   error: string | null
 }
 
-export const readRestoreChoices = () =>
-  getJson<{ stores: RestorableStore[]; restore: RestoreStatus | null }>('/api/data-format/restore')
-export const describeRestore = (label: string, backupRef: string) => getJson<{ impact: RestoreImpact }>(
-  `/api/data-format/restore?${new URLSearchParams({ label, backup: backupRef })}`)
+// consoleRestore.status() is null until a restore has run.
+const restoreStatusSchema = z.looseObject({
+  id: z.string(), label: z.string(), backupRef: z.string(), status: z.string(),
+  safetyBackupRef: z.string().nullable(), started: z.boolean().nullable(), error: z.string().nullable(),
+})
+const restoreStatusShape = shapeFor<RestoreStatus>(restoreStatusSchema)
+const restoreStatusAnswerShape = shapeFor<{ restore: RestoreStatus | null }>(z.looseObject({ restore: restoreStatusSchema.nullable() }))
+const restoreChoicesShape = shapeFor<{ stores: RestorableStore[]; restore: RestoreStatus | null }>(z.looseObject({
+  stores: z.array(z.looseObject({
+    label: z.string(), store: z.string(), kind: z.string(),
+    backups: z.array(z.looseObject({ ref: z.string(), version: z.number().nullish(), takenAt: z.string().nullish() })),
+  })),
+  restore: restoreStatusSchema.nullable(),
+}))
+const restoreImpactShape = shapeFor<{ impact: RestoreImpact }>(z.looseObject({
+  impact: z.looseObject({
+    store: z.string(), backupRef: z.string(), takenAt: z.string().nullish(), currentVersion: z.number().nullish(),
+    backupVersion: z.number().nullish(),
+    tables: z.array(z.looseObject({ table: z.string(), current: z.number(), backup: z.number() })).nullish(),
+    laterMigrations: z.array(z.looseObject({ migrationId: z.string(), status: z.string() })),
+    currentDigest: z.string().nullable(),
+  }),
+}))
+
+export const readRestoreChoices = () => getJson('/api/data-format/restore', restoreChoicesShape)
+export const describeRestore = (label: string, backupRef: string) => getJson(
+  `/api/data-format/restore?${new URLSearchParams({ label, backup: backupRef })}`, restoreImpactShape)
 export const startRestore = (label: string, backupRef: string, currentDigest: string | null) =>
-  postJson<RestoreStatus>('/api/data-format/restore', { label, backupRef, currentDigest })
-export const readRestoreStatus = () => getJson<{ restore: RestoreStatus | null }>('/api/data-format/restore/status')
+  postJson('/api/data-format/restore', { label, backupRef, currentDigest }, restoreStatusShape)
+export const readRestoreStatus = () => getJson('/api/data-format/restore/status', restoreStatusAnswerShape)
 
 export function restoreFinished(status: RestoreStatus | null, id: string): boolean {
   return status?.id === id && (status.status === 'restored' || status.status === 'failed')
