@@ -1,5 +1,6 @@
 import { apiErrorReason, putJson } from '@/api/client'
 import type { ProjectAgentRecord } from '@/types'
+import { projectAgentShape } from './agent-record-shape'
 import { rememberRoleName } from './role-names'
 
 // Renaming an Agent (rec#11 D-89): only the shown name changes; the Agent ID,
@@ -8,10 +9,10 @@ import { rememberRoleName } from './role-names'
 export const MAX_AGENT_NAME = 64
 
 export async function renameAgent(agent: Pick<ProjectAgentRecord, 'personalSpaceId' | 'agentId'>, displayName: string | null) {
-  const record = await putJson<ProjectAgentRecord>(`/api/project-agents/${encodeURIComponent(agent.agentId)}/name`, {
+  const record = await putJson(`/api/project-agents/${encodeURIComponent(agent.agentId)}/name`, {
     personalSpaceId: agent.personalSpaceId,
     displayName,
-  })
+  }, projectAgentShape)
   // A renamed built-in role reads by its new name in every label at once.
   rememberRoleName(record)
   return record

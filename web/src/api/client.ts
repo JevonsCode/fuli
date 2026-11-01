@@ -1,4 +1,5 @@
 import { t } from '@/i18n'
+import { isResponseShape, mismatchPath, type ResponseShape } from './response-shape'
 
 export class ApiError extends Error {
   readonly status: number
@@ -19,7 +20,7 @@ export function isKnowledgeRecoveryPending(error: unknown): boolean {
   try { return JSON.parse(error.detail)?.code === 'knowledge_recovery_pending' } catch { return false }
 }
 
-async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+async function requestJson<T>(url: string, init?: RequestInit, shape?: ResponseShape<T>): Promise<T> {
   const response = await fetch(url, init)
   if (!response.ok) {
     const detail = (await response.text()).trim()
@@ -29,8 +30,17 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
       : detail || t('common.errors.requestFailed', { status: response.status })
     throw new ApiError(message, response.status, detail)
   }
-  return response.json() as Promise<T>
+  const value: unknown = await response.json()
+  if (!shape) return value as T
+  const checked = shape.schema.safeParse(value)
+  if (checked.success) return checked.data as T
+  // An answer the console cannot read is one error that names the field, never its value.
+  const message = t('common.errors.invalidResponse', { field: mismatchPath(checked.error) })
+  throw new ApiError(message, response.status, JSON.stringify({ code: RESPONSE_INVALID, error: message }))
 }
+
+/** The code of an answer that did not have the shape the console checks for. */
+export const RESPONSE_INVALID = 'response_invalid'
 
 // The API's own { "code": "…" } for a request it refused, else null.
 export function apiErrorCode(error: unknown): string | null {
@@ -56,42 +66,35 @@ export function apiErrorReason(error: unknown, fallback = t('common.errors.opera
   return error instanceof Error && error.message ? error.message : fallback
 }
 
-export function getJson<T>(
-  url: string,
-  init?: Pick<RequestInit, 'signal'>,
-): Promise<T> {
-  return requestJson<T>(url, init)
+type Init = Pick<RequestInit, 'signal'>
+const JSON_HEADERS = { 'content-type': 'application/json' }
+
+// Each verb takes an optional ResponseShape (api/response-shape.ts) that checks
+// the answer before it is returned. A call without one is an unchecked cast;
+// web/src/api/response-validation.spec.ts keeps their number from growing.
+export function getJson<T>(url: string, init?: Init): Promise<T>
+export function getJson<T>(url: string, shape: ResponseShape<T>, init?: Init): Promise<T>
+export function getJson<T>(url: string, shapeOrInit?: ResponseShape<T> | Init, init?: Init): Promise<T> {
+  return isResponseShape(shapeOrInit)
+    ? requestJson<T>(url, init, shapeOrInit as ResponseShape<T>)
+    : requestJson<T>(url, shapeOrInit as Init | undefined)
 }
 
-export function postJson<T>(url: string, body: unknown, init?: Pick<RequestInit, 'signal'>): Promise<T> {
-  return requestJson<T>(url, {
-    ...init,
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+export function postJson<T>(url: string, body: unknown, init?: Init): Promise<T>
+export function postJson<T>(url: string, body: unknown, shape: ResponseShape<T>, init?: Init): Promise<T>
+export function postJson<T>(url: string, body: unknown, shapeOrInit?: ResponseShape<T> | Init, init?: Init): Promise<T> {
+  const shape = isResponseShape(shapeOrInit) ? shapeOrInit as ResponseShape<T> : undefined
+  return requestJson<T>(url, { ...(shape ? init : shapeOrInit as Init | undefined), method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) }, shape)
 }
 
-export function putJson<T>(url: string, body: unknown): Promise<T> {
-  return requestJson<T>(url, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+export function putJson<T>(url: string, body: unknown, shape?: ResponseShape<T>): Promise<T> {
+  return requestJson<T>(url, { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(body) }, shape)
 }
 
-export function patchJson<T>(url: string, body: unknown): Promise<T> {
-  return requestJson<T>(url, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+export function patchJson<T>(url: string, body: unknown, shape?: ResponseShape<T>): Promise<T> {
+  return requestJson<T>(url, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify(body) }, shape)
 }
 
-export function deleteJson<T>(url: string, body?: unknown): Promise<T> {
-  return requestJson<T>(url, body === undefined ? { method: 'DELETE' } : {
-    method: 'DELETE',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+export function deleteJson<T>(url: string, body?: unknown, shape?: ResponseShape<T>): Promise<T> {
+  return requestJson<T>(url, body === undefined ? { method: 'DELETE' } : { method: 'DELETE', headers: JSON_HEADERS, body: JSON.stringify(body) }, shape)
 }

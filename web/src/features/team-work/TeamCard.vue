@@ -44,7 +44,7 @@ const now = computed(() => {
 const currentIds = computed(() => new Set(shares.value.map(share => currentStepOf(props.sheet, share)?.id).filter(Boolean)))
 const known = (key: string, fallback: string) => { const label = t(key); return label === key ? fallback : label }
 const statusLabel = (status: string) => known(`projectAgents.taskStatus.${status}`, status)
-const roleLabel = (role: string | null) => (role ? known(`teamWork.card.roles.${role}`, '') : '')
+const roleLabel = (role: string | null | undefined) => (role ? known(`teamWork.card.roles.${role}`, '') : '')
 const total = computed(() => fill(props.sheet.progress))
 </script>
 

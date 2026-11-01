@@ -2,6 +2,7 @@ import { getJson } from '@/api/client'
 import { i18n, t } from '@/i18n'
 import { roleNameMessages } from '@/i18n/messages/role-names'
 import type { ProjectAgentRecord } from '@/types'
+import { projectAgentShape } from './agent-record-shape'
 import { agentDisplayName } from './profile-model'
 
 // The names FULI's built-in roles go by now (rec#11 D-89). Copy names a role
@@ -49,10 +50,11 @@ export async function loadRoleNames(spaceId: string): Promise<void> {
   write({})
   await Promise.all(ROLES.map(async (role) => {
     try {
-      const record = await getJson<ProjectAgentRecord>(
+      const record = await getJson(
         `/api/project-agents/${encodeURIComponent(ROLE_AGENT_IDS[role])}?${new URLSearchParams({ personalSpaceId: spaceId })}`,
+        projectAgentShape,
       )
-      if (spaceId === loadedSpace && record?.profile) rememberRoleName(record)
+      if (spaceId === loadedSpace) rememberRoleName(record)
     } catch {
       // A role this space does not have, or a failed read, keeps the role's own name.
     }

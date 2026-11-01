@@ -1,5 +1,7 @@
 import { shallowRef } from 'vue'
+import { z } from 'zod'
 import { getJson, putJson } from '@/api/client'
+import { shapeOf } from '@/api/response-shape'
 
 // The looks the person chose for their Agents (rec#11 D-89), one copy for the
 // whole console so the dock, cards and capsules change together. Only changed
@@ -9,7 +11,16 @@ export type AgentLook =
   | { agentId: string; kind: 'generated'; seed: string; updatedAt: string }
   | { agentId: string; kind: 'image'; imageVersion: string; updatedAt: string }
 export type LookChoice = { kind: 'generated'; seed: string } | { kind: 'image'; data: string } | { kind: 'default' }
-interface LookView { agentId: string; kind: 'generated' | 'image' | 'default'; seed?: string; imageVersion?: string; updatedAt: string }
+const lookViewSchema = z.looseObject({
+  agentId: z.string(),
+  kind: z.enum(['generated', 'image', 'default']),
+  seed: z.string().optional(),
+  imageVersion: z.string().optional(),
+  updatedAt: z.string(),
+})
+type LookView = z.infer<typeof lookViewSchema>
+const lookShape = shapeOf(lookViewSchema)
+const looksShape = shapeOf(z.looseObject({ avatars: z.array(lookViewSchema) }))
 
 export const agentLooks = shallowRef<ReadonlyMap<string, AgentLook>>(new Map())
 let loadedSpace = ''
@@ -25,7 +36,7 @@ function asLook(view: LookView): AgentLook | null {
 
 async function read(spaceId: string) {
   try {
-    const { avatars } = await getJson<{ avatars: LookView[] }>(looksPath(spaceId))
+    const { avatars } = await getJson(looksPath(spaceId), looksShape)
     if (spaceId !== loadedSpace) return
     agentLooks.value = new Map(avatars.flatMap(view => { const look = asLook(view); return look ? [[look.agentId, look] as const] : [] }))
   } catch {
@@ -45,7 +56,7 @@ export function loadAgentLooks(spaceId: string): Promise<void> {
 
 /** Saves one Agent's look, shows it everywhere at once, then reads the list again. */
 export async function saveAgentLook(spaceId: string, agentId: string, look: LookChoice): Promise<void> {
-  const view = await putJson<LookView>(`/api/agent-avatars/${encodeURIComponent(agentId)}`, { personalSpaceId: spaceId, look })
+  const view = await putJson(`/api/agent-avatars/${encodeURIComponent(agentId)}`, { personalSpaceId: spaceId, look }, lookShape)
   if (spaceId === loadedSpace) {
     const next = new Map(agentLooks.value)
     const saved = asLook(view)

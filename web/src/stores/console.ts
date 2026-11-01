@@ -1,5 +1,7 @@
 import { computed, ref, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
+import { z } from 'zod'
+import { shapeFor } from '@/api/response-shape'
 
 import { getJson, patchJson, postJson } from '@/api/client'
 import { t } from '@/i18n'
@@ -18,6 +20,21 @@ import type {
 
 export type RuntimeStatus = 'idle' | 'loading' | 'ready' | 'error'
 export type FeedbackTone = 'success' | 'error'
+
+// The console state as the API answers it: the spaces and projects every page
+// reads first. Policies and provider status pass through as ConsoleState.
+const consoleStateShape = shapeFor<ConsoleState>(z.looseObject({
+  mode: z.string(),
+  activePersonalSpaceId: z.string().nullish(),
+  personalSpaces: z.array(z.looseObject({ id: z.string(), name: z.string() })),
+  personalProjects: z.array(z.looseObject({
+    project_id: z.string(),
+    personal_space_id: z.string(),
+    profile: z.looseObject({ name: z.string() }),
+  })).optional(),
+  projects: z.array(z.looseObject({})),
+  subscriptions: z.array(z.looseObject({})),
+}))
 
 export const useConsoleStore = defineStore('console', () => {
   const state = shallowRef<ConsoleState | null>(null)
@@ -56,7 +73,7 @@ export const useConsoleStore = defineStore('console', () => {
           reject(Object.assign(new Error(t('common.errors.operationFailed')), { code: 'scope_timeout' }))
         }, 30000)
       })
-      const result = await Promise.race([getJson<ConsoleState>('/api/state', { signal: controller.signal }), timeout])
+      const result = await Promise.race([getJson('/api/state', consoleStateShape, { signal: controller.signal }), timeout])
       if (current !== refreshVersion) return
       state.value = result
       runtimeStatus.value = 'ready'
