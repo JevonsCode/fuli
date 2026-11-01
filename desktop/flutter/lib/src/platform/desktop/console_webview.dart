@@ -1,9 +1,12 @@
+import 'dart:collection';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
+import '../caption_controls.dart';
 import '../console_link.dart';
 import '../ports.dart';
 import 'download_saver.dart';
@@ -14,22 +17,29 @@ import 'download_saver.dart';
 /// the page exports is saved by the client (`fuliSaveFile`), since neither
 /// WebView saves a page-made download for it. The console draws its own
 /// right-click menu, so the WebView's native one is off; its 粘贴 reads the
-/// clipboard, which only the console's own page may.
+/// clipboard, which only the console's own page may. The console's top bar is
+/// the window's title bar: the page learns where the window's own controls are
+/// before it runs (`window.fuliDesktopClient`, web/src/lib/desktop-client.ts)
+/// and asks the client to move or maximise the window (`fuliWindow`).
 class ConsoleWebView {
-  ConsoleWebView._(this._environment, this._opener, this._saver, this._onSaved);
+  ConsoleWebView._(this._environment, this._opener, this._saver, this._onSaved, this._caption);
 
   final WebViewEnvironment? _environment;
   final UrlOpener _opener;
   final DownloadSaver _saver;
   final void Function(File file) _onSaved;
+  final CaptionControls _caption;
 
   static const saveHandler = 'fuliSaveFile';
+  static const windowHandler = 'fuliWindow';
 
   /// Null when this computer has no WebView runtime: the window then keeps
   /// its status page and opens the console in the browser.
   static Future<ConsoleWebView?> create(UrlOpener opener,
-      {required DownloadSaver saver, required void Function(File file) onSaved}) async {
-    if (!Platform.isWindows) return Platform.isMacOS ? ConsoleWebView._(null, opener, saver, onSaved) : null;
+      {required DownloadSaver saver,
+      required void Function(File file) onSaved,
+      required CaptionControls caption}) async {
+    if (!Platform.isWindows) return Platform.isMacOS ? ConsoleWebView._(null, opener, saver, onSaved, caption) : null;
     try {
       if (await WebViewEnvironment.getAvailableVersion() == null) return null;
       // Outside the versioned program folder, so console settings kept in
@@ -41,7 +51,8 @@ class ConsoleWebView {
                   userDataFolder: local == null ? null : '$local\\FULI Desktop\\WebView2')),
           opener,
           saver,
-          onSaved);
+          onSaved,
+          caption);
     } on Object {
       return null;
     }
@@ -57,6 +68,26 @@ class ConsoleWebView {
         disableContextMenu: false,
         isInspectable: kDebugMode,
       );
+
+  /// Tells the page, before it runs, that it is the window's title bar and
+  /// how much room the window's own controls take in its top corners.
+  static UserScript desktopClientScript(CaptionControls caption) {
+    final client = {
+      'platform': caption.platform,
+      'captionStart': caption.reserved.start,
+      'captionEnd': caption.reserved.end,
+    };
+    return UserScript(
+        source: 'window.fuliDesktopClient = Object.freeze(${jsonEncode(client)});',
+        injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START);
+  }
+
+  /// Moves or maximises the window for the console page's top bar.
+  static Future<void> windowAction(CaptionControls caption, Object? action) async => switch (action) {
+        'drag' => caption.startDragging(),
+        'toggleMaximize' => caption.toggleMaximize(),
+        _ => null,
+      };
 
   /// Grants the console page reading the clipboard (its own menu's 粘贴);
   /// every other request, and any request from another page, is denied.
@@ -75,6 +106,7 @@ class ConsoleWebView {
         webViewEnvironment: _environment,
         initialUrlRequest: URLRequest(url: WebUri.uri(console)),
         initialSettings: settings(),
+        initialUserScripts: UnmodifiableListView([desktopClientScript(_caption)]),
         onPermissionRequest: (_, request) async =>
             PermissionResponse(resources: request.resources, action: permissionFor(request, console)),
         shouldOverrideUrlLoading: (_, action) async {
@@ -83,8 +115,15 @@ class ConsoleWebView {
           await _opener.open(url);
           return NavigationActionPolicy.CANCEL;
         },
-        // Only the console page itself may save; the answer tells it the file is on disk.
-        onWebViewCreated: (controller) => controller.addJavaScriptHandler(
+        // Only the console page itself may move the window, or save; the answer tells it the file is on disk.
+        onWebViewCreated: (controller) {
+          controller.addJavaScriptHandler(
+              handlerName: windowHandler,
+              callback: (arguments) async {
+                final page = await controller.getUrl();
+                if (page != null && isConsolePage(page, console)) await windowAction(_caption, arguments.firstOrNull);
+              });
+          controller.addJavaScriptHandler(
             handlerName: saveHandler,
             callback: (arguments) async {
               final page = await controller.getUrl();
@@ -102,7 +141,9 @@ class ConsoleWebView {
               } on Object catch (error) {
                 return {'saved': false, 'error': '$error'};
               }
-            }),
+            },
+          );
+        },
         onLoadStop: (_, _) => onLoaded(),
         onReceivedError: (_, request, _) {
           if (request.isForMainFrame ?? true) onLoaded();

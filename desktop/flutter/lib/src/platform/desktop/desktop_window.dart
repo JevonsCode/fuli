@@ -4,16 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
-/// The one window. Closing it hides it to the tray; only 退出 quits. The
-/// Windows runner leaves it hidden until [open] shows it
-/// (windows/runner/flutter_window.cpp), so a start at login stays in the tray.
+/// The one window, with its title bar hidden: the top bar of what it shows is
+/// the title bar (window_caption.dart, desktop_caption.dart), while the frame keeps its
+/// resize edges, shadow, rounded corners and snapping. Closing it hides it to
+/// the tray; only 退出 quits. The Windows runner leaves it hidden until [open]
+/// shows it (windows/runner/flutter_window.cpp), so a start at login stays in
+/// the tray.
 class DesktopWindow with WindowListener {
   ValueChanged<bool>? onVisibilityChanged;
 
   Future<void> open({required String title, bool show = true}) async {
     await windowManager.ensureInitialized();
     windowManager.addListener(this);
-    final options = WindowOptions(size: await _openingSize(), minimumSize: const Size(460, 520), title: title, center: true);
+    final options = WindowOptions(
+        size: await _openingSize(),
+        minimumSize: const Size(460, 520),
+        title: title,
+        center: true,
+        titleBarStyle: TitleBarStyle.hidden);
     await windowManager.waitUntilReadyToShow(options, () async {
       if (!show) return;
       await windowManager.show();

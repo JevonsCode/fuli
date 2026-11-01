@@ -34,7 +34,8 @@
 .rt-msg { display: grid; padding-top: 2px; }
 .rt-msg.is-run-start { padding-top: 12px; }
 .rt-sep { margin: 14px 0 4px; color: var(--color-faint); font-size: var(--text-meta); text-align: center; font-variant-numeric: tabular-nums; }
-.rt-msg-row { display: flex; align-items: flex-end; gap: 8px; max-width: min(680px, 86%); }
+/* Each message keeps a readable width at its own side: the person's on the right, everyone else's on the left. */
+.rt-msg-row { display: flex; align-items: flex-end; gap: 8px; max-width: min(720px, 86%); }
 .rt-msg.is-mine .rt-msg-row { justify-self: end; flex-direction: row-reverse; }
 .rt-face, .rt-face-gap { flex: none; width: 28px; height: 28px; }
 .rt-face {

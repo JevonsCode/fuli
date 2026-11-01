@@ -23,6 +23,7 @@ import { waitForSettingsApply } from '@/features/settings/settings-apply'
 import { useSettingsAutoSave } from '@/features/settings/settings-autosave'
 import { PERSONAL_PORT_KEYS, pendingRestartFields, withoutRestartChanges } from '@/features/settings/settings-restart'
 import { captureSourceOff, withCaptureSource } from '@/features/capture/capture-sources'
+import { clientDetectionShape, shownCaptureClients, type ClientDetection } from '@/features/capture/capture-clients'
 import { fieldErrorMessage } from '@/features/settings/settings-field-error'
 import { matchingSections, settingSearchTerm, useSettingsSearch } from '@/features/settings/settings-search'
 import {
@@ -134,8 +135,11 @@ const conversationIdFormatOptions = computed(() => [
 ])
 const captureEnabled = computed(() => store.state?.capturePolicy?.enabled !== false)
 // Capture is per client; a client that is off still reads memory through its tools.
-const CAPTURE_CLIENTS = [['claude_code', 'Claude Code'], ['codex', 'Codex'], ['cursor', 'Cursor'], ['opencode', 'OpenCode']] as const
 const captureSources = computed(() => store.state?.capturePolicy ?? {})
+// The switches list the clients on this machine; a failed read keeps the full list.
+const clientDetection = ref<ClientDetection | null>(null)
+const detectingClients = ref(true)
+const captureClients = computed(() => shownCaptureClients(clientDetection.value, captureSources.value))
 const answerFromConfirmed = computed(() => store.state?.recallPolicy?.answerFromConfirmed !== false)
 const agentAccessEnabled = computed(() =>
   store.state?.agentAccessPolicy?.enabled !== false,
@@ -157,6 +161,7 @@ const recommendsNativeRuntime = computed(() =>
 
 onMounted(async () => {
   if (store.runtimeStatus === 'idle') void store.refresh()
+  void detectClients()
   await Promise.all([loadSettings(), loadResources()])
   loading.value = false
 })
@@ -184,6 +189,12 @@ watch(
   () => form.value?.resourceRefreshSeconds,
   () => startPolling(),
 )
+
+async function detectClients() {
+  try { clientDetection.value = await getJson('/api/system/client-connection/status', clientDetectionShape, { signal: saveController.signal }) }
+  catch { clientDetection.value = null }
+  finally { detectingClients.value = false }
+}
 
 async function loadSettings() {
   try {
@@ -413,12 +424,15 @@ function checkFields(): ValidatedField[] {
                     <span><strong>{{ t('settings.behavior.capture') }}</strong><small>{{ t('settings.behavior.captureMeta') }}</small></span>
                     <Switch :model-value="captureEnabled" :aria-label="t('settings.behavior.capture')" @update:model-value="toggleCapture" />
                   </label>
-                  <template v-if="captureEnabled">
+                  <template v-if="captureEnabled && (detectingClients || captureClients.length)">
                     <p class="setting-note">{{ t('settings.behavior.captureClientsMeta') }}</p>
-                    <label v-for="[source, label] in CAPTURE_CLIENTS" :key="source" class="setting-row setting-row-nested" :data-capture-source="source">
-                      <span><strong>{{ label }}</strong></span>
-                      <Switch :model-value="!captureSourceOff(captureSources, source)" :aria-label="label" @update:model-value="toggleClientCapture(source, $event)" />
-                    </label>
+                    <GrowthLoading v-if="detectingClients" variant="inline" class="setting-note" :label="t('settings.behavior.captureClientsLoading')" />
+                    <template v-else>
+                      <label v-for="[source, label] in captureClients" :key="source" class="setting-row setting-row-nested" :data-capture-source="source">
+                        <span><strong>{{ label }}</strong></span>
+                        <Switch :model-value="!captureSourceOff(captureSources, source)" :aria-label="label" @update:model-value="toggleClientCapture(source, $event)" />
+                      </label>
+                    </template>
                   </template>
                   <label class="setting-row" data-recall-answer-from-confirmed>
                     <span><strong>{{ t('settings.behavior.answerFromConfirmed') }}</strong><small>{{ t('settings.behavior.answerFromConfirmedMeta') }}</small></span>

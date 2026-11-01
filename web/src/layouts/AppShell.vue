@@ -17,6 +17,7 @@ import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
 import { currentLocale, t } from '@/i18n'
 import { fuliWordmarkUrl } from '@/lib/brand'
+import { vWindowDrag } from '@/lib/desktop-client'
 import { SPRING, motionConfigReduced } from '@/lib/motion'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { useConsoleStore } from '@/stores/console'
@@ -106,7 +107,7 @@ watchEffect(() => {
   <MotionConfig :reduced-motion="motionConfigReduced" :transition="SPRING">
   <div class="app-frame">
     <GrowingBackdrop />
-    <header class="app-topbar">
+    <header v-window-drag class="app-topbar">
       <div class="app-topbar-inner">
         <div class="app-brand">
           <BrandEasterEgg compact />
@@ -179,6 +180,13 @@ watchEffect(() => {
 /* Every page has the workbench's width (tokens.css --page-inline); the top bar and the feedback line keep the
    page's edges, adding the room the page's scrollbar takes on the right. */
 .app-topbar { position: relative; z-index: var(--z-popover); flex: 0 0 auto; padding: 12px calc(var(--page-inline) + var(--scrollbar-size)) 8px var(--page-inline); }
+/* In the desktop client the bar is the window's title bar: its own minimise, maximise and
+   close (Windows) or the traffic lights (macOS) sit in the top corners, so the bar keeps
+   clear of them (lib/desktop-client.ts). */
+:root[data-desktop-client] .app-topbar {
+  padding-left: max(var(--page-inline), var(--desktop-caption-start));
+  padding-right: max(calc(var(--page-inline) + var(--scrollbar-size)), var(--desktop-caption-end));
+}
 .app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-height: 44px; }
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 /* The brand lockup's proportions (brand/svg/lockup): the wordmark's glyphs stand at about 0.54 of the

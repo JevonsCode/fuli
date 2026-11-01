@@ -3,6 +3,7 @@ import { createApp } from 'vue'
 
 import App from './App.vue'
 import { i18n } from './i18n'
+import { connectDesktopClient } from './lib/desktop-client'
 import { installPageTransitions } from './lib/motion'
 import { initMotionPreference } from './lib/motion-preference'
 import { router } from './router'
@@ -23,6 +24,7 @@ import './styles/primitives.css'
 import './styles/motion.css'
 
 initMotionPreference()
+connectDesktopClient()
 
 const app = createApp(App)
 app.use(createPinia())
