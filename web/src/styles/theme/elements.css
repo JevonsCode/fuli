@@ -20,6 +20,14 @@
    the gap; it sits first so the control rules below still win. */
 *, ::before, ::after { border-color: var(--border); }
 button { cursor: pointer; }
+/* What you click is not text to select (Jevons 11-01): a drag across buttons,
+   tabs, menu items, chips, disclosures and nav links never highlights their
+   labels. Body text, inputs and plain inline links stay selectable. */
+:where(button, [role="button"], [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="option"], [role="switch"],
+  summary, label:has(> input[type="checkbox"], > input[type="radio"], > button[role="switch"]), nav a) {
+  -webkit-user-select: none;
+  user-select: none;
+}
 h1, h2, h3, p { margin: 0; }
 /* Headings follow the type scale (base.css): page, section, card. */
 h1 { font-size: var(--text-title); font-weight: var(--weight-strong); line-height: var(--leading-title); letter-spacing: -.02em; }
