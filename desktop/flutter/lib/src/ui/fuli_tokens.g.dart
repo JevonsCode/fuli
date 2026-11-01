@@ -69,8 +69,19 @@ abstract final class FuliSpace {
 }
 
 abstract final class FuliSize {
-  static const controlHeight = 36.0;
   static const controlHeightSm = 30.0;
+  static const controlHeightMd = 36.0;
+  static const controlHeightLg = 44.0;
+  static const controlHeight = 36.0;
+  static const controlSquareSm = 30.0;
+  static const controlSquareMd = 36.0;
+  static const controlSquareLg = 44.0;
+  static const controlPaddingSm = 10.0;
+  static const controlPaddingMd = 14.0;
+  static const controlPaddingLg = 20.0;
+  static const controlTextSm = 12.0;
+  static const controlTextMd = 13.0;
+  static const controlTextLg = 14.0;
   static const radiusControl = 8.0;
   static const radiusCard = 14.0;
   static const radiusDialog = 20.0;
