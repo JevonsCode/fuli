@@ -5,6 +5,8 @@
 // UPDATE_CLIENT_SNAPSHOTS=1 node --test test/setup-client-descriptor-snapshots.test.js
 // Re-recorded when agent-installer took over detection and status (rec#11
 // D-79): the `available` probes and FULI's own status left; writes are unchanged.
+// Re-recorded again when Codex hooks kept in config.toml stopped leaving a blank
+// line at the end of the file, which agent-installer read as an outdated entry.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
