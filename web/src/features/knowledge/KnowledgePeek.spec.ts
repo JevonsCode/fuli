@@ -1,5 +1,6 @@
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import KnowledgePeek from './KnowledgePeek.vue'
 import { knowledgeItemFromEdge, knowledgeItemFromNode } from './model'
@@ -9,6 +10,9 @@ const node = {
   id: 'synthetic-node', name: 'Synthetic title', type: 'Decision', summary: 'Synthetic body',
   epistemic_state_explicit: true, confirmation_status: 'pending',
 }
+
+// A project item reads the console store for its record; plain items never do.
+beforeEach(() => setActivePinia(createPinia()))
 
 describe('KnowledgePeek', () => {
   it('names the item once in its header and hands actions to the page', async () => {

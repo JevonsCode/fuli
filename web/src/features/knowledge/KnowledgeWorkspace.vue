@@ -60,6 +60,9 @@ import {
   type KnowledgeSearchResult,
   type PersonalProjectDiscovery,
 } from './project-discovery'
+import AllProjectsBackLink from './AllProjectsBackLink.vue'
+import ProjectHistoryPreview from '@/features/project-history/ProjectHistoryPreview.vue'
+import { isProjectNode } from './graph-runtime'
 import { separateParentProjects } from './project-hierarchy'
 import {
   extractFrequentProjects,
@@ -762,6 +765,12 @@ async function closePeek() {
   await router.replace({ path: workspacePath(mode.value), query: route.query })
 }
 
+// A related project chosen in a project's quick look opens that project's quick look.
+function selectProjectNode(nextProjectId: string) {
+  const node = graph.value?.nodes.find(candidate => isProjectNode(candidate) && candidate.attributes?.projectId === nextProjectId)
+  if (node) selectNode(node)
+}
+
 function selectNode(node: KnowledgeNode) {
   const item = selectableItems.value.find(
     ({ itemKind, id }) => itemKind === 'entity' && id === node.id,
@@ -1005,6 +1014,7 @@ function queryValues(value: unknown) {
     :class="{ 'graph-canvas-active': mode === 'graph', 'is-project-overview': mode === 'overview', 'is-directory': mode === 'directory' }"
   >
     <div class="knowledge-canvas">
+    <AllProjectsBackLink v-if="overviewAvailable" :space-id="spaceId" />
     <div class="knowledge-view-heading">
       <!-- The view is part of the URL; the tabs only change the route. -->
       <Tabs :model-value="mode" class="knowledge-mode-tabs" @update:model-value="changeMode($event as KnowledgeMode)">
@@ -1108,6 +1118,7 @@ function queryValues(value: unknown) {
         />
       </form>
       <div class="graph-view-actions">
+        <ProjectHistoryPreview v-if="personalProjectsOnly && !projectId && spaceId" :space-id="spaceId" />
         <Button size="sm" variant="ghost"
           v-if="
             personalProjectsOnly
@@ -1239,6 +1250,7 @@ function queryValues(value: unknown) {
       @open-graph="openItemInMode($event, 'graph')"
       @open-replacement="openReplacement"
       @manage-project="manageProjectMaterial"
+      @select-project="selectProjectNode"
       @deleted="knowledgeDeleted"
       @close="closePeek"
     />

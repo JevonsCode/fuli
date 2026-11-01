@@ -91,11 +91,9 @@ function mergeLabel(item: ProjectPreview) {
 </script>
 
 <template>
-  <section class="project-history" aria-labelledby="project-history-heading">
-    <div class="min-w-0">
-      <h2 id="project-history-heading" class="m-0 text-sm font-semibold">{{ t('projectHistory.title') }}</h2>
-    </div>
-    <Button size="sm" variant="outline" class="shrink-0" data-generate aria-haspopup="dialog" @click="start">
+  <!-- A quiet toolbar button (Jevons 11-01): the preview is a rare tool, never a bar pinned under the page. -->
+  <span class="project-history">
+    <Button size="sm" variant="ghost" class="shrink-0" data-generate aria-haspopup="dialog" :title="t('projectHistory.title')" @click="start">
       {{ preview ? t('projectHistory.regenerate') : t('projectHistory.generate') }}
     </Button>
 
@@ -169,17 +167,12 @@ function mergeLabel(item: ProjectPreview) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  </section>
+  </span>
 </template>
 
 <style scoped>
 /* A slim bar under the projects, on the page gutter and clear of the dock; the preview itself is a dialog. */
-.project-history {
-  display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 16px;
-  /* As wide as the page's column above it (rec#38), never wider. */
-  width: min(calc(100% - 2 * var(--page-gutter)), var(--layout-max)); margin: 0 auto var(--dock-clearance); padding: 10px 16px; border: 1px solid var(--color-border);
-  border-radius: var(--radius-card); background: var(--card);
-}
+.project-history { display: inline-flex; }
 .project-history-hint, .project-history-summary { margin: 2px 0 0; color: var(--color-muted); font-size: 13px; line-height: 1.6; }
 .project-history-summary.is-incomplete { color: var(--color-warning); font-weight: 600; }
 .project-history-state { color: var(--color-danger); }
