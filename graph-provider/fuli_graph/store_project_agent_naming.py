@@ -96,3 +96,22 @@ async def with_rename_suggestion(store, record):
     names = await space_agent_names(store, record.personal_space_id)
     return record.model_copy(update={
         'name_suggestion': unique_nickname(record.agent_id, _taken(names, record.agent_id))})
+
+
+def renamed_profile(names, agent_id: str, profile: dict, display_name: str | None) -> dict:
+    """The stored profile with the name a person chose (rec#11 D-89).
+
+    Every Agent can be renamed, FULI's own roles included; identity stays the
+    agent_id. A role keeps its built-in name as a second name people may still
+    call it by, so no other Agent may take that name, and None gives the role
+    its built-in name back. Any other Agent always has a name of its own.
+    """
+    if display_name is None:
+        if agent_id not in SYSTEM_PROFILES:
+            raise HTTPException(422, 'agent_name_required: only a built-in role can go back to its own name')
+        return {key: value for key, value in profile.items() if key != 'display_name'}
+    taken = _taken(names, agent_id) | {identity_key(SYSTEM_PROFILES[other]().name)
+                                       for other in SYSTEM_PROFILES if other != agent_id}
+    if identity_key(display_name) in taken:
+        raise _name_taken(free_nicknames(agent_id, taken))
+    return {**profile, 'display_name': display_name}

@@ -4,7 +4,8 @@ What a host session saved while nobody chose where it applies waits in that
 session's temporary project. Once the session works in a formal project, the
 person is offered to move those items there: the preview lists exactly the
 items still held, and the person moves all of them or any subset. Nothing
-moves on its own, and an Agent can only link to the console page.
+moves on its own, and an Agent can only link to the console page, except
+the topic promotion below.
 
 Each item moves through the quick edit's own scope change
 (knowledge_scope_edit.apply_scope_change): the same ID, a scope_change
@@ -13,6 +14,12 @@ The whole batch is one transaction. When any chosen item changed since the
 preview (a newer edit revision, or it no longer waits there), nothing moves
 and the answer names every such item, so the person decides on what is
 stored now.
+
+One Agent/system path exists (rec#11 D-86): when the person's setting lets
+Astro form a recurring topic into a project, or the person accepts it, what
+the topic's own sessions hold moves there (move_session_knowledge), recorded
+as the Assistant with a reason naming the topic. It moves exactly what is
+held when it runs, with the same guard and revisions as the person's batch.
 """
 from fastapi import HTTPException
 
@@ -20,7 +27,8 @@ from .knowledge_item_version import edit_revision
 from .knowledge_item_view import item_evidence, item_scope, item_summary, personal_reader_space, scope_projects
 from .knowledge_item_view_models import KnowledgeScopeChange
 from .knowledge_management import _read_item
-from .knowledge_scope_edit import apply_scope_change, scope_editor_space
+from .knowledge_project_scope import refused_for_match
+from .knowledge_scope_edit import apply_scope_change, place_scope_as, scope_editor_space
 from .knowledge_versions import lock_knowledge
 from .knowledge_visibility import fla_own_work_cypher, hidden_refs, reader_parameter, request_reader
 from .knowledge_session_migration_models import (
@@ -65,16 +73,7 @@ async def apply_session_migration(store, actor: dict, request: SessionMigrationA
         # reference or reassignment lands in between (dot P1-2).
         await lock_knowledge(scoped, space)
         await _target_project(scoped, actor, space, request.target_project_id)
-        held = {(item_kind, item_id) for item_kind, item_id, _ in await held_items(scoped, space, temporary_id)}
-        stale = []
-        for item in request.items:
-            if (item.item_kind, item.item_id) not in held:
-                stale.append({'item_kind': item.item_kind, 'item_id': item.item_id, 'reason': 'not_held'})
-                continue
-            version = await edit_revision(scoped, space, item.item_kind, item.item_id)
-            if version != item.expected_version:
-                stale.append({'item_kind': item.item_kind, 'item_id': item.item_id, 'reason': 'changed',
-                              'current_version': version})
+        stale = await _stale_items(scoped, space, temporary_id, request.items)
         if stale:
             raise HTTPException(status_code=409, detail={
                 'code': 'stale_version', 'stale_items': stale,
@@ -86,6 +85,43 @@ async def apply_session_migration(store, actor: dict, request: SessionMigrationA
                 reason=request.reason, scope='projects', project_ids=[request.target_project_id]))
             moved.append(SessionMigrationMoved(**result))
     return SessionMigrationResult(target_project_id=request.target_project_id, moved=moved)
+
+
+async def move_session_knowledge(scoped, actor: dict, space: dict, temporary_id: str, target_project_id: str, *,
+                                 author_id: str, reason: str) -> dict:
+    """The Agent/system path (rec#11 D-86): every item the session holds now
+    moves to the target, inside the caller's transaction and knowledge lock.
+    Each moves at the version read under that lock, through the same scope
+    change and revision as the person's batch. An entity the target already
+    has a match for stays held: only the person decides how two relate."""
+    await _target_project(scoped, actor, space, target_project_id)
+    moved, kept = [], []
+    for item_kind, item_id, _ in await held_items(scoped, space, temporary_id):
+        version = await edit_revision(scoped, space, item_kind, item_id)
+        try:
+            moved.append(await place_scope_as(scoped, actor, space, author_id, item_kind, item_id,
+                                              expected_version=version, project_ids=[target_project_id],
+                                              reason=reason))
+        except HTTPException as error:
+            if not refused_for_match(error):
+                raise
+            kept.append({'item_kind': item_kind, 'item_id': item_id, 'reason': 'project_has_match'})
+    return {'moved': moved, 'kept': kept}
+
+
+async def _stale_items(scoped, space, temporary_id, items) -> list[dict]:
+    """Each chosen item no longer held, or at another version than was shown."""
+    held = {(item_kind, item_id) for item_kind, item_id, _ in await held_items(scoped, space, temporary_id)}
+    stale = []
+    for item in items:
+        if (item.item_kind, item.item_id) not in held:
+            stale.append({'item_kind': item.item_kind, 'item_id': item.item_id, 'reason': 'not_held'})
+            continue
+        version = await edit_revision(scoped, space, item.item_kind, item.item_id)
+        if version != item.expected_version:
+            stale.append({'item_kind': item.item_kind, 'item_id': item.item_id, 'reason': 'changed',
+                          'current_version': version})
+    return stale
 
 
 async def held_items(store, space, temporary_id) -> list[tuple[str, str, dict]]:

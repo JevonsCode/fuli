@@ -2,8 +2,11 @@
 from fastapi import HTTPException
 from .conversation_scope import conversation_scope_id
 from .graph_field_contract import stored_fields
+from .knowledge_versions import lock_knowledge
 from .provider_values import now_utc
+from .store_transactions import query_store_transaction
 from .system_agents import SYSTEM_ASSISTANT_AGENT_ID as ASSISTANT_AGENT_ID
+from .topic_knowledge_migration import move_topic_knowledge, return_topic_knowledge
 
 
 def topic_key(topic):
@@ -94,38 +97,51 @@ class StoreConversationTriage:
             space_id=space_id, key=key, topic=' '.join(topic.split()), count=count, now=now_utc().isoformat())
 
     async def form_conversation_topic(self, actor, request):
-        """Attach every open conversation of a topic to its formed project; idempotent."""
+        """Attach every open conversation of a topic to its formed project, and
+        move what their sessions hold into it (topic_knowledge_migration), in
+        one transaction under the knowledge lock; idempotent."""
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         await self.get_personal_project(actor, request.personal_space_id, request.personal_project_id)
-        rows, _, _ = await self.runtime.driver.execute_query(
-            "MATCH (t:FuliConversationTriage {space_id: $space_id, topic_key: $key, kind: 'topic'}) "
-            'WHERE t.formed_project_id IS NULL OR t.formed_project_id = $project '
-            'SET t.formed_project_id = $project, t.formed_at = coalesce(t.formed_at, $now) '
-            'RETURN t.id AS id ORDER BY id',
-            space_id=space['id'], key=topic_key(request.topic), project=request.personal_project_id,
-            now=now_utc().isoformat())
-        return {'personal_project_id': request.personal_project_id,
-                'conversation_ids': [row['id'] for row in rows]}
+        async with query_store_transaction(self) as scoped:
+            await lock_knowledge(scoped, space)
+            rows, _, _ = await scoped.runtime.driver.execute_query(
+                "MATCH (t:FuliConversationTriage {space_id: $space_id, topic_key: $key, kind: 'topic'}) "
+                'WHERE t.formed_project_id IS NULL OR t.formed_project_id = $project '
+                'SET t.formed_project_id = $project, t.formed_at = coalesce(t.formed_at, $now) '
+                'RETURN t.id AS id ORDER BY id',
+                space_id=space['id'], key=topic_key(request.topic), project=request.personal_project_id,
+                now=now_utc().isoformat())
+            conversation_ids = [row['id'] for row in rows]
+            knowledge = await move_topic_knowledge(scoped, actor, space, ' '.join(request.topic.split()),
+                                                   request.personal_project_id, conversation_ids)
+        return {'personal_project_id': request.personal_project_id, 'conversation_ids': conversation_ids,
+                'knowledge': knowledge}
 
     async def reopen_conversation_topic(self, actor, request):
         """Undo a formation (rec#11 D-86): the topic's conversations formed into
-        this project are open again, and the topic counts as declined at that
-        size, so it is not formed or proposed again until it grows."""
+        this project are open again, what their sessions' knowledge moved there
+        and nobody changed since goes back, and the topic counts as declined at
+        that size, so it is not formed or proposed again until it grows."""
         self._require_personal()
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         key = topic_key(request.topic)
-        rows, _, _ = await self.runtime.driver.execute_query(
-            "MATCH (t:FuliConversationTriage {space_id: $space_id, topic_key: $key, kind: 'topic', "
-            'formed_project_id: $project}) REMOVE t.formed_project_id, t.formed_at '
-            'RETURN t.id AS id ORDER BY id',
-            space_id=space['id'], key=key, project=request.personal_project_id)
-        if not rows:
-            raise HTTPException(404, 'No conversation of this topic was formed into this project')
-        count = await self._topic_count(space['id'], key)
-        await self._remember_decline(space['id'], key, request.topic, count)
+        async with query_store_transaction(self) as scoped:
+            await lock_knowledge(scoped, space)
+            rows, _, _ = await scoped.runtime.driver.execute_query(
+                "MATCH (t:FuliConversationTriage {space_id: $space_id, topic_key: $key, kind: 'topic', "
+                'formed_project_id: $project}) REMOVE t.formed_project_id, t.formed_at '
+                'RETURN t.id AS id ORDER BY id',
+                space_id=space['id'], key=key, project=request.personal_project_id)
+            if not rows:
+                raise HTTPException(404, 'No conversation of this topic was formed into this project')
+            conversation_ids = [row['id'] for row in rows]
+            knowledge = await return_topic_knowledge(scoped, actor, space, ' '.join(request.topic.split()),
+                                                     request.personal_project_id, conversation_ids)
+            count = await scoped._topic_count(space['id'], key)
+            await scoped._remember_decline(space['id'], key, request.topic, count)
         return {'topic': ' '.join(request.topic.split()), 'personal_project_id': request.personal_project_id,
-                'conversation_ids': [row['id'] for row in rows], 'declined_count': count}
+                'conversation_ids': conversation_ids, 'declined_count': count, 'knowledge': knowledge}
 
     async def read_conversation_triage(self, actor, request):
         """One conversation's current attribution state, or None: the label (kind,

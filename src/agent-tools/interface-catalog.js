@@ -58,6 +58,8 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('PUT /api/personal-projects', 'upsert_personal_project'),
   local('POST /api/personal-projects/:projectId/parent', 'Moving a project under another one or to the top level (调整层级) decides which knowledge it inherits; the person does it in the projects view on the human-review channel, and an Agent can only suggest it.'),
   agent('PUT /api/project-agents', 'upsert_project_agent'),
+  agent('PUT /api/project-agents/:agentId/name', 'rename_project_agent'),
+  local('PUT /api/agent-avatars/:agentId', 'An Agent\'s look is the person\'s own choice of picture or drawing; Agents never change their own or another\'s.'),
   agent('DELETE /api/project-agents/:agentId', 'cleanup_test_project_agents'),
   local('PUT /api/project-agents/:agentId/occupation', 'A long-term occupation is set by a person; an Agent never infers it from one task.'),
   local('POST /api/occupations', 'The occupation catalog and the duties each occupation carries are defined by a person.'),

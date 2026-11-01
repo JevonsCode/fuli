@@ -40,7 +40,7 @@ const promoted = computed(() => {
 })
 const undoing = ref(false)
 const undoError = ref('')
-const undone = ref<{ topic: string, archived: boolean } | null>(null)
+const undone = ref<{ topic: string, archived: boolean, returned: number, kept: number } | null>(null)
 
 async function undo() {
   if (!promoted.value || undoing.value) return
@@ -48,7 +48,8 @@ async function undo() {
   undoError.value = ''
   try {
     const result = await undoTopicPromotion(props.spaceId, promoted.value.topic, promoted.value.project)
-    undone.value = { topic: promoted.value.topic, archived: result.project_archived }
+    undone.value = { topic: promoted.value.topic, archived: result.project_archived,
+      returned: result.knowledge_returned, kept: result.knowledge_kept }
     void load()
   } catch {
     undoError.value = t('agentRedesign.topicProposal.undoError', { topic: promoted.value.topic })
@@ -132,6 +133,10 @@ const busy = (proposal: TopicProposal, action: 'accept' | 'decline') =>
     </article>
     <p v-if="undone" class="ui-meta" role="status" data-topic-undone>
       {{ t(undone.archived ? 'agentRedesign.topicProposal.undone' : 'agentRedesign.topicProposal.undoneKept', { topic: undone.topic }) }}
+      <template v-if="undone.returned || undone.kept">
+        {{ t(undone.kept ? 'agentRedesign.topicProposal.knowledgeReturnedKept' : 'agentRedesign.topicProposal.knowledgeReturned',
+             { returned: undone.returned, kept: undone.kept }) }}
+      </template>
     </p>
     <GrowthLoading v-if="loading && !proposals.length" variant="inline" :label="t('agentRedesign.topicProposal.loading')" />
     <p v-if="loadError" class="ui-meta" role="alert">

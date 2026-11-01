@@ -77,7 +77,8 @@ describe('Astro topic proposals', () => {
 
   it('opens on a project Astro formed by itself, links to rename or move it, and undoes it (D-86)', async () => {
     getJson.mockResolvedValue({ proposals: [] })
-    postJson.mockResolvedValue({ project_archived: true, conversations: 3, ask_again_at: 6 })
+    postJson.mockResolvedValue({ project_archived: true, conversations: 3, ask_again_at: 6,
+      knowledge_returned: 4, knowledge_kept: 1 })
     const wrapper = renderPromoted()
     await flushPromises()
     const card = wrapper.get('[data-topic-promoted]')
@@ -89,5 +90,6 @@ describe('Astro topic proposals', () => {
       { personalSpaceId: 'space-a', topic: 'Garden', personalProjectId: 'garden' })
     expect(wrapper.find('[data-topic-promoted]').exists()).toBe(false)
     expect(wrapper.get('[data-topic-undone]').text()).toContain('归档')
+    expect(wrapper.get('[data-topic-undone]').text()).toContain('4 条知识已回到原会话暂存；1 条之后改过')
   })
 })

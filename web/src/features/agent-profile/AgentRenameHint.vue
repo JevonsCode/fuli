@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { putJson } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import type { ProjectAgentRecord } from "@/types";
+import { renameAgent } from "./agent-rename";
 import { agentDisplayName } from "./profile-model";
 
 // A quiet, non-blocking offer for an Agent whose shown name reads as a job
@@ -25,12 +25,7 @@ async function rename() {
   saving.value = true;
   error.value = "";
   try {
-    emit("saved", await putJson<ProjectAgentRecord>("/api/project-agents", {
-      personalSpaceId: agent.personalSpaceId,
-      personalProjectId: null,
-      agentId: agent.agentId,
-      profile: { ...agent.profile, displayName: suggestion.value },
-    }));
+    emit("saved", await renameAgent(agent, suggestion.value));
   } catch (cause) {
     error.value = t("agentProfiles.rename.failed", {
       reason: cause instanceof Error ? cause.message : t("agentProfiles.saveError"),

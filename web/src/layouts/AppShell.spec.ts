@@ -219,6 +219,20 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
+  it('leaves the H1 to a page that shows the name itself, keeping the tab title', async () => {
+    const profile = defineComponent({ setup() {
+      usePageTitle('Ada Lovelace', { inPage: true })
+      return () => h('h1', { class: 'routed-page' }, 'Ada Lovelace')
+    } })
+    const { wrapper } = await setup('/agents/personal-1/agent-a', {}, [
+      { path: '/agents/:spaceId/:agentId', component: profile, meta: { title: 'agentProfiles.profile', layout: 'canvas', detail: true } },
+    ])
+    expect(wrapper.find('.app-title').exists()).toBe(false)
+    expect(wrapper.findAll('h1').map(heading => heading.text())).toEqual(['Ada Lovelace'])
+    expect(document.title).toBe('Ada Lovelace · 复利')
+    wrapper.unmount()
+  })
+
   it('gives a detail page its own name alone: no section tabs beside it', async () => {
     const profile = defineComponent({ setup() { usePageTitle('Ada Lovelace'); return () => h('div', { class: 'routed-page' }) } })
     const { wrapper, router } = await setup('/agents/personal-1/agent-a', {}, [

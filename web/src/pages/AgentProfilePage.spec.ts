@@ -326,10 +326,13 @@ describe('Agent profile integration', () => {
 
   it('uses recorded assignments, team policy and actual shared work for its resume', async () => {
     const { wrapper } = await setup()
-    // The shell renders the page's one H1 from this title: the Agent's real name.
-    expect(pageTitle.value.text).toBe('Aster')
+    // The header carries the page's one H1, the Agent's real name, where it can be renamed;
+    // the shell keeps only the tab title (rec#11 D-89).
+    expect(pageTitle.value).toMatchObject({ text: 'Aster', inPage: true })
     expect(wrapper.get('.agent-portrait img').attributes('src')).toBe(agentAvatarUrl('alpha'))
-    expect(wrapper.find('h1').exists()).toBe(false)
+    expect(wrapper.findAll('h1').map(heading => heading.text())).toEqual(['Aster'])
+    expect(wrapper.find('[data-agent-name-edit]').exists()).toBe(true)
+    expect(wrapper.get('[data-agent-look-trigger]').attributes('aria-label')).toBe('更换 Aster 的头像')
     expect(wrapper.get('.agent-portrait').attributes('style')).toMatch(/--agent-identity: var\(--identity-[0-7]\)/)
     expect(wrapper.text()).toContain('Synthetic active project')
     expect(wrapper.text()).toContain('Synthetic previous project')

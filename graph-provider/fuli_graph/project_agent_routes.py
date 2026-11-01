@@ -21,6 +21,7 @@ from .project_agent_models import (
     ProjectAgentAssignmentReplace,
     ProjectAgentAssignmentReplaceResult,
     ProjectAgentRecord,
+    ProjectAgentRename,
     ProjectAgentStatus,
     ProjectAgentUpsert,
 )
@@ -177,6 +178,14 @@ def register_project_agent_routes(
         actor: Actor,
     ) -> ProjectAgentRecord:
         return await store.update_project_agent_occupation(actor, agent_id, request)
+
+    @application.put('/v1/project-agents/{agent_id}/name', response_model=ProjectAgentRecord)
+    async def rename_project_agent(
+        agent_id: str,
+        request: ProjectAgentRename,
+        actor: Actor,
+    ) -> ProjectAgentRecord:
+        return await store.rename_project_agent(actor, agent_id, request)
 
     @application.post(
         '/v1/project-agents/system-coordinator',
