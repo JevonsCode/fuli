@@ -49,10 +49,6 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
   final packageRoot = await _registeringPackage(exeDir);
   if (packageRoot != null) await _registry(WindowsNotificationIdentity(packageRoot: packageRoot).apply());
   final notifier = await OsNotifier.create(onClick: window.show);
-  final console = await ConsoleWebView.create(opener,
-      saver: DownloadSaver(),
-      onSaved: (file) => unawaited(notifier.notify(strings.fileSaved, file.path)),
-      caption: caption);
   final client = http.Client();
   final controller = FuliController(
     apiFor: (port) => HttpFuliApi(port: port, client: client),
@@ -75,6 +71,13 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
     await window.quit();
   }
 
+  // The tray menu and the console's first-run guide change the same setting.
+  Future<bool?> changeLaunchAtLogin(bool on) async {
+    launchAtLogin = await _registry(loginLaunch!.setEnabled(on)) ?? launchAtLogin;
+    showTray();
+    return launchAtLogin;
+  }
+
   // A fuli:// link only navigates: to this window, or to a console page in the browser.
   Future<void> follow(FuliLink link) async =>
       link.opensClient ? window.show() : opener.open(link.consolePage(await controller.consolePort()));
@@ -86,15 +89,15 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
     onExportDiagnostics: () => unawaited(follow(FuliLink.parse(diagnosticsLink)!)),
     onQuit: quit,
     onChangePort: runtime.canChangePort ? controller.changePort : null,
-    onLaunchAtLogin: loginLaunch == null
-        ? null
-        : (on) async {
-            launchAtLogin = await _registry(loginLaunch.setEnabled(on)) ?? launchAtLogin;
-            showTray();
-          },
+    onLaunchAtLogin: loginLaunch == null ? null : (on) => unawaited(changeLaunchAtLogin(on)),
   );
   controller.addListener(showTray);
   showTray();
+  final console = await ConsoleWebView.create(opener,
+      saver: DownloadSaver(),
+      onSaved: (file) => unawaited(notifier.notify(strings.fileSaved, file.path)),
+      caption: caption,
+      launchAtLogin: loginLaunch == null ? null : (read: () => launchAtLogin, change: changeLaunchAtLogin));
   window.onVisibilityChanged = controller.setVisible;
   if (quiet) controller.setVisible(false);
   // A second launch asks for the window or leaves its link in the inbox.

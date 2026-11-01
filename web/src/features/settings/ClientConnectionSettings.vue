@@ -10,14 +10,16 @@ import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import UiIcon from '@/ui/UiIcon.vue'
 import UiNotice from '@/ui/UiNotice.vue'
+import { useConsoleStore } from '@/stores/console'
 
-import { CUSTOM_CLIENT_FORMATS, connectActionKey, connectionSummary, shownClients, type ClientObservation, type ClientStatus,
+import { CUSTOM_CLIENT_FORMATS, canConnect, connectActionKey, connectionSummary, shownClients, type ClientObservation, type ClientStatus,
   type ConnectionResult, type ConnectionStatus, type CustomClient, type CustomClientFormat, type Format } from './client-connection-model'
 
 // Re-read configuration this often while the page is visible.
 const RECHECK_MS = 15_000
 const GUIDE_URL = 'https://github.com/JevonsCode/fuli/blob/main/docs/client-connections.md'
 
+const store = useConsoleStore()
 const configuration = ref<Record<Format, object> | null>(null)
 const format = ref<Format>('standard')
 const loading = ref(false)
@@ -130,7 +132,6 @@ async function removeClient(client: CustomClient) {
     finally { removing.value = '' }
   })
 }
-const canConnect = (client: ClientObservation) => client.detected && !client.manualOnly && client.status !== 'unknown'
 function schedule() {
   clearTimeout(timer)
   if (watching()) timer = setTimeout(() => void check(), RECHECK_MS)
@@ -194,7 +195,10 @@ async function copy() {
       <CardDescription class="connection-summary" data-connection-summary>
         <template v-if="observation?.available !== false && summary.total">{{ t('settings.connection.summary', summary) }}</template>
       </CardDescription>
-      <CardAction>
+      <CardAction class="connection-actions">
+        <Button variant="outline" size="sm" data-open-first-run-guide @click="store.reopenFirstRunGuide()">
+          {{ t('firstRun.reopen') }}
+        </Button>
         <Button variant="outline" size="icon-sm" class="connection-refresh" data-refresh-clients :disabled="checking"
           :title="t('settings.connection.clients.refresh')" :aria-label="t('settings.connection.clients.refresh')" @click="check">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8" /><path d="M4 3v5h5" /><path d="M4 13a8 8 0 0 0 14.6 4.5L20 16" /><path d="M20 21v-5h-5" /></svg>
@@ -326,6 +330,7 @@ async function copy() {
 /* One line is always reserved so the summary never pushes the sections down. */
 .connection-summary { min-height: 1.5em; }
 .connection-refresh svg { width: 18px; height: 18px; }
+.connection-actions { display: flex; gap: 8px; }
 /* Detected clients first, connecting by hand below, both full width. */
 .connection-sections { display: grid; gap: 28px; padding-inline: 24px; }
 .connection-section { display: grid; gap: 12px; align-content: start; min-width: 0; }

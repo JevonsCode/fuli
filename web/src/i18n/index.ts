@@ -42,6 +42,7 @@ import { sessionRecordsMessages } from './messages/session-records'
 import { sessionMigrationMessages } from './messages/session-migration'
 import { knowledgeTagsMessages } from './messages/knowledge-tags'
 import { captureMessages } from './messages/capture'
+import { firstRunMessages } from './messages/first-run'
 import { clientLinksMessages } from './messages/client-links'
 import { taskBlockerMessages } from './messages/task-blocker'
 import { taskReasonMessages } from './messages/task-reason'
@@ -121,6 +122,7 @@ export const messages = {
     sessionMigration: sessionMigrationMessages['zh-CN'],
     knowledgeTags: knowledgeTagsMessages['zh-CN'],
     capture: captureMessages['zh-CN'],
+    firstRun: firstRunMessages['zh-CN'],
     clientLinks: clientLinksMessages['zh-CN'],
     taskBlocker: taskBlockerMessages['zh-CN'],
     taskReason: taskReasonMessages['zh-CN'],
@@ -172,6 +174,7 @@ export const messages = {
     sessionMigration: sessionMigrationMessages['en-US'],
     knowledgeTags: knowledgeTagsMessages['en-US'],
     capture: captureMessages['en-US'],
+    firstRun: firstRunMessages['en-US'],
     clientLinks: clientLinksMessages['en-US'],
     taskBlocker: taskBlockerMessages['en-US'],
     taskReason: taskReasonMessages['en-US'],

@@ -20,26 +20,36 @@ import 'download_saver.dart';
 /// clipboard, which only the console's own page may. The console's top bar is
 /// the window's title bar: the page learns where the window's own controls are
 /// before it runs (`window.fuliDesktopClient`, web/src/lib/desktop-client.ts)
-/// and asks the client to move or maximise the window (`fuliWindow`).
+/// and asks the client to move or maximise the window (`fuliWindow`). Its
+/// first-run guide reads and sets launch at login (`fuliLaunchAtLogin`), the
+/// setting behind the tray menu's 「开机时启动」.
+/// Launch at login as the tray menu holds it: [read] is the current choice
+/// (null when reg.exe could not answer), [change] saves one and answers the
+/// choice afterwards.
+typedef LaunchAtLoginAccess = ({bool? Function() read, Future<bool?> Function(bool on) change});
+
 class ConsoleWebView {
-  ConsoleWebView._(this._environment, this._opener, this._saver, this._onSaved, this._caption);
+  ConsoleWebView._(this._environment, this._opener, this._saver, this._onSaved, this._caption, this._launchAtLogin);
 
   final WebViewEnvironment? _environment;
   final UrlOpener _opener;
   final DownloadSaver _saver;
   final void Function(File file) _onSaved;
   final CaptionControls _caption;
+  final LaunchAtLoginAccess? _launchAtLogin;
 
   static const saveHandler = 'fuliSaveFile';
   static const windowHandler = 'fuliWindow';
+  static const launchAtLoginHandler = 'fuliLaunchAtLogin';
 
   /// Null when this computer has no WebView runtime: the window then keeps
   /// its status page and opens the console in the browser.
   static Future<ConsoleWebView?> create(UrlOpener opener,
       {required DownloadSaver saver,
       required void Function(File file) onSaved,
-      required CaptionControls caption}) async {
-    if (!Platform.isWindows) return Platform.isMacOS ? ConsoleWebView._(null, opener, saver, onSaved, caption) : null;
+      required CaptionControls caption,
+      LaunchAtLoginAccess? launchAtLogin}) async {
+    if (!Platform.isWindows) return Platform.isMacOS ? ConsoleWebView._(null, opener, saver, onSaved, caption, null) : null;
     try {
       if (await WebViewEnvironment.getAvailableVersion() == null) return null;
       // Outside the versioned program folder, so console settings kept in
@@ -52,7 +62,8 @@ class ConsoleWebView {
           opener,
           saver,
           onSaved,
-          caption);
+          caption,
+          launchAtLogin);
     } on Object {
       return null;
     }
@@ -89,6 +100,18 @@ class ConsoleWebView {
         _ => null,
       };
 
+  /// Answers the console page's `{}` (read) or `{enabled: bool}` (set) with
+  /// `{available, enabled}`; unavailable without the setting (not an
+  /// installed Windows FULI) or when reg.exe could not answer.
+  static Future<Map<String, Object?>> launchAtLoginAction(LaunchAtLoginAccess? access, Object? request) async {
+    const unavailable = {'available': false};
+    if (access == null || request is! Map) return unavailable;
+    final wanted = request['enabled'];
+    if (request.containsKey('enabled') && wanted is! bool) return unavailable;
+    final enabled = wanted is bool ? await access.change(wanted) : access.read();
+    return enabled == null ? unavailable : {'available': true, 'enabled': enabled};
+  }
+
   /// Grants the console page reading the clipboard (its own menu's 粘贴);
   /// every other request, and any request from another page, is denied.
   static PermissionResponseAction permissionFor(PermissionRequest request, Uri console) {
@@ -122,6 +145,13 @@ class ConsoleWebView {
               callback: (arguments) async {
                 final page = await controller.getUrl();
                 if (page != null && isConsolePage(page, console)) await windowAction(_caption, arguments.firstOrNull);
+              });
+          controller.addJavaScriptHandler(
+              handlerName: launchAtLoginHandler,
+              callback: (arguments) async {
+                final page = await controller.getUrl();
+                if (page == null || !isConsolePage(page, console)) return {'available': false};
+                return launchAtLoginAction(_launchAtLogin, arguments.firstOrNull);
               });
           controller.addJavaScriptHandler(
             handlerName: saveHandler,

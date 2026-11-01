@@ -17,6 +17,7 @@ import {
 } from './capture-policy.js';
 import { createCaptureChanges } from './capture-change-confirmation.js';
 import { createCaptureOnboarding } from './capture-onboarding.js';
+import { createFirstRunGuide, firstRunGuidePathForRuntime } from './first-run-guide.js';
 import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from './capture-session-pause.js';
 import { setSessionCapturePause } from './session-capture-pause-request.js';
 import { readOwnSessionRecords } from './session-records.js';
@@ -147,6 +148,7 @@ export function openFederatedGraphApplication({
       agentAccessPolicyPathForRuntime(runtimeConfigPath)
     ),
     recallPolicyStore: recallPolicyStore ?? new RecallPolicyStore(recallPolicyPathForRuntime(runtimeConfigPath)),
+    firstRunGuide: createFirstRunGuide(firstRunGuidePathForRuntime(runtimeConfigPath)),
     tokenUsageResolver,
     consoleUrl: sourceConsoleUrl(runtimeConfigPath),
     fuliLinkOrigin: fuliLinkOrigin(),
@@ -189,6 +191,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     sessionCapturePauseStore = new SessionCapturePauseStore(),
     agentAccessPolicyStore = new AgentAccessPolicyStore(),
     recallPolicyStore = new RecallPolicyStore(),
+    // The console's first-run guide (first-run-guide.js); in memory unless opened on a data directory.
+    firstRunGuide = createFirstRunGuide(null),
     consoleUrl = sourceConsoleUrl(null),
     // `fuli:/` when receipt links can be fuli:// links (src/desktop/fuli-links.js), else null.
     fuliLinkOrigin = () => null,
@@ -210,6 +214,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       taskContext: (token, client) => this.taskContextRegistry.context(token, client) };
     this.captureChanges = createCaptureChanges(capturePolicyStore, captureChangeReads);
     this.captureOnboarding = createCaptureOnboarding(capturePolicyStore);
+    this.firstRunGuide = firstRunGuide;
     this.sessionCapturePauseStore = sessionCapturePauseStore;
     this.runtimeConfigPath = runtimeConfigPath;
     this.agentAccessPolicyStore = agentAccessPolicyStore;
@@ -627,6 +632,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       providers,
       capturePolicy: this.getCapturePolicy(),
       captureOnboarding: this.captureOnboarding.state(),
+      firstRunGuide: this.firstRunGuide.state(),
       agentAccessPolicy: this.getAgentAccessPolicy(),
       recallPolicy: this.getRecallPolicy(),
       publicProvider: { configured, status: publicStatus },

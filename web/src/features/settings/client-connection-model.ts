@@ -24,6 +24,11 @@ export function shownClients(observation: ConnectionStatus | null): ClientObserv
   return (observation?.clients ?? []).filter((client) => client.status !== 'not_detected')
 }
 
+// Whether FULI can write this client's configuration itself (「接入」), as opposed to the person by hand.
+export function canConnect(client: ClientObservation): boolean {
+  return client.detected && !client.manualOnly && client.status !== 'unknown'
+}
+
 // 「已接入 X/Y 个客户端」: the shown clients and every client described by hand.
 export function connectionSummary(observation: ConnectionStatus | null): { connected: number, total: number } {
   const clients = [...shownClients(observation), ...(observation?.customClients ?? [])]

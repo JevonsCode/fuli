@@ -46,4 +46,36 @@ void main() {
     }
     expect(caption.calls, ['startDragging', 'toggleMaximize']);
   });
+
+  // The first-run guide's 「开机启动」 switch: the tray menu's setting, read and set from the page.
+  group('launch at login', () {
+    bool? held = true;
+    final changes = <bool>[];
+    final access = (
+      read: () => held,
+      change: (bool on) async {
+        changes.add(on);
+        return held = on;
+      },
+    );
+    setUp(() {
+      held = true;
+      changes.clear();
+    });
+
+    test('the page reads the choice and changes it', () async {
+      expect(await ConsoleWebView.launchAtLoginAction(access, {}), {'available': true, 'enabled': true});
+      expect(await ConsoleWebView.launchAtLoginAction(access, {'enabled': false}), {'available': true, 'enabled': false});
+      expect(changes, [false]);
+    });
+
+    test('is unavailable without the setting, when reg.exe did not answer, or for a malformed request', () async {
+      expect(await ConsoleWebView.launchAtLoginAction(null, {}), {'available': false});
+      held = null;
+      expect(await ConsoleWebView.launchAtLoginAction(access, {}), {'available': false});
+      expect(await ConsoleWebView.launchAtLoginAction(access, 'on'), {'available': false});
+      expect(await ConsoleWebView.launchAtLoginAction(access, {'enabled': 'yes'}), {'available': false});
+      expect(changes, isEmpty);
+    });
+  });
 }

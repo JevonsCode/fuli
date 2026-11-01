@@ -48,6 +48,20 @@ export function requireJsonFormatVersion(document, format) {
     + `${format.versions.join(' or ')}`);
 }
 
+const UNREADABLE_RECORD = Object.freeze({ status: 'unreadable' });
+
+// A small state record (a first-run question, a guide): null when there is
+// none, `{ status: 'unreadable' }` for a file this FULI cannot read or does
+// not write, so a caller treats it as neither missing nor any known state.
+export function readJsonRecord(filePath, format) {
+  try {
+    const record = readJsonFile(filePath, null);
+    return record === null || format.versions.includes(record?.version) ? record : UNREADABLE_RECORD;
+  } catch {
+    return UNREADABLE_RECORD;
+  }
+}
+
 // Returns the version on disk (undefined when there is none to protect).
 export function assertJsonFormatWritable(filePath, format) {
   let stored;
