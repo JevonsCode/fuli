@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -30,6 +30,8 @@ type SurfaceState = { status: 'loading' } | { status: 'ready'; surfaces: AgentWo
 const surfaces = ref<Record<string, SurfaceState>>({})
 // The capsule stays up while a menu is open: focus has moved into the menu, outside the dock.
 const holding = ref(false)
+// A menu item that navigates away releases the hold even if the menu never reports closing.
+watch(() => route.fullPath, () => { holding.value = false })
 
 async function opened(open: boolean, agent: ProjectAgentRecord) {
   holding.value = open
