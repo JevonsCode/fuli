@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MINIMUM_LOADING_DISPLAY_MS } from '@/composables/useMinimumLoadingDisplay'
 
 const getJson = vi.hoisted(() => vi.fn())
+const patchJson = vi.hoisted(() => vi.fn())
 const graphCalls = vi.hoisted(() => ({
   clearSelection: vi.fn(),
   selectItem: vi.fn(() => true),
@@ -14,7 +15,7 @@ const graphCalls = vi.hoisted(() => ({
 }))
 
 // The real ApiError and apiErrorCode, so pages that tell API errors apart can still do so.
-vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson, patchJson: vi.fn() }))
+vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson, patchJson }))
 vi.mock('./GraphCanvas.vue', async () => {
   const { defineComponent, h } = await import('vue')
   return {
@@ -230,7 +231,6 @@ describe('KnowledgeWorkspace', () => {
       global: {
         plugins: [pinia, router],
         stubs: {
-          KnowledgeConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
@@ -288,7 +288,6 @@ describe('KnowledgeWorkspace', () => {
       global: {
         plugins: [pinia, router],
         stubs: {
-          KnowledgeConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
@@ -364,7 +363,6 @@ describe('KnowledgeWorkspace', () => {
       global: {
         plugins: [pinia, router],
         stubs: {
-          KnowledgeConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
@@ -442,7 +440,6 @@ describe('KnowledgeWorkspace', () => {
       global: {
         plugins: [pinia, router],
         stubs: {
-          KnowledgeConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
@@ -515,7 +512,9 @@ describe('KnowledgeWorkspace', () => {
     wrapper.unmount()
   })
 
-  it('confirms personal-profile knowledge without narrowing the mutation to the active project', async () => {
+  it('confirms personal-profile knowledge in one click without narrowing the mutation to the active project', async () => {
+    patchJson.mockReset()
+    patchJson.mockResolvedValue({})
     const preferenceId = 'preference-1'
     getJson.mockResolvedValue({
       nodes: [{
@@ -565,16 +564,6 @@ describe('KnowledgeWorkspace', () => {
       global: {
         plugins: [pinia, router],
         stubs: {
-          KnowledgeConfirmDialog: {
-            props: ['item', 'personalProjectId'],
-            template: `
-              <div
-                v-if="item"
-                data-testid="confirm-dialog-stub"
-                :data-project-id="personalProjectId ?? 'none'"
-              />
-            `,
-          },
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
@@ -584,11 +573,17 @@ describe('KnowledgeWorkspace', () => {
     })
     await finishInitialLoading()
 
+    const graphReads = () => getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/graph')).length
+    const readsBefore = graphReads()
     await body().get('.inspector-confirm-action').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="confirm-dialog-stub"]').attributes('data-project-id'))
-      .toBe('none')
+    expect(document.querySelector('.knowledge-confirm-dialog, [name="confirmation-acknowledged"]')).toBeNull()
+    expect(patchJson).toHaveBeenCalledTimes(1)
+    expect(patchJson).toHaveBeenCalledWith(`/api/knowledge/entity/${preferenceId}`, expect.objectContaining({
+      personalSpaceId: 'space-1', personalProjectId: null, action: 'confirm', confirmationStatus: 'confirmed' }))
+    // The page reads again, so the status shown is the server's.
+    expect(graphReads()).toBe(readsBefore + 1)
     wrapper.unmount()
   })
 
@@ -631,7 +626,6 @@ describe('KnowledgeWorkspace', () => {
       global: {
         plugins: [pinia, router],
         stubs: {
-          KnowledgeConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
@@ -722,7 +716,6 @@ describe('KnowledgeWorkspace', () => {
       global: {
         plugins: [pinia, router],
         stubs: {
-          KnowledgeConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
@@ -829,7 +822,6 @@ describe('KnowledgeWorkspace', () => {
       global: {
         plugins: [pinia, router],
         stubs: {
-          KnowledgeConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
@@ -891,7 +883,6 @@ describe('KnowledgeWorkspace', () => {
       global: {
         plugins: [pinia, router],
         stubs: {
-          KnowledgeConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,

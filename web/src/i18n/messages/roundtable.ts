@@ -2,7 +2,7 @@ export const roundtableMessages = {
   'zh-CN': {
     threads: '对话',
     sections: { mine: '你的对话', flas: 'FLA 之间' },
-    you: '你',
+    you: "@:{'common.me.name'}",
     composer: {
       label: '消息', placeholder: '输入消息，Enter 发送，Shift+Enter 换行', send: '发送', sending: '正在发送消息…',
       modeLabel: '对方怎么回复', modes: { board: '留言板', instant: '即时对话' },
@@ -69,7 +69,7 @@ export const roundtableMessages = {
   'en-US': {
     threads: 'Conversations',
     sections: { mine: 'Your conversations', flas: 'Between FLAs' },
-    you: 'You',
+    you: "@:{'common.me.name'}",
     composer: {
       label: 'Message', placeholder: 'Type a message; Enter sends, Shift+Enter adds a line', send: 'Send', sending: 'Sending message…',
       modeLabel: 'How they reply', modes: { board: 'Message board', instant: 'Instant chat' },

@@ -29,7 +29,7 @@ describe('RoundtableThreadChat', () => {
     const wrapper = mountChat(conversation())
     const bubbles = wrapper.findAll('[data-roundtable-bubble]')
     expect(bubbles.map(bubble => bubble.attributes('data-mine') ?? 'theirs')).toEqual(['true', 'theirs', 'true'])
-    expect(bubbles[0]!.text()).toContain('你')
+    expect(bubbles[0]!.text()).toContain('我')
     expect(bubbles[0]!.text()).toContain('Ada Vale 已回复')
     expect(bubbles[1]!.text()).toContain('Ada Vale')
     expect(bubbles[1]!.text()).toContain('新会话回答')

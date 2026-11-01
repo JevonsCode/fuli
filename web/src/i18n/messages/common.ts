@@ -1,6 +1,8 @@
 export const commonMessages = {
   'zh-CN': {
     brand: '复利',
+    // The current person wherever the console names them as an actor (MeLink).
+    me: { name: '我', link: '我的偏好' },
     language: {
       label: '界面语言',
       chinese: '中文',
@@ -48,6 +50,7 @@ export const commonMessages = {
   },
   'en-US': {
     brand: 'FULI',
+    me: { name: 'Me', link: 'My preferences' },
     language: {
       label: 'Interface language',
       chinese: '中文',

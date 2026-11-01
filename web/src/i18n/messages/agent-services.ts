@@ -52,7 +52,7 @@ export const agentServicesMessages = {
       clearing: '正在清空 {name} 的日志',
       clearConfirm: '确认清空',
       close: '关闭',
-      actor: { agent: 'Agent', person: '你', fuli: 'FULI' },
+      actor: { agent: 'Agent', fuli: 'FULI' },
       action: {
         registered: '登记', updated: '更新', restarted: '重新启动', stopped: '停止', started: '启动', exited: '自行结束',
         crashed: '崩溃', found_stopped: '发现已停止', stop_requested: '请求停止', stop_refused: '拒绝停止', output: '输出',
@@ -113,7 +113,7 @@ export const agentServicesMessages = {
       clearing: 'Clearing the log of {name}',
       clearConfirm: 'Confirm clear',
       close: 'Close',
-      actor: { agent: 'Agent', person: 'You', fuli: 'FULI' },
+      actor: { agent: 'Agent', fuli: 'FULI' },
       action: {
         registered: 'Registered', updated: 'Updated', restarted: 'Restarted', stopped: 'Stopped', started: 'Started', exited: 'Ended by itself',
         crashed: 'Crashed', found_stopped: 'Found stopped', stop_requested: 'Stop requested', stop_refused: 'Stop refused', output: 'Output',

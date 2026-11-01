@@ -54,6 +54,8 @@ const props = defineProps<{
   conversationLaunchers?: ConversationLauncherConfiguration
   // The console's personal space; without it nothing here can be deleted.
   spaceId?: string
+  /** A one-click confirmation of this item is on its way. */
+  confirming?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -205,7 +207,7 @@ function preferenceScopeLabel(item: KnowledgeItem) {
 
 <template>
   <div class="knowledge-inspector">
-    <PreferenceDetail v-if="mode === 'preference'" :item="item" :graph="graph" :editable="editable" :scope-label="props.preferenceScopeLabel" :status-label="preferenceStatusLabel" :conversation-launchers="conversationLaunchers" @confirm="emit('confirm', $event)" @edit="emit('edit', $event)" @open-replacement="emit('openReplacement', $event)" />
+    <PreferenceDetail v-if="mode === 'preference'" :item="item" :graph="graph" :editable="editable" :scope-label="props.preferenceScopeLabel" :status-label="preferenceStatusLabel" :conversation-launchers="conversationLaunchers" :confirming="confirming" @confirm="emit('confirm', $event)" @edit="emit('edit', $event)" @open-replacement="emit('openReplacement', $event)" />
     <template v-else>
       <section v-if="managementItem" class="inspector-project-material">
         <div>
@@ -369,6 +371,8 @@ function preferenceScopeLabel(item: KnowledgeItem) {
       <div v-if="hasActions" class="inspector-actions">
         <Button size="sm" class="inspector-confirm-action"
           v-if="canConfirm"
+          :loading="confirming"
+          :loading-label="t('knowledge.dialogs.confirm.confirming', { subject: t(item.profileAspect ? 'knowledge.dialogs.confirm.preferenceSubject' : 'knowledge.dialogs.confirm.knowledgeSubject') })"
           @click="emit('confirm', item)"
         >
           {{ item.profileAspect

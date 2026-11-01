@@ -10,7 +10,7 @@ import {
 } from '@/composables/useMinimumLoadingDisplay'
 import KnowledgeBatchConfirmDialog from '@/features/knowledge/KnowledgeBatchConfirmDialog.vue'
 import { reconcileKnowledgeWrites } from '@/features/knowledge/knowledge-write-lifecycle'
-import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
+import { useKnowledgeConfirm } from '@/features/knowledge/useKnowledgeConfirm'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import KnowledgePeek from '@/features/knowledge/KnowledgePeek.vue'
 import { useKnowledgeItemPeek } from '@/features/knowledge/useKnowledgeItemPeek'
@@ -41,7 +41,12 @@ const loadingMore = ref(false)
 const query = ref('')
 const activeQuadrant = ref('all')
 const activeReviewState = ref<'all' | KnowledgeReviewState>('all')
-const confirmingItem = ref<KnowledgeItem | null>(null)
+const { confirm: confirmItem, confirming } = useKnowledgeConfirm({
+  personalSpaceId: () => store.activePersonalSpace?.id ?? '',
+  personalProjectId: () => null,
+  accessDenied: revokeKnowledgeAccess,
+  reload: () => load(),
+})
 const editingItem = ref<KnowledgeItem | null>(null)
 const batchDialogOpen = ref(false)
 const loadingPreview = isLoadingPreviewEnabled()
@@ -203,7 +208,6 @@ function revokeKnowledgeAccess() {
   graph.value = null
   complete.value = false
   void peek.close()
-  confirmingItem.value = null
   editingItem.value = null
   batchDialogOpen.value = false
   loading.value = false
@@ -215,7 +219,6 @@ async function load(spaceId = store.activePersonalSpace?.id) {
   if (!spaceId) return
   const version = ++loadVersion
   loading.value = true
-  confirmingItem.value = null
   editingItem.value = null
   loadingMore.value = false
   complete.value = false
@@ -390,10 +393,11 @@ async function openReplacement(item: KnowledgeItem) {
 
     <KnowledgePeek
       :item="selectedItem"
-      :suspended="Boolean(editingItem || confirmingItem)"
+      :suspended="Boolean(editingItem)"
       :graph="graph"
       editable
-      @confirm="confirmingItem = $event"
+      :confirming="confirming"
+      @confirm="confirmItem"
       @edit="editingItem = $event"
       @open-replacement="openReplacement"
       @close="peek.close()"
@@ -407,15 +411,6 @@ async function openReplacement(item: KnowledgeItem) {
       :projects="store.state?.personalProjects ?? []"
       :replacement-items="items"
       @close="editingItem = null"
-      @saved="load()"
-      @reload="load()"
-      @access-denied="revokeKnowledgeAccess"
-    />
-    <KnowledgeConfirmDialog
-      :item="confirmingItem"
-      :personal-space-id="store.activePersonalSpace?.id ?? ''"
-      :personal-project-id="null"
-      @close="confirmingItem = null"
       @saved="load()"
       @reload="load()"
       @access-denied="revokeKnowledgeAccess"
