@@ -27,7 +27,7 @@ export const taskReasonMessages = {
       explicit_new_agent: '按要求新招一名 Agent',
       explicit_temporary_agent: '按要求安排一名临时 Agent',
       explicit_unassigned: '按要求暂不分配 Agent',
-      hr_unavailable: 'Bole 当前不可用，没法安排招聘',
+      hr_unavailable: '@:{\'roleNames.bole\'} 当前不可用，没法安排招聘',
     },
     // Which executor client runs it (the executor selection's reason).
     executor: {
@@ -87,7 +87,7 @@ export const taskReasonMessages = {
       explicit_new_agent: 'A new Agent was requested',
       explicit_temporary_agent: 'A temporary Agent was requested',
       explicit_unassigned: 'Left unassigned as requested',
-      hr_unavailable: 'Bole is not available to recruit',
+      hr_unavailable: '@:{\'roleNames.bole\'} is not available to recruit',
     },
     executor: {
       noUsableExecutor: 'no executor client is available',

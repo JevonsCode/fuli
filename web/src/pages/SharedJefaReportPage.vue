@@ -41,7 +41,7 @@ async function load() {
   <main class="shared-jefa-report">
     <header class="shared-jefa-report-bar">
       <div class="mx-auto flex w-full max-w-(--canvas-max) flex-wrap items-baseline gap-x-4 gap-y-1">
-        <strong class="text-xl">Jefa</strong>
+        <strong class="text-xl">{{ t('roleNames.jefa') }}</strong>
         <h1 class="m-0 text-lg font-semibold">{{ t('employees.share.title') }}</h1>
         <span class="ml-auto text-xs text-muted-foreground">{{ t('employees.share.readOnly') }}</span>
       </div>

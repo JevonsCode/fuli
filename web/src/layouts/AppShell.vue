@@ -6,6 +6,7 @@ import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import { loadAgentLooks } from '@/features/agent-profile/agent-looks'
+import { loadRoleNames } from '@/features/agent-profile/role-names'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
 import CaptureOnboardingDialog from '@/features/capture/CaptureOnboardingDialog.vue'
 import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
@@ -67,6 +68,8 @@ const sectionTabs = computed(() => route.meta.detail ? [] : destination.value?.s
 provide(AGENT_PINS_KEY, useAgentPins(activeSpaceId))
 // The looks the person chose for their Agents, read once for every portrait.
 watch(activeSpaceId, id => void loadAgentLooks(id), { immediate: true })
+// The names the built-in roles go by now, for every label that names one.
+watch(activeSpaceId, id => void loadRoleNames(id), { immediate: true })
 
 // The waiting-requests badge in the top bar stays fresh while the page is visible.
 const attention = useAgentAttention()

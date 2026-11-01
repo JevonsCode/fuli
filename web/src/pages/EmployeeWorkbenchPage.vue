@@ -19,6 +19,7 @@ import { isFormalProject } from '@/features/projects/project-origin'
 import EmployeeTaskDialog from '@/features/employees/EmployeeTaskDialog.vue'
 import EmployeeShareDialog from '@/features/employees/EmployeeShareDialog.vue'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
+import { roleName } from '@/features/agent-profile/role-names'
 import { employeeAvatarUrl } from '@/features/employees/avatars'
 import { useProjectBoardFilter } from '@/features/employees/project-board-filter'
 import { provideWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
@@ -27,7 +28,7 @@ import UiIcon from '@/ui/UiIcon.vue'
 import { agentProfilePath } from '@/features/agent-profile/profile-model'
 import { useConsoleStore } from '@/stores/console'
 import { t } from '@/i18n'
-import { employeeRoleLabel, employeeTemplates, employeeCatalogError, employeeCatalogLoading, employeeErrorMessage, refreshEmployeeCatalog, type EmployeeWorkspace } from '@/features/employees/catalog'
+import { employeeName, employeeRoleLabel, employeeTemplates, employeeCatalogError, employeeCatalogLoading, employeeErrorMessage, refreshEmployeeCatalog, type EmployeeWorkspace } from '@/features/employees/catalog'
 
 const route = useRoute()
 const router = useRouter()
@@ -59,7 +60,7 @@ const jefaRead = reactive(useJefaBoardLoad({
 }))
 const template = computed(() => isJefa.value ? jefaRead.template : employeeTemplates.value.find((entry) => entry.id === templateId.value))
 // The shell's H1 is the Agent's own name; the route title stands in until it is read.
-usePageTitle(() => template.value?.name ?? (isJefa.value ? 'Jefa' : ''))
+usePageTitle(() => (template.value ? employeeName(template.value) : isJefa.value ? roleName('jefa') : ''))
 const openedFromAgents = /^\/project-agents(\?|$)/
 const nativeWorkbenchView = computed(() => {
   const workbench = template.value?.workbench
@@ -368,7 +369,7 @@ async function projectsSaved() {
 </script>
 
 <template>
-  <section ref="pageRoot" class="view employee-workbench-view" :class="{ 'fills-height': !isNativeWorkbench || isNativeJudgment }" :aria-label="template?.name ?? t('employees.workbench')">
+  <section ref="pageRoot" class="view employee-workbench-view" :class="{ 'fills-height': !isNativeWorkbench || isNativeJudgment }" :aria-label="template ? employeeName(template) : t('employees.workbench')">
    <!-- The board, the iframe and Tonborg's record list fill the canvas and scroll inside; other native panels scroll with the page. -->
    <div class="employee-workbench-canvas mx-auto flex w-full max-w-(--layout-max) flex-col gap-3">
     <!-- The Agent's name is the shell's H1; this row says only what the name does not. -->
@@ -377,7 +378,7 @@ async function projectsSaved() {
       <div class="employee-workbench-identity">
         <span class="employee-workbench-mark" aria-hidden="true">
           <img v-if="employeeAvatarUrl(templateId)" :src="agentAvatarUrl(`employee.${templateId}`)" alt="" />
-          <template v-else>{{ template?.name.slice(0, 1) ?? 'A' }}</template>
+          <template v-else>{{ template ? employeeName(template).slice(0, 1) : 'A' }}</template>
         </span>
         <span class="employee-workbench-role" data-employee-role>{{ employeeRoleLabel({ id: templateId, role: template?.role ?? '' }) }}</span>
         <Button v-if="isJefa && supportsAllProjects" variant="ghost" size="icon" class="employee-share-button" :aria-label="t('employees.share.title')" :title="t('employees.share.title')" @click="shareOpen = true">

@@ -16,7 +16,7 @@ import { personalProjectsPath } from '@/router/paths'
 import { pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
 import type { PersonalProject } from '@/types'
 import {
-  employeeRoleLabel, employeeTemplates, fetchEmployeeCatalog, refreshEmployeeCatalog,
+  employeeName, employeeRoleLabel, employeeTemplates, fetchEmployeeCatalog, refreshEmployeeCatalog,
   employeeErrorMessage, type EmployeeRecruitmentResult, type EmployeeTemplate,
 } from './catalog'
 import { OptionSelect } from '@/components/ui/select'
@@ -179,10 +179,10 @@ function scopeKeydown(event: KeyboardEvent) {
       <div class="employee-profile">
         <span class="employee-avatar" aria-hidden="true">
           <img v-if="employeeAvatarUrl(selected.id)" :src="agentAvatarUrl(`employee.${selected.id}`)" alt="" />
-          <template v-else>{{ selected.name.slice(0, 1) }}</template>
+          <template v-else>{{ employeeName(selected).slice(0, 1) }}</template>
         </span>
         <div>
-          <h3>{{ selected.name }} <span>{{ employeeRoleLabel(selected) }}</span></h3>
+          <h3>{{ employeeName(selected) }} <span>{{ employeeRoleLabel(selected) }}</span></h3>
           <p>{{ selected.description }}</p>
           <p class="ui-meta">{{ selected.capabilities.join(' · ') }}</p>
         </div>
@@ -194,7 +194,7 @@ function scopeKeydown(event: KeyboardEvent) {
             {{ t(`employees.scope.${mode === 'all' ? 'continuousAll' : 'onlySelected'}`) }}
           </button>
         </div>
-        <p class="ui-meta" role="status">{{ scopeMode === 'all' ? t('employees.scope.allHint', { name: selected.name }) : t('employees.scope.selectedHint') }}</p>
+        <p class="ui-meta" role="status">{{ scopeMode === 'all' ? t('employees.scope.allHint', { name: employeeName(selected) }) : t('employees.scope.selectedHint') }}</p>
       </div>
       <OptionListbox v-model="selectionIds" :options="projectSelectOptions(projectOptions)" :label="t('employees.scope.label')" :hint="scopeMode === 'all' ? t('employees.scope.excludeHint') : t('employees.scope.snapshotHint')" :disabled="busy || selectionLoading || requiresReload" />
       <p v-if="scopeMode === 'all' && excludedIds.length" class="ui-meta">{{ t('employees.scope.excludedCount', { count: excludedIds.length }) }}</p>

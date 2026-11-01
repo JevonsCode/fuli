@@ -1,5 +1,6 @@
 import { ApiError, apiErrorCode, getJson, putJson } from '@/api/client'
 import { t } from '@/i18n'
+import { roleName as builtInRoleName } from '@/features/agent-profile/role-names'
 import { shortDigest } from '@/features/data-format/model'
 import { formatDateTime } from '@/lib/date-time'
 
@@ -16,9 +17,8 @@ export const MODEL_PROTOCOLS = ['openai_chat', 'anthropic_messages', 'typesafe_s
 export type ModelProtocol = typeof MODEL_PROTOCOLS[number]
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high'] as const
 
-// Astro's stable id is assistant; the others are named as they are.
-const ROLE_NAMES: Record<ModelRoleId, string> = { assistant: 'Astro', bole: 'Bole', jefa: 'Jefa', tonborg: 'Tonborg' }
-export const roleName = (role: ModelRoleId) => ROLE_NAMES[role]
+// A role by the name it goes by now; Astro's stable id is assistant.
+export const roleName = (role: ModelRoleId) => builtInRoleName(role === 'assistant' ? 'astro' : role)
 
 export interface ModelPricing {
   currency: string

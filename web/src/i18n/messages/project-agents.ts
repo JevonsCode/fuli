@@ -77,7 +77,7 @@ export const projectAgentMessages = {
     loading: '正在读取项目 Agent 列表…',
     loadError: '项目 Agent 暂时无法读取。',
     emptyTitle: '还没有项目 Agent',
-    emptyCopy: '开始项目任务后，Bole 会按需安排 Agent。',
+    emptyCopy: '开始项目任务后，@:{\'roleNames.bole\'} 会按需安排 Agent。',
     noMatchTitle: '没有匹配的 Agent',
     noMatchCopy: '调整项目、状态或搜索条件。',
     stats: {
@@ -490,7 +490,7 @@ export const projectAgentMessages = {
     loading: 'Loading the project Agent directory…',
     loadError: 'Project Agents are temporarily unavailable.',
     emptyTitle: 'No project Agents yet',
-    emptyCopy: 'Start a project task and Bole will staff an Agent.',
+    emptyCopy: 'Start a project task and @:{\'roleNames.bole\'} will staff an Agent.',
     noMatchTitle: 'No matching Agents',
     noMatchCopy: 'Change the project, status, or search filters.',
     stats: {
