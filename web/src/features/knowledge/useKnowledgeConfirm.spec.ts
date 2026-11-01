@@ -57,7 +57,7 @@ describe('useKnowledgeConfirm', () => {
         confirmedAt: expect.any(String),
       },
     })
-    expect(useConsoleStore().feedback).toEqual({ message: '这条偏好已确认，并记录了确认人和确认时间。', tone: 'success' })
+    expect(useConsoleStore().feedback).toMatchObject({ message: expect.stringMatching(/^已确认这条偏好：「.+」$/), tone: 'success', link: { to: expect."/knowledge/item/space-ok/entity/one" } })
     expect(reload).toHaveBeenCalledTimes(1)
     expect(api.confirming.value).toBe(false)
     wrapper.unmount()

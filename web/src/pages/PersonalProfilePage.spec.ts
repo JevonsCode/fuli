@@ -583,7 +583,7 @@ describe('PersonalProfilePage', () => {
         confirmedBy: { kind: 'user', label: '当前用户' },
       }),
     }))
-    expect(store.feedback).toEqual({ message: '这条偏好已确认，并记录了确认人和确认时间。', tone: 'success' })
+    expect(store.feedback).toMatchObject({ message: expect.stringMatching(/^已确认这条偏好：「.+」$/), tone: 'success', link: { to: expect.stringContaining("/knowledge/item/") } })
     expect(body().get('.preference-context strong').text()).toBe('已确认')
     expect(body().find('.inspector-confirm-action').exists()).toBe(false)
   })

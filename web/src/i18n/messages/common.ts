@@ -11,6 +11,7 @@ export const commonMessages = {
     },
     actions: {
       retry: '重试',
+      view: '查看',
       backHome: '返回首页',
       refresh: '刷新',
       close: '关闭',
@@ -60,6 +61,7 @@ export const commonMessages = {
     },
     actions: {
       retry: 'Retry',
+      view: 'View',
       backHome: 'Back to home',
       refresh: 'Refresh',
       close: 'Close',

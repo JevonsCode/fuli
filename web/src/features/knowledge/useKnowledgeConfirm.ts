@@ -6,6 +6,7 @@ import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeItem } from '@/types'
 import { itemConfirmationBasis } from './model'
 import { useKnowledgeWriteLifecycle } from './knowledge-write-lifecycle'
+import { itemEditPath } from '@/features/knowledge-quick-edit/model'
 
 /**
  * 「确认这条偏好 / 知识」 in one click (Jevons 11-02): the person's own click in
@@ -53,7 +54,9 @@ export function useKnowledgeConfirm(options: {
         confirmedAt: new Date().toISOString(),
       },
     }), () => { saved = true })
-    if (saved) store.notify(t('knowledge.dialogs.confirm.confirmed', { subject }))
+    // Names what was confirmed and opens it, where it can be corrected or confirmed again.
+    if (saved) store.notify(t('knowledge.dialogs.confirm.confirmed', { subject, title: excerpt(item.title || item.body) }),
+      { to: itemEditPath(personalSpaceId, { item_kind: item.itemKind, item_id: item.id }) })
     else if (error.value && !denied) store.reportError(new Error(error.value))
     // An unconfirmed result stays locked until a read shows the server's state.
     if (saved || locked.value) await options.reload()
@@ -61,3 +64,6 @@ export function useKnowledgeConfirm(options: {
 
   return { confirm, confirming: busy }
 }
+
+const EXCERPT = 24
+const excerpt = (text: string) => text.length > EXCERPT ? `${text.slice(0, EXCERPT)}…` : text

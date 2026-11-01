@@ -115,7 +115,7 @@ export const knowledgeDialogMessages = {
       knowledgeSubject: '这条知识',
       sourceSupport: '该内容由已保留的来源记录支持。',
       confirmationReason: '已核对内容与发现时象限，确认无误。',
-      confirmed: '{subject}已确认，并记录了确认人和确认时间。',
+      confirmed: '已确认{subject}：「{title}」',
       confirming: '正在确认{subject}…',
     },
     batch: {
@@ -267,7 +267,7 @@ export const knowledgeDialogMessages = {
       knowledgeSubject: 'this knowledge',
       sourceSupport: 'This content is supported by a retained source record.',
       confirmationReason: 'I reviewed the content and discovery quadrant and confirm they are accurate.',
-      confirmed: 'Confirmed {subject}, with confirmer and confirmation time recorded.',
+      confirmed: 'Confirmed {subject}: “{title}”',
       confirming: 'Confirming {subject}…',
     },
     batch: {

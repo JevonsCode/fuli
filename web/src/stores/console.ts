@@ -75,7 +75,8 @@ export const useConsoleStore = defineStore('console', () => {
   const refreshMessage = ref('')
   let refreshVersion = 0
   let refreshController: AbortController | undefined
-  const feedback = ref<{ message: string; tone: FeedbackTone } | null>(null)
+  // link: where the change can be seen and changed again (a route).
+  const feedback = ref<{ message: string; tone: FeedbackTone; link?: { to: string; label?: string } } | null>(null)
 
   const activePersonalSpace = computed(() => {
     const value = state.value
@@ -263,8 +264,8 @@ export const useConsoleStore = defineStore('console', () => {
     return state.value?.capabilities?.[name] === true
   }
 
-  function notify(message: string) {
-    feedback.value = { message, tone: 'success' }
+  function notify(message: string, link?: { to: string; label?: string }) {
+    feedback.value = { message, tone: 'success', ...(link ? { link } : {}) }
   }
 
   function reportError(error: unknown) {

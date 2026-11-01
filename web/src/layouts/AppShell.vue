@@ -11,7 +11,6 @@ import { loadRoleNames } from '@/features/agent-profile/role-names'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
 import CaptureOnboardingDialog from '@/features/capture/CaptureOnboardingDialog.vue'
 import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
-import CopyFixPrompt from '@/features/problem/CopyFixPrompt.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
@@ -21,7 +20,8 @@ import { vWindowDrag } from '@/lib/desktop-client'
 import { SPRING, motionConfigReduced } from '@/lib/motion'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { useConsoleStore } from '@/stores/console'
-import { UiIcon, UiIconButton, UiNotice } from '@/ui'
+import { UiIcon, UiIconButton } from '@/ui'
+import FeedbackToast from './FeedbackToast.vue'
 import { FULI_VERSION } from '@/version'
 import AppDock from './AppDock.vue'
 import WidgetSlot from '@/widgets/WidgetSlot.vue'
@@ -146,15 +146,7 @@ watchEffect(() => {
     </header>
     <main class="app-main">
       <NavigationRecovery />
-      <div v-if="store.feedback" class="app-feedback-row">
-        <UiNotice class="feedback-message" :tone="store.feedback.tone">
-          {{ store.feedback.message }}
-          <template #actions>
-            <CopyFixPrompt v-if="store.feedback.tone === 'error'" :what="store.feedback.message" />
-            <UiIconButton icon="close" size="sm" :label="t('common.actions.close')" @click="store.clearFeedback" />
-          </template>
-        </UiNotice>
-      </div>
+      <FeedbackToast />
       <RouterView v-slot="{ Component }"><component :is="Component" /></RouterView>
       <GlossaryLayer />
       <CaptureOnboardingDialog />
@@ -215,7 +207,6 @@ watchEffect(() => {
 .app-round.is-full { color: var(--color-ink); }
 .app-round :deep(.tray-papers) { transform-box: fill-box; animation: tray-papers-in var(--motion-enter); }
 @keyframes tray-papers-in { from { opacity: 0; transform: translateY(-5px); } }
-.app-feedback-row { flex: 0 0 auto; padding: 0 calc(var(--page-inline) + var(--scrollbar-size)) 8px var(--page-inline); }
 /* A long record name takes at most two lines. */
 .app-title.is-screen-reader-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .app-title:not(.is-screen-reader-only) { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

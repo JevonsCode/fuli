@@ -361,12 +361,8 @@ const spaceSelectOptions = computed(() =>
   }),
 )
 const editable = computed(() => scope.value === 'personal')
-const { confirm: confirmItem, confirming } = useKnowledgeConfirm({
-  personalSpaceId: () => store.activePersonalSpace?.id ?? spaceId.value,
-  personalProjectId: knowledgeMutationProjectId,
-  accessDenied: revokeKnowledgeAccess,
-  reload: loadGraph,
-})
+const { confirm: confirmItem, confirming } = useKnowledgeConfirm({ personalSpaceId: () => store.activePersonalSpace?.id ?? spaceId.value,
+  personalProjectId: knowledgeMutationProjectId, accessDenied: revokeKnowledgeAccess, reload: loadGraph })
 const activePersonalProject = computed(() =>
   personalProjects.value.find(({ project_id }) => project_id === projectId.value) ?? null,
 )
