@@ -2,8 +2,10 @@ import { createInterface } from 'node:readline';
 
 // A stand-in stdio MCP server for stdio-relay tests. It answers with its own
 // version (argv[2]); a version starting with "broken" exits at once, and the
-// method "slow" answers after a moment.
+// method "slow" answers after a moment. Run without a version (node --test
+// collects every file under test/), it does nothing.
 const version = process.argv[2];
+if (!version) process.exit(0);
 if (version.startsWith('broken')) process.exit(3);
 const send = message => process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
 createInterface({ input: process.stdin }).on('line', line => {
