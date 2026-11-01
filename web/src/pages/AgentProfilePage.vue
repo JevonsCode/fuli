@@ -342,7 +342,7 @@ onMounted(() => {
     class="view agent-profile-page"
     :aria-label="agent ? agentDisplayName(agent) : t('agentProfiles.profile')"
   >
-    <div class="@container mx-auto grid w-full max-w-(--layout-max) gap-4">
+    <div class="@container grid w-full gap-4">
       <BackLink class="agent-profile-back" to="/project-agents" :from="openedFromDirectory">{{ t("agentProfiles.back") }}</BackLink>
 
       <GrowthLoading
@@ -691,7 +691,6 @@ onMounted(() => {
 <style src="@/features/agent-profile/agent-profile.css" />
 
 <style scoped>
-.agent-profile-page { scrollbar-gutter: stable; }
 .agent-portrait.agent-identity {
   color: var(--agent-identity, var(--color-accent));
   background: var(--agent-identity-soft, var(--color-accent-soft));

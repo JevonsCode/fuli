@@ -371,7 +371,7 @@ async function projectsSaved() {
 <template>
   <section ref="pageRoot" class="view employee-workbench-view" :class="{ 'fills-height': !isNativeWorkbench || isNativeJudgment }" :aria-label="template ? employeeName(template) : t('employees.workbench')">
    <!-- The board, the iframe and Tonborg's record list fill the canvas and scroll inside; other native panels scroll with the page. -->
-   <div class="employee-workbench-canvas mx-auto flex w-full max-w-(--layout-max) flex-col gap-3">
+   <div class="employee-workbench-canvas flex w-full flex-col gap-3">
     <!-- The Agent's name is the shell's H1; this row says only what the name does not. -->
     <header class="employee-workbench-toolbar">
       <BackLink class="employee-workbench-back" to="/project-agents" :from="openedFromAgents">{{ t('agentProfiles.back') }}</BackLink>

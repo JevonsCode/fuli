@@ -253,7 +253,7 @@ function recordSaved(record: ProjectAgentRecord) {
 <template>
   <section ref="scroller" class="view project-agents-view" :aria-label="t('projectAgents.aria')">
     <GrowthLoading v-if="linkedAgent || resolvingTask" :label="linkedAgent ? t('projectAgents.opening') : t('projectAgents.openingTask')" />
-    <div v-else class="@container mx-auto grid w-full max-w-(--layout-max) gap-4">
+    <div v-else class="@container grid w-full gap-4">
       <!-- One toolbar: filters, then a row with the count and the actions. It stays
            in reach on tall screens and scrolls away on short ones. -->
       <div class="project-agents-toolbar">
@@ -347,7 +347,6 @@ function recordSaved(record: ProjectAgentRecord) {
 <style src="@/features/agent-profile/agent-profile.css" />
 
 <style scoped>
-.project-agents-view { scrollbar-gutter: stable; }
 .project-agents-toolbar {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px;
   padding-block: 4px 0; background: var(--color-bg);

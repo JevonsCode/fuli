@@ -160,7 +160,7 @@ const roomPath = (item: RoundtableChatRoom) => `/roundtables/chat/${encodeURICom
 .rt-view { display: flex; flex-direction: column; }
 /* An open conversation fills the page and scrolls inside, keeping the shell's dock clearance. */
 .rt-view.is-open { overflow: hidden; }
-.rt { display: flex; flex: 1 0 auto; flex-direction: column; gap: 24px; width: 100%; max-width: 960px; margin-inline: auto; }
+.rt { display: flex; flex: 1 0 auto; flex-direction: column; gap: 24px; width: 100%; }
 .is-open .rt { flex: 1 1 0; gap: 12px; min-height: 0; }
 .rt-back { align-self: flex-start; color: var(--color-muted); font-size: var(--text-control); text-decoration: none; }
 .rt-back:hover { color: var(--color-ink); }

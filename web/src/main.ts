@@ -19,6 +19,7 @@ import './styles/connections.css'
 import './styles/knowledge-graph.css'
 import './styles/vue.css'
 import './styles/project-overview.css'
+import './styles/page-columns.css'
 import './styles/primitives.css'
 import './styles/motion.css'
 

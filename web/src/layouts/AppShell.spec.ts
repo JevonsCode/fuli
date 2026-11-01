@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getJson } from '@/api/client'
 import { findTerm } from '@/features/glossary/terms'
+import { setLocale } from '@/i18n'
+import { fuliWordmarkUrl } from '@/lib/brand'
 import { useConsoleStore } from '@/stores/console'
 import AppShell from './AppShell.vue'
 import { usePageTitle } from './page-title'
@@ -178,6 +180,23 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
+  it('draws the brand with the official wordmark for the interface language, the service dot on its baseline row', async () => {
+    const { wrapper } = await setup('/')
+    const wordmark = wrapper.get('[data-wordmark]')
+    expect(wordmark.element.tagName).toBe('IMG')
+    expect(wordmark.attributes('src')).toBe(fuliWordmarkUrl('zh-CN'))
+    expect(wordmark.attributes('alt')).toBe('复利')
+    expect(wordmark.attributes('draggable')).toBe('false')
+    // The wordmark and the service dot share one row; no brand name is typed in the UI font.
+    expect(wrapper.get('.app-brand-word').element.contains(wrapper.get('[data-runtime]').element)).toBe(true)
+    expect(wrapper.get('.app-brand').text()).not.toContain('复利')
+    setLocale('en-US', { persist: false })
+    await flushPromises()
+    expect(wrapper.get('[data-wordmark]').attributes('src')).toBe(fuliWordmarkUrl('en-US'))
+    setLocale('zh-CN', { persist: false })
+    wrapper.unmount()
+  })
+
   it('shows the version on the service dot and names the service only when it is not ready', async () => {
     const { wrapper, store } = await setup('/')
     expect(wrapper.get('[data-runtime]').attributes('title')).toMatch(/ · v[0-9]/)
@@ -273,18 +292,11 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('lines the top bar up with the canvas or form column of rebuilt pages only', async () => {
-    const { wrapper, router } = await setup('/canvas', {}, [
-      { path: '/canvas', component: { template: '<div />' }, meta: { title: '画布', layout: 'canvas' } },
-      { path: '/form', component: { template: '<div />' }, meta: { title: '表单', layout: 'form' } },
-    ])
-    expect(wrapper.get('.app-main').attributes('data-layout')).toBe('canvas')
-    await router.push('/form')
-    await flushPromises()
-    expect(wrapper.get('.app-main').attributes('data-layout')).toBe('form')
-    await router.push('/')
-    await flushPromises()
+  it('gives every page one width: the page carries no layout of its own, and the top bar keeps its edges', async () => {
+    const { wrapper } = await setup('/')
     expect(wrapper.get('.app-main').attributes('data-layout')).toBeUndefined()
+    // The page's scrollbar room was measured once and handed to the top bar and fixed controls.
+    expect(document.documentElement.style.getPropertyValue('--scrollbar-size')).toMatch(/^\d+px$/)
     wrapper.unmount()
   })
 

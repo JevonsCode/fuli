@@ -34,20 +34,16 @@ import { fuliMarkUrl } from '@/lib/brand'
 </template>
 
 <style scoped>
-/* The shell's column (--layout-max) its title lines up with. */
 .about-view {
   padding-top: clamp(24px, 4vw, 48px);
   padding-bottom: 96px;
   color: var(--color-ink);
-  scrollbar-gutter: stable;
 }
 
 .about-content {
   width: 100%;
-  max-width: var(--layout-max);
   display: grid;
   gap: 72px;
-  margin: 0 auto;
 }
 
 .about-opening {

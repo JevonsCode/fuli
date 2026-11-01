@@ -140,6 +140,14 @@ describe('AppDock pinned FLA menu', () => {
     await wait(20)
   }
 
+  it('heads the pinned capsule with the button name, above the first portrait', async () => {
+    const { wrapper } = await setup('/project-agents')
+    const pins = wrapper.get('.app-dock-pins')
+    expect(pins.element.firstElementChild?.matches('[data-pins-label]')).toBe(true)
+    expect(pins.get('[data-pins-label]').text()).toBe('FLAs')
+    wrapper.unmount()
+  })
+
   it('keeps the capsule open while the menu is, then closes both once the pointer has left both', async () => {
     const { wrapper, pin, capsule } = await openMenu('pointer')
     expect(menu()).not.toBeNull()

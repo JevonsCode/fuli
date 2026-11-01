@@ -171,8 +171,8 @@ watch([spaceId, kind, itemId], () => {
 </script>
 
 <template>
-  <section class="view [scrollbar-gutter:stable]">
-  <div ref="root" class="mx-auto flex w-full max-w-(--layout-max) flex-col gap-4" data-knowledge-item-edit>
+  <section class="view">
+  <div ref="root" class="flex w-full flex-col gap-4" data-knowledge-item-edit>
     <BackLink to="/organize" :from="/^\/(organize|knowledge|preferences)/" class="text-sm">{{ t('knowledgeQuickEdit.back') }}</BackLink>
     <GrowthLoading v-if="showLoading" :label="t('knowledgeQuickEdit.loading')" />
     <section v-else-if="sourceDeletion" class="grid gap-3" data-source-deleted-page>
@@ -196,29 +196,32 @@ watch([spaceId, kind, itemId], () => {
           <RouterLink :to="currentVersionPath">{{ t('knowledgeQuickEdit.viewCurrent') }}</RouterLink>
         </Button>
       </div>
-      <KnowledgeBasisReview :item="item" :space-id="spaceId" @versioned="versioned" @failed="failed" />
-      <template v-if="active">
-        <KnowledgeScopeEditor :item="item" :space-id="spaceId" :projects="projects" @saved="saved" @failed="failed" />
-        <KnowledgeTagEditor :item="item" :space-id="spaceId" @changed="saved" @failed="failed" />
-      </template>
-      <KnowledgeContentEditor :item="item" :space-id="spaceId" @saved="saved" @versioned="versioned" @failed="failed" />
-      <Card v-if="item.bases?.length" as="section" data-item-bases>
-        <CardHeader>
-          <CardTitle as="h2">{{ t('knowledgeQuickEdit.bases.title') }}</CardTitle>
-          <CardDescription>{{ t('knowledgeQuickEdit.bases.help') }}</CardDescription>
-        </CardHeader>
-        <ul class="m-0 grid list-none gap-2 px-5 text-sm">
-          <li v-for="basis in item.bases" :key="basis.item_id" class="flex min-w-0 flex-wrap items-center gap-2">
-            <Badge :variant="versionTone(basis.status)">{{ versionStatusLabel(basis.status) }}</Badge>
-            <RouterLink :to="itemEditPath(spaceId, basis)" class="min-w-0 underline underline-offset-4 [overflow-wrap:anywhere]">
-              {{ basis.status === 'deleted' ? t('knowledgeHardDelete.deleted.basis') : basis.content }}
-            </RouterLink>
-          </li>
-        </ul>
-      </Card>
-      <KnowledgeItemDependents :item="item" :space-id="spaceId" @saved="saved" @failed="failed" />
-      <KnowledgeItemHistory :item="item" :space-id="spaceId" @open-version="openVersion" @source-deleted="sourceRemoved" />
-      <KnowledgeHardDeleteSection :item="item" :space-id="spaceId" @deleted="removed" />
+      <!-- The page's full width: the item's sections sit in two columns on a wide window. -->
+      <div class="page-columns">
+        <KnowledgeBasisReview :item="item" :space-id="spaceId" @versioned="versioned" @failed="failed" />
+        <template v-if="active">
+          <KnowledgeScopeEditor :item="item" :space-id="spaceId" :projects="projects" @saved="saved" @failed="failed" />
+          <KnowledgeTagEditor :item="item" :space-id="spaceId" @changed="saved" @failed="failed" />
+        </template>
+        <KnowledgeContentEditor :item="item" :space-id="spaceId" @saved="saved" @versioned="versioned" @failed="failed" />
+        <Card v-if="item.bases?.length" as="section" data-item-bases>
+          <CardHeader>
+            <CardTitle as="h2">{{ t('knowledgeQuickEdit.bases.title') }}</CardTitle>
+            <CardDescription>{{ t('knowledgeQuickEdit.bases.help') }}</CardDescription>
+          </CardHeader>
+          <ul class="m-0 grid list-none gap-2 px-5 text-sm">
+            <li v-for="basis in item.bases" :key="basis.item_id" class="flex min-w-0 flex-wrap items-center gap-2">
+              <Badge :variant="versionTone(basis.status)">{{ versionStatusLabel(basis.status) }}</Badge>
+              <RouterLink :to="itemEditPath(spaceId, basis)" class="min-w-0 underline underline-offset-4 [overflow-wrap:anywhere]">
+                {{ basis.status === 'deleted' ? t('knowledgeHardDelete.deleted.basis') : basis.content }}
+              </RouterLink>
+            </li>
+          </ul>
+        </Card>
+        <KnowledgeItemDependents :item="item" :space-id="spaceId" @saved="saved" @failed="failed" />
+        <KnowledgeItemHistory :item="item" :space-id="spaceId" @open-version="openVersion" @source-deleted="sourceRemoved" />
+        <KnowledgeHardDeleteSection :item="item" :space-id="spaceId" @deleted="removed" />
+      </div>
     </template>
   </div>
   <Dialog :open="Boolean(peekVersion)" @update:open="peekOpenChange">

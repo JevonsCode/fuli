@@ -36,13 +36,9 @@ onBeforeUnmount(() => { attention.open = false })
 
 <template>
   <section class="view inbox-page">
-    <div class="@container mx-auto flex w-full max-w-(--layout-max) flex-col">
+    <div class="@container flex w-full flex-col">
       <AttentionWorkspace v-if="space" :personal-space-id="space" :projects="projects" :open-request-id="openRequestId"
         @open="peek.open({ spaceId: space, id: $event })" @close="peek.close()" />
     </div>
   </section>
 </template>
-
-<style scoped>
-.inbox-page { scrollbar-gutter: stable; }
-</style>

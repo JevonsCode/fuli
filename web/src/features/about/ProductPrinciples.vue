@@ -36,10 +36,10 @@ const principles = computed(() => PRINCIPLE_KEYS.map((key, position) => ({
   min-width: 0;
 }
 
-/* Full width: one column on a phone, two on a laptop, three on a big screen. */
+/* Full width: one column on a phone, two on a laptop, three at most (two even rows of the six). */
 .principle-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(max(min(100%, 300px), calc((100% - 80px) / 3)), 1fr));
   column-gap: 40px;
   margin: 0;
   padding: 0;

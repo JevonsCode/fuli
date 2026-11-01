@@ -69,11 +69,15 @@ function escape() {
         <motion.span v-if="destination.key === activeKey" layout-id="app-dock-active" class="app-dock-active" :transition="SPRING" aria-hidden="true" />
         <RouterLink :to="destination.to" class="app-dock-link"
           :aria-current="destination.key === activeKey ? 'page' : undefined" :aria-label="t(`shell.destinations.${destination.key}`)"
-          :data-tip="destination.key === 'agents' ? undefined : t(`shell.destinations.${destination.key}`)"
+          :data-tip="t(`shell.destinations.${destination.key}`)"
           :data-destination="destination.key" :data-term="`destination.${destination.key}`">
           <UiIcon :name="destination.icon" :size="20" />
         </RouterLink>
-        <div v-if="destination.key === 'agents'" class="app-dock-pins"><DockPins :space-id="spaceId" /></div>
+        <div v-if="destination.key === 'agents'" class="app-dock-pins">
+          <!-- The button's name heads the capsule, as every other button's name floats above it. -->
+          <span class="app-dock-pins-label" aria-hidden="true" data-pins-label>{{ t('shell.destinations.agents') }}</span>
+          <DockPins :space-id="spaceId" />
+        </div>
       </li>
     </ul>
   </nav>
@@ -82,7 +86,7 @@ function escape() {
 <style scoped>
 .app-dock {
   /* Left-aligned with the page canvas, which centres on very wide screens. */
-  position: fixed; bottom: 20px; left: max(var(--page-gutter), calc((100vw - var(--canvas-max)) / 2)); z-index: var(--z-nav);
+  position: fixed; bottom: 20px; left: var(--page-inline); z-index: var(--z-nav);
   padding: 5px; border: 1px solid var(--edge-dock); border-radius: var(--radius-pill);
   box-shadow: var(--shadow-glass);
 }
@@ -114,6 +118,8 @@ function escape() {
   transition: opacity var(--motion-fast), translate var(--motion-spring) var(--motion-ease-spring); translate: 0 4px;
 }
 .app-dock-link[data-tip]:hover::after, .app-dock-link[data-tip]:focus-visible::after { opacity: 1; translate: 0 0; }
+/* With pinned FLAs the name moves to the top of their capsule instead of floating inside it. */
+.app-dock-item.has-pins:has(.dock-pins) .app-dock-link::after { display: none; }
 /* Pinned FLAs rise in their own capsule once the pointer rests on the FLAs button (hover intent),
    so sweeping across the dock or moving up from it never opens them; keyboard focus opens them at once.
    Only keyboard focus (:focus-visible) holds them open: a clicked pin keeps focus after it navigates,
@@ -126,6 +132,13 @@ function escape() {
   transition: opacity var(--motion-fast), transform var(--motion-spring) var(--motion-ease-spring), visibility 0s linear var(--motion-fast);
 }
 .app-dock-pins::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 14px; }
+.app-dock-pins { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.app-dock-pins:not(:has(.dock-pins)) { display: none; }
+.app-dock-pins-label {
+  padding: 4px 10px; border: 1px solid var(--edge-glass); border-radius: var(--radius-pill); color: var(--color-ink);
+  background: var(--surface-glass-strong); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: var(--shadow-md); font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; user-select: none;
+}
 .app-dock-item.has-pins:hover .app-dock-pins {
   transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto; transition-delay: var(--motion-intent);
 }

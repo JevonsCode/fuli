@@ -38,8 +38,8 @@ watch([spaceId, episodes], () => { receipt.value = null; void load() }, { immedi
 </script>
 
 <template>
-  <section class="view [scrollbar-gutter:stable]">
-  <div class="mx-auto flex w-full max-w-(--layout-max) flex-col gap-4" data-turn-receipt>
+  <section class="view">
+  <div class="flex w-full flex-col gap-4" data-turn-receipt>
     <GrowthLoading v-if="showLoading" :label="t('knowledgeQuickEdit.loadingTurn')" />
     <div v-else-if="error" role="alert" class="grid justify-items-start gap-2">
       <p class="m-0">{{ t('knowledgeQuickEdit.turnLoadFailed', { error }) }}</p>
@@ -52,7 +52,7 @@ watch([spaceId, episodes], () => { receipt.value = null; void load() }, { immedi
       <p v-if="receipt.deleted_count" class="m-0 text-sm text-muted-foreground" data-turn-deleted>
         {{ t('knowledgeHardDelete.receipt.deleted', { count: receipt.deleted_count }) }}
       </p>
-      <ol class="m-0 grid list-none gap-3 p-0">
+      <ol class="page-columns m-0 list-none p-0">
         <li v-for="entry in receipt.entries" :key="`${entry.item_kind}:${entry.item_id}`" class="grid gap-2"
           :data-turn-entry="entry.item_id">
           <div class="flex flex-wrap items-center gap-2">
