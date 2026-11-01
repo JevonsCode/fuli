@@ -496,6 +496,60 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('shows a capture switch for each detected client and any turned off, after finding them', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.runtimeStatus = 'ready'
+    store.state = { mode: 'personal_only', activePersonalSpaceId: 'personal-1',
+      personalSpaces: [{ id: 'personal-1', name: '我' }], personalProjects: [], projects: [], subscriptions: [],
+      capturePolicy: { enabled: true, disabledSources: ['cursor'] }, agentAccessPolicy: { enabled: true },
+      capabilities: { browsePublicProjects: false, submitKnowledge: false, reviewProposals: false } } as never
+    const answers: Array<(response: Response) => void> = []
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
+      if (String(input) === '/api/system/client-connection/status') return new Promise<Response>(resolve => { answers.push(resolve) })
+      return Response.json({}, { status: 503 })
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
+    await flushPromises()
+    const card = wrapper.get('.behavior-card')
+    expect(card.find('[data-capture-source]').exists()).toBe(false)
+    expect(card.get('.growth-loading').attributes('aria-label')).toBe('正在查找本机的客户端…')
+    const client = (id: string, status: string) => ({ id, label: id, status, detected: status !== 'not_detected', previouslyConnected: false, changes: [] })
+    for (const answer of answers) answer(Response.json({ observedAt: '2026-11-02T08:00:00.000Z', historySaved: true, clients: [
+      client('claude-code', 'connected'), client('codex', 'not_connected'),
+      client('cursor', 'not_detected'), client('opencode', 'not_detected'), client('claude-desktop', 'connected')] }))
+    await flushPromises()
+    expect(card.find('.growth-loading').exists()).toBe(false)
+    expect(card.findAll('[data-capture-source]').map(row => row.attributes('data-capture-source'))).toEqual(['claude_code', 'codex', 'cursor'])
+    expect(card.get('[data-capture-source="cursor"] [role="switch"]').attributes('aria-checked')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('keeps every capture switch, without a warning, when the clients cannot be read', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.runtimeStatus = 'ready'
+    store.state = { mode: 'personal_only', activePersonalSpaceId: 'personal-1',
+      personalSpaces: [{ id: 'personal-1', name: '我' }], personalProjects: [], projects: [], subscriptions: [],
+      capturePolicy: { enabled: true }, agentAccessPolicy: { enabled: true },
+      capabilities: { browsePublicProjects: false, submitKnowledge: false, reviewProposals: false } } as never
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
+      return Response.json({}, { status: 503 })
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
+    await flushPromises()
+    const card = wrapper.get('.behavior-card')
+    expect(card.findAll('[data-capture-source]').map(row => row.attributes('data-capture-source')))
+      .toEqual(['claude_code', 'codex', 'cursor', 'opencode'])
+    expect(card.find('.ui-notice').exists()).toBe(false)
+    expect(card.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('answers from confirmed knowledge by default and lets the person require file checks', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
