@@ -53,7 +53,7 @@ const total = computed(() => fill(props.sheet.progress))
 /* Glass, like the dock: it floats over the page and blurs what scrolls beneath. */
 .island {
   width: min(var(--island-width, 330px), 100%); min-width: 0; padding: 4px; border: 1px solid var(--edge-glass); border-radius: 30px;
-  background: var(--surface-glass-strong); backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%);
+  background: var(--surface-glass-strong); -webkit-backdrop-filter: blur(24px) saturate(160%); backdrop-filter: blur(24px) saturate(160%);
   box-shadow: 0 0 0 .5px rgb(var(--shadow-rgb) / 8%), 0 10px 30px -10px rgb(var(--shadow-rgb) / 26%);
 }
 .island.is-wide { --island-width: 440px; }
