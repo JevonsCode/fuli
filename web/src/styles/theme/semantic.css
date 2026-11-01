@@ -43,10 +43,10 @@
   --surface-dock: rgb(255 255 255 / 40%);
   /* A taller glass panel over busy content (the pinned FLAs) takes a little more tint. */
   --surface-dock-panel: rgb(255 255 255 / 56%);
-  /* A faint sheen on the glass (Jevons 11-01): pale pink at the top-left corner, pale gold at the
-     bottom-right, the middle stays the neutral tint. */
-  --glass-sheen: radial-gradient(120% 140% at 0% 0%, rgb(255 205 220 / 42%), transparent 55%),
-    radial-gradient(120% 140% at 100% 100%, rgb(255 222 160 / 42%), transparent 55%);
+  /* A faint sheen on the glass (Jevons 11-01, lighter 11-02): a breath of pink in the top-left
+     corner and of gold in the bottom-right; everything between stays the neutral tint. */
+  --glass-sheen: radial-gradient(60% 90% at 0% 0%, rgb(255 205 220 / 22%), transparent 70%),
+    radial-gradient(60% 90% at 100% 100%, rgb(255 222 160 / 22%), transparent 70%);
   --filter-dock: blur(22px) saturate(180%);
   /* Glass lifts off the page: a hairline ring, a soft near shadow and a wide drop, plus a light top edge. */
   --shadow-glass: 0 0 0 .5px rgb(var(--shadow-rgb) / 12%), 0 2px 6px rgb(var(--shadow-rgb) / 8%),

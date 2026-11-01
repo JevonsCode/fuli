@@ -37,6 +37,12 @@ describe('glossary terms', () => {
     expect(findTerm(host.querySelector('p'))).toBeUndefined()
   })
 
+  it('explains FULI\'s own words FLA, FLAs and FLG wherever they show', () => {
+    const host = html('<span>FLA</span><span>FLAs</span><span>FLG</span>')
+    const spans = host.querySelectorAll('span')
+    expect([...spans].map(span => findTerm(span)?.term.id)).toEqual(['concept.fla', 'concept.flas', 'concept.flg'])
+  })
+
   it('explains every destination and section only where it is tagged, never a common word elsewhere', () => {
     for (const [group, keys] of [['destination', messages['zh-CN'].shell.destinations], ['section', messages['zh-CN'].shell.sections]] as const) {
       for (const key of Object.keys(keys)) expect(GLOSSARY_TERMS.some(term => term.id === `${group}.${key}`), `${group}.${key}`).toBe(true)

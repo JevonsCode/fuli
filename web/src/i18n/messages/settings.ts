@@ -230,7 +230,7 @@ export const settingsMessages = {
     },
     tabs: { label: '设置分组', memory: '记忆与访问', clients: '客户端', network: '网络', system: '系统', version: '版本' },
     version: {
-      title: '版本',
+      title: '更新',
       current: '当前版本',
       beta: '接收测试版',
       betaMeta: '打开后也提示 Beta 版更新，能更早用到新功能，偶尔会有问题；关闭后只提示正式版。',
@@ -240,7 +240,7 @@ export const settingsMessages = {
       unavailable: '暂时检查不了新版本',
       checkedAt: '检查于 {time}',
     },
-    groups: { capture: '采集与回答', access: 'Agent 访问', lan: '局域网', interface: '界面', runtime: '运行', advanced: '高级' },
+    groups: { capture: '采集与回答', access: 'Agent 访问', lan: '局域网', interface: '界面', runtime: '运行' },
     searchEverywhere: '正在显示全部分组里的匹配项',
     fieldErrors: {
       required: '请填写这一项',
@@ -523,7 +523,7 @@ export const settingsMessages = {
     },
     tabs: { label: 'Settings sections', memory: 'Memory & access', clients: 'Clients', network: 'Network', system: 'System', version: 'Version' },
     version: {
-      title: 'Version',
+      title: 'Updates',
       current: 'This version',
       beta: 'Receive beta releases',
       betaMeta: 'When on, beta updates are offered too: new features sooner, with the odd rough edge. When off, only stable releases are offered.',
@@ -533,7 +533,7 @@ export const settingsMessages = {
       unavailable: 'Cannot check for a newer version right now',
       checkedAt: 'Checked {time}',
     },
-    groups: { capture: 'Capture and answers', access: 'Agent access', lan: 'Local network', interface: 'Interface', runtime: 'Runtime', advanced: 'Advanced' },
+    groups: { capture: 'Capture and answers', access: 'Agent access', lan: 'Local network', interface: 'Interface', runtime: 'Runtime' },
     searchEverywhere: 'Showing matches from every section',
     fieldErrors: {
       required: 'Fill in this field',

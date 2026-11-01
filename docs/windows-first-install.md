@@ -39,20 +39,26 @@ FuliTray.exe is no longer built.
 - Launch at login is on for an installed client until the person turns off
   「开机时启动」 in the tray menu (`HKCU\Software\Fuli\DesktopClient\LaunchAtLogin`).
   The entry is `HKCU\...\CurrentVersion\Run\FULI` =
-  `"<package>\Fuli.exe" --background` (tray icon only). Each client start points it
+  `"<package>\Fuli.exe" --background` (tray icon only). Each start of the installed client points it
   at its own version; an update or rollback points an existing entry at the version
   it installs, or removes it when that version has no desktop client (the old tray
   takes no arguments). Uninstall removes the entry, the client settings key and the
   notification identity `HKCU\Software\Classes\AppUserModelId\FULI`.
 - `fuli://` links open the installed client: `HKCU\Software\Classes\fuli` (`URL Protocol`)
-  with `shell\open\command` = `"<package>\Fuli.exe" "%1"`. Each installed client start
+  with `shell\open\command` = `"<package>\Fuli.exe" "%1"`. Each start of the installed client
   points it at its own version; updates and rollbacks follow it like the launch-at-login
   entry, and uninstall removes the key when it opens this installation. A rollback to a
   version whose client predates `fuli://` keeps the key on that launcher, which refuses
   the link with its message until a newer client registers again.
-- Windows notifications use that registered identity, never a Start-menu shortcut:
+- Windows notifications use the identity `HKCU\Software\Classes\AppUserModelId\FULI`
+  (`DisplayName` FULI, `IconUri` the installed client's `fuli.png`), which each start of
+  the installed client writes where it is missing or differs. Never a Start-menu shortcut:
   stamping one into `Fuli.lnk` would change the installer's shortcut, and updates
   refuse a changed shortcut.
+- "The installed client" is a release build that is the version `installation.json` names
+  now. A debug or profile build (`flutter run`), a client build folder, a package that was
+  never installed and an older version kept for rollback do not write these per-user
+  entries at all: there is one of each per user, shared by every FULI build on the machine.
 - The tray menu keeps the old tray's 「换一个端口」 (`windows-controller.js
   change-port`); a start that fails on a port Windows reserves says to use it.
 - Icons come from the FULI mark in `brand/` with a green, amber or red status dot:

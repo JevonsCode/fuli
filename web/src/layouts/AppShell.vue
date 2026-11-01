@@ -106,7 +106,7 @@ watchEffect(() => {
 <template>
   <MotionConfig :reduced-motion="motionConfigReduced" :transition="SPRING">
   <div class="app-frame">
-    <GrowingBackdrop />
+    <GrowingBackdrop :destination="destination?.key" />
     <header v-window-drag class="app-topbar">
       <div class="app-topbar-inner">
         <div class="app-brand">

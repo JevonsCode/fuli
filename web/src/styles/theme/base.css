@@ -78,6 +78,8 @@
   --motion-intent: 280ms;
   --motion-pulse: 2400ms;
   --motion-blink: 1400ms;
+  /* The page backdrop's change of motif between destinations. */
+  --motion-crossfade: 600ms;
   --motion-ease: cubic-bezier(.2, .8, .2, 1);
   /* Lively motion (2026-11-01): a spring with a small overshoot for things
      that appear or move, a soft ease-out for what leaves. linear() is the
