@@ -72,6 +72,12 @@ function parseSetupLikeOptions(args, command) {
       seen.add(flag);
       continue;
     }
+    // fuli update --beta: follow the beta channel (package-version-checker.js).
+    if (flag === '--beta' && command === 'update') {
+      result.beta = true;
+      seen.add(flag);
+      continue;
+    }
     const booleanKey = BOOLEAN_OPTIONS[flag];
     if (booleanKey) {
       result[booleanKey] = true;

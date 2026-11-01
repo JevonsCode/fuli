@@ -789,6 +789,8 @@ export interface RuntimeSettings {
   notifications: { needsPersonUrl: string }
   agentNamingStyle: string
   topicPromotion: 'auto' | 'ask'
+  // Which releases the console offers (设置 › 版本).
+  updateChannel: 'stable' | 'beta'
 }
 
 export interface SystemSettingsResult {

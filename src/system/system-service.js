@@ -50,7 +50,7 @@ export function createSystemService({
   }),
   clientInstaller = createClientInstaller({ paths, runtimeConfigPath, installer: agentKits.clientInstaller }),
   executorAdapters = new Map(),
-  versionChecker = createPackageVersionChecker(),
+  versionChecker = null,
   update = consoleUpdate(paths.dataDir),
   // The data format plan (migration-plan.js) the doctor reads; null without a local installation.
   previewDataFormats = null,
@@ -80,6 +80,8 @@ export function createSystemService({
   }
 
   const configuredSettings = () => readSettings(paths.runtimeSettingsPath, { fallback: activeSettings() });
+  // Releases are offered from the person's update channel (版本 in settings).
+  versionChecker ??= createPackageVersionChecker({ channel: () => configuredSettings().updateChannel });
   const sessionOffers = createSessionOffers({ launcher: agentKits.sessionLauncher, configPath: paths.launcherHostConfigPath,
     readLaunchers: () => configuredSettings().conversationLaunchers, records: sessionClientRecords(paths.dataDir) });
   // The launcher's host configuration follows the settings whenever they are
@@ -150,7 +152,7 @@ export function createSystemService({
     updateStatus: () => update.status(),
     startUpdate: async ({ stopProcesses } = {}) => {
       const version = await versionChecker.check();
-      return update.start({ version: version.updateAvailable ? version.latestVersion : null, stopProcesses });
+      return update.start({ version: version.updateAvailable ? version.latestVersion : null, channel: version.channel, stopProcesses });
     },
     // FULI's 体检 and its repair of what needs no person (doctor.js, doctor-repair.js).
     doctor: () => doctor.check(),

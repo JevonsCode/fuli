@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { runLocalRuntimeCommand } from '../src/cli/local-runtime-command.js';
 import { parseLocalRuntimeOptions } from '../src/cli/local-runtime-options.js';
-import { DEFAULT_CONVERSATION_LAUNCHERS } from '../src/system/runtime-settings.js';
+import { DEFAULT_CONVERSATION_LAUNCHERS, DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 
 test('local runtime options leave persisted port and LAN defaults unresolved', () => {
   assert.deepEqual(parseLocalRuntimeOptions('start', ['--open']), {
@@ -163,7 +163,8 @@ test('fl restart applies persisted ports and LAN settings when CLI overrides are
     conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS,
     notifications: { needsPersonUrl: '' },
     agentNamingStyle: '',
-    topicPromotion: 'auto'
+    topicPromotion: 'auto',
+    updateChannel: DEFAULT_RUNTIME_SETTINGS.updateChannel
   };
   await runLocalRuntimeCommand('restart', [], {
     resolvePaths: () => ({
