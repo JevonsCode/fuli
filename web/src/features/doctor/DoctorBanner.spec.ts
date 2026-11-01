@@ -93,6 +93,7 @@ describe('DoctorBanner', () => {
     await flushPromises()
     let finish!: (value: unknown) => void
     api.postJson.mockReturnValueOnce(new Promise((resolve) => { finish = resolve }))
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
     await wrapper.get('[data-doctor-repair]').trigger('click')
     expect(api.postJson).toHaveBeenCalledWith('/api/system/doctor/repair', {})
     expect(wrapper.getComponent(GrowthLoading).props()).toMatchObject({ variant: 'inline', label: '正在自动修复：重新连接客户端…' })
@@ -109,10 +110,31 @@ describe('DoctorBanner', () => {
     await flushPromises()
     api.postJson.mockResolvedValueOnce({ results: [{ id: OUTDATED.id, outcome: 'failed', error: 'Client is unavailable for automatic connection' }],
       doctor: report('needs_person', [OUTDATED]) })
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
     await wrapper.get('[data-doctor-repair]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-doctor-failure]').text()).toBe('有 1 件没能自动修复：Client is unavailable for automatic connection')
     expect(wrapper.find('[data-doctor-repair]').exists()).toBe(true)
+  })
+
+  it('is a chip whose panel floats over the page and closes on Escape or a click outside', async () => {
+    api.getJson.mockResolvedValue(report('needs_person', [OUTDATED, SESSIONS]))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    const chip = wrapper.get('[data-doctor-toggle]')
+    expect(chip.text()).toBe('有 2 件事需要你')
+    expect(chip.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('[data-doctor-panel]').exists()).toBe(false)
+    await chip.trigger('click')
+    expect(chip.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('[data-doctor-panel]').exists()).toBe(true)
+    await wrapper.get('[data-doctor-banner]').trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('[data-doctor-panel]').exists()).toBe(false)
+    await chip.trigger('click')
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-doctor-panel]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('says once that FULI moved its port by itself, not on the next read or the next visit', async () => {

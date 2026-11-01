@@ -9,6 +9,7 @@ export const doctorMessages = {
     repairing: '正在自动修复：重新连接客户端…',
     repaired: '已自动修复 {count} 件事',
     repairFailed: '有 {count} 件没能自动修复：{reason}',
+    repairFailedShort: '自动修复没完成',
     listLabel: '需要你处理的事',
     open: '去处理',
     kinds: {
@@ -43,6 +44,7 @@ export const doctorMessages = {
     repairing: 'Fixing automatically: reconnecting clients…',
     repaired: 'Fixed {count} things automatically',
     repairFailed: '{count} could not be fixed automatically: {reason}',
+    repairFailedShort: 'Automatic repair did not finish',
     listLabel: 'Things that need you',
     open: 'Open',
     kinds: {
