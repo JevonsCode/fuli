@@ -1,6 +1,7 @@
 export const commonMessages = {
   'zh-CN': {
     brand: '复利',
+    breadcrumb: '页面位置',
     language: {
       label: '界面语言',
       chinese: '中文',
@@ -48,6 +49,7 @@ export const commonMessages = {
   },
   'en-US': {
     brand: 'FULI',
+    breadcrumb: 'Breadcrumb',
     language: {
       label: 'Interface language',
       chinese: '中文',

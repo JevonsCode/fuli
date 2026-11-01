@@ -66,7 +66,7 @@ describe('localized route metadata', () => {
   it('localizes Agent profile and management routes', () => {
     expect(routeMetaText(router.resolve('/agents/space/agent').meta.title)).toBe('主页')
     expect(routeMetaText(router.resolve('/project-agents/manage').meta.title)).toBe('编排')
-    // An Agent's 编排 page falls back to a name of its own, never the 「← 编排」 beside it.
+    // An Agent's 编排 page falls back to a name of its own, never the 编排 crumb above it.
     expect(routeMetaText(router.resolve('/project-agents/manage/space/agent').meta.title)).toBe('Agent')
     setLocale('en-US', { persist: false })
     expect(routeMetaText(router.resolve('/agents/space/agent').meta.title)).toBe('Profile')

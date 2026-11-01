@@ -229,7 +229,7 @@ export const settingsMessages = {
       },
     },
     tabs: { label: '设置分组', memory: '记忆与访问', clients: '客户端', network: '网络', system: '系统' },
-    groups: { capture: '采集与回答', access: 'Agent 访问', lan: '局域网', interface: '界面', runtime: '运行', advanced: '高级' },
+    groups: { capture: '采集与回答', access: 'Agent 访问', lan: '局域网', interface: '界面', runtime: '运行' },
     searchEverywhere: '正在显示全部分组里的匹配项',
     fieldErrors: {
       required: '请填写这一项',
@@ -511,7 +511,7 @@ export const settingsMessages = {
       },
     },
     tabs: { label: 'Settings sections', memory: 'Memory & access', clients: 'Clients', network: 'Network', system: 'System' },
-    groups: { capture: 'Capture and answers', access: 'Agent access', lan: 'Local network', interface: 'Interface', runtime: 'Runtime', advanced: 'Advanced' },
+    groups: { capture: 'Capture and answers', access: 'Agent access', lan: 'Local network', interface: 'Interface', runtime: 'Runtime' },
     searchEverywhere: 'Showing matches from every section',
     fieldErrors: {
       required: 'Fill in this field',

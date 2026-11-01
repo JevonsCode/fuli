@@ -60,7 +60,8 @@ import {
   type KnowledgeSearchResult,
   type PersonalProjectDiscovery,
 } from './project-discovery'
-import AllProjectsBackLink from './AllProjectsBackLink.vue'
+import Breadcrumb from '@/components/Breadcrumb.vue'
+import { allProjectsCrumb } from './all-projects-crumb'
 import ProjectHistoryPreview from '@/features/project-history/ProjectHistoryPreview.vue'
 import { isProjectNode } from './graph-runtime'
 import { separateParentProjects } from './project-hierarchy'
@@ -1014,7 +1015,7 @@ function queryValues(value: unknown) {
     :class="{ 'graph-canvas-active': mode === 'graph', 'is-project-overview': mode === 'overview', 'is-directory': mode === 'directory' }"
   >
     <div class="knowledge-canvas">
-    <AllProjectsBackLink v-if="overviewAvailable" :space-id="spaceId" />
+    <Breadcrumb v-if="overviewAvailable" :parent="allProjectsCrumb(spaceId)" />
     <div class="knowledge-view-heading">
       <!-- The view is part of the URL; the tabs only change the route. -->
       <Tabs :model-value="mode" class="knowledge-mode-tabs" @update:model-value="changeMode($event as KnowledgeMode)">
