@@ -185,7 +185,12 @@ const BASELINE = Object.freeze({
   // (+115 B), measured bytes from the real tools/list.
   // Search index view: the same optional view and ids on search_current_project_knowledge,
   // 8,426 -> 8,641 B (+215 B, about 55 tokens a request), measured from the real tools/list.
-  chatToolSchemaBytes: 8641,
+  // rec#46: the chat listing drops minLength/maxLength/minItems/maxItems (calls still check them,
+  // list_agent_interfaces still returns them), as OpenCode code mode renders each as a JSDoc tag:
+  // 8,641 -> 7,343 B (-1,298 B), measured from the real tools/list. In OpenCode 2.2.4's catalog the
+  // fuli section goes 3,054 -> about 2,199 B (about -214 tokens on every step from the second);
+  // checkpoint_task_knowledge still does not fit its 2,000-token listing budget, so stays unlisted.
+  chatToolSchemaBytes: 7343,
   // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
   // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
   // 2,048 B (+7 B), measured. This is Claude Code's 2 KiB cap, so the next addition must shrink.

@@ -185,7 +185,7 @@ function registerDispatchTool(server) {
     title: 'CALL · Run a discovered Fuli tool',
     description: 'Run a Fuli tool by exact name with its input, after list_agent_interfaces(toolName) showed its schema. Same validation and permissions as calling it directly.',
     inputSchema: jsonSchemaToZod({ type: 'object', additionalProperties: false, required: ['toolName'],
-      properties: { toolName: { type: 'string', minLength: 1, maxLength: 128 }, input: { type: 'object' } } }),
+      properties: { toolName: { type: 'string' }, input: { type: 'object' } } }),
     outputSchema: openObjectSchema()
   }, () => { throw new Error('Handled by the Fuli call handler'); });
 }
