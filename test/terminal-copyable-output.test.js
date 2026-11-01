@@ -37,7 +37,7 @@ test('setup highlights copyable addresses, access code and commands only in a co
 test('start also highlights the management address and temporary access code', async () => {
   const lines = [];
   await runLocalRuntimeCommand('start', [], { output: tty, env, write: (line) => lines.push(line),
-    resolvePaths: () => ({}), discoverAgents: () => [],
+    resolvePaths: () => ({}), detectAgents: async () => ({ status: 'available', agents: [] }),
     start: async () => ({ status: 'started', url: fakeUrl, lan: true, lanUrls: [],
       lanAccess: { username: 'fuli', accessCode: fakeCode } }) });
   assert.match(lines.join('\n'), /\u001b\[1;36mhttp:\/\/127\.0\.0\.1:2727\u001b\[0m/);

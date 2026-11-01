@@ -7,11 +7,7 @@ import path from 'node:path';
 export async function exerciseAdapter(t, adapter) {
   const homeDir = mkdtempSync(path.join(tmpdir(), 'fuli-adapter-'));
   t.after(() => rmSync(homeDir, { recursive: true, force: true }));
-  const environment = { homeDir, env: {}, platform: process.platform, pathApi: path,
-    fileExists: () => false, commandExists: () => false };
-  assert.equal(adapter.detect(environment), null);
-  const agent = adapter.detect({ ...environment, commandExists: () => true });
-  assert.equal(agent.available, true);
+  const agent = adapter.target({ homeDir, env: {}, platform: process.platform, pathApi: path, fileExists: () => false });
   assert.ok(agent.configPath.startsWith(homeDir));
   const config = adapter.id === 'opencode' ? { theme: 'dark', mcp: { other: { type: 'local', command: ['other'] } } }
     : { theme: 'dark', mcpServers: { other: { command: 'other' } } };
@@ -26,7 +22,6 @@ export async function exerciseAdapter(t, adapter) {
   assert.deepEqual(servers.other, (config.mcp ?? config.mcpServers).other);
   const args = servers.fuli.args ?? servers.fuli.command;
   assert.equal(args[args.indexOf('--tool-profile') + 1], 'chat');
-  assert.equal(adapter.status(agent, context).registration.current, true);
   const modified = statSync(agent.configPath).mtimeMs;
   adapter.connect(agent, context);
   assert.equal(readFileSync(agent.configPath, 'utf8'), first);

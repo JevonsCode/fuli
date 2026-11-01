@@ -8,8 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { agentAdapter, agentAdapters } from './registry.js';
 import { loadClientDescriptorPacks } from './descriptor-packs.js';
-import { discoverAgents } from '../agents.js';
-import { inspectAgentInstallations } from '../agent-installation-status.js';
+import { agentTargets } from '../agents.js';
 
 const CONTEXT = Object.freeze({ platform: 'linux', nodePath: '/runtime/node', mcpServerPath: '/pkg/src/mcp-server.js',
   runtimeConfigPath: '/data/graph-runtime.json' });
@@ -44,15 +43,14 @@ function snapshot(homeDir) {
   return Object.fromEntries(walk(homeDir).sort().map((file) => [file, [readFileSync(path.join(homeDir, file), 'utf8'),
     statSync(path.join(homeDir, file)).mtimeMs]]));
 }
-const client = (id, homeDir) => discoverAgents({ homeDir, env: {}, includeUnavailable: true, commandExists: () => true,
+const client = (id, homeDir) => agentTargets({ homeDir, env: {},
   commandVersion: (command) => (command === 'opencode' ? '2.1.4' : null),
   fileExists: () => false }).find((agent) => agent.id === id);
-const current = (agent) => inspectAgentInstallations([agent], CONTEXT, { skillCurrent: () => true })[0].integrationDetails;
 
 test('every adapter, descriptor- or code-backed, has the same port shape', () => {
   for (const adapter of agentAdapters) {
-    assert.deepEqual(Object.keys(adapter).sort(), ['connect', 'detect', 'disconnect', 'id', 'status'], adapter.id);
-    for (const key of ['connect', 'detect', 'disconnect', 'status']) assert.equal(typeof adapter[key], 'function');
+    assert.deepEqual(Object.keys(adapter).sort(), ['connect', 'disconnect', 'id', 'target'], adapter.id);
+    for (const key of ['connect', 'disconnect', 'target']) assert.equal(typeof adapter[key], 'function');
   }
 });
 
@@ -65,8 +63,6 @@ for (const { id } of loadClientDescriptorPacks()) {
     const again = agentAdapter(id).connect(agent, CONTEXT);
     assert.equal(again.newTaskRequired ?? again.restartRequired, false);
     assert.deepEqual(snapshot(homeDir), connected, 'a second connect writes nothing');
-    assert.equal(current(agent).mcp, 'current');
-    assert.equal(current(agent).lifecycleHooks, 'current');
     for (const [relative, original] of Object.entries(PERSONAL[id])) {
       const text = read(homeDir, relative);
       if (relative.endsWith('.json')) {
@@ -85,10 +81,8 @@ for (const { id } of loadClientDescriptorPacks()) {
       assert.deepEqual(parsed(relative, read(homeDir, relative)), parsed(relative, original), relative);
     }
     assert.equal(agentAdapter(id).disconnect(agent).status, 'not_connected');
-    assert.equal(current(agent).mcp, 'missing');
     agentAdapter(id).connect(agent, CONTEXT);
     assert.deepEqual(Object.fromEntries(Object.entries(snapshot(homeDir)).map(([file, [text]]) => [file, text])), connected);
-    assert.equal(current(agent).mcp, 'current');
   });
 
   test(`${id}: a malformed client file is refused and left untouched`, (t) => {

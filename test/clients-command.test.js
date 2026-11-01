@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { runClientsCommand } from '../src/cli/clients-command.js';
 import { descriptorDigest } from '../src/setup/agents/descriptor-schema.js';
 import { agentAdapter } from '../src/setup/agents/registry.js';
-import { discoverAgents } from '../src/setup/agents.js';
+import { agentTargets } from '../src/setup/agents.js';
 import { writeTextFileAtomic } from '../src/storage/json-file.js';
 import { readClientPackState, writeClientPackState } from '../src/setup/agents/client-pack-store.js';
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -25,9 +25,10 @@ function fixture(t, id = 'codex', { connect = true } = {}) {
   const source = join(root, 'manifest.json'); writeFileSync(source, manifest);
   const env = { FULI_DATA_DIR: dataDir }; const output = [];
   const options = { env, homeDir, confirm: async () => true, write: text => output.push(text) };
-  const run = (args, overrides = {}) => runClientsCommand(args, { ...options, ...overrides });
-  const agent = discoverAgents({ homeDir, env, commandExists: command => command === 'opencode', includeUnavailable: true,
-    commandVersion: () => '2.1.4' }).find(value => value.id === id);
+  // agent-installer is simulated: it finds FULI's MCP entry exactly where this fixture connected the client.
+  const detect = async () => ({ status: 'available', clients: [{ id, components: { mcp: connect ? 'current' : 'missing' } }] });
+  const run = (args, overrides = {}) => runClientsCommand(args, { ...options, detect, ...overrides });
+  const agent = agentTargets({ homeDir, env, commandVersion: () => '2.1.4' }).find(value => value.id === id);
   if (connect) agentAdapter(id).connect(agent, { nodePath: process.execPath, mcpServerPath: join(root, 'fake-server.js'), runtimeConfigPath: join(dataDir, 'graph-runtime.json') });
   return { root, dataDir, homeDir, source, sha256: hash(manifest), run, agent, env, output };
 }
@@ -47,7 +48,7 @@ test('CLI trust -> check -> apply -> registry -> rollback; preview is read-only'
   assert.deepEqual(snapshot(f.root), before);
   assert.equal((await f.run(['update', '--apply', 'codex@99.0.0'])).status, 'applied');
   assert.match(readFileSync(f.agent.globalInstructionsPath, 'utf8'), /Synthetic rule/);
-  assert.equal(discoverAgents({ env: f.env, homeDir: f.homeDir, commandExists: () => false }).find(agent => agent.id === 'codex').label, 'Synthetic Client');
+  assert.equal(agentTargets({ env: f.env, homeDir: f.homeDir, commandVersion: () => null }).find(agent => agent.id === 'codex').label, 'Synthetic Client');
   const active = (await f.run(['status'])).find(pack => pack.id === 'codex'); assert.equal(active.version, '99.0.0');
   const after = snapshot(f.root); await f.run(['update']); assert.deepEqual(snapshot(f.root), after);
   assert.equal((await f.run(['rollback', 'codex'])).status, 'applied');
@@ -95,6 +96,7 @@ test('process interruption leaves the prior active version and requires explicit
     import { writeTextFileAtomic } from './src/storage/json-file.js';
     await runClientsCommand(['update','--apply','codex@99.0.0'], {
       env: ${JSON.stringify(f.env)}, homeDir: ${JSON.stringify(f.homeDir)}, confirm: async()=>true, write:()=>{},
+      detect: async () => ({ status: 'available', clients: [{ id: 'codex', components: { mcp: 'current' } }] }),
       writeFile: (path,text)=>{ writeTextFileAtomic(path,text,{durable:true}); process.exit(73); }
     });`;
   const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], { cwd: process.cwd(), encoding: 'utf8' });
@@ -155,7 +157,7 @@ test('update identifies its npm built-in release and the package upgrade path', 
 });
 
 for (const caller of ['install', 'observe', 'uninstall', 'start']) {
-  test(`${caller} discovers overridden paths and skills from its explicit data directory`, async t => {
+  test(`${caller} targets overridden paths and skills from its explicit data directory`, async t => {
     const f = fixture(t);
     const packPath = join(f.root, 'pack.json'); const pack = JSON.parse(readFileSync(packPath));
     pack.detection.clientHome.path = ['.codex-custom']; pack.detection.skillsRoot = { from: 'clientHome', path: ['skills'] }; pack.digest = descriptorDigest(pack);
@@ -165,28 +167,39 @@ for (const caller of ['install', 'observe', 'uninstall', 'start']) {
     await f.run(['trust', f.source, '--sha256', hash(manifestBytes)]);
     await f.run(['update', '--apply', 'codex@99.0.0']);
     const paths = resolveSetupPaths({ dataDir: f.dataDir, env: {}, homeDir: f.homeDir });
-    const discover = options => discoverAgents({ ...options,
-      env: { FULI_DATA_DIR: join(f.root, 'different-default') }, homeDir: f.homeDir, commandExists: () => true, commandVersion: () => null });
+    const targets = options => agentTargets({ ...options,
+      env: { FULI_DATA_DIR: join(f.root, 'different-default') }, homeDir: f.homeDir, commandVersion: () => null });
+    const installer = { status: async () => ({ status: 'available', extensionErrors: [], clients: [{ id: 'codex', name: 'Codex',
+      builtin: true, detected: true, platformSupported: true, state: 'not_connected', componentStates: [{ component: 'mcp', state: 'missing' }] }] }) };
+    const detected = async (paths, list) => {
+      const answer = await (await import('../src/agent-kits/client-detection.js')).detectAgents(installer, list);
+      return { ...answer, agents: answer.agents.map((agent) => ({ ...agent, integrationStatus: 'update_available' })) };
+    };
     const check = agent => {
       assert.equal(agent.configPath, join(f.homeDir, '.codex-custom', 'config.toml'));
       assert.ok(agent.skillPath.startsWith(join(f.homeDir, '.codex-custom')));
     };
     if (caller === 'install') {
-      const install = createClientInstaller({ paths, discover, install: async agent => { check(agent); return { status: 'connected' }; } });
+      const install = createClientInstaller({ paths, installer, targets: () => targets({ dataDir: paths.dataDir }),
+        install: async agent => { check(agent); return { status: 'connected' }; } });
       await install({ clientId: 'codex' });
     } else if (caller === 'observe') {
-      const observer = createClientConnectionObserver({ discover, context: { dataDir: paths.dataDir,
-        nodePath: process.execPath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath: paths.graphRuntimeConfigPath },
-        historyPath: join(paths.dataDir, 'observations.json'), inspect: agents => { check(agents.find(a => a.id === 'codex')); return []; } });
-      observer.observe();
+      // The observer reads writer targets only to know which clients FULI writes and how.
+      let read = false;
+      const observer = createClientConnectionObserver({ installer, customClients: { removable: () => new Set() },
+        targets: () => { const list = targets({ dataDir: paths.dataDir }); check(list.find(a => a.id === 'codex')); read = true; return list; },
+        historyPath: join(paths.dataDir, 'observations.json') });
+      await observer.observe();
+      assert.equal(read, true);
     } else if (caller === 'uninstall') {
-      const plan = planLocalUninstall({ dataDir: f.dataDir }, { env: {}, discover, resolvePaths: () => paths });
+      const plan = await planLocalUninstall({ dataDir: f.dataDir }, { env: {}, targets, detect: detected, resolvePaths: () => paths });
       check(plan.agents.find(a => a.id === 'codex'));
     } else {
       let inspected = false;
       const result = await runLocalRuntimeCommand('start', ['--data-dir', f.dataDir], { env: {},
-        resolvePaths: () => paths, discoverAgents: discover, inspectAgentInstallations: agents => {
-          check(agents.find(a => a.id === 'codex')); inspected = true; return [];
+        resolvePaths: () => paths, detectAgents: async () => {
+          const answer = await detected(paths, targets({ dataDir: paths.dataDir }));
+          check(answer.agents.find(a => a.id === 'codex')); inspected = true; return answer;
         }, start: async () => ({ status: 'started', url: 'http://synthetic.invalid' }), write: () => {} });
       assert.equal(result.agentSetupCheck.status, 'checked'); assert.equal(inspected, true);
     }
@@ -232,7 +245,7 @@ test('an equal-version npm descriptor retires the installed override and status 
   const state = readClientPackState(f.dataDir); const key = `${override.id}@${override.version}`;
   state.packages[key] = override; state.active[override.id] = key;
   writeClientPackState(f.dataDir, state);
-  assert.equal(discoverAgents({ env: f.env, homeDir: f.homeDir, commandExists: () => false }).find(agent => agent.id === 'codex').label, builtin.label);
+  assert.equal(agentTargets({ env: f.env, homeDir: f.homeDir, commandVersion: () => null }).find(agent => agent.id === 'codex').label, builtin.label);
   const status = (await f.run(['status'])).find(pack => pack.id === 'codex');
   assert.equal(status.version, builtin.version); assert.equal(status.retired, true);
 });

@@ -121,9 +121,9 @@ test('setup preview recommends native processes on a low-memory Mac', async () =
   assert.match(output[0], /--runtime-mode native/);
 });
 
-test('local setup planning is side-effect free and describes detected agents', () => {
+test('local setup planning is side-effect free and describes detected agents', async () => {
   let mutated = false;
-  const plan = planLocalSetup({ ...OPTIONS, port: null }, {
+  const plan = await planLocalSetup({ ...OPTIONS, port: null }, {
     resolvePaths: () => ({
       dataDir: 'C:/Fuli',
       backupDir: 'C:/Fuli/backups/agents',
@@ -132,11 +132,10 @@ test('local setup planning is side-effect free and describes detected agents', (
     }),
     readSettings: () => SAVED_RUNTIME_SETTINGS,
     settingsExist: () => true,
-    discover: () => [
+    detect: async () => ({ status: 'available', agents: [
       { id: 'codex', label: 'Codex', available: true, configPath: 'C:/Codex/config.toml' },
       { id: 'claude-code', label: 'Claude Code', available: false, configPath: 'C:/x' }
-    ],
-    inspectInstallations: (agents) => agents,
+    ] }),
     mutate: () => { mutated = true; }
   });
 
@@ -151,7 +150,7 @@ test('local setup planning is side-effect free and describes detected agents', (
   ]);
 });
 
-test('local setup recommends native mode on a low-memory Mac without overriding the choice', () => {
+test('local setup recommends native mode on a low-memory Mac without overriding the choice', async () => {
   const dependencies = {
     resolvePaths: () => ({
       dataDir: 'C:/Fuli',
@@ -159,13 +158,12 @@ test('local setup recommends native mode on a low-memory Mac without overriding 
       adaptiveRuntimeSettingsPath: null,
       mcpServerPath: 'C:/Package/src/mcp-server.js'
     }),
-    discover: () => [],
-    inspectInstallations: (agents) => agents,
+    detect: async () => ({ status: 'available', agents: [] }),
     platform: 'darwin',
     hostTotalMemory: () => 16 * 1024 ** 3
   };
 
-  const recommended = planLocalSetup({ ...OPTIONS, port: null }, dependencies);
+  const recommended = await planLocalSetup({ ...OPTIONS, port: null }, dependencies);
   assert.equal(recommended.runtimeSettings.graphRuntimeMode, 'container');
   assert.deepEqual(recommended.runtimeModeRecommendation, {
     recommendedMode: 'native',
@@ -173,7 +171,7 @@ test('local setup recommends native mode on a low-memory Mac without overriding 
     hostTotalBytes: 16 * 1024 ** 3
   });
 
-  const selected = planLocalSetup({
+  const selected = await planLocalSetup({
     ...OPTIONS,
     port: null,
     runtimeMode: 'native'
@@ -181,7 +179,7 @@ test('local setup recommends native mode on a low-memory Mac without overriding 
   assert.equal(selected.runtimeSettings.graphRuntimeMode, 'native');
 });
 
-test('first setup on Windows picks ports outside the ranges Windows reserves; saved or chosen ports stay', () => {
+test('first setup on Windows picks ports outside the ranges Windows reserves; saved or chosen ports stay', async () => {
   const reserved = [{ start: 2634, end: 2733 }, { start: 7600, end: 7699 }];
   const platforms = [];
   const dependencies = (settingsExist) => ({
@@ -190,21 +188,20 @@ test('first setup on Windows picks ports outside the ranges Windows reserves; sa
     readSettings: () => DEFAULT_RUNTIME_SETTINGS,
     settingsExist: () => settingsExist,
     readReservedRanges: ({ platform }) => { platforms.push(platform); return reserved; },
-    discover: () => [],
-    inspectInstallations: (agents) => agents,
+    detect: async () => ({ status: 'available', agents: [] }),
     platform: 'win32'
   });
 
-  const first = planLocalSetup({ ...OPTIONS, port: null }, dependencies(false));
+  const first = await planLocalSetup({ ...OPTIONS, port: null }, dependencies(false));
   assert.equal(first.runtimeSettings.ports.console, 2734);
   assert.equal(first.runtimeSettings.ports.personalNeo4jBolt, 7700);
   assert.equal(first.runtimeSettings.ports.personalProvider, DEFAULT_RUNTIME_SETTINGS.ports.personalProvider);
   assert.deepEqual(platforms, ['win32']);
   assert.match(formatSetupPreview(first, { ...OPTIONS, port: null }), /Management UI: http:\/\/127\.0\.0\.1:2734/);
 
-  assert.equal(planLocalSetup({ ...OPTIONS, port: null }, dependencies(true)).runtimeSettings.ports.console, 2727,
+  assert.equal((await planLocalSetup({ ...OPTIONS, port: null }, dependencies(true))).runtimeSettings.ports.console, 2727,
     'an existing installation keeps its saved ports');
-  assert.equal(planLocalSetup({ ...OPTIONS, port: 2727 }, dependencies(false)).runtimeSettings.ports.console, 2727,
+  assert.equal((await planLocalSetup({ ...OPTIONS, port: 2727 }, dependencies(false))).runtimeSettings.ports.console, 2727,
     'a port the person passed is kept');
   assert.deepEqual(platforms, ['win32']);
 });
@@ -578,16 +575,16 @@ test('applyLocalSetup runs post-connection self-check and formatSetupResult prin
       path: agent.skillPath,
       backupPath: null
     }),
-    inspectInstallations: (agents) => agents.map((agent) => ({
+    inspect: async (agent) => ({
       ...agent,
       integrationStatus: 'connected',
       integrationDetails: {
         mcp: 'current',
         skills: 'current',
-        bootstrap: 'current',
-        lifecycleHooks: 'current'
+        instructions: 'current',
+        hooks: 'current'
       }
-    }))
+    })
   });
 
   assert.equal(result.status, 'ready');
@@ -596,8 +593,8 @@ test('applyLocalSetup runs post-connection self-check and formatSetupResult prin
     details: {
       mcp: 'current',
       skills: 'current',
-      bootstrap: 'current',
-      lifecycleHooks: 'current'
+      instructions: 'current',
+      hooks: 'current'
     }
   });
 
@@ -620,23 +617,23 @@ test('applyLocalSetup downgrades an Agent to partial when post-connection self-c
       path: agent.skillPath,
       backupPath: null
     }),
-    inspectInstallations: (agents) => agents.map((agent) => ({
+    inspect: async (agent) => ({
       ...agent,
       integrationStatus: 'update_available',
       integrationDetails: {
         mcp: 'current',
         skills: 'current',
-        lifecycleHooks: 'outdated'
+        hooks: 'outdated'
       }
-    }))
+    })
   });
 
   assert.equal(result.status, 'partial');
   assert.equal(result.agents[0].status, 'partial');
   assert.equal(result.agents[0].selfCheck.status, 'failed');
-  assert.match(result.agents[0].message, /Self-check failed \(lifecycleHooks=outdated\)/);
+  assert.match(result.agents[0].message, /Self-check failed \(hooks=outdated\)/);
 
   const output = formatSetupResult(result, samplePlan());
-  assert.match(output, /Codex: partially configured \(Self-check failed \(lifecycleHooks=outdated\)\); retry fuli setup/);
+  assert.match(output, /Codex: partially configured \(Self-check failed \(hooks=outdated\)\); retry fuli setup/);
 });
 

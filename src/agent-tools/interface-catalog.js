@@ -45,6 +45,8 @@ const UI_MUTATION_PARITY = Object.freeze([
   local('PUT /api/client-links/auto-update', 'Whether the client link manifest updates itself once a day is the person\'s setting.'),
   local('POST /api/system/update', 'Updating FULI stops its services, installs the newest package and starts them again; the person starts it from the console\'s update notice on this computer (or with fuli update). An Agent can only mention that an update is available.'),
   local('POST /api/system/client-connection/connect','Local device client configuration writes require a local user operation.'),
+  local('POST /api/system/client-connection/custom-clients', 'Describing a client by hand writes the shared agent-clients directory on this computer; the person adds it in the 客户端接入 card.'),
+  local('DELETE /api/system/client-connection/custom-clients/:clientId', 'Removing a hand-described client deletes its file in the shared agent-clients directory; the person removes it in the 客户端接入 card.'),
   local('POST /api/system/doctor/repair', 'The doctor\'s 「自动修复」 rewrites client configurations on this computer; the person starts it from the console\'s banner. An Agent can read GET /api/system/doctor and tell the person what it found.'),
   agent('POST /api/capture', 'capture_session_knowledge'),
   agent('POST /api/subscriptions', 'subscribe_public_project'),

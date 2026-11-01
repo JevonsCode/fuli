@@ -120,6 +120,9 @@
     },
     "opencode": {
       "mcp": { "args": ["{mcpServerPath}", "--runtime-config", "{runtimeConfigPath}", "--source-application", "opencode", "--tool-profile", "chat"] }
+    },
+    "antigravity": {
+      "mcp": { "args": ["{mcpServerPath}", "--runtime-config", "{runtimeConfigPath}", "--source-application", "antigravity", "--tool-profile", "chat"] }
     }
   }
 }

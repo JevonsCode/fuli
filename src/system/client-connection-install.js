@@ -1,9 +1,13 @@
-import { discoverAgents } from '../setup/agents.js';
+import { detectAgents, inspectAgent } from '../agent-kits/client-detection.js';
+import { agentTargets } from '../setup/agents.js';
 import { installAgent } from '../setup/install-agent.js';
+import { integrationContext } from '../setup/integration-context.js';
 import { assertJsonObject } from '../validation/values.js';
 
-export function createClientInstaller({ paths, runtimeConfigPath = paths.graphRuntimeConfigPath,
-  discover = discoverAgents, install = installAgent }) {
+// The console's one-click connection: FULI's writer, for a client
+// agent-installer found on this machine that FULI may write by itself.
+export function createClientInstaller({ paths, runtimeConfigPath = paths.graphRuntimeConfigPath, installer,
+  targets = () => agentTargets({ dataDir: paths.dataDir }), install = installAgent }) {
   let busy = false;
   return async (input) => {
     assertJsonObject(input, 'Client connection');
@@ -11,16 +15,14 @@ export function createClientInstaller({ paths, runtimeConfigPath = paths.graphRu
       throw new TypeError('Expected only a clientId');
     }
     if (busy) throw new TypeError('A client connection is already being installed');
-    const agent = discover({ dataDir: paths.dataDir }).find(({ id }) => id === input.clientId);
-    if (!agent?.available || agent.manualOnly) throw new TypeError('Client is unavailable for automatic connection');
     busy = true;
     try {
-      const result = await install(agent, {
-        dataDir: paths.dataDir, defaultToolProfile: 'chat', nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath,
-        sessionSkillPath: paths.sessionSkillPath, projectSkillPath: paths.projectSkillPath,
-        reviewSkillPath: paths.reviewSkillPath, operationSkillPath: paths.operationSkillPath,
-        sessionCommandSkillPath: paths.sessionCommandSkillPath
-      }, paths);
+      const target = targets().find(({ id }) => id === input.clientId);
+      const detected = target ? await detectAgents(installer, [target]) : null;
+      const agent = detected?.agents?.[0];
+      if (!agent?.available || agent.manualOnly) throw new TypeError('Client is unavailable for automatic connection');
+      const result = await install(agent, { ...integrationContext(paths, runtimeConfigPath), defaultToolProfile: 'chat' },
+        paths, { inspect: (connected) => inspectAgent(installer, connected) });
       // Do not expose config/backup paths or raw filesystem diagnostics over HTTP.
       return { id: agent.id, status: result.status, restartRequired: result.status === 'connected' };
     } finally { busy = false; }

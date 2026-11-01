@@ -34,13 +34,14 @@ const detection = z.object({
   files: z.object(Object.fromEntries(CLIENT_FILE_KEYS.map((key) =>
     [key, key === 'configPath' ? pathRef : pathRef.optional()]))).strict(),
   skillsRoot: pathRef,
+  // No longer read: agent-installer detects clients (rec#11 D-79). Accepted
+  // so the schema-1 packs already published, and the built-in packs that
+  // still carry it, keep their digests; drop it with the next pack schema.
   availableWhen: z.array(z.discriminatedUnion('probe', [
     z.object({ probe: z.literal('commandOnPath') }).strict(),
     z.object({ probe: z.literal('pathExists'), target: z.enum(['clientHome', ...CLIENT_FILE_KEYS]) }).strict()
-  ])).min(1).max(8)
-}).strict().refine((value) => value.availableWhen.every((probe) =>
-  probe.probe !== 'pathExists' || probe.target === 'clientHome' || value.files[probe.target]),
-'A path probe must name a declared file');
+  ])).min(1).max(8).optional()
+}).strict();
 
 // The FULI MCP entry: node runs the packaged MCP server. Placeholders are whole
 // strings and are only substituted, never evaluated; literals hold no path.

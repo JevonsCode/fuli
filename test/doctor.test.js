@@ -171,6 +171,9 @@ test('info alone leaves FULI ok; a graph never seen answering is unchecked with 
   const broken = doctor(t, { previewDataFormats: () => previewMigrations({ dataDir: dataDir(t), graph: graph(SLEEPING_GRAPH) }),
     graphStage: () => 'awake' });
   assert.deepEqual((await broken.check()).uncheckedReasons, { graph_format: 'graph_not_answering' });
+  // Without agent-installer FULI knows nothing about its clients; that is not "all fine".
+  const undetected = await doctor(t, { observeClients: () => ({ available: false, clients: [] }) }).check();
+  assert.deepEqual(undetected.uncheckedReasons, { clients: 'client_detection_unavailable' });
 
   const failing = doctor(t, {
     observeClients: () => { throw new Error('unreadable'); },

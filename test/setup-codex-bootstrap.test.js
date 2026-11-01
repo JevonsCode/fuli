@@ -3,7 +3,6 @@ import test from 'node:test';
 
 import {
   installCodexBootstrap,
-  isCodexBootstrapCurrent,
   removeFuliGlobalInstructions,
   replaceFuliGlobalInstructions
 } from '../src/setup/codex-bootstrap.js';
@@ -68,5 +67,5 @@ test('Codex bootstrap writes the active override and becomes current', () => {
     texts.get(AGENT.globalInstructionsOverridePath),
     /get_collaboration_preferences/
   );
-  assert.equal(isCodexBootstrapCurrent(AGENT, INSTRUCTIONS, io), true);
+  assert.equal(installCodexBootstrap(AGENT, INSTRUCTIONS, io).changed, false);
 });

@@ -1,31 +1,26 @@
-import { existsSync } from 'node:fs';
 import { isAbsolute, relative } from 'node:path';
 
 import { stopLocalRuntime } from '../local-runtime/lifecycle.js';
 import { backupAgentConfig } from './config-backup.js';
-import { disconnectAgent, discoverAgents } from './agents.js';
+import { detectAgents } from '../agent-kits/client-detection.js';
+import { agentKitPorts } from '../agent-kits/ports.js';
+import { agentTargets, disconnectAgent } from './agents.js';
 import { resolveSetupPaths } from './paths.js';
 import { removeBundledSkill } from './session-skill.js';
 
-export function planLocalUninstall(options, {
+// The clients agent-installer finds FULI in. Without it, every client FULI
+// writes: each writer removes only FULI's entries and leaves an absent file alone.
+export async function planLocalUninstall(options, {
   env = process.env,
   resolvePaths = resolveSetupPaths,
-  discover = discoverAgents,
-  fileExists = existsSync
+  targets = agentTargets,
+  detect = (paths, list) => detectAgents(agentKitPorts(paths, { env }).clientInstaller, list)
 } = {}) {
   const paths = resolvePaths({ dataDir: options.dataDir, env });
-  const agents = discover({ env, dataDir: paths.dataDir }).filter((agent) => (
-    agent.available ||
-    (agent.configPath && fileExists(agent.configPath)) ||
-    (agent.globalInstructionsPath && fileExists(agent.globalInstructionsPath)) ||
-    (agent.globalInstructionsOverridePath &&
-      fileExists(agent.globalInstructionsOverridePath)) ||
-    (agent.skillPath && fileExists(agent.skillPath)) ||
-    (agent.projectSkillPath && fileExists(agent.projectSkillPath)) ||
-    (agent.reviewSkillPath && fileExists(agent.reviewSkillPath)) ||
-    (agent.operationSkillPath && fileExists(agent.operationSkillPath)) ||
-    (agent.sessionCommandSkillPath && fileExists(agent.sessionCommandSkillPath))
-  ));
+  const all = targets({ env, dataDir: paths.dataDir });
+  const detection = await detect(paths, all);
+  const agents = detection.status === 'available'
+    ? detection.agents.filter(({ integrationStatus }) => integrationStatus !== 'not_connected') : all;
   return { paths, agents };
 }
 

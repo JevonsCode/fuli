@@ -4,18 +4,16 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { agentAdapter } from '../registry.js';
-import { inspectAgentInstallations } from '../../agent-installation-status.js';
 
 const adapter = agentAdapter('codex');
 
-test('codex: registry discovery and temporary configuration preserve unrelated entries', (t) => {
+test('codex: registry target and temporary configuration preserve unrelated entries', (t) => {
   const homeDir = mkdtempSync(path.join(tmpdir(), 'fuli-codex-'));
   t.after(() => rmSync(homeDir, { recursive: true, force: true }));
   const environment = { homeDir, env: {}, platform: 'darwin', pathApi: path.posix,
-    fileExists: () => true, commandExists: () => true };
-  const detected = adapter.detect(environment);
+    fileExists: () => true };
+  const detected = adapter.target(environment);
   assert.equal(detected.id, 'codex');
-  assert.equal(detected.available, true);
   // Exercise MCP wiring only; existing lifecycle/bootstrap tests cover their own files.
   const agent = { id: detected.id, label: detected.label, configPath: detected.configPath,
     ...('codex' === 'claude-code' ? { settingsPath: detected.settingsPath } : {}) };
@@ -26,7 +24,6 @@ test('codex: registry discovery and temporary configuration preserve unrelated e
   assert.equal(adapter.connect(agent, context).status, 'connected');
   const connected = readFileSync(agent.configPath, 'utf8');
   assert.match(connected, /other/);
-  assert.equal(inspectAgentInstallations([agent], context, { bootstrapCurrent: () => true })[0].integrationDetails.mcp, 'current');
   adapter.connect(agent, context);
   assert.equal(readFileSync(agent.configPath, 'utf8'), connected);
   adapter.disconnect(agent);

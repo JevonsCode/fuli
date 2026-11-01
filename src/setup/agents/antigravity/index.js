@@ -6,13 +6,9 @@ import { jsonMcpPort } from '../json-mcp.js';
 // FULI connects MCP only.
 export const adapter = {
   id: 'antigravity',
-  detect({ homeDir, pathApi, fileExists, commandExists, includeUnavailable = false }) {
-    const gemini = pathApi.join(homeDir, '.gemini');
-    const configPath = pathApi.join(gemini, 'config', 'mcp_config.json');
-    const available = Boolean(commandExists('agy') || fileExists(configPath)
-      || fileExists(pathApi.join(gemini, 'antigravity')) || fileExists(pathApi.join(gemini, 'antigravity-cli')));
-    return available || includeUnavailable
-      ? { id: 'antigravity', label: 'Antigravity', command: 'agy', configPath, available } : null;
+  target({ homeDir, pathApi }) {
+    return { id: 'antigravity', label: 'Antigravity', command: 'agy',
+      configPath: pathApi.join(homeDir, '.gemini', 'config', 'mcp_config.json') };
   },
   ...jsonMcpPort({ obsoleteKeys: ['url', 'httpUrl', 'headers', 'type'], source: 'antigravity',
     argsOf: (server) => server?.args, server: (command, args) => ({ command, args }) })

@@ -6,7 +6,7 @@ import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
 import { assertJsonObject } from '../validation/values.js';
 
 // Arguments after the runtime config that identify the app and keep its tool list small.
-export const CLAUDE_DESKTOP_SERVER_ARGS = Object.freeze(['--source-application', 'claude', '--tool-profile', 'chat']);
+const CLAUDE_DESKTOP_SERVER_ARGS = Object.freeze(['--source-application', 'claude', '--tool-profile', 'chat']);
 
 // Claude Desktop (the chat app) reads stdio MCP servers from
 // claude_desktop_config.json. It has no lifecycle hooks or Skill folder, and it

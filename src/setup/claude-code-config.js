@@ -3,7 +3,6 @@ import { isDeepStrictEqual } from 'node:util';
 import { claudeLifecycleCommand, isClaudeLifecycleCommand } from '../agents/claude-code/lifecycle-hooks.js';
 import { installedToolProfile } from './installed-tool-profile.js';
 import { renderMcpEntry } from './agents/mcp-entry-template.js';
-import { jsonRegistration } from './agents/registration.js';
 
 import {
   readJsonFile,
@@ -99,26 +98,6 @@ export function disconnectClaudeCode(agent, {
     label: agent.label,
     status: changed ? 'disconnected' : 'not_connected'
   };
-}
-
-export function claudeCodeStatus(pack, agent, context, readers) {
-  return { registration: jsonRegistration(agent, readers, (server) => fuliServer(pack, context, server?.args)),
-    lifecycleHooks: hasCurrentClaudeCodeHooks(pack, readers.readJson(agent.settingsPath),
-      { ...context, hookTimeoutSec: context.hookTimeoutSec ?? pack.lifecycleHooks.timeoutSec }) };
-}
-
-export function hasCurrentClaudeCodeHooks(pack, settings, context = {}) {
-  try {
-    assertJsonObject(settings, 'Claude Code settings');
-    assertHookSettings(settings.hooks ?? {});
-    assertPermissionSettings(settings.permissions ?? {});
-    return sameJson(
-      withManagedHooks(pack, settings, context),
-      settings
-    );
-  } catch {
-    return false;
-  }
 }
 
 function fuliServer(pack, context, installedArgs) {

@@ -1,5 +1,5 @@
 {
-  "detection": {
+  "targets": {
     "linux:{}": {
       "agents": [
         {
@@ -13,7 +13,6 @@
           "skillPath": "/home/test/.agents/skills/capturing-session-knowledge",
           "projectSkillPath": "/home/test/.agents/skills/grilling-project",
           "operationSkillPath": "/home/test/.agents/skills/operating-fuli",
-          "available": false,
           "reviewSkillPath": "/home/test/.agents/skills/flreview",
           "reviewSkillTrigger": {
             "userCommand": "fuli review",
@@ -29,7 +28,6 @@
           "skillPath": "/home/test/.claude/skills/capturing-session-knowledge",
           "projectSkillPath": "/home/test/.claude/skills/grilling-project",
           "operationSkillPath": "/home/test/.claude/skills/operating-fuli",
-          "available": false,
           "reviewSkillPath": "/home/test/.claude/skills/flreview",
           "reviewSkillTrigger": {
             "userCommand": "/flreview",
@@ -46,7 +44,6 @@
           "skillPath": "/home/test/.cursor/skills/capturing-session-knowledge",
           "projectSkillPath": "/home/test/.cursor/skills/grilling-project",
           "operationSkillPath": "/home/test/.cursor/skills/operating-fuli",
-          "available": false,
           "reviewSkillPath": "/home/test/.cursor/skills/flreview",
           "reviewSkillTrigger": {
             "userCommand": "/flreview",
@@ -54,29 +51,7 @@
           },
           "sessionCommandSkillPath": "/home/test/.cursor/skills/fuli"
         }
-      ],
-      "available": {
-        "codex": {
-          "command": true,
-          "files": [
-            "/home/test/.codex/config.toml"
-          ]
-        },
-        "claude-code": {
-          "command": true,
-          "files": [
-            "/home/test/.claude",
-            "/home/test/.claude.json"
-          ]
-        },
-        "cursor": {
-          "command": true,
-          "files": [
-            "/home/test/.cursor",
-            "/home/test/.cursor/mcp.json"
-          ]
-        }
-      }
+      ]
     },
     "darwin:{\"CODEX_HOME\":\"/Users/test/codex-home\"}": {
       "agents": [
@@ -91,7 +66,6 @@
           "skillPath": "/Users/test/.agents/skills/capturing-session-knowledge",
           "projectSkillPath": "/Users/test/.agents/skills/grilling-project",
           "operationSkillPath": "/Users/test/.agents/skills/operating-fuli",
-          "available": false,
           "reviewSkillPath": "/Users/test/.agents/skills/flreview",
           "reviewSkillTrigger": {
             "userCommand": "fuli review",
@@ -107,7 +81,6 @@
           "skillPath": "/Users/test/.claude/skills/capturing-session-knowledge",
           "projectSkillPath": "/Users/test/.claude/skills/grilling-project",
           "operationSkillPath": "/Users/test/.claude/skills/operating-fuli",
-          "available": false,
           "reviewSkillPath": "/Users/test/.claude/skills/flreview",
           "reviewSkillTrigger": {
             "userCommand": "/flreview",
@@ -124,7 +97,6 @@
           "skillPath": "/Users/test/.cursor/skills/capturing-session-knowledge",
           "projectSkillPath": "/Users/test/.cursor/skills/grilling-project",
           "operationSkillPath": "/Users/test/.cursor/skills/operating-fuli",
-          "available": false,
           "reviewSkillPath": "/Users/test/.cursor/skills/flreview",
           "reviewSkillTrigger": {
             "userCommand": "/flreview",
@@ -132,29 +104,7 @@
           },
           "sessionCommandSkillPath": "/Users/test/.cursor/skills/fuli"
         }
-      ],
-      "available": {
-        "codex": {
-          "command": true,
-          "files": [
-            "/Users/test/codex-home/config.toml"
-          ]
-        },
-        "claude-code": {
-          "command": true,
-          "files": [
-            "/Users/test/.claude",
-            "/Users/test/.claude.json"
-          ]
-        },
-        "cursor": {
-          "command": true,
-          "files": [
-            "/Users/test/.cursor",
-            "/Users/test/.cursor/mcp.json"
-          ]
-        }
-      }
+      ]
     },
     "win32:{\"CODEX_HOME\":\"  \"}": {
       "agents": [
@@ -169,7 +119,6 @@
           "skillPath": "C:\\Users\\Test\\.agents\\skills\\capturing-session-knowledge",
           "projectSkillPath": "C:\\Users\\Test\\.agents\\skills\\grilling-project",
           "operationSkillPath": "C:\\Users\\Test\\.agents\\skills\\operating-fuli",
-          "available": false,
           "reviewSkillPath": "C:\\Users\\Test\\.agents\\skills\\flreview",
           "reviewSkillTrigger": {
             "userCommand": "fuli review",
@@ -185,7 +134,6 @@
           "skillPath": "C:\\Users\\Test\\.claude\\skills\\capturing-session-knowledge",
           "projectSkillPath": "C:\\Users\\Test\\.claude\\skills\\grilling-project",
           "operationSkillPath": "C:\\Users\\Test\\.claude\\skills\\operating-fuli",
-          "available": false,
           "reviewSkillPath": "C:\\Users\\Test\\.claude\\skills\\flreview",
           "reviewSkillTrigger": {
             "userCommand": "/flreview",
@@ -202,7 +150,6 @@
           "skillPath": "C:\\Users\\Test\\.cursor\\skills\\capturing-session-knowledge",
           "projectSkillPath": "C:\\Users\\Test\\.cursor\\skills\\grilling-project",
           "operationSkillPath": "C:\\Users\\Test\\.cursor\\skills\\operating-fuli",
-          "available": false,
           "reviewSkillPath": "C:\\Users\\Test\\.cursor\\skills\\flreview",
           "reviewSkillTrigger": {
             "userCommand": "/flreview",
@@ -210,29 +157,7 @@
           },
           "sessionCommandSkillPath": "C:\\Users\\Test\\.cursor\\skills\\fuli"
         }
-      ],
-      "available": {
-        "codex": {
-          "command": true,
-          "files": [
-            "C:\\Users\\Test\\.codex\\config.toml"
-          ]
-        },
-        "claude-code": {
-          "command": true,
-          "files": [
-            "C:\\Users\\Test\\.claude",
-            "C:\\Users\\Test\\.claude.json"
-          ]
-        },
-        "cursor": {
-          "command": true,
-          "files": [
-            "C:\\Users\\Test\\.cursor",
-            "C:\\Users\\Test\\.cursor\\mcp.json"
-          ]
-        }
-      }
+      ]
     },
     "win32:{\"CODEX_HOME\":\"D:\\\\Codex\"}": {
       "agents": [
@@ -247,7 +172,6 @@
           "skillPath": "C:\\Users\\Test\\.agents\\skills\\capturing-session-knowledge",
           "projectSkillPath": "C:\\Users\\Test\\.agents\\skills\\grilling-project",
           "operationSkillPath": "C:\\Users\\Test\\.agents\\skills\\operating-fuli",
-          "available": false,
           "reviewSkillPath": "C:\\Users\\Test\\.agents\\skills\\flreview",
           "reviewSkillTrigger": {
             "userCommand": "fuli review",
@@ -263,7 +187,6 @@
           "skillPath": "C:\\Users\\Test\\.claude\\skills\\capturing-session-knowledge",
           "projectSkillPath": "C:\\Users\\Test\\.claude\\skills\\grilling-project",
           "operationSkillPath": "C:\\Users\\Test\\.claude\\skills\\operating-fuli",
-          "available": false,
           "reviewSkillPath": "C:\\Users\\Test\\.claude\\skills\\flreview",
           "reviewSkillTrigger": {
             "userCommand": "/flreview",
@@ -280,7 +203,6 @@
           "skillPath": "C:\\Users\\Test\\.cursor\\skills\\capturing-session-knowledge",
           "projectSkillPath": "C:\\Users\\Test\\.cursor\\skills\\grilling-project",
           "operationSkillPath": "C:\\Users\\Test\\.cursor\\skills\\operating-fuli",
-          "available": false,
           "reviewSkillPath": "C:\\Users\\Test\\.cursor\\skills\\flreview",
           "reviewSkillTrigger": {
             "userCommand": "/flreview",
@@ -288,29 +210,7 @@
           },
           "sessionCommandSkillPath": "C:\\Users\\Test\\.cursor\\skills\\fuli"
         }
-      ],
-      "available": {
-        "codex": {
-          "command": true,
-          "files": [
-            "D:\\Codex\\config.toml"
-          ]
-        },
-        "claude-code": {
-          "command": true,
-          "files": [
-            "C:\\Users\\Test\\.claude",
-            "C:\\Users\\Test\\.claude.json"
-          ]
-        },
-        "cursor": {
-          "command": true,
-          "files": [
-            "C:\\Users\\Test\\.cursor",
-            "C:\\Users\\Test\\.cursor\\mcp.json"
-          ]
-        }
-      }
+      ]
     }
   },
   "contexts": {
@@ -373,36 +273,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -444,36 +314,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -535,36 +375,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -606,36 +416,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -696,36 +476,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -766,36 +516,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -857,36 +577,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -928,36 +618,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -1019,36 +679,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -1090,36 +720,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -1181,36 +781,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -1252,36 +822,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -1343,36 +883,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -1414,36 +924,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -1505,36 +985,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -1576,36 +1026,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -1716,36 +1136,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -1787,36 +1177,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -1878,36 +1238,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -1949,36 +1279,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -2039,36 +1339,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -2109,36 +1379,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -2200,36 +1440,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -2271,36 +1481,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -2362,36 +1542,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -2433,36 +1583,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -2524,36 +1644,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -2595,36 +1685,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -2686,36 +1746,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -2757,36 +1787,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },
@@ -2848,36 +1848,6 @@
           }
         ],
         "reconnectUnchanged": true,
-        "statusAfterConnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "bootstrap": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "connected",
-            "integrationDetails": {
-              "mcp": "current",
-              "skills": "current",
-              "lifecycleHooks": "current"
-            }
-          }
-        ],
         "disconnected": [
           {
             "id": "codex",
@@ -2919,36 +1889,6 @@
             "id": "cursor",
             "label": "Cursor",
             "status": "not_connected"
-          }
-        ],
-        "statusAfterDisconnect": [
-          {
-            "id": "codex",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "bootstrap": "outdated",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "claude-code",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
-          },
-          {
-            "id": "cursor",
-            "integrationStatus": "not_connected",
-            "integrationDetails": {
-              "mcp": "missing",
-              "skills": "current",
-              "lifecycleHooks": "outdated"
-            }
           }
         ]
       },

@@ -50,23 +50,6 @@ export function removeCodexBootstrap(agent, {
   return { changed };
 }
 
-export function isCodexBootstrapCurrent(agent, instructions, {
-  fileExists = existsSync,
-  readText = defaultReadText
-} = {}) {
-  if (!agent?.globalInstructionsPath) return false;
-  try {
-    const instructionsPath = activeGlobalInstructionsPath(agent, {
-      fileExists,
-      readText
-    });
-    const current = readText(instructionsPath);
-    return replaceFuliGlobalInstructions(current, instructions) === current;
-  } catch {
-    return false;
-  }
-}
-
 export function replaceFuliGlobalInstructions(source, instructions) {
   const withoutBlock = removeFuliGlobalInstructions(source).trimEnd();
   return `${withoutBlock ? `${withoutBlock}\n\n` : ''}${managedBlock(instructions)}\n`;

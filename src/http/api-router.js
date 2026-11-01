@@ -107,7 +107,22 @@ export async function handleApiRequest({
 
   if (system && url.pathname === '/api/system/client-connection/status' && request.method === 'GET') {
     response.setHeader('Cache-Control', 'no-store');
-    sendJson(response, 200, system.clientConnectionStatus());
+    sendJson(response, 200, await system.clientConnectionStatus());
+    return true;
+  }
+
+  // A client the person describes by hand goes into the shared agent-clients
+  // directory, so only this computer may add or remove one.
+  const customClient = /^\/api\/system\/client-connection\/custom-clients(?:\/([a-z][a-z0-9-]{0,63}))?$/.exec(url.pathname);
+  if (system && customClient && ((request.method === 'POST' && !customClient[1]) || (request.method === 'DELETE' && customClient[1]))) {
+    response.setHeader('Cache-Control', 'no-store');
+    if (!isLoopbackAddress(request.socket?.remoteAddress)) {
+      sendJson(response, 403, { error: 'Custom clients can only be changed on this computer' });
+      return true;
+    }
+    sendJson(response, 200, request.method === 'POST'
+      ? await system.addCustomClient(await readJson(request))
+      : system.removeCustomClient(customClient[1]));
     return true;
   }
 

@@ -19,21 +19,22 @@ export function descriptorAdapter(pack) {
   if (!writer) throw new TypeError(`Unknown client config writer: ${pack.configWriter}`);
   return Object.freeze({
     id: pack.id,
-    // A writer whose client format picks between files or needs its version refines discovery.
-    detect: (environment) => writer.detect
-      ? writer.detect(pack, detectClient(pack, environment), environment) : detectClient(pack, environment),
+    // A writer whose client format picks between files or needs its version refines its target.
+    target: (environment) => writer.target
+      ? writer.target(pack, packTarget(pack, environment), environment) : packTarget(pack, environment),
     connect(agent, context, { connectConfig = (target, settings) => writer.connect(pack, target, settings) } = {}) {
       return connectConfig(agent, context);
     },
     disconnect(agent, { disconnectConfig = writer.disconnect } = {}) {
       return disconnectConfig(agent);
-    },
-    status: (agent, context, readers) => writer.status(pack, agent, context, readers)
+    }
   });
 }
 
-function detectClient(pack, { env, homeDir, pathApi, fileExists, commandExists }) {
-  const { clientHome: home, files, skillsRoot, availableWhen } = pack.detection;
+// Where the pack's files and Skills are; which clients are installed is
+// agent-installer's answer (src/agent-kits/client-detection.js).
+function packTarget(pack, { env, homeDir, pathApi }) {
+  const { clientHome: home, files, skillsRoot } = pack.detection;
   const override = home.envOverride ? env[home.envOverride] : undefined;
   const base = home.envBase ? env[home.envBase] : undefined;
   const clientHome = typeof override === 'string' && override.trim() ? override
@@ -43,17 +44,12 @@ function detectClient(pack, { env, homeDir, pathApi, fileExists, commandExists }
   const resolve = ({ from, path }) => pathApi.join(bases[from], ...path);
   const paths = Object.fromEntries(CLIENT_FILE_KEYS.filter((key) => files[key]).map((key) => [key, resolve(files[key])]));
   const skills = resolve(skillsRoot);
-  // Built-in probes only, in the pack's order; the first match decides.
-  const available = availableWhen.some((probe) => probe.probe === 'commandOnPath'
-    ? Boolean(commandExists(pack.command))
-    : Boolean(fileExists(probe.target === 'clientHome' ? clientHome : paths[probe.target])));
   return {
     id: pack.id,
     label: pack.label,
     command: pack.command,
     ...paths,
     ...Object.fromEntries(Object.entries(SKILLS).map(([field, name]) => [field, pathApi.join(skills, name)])),
-    available,
     reviewSkillPath: pathApi.join(skills, REVIEW_SKILL),
     reviewSkillTrigger: { ...pack.commandSkills.review },
     ...(pack.commandSkills.sessionCommand ? { sessionCommandSkillPath: pathApi.join(skills, SESSION_COMMAND_SKILL) } : {})

@@ -24,20 +24,24 @@ function mcpPort(pack) {
     server: (command, args) => ({ type: 'local', command: [command, ...args], enabled: true }) });
 }
 
-// OpenCode reads opencode.jsonc when present. Layered global files or explicit
-// environment overrides can shadow this edit, so those get the documented
-// manual configuration instead of a claimed connection.
-// An OpenCode that is not installed is listed only when asked for, as before it had a pack.
-export function detectOpenCode(pack, agent, { env, pathApi, fileExists, commandVersion, includeUnavailable = false }) {
+// Where the writer edits: OpenCode reads opencode.jsonc when present. Layered
+// global files or explicit environment overrides can shadow this edit, so
+// those get the documented manual configuration instead of a claimed
+// connection. The version decides the plugin (pluginPlan).
+export function openCodeTarget(pack, agent, { env, pathApi, fileExists, commandVersion }) {
   const jsonc = pathApi.join(pathApi.dirname(agent.configPath), 'opencode.jsonc');
   const json = agent.configPath;
-  const available = agent.available || Boolean(fileExists(jsonc));
-  if (!available && !includeUnavailable) return null;
   const manualOnly = Boolean((fileExists(json) && fileExists(jsonc)) || env.OPENCODE_CONFIG
     || env.OPENCODE_CONFIG_CONTENT || env.OPENCODE_CONFIG_DIR);
-  return { ...agent, configPath: fileExists(jsonc) ? jsonc : json, available,
-    ...(available ? { clientVersion: commandVersion?.(pack.command) ?? null } : {}),
+  return { ...agent, configPath: fileExists(jsonc) ? jsonc : json, clientVersion: commandVersion?.(pack.command) ?? null,
     ...(manualOnly ? { manualOnly: true, manualUrl: MANUAL_URL } : {}) };
+}
+
+// Whether the writer keeps a plugin in this OpenCode: 2.x, or an unknown
+// version with FULI's plugin already there (pluginPlan).
+export function openCodePluginKept(agent, readText = readExisting) {
+  const major = majorVersion(agent.clientVersion);
+  return major === SUPPORTED_MAJOR || (major === null && isFuliOpenCodePlugin(readText(agent.pluginPath)));
 }
 
 function majorVersion(version) {
@@ -77,15 +81,6 @@ export function connectOpenCode(pack, agent, context, {
   else if (pluginChanged) writeText(agent.pluginPath, plan.text);
   return { ...connected, restartRequired: connected.restartRequired || pluginChanged,
     ...(plan.nextStep ? { nextSteps: [plan.nextStep] } : {}) };
-}
-
-export function openCodeStatus(pack, agent, context, readers) {
-  const { registration } = mcpPort(pack).status(agent, context, readers);
-  const existing = agent.pluginPath ? readers.readText(agent.pluginPath) : '';
-  const major = majorVersion(agent.clientVersion);
-  // A plugin is expected where setup installs one; V1 is connected without it.
-  const expected = major === SUPPORTED_MAJOR || (major === null && isFuliOpenCodePlugin(existing));
-  return { registration, ...(expected ? { lifecycleHooks: existing === openCodePluginSource(context, pack.lifecycleHooks) } : {}) };
 }
 
 // The plugin goes first: a configuration file FULI cannot parse keeps its MCP

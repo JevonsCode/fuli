@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { agentAdapter } from '../registry.js';
-import { inspectAgentInstallations } from '../../agent-installation-status.js';
+import { openCodePluginKept } from './config-writer.js';
 import { previewClientConfiguration } from '../config-preview.js';
 import { loadClientDescriptorPacks } from '../descriptor-packs.js';
 
@@ -22,10 +22,9 @@ function home(t) {
   t.after(() => rmSync(homeDir, { recursive: true, force: true }));
   return homeDir;
 }
-function detect(homeDir, { version = '2.1.4', env = {}, fileExists = existsSync, commandExists = () => true } = {}) {
-  return adapter.detect({ homeDir, env, pathApi: path, fileExists, commandExists, commandVersion: () => version });
+function detect(homeDir, { version = '2.1.4', env = {}, fileExists = existsSync } = {}) {
+  return adapter.target({ homeDir, env, pathApi: path, fileExists, commandVersion: () => version });
 }
-const lifecycle = (agent) => inspectAgentInstallations([agent], CONTEXT, { skillCurrent: () => true })[0].integrationDetails;
 
 test('OpenCode 2.x: setup writes the MCP entry and the plugin, keeps JSONC comments, and disconnect removes both', (t) => {
   const homeDir = home(t);
@@ -52,8 +51,7 @@ test('OpenCode 2.x: setup writes the MCP entry and the plugin, keeps JSONC comme
   assert.ok(plugin.includes(JSON.stringify(CONTEXT.runtimeConfigPath)));
   assert.match(plugin, /"events": \[\s*"prompt",\s*"execution\.succeeded"\s*\]/);
   assert.match(plugin, /"timeoutMs": 15000/, 'the hook deadline leaves room inside the pack timeout');
-  assert.deepEqual({ mcp: lifecycle(agent).mcp, lifecycleHooks: lifecycle(agent).lifecycleHooks },
-    { mcp: 'current', lifecycleHooks: 'current' });
+  assert.equal(openCodePluginKept(agent), true, 'agent-installer is told to expect the plugin');
   assert.equal(adapter.connect(agent, CONTEXT).restartRequired, false, 'a second connect writes nothing');
 
   assert.equal(adapter.disconnect(agent).status, 'disconnected');
@@ -65,17 +63,15 @@ test('OpenCode 2.x: setup writes the MCP entry and the plugin, keeps JSONC comme
   assert.equal(adapter.disconnect(agent).status, 'not_connected');
 });
 
-test('an OpenCode MCP entry FULI wrote as `other` is reported outdated and rewritten as `opencode`, keeping its profile', (t) => {
+test('an OpenCode MCP entry FULI wrote as `other` is rewritten as `opencode`, keeping its profile', (t) => {
   const homeDir = home(t);
   const agent = detect(homeDir);
   mkdirSync(path.dirname(agent.configPath), { recursive: true });
   writeFileSync(agent.configPath, JSON.stringify({ mcp: { fuli: { type: 'local', command: [CONTEXT.nodePath, CONTEXT.mcpServerPath,
     '--runtime-config', CONTEXT.runtimeConfigPath, '--source-application', 'other', '--tool-profile', 'full'], enabled: true } } }));
-  assert.equal(lifecycle(agent).mcp, 'outdated');
   adapter.connect(agent, CONTEXT);
   const { command } = JSON.parse(readFileSync(agent.configPath, 'utf8')).mcp.fuli;
   assert.deepEqual(command.slice(-4), ['--source-application', 'opencode', '--tool-profile', 'full']);
-  assert.equal(lifecycle(agent).mcp, 'current');
 });
 
 test('uninstall removes the plugin even when the OpenCode configuration cannot be parsed', (t) => {
@@ -88,7 +84,7 @@ test('uninstall removes the plugin even when the OpenCode configuration cannot b
   assert.equal(readFileSync(agent.configPath, 'utf8'), '{ "mcp": [ }', 'the unparseable file is left as it was');
 });
 
-test('OpenCode 1.x is detected and refused: the MCP entry is connected, the V2 plugin is not installed', (t) => {
+test('OpenCode 1.x is refused: the MCP entry is connected, the V2 plugin is not installed', (t) => {
   const homeDir = home(t);
   const agent = detect(homeDir, { version: '1.19.4' });
   const connected = adapter.connect(agent, CONTEXT);
@@ -96,8 +92,7 @@ test('OpenCode 1.x is detected and refused: the MCP entry is connected, the V2 p
   assert.match(connected.nextSteps[0], /OpenCode 1\.19\.4 found: FULI's per-prompt plugin needs OpenCode 2\.x/);
   assert.equal(existsSync(agent.pluginPath), false);
   assert.match(readFileSync(agent.configPath, 'utf8'), /"fuli"/);
-  assert.equal(lifecycle(agent).lifecycleHooks, undefined, 'no plugin is expected for V1');
-  assert.equal(lifecycle(agent).mcp, 'current');
+  assert.equal(openCodePluginKept(agent), false, 'no plugin is expected for V1');
 
   // A downgrade from 2.x takes FULI's plugin away instead of leaving V2 code for V1.
   adapter.connect(detect(homeDir), CONTEXT);
@@ -114,7 +109,7 @@ test('an unknown OpenCode version installs no new plugin but keeps an installed 
   assert.equal(existsSync(unknown.pluginPath), false);
   adapter.connect(detect(homeDir), CONTEXT);
   const moved = { ...CONTEXT, runtimeConfigPath: '/elsewhere/graph-runtime.json' };
-  assert.equal(lifecycle(unknown).lifecycleHooks, 'current');
+  assert.equal(openCodePluginKept(unknown), true, 'an installed plugin stays expected');
   adapter.connect(unknown, moved);
   assert.ok(readFileSync(unknown.pluginPath, 'utf8').includes('/elsewhere/graph-runtime.json'));
 });
@@ -149,13 +144,12 @@ test('layered OpenCode configuration gets the documented manual setup instead of
   assert.equal(detect(homeDir, { fileExists: () => true }).manualOnly, true, 'opencode.json beside opencode.jsonc');
 });
 
-test('OpenCode discovers a Windows JSONC config without accessing the host filesystem', () => {
+test('OpenCode targets a Windows JSONC config without accessing the host filesystem', () => {
   const configPath = String.raw`C:\Users\Tester\.config\opencode\opencode.jsonc`;
-  const agent = adapter.detect({ homeDir: String.raw`C:\Users\Tester`, env: {}, pathApi: path.win32,
-    commandExists: () => false, commandVersion: () => null, fileExists: (file) => file === configPath });
+  const agent = adapter.target({ homeDir: String.raw`C:\Users\Tester`, env: {}, pathApi: path.win32,
+    commandVersion: () => null, fileExists: (file) => file === configPath });
   assert.equal(agent.configPath, configPath);
   assert.equal(agent.pluginPath, String.raw`C:\Users\Tester\.config\opencode\plugins\fuli\index.js`);
-  assert.equal(agent.available, true);
   assert.notEqual(agent.manualOnly, true);
 });
 
@@ -163,7 +157,7 @@ test('a client pack update previews the plugin change in memory only', (t) => {
   const homeDir = home(t);
   adapter.connect(detect(homeDir), CONTEXT);
   // `fuli clients update` reads no client version: an installed plugin is kept current.
-  const target = adapter.detect({ homeDir, env: {}, pathApi: path, fileExists: existsSync, commandExists: () => false });
+  const target = adapter.target({ homeDir, env: {}, pathApi: path, fileExists: existsSync });
   const before = readFileSync(target.pluginPath, 'utf8');
   const changed = { ...pack, lifecycleHooks: { ...pack.lifecycleHooks, timeoutSec: 20 } };
   const changes = previewClientConfiguration(changed, target, CONTEXT);

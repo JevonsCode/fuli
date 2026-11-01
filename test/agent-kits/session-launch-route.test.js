@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { handleSessionLaunchRequest } from '../../src/http/session-launch-api-router.js';
-import { createDoctor } from '../../src/system/doctor.js';
 
 function call(path, { method = 'GET', system } = {}) {
   const sent = [];
@@ -25,15 +24,4 @@ test('the console reads session offers by source application and session ID, ope
   await assert.rejects(call('/api/session-launch/offers?session=abc', { system }), { code: 'invalid_input' });
   const many = Array.from({ length: 21 }, (_, index) => `session=codex:${index}`).join('&');
   await assert.rejects(call(`/api/session-launch/offers?${many}`, { system }), { code: 'invalid_input' });
-});
-
-test('the doctor carries the installer comparison without changing what it tells the person', async () => {
-  const read = (internalDetails) => createDoctor({ observeClients: () => ({ clients: [] }), liveProcesses: () => [],
-    latestVersion: () => null, lastUpdate: () => null, internalDetails, now: () => new Date(0) }).check();
-  const without = await read(null);
-  const withShadow = await read(() => ({ installerShadow: { status: 'pending' } }));
-  assert.equal('internal' in without, false);
-  assert.deepEqual(withShadow.internal, { installerShadow: { status: 'pending' } });
-  const { internal: _internal, ...rest } = withShadow;
-  assert.deepEqual(rest, without);
 });

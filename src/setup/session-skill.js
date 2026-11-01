@@ -57,7 +57,7 @@ export function installSessionSkill(agent, {
   return { status: 'installed', path: agent.skillPath, backupPath };
 }
 
-export function isSessionSkillCurrent(sourcePath, targetPath) {
+function isSessionSkillCurrent(sourcePath, targetPath) {
   const sourceEntry = join(sourcePath, 'SKILL.md');
   const targetEntry = join(targetPath, 'SKILL.md');
   if (!existsSync(sourceEntry) || !existsSync(targetEntry)) return false;
