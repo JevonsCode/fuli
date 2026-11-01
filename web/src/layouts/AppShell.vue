@@ -112,7 +112,7 @@ watchEffect(() => {
         <div class="app-brand">
           <BrandEasterEgg compact />
           <!-- The official wordmark (复利 in Chinese, FULI in English), centred on the mark as in the
-               brand lockup; the service dot sits on its baseline. -->
+               brand lockup; the service dot sits on its middle. -->
           <span class="app-brand-word">
             <img class="app-wordmark" :src="fuliWordmarkUrl(currentLocale())" :alt="t('shell.brand')" draggable="false" data-wordmark />
             <!-- The service dot says ready on its own; its words show only when the service is not ready. -->
@@ -191,12 +191,12 @@ watchEffect(() => {
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 /* The brand lockup's proportions (brand/svg/lockup): the wordmark's glyphs stand at about 0.54 of the
    mark's art (21px for the 38px mark; the files keep 16 of 232 units of clear space around the glyphs)
-   and start about a quarter of the art to its right. The status dot and its words sit on the glyphs'
-   baseline: the row aligns the dot's bottom to the image's bottom, then lifts it by that clear space, and its
-   words share that baseline. The row keeps the wordmark's height, so the words never move the brand. */
-.app-brand-word { --wordmark-height: 21px; display: inline-flex; align-items: baseline; gap: 8px; height: var(--wordmark-height); margin-left: -3px; }
+   and start about a quarter of the art to its right. The status dot and its words sit on the wordmark's
+   vertical middle (Jevons 11-02: centred, not on the baseline). The row keeps the wordmark's height,
+   so the words never move the brand. */
+.app-brand-word { --wordmark-height: 21px; display: inline-flex; align-items: center; gap: 8px; height: var(--wordmark-height); margin-left: -3px; }
 .app-wordmark { display: block; width: auto; height: var(--wordmark-height); user-select: none; -webkit-user-drag: none; }
-.app-runtime { position: relative; bottom: calc(var(--wordmark-height) * 16 / 232); display: inline-flex; align-items: baseline; gap: 6px; --runtime: var(--status-error); }
+.app-runtime { display: inline-flex; align-items: center; gap: 6px; --runtime: var(--status-error); }
 .app-runtime.is-ready { --runtime: var(--color-success); }
 .app-runtime-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--runtime); }
 .app-runtime-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -228,7 +228,6 @@ watchEffect(() => {
   .app-topbar-inner { min-height: 36px; }
   .app-title { font-size: 19px; }
   .app-wordmark { display: none; }
-  .app-runtime { bottom: 0; }
   /* Brand, title and actions share the first row; the section tabs take their own. */
   .app-topbar-inner > .section-tabs { order: 3; flex-basis: 100%; }
 }
