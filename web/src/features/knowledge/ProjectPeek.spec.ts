@@ -69,6 +69,16 @@ describe('ProjectPeek', () => {
     expect(wrapper.get('[data-project-ids]').text()).toContain('open')
   })
 
+  it('shows who wrote the description it leads with', async () => {
+    readProjectTeam.mockResolvedValue(null)
+    const wrapper = mount(ProjectPeek, { props: { item: knowledgeItemFromNode(project('open')), graph, spaceId: 'space-a',
+      project: { ...record, profile: { name: 'open', scope: 'Synthetic scope',
+        authors: { scope: { kind: 'agent', agent_id: 'agent-ada', agent_name: 'Ada' } } } } } })
+    await flushPromises()
+    expect(wrapper.get('[data-project-description]').text()).toBe('Synthetic scope')
+    expect(wrapper.get('[data-author]').text()).toContain('Ada 写的')
+  })
+
   it('opens the project with one action and shows the related projects only on request', async () => {
     readProjectTeam.mockRejectedValue(new Error('synthetic failure'))
     const wrapper = mountPeek()

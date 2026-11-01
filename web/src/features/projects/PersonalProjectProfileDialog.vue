@@ -7,6 +7,7 @@ import UiDialog from '@/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
 import { OptionSelect } from '@/components/ui/select'
+import ProfileAuthorChip from './ProfileAuthorChip.vue'
 
 type SourceDraft = {
   key: string
@@ -36,6 +37,8 @@ const boundaries = ref('')
 const sources = ref<SourceDraft[]>([])
 const error = ref('')
 const busy = ref(false)
+
+const authors = computed(() => props.project?.profile.authors ?? {})
 
 const materialTypes = new Set([
   'ProjectPurpose',
@@ -205,16 +208,20 @@ async function save() {
         <input v-model="name" name="project-name" maxlength="160" required />
       </label>
       <OptionSelect v-model="lifecycle" field name="project-lifecycle" :label="t('projects.profileDialog.lifecycle')" :options="lifecycleOptions" />
-      <label class="ui-field project-profile-wide-field">{{ t('projects.profileDialog.purpose') }}
+      <label class="ui-field project-profile-wide-field">
+        <span class="project-profile-label">{{ t('projects.profileDialog.purpose') }}<ProfileAuthorChip :author="authors.purpose" /></span>
         <textarea v-model="purpose" name="project-purpose" maxlength="4096" rows="4" :autofocus="materialType === 'ProjectPurpose'" :placeholder="t('projects.profileDialog.purposePlaceholder')" />
       </label>
-      <label class="ui-field project-profile-wide-field">{{ t('projects.profileDialog.scope') }}
+      <label class="ui-field project-profile-wide-field">
+        <span class="project-profile-label">{{ t('projects.profileDialog.scope') }}<ProfileAuthorChip :author="authors.scope" /></span>
         <textarea v-model="scope" name="project-scope" maxlength="4096" rows="4" :autofocus="materialType === 'ProjectScope'" :placeholder="t('projects.profileDialog.scopePlaceholder')" />
       </label>
-      <label class="ui-field project-profile-wide-field">{{ t('projects.profileDialog.technicalSummary') }}
+      <label class="ui-field project-profile-wide-field">
+        <span class="project-profile-label">{{ t('projects.profileDialog.technicalSummary') }}<ProfileAuthorChip :author="authors.technical_summary" /></span>
         <textarea v-model="technicalSummary" name="project-technical-summary" maxlength="4096" rows="4" :placeholder="t('projects.profileDialog.technicalPlaceholder')" />
       </label>
-      <label class="ui-field project-profile-wide-field">{{ t('projects.profileDialog.boundary') }}
+      <label class="ui-field project-profile-wide-field">
+        <span class="project-profile-label">{{ t('projects.profileDialog.boundary') }}<ProfileAuthorChip :author="authors.boundaries" /></span>
         <textarea v-model="boundaries" name="project-boundaries" maxlength="8192" rows="5" :autofocus="materialType === 'ProjectBoundary'" :placeholder="t('projects.profileDialog.boundaryPlaceholder')" />
         <small class="ui-field-hint">{{ t('projects.profileDialog.boundaryHint') }}</small>
       </label>
@@ -258,6 +265,7 @@ async function save() {
 <style scoped>
 .project-profile-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .project-profile-wide-field { grid-column: 1 / -1; }
+.project-profile-label { display: flex; align-items: center; gap: 8px; min-height: 22px; }
 .project-source-editor { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid var(--color-border); }
 .project-source-editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; outline: 0; }
 .project-source-editor-heading h3 { margin: 0; font-size: 13px; font-weight: 600; }

@@ -94,4 +94,24 @@ describe('PersonalProjectProfileDialog', () => {
     expect(wrapper.emitted('saved')).toHaveLength(1)
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
+
+  it('shows who wrote each field beside its label, nothing for an empty one, and never sends authors', async () => {
+    const wrapper = mount(PersonalProjectProfileDialog, {
+      props: { project: {
+        project_id: 'synthetic-project', personal_space_id: 'synthetic-space',
+        profile: { name: 'Synthetic', purpose: 'Typed', scope: 'Drafted', boundaries: ['Shared'],
+          authors: { purpose: { kind: 'person' }, scope: { kind: 'agent', agent_id: 'agent-ada', agent_name: 'Ada' },
+            boundaries: { kind: 'both', agent_id: 'agent-ada', agent_name: 'Ada' } } },
+      } },
+    })
+    const chipOf = (name: string) => wrapper.get(`[name="${name}"]`).element.closest('label')!.querySelector('[data-author]')
+    expect(chipOf('project-purpose')?.textContent).toContain('你写的')
+    expect(chipOf('project-scope')?.textContent).toContain('Ada 写的')
+    expect(chipOf('project-boundaries')?.textContent).toContain('你和 Ada')
+    expect(chipOf('project-technical-summary')).toBeNull()
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(putJson.mock.calls[0][1].profile).not.toHaveProperty('authors')
+    wrapper.unmount()
+  })
 })

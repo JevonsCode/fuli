@@ -66,7 +66,9 @@ evidence. Do not manufacture questions solely to fill a generic checklist. In ea
 
 Prefer project identity, purpose, scope, and privacy boundary before lower-impact metadata. Skip resolved categories. If the user rejects a recommendation, record their choice without repeatedly arguing.
 
-Before updating an existing project, call `list_personal_projects` with its exact `projectId` to read its full profile; check that the result is not truncated. After a meaningful confirmed update, call `upsert_personal_project` with the complete current profile, not a partial patch. Preserve earlier confirmed fields and sources. Routine successful updates stay quiet.
+Before updating an existing project, call `list_personal_projects` with its exact `projectId` to read its full profile; check that the result is not truncated. After a meaningful confirmed update, call `upsert_personal_project` with the complete current profile, not a partial patch, and your current `taskContextToken` so you are recorded as the author of what you write. Preserve earlier confirmed fields and sources. Routine successful updates stay quiet.
+
+Each of `purpose`, `scope`, `technicalSummary` and `boundaries` carries its author in `profile.authors`: `person` (the user wrote it, weight 100%, authoritative), `both` (the user edited an Agent's draft, 90%) or `agent` (an AI draft, 50%, editable). Fill empty or `agent` fields freely. Never overwrite a `person` or `both` field: FULI keeps it and lists it in `refused_fields`; tell the user what you would change and let them edit it in the console. When you report the profile, say which fields the user wrote and which are your drafts.
 
 ## Evidence coverage assessment
 
