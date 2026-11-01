@@ -19,7 +19,7 @@ const service = {
   live: { state: 'unknown', process: null, port: null },
 }
 
-describe('response shapes of the first API batch', () => {
+describe('response shapes accept what the server may leave out', () => {
   beforeEach(() => setActivePinia(createPinia()))
   afterEach(() => vi.unstubAllGlobals())
 
