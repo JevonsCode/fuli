@@ -241,7 +241,8 @@ export default {
 | `POST` | `/api/external-knowledge/bindings/:id/sync` | 手动同步 |
 | `POST` | `/api/external-knowledge/bindings/:id/retrieve` | 单绑定实时检索 |
 | `DELETE` | `/api/external-knowledge/bindings/:id` | 解绑并失效镜像实体 |
-| `GET/PATCH` | `/api/external-knowledge/conflict-policy` | 读取 / 修改项目冲突策略 |
+| `GET/PATCH` | `/api/external-knowledge/conflict-policy` | 带 `personalProjectId` 读取项目生效策略（`source: default | project`），不带则读取默认值和例外项目；`PATCH` 设置项目例外，`mode: null` 恢复默认 |
+| `PATCH` | `/api/external-knowledge/conflict-policy/default` | 修改所有项目的默认冲突策略 |
 | `POST` | `/api/connected-knowledge/search` | 聚合图谱、外部源和选定公共项目 |
 
 Agent 使用 `search_connected_knowledge`。运行时只选择与当前 `personalSpaceId + personalProjectId`

@@ -700,12 +700,6 @@ export interface ExternalKnowledgeBinding {
   }
 }
 
-export interface KnowledgeConflictPolicy {
-  personalProjectId: string
-  mode: 'ask_human' | 'agent_decide'
-  updatedAt?: string | null
-}
-
 export interface ProviderStatus {
   status: string
   providerUrl?: string

@@ -4,7 +4,7 @@ import UiDisclosure from '@/components/UiDisclosure.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardTitle } from '@/components/ui/card'
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
 import type { SelectOption } from '@/components/ui/select'
@@ -12,19 +12,18 @@ import TextField from '@/components/TextField.vue'
 import { currentLocale, t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
+import ConflictPolicyCard from '@/features/connections/ConflictPolicyCard.vue'
+import { readmeHelpUrl } from '@/features/connections/readme-help'
 import type {
   ExternalKnowledgeBinding,
   ExternalKnowledgeBindingTarget,
   ExternalKnowledgeConnector,
   ExternalKnowledgeMode,
-  KnowledgeConflictPolicy,
   PublicProject,
   Subscription,
 } from '@/types'
 import { OptionSelect } from '@/components/ui/select'
 import { OptionCombobox } from '@/components/ui/combobox'
-
-type ConflictMode = KnowledgeConflictPolicy['mode']
 
 const store = useConsoleStore()
 const selectedProjectKey = ref('')
@@ -38,14 +37,6 @@ const externalAction = ref('')
 const editingBindingId = ref<string | null>(null)
 const editingProjectIds = ref<string[]>([])
 const editingTargetModes = ref<Record<string, ExternalKnowledgeMode>>({})
-const conflictProjectId = ref('')
-const conflictMode = ref<ConflictMode>('ask_human')
-const conflictBusy = ref(false)
-const conflictLoading = ref(false)
-const conflictError = ref(false)
-let confirmedConflictMode: ConflictMode = 'ask_human'
-let conflictVersion = 0
-let conflictController: AbortController | null = null
 const form = reactive({
   name: '',
   connectorType: 'mcp',
@@ -94,7 +85,6 @@ const publicPurpose = computed(() => {
 const subscriptions = computed(() => store.state?.subscriptions ?? [])
 const personalProjects = computed(() => store.state?.personalProjects ?? [])
 const externalKnowledgeHelpUrl = computed(() => readmeHelpUrl('connect-external-knowledge'))
-const conflictPolicyHelpUrl = computed(() => readmeHelpUrl('external-knowledge-conflict-policy'))
 const subscribedKeys = computed(
   () => new Set(subscriptions.value.map(({ provider_url, project_id }) => `${provider_url}::${project_id}`)),
 )
@@ -137,10 +127,6 @@ const feishuRegionOptions = computed<SelectOption[]>(() => [
   { value: 'cn', label: 'Feishu' },
   { value: 'global', label: 'Lark' },
 ])
-const conflictModeOptions = computed<SelectOption[]>(() => [
-  { value: 'ask_human', label: t('pages.connections.askHuman') },
-  { value: 'agent_decide', label: t('pages.connections.agentDecide') },
-])
 
 watch(personalProjects, (projects) => {
   const ids = new Set(projects.map(({ project_id }) => project_id))
@@ -148,16 +134,7 @@ watch(personalProjects, (projects) => {
   form.personalProjectIds = form.personalProjectIds.filter((id) => ids.has(id))
   if (!form.personalProjectIds.length && first) form.personalProjectIds = [first]
   editingProjectIds.value = editingProjectIds.value.filter((id) => ids.has(id))
-  if (!ids.has(conflictProjectId.value)) {
-    conflictProjectId.value = first
-  }
 }, { immediate: true })
-
-watch(
-  () => [store.activePersonalSpace?.id, conflictProjectId.value],
-  () => void loadConflictPolicy(),
-  { immediate: true, flush: 'sync' },
-)
 
 watch(() => form.connectorType, (type) => {
   if (connectorSupportsMode(type, form.mode)) return
@@ -165,11 +142,6 @@ watch(() => form.connectorType, (type) => {
 })
 
 onMounted(() => void refreshExternalKnowledge())
-
-onBeforeUnmount(() => {
-  conflictVersion += 1
-  conflictController?.abort()
-})
 
 function projectKey(project: PublicProject) {
   return `${project.providerUrl}::${project.id}`
@@ -447,66 +419,6 @@ async function saveBindingTargets(binding: ExternalKnowledgeBinding) {
   }
 }
 
-async function loadConflictPolicy() {
-  const version = ++conflictVersion
-  conflictController?.abort()
-  conflictController = null
-  conflictMode.value = 'ask_human'
-  conflictError.value = false
-  conflictLoading.value = false
-  if (!store.activePersonalSpace?.id || !conflictProjectId.value) return
-  const controller = new AbortController()
-  conflictController = controller
-  conflictLoading.value = true
-  try {
-    const query = new URLSearchParams({ personalProjectId: conflictProjectId.value })
-    const policy = await getJson<KnowledgeConflictPolicy>(
-      `/api/external-knowledge/conflict-policy?${query}`,
-      { signal: controller.signal },
-    )
-    if (version !== conflictVersion) return
-    conflictMode.value = policy.mode
-    confirmedConflictMode = policy.mode
-  } catch (error) {
-    if (version !== conflictVersion) return
-    conflictError.value = true
-  } finally {
-    if (version === conflictVersion) {
-      conflictLoading.value = false
-      conflictController = null
-    }
-  }
-}
-
-async function updateConflictPolicy() {
-  const personalSpaceId = store.activePersonalSpace?.id
-  if (!personalSpaceId || !conflictProjectId.value || conflictBusy.value
-    || conflictLoading.value || conflictError.value) return
-  const version = conflictVersion
-  conflictBusy.value = true
-  try {
-    const query = new URLSearchParams({ personalProjectId: conflictProjectId.value })
-    const policy = await patchJson<KnowledgeConflictPolicy>(
-      `/api/external-knowledge/conflict-policy?${query}`,
-      {
-        personalSpaceId,
-        personalProjectId: conflictProjectId.value,
-        mode: conflictMode.value,
-      },
-    )
-    if (version !== conflictVersion) return
-    conflictMode.value = policy.mode
-    confirmedConflictMode = policy.mode
-    store.notify(t('pages.connections.conflictSaved'))
-  } catch (error) {
-    if (version !== conflictVersion) return
-    conflictMode.value = confirmedConflictMode
-    store.reportError(error)
-  } finally {
-    conflictBusy.value = false
-  }
-}
-
 function connectorName(type: string) {
   return connectors.value.find((connector) => connector.type === type)?.name ?? type
 }
@@ -581,11 +493,6 @@ function compactObject(value: Record<string, unknown>) {
 function required(value: string, label: string) {
   if (!value.trim()) throw new TypeError(`${label} is required`)
   return value.trim()
-}
-
-function readmeHelpUrl(fragment: string) {
-  const file = currentLocale() === 'zh-CN' ? 'README.zh-CN.md' : 'README.md'
-  return `https://github.com/JevonsCode/fuli/blob/main/${file}#${fragment}`
 }
 </script>
 
@@ -803,52 +710,7 @@ function readmeHelpUrl(fragment: string) {
       </div>
     </Card>
 
-    <Card v-if="personalProjects.length" as="section" class="conflict-policy-section py-0" :aria-label="t('pages.connections.conflictTitle')">
-    <UiDisclosure class="px-5 py-4" :open="conflictError" :title="t('pages.connections.conflictTitle')">
-      <div class="flex">
-        <a
-          class="section-help-link"
-          data-testid="conflict-policy-help"
-          :href="conflictPolicyHelpUrl"
-          :aria-label="t('pages.connections.conflictHelp')"
-          :title="t('pages.connections.conflictHelp')"
-          target="_blank"
-          rel="noreferrer"
-        >?</a>
-      </div>
-      <div class="conflict-policy-controls">
-        <label>
-          <span>{{ t('pages.connections.targetProject') }}</span>
-          <OptionCombobox
-            v-model="conflictProjectId"
-            control-id="external-conflict-project"
-            :label="t('pages.connections.targetProject')"
-            :options="personalProjectOptions"
-            :disabled="conflictBusy"
-            required
- />
-        </label>
-        <label>
-          <span>{{ t('pages.connections.conflictAction') }}</span>
-          <OptionSelect
-            v-model="conflictMode"
-            control-id="external-conflict-mode"
-            :label="t('pages.connections.conflictAction')"
-            :options="conflictModeOptions"
-            :disabled="conflictBusy || conflictLoading || conflictError || !conflictProjectId"
-            required
-            @update:model-value="updateConflictPolicy"
- />
-        </label>
-      </div>
-      <GrowthLoading v-if="conflictLoading" variant="compact" :label="t('pages.connections.loadingConflictPolicy')" />
-      <GrowthLoading v-if="conflictBusy" variant="inline" :label="t('pages.connections.savingConflictPolicy')" />
-      <div v-else-if="conflictError" role="alert">
-        <p>{{ t('common.errors.loadFailed') }}</p>
-        <Button variant="outline" size="sm" @click="loadConflictPolicy">{{ t('common.actions.retry') }}</Button>
-      </div>
-    </UiDisclosure>
-    </Card>
+    <ConflictPolicyCard v-if="personalProjects.length" />
 
     <Card v-if="store.state?.capabilities?.subscribeProject" as="section" class="connection-subscriptions" aria-labelledby="connection-subscriptions-title">
       <div class="flex items-center gap-2 px-5">

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -16,6 +16,71 @@ test('conflict policy keys cannot collide with object prototype properties', () 
     policies.set('__proto__', 'agent_decide');
     assert.equal(policies.get('__proto__').mode, 'agent_decide');
     assert.equal(policies.get('constructor').mode, 'ask_human');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('a project without its own conflict choice follows the stored default', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-connected-search-'));
+  const file = join(directory, 'policies.json');
+  try {
+    const policies = new KnowledgeConflictPolicyStore(file, {
+      now: () => new Date('2026-11-01T00:00:00.000Z')
+    });
+    assert.deepEqual(policies.get('project-a'), {
+      personalProjectId: 'project-a', mode: 'ask_human', updatedAt: null, source: 'default'
+    });
+    assert.deepEqual(policies.overview(), {
+      default: { mode: 'ask_human', updatedAt: null }, projects: []
+    });
+
+    policies.setDefault('agent_decide');
+    policies.set('project-b', 'ask_human');
+    assert.equal(policies.get('project-a').mode, 'agent_decide');
+    assert.equal(policies.get('project-a').source, 'default');
+    assert.deepEqual(policies.get('project-b'), {
+      personalProjectId: 'project-b', mode: 'ask_human',
+      updatedAt: '2026-11-01T00:00:00.000Z', source: 'project'
+    });
+    assert.deepEqual(policies.overview(), {
+      default: { mode: 'agent_decide', updatedAt: '2026-11-01T00:00:00.000Z' },
+      projects: [{ personalProjectId: 'project-b', mode: 'ask_human', updatedAt: '2026-11-01T00:00:00.000Z' }]
+    });
+
+    assert.equal(policies.clear('project-b').source, 'default');
+    assert.equal(policies.get('project-b').mode, 'agent_decide');
+    assert.deepEqual(policies.overview().projects, []);
+    assert.throws(() => policies.setDefault('maybe'), /ask_human or agent_decide/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('a version 1 file without a default keeps its project choices, legacy keys included', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-connected-search-'));
+  const file = join(directory, 'policies.json');
+  try {
+    writeFileSync(file, JSON.stringify({
+      version: 1,
+      projects: {
+        'legacy-project': { personalProjectId: 'legacy-project', mode: 'agent_decide', updatedAt: '2026-01-01T00:00:00.000Z' },
+        'project:project-a': { personalProjectId: 'project-a', mode: 'agent_decide', updatedAt: '2026-01-02T00:00:00.000Z' }
+      }
+    }));
+    const policies = new KnowledgeConflictPolicyStore(file);
+    assert.equal(policies.get('legacy-project').source, 'project');
+    assert.deepEqual(policies.overview().projects.map(({ personalProjectId }) => personalProjectId),
+      ['legacy-project', 'project-a']);
+
+    policies.setDefault('agent_decide');
+    const stored = JSON.parse(readFileSync(file, 'utf8'));
+    assert.equal(stored.version, 1);
+    assert.equal(stored.projects['project:project-a'].mode, 'agent_decide');
+    assert.equal(stored.default.mode, 'agent_decide');
+
+    policies.clear('legacy-project');
+    assert.equal(Object.hasOwn(JSON.parse(readFileSync(file, 'utf8')).projects, 'legacy-project'), false);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -115,6 +180,18 @@ test('connected search keeps public, personal, and live external results separat
     });
     const updated = await search.getConflictPolicy({ personalProjectId: 'project-a' });
     assert.equal(updated.mode, 'agent_decide');
+    assert.equal(updated.source, 'project');
+    assert.equal(search.updateDefaultConflictPolicy({ mode: 'agent_decide' }).mode, 'agent_decide');
+    assert.deepEqual(search.getConflictPolicy({}).projects.map(({ personalProjectId }) => personalProjectId),
+      ['project-a']);
+    await assert.rejects(search.updateConflictPolicy({
+      personalSpaceId: 'personal-1', personalProjectId: 'project-missing', mode: 'ask_human'
+    }), /existing personal project/);
+    const cleared = await search.updateConflictPolicy({
+      personalSpaceId: 'personal-1', personalProjectId: 'project-a', mode: null
+    });
+    assert.deepEqual([cleared.mode, cleared.source], ['agent_decide', 'default']);
+    assert.deepEqual(search.getConflictPolicy({}).projects, []);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

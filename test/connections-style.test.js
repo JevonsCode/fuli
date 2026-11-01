@@ -9,7 +9,9 @@ test('connection sections are cards on the form column and keep accessible help 
   const page = readFileSync('web/src/pages/ConnectionsPage.vue', 'utf8');
   // D-03: each section is a shared Card in the one form column; no hand-made dividers.
   assert.match(page, /<Card as="section" class="external-knowledge-section"/);
-  assert.match(page, /<Card v-if="personalProjects.length" as="section" class="conflict-policy-section/);
+  assert.match(page, /<ConflictPolicyCard v-if="personalProjects.length" \/>/);
+  const conflictCard = readFileSync('web/src/features/connections/ConflictPolicyCard.vue', 'utf8');
+  assert.match(conflictCard, /<Card as="section" class="conflict-policy-section"/);
   // rec#38: the page reads the shell's width; the route puts it in the form column.
   assert.match(page, /max-w-\(--layout-max\)/);
   assert.doesNotMatch(page, /--(canvas|column|form)-max/);

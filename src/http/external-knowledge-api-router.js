@@ -85,6 +85,16 @@ export async function handleExternalKnowledgeApiRequest({
     return true;
   }
   if (connectedKnowledge &&
+      url.pathname === '/api/external-knowledge/conflict-policy/default' &&
+      request.method === 'PATCH') {
+    sendJson(
+      response,
+      200,
+      connectedKnowledge.updateDefaultConflictPolicy(await readJson(request))
+    );
+    return true;
+  }
+  if (connectedKnowledge &&
       url.pathname === '/api/external-knowledge/conflict-policy' &&
       request.method === 'PATCH') {
     sendJson(

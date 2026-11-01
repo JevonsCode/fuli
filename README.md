@@ -534,11 +534,12 @@ reported by count, and never enter the graph or Agent context.
 
 ### Conflict policy
 
-The conflict policy is stored per personal project and applies across that project's personal
-graph, all external bindings, and explicitly selected public projects:
+One default applies to every personal project; a project can keep its own choice as an exception
+(Connections → Conflict policy). The policy covers that project's personal graph, all external
+bindings, and explicitly selected public projects:
 
-- Ask in the Agent conversation is the default. The Agent presents conflicting content, source,
-  and scope separately so the user can choose.
+- Ask in the Agent conversation is the built-in default. The Agent presents conflicting content,
+  source, and scope separately so the user can choose.
 - Allow an Agent decision lets the Agent select the stronger or fresher source for the current
   response and requires it to explain the basis. It never confirms, invalidates, overwrites, or
   writes back any knowledge.

@@ -169,7 +169,10 @@ const BASELINE = Object.freeze({
   // list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
   // rec#11 D-89 rename_project_agent: any Agent's shown name, built-in roles included:
   // 198,559 -> 199,378 B (+819 B), measured; chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 199378,
+  // Conflict policy default + exceptions: one full-profile tool sets the default for every project,
+  // the project tool takes mode null to drop an exception and the read tool lists them without a
+  // project: 199,378 -> 199,999 B (+621 B), measured; chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 199999,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
