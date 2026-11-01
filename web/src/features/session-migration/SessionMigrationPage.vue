@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import { ApiError, apiErrorReason } from '@/api/client'
-import BackLink from '@/components/BackLink.vue'
+import Breadcrumb from '@/components/Breadcrumb.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import PageColumns from '@/components/PageColumns.vue'
 import { Badge } from '@/components/ui/badge'
@@ -190,7 +190,7 @@ watch([spaceId, sessionId, client, projectId], () => {
 <template>
   <section class="view">
     <div class="flex w-full flex-col gap-4" data-session-migration>
-      <BackLink :to="sessionPath" :from="/^\/s\//" class="text-sm">{{ t('sessionMigration.back') }}</BackLink>
+      <Breadcrumb :parent="{ label: t('sessionMigration.back'), to: sessionPath, from: /^\/s\// }" :current="t('routes.sessionMigration.title')" />
       <p v-if="!linkComplete" role="alert" class="m-0 text-sm text-destructive" data-migration-link-missing>
         {{ t('sessionMigration.missingLink') }}
       </p>

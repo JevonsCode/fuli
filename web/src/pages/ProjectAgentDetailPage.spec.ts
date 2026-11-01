@@ -401,7 +401,7 @@ describe('ProjectAgentDetailPage', () => {
     await router.push(AGENT_PAGE)
     await flushPromises()
     const returned = new Promise((resolve) => router.afterEach(resolve))
-    await wrapper.get('.agent-profile-back').trigger('click')
+    await wrapper.get('[data-breadcrumb-parent]').trigger('click')
     await returned
     expect(router.currentRoute.value.fullPath).toBe('/project-agents/manage?status=active')
   })

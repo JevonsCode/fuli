@@ -69,7 +69,7 @@ describe('RoundtablesPage', () => {
     await flushPromises()
     // One canvas: the open conversation replaces the list, with a way back to it.
     expect(wrapper.find('[data-testid="roundtable-thread"]').exists()).toBe(false)
-    expect(wrapper.get('[data-roundtable-back]').attributes('href')).toBe('/roundtables')
+    expect(wrapper.get('[data-breadcrumb-parent]').attributes('href')).toBe('/roundtables')
     const timeline = wrapper.get('[data-testid="roundtable-timeline"]')
     expect(timeline.text()).toContain('Claude Code')
     expect(timeline.text()).toContain('Nova Lane 已回复')
@@ -294,7 +294,7 @@ describe('RoundtablesPage on a phone and with paging', () => {
     const wrapper = mount(RoundtablesPage, { global: { plugins: [router] }, attachTo: document.body })
     await flushPromises()
     expect(wrapper.text()).toContain('对话不存在或当前不可访问')
-    await wrapper.get('[data-roundtable-back]').trigger('click')
+    await wrapper.get('[data-breadcrumb-parent]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/roundtables')
     wrapper.unmount()

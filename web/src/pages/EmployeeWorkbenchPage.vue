@@ -6,7 +6,7 @@ import { useJefaBoardLoad } from '@/features/employees/useJefaBoardLoad'
 import JefaReadStatus from '@/features/employees/JefaReadStatus.vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { getJson, patchJson, postJson } from '@/api/client'
-import BackLink from '@/components/BackLink.vue'
+import Breadcrumb from '@/components/Breadcrumb.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { useRoutePeek } from '@/composables/useRoutePeek'
 import { usePageTitle } from '@/layouts/page-title'
@@ -374,7 +374,7 @@ async function projectsSaved() {
    <div class="employee-workbench-canvas flex w-full flex-col gap-3">
     <!-- The Agent's name is the shell's H1; this row says only what the name does not. -->
     <header class="employee-workbench-toolbar">
-      <BackLink class="employee-workbench-back" to="/project-agents" :from="openedFromAgents">{{ t('agentProfiles.back') }}</BackLink>
+      <Breadcrumb :parent="{ label: t('agentProfiles.back'), to: '/project-agents', from: openedFromAgents }" />
       <div class="employee-workbench-identity">
         <span class="employee-workbench-mark" aria-hidden="true">
           <img v-if="employeeAvatarUrl(templateId)" :src="agentAvatarUrl(`employee.${templateId}`)" alt="" />
@@ -450,8 +450,6 @@ async function projectsSaved() {
 .employee-workbench-canvas { flex: 1 0 auto; }
 .fills-height .employee-workbench-canvas { flex: 1 1 0; min-height: 0; }
 .employee-workbench-toolbar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
-.employee-workbench-back { color: var(--color-muted); font-size: 13px; text-decoration: none; }
-.employee-workbench-back:hover { color: var(--color-ink); }
 .employee-workbench-identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .employee-workbench-mark { display: grid; place-items: center; flex: 0 0 28px; height: 28px; overflow: hidden; border-radius: var(--radius-control); background: var(--color-surface-subtle); color: var(--color-ink); font-size: 15px; font-weight: 650; }
 .employee-workbench-mark img { width: 100%; height: 100%; object-fit: cover; }
