@@ -12,7 +12,9 @@ import 'download_saver.dart';
 /// macOS). Only the console's own origin loads here; any other link opens in
 /// the default browser, as it would from the console in a browser tab. A file
 /// the page exports is saved by the client (`fuliSaveFile`), since neither
-/// WebView saves a page-made download for it.
+/// WebView saves a page-made download for it. The console draws its own
+/// right-click menu, so the WebView's native one is off; its 粘贴 reads the
+/// clipboard, which only the console's own page may.
 class ConsoleWebView {
   ConsoleWebView._(this._environment, this._opener, this._saver, this._onSaved);
 
@@ -45,17 +47,32 @@ class ConsoleWebView {
     }
   }
 
+  static InAppWebViewSettings settings() => InAppWebViewSettings(
+        useShouldOverrideUrlLoading: true,
+        supportMultipleWindows: true,
+        disableContextMenu: true,
+        isInspectable: kDebugMode,
+      );
+
+  /// Grants the console page reading the clipboard (its own menu's 粘贴);
+  /// every other request, and any request from another page, is denied.
+  static PermissionResponseAction permissionFor(PermissionRequest request, Uri console) {
+    final clipboardOnly = request.resources.isNotEmpty &&
+        request.resources.every((resource) => resource == PermissionResourceType.CLIPBOARD_READ);
+    return clipboardOnly && isConsolePage(request.origin, console)
+        ? PermissionResponseAction.GRANT
+        : PermissionResponseAction.DENY;
+  }
+
   /// [onLoaded] runs when the page has loaded, or could not, so the window
   /// stops waiting over it.
   Widget build(Uri console, VoidCallback onLoaded) => InAppWebView(
         key: ValueKey(console),
         webViewEnvironment: _environment,
         initialUrlRequest: URLRequest(url: WebUri.uri(console)),
-        initialSettings: InAppWebViewSettings(
-          useShouldOverrideUrlLoading: true,
-          supportMultipleWindows: true,
-          isInspectable: kDebugMode,
-        ),
+        initialSettings: settings(),
+        onPermissionRequest: (_, request) async =>
+            PermissionResponse(resources: request.resources, action: permissionFor(request, console)),
         shouldOverrideUrlLoading: (_, action) async {
           final url = action.request.url;
           if (url == null || isConsolePage(url, console)) return NavigationActionPolicy.ALLOW;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppShell from '@/layouts/AppShell.vue'
+import AppContextMenu from '@/features/context-menu/AppContextMenu.vue'
 import { RouterView, useRoute } from 'vue-router'
 const route = useRoute()
 </script>
@@ -7,4 +8,5 @@ const route = useRoute()
 <template>
   <RouterView v-if="route.meta.publicReport" />
   <AppShell v-else />
+  <AppContextMenu />
 </template>
