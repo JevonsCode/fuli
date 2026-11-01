@@ -3,8 +3,14 @@ description: >-
   Builds the per-user Windows package a release attaches and the one-click
   update installs: the portable runtime, the current application, the Flutter
   desktop client (desktop/flutter) in client\ with the Fuli.exe launcher, as
-  one zip and its SHA-256 in the release output folder. Expects a checkout and
-  npm ci already done on a Windows runner.
+  one zip and its SHA-256 in the release output folder, and from the same tray
+  directory the one-file installer FULI-Setup-<version>.exe and its SHA-256
+  (desktop/windows-setup/fuli-setup.iss). Expects a checkout and npm ci already
+  done on a Windows runner.
+inputs:
+  setup:
+    description: Also build FULI-Setup-<version>.exe ("false" builds only the zip)
+    default: "true"
 outputs:
   release:
     description: Folder holding the zip and its .sha256
@@ -54,3 +60,24 @@ runs:
         node scripts/build-windows-tray.js --asset-bundle "$t\fuli-portable" --client "$env:GITHUB_WORKSPACE\desktop\flutter\build\windows\x64\runner\Release" --output "$t\fuli-tray" --data-dir "$t\fuli-tray-data"
         node scripts/package-windows-tray-release.js --tray "$t\fuli-tray" --output "$t\fuli-release"
         "release=$t\fuli-release" >> $env:GITHUB_OUTPUT
+    - name: Make sure Inno Setup 6 is available
+      if: inputs.setup == 'true'
+      id: inno
+      shell: pwsh
+      run: |
+        $PSNativeCommandUseErrorActionPreference = $true
+        $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+        # fuli-setup.iss needs 6.3 or later (ExecAndCaptureOutput); an older preinstalled copy is upgraded.
+        if (-not (Test-Path $iscc) -or [version](Get-Item $iscc).VersionInfo.ProductVersion -lt [version]'6.3') {
+          choco upgrade innosetup --no-progress -y
+        }
+        if (-not (Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
+        Write-Output "Inno Setup $((Get-Item $iscc).VersionInfo.ProductVersion)"
+        "iscc=$iscc" >> $env:GITHUB_OUTPUT
+    - name: Build the one-file installer
+      if: inputs.setup == 'true'
+      shell: pwsh
+      run: |
+        $PSNativeCommandUseErrorActionPreference = $true
+        $t = $env:RUNNER_TEMP
+        node scripts/build-windows-setup.js --tray "$t\fuli-tray" --output "$t\fuli-release" --iscc "${{ steps.inno.outputs.iscc }}"

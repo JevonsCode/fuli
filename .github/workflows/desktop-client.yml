@@ -125,6 +125,23 @@ jobs:
           }
           if ($names | Where-Object { $_ -match '(?i)FuliTray|ControllerRunner' }) { throw 'The retired C# tray is still packaged' }
           Write-Output "$($zip.Name): $($names.Count) entries; Fuli.exe launches client/FULI.exe"
+      # Runs the setup the way a person would, without the wizard: a first
+      # per-user install on the clean runner, then checks what it left.
+      - name: Install with FULI-Setup.exe
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem "${{ steps.tray.outputs.release }}" -Filter 'FULI-Setup-*.exe' | Select-Object -First 1
+          if (-not $setup) { throw 'No FULI-Setup-*.exe was built' }
+          $log = Join-Path $env:RUNNER_TEMP 'fuli-setup.log'
+          $run = Start-Process $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', "/LOG=`"$log`"" -Wait -PassThru
+          Get-Content $log -Tail 40
+          if ($run.ExitCode -ne 0) { throw "FULI-Setup exited with $($run.ExitCode)" }
+          $root = Join-Path $env:LOCALAPPDATA 'Programs\Fuli'
+          $record = Get-Content (Join-Path $root 'installation.json') -Raw | ConvertFrom-Json
+          if (-not (Test-Path (Join-Path $record.packageRoot 'Fuli.exe'))) { throw 'The installed version has no Fuli.exe' }
+          $entry = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FULI'
+          if ($entry.InstallLocation -ne $root) { throw "The Installed apps entry names $($entry.InstallLocation)" }
+          Write-Output "$($setup.Name) installed $($record.applicationVersion) at $($record.packageRoot)"
       - uses: actions/upload-artifact@v4
         with:
           name: fuli-windows-tray

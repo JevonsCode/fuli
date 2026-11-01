@@ -78,7 +78,9 @@ jobs:
   # The per-user Windows (tray) install updates from this asset with one click
   # (src/desktop/windows-tray-release.js): the tray package as one zip and its
   # SHA-256, attached to the release after the npm package is published. Its
-  # tray app is the Flutter desktop client (desktop/flutter).
+  # tray app is the Flutter desktop client (desktop/flutter). Beside it goes the
+  # one-file first install FULI-Setup-<version>.exe (unsigned) and its SHA-256,
+  # built from the same tray directory.
   windows-tray:
     if: github.repository == 'JevonsCode/fuli'
     needs: publish
@@ -95,7 +97,7 @@ jobs:
       - run: npm ci
       - id: tray
         uses: ./.github/actions/windows-tray
-      - name: Attach the tray package to the release
+      - name: Attach the tray package and the installer to the release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

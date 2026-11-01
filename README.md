@@ -578,7 +578,7 @@ New in 0.20 (public preview `0.20.0-beta`, see the [release notes](docs/releases
 - **Memory between projects**: weighted links (related, frequent, close) say how much one project may draw on another. Weights never grant access.
 - **Lower token cost**: a smaller task entry, shared rules read on demand, long preference lists read in pages, and a Stop hook that closes routine tasks without another model turn.
 - **Console**: six entries (Workbench, Agents, Conversations, Projects, Memory, Settings), a phone layout, and Alt/Option-click explanations for any status or term.
-- **Windows**: an installed build with Update-Fuli, Rollback-Fuli, and Uninstall-Fuli that keeps your data; the console's 「Update to vX」 downloads the release's verified Windows package and runs the same update in one click.
+- **Windows**: download `FULI-Setup-<version>.exe` from the release and double-click it to install for your user (no terminal, no administrator; unsigned for now, so SmartScreen asks once). The installed build has Update-Fuli, Rollback-Fuli, and Uninstall-Fuli that keeps your data; the console's 「Update to vX」 downloads the release's verified Windows package and runs the same update in one click.
 
 The following must not be presented as already proven:
 

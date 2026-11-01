@@ -42,8 +42,9 @@ FuliTray.exe is no longer built.
   `"<package>\Fuli.exe" --background` (tray icon only). Each start of the installed client points it
   at its own version; an update or rollback points an existing entry at the version
   it installs, or removes it when that version has no desktop client (the old tray
-  takes no arguments). Uninstall removes the entry, the client settings key and the
-  notification identity `HKCU\Software\Classes\AppUserModelId\FULI`.
+  takes no arguments). Uninstall removes the entry, the client settings key, the
+  notification identity `HKCU\Software\Classes\AppUserModelId\FULI` and the Installed
+  apps entry FULI-Setup.exe registers when it names this installation.
 - `fuli://` links open the installed client: `HKCU\Software\Classes\fuli` (`URL Protocol`)
   with `shell\open\command` = `"<package>\Fuli.exe" "%1"`. Each start of the installed client
   points it at its own version; updates and rollbacks follow it like the launch-at-login
@@ -64,9 +65,48 @@ FuliTray.exe is no longer built.
 - Icons come from the FULI mark in `brand/` with a green, amber or red status dot:
   `node scripts/build-brand-assets.js` (`brand/README.md`).
 
+## One-click installation (FULI-Setup.exe)
+
+For people who do not use a terminal, each release attaches `FULI-Setup-<version>.exe`
+next to the tray zip: download it, double-click it, click 「安装 / Install」, and FULI
+opens. The setup carries the same verified tray directory as the zip, so Node, Java
+and the graph database come with it and nothing else needs installing.
+
+- Per user, no administrator permission. The wizard is in Chinese or English,
+  following the Windows display language.
+- It extracts the tray directory to its temporary folder, runs the bundled
+  `runtime\node\node.exe src\desktop\windows-install.js --yes` without a console
+  window, deletes the temporary copy, and offers 「启动 FULI / Launch FULI」 (checked),
+  which opens the installed `<package>\Fuli.exe`. Locations and shortcuts are the
+  defaults below; nothing is asked.
+- Data a previous FULI left in `%LOCALAPPDATA%\Fuli` (an uninstall keeps it) is
+  adopted unchanged (`--adopt-existing-data`); a folder there that is not FULI data
+  is refused.
+- When FULI is already installed under `%LOCALAPPDATA%\Programs\Fuli`, it runs the
+  package's `src\desktop\windows-update-command.js --yes` instead, the same update as
+  `Update-Fuli.cmd`: data is kept, the running desktop client closes and reopens. The
+  same version is left as it is. A lower version is refused (no `--allow-downgrade`).
+- If that step fails, the last page shows its error text and the setup log path
+  (`%TEMP%\Setup Log <date> #<n>.txt`, which also has the full node output), the
+  launch option is hidden and the setup exits with code 1.
+- It registers FULI in Windows' Installed apps (`HKCU\...\CurrentVersion\Uninstall\FULI`,
+  no uninstaller of its own). Its uninstall runs `Uninstall-Fuli`'s script through the
+  root `FuliNode.exe`, so it follows updates; `Uninstall-Fuli.cmd` removes the entry.
+- The setup is not code-signed yet. Windows SmartScreen warns about it 「Windows 已保护你的电脑 /
+  Windows protected your PC」; choose 「更多信息 / More info」 and then 「仍要运行 / Run anyway」.
+  Compare the download with its `.sha256` asset to check it.
+
+It is built by `scripts/build-windows-setup.js --tray <tray> --output <folder>` with
+Inno Setup 6.3 or later (`ISCC.exe`, `--iscc` to name it) from
+`desktop/windows-setup/fuli-setup.iss`; the version is the tray's `package.json`.
+`.github/actions/windows-tray` builds it with the zip, installing Inno Setup with
+Chocolatey when the runner lacks it, and the Desktop client workflow installs it
+silently on the runner as a check.
+
 ## Installation
 
-Run `Install-Fuli.cmd` in the resulting directory and confirm its displayed paths.
+Run `Install-Fuli.cmd` in the resulting directory and confirm its displayed paths
+(the one-click setup above runs the same installer).
 No administrator permission is requested. Defaults:
 
 - Application: `%LOCALAPPDATA%\Programs\Fuli\versions\<installation-id>`.
