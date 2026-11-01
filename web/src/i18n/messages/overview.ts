@@ -4,8 +4,6 @@ export const overviewMessages = {
       attention: '等你处理',
       currentWork: '进行中',
       recentlyDone: '最近完成',
-      log: '进展',
-      flas: 'FLAs 正在做',
     },
     stage: {
       aria: '当前工作',
@@ -15,6 +13,17 @@ export const overviewMessages = {
       you: '你',
       system: '系统',
       switchTo: '切换到 {title}',
+      viewsAria: '这项工作的进展',
+      views: { timeline: '时间轴', flas: 'FLA 分工' },
+    },
+    timeline: {
+      today: '今天',
+      yesterday: '昨天',
+      undated: '时间未知',
+      expand: '展开',
+      collapse: '收起',
+      earlier: '显示更早的 {count} 条',
+      tones: { done: '已完成', blocked: '受阻', unblocked: '已解除阻塞' },
     },
     done: {
       empty: '还没有完成的工作。',
@@ -44,8 +53,6 @@ export const overviewMessages = {
       attention: 'Waiting for you',
       currentWork: 'In progress',
       recentlyDone: 'Recently done',
-      log: 'Progress',
-      flas: 'FLAs at work',
     },
     stage: {
       aria: 'Current work',
@@ -55,6 +62,17 @@ export const overviewMessages = {
       you: 'You',
       system: 'System',
       switchTo: 'Switch to {title}',
+      viewsAria: 'Progress of this work',
+      views: { timeline: 'Timeline', flas: 'FLA shares' },
+    },
+    timeline: {
+      today: 'Today',
+      yesterday: 'Yesterday',
+      undated: 'Time unknown',
+      expand: 'Show more',
+      collapse: 'Show less',
+      earlier: 'Show {count} earlier',
+      tones: { done: 'Done', blocked: 'Blocked', unblocked: 'Unblocked' },
     },
     done: {
       empty: 'Nothing finished yet.',

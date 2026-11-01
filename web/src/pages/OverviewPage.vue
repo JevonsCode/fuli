@@ -73,11 +73,6 @@ function agentName(id?: string | null) {
 function owner(task: ProjectAgentTaskRecord) { const id = overviewOwnerId(task); return id ? agentName(id) : t('overview.missing.owner') }
 function taskTitle(task: ProjectAgentTaskRecord) { return overviewTaskTitle(task) || t('overview.missing.taskTitle') }
 function statusLabel(status: string) { return taskStatusLabel(status, { unrecognized: t('overview.missing.status') }) }
-// The log reads the clock alone for today, the date and clock before that.
-function formatLogTime(value?: string | null) {
-  const today = value && new Date(value).toDateString() === new Date().toDateString()
-  return formatDateTime(value, currentLocale(), today ? { hour: '2-digit', minute: '2-digit' } : { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }, { missing: t('overview.missing.time'), invalid: t('overview.missing.time') })
-}
 function formatTime(value?: string | null) { return formatDateTime(value, currentLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }, { missing: t('overview.missing.time'), invalid: t('overview.missing.time') }) }
 // A block the person marked cleared also closes its open decision requests.
 function blockerCleared() { void data.loadTasks(); void data.loadRequests() }
@@ -105,7 +100,7 @@ const next = computed(() => {
     <div v-else class="workbench">
       <GrowthLoading v-if="!tasks.data && tasks.loading" class="workbench-loading" variant="compact" :label="t('overview.work.loading')" />
       <WorkbenchStage v-else :task="staged" :space-id="activeSpaceId" :title="taskTitle" :project-name="projectName" :agent-name="agentName"
-        :status-label="statusLabel" :format-time="formatLogTime" :next="next" :flying="flying" :partial="tasks.data?.partial === true" @cleared="blockerCleared" />
+        :status-label="statusLabel" :next="next" :flying="flying" :partial="tasks.data?.partial === true" @cleared="blockerCleared" />
       <WorkbenchFeed :requests="data.requestItems.value" :requests-state="requests" :request-total="requests.data?.total ?? 0"
         :running="others" :tasks-state="tasks" :done="done" :title="taskTitle" :agent-name="agentName" :owner="owner"
         :status-label="statusLabel" :format-time="formatTime" :flying="flying" @select="select" @retry-requests="data.loadRequests" @retry-tasks="data.loadTasks" />
