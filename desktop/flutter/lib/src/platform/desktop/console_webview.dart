@@ -45,7 +45,9 @@ class ConsoleWebView {
     }
   }
 
-  Widget build(Uri console) => InAppWebView(
+  /// [onLoaded] runs when the page has loaded, or could not, so the window
+  /// stops waiting over it.
+  Widget build(Uri console, VoidCallback onLoaded) => InAppWebView(
         key: ValueKey(console),
         webViewEnvironment: _environment,
         initialUrlRequest: URLRequest(url: WebUri.uri(console)),
@@ -80,6 +82,10 @@ class ConsoleWebView {
                 return {'saved': false, 'error': '$error'};
               }
             }),
+        onLoadStop: (_, _) => onLoaded(),
+        onReceivedError: (_, request, _) {
+          if (request.isForMainFrame ?? true) onLoaded();
+        },
         // target=_blank and window.open: never a second window inside FULI.
         onCreateWindow: (_, action) async {
           final url = action.request.url;

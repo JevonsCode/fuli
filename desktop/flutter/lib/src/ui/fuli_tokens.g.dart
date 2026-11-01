@@ -102,6 +102,13 @@ abstract final class FuliShadow {
   ];
 }
 
+// The dock's frosted glass: every floating or pinned bar takes it.
+abstract final class FuliGlass {
+  static const surface = Color(0xC7FAFAF8);
+  static const edge = Color(0x1414141E);
+  static const blur = 30.0;
+}
+
 abstract final class FuliMotion {
   static const fast = Duration(milliseconds: 140);
   static const medium = Duration(milliseconds: 220);

@@ -4,7 +4,7 @@ import '../api/fuli_api.dart';
 import '../api/migration_plan.dart';
 import '../app/fuli_controller.dart';
 import '../l10n/strings.dart';
-import 'pending_line.dart';
+import 'growth_loading.dart';
 import 'theme.dart';
 
 const _staleCode = 'data_format_stale_preview';
@@ -101,7 +101,7 @@ class _MigrationDialogState extends State<MigrationDialog> {
   }
 
   Widget _body(MigrationPlan? plan) {
-    if (_loading && plan == null) return PendingLine(label: s.migrationLoading);
+    if (_loading && plan == null) return GrowthLoading(label: s.migrationLoading);
     final outcome = _outcome;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -114,7 +114,7 @@ class _MigrationDialogState extends State<MigrationDialog> {
           if (_stale) _line(s.migrationStale, error: true),
           if (plan != null) ..._planView(plan),
         ],
-        if (_applying) PendingLine(label: s.migrationApplying),
+        if (_applying) GrowthLoading(label: s.migrationApplying),
         if (_error != null) _line(_error!, error: true),
       ],
     );

@@ -243,6 +243,31 @@ void main() {
     await starting;
   });
 
+  test('a start keeps the window waiting until the check after it has finished', () async {
+    final release = Completer<RuntimeReport>();
+    final api = DemoFuliApi()..reachable = false;
+    final controller = controllerFor(api, _GatedRuntime(release.future));
+    await controller.refresh();
+    expect(controller.bringingUp, isNull);
+    final seen = <(String?, bool?)>[];
+    controller.addListener(() => seen.add((controller.bringingUp, controller.snapshot?.reached)));
+
+    final starting = controller.start();
+    expect(controller.bringingUp, '正在启动 FULI…');
+    api.reachable = true;
+    release.complete(const RuntimeReport(RuntimeState.running));
+    await starting;
+
+    // The check that found the console still came while waiting; only then does the wait end.
+    expect(seen, containsAllInOrder([('正在启动 FULI…', false), ('正在启动 FULI…', true), (null, true)]));
+    expect(controller.bringingUp, isNull);
+
+    // A stop is no reason to wait for the console.
+    final beforeStop = seen.length;
+    await controller.stop();
+    expect(seen.skip(beforeStop).map((entry) => entry.$1), everyElement(isNull));
+  });
+
   test('applying a migration sends the digest that was shown', () async {
     final api = DemoFuliApi(plan: demoPlan);
     final controller = controllerFor(api, DemoRuntime(api));

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../doctor/doctor_report.dart';
 import '../l10n/strings.dart';
+import 'status_card.dart';
 import 'theme.dart';
 
 const _knownKinds = {
@@ -14,15 +15,16 @@ const _knownKinds = {
   'ports_moved',
 };
 
-/// One doctor item the person acts on or reads: a tinted mark, a plain
-/// sentence and at most one button on the right. Automatic items are not
-/// cards; they share the 「自动修复」 card above.
+/// One doctor item as a card: its plain sentence and the one button that
+/// acts on it, if any. 「自动修复」 runs the console's repair, which fixes
+/// every automatic item at once.
 class ItemCard extends StatelessWidget {
   const ItemCard({
     super.key,
     required this.item,
     required this.strings,
     required this.enabled,
+    required this.onRepair,
     required this.onReview,
     required this.onUpdate,
   });
@@ -30,61 +32,29 @@ class ItemCard extends StatelessWidget {
   final DoctorItem item;
   final Strings strings;
   final bool enabled;
+  final VoidCallback onRepair;
   final VoidCallback onReview;
   final ValueChanged<String> onUpdate;
 
   @override
   Widget build(BuildContext context) {
-    final info = item.severity == DoctorSeverity.info;
-    final blocking = item.severity == DoctorSeverity.blocking;
     final (tone, icon) = switch (item.severity) {
       DoctorSeverity.blocking => (Tone.problem, Icons.error_outline_rounded),
       DoctorSeverity.warning => (Tone.attention, Icons.priority_high_rounded),
       DoctorSeverity.info => (Tone.quiet, Icons.info_outline_rounded),
     };
-    final detail = _detail();
-    final action = _action();
-    return Container(
+    return StatusCard(
       key: ValueKey('item-${item.id}'),
-      width: double.infinity,
-      padding: EdgeInsets.all(info ? FuliSpace.space4 : FuliSpace.space5),
-      // An information line sits on the quiet surface; something that blocks
-      // FULI is lifted, never marked with a side bar.
-      decoration: info
-          ? BoxDecoration(color: FuliColors.surfaceSubtle, borderRadius: BorderRadius.circular(FuliSize.radiusCard))
-          : cardDecoration(lifted: blocking),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: info ? FuliColors.surface : tone.soft,
-              borderRadius: BorderRadius.circular(FuliSize.radiusControl),
-            ),
-            child: Icon(icon, size: 16, color: tone.ink),
-          ),
-          const SizedBox(width: FuliSpace.space3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(strings.explain(item), style: info ? TypeScale.body.copyWith(color: FuliColors.inkSoft) : TypeScale.cardTitle),
-                if (detail != null) ...[
-                  const SizedBox(height: FuliSpace.space1),
-                  Text(detail, style: TypeScale.meta),
-                ],
-              ],
-            ),
-          ),
-          if (action != null) ...[const SizedBox(width: FuliSpace.space4), action],
-        ],
-      ),
+      tone: tone,
+      icon: icon,
+      sentence: strings.explain(item),
+      detail: _detail(),
+      action: _action(),
+      lifted: item.severity == DoctorSeverity.blocking,
     );
   }
 
-  // Secondary text only: the failed update's reason, or the kind this client
+  // Folded detail only: the failed update's reason, or the kind this client
   // does not know yet (never the main sentence).
   String? _detail() {
     if (item.kind == 'update_left_work' && item.data['error'] is String) return item.data['error'] as String;
@@ -93,6 +63,9 @@ class ItemCard extends StatelessWidget {
 
   Widget? _action() {
     final latest = item.data['latest'];
+    if (item.fix == DoctorFix.auto) {
+      return OutlinedButton(onPressed: enabled ? onRepair : null, child: Text(strings.autoRepair));
+    }
     return switch (item.kind) {
       'data_format_waiting' => OutlinedButton(onPressed: enabled ? onReview : null, child: Text(strings.review)),
       'update_available' when latest is String && latest.isNotEmpty =>

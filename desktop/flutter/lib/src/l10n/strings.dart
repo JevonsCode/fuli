@@ -16,6 +16,8 @@ class Strings {
   // The desktop client is a Beta feature for now: its window and tray say so.
   String get appName => 'FULI Beta';
   String get checking => _t('正在检查 FULI…', 'Checking FULI…');
+  // The console answers; its page is loading in the window.
+  String get openingConsole => _t('正在打开控制台…', 'Opening the console…');
   String get statusOk => _t('FULI 正常工作', 'FULI is working');
   String statusNeedsPerson(int count) =>
       _t('有 $count 件事需要你', count == 1 ? '1 thing needs you' : '$count things need you');
@@ -27,7 +29,6 @@ class Strings {
   // Details under the status sentence
   String get doctorUnsupported =>
       _t('这个版本的 FULI 还不支持体检，更新后可用', 'This FULI version cannot run the health check yet; it can after an update');
-  String get notFoundBody => _t('这台电脑上没有找到 FULI 的安装。', 'No FULI installation was found on this computer.');
   String get noAnswer => _t('FULI 在运行，但控制台没有应答。', 'FULI is running, but its console does not answer.');
   String consoleError(String detail) => _t('控制台回答出错：$detail', 'The console answered with an error: $detail');
 
@@ -41,10 +42,6 @@ class Strings {
 
   // Buttons and menu
   String get autoRepair => _t('自动修复', 'Fix automatically');
-  String autoRepairHint(int count) =>
-      _t('$count 件事可以自动修复', '${_things(count)} can be fixed automatically');
-  String get sectionNeedsYou => _t('需要你处理', 'Needs you');
-  String get sectionNotes => _t('提示', 'For your information');
   String get review => _t('查看并确认', 'Review and confirm');
   String updateTo(String version) => _t('更新到 v$version', 'Update to v$version');
   String get openConsole => _t('打开控制台', 'Open console');
