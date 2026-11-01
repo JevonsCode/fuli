@@ -4,6 +4,7 @@ import '../app/fuli_condition.dart';
 import 'fuli_mark.dart';
 import 'glass_bar.dart';
 import 'theme.dart';
+import 'window_caption.dart';
 import 'wordmark.dart';
 
 const topLineHeight = 64.0;
@@ -13,6 +14,7 @@ const _dot = 8.0;
 /// after a status dot. [version] (the installed version, in words) waits in
 /// the dot's tooltip.
 /// Without a [sentence] (while waiting) it is the mark and the wordmark alone, at the same place.
+/// In the desktop client it is the window's title bar and keeps clear of the window's own controls.
 class TopLine extends StatelessWidget {
   const TopLine({super.key, this.condition, this.sentence, this.version});
 
@@ -26,11 +28,14 @@ class TopLine extends StatelessWidget {
     final motion = still ? Duration.zero : FuliMotion.medium;
     final sentence = this.sentence;
     final version = this.version;
-    return GlassBar(
+    final room = captionRoom(context, padding: FuliSpace.space8);
+    return CaptionDragArea(
+        child: GlassBar(
       height: topLineHeight,
       edge: AxisDirection.down,
       child: Row(
         children: [
+          SizedBox(width: room.start),
           const FuliMark(),
           const SizedBox(width: FuliSpace.space2),
           const FuliWordmark(),
@@ -65,9 +70,10 @@ class TopLine extends StatelessWidget {
               ),
             ),
           ],
+          SizedBox(width: room.end),
         ],
       ),
-    );
+    ));
   }
 
   static Widget _tooltip(String? message, Widget child) =>

@@ -5,6 +5,7 @@ import 'brand.dart';
 import 'home_page.dart';
 import 'theme.dart';
 import 'waiting_screen.dart';
+import 'window_caption.dart';
 
 class FuliApp extends StatelessWidget {
   const FuliApp({super.key, required this.services, required this.brand});
@@ -70,7 +71,8 @@ class _WindowState extends State<_Window> {
     final controller = _services.controller;
     final strings = _services.strings;
     final consoleView = _services.consoleView;
-    return ListenableBuilder(
+    final caption = _services.caption;
+    final content = ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
         final snapshot = controller.snapshot;
@@ -107,5 +109,8 @@ class _WindowState extends State<_Window> {
             consoleLink: consoleView == null);
       },
     );
+    if (caption == null) return content;
+    // The window's own controls stay where they are whatever the window shows.
+    return WindowChrome(caption: caption, strings: strings, child: content);
   }
 }
