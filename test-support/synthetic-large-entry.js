@@ -123,6 +123,47 @@ export async function syntheticWorkingEntry({ items, sessionId, token = 'fuli-ta
     source_application: 'claude_code', preference_scope: { version: 1, work_kind: 'implementation', workflow: null } });
 }
 
+// An ordinary small coding task of the same working lead when nothing in the
+// store matches it: both memory layers never written, the directory snapshot
+// already current, a five-person team, Jefa's empty board, Tonborg's
+// automatic judgment, a searched recall with no match, a saved conversation
+// pointing at the last one, and no preferences. The entry's fixed cost.
+export async function syntheticNoMatchEntry({ sessionId, token = 'fuli-task-6f1d2c3b-8a4e-4f5d-9b0c-1e2f3a4b5c6d' }) {
+  const entry = await syntheticWorkingEntry({ items: [], sessionId, token });
+  const continuity = syntheticContinuity();
+  const empty = personalProjectId => agentMemoryView({ personal_space_id: SPACE, personal_project_id: personalProjectId,
+    agent_id: AGENT, scope: personalProjectId === null ? 'private_agent_global' : 'private_agent_project',
+    storage: 'provider', authority: 'working_context_not_confirmed_knowledge', revision: 0, current: null });
+  const person = (index, occupation) => ({ agent_id: `project.member-${index}`, name: `Synthetic member ${index}`, occupation });
+  return withPreferenceScope({ ...entry, active_conflicts: [], deferred_conflicts: [], conflicts: undefined,
+    task_knowledge_recall: { status: 'no_match', partial: false, failed_query_count: 0,
+      trigger_categories: ['release_delivery', 'requirements_architecture_decision'], query_count: 3,
+      guidance: TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE, sourceMarker: createFuliSourceMarker({}),
+      noMatchSourceMarker: createFuliSourceMarker({}), facts: [], entities: [] },
+    conversation: { status: 'saved', conversation_id: '0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b01', revision: 0,
+      recovery: null, recovered_from: null, compacted: false, recent_conversation: {
+        id: '0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b02', updated_at: '2026-10-26T10:00:00.000000+00:00',
+        title: 'SYNTHETIC: closed by the Stop hook with no checkpoint.' }, guidance: CONVERSATION_GUIDANCE },
+    project_management_context: { ...entry.project_management_context, managers: entry.project_management_context.managers
+      .map(manager => ({ ...manager, board: { version: 0, total: 0, view: 'on_demand' } })) },
+    project_agent_context: { ...continuity, selection_reason: 'project_team_lead', match_basis: [
+      'project team lead is the stable conversation owner', '0 active team member(s) available for explicit workstreams',
+      'AR and project manager remain peer roles'], role: { name: 'Synthetic lead',
+      responsibility: 'SYNTHETIC lead who develops, fixes, tests and delivers the project.',
+      initial_preferences: ['SYNTHETIC: read the existing code first.', 'SYNTHETIC: attach reproducible evidence.'] },
+    project_brief: { name: 'project', summary: 'SYNTHETIC draft brief' },
+    memory: empty(PROJECT), global_memory: empty(null),
+    team: { ...continuity.team, roster: [{ agent_id: AGENT, name: 'Synthetic lead', occupation: null },
+      person(1, 'engineering'), person(2, 'qa_automation'), person(3, 'engineering'), person(4, 'design')] },
+    directorySnapshot: { ...continuity.directorySnapshot, files: [
+      { file: 'AGENTS.md', scope: 'identity', state: 'unchanged' },
+      { file: `projects/${PROJECT}/MEMORY.md`, scope: 'project', revision: 0, state: 'unchanged' },
+      { file: 'MEMORY.md', scope: 'global', revision: 0, state: 'unchanged' }] },
+    execution_reason: 'project_team_lead', execution_agent_id: AGENT } },
+  { personal_space_id: SPACE, personal_project_id: PROJECT, project_agent_id: AGENT, session_id: sessionId,
+    source_application: 'claude_code', preference_scope: { version: 1, work_kind: 'implementation', workflow: null } });
+}
+
 const NOTE = 'SYNTHETIC working note about the export cursor, the rollback plan and the review checklist for this project. ';
 
 function memoryLayer(personalProjectId, revision) {

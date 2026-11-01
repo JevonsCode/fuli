@@ -157,7 +157,9 @@ test('MCP reads, memory checkpoints and task entry expose directorySnapshot stat
   const entry = (await call('get_collaboration_preferences', { projectPath: '/synthetic/sample-project',
     taskPrompt: 'Continue.' })).structuredContent;
   assert.equal(entry.project_agent_context.directorySnapshot.status, 'current');
-  assert.deepEqual(entry.project_agent_context.directorySnapshot.files.map(file => file.scope), ['identity', 'project', 'global']);
+  // Every file is already as the read and checkpoint left it, so the entry counts them (rec#46).
+  assert.equal(entry.project_agent_context.directorySnapshot.files, undefined);
+  assert.equal(entry.project_agent_context.directorySnapshot.files_unchanged, 3);
 
   const everything = JSON.stringify([read, written, entry]);
   assert.equal(everything.includes(home), false, 'no absolute path');

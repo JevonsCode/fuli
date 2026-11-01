@@ -44,14 +44,15 @@ test('every Agent and the MCP view get the same compact manager, judgment and me
   const { version } = entryRules();
   for (const [agent, view] of Object.entries(views)) {
     const [manager] = view.project_management_context.managers;
-    assert.deepEqual(manager.guidance, { summary: manager.guidance.summary, rules: 'fuli://rules/task-entry/manager_guidance', version }, agent);
+    assert.equal(view.rules_version, version, agent);
+    assert.deepEqual(manager.guidance, { summary: manager.guidance.summary, rules: 'fuli://rules/task-entry/manager_guidance' }, agent);
     assert.match(manager.guidance.summary, /read_board/, agent);
     assert.ok(manager.guidance.summary.length <= 110, agent);
     assert.deepEqual(manager.board, { version: 12, total: 9, view: 'on_demand' }, agent);
     assert.equal(manager.collaboration_receipt, undefined, agent);
     assert.ok(manager.session?.sessionId, `${agent}: the title tool still names its session`);
     assert.deepEqual(view.judgment_context.guidance, { summary: view.judgment_context.guidance.summary,
-      rules: 'fuli://rules/task-entry/judgment_guidance', version }, agent);
+      rules: 'fuli://rules/task-entry/judgment_guidance' }, agent);
     assert.match(view.judgment_context.guidance.summary, /assess_agent_action/, agent);
     const { current } = view.project_agent_context.memory;
     for (const field of ['personalSpaceId', 'personalProjectId', 'agentId', 'revision', 'checkpointId', 'taskId', 'sourceSessionId']) {
