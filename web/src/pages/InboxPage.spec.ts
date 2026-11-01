@@ -114,7 +114,7 @@ describe('Inbox page', () => {
     await type('Synthetic decision')
     document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
     await new Promise(resolve => setTimeout(resolve, 0)); await flushPromises()
-    expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', expect.objectContaining({ requestId: 'request-a', choice: null, note: 'Synthetic decision' }))
+    expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', expect.objectContaining({ requestId: 'request-a', choice: null, note: 'Synthetic decision' }), expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.findAll('.attention-request').map(item => item.text())).toEqual([expect.stringContaining('Synthetic request-b')])
     expect(wrapper.get('.attention-page-count').text()).toContain('1')
     expect(router.currentRoute.value.query).toEqual({})
@@ -154,7 +154,7 @@ describe('Inbox page', () => {
 
       await type('Synthetic reply beyond the page')
       document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
-      expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', expect.objectContaining({ personalSpaceId: 'space-a', requestId: 'request-101', expectedRevision: 1 }))
+      expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', expect.objectContaining({ personalSpaceId: 'space-a', requestId: 'request-101', expectedRevision: 1 }), expect.objectContaining({ schema: expect.anything() }))
     })
 
     it('opens a linked request while the queue is still pending, then lets the queue take over without a second read', async () => {
