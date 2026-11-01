@@ -41,6 +41,8 @@
      beneath turns into soft colour and text cannot be read, and the panel still reads as glass,
      not a white plate; a solid surface where backdrop-filter is missing. */
   --surface-dock: rgb(255 255 255 / 40%);
+  /* A taller glass panel over busy content (the pinned FLAs) takes a little more tint. */
+  --surface-dock-panel: rgb(255 255 255 / 56%);
   /* A faint sheen on the glass (Jevons 11-01): pale pink at the top-left corner, pale gold at the
      bottom-right, the middle stays the neutral tint. */
   --glass-sheen: radial-gradient(120% 140% at 0% 0%, rgb(255 205 220 / 42%), transparent 55%),

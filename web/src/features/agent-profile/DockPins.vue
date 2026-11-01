@@ -99,7 +99,7 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
    are glass too and must blur the page, not this capsule. */
 .dock-pins::before {
   content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
-  background: var(--glass-sheen), var(--surface-dock); backdrop-filter: var(--filter-dock); -webkit-backdrop-filter: var(--filter-dock);
+  background: var(--glass-sheen), var(--surface-dock-panel); -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .dock-pins::before { background: var(--color-surface); }
@@ -116,7 +116,7 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
 .dock-pin::after {
   content: attr(data-name); position: absolute; top: 50%; left: calc(100% + 10px); padding: 4px 10px; transform: translateY(-50%);
   border: 1px solid var(--edge-glass); border-radius: var(--radius-pill); color: var(--color-ink); background: var(--surface-glass-strong);
-  backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); box-shadow: var(--shadow-md);
+  -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); box-shadow: var(--shadow-md);
   font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; opacity: 0; pointer-events: none;
   translate: -4px 0; transition: opacity var(--motion-fast), translate var(--motion-spring) var(--motion-ease-spring);
 }

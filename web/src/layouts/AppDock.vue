@@ -48,7 +48,7 @@ defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; space
    blur the dock, not the page: it looked clear instead of frosted (Jevons 11-01). */
 .app-dock::before {
   content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
-  background: var(--glass-sheen), var(--surface-dock); backdrop-filter: var(--filter-dock); -webkit-backdrop-filter: var(--filter-dock);
+  background: var(--glass-sheen), var(--surface-dock); -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock);
 }
 .app-dock-items { display: flex; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .app-dock-item { position: relative; display: flex; max-width: 44px; }
@@ -66,7 +66,7 @@ defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; space
 .app-dock-link[data-tip]::after {
   content: attr(data-tip); position: absolute; bottom: calc(100% + 10px); left: 50%; padding: 4px 10px; transform: translateX(-50%);
   border: 1px solid var(--edge-glass); border-radius: var(--radius-pill); color: var(--color-ink); background: var(--surface-glass-strong);
-  backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); box-shadow: var(--shadow-md);
+  -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); box-shadow: var(--shadow-md);
   font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; opacity: 0; pointer-events: none;
   transition: opacity var(--motion-fast), translate var(--motion-spring) var(--motion-ease-spring); translate: 0 4px;
 }
