@@ -192,6 +192,14 @@ class CustomPlatformViewController
         .invokeMethod('setCursorPos', [position.dx, position.dy]);
   }
 
+  /// FULI patch: gives the page keyboard focus (no-op when it has it).
+  Future<void> _moveFocus() async {
+    if (_isDisposed || !value.isInitialized) {
+      return;
+    }
+    return _methodChannel.invokeMethod('moveFocus');
+  }
+
   /// Indicates whether the specified [button] is currently down.
   Future<void> _setPointerButtonState(PointerButton button, bool isDown) async {
     if (_isDisposed) {
@@ -280,6 +288,8 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
         onPlatformViewCreated: (id) {
           widget.onPlatformViewCreated?.call(id);
           setState(() {});
+          // FULI patch: autofocus ran before there was a page to focus.
+          if (_focusNode.hasFocus) _controller._moveFocus();
         },
         arguments: widget.creationParams);
 
@@ -303,7 +313,12 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
       focusNode: _focusNode,
       canRequestFocus: true,
       debugLabel: "flutter_inappwebview_windows_custom_platform_view",
-      onFocusChange: (focused) {},
+      // FULI patch: when Flutter focuses this view (start-up autofocus, the
+      // window becoming active again), hand keyboard focus to the page. Losing
+      // Flutter focus needs nothing: WebView2 holding focus is why it is lost.
+      onFocusChange: (focused) {
+        if (focused) _controller._moveFocus();
+      },
       child: SizedBox.expand(key: _key, child: _buildInner()),
     );
   }
@@ -331,14 +346,11 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                       _reportSurfaceSize();
                       _reportWidgetPosition();
 
-                      if (!_focusNode.hasFocus) {
-                        _focusNode.requestFocus();
-                        Future.delayed(const Duration(milliseconds: 50), () {
-                          if (!_focusNode.hasFocus) {
-                            _focusNode.requestFocus();
-                          }
-                        });
-                      }
+                      // FULI patch: focus the page directly, before the press
+                      // reaches it. Requesting Flutter focus here sent focus
+                      // through the Flutter view first, which blurred the page
+                      // again on every other click.
+                      _controller._moveFocus();
 
                       _pointerKind = ev.kind;
                       if (ev.kind == PointerDeviceKind.touch) {
@@ -350,6 +362,11 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                             ev.pressure);
                         return;
                       }
+                      // FULI patch: press where the pointer is. Hover may not
+                      // have reported it yet (the first move after the pointer
+                      // enters the view is not a hover), which pressed at a
+                      // stale position.
+                      _controller._setCursorPos(ev.localPosition);
                       final button = _getButton(ev.buttons);
                       _downButtons[ev.pointer] = button;
                       _controller._setPointerButtonState(button, true);

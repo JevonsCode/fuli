@@ -32,4 +32,19 @@ void main() {
     expect(webview, isNot(contains('flutterWindowRect.left + scaled_x')));
     expect(webview, contains('webViewController->NotifyParentWindowPositionChanged();'));
   });
+
+  // Upstream issue #2736: a press requested Flutter focus, which focused the
+  // Flutter view after the press and blurred the page on every other click.
+  test('a press hands focus straight to WebView2 and presses where the pointer is', () {
+    final view = File('$vendored/lib/src/in_app_webview/custom_platform_view.dart').readAsStringSync();
+    final onDown = view.substring(view.indexOf('onPointerDown:'), view.indexOf('onPointerUp:'));
+    expect(onDown, isNot(contains('requestFocus')));
+    expect(onDown.indexOf('_controller._moveFocus();'), greaterThanOrEqualTo(0));
+    expect(onDown.indexOf('_controller._setCursorPos(ev.localPosition);'),
+        lessThan(onDown.indexOf('_controller._setPointerButtonState(button, true);')));
+    expect(view, contains('if (focused) _controller._moveFocus();'));
+    expect(source('custom_platform_view/custom_platform_view.cc'), contains('view->moveFocus();'));
+    expect(source('in_app_webview/in_app_webview.cpp'),
+        contains('webViewController->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)'));
+  });
 }
