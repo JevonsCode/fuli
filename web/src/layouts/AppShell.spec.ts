@@ -180,7 +180,7 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('draws the brand with the official wordmark for the interface language, the service dot on its baseline row', async () => {
+  it('draws the brand with the official wordmark for the interface language, the service dot on its middle', async () => {
     const { wrapper } = await setup('/')
     const wordmark = wrapper.get('[data-wordmark]')
     expect(wordmark.element.tagName).toBe('IMG')
