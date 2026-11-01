@@ -19,6 +19,8 @@ const URL_SCHEME_KEY = 'HKCU\\Software\\Classes\\fuli';
 const URL_COMMAND_KEY = URL_SCHEME_KEY + '\\shell\\open\\command';
 // The client's own settings (the launch-at-login choice) and its notification identity.
 const CLIENT_KEYS = ['HKCU\\Software\\Fuli\\DesktopClient', 'HKCU\\Software\\Classes\\AppUserModelId\\FULI'];
+// The Windows "Installed apps" entry FULI-Setup.exe registers (desktop/windows-setup/fuli-setup.iss).
+const APPS_ENTRY_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\FULI';
 // A client in the middle of a start, stop or port change finishes it first
 // (each CLI call is bounded to five minutes by windows-controller.js).
 const CLIENT_EXIT_TIMEOUT_MS = 330_000;
@@ -45,6 +47,16 @@ const URL_SCHEME = {
   },
   write: (reg, command) => requireReg(reg, ['add', URL_COMMAND_KEY, '/ve', '/t', 'REG_SZ', '/d', command, '/f']),
   remove: reg => requireReg(reg, ['delete', URL_SCHEME_KEY, '/f'])
+};
+// Its uninstall command runs through cmd.exe, so the installation it belongs
+// to is its InstallLocation rather than the command's executable.
+const APPS_ENTRY = {
+  read: async reg => {
+    const result = await reg(['query', APPS_ENTRY_KEY, '/v', 'InstallLocation']);
+    if (result.code !== 0) return null;
+    return /^\s*InstallLocation\s+REG_(?:EXPAND_)?SZ\s+(.*?)\s*$/mi.exec(result.stdout)?.[1] ?? null;
+  },
+  remove: reg => requireReg(reg, ['delete', APPS_ENTRY_KEY, '/f'])
 };
 
 // Asks a running client of this data directory to exit and waits for it.
@@ -100,14 +112,17 @@ async function retarget(reg, entry, installRoot, packageRoot) {
 }
 
 // Uninstall: the launch-at-login entry and the fuli:// scheme (each only when
-// it starts this installation), the client's settings and its notification
-// identity. 'removed' or 'failed'.
+// it starts this installation), the Installed apps entry (only when it names
+// this installation), the client's settings and its notification identity.
+// 'removed' or 'failed'.
 async function removeWindowsClientRegistrations(installRoot, { reg = runReg } = {}) {
   try {
     for (const entry of [LAUNCH_AT_LOGIN, URL_SCHEME]) {
       const command = await entry.read(reg);
       if (command && launchesFrom(command, installRoot)) await entry.remove(reg);
     }
+    const location = await APPS_ENTRY.read(reg);
+    if (location && windowsInstallPathsOverlap(location, installRoot)) await APPS_ENTRY.remove(reg);
     for (const key of CLIENT_KEYS) {
       if ((await reg(['query', key])).code === 0) await requireReg(reg, ['delete', key, '/f']);
     }

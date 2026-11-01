@@ -31,6 +31,8 @@ jobs:
         if: steps.previous.outputs.update_available == 'true'
         id: tray
         uses: ./.github/actions/windows-tray
+        with:
+          setup: "false"
       - name: Update and verify health and MCP
         if: steps.previous.outputs.update_available == 'true'
         run: node acceptance/windows-installed-update.js update "${{ steps.tray.outputs.release }}"
