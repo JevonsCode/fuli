@@ -5,6 +5,11 @@ export const knowledgeWorkspaceMessages = {
       legend: '关系图例',
       legendCopy: '图标与中文含义',
     },
+    projectPeek: {
+      noDescription: '还没有项目简介。', edit: '编辑项目资料', ids: '项目编号', copyId: '复制项目 ID', copyKey: '复制发布密钥', copied: '已复制',
+      team: '谁在做', loadingTeam: '正在读取项目成员…', lead: '组长', working: '正在工作', noTeam: '还没有 FLA 负责这个项目。',
+      history: '经历', created: '创建', updated: '最近更新', family: '项目关系', siblings: '同级：', open: '进入项目', allProjects: '全部项目',
+    },
     hierarchy: {
       aria: '当前项目的上级项目',
       level: '项目层级',
@@ -287,6 +292,11 @@ export const knowledgeWorkspaceMessages = {
       aria: 'Knowledge relationship graph',
       legend: 'Relationship legend',
       legendCopy: 'Icons and meanings',
+    },
+    projectPeek: {
+      noDescription: 'No description yet.', edit: 'Edit project details', ids: 'Project IDs', copyId: 'Copy project ID', copyKey: 'Copy publication key', copied: 'Copied',
+      team: 'Who works on it', loadingTeam: 'Reading the project members…', lead: 'Lead', working: 'Working', noTeam: 'No FLA works on this project yet.',
+      history: 'History', created: 'Created', updated: 'Last updated', family: 'Related projects', siblings: 'Siblings:', open: 'Open project', allProjects: 'All projects',
     },
     hierarchy: {
       aria: 'Parent projects of the current project',

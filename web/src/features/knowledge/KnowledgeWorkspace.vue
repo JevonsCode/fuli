@@ -60,6 +60,9 @@ import {
   type KnowledgeSearchResult,
   type PersonalProjectDiscovery,
 } from './project-discovery'
+import BackLink from '@/components/BackLink.vue'
+import ProjectHistoryPreview from '@/features/project-history/ProjectHistoryPreview.vue'
+import { isProjectNode } from './graph-runtime'
 import { separateParentProjects } from './project-hierarchy'
 import {
   extractFrequentProjects,
@@ -127,6 +130,8 @@ const projectId = computed(() => {
   const value = route.params.projectId
   return typeof value === 'string' && value ? value : null
 })
+// The all-projects views (directory or graph) a project page can go Back to.
+const ALL_PROJECTS_PATH = /^\/personal\/[^/]+\/projects\/(graph|directory)(?:[?#]|$)/
 const overviewAvailable = computed(() => props.personalProjectsOnly && Boolean(projectId.value))
 const mode = computed<KnowledgeMode>(() => {
   if (route.params.mode === 'graph') return 'graph'
@@ -762,6 +767,12 @@ async function closePeek() {
   await router.replace({ path: workspacePath(mode.value), query: route.query })
 }
 
+// A related project chosen in a project's quick look opens that project's quick look.
+function selectProjectNode(nextProjectId: string) {
+  const node = graph.value?.nodes.find(candidate => isProjectNode(candidate) && candidate.attributes?.projectId === nextProjectId)
+  if (node) selectNode(node)
+}
+
 function selectNode(node: KnowledgeNode) {
   const item = selectableItems.value.find(
     ({ itemKind, id }) => itemKind === 'entity' && id === node.id,
@@ -1005,6 +1016,10 @@ function queryValues(value: unknown) {
     :class="{ 'graph-canvas-active': mode === 'graph', 'is-project-overview': mode === 'overview', 'is-directory': mode === 'directory' }"
   >
     <div class="knowledge-canvas">
+    <!-- Inside one project, the way back to all projects (Back when it was opened from there). -->
+    <BackLink v-if="overviewAvailable" class="project-back" :to="`/personal/${spaceId}/projects/graph`" :from="ALL_PROJECTS_PATH" data-project-back>
+      {{ t('knowledge.workspace.projectPeek.allProjects') }}
+    </BackLink>
     <div class="knowledge-view-heading">
       <!-- The view is part of the URL; the tabs only change the route. -->
       <Tabs :model-value="mode" class="knowledge-mode-tabs" @update:model-value="changeMode($event as KnowledgeMode)">
@@ -1108,6 +1123,7 @@ function queryValues(value: unknown) {
         />
       </form>
       <div class="graph-view-actions">
+        <ProjectHistoryPreview v-if="personalProjectsOnly && !projectId && spaceId" :space-id="spaceId" />
         <Button size="sm" variant="ghost"
           v-if="
             personalProjectsOnly
@@ -1239,6 +1255,7 @@ function queryValues(value: unknown) {
       @open-graph="openItemInMode($event, 'graph')"
       @open-replacement="openReplacement"
       @manage-project="manageProjectMaterial"
+      @select-project="selectProjectNode"
       @deleted="knowledgeDeleted"
       @close="closePeek"
     />
@@ -1276,6 +1293,8 @@ function queryValues(value: unknown) {
   color: var(--color-danger);
   font-size: 13px;
 }
+.project-back { align-self: flex-start; color: var(--color-muted); font-size: 13px; text-decoration: none; }
+.project-back:hover { color: var(--color-ink); }
 .project-visibility-toggle {
   display: inline-flex;
   align-items: center;
