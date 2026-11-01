@@ -83,7 +83,7 @@ import { fuliMarkUrl } from '@/lib/brand'
 .about-brand-name {
   color: var(--color-ink);
   font-size: 18px;
-  font-weight: 700;
+  font-weight: var(--weight-strong);
   letter-spacing: -.02em;
 }
 

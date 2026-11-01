@@ -53,7 +53,7 @@ The home page is the 工作台: two equal halves on the client's default 1280×8
 
 Graph labels follow zoom level. Below 0.72, retain project names and reveal other labels on hover, keyboard focus, selection or search. Keep accessible names and original labels available at every scale.
 
-The About page uses its dark ink treatment across the full page. Keep the closing section visible rather than collapsible, with its official-site link.
+The About page sits on the light canvas like every other page: the FULI promise, then one 我们的理念 section (each principle a headline and one sentence, two or three columns on wider screens), the label system and the open-source credits. A principle states only what the product does today. Keep the closing section visible rather than collapsible, with its official-site link.
 
 ## Widgets
 

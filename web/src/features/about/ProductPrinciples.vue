@@ -4,76 +4,30 @@ import { computed } from 'vue'
 
 import { t } from '@/i18n'
 
-const principles = computed(() => [
-  {
-    key: 'capture',
-    index: t('about.philosophy.capture.index'),
-    title: t('about.philosophy.capture.title'),
-    description: t('about.philosophy.capture.description'),
-  },
-  {
-    key: 'project',
-    index: t('about.philosophy.project.index'),
-    title: t('about.philosophy.project.title'),
-    description: t('about.philosophy.project.description'),
-  },
-  {
-    key: 'review',
-    index: t('about.philosophy.review.index'),
-    title: t('about.philosophy.review.title'),
-    description: t('about.philosophy.review.description'),
-  },
-  {
-    key: 'reuse',
-    index: t('about.philosophy.reuse.index'),
-    title: t('about.philosophy.reuse.title'),
-    description: t('about.philosophy.reuse.description'),
-  },
-])
+// What FULI stands for (Jevons 11-01): each one is something the product does today.
+const PRINCIPLE_KEYS = ['partners', 'retain', 'onDemand', 'authority', 'history', 'local'] as const
 
-const boundaries = computed(() => [
-  {
-    key: 'local',
-    title: t('about.philosophy.local.title'),
-    description: t('about.philosophy.local.description'),
-  },
-  {
-    key: 'authority',
-    title: t('about.philosophy.authority.title'),
-    description: t('about.philosophy.authority.description'),
-  },
-  {
-    key: 'scope',
-    title: t('about.philosophy.scope.title'),
-    description: t('about.philosophy.scope.description'),
-  },
-])
+const principles = computed(() => PRINCIPLE_KEYS.map((key, position) => ({
+  key,
+  index: String(position + 1).padStart(2, '0'),
+  title: t(`about.philosophy.${key}.title`),
+  description: t(`about.philosophy.${key}.description`),
+})))
 </script>
 
 <template>
   <section class="product-principles" aria-labelledby="principles-title">
     <AboutSectionHeading title-id="principles-title" :title="t('about.philosophy.sectionTitle')" :description="t('about.philosophy.support')" />
 
-    <div class="principle-sequence">
-      <article v-for="principle in principles" :key="principle.key">
-        <span>{{ principle.index }}</span>
+    <ol class="principle-list">
+      <li v-for="principle in principles" :key="principle.key" :data-principle="principle.key">
+        <span aria-hidden="true">{{ principle.index }}</span>
         <div>
           <h3>{{ principle.title }}</h3>
           <p>{{ principle.description }}</p>
         </div>
-      </article>
-    </div>
-
-    <div class="principle-boundaries">
-      <h3>{{ t('about.philosophy.boundariesTitle') }}</h3>
-      <div>
-        <article v-for="boundary in boundaries" :key="boundary.key">
-          <i :data-boundary="boundary.key" aria-hidden="true" />
-          <h4>{{ boundary.title }}</h4>
-          <p>{{ boundary.description }}</p>
-        </article>
-      </div>
-    </div>
+      </li>
+    </ol>
   </section>
 </template>
 
@@ -82,85 +36,48 @@ const boundaries = computed(() => [
   min-width: 0;
 }
 
-.principle-sequence {
+/* Full width: one column on a phone, two on a laptop, three on a big screen. */
+.principle-list {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  column-gap: 40px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.principle-sequence article {
+.principle-list li {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   align-content: start;
   gap: 16px;
-  padding: 22px 0;
+  padding: 24px 0;
   border-bottom: 1px solid var(--color-border);
 }
 
-.principle-sequence article > span {
-  padding-top: 3px;
+.principle-list li > span {
+  padding-top: 2px;
   color: var(--color-accent);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--text-meta);
+  font-weight: var(--weight-strong);
   letter-spacing: .06em;
 }
 
-.principle-sequence h3,
-.principle-boundaries h4 {
+.principle-list h3 {
   margin: 0;
   color: var(--color-ink);
-  font-size: 15px;
-  font-weight: 680;
+  font-size: var(--text-card-title);
+  font-weight: var(--weight-strong);
 }
 
-.principle-sequence p,
-.principle-boundaries p {
-  margin-top: 9px;
+.principle-list p {
+  margin-top: 8px;
   color: var(--color-muted);
-  font-size: 13px;
+  font-size: var(--text-body);
   line-height: 1.7;
 }
 
-.principle-boundaries {
-  padding-top: 30px;
-}
-
-.principle-boundaries > h3 {
-  margin: 0;
-  color: var(--color-ink);
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.principle-boundaries > div {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 18px;
-}
-
-.principle-boundaries article {
-  min-width: 0;
-  padding: 0 20px;
-}
-
-.principle-boundaries article:first-child { padding-left: 0; }
-.principle-boundaries article:last-child { padding-right: 0; }
-.principle-boundaries article + article { border-left: 1px solid var(--color-border); }
-
-.principle-boundaries i {
-  width: 8px;
-  height: 8px;
-  display: inline-block;
-  margin-bottom: 12px;
-  border: 1.5px solid var(--color-muted);
-  border-radius: 50%;
-}
-
-.principle-boundaries i[data-boundary="authority"] { border-radius: 2px; }
-.principle-boundaries i[data-boundary="scope"] { transform: rotate(45deg); border-radius: 1px; }
-
 @media (max-width: 680px) {
-  .principle-sequence article { gap: 12px; padding: 20px 0; }
-  .principle-boundaries > div { grid-template-columns: 1fr; gap: 20px; }
-  .principle-boundaries article { padding: 0; }
-  .principle-boundaries article + article { padding-top: 20px; border-top: 1px solid var(--color-border); border-left: 0; }
+  .principle-list li { gap: 12px; padding: 20px 0; }
 }
 </style>
