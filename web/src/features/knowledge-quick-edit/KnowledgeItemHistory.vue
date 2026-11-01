@@ -4,6 +4,7 @@ import type { HardDeletedState } from '@/features/knowledge-hard-delete/model'
 import type { SourceDeleteTarget } from '@/features/knowledge-hard-delete/source-delete-model'
 import { RouterLink } from 'vue-router'
 
+import MeLink from '@/components/MeLink.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
@@ -88,7 +89,7 @@ const action = (value: string) => t(`knowledgeQuickEdit.history.actions.${value}
           <li v-for="revision in item.revisions" :key="revision.id" class="flex flex-wrap gap-x-2">
             <span class="text-xs text-muted-foreground">{{ when(revision.created_at) }}</span>
             <span class="font-medium">{{ action(revision.action) }}</span>
-            <span v-if="revision.changed_by" class="text-xs text-muted-foreground">{{ changedByLabel(revision.changed_by) }}</span>
+            <span v-if="revision.changed_by" class="text-xs text-muted-foreground"><MeLink v-if="revision.changed_by === 'user'" /><template v-else>{{ changedByLabel(revision.changed_by) }}</template></span>
             <span class="min-w-0 break-words">{{ revision.reason }}</span>
           </li>
         </ol>

@@ -9,8 +9,8 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { UiEmpty, UiIconButton, UiSegmented, UiStatRow, UiToolbar, type UiStat } from '@/ui'
 import { useMinimumLoadingDisplay } from '@/composables/useMinimumLoadingDisplay'
 import { reconcileKnowledgeWrites } from '@/features/knowledge/knowledge-write-lifecycle'
-import KnowledgeConfirmDialog from '@/features/knowledge/KnowledgeConfirmDialog.vue'
 import KnowledgePeek from '@/features/knowledge/KnowledgePeek.vue'
+import { useKnowledgeConfirm } from '@/features/knowledge/useKnowledgeConfirm'
 import { useKnowledgeItemPeek } from '@/features/knowledge/useKnowledgeItemPeek'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import PreferenceConflictDialog from '@/features/preferences/PreferenceConflictDialog.vue'
@@ -75,7 +75,12 @@ const activeScope = ref('all')
 // 'all' lists what is current; history is its own group (rec#5 C8-1).
 const activeReviewState = ref<'all' | PreferenceListState>('all')
 const conflictsOnly = ref(false)
-const confirmingItem = ref<KnowledgeItem | null>(null)
+const { confirm: confirmItem, confirming } = useKnowledgeConfirm({
+  personalSpaceId: () => store.activePersonalSpace?.id ?? '',
+  personalProjectId: () => null,
+  accessDenied: revokeAccess,
+  reload: () => load(),
+})
 const editingItem = ref<KnowledgeItem | null>(null)
 const activeConflict = ref<PreferenceConflict | null>(null)
 const conflictRecords = ref<PreferenceConflictRecord[]>([])
@@ -240,7 +245,6 @@ function openItem(item: KnowledgeItem) {
 }
 
 function closeForms() {
-  confirmingItem.value = null
   editingItem.value = null
   activeConflict.value = null
 }
@@ -693,12 +697,13 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
     <KnowledgePeek
       mode="preference"
       :item="selectedItem"
-      :suspended="Boolean(editingItem || confirmingItem)"
+      :suspended="Boolean(editingItem)"
       :graph="graph"
       :editable="Boolean(selectedItem) && snapshotReady && knownScope(selectedItem!)"
       :preference-scope-label="selectedItem ? scopeLabel(selectedItem) : ''"
       :preference-status-label="selectedItem ? statusLabel(selectedItem) : ''"
-      @confirm="confirmingItem = $event"
+      :confirming="confirming"
+      @confirm="confirmItem"
       @edit="editingItem = $event"
       @open-replacement="openReplacement"
       @close="peek.close()"
@@ -713,15 +718,6 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
       @access-denied="revokeAccess"
       @reload="load()"
       @close="editingItem = null"
-      @saved="load()"
-    />
-    <KnowledgeConfirmDialog
-      :item="confirmingItem"
-      :personal-space-id="store.activePersonalSpace?.id ?? ''"
-      :personal-project-id="null"
-      @access-denied="revokeAccess"
-      @reload="load()"
-      @close="confirmingItem = null"
       @saved="load()"
     />
     <PreferenceConflictDialog

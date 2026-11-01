@@ -25,6 +25,7 @@ export const glossaryMessages = {
       flas: { label: 'FLAs', body: '多位 FLA，也就是你的 Agent 团队。底部导航的 FLAs 页能看到每一位在做什么，悬停可以打开置顶的几位。' },
       flg: { label: 'FLG', body: 'FuLi Agents Group：在聊天里写「@FLG 问题」，邀请 2–4 位 FLA 一起讨论。可以点名，也可以让 FULI 按职业推荐，确认成员后开始。' },
       receipt: { label: '回执', body: 'Agent 每次回复末尾的一行：这一轮由哪位 FLA 负责、记下了什么。点开链接能看到原话和记下的知识，记错了可以直接改。' },
+      me: '就是你。FULI 在记录和对话里用「我」指你自己，比如谁确认了、谁改了、谁发的消息。点「我」打开你的偏好页，先看品味。',
     },
     memory: {
       preferenceCount: { label: '偏好条数', body: '前一个数是按当前维度和范围列出的条数，后一个是全部偏好的总数（含历史）。偏好的条数没有上限。' },
@@ -147,6 +148,7 @@ export const glossaryMessages = {
       flas: { label: 'FLAs', body: 'Several FLAs: your Agent team. The FLAs page in the dock shows what each one is doing; hover it to open the ones you pinned.' },
       flg: { label: 'FLG', body: 'FuLi Agents Group: write “@FLG question” in a chat to invite 2–4 FLAs to discuss it. Name them, or let FULI suggest some by occupation, then confirm the members to begin.' },
       receipt: { label: 'Receipt', body: 'The line at the end of each Agent reply: which FLA owns this turn and what it recorded. Open its link to see the words and the knowledge kept, and fix anything recorded wrong.' },
+      me: 'That is you. Records and chats in FULI say “Me” for you: who confirmed, changed or sent something. Click “Me” to open your preferences, starting with taste.',
     },
     memory: {
       preferenceCount: { label: 'Preference count', body: 'The first number is how many preferences the chosen aspect and scope list; the second is how many there are in all, history included. There is no limit on how many preferences FULI keeps.' },

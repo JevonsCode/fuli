@@ -33,6 +33,7 @@ import GraphSearchStatus from './GraphSearchStatus.vue'
 import KnowledgeDirectoryPanel from './KnowledgeDirectoryPanel.vue'
 import KnowledgePeek from './KnowledgePeek.vue'
 import { reconcileKnowledgeWrites } from './knowledge-write-lifecycle'
+import { useKnowledgeConfirm } from './useKnowledgeConfirm'
 import KnowledgeWorkspaceDialogs from './KnowledgeWorkspaceDialogs.vue'
 import ProjectHierarchyAside from './ProjectHierarchyAside.vue'
 import ProjectOverview from '@/features/projects/ProjectOverview.vue'
@@ -103,7 +104,6 @@ const graphCanvas = ref<GraphCanvasApi | null>(null)
 const searchDraft = ref(queryValue(route.query.q))
 const searchMessage = ref('')
 const searching = ref(false)
-const confirmingItem = ref<KnowledgeItem | null>(null)
 const editingItem = ref<KnowledgeItem | null>(null)
 const projectActionItem = ref<KnowledgeItem | null>(null)
 const publishingProject = ref<PersonalProject | null>(null)
@@ -361,12 +361,14 @@ const spaceSelectOptions = computed(() =>
   }),
 )
 const editable = computed(() => scope.value === 'personal')
+const { confirm: confirmItem, confirming } = useKnowledgeConfirm({ personalSpaceId: () => store.activePersonalSpace?.id ?? spaceId.value,
+  personalProjectId: knowledgeMutationProjectId, accessDenied: revokeKnowledgeAccess, reload: loadGraph })
 const activePersonalProject = computed(() =>
   personalProjects.value.find(({ project_id }) => project_id === projectId.value) ?? null,
 )
 // A form opened from the quick look takes its place until it closes.
 const peekSuspended = computed(() => Boolean(
-  editingItem.value || confirmingItem.value || projectActionItem.value
+  editingItem.value || projectActionItem.value
   || publishingProject.value || managingProject.value,
 ))
 const manageableSelectedProject = computed(() =>
@@ -485,7 +487,6 @@ function revokeKnowledgeAccess() {
   loadedGraphContextKey = null
   selectedItem.value = null
   editingItem.value = null
-  confirmingItem.value = null
   projectActionItem.value = null
   publishingProject.value = null
   managingProject.value = null
@@ -501,7 +502,6 @@ async function loadGraph() {
   cancelGraphSearch()
   loading.value = true
   editingItem.value = null
-  confirmingItem.value = null
   selectedItem.value = null
   resetGraphSearchState()
   try {
@@ -1242,7 +1242,8 @@ function queryValues(value: unknown) {
       :can-manage-project="Boolean(manageableSelectedProject)"
       :space-id="store.activePersonalSpace?.id ?? spaceId"
       :mode="mode"
-      @confirm="confirmingItem = $event"
+      :confirming="confirming"
+      @confirm="confirmItem"
       @edit="editingItem = $event"
       @create-project="projectActionItem = $event"
       @open-project="openPersonalProject"
@@ -1260,19 +1261,16 @@ function queryValues(value: unknown) {
 
     <KnowledgeWorkspaceDialogs
       :editing-item="editingItem"
-      :confirming-item="confirmingItem"
       :project-action-item="projectActionItem"
       :publishing-project="publishingProject"
       :managing-project="managingProject"
       :managing-material-type="managingMaterialType"
       :personal-space-id="store.activePersonalSpace?.id ?? spaceId"
       :editing-project-id="knowledgeMutationProjectId(editingItem)"
-      :confirming-project-id="knowledgeMutationProjectId(confirmingItem)"
       :current-project-id="projectId"
       :projects="store.state?.personalProjects ?? []"
       :replacement-items="allItems"
       @close-edit="editingItem = null"
-      @close-confirm="confirmingItem = null"
       @close-project-action="projectActionItem = null"
       @close-publish="publishingProject = null"
       @close-profile="managingProject = null"

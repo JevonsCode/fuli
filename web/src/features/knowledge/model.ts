@@ -453,12 +453,22 @@ export function batchConfirmationBasis(
       ? candidate.id === group.value
       : candidate.session_id === group.value,
   )
+  return confirmationBasisFrom(item, evidence,
+    t('knowledge.domain.confirmation.sourceSupports', { label: group.label }))
+}
+
+/** What one item's direct confirmation records: its stored basis, else its first source. */
+export function itemConfirmationBasis(item: KnowledgeItem) {
+  return confirmationBasisFrom(item, item.evidence.at(0), t('knowledge.dialogs.confirm.sourceSupport'))
+}
+
+function confirmationBasisFrom(item: KnowledgeItem, evidence: EvidenceRecord | undefined, sourceFallback: string) {
   const existing = item.confirmationBasis
   return {
     existenceReason: existing?.existence_reason
       || evidence?.source_description
       || evidence?.summary
-      || t('knowledge.domain.confirmation.sourceSupports', { label: group.label }),
+      || sourceFallback,
     quadrantReason: existing?.quadrant_reason
       || item.reasoningSummary
       || t('knowledge.domain.confirmation.quadrantReason', {
