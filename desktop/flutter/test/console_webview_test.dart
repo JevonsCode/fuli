@@ -10,8 +10,9 @@ void main() {
   PermissionResponseAction answer(String origin, List<PermissionResourceType> resources) =>
       ConsoleWebView.permissionFor(PermissionRequest(origin: WebUri(origin), resources: resources), console);
 
-  test('the native right-click menu is off', () {
-    expect(ConsoleWebView.settings().disableContextMenu, isTrue);
+  // Off natively it made the window flash on every right-click; the page cancels it instead.
+  test('the native right-click menu is left to the page to cancel', () {
+    expect(ConsoleWebView.settings().disableContextMenu, isFalse);
   });
 
   test('the console page may read the clipboard', () {

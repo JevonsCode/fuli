@@ -47,10 +47,14 @@ class ConsoleWebView {
     }
   }
 
+  // The page draws its own right-click menu and cancels the native one itself
+  // (web/src/features/context-menu). Switching WebView2's menus off natively
+  // made the whole window flash on every right-click (Jevons 11-01), so they
+  // stay on and the page's preventDefault keeps them from showing.
   static InAppWebViewSettings settings() => InAppWebViewSettings(
         useShouldOverrideUrlLoading: true,
         supportMultipleWindows: true,
-        disableContextMenu: true,
+        disableContextMenu: false,
         isInspectable: kDebugMode,
       );
 
