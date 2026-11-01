@@ -66,12 +66,20 @@ function renderPage(template, base, route, locale, catalog) {
   return { document, pageUrl };
 }
 
-function homePages(template, files) {
+// The client download is the Windows setup of the version this build packages (package.json).
+function linkDownloads(document, version) {
+  for (const link of document.querySelectorAll('[data-download-windows]')) {
+    link.href = `https://github.com/JevonsCode/fuli/releases/download/v${version}/FULI-Setup-${version}.exe`;
+  }
+}
+
+function homePages(template, version, files) {
   for (const [route, locale] of languageRoutes) {
     const { document, pageUrl } = renderPage(template, '', route, locale);
     add(document, 'link', { rel: 'alternate', type: 'text/markdown', href: pageUrl + 'index.md' });
     add(document, 'link', { rel: 'describedby', type: 'text/plain', href: SITE_URL + 'llms.txt' });
     add(document, 'link', { rel: 'sitemap', type: 'application/xml', href: SITE_URL + 'sitemap.xml' });
+    linkDownloads(document, version);
     add(document, 'script', { id: 'site-schema', type: 'application/ld+json' }, JSON.stringify(structuredData(locale, pageUrl)).replace(/</g, '\\u003c'));
     files.set(route + 'index.html', document.toString());
     files.set(route + 'index.md', markdown(document));
@@ -85,6 +93,7 @@ function previewPages(template, version, files) {
     add(document, 'link', { rel: 'sitemap', type: 'application/xml', href: SITE_URL + 'sitemap.xml' });
     for (const element of document.querySelectorAll('[data-preview-version]')) element.textContent = version;
     for (const link of document.querySelectorAll('[data-preview-release]')) link.href = `https://github.com/JevonsCode/fuli/releases/tag/v${version}`;
+    linkDownloads(document, version);
     files.set(PREVIEW_BASE + route + 'index.html', document.toString());
   }
 }
@@ -127,7 +136,7 @@ export function createSitePages({ home, preview, version }) {
   const files = new Map();
   // A prerelease version (0.23.0-beta.1) is a preview; a stable one has none ahead of it.
   const hasPreview = version.includes('-');
-  homePages(home, files);
+  homePages(home, version, files);
   if (hasPreview) previewPages(preview, version, files);
   else noPreviewPages(version, files);
 

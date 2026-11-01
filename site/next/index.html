@@ -270,7 +270,13 @@
       </section>
 
       <section class="start" id="start" aria-labelledby="start-title">
-        <h2 data-i18n="next.installTitle" id="start-title">一条命令装上预览版</h2>
+        <h2 data-i18n="next.installTitle" id="start-title">装上预览版</h2>
+        <div class="install-choice install-client">
+          <h3 data-i18n="next.clientTitle">下载客户端（推荐）</h3>
+          <p data-i18n="next.clientDescription">双击安装，不用终端。Node.js、图数据库都已内置。已经装过 FULI 的，安装包会直接更新，数据保留。</p>
+          <p class="start-links"><a data-i18n="next.clientWindows" data-download-windows class="button" href="https://github.com/JevonsCode/fuli/releases">下载 Windows 版</a><span data-i18n="next.clientMac">macOS 版即将推出，现在可以用下面的终端方式。</span></p>
+        </div>
+        <h3 data-i18n="next.terminalTitle">用终端安装</h3>
         <p data-i18n="next.installDescription">已经装了 FULI 的话，先运行 fuli stop，并备份数据目录。下面的命令用原来的安装脚本，只是把安装的包换成 fuli-context@beta，装完会接着运行 fuli setup。</p>
         <div class="oneliner">
           <code>curl -fsSL https://xn--8ovp9s.xn--m8txu.com/fuli/install.sh | FULI_NPM_PACKAGE_SPEC=fuli-context@beta sh<span>macOS / Linux</span></code>

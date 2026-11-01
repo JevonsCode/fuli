@@ -73,7 +73,7 @@ test('both languages cover the complete page, accessibility text, metadata and s
   for (const element of document.querySelectorAll('[aria-label], meta[content]')) {
     assert.doesNotMatch(element.getAttribute('aria-label') ?? element.getAttribute('content'), /[\u3400-\u9fff]/);
   }
-  assert.match(document.querySelector('.start-links .button').href, /\/README\.md$/);
+  assert.match(document.querySelector('[data-i18n="start.docs"]').href, /\/README\.md$/);
   for (const [scene, labels] of Object.entries(sceneMessages.en)) {
     assert.equal(labels.length, 12, scene);
     assert.equal(sceneMessages['zh-CN'][scene].length, 12, scene);
@@ -82,6 +82,6 @@ test('both languages cover the complete page, accessibility text, metadata and s
   const commands = [...document.querySelectorAll('.terminal code, .start code')].map(node => node.textContent);
   language.setLocale('zh-CN');
   assert.deepEqual([...document.querySelectorAll('.terminal code, .start code')].map(node => node.textContent), commands);
-  assert.match(document.querySelector('.start-links .button').href, /\/README\.zh-CN\.md$/);
+  assert.match(document.querySelector('[data-i18n="start.docs"]').href, /\/README\.zh-CN\.md$/);
   assert.doesNotMatch(document.documentElement.textContent, /不按天数遗忘/);
 });
