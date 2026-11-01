@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
+import { Button } from '@/components/ui/button'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
 import type { ProjectAgentTaskParticipant } from '@/types'
+import { UiIcon } from '@/ui'
 
 // Beside the timeline: who is on this work and which project it belongs to.
 // The FLAs at work come first and their faces breathe; a finished part wears a
@@ -30,17 +32,20 @@ const pick = (id: string) => { only.value = only.value === id ? null : id }
       <h4 class="cast-label">{{ t('overview.cast.flas') }}</h4>
       <ul class="cast-flas">
         <li v-for="fla in ordered" :key="fla.agentId">
-          <button type="button" class="cast-fla" :class="{ 'is-live': LIVE.has(fla.status), 'is-done': fla.status === 'completed', 'is-dim': only && only !== fla.agentId }"
+          <Button variant="ghost" class="cast-fla" :class="{ 'is-live': LIVE.has(fla.status), 'is-done': fla.status === 'completed', 'is-dim': only && only !== fla.agentId }"
             :aria-pressed="only === fla.agentId" :title="fla.assignmentSummary?.trim() || statusLabel(fla.status)"
             :aria-label="only === fla.agentId ? t('overview.cast.all') : t('overview.cast.only', { name: agentName(fla.agentId) })"
             :data-cast-fla="fla.agentId" @click="pick(fla.agentId)">
-            <span class="cast-face" :style="agentIdentityStyle(fla.agentId)" aria-hidden="true"><img :src="agentAvatarUrl(fla.agentId)" alt="" /></span>
+            <span class="cast-face" :style="agentIdentityStyle(fla.agentId)" aria-hidden="true">
+              <img :src="agentAvatarUrl(fla.agentId)" alt="" />
+              <span v-if="fla.status === 'completed'" class="cast-done"><UiIcon name="check" :size="8" /></span>
+            </span>
             <span class="cast-who">
               <strong>{{ agentName(fla.agentId) }}</strong>
               <small>{{ fla.assignmentSummary?.trim() || statusLabel(fla.status) }}</small>
             </span>
             <span v-if="counts.get(fla.agentId)" class="cast-count">{{ t('overview.cast.moments', { count: counts.get(fla.agentId) ?? 0 }) }}</span>
-          </button>
+          </Button>
         </li>
       </ul>
     </section>
@@ -58,7 +63,7 @@ const pick = (id: string) => { only.value = only.value === id ? null : id }
 .cast-label { margin: 0; color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-strong); }
 .cast-flas { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .cast-fla {
-  display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%;
+  display: grid; height: auto; justify-content: stretch; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%;
   padding: 5px 8px; border: 0; border-radius: var(--radius-control); background: transparent; color: inherit;
   font: inherit; text-align: left; cursor: pointer; user-select: none;
   transition: background var(--motion-fast) var(--motion-ease), opacity var(--motion-fast) var(--motion-ease), transform var(--motion-fast) var(--motion-ease);
@@ -81,10 +86,9 @@ const pick = (id: string) => { only.value = only.value === id ? null : id }
   box-shadow: 0 0 0 2px var(--color-gold-soft); animation: cast-breathe 2.4s var(--motion-ease) infinite;
 }
 /* Its part finished: a small tick on the face. */
-.cast-fla.is-done .cast-face::after {
-  content: '✓'; position: absolute; right: -4px; bottom: -4px; display: grid; width: 11px; height: 11px; place-items: center;
-  border-radius: 50%; background: var(--color-success); color: var(--color-surface); font-size: 7px; font-weight: 700;
-  box-shadow: 0 0 0 2px var(--color-surface);
+.cast-done {
+  position: absolute; right: -4px; bottom: -4px; display: grid; width: 11px; height: 11px; place-items: center;
+  border-radius: 50%; background: var(--color-success); color: var(--color-surface); box-shadow: 0 0 0 2px var(--color-surface);
 }
 .cast-who { display: grid; min-width: 0; }
 .cast-who strong { overflow: hidden; color: var(--color-ink); font-size: var(--text-control); font-weight: var(--weight-strong); text-overflow: ellipsis; white-space: nowrap; }
