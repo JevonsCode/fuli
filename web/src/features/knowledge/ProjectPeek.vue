@@ -9,7 +9,7 @@ import { readProjectTeam, type ProjectTeam, type ProjectTeamPerson } from '@/fea
 import { currentLocale, t } from '@/i18n'
 import { formatRelativeTime } from '@/lib/relative-time'
 import type { KnowledgeGraph, KnowledgeItem, KnowledgeNode, PersonalProject } from '@/types'
-import { UiIcon } from '@/ui'
+import { UiIcon, UiIconButton } from '@/ui'
 import { projectFamily } from './project-family'
 
 // A project's quick look (Jevons 11-01): what it is, how it came to be, who
@@ -71,21 +71,16 @@ onMounted(async () => {
       <p v-if="description" class="project-peek-description" data-project-description>{{ description }}</p>
       <p v-else class="project-peek-description is-empty">{{ t('knowledge.workspace.projectPeek.noDescription') }}</p>
       <div class="project-peek-corner">
-        <button type="button" class="project-peek-icon" :aria-label="t('knowledge.workspace.projectPeek.edit')" :title="t('knowledge.workspace.projectPeek.edit')"
-          data-project-edit @click="emit('editProject', item)">
-          <UiIcon name="edit" :size="16" />
-        </button>
-        <button type="button" class="project-peek-icon" :aria-expanded="showIds" :aria-label="t('knowledge.workspace.projectPeek.ids')"
-          :title="t('knowledge.workspace.projectPeek.ids')" data-project-ids-toggle @click="showIds = !showIds">
-          <UiIcon name="more" :size="16" />
-        </button>
+        <UiIconButton icon="edit" size="sm" :label="t('knowledge.workspace.projectPeek.edit')" data-project-edit @click="emit('editProject', item)" />
+        <UiIconButton icon="more" size="sm" :active="showIds" :aria-expanded="showIds" :label="t('knowledge.workspace.projectPeek.ids')"
+          data-project-ids-toggle @click="showIds = !showIds" />
         <div v-if="showIds" class="project-peek-ids" data-project-ids>
-          <button type="button" @click="copy(projectId)">
+          <Button variant="ghost" size="sm" @click="copy(projectId)">
             <span>{{ t('knowledge.workspace.projectPeek.copyId') }}</span><code>{{ projectId }}</code>
-          </button>
-          <button v-if="project?.publication_key" type="button" @click="copy(project.publication_key)">
+          </Button>
+          <Button v-if="project?.publication_key" variant="ghost" size="sm" @click="copy(project.publication_key)">
             <span>{{ t('knowledge.workspace.projectPeek.copyKey') }}</span><code>{{ project.publication_key.slice(0, 8) }}…</code>
-          </button>
+          </Button>
           <small v-if="copied" role="status">{{ t('knowledge.workspace.projectPeek.copied') }}</small>
         </div>
       </div>
@@ -117,20 +112,20 @@ onMounted(async () => {
     </div>
 
     <section v-if="family.parents.length || family.siblings.length || family.children.length" class="project-peek-family">
-      <button type="button" class="project-peek-disclosure" :aria-expanded="showFamily" data-project-family-toggle @click="showFamily = !showFamily">
+      <Button variant="ghost" size="sm" class="project-peek-disclosure" :aria-expanded="showFamily" data-project-family-toggle @click="showFamily = !showFamily">
         {{ t('knowledge.workspace.projectPeek.family') }}<UiIcon :name="showFamily ? 'chevron-up' : 'chevron-down'" :size="14" />
-      </button>
+      </Button>
       <div v-if="showFamily" class="project-peek-tree" data-project-family>
         <div v-for="parent in family.parents" :key="parent.id" class="tree-row is-parent">
-          <button type="button" @click="emit('selectProject', parent.projectId)">{{ parent.name }}</button>
+          <Button variant="outline" size="sm" @click="emit('selectProject', parent.projectId)">{{ parent.name }}</Button>
         </div>
         <div class="tree-row is-self"><strong>{{ item.title }}</strong>
           <span v-if="family.siblings.length" class="tree-siblings">{{ t('knowledge.workspace.projectPeek.siblings') }}
-            <button v-for="sibling in family.siblings" :key="sibling.id" type="button" @click="emit('selectProject', sibling.projectId)">{{ sibling.name }}</button>
+            <Button v-for="sibling in family.siblings" :key="sibling.id" variant="outline" size="sm" @click="emit('selectProject', sibling.projectId)">{{ sibling.name }}</Button>
           </span>
         </div>
         <div v-for="child in family.children" :key="child.id" class="tree-row is-child">
-          <button type="button" @click="emit('selectProject', child.projectId)">{{ child.name }}</button>
+          <Button variant="outline" size="sm" @click="emit('selectProject', child.projectId)">{{ child.name }}</Button>
         </div>
       </div>
     </section>
@@ -147,11 +142,8 @@ onMounted(async () => {
 .project-peek-description { margin: 0; color: var(--color-ink); font-size: 15px; line-height: 1.6; }
 .project-peek-description.is-empty, .project-peek-quiet { color: var(--color-muted); font-size: 13px; }
 .project-peek-corner { position: relative; display: flex; flex: 0 0 auto; gap: 4px; }
-.project-peek-icon { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 50%; color: var(--color-muted); background: transparent; cursor: pointer; }
-.project-peek-icon:hover, .project-peek-icon[aria-expanded='true'] { color: var(--color-ink); background: var(--color-surface-hover); }
 .project-peek-ids { position: absolute; z-index: 2; top: calc(100% + 6px); right: 0; display: grid; gap: 4px; min-width: 240px; padding: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--card); box-shadow: var(--shadow-popover); }
-.project-peek-ids button { display: flex; justify-content: space-between; gap: 12px; padding: 6px 8px; border: 0; border-radius: var(--radius-control); color: var(--color-ink); background: transparent; font-size: 12px; cursor: pointer; }
-.project-peek-ids button:hover { background: var(--color-surface-hover); }
+.project-peek-ids :deep(button) { justify-content: space-between; gap: 12px; }
 .project-peek-ids code { color: var(--color-muted); }
 .project-peek-ids small { padding: 0 8px; color: var(--color-muted); font-size: 12px; }
 .project-peek-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
@@ -174,12 +166,11 @@ onMounted(async () => {
 .project-peek-timeline li { position: relative; display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
 .project-peek-timeline li::before { position: absolute; top: 6px; left: -18px; width: 7px; height: 7px; border-radius: 50%; background: var(--color-ink-soft); content: ''; }
 .project-peek-timeline time { color: var(--color-muted); }
-.project-peek-disclosure { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; color: var(--color-muted); background: transparent; font-size: 13px; cursor: pointer; }
+.project-peek-disclosure { color: var(--color-muted); }
 .project-peek-tree { display: grid; gap: 6px; margin-top: 10px; font-size: 13px; }
 .tree-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .tree-row.is-self { padding-left: 18px; }
 .tree-row.is-child { padding-left: 36px; }
-.tree-row button { padding: 2px 8px; border: 1px solid var(--color-border); border-radius: var(--radius-pill); color: var(--color-ink); background: transparent; font-size: 12px; cursor: pointer; }
 .tree-siblings { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--color-muted); font-size: 12px; }
 .project-peek-actions { display: flex; justify-content: flex-end; }
 </style>
