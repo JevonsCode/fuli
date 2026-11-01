@@ -138,8 +138,9 @@ onBeforeUnmount(() => {
 }
 .doctor-chip:hover, .doctor-chip[aria-expanded='true'] { color: var(--color-ink); background: var(--color-surface-hover); }
 .doctor-chip:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-.doctor-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-accent); }
-.doctor-chip.is-warning .doctor-dot { background: var(--color-warning); }
+/* A warm gold dot says something waits for the person (Jevons, 11-01: 黄色的点点); ink would read as decoration. */
+.doctor-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-gold); box-shadow: 0 0 0 3px var(--color-gold-soft); }
+.doctor-chip.is-warning .doctor-dot { background: var(--color-warning); box-shadow: 0 0 0 3px var(--color-warning-soft); }
 .doctor-panel {
   position: absolute; z-index: var(--z-popover); top: calc(100% + 8px); right: 0; display: grid; gap: 10px;
   width: min(420px, calc(100vw - 2 * var(--page-gutter))); padding: 14px 16px; border: 1px solid var(--color-border);
