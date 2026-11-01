@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, provide, watch, watchEffect } fro
 import { MotionConfig } from 'motion-v'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
+import GrowingBackdrop from '@/components/GrowingBackdrop.vue'
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import { loadAgentLooks } from '@/features/agent-profile/agent-looks'
@@ -104,6 +105,7 @@ watchEffect(() => {
 <template>
   <MotionConfig :reduced-motion="motionConfigReduced" :transition="SPRING">
   <div class="app-frame">
+    <GrowingBackdrop />
     <header class="app-topbar">
       <div class="app-topbar-inner">
         <div class="app-brand">
@@ -161,7 +163,7 @@ watchEffect(() => {
 /* The page root (.view) is the scroll container: body never scrolls, so the
    main column keeps a fixed height and lets the routed page take the rest.
    The page itself is plain: surfaces and type carry the design (direction A). */
-.app-frame { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; color: var(--color-ink); background: var(--color-bg); }
+.app-frame { position: relative; isolation: isolate; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; color: var(--color-ink); background: var(--color-bg); }
 .app-main { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 /* Every page keeps its last lines clear of the floating dock. A page that
    ends with another block after its .view (项目's history card) keeps that
