@@ -70,6 +70,24 @@ export function portsMovedNotice(report: DoctorReport | null): { id: string; mes
   return { id: moved.id, message }
 }
 
+// A session whose MCP server still runs an older FULI (sessions_outdated's sessions).
+export interface OutdatedSession { sourceApplication: ConversationSourceApplication; sessionId: string }
+
+// The characters of a session ID a label keeps: enough to tell a few open sessions apart.
+const SESSION_SUFFIX = 6
+
+export function outdatedSessions(item: DoctorItem): OutdatedSession[] {
+  if (item.kind !== 'sessions_outdated' || !Array.isArray(item.data.sessions)) return []
+  return (item.data.sessions as Partial<OutdatedSession>[]).filter((session): session is OutdatedSession =>
+    Boolean(text(session?.sourceApplication) && text(session?.sessionId)))
+}
+
+export const outdatedSessionKey = (session: OutdatedSession) => `${session.sourceApplication}:${session.sessionId}`
+
+// The client and the end of the session ID, never the whole ID.
+export const outdatedSessionLabel = (session: OutdatedSession) =>
+  `${sourceApplicationName(session.sourceApplication) ?? t('doctor.otherClient')} …${session.sessionId.slice(-SESSION_SUFFIX)}`
+
 // One item in plain words: never its kind code. A kind this console does not
 // know yet still reads as something to look at.
 export function doctorItemView(item: DoctorItem): DoctorItemView {

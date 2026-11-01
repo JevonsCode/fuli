@@ -25,19 +25,21 @@ export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames
     nativeRequestContext: nativeMcpRequestContextResolver(sourceApplication),
     toolNames,
     toolProfile,
-    withRuntimeLease: leaseClient.withGraphLease
+    withRuntimeLease: leaseClient.withGraphLease,
+    onSession: sessionId => registration?.recordSession(sessionId)
   });
   const transport = new StdioServerTransport();
   const signalHandlers = new Map();
-  // Lets a later hook see that this client still runs this version after an update.
-  const unregister = worker === null ? registerMcpProcess(runtimeConfigPath, { sourceApplication, version: FULI_VERSION }) : () => {};
+  // Lets a later hook see that this client still runs this version after an
+  // update, and the doctor offer to open the sessions this server answered.
+  const registration = worker === null ? registerMcpProcess(runtimeConfigPath, { sourceApplication, version: FULI_VERSION }) : null;
   const close = createCloseOnce({
     closeServer: () => server.close(),
     closeApplication: async () => {
       await leaseClient.close();
       return app.close();
     },
-    afterClose: () => { unregister(); removeHandlers(signalHandlers); }
+    afterClose: () => { registration?.unregister(); removeHandlers(signalHandlers); }
   });
   const quietClose = createQuietCloser(close, () => { process.exitCode = 1; });
 

@@ -259,6 +259,7 @@ const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/desktop/windows-update-command.js', 'the outcome of one update run, handed to the tray that started it and read once'],
   ['src/native-runtime/neo4j-lifecycle.js', 'Neo4j runtime manifest and journal; store versions are checked by neo4j-store-formats.js'],
   ['src/native-runtime/runtime.js', 'Neo4j process state of the running console'],
+  ['src/mcp/process-registry.js', 'each running MCP server\'s version and recent sessions, removed when it exits'],
   ['src/setup/graph-runtime.js', 'console process state; the graph runtime config it writes is versioned'],
   ['src/system/settings-apply.js', 'the settings operation journal, and the graph runtime config restored exactly as it was read'],
   ['src/system/detached-job.js', 'the journal of a console operation that restarts FULI (a restore, an update), read back afterwards'],

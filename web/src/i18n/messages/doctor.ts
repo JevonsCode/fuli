@@ -30,6 +30,10 @@ export const doctorMessages = {
       updateFailed: '更新没有完成：{reason}',
     },
     otherClient: '其他 Agent',
+    sessionLinks: {
+      loading: '正在查找这些会话的打开链接…',
+      open: '打开',
+    },
     portsMoved: {
       consoleReserved: '端口 {from} 被系统保留，FULI 已自动改用 {to}，不用你做什么。',
       consoleInUse: '端口 {from} 被别的程序占用，FULI 已自动改用 {to}，不用你做什么。',
@@ -65,6 +69,10 @@ export const doctorMessages = {
       updateFailed: 'The update did not finish: {reason}',
     },
     otherClient: 'Other Agent',
+    sessionLinks: {
+      loading: 'Finding links to open these sessions…',
+      open: 'Open',
+    },
     portsMoved: {
       consoleReserved: 'Port {from} is reserved by the system, so FULI moved to port {to} by itself. Nothing to do.',
       consoleInUse: 'Another program uses port {from}, so FULI moved to port {to} by itself. Nothing to do.',

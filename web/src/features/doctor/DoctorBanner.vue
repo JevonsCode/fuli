@@ -7,9 +7,10 @@ import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import {
-  attentionItems, canRepair, doctorItemView, portsMovedNotice, readDoctor, repairDoctor,
+  attentionItems, canRepair, doctorItemView, outdatedSessions, portsMovedNotice, readDoctor, repairDoctor,
   type DoctorReport, type DoctorRepairResult,
 } from './model'
+import DoctorOutdatedSessions from './DoctorOutdatedSessions.vue'
 
 // The shell's chip when FULI's 体检 finds something that needs the person:
 // how many things, and a panel with the list and 「自动修复」 when some of them
@@ -30,7 +31,7 @@ let announcedPortMove = ''
 let timer: ReturnType<typeof setInterval> | undefined
 
 const items = computed(() => attentionItems(report.value))
-const views = computed(() => items.value.map(item => ({ id: item.id, ...doctorItemView(item) })))
+const views = computed(() => items.value.map(item => ({ id: item.id, ...doctorItemView(item), sessions: outdatedSessions(item) })))
 const shown = computed(() => report.value !== null && report.value.overall !== 'ok' && items.value.length > 0)
 
 async function refresh() {
@@ -114,6 +115,7 @@ onBeforeUnmount(() => {
         <li v-for="view in views" :key="view.id" :data-doctor-item="view.id">
           <strong>{{ view.title }}</strong><template v-if="view.subject">：{{ view.subject }}</template>
           <span v-if="view.hint" class="doctor-hint">{{ view.hint }}</span>
+          <DoctorOutdatedSessions v-if="view.sessions.length" :sessions="view.sessions" />
           <Button v-if="view.to" as-child variant="link" size="sm" class="doctor-link">
             <RouterLink :to="view.to" data-doctor-link @click="open = false">{{ t('doctor.open') }}</RouterLink>
           </Button>

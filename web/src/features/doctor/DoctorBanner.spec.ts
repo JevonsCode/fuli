@@ -78,6 +78,53 @@ describe('DoctorBanner', () => {
     expect(wrapper.getComponent(RouterLinkStub).props('to')).toBe('/settings/data-format')
   })
 
+  it('asks for its sessions when the panel opens and offers to open the ones the launcher links', async () => {
+    const withSessions = item('sessions_outdated:codex:0.21.0', 'sessions_outdated', 'warning', 'person', { client: 'codex', count: 4,
+      runningVersion: '0.21.0', sessions: [
+        { sourceApplication: 'codex', sessionId: 'synthetic-thread-a1b2c3' },
+        { sourceApplication: 'codex', sessionId: 'synthetic-thread-d4e5f6' },
+      ] })
+    let answer!: (value: unknown) => void
+    api.getJson.mockImplementation((path: string) => path === '/api/system/doctor'
+      ? Promise.resolve(report('needs_person', [withSessions]))
+      : new Promise((resolve) => { answer = resolve }))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    expect(api.getJson).toHaveBeenCalledTimes(1)
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    expect(api.getJson).toHaveBeenLastCalledWith(
+      '/api/session-launch/offers?session=codex%3Asynthetic-thread-a1b2c3&session=codex%3Asynthetic-thread-d4e5f6')
+    expect(wrapper.getComponent(GrowthLoading).props()).toMatchObject({ variant: 'inline', label: '正在查找这些会话的打开链接…' })
+    answer({ launcher: 'available', offers: [
+      { sourceApplication: 'codex', sessionId: 'synthetic-thread-a1b2c3', client: 'codex', offer: 'link', href: 'codex://threads/synthetic-thread-a1b2c3' },
+      { sourceApplication: 'codex', sessionId: 'synthetic-thread-d4e5f6', client: 'codex', offer: 'none' },
+    ] })
+    await flushPromises()
+    expect(wrapper.findComponent(GrowthLoading).exists()).toBe(false)
+    const sessions = wrapper.get('[data-doctor-sessions]')
+    expect(sessions.findAll('li').map(row => row.text())).toEqual(['Codex …a1b2c3打开'])
+    const open = sessions.get('[data-doctor-session-open]')
+    expect(open.attributes()).toMatchObject({ href: 'codex://threads/synthetic-thread-a1b2c3', rel: 'noreferrer' })
+    expect(wrapper.get('[data-doctor-items]').text()).toContain('4 个会话还在用 0.21.0')
+    expect(wrapper.text()).not.toContain('synthetic-thread')
+  })
+
+  it('keeps the one-line hint when no session can be opened', async () => {
+    const withSessions = item('sessions_outdated:codex:0.21.0', 'sessions_outdated', 'warning', 'person', { client: 'codex', count: 1,
+      runningVersion: '0.21.0', sessions: [{ sourceApplication: 'codex', sessionId: 'synthetic-thread-a1b2c3' }] })
+    api.getJson.mockImplementation((path: string) => Promise.resolve(path === '/api/system/doctor'
+      ? report('needs_person', [withSessions])
+      : { launcher: 'available', offers: [{ sourceApplication: 'codex', sessionId: 'synthetic-thread-a1b2c3', client: 'codex', offer: 'none' }] }))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    await flushPromises()
+    expect(api.getJson).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-doctor-sessions]').exists()).toBe(false)
+    expect(wrapper.findComponent(GrowthLoading).exists()).toBe(false)
+    expect(wrapper.get('[data-doctor-items]').text()).toContain('1 个会话还在用 0.21.0，重启这些会话就会用上新版。')
+  })
+
   it('reads a kind it does not know yet as something to look at', async () => {
     api.getJson.mockResolvedValue(report('needs_person', [item('graph_offline', 'graph_offline', 'warning', 'person')]))
     const { wrapper } = mountBanner()
