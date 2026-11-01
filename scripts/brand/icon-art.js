@@ -1,5 +1,7 @@
-// Draws the desktop client's icons: the tray's mark on a light disc with a
-// status dot, and macOS app icons inside the transparent margin macOS expects.
+// Draws the desktop client's icons: the tray's mark on a light rounded square
+// with a status dot, and macOS app icons inside the transparent margin macOS
+// expects. Wherever the mark sits on a backdrop it is a rounded square, like
+// the app icon, never a disc (Jevons 11-01).
 import { blankImage, blendPixel, composite, cropToContent, resizeArea } from './raster.js';
 import { renderMark } from './svg-raster.js';
 
@@ -7,12 +9,14 @@ const BACKDROP = 0xffffff;
 const DOT_RING = 0xffffff;
 const MARK_SHARE = 0.74;
 const SAMPLES = 4;
+// The backdrop's corner radius as a share of its side, matching the app icon's.
+export const CORNER_SHARE = 0.225;
 
 // [markFor(pixels)]: the mark cut to draw at that size (the micro cut below 28 px).
 export function trayIcon(markFor, size, dot) {
   const canvas = blankImage(size);
   const center = size / 2;
-  paintDisc(canvas, center, center, size * 0.5, BACKDROP);
+  paintRoundedSquare(canvas, size, size * CORNER_SHARE, BACKDROP);
   const inner = Math.round(size * MARK_SHARE);
   const offset = Math.round((size - inner) / 2);
   composite(canvas, renderMark(markFor(inner), inner), offset, offset);
@@ -32,6 +36,25 @@ export function marginedIcon(icon, size, margin) {
   const offset = Math.round((size - side) / 2);
   composite(canvas, resizeArea(cropToContent(icon), side), offset, offset);
   return canvas;
+}
+
+// A [size] square with [corner]-radius corners filling the canvas, antialiased.
+function paintRoundedSquare(canvas, size, corner, rgb) {
+  const colour = [(rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff];
+  const inside = (px, py) => {
+    const dx = Math.max(corner - px, 0, px - (size - corner));
+    const dy = Math.max(corner - py, 0, py - (size - corner));
+    return dx * dx + dy * dy <= corner * corner;
+  };
+  for (let y = 0; y < Math.min(canvas.height, size); y++) {
+    for (let x = 0; x < Math.min(canvas.width, size); x++) {
+      let covered = 0;
+      for (let sy = 0; sy < SAMPLES; sy++) {
+        for (let sx = 0; sx < SAMPLES; sx++) if (inside(x + (sx + 0.5) / SAMPLES, y + (sy + 0.5) / SAMPLES)) covered++;
+      }
+      blendPixel(canvas, (y * canvas.width + x) * 4, colour, covered / (SAMPLES * SAMPLES));
+    }
+  }
 }
 
 function paintDisc(canvas, cx, cy, radius, rgb) {

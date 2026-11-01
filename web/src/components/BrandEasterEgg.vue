@@ -227,7 +227,7 @@ onBeforeUnmount(() => {
 }
 
 .brand-block.is-keyboard-focused .brand-mark-wrap {
-  border-radius: 50%;
+  border-radius: 9px;
   box-shadow: 0 0 0 2px var(--color-accent);
 }
 
