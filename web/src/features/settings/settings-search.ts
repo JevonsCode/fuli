@@ -1,25 +1,22 @@
 import { onBeforeUnmount, onMounted, watch, type Ref } from 'vue'
 
 const HIDDEN = 'data-search-hidden'
-const OPENED = 'data-search-opened'
+const CARD = '.settings-card'
 const normalize = (text: string | null | undefined) => (text ?? '').toLocaleLowerCase().replace(/\s+/g, ' ').trim()
 
 /**
  * Filter the settings page in place by what it already shows. A card stays
  * when any of its text matches; inside a card whose title does not match,
- * only the matching rows stay. Collapsed cards open while they match and
- * close again when the search clears. Returns how many cards match.
+ * only the matching rows stay. Returns how many cards match.
  */
 export function filterSettings(root: HTMLElement, query: string): number {
   const needle = normalize(query)
   let matches = 0
-  for (const card of root.querySelectorAll<HTMLElement>('.settings-card')) {
+  for (const card of root.querySelectorAll<HTMLElement>(CARD)) {
     const rows = [...card.querySelectorAll<HTMLElement>('.setting-row')]
-    const details = card instanceof HTMLDetailsElement ? card : null
     if (!needle) {
       card.removeAttribute(HIDDEN)
       for (const row of rows) row.removeAttribute(HIDDEN)
-      if (details?.hasAttribute(OPENED)) { details.open = false; details.removeAttribute(OPENED) }
       matches += 1
       continue
     }
@@ -27,28 +24,24 @@ export function filterSettings(root: HTMLElement, query: string): number {
     card.toggleAttribute(HIDDEN, !found)
     if (!found) continue
     matches += 1
-    const title = normalize(card.querySelector('summary, h3')?.textContent)
+    const title = normalize(card.querySelector('[data-slot="card-title"], h2, h3')?.textContent)
     const rowMatches = rows.filter(row => normalize(row.textContent).includes(needle))
     // A title match or a match outside every row keeps the whole card readable.
     const keepAll = title.includes(needle) || rowMatches.length === 0
     for (const row of rows) row.toggleAttribute(HIDDEN, !keepAll && !rowMatches.includes(row))
-    if (details && !details.open) { details.open = true; details.setAttribute(OPENED, '') }
   }
   return matches
 }
 
 /**
- * The collapsed sections (marked data-settings-section) whose text holds the
- * query, so the page can open them while the search lasts. Closed sections
- * stay in the DOM, so their text is searchable.
+ * The card a link points at: with a #hash, the card holding the element it
+ * names; without one, the first card a ?setting= search left visible.
  */
-export function matchingSections(root: HTMLElement, query: string): string[] {
-  const needle = normalize(query)
-  if (!needle) return []
-  return [...root.querySelectorAll<HTMLElement>('[data-settings-section]')]
-    .filter(section => normalize(section.textContent).includes(needle))
-    .map(section => section.dataset.settingsSection ?? '')
-    .filter(Boolean)
+export function linkedCard(root: HTMLElement, hash: string): HTMLElement | null {
+  const id = hash.replace(/^#/, '')
+  if (!id) return root.querySelector<HTMLElement>(`${CARD}:not([${HIDDEN}])`)
+  const named = root.ownerDocument.getElementById(id)
+  return named && root.contains(named) ? named.closest<HTMLElement>(CARD) : null
 }
 
 /** Keep the filter applied while the query changes and cards load their content. */

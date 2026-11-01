@@ -20,25 +20,19 @@ const paired = {
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
-async function open(wrapper: ReturnType<typeof mount>) {
-  const details = wrapper.get('details')
-  ;(details.element as HTMLDetailsElement).open = true
-  await details.trigger('toggle')
-  await flushPromises()
-}
-
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 }
 
-it('loads only when opened and hosts without enabling console LAN access', async () => {
+it('loads as a plain card and hosts without enabling console LAN access', async () => {
   const fetch = vi.fn()
     .mockResolvedValueOnce(json(off))
     .mockResolvedValueOnce(json(paired))
   vi.stubGlobal('fetch', fetch)
   const wrapper = mount(PeerSettings)
-  expect(fetch).not.toHaveBeenCalled()
-  await open(wrapper)
+  await flushPromises()
+  expect(wrapper.find('details').exists()).toBe(false)
+  expect(wrapper.get('[data-slot="card-title"]').text()).toBe('局域网圆桌（Beta）')
   expect(fetch.mock.calls[0]?.[0]).toBe('/api/peer')
   await wrapper.get('[data-host-peer]').trigger('click')
   await flushPromises()
@@ -58,7 +52,7 @@ it('requires an explicit client when sharing a project lead and never publishes 
     }] }))
   vi.stubGlobal('fetch', fetch)
   const wrapper = mount(PeerSettings)
-  await open(wrapper)
+  await flushPromises()
   const project = wrapper.get('.peer-share-title input')
   expect((project.element as HTMLInputElement).checked).toBe(false)
   await project.setValue(true)
@@ -84,7 +78,7 @@ it('copies a pairing invitation and revokes another device from this computer', 
   const writeText = vi.fn(async () => {})
   vi.stubGlobal('navigator', { clipboard: { writeText } })
   const wrapper = mount(PeerSettings)
-  await open(wrapper)
+  await flushPromises()
   await wrapper.get('[data-invite-peer]').trigger('click')
   await flushPromises()
   await wrapper.get('[data-copy-invite]').trigger('click')
@@ -103,7 +97,7 @@ it('previews the device fingerprint before pairing and invalidates it when the i
     .mockResolvedValueOnce(json({ ...paired, role: 'member' }))
   vi.stubGlobal('fetch', fetch)
   const wrapper = mount(PeerSettings)
-  await open(wrapper)
+  await flushPromises()
   await wrapper.get('textarea').setValue('first-invitation')
   await wrapper.get('[data-join-peer]').trigger('click')
   await flushPromises()

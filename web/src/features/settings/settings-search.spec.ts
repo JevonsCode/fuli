@@ -1,23 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import { setLocale, t } from '@/i18n'
-import { filterSettings, matchingSections, settingSearchTerm } from './settings-search'
+import { filterSettings, linkedCard, settingSearchTerm } from './settings-search'
 
 function page() {
   const root = document.createElement('div')
   root.innerHTML = `
     <section class="settings-card" data-card="behavior">
-      <h3>Behaviour</h3>
+      <h2 data-slot="card-title">Behaviour</h2>
       <label class="setting-row" data-row="capture">Capture knowledge automatically</label>
       <label class="setting-row" data-row="language">Interface language English</label>
     </section>
-    <details class="settings-card" data-card="ports">
-      <summary>Ports</summary>
+    <section class="settings-card" data-card="ports" id="ports">
+      <h2 data-slot="card-title">Ports</h2>
+      <h3 class="ui-group-label">Personal</h3>
       <label class="setting-row" data-row="console">Console port</label>
-    </details>
-    <details class="settings-card" data-card="notifications" open>
-      <summary>Notifications</summary>
-      <p>Desktop alerts when an Agent asks you</p>
-    </details>`
+    </section>
+    <section class="settings-card" data-card="notifications">
+      <h2 data-slot="card-title">Notifications</h2>
+      <p id="needs-person">Desktop alerts when an Agent asks you</p>
+    </section>`
+  document.body.append(root)
   return root
 }
 const hidden = (root: HTMLElement, selector: string) => root.querySelector(selector)!.hasAttribute('data-search-hidden')
@@ -30,30 +32,43 @@ describe('filterSettings', () => {
     expect(hidden(root, '[data-row="language"]')).toBe(false)
     expect(hidden(root, '[data-row="capture"]')).toBe(true)
     expect(hidden(root, '[data-card="ports"]')).toBe(true)
+    root.remove()
   })
 
-  it('opens a matching collapsed card, ignores case, and closes it again when cleared', () => {
+  it('ignores case and shows every card again when cleared', () => {
     const root = page()
-    const ports = root.querySelector<HTMLDetailsElement>('[data-card="ports"]')!
     expect(filterSettings(root, 'CONSOLE')).toBe(1)
-    expect(ports.open).toBe(true)
+    expect(hidden(root, '[data-card="ports"]')).toBe(false)
     expect(filterSettings(root, '')).toBe(3)
-    expect(ports.open).toBe(false)
     expect(root.querySelectorAll('[data-search-hidden]')).toHaveLength(0)
+    root.remove()
   })
 
-  it('keeps a whole card when the title or only non-row text matches, and leaves cards the person opened open', () => {
+  it('keeps a whole card when its title or only non-row text matches', () => {
     const root = page()
     expect(filterSettings(root, 'behaviour')).toBe(1)
     expect(hidden(root, '[data-row="capture"]')).toBe(false)
     expect(filterSettings(root, 'desktop alerts')).toBe(1)
-    expect(filterSettings(root, '')).toBe(3)
-    expect(root.querySelector<HTMLDetailsElement>('[data-card="notifications"]')!.open).toBe(true)
+    expect(hidden(root, '[data-card="notifications"]')).toBe(false)
+    root.remove()
   })
 
   it('reports no match without hiding the page structure', () => {
     const root = page()
     expect(filterSettings(root, 'nothing like this')).toBe(0)
+    root.remove()
+  })
+})
+
+describe('linkedCard', () => {
+  it('finds the card holding a #hash target, or the first card a search left', () => {
+    const root = page()
+    expect(linkedCard(root, '#needs-person')?.dataset.card).toBe('notifications')
+    expect(linkedCard(root, '#ports')?.dataset.card).toBe('ports')
+    expect(linkedCard(root, '#no-such-card')).toBeNull()
+    filterSettings(root, 'console')
+    expect(linkedCard(root, '')?.dataset.card).toBe('ports')
+    root.remove()
   })
 })
 
@@ -68,17 +83,5 @@ describe('settingSearchTerm', () => {
     expect(settingSearchTerm('ports', t)).toBe('服务端口')
     expect(settingSearchTerm('unknown', t)).toBe('')
     expect(settingSearchTerm(['ports'], t)).toBe('')
-  })
-})
-
-describe('matchingSections', () => {
-  it('names the collapsed sections whose text holds the query, so the page can open them', () => {
-    const root = document.createElement('div')
-    root.innerHTML = `
-      <div data-settings-section="ports"><h3>Ports</h3><label>Personal Neo4j Bolt</label></div>
-      <div data-settings-section="notifications"><h3>Notifications</h3></div>`
-    expect(matchingSections(root, 'neo4j bolt')).toEqual(['ports'])
-    expect(matchingSections(root, 'NOTIFICATIONS')).toEqual(['notifications'])
-    expect(matchingSections(root, '  ')).toEqual([])
   })
 })
