@@ -36,6 +36,12 @@ export interface GraphController {
   markDropTarget(nodeId: string | null): void
   /** Puts a project dragged in organize mode back where its drag started. */
   restoreNode(nodeId: string): void
+  /**
+   * Shows each project's lead as its portrait inside the project node; a
+   * project without one keeps the folder mark. avatarFor maps a project node to
+   * its lead's portrait URL, or null.
+   */
+  showProjectLeads(avatarFor: (node: KnowledgeNode) => string | null): void
   destroy(): void
 }
 
@@ -93,6 +99,8 @@ const NODE_LABEL_FONT_SIZE = 12
 const NODE_ID_FONT_SIZE = 7
 const EDGE_LABEL_HEIGHT = 20
 const PROJECT_RING_RADIUS = 24
+// A project lead's portrait fills the project node's inner circle (r 19) inside its white edge.
+const PROJECT_LEAD_RADIUS = 17
 const LINK_GAP = 28
 const SEARCH_BADGE = { width: 30, height: 15, above: 8 }
 // How close the pointer must come to another project to drop onto it.
@@ -126,7 +134,9 @@ export function renderKnowledgeGraph(
     .attr('preserveAspectRatio', 'xMidYMid meet')
 
   const markerId = `graph-arrow-${Math.random().toString(36).slice(2)}`
+  const leadClipId = `graph-lead-clip-${Math.random().toString(36).slice(2)}`
   const defs = root.append('defs')
+  defs.append('clipPath').attr('id', leadClipId).append('circle').attr('r', PROJECT_LEAD_RADIUS)
   defs.append('marker')
     .attr('id', markerId)
     .attr('viewBox', '0 -5 10 10')
@@ -467,7 +477,24 @@ export function renderKnowledgeGraph(
 
   fitToNodes(nodes, 0)
 
+  function showProjectLeads(avatarFor: (node: KnowledgeNode) => string | null) {
+    nodeGroups.filter(isProjectNode).each(function (node) {
+      const group = d3.select(this)
+      const url = avatarFor(node)
+      group.select('image.graph-project-lead').remove()
+      group.select('.graph-project-icon').attr('display', url ? 'none' : null)
+      if (!url) return
+      group.insert('image', '.graph-node-label')
+        .attr('class', 'graph-project-lead')
+        .attr('href', url)
+        .attr('x', -PROJECT_LEAD_RADIUS).attr('y', -PROJECT_LEAD_RADIUS)
+        .attr('width', PROJECT_LEAD_RADIUS * 2).attr('height', PROJECT_LEAD_RADIUS * 2)
+        .attr('clip-path', `url(#${leadClipId})`)
+    })
+  }
+
   return {
+    showProjectLeads,
     zoomIn: () => zoomBy(1.32),
     zoomOut: () => zoomBy(0.76),
     fit: () => fitToNodes(nodes),
