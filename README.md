@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JevonsCode/fuli/main/web/assets/brand/fuli-logo.png" alt="Fuli logo" width="72" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JevonsCode/fuli/main/brand/svg/mark/fuli-mark-dark.svg" />
+    <img src="https://raw.githubusercontent.com/JevonsCode/fuli/main/brand/svg/mark/fuli-mark-color.svg" alt="Fuli logo" width="72" />
+  </picture>
 </p>
 
 <h1 align="center">Fuli</h1>
@@ -1000,6 +1003,15 @@ docker compose -f compose.graphiti.yml config --quiet
 `npm run test:package` builds the web UI, creates a real npm tarball, installs it into an isolated
 global prefix, and verifies `fuli` / `fl`, version output, help output, and the packaged UI. Tests,
 QA screenshots, and internal design documents are excluded from the npm package.
+
+## Brand
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JevonsCode/fuli/main/brand/svg/lockup/fuli-lockup-bilingual-horizontal-dark.svg" />
+  <img src="https://raw.githubusercontent.com/JevonsCode/fuli/main/brand/svg/lockup/fuli-lockup-bilingual-horizontal.svg" alt="FULI 复利 lockup" width="280" />
+</picture>
+
+The FULI mark, wordmarks and lockups come from the [FULI 复利 brand system on Figma](https://www.figma.com/community/file/1698659778015746085). See [`brand/README.md`](brand/README.md) for the brand files and how to change them.
 
 ## License
 

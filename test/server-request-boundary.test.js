@@ -92,7 +92,7 @@ test('exact local browser authority and requests without Origin keep working', a
   assert.equal(captured.status, 200);
   assert.equal(captureCalls, 1);
   assert.equal(favicon.status, 200);
-  assert.equal(favicon.headers.get('content-type'), 'image/png');
+  assert.equal(favicon.headers.get('content-type'), 'image/x-icon');
   assert.equal(index.status, 200);
   assert.match(index.headers.get('content-type'), /^text\/html/);
   assert.equal(index.headers.get('cache-control'), 'no-cache');

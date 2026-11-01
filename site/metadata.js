@@ -19,7 +19,7 @@ export function structuredData(locale, pageUrl) {
         license: 'https://www.apache.org/licenses/LICENSE-2.0',
         downloadUrl: 'https://www.npmjs.com/package/fuli-context',
         sameAs: ['https://github.com/JevonsCode/fuli', 'https://www.npmjs.com/package/fuli-context'],
-        image: SITE_URL + 'assets/fuli-logo.png',
+        image: SITE_URL + 'assets/brand/fuli-mark-color-512.png',
         featureList: ['agents', 'handoff', 'roundtable', 'taste', 'team', 'memory', 'database'].map(key => copy[key + '.description']),
       },
       {

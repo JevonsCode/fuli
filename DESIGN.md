@@ -129,10 +129,10 @@ motion mode. Do not add written scroll instructions or captions repeating the ch
 
 ## Brand identity
 
-The existing Fuli logo is a fixed brand asset, not part of the website redesign.
-Use `site/assets/fuli-logo.png` unchanged in the header, footer, and favicon.
-It is generated from `brand/fuli-logo.png`, like the console's `web/assets/brand/fuli-logo.png`
-(`brand/README.md`). Preserve its native colors,
+The FULI mark is a fixed brand asset, not part of the website redesign.
+Use `site/assets/brand/fuli-mark-color.svg` unchanged in the header (`fuli-mark-dark.svg` over
+the dark scene) and `site/assets/brand/favicon.ico` as the favicon. They are generated from `brand/`,
+like the console's `web/assets/brand/` (`brand/README.md`). Preserve its native colors,
 aspect ratio, and transparent background; do not substitute an authored F glyph.
 The header renders it at 32px (28px on mobile), the footer at 36px.
 

@@ -184,7 +184,7 @@ export async function compileWindowsNodeLauncher(compiler, output, scratch) {
     join(PACKAGE_ROOT, 'desktop', 'windows', 'FuliNodeLauncher.cs')]);
 }
 
-// Generated from brand/fuli-logo.png by scripts/build-brand-assets.js.
+// Copied from brand/png/app-icon/fuli-app.ico by scripts/build-brand-assets.js.
 const APP_ICON = 'desktop/flutter/windows/runner/resources/app_icon.ico';
 
 const PROJECT_VERSION = /^version\s*=\s*"([^"]+)"\s*$/m;

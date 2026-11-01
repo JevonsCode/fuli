@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/JevonsCode/fuli/main/web/assets/brand/fuli-logo.png" alt="Fuli Logo" width="72" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JevonsCode/fuli/main/brand/svg/mark/fuli-mark-dark.svg" />
+    <img src="https://raw.githubusercontent.com/JevonsCode/fuli/main/brand/svg/mark/fuli-mark-color.svg" alt="Fuli Logo" width="72" />
+  </picture>
 </p>
 
 <h1 align="center">复利（Fuli）</h1>
@@ -858,6 +861,15 @@ docker compose -f compose.graphiti.yml config --quiet
 `npm run test:package` 会构建前端、生成真实 npm tarball、安装到隔离的全局前缀，并验证
 `fuli` / `fl`、版本号、帮助信息和 Web UI。测试源码、QA 截图和内部设计文档不会进入 npm
 包。
+
+## 品牌
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JevonsCode/fuli/main/brand/svg/lockup/fuli-lockup-bilingual-horizontal-dark.svg" />
+  <img src="https://raw.githubusercontent.com/JevonsCode/fuli/main/brand/svg/lockup/fuli-lockup-bilingual-horizontal.svg" alt="FULI 复利 组合标" width="280" />
+</picture>
+
+FULI 的图形标、字标和组合标来自 [Figma 上的 FULI 复利品牌系统](https://www.figma.com/community/file/1698659778015746085)。品牌文件和修改方法见 [`brand/README.md`](brand/README.md)。
 
 ## License
 

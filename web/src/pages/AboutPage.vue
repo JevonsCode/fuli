@@ -4,7 +4,7 @@ import LabelGuide from '@/features/about/LabelGuide.vue'
 import OpenSourceCredits from '@/features/about/OpenSourceCredits.vue'
 import ProductPrinciples from '@/features/about/ProductPrinciples.vue'
 import { t } from '@/i18n'
-import { fuliLogoUrl } from '@/lib/brand'
+import { fuliMarkUrl } from '@/lib/brand'
 </script>
 
 <template>
@@ -13,7 +13,7 @@ import { fuliLogoUrl } from '@/lib/brand'
       <header class="about-opening">
         <div class="about-brand-lockup">
           <span class="about-logo-plate">
-            <img data-testid="about-opening-logo" :src="fuliLogoUrl" alt="" aria-hidden="true" />
+            <img data-testid="about-opening-logo" :src="fuliMarkUrl" alt="" aria-hidden="true" />
           </span>
           <span class="about-brand-name">{{ t('common.brand') }}</span>
         </div>
