@@ -93,13 +93,13 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
   position: relative; isolation: isolate;
   display: flex; flex-direction: column-reverse; align-items: center; gap: 6px; margin: 0; padding: 6px; list-style: none;
   border: 1px solid var(--edge-dock); border-radius: var(--radius-pill);
-  box-shadow: 0 0 0 .5px rgb(var(--shadow-rgb) / 10%), 0 10px 30px -10px rgb(var(--shadow-rgb) / 28%), inset 0 1px 0 var(--edge-glass);
+  box-shadow: var(--shadow-glass);
 }
 /* The glass on its own layer, like the dock's: the names beside each portrait
    are glass too and must blur the page, not this capsule. */
 .dock-pins::before {
   content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
-  background: var(--surface-dock); backdrop-filter: var(--filter-dock); -webkit-backdrop-filter: var(--filter-dock);
+  background: var(--glass-sheen), var(--surface-dock); backdrop-filter: var(--filter-dock); -webkit-backdrop-filter: var(--filter-dock);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .dock-pins::before { background: var(--color-surface); }
