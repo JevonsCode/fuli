@@ -115,7 +115,8 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   const input = { session_id: session, cwd: projectPath, transcript_path: transcript, prompt };
   const first = context(await hook('claude-code', 'UserPromptSubmit', input));
   assert.equal(first.context.project_agent_id, 'engineer');
-  assert.equal(first.conversation.recovery, null);
+  // A conversation with nothing to recover leaves out its null recovery fields (rec#46).
+  assert.equal(first.conversation.recovery, undefined);
   const initialized = await query({ mode: 'session', session_id: session });
   assert.equal(initialized.initialized, true);
   assert.equal(initialized.cursor, Buffer.byteLength(old));
@@ -152,8 +153,8 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   const next = context(await hook('codex', 'UserPromptSubmit', { session_id: codexSession,
     turn_id: 'turn-two', cwd: projectPath, transcript_path: codexPath, prompt: nextPrompt }));
   assert.equal(next.context.project_agent_id, 'engineer');
-  assert.equal(next.conversation.recovery, null);
-  assert.equal(next.conversation.recovered_from, null);
+  assert.equal(next.conversation.recovery, undefined);
+  assert.equal(next.conversation.recovered_from, undefined);
   // Each raw message can be reread exactly from the recovered source, which
   // differs from the new conversation. No external model/host is involved.
   const historyApplication = openFederatedGraphApplication({ runtimeConfigPath });
@@ -193,7 +194,7 @@ test('candidate Hook subprocesses persist visible history and recover only the s
   const reviewer = context(await hook('claude-code', 'UserPromptSubmit', { session_id: reviewSession,
     cwd: projectPath, transcript_path: reviewPath, prompt: reviewPrompt }));
   assert.equal(reviewer.context.project_agent_id, 'reviewer');
-  assert.equal(reviewer.conversation.recovery, null);
+  assert.equal(reviewer.conversation.recovery, undefined);
   assert.equal(reviewer.project_agent_context.memory.revision, 0);
   assert.doesNotMatch(JSON.stringify(reviewer), /VISIBLE_TRANSCRIPT_SYNTHETIC_MARKER|SYNTHETIC_DURABLE_MEMORY_MARKER/);
   // Disable this Agent's capture through the real Provider, then exercise another Hook pair.

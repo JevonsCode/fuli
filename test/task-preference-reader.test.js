@@ -162,7 +162,7 @@ const ENTRY_ONLY_KEYS = ['memory', 'global_memory', 'knowledge', 'recent_tasks',
 const withoutEntryOnly = value => Object.fromEntries(Object.entries(value).filter(([key]) => !ENTRY_ONLY_KEYS.includes(key)));
 // The entry references shared rule text; resolve it before comparing with full recovery.
 const resolvedRules = value => Object.fromEntries(Object.entries(value).map(([key, item]) =>
-  [key, typeof item?.rules === 'string' && item.version === entryRules().version
+  [key, typeof item?.rules === 'string' && item.rules.startsWith('fuli://rules/task-entry/')
     ? entryRules().sections[item.rules.split('/').at(-1)] : item]));
 
 test('recovered Agent context matches every instruction field of the compacted entry, including team reporting', async () => {

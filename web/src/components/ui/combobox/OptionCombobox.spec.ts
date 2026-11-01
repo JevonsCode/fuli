@@ -221,3 +221,16 @@ describe('OptionCombobox', () => {
     expect(primitives).toMatch(/:root\[data-motion="reduced"\] \*[\s\S]*animation-duration: 0s !important/)
   })
 })
+
+describe('OptionCombobox before its options arrive', () => {
+  it('stays empty instead of showing the raw value, then shows the label', async () => {
+    const { wrapper } = mountCombobox('alpha', { options: [] })
+    await flushPromises()
+    expect(input().value).toBe('')
+    wrapper.unmount()
+    mounted.pop()
+    mountCombobox('alpha')
+    await flushPromises()
+    expect(input().value).toBe('Alpha 项目')
+  })
+})

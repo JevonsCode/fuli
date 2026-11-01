@@ -262,7 +262,7 @@ describe('AppShell', () => {
   it('names section tabs by state words, never repeating the page title', async () => {
     const { wrapper } = await setup('/project-agents')
     expect(wrapper.get('h1').text()).toBe('FLAs')
-    expect(wrapper.findAll('[data-section]').map(tab => tab.text())).toEqual(['全部', '编排', '职业', '服务'])
+    expect(wrapper.findAll('[data-section]').map(tab => tab.text())).toEqual(['全部', '编排', '职业', '服务', '应用'])
     wrapper.unmount()
   })
 

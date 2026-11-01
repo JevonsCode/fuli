@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { motion } from 'motion-v'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -11,9 +11,12 @@ import TaskBlockerNotice from '@/features/project-agents/TaskBlockerNotice.vue'
 import { taskStatusTone } from '@/features/project-agents/task-labels'
 import { t } from '@/i18n'
 import { SPRING } from '@/lib/motion'
-import type { ProjectAgentTaskEvent, ProjectAgentTaskRecord } from '@/types'
+import type { ProjectAgentTaskRecord } from '@/types'
+import { UiSegmented } from '@/ui'
 import FlaArc from './FlaArc.vue'
-import { flaProgress, taskFlas, taskKey, taskLog } from './workbench-model'
+import WorkbenchTimeline from './WorkbenchTimeline.vue'
+import { taskTimeline } from './task-timeline'
+import { flaProgress, taskFlas, taskKey } from './workbench-model'
 
 // The workbench's fixed left half: the one piece of work you are looking at,
 // how many of its FLAs finished their part, what happened on it and what each
@@ -25,7 +28,6 @@ const props = defineProps<{
   projectName: (id?: string | null) => string
   agentName: (id?: string | null) => string
   statusLabel: (status: string) => string
-  formatTime: (value?: string | null) => string
   next: { to: RouteLocationRaw; label: string } | null
   /** The task whose title is flying in from the column, if any. */
   flying: string
@@ -36,9 +38,16 @@ const emit = defineEmits<{ cleared: [] }>()
 
 const progress = computed(() => (props.task ? flaProgress(props.task) : { done: 0, total: 0 }))
 const flas = computed(() => (props.task ? taskFlas(props.task) : []))
-const log = computed(() => (props.task ? taskLog(props.task) : []))
-const actor = (event: ProjectAgentTaskEvent) => event.agentId ? props.agentName(event.agentId)
-  : event.actorKind === 'human' ? t('overview.stage.you') : t('overview.stage.system')
+const timeline = computed(() => (props.task ? taskTimeline(props.task) : []))
+// FLA 分工 only when some FLA holds a part of the work.
+const views = computed(() => [
+  ...(timeline.value.length || !flas.value.length ? [{ value: 'timeline' as const, label: t('overview.stage.views.timeline'), count: timeline.value.length }] : []),
+  ...(flas.value.length ? [{ value: 'flas' as const, label: t('overview.stage.views.flas'), count: flas.value.length }] : []),
+])
+const view = ref<'timeline' | 'flas'>('timeline')
+watch(() => (props.task ? taskKey(props.task) : ''), () => { view.value = 'timeline' })
+// The view shown: the chosen one while it exists, else the only one there is.
+const active = computed(() => views.value.some(option => option.value === view.value) ? view.value : views.value[0]?.value)
 const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
 </script>
 
@@ -62,20 +71,15 @@ const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
           <TaskBlockerClear v-if="task.personalProjectId" :title="title(task)" :blocker="task.blocker" :updated-at="task.updatedAt"
             :scope="{ personalSpaceId: spaceId, personalProjectId: task.personalProjectId, taskId: task.taskId }" @cleared="emit('cleared')" />
         </div>
-        <div class="workbench-stage-lower">
-          <section class="workbench-panel" aria-labelledby="workbench-log-heading">
-            <h3 id="workbench-log-heading" class="workbench-panel-title">{{ t('overview.sections.log') }}</h3>
-            <ol v-if="log.length" class="workbench-log">
-              <li v-for="event in log" :key="event.eventId">
-                <time :datetime="event.createdAt">{{ formatTime(event.createdAt) }}</time>
-                <p><strong>{{ actor(event) }}</strong>{{ event.summary }}</p>
-              </li>
-            </ol>
-            <p v-else class="workbench-empty">{{ t('overview.stage.noLog') }}</p>
-          </section>
-          <section class="workbench-panel" aria-labelledby="workbench-flas-heading">
-            <h3 id="workbench-flas-heading" class="workbench-panel-title">{{ t('overview.sections.flas') }}</h3>
-            <ul class="workbench-flas">
+        <!-- One full-width panel; its switch shows the timeline or each FLA's share, one at a time. Nothing recorded, no panel. -->
+        <section v-if="timeline.length || flas.length" class="workbench-stage-lower" :aria-label="t('overview.stage.viewsAria')">
+          <UiSegmented v-if="views.length > 1" v-model="view" class="workbench-views" :options="views" :label="t('overview.stage.viewsAria')" />
+          <h3 v-else class="workbench-panel-title">{{ views[0]?.label }}</h3>
+          <Transition name="workbench-view" mode="out-in">
+            <div v-if="active === 'timeline'" key="timeline" class="workbench-view">
+              <WorkbenchTimeline :entries="timeline" :task-key="taskKey(task)" :agent-name="agentName" />
+            </div>
+            <ul v-else key="flas" class="workbench-flas workbench-view" data-workbench-flas>
               <li v-for="fla in flas" :key="fla.agentId">
                 <span class="workbench-face" :style="agentIdentityStyle(fla.agentId)" aria-hidden="true"><img :src="agentAvatarUrl(fla.agentId)" alt="" /></span>
                 <p>
@@ -86,8 +90,8 @@ const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
                 <span v-else class="sr-only">{{ statusLabel(fla.status) }}</span>
               </li>
             </ul>
-          </section>
-        </div>
+          </Transition>
+        </section>
       </motion.div>
     </template>
     <p v-else class="workbench-stage-empty">{{ t(partial ? 'overview.read.partial' : 'overview.work.empty') }}</p>
@@ -99,28 +103,24 @@ const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
   display: flex; min-width: 0; min-height: 0; padding: 24px 28px; overflow: hidden;
   border-radius: var(--radius-shell); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border);
 }
-.workbench-stage-body { display: flex; flex: 1; flex-direction: column; gap: 20px; min-width: 0; min-height: 0; }
+.workbench-stage-body { display: flex; flex: 1; flex-direction: column; gap: 20px; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 .workbench-stage-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .workbench-stage-heading { display: grid; gap: 8px; min-width: 0; }
 .workbench-stage-title { margin: 0; font-size: 30px; font-weight: var(--weight-strong); line-height: 1.25; letter-spacing: -.02em; overflow-wrap: anywhere; }
 .workbench-stage-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .workbench-meta { margin: 0; color: var(--color-muted); font-size: var(--text-meta); }
 .workbench-stage-blocker { display: grid; gap: 8px; }
-.workbench-stage-lower {
-  display: grid; flex: 1; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; min-height: 0;
-  padding-top: 18px; border-top: 1px solid var(--color-border);
-}
-/* The stage never scrolls as a page; a long log scrolls inside its own column. */
-.workbench-panel { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
-.workbench-panel + .workbench-panel { padding-left: 24px; border-left: 1px solid var(--color-border); }
+.workbench-stage-lower { display: grid; align-content: start; gap: 14px; padding-top: 18px; border-top: 1px solid var(--color-border); }
+.workbench-views { justify-self: start; }
 .workbench-panel-title { margin: 0; font-size: var(--text-body); font-weight: var(--weight-strong); }
-.workbench-log, .workbench-flas { display: flex; flex-direction: column; min-height: 0; margin: 0; padding: 0; overflow: auto; list-style: none; }
-.workbench-log li { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; padding: 8px 0; color: var(--color-ink-soft); font-size: var(--text-control); }
-.workbench-log li + li { border-top: 1px solid var(--color-border); }
-.workbench-log li:first-child p { color: var(--color-ink); }
-.workbench-log time { color: var(--color-faint); font-variant-numeric: tabular-nums; }
-.workbench-log p, .workbench-flas p { margin: 0; overflow-wrap: anywhere; }
-.workbench-log strong, .workbench-flas strong { margin-right: 6px; color: var(--color-ink); font-weight: var(--weight-strong); }
+.workbench-view { min-width: 0; }
+.workbench-view-enter-active, .workbench-view-leave-active { transition: opacity var(--motion-fast) var(--motion-ease), translate var(--motion-fast) var(--motion-ease); }
+.workbench-view-enter-from { opacity: 0; translate: 0 4px; }
+.workbench-view-leave-to { opacity: 0; }
+.workbench-flas { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.workbench-flas li + li { border-top: 1px solid var(--color-border); }
+.workbench-flas p { margin: 0; overflow-wrap: anywhere; }
+.workbench-flas strong { margin-right: 6px; color: var(--color-ink); font-weight: var(--weight-strong); }
 .workbench-flas li { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 0; font-size: var(--text-control); }
 .workbench-flas p span { color: var(--color-ink-soft); }
 .workbench-face { display: grid; width: 32px; height: 32px; overflow: hidden; place-items: center; border-radius: 50%; background: var(--agent-identity-soft, var(--color-accent-soft)); }
@@ -135,9 +135,7 @@ const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
 @media (max-width: 860px) {
   /* One column: the stage grows with its content and the page scrolls. */
   .workbench-stage { padding: 20px; overflow: visible; }
-  .workbench-log, .workbench-flas { overflow: visible; }
+  .workbench-stage-body { overflow: visible; }
   .workbench-stage-title { font-size: 24px; }
-  .workbench-stage-lower { grid-template-columns: minmax(0, 1fr); }
-  .workbench-panel + .workbench-panel { padding-top: 16px; padding-left: 0; border-top: 1px solid var(--color-border); border-left: 0; }
 }
 </style>

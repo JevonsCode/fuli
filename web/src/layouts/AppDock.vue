@@ -11,7 +11,8 @@ import type { NavDestination } from './nav-destinations'
 // one frosted-glass capsule like the macOS dock, left-aligned with the page.
 // Names show as tooltips and are the links' accessible names. Pinned FLAs rise
 // above the FLAs button. On the workbench the dock stays open; elsewhere it
-// folds to the current destination and opens again on hover or keyboard focus.
+// folds to the current destination and opens again on hover or keyboard focus
+// (keyboard only: a clicked link keeps focus, which must not hold the dock open).
 // The current icon is ink over a gold dot, and the dot glides to the next one
 // on the spring.
 defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; spaceId: string; folded: boolean }>()
@@ -39,8 +40,8 @@ defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; space
 .app-dock {
   /* Left-aligned with the page canvas, which centres on very wide screens. */
   position: fixed; bottom: 20px; left: max(var(--page-gutter), calc((100vw - var(--canvas-max)) / 2)); z-index: var(--z-nav);
-  padding: 5px; border: 1px solid var(--edge-glass); border-radius: var(--radius-pill);
-  background: var(--surface-glass); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
+  padding: 5px; border: 1px solid var(--edge-dock); border-radius: var(--radius-pill);
+  background: var(--surface-dock); backdrop-filter: var(--filter-dock); -webkit-backdrop-filter: var(--filter-dock);
   box-shadow: 0 0 0 .5px rgb(var(--shadow-rgb) / 10%), 0 10px 30px -10px rgb(var(--shadow-rgb) / 28%);
 }
 .app-dock-items { display: flex; gap: 4px; margin: 0; padding: 0; list-style: none; }
@@ -64,27 +65,42 @@ defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; space
   transition: opacity var(--motion-fast), translate var(--motion-spring) var(--motion-ease-spring); translate: 0 4px;
 }
 .app-dock-link[data-tip]:hover::after, .app-dock-link[data-tip]:focus-visible::after { opacity: 1; translate: 0 0; }
-/* Pinned FLAs rise in their own capsule; the transparent bridge keeps the hover alive on the way up. */
+/* Pinned FLAs rise in their own capsule once the pointer rests on the FLAs button (hover intent),
+   so sweeping across the dock or moving up from it never opens them; keyboard focus opens them at once.
+   Only keyboard focus (:focus-visible) holds them open: a clicked pin keeps focus after it navigates,
+   and that must not latch the capsule open over the page.
+   Hidden, the capsule takes no pointer, so only the button's own 44px box starts it. Open, a bridge
+   exactly as tall as the gap keeps it open on the way up. */
 .app-dock-pins {
   position: absolute; bottom: calc(100% + 14px); left: 50%; transform: translate(-50%, 10px);
-  opacity: 0; pointer-events: none;
-  transition: opacity var(--motion-fast), transform var(--motion-spring) var(--motion-ease-spring);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity var(--motion-fast), transform var(--motion-spring) var(--motion-ease-spring), visibility 0s linear var(--motion-fast);
 }
-.app-dock-pins::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 22px; }
-.app-dock-item.has-pins:hover .app-dock-pins, .app-dock-item.has-pins:focus-within .app-dock-pins, .app-dock-pins:has(.is-holding) { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
-/* The portraits rise one after another, nearest the dock first. */
+.app-dock-pins::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 14px; }
+.app-dock-item.has-pins:hover .app-dock-pins {
+  transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto; transition-delay: var(--motion-intent);
+}
+.app-dock-item.has-pins:has(:focus-visible) .app-dock-pins, .app-dock-pins:has(.is-holding) {
+  transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s;
+}
+/* The portraits rise one after another, nearest the dock first, after the same rest on hover. */
 .app-dock-pins :deep(.dock-pin) { opacity: 0; translate: 0 10px; scale: .8; transition: opacity var(--motion-fast), translate var(--motion-spring) var(--motion-ease-spring), scale var(--motion-spring) var(--motion-ease-spring), transform var(--motion-fast); transition-delay: calc(var(--pin-index, 0) * 35ms); }
-.app-dock-item.has-pins:is(:hover, :focus-within) .app-dock-pins :deep(.dock-pin), .app-dock-pins:has(.is-holding) :deep(.dock-pin) { opacity: 1; translate: 0 0; scale: 1; }
+.app-dock-item.has-pins:hover .app-dock-pins :deep(.dock-pin) { opacity: 1; translate: 0 0; scale: 1; transition-delay: calc(var(--motion-intent) + var(--pin-index, 0) * 35ms); }
+.app-dock-item.has-pins:has(:focus-visible) .app-dock-pins :deep(.dock-pin), .app-dock-pins:has(.is-holding) :deep(.dock-pin) { opacity: 1; translate: 0 0; scale: 1; transition-delay: calc(var(--pin-index, 0) * 35ms); }
 /* Folded: only the current destination shows until the dock is hovered or focused. */
-.app-dock.is-folded:not(:hover, :focus-within) .app-dock-item:not(.is-active) { max-width: 0; overflow: hidden; opacity: 0; }
-.app-dock.is-folded:not(:hover, :focus-within) .app-dock-items { gap: 0; }
+.app-dock.is-folded:not(:hover, :has(:focus-visible)) .app-dock-item:not(.is-active) { max-width: 0; overflow: hidden; opacity: 0; }
+.app-dock.is-folded:not(:hover, :has(:focus-visible)) .app-dock-items { gap: 0; }
 .app-dock-item { transition: max-width var(--motion-spring) var(--motion-ease-spring), opacity var(--motion-medium) var(--motion-ease-out); }
 
 @media (max-width: 720px) {
   .app-dock { bottom: calc(12px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); }
   /* A phone has no hover: the dock stays open. */
-  .app-dock.is-folded:not(:hover, :focus-within) .app-dock-item:not(.is-active) { max-width: 44px; overflow: visible; opacity: 1; }
-  .app-dock.is-folded:not(:hover, :focus-within) .app-dock-items { gap: 4px; }
+  .app-dock.is-folded:not(:hover, :has(:focus-visible)) .app-dock-item:not(.is-active) { max-width: 44px; overflow: visible; opacity: 1; }
+  .app-dock.is-folded:not(:hover, :has(:focus-visible)) .app-dock-items { gap: 4px; }
+}
+/* Without backdrop-filter the glass would let text through: a solid surface instead. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .app-dock { background: var(--color-surface); }
 }
 @media (prefers-reduced-motion: reduce) { .app-dock-link, .app-dock-link::after, .app-dock-pins, .app-dock-item { transition: none; } }
 :root[data-motion="reduced"] .app-dock-link, :root[data-motion="reduced"] .app-dock-link::after, :root[data-motion="reduced"] .app-dock-pins, :root[data-motion="reduced"] .app-dock-item { transition: none; }

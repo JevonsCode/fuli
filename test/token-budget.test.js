@@ -19,8 +19,9 @@ import { readTurnReceipt } from '../src/agents/turn-receipt.js';
 import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
 import { sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
 import { OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
-import { claudeEntrySession, syntheticLargeEntry, syntheticPreferences, syntheticTokenlessEntry }
+import { claudeEntrySession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences, syntheticTokenlessEntry }
   from '../test-support/synthetic-large-entry.js';
+import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
 
 // R-13 token gate: what every session pays before doing any work. A change
 // that grows a number fails here; lower the baseline when a change shrinks it,
@@ -184,7 +185,12 @@ const BASELINE = Object.freeze({
   // (+115 B), measured bytes from the real tools/list.
   // Search index view: the same optional view and ids on search_current_project_knowledge,
   // 8,426 -> 8,641 B (+215 B, about 55 tokens a request), measured from the real tools/list.
-  chatToolSchemaBytes: 8641,
+  // rec#46: the chat listing drops minLength/maxLength/minItems/maxItems (calls still check them,
+  // list_agent_interfaces still returns them), as OpenCode code mode renders each as a JSDoc tag:
+  // 8,641 -> 7,343 B (-1,298 B), measured from the real tools/list. In OpenCode 2.2.4's catalog the
+  // fuli section goes 3,054 -> about 2,199 B (about -214 tokens on every step from the second);
+  // checkpoint_task_knowledge still does not fit its 2,000-token listing budget, so stays unlisted.
+  chatToolSchemaBytes: 7343,
   // rec#51: "noMatchSourceMarker (empty) if searched", since an MCP-only client that never searched
   // opened its answer with "已检索，未命中"; "then" dropped from "Active child first, then": 2,041 ->
   // 2,048 B (+7 B), measured. This is Claude Code's 2 KiB cap, so the next addition must shrink.
@@ -200,7 +206,21 @@ const BASELINE = Object.freeze({
   // An unsaved conversation names its failed step and error code; this synthetic
   // entry has no conversation store, so it always carries them: 1,775 -> 1,820
   // chars, measured. A saved conversation carries neither.
-  projectEntryChars: 1820,
+  // rec#46: the shared rules version is stated once as rules_version instead of on each
+  // reference, a complete recall drops its zero failures and empty categories, and a fresh
+  // task its two off-flags: 1,818 -> 1,673 chars, measured.
+  projectEntryChars: 1673,
+  // rec#46: an ordinary small coding task of a working lead (team, Jefa's empty board, Tonborg,
+  // both memory layers never written, the directory snapshot current) when nothing in the store
+  // matches, through the Claude Code hook with its label (test-support/synthetic-large-entry.js).
+  // Measured cuts, about: a no-match recall shows only noMatchSourceMarker (its sourceMarker
+  // repeated it byte for byte, -180), a never-written memory layer is its scope, revision 0 and
+  // rules (-260 for both), an all-unchanged snapshot counts its files (-210), a lead that executes
+  // itself drops the selection explanation (-240), a conversation with nothing to recover its
+  // null fields (-55), default flags and counts (-100), and the rules version is stated once
+  // (-295): 5,939 -> 4,645 chars (about 1,650 -> 1,290 tokens). Role, preferences, receipt,
+  // token, team, manager and judgment are unchanged.
+  noMatchEntryChars: 4645,
   // rec#51 D-59: a coding task (a change request naming a distinctive term) whose exact project
   // holds matching knowledge gets a title-only knowledge_index in its recall: [id, title] pairs, the
   // count that one bounded search kept and one read line, never a body. Measured over the same
@@ -216,9 +236,9 @@ const BASELINE = Object.freeze({
   // rec#46: get_collaboration_preferences without a native session (OpenCode code mode) begins no
   // task, and its entry is re-read on every later model step. A working lead's synthetic entry
   // (two preferences, both memory layers, team, Jefa, Tonborg) shows its memory, team and
-  // managers as the calls that read them, and Tonborg as its one sentence: 11,567 -> 6,983 B,
-  // measured on the compact view the MCP result carries.
-  tokenlessEntryBytes: 6983,
+  // managers as the calls that read them, and Tonborg as its one sentence: 11,154 -> 6,645 B,
+  // measured on the compact view the MCP result carries (with the shared rules_version).
+  tokenlessEntryBytes: 6645,
   // rec#5 C3b: a turn of a session FULI is off for gets this one line instead of the project
   // entry (its longest reason, measured): no memory, preferences, recall or receipt. Every
   // other number above is unchanged; the switch adds no tool, schema or instruction text.
@@ -328,6 +348,15 @@ async function projectEntryChars() {
   return { projectEntryChars: deliveredChars(entry), entryClosingChars: taskClosingInstruction(entry).length };
 }
 
+// rec#46: the no-match working-lead entry as the Claude Code hook delivers it, label included.
+async function noMatchEntryChars() {
+  const sessionId = '0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b84';
+  const output = await claudeLifecycleOutput('UserPromptSubmit', { session_id: sessionId, cwd: '/synthetic/project',
+    prompt: 'Replace the hand-rolled sleep with setTimeout from node:timers/promises' },
+  () => syntheticNoMatchEntry({ sessionId }));
+  return { noMatchEntryChars: output.hookSpecificOutput.additionalContext.length };
+}
+
 // rec#51 D-59: what a coding task's entry adds for 0, 1 and 5 matching items of
 // its project, over the same entry for a task that searches nothing. UUID ids
 // and synthetic titles of 22 to 45 bytes, as stored names run.
@@ -375,7 +404,7 @@ async function measure() {
     chatToolSchemaBytes: await listedChatBytes(),
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
-    ...await projectEntryChars(), ...await knowledgeIndexChars(), ...await claudeBoundedEntryChars(),
+    ...await projectEntryChars(), ...await noMatchEntryChars(), ...await knowledgeIndexChars(), ...await claudeBoundedEntryChars(),
     tokenlessEntryBytes: Buffer.byteLength(JSON.stringify(compactTaskContext(
       await syntheticTokenlessEntry({ items: syntheticPreferences(2) })))),
     omittedPreferencesLabelChars: 1 + OMITTED_PREFERENCES_LABEL.length,

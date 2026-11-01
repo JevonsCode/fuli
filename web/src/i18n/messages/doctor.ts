@@ -9,6 +9,7 @@ export const doctorMessages = {
     repairing: '正在自动修复：重新连接客户端…',
     repaired: '已自动修复 {count} 件事',
     repairFailed: '有 {count} 件没能自动修复：{reason}',
+    repairFailedShort: '自动修复没完成',
     listLabel: '需要你处理的事',
     open: '去处理',
     kinds: {
@@ -29,6 +30,10 @@ export const doctorMessages = {
       updateFailed: '更新没有完成：{reason}',
     },
     otherClient: '其他 Agent',
+    sessionLinks: {
+      loading: '正在查找这些会话的打开链接…',
+      open: '打开',
+    },
     portsMoved: {
       consoleReserved: '端口 {from} 被系统保留，FULI 已自动改用 {to}，不用你做什么。',
       consoleInUse: '端口 {from} 被别的程序占用，FULI 已自动改用 {to}，不用你做什么。',
@@ -43,6 +48,7 @@ export const doctorMessages = {
     repairing: 'Fixing automatically: reconnecting clients…',
     repaired: 'Fixed {count} things automatically',
     repairFailed: '{count} could not be fixed automatically: {reason}',
+    repairFailedShort: 'Automatic repair did not finish',
     listLabel: 'Things that need you',
     open: 'Open',
     kinds: {
@@ -63,6 +69,10 @@ export const doctorMessages = {
       updateFailed: 'The update did not finish: {reason}',
     },
     otherClient: 'Other Agent',
+    sessionLinks: {
+      loading: 'Finding links to open these sessions…',
+      open: 'Open',
+    },
     portsMoved: {
       consoleReserved: 'Port {from} is reserved by the system, so FULI moved to port {to} by itself. Nothing to do.',
       consoleInUse: 'Another program uses port {from}, so FULI moved to port {to} by itself. Nothing to do.',

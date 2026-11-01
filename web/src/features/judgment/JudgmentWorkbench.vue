@@ -13,6 +13,7 @@ import { useWorkbenchToolbarActions } from '@/features/employees/workbench-toolb
 import { projectDisplayName } from '@/features/projects/project-origin'
 import type { PersonalProject } from '@/types'
 import UiSegmented from '@/ui/UiSegmented.vue'
+import UiIcon from '@/ui/UiIcon.vue'
 
 import JudgmentProjectOverrides from './JudgmentProjectOverrides.vue'
 import { judgmentText, policySummary } from './judgment-copy'
@@ -491,7 +492,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
             <div class="judgment-feedback-editor-row">
               <label class="ui-sr-only" :for="`judgment-feedback-${record.id}`">{{ judgmentText('workbench.feedbackReason') }}</label>
               <textarea :id="`judgment-feedback-${record.id}`" v-model="feedbackReasons[record.id]" data-feedback-reason rows="2" maxlength="1000" :disabled="feedbackSavingId === record.id" @input="markReasonEdited(record.id)" @keydown.enter.exact.prevent="saveReason(record)" />
-              <Button variant="outline" size="icon-sm" class="judgment-save-reason" data-save-reason :aria-label="judgmentText('workbench.saveReason')" :title="judgmentText('workbench.saveReason')" :disabled="feedbackSavingId === record.id" @click="saveReason(record)"><span aria-hidden="true">✓</span></Button>
+              <Button variant="outline" size="icon-sm" class="judgment-save-reason" data-save-reason :aria-label="judgmentText('workbench.saveReason')" :title="judgmentText('workbench.saveReason')" :disabled="feedbackSavingId === record.id" @click="saveReason(record)"><UiIcon name="check" :size="16" /></Button>
             </div>
           </details>
           <div class="judgment-feedback-actions">

@@ -36,6 +36,37 @@ const consoleStateShape = shapeFor<ConsoleState>(z.looseObject({
   subscriptions: z.array(z.looseObject({})),
 }))
 
+// The capture settings as the server answers them: only `enabled` is always
+// there; the lists and project switches come with the settings version in
+// use, so the console treats each as optional.
+const capturePolicyFields = {
+  enabled: z.boolean(),
+  disabledSources: z.array(z.string()).optional(),
+  capturedSources: z.array(z.string()).optional(),
+  projectMode: z.string().optional(),
+  excludedProjectIds: z.array(z.string()).optional(),
+  selectedProjectIds: z.array(z.string()).optional(),
+  unregisteredDirectories: z.string().optional(),
+  updatedAt: z.string().nullish(),
+}
+const capturePolicyShape = shapeFor<CapturePolicy>(z.looseObject(capturePolicyFields))
+const captureScopeOutcomeShape = shapeFor<CaptureScopeOutcome>(z.discriminatedUnion('status', [
+  z.looseObject({ status: z.literal('answered'), choice: z.string(), capturePolicy: z.looseObject(capturePolicyFields) }),
+  z.looseObject({ status: z.literal('gone') }),
+]))
+const captureOnboardingShape = shapeFor<CaptureOnboardingState>(z.looseObject({
+  ask: z.boolean(),
+  capturePolicy: z.looseObject(capturePolicyFields),
+}))
+const recallPolicyShape = shapeFor<RecallPolicy>(z.looseObject({
+  answerFromConfirmed: z.boolean(),
+  updatedAt: z.string().nullish(),
+}))
+const agentAccessPolicyShape = shapeFor<AgentAccessPolicy>(z.looseObject({
+  enabled: z.boolean(),
+  updatedAt: z.string().nullish(),
+}))
+
 export const useConsoleStore = defineStore('console', () => {
   const state = shallowRef<ConsoleState | null>(null)
   const runtimeStatus = ref<RuntimeStatus>('idle')
@@ -108,7 +139,7 @@ export const useConsoleStore = defineStore('console', () => {
   async function loadCapturePolicy() {
     const saves = captureSaves
     const overlapped = capturesInFlight > 0
-    const policy = await getJson<CapturePolicy>('/api/capture-policy')
+    const policy = await getJson('/api/capture-policy', capturePolicyShape)
     if (!overlapped && saves === captureSaves) rememberCapturePolicy(policy)
   }
 
@@ -121,7 +152,7 @@ export const useConsoleStore = defineStore('console', () => {
     for (;;) {
       const saves = captureSaves
       await captureWrites
-      const policy = await getJson<CapturePolicy>('/api/capture-policy')
+      const policy = await getJson('/api/capture-policy', capturePolicyShape)
       if (saves === captureSaves && capturesInFlight === 0) {
         rememberCapturePolicy(policy)
         return policy
@@ -137,7 +168,7 @@ export const useConsoleStore = defineStore('console', () => {
   // newer on the server, would look stale here.
   let captureWrites: Promise<unknown> = Promise.resolve()
   function changeCapturePolicy(change: CapturePolicyChange) {
-    return queueCaptureSave(() => patchJson<CapturePolicy>('/api/capture-policy', change), policy => policy)
+    return queueCaptureSave(() => patchJson('/api/capture-policy', change, capturePolicyShape), policy => policy)
   }
 
   // The person's answer to a new installation's question, where FULI records
@@ -145,7 +176,7 @@ export const useConsoleStore = defineStore('console', () => {
   // capture save. Either way the question is closed here: answered now, or
   // already answered elsewhere and the settings are read again.
   async function answerCaptureScope(answer: CaptureScopeAnswer) {
-    const outcome = await queueCaptureSave(() => postJson<CaptureScopeOutcome>('/api/capture-onboarding', answer),
+    const outcome = await queueCaptureSave(() => postJson('/api/capture-onboarding', answer, captureScopeOutcomeShape),
       sent => sent.status === 'answered' ? sent.capturePolicy : null)
     if (state.value) state.value = { ...state.value, captureOnboarding: { ask: false } }
     if (outcome.status === 'gone') void refreshAfterRefusal()
@@ -157,7 +188,7 @@ export const useConsoleStore = defineStore('console', () => {
   // actually did (dot review P2-3, PR 266).
   async function readCaptureOnboarding() {
     await captureWrites
-    const read = await getJson<CaptureOnboardingState>('/api/capture-onboarding')
+    const read = await getJson('/api/capture-onboarding', captureOnboardingShape)
     if (state.value) state.value = { ...state.value, capturePolicy: read.capturePolicy, captureOnboarding: { ask: read.ask } }
     return read
   }
@@ -202,7 +233,7 @@ export const useConsoleStore = defineStore('console', () => {
 
   async function updateRecallPolicy(answerFromConfirmed: boolean) {
     try {
-      const policy = await patchJson<RecallPolicy>('/api/recall-policy', { answerFromConfirmed })
+      const policy = await patchJson('/api/recall-policy', { answerFromConfirmed }, recallPolicyShape)
       if (state.value) state.value = { ...state.value, recallPolicy: policy }
       notify(answerFromConfirmed ? t('console.recall.directNotice') : t('console.recall.verifyNotice'))
     } catch (error) {
@@ -212,10 +243,7 @@ export const useConsoleStore = defineStore('console', () => {
 
   async function updateAgentAccessPolicy(enabled: boolean) {
     try {
-      const policy = await patchJson<AgentAccessPolicy>(
-        '/api/agent-access-policy',
-        { enabled },
-      )
+      const policy = await patchJson('/api/agent-access-policy', { enabled }, agentAccessPolicyShape)
       if (state.value) state.value = { ...state.value, agentAccessPolicy: policy }
       notify(
         enabled

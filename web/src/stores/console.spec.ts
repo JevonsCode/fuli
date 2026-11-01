@@ -32,7 +32,7 @@ describe('console store policies', () => {
 
     await store.updateCapturePolicy(false)
 
-    expect(patchJson).toHaveBeenCalledWith('/api/capture-policy', { enabled: false })
+    expect(patchJson).toHaveBeenCalledWith('/api/capture-policy', { enabled: false }, expect.objectContaining({ schema: expect.anything() }))
     expect(store.state.capturePolicy?.enabled).toBe(false)
     expect(store.feedback?.message).toContain('已有知识仍可读取')
   })
@@ -44,7 +44,7 @@ describe('console store policies', () => {
     store.state = { mode: 'personal_only', personalSpaces: [], projects: [], subscriptions: [],
       capturePolicy: { enabled: true, disabledSources: ['other'] } }
     await store.updateCapturePolicy(true, sources)
-    expect(patchJson).toHaveBeenCalledWith('/api/capture-policy', { enabled: true, ...sources })
+    expect(patchJson).toHaveBeenCalledWith('/api/capture-policy', { enabled: true, ...sources }, expect.objectContaining({ schema: expect.anything() }))
     expect(store.state.capturePolicy?.disabledSources).toEqual(['other'])
     expect(store.state.capturePolicy?.capturedSources).toEqual(['opencode'])
   })
@@ -65,7 +65,7 @@ describe('console store policies', () => {
 
     expect(store.state.capturePolicy?.enabled).toBe(true)
     expect(store.feedback).toEqual({ message: 'save failed', tone: 'error' })
-    expect(getJson).toHaveBeenCalledWith('/api/capture-policy')
+    expect(getJson).toHaveBeenCalledWith('/api/capture-policy', expect.objectContaining({ schema: expect.anything() }))
   })
 
   it('drops a read that started while a save was in flight and answered after it (dot review P2-2, PR 262)', async () => {
@@ -140,7 +140,7 @@ describe('console store policies', () => {
     answerFirst({ enabled: true, projectMode: 'all_except', excludedProjectIds: [] })
     await first
     await secondFailed
-    await vi.waitFor(() => expect(getJson).toHaveBeenCalledWith('/api/capture-policy'))
+    await vi.waitFor(() => expect(getJson).toHaveBeenCalledWith('/api/capture-policy', expect.objectContaining({ schema: expect.anything() })))
     await vi.waitFor(() => expect(store.state?.capturePolicy?.excludedProjectIds).toEqual([]))
   })
 

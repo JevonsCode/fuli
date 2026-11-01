@@ -176,6 +176,7 @@ none do, choose `noMatchSourceMarker`. Never show either marker when no search w
 called: `noMatchSourceMarker` reads "searched, no match" (已检索，未命中), so it belongs only
 to a search that ran in this task. A `task_knowledge_recall` without markers ran no search
 (for example `not_needed` or `project_unresolved`); do not reuse a marker from an earlier
-task. For a no-match search, `noMatchSourceMarker.markdown` is intentionally empty:
+task. A `no_match` recall carries only `noMatchSourceMarker`, since nothing it returned can
+support an answer; its search still ran. For a no-match search, `noMatchSourceMarker.markdown` is intentionally empty:
 show only its `leadMarkdown` and do not synthesize a footer. Never fabricate, rewrite,
 omit, or wrap markers in HTML. A capture or write result is not a read citation.

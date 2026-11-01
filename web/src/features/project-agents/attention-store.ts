@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { z } from 'zod'
+import { shapeFor } from '@/api/response-shape'
 import { ApiError, getJson, postJson } from '@/api/client'
 import { t } from '@/i18n'
 import type { AttentionAnswer, AttentionDelivery, AttentionReplyDraft } from './attention-replies'
@@ -13,6 +15,33 @@ export interface AgentAttention {
   taskBlocker?: ProjectAgentTaskBlocker | null
 }
 interface AttentionList { items: AgentAttention[]; total: number; counts: Record<string, number> }
+
+// What the console reads of a request: who and what it asks, its revision and
+// state. The Agent's options, linked task and detail may be absent or null.
+const attentionFields = {
+  requestId: z.string(),
+  personalSpaceId: z.string(),
+  personalProjectId: z.string(),
+  agentId: z.string(),
+  taskId: z.string().nullish(),
+  kind: z.string(),
+  title: z.string(),
+  detail: z.string().nullish(),
+  requestedAction: z.string(),
+  options: z.array(z.string()).nullish(),
+  revision: z.number(),
+  status: z.string(),
+  createdAt: z.string().nullish(),
+}
+const attentionShape = shapeFor<AgentAttention>(z.looseObject(attentionFields))
+const attentionListShape = shapeFor<AttentionList>(z.looseObject({
+  items: z.array(z.looseObject(attentionFields)),
+  total: z.number(),
+  counts: z.record(z.string(), z.number()),
+}))
+const replyShape = shapeFor<{ delivery: AttentionDelivery }>(z.looseObject({
+  delivery: z.looseObject({ status: z.string(), agentId: z.string().nullish() }),
+}))
 /**
  * A request opened by its link, read by its identity apart from the queue's pages.
  * `missing`: no such request in this space; `failed`: the read itself did not work.
@@ -84,7 +113,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
     previewError.value = ''
     try {
       const scope = new URLSearchParams({ personalSpaceId: spaceId.value, status: 'open' })
-      const summary = await getJson<AttentionList>(`/api/agent-attention?${scope}&limit=5`)
+      const summary = await getJson(`/api/agent-attention?${scope}&limit=5`, attentionListShape)
       if (current !== version) return
       counts.value = summary.counts; total.value = summary.total
       if (currentPreview === previewVersion) {
@@ -93,7 +122,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
       }
       if (open.value) {
         if (agentId.value) scope.set('agentId', agentId.value)
-        const result = await getJson<AttentionList>(`/api/agent-attention?${scope}&limit=100`)
+        const result = await getJson(`/api/agent-attention?${scope}&limit=100`, attentionListShape)
         if (current !== version) return
         items.value = result.items.filter(item => item.personalSpaceId === spaceId.value && (!agentId.value || item.agentId === agentId.value)); filteredTotal.value = result.total
         // A request opened by its link and not on this page is read again by itself, unless
@@ -129,7 +158,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
     previewError.value = ''
     try {
       const scope = new URLSearchParams({ personalSpaceId: id, status: 'open', limit: '5' })
-      const result = await getJson<AttentionList>(`/api/agent-attention?${scope}`)
+      const result = await getJson(`/api/agent-attention?${scope}`, attentionListShape)
       if (current !== previewVersion) return
       applyPreview(id, result)
     } catch (cause) {
@@ -148,7 +177,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
     linked.value = { requestId, state: 'loading', item: previous }
     try {
       const query = new URLSearchParams({ personalSpaceId: space, requestId })
-      const item = await getJson<AgentAttention>(`/api/agent-attention/request?${query}`)
+      const item = await getJson(`/api/agent-attention/request?${query}`, attentionShape)
       if (current !== linkedVersion || space !== spaceId.value) return
       linked.value = item.personalSpaceId === space ? { requestId, state: 'found', item } : { requestId, state: 'missing' }
     } catch (cause) {
@@ -178,7 +207,7 @@ export const useAgentAttention = defineStore('agent-attention', () => {
     try {
       const query = new URLSearchParams({ personalSpaceId: spaceId.value, status: 'open', limit: '100', offset: String(items.value.length) })
       if (agentId.value) query.set('agentId', agentId.value)
-      const result = await getJson<AttentionList>(`/api/agent-attention?${query}`)
+      const result = await getJson(`/api/agent-attention?${query}`, attentionListShape)
       if (current !== version) return
       const seen = new Set(items.value.map(item => item.requestId))
       items.value.push(...result.items.filter(item => item.personalSpaceId === spaceId.value && (!agentId.value || item.agentId === agentId.value) && !seen.has(item.requestId))); filteredTotal.value = result.total
@@ -188,10 +217,10 @@ export const useAgentAttention = defineStore('agent-attention', () => {
   async function respond(item: AgentAttention, answer: AttentionAnswer) {
     const originalSpace = spaceId.value
     if (!originalSpace || item.personalSpaceId !== originalSpace) throw new Error(t('attention.wrongSpace'))
-    const { delivery } = await postJson<{ delivery: AttentionDelivery }>('/api/agent-attention/respond', {
+    const { delivery } = await postJson('/api/agent-attention/respond', {
       personalSpaceId: originalSpace, personalProjectId: item.personalProjectId,
       requestId: item.requestId, expectedRevision: item.revision, ...answer,
-    })
+    }, replyShape)
     if (spaceId.value === originalSpace) {
       lastReply.value = { requestId: item.requestId, title: item.title, ...delivery }
       // The POST has confirmed this reply. A failed refresh must not offer it again.

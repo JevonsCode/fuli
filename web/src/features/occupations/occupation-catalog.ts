@@ -1,5 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
+import { z } from 'zod'
 import { deleteJson, getJson, postJson, putJson } from '@/api/client'
+import { shapeFor } from '@/api/response-shape'
 import { currentLocale } from '@/i18n'
 
 // The space's occupation catalog (R-05): built-in and custom occupations, each
@@ -21,6 +23,22 @@ export interface OccupationEntry {
 
 export interface OccupationDraft { name: string; description: string }
 
+// The occupation as the catalog answers it. A locale's name or description
+// may be empty or missing (the console falls back to the other locale).
+const occupationShape = shapeFor<OccupationEntry>(z.looseObject({
+  key: z.string(),
+  name_zh: z.string().nullish(),
+  name_en: z.string().nullish(),
+  description_zh: z.string().nullish(),
+  description_en: z.string().nullish(),
+  builtin: z.boolean(),
+  status: z.string(),
+  revision: z.number(),
+  agent_count: z.number(),
+  updated_at: z.string().nullish(),
+}))
+const occupationListShape = shapeFor<OccupationEntry[]>(z.array(occupationShape.schema))
+
 const entries = ref<OccupationEntry[]>([])
 const loadedSpace = ref('')
 const loading = ref(false)
@@ -40,7 +58,7 @@ async function read(spaceId: string) {
   loading.value = true
   error.value = ''
   try {
-    const value = await getJson<OccupationEntry[]>(`/api/occupations?${new URLSearchParams({ personalSpaceId: spaceId })}`)
+    const value = await getJson(`/api/occupations?${new URLSearchParams({ personalSpaceId: spaceId })}`, occupationListShape)
     entries.value = Array.isArray(value) ? value : []
     loadedSpace.value = spaceId
   } catch (cause) {
@@ -81,13 +99,13 @@ export function useOccupationCatalog(spaceId: Ref<string>) {
     loading,
     error,
     load,
-    create: async (draft: OccupationDraft) => replace(await postJson<OccupationEntry>('/api/occupations', { ...space(), ...fields(draft) })),
+    create: async (draft: OccupationDraft) => replace(await postJson('/api/occupations', { ...space(), ...fields(draft) }, occupationShape)),
     update: async (entry: OccupationEntry, draft: OccupationDraft) =>
-      replace(await putJson<OccupationEntry>(path(entry.key), { ...space(), revision: entry.revision, ...fields(draft) })),
+      replace(await putJson(path(entry.key), { ...space(), revision: entry.revision, ...fields(draft) }, occupationShape)),
     archive: async (entry: OccupationEntry) =>
-      replace(await postJson<OccupationEntry>(`${path(entry.key)}/archive`, { ...space(), revision: entry.revision })),
+      replace(await postJson(`${path(entry.key)}/archive`, { ...space(), revision: entry.revision }, occupationShape)),
     restore: async (entry: OccupationEntry) =>
-      replace(await putJson<OccupationEntry>(path(entry.key), { ...space(), revision: entry.revision, status: 'active' })),
+      replace(await putJson(path(entry.key), { ...space(), revision: entry.revision, status: 'active' }, occupationShape)),
     remove: async (entry: OccupationEntry) => {
       await deleteJson(path(entry.key), { ...space(), revision: entry.revision })
       entries.value = entries.value.filter(item => item.key !== entry.key)

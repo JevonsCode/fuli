@@ -3,6 +3,7 @@
 import type { HTMLAttributes } from "vue"
 import { useVModel } from "@vueuse/core"
 import { cn } from "@/lib/class-names"
+import { FIELD_DISABLED, FIELD_FOCUS, FIELD_LOOK } from "../field-look"
 
 const props = defineProps<{
   class?: HTMLAttributes["class"]
@@ -24,6 +25,6 @@ const modelValue = useVModel(props, "modelValue", emits, {
   <textarea
     v-model="modelValue"
     data-slot="textarea"
-    :class="cn('border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-primary-soft aria-invalid:ring-destructive-soft aria-invalid:border-destructive flex field-sizing-content min-h-16 w-full rounded-md border bg-card px-3 py-2 text-base leading-[1.6] text-foreground transition-[border-color,box-shadow] outline-none hover:not-disabled:border-border-strong focus-visible:ring-3 focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground', props.class)"
+    :class="cn(FIELD_LOOK, FIELD_FOCUS, FIELD_DISABLED, 'placeholder:text-muted-foreground aria-invalid:border-destructive flex field-sizing-content min-h-16 w-full px-3 py-2 text-base leading-[1.6]', props.class)"
   />
 </template>

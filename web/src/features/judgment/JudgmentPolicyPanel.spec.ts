@@ -34,7 +34,7 @@ describe('JudgmentPolicyPanel', () => {
     })
     await flushPromises()
 
-    expect(getJson).toHaveBeenCalledWith('/api/judgment/policy?personalSpaceId=space-a')
+    expect(getJson).toHaveBeenCalledWith('/api/judgment/policy?personalSpaceId=space-a', expect.objectContaining({ schema: expect.anything() }))
     // The card names what it sets: how Tonborg judges by default, for every project.
     expect(wrapper.get('h3').text()).toMatch(/^(Tonborg 的默认判断方式|Tonborg's default judgment)$/)
     expect(wrapper.findAll('input[type="radio"][name="judgment-mode"]')).toHaveLength(3)
@@ -46,7 +46,7 @@ describe('JudgmentPolicyPanel', () => {
       personalSpaceId: 'space-a',
       policy: { mode: 'shared', quality: 'quality', client: 'codex' },
       expectedRevision: 4,
-    })
+    }, expect.objectContaining({ schema: expect.anything() }))
   })
 
   it('undoes the last autosaved choice using the returned revision', async () => {
@@ -60,7 +60,7 @@ describe('JudgmentPolicyPanel', () => {
       personalSpaceId: 'space-a',
       policy: { mode: 'manual', quality: 'quality', client: 'codex' },
       expectedRevision: 5,
-    })
+    }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.find('[data-action="undo-policy"]').exists()).toBe(false)
   })
 

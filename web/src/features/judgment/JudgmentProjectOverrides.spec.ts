@@ -29,7 +29,7 @@ describe('JudgmentProjectOverrides', () => {
   it('lists each project with its own judgment, adds one from the default and drops one that returns to it', async () => {
     const wrapper = mount(JudgmentProjectOverrides, { props: { personalSpaceId: 'space', projects } })
     await flushPromises()
-    expect(getJson).toHaveBeenCalledWith('/api/judgment/policies?personalSpaceId=space')
+    expect(getJson).toHaveBeenCalledWith('/api/judgment/policies?personalSpaceId=space', expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.get('[data-judgment-default]').text()).toMatch(/共同决策|Shared/)
     const rows = () => wrapper.findAll('[data-project-judgment]').map(row => row.attributes('data-project-judgment'))
     expect(rows()).toEqual(['ledger'])
@@ -40,15 +40,15 @@ describe('JudgmentProjectOverrides', () => {
 
     await wrapper.get('[data-action="add-project-policy"]').trigger('click')
     await flushPromises()
-    expect(getJson).toHaveBeenCalledWith('/api/judgment/policy?personalSpaceId=space&personalProjectId=novel')
+    expect(getJson).toHaveBeenCalledWith('/api/judgment/policy?personalSpaceId=space&personalProjectId=novel', expect.objectContaining({ schema: expect.anything() }))
     expect(putJson).toHaveBeenLastCalledWith('/api/judgment/policy', { personalSpaceId: 'space', personalProjectId: 'novel',
-      policy: { mode: 'shared', quality: 'quality', client: 'claude_code' }, expectedRevision: 3 })
+      policy: { mode: 'shared', quality: 'quality', client: 'claude_code' }, expectedRevision: 3 }, expect.objectContaining({ schema: expect.anything() }))
     expect(rows()).toEqual(['ledger', 'novel'])
     expect(wrapper.find('[data-select="judgment-override-project"]').exists()).toBe(false)
 
     await wrapper.get('[data-project-judgment="ledger"] [data-action="reset-project-policy"]').trigger('click')
     await flushPromises()
-    expect(putJson).toHaveBeenLastCalledWith('/api/judgment/policy', { personalSpaceId: 'space', personalProjectId: 'ledger', policy: null, expectedRevision: 1 })
+    expect(putJson).toHaveBeenLastCalledWith('/api/judgment/policy', { personalSpaceId: 'space', personalProjectId: 'ledger', policy: null, expectedRevision: 1 }, expect.objectContaining({ schema: expect.anything() }))
     expect(rows()).toEqual(['novel'])
   })
 })

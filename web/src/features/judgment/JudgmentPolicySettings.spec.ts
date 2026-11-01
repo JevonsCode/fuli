@@ -27,7 +27,7 @@ describe('JudgmentPolicySettings', () => {
     }
     const wrapper = mount(JudgmentPolicySettings)
     await flushPromises()
-    expect(getJson).toHaveBeenCalledWith('/api/judgment/policy?personalSpaceId=space-a')
+    expect(getJson).toHaveBeenCalledWith('/api/judgment/policy?personalSpaceId=space-a', expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.find('[data-select="judgment-project"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('验收项目')
   })

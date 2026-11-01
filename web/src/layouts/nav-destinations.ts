@@ -23,6 +23,8 @@ export function navDestinations({ spaceId, publicProjects }: NavContext): NavDes
       { key: 'occupations', to: '/project-agents/occupations', owns: ['/project-agents/occupations'] },
       // 服务管理: services FLAs started and their workbenches (rec#11 D-71).
       { key: 'services', to: '/project-agents/services', owns: ['/project-agents/services'] },
+      // 应用: the apps FLAs built, approved and removed by the person (docs/agent-apps.md).
+      { key: 'apps', to: '/project-agents/apps', owns: ['/project-agents/apps'] },
     ] },
     { key: 'chat', icon: 'chat', to: '/roundtables', owns: ['/roundtables', '/inbox'], placement: 'dock', sections: [
       { key: 'roundtables', to: '/roundtables', owns: ['/roundtables'] },

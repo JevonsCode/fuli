@@ -27,7 +27,7 @@ describe('KnowledgeTurnReceiptPage', () => {
     await router.isReady()
     const wrapper = mount(KnowledgeTurnReceiptPage, { global: { plugins: [createPinia(), router] } })
     await flushPromises()
-    expect(getJson).toHaveBeenCalledWith('/api/knowledge/turn-receipt?personalSpaceId=space&episodes=e1%2Ce2')
+    expect(getJson).toHaveBeenCalledWith('/api/knowledge/turn-receipt?personalSpaceId=space&episodes=e1%2Ce2', expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.findAll('[data-turn-entry]')).toHaveLength(12)
     expect(wrapper.get('[data-turn-count]').text()).toBe('共 12 条')
     expect(wrapper.get('[data-turn-entry="item-3"] a').attributes('href')).toBe('/knowledge/item/space/entity/item-3')

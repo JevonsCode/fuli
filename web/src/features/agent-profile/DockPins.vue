@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -30,6 +30,8 @@ type SurfaceState = { status: 'loading' } | { status: 'ready'; surfaces: AgentWo
 const surfaces = ref<Record<string, SurfaceState>>({})
 // The capsule stays up while a menu is open: focus has moved into the menu, outside the dock.
 const holding = ref(false)
+// A menu item that navigates away releases the hold even if the menu never reports closing.
+watch(() => route.fullPath, () => { holding.value = false })
 
 async function opened(open: boolean, agent: ProjectAgentRecord) {
   holding.value = open
@@ -89,9 +91,12 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
 <style scoped>
 .dock-pins {
   display: flex; flex-direction: column-reverse; align-items: center; gap: 6px; margin: 0; padding: 6px; list-style: none;
-  border: 1px solid var(--edge-glass); border-radius: var(--radius-pill);
-  background: var(--surface-glass); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--edge-dock); border-radius: var(--radius-pill);
+  background: var(--surface-dock); backdrop-filter: var(--filter-dock); -webkit-backdrop-filter: var(--filter-dock);
   box-shadow: 0 0 0 .5px rgb(var(--shadow-rgb) / 10%), 0 10px 30px -10px rgb(var(--shadow-rgb) / 28%);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .dock-pins { background: var(--color-surface); }
 }
 .dock-pin {
   position: relative; display: grid; width: 40px; height: 40px; overflow: visible; place-items: center; border: 2px solid var(--color-surface); border-radius: 50%;

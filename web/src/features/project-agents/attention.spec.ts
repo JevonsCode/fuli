@@ -92,7 +92,7 @@ describe('Agent attention', () => {
     postJson.mockResolvedValue({ status: 'resolved', delivery: { status: 'inbox', agentId: 'agent-a' } })
     getJson.mockResolvedValue({ items: [], total: 0, counts: {} })
     await store.respond(item, { choice: '方案 A', note: null })
-    expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', { personalSpaceId: 'space-a', personalProjectId: 'project-a', requestId: 'request-a', expectedRevision: 2, choice: '方案 A', note: null })
+    expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', { personalSpaceId: 'space-a', personalProjectId: 'project-a', requestId: 'request-a', expectedRevision: 2, choice: '方案 A', note: null }, expect.objectContaining({ schema: expect.anything() }))
     expect(store.counts).toEqual({})
     expect(store.lastReply).toEqual({ requestId: 'request-a', title: '选择方案', status: 'inbox', agentId: 'agent-a' })
     store.setSpace('space-b')

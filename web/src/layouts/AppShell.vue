@@ -115,9 +115,12 @@ watchEffect(() => {
             <span class="app-runtime-text" :class="{ 'is-visible': !runtimeReady }">{{ t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline') }}</span>
           </span>
         </div>
-        <h1 v-if="!titleInPage" class="app-title">{{ title }}</h1>
+        <!-- Only a record's own name is shown; a destination is already named by the dock
+             (or the settings button), so its heading stays for screen readers only. -->
+        <h1 v-if="!titleInPage" class="app-title" :class="{ 'is-screen-reader-only': !recordTitle }">{{ title }}</h1>
         <SectionTabs :sections="sectionTabs" :active-key="section?.key" />
         <div class="app-actions">
+          <DoctorBanner />
           <GlossaryToggle />
           <LocaleSwitcher />
           <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" data-shell-refresh @click="refreshConsole" />
@@ -134,9 +137,6 @@ watchEffect(() => {
       </div>
     </header>
     <main class="app-main" :data-layout="layout">
-      <div class="app-feedback-row app-doctor-row">
-        <div class="app-feedback-inner"><DoctorBanner /></div>
-      </div>
       <NavigationRecovery />
       <div v-if="store.feedback" class="app-feedback-row">
         <div class="app-feedback-inner">
@@ -162,8 +162,11 @@ watchEffect(() => {
    The page itself is plain: surfaces and type carry the design (direction A). */
 .app-frame { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; color: var(--color-ink); background: var(--color-bg); }
 .app-main { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
-/* Every page keeps its last lines clear of the floating dock. */
+/* Every page keeps its last lines clear of the floating dock. A page that
+   ends with another block after its .view (项目's history card) keeps that
+   space below the block instead, so no gap opens in the middle of the page. */
 .app-main :deep(.view) { padding-bottom: var(--dock-clearance); }
+.app-main :deep(.view:not(:last-child)) { padding-bottom: 0; }
 .app-topbar { flex: 0 0 auto; padding: 12px var(--page-gutter) 8px; }
 .app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; max-width: var(--canvas-max); min-height: 44px; margin-inline: auto; }
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
@@ -189,15 +192,14 @@ watchEffect(() => {
   font-size: 10px; font-weight: var(--weight-strong); line-height: 1; font-variant-numeric: tabular-nums;
 }
 .app-feedback-row { flex: 0 0 auto; padding: 0 var(--page-gutter) 8px; }
-/* The doctor's row takes no space while FULI needs nothing from the person. */
-.app-doctor-row:has(> .app-feedback-inner:empty) { display: none; }
 /* Canvas and form pages: the top bar and feedback line up with the page's
    centred column. A long record name takes at most two lines. */
 .app-main[data-layout] { --layout-max: var(--canvas-max); }
 .app-main[data-layout="form"] { --layout-max: var(--form-measure); }
 .app-main[data-layout] .app-feedback-row { overflow: hidden; scrollbar-gutter: stable; }
 .app-main[data-layout] .app-feedback-inner { max-width: var(--canvas-max); margin-inline: auto; }
-.app-title { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.app-title.is-screen-reader-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.app-title:not(.is-screen-reader-only) { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 @media (min-width: 721px) {
   .app-topbar-inner { flex-wrap: nowrap; }
   .app-title { flex: 0 1 auto; min-width: 0; }

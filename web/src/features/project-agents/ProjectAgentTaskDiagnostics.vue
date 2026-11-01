@@ -30,45 +30,21 @@ const executionState = computed(() => {
   if (workers.every(worker => ['completed', 'failed', 'cancelled'].includes(worker.status ?? ''))) return 'ended'
   return 'reported'
 })
-const summaryReason = computed(() => {
-  if (props.task.executionSummary?.length) return ''
-  if (reportedWorkers.value.length) return 'eventsOnly'
-  return assigned.value ? 'assignedOnly' : 'unassigned'
-})
+const facts = computed(() => [
+  projectState.value === 'identified' ? null : { key: 'project', text: t(`projectAgents.diagnostics.projectState.${projectState.value}`) },
+  assigned.value ? { key: 'assignment', text: t('projectAgents.diagnostics.assignmentState.assigned') } : null,
+  executionState.value === 'unreported' ? null : { key: 'execution', text: t(`projectAgents.diagnostics.executionState.${executionState.value}`) },
+].filter((fact): fact is { key: string; text: string } => fact !== null))
 </script>
 
 <template>
-  <section class="project-agent-task-diagnostics" :aria-label="t('projectAgents.diagnostics.title')">
-    <dl>
-      <div data-task-project-state>
-        <dt>{{ t('projectAgents.diagnostics.project') }}</dt>
-        <dd>{{ t(`projectAgents.diagnostics.projectState.${projectState}`) }}</dd>
-        <small v-if="task.personalProjectId">{{ projectName }}</small>
-      </div>
-      <div data-task-assignment-state>
-        <dt>{{ t('projectAgents.diagnostics.assignment') }}</dt>
-        <dd>{{ t(`projectAgents.diagnostics.assignmentState.${assigned ? 'assigned' : 'unreported'}`) }}</dd>
-      </div>
-      <div data-task-execution-state>
-        <dt>{{ t('projectAgents.diagnostics.execution') }}</dt>
-        <dd>{{ t(`projectAgents.diagnostics.executionState.${executionState}`) }}</dd>
-      </div>
-    </dl>
-    <p v-if="projectState === 'temporary'" class="project-agent-task-scope-hint">{{ t('projectAgents.diagnostics.temporaryHint') }}</p>
-    <p v-if="summaryReason" data-task-summary-reason>{{ t(`projectAgents.diagnostics.summaryReason.${summaryReason}`) }}</p>
-  </section>
+  <!-- Only what is known, on one quiet line: a project already in the card's meta, an
+       unassigned task or an unreported run says nothing (Jevons 11-01, 简洁). -->
+  <p v-if="facts.length" class="project-agent-task-diagnostics" :aria-label="t('projectAgents.diagnostics.title')" data-task-diagnostics>
+    <span v-for="fact in facts" :key="fact.key" :data-task-diagnostic="fact.key">{{ fact.text }}</span>
+  </p>
 </template>
 
 <style scoped>
-/* Quiet status lines: the three facts stay visible without a boxed grid competing with the task itself. */
-.project-agent-task-diagnostics { margin: 8px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.55; }
-.project-agent-task-diagnostics dl { display: grid; gap: 2px; margin: 0; }
-.project-agent-task-diagnostics dl > div { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; }
-.project-agent-task-diagnostics dt { color: var(--color-muted); }
-.project-agent-task-diagnostics dt::after { content: ':'; }
-.project-agent-task-diagnostics dd { margin: 0; color: var(--color-ink); overflow-wrap: anywhere; }
-.project-agent-task-diagnostics small { color: var(--color-muted); }
-.project-agent-task-diagnostics small::before { content: '('; }
-.project-agent-task-diagnostics small::after { content: ')'; }
-.project-agent-task-diagnostics p { margin: 4px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.55; }
+.project-agent-task-diagnostics { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0 0; color: var(--color-muted); font-size: 12px; line-height: 1.55; }
 </style>

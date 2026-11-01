@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { outdatedMcpNotice, outdatedMcpProcesses, registerMcpProcess, withOutdatedMcpNotice } from '../src/mcp/process-registry.js';
+import { liveMcpProcesses, outdatedMcpNotice, outdatedMcpProcesses, registerMcpProcess, withOutdatedMcpNotice } from '../src/mcp/process-registry.js';
 
 const fixture = () => {
   const dir = mkdtempSync(join(tmpdir(), 'fuli-mcp-registry-'));
@@ -33,11 +33,45 @@ test('exited servers are forgotten and unregister removes the record', () => {
   const { dir, config } = fixture();
   try {
     registerMcpProcess(config, { sourceApplication: 'codex', version: 'old', pid: 201 });
-    const unregister = registerMcpProcess(config, { sourceApplication: 'codex', version: 'old', pid: 202 });
+    const { unregister } = registerMcpProcess(config, { sourceApplication: 'codex', version: 'old', pid: 202 });
     assert.deepEqual(outdatedMcpProcesses(config, { sourceApplication: 'codex', version: 'new', isAlive: pid => pid === 202 }).map(r => r.pid), [202]);
     assert.ok(!readdirSync(join(dir, 'mcp-processes')).includes('201.json'));
     unregister();
     assert.deepEqual(outdatedMcpProcesses(config, { sourceApplication: 'codex', version: 'new', isAlive: () => true }), []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a server keeps the sessions it answered, newest last and bounded, and rewrites only on a change', () => {
+  const { dir, config } = fixture();
+  try {
+    const { recordSession } = registerMcpProcess(config, { sourceApplication: 'codex', version: 'old', pid: 301 });
+    const path = join(dir, 'mcp-processes', '301.json');
+    const sessionIds = () => liveMcpProcesses(config, { isAlive: () => true })[0].sessionIds;
+    assert.deepEqual(sessionIds(), []);
+    recordSession('thread-a');
+    recordSession('thread-b');
+    const written = statSync(path, { bigint: true });
+    recordSession('thread-b');
+    assert.equal(statSync(path, { bigint: true }).ino, written.ino);
+    recordSession('thread-a');
+    assert.deepEqual(sessionIds(), ['thread-b', 'thread-a']);
+    // Neither an empty nor an over-long ID is kept.
+    recordSession('');
+    recordSession('x'.repeat(513));
+    recordSession(null);
+    assert.deepEqual(sessionIds(), ['thread-b', 'thread-a']);
+    for (let index = 0; index < 10; index += 1) recordSession(`thread-${index}`);
+    assert.deepEqual(sessionIds(), ['thread-2', 'thread-3', 'thread-4', 'thread-5', 'thread-6', 'thread-7', 'thread-8', 'thread-9']);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a failed session write never fails the call', () => {
+  const { dir, config } = fixture();
+  try {
+    const { recordSession } = registerMcpProcess(config, { sourceApplication: 'codex', version: 'old', pid: 401 });
+    rmSync(join(dir, 'mcp-processes'), { recursive: true, force: true });
+    writeFileSync(join(dir, 'mcp-processes'), 'not a directory');
+    assert.doesNotThrow(() => recordSession('thread-a'));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

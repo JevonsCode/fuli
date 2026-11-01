@@ -109,7 +109,8 @@ describe('task run controls', () => {
     respond({ '/api/project-agent-tasks/task-1/runs?': { runs: [], nextCursor: null, complete: true } })
     const wrapper = await mountControls('awaiting_review')
     expect(wrapper.findAll('button').some(button => /重试|Retry/.test(button.text()))).toBe(false)
-    expect(wrapper.text()).toMatch(/暂无运行记录|No recorded runs/)
+    // An empty history shows no heading, count or empty line.
+    expect(wrapper.text()).not.toMatch(/暂无运行记录|No recorded runs|运行记录/)
   })
 })
 

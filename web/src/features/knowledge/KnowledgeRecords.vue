@@ -12,7 +12,7 @@ const copiedEvidenceKey = ref('')
 const copyError = ref('')
 const stored = useConversationLauncherConfiguration()
 const launchers = computed(() => props.conversationLaunchers ?? stored.value)
-const offers = useSessionLaunchOffers(computed(() => props.item.evidence))
+const { offers } = useSessionLaunchOffers(computed(() => props.item.evidence.map(sessionLaunchKey)))
 const conversationLink = (evidence: EvidenceRecord) =>
   sourceLinkForEvidence(evidence, launchers.value, offers.value.get(sessionLaunchKey(evidence) ?? ''))
 const conversationAppName = (evidence: EvidenceRecord) => sourceLauncherAppName(evidence, launchers.value)

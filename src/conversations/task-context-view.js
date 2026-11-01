@@ -1,4 +1,5 @@
-import { containsEntryRules, DETAILS_GUIDANCE, entryRules, entryRulesReference, ruleTextView } from './entry-rules.js';
+import { isDeepStrictEqual } from 'node:util';
+import { containsEntryRules, DETAILS_GUIDANCE, ENTRY_RULES_URI, entryRules, entryRulesReference, ruleTextView } from './entry-rules.js';
 import { preferenceScopeGuidance } from '../graphiti/collaboration-preference-workflow.js';
 import { copyPreferenceScope } from './preference-snapshot.js';
 import { preferenceInstructionView } from './preference-view.js';
@@ -25,6 +26,10 @@ export function compactTaskContext(value) {
       guidance_ref: sharedApplication ? entryRulesReference('application_guidance').rules
         : 'application_guidance.knowledge_retrieval' };
   }
+  if (share && result.task_knowledge_recall) result.task_knowledge_recall = recallView(result.task_knowledge_recall);
+  // Off-flags of a fresh task: a resumed or orphaned checkpoint says so.
+  if (share && value.resumed_checkpoint === false) delete result.resumed_checkpoint;
+  if (share && value.previous_checkpoint_missing === false) delete result.previous_checkpoint_missing;
   // Task-independent rule text is referenced, not repeated on every turn.
   if (share && containsEntryRules(value.task_guidance, 'task_guidance')
     && Object.keys(value.task_guidance).length === Object.keys(entryRules().sections.task_guidance).length) {
@@ -59,7 +64,8 @@ export function compactTaskContext(value) {
     guidance: text(value.judgment_context.guidance, 'judgment_guidance') };
   const teamRules = !omitTeam && (continuity?.team?.guidance ?? continuity?.team_guidance);
   const teamGuidance = teamRules ? text(teamRules, 'team_guidance') : undefined;
-  if (continuity) result.project_agent_context = { ...continuity,
+  if (continuity) result.project_agent_context = { ...continuity, ...selectionView(continuity, share),
+    ...(share && continuity.directorySnapshot ? { directorySnapshot: snapshotView(continuity.directorySnapshot) } : {}),
     team: omitTeam ? undefined : compactTeamRoster(continuity.team, teamGuidance),
     team_guidance: undefined,
     recent_tasks: undefined,
@@ -74,7 +80,8 @@ export function compactTaskContext(value) {
   }
   if (share && result.project_agent_context) result.project_agent_context = withoutDefaults(result.project_agent_context,
     { flags: false, keep: AGENT_CONTEXT_STATES });
-  return copyPreferenceScope(value, share && withoutTaskToken(value) ? onDemandDetails(result) : result);
+  if (share && withoutTaskToken(value)) return copyPreferenceScope(value, withRulesVersion(onDemandDetails(result)));
+  return copyPreferenceScope(value, share ? withRulesVersion(result) : result);
 }
 
 // get_collaboration_preferences without a native session or prompt creates no
@@ -104,6 +111,28 @@ function onDemandDetails(value) {
         name: manager.name, guidance: manager.guidance, read: managerRead(manager) })) } } : {}),
     ...(value.judgment_context ? { judgment_context: { agentId: value.judgment_context.agentId,
       guidance: value.judgment_context.guidance } } : {}) };
+}
+
+// Every shared rule reference names the same rules version, so an entry with
+// two or more states it once as rules_version (one costs less than the field).
+// Preferences, recovered history and recalled items are data, never rule
+// references, and are passed through untouched.
+const RULELESS_FIELDS = new Set(['effective_preferences', 'recovery', 'facts', 'entities', 'knowledge_index']);
+function withRulesVersion(entry) {
+  const { version } = entryRules();
+  const isReference = item => item.version === version && typeof item.rules === 'string'
+    && item.rules.startsWith(`${ENTRY_RULES_URI}/`);
+  let count = 0;
+  const view = (item, strip) => {
+    if (Array.isArray(item)) return item.map(value => view(value, strip));
+    if (!item || typeof item !== 'object') return item;
+    const reference = isReference(item);
+    if (reference) count++;
+    return Object.fromEntries(Object.entries(item).filter(([key]) => !(strip && reference && key === 'version'))
+      .map(([key, value]) => [key, RULELESS_FIELDS.has(key) ? value : view(value, strip)]));
+  };
+  view(entry, false);
+  return count > 1 ? { ...view(entry, true), rules_version: version } : entry;
 }
 
 // Each manager's routing, title policy and tools; the board itself is read on
@@ -151,9 +180,41 @@ function isDefault(value, { counts = false, flags = false } = {}) {
 // The Provider's whole budgeted window is kept here. What one native session
 // has already seen is left out only at delivery, against that session's own
 // transcript (recent-context.js); a client without one receives it all.
+// A conversation with nothing to recover leaves out its null recovery fields.
 function conversationView(conversation, share) {
   if (!share) return conversation;
-  return { ...conversation, guidance: ruleTextView(conversation.guidance, 'conversation_guidance') };
+  const unused = new Map([['recovery', null], ['recovered_from', null], ['compacted', false]]);
+  return { ...Object.fromEntries(Object.entries(conversation).filter(([key, item]) => !unused.has(key) || unused.get(key) !== item)),
+    guidance: ruleTextView(conversation.guidance, 'conversation_guidance') };
+}
+
+// A recall that matched nothing has one marker to show, so a sourceMarker that
+// repeats noMatchSourceMarker byte for byte is left out; so are a complete
+// search's zero failures and an unmatched prompt's empty categories.
+function recallView(recall) {
+  const repeated = recall.sourceMarker && isDeepStrictEqual(recall.sourceMarker, recall.noMatchSourceMarker);
+  return Object.fromEntries(Object.entries(recall).filter(([key, item]) => !(key === 'sourceMarker' && repeated)
+    && !(key === 'partial' && item === false) && !(key === 'failed_query_count' && item === 0)
+    && !(key === 'trigger_categories' && Array.isArray(item) && !item.length)));
+}
+
+// When the selected lead also executes, the execution pair repeats the
+// selection and match_basis only explains it; any other execution decision
+// keeps both, since its match_basis then says how to staff the work.
+function selectionView(continuity, share) {
+  const selfExecuting = share && typeof continuity.execution_reason === 'string'
+    && continuity.execution_agent_id === continuity.project_agent_id
+    && continuity.execution_reason === continuity.selection_reason;
+  return selfExecuting ? { match_basis: undefined, execution_reason: undefined, execution_agent_id: undefined } : {};
+}
+
+// A snapshot whose files are all as the Agent's folder already holds them
+// says only where the folder is and how many files it holds.
+function snapshotView(snapshot) {
+  if (!Array.isArray(snapshot.files) || !snapshot.files.length
+    || snapshot.files.some(file => file.state !== 'unchanged')) return snapshot;
+  const { files, ...rest } = snapshot;
+  return { ...rest, files_unchanged: files.length };
 }
 
 function ruleOrReference(section, share) {
@@ -164,6 +225,9 @@ function ruleOrReference(section, share) {
 // the hot path without bound. notesTruncated reports this view's own cuts.
 function memoryPreview(memory, guidance) {
   const current = memory.current;
+  // A layer never written has nothing to preview, cut or read in full first:
+  // its scope, revision 0 (the first write's expectedRevision) and rules.
+  if (!current && memory.revision === 0 && !memory.scrubbedGuidance) return { scope: memory.scope, revision: 0, current: null, guidance };
   const notes = current?.memory;
   let notesTruncated = false;
   const text = (value, limit) => {

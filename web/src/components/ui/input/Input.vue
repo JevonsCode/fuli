@@ -3,6 +3,7 @@
 import type { HTMLAttributes } from "vue"
 import { useVModel } from "@vueuse/core"
 import { cn } from "@/lib/class-names"
+import { FIELD_DISABLED, FIELD_FOCUS, FIELD_LOOK } from "../field-look"
 
 const props = defineProps<{
   defaultValue?: string | number
@@ -25,8 +26,8 @@ const modelValue = useVModel(props, "modelValue", emits, {
     v-model="modelValue"
     data-slot="input"
     :class="cn(
-      'file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground border-input h-(--control-height) w-full min-w-0 rounded-md border bg-card px-3 py-1.5 text-base leading-[1.5] text-foreground transition-[border-color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium hover:not-disabled:border-border-strong disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground',
-      'focus-visible:border-ring focus-visible:ring-primary-soft focus-visible:ring-3 focus-visible:outline-none',
+      FIELD_LOOK, FIELD_FOCUS, FIELD_DISABLED,
+      'file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground h-(--control-height) w-full min-w-0 px-3 py-1.5 text-base leading-[1.5] file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium',
       'aria-invalid:ring-destructive-soft aria-invalid:border-destructive',
       props.class,
     )"

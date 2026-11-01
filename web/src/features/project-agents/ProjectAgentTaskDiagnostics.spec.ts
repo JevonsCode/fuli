@@ -11,72 +11,64 @@ const task: ProjectAgentTaskRecord = {
 const mountDiagnostics = (overrides: Partial<ProjectAgentTaskRecord> = {}) => mount(ProjectAgentTaskDiagnostics, {
   props: { task: { ...task, ...overrides }, projectName: '项目 A' },
 })
+const fact = (wrapper: ReturnType<typeof mountDiagnostics>, key: string) => wrapper.find(`[data-task-diagnostic="${key}"]`)
 
 afterEach(() => setLocale('zh-CN', { persist: false }))
 
+// One quiet line of what is known (Jevons 11-01, 简洁): an identified project
+// (already in the card's meta), a missing assignment and an unreported run say nothing.
 describe('task execution diagnostics', () => {
-  it('distinguishes assignment and configured routing from a real worker report', () => {
+  it('names an assignment, but not routing metadata or an unreported run as execution', () => {
     const wrapper = mountDiagnostics({
       runId: 'run-a', executionId: 'execution-a',
       effectiveExecutorPolicy: { mode: 'flexible', allowList: [{ executorId: 'allowed-executor' }] },
       routingDecision: { outcome: 'parallel_reuse', candidateAgentIds: ['candidate-a'] },
       executionSummary: [],
     })
-    expect(wrapper.get('[data-task-assignment-state]').text()).toContain('已记录任务分配')
-    expect(wrapper.get('[data-task-execution-state]').text()).toContain('尚未收到工作进程报告')
-    expect(wrapper.get('[data-task-summary-reason]').text()).toContain('等待客户端上报执行结果')
-    expect(wrapper.text()).not.toContain('工作进程报告运行中')
+    expect(fact(wrapper, 'assignment').text()).toBe('已记录任务分配')
+    expect(fact(wrapper, 'execution').exists()).toBe(false)
+    expect(fact(wrapper, 'project').exists()).toBe(false)
   })
 
-  it('does not treat coordinator or candidate metadata as a task assignment', () => {
+  it('says nothing at all when nothing is known yet', () => {
     const wrapper = mountDiagnostics({ participants: [], coordinatorAgentId: 'coordinator-a', routingDecision: { candidateAgentIds: ['candidate-a'] } })
-    expect(wrapper.get('[data-task-assignment-state]').text()).toContain('尚未记录任务分配')
-    expect(wrapper.get('[data-task-summary-reason]').text()).toContain('还没有分配或执行记录')
+    expect(wrapper.find('[data-task-diagnostics]').exists()).toBe(false)
   })
 
-  it('labels an explicitly temporary scope and leaves opaque IDs uninterpreted', () => {
-    const temporary = mountDiagnostics({ projectScope: { type: 'temporary', lifetime: 'task', persisted: true } })
-    expect(temporary.get('[data-task-project-state]').text()).toContain('独立临时项目')
-    expect(temporary.text()).toContain('独立的临时项目')
-    expect(mountDiagnostics({ personalProjectId: 'temporary-looking-id' }).get('[data-task-project-state]').text()).toContain('已关联项目')
-    expect(mountDiagnostics({ personalProjectId: null }).get('[data-task-project-state]').text()).toContain('项目尚未识别')
+  it('names a temporary or unresolved project and leaves opaque IDs uninterpreted', () => {
+    expect(fact(mountDiagnostics({ projectScope: { type: 'temporary', lifetime: 'task', persisted: true } }), 'project').text()).toBe('独立临时项目')
+    expect(fact(mountDiagnostics({ personalProjectId: 'temporary-looking-id' }), 'project').exists()).toBe(false)
+    expect(fact(mountDiagnostics({ personalProjectId: null }), 'project').text()).toBe('项目尚未识别')
   })
 
   it('shows a queued worker without claiming execution started', () => {
-    const wrapper = mountDiagnostics({ executionSummary: [{ workerId: 'worker-a', status: 'queued' }] })
-    expect(wrapper.get('[data-task-execution-state]').text()).toContain('工作进程已排队')
-    expect(wrapper.find('[data-task-summary-reason]').exists()).toBe(false)
+    expect(fact(mountDiagnostics({ executionSummary: [{ workerId: 'worker-a', status: 'queued' }] }), 'execution').text()).toBe('工作进程已排队')
   })
 
-  it('uses the latest per-worker event and explains an absent summary without inventing one', () => {
+  it('uses the latest per-worker event', () => {
     const wrapper = mountDiagnostics({ events: [
       { eventId: 'event-2', taskId: 'task-a', workerId: 'worker-a', status: 'running', workerStatus: 'completed', summary: 'Done', createdAt: '2026-10-09T02:00:00Z' },
       { eventId: 'event-1', taskId: 'task-a', workerId: 'worker-a', status: 'running', workerStatus: 'running', summary: 'Started', createdAt: '2026-10-09T01:00:00Z' },
     ] })
-    expect(wrapper.get('[data-task-execution-state]').text()).toContain('已收到结束状态')
-    expect(wrapper.get('[data-task-summary-reason]').text()).toContain('已收到执行事件，等待汇总')
-    expect(wrapper.find('table').exists()).toBe(false)
+    expect(fact(wrapper, 'execution').text()).toBe('已收到结束状态')
   })
 
   it('does not promote the parent task status to worker status', () => {
     const wrapper = mountDiagnostics({ events: [{
       eventId: 'event-a', taskId: 'task-a', workerId: 'worker-a', status: 'running', summary: '', createdAt: '',
     }] })
-    expect(wrapper.get('[data-task-execution-state]').text()).toContain('已收到工作进程报告')
-    expect(wrapper.text()).not.toContain('工作进程报告运行中')
+    expect(fact(wrapper, 'execution').text()).toBe('已收到工作进程报告')
   })
 
   it('respects an authoritative empty summary over historical event fallback', () => {
     const wrapper = mountDiagnostics({ executionSummary: [], events: [{
       eventId: 'event-a', taskId: 'task-a', workerId: 'worker-a', status: 'running', workerStatus: 'running', summary: '', createdAt: '',
     }] })
-    expect(wrapper.get('[data-task-execution-state]').text()).toContain('尚未收到工作进程报告')
+    expect(fact(wrapper, 'execution').exists()).toBe(false)
   })
 
   it('renders the evidence-based running state in English', () => {
     setLocale('en-US', { persist: false })
-    const wrapper = mountDiagnostics({ executionSummary: [{ workerId: 'worker-a', status: 'running' }] })
-    expect(wrapper.get('[data-task-execution-state]').text()).toContain('Worker reported running')
-    expect(wrapper.find('[data-task-summary-reason]').exists()).toBe(false)
+    expect(fact(mountDiagnostics({ executionSummary: [{ workerId: 'worker-a', status: 'running' }] }), 'execution').text()).toBe('Worker reported running')
   })
 })
