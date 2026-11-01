@@ -33,7 +33,7 @@ export function describeSettings({ settings, capturePolicy, consoleUrl }) {
       {
         key: 'agentNamingStyle',
         value: settings.agentNamingStyle ?? '',
-        effect: 'The person\'s wish for the names of Agents created from now on (about 100 characters suggested); empty means FULI\'s generated names. Existing Agents keep their names. Recruiting Agents read it with get_agent_naming_style.',
+        effect: 'The person\'s wish for the names of Agents created from now on (about 100 characters suggested); empty means FULI\'s generated names, whose rule the settings field shows as its editable default. Existing Agents keep their names. Recruiting Agents read it with get_agent_naming_style.',
         changedBy: PERSON,
         settingsUrl: link('agentNamingStyle'),
       },

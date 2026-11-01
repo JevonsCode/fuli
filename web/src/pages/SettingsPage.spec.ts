@@ -116,7 +116,7 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
-  it('saves, edits and clears the Agent naming style with its suggested length', async () => {
+  it('saves an edited Agent naming style and its restored default as no style', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     useConsoleStore().runtimeStatus = 'ready'
@@ -143,12 +143,14 @@ describe('SettingsPage', () => {
     await field.setValue('像北欧神话里的名字')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    await wrapper.get('[data-agent-naming-clear]').trigger('click')
-    expect(field.element.value).toBe('')
-    expect(wrapper.get('[data-agent-naming-clear]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-agent-naming-reset]').trigger('click')
+    expect(field.element.value).toContain('Lyra North')
+    expect(wrapper.get('[data-agent-naming-reset]').attributes('disabled')).toBeDefined()
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(puts.map(body => body.agentNamingStyle)).toEqual(['像北欧神话里的名字', ''])
+    expect(field.element.value).toContain('Lyra North')
+    expect(wrapper.get('.settings-save-status').text()).toBe('已保存')
     wrapper.unmount()
   })
 
