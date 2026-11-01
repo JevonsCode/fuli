@@ -131,7 +131,8 @@ motion mode. Do not add written scroll instructions or captions repeating the ch
 
 The existing Fuli logo is a fixed brand asset, not part of the website redesign.
 Use `site/assets/fuli-logo.png` unchanged in the header, footer, and favicon.
-It matches the console's `web/assets/brand/fuli-logo.png`. Preserve its native colors,
+It is generated from `brand/fuli-logo.png`, like the console's `web/assets/brand/fuli-logo.png`
+(`brand/README.md`). Preserve its native colors,
 aspect ratio, and transparent background; do not substitute an authored F glyph.
 The header renders it at 32px (28px on mobile), the footer at 36px.
 

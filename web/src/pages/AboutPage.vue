@@ -4,8 +4,7 @@ import LabelGuide from '@/features/about/LabelGuide.vue'
 import OpenSourceCredits from '@/features/about/OpenSourceCredits.vue'
 import ProductPrinciples from '@/features/about/ProductPrinciples.vue'
 import { t } from '@/i18n'
-
-import fuliLogoUrl from '../../assets/brand/fuli-logo.png'
+import { fuliLogoUrl } from '@/lib/brand'
 </script>
 
 <template>

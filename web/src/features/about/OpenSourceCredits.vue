@@ -2,8 +2,8 @@
 import AboutSectionHeading from './AboutSectionHeading.vue'
 import { computed, reactive } from 'vue'
 
-import fuliLogoUrl from '../../../assets/brand/fuli-logo.png'
 import { t } from '@/i18n'
+import { fuliLogoUrl } from '@/lib/brand'
 
 // Logos come from each project's own repository, as before; the browser
 // caches them. A logo that cannot load becomes a quiet initial tile.
