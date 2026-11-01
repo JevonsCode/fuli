@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
@@ -16,10 +17,14 @@ import RoundtableSeats from './RoundtableSeats.vue'
 // One thread as a chat, like Messages: the person's own messages in ink on
 // the right, each FLA's on the left under its name and portrait once per run,
 // a time between messages far apart, and under each message where it stands
-// for every recipient. The composer stays at the bottom.
+// for every recipient. The composer stays at the bottom, as wide as the
+// messages. A very wide window lists the participants in a side column
+// instead of the folded list under the title.
 const props = defineProps<{ thread: RoundtableThread; time: (value: string) => string; stale?: boolean }>()
 const emit = defineEmits<{ updated: [RoundtableThread] }>()
 const CLIENTS: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex', cursor: 'Cursor', claude: 'Claude', opencode: 'OpenCode' }
+const SIDE_MIN_WIDTH = '(min-width: 1440px)'
+const wide = useMediaQuery(SIDE_MIN_WIDTH)
 
 const bubbles = computed(() => chatBubbles(props.thread))
 const seats = computed(() => tableSeats(props.thread.messages))
@@ -79,61 +84,67 @@ watch(() => props.thread.messages.length, async (length, previous) => {
 
 <template>
   <article class="rt-chat roundtable-thread-chat" data-testid="roundtable-timeline">
-    <header class="rt-chat-head">
-      <span class="rt-chat-faces" aria-hidden="true">
-        <span v-for="seat in seats.slice(0, 4)" :key="seat.key" :style="agentIdentityStyle(seat.person.agentId)"><img
-          v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" alt="" /><template v-else>{{ (seat.person.name ?? '?').slice(0, 1) }}</template></span>
-      </span>
-      <h2 tabindex="-1" class="rt-chat-title" data-roundtable-detail-title>{{ thread.subject }}</h2>
-      <p class="rt-chat-meta">{{ t('roundtable.messages', { count: thread.messages.length }) }} · {{ time(thread.createdAt) }}</p>
-      <p v-if="stale" class="rt-chat-meta" role="status">{{ t('roundtable.stale') }}</p>
-      <details class="rt-chat-people">
-        <summary>{{ t('roundtable.participants', { count: seats.length }) }}</summary>
-        <RoundtableSeats :seats="seats" />
-      </details>
-    </header>
-    <div ref="body" class="rt-chat-body">
-      <p v-if="!bubbles.length" class="rt-chat-empty">{{ t('roundtable.emptyConversation') }}</p>
-      <ol v-else class="rt-bubbles">
-        <li v-for="(bubble, index) in bubbles" :key="bubble.id" class="rt-msg" :class="{ 'is-mine': bubble.mine, 'is-run-start': marks[index]!.runStart }"
-          data-roundtable-bubble :data-mine="bubble.mine || undefined">
-          <p v-if="marks[index]!.separator" class="rt-sep"><time :datetime="bubble.createdAt">{{ time(bubble.createdAt) }}</time></p>
-          <div class="rt-msg-row">
-            <template v-if="!bubble.mine">
-              <span v-if="marks[index]!.runStart" class="rt-face roundtable-avatar" :style="agentIdentityStyle(bubble.from.agentId)" aria-hidden="true"><img
-                v-if="bubble.from.agentId" :src="agentAvatarUrl(bubble.from.agentId)" alt="" /><template v-else>{{ initial(bubble) }}</template></span>
-              <span v-else class="rt-face-gap" aria-hidden="true" />
-            </template>
-            <div class="rt-msg-col">
-              <p v-if="marks[index]!.runStart && !bubble.mine" class="rt-byline">
-                <strong>{{ sender(bubble) }}</strong>
-                <span v-if="client(bubble.from)" class="rt-client">{{ client(bubble.from) }}</span>
-              </p>
-              <p v-else class="ui-sr-only">{{ sender(bubble) }}</p>
-              <p class="rt-bubble" :title="time(bubble.createdAt)">{{ bubble.body }}</p>
-              <p v-if="viaLabel(bubble.via) && bubble.kind === 'reply'" class="rt-status">{{ viaLabel(bubble.via) }}</p>
-              <ul v-if="bubble.deliveries.length" class="rt-statuses rt-status">
-                <li v-for="delivery in bubble.deliveries" :key="delivery.messageId" :data-roundtable-delivery="delivery.state.kind"
-                  :data-tone="deliveryTone(delivery)">
-                  <GrowthLoading v-if="delivery.state.kind === 'replying'" variant="inline" :label="deliveryLabel(delivery, bubble.via)" />
-                  <template v-else>{{ deliveryLabel(delivery, bubble.via) }}</template>
-                </li>
-              </ul>
-              <p v-if="cleanupWarning(bubble)" class="rt-status" data-tone="warning" data-roundtable-cleanup>{{ cleanupWarning(bubble) }}</p>
+    <div class="rt-thread-main">
+      <header class="rt-chat-head">
+        <span class="rt-chat-faces" aria-hidden="true">
+          <span v-for="seat in seats.slice(0, 4)" :key="seat.key" :style="agentIdentityStyle(seat.person.agentId)"><img
+            v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" alt="" /><template v-else>{{ (seat.person.name ?? '?').slice(0, 1) }}</template></span>
+        </span>
+        <h2 tabindex="-1" class="rt-chat-title" data-roundtable-detail-title>{{ thread.subject }}</h2>
+        <p class="rt-chat-meta">{{ t('roundtable.messages', { count: thread.messages.length }) }} · {{ time(thread.createdAt) }}</p>
+        <p v-if="stale" class="rt-chat-meta" role="status">{{ t('roundtable.stale') }}</p>
+        <details v-if="!wide" class="rt-chat-people">
+          <summary>{{ t('roundtable.participants', { count: seats.length }) }}</summary>
+          <RoundtableSeats :seats="seats" />
+        </details>
+      </header>
+      <div ref="body" class="rt-chat-body">
+        <p v-if="!bubbles.length" class="rt-chat-empty">{{ t('roundtable.emptyConversation') }}</p>
+        <ol v-else class="rt-bubbles">
+          <li v-for="(bubble, index) in bubbles" :key="bubble.id" class="rt-msg" :class="{ 'is-mine': bubble.mine, 'is-run-start': marks[index]!.runStart }"
+            data-roundtable-bubble :data-mine="bubble.mine || undefined">
+            <p v-if="marks[index]!.separator" class="rt-sep"><time :datetime="bubble.createdAt">{{ time(bubble.createdAt) }}</time></p>
+            <div class="rt-msg-row">
+              <template v-if="!bubble.mine">
+                <span v-if="marks[index]!.runStart" class="rt-face roundtable-avatar" :style="agentIdentityStyle(bubble.from.agentId)" aria-hidden="true"><img
+                  v-if="bubble.from.agentId" :src="agentAvatarUrl(bubble.from.agentId)" alt="" /><template v-else>{{ initial(bubble) }}</template></span>
+                <span v-else class="rt-face-gap" aria-hidden="true" />
+              </template>
+              <div class="rt-msg-col">
+                <p v-if="marks[index]!.runStart && !bubble.mine" class="rt-byline">
+                  <strong>{{ sender(bubble) }}</strong>
+                  <span v-if="client(bubble.from)" class="rt-client">{{ client(bubble.from) }}</span>
+                </p>
+                <p v-else class="ui-sr-only">{{ sender(bubble) }}</p>
+                <p class="rt-bubble" :title="time(bubble.createdAt)">{{ bubble.body }}</p>
+                <p v-if="viaLabel(bubble.via) && bubble.kind === 'reply'" class="rt-status">{{ viaLabel(bubble.via) }}</p>
+                <ul v-if="bubble.deliveries.length" class="rt-statuses rt-status">
+                  <li v-for="delivery in bubble.deliveries" :key="delivery.messageId" :data-roundtable-delivery="delivery.state.kind"
+                    :data-tone="deliveryTone(delivery)">
+                    <GrowthLoading v-if="delivery.state.kind === 'replying'" variant="inline" :label="deliveryLabel(delivery, bubble.via)" />
+                    <template v-else>{{ deliveryLabel(delivery, bubble.via) }}</template>
+                  </li>
+                </ul>
+                <p v-if="cleanupWarning(bubble)" class="rt-status" data-tone="warning" data-roundtable-cleanup>{{ cleanupWarning(bubble) }}</p>
+              </div>
             </div>
-          </div>
-        </li>
-      </ol>
+          </li>
+        </ol>
+      </div>
+      <template v-if="recipients.length">
+        <p v-for="item in blocked" :key="item.agentId" class="roundtable-blocked" role="status" data-roundtable-instant-blocked>
+          {{ t('roundtable.instantBlocked', { name: item.name ?? item.agentId, reason: reasonLabel(item.instantBlocked) }) }}
+        </p>
+        <p v-if="!subscribed" class="roundtable-recipients ui-meta">{{ t('roundtable.composer.to', { names: recipients.map(item => item.name).join('、') }) }}</p>
+        <RoundtableComposer ref="composer" :mode="mode" :sending="sending" :switching="switching" :error="error"
+          @update:mode="changeMode" @send="send" />
+      </template>
+      <p v-else class="roundtable-recipients ui-meta" data-roundtable-no-recipients>{{ t('roundtable.composer.noRecipients') }}</p>
     </div>
-    <template v-if="recipients.length">
-      <p v-for="item in blocked" :key="item.agentId" class="roundtable-blocked" role="status" data-roundtable-instant-blocked>
-        {{ t('roundtable.instantBlocked', { name: item.name ?? item.agentId, reason: reasonLabel(item.instantBlocked) }) }}
-      </p>
-      <p v-if="!subscribed" class="roundtable-recipients ui-meta">{{ t('roundtable.composer.to', { names: recipients.map(item => item.name).join('、') }) }}</p>
-      <RoundtableComposer ref="composer" :mode="mode" :sending="sending" :switching="switching" :error="error"
-        @update:mode="changeMode" @send="send" />
-    </template>
-    <p v-else class="roundtable-recipients ui-meta" data-roundtable-no-recipients>{{ t('roundtable.composer.noRecipients') }}</p>
+    <aside v-if="wide" class="rt-thread-side" aria-labelledby="rt-thread-people" data-roundtable-side>
+      <h3 id="rt-thread-people" class="rt-thread-side-label">{{ t('roundtable.participants', { count: seats.length }) }}</h3>
+      <RoundtableSeats :seats="seats" />
+    </aside>
   </article>
 </template>
 
@@ -143,4 +154,10 @@ watch(() => props.thread.messages.length, async (length, previous) => {
 .roundtable-blocked, .roundtable-recipients { margin: 0; padding: 8px 28px 0; color: var(--color-muted); font-size: var(--text-meta); }
 .roundtable-blocked { color: var(--color-warning); }
 @media (max-width: 480px) { .roundtable-blocked, .roundtable-recipients { padding: 8px 16px 0; } }
+/* The conversation and its composer share one column; the participants, when shown beside it, take a slim one. */
+.roundtable-thread-chat { flex-direction: row; }
+.rt-thread-main { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; }
+.rt-thread-side { display: grid; flex: 0 0 280px; align-content: start; gap: 10px; padding: 22px 20px; overflow-y: auto; border-left: 1px solid var(--color-border); }
+.rt-thread-side-label { margin: 0; color: var(--color-muted); font-size: var(--text-meta); font-weight: var(--weight-medium); }
+.rt-thread-side :deep(.roundtable-seats) { flex-direction: column; align-items: flex-start; }
 </style>
