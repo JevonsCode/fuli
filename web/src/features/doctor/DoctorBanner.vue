@@ -152,5 +152,5 @@ onBeforeUnmount(() => {
 .doctor-actions { display: flex; justify-content: flex-end; }
 @keyframes doctor-panel-in { from { opacity: 0; transform: translateY(-4px); } }
 @media (prefers-reduced-motion: reduce) { .doctor-panel { animation: none; } }
-:root[data-motion='reduced'] .doctor-panel { animation: none; }
+:root[data-motion="reduced"] .doctor-panel { animation: none; }
 </style>
