@@ -60,11 +60,12 @@ test('the setup is per-user, keeps the existing uninstall, and its own files exi
   assert.match(script, /^Uninstallable=no$/m);
   assert.match(script, /^CreateUninstallRegKey=no$/m);
   const directory = dirname(SETUP_SCRIPT);
-  const icon = /^SetupIconFile=(.+)$/m.exec(script)[1].trim();
+  // Inno Setup paths use Windows separators; read them on any OS.
+  const icon = /^SetupIconFile=(.+)$/m.exec(script)[1].trim().replaceAll('\', '/');
   assert.ok(existsSync(join(directory, icon)), 'the brand icon ' + icon + ' exists');
   assert.equal(join(directory, icon), join(root, 'brand', 'png', 'app-icon', 'fuli-app.ico'));
   for (const [, files] of script.matchAll(/MessagesFile: "([^"]+)"/g)) {
-    for (const file of files.split(',').filter(name => !name.startsWith('compiler:'))) {
+    for (const file of files.split(',').filter(name => !name.startsWith('compiler:')).map(name => name.replaceAll('\', '/'))) {
       assert.ok(existsSync(join(directory, file)), file + ' exists');
     }
   }
