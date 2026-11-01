@@ -85,6 +85,11 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(var(-
 /* Hidden by an in-page filter (settings search); wins over component display rules. */
 [data-search-hidden] { display: none !important; }
 
+/* Inside a card, a group's name is a quiet small label, never a second card
+   title: the type steps are card title (16, 600, ink) > row name (14, 500,
+   ink) > group label (12, 600, muted) > help (12, muted). */
+.ui-group-label { margin: 0; color: var(--color-muted); font-size: var(--text-meta); font-weight: var(--weight-strong); letter-spacing: .04em; line-height: var(--leading-heading); }
+
 /* One list look for every page: a card of rows split by hairlines. */
 .ui-list { min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
 .ui-list-row { display: flex; align-items: flex-start; gap: 16px; padding: 14px 16px; }

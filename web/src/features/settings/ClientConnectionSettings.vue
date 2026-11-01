@@ -202,25 +202,21 @@ async function copy() {
       </CardAction>
     </CardHeader>
 
-    <div class="connection-columns">
-      <section class="connection-column" aria-labelledby="client-connection-detected">
-        <h3 id="client-connection-detected">{{ t('settings.connection.clients.title') }}</h3>
+    <div class="connection-sections">
+      <section class="connection-section" aria-labelledby="client-connection-detected">
+        <h3 id="client-connection-detected" class="ui-group-label">{{ t('settings.connection.clients.title') }}</h3>
         <GrowthLoading v-if="checking && !observation" variant="compact" :label="t('settings.connection.clients.checking')" />
         <UiNotice v-if="checkError" tone="warning">{{ t('settings.connection.clients.checkError') }}</UiNotice>
         <UiNotice v-if="observation?.available === false" tone="warning" data-detection-unavailable>{{ t('settings.connection.clients.unavailable') }}</UiNotice>
-        <ul v-if="observation && observation.available !== false" class="client-list">
+        <!-- One tile per client, as many per row as the width holds; a long list scrolls inside, the page does not grow. -->
+        <ul v-if="observation && observation.available !== false" class="client-grid">
           <li v-for="client in clients" :key="client.id" :data-client-status="client.status"
             :class="`client-row client-row--${client.status}`">
             <span class="client-row__icon" aria-hidden="true"><UiIcon v-if="client.status === 'connected'" name="check" :size="14" /><template v-else>{{ icons[client.status] }}</template></span>
             <div class="client-row__body">
               <div class="client-row__head">
-                <strong>{{ client.label }}</strong>
+                <strong :title="client.label">{{ client.label }}</strong>
                 <span class="client-row__label">{{ t(`settings.connection.clients.status.${client.status}`) }}</span>
-                <Button v-if="canConnect(client) && client.status !== 'connected'" size="sm" variant="outline" class="client-row__action"
-                  :data-connect-client="client.id" :disabled="busy" :loading="connecting === client.id"
-                  :loading-label="t('settings.connection.clients.connecting', { client: client.label })" @click="connect(client)">
-                  {{ t(`settings.connection.clients.${connectActionKey(client.status)}`) }}
-                </Button>
               </div>
               <p>{{ explanation(client) }}</p>
               <p v-if="connectionFeedback[client.id]" :role="connectionFeedback[client.id] === 'connectError' ? 'alert' : 'status'">
@@ -236,9 +232,15 @@ async function copy() {
                   to: t(`settings.connection.clients.status.${client.changes.at(-1)!.to}`),
                   time: formatTime(client.changes.at(-1)!.detectedAt) }) }}
               </p>
+              <!-- The tile's action sits at its foot, so tiles of one row line up their buttons. -->
+              <Button v-if="canConnect(client) && client.status !== 'connected'" size="sm" variant="outline" class="client-row__action"
+                :data-connect-client="client.id" :disabled="busy" :loading="connecting === client.id"
+                :loading-label="t('settings.connection.clients.connecting', { client: client.label })" @click="connect(client)">
+                {{ t(`settings.connection.clients.${connectActionKey(client.status)}`) }}
+              </Button>
             </div>
           </li>
-          <li v-if="!clients.length">{{ t('settings.connection.clients.none') }}</li>
+          <li v-if="!clients.length" class="client-grid__empty">{{ t('settings.connection.clients.none') }}</li>
         </ul>
         <p v-if="observation && observation.available !== false" class="client-row__meta" role="status">
           {{ t('settings.connection.clients.observedAt', { time: formatTime(observation.observedAt) }) }}
@@ -247,9 +249,9 @@ async function copy() {
         </p>
       </section>
 
-      <section class="connection-column" aria-labelledby="client-connection-manual">
-        <div class="connection-column__head">
-          <h3 id="client-connection-manual">{{ t('settings.connection.custom.title') }}</h3>
+      <section class="connection-section" aria-labelledby="client-connection-manual">
+        <div class="connection-section__head">
+          <h3 id="client-connection-manual" class="ui-group-label">{{ t('settings.connection.custom.title') }}</h3>
           <Button v-if="!adding" size="sm" variant="outline" data-add-custom-client :disabled="observation?.available === false"
             @click="adding = true">{{ t('settings.connection.custom.add') }}</Button>
         </div>
@@ -271,7 +273,7 @@ async function copy() {
           </div>
           <UiNotice v-if="addError" tone="error">{{ addError }}</UiNotice>
         </form>
-        <ul v-if="customClients.length" class="client-list">
+        <ul v-if="customClients.length" class="client-grid">
           <li v-for="client in customClients" :key="client.id" :data-custom-client="client.id" :data-client-status="client.status"
             :class="`client-row client-row--${client.status}`">
             <span class="client-row__icon" aria-hidden="true"><UiIcon v-if="client.status === 'connected'" name="check" :size="14" /><template v-else>{{ icons[client.status] }}</template></span>
@@ -321,36 +323,50 @@ async function copy() {
 <style scoped>
 .connection-settings p { color: var(--color-muted); font-size: 13px; line-height: 1.6; }
 .connection-settings a { font-size: 13px; }
-/* One line is always reserved so the summary never pushes the columns down. */
+/* One line is always reserved so the summary never pushes the sections down. */
 .connection-summary { min-height: 1.5em; }
-.connection-refresh { width: 32px; height: 32px; padding: 6px; }
 .connection-refresh svg { width: 18px; height: 18px; }
-/* Detected clients on the left, connecting by hand on the right; stacked when the card is narrow. */
-.connection-settings { container-type: inline-size; }
-.connection-columns { display: grid; gap: 24px 32px; grid-template-columns: minmax(0, 1fr); }
-@container (min-width: 720px) { .connection-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.connection-column { display: grid; gap: 10px; align-content: start; min-width: 0; }
-.connection-column h3 { font-size: var(--text-section); margin: 0; }
-.connection-column__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }
-.client-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-.client-row { display: flex; gap: 10px; align-items: flex-start; min-width: 0; }
-.client-row__body { min-width: 0; flex: 1; overflow-wrap: anywhere; }
-.client-row__body p { margin: 2px 0 0; }
-.client-row__head { display: flex; align-items: center; gap: 8px; min-height: 32px; }
-.client-row__label { font-size: 13px; color: var(--color-muted); }
-.client-row__action { margin-left: auto; flex: none; }
-.client-row__icon { flex: 0 0 22px; height: 22px; margin-top: 5px; border-radius: 50%; display: inline-grid; place-items: center;
-  font-size: 12px; font-weight: 600; border: 1px solid currentColor; color: var(--color-muted); }
+/* Detected clients first, connecting by hand below, both full width. */
+.connection-sections { display: grid; gap: 28px; padding-inline: 24px; }
+.connection-section { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.connection-section + .connection-section { padding-top: 24px; border-top: 1px solid var(--color-border); }
+.connection-section__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--control-height-sm); }
+/* Tiles fill the row by width; past two rows the grid scrolls inside itself. */
+.client-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 248px), 1fr)); gap: 12px;
+  max-height: 392px; margin: 0; padding: 2px; overflow-y: auto; list-style: none; scrollbar-gutter: stable;
+}
+.client-grid__empty { grid-column: 1 / -1; color: var(--color-muted); font-size: 13px; }
+.client-row {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; min-width: 0;
+  padding: 14px; border-radius: var(--radius-card); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border);
+}
+.client-row--connected { background: color-mix(in srgb, var(--color-success-soft) 35%, var(--color-surface)); }
+.client-row__body { display: flex; flex-direction: column; gap: 4px; min-width: 0; height: 100%; overflow-wrap: anywhere; }
+.client-row__body p { margin: 0; }
+/* Name and status on top, the action pinned to the tile's right so it never moves. */
+.client-row__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-height: 26px; padding-top: 2px; }
+.client-row__head strong { overflow: hidden; color: var(--color-ink); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.client-row__label { flex: none; color: var(--color-muted); font-size: 12px; }
+.client-row__action { align-self: flex-start; margin-top: auto; }
+.client-row__head .client-row__action { margin: 0 0 0 auto; align-self: center; }
+.client-row__icon {
+  display: inline-grid; width: 22px; height: 22px; margin-top: 4px; place-items: center; border: 1px solid currentColor; border-radius: 50%;
+  color: var(--color-muted); font-size: 12px; font-weight: var(--weight-strong);
+}
 .client-row--connected .client-row__icon { color: var(--color-success); }
 .client-row--removed .client-row__icon,
 .client-row--changed .client-row__icon,
 .client-row--skills_left .client-row__icon { color: var(--color-warning); }
 .connection-settings .client-row__meta { font-size: 12px; }
-.custom-form { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.client-row .client-row__meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.custom-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; align-items: end; padding: 14px; border-radius: var(--radius-card); box-shadow: 0 0 0 1px var(--color-border); }
 .custom-form__actions { display: flex; gap: 8px; }
-.connection-toolbar { display: flex; align-items: flex-end; gap: 12px; }
-.connection-toolbar :deep([data-slot=option-select]) { min-width: 0; flex: 1; max-width: 300px; }
-.connection-copy { width: 40px; height: 40px; flex: 0 0 40px; padding: 9px; }
-.connection-copy svg { width: 20px; height: 20px; }
+.custom-form > :deep(.ui-notice) { grid-column: 1 / -1; }
+/* The format select and its copy button share one control height. */
+.connection-toolbar { display: flex; align-items: flex-end; gap: 8px; }
+.connection-toolbar :deep([data-slot=option-select]) { min-width: 0; flex: 0 1 300px; }
+.connection-copy svg { width: 18px; height: 18px; }
+@media (max-width: 680px) { .connection-sections { padding-inline: var(--space-4); } }
 textarea { display: block; box-sizing: border-box; width: 100%; min-width: 0; resize: vertical; font: 12px/1.65 var(--font-mono, monospace); overflow-wrap: anywhere; }
 </style>

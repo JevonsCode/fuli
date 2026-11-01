@@ -13,7 +13,7 @@
      leads the hierarchy; weight only separates a heading from its text, so
      headings are 600, controls 500, everything else 400. Nothing is 700. */
   --text-title: 22px;       /* the page title, the shell's one H1 */
-  --text-section: 16px;     /* a section of a page */
+  --text-section: 18px;     /* a section of a page, a card's title: a clear step above a row's name (14) */
   --text-card-title: 15px;  /* a card's or a list row's own name */
   --text-body: 14px;
   /* Buttons, segmented controls and other compact controls. */
