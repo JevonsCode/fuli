@@ -1,37 +1,43 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { startGrowingBackdrop } from '@/lib/growing-backdrop'
+import { computed, onBeforeUnmount, onMounted, watch, type Directive } from 'vue'
+import { startGrowingBackdrop, type BackdropDrift } from '@/lib/growing-backdrop'
 import { motionPreference, motionReduced } from '@/lib/motion-preference'
+import { pageBackdrop } from '@/lib/page-backdrops'
 
-// The page's slowly growing backdrop: two soft glows, gold low on the left
-// and green high on the right, painted once and stepped by transform (see
-// lib/growing-backdrop). It sits behind the page and takes no input.
-const layer = ref<HTMLElement | null>(null)
-let backdrop: ReturnType<typeof startGrowingBackdrop> | null = null
+// The page's slowly growing backdrop: the current destination's motif (see
+// lib/page-backdrops), painted once and stepped by transform (see
+// lib/growing-backdrop). A change of destination crossfades the layers by
+// opacity; reduced motion zeroes the fade in primitives.css. It sits behind
+// the page and takes no input.
+const props = defineProps<{ destination?: string }>()
+const backdrop = computed(() => pageBackdrop(props.destination))
+
+// Each layer drifts on its own clock until it leaves, so a fading layer
+// keeps its pose instead of jumping to the new motif's.
+type Engine = ReturnType<typeof startGrowingBackdrop>
+const engines = new Map<HTMLElement, Engine>()
+const vDrift: Directive<HTMLElement, BackdropDrift> = {
+  mounted(element, { value }) { engines.set(element, startGrowingBackdrop(element, value, motionReduced)) },
+  beforeUnmount(element) { engines.get(element)?.stop(); engines.delete(element) },
+}
+
 const systemReduced = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
   ? window.matchMedia('(prefers-reduced-motion: reduce)') : null
-const resume = () => backdrop?.resume()
-
-onMounted(() => {
-  if (layer.value) backdrop = startGrowingBackdrop(layer.value, motionReduced)
-  systemReduced?.addEventListener('change', resume)
-})
+const resume = () => engines.forEach(engine => engine.resume())
+onMounted(() => systemReduced?.addEventListener('change', resume))
 watch(motionPreference, resume)
-onBeforeUnmount(() => {
-  backdrop?.stop()
-  systemReduced?.removeEventListener('change', resume)
-})
+onBeforeUnmount(() => systemReduced?.removeEventListener('change', resume))
 </script>
 
 <template>
-  <div ref="layer" class="growing-backdrop" aria-hidden="true" />
+  <Transition name="backdrop-fade">
+    <div :key="backdrop.key" v-drift="backdrop.drift" class="growing-backdrop" :style="{ background: backdrop.background }"
+      :data-backdrop="backdrop.key" aria-hidden="true" />
+  </Transition>
 </template>
 
 <style scoped>
-.growing-backdrop {
-  position: absolute; inset: -8%; z-index: -1; pointer-events: none; will-change: transform;
-  background:
-    radial-gradient(42% 46% at 18% 88%, color-mix(in srgb, var(--color-gold) 13%, transparent), transparent 70%),
-    radial-gradient(38% 42% at 84% 14%, color-mix(in srgb, var(--color-success) 8%, transparent), transparent 70%);
-}
+.growing-backdrop { position: absolute; inset: -8%; z-index: -1; pointer-events: none; will-change: transform; }
+.backdrop-fade-enter-active, .backdrop-fade-leave-active { transition: opacity var(--motion-crossfade) var(--motion-ease-out); }
+.backdrop-fade-enter-from, .backdrop-fade-leave-to { opacity: 0; }
 </style>
