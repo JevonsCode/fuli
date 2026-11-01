@@ -40,12 +40,6 @@ const credits = computed(() => [
     logo: 'https://raw.githubusercontent.com/vitest-dev/vitest/main/docs/public/logo-without-border.svg',
   },
   {
-    name: 'Hono',
-    role: t('about.credits.roles.hono'),
-    url: 'https://hono.dev/',
-    logo: 'https://raw.githubusercontent.com/honojs/website/main/public/images/logo.svg',
-  },
-  {
     name: 'Neo4j',
     role: t('about.credits.roles.neo4j'),
     url: 'https://neo4j.com/',
@@ -56,6 +50,30 @@ const credits = computed(() => [
     role: t('about.credits.roles.zod'),
     url: 'https://zod.dev/',
     logo: 'https://raw.githubusercontent.com/colinhacks/zod/main/packages/docs/public/logo/logo_square.png',
+  },
+  {
+    name: 'Tailwind CSS',
+    role: t('about.credits.roles.tailwind'),
+    url: 'https://tailwindcss.com/',
+    logo: 'https://github.com/tailwindlabs.png',
+  },
+  {
+    name: 'Reka UI',
+    role: t('about.credits.roles.reka'),
+    url: 'https://reka-ui.com/',
+    logo: 'https://github.com/unovue.png',
+  },
+  {
+    name: 'shadcn-vue',
+    role: t('about.credits.roles.shadcn'),
+    url: 'https://www.shadcn-vue.com/',
+    logo: 'https://github.com/shadcn.png',
+  },
+  {
+    name: 'VueUse',
+    role: t('about.credits.roles.vueuse'),
+    url: 'https://vueuse.org/',
+    logo: 'https://github.com/vueuse.png',
   },
   {
     name: 'Inter',
@@ -164,6 +182,7 @@ const credits = computed(() => [
   background: var(--color-surface);
   color: inherit;
   text-decoration: none;
+  user-select: none;
   transition: border-color var(--motion-fast), transform var(--motion-fast) var(--motion-ease);
 }
 
@@ -180,7 +199,7 @@ const credits = computed(() => [
 }
 
 .credit-mark img { width: 30px; height: 30px; object-fit: contain; }
-.credit-mark.is-fallback { color: var(--color-accent); background: var(--color-accent-soft); font-size: 18px; font-weight: 700; }
+.credit-mark.is-fallback { color: var(--color-accent); background: var(--color-accent-soft); font-size: 18px; font-weight: var(--weight-strong); }
 
 .credit-copy { display: grid; gap: 3px; min-width: 0; }
 .credit-copy strong, .credit-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -264,6 +283,7 @@ const credits = computed(() => [
   color: var(--color-accent);
   font-size: 13px;
   text-decoration: none;
+  user-select: none;
 }
 
 .finale-site-link:hover {
@@ -282,7 +302,6 @@ const credits = computed(() => [
 
 @media (max-width: 680px) {
   .credit-grid { grid-template-columns: 1fr; }
-  .credits-heading { gap: 12px; }
   .fuli-finale { margin-top: 64px; padding-top: 56px; }
 }
 </style>

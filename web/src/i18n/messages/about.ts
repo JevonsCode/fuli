@@ -3,42 +3,33 @@ export const aboutMessages = {
     aria: 'FULI 说明',
     labelsAria: '知识标签说明',
     philosophy: {
-      title: '对话会结束，方法应该留下',
-      intro: 'FULI 帮你在与 Agent 的协作中，沉淀自己的工作流、判断方式和品味。',
-      support: '不保存每一句话，只留下稳定、能再次用上的经验。',
-      sectionTitle: '方法如何留下',
-      capture: {
-        index: '01',
-        title: '从真实协作中沉淀',
-        description: '偏好、步骤、标准和边界来自真实任务；Agent 提炼，你来确认。',
+      title: '换 AI 工具，留住你自己',
+      intro: '和 AI 一起工作时，FULI 帮你留住自己的品味、个性和判断。你可以腾出手来做决定、想点子，也可以歇一歇。',
+      sectionTitle: '我们的理念',
+      support: '复利就是 compound interest：这一次协作留下的，下一次接着生长。',
+      partners: {
+        title: '搭档一直都在',
+        description: 'Codex、Claude Code 等客户端接入同一份 FULI 数据，就能接着和同一位 FLA 合作，它的职责和工作记录都还在。',
       },
-      project: {
-        index: '02',
-        title: '让个人项目逐渐成形',
-        description: '项目可以从对话、文档或仓库开始；归属由你决定，随时可以调整。',
+      retain: {
+        title: '只留值得复用的',
+        description: '每个任务结束时检查一次：能再用上的方法和决定才留下，放进它所属的项目；没有就什么都不留。',
       },
-      review: {
-        index: '03',
-        title: '周期回顾，而不是无限堆积',
-        description: '定期回顾：确认内容、处理冲突、清理过期信息，Agent 可以帮你整理。',
-      },
-      reuse: {
-        index: '04',
-        title: '跨 Agent 复用自己的方法',
-        description: '重复的流程不必反复交代：可以是全局工作流，也可以只属于某个项目。',
-      },
-      boundariesTitle: '始终保留的边界',
-      local: {
-        title: '本机优先',
-        description: '个人项目与对话默认只在本机，明确提交才会公开。',
+      onDemand: {
+        title: '用到时再取',
+        description: '任务开始只带上生效的偏好和少量相关知识，其余的由 Agent 需要时再查，省下上下文和 token。',
       },
       authority: {
-        title: '用户决定',
-        description: 'Agent 可以建议和整理，最终取舍由你决定。',
+        title: '你来拍板',
+        description: 'Agent 可以提议、整理和提醒，但只有你的确认才算确认；公开项目也要你看过预览再发布。',
       },
-      scope: {
-        title: '按范围复用',
-        description: '通用方法跨项目复用；项目知识不会因为相似就进入别的项目。',
+      history: {
+        title: '历史不被覆盖',
+        description: '旧做法被替代后依然保留：现在该用什么、当初为什么不同，都查得到。',
+      },
+      local: {
+        title: '就在你的电脑上',
+        description: '知识、对话记录和控制台都在本机运行，不用注册，也不用登录。',
       },
     },
     labelsIntro: {
@@ -55,9 +46,12 @@ export const aboutMessages = {
         pinia: '状态管理',
         d3: '图谱可视化',
         vitest: '前端测试',
-        hono: 'HTTP 运行层',
         neo4j: '图数据库',
         zod: '结构校验',
+        tailwind: '样式工具',
+        reka: '无障碍交互组件',
+        shadcn: '界面组件源码',
+        vueuse: '组合式工具集',
         inter: '英文与数字字体（SIL OFL 1.1）',
         notoSansSc: '中文字体（SIL OFL 1.1）',
         fastapi: 'Provider 服务',
@@ -183,42 +177,33 @@ export const aboutMessages = {
     aria: 'About FULI',
     labelsAria: 'Knowledge label guide',
     philosophy: {
-      title: 'Conversations end. Methods should remain.',
-      intro: 'FULI helps you keep your workflows, judgment, and taste as you work with Agents.',
-      support: 'Not every line of a conversation — only stable experience worth reusing.',
-      sectionTitle: 'How methods remain',
-      capture: {
-        index: '01',
-        title: 'Learn from real collaboration',
-        description: 'Preferences, steps, standards, and boundaries come from real tasks. Agents extract; you confirm.',
+      title: 'Switch AI tools. Keep yourself.',
+      intro: 'As you work with AI, FULI keeps your own taste, personality, and judgment, so you can step back to decide, come up with ideas, or take a break.',
+      sectionTitle: 'What we believe',
+      support: 'Fuli (复利) means compound interest: what one collaboration leaves behind keeps growing in the next.',
+      partners: {
+        title: 'Your partners stay',
+        description: 'Connect Codex, Claude Code, or another client to the same FULI data and keep working with the same FLA, its role and work record intact.',
       },
-      project: {
-        index: '02',
-        title: 'Let personal projects take shape',
-        description: 'A project can start from a chat, document, or repository. You choose where knowledge belongs and can move it any time.',
+      retain: {
+        title: 'Keep only what is worth reusing',
+        description: 'Each task ends with one check: methods and decisions you will use again stay, filed under their project; otherwise nothing is kept.',
       },
-      review: {
-        index: '03',
-        title: 'Review periodically, not endlessly accumulate',
-        description: 'Review periodically: confirm, resolve conflicts, and retire stale items. Agents can help.',
-      },
-      reuse: {
-        index: '04',
-        title: 'Reuse your method across Agents',
-        description: 'Stop re-explaining recurring processes: keep them as global workflows or within one project.',
-      },
-      boundariesTitle: 'Boundaries that remain',
-      local: {
-        title: 'Local first',
-        description: 'Personal projects and conversations stay on this device unless you explicitly submit them.',
+      onDemand: {
+        title: 'Fetch it when it is needed',
+        description: 'A task starts with the preferences in effect and a little relevant knowledge; Agents look up the rest when they need it, saving context and tokens.',
       },
       authority: {
-        title: 'User decides',
-        description: 'Agents suggest and organize; you make the final call.',
+        title: 'You make the call',
+        description: 'Agents propose, organize, and remind, but only your confirmation counts as confirmed, and a public project is published only after you review its preview.',
       },
-      scope: {
-        title: 'Reuse by scope',
-        description: 'General methods work across projects; project knowledge never leaks into another just because it looks similar.',
+      history: {
+        title: 'History is never overwritten',
+        description: 'A replaced method stays on record, so you can see what applies now and why it was once different.',
+      },
+      local: {
+        title: 'On your own computer',
+        description: 'Knowledge, conversation records, and the console run on this machine, with no sign-up and no login.',
       },
     },
     labelsIntro: {
@@ -235,9 +220,12 @@ export const aboutMessages = {
         pinia: 'State management',
         d3: 'Graph visualization',
         vitest: 'Frontend testing',
-        hono: 'HTTP runtime',
         neo4j: 'Graph database',
         zod: 'Schema validation',
+        tailwind: 'Styling utilities',
+        reka: 'Accessible interface primitives',
+        shadcn: 'Component source',
+        vueuse: 'Composition utilities',
         inter: 'Latin and digit typeface (SIL OFL 1.1)',
         notoSansSc: 'Chinese typeface (SIL OFL 1.1)',
         fastapi: 'Provider service',
