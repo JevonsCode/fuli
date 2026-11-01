@@ -172,7 +172,9 @@ test('the route is stored even when no Agent could be selected', async () => {
   const stored = tasks.at(-1).agentAssignment;
   assert.equal(stored.selection_reason, null);
   assert.deepEqual(stored.match_basis.map(basis => basis.split(':')[0]),
-    ['standing_assignment', 'standing_session_project']);
+    ['standing_assignment', 'standing_session_project', 'entry_unassigned']);
+  // Its checkpoint receipt gives the entry's reason for having no owner.
+  assert.equal(stored.match_basis.at(-1), 'entry_unassigned:unavailable -');
   // The next plain task does not inherit timesheet as an ordinary session project.
   assert.equal((await run({ projectPath: null, taskPrompt: '部署脚本再检查一下' })).context.personal_project_id, 'ops');
 });

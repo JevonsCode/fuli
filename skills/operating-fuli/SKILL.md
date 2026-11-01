@@ -46,7 +46,7 @@ When the user addresses AR or Bole to ask about organization or find someone, re
 
 ## Before starting collaborators
 
-Read each returned worker's `context.agent.profile.allowedClients` and `executorPolicy`, together with the task's effective executor policy. Intersect the restrictions before starting either a native or external worker; the lead's selected executor does not authorize every collaborator. A locked allow-list applies even when the current host has an idle worker. If the intended platform is outside any effective lock, select an eligible Agent/executor or report the constraint before launch. Never relax the lock, relabel the worker, or invent model evidence to satisfy reporting. FULI context recovery and a ready worker plan are not execution authorization by themselves.
+Read each returned worker's `context.agent.profile.allowedClients` and `executorPolicy`, together with the task's effective executor policy. A client list that names `other` but not `opencode` or `antigravity` also allows that client: older profiles used `other` for them. Intersect the restrictions before starting either a native or external worker; the lead's selected executor does not authorize every collaborator. A locked allow-list applies even when the current host has an idle worker. If the intended platform is outside any effective lock, select an eligible Agent/executor or report the constraint before launch. Never relax the lock, relabel the worker, or invent model evidence to satisfy reporting. FULI context recovery and a ready worker plan are not execution authorization by themselves.
 
 ## Handling conflicts and failures
 

@@ -19,6 +19,15 @@ test('a list naming `other` covers OpenCode until it names OpenCode itself, and 
   assert.equal(coversClient(['other'], 'other', { explicit: ['opencode'] }), true);
 });
 
+test('a list naming `other` covers Antigravity, which used it before its own source, by the same rule', () => {
+  const hiredBefore = ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'other'];
+  assert.equal(coversClient(hiredBefore, 'antigravity'), true);
+  assert.equal(coversClient(['antigravity'], 'antigravity'), true);
+  assert.equal(coversClient(['codex'], 'antigravity'), false);
+  assert.equal(coversClient(['antigravity'], 'other'), false);
+  assert.equal(coversClient(['other'], 'antigravity', { explicit: ['antigravity'] }), false);
+});
+
 test('an existing Agent that allowed `other` loads its memory in OpenCode, with its stored profile unchanged', async () => {
   const profile = { status: 'active', allowedClients: ['codex', 'other'] };
   const reads = [];
