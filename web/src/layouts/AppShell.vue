@@ -117,10 +117,13 @@ watchEffect(() => {
             <img class="app-wordmark" :src="fuliWordmarkUrl(currentLocale())" :alt="t('shell.brand')" draggable="false" data-wordmark />
             <!-- The service dot says ready on its own; its words show only when the service is not ready. -->
             <span class="app-runtime" :class="{ 'is-ready': runtimeReady }" role="status"
-              :title="`${t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')} · v${FULI_VERSION}`" data-runtime>
+              :title="t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')" data-runtime>
               <span class="app-runtime-dot" aria-hidden="true" />
               <span class="app-runtime-text" :class="{ 'is-visible': !runtimeReady }">{{ t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline') }}</span>
             </span>
+            <!-- The version beside the dot opens 设置 › 版本 (update channel and updates). -->
+            <RouterLink class="app-version" to="/settings?tab=version" :aria-label="t('shell.versionLink', { version: FULI_VERSION })"
+              draggable="false" data-app-version>v{{ FULI_VERSION }}</RouterLink>
           </span>
         </div>
         <!-- Only a record's own name is shown; a destination is already named by the dock
@@ -198,6 +201,11 @@ watchEffect(() => {
 .app-wordmark { display: block; width: auto; height: var(--wordmark-height); user-select: none; -webkit-user-drag: none; }
 .app-runtime { display: inline-flex; align-items: center; gap: 6px; --runtime: var(--status-error); }
 .app-runtime.is-ready { --runtime: var(--color-success); }
+.app-version {
+  color: var(--color-muted); font-size: var(--text-meta); font-variant-numeric: tabular-nums; text-decoration: none;
+  user-select: none; border-radius: var(--radius-control, 6px);
+}
+.app-version:hover, .app-version:focus-visible { color: var(--color-ink); }
 .app-runtime-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--runtime); }
 .app-runtime-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .app-runtime-text.is-visible { position: static; width: auto; height: auto; overflow: visible; clip-path: none; color: var(--runtime); font-size: var(--text-meta); font-weight: var(--weight-medium); }
