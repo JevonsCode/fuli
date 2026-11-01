@@ -4,10 +4,11 @@ import { dirname, join } from 'node:path';
 
 import { writeJsonFileAtomic } from '../storage/json-file.js';
 
-// Every stdio MCP server records its version beside the runtime config. An
-// update does not restart servers that clients already started, so a hook
-// (always the installed version) can tell the person once per session that an
-// open client still runs an older FULI and should be restarted.
+// Every stdio MCP server records its version beside the runtime config. A
+// relayed server (stdio-relay.js) moves to an update by itself once idle; a
+// server a client started before the relay existed does not, so a hook (always
+// the installed version) can tell the person once per session that an open
+// client still runs an older FULI and should be restarted.
 const directory = runtimeConfigPath => join(dirname(runtimeConfigPath), 'mcp-processes');
 
 const alive = pid => {

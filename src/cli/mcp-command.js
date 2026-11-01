@@ -10,6 +10,8 @@ import {
   resolveGraphRuntimeOptions
 } from '../graphiti/runtime-config.js';
 import { runStdio } from '../mcp/runtime.js';
+import { mcpServerTarget } from '../mcp/relay-target.js';
+import { MCP_RELAYED_ENV, runStdioRelay } from '../mcp/stdio-relay.js';
 import { prepareDirectAgentToolCall } from '../mcp/direct-call.js';
 import { normalizeMcpSourceApplication } from '../mcp/session-id.js';
 import { applicationErrorMessage } from '../mcp/tool-result.js';
@@ -48,6 +50,11 @@ export async function runMcpCommand(args, { env = process.env } = {}) {
         ? normalizeMcpSourceApplication(configuredSourceApplication)
         : 'other'
     });
+    return;
+  }
+  // The client starts the relay; the relay starts this same command as the server.
+  if (!env[MCP_RELAYED_ENV]) {
+    runStdioRelay({ target: mcpServerTarget(args) });
     return;
   }
   await runStdio({
