@@ -49,10 +49,15 @@ test('the doctor names each finding with who fixes it, and a blocking one degrad
   const runtimeConfigPath = join(root, 'graph-runtime.json');
   const live = new Set([101, 102, 103, 104]);
   const isAlive = (pid) => live.has(pid);
-  registerMcpProcess(runtimeConfigPath, { sourceApplication: 'codex', version: '0.21.0', pid: 101 });
+  const first = registerMcpProcess(runtimeConfigPath, { sourceApplication: 'codex', version: '0.21.0', pid: 101 });
+  first.recordSession('thread-a');
+  first.recordSession('thread-b');
+  // A server that never answered a call still counts, without a session.
   registerMcpProcess(runtimeConfigPath, { sourceApplication: 'codex', version: '0.21.0', pid: 102 });
-  registerMcpProcess(runtimeConfigPath, { sourceApplication: 'claude_code', version: VERSION, pid: 103 });
-  registerMcpProcess(runtimeConfigPath, { sourceApplication: 'codex', version: '0.20.0', pid: 105 });
+  registerMcpProcess(runtimeConfigPath, { sourceApplication: 'claude_code', version: VERSION, pid: 103 }).recordSession('current');
+  // Two servers of one session name it once.
+  registerMcpProcess(runtimeConfigPath, { sourceApplication: 'codex', version: '0.21.0', pid: 104 }).recordSession('thread-b');
+  registerMcpProcess(runtimeConfigPath, { sourceApplication: 'codex', version: '0.20.0', pid: 105 }).recordSession('gone');
   const checkup = doctor(t, {
     observeClients: () => ({ clients: [
       client('codex', 'changed'),
@@ -82,7 +87,8 @@ test('the doctor names each finding with who fixes it, and a blocking one degrad
       { id: 'client_outdated:opencode', kind: 'client_outdated', severity: 'warning', fix: 'person',
         data: { clientId: 'opencode', label: 'OPENCODE', status: 'skills_left' } },
       { id: 'sessions_outdated:codex:0.21.0', kind: 'sessions_outdated', severity: 'warning', fix: 'person',
-        data: { client: 'codex', count: 2, runningVersion: '0.21.0' } },
+        data: { client: 'codex', count: 3, runningVersion: '0.21.0', sessions: [
+          { sourceApplication: 'codex', sessionId: 'thread-a' }, { sourceApplication: 'codex', sessionId: 'thread-b' }] } },
       { id: 'update_left_work', kind: 'update_left_work', severity: 'warning', fix: 'auto',
         data: { updateId: 'u1', status: 'updated', clients: 'not_reconnected', version: VERSION } },
       { id: 'update_available', kind: 'update_available', severity: 'info', fix: 'person', data: { latest: '0.23.0' } }
@@ -91,7 +97,18 @@ test('the doctor names each finding with who fixes it, and a blocking one degrad
     uncheckedReasons: {}
   });
   // The exited server's record went away on the way.
-  assert.deepEqual(liveMcpProcesses(runtimeConfigPath, { isAlive }).map(({ pid }) => pid).sort(), [101, 102, 103]);
+  assert.deepEqual(liveMcpProcesses(runtimeConfigPath, { isAlive }).map(({ pid }) => pid), [101, 102, 103, 104]);
+});
+
+test('an outdated item names at most 20 sessions', async (t) => {
+  const sessionIds = Array.from({ length: 8 }, (_, index) => `thread-${index}`);
+  const processes = [1, 2, 3].map(pid => ({ pid, version: '0.21.0', sourceApplication: 'codex',
+    sessionIds: sessionIds.map(id => `${pid}-${id}`) }));
+  const { items } = await doctor(t, { liveProcesses: () => processes }).check();
+  const outdated = items.find(({ kind }) => kind === 'sessions_outdated');
+  assert.equal(outdated.data.count, 3);
+  assert.equal(outdated.data.sessions.length, 20);
+  assert.deepEqual(outdated.data.sessions[0], { sourceApplication: 'codex', sessionId: '1-thread-0' });
 });
 
 test('ports the running console moved by itself are one info item named after that start', async (t) => {

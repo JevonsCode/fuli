@@ -23,6 +23,8 @@ const PRESENT_CLIENT = new Set(['connected', 'changed', 'skills_left']);
 const SEVERITY_ORDER = Object.freeze({ blocking: 0, warning: 1, info: 2 });
 // Adaptive runtime stages in which the graph provider sleeps on purpose (runtime-broker.js).
 const GRAPH_SLEEPING = new Set(['provider-sleeping', 'sleeping']);
+// The sessions one outdated item names: what the console's offers request takes at once.
+const MAX_OUTDATED_SESSIONS = 20;
 
 // The clients a repair may reconnect: once connected, FULI's integration still
 // present, and installable without the person (detected, not manual-only).
@@ -151,17 +153,25 @@ async function stillWaiting(lastGraph, readOperations) {
 }
 
 // Open client sessions whose MCP server still runs another FULI version; only
-// restarting those sessions loads the installed one.
+// restarting those sessions loads the installed one. sessions names the ones
+// the servers answered calls for, so the console can offer to open them; a
+// server that answered none still counts.
 function sessionItems(processes, version) {
   const groups = new Map();
   for (const record of processes.filter((candidate) => candidate.version !== version)) {
     const client = record.sourceApplication ?? 'other';
     const key = `${client}:${record.version}`;
-    const group = groups.get(key) ?? { client, count: 0, runningVersion: record.version };
+    const group = groups.get(key) ?? { client, count: 0, runningVersion: record.version, sessions: new Map() };
     group.count += 1;
+    if (record.sourceApplication) {
+      for (const sessionId of Array.isArray(record.sessionIds) ? record.sessionIds : []) {
+        if (typeof sessionId === 'string') group.sessions.set(sessionId, { sourceApplication: client, sessionId });
+      }
+    }
     groups.set(key, group);
   }
-  return [...groups].map(([key, group]) => item(`sessions_outdated:${key}`, 'sessions_outdated', 'warning', 'person', group));
+  return [...groups].map(([key, { sessions, ...group }]) => item(`sessions_outdated:${key}`, 'sessions_outdated', 'warning', 'person',
+    { ...group, sessions: [...sessions.values()].slice(0, MAX_OUTDATED_SESSIONS) }));
 }
 
 // Ports this console's start moved because Windows reserved them or another

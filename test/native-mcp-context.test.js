@@ -41,6 +41,21 @@ test('request metadata is inert without the local adapter and cannot replace an 
   assert.equal(remote[0].sessionId, 'fuli-remote-synthetic');
 });
 
+test('each call names its calling session for the process registry: the host one first, else the task entry one', async () => {
+  const seen = [];
+  const onSession = sessionId => seen.push(sessionId);
+  await invoke({ env: { CODEX_THREAD_ID: a }, nativeRequestContext: nativeMcpRequestContextResolver('codex'), onSession },
+    [metadata(a), metadata(b)]);
+  assert.deepEqual(seen, [a, b]);
+  seen.length = 0;
+  await invoke({ onSession }, [undefined]);
+  assert.deepEqual(seen, ['model-supplied-id']);
+  seen.length = 0;
+  // An identity FULI made for a process is no session the person can open.
+  await invoke({ onSession, prepareToolInput: (_name, value) => ({ ...value, sessionId: 'fuli-host-synthetic' }) }, [undefined]);
+  assert.deepEqual(seen, [null]);
+});
+
 test('unknown or malformed native metadata cannot establish identity or a context generation', () => {
   const resolve = nativeMcpRequestContextResolver('codex');
   assert.equal(resolve({ thread_id: a, session_id: execution }), null);

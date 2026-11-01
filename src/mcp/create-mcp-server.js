@@ -34,6 +34,7 @@ import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
 import { assertToolInputWithinBudget, createToolInputValidator } from './tool-input-budget.js';
 import { nativeSessionFromEnv } from '../agents/native-session-env.js';
 import {
+  isFuliProcessSession,
   mcpHostSessionId,
   nativeCodexThreadId,
   normalizeAgentSessionInput,
@@ -121,7 +122,9 @@ export function createMcpServer(
     prepareToolInput = (_name, input) => input,
     registerResources = true,
     workerTaskContext = null,
-    nativeRequestContext = null
+    nativeRequestContext = null,
+    // Receives the calling session of each call, when one is known (process-registry.js).
+    onSession = () => {}
   } = {}
 ) {
   if (workerTaskContext !== null && (!Array.isArray(workerTaskContext.toolNames) ||
@@ -155,7 +158,8 @@ export function createMcpServer(
     prepareToolInput,
     env,
     workerTaskContext,
-    preferenceState
+    preferenceState,
+    onSession
   );
   // Only the named chat profile expands on demand. Restricted custom/remote
   // allow-lists remain a security boundary. Every call keeps its original name.
@@ -165,7 +169,7 @@ export function createMcpServer(
   if (registerResources && !workerTaskContext) registerFuliContextResources(server, app, { withRuntimeLease });
   const onDemandTools = isChatProfile ? createToolMap(app,
     projectActionPreviews, nativeThreadId, effectiveHostSessionId,
-    clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env, null, preferenceState) : null;
+    clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env, null, preferenceState, onSession) : null;
   if (onDemandTools) registerDispatchTool(server);
   registerCallHandler(server, tools, onDemandTools,
     !workerTaskContext && hostSessionId === null ? nativeRequestContext : null);
@@ -203,7 +207,8 @@ function createToolMap(
   prepareToolInput,
   env = process.env,
   workerTaskContext = null,
-  preferenceState
+  preferenceState,
+  onSession
 ) {
   const commonKnowledgePreviews = createCommonKnowledgePreviewTokens();
   if (toolNames !== null && !Array.isArray(toolNames)) {
@@ -256,26 +261,27 @@ function createToolMap(
           // Provenance follows the Provider-admitted run, never the payload.
           return invokeAgentTool(app, definition.name, prepared, projectActionPreviews,
             commonKnowledgePreviews, sealedWorkerRequestContext(requestContext));
-        }) : invokeAgentTool(
-          app,
-          definition.name,
-          normalizeAgentSessionInput(
-            definition.name,
-            prepareToolInput(definition.name, input),
-            requestNative,
-            requestHost,
-            clock,
-            sourceApplication
-          ),
-          projectActionPreviews,
-          commonKnowledgePreviews,
-          agentHostRequestContext({ ...requestContext, testToolsEnabled: includeTestTools }, requestHost,
-            sourceApplication)
-        ),
+        }) : invokeAsHost(),
         requestContext
       );
+
+      function invokeAsHost() {
+        const normalized = normalizeAgentSessionInput(definition.name, prepareToolInput(definition.name, input),
+          requestNative, requestHost, clock, sourceApplication);
+        onSession(callingSession(definition.name, normalized, requestNative));
+        return invokeAgentTool(app, definition.name, normalized, projectActionPreviews, commonKnowledgePreviews,
+          agentHostRequestContext({ ...requestContext, testToolsEnabled: includeTestTools }, requestHost, sourceApplication));
+      }
     }
   }]));
+}
+
+// The client session a call came from: the one its host names, else the one a
+// task entry carried. Never an identity FULI made up for this process.
+const TASK_ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
+function callingSession(name, input, nativeSessionId) {
+  const sessionId = nativeSessionId ?? (TASK_ENTRY_TOOLS.has(name) ? input?.sessionId : null);
+  return typeof sessionId === 'string' && sessionId && !isFuliProcessSession(sessionId) ? sessionId : null;
 }
 
 // Chat clients list a compact form (chat-listing.js); calls are always
