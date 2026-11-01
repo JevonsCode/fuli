@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Generates every copy of the FULI logo from brand/fuli-logo.png: the console's
-// and the site's copies, and the desktop client's tray, notification, Windows
-// and macOS icons. Run `node scripts/build-brand-assets.js` after replacing the
-// logo; test/brand-assets.test.js fails while a copy is stale.
+// Generates every copy of the FULI brand from brand/: the logo's console and
+// site copies, the desktop client's tray, notification, Windows and macOS icons,
+// and the console's wordmarks. Run `node scripts/build-brand-assets.js` after
+// replacing a file there; test/brand-assets.test.js fails while a copy is stale.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +17,9 @@ export const PROJECT_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE = join(PROJECT_ROOT, 'brand/fuli-logo.png');
 // Paths the console, the site, README images and the published site already load.
 const LOGO_COPIES = ['web/assets/brand/fuli-logo.png', 'site/assets/fuli-logo.png', 'site/v0/assets/fuli-logo.png'];
+// The wordmarks the console shows (web/src/lib/brand.ts), copied as they are.
+const WORDMARK_COPIES = ['fuli-wordmark-en.svg', 'fuli-wordmark-zh.svg']
+  .map((name) => ({ source: `brand/${name}`, path: `web/assets/brand/${name}` }));
 const DESKTOP = 'desktop/flutter';
 const STATUS_DOTS = { ok: 0x1f9a76, needs_person: 0xd08a1e, broken: 0xc0453a };
 // macOS shows the menu bar icon at 18 pt; 36 px keeps it sharp on Retina.
@@ -33,7 +36,10 @@ const ico = (draw, sizes) => encodeIco(sizes.map((size) => ({ size, bytes: encod
 // Every derived file as { path, bytes, same }, [same] telling whether a file on disk still matches.
 export function brandAssets(sourceBytes = readFileSync(SOURCE)) {
   const logo = decodePng(sourceBytes);
-  const copies = LOGO_COPIES.map((path) => ({ path, bytes: sourceBytes, same: sameBytes }));
+  const copies = [
+    ...LOGO_COPIES.map((path) => ({ path, bytes: sourceBytes, same: sameBytes })),
+    ...WORDMARK_COPIES.map(({ source, path }) => ({ path, bytes: readFileSync(join(PROJECT_ROOT, source)), same: sameBytes }))
+  ];
   const drawn = [
     ...Object.entries(STATUS_DOTS).flatMap(([status, dot]) => [
       { path: `${DESKTOP}/assets/tray/${status}.png`, bytes: encodePng(trayIcon(logo, TRAY_PNG_SIZE, dot)) },
