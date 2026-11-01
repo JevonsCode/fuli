@@ -23,6 +23,7 @@ import { shellMessages } from './messages/shell'
 import { occupationsMessages } from './messages/occupations'
 import { agentServicesMessages } from './messages/agent-services'
 import { flasMessages } from './messages/flas'
+import { agentAppsMessages } from './messages/agent-apps'
 import { roleNameMessages } from './messages/role-names'
 import { teamWorkMessages } from './messages/team-work'
 import { flaPageMessages } from './messages/fla-page'
@@ -102,6 +103,7 @@ export const messages = {
     occupations: occupationsMessages['zh-CN'],
     agentServices: agentServicesMessages['zh-CN'],
     flas: flasMessages['zh-CN'],
+    agentApps: agentAppsMessages['zh-CN'],
     roleNames: roleNameMessages['zh-CN'],
     teamWork: teamWorkMessages['zh-CN'],
     flaPage: flaPageMessages['zh-CN'],
@@ -150,6 +152,7 @@ export const messages = {
     occupations: occupationsMessages['en-US'],
     agentServices: agentServicesMessages['en-US'],
     flas: flasMessages['en-US'],
+    agentApps: agentAppsMessages['en-US'],
     roleNames: roleNameMessages['en-US'],
     teamWork: teamWorkMessages['en-US'],
     flaPage: flaPageMessages['en-US'],
