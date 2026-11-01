@@ -4,7 +4,7 @@ import test from 'node:test';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { groupChoiceReply, parseFlaMention } from '../src/graphiti/fla-mention.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
-import { CONSOLE_LOCALES, consolePhrasings } from '../test-support/console-mention-phrasings.js';
+import { CONSOLE_LOCALES, consoleConversationPhrasings, consolePhrasings } from '../test-support/console-mention-phrasings.js';
 import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
 import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
@@ -218,6 +218,17 @@ test('the console\'s @FLG phrasings name their FLAs, and "recommend one more" ad
     assert.deepEqual(names(preselected(pair)), ['Nova Lane', 'Pia Mo'], locale);
     const more = await fixture().hook(`${copied.recommend}技术架构`);
     assert.deepEqual(names(preselected(more)), ['Nova Lane', 'Jamie Ash'], locale);
+  }
+});
+
+test('the roundtable page\'s @FLG examples recommend members for a question, or keep the two it names, in both locales', async () => {
+  for (const locale of CONSOLE_LOCALES) {
+    const copied = consoleConversationPhrasings(locale, ['Nova Lane', 'Pia Mo']);
+    const discuss = await fixture().hook(`${copied.discuss}这个方案的产品体验和技术风险`);
+    assert.equal(discuss.flg.status, 'choose', locale);
+    assert.ok(names(preselected(discuss)).length >= 2, locale);
+    const pair = await fixture().hook(`${copied.pair}这个方案`);
+    assert.deepEqual(names(preselected(pair)), ['Nova Lane', 'Pia Mo'], locale);
   }
 });
 

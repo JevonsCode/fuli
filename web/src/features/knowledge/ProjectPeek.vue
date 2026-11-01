@@ -11,6 +11,7 @@ import { formatRelativeTime } from '@/lib/relative-time'
 import type { KnowledgeGraph, KnowledgeItem, KnowledgeNode, PersonalProject } from '@/types'
 import { UiIcon, UiIconButton } from '@/ui'
 import { projectFamily } from './project-family'
+import ProfileAuthorChip from '@/features/projects/ProfileAuthorChip.vue'
 
 // A project's quick look (Jevons 11-01): what it is, how it came to be, who
 // works on it, and where it sits among the other projects. One action leads
@@ -26,7 +27,10 @@ const emit = defineEmits<{ openProject: [projectId: string]; editProject: [item:
 const node = computed(() => props.item.raw as KnowledgeNode)
 const projectId = computed(() => String(node.value.attributes?.projectId ?? ''))
 // The project's own words only; the graph's generic node summary says nothing about it.
-const description = computed(() => props.project?.profile.purpose?.trim() || props.project?.profile.scope?.trim() || '')
+const descriptionField = computed(() => props.project?.profile.purpose?.trim() ? 'purpose'
+  : props.project?.profile.scope?.trim() ? 'scope' : null)
+const description = computed(() => descriptionField.value ? props.project!.profile[descriptionField.value]!.trim() : '')
+const descriptionAuthor = computed(() => descriptionField.value ? props.project?.profile.authors?.[descriptionField.value] : null)
 
 // The project's own moments, oldest first; only what the record holds.
 const timeline = computed(() => [
@@ -68,7 +72,10 @@ onMounted(async () => {
 <template>
   <section class="project-peek" data-project-peek>
     <header class="project-peek-head">
-      <p v-if="description" class="project-peek-description" data-project-description>{{ description }}</p>
+      <div v-if="description" class="project-peek-description-block">
+        <p class="project-peek-description" data-project-description>{{ description }}</p>
+        <ProfileAuthorChip :author="descriptionAuthor" />
+      </div>
       <p v-else class="project-peek-description is-empty">{{ t('knowledge.workspace.projectPeek.noDescription') }}</p>
       <div class="project-peek-corner">
         <UiIconButton icon="edit" size="sm" :label="t('knowledge.workspace.projectPeek.edit')" data-project-edit @click="emit('editProject', item)" />
@@ -139,6 +146,7 @@ onMounted(async () => {
 <style scoped>
 .project-peek { display: grid; gap: 18px; }
 .project-peek-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.project-peek-description-block { display: grid; justify-items: start; gap: 6px; min-width: 0; }
 .project-peek-description { margin: 0; color: var(--color-ink); font-size: 15px; line-height: 1.6; }
 .project-peek-description.is-empty, .project-peek-quiet { color: var(--color-muted); font-size: 13px; }
 .project-peek-corner { position: relative; display: flex; flex: 0 0 auto; gap: 4px; }

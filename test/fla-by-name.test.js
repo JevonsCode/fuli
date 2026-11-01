@@ -5,7 +5,7 @@ import { checkpointTaskKnowledge } from '../src/graphiti/agent-knowledge-workflo
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { parseFlaMention } from '../src/graphiti/fla-mention.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
-import { CONSOLE_LOCALES, consolePhrasings } from '../test-support/console-mention-phrasings.js';
+import { CONSOLE_LOCALES, consoleConversationPhrasings, consolePhrasings } from '../test-support/console-mention-phrasings.js';
 
 // rec#54: continue one of the person's FLAs by name in the current session,
 // from any folder, with a native choice instead of copied names or IDs.
@@ -191,6 +191,18 @@ test('the console\'s copied #FLA and its "continue here" phrasing continue that 
       const copied = consolePhrasings(locale, name, null);
       // Pasted alone, typed on directly after, or pasted mid-sentence.
       for (const prompt of [copied.continue, `${copied.mention}看下进度`, `帮我 ${copied.mention}看下进度`]) {
+        assert.deepEqual(owner(await fixture({ roster }).run(prompt)), expected, `${locale}: ${prompt}`);
+      }
+    }
+  }
+});
+
+test('the roundtable page\'s "ask one FLA to ask another" and "continue here" examples continue the first FLA, in both locales', async () => {
+  const roster = [ADA, JAMIE, fla('lin', '小林', '运营', 'project-b')];
+  for (const locale of CONSOLE_LOCALES) {
+    for (const [names, expected] of [[['Jamie Ash', '小林'], ['project-b', 'jamie']], [['小林', 'Jamie Ash'], ['project-b', 'lin']]]) {
+      const copied = consoleConversationPhrasings(locale, names);
+      for (const prompt of [`${copied.relay}上线时间`, copied.continue]) {
         assert.deepEqual(owner(await fixture({ roster }).run(prompt)), expected, `${locale}: ${prompt}`);
       }
     }

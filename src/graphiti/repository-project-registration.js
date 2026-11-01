@@ -2,6 +2,7 @@ import { repositoryProjectDraft } from './project-brief.js';
 import { findRepositoryRoot } from './project-path-context.js';
 import { originRemoteSource } from './repository-remote.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
+import { UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
 
 export const TASK_ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 
@@ -18,6 +19,7 @@ export async function registerRepositoryProject(application, resolution, { sessi
     await application.upsertPersonalProject({
       personalSpaceId: application.config.personal.spaceId,
       projectId,
+      writer: UNNAMED_AGENT_WRITER,
       profile: { name: projectId, lifecycle: 'active', ...draft, ...(source ? { sources: [source] } : {}) }
     });
   } catch {

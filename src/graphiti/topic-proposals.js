@@ -1,5 +1,6 @@
 import { receiptConsoleUrl } from '../agents/identity-receipt.js';
 import { createProjectNamed, projectByName } from './task-entry-project-mention.js';
+import { PERSON_WRITER, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
 import { sourceConsoleUrl } from './source-marker.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 
@@ -92,8 +93,9 @@ export async function undoTopicPromotion(application, { topic, personalProjectId
   const project = (await application.personal.listPersonalProjects(spaceId))
     .find(entry => entry.project_id === personalProjectId);
   const archive = Boolean(project?.profile?.purpose?.startsWith(PROMOTED_PURPOSE)) && project.profile.lifecycle !== 'archived';
+  // The person's undo; only the lifecycle changes, so every field keeps its author.
   if (archive) await application.upsertPersonalProject({ personalSpaceId: spaceId, projectId: personalProjectId,
-    profile: { ...project.profile, lifecycle: 'archived' } });
+    writer: PERSON_WRITER, profile: { ...project.profile, lifecycle: 'archived' } });
   return { status: 'reopened', topic: reopened.topic, personal_project_id: personalProjectId,
     conversations: reopened.conversation_ids.length, project_archived: archive,
     knowledge_returned: reopened.knowledge.returned, knowledge_kept: reopened.knowledge.kept,
@@ -102,7 +104,9 @@ export async function undoTopicPromotion(application, { topic, personalProjectId
 
 async function formTopicProject(application, stats, existing, reason, sourceApplication) {
   const spaceId = application.config.personal.spaceId;
-  const project = existing ?? await createProjectNamed(application, stats.topic, `${reason}（AI 草稿，可编辑）`);
+  // Astro's own wording, also when the person accepted it.
+  const project = existing ?? await createProjectNamed(application, stats.topic, `${reason}（AI 草稿，可编辑）`,
+    UNNAMED_AGENT_WRITER);
   const projectId = project.personalProjectId;
   const lead = await application.personal.staffDefaultProjectLead({ personal_space_id: spaceId,
     personal_project_id: projectId, source_application: sourceApplication }).catch(() => null);

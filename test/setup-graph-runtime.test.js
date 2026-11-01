@@ -7,7 +7,7 @@ import {
   selectDockerEnvironment
 } from '../src/setup/graph-runtime.js';
 import { FULI_VERSION } from '../src/package-metadata.js';
-import { DEFAULT_CONVERSATION_LAUNCHERS } from '../src/system/runtime-settings.js';
+import { DEFAULT_CONVERSATION_LAUNCHERS, DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 import { recoverBlockedPorts } from '../src/system/blocked-port-recovery.js';
 
 const PATHS = Object.freeze({
@@ -286,7 +286,8 @@ test('setup applies every configured service port to Provider URLs and Compose e
     conversationLaunchers: DEFAULT_CONVERSATION_LAUNCHERS,
     notifications: { needsPersonUrl: '' },
     agentNamingStyle: '',
-    topicPromotion: 'auto'
+    topicPromotion: 'auto',
+    updateChannel: DEFAULT_RUNTIME_SETTINGS.updateChannel
   };
   let environment = '';
   let savedSettings = null;

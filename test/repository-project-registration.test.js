@@ -18,7 +18,7 @@ test('a task in an unregistered repository registers it under its exact ID', asy
   const result = await registerRepositoryProject(app(async (input) => { writes.push(input); }),
     { status: 'unmatched', personalProjectId: null, repositoryProjectId: 'new-app' }, { projectPath });
   assert.deepEqual(result, { status: 'matched', basis: 'registered_repository', personalProjectId: 'new-app' });
-  assert.deepEqual(writes, [{ personalSpaceId: 'space', projectId: 'new-app',
+  assert.deepEqual(writes, [{ personalSpaceId: 'space', projectId: 'new-app', writer: { kind: 'agent' },
     profile: { name: 'new-app', lifecycle: 'active', purpose: 'A sample app.',
       brief_draft: { source: 'readme', label: 'AI draft', editable: true } } }]);
 });

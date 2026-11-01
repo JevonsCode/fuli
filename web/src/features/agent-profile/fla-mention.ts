@@ -20,7 +20,7 @@ export const isBuiltInRole = (agentId: string) => BUILT_IN_ROLE_IDS.has(agentId)
 
 /** 'fla': alone or in a group; 'role': a built-in role, alone only. */
 export type MentionKind = 'fla' | 'role'
-export type MentionPhrasingKey = 'continue' | 'pair' | 'recommend'
+export type MentionPhrasingKey = 'continue' | 'pair' | 'recommend' | 'discuss' | 'relay'
 /** `open` phrasings end where the person goes on typing (shown with a trailing …). */
 export interface MentionPhrasing { key: MentionPhrasingKey; text: string; open: boolean }
 type Translate = (key: MentionPhrasingKey, values: Record<string, string>) => string
@@ -54,6 +54,24 @@ export function mentionPhrasings(name: string, partner: string | null, translate
     alone,
     ...(partner ? [{ key: 'pair' as const, text: `@FLG ${translate('pair', { name, partner })}`, open: true }] : []),
     { key: 'recommend', text: `@FLG ${translate('recommend', { name })}`, open: true },
+  ]
+}
+
+/**
+ * How a person gets their FLAs talking to each other (the 圆桌 helper): a
+ * discussion that recommends 2–4 members, two named FLAs discussing, one FLA
+ * asked to ask another (an inline `#FLA` after 让 / ask, then message_agent),
+ * and one FLA continuing here. `names` are two of the person's FLAs, when known.
+ */
+export function conversationPhrasings(names: readonly string[], translate: Translate): MentionPhrasing[] {
+  const [name, partner] = names
+  return [
+    { key: 'discuss', text: `@FLG ${translate('discuss', {})}`, open: true },
+    ...(name && partner ? [
+      { key: 'pair' as const, text: `@FLG ${translate('pair', { name, partner })}`, open: true },
+      { key: 'relay' as const, text: translate('relay', { mention: flaMention(name), partner }), open: true },
+    ] : []),
+    ...(name ? [{ key: 'continue' as const, text: `${flaMention(name)} ${translate('continue', { name })}`, open: false }] : []),
   ]
 }
 

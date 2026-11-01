@@ -14,6 +14,8 @@ Optional fields may be absent. Publication is never blocked by this guidance.
 - `boundaries`: durable development, ownership, privacy, and operational rules
 - `assessment`: evidence-backed summary of information currently recorded
 
+FULI records who wrote `purpose`, `scope`, `technicalSummary` and `boundaries` in `profile.authors`; do not send `authors`, it is computed from who writes. Pass `taskContextToken` so your FLA is named. A field authored `person` or `both` is not changed by an Agent call and is returned in `refused_fields`; the other fields of that call still apply.
+
 ## Source records
 
 Every source needs a stable `key`, `kind`, and `title`. Add `uri` and `summary` only when supported by evidence.

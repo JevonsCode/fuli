@@ -176,8 +176,9 @@ const HANDLERS = Object.freeze({
   // Agents register projects on their own (capture.md) and FULI cannot verify a
   // person asked, so this stops with recording; the person's explicit paths are
   // the console and a "新项目：" task line (rec#11 D-01).
+  // The writer is the calling task's FLA, so a person-written field stays theirs.
   upsert_personal_project: (app, input) => captureGuard(app, { sourceApplication: input?.sourceApplication },
-    () => app.upsertPersonalProject(input)),
+    async () => app.upsertPersonalProject({ ...input, writer: await app.agentProfileWriter(input) })),
   list_personal_projects: (app, input) => app.listPersonalProjects(input),
   upsert_project_agent: (app, input) => captureGuard(app, { sourceApplication: input?.sourceApplication,
     personalProjectId: input?.personalProjectId ?? null }, () => app.upsertProjectAgent(input)),

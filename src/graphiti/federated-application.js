@@ -114,6 +114,7 @@ import {
   reviewProjectRelation
 } from './public-project-relations.js';
 import {
+  agentProfileWriter,
   listPersonalProjects,
   listProjectRelationWeights,
   upsertPersonalProject
@@ -457,6 +458,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async upsertPersonalProject(input) {
     return upsertPersonalProject(this, input);
+  }
+
+  async agentProfileWriter(input) {
+    return agentProfileWriter(this, input);
   }
 
   async listPersonalProjects(input) {

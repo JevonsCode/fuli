@@ -9,6 +9,7 @@
 .project-overview-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
 .project-overview-failed { display: flex; align-items: center; gap: var(--space-3); padding-block: var(--space-6); }
 .project-overview-title { display: grid; gap: var(--space-2); min-width: 0; }
+.project-overview-author { justify-self: start; }
 .project-overview-title h2 { font-size: var(--text-title); font-weight: 650; line-height: 1.25; letter-spacing: -.02em; overflow-wrap: anywhere; }
 .project-overview-purpose { max-width: var(--measure); color: var(--color-ink-soft); line-height: 1.6; }
 .project-overview-actions { display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }

@@ -829,12 +829,14 @@ test('agents can record and update an incomplete personal project profile withou
       profile: { name: 'Hotel Theme', lifecycle: 'active', sources: [], boundaries: [] }
     };
     const app = new FederatedGraphApplication(CONFIG, {
-      fetchImpl: providerFetch(calls, { '/v1/personal-projects': record })
+      fetchImpl: providerFetch(calls, { '/v1/personal-projects': record,
+        '/v1/personal-projects/hotel-theme': () => new Response('{"detail":"personal project not found"}', { status: 404 }) })
     });
 
     const result = await app.upsertPersonalProject({
       personalSpaceId: 'personal-space',
       projectId: 'hotel-theme',
+      writer: { kind: 'agent' },
       profile: record.profile
     });
 
@@ -853,7 +855,8 @@ test('agents can record and update an incomplete personal project profile withou
         lifecycle: 'active',
         sources: [],
         boundaries: [],
-        assessment: null
+        assessment: null,
+        authors: {}
       }
     });
     assert.equal(calls.some(({ origin }) => origin === 'https://workspace.example'), false);
