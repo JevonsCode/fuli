@@ -154,14 +154,23 @@ test('MCP reads, memory checkpoints and task entry expose directorySnapshot stat
   assert.equal(written.directorySnapshot.status, 'current');
   assert.equal(written.directorySnapshot.files.at(-1).scope, 'global');
 
-  const entry = (await call('get_collaboration_preferences', { projectPath: '/synthetic/sample-project',
+  // A token-less entry leaves the snapshot to the memory read it points to (rec#46).
+  const tokenless = (await call('get_collaboration_preferences', { projectPath: '/synthetic/sample-project',
     taskPrompt: 'Continue.' })).structuredContent;
+  assert.equal(tokenless.task_lifecycle.status, 'not_started');
+  assert.equal(tokenless.project_agent_context.directorySnapshot, undefined);
+  assert.equal(tokenless.project_agent_context.memory.read.tool, 'get_project_agent_memory');
+
+  app.taskContextRegistry = { current: async () => null, begin: async input => ({ ...input, token: 'fuli-task-transport' }) };
+  const entry = (await call('get_collaboration_preferences', { projectPath: '/synthetic/sample-project',
+    taskPrompt: 'Continue.', sessionId: 'synthetic-session' })).structuredContent;
+  assert.equal(entry.taskContextToken, 'fuli-task-transport');
   assert.equal(entry.project_agent_context.directorySnapshot.status, 'current');
   // Every file is already as the read and checkpoint left it, so the entry counts them (rec#46).
   assert.equal(entry.project_agent_context.directorySnapshot.files, undefined);
   assert.equal(entry.project_agent_context.directorySnapshot.files_unchanged, 3);
 
-  const everything = JSON.stringify([read, written, entry]);
+  const everything = JSON.stringify([read, written, tokenless, entry]);
   assert.equal(everything.includes(home), false, 'no absolute path');
   assert.equal(everything.includes('.fuli-snapshot'), false, 'no manifest or lock internals');
 });

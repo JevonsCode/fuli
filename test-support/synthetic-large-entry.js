@@ -20,7 +20,7 @@ import { TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE } from '../src/graphiti/task-knowledg
 import { createFuliSourceMarker } from '../src/graphiti/source-marker.js';
 import { RECEIPT_GUIDANCE } from '../src/agents/identity-receipt.js';
 import { employeeTaskEntry } from '../src/employees/task-entry.js';
-import { taskJudgmentContext } from '../src/graphiti/task-entry-preferences.js';
+import { finishTaskEntryPreferences, taskJudgmentContext } from '../src/graphiti/task-entry-preferences.js';
 
 // Claude Code keeps a hook context longer than this only as a preview.
 const CLAUDE_PREVIEW_CHARS = 10000;
@@ -121,6 +121,18 @@ export async function syntheticWorkingEntry({ items, sessionId, token = 'fuli-ta
     project_agent_context: syntheticContinuity(), project_management_context: management, judgment_context: judgment },
   { personal_space_id: SPACE, personal_project_id: PROJECT, project_agent_id: AGENT, session_id: sessionId,
     source_application: 'claude_code', preference_scope: { version: 1, work_kind: 'implementation', workflow: null } });
+}
+
+// The same working lead's get_collaboration_preferences when the client has no
+// native host session (OpenCode code mode): the entry builder's preferences
+// with no task begun, so no token, conversation or task rules, and the
+// lifecycle the real entry finish adds.
+export async function syntheticTokenlessEntry({ items }) {
+  const { conversation: _conversation, taskContextToken: _token, task_context_token: _snake, checkpoint_required: _required,
+    checkpoint_guidance: _checkpoint, resumed_checkpoint: _resumed, previous_checkpoint_missing: _missing,
+    task_guidance: _task, ...preferences } = await syntheticWorkingEntry({ items, sessionId: null });
+  return finishTaskEntryPreferences({}, preferences, { agentInvocation: true,
+    agentToolName: 'get_collaboration_preferences', taskPrompt: 'fix the export bug' });
 }
 
 // An ordinary small coding task of the same working lead when nothing in the

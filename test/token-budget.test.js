@@ -19,7 +19,7 @@ import { readTurnReceipt } from '../src/agents/turn-receipt.js';
 import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
 import { sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
 import { OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
-import { claudeEntrySession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences }
+import { claudeEntrySession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences, syntheticTokenlessEntry }
   from '../test-support/synthetic-large-entry.js';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
 
@@ -236,6 +236,12 @@ const BASELINE = Object.freeze({
   knowledgeIndexNoneChars: 0,
   knowledgeIndexOneChars: 226,
   knowledgeIndexFiveChars: 529,
+  // rec#46: get_collaboration_preferences without a native session (OpenCode code mode) begins no
+  // task, and its entry is re-read on every later model step. A working lead's synthetic entry
+  // (two preferences, both memory layers, team, Jefa, Tonborg) shows its memory, team and
+  // managers as the calls that read them, and Tonborg as its one sentence: 11,154 -> 6,645 B,
+  // measured on the compact view the MCP result carries (with the shared rules_version).
+  tokenlessEntryBytes: 6645,
   // rec#5 C3b: a turn of a session FULI is off for gets this one line instead of the project
   // entry (its longest reason, measured): no memory, preferences, recall or receipt. Every
   // other number above is unchanged; the switch adds no tool, schema or instruction text.
@@ -402,6 +408,8 @@ async function measure() {
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
     ...await projectEntryChars(), ...await noMatchEntryChars(), ...await knowledgeIndexChars(), ...await claudeBoundedEntryChars(),
+    tokenlessEntryBytes: Buffer.byteLength(JSON.stringify(compactTaskContext(
+      await syntheticTokenlessEntry({ items: syntheticPreferences(2) })))),
     omittedPreferencesLabelChars: 1 + OMITTED_PREFERENCES_LABEL.length,
     sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'session_start_unsaved', 'policy_unavailable']
       .map(reason => sessionFuliOffContext({ reason }).length)),

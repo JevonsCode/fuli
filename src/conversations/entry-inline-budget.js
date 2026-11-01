@@ -1,6 +1,7 @@
 import { copyPreferenceScope, entryWorkKind } from './preference-snapshot.js';
 import { preferenceAlwaysInline, preferenceNamesWorkKind, preferenceSceneReplaceable } from '../graphiti/preference-task-scope.js';
 import { blockedByDeliveryBudget, blockedPreferenceDelivery } from '../mcp/preference-delivery.js';
+import { managerRead, memoryRead, teamRead } from './entry-detail-readers.js';
 
 // The blocked reason of an entry that does not fit its host's inline limit.
 const INLINE_BUDGET = 'inline_budget';
@@ -185,8 +186,6 @@ function reducedDetails(leanest, steps) {
 
 const withContinuity = (value, field, view) => ({ ...value, project_agent_context: { ...value.project_agent_context, [field]: view } });
 const present = values => Object.fromEntries(Object.entries(values).filter(([, item]) => item !== undefined));
-const memoryArguments = (value, personalProjectId) => present({ personalSpaceId: value.context?.personal_space_id,
-  personalProjectId, agentId: value.context?.project_agent_id ?? value.project_agent_context?.project_agent_id });
 
 // Each step returns the entry with one detail reduced to what it counts and
 // the call that reads it, or null when there is nothing to reduce. The role is
@@ -195,29 +194,27 @@ const memoryArguments = (value, personalProjectId) => present({ personalSpaceId:
 const DETAIL_STEPS = [
   // The global layer first, as it is the less specific one.
   value => value.project_agent_context?.global_memory?.current ? withContinuity(value, 'global_memory',
-    memoryPointer(value.project_agent_context.global_memory, memoryArguments(value, null))) : null,
+    memoryPointer(value.project_agent_context.global_memory, memoryRead(value, null))) : null,
   value => value.project_agent_context?.memory?.current ? withContinuity(value, 'memory',
-    memoryPointer(value.project_agent_context.memory, memoryArguments(value, value.context?.personal_project_id ?? null))) : null,
+    memoryPointer(value.project_agent_context.memory, memoryRead(value, value.context?.personal_project_id ?? null))) : null,
   // The snapshot's files are written with the memory the layers' read returns.
   value => {
     const snapshot = value.project_agent_context?.directorySnapshot;
     return Array.isArray(snapshot?.files) ? withContinuity(value, 'directorySnapshot',
       { status: snapshot.status, path: snapshot.path, files_omitted: snapshot.files.length,
-        read: { tool: 'get_project_agent_memory', arguments: memoryArguments(value, value.context?.personal_project_id ?? null) } }) : null;
+        read: memoryRead(value, value.context?.personal_project_id ?? null) }) : null;
   },
   value => {
     const team = value.project_agent_context?.team;
     return team?.roster?.length ? withContinuity(value, 'team', { roster_total: team.roster_total ?? team.roster.length,
-      read: { tool: 'get_project_team', arguments: present({ personalSpaceId: value.context?.personal_space_id,
-        personalProjectId: value.context?.personal_project_id ?? value.project_agent_context?.personal_project_id }) } }) : null;
+      read: teamRead(value) }) : null;
   },
   value => {
     const managers = value.project_management_context?.managers;
     return managers?.length ? { ...value, project_management_context: { ...value.project_management_context,
       managers: managers.map(manager => present({ template_id: manager.template_id, agent_id: manager.agent_id, name: manager.name,
         title_mode: manager.title_mode, suggested_match: manager.suggested_match, guidance: manager.guidance,
-        read: { tool: manager.tools?.discover ?? 'list_employee_tools',
-          arguments: { templateId: manager.template_id, personalProjectId: manager.personal_project_id } } })) } } : null;
+        read: managerRead(manager) })) } } : null;
   },
   ({ active_conflicts: conflicts, ...value }) => conflicts?.length ? { ...withoutCompleteClaims(value),
     active_conflicts_omitted: { count: conflicts.length,
@@ -226,9 +223,9 @@ const DETAIL_STEPS = [
 
 // A layer's preview without its notes: its scope, revision and rules stay,
 // so a checkpoint still names the revision it read (task-context-view.js).
-function memoryPointer(memory, readArguments) {
+function memoryPointer(memory, read) {
   const { current: _current, notesTruncated: _cut, ...pointer } = memory;
-  return { ...pointer, view: 'omitted', read: { tool: 'get_project_agent_memory', arguments: readArguments } };
+  return { ...pointer, view: 'omitted', read };
 }
 
 // The recall without its items: what it matched, how many, and the search
