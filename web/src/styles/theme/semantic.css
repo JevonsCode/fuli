@@ -37,10 +37,18 @@
   --surface-glass: rgb(255 255 255 / 58%);
   --surface-glass-strong: rgb(255 255 255 / 82%);
   --edge-glass: rgb(255 255 255 / 80%);
-  /* The dock's frosted glass (Jevons, 11-01): opaque enough, and blurred enough, that page text
-     scrolling beneath never competes with the icons; a solid surface where backdrop-filter is missing. */
-  --surface-dock: rgb(250 250 248 / 78%);
-  --filter-dock: blur(30px) saturate(190%);
+  /* The dock's frosted glass (Jevons, 11-01): a light tint over a strong blur, so what lies
+     beneath turns into soft colour and text cannot be read, and the panel still reads as glass,
+     not a white plate; a solid surface where backdrop-filter is missing. */
+  --surface-dock: rgb(255 255 255 / 40%);
+  /* A faint sheen on the glass (Jevons 11-01): pale pink at the top-left corner, pale gold at the
+     bottom-right, the middle stays the neutral tint. */
+  --glass-sheen: radial-gradient(120% 140% at 0% 0%, rgb(255 205 220 / 42%), transparent 55%),
+    radial-gradient(120% 140% at 100% 100%, rgb(255 222 160 / 42%), transparent 55%);
+  --filter-dock: blur(22px) saturate(180%);
+  /* Glass lifts off the page: a hairline ring, a soft near shadow and a wide drop, plus a light top edge. */
+  --shadow-glass: 0 0 0 .5px rgb(var(--shadow-rgb) / 12%), 0 2px 6px rgb(var(--shadow-rgb) / 8%),
+    0 14px 34px -10px rgb(var(--shadow-rgb) / 32%), inset 0 1px 0 var(--edge-glass);
   --edge-dock: rgb(var(--shadow-rgb) / 8%);
   --color-success: #2e7d5b;
   --color-success-soft: #e8f2ec;

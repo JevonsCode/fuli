@@ -90,13 +90,19 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
 
 <style scoped>
 .dock-pins {
+  position: relative; isolation: isolate;
   display: flex; flex-direction: column-reverse; align-items: center; gap: 6px; margin: 0; padding: 6px; list-style: none;
   border: 1px solid var(--edge-dock); border-radius: var(--radius-pill);
-  background: var(--surface-dock); backdrop-filter: var(--filter-dock); -webkit-backdrop-filter: var(--filter-dock);
-  box-shadow: 0 0 0 .5px rgb(var(--shadow-rgb) / 10%), 0 10px 30px -10px rgb(var(--shadow-rgb) / 28%);
+  box-shadow: var(--shadow-glass);
+}
+/* The glass on its own layer, like the dock's: the names beside each portrait
+   are glass too and must blur the page, not this capsule. */
+.dock-pins::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: var(--glass-sheen), var(--surface-dock); backdrop-filter: var(--filter-dock); -webkit-backdrop-filter: var(--filter-dock);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .dock-pins { background: var(--color-surface); }
+  .dock-pins::before { background: var(--color-surface); }
 }
 .dock-pin {
   position: relative; display: grid; width: 40px; height: 40px; overflow: visible; place-items: center; border: 2px solid var(--color-surface); border-radius: 50%;

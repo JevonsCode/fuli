@@ -41,8 +41,14 @@ defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; space
   /* Left-aligned with the page canvas, which centres on very wide screens. */
   position: fixed; bottom: 20px; left: max(var(--page-gutter), calc((100vw - var(--canvas-max)) / 2)); z-index: var(--z-nav);
   padding: 5px; border: 1px solid var(--edge-dock); border-radius: var(--radius-pill);
-  background: var(--surface-dock); backdrop-filter: var(--filter-dock); -webkit-backdrop-filter: var(--filter-dock);
-  box-shadow: 0 0 0 .5px rgb(var(--shadow-rgb) / 10%), 0 10px 30px -10px rgb(var(--shadow-rgb) / 28%);
+  box-shadow: var(--shadow-glass);
+}
+/* The glass lives on its own layer. An element with a backdrop filter becomes a
+   backdrop root, and glass inside it (the pinned FLAs, the names) could then only
+   blur the dock, not the page: it looked clear instead of frosted (Jevons 11-01). */
+.app-dock::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: var(--glass-sheen), var(--surface-dock); backdrop-filter: var(--filter-dock); -webkit-backdrop-filter: var(--filter-dock);
 }
 .app-dock-items { display: flex; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .app-dock-item { position: relative; display: flex; max-width: 44px; }
