@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:fuli_desktop/src/ui/brand.dart';
 
-/// The brand from test/fixtures/fuli-mark.json: the same contract as
-/// assets/brand/fuli-mark.json, built from the brand's mark SVGs.
-final testBrand = FuliBrand.fromJson(
-    jsonDecode(File('test/fixtures/fuli-mark.json').readAsStringSync()) as Map<String, Object?>);
+Map<String, Object?> _fixture(String name) =>
+    jsonDecode(File('test/fixtures/$name').readAsStringSync()) as Map<String, Object?>;
+
+/// The brand from test/fixtures/fuli-mark.json and fuli-wordmark.json: the same
+/// contracts as assets/brand/, generated from the brand's mark and wordmark SVGs.
+final testBrand = FuliBrand.fromJson(_fixture('fuli-mark.json'), _fixture('fuli-wordmark.json'));

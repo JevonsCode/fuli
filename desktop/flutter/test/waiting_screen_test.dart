@@ -107,6 +107,7 @@ void main() {
   testWidgets('under reduced motion the waiting screen stands still', (tester) async {
     await tester.pumpWidget(FuliBrandScope(
       brand: testBrand,
+      chinese: true,
       child: const MaterialApp(
         home: MediaQuery(data: MediaQueryData(disableAnimations: true), child: WaitingScreen(label: '正在启动 FULI…')),
       ),

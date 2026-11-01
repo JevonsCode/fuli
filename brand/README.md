@@ -14,7 +14,7 @@ The files keep the design delivery's names and folders, so an updated delivery c
 | --- | --- | --- |
 | `svg/mark/fuli-mark-color.svg`, `fuli-mark-dark.svg` | The master mark for light and dark surfaces | console and site images; the mark data |
 | `svg/mark/fuli-mark-micro-color.svg`, `fuli-mark-micro-dark.svg` | The micro cut: a larger ring and wider channels for 16-24 px | tray icons, the console's inline loading; the mark data |
-| `svg/wordmark/fuli-wordmark-{en,zh}{,-dark}.svg` | The FULI and 复利 wordmarks | console top bar (the dark ones wait for a dark theme) |
+| `svg/wordmark/fuli-wordmark-{en,zh}{,-dark}.svg` | The FULI and 复利 wordmarks | console and desktop client top bars (the dark ones wait for a dark theme) |
 | `svg/lockup/fuli-lockup-bilingual-horizontal{,-dark}.svg` | Mark with 复利 FULI | the repository READMEs |
 | `png/mark/favicon.ico` | The favicon, micro cut at 16 and 24 px | console and site |
 | `png/mark/fuli-mark-color-512.png` | The mark as a raster | the site's link previews |
@@ -57,6 +57,12 @@ do not use them.
     are fixed; the client's tests read the same shape.
   - `web/assets/brand/fuli-mark.json`, the console's: the same, plus `viewBox`, `goldLine` (the
     gradient's line) and `microBelowPx` (28).
+- **Wordmark data**, read from `svg/wordmark/fuli-wordmark-{zh,en}.svg`:
+  `desktop/flutter/assets/brand/fuli-wordmark.json`, the desktop client's top line: `zh` (复利) and
+  `en` (FULI), each with `viewBox` (`[x, y, width, height]` in the paths' own coordinates, the
+  group's translate folded in, the clear space kept) and `paths` (SVG path data). The client draws
+  them in the mark's `ink`; a wordmark in another fill or with a transform other than a translate
+  is refused.
 - **Desktop client** (`desktop/flutter/`):
   - `assets/tray/{ok,needs_person,broken}.{png,ico}`: the mark on a white disc with a green, amber or
     red status dot, drawn from the SVG marks (the micro cut where the mark is under 28 px);
