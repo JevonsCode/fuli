@@ -38,10 +38,10 @@ async function mountPage(path = '/project-agents/services') {
   await flushPromises()
   return wrapper
 }
+// Log, stop and delete sit under the row's disclosure.
 async function rowAction(wrapper: Awaited<ReturnType<typeof mountPage>>, row: string, item: string) {
-  await wrapper.get(`[data-service-row="${row}"] [data-service-actions]`).trigger('keydown', { key: 'Enter' })
-  await flushPromises()
-  ;(document.querySelector(item) as HTMLElement).click()
+  await wrapper.get(`[data-service-row="${row}"] [data-service-toggle]`).trigger('click')
+  await wrapper.get(`[data-service-row="${row}"] ${item}`).trigger('click')
   await flushPromises()
 }
 const inBody = (selector: string) => document.querySelector(selector) as HTMLElement
@@ -53,23 +53,29 @@ const listed = [service(), service({ serviceId: 'svc-2', agentId: 'fla-b', kind:
   purpose: 'Dispatch log', address: null, live: { state: 'stopped', process: 'gone', port: 'not_checked' }, state: 'stopped' })]
 
 describe('services page', () => {
-  it('lists each service with its address, owner and live state, and filters from the URL', async () => {
+  it('groups services by live state, opens a running address, folds the details and searches from the URL', async () => {
     serve({
       'GET /api/agent-services': () => ({ services: listed, checkedAt: '2026-10-27T08:01:00Z' }),
       'GET /api/project-agents?': () => ({ agents: [{ agent_id: 'fla-a', personal_space_id: 'space-1', profile: { name: 'Builder' } }] }),
     })
     const wrapper = await mountPage()
-    const row = wrapper.get('[data-service-row="svc-1"]')
+    expect(wrapper.get('[data-service-group="running"]').text()).toContain('运行中')
+    expect(wrapper.get('[data-service-group="stopped"]').text()).toContain('已停止')
+    const row = wrapper.get('[data-service-group="running"] [data-service-row="svc-1"]')
     expect(row.text()).toContain('Docs preview')
     expect(row.text()).toContain('http://localhost:5173')
-    expect(row.text()).toContain('Builder')
-    expect(row.text()).toContain('Alpha')
-    expect(row.get('[data-service-state]').text()).toBe('运行中')
-    expect(wrapper.get('[data-service-row="svc-2"] [data-service-state]').text()).toBe('已停止')
+    expect(row.get('[data-service-open]').attributes('href')).toBe('http://localhost:5173')
+    expect(wrapper.find('[data-service-row="svc-2"] [data-service-open]').exists()).toBe(false)
+    expect(row.find('[data-service-detail]').exists()).toBe(false)
 
-    await router.replace({ query: { kind: 'workbench' } })
-    await flushPromises()
-    expect(wrapper.findAll('[data-service-row]').map(item => item.attributes('data-service-row'))).toEqual(['svc-2'])
+    await row.get('[data-service-toggle]').trigger('click')
+    const detail = row.get('[data-service-detail]').text()
+    expect(detail).toContain('Builder · Alpha')
+    expect(detail).toContain('4100')
+    expect(detail).toContain('node vite --port 5173')
+    expect(row.get('[data-service-state]').text()).toBe('进程在运行 · 端口可连接')
+    expect(row.get('[data-service-toggle]').attributes('aria-expanded')).toBe('true')
+
     await router.replace({ query: { q: 'docs' } })
     await flushPromises()
     expect(wrapper.findAll('[data-service-row]').map(item => item.attributes('data-service-row'))).toEqual(['svc-1'])
