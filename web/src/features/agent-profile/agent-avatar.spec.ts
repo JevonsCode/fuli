@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { employeeAvatarUrl } from '@/features/employees/avatars'
+import { setMotionPreference } from '@/lib/motion-preference'
 import { agentAvatarUrl, defaultAvatarUrl, generatedAvatarUrl } from './agent-avatar'
 import { agentLooks, forgetAgentLooks } from './agent-looks'
 
@@ -44,7 +45,19 @@ describe('Agent portraits', () => {
     const image = svg(agentAvatarUrl('<script>alert(1)</script>" onload="bad 🌱'))
     expect(image).not.toContain('<script')
     expect(image).not.toContain('onload')
-    expect(image).not.toMatch(/<(?:image|foreignObject)|(?:href|src)=/)
+    expect(image).not.toMatch(/<foreignObject|(?:href|src)="(?!#|data:image\/png;base64,)/)
     expect(image).toContain('</svg>')
+  })
+
+  it('a portrait that moves stands still when motion is reduced', () => {
+    const moving = Array.from({ length: 400 }, (_, index) => `agent-${index}`)
+      .find(id => svg(agentAvatarUrl(id)).includes('@keyframes'))
+    expect(moving).toBeDefined()
+    setMotionPreference('reduced')
+    try {
+      expect(svg(agentAvatarUrl(moving!))).not.toContain('@keyframes')
+    } finally {
+      setMotionPreference('system')
+    }
   })
 })

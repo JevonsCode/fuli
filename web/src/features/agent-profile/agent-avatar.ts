@@ -1,10 +1,14 @@
 import { employeeAvatarUrl } from '@/features/employees/avatars'
+import { motionReduced } from '@/lib/motion-preference'
 import { createAvatar } from '@/vendor/fuli-avatar/avatar.js'
 import { agentLooks } from './agent-looks'
 
 // Identity is the stable Agent ID, never its editable name, job, project or status.
-// The pinned renderer (fuli-avatar 0.4.0) includes VERSION 4 in its seed.
-const drawn = (seed: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(createAvatar(seed))}`
+// The pinned renderer (fuli-avatar 0.5.0) includes VERSION 5 in its seed. Portraits
+// with an egg move (Jevons 11-01) and stand still when motion is reduced: the setting
+// cannot reach inside an image.
+const drawn = (seed: string) =>
+  `data:image/svg+xml;charset=utf-8,${encodeURIComponent(createAvatar(seed, { eggs: true, animate: !motionReduced() }))}`
 
 /** The look an Agent has when the person never changed it: its built-in portrait or its own drawing. */
 export function defaultAvatarUrl(agentId: string): string {
