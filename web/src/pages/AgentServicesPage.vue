@@ -190,7 +190,7 @@ async function confirmDelete() {
         <Input type="search" maxlength="120" class="services-search" :model-value="search" :placeholder="t('agentServices.search')"
           :aria-label="t('agentServices.search')" data-service-search @update:model-value="setSearch(String($event))" />
         <GrowthLoading v-if="loading" variant="inline" :label="t('agentServices.loading')" />
-        <Button variant="ghost" size="sm" :disabled="loading" data-service-refresh @click="load">
+        <Button variant="ghost" :disabled="loading" data-service-refresh @click="load">
           <UiIcon name="refresh" :size="14" />{{ t('agentServices.refresh') }}
         </Button>
       </header>
@@ -304,7 +304,7 @@ async function confirmDelete() {
 /* The page is the one scroll container; the list grows with its rows. */
 .agent-services-view { padding-bottom: 16px; }
 .services { display: flex; flex-direction: column; gap: 28px; width: 100%; }
-.services-bar { display: flex; align-items: center; gap: 12px; min-height: 36px; }
+.services-bar { display: flex; align-items: center; gap: 12px; min-height: var(--control-height-md); }
 .services-bar :deep(.services-search) { flex: 0 1 320px; margin-right: auto; }
 .services-notice { margin: 0; font-size: var(--text-control); }
 .services-empty { display: grid; justify-items: center; gap: 10px; margin: 0; padding: 48px 16px; border-radius: var(--radius-card); color: var(--color-muted); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border); text-align: center; }

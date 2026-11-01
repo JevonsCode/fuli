@@ -4,8 +4,10 @@
 // Local changes:
 // - `cn` comes from @/lib/class-names; chevrons and the check mark are FULI's
 //   (UiIcon), not lucide.
+// - The trigger takes `size` sm | md | lg (default md) from the control size
+//   scale (../control-size.ts) instead of upstream's sm | default.
 // - The trigger has the shared field look (../field-look.ts, direction A):
-//   control heights, white surface with a hairline, 14px type, a small inline
+//   white surface with a hairline, 14px type, a small inline
 //   chevron, a darker hairline on hover and a soft neutral halo on focus and
 //   while the list is open; quiet disabled surface.
 // - FULI popover look, as DropdownMenu: card surface, hairline border, popover

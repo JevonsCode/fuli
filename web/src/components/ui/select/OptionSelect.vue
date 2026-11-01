@@ -8,6 +8,7 @@ import { computed, useId } from "vue"
 import GrowthLoading from "@/components/GrowthLoading.vue"
 import { t } from "@/i18n"
 import { cn } from "@/lib/class-names"
+import type { ControlSize } from "../control-size"
 import { fromItemValue, groupOptions, toItemValue, type SelectOption } from "./option"
 import Select from "./Select.vue"
 import SelectContent from "./SelectContent.vue"
@@ -28,9 +29,9 @@ const props = withDefaults(defineProps<{
   required?: boolean
   name?: string
   controlId?: string
-  size?: "sm" | "default"
+  size?: ControlSize
   class?: HTMLAttributes["class"]
-}>(), { field: false, placeholder: undefined, disabled: false, loading: false, required: false, name: undefined, controlId: undefined, size: "default", class: undefined })
+}>(), { field: false, placeholder: undefined, disabled: false, loading: false, required: false, name: undefined, controlId: undefined, size: "md", class: undefined })
 
 const emit = defineEmits<{ "update:modelValue": [value: string] }>()
 

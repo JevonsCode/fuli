@@ -157,7 +157,7 @@ watch(peekKey, async (key) => {
         </label>
         <div class="ml-auto flex flex-wrap items-center gap-2">
           <GrowthLoading v-if="catalog.loading.value && entries.length" variant="inline" :label="t('occupations.loading')" />
-          <Button size="sm" data-occupation-new @click="openDialog(null)">{{ t('occupations.new') }}</Button>
+          <Button data-occupation-new @click="openDialog(null)">{{ t('occupations.new') }}</Button>
         </div>
       </div>
       <p v-if="archivedNow && !peek.item.value" class="m-0 flex flex-wrap items-center gap-2 text-sm text-muted-foreground" role="status" data-occupation-archived-notice>
@@ -268,8 +268,8 @@ watch(peekKey, async (key) => {
 <style scoped>
 .occupations-search { flex: 1 1 260px; max-width: 420px; }
 .occupations-search input {
-  box-sizing: border-box; width: 100%; height: var(--control-height-sm); padding: 0 12px; border: 1px solid var(--color-control-border);
-  border-radius: var(--radius-control); color: var(--color-ink); background: var(--color-surface); font: inherit; font-size: 13px;
+  box-sizing: border-box; width: 100%; border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-control); color: var(--color-ink); background: var(--color-surface); font: inherit;
 }
 .occupation-row.is-archived :is(.occupation-name, .occupation-duties) { color: var(--color-muted); }
 /* The open row lifts; it never gets a side bar. */

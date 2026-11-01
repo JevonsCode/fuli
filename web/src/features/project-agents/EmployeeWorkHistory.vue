@@ -86,7 +86,6 @@ function status(value: string) {
 .employee-work-history { margin-block: 24px; font-size: 14px; }
 summary { cursor: pointer; font-weight: 650; padding-block: 12px; }
 label { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-select { max-width: 100%; padding: 8px; font: inherit; }
 ol { list-style: none; padding: 0; margin: 12px 0; }
 li { border-top: 1px solid var(--color-border); padding-block: 14px; }
 .work-record-meta { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline; }

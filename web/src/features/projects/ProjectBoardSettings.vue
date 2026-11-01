@@ -190,11 +190,11 @@ onBeforeUnmount(() => stopMonitor())
             <span>{{ t('employees.projectBoard.recruitName') }}</span>
             <Input v-model="recruitName" maxlength="160" :disabled="busy" data-recruit-name />
           </label>
-          <Button type="button" size="sm" :disabled="!recruitName.trim() || busy" :loading="pending === 'recruiting'" :loading-label="pendingLabel"
+          <Button type="button" :disabled="!recruitName.trim() || busy" :loading="pending === 'recruiting'" :loading-label="pendingLabel"
             data-action="recruit" @click="recruit">
             {{ t('employees.projectBoard.recruitConfirm') }}
           </Button>
-          <Button type="button" size="sm" variant="ghost" :disabled="busy" @click="recruitOpen = false">{{ t('employees.projectBoard.recruitCancel') }}</Button>
+          <Button type="button" variant="ghost" :disabled="busy" @click="recruitOpen = false">{{ t('employees.projectBoard.recruitCancel') }}</Button>
         </div>
       </div>
 
@@ -223,7 +223,7 @@ onBeforeUnmount(() => stopMonitor())
               :aria-label="t('employees.projectBoard.dragColumn', { label: column.label })" :title="t('employees.projectBoard.dragColumn', { label: column.label })">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="5" cy="4" r="1" /><circle cx="11" cy="4" r="1" /><circle cx="5" cy="8" r="1" /><circle cx="11" cy="8" r="1" /><circle cx="5" cy="12" r="1" /><circle cx="11" cy="12" r="1" /></svg>
             </Button>
-            <Input v-model="column.label" class="project-board-column-label" maxlength="40" :disabled="busy"
+            <Input v-model="column.label" size="sm" class="project-board-column-label" maxlength="40" :disabled="busy"
               :aria-label="t('employees.projectBoard.columnLabel')" data-column-label />
             <OptionSelect v-model="column.mapsTo" size="sm" :name="`project-board-maps-to-${index}`" :label="t('employees.projectBoard.columnMapsTo')"
               :options="statusOptions" :disabled="busy" />

@@ -82,6 +82,32 @@
 @theme inline reference {
   --font-sans: var(--font-ui);
   --spacing: var(--space-1);
+  /* The control size scale (base.css): h-control-md, size-square-sm,
+     px-control-lg, px-field-md, text-control-sm, text-field-md … */
+  --spacing-control-sm: var(--control-height-sm);
+  --spacing-control-md: var(--control-height-md);
+  --spacing-control-lg: var(--control-height-lg);
+  --spacing-square-sm: var(--control-square-sm);
+  --spacing-square-md: var(--control-square-md);
+  --spacing-square-lg: var(--control-square-lg);
+  --spacing-control-pad-sm: var(--control-padding-sm);
+  --spacing-control-pad-md: var(--control-padding-md);
+  --spacing-control-pad-lg: var(--control-padding-lg);
+  --spacing-field-pad-sm: var(--field-padding-sm);
+  --spacing-field-pad-md: var(--field-padding-md);
+  --spacing-field-pad-lg: var(--field-padding-lg);
+  --text-control-sm: var(--control-text-sm);
+  --text-control-sm--line-height: 1.4;
+  --text-control-md: var(--control-text-md);
+  --text-control-md--line-height: 1.4;
+  --text-control-lg: var(--control-text-lg);
+  --text-control-lg--line-height: 1.4;
+  --text-field-sm: var(--field-text-sm);
+  --text-field-sm--line-height: 1.5;
+  --text-field-md: var(--field-text-md);
+  --text-field-md--line-height: 1.5;
+  --text-field-lg: var(--field-text-lg);
+  --text-field-lg--line-height: 1.5;
   --text-xs: var(--text-meta);
   --text-xs--line-height: 1.5;
   --text-sm: var(--text-control);

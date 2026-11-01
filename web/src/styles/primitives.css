@@ -57,11 +57,18 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(var(-
 .ui-dialog__body textarea { resize: vertical; }
 .ui-dialog fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 
-/* Segmented control and tabs */
-.ui-segmented { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--color-surface-subtle); }
+/* Segmented control and tabs. The track is exactly the control height of its
+   size (base.css; md without data-size); the options fill it inside the 3px inset. */
+.ui-segmented {
+  --segmented-height: var(--control-height-md); --segmented-text: var(--control-text-md);
+  display: inline-flex; gap: 2px; height: var(--segmented-height); padding: 3px; border-radius: 10px; background: var(--color-surface-subtle);
+}
+.ui-segmented[data-size=sm] { --segmented-height: var(--control-height-sm); --segmented-text: var(--control-text-sm); }
+.ui-segmented[data-size=lg] { --segmented-height: var(--control-height-lg); --segmented-text: var(--control-text-lg); }
 .ui-segmented > button {
-  min-height: 28px; padding: 3px 12px; border: 0; border-radius: 7px;
-  color: var(--color-muted); background: transparent; font-size: var(--text-control); font-weight: var(--weight-medium); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 100%; min-height: 0; padding: 0 12px; border: 0; border-radius: 7px;
+  color: var(--color-muted); background: transparent; font-size: var(--segmented-text); font-weight: var(--weight-medium); line-height: 1.4; cursor: pointer;
   transition: background-color var(--motion-fast), color var(--motion-fast);
 }
 .ui-segmented > button:hover { color: var(--color-ink); }

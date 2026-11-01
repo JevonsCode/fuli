@@ -241,7 +241,7 @@ async function save() {
             <textarea v-model="source.summary" maxlength="4096" rows="2" />
           </label>
           <OptionSelect v-model="source.sensitivity" field :label="t('projects.profileDialog.sensitivity')" :options="sensitivityOptions" />
-          <Button class="project-source-remove" size="sm" variant="destructive" @click="removeSource(index)">{{ t('common.actions.remove') }}</Button>
+          <Button class="project-source-remove" variant="destructive" @click="removeSource(index)">{{ t('common.actions.remove') }}</Button>
         </article>
       </div>
       <p v-else class="ui-meta">{{ t('projects.profileDialog.noSources') }}</p>

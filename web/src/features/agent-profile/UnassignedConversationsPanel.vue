@@ -229,8 +229,7 @@ async function handleProjectCreated(project: PersonalProject) {
             :label="t('agentRedesign.unassigned.selectProject')"
             :options="formalProjects.map((project) => ({ value: project.project_id, label: project.profile.name }))"
  />
-          <Button size="sm" variant="ghost"
-           
+          <Button variant="ghost"
             data-unassigned-confirm-move
             :disabled="!targetProjectId"
             @click="applyTriage(item.conversationId, 'project', targetProjectId)"

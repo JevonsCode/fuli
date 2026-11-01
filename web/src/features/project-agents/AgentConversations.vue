@@ -291,7 +291,7 @@ function selectContinuation(event: Event) { (event.target as HTMLTextAreaElement
 summary { cursor: pointer; padding-block: 12px; font-weight: 650; }
 summary:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 label { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-select, input[type=number] { max-width: 100%; border: 1px solid var(--color-border-strong); border-radius: 6px; padding: 8px; font: inherit; color: inherit; background: var(--color-surface); }
+select, input[type=number] { max-width: 100%; border: 1px solid var(--color-border-strong); border-radius: 6px; padding-inline: 8px; font: inherit; color: inherit; background: var(--color-surface); }
 input[type=number] { width: 100px; }
 input[type=checkbox] { width: 18px; height: 18px; }
 fieldset { display: grid; gap: 16px; border: 0; padding: 8px 0; margin: 0; min-width: 0; }

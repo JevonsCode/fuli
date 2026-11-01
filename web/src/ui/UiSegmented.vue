@@ -1,20 +1,22 @@
 <script setup lang="ts" generic="T extends string">
+import type { ControlSize } from '@/components/ui/control-size'
 import UiIcon from './UiIcon.vue'
 import type { IconName } from './icons'
 
 // Mutually exclusive filters or views: one row of choices, one active. An
 // option with an icon and iconOnly shows just the icon, labelled for a11y;
 // a swatch (any CSS colour, usually a token) shows a small dot before the label.
-defineProps<{
+withDefaults(defineProps<{
   modelValue: T
   options: readonly { value: T; label: string; count?: number; icon?: IconName; iconOnly?: boolean; swatch?: string }[]
   label: string
-}>()
+  size?: ControlSize
+}>(), { size: 'md' })
 defineEmits<{ 'update:modelValue': [value: T] }>()
 </script>
 
 <template>
-  <div class="ui-segmented" role="group" :aria-label="label">
+  <div class="ui-segmented" role="group" :aria-label="label" :data-size="size">
     <button v-for="option in options" :key="option.value" type="button" :aria-pressed="option.value === modelValue" :data-value="option.value"
       :aria-label="option.iconOnly ? option.label : undefined" :title="option.iconOnly ? option.label : undefined"
       @click="$emit('update:modelValue', option.value)">

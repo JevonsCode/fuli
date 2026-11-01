@@ -223,7 +223,7 @@ function shareState(projectId: string) {
             <span>{{ t('settings.peer.hostName') }}</span>
             <input v-model="hostName" type="text" maxlength="60" :disabled="Boolean(busy)" />
           </label>
-          <Button size="sm" data-host-peer :disabled="!hostAddress"
+          <Button data-host-peer :disabled="!hostAddress"
             :loading="busy === 'host'" :loading-label="t('settings.peer.hosting')" @click="host">
             {{ t('settings.peer.hostAction') }}
           </Button>

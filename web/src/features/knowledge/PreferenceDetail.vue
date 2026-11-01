@@ -77,8 +77,8 @@ watch(() => props.item.body, () => { fullText.value = false; void nextTick(sched
         <p v-else>{{ t(item.replacedByItemId ? 'knowledge.workspace.inspector.replacementOutOfScope' : 'knowledge.workspace.inspector.missingReplacement') }}</p>
       </div>
       <div v-if="editable && !managed" class="preference-actions">
-        <Button v-if="canConfirm" class="inspector-confirm-action" @click="emit('confirm', item)">{{ t('knowledge.workspace.inspector.confirmPreference') }}</Button>
-        <Button variant="outline" class="inspector-edit-action" @click="emit('edit', item)">{{ t('knowledge.workspace.inspector.correctPreference') }}</Button>
+        <Button v-if="canConfirm" size="lg" class="inspector-confirm-action" @click="emit('confirm', item)">{{ t('knowledge.workspace.inspector.confirmPreference') }}</Button>
+        <Button variant="outline" size="lg" class="inspector-edit-action" @click="emit('edit', item)">{{ t('knowledge.workspace.inspector.correctPreference') }}</Button>
       </div>
       <p ref="bodyElement" class="preference-body" :class="{ 'is-preview': longText && !fullText }">{{ item.body }}</p>
       <Button v-if="longText" variant="ghost" :aria-expanded="fullText" @click="fullText = !fullText">{{ t(fullText ? 'preferences.detail.hideText' : 'preferences.detail.fullText') }}</Button>
@@ -117,7 +117,7 @@ watch(() => props.item.body, () => { fullText.value = false; void nextTick(sched
 .preference-summary { display: grid; gap: 12px; max-width: 760px; min-width: 0; font-size: 14px; }
 .preference-context { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .preference-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; }
-.preference-actions :deep(button) { min-height: 44px; white-space: normal; }
+.preference-actions :deep(button) { white-space: normal; }
 .preference-body { margin: 0; white-space: pre-wrap; line-height: 1.65; font-size: 16px; }
 .preference-body.is-preview { display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
 .preference-risk { margin: 0; color: var(--color-ink); font-weight: 600; }
@@ -128,6 +128,6 @@ watch(() => props.item.body, () => { fullText.value = false; void nextTick(sched
 .preference-basis dt { color: var(--color-ink-soft); }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
 :deep(.evidence-excerpt) { max-height: none; white-space: pre-wrap; color: var(--color-ink); }
-:deep(summary) { min-height: 44px; }
+:deep(summary) { min-height: var(--control-height-lg); }
 @media (max-width: 480px) { .preference-basis div { grid-template-columns: 1fr; gap: 4px; } }
 </style>

@@ -528,7 +528,7 @@ onBeforeUnmount(() => {
 .employee-all-projects-controls { display: flex; flex: 0 1 660px; align-items: end; justify-content: flex-end; gap: 10px; min-width: 0; }
 .employee-all-projects-filter { flex: 0 1 270px; min-width: 240px; }
 .employee-all-projects-search { display: grid; flex: 1 1 300px; min-width: 180px; gap: 5px; color: var(--color-ink); font-size: 12px; }
-.employee-all-projects-search input { width: 100%; min-height: 40px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); font: inherit; font-size: 14px; padding: 8px 11px; }
+.employee-all-projects-search input { width: 100%; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); font: inherit; }
 .employee-all-projects-search input:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .employee-all-projects-notice { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; padding: 8px 12px; border-radius: 10px; background: var(--color-warning-soft); color: var(--color-warning); font-size: 13px; }
 .employee-all-projects-notice.is-error { background: var(--color-danger-soft); color: var(--color-danger); }

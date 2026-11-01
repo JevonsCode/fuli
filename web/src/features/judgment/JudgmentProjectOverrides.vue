@@ -100,7 +100,7 @@ function changed(value: JudgmentPolicy) {
         <div v-if="addable.length" class="judgment-overrides-add">
           <OptionCombobox v-model="chosenProjectId" class="judgment-overrides-project" control-id="judgment-override-project" data-select="judgment-override-project"
             :label="judgmentText('overrides.project')" :options="addableOptions" :disabled="adding" />
-          <Button size="sm" variant="outline" data-action="add-project-policy" :disabled="!chosenProjectId" :loading="adding" :loading-label="addingLabel" @click="add">
+          <Button variant="outline" data-action="add-project-policy" :disabled="!chosenProjectId" :loading="adding" :loading-label="addingLabel" @click="add">
             {{ judgmentText('overrides.add') }}
           </Button>
         </div>

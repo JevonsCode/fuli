@@ -16,7 +16,7 @@ body { margin: 0; min-width: 320px; }
 .profile-aspect-mark.taste { color: var(--aspect-taste); background: var(--aspect-taste-soft); }
 .profile-aspect-mark.personality { color: var(--aspect-personality); background: var(--aspect-personality-soft); }
 .profile-aspect-mark.judgment_preference { color: var(--aspect-judgment); background: var(--aspect-judgment-soft); }
-.subscription-action { min-height: 30px; padding: 5px 10px; margin-left: 4px; font-size: 12px; }
+.subscription-action { margin-left: 4px; }
 
 .subscription-list { display: grid; gap: 8px; }
 .subscription-row { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 9px; padding: 10px 0; border-bottom: 1px solid var(--color-border); }
@@ -169,7 +169,7 @@ body { margin: 0; min-width: 320px; }
 .knowledge-project-relation :is([data-slot=option-select], [data-slot=option-combobox]) { width: 100%; }
 .personal-context-picker { position: relative; }
 .personal-context-picker > summary {
-  min-height: 32px; display: flex; align-items: center; gap: 8px; padding: 6px 9px;
+  height: var(--control-height-md); display: flex; align-items: center; gap: 8px; padding: 0 var(--field-padding-md);
   border: 1px solid var(--color-border-strong); border-radius: var(--radius-control); color: var(--color-ink); background: var(--color-surface);
   cursor: pointer; font-size: 12px; list-style: none;
 }
@@ -568,7 +568,7 @@ body { margin: 0; min-width: 320px; }
 .reject { border: 1px solid var(--color-danger-soft); background: var(--color-surface); color: var(--color-danger); }
 .stacked-actions { align-items: flex-end; flex-wrap: wrap; justify-content: flex-end; max-width: 240px; }
 .empty-state { padding: 40px 0; text-align: center; color: var(--color-muted); font-size: 13px; }
-.subscription-form { display: flex; gap: 7px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--color-border); }
+.subscription-form { display: flex; align-items: center; gap: 7px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--color-border); }
 .subscription-form :is([data-slot=option-select], [data-slot=option-combobox]) { flex: 1; }
 .muted { color: var(--color-muted); font-size: 12px; }
 
@@ -665,9 +665,6 @@ body { margin: 0; min-width: 320px; }
   border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface);
 }
 .project-source-wide-field { grid-column: 1 / span 2; }
-.project-source-remove {
-  min-height: 32px; padding: 6px 9px; border: 0; color: var(--color-danger);
-  background: transparent; font-size: 12px;
-}
+.project-source-remove { border: 0; color: var(--color-danger); background: transparent; }
 .project-source-remove:hover { color: var(--color-danger); text-decoration: underline; }
 

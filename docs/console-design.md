@@ -78,7 +78,22 @@ Controls, cards and dialogs use the shared 10/16/20px radii. Keep spacing on the
 ## Components
 
 - shadcn-vue components in `web/src/components/ui` (Button, Dialog, Tabs, Card, Accordion, DropdownMenu, Badge) own their controls; pages use them as they are rather than wrapping them. Preserve native button refs when focus restoration depends on them.
-- `TextField`, `SearchableSelect` and native form controls share 40px sizing, readable labels, focus rings and control boundaries.
+- `TextField`, `SearchableSelect` and native form controls share readable labels, focus rings and control boundaries; their height comes from the control size scale below.
+
+### Controls
+
+Every control takes one `size` prop, `sm | md | lg`, default `md`, and renders exactly that height, so a row of controls of one size lines up. The scale lives in `web/src/styles/theme/base.css`; components take their classes from `web/src/components/ui/control-size.ts`.
+
+| Size | Height | Icon-only square | Button padding / type | Field padding / type | Use |
+| --- | --- | --- | --- | --- | --- |
+| `sm` | 30px `--control-height-sm` | 30px | 10px / 12px | 10px / 13px | Dense rows: table rows, list-row editors, a card's inline actions |
+| `md` | 36px `--control-height-md` (`--control-height`) | 36px | 14px / 13px | 12px / 14px | The default: toolbars, filter bars, search rows, forms, dialogs |
+| `lg` | 44px `--control-height-lg` | 44px | 20px / 14px | 14px / 15px | Hero or primary forms and touch-sized recovery actions |
+
+- Controls on the scale: `Button` (text, and `icon-sm` / `icon-md` / `icon-lg`; upstream `default` and `icon` mean md), `Input` (a search field is `Input type="search"`), `OptionSelect`, `OptionCombobox` (single and multiple), `UiSegmented` and `UiIconButton`. A raw `<input>` or `<select>` is md through `theme/elements.css`. `Textarea` is multi-line and starts at its own minimum.
+- Controls side by side take the same size. Align a row with `align-items: center`, or `end` where labels sit above the fields.
+- A page never sets a control's height, min-height or vertical padding; pass `size` instead. `web/src/ui/control-size.spec.ts` and `web/src/ui/control-ratchet.spec.ts` enforce this.
+- `xs` / `icon-xs` (24px) sit below the scale, for an action inside a chip or a list's popover footer, never beside a field.
 - `UiDisclosure` keeps optional detail reachable with a native summary. An invalid settings field opens its tab and section, takes focus and names itself beside the save button.
 - `GrowthLoading` provides page, compact and inline forms of one three-arc SVG animation. A loading sits in the middle of the area it replaces: the page form takes the rest of the page below what the page already shows, and the compact form fills a section that has a height. The loading composable delays the mark by 120ms and keeps a revealed mark for at least 180ms. Reduced motion renders the static mark. Refreshing data preserves existing content.
 - Member availability and task status are distinct. Missing, failed or truncated task data must never be presented as idle.

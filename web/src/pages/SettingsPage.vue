@@ -745,7 +745,7 @@ function checkFields(): ValidatedField[] {
 .settings-view { scrollbar-gutter: stable; }
 .settings-tabbar { position: relative; }
 .settings-search { flex: 0 1 300px; min-width: 180px; }
-.settings-search input { box-sizing: border-box; width: 100%; min-height: var(--control-height-sm); padding-block: 4px; }
+.settings-search input { box-sizing: border-box; width: 100%; }
 .settings-search-note, .settings-search-empty { margin: 0; color: var(--color-muted); font-size: 13px; }
 .settings-form { display: grid; min-width: 0; gap: var(--space-4); }
 .settings-fields { display: grid; min-width: 0; border: 0; margin: 0; padding: 0; }
@@ -809,11 +809,11 @@ function checkFields(): ValidatedField[] {
   display: grid; align-items: start; grid-template-columns: minmax(0, .7fr) minmax(0, .8fr) minmax(0, 1.5fr); gap: 12px; margin-top: 14px;
 }
 .conversation-launcher-fields > label {
-  min-width: 0; display: grid; grid-template-rows: auto 40px; align-content: start; gap: 7px; color: var(--color-muted); font-size: 12px;
+  min-width: 0; display: grid; grid-template-rows: auto var(--control-height-md); align-content: start; gap: 7px; color: var(--color-muted); font-size: 12px;
 }
 .conversation-launcher-fields > label > span { min-width: 0; display: block; line-height: 18px; overflow-wrap: anywhere; }
 .conversation-launcher-fields code { color: var(--color-muted); font-size: 12px; }
-.conversation-launcher-fields :deep(.launcher-select) { width: 100%; height: 40px; min-width: 0; }
+.conversation-launcher-fields :deep(.launcher-select) { width: 100%; min-width: 0; }
 .conversation-launcher-fields input { width: 100%; min-width: 0; }
 .notification-url { display: grid; gap: 10px; }
 .notification-url > span { display: grid; gap: 4px; }

@@ -270,7 +270,7 @@ function recordSaved(record: ProjectAgentRecord) {
           <p v-if="!pageLoading && !pageError" class="project-agents-header-meta" aria-live="polite">
             <strong>{{ t('projectAgents.stats.active', { count: activeCount }) }}</strong> · {{ t('projectAgents.stats.total', { count: agents.length }) }} · {{ t('projectAgents.stats.assignments', { count: assignmentCount }) }} · {{ t('projectAgents.stats.projects', { count: representedProjectCount }) }}<span class="project-agents-header-note">{{ t('projectAgents.stats.noOnlineClaim') }}</span>
           </p>
-          <Button class="project-agents-actions-start" size="sm" variant="ghost" :disabled="!spaceId" @click="openCreate">{{ t('projectAgents.add') }}</Button>
+          <Button class="project-agents-actions-start" variant="ghost" :disabled="!spaceId" @click="openCreate">{{ t('projectAgents.add') }}</Button>
         </div>
       </div>
 
@@ -358,11 +358,11 @@ function recordSaved(record: ProjectAgentRecord) {
 }
 .project-agents-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; flex: 1 1 560px; }
 .project-agents-project-filter { flex: 0 1 280px; min-width: 220px; }
-/* One control height across the toolbar. */
+/* One control height across the toolbar: the search keeps the base field's md size. */
 .project-agents-search { flex: 1 1 200px; min-width: 180px; max-width: 360px; }
 .project-agents-search input {
-  width: 100%; min-height: var(--control-height); border: 1px solid var(--color-border-strong); border-radius: var(--radius-control);
-  background: var(--color-surface); color: var(--color-ink); padding: 0 12px; font-size: 13px;
+  width: 100%; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control);
+  background: var(--color-surface); color: var(--color-ink);
 }
 .project-agents-search input:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
 .project-agents-status-filter { flex: 0 0 auto; }
