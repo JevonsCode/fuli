@@ -214,8 +214,8 @@ procedure CurPageChanged(CurPageID: Integer);
 begin
   if (CurPageID <> wpFinished) or (FailureText = '') then Exit;
   WizardForm.FinishedHeadingLabel.Caption := CustomMessage('FailedHeading');
-  WizardForm.FinishedLabel.Caption := FmtMessage(CustomMessage('FailedLabel'),
-    [FailureText, ExpandConstant('{log}')]);
+  // A [Code] line must not start with "[" or Inno Setup reads it as a section tag.
+  WizardForm.FinishedLabel.Caption := FmtMessage(CustomMessage('FailedLabel'), [FailureText, ExpandConstant('{log}')]);
   WizardForm.FinishedLabel.AdjustHeight;
 end;
 

@@ -89,3 +89,9 @@ test('the build refuses a tray without a file the setup runs, before ISCC starts
     /The tray directory has no src\/desktop\/windows-install\.js for the setup\./);
   assert.equal(existsSync(join(f.root, 'setup')), false);
 });
+
+test('no [Code] line starts with "[", which Inno Setup reads as a section tag', () => {
+  const script = readFileSync(SETUP_SCRIPT, 'utf8');
+  const code = script.slice(script.indexOf('[Code]') + '[Code]'.length);
+  assert.deepEqual(code.split(/\r?\n/).filter(line => /^\s*\[/.test(line)), []);
+});

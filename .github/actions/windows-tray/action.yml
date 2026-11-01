@@ -68,11 +68,11 @@ runs:
         $PSNativeCommandUseErrorActionPreference = $true
         $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
         # fuli-setup.iss needs 6.3 or later (ExecAndCaptureOutput); an older preinstalled copy is upgraded.
-        if (-not (Test-Path $iscc) -or [version](Get-Item $iscc).VersionInfo.ProductVersion -lt [version]'6.3') {
+        if (-not (Test-Path $iscc) -or [version](Get-Item $iscc).VersionInfo.FileVersion -lt [version]'6.3') {
           choco upgrade innosetup --no-progress -y
         }
         if (-not (Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
-        Write-Output "Inno Setup $((Get-Item $iscc).VersionInfo.ProductVersion)"
+        Write-Output "Inno Setup $((Get-Item $iscc).VersionInfo.FileVersion)"
         "iscc=$iscc" >> $env:GITHUB_OUTPUT
     - name: Build the one-file installer
       if: inputs.setup == 'true'
