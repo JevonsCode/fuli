@@ -17,6 +17,7 @@ import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
 import { currentLocale, t } from '@/i18n'
 import { fuliWordmarkUrl } from '@/lib/brand'
+import { vWindowDrag } from '@/lib/desktop-client'
 import { SPRING, motionConfigReduced } from '@/lib/motion'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { useConsoleStore } from '@/stores/console'
@@ -108,7 +109,7 @@ watchEffect(() => {
   <MotionConfig :reduced-motion="motionConfigReduced" :transition="SPRING">
   <div class="app-frame">
     <GrowingBackdrop />
-    <header class="app-topbar">
+    <header v-window-drag class="app-topbar">
       <div class="app-topbar-inner">
         <div class="app-brand">
           <BrandEasterEgg compact />
@@ -177,6 +178,13 @@ watchEffect(() => {
 .app-main :deep(.view:not(:last-child)) { padding-bottom: 0; }
 /* The top bar is its own layer above the page, so what it opens (the doctor's panel) floats over the page's cards instead of under them. */
 .app-topbar { position: relative; z-index: var(--z-popover); flex: 0 0 auto; padding: 12px var(--page-gutter) 8px; }
+/* In the desktop client the bar is the window's title bar: its own minimise, maximise and
+   close (Windows) or the traffic lights (macOS) sit in the top corners, so the bar keeps
+   clear of them, and stays centred where the window is wide enough (lib/desktop-client.ts). */
+:root[data-desktop-client] .app-topbar {
+  padding-left: max(var(--page-gutter), min(var(--desktop-caption-start), calc(var(--page-gutter) + var(--canvas-max) + 2 * var(--desktop-caption-start) - 100%)));
+  padding-right: max(var(--page-gutter), min(var(--desktop-caption-end), calc(var(--page-gutter) + var(--canvas-max) + 2 * var(--desktop-caption-end) - 100%)));
+}
 .app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; max-width: var(--canvas-max); min-height: 44px; margin-inline: auto; }
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .app-wordmark { display: block; width: auto; height: 15px; user-select: none; }

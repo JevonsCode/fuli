@@ -4,8 +4,8 @@ import '../app/app_services.dart';
 import 'brand.dart';
 import 'home_page.dart';
 import 'theme.dart';
-import 'title_strip.dart';
 import 'waiting_screen.dart';
+import 'window_caption.dart';
 
 class FuliApp extends StatelessWidget {
   const FuliApp({super.key, required this.services, required this.brand});
@@ -110,7 +110,7 @@ class _WindowState extends State<_Window> {
       },
     );
     if (caption == null) return content;
-    // The title strip stays where it is whatever the window shows below it.
-    return Column(children: [TitleStrip(caption: caption, strings: strings), Expanded(child: content)]);
+    // The window's own controls stay where they are whatever the window shows.
+    return WindowChrome(caption: caption, strings: strings, child: content);
   }
 }

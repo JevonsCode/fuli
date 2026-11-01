@@ -10,8 +10,8 @@
 #include <optional>
 #include <string>
 
-// The client draws its own title strip (lib/src/ui/title_strip.dart) in a
-// window whose title bar window_manager hides. Two parts of the hidden caption
+// The client draws its own window buttons (lib/src/ui/window_caption.dart) in
+// a window whose title bar window_manager hides. Two parts of the hidden caption
 // stay with the OS:
 // - the drawn maximise button is the OS's maximise button to hit testing, so
 //   hovering it opens Windows 11's snap layouts and clicking it maximises or

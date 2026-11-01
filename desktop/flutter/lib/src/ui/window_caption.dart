@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
@@ -6,56 +8,104 @@ import '../l10n/window_control_names.dart';
 import '../platform/caption_controls.dart';
 import 'theme.dart';
 
-// Windows' caption button width and glyph size.
-const _buttonWidth = 46.0;
 const _glyphSize = 10.0;
 
-/// The window's own title strip, in place of the OS's caption and above
-/// everything the window shows: the console page and the status page start
-/// below it, so nothing in it moves while they load. All of it moves the
-/// window, a double click maximises or restores it and a right click opens the
-/// window menu. Windows gets minimise, maximise and close on the right; macOS
-/// keeps its traffic lights on the left. No title: the page below names FULI.
-class TitleStrip extends StatelessWidget {
-  const TitleStrip({super.key, required this.caption, required this.strings});
+/// The window's own caption, in place of the OS's title bar. Nothing is added
+/// above what the window shows: its top bar is the title bar (the console's
+/// own, through lib/desktop-client.ts in the page; the status and waiting
+/// pages' [TopLine], through [CaptionDragArea]). On Windows minimise, maximise
+/// and close sit over the top right corner, above the console's WebView too;
+/// the top bar keeps clear of them. macOS keeps its traffic lights.
+class WindowChrome extends StatelessWidget {
+  const WindowChrome({super.key, required this.caption, required this.strings, required this.child});
+
+  final CaptionControls caption;
+  final Strings strings;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return _CaptionScope(
+      caption: caption,
+      child: Stack(
+        children: [
+          Positioned.fill(child: child),
+          if (caption.drawsButtons)
+            Positioned(
+              top: 0,
+              right: 0,
+              child: _CaptionButtons(caption: caption, strings: strings),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CaptionScope extends InheritedWidget {
+  const _CaptionScope({required this.caption, required super.child});
+
+  final CaptionControls caption;
+
+  @override
+  bool updateShouldNotify(_CaptionScope old) => old.caption != caption;
+}
+
+/// Room a top bar keeps clear for the window's own controls, beyond its own
+/// padding of [padding]: none outside [WindowChrome].
+({double start, double end}) captionRoom(BuildContext context, {required double padding}) {
+  final reserved = context.dependOnInheritedWidgetOfExactType<_CaptionScope>()?.caption.reserved;
+  double beyond(double side) => side == 0 ? 0 : math.max(0, side + FuliSpace.space2 - padding);
+  return reserved == null ? (start: 0, end: 0) : (start: beyond(reserved.start), end: beyond(reserved.end));
+}
+
+/// Makes a top bar the window's title bar: dragging it moves the window, a
+/// double click maximises or restores it and a right click opens the window
+/// menu. Outside [WindowChrome] (the web preview) it is just [child].
+class CaptionDragArea extends StatelessWidget {
+  const CaptionDragArea({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final caption = context.dependOnInheritedWidgetOfExactType<_CaptionScope>()?.caption;
+    if (caption == null) return child;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onPanStart: (_) => caption.startDragging(),
+      onDoubleTap: caption.toggleMaximize,
+      onSecondaryTapUp: (_) => caption.showWindowMenu(),
+      child: child,
+    );
+  }
+}
+
+class _CaptionButtons extends StatelessWidget {
+  const _CaptionButtons({required this.caption, required this.strings});
 
   final CaptionControls caption;
   final Strings strings;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: caption.height,
-      child: ColoredBox(
-        color: FuliColors.bg,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: GestureDetector(
-                key: const Key('title-strip-drag'),
-                behavior: HitTestBehavior.opaque,
-                onPanStart: (_) => caption.startDragging(),
-                onDoubleTap: caption.toggleMaximize,
-                onSecondaryTapUp: (_) => caption.showWindowMenu(),
-              ),
+    return SizedBox.fromSize(
+      size: Size(captionButtonSize.width * 3, captionButtonSize.height),
+      child: Row(
+        children: [
+          _CaptionButton(glyph: _Glyph.minimize, label: strings.minimizeWindow, onPressed: caption.minimize),
+          ValueListenableBuilder(
+            valueListenable: caption.maximized,
+            builder: (context, maximized, _) => _CaptionButton(
+              glyph: maximized ? _Glyph.restore : _Glyph.maximize,
+              label: maximized ? strings.restoreWindow : strings.maximizeWindow,
+              onPressed: caption.toggleMaximize,
+              nativeState: caption.maximizeButtonState,
+              onPlaced: caption.placeMaximizeButton,
             ),
-            if (caption.drawsButtons) ...[
-              _CaptionButton(glyph: _Glyph.minimize, label: strings.minimizeWindow, onPressed: caption.minimize),
-              ValueListenableBuilder(
-                valueListenable: caption.maximized,
-                builder: (context, maximized, _) => _CaptionButton(
-                  glyph: maximized ? _Glyph.restore : _Glyph.maximize,
-                  label: maximized ? strings.restoreWindow : strings.maximizeWindow,
-                  onPressed: caption.toggleMaximize,
-                  nativeState: caption.maximizeButtonState,
-                  onPlaced: caption.placeMaximizeButton,
-                ),
-              ),
-              _CaptionButton(glyph: _Glyph.close, label: strings.closeWindow, onPressed: caption.close),
-            ],
-          ],
-        ),
+          ),
+          _CaptionButton(glyph: _Glyph.close, label: strings.closeWindow, onPressed: caption.close),
+        ],
       ),
     );
   }
@@ -64,8 +114,13 @@ class TitleStrip extends StatelessWidget {
 enum _Glyph { minimize, maximize, restore, close }
 
 class _CaptionButton extends StatefulWidget {
-  const _CaptionButton(
-      {required this.glyph, required this.label, required this.onPressed, this.nativeState, this.onPlaced});
+  const _CaptionButton({
+    required this.glyph,
+    required this.label,
+    required this.onPressed,
+    this.nativeState,
+    this.onPlaced,
+  });
 
   final _Glyph glyph;
   final String label;
@@ -129,7 +184,8 @@ class _CaptionButtonState extends State<_CaptionButton> {
       key: Key('caption-${widget.glyph.name}'),
       duration: still ? Duration.zero : FuliMotion.fast,
       curve: FuliMotion.ease,
-      width: _buttonWidth,
+      width: captionButtonSize.width,
+      height: captionButtonSize.height,
       color: fill,
       alignment: Alignment.center,
       child: CustomPaint(
@@ -164,13 +220,14 @@ class _GlyphPainter extends CustomPainter {
       case _Glyph.restore:
         canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(.5, 2.5, s - 3, s - 3), corner), pen);
         canvas.drawPath(
-            Path()
-              ..moveTo(2.5, 2.5)
-              ..lineTo(2.5, .5)
-              ..lineTo(s - .5, .5)
-              ..lineTo(s - .5, s - 2.5)
-              ..lineTo(s - 2.5, s - 2.5),
-            pen);
+          Path()
+            ..moveTo(2.5, 2.5)
+            ..lineTo(2.5, .5)
+            ..lineTo(s - .5, .5)
+            ..lineTo(s - .5, s - 2.5)
+            ..lineTo(s - 2.5, s - 2.5),
+          pen,
+        );
       case _Glyph.close:
         canvas
           ..drawLine(Offset.zero, Offset(s, s), pen)

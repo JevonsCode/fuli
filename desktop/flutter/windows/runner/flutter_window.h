@@ -30,7 +30,7 @@ class FlutterWindow : public Win32Window {
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
 
-  // The drawn title strip's maximise button and top resize edge.
+  // The drawn maximise button and the top resize edge.
   std::unique_ptr<CaptionFrame> caption_;
 };
 

@@ -7,12 +7,10 @@ import 'package:window_manager/window_manager.dart';
 
 import '../caption_controls.dart';
 
-// Windows' caption metrics: buttons 46 x 32. macOS's title bar, where the
-// traffic lights stay, is 28 high.
-const _windowsHeight = 32.0;
-const _macosHeight = 28.0;
+// The traffic lights' width on macOS, from the window's left edge.
+const _trafficLightsWidth = 76.0;
 
-/// The title strip's controls over window_manager. The window is opened with
+/// The window's own caption over window_manager. The window is opened with
 /// its title bar hidden (desktop_window.dart). On Windows the runner gives the
 /// drawn maximise button to the OS, so hovering it opens the snap layouts, and
 /// keeps the top edge resizable (windows/runner/caption_frame.cpp); this
@@ -41,7 +39,11 @@ class DesktopCaption with WindowListener implements CaptionControls {
   }
 
   @override
-  double get height => Platform.isMacOS ? _macosHeight : _windowsHeight;
+  String get platform => Platform.isMacOS ? 'macos' : 'windows';
+
+  @override
+  ({double start, double end}) get reserved =>
+      Platform.isMacOS ? (start: _trafficLightsWidth, end: 0) : (start: 0, end: captionButtonSize.width * 3);
 
   @override
   bool get drawsButtons => Platform.isWindows;

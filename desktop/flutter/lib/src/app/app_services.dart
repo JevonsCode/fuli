@@ -9,7 +9,7 @@ import 'fuli_controller.dart';
 /// console page inside the window and calls its second argument once the page
 /// has loaded (or failed to); null where there is no WebView (the web preview,
 /// a computer without the WebView runtime). [caption] is the window's own
-/// title strip; null where the OS keeps its own (the web preview).
+/// caption (its buttons and title bar); null where the OS keeps its own (the web preview).
 class AppServices {
   const AppServices(
       {required this.controller, required this.strings, required this.opener, this.consoleView, this.caption});

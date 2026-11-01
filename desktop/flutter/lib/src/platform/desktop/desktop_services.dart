@@ -47,7 +47,9 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
   final notifier = await OsNotifier.create(
       onClick: window.show, windowsIcon: '$exeDir\\data\\flutter_assets\\assets\\app\\fuli.png');
   final console = await ConsoleWebView.create(opener,
-      saver: DownloadSaver(), onSaved: (file) => unawaited(notifier.notify(strings.fileSaved, file.path)));
+      saver: DownloadSaver(),
+      onSaved: (file) => unawaited(notifier.notify(strings.fileSaved, file.path)),
+      caption: caption);
   final client = http.Client();
   final controller = FuliController(
     apiFor: (port) => HttpFuliApi(port: port, client: client),
