@@ -75,7 +75,7 @@ test('fl start prints one stable local console address', async () => {
   const output = [];
   await runLocalRuntimeCommand('start', [], {
     resolvePaths: () => ({ dataDir: 'C:/Fuli' }),
-    discoverAgents: () => [],
+    detectAgents: async () => ({ status: 'available', agents: [] }),
     start: async () => ({
       status: 'started',
       url: 'http://127.0.0.1:2727',
@@ -94,7 +94,7 @@ test('fl start says once which port it moved by itself, before the new address',
   const output = [];
   await runLocalRuntimeCommand('start', [], {
     resolvePaths: () => ({ dataDir: 'C:/Fuli' }),
-    discoverAgents: () => [],
+    detectAgents: async () => ({ status: 'available', agents: [] }),
     start: async () => ({
       status: 'started',
       url: 'http://127.0.0.1:2734',
@@ -124,17 +124,11 @@ test('fl start tells the user to run setup when an Agent integration is outdated
       reviewSkillPath: 'C:/Package/skills/flreview',
       operationSkillPath: 'C:/Package/skills/operating-fuli'
     }),
-    discoverAgents: () => [{ id: 'codex', label: 'Codex', available: true }],
-    inspectAgentInstallations: () => [{
-      id: 'codex',
-      label: 'Codex',
-      integrationStatus: 'update_available',
-      integrationDetails: {
-        mcp: 'outdated',
-        skills: 'current',
-        bootstrap: 'outdated'
-      }
-    }],
+    detectAgents: async () => ({ status: 'available', agents: [
+      { id: 'codex', label: 'Codex', available: true, integrationStatus: 'update_available',
+        integrationDetails: { mcp: 'outdated', skills: 'current', instructions: 'outdated' } },
+      { id: 'cursor', label: 'Cursor', available: false, integrationStatus: 'not_connected', integrationDetails: { mcp: 'missing' } }
+    ] }),
     start: async () => ({
       status: 'started',
       url: 'http://127.0.0.1:2727',
@@ -145,7 +139,8 @@ test('fl start tells the user to run setup when an Agent integration is outdated
 
   assert.equal(result.agentSetupCheck.status, 'checked');
   assert.match(output[0], /Agent setup required/);
-  assert.match(output[0], /Codex: MCP: outdated, Bootstrap: outdated/);
+  assert.match(output[0], /Codex: MCP: outdated, Instructions: outdated/);
+  assert.doesNotMatch(output[0], /Cursor/, 'a client that is not on this machine needs nothing');
   assert.match(output[0], /Run `fuli setup` to install or update them/);
 });
 
@@ -202,7 +197,7 @@ test('fl start --lan prints protected LAN addresses and the temporary access cod
   const output = [];
   await runLocalRuntimeCommand('start', ['--lan'], {
     resolvePaths: () => ({ dataDir: 'C:/Fuli' }),
-    discoverAgents: () => [],
+    detectAgents: async () => ({ status: 'available', agents: [] }),
     start: async (input) => {
       assert.equal(input.lan, true);
       return {

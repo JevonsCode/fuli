@@ -21,4 +21,4 @@ export function agentAdapter(id, dataDir) {
 
 // CLI package administration uses this registry port to inspect compatible descriptors.
 export function clientDescriptorPacks(options) { return loadClientDescriptorPacks(options); }
-export function clientPackTarget(pack, environment) { return descriptorAdapter(pack).detect(environment); }
+export function clientPackTarget(pack, environment) { return descriptorAdapter(pack).target(environment); }

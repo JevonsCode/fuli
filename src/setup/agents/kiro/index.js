@@ -3,11 +3,9 @@ import { jsonMcpPort } from '../json-mcp.js';
 
 export const adapter = {
   id: 'kiro',
-  detect({ homeDir, env = {}, pathApi, fileExists, commandExists, cwd, includeUnavailable = false }) {
+  target({ homeDir, env = {}, pathApi, cwd }) {
     const directory = configDirectory(env.KIRO_HOME, pathApi.join(homeDir, '.kiro'), { homeDir, pathApi, cwd });
-    const configPath = pathApi.join(directory, 'settings', 'mcp.json');
-    const available = Boolean(commandExists('kiro') || commandExists('kiro-cli') || fileExists(configPath));
-    return available || includeUnavailable ? { id: 'kiro', label: 'Kiro', command: 'kiro', configPath, available } : null;
+    return { id: 'kiro', label: 'Kiro', command: 'kiro', configPath: pathApi.join(directory, 'settings', 'mcp.json') };
   },
   ...jsonMcpPort({ obsoleteKeys: ['url', 'httpUrl', 'headers', 'type'], source: 'kiro', argsOf: (server) => server?.args,
     server: (command, args) => ({ command, args, disabled: false }) })

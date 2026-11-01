@@ -1,12 +1,12 @@
 import { backupAgentConfig } from './config-backup.js';
 import { connectAgent } from './agents.js';
-import { inspectAgentInstallations } from './agent-installation-status.js';
 import { installSessionSkill } from './session-skill.js';
 
 // Shared by CLI setup and the local console. Backup always precedes configuration writes.
+// inspect: the client as agent-installer now finds it (client-detection.js
+// inspectAgent), or null when it cannot say; the self-check is skipped then.
 export async function installAgent(agent, context, paths, {
-  backupConfig = backupAgentConfig, connect = connectAgent, installSkill = installSessionSkill,
-  inspectInstallations = inspectAgentInstallations
+  backupConfig = backupAgentConfig, connect = connectAgent, installSkill = installSessionSkill, inspect = null
 } = {}) {
   let backupPath;
   let connected;
@@ -26,9 +26,7 @@ export async function installAgent(agent, context, paths, {
         backupDir: paths.backupDir
       }));
     }
-    const [inspected] = inspectInstallations
-      ? inspectInstallations([agent], context)
-      : [];
+    const inspected = inspect ? await inspect(agent) : null;
     if (inspected && inspected.integrationStatus !== 'connected') {
       const failedChecks = Object.entries(inspected.integrationDetails ?? {})
         .filter(([, state]) => state !== 'current')

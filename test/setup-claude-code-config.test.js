@@ -4,8 +4,7 @@ import { claudeLifecycleCommand } from '../src/agents/claude-code/lifecycle-hook
 
 import {
   connectClaudeCode,
-  disconnectClaudeCode,
-  hasCurrentClaudeCodeHooks
+  disconnectClaudeCode
 } from '../src/setup/claude-code-config.js';
 import { builtInClientPack } from '../test-support/client-packs.js';
 
@@ -140,38 +139,6 @@ test('Claude Code hook timeout can be increased by an isolated acceptance runtim
   assert.equal(settings.hooks.Stop.at(-1).hooks[0].timeout, 240);
 });
 
-test('Claude Code hook status requires the exact managed command, timeout and status message', () => {
-  const writes = new Map();
-  connectClaudeCode(PACK, AGENT, CONTEXT, {
-    readConfig: () => ({}),
-    writeConfig: (filePath, value) => writes.set(filePath, value)
-  });
-  const current = writes.get(AGENT.settingsPath);
-  assert.equal(hasCurrentClaudeCodeHooks(PACK, current, CONTEXT), true);
-
-  for (const mutate of [
-    (settings) => { settings.hooks.UserPromptSubmit.at(-1).hooks[0].command += ' --extra'; },
-    (settings) => { settings.hooks.Stop.at(-1).hooks[0].timeout = 31; },
-    (settings) => { settings.hooks.Stop.at(-1).hooks[0].statusMessage = 'Different'; },
-    (settings) => { delete settings.hooks.PreCompact; },
-    (settings) => { settings.hooks.SessionStart.at(-1).hooks[0].command += ' --extra'; },
-    (settings) => {
-      settings.permissions.allow = ['mcp__fuli__get_collaboration_preferences'];
-    }
-  ]) {
-    const outdated = structuredClone(current);
-    mutate(outdated);
-    assert.equal(hasCurrentClaudeCodeHooks(PACK, outdated, CONTEXT), false);
-  }
-
-  const customTimeout = structuredClone(current);
-  for (const event of ['UserPromptSubmit', 'Stop', 'SessionStart', 'PreCompact']) {
-    customTimeout.hooks[event].at(-1).hooks[0].timeout = 240;
-    customTimeout.hooks[event].at(-1).hooks[0].command = claudeLifecycleCommand(CONTEXT, event, 240);
-  }
-  assert.equal(hasCurrentClaudeCodeHooks(PACK, customTimeout, { ...CONTEXT, hookTimeoutSec: 240 }), true);
-});
-
 test('Claude Code migrates legacy MCP hooks while preserving unrelated handlers in the same group', () => {
   const files = new Map([[AGENT.configPath, {}], [AGENT.settingsPath, { hooks: {
     UserPromptSubmit: [{ matcher: '*', hooks: [
@@ -180,7 +147,6 @@ test('Claude Code migrates legacy MCP hooks while preserving unrelated handlers 
     ] }],
     Stop: [{ hooks: [{ type: 'mcp_tool', server: 'fuli', tool: 'verify_task_checkpoint' }] }]
   } }]]);
-  assert.equal(hasCurrentClaudeCodeHooks(PACK, files.get(AGENT.settingsPath), CONTEXT), false);
   const io = { readConfig: path => files.get(path), writeConfig: (path, value) => files.set(path, value) };
   connectClaudeCode(PACK, AGENT, CONTEXT, io);
   const settings = files.get(AGENT.settingsPath);
@@ -189,7 +155,6 @@ test('Claude Code migrates legacy MCP hooks while preserving unrelated handlers 
   });
   assert.equal(settings.hooks.Stop.length, 1);
   assert.equal(JSON.stringify(settings.hooks).includes('mcp_tool'), false);
-  assert.equal(hasCurrentClaudeCodeHooks(PACK, settings, CONTEXT), true);
   assert.equal(connectClaudeCode(PACK, AGENT, CONTEXT, io).newTaskRequired, false);
 });
 

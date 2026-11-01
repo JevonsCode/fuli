@@ -3,13 +3,14 @@
 // the move; the descriptor-backed adapters must reproduce them byte for byte.
 // Every write stays in a temporary home. Re-record only with a reviewed reason:
 // UPDATE_CLIENT_SNAPSHOTS=1 node --test test/setup-client-descriptor-snapshots.test.js
+// Re-recorded when agent-installer took over detection and status (rec#11
+// D-79): the `available` probes and FULI's own status left; writes are unchanged.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { connectAgent, disconnectAgent, discoverAgents } from '../src/setup/agents.js';
-import { inspectAgentInstallations } from '../src/setup/agent-installation-status.js';
+import { agentTargets, connectAgent, disconnectAgent } from '../src/setup/agents.js';
 
 const SNAPSHOT = new URL('./fixtures/client-descriptor-snapshots.json', import.meta.url);
 const LIFECYCLE_CLIENTS = ['codex', 'claude-code', 'cursor'];
@@ -64,8 +65,7 @@ function homeFiles(homeDir, directory = homeDir) {
 }
 
 function lifecycleAgents(homeDir, env = {}) {
-  return discoverAgents({ homeDir, env, platform: process.platform, includeUnavailable: true,
-    commandExists: () => true, commandVersion: () => null, fileExists: () => false })
+  return agentTargets({ homeDir, env, platform: process.platform, commandVersion: () => null, fileExists: () => false })
     .filter(({ id }) => LIFECYCLE_CLIENTS.includes(id));
 }
 
@@ -74,12 +74,7 @@ function outcome(action) {
   try { return action(); } catch (error) { return { error: error instanceof SyntaxError ? 'SyntaxError' : error.message }; }
 }
 
-function status(agents, context) {
-  return inspectAgentInstallations(agents, context, { skillCurrent: () => true })
-    .map(({ id, integrationStatus, integrationDetails }) => ({ id, integrationStatus, integrationDetails }));
-}
-
-// Connect, reconnect, inspect, disconnect twice: the whole lifecycle a person can run.
+// Connect, reconnect, disconnect twice: the whole lifecycle a person can run.
 function lifecycle(files, context, { env = () => ({}) } = {}) {
   const homeDir = seedHome(files);
   try {
@@ -88,14 +83,12 @@ function lifecycle(files, context, { env = () => ({}) } = {}) {
     const afterConnect = homeFiles(homeDir);
     const reconnected = agents.map(agent => outcome(() => connectAgent(agent, context)));
     const afterReconnect = homeFiles(homeDir);
-    const statusAfterConnect = status(agents, context);
     const disconnected = agents.map(agent => outcome(() => disconnectAgent(agent)));
     const afterDisconnect = homeFiles(homeDir);
     const disconnectedAgain = agents.map(agent => outcome(() => disconnectAgent(agent)));
     return normalize({ connected, afterConnect, reconnected,
       reconnectUnchanged: JSON.stringify(afterReconnect) === JSON.stringify(afterConnect),
-      statusAfterConnect, disconnected, afterDisconnect, disconnectedAgain,
-      statusAfterDisconnect: status(agents, context) }, homeDir);
+      disconnected, afterDisconnect, disconnectedAgain }, homeDir);
   } finally { rmSync(homeDir, { recursive: true, force: true }); }
 }
 
@@ -114,29 +107,14 @@ function normalize(value, homeDir) {
     .reduce((current, home) => current.split(home).join('<home>'), text));
 }
 
-function detection() {
+function targets() {
   const result = {};
   for (const [platform, homeDir, env] of [
     ['linux', '/home/test', {}], ['darwin', '/Users/test', { CODEX_HOME: '/Users/test/codex-home' }],
     ['win32', 'C:\\Users\\Test', { CODEX_HOME: '  ' }], ['win32', 'C:\\Users\\Test', { CODEX_HOME: 'D:\\Codex' }]
   ]) {
-    const key = `${platform}:${JSON.stringify(env)}`;
-    const discover = (fileExists, commandExists) => discoverAgents({ platform, homeDir, env, includeUnavailable: true,
-      fileExists, commandExists, commandVersion: () => null }).filter(({ id }) => LIFECYCLE_CLIENTS.includes(id));
-    const agents = discover(() => false, () => false);
-    result[key] = { agents, available: {} };
-    const pathApi = platform === 'win32' ? path.win32 : path.posix;
-    const candidates = [...new Set(agents.flatMap(agent => Object.entries(agent)
-      .filter(([field, value]) => typeof value === 'string' && field.endsWith('Path'))
-      .flatMap(([, value]) => [value, pathApi.dirname(value)])))].sort();
-    for (const agent of agents) {
-      const availableWhen = (fileExists, commandExists) => discover(fileExists, commandExists)
-        .find(({ id }) => id === agent.id).available;
-      result[key].available[agent.id] = {
-        command: availableWhen(() => false, (command) => command === agent.command),
-        files: candidates.filter(candidate => availableWhen((value) => value === candidate, () => false))
-      };
-    }
+    result[`${platform}:${JSON.stringify(env)}`] = { agents: agentTargets({ platform, homeDir, env, fileExists: () => false,
+      commandVersion: () => null }).filter(({ id }) => LIFECYCLE_CLIENTS.includes(id)) };
   }
   return result;
 }
@@ -158,7 +136,7 @@ function snapshot() {
       conflictingCodexHooks: refused({ '.codex/config.toml': CODEX_TOML_HOOKS, '.codex/hooks.json': SEEDS['.codex/hooks.json'] }, context)
     };
   }
-  return { detection: detection(), contexts };
+  return { targets: targets(), contexts };
 }
 
 test('lifecycle client setup output is byte-identical to the recorded code-adapter snapshots', () => {
@@ -170,9 +148,9 @@ test('lifecycle client setup output is byte-identical to the recorded code-adapt
   assert.equal(current, readFileSync(SNAPSHOT, 'utf8'));
 });
 
-// rec#25: connect and status share one profile rule for every lifecycle client,
-// so a requested non-default profile is written by connect and read as current.
-test('a requested non-default tool profile goes through connect and status consistently', () => {
+// rec#25: one profile rule for every lifecycle client, so a requested
+// non-default profile is written by connect.
+test('a requested non-default tool profile is written by connect', () => {
   for (const seed of [{}, { '.codex/config.toml': SEEDS['.codex/config.toml'] }]) {
     const homeDir = seedHome(seed);
     try {
@@ -183,13 +161,6 @@ test('a requested non-default tool profile goes through connect and status consi
       assert.match(files['.codex/config.toml'], /"--tool-profile", "full"]/);
       assert.match(files['.claude.json'], /"--tool-profile",\s*"full"/);
       assert.match(files['.cursor/mcp.json'], /"--tool-profile",\s*"full"/);
-      for (const { id, integrationDetails } of status(agents, context)) {
-        assert.equal(integrationDetails.mcp, 'current', id);
-      }
-      // A status that asks for another profile sees the written config as stale.
-      for (const { id, integrationDetails } of status(agents, { ...context, toolProfile: 'chat' })) {
-        assert.notEqual(integrationDetails.mcp, 'current', id);
-      }
     } finally { rmSync(homeDir, { recursive: true, force: true }); }
   }
 });

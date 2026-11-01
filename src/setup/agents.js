@@ -13,14 +13,15 @@ const VERSION_TIMEOUT_MS = 5_000;
 const VERSION_REUSE_MS = 60_000;
 const versions = new Map();
 
-export function discoverAgents({ platform = process.platform, env = process.env, homeDir = homedir(),
-  cwd = process.cwd(), dataDir: requestedDataDir, includeUnavailable = false, fileExists = existsSync,
-  commandExists = (command) => defaultCommandExists(command, platform),
-  commandVersion = (command) => commandExists(command) ? defaultCommandVersion(command, platform) : null } = {}) {
-  const environment = { platform, env, homeDir, cwd, includeUnavailable, fileExists, commandExists, commandVersion,
-    pathApi: platformPath(platform) };
+// Where FULI's writers edit each client they support, on this platform. Which
+// of them are on this machine, and whether FULI is in them, is
+// agent-installer's answer (src/agent-kits/client-detection.js), not this one.
+export function agentTargets({ platform = process.platform, env = process.env, homeDir = homedir(),
+  cwd = process.cwd(), dataDir: requestedDataDir, fileExists = existsSync,
+  commandVersion = (command) => defaultCommandExists(command, platform) ? defaultCommandVersion(command, platform) : null } = {}) {
+  const environment = { platform, env, homeDir, cwd, fileExists, commandVersion, pathApi: platformPath(platform) };
   const dataDir = resolveSetupPaths({ env, homeDir, platform, dataDir: requestedDataDir }).dataDir;
-  return configuredAgentAdapters(dataDir).map((adapter) => adapter.detect(environment)).filter(Boolean);
+  return configuredAgentAdapters(dataDir).map((adapter) => adapter.target(environment)).filter(Boolean);
 }
 export function connectAgent(agent, context, dependencies = {}) {
   return agentAdapter(agent.id, context.dataDir ?? (context.runtimeConfigPath ? dirname(context.runtimeConfigPath) : undefined)).connect(agent, context, dependencies);
@@ -28,7 +29,7 @@ export function connectAgent(agent, context, dependencies = {}) {
 export function disconnectAgent(agent, dependencies = {}) {
   return agentAdapter(agent.id).disconnect(agent, dependencies);
 }
-export function defaultCommandExists(command, platform = process.platform) {
+function defaultCommandExists(command, platform = process.platform) {
   const result = spawnSync(platform === 'win32' ? 'where.exe' : 'which', [command], {
     encoding: 'utf8', windowsHide: true, stdio: 'ignore'
   });

@@ -7,7 +7,6 @@ import {
 } from './codex-bootstrap.js';
 import {
   hasCodexTomlHookDefinitions,
-  hasCurrentCodexLifecycleHooks,
   hasCurrentCodexTomlLifecycleHooks,
   installCodexLifecycleHooks,
   removeCodexLifecycleHooks,
@@ -82,23 +81,6 @@ export function connectCodex(pack, agent, context, {
         : 'Check Fuli hooks in the Codex CLI with /hooks; setup does not verify hook trust.']
     } : {})
   };
-}
-
-export function codexStatus(pack, agent, context, readers) {
-  const current = readers.readText(agent.configPath);
-  const present = /^\s*\[mcp_servers\.(?:fuli|"fuli"|'fuli')]/m.test(current);
-  const hooks = pack.lifecycleHooks;
-  let registration;
-  try {
-    const expected = replaceFuliTable(current, fuliTable(pack, context, current));
-    const normalized = hasCodexTomlHookDefinitions(current) ? withCodexTomlLifecycleHooks(expected, { context, hooks }) : expected;
-    registration = { present, current: present && normalized.replaceAll('\r\n', '\n').trim() === current.replaceAll('\r\n', '\n').trim() };
-  } catch { registration = { present, current: false }; }
-  return { registration,
-    bootstrap: readers.bootstrapCurrent(agent, pack.instructions.global, readers),
-    ...(agent.hooksPath ? { lifecycleHooks: hasCodexTomlHookDefinitions(current)
-      ? hasCurrentCodexTomlLifecycleHooks(current, { context, hooks })
-      : hasCurrentCodexLifecycleHooks(readers.readJson(agent.hooksPath), { context, hooks }) } : {}) };
 }
 
 // The one profile rule connect and status share, as for Claude Code and Cursor:

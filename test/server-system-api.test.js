@@ -826,3 +826,25 @@ test('client connection POST obeys origin/host policy and passes only the reques
     assert.deepEqual(inputs, [{ clientId: 'gemini' }]);
   } finally { await closeServer(server); }
 });
+
+test('custom clients are added and removed on this computer only, through the system service', async () => {
+  const calls = [];
+  const system = {
+    addCustomClient: async (input) => { calls.push(['add', input]); return { id: 'acme-agent' }; },
+    removeCustomClient: (id) => { calls.push(['remove', id]); return { id }; }
+  };
+  const { server, url } = await createServer({ app: { graphiti: true, close() {} }, system, port: 0 });
+  try {
+    const target = `${url}/api/system/client-connection/custom-clients`;
+    const foreign = await fetch(target, { method: 'POST', headers: { Origin: 'https://foreign.example', 'Content-Type': 'application/json' },
+      body: '{"name":"Acme"}' });
+    assert.equal(foreign.status, 403);
+    const added = await fetch(target, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Acme', mcpFile: '~/.acme/mcp.json', format: 'mcp-servers-json' }) });
+    assert.deepEqual([added.status, added.headers.get('cache-control'), await added.json()], [200, 'no-store', { id: 'acme-agent' }]);
+    assert.equal((await fetch(`${target}/acme-agent`, { method: 'DELETE' })).status, 200);
+    assert.notEqual((await fetch(`${target}/Not_An_Id`, { method: 'DELETE' })).status, 200);
+    assert.notEqual((await fetch(target, { method: 'DELETE' })).status, 200);
+    assert.deepEqual(calls, [['add', { name: 'Acme', mcpFile: '~/.acme/mcp.json', format: 'mcp-servers-json' }], ['remove', 'acme-agent']]);
+  } finally { await closeServer(server); }
+});

@@ -5,8 +5,9 @@ import {
   startLocalRuntime,
   stopLocalRuntime
 } from '../local-runtime/lifecycle.js';
-import { discoverAgents } from '../setup/agents.js';
-import { inspectAgentInstallations } from '../setup/agent-installation-status.js';
+import { detectAgents } from '../agent-kits/client-detection.js';
+import { agentKitPorts } from '../agent-kits/ports.js';
+import { agentTargets } from '../setup/agents.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
@@ -47,15 +48,13 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
     status: dependencies.inspect ?? inspectLocalRuntime,
     open: dependencies.openConsole ?? openLocalConsole
   };
-  const agentSetupCheck = command === 'start'
-    ? checkAgentSetup({
-      paths,
-      env,
-      discover: dependencies.discoverAgents ?? discoverAgents,
-      inspect: dependencies.inspectAgentInstallations ?? inspectAgentInstallations
-    })
+  // Read beside the start, through agent-installer (client-detection.js).
+  const agentSetup = command === 'start'
+    ? checkAgentSetup(dependencies.detectAgents
+      ?? (() => detectAgents(agentKitPorts(paths, { env }).clientInstaller, agentTargets({ env, dataDir: paths.dataDir }))))
     : null;
   const result = await handlers[command](input, dependencies.lifecycleDependencies);
+  const agentSetupCheck = agentSetup ? await agentSetup : null;
   const outputResult = agentSetupCheck
     ? { ...result, agentSetupCheck }
     : result;
@@ -117,25 +116,13 @@ function formatStartedRuntime(title, result, copy) {
   return lines.join('\n');
 }
 
-function checkAgentSetup({ paths, env, discover, inspect }) {
+// The detected clients FULI is not fully connected in.
+async function checkAgentSetup(detect) {
   try {
-    const agents = discover({ env, dataDir: paths.dataDir }).filter(({ available }) => available);
-    if (!agents.length) return { status: 'checked', agents: [] };
-    const inspected = inspect(agents, {
-      dataDir: paths.dataDir,
-      nodePath: paths.clientNodePath,
-      mcpServerPath: paths.mcpServerPath,
-      runtimeConfigPath: paths.graphRuntimeConfigPath,
-      sessionSkillPath: paths.sessionSkillPath,
-      projectSkillPath: paths.projectSkillPath,
-      reviewSkillPath: paths.reviewSkillPath,
-      operationSkillPath: paths.operationSkillPath,
-      sessionCommandSkillPath: paths.sessionCommandSkillPath
-    });
-    return {
-      status: 'checked',
-      agents: inspected.filter(({ integrationStatus }) => integrationStatus !== 'connected')
-    };
+    const detection = await detect();
+    if (detection.status !== 'available') return { status: 'unavailable', agents: [] };
+    return { status: 'checked',
+      agents: detection.agents.filter(({ available, integrationStatus }) => available && integrationStatus !== 'connected') };
   } catch {
     return { status: 'unavailable', agents: [] };
   }
@@ -158,11 +145,14 @@ function formatAgentSetupNotice(check) {
 }
 
 function agentNeedsSetup(agent) {
+  // agent-installer's component names.
   const detailLabels = {
     mcp: 'MCP',
     skills: 'Skills',
-    bootstrap: 'Bootstrap',
-    lifecycleHooks: 'Lifecycle hooks'
+    hooks: 'Lifecycle hooks',
+    instructions: 'Instructions',
+    permissions: 'Permissions',
+    plugin: 'Plugin'
   };
   const outdated = Object.entries(agent.integrationDetails ?? {})
     .filter(([, status]) => status !== 'current')

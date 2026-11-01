@@ -80,12 +80,6 @@ export function removeCodexLifecycleHooks(agent, {
   return { changed };
 }
 
-export function hasCurrentCodexLifecycleHooks(current, { context = null, hooks = null } = {}) {
-  try {
-    return JSON.stringify(withCodexLifecycleHooks(current, { context, hooks })) === JSON.stringify(current);
-  } catch { return false; }
-}
-
 export function hasCodexTomlHookDefinitions(source) {
   return String(source).replaceAll('\r\n', '\n').split('\n')
     .some((line) => TOML_HOOK_GROUP.test(line));

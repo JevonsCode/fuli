@@ -83,7 +83,6 @@ test('a pack cannot carry commands, scripts, free paths, secrets or a writer out
     'undocumented environment variable': (pack) => { pack.detection.clientHome.envOverride = 'AWS_SECRET_ACCESS_KEY'; },
     'XDG base for a home outside .config': (pack) => { pack.detection.clientHome.envBase = 'XDG_CONFIG_HOME'; },
     'probe outside the built-in set': (pack) => { pack.detection.availableWhen.push({ probe: 'runVersionCommand', command: 'cursor --version' }); },
-    'probe of an undeclared file': (pack) => { pack.detection.availableWhen.push({ probe: 'pathExists', target: 'settingsPath' }); },
     'writer outside the fixed set': (pack) => { pack.configWriter = 'shell-script'; },
     'unknown schema version': (pack) => { pack.schemaVersion = 2; }
   };

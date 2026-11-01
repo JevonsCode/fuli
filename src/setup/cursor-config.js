@@ -3,10 +3,9 @@ import { existsSync } from 'node:fs';
 import { installedToolProfile } from './installed-tool-profile.js';
 
 import { readJsonFile, writeJsonFileAtomic } from '../storage/json-file.js';
-import { hasCurrentCursorLifecycleHooks, withCursorLifecycleHooks, withoutCursorLifecycleHooks } from '../agents/cursor/lifecycle-hooks.js';
+import { withCursorLifecycleHooks, withoutCursorLifecycleHooks } from '../agents/cursor/lifecycle-hooks.js';
 import { assertJsonObject } from '../validation/values.js';
 import { renderMcpEntry } from './agents/mcp-entry-template.js';
-import { jsonRegistration } from './agents/registration.js';
 
 // The 'cursor-hooks' config writer: the MCP entry in mcp.json and lifecycle hooks in hooks.json.
 export function connectCursor(pack, agent, context, {
@@ -39,12 +38,6 @@ export function connectCursor(pack, agent, context, {
     ...(agent.hooksPath
       ? { newTaskRequired: registrationChanged || Boolean(hooksChanged) }
       : {}) };
-}
-
-export function cursorStatus(pack, agent, context, readers) {
-  return { registration: jsonRegistration(agent, readers, (server) =>
-    fuliServer(pack, context, server?.args, Boolean(server?.args?.includes('--tool-profile')))),
-  ...(agent.hooksPath ? { lifecycleHooks: hasCurrentCursorLifecycleHooks(readers.readJson(agent.hooksPath), context, pack.lifecycleHooks) } : {}) };
 }
 
 // Cursor names a tool profile only when one is asked for or already installed.

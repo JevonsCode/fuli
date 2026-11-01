@@ -2,8 +2,10 @@ import { installAgent } from './install-agent.js';
 import { backupAgentConfig } from './config-backup.js';
 import { existsSync } from 'node:fs';
 import { totalmem } from 'node:os';
-import { inspectAgentInstallations } from './agent-installation-status.js';
-import { connectAgent, discoverAgents } from './agents.js';
+import { detectAgents, inspectAgent } from '../agent-kits/client-detection.js';
+import { agentKitPorts } from '../agent-kits/ports.js';
+import { agentTargets, connectAgent } from './agents.js';
+import { integrationContext } from './integration-context.js';
 import { resolveSetupPaths } from './paths.js';
 import { ensureGraphRuntime } from './graph-runtime.js';
 import { installSessionSkill } from './session-skill.js';
@@ -21,11 +23,12 @@ import {
   readAdaptiveRuntimeSettings
 } from '../adaptive-runtime/settings.js';
 
-export function planLocalSetup(options, {
+// detect: which of FULI's writer targets agent-installer finds on this
+// machine (client-detection.js detectAgents), for the setup paths.
+export async function planLocalSetup(options, {
   env = process.env,
   resolvePaths = resolveSetupPaths,
-  discover = discoverAgents,
-  inspectInstallations = inspectAgentInstallations,
+  detect = (paths) => detectAgents(agentKitPorts(paths, { env }).clientInstaller, agentTargets({ env, dataDir: paths.dataDir })),
   readSettings = readRuntimeSettings,
   readAdaptiveSettings = readAdaptiveRuntimeSettings,
   settingsExist = existsSync,
@@ -54,10 +57,11 @@ export function planLocalSetup(options, {
     savedAdaptiveRuntimeSettings,
     { enabled: options.adaptiveMemory ?? null }
   );
-  const discovered = options.skipAgents ? [] : discover({ env, dataDir: paths.dataDir });
+  const detection = options.skipAgents ? { status: 'available', agents: [] } : await detect(paths);
+  const detected = detection.status === 'available' ? detection.agents : [];
   const agents = options.codexOnly
-    ? discovered.filter(({ id }) => id === 'codex')
-    : discovered;
+    ? detected.filter(({ id }) => id === 'codex')
+    : detected;
   return {
     paths,
     runtimeSettings,
@@ -68,16 +72,9 @@ export function planLocalSetup(options, {
       hostTotalBytes: hostTotalMemory()
     }),
     adaptiveRuntimeSettings,
-    agents: inspectInstallations(agents, {
-      nodePath: paths.clientNodePath,
-      mcpServerPath: paths.mcpServerPath,
-      dataDir: paths.dataDir, runtimeConfigPath: paths.graphRuntimeConfigPath,
-      sessionSkillPath: paths.sessionSkillPath,
-      projectSkillPath: paths.projectSkillPath,
-      reviewSkillPath: paths.reviewSkillPath,
-      operationSkillPath: paths.operationSkillPath,
-      sessionCommandSkillPath: paths.sessionCommandSkillPath
-    })
+    agents,
+    // Why no client could be detected, when agent-installer was unavailable.
+    ...(detection.status === 'available' ? {} : { clientDetection: { status: 'unavailable', reason: detection.reason } })
   };
 }
 
@@ -97,11 +94,11 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
   const backupConfig = dependencies.backupConfig ?? backupAgentConfig;
   const connect = dependencies.connect ?? connectAgent;
   const installSkill = dependencies.installSkill ?? installSessionSkill;
-  const inspectInstallations = dependencies.inspectInstallations ?? (
-    connect === connectAgent && installSkill === installSessionSkill
-      ? inspectAgentInstallations
-      : null
-  );
+  // Real writers are self-checked through agent-installer; stubbed ones in tests are not.
+  const realWriters = connect === connectAgent && installSkill === installSessionSkill;
+  const installer = realWriters && !dependencies.inspect
+    ? agentKitPorts(plan.paths, { env: dependencies.env ?? process.env }).clientInstaller : null;
+  const inspect = dependencies.inspect ?? (installer ? (agent) => inspectAgent(installer, agent) : null);
   // Stubbed runtimes in tests never touch the data directory they name.
   const beginFirstRun = dependencies.beginFirstRun ?? (ensureRuntime === ensureGraphRuntime ? beginFirstRunCapture : () => {});
   const runtimeSettings = plan.runtimeSettings ?? runtimeSettingsWithOverrides(
@@ -125,23 +122,14 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
     env: dependencies.env ?? process.env,
     onProgress: dependencies.onProgress
   });
-  const context = {
-    nodePath: plan.paths.clientNodePath,
-    mcpServerPath: plan.paths.mcpServerPath,
-    dataDir: plan.paths.dataDir, runtimeConfigPath: plan.paths.graphRuntimeConfigPath,
-    sessionSkillPath: plan.paths.sessionSkillPath,
-    projectSkillPath: plan.paths.projectSkillPath,
-    reviewSkillPath: plan.paths.reviewSkillPath,
-    operationSkillPath: plan.paths.operationSkillPath,
-    sessionCommandSkillPath: plan.paths.sessionCommandSkillPath
-  };
+  const context = integrationContext(plan.paths);
   const agents = [];
 
   for (const agent of plan.agents.filter(
     ({ available, selected }) => available && selected !== false
   )) {
     agents.push(await installAgent(agent, context, plan.paths, {
-      backupConfig, connect, installSkill, inspectInstallations
+      backupConfig, connect, installSkill, inspect
     }));
   }
 

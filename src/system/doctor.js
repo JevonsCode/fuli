@@ -6,15 +6,13 @@ import { FULI_VERSION } from '../package-metadata.js';
 // (doctor-repair.js) acts on the items marked fix 'auto'. The console's banner
 // and the desktop client read the same answer (GET /api/system/doctor):
 //
-//   { checkedAt, version, overall, items: [{ id, kind, severity, fix, data }], unchecked, uncheckedReasons, internal? }
+//   { checkedAt, version, overall, items: [{ id, kind, severity, fix, data }], unchecked, uncheckedReasons }
 //
 // overall: 'degraded' when any item is blocking, else 'needs_person' when any
 // is a warning, else 'ok'; info items never change it. unchecked names the
 // sources that could not be read this time, so a missing item is never read
 // as a healthy one; uncheckedReasons gives a reason code for each source that
-// FULI knows why it could not check. internal carries developer-facing
-// comparisons that never change the items or overall (the client installer's
-// shadow status, rec#11 D-79); the console and desktop client do not show it.
+// FULI knows why it could not check.
 
 // A client with FULI's integration left behind in an older or partial form.
 const OUTDATED_CLIENT = new Set(['changed', 'skills_left']);
@@ -43,12 +41,11 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 // lastUpdate: the console update journal's status (console-update.js), or null.
 // hookTrustUnreadable: IDs of clients whose host keeps its trust in FULI's
 //   hooks where FULI cannot read it (src/agents/<client>/hook-trust.js).
-// internalDetails: returns the report's internal section without waiting, or null.
 // portMoves: the ports the running console's start moved by itself
 // ({ movedAt, moves }, blocked-port-recovery.js), or null.
 export function createDoctor({ observeClients, previewDataFormats = null, formatOperations = () => [],
   graphStage = () => null, liveProcesses, latestVersion, lastUpdate, hookTrustUnreadable = [],
-  internalDetails = null, portMoves = () => null, version = FULI_VERSION, now = () => new Date() }) {
+  portMoves = () => null, version = FULI_VERSION, now = () => new Date() }) {
   // The personal graph's last answer while its provider answered: the step it
   // waited on, or null, and when that was seen.
   let lastGraph = null;
@@ -62,6 +59,8 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
       try { return await readSource(); } catch { unchecked.push(source); return null; }
     };
     const clients = await read('clients', observeClients);
+    // Clients are read through agent-installer (client-detection.js); without it nothing is known.
+    if (clients?.available === false) notChecked('clients', 'client_detection_unavailable');
     const formats = previewDataFormats ? await read('data_format', previewDataFormats) : null;
     let rememberedGraph = [];
     if (formats) {
@@ -91,8 +90,7 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
       ...updateItems(latest, update, version),
       ...portItems(moved)
     ].sort((left, right) => SEVERITY_ORDER[left.severity] - SEVERITY_ORDER[right.severity]);
-    return { checkedAt, version, overall: overallOf(items), items, unchecked: [...new Set(unchecked)], uncheckedReasons,
-      ...(internalDetails ? { internal: internalDetails() } : {}) };
+    return { checkedAt, version, overall: overallOf(items), items, unchecked: [...new Set(unchecked)], uncheckedReasons };
   }
   return { check };
 }

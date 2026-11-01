@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { runSetupCommand } from '../src/cli/setup-command.js';
-import { discoverAgents } from '../src/setup/agents.js';
+import { agentTargets } from '../src/setup/agents.js';
 
 test('setup tells the user to review newly installed Codex hooks', async (t) => {
   const { run, output } = isolatedSetup(t);
@@ -38,13 +38,12 @@ function isolatedSetup(t) {
       '--yes', '--codex-only', '--no-start', '--data-dir', join(root, 'data')
     ], {
       env: {},
-      discover: () => discoverAgents({
-        homeDir: root,
-        env: {},
-        commandExists: (command) => command === 'codex'
-      }),
-      // Only the external graph-runtime startup is simulated. Planning, config
-      // writes, hook installation, backups, Skills and command output are real.
+      // agent-installer finds Codex; its self-check after the write is not run here.
+      detect: async () => ({ status: 'available', agents: agentTargets({ homeDir: root, env: {} })
+        .map((agent) => ({ ...agent, available: agent.id === 'codex', integrationStatus: 'not_connected', integrationDetails: {} })) }),
+      inspect: async () => null,
+      // Only the external graph-runtime startup and agent-installer are simulated.
+      // Planning, config writes, hook installation, backups, Skills and command output are real.
       ensureRuntime: async () => ({ status: 'initialized', url: null, pid: null }),
       write: (line) => output.push(line)
     })

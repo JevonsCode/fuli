@@ -7,11 +7,14 @@ import { agentKitExecutables } from '../src/agent-kits/executables.js';
 // The real pinned executables of the shared client components for this
 // platform, downloaded once per machine into a test cache and verified
 // against their pins. Null (the caller skips) when they cannot be had, for
-// example offline.
+// example offline. A developer testing an unreleased build points
+// FULI_AGENT_INSTALLER (or FULI_AGENT_SESSION_LAUNCHER) at it, as FULI does.
 const CACHE = join(tmpdir(), 'fuli-agent-kits-test-cache');
+const OVERRIDES = ['FULI_AGENT_INSTALLER', 'FULI_AGENT_SESSION_LAUNCHER'];
 
 export async function realAgentKitExecutable(component) {
-  const found = await agentKitExecutables({ nativeRuntimeDir: CACHE, env: {} }).ensure(component);
+  const env = Object.fromEntries(OVERRIDES.filter((name) => process.env[name]).map((name) => [name, process.env[name]]));
+  const found = await agentKitExecutables({ nativeRuntimeDir: CACHE, env }).ensure(component);
   return found.status === 'available' ? found.path : null;
 }
 

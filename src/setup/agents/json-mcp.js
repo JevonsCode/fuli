@@ -4,7 +4,7 @@ import { writeTextFileAtomic } from '../../storage/json-file.js';
 import { assertJsonObject } from '../../validation/values.js';
 import { installedToolProfile } from '../installed-tool-profile.js';
 
-export function parseMcpJson(text, { jsonc = false } = {}) {
+function parseMcpJson(text, { jsonc = false } = {}) {
   if (!jsonc) return JSON.parse(text);
   const errors = [];
   const value = parse(text, errors, { allowTrailingComma: true });
@@ -59,16 +59,6 @@ export function jsonMcpPort({ key = 'mcpServers', jsonc = false, source = 'other
       const present = Object.hasOwn(config[key] ?? {}, 'fuli');
       if (present) write(agent, text, undefined);
       return { id: agent.id, label: agent.label, status: present ? 'disconnected' : 'not_connected' };
-    },
-    status(agent, context, readers) {
-      let present = false;
-      try {
-        const config = validate(readers ? readers.readJson(agent.configPath, { jsonc }) : read(agent).config);
-        const current = config[key]?.fuli;
-        present = Boolean(current);
-        return { registration: { present, current: present &&
-          JSON.stringify(current) === JSON.stringify(expected(context, current)) } };
-      } catch { return { registration: { present, current: false } }; }
     }
   };
 }

@@ -13,7 +13,7 @@ import { createAdaptiveRuntimeBroker } from '../adaptive-runtime/runtime-broker.
 import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
 import { createPackageVersionChecker } from './package-version-checker.js';
 import { clientConnectionConfig } from '../setup/client-connection.js';
-import { discoverAgents } from '../setup/agents.js';
+import { agentTargets } from '../setup/agents.js';
 import { createClientConnectionObserver } from './client-connection-status.js';
 import { createClientInstaller } from './client-connection-install.js';
 import { createSettingsApplier } from './settings-apply.js';
@@ -22,11 +22,11 @@ import { createDoctor } from './doctor.js';
 import { createDoctorRepair } from './doctor-repair.js';
 import { createDiagnosticsBundle } from './diagnostics-bundle.js';
 import { liveMcpProcesses } from '../mcp/process-registry.js';
-import { inspectAgentInstallations } from '../setup/agent-installation-status.js';
 import { agentKitPorts } from '../agent-kits/ports.js';
 import { sessionClientRecords } from '../agent-kits/session-clients.js';
 import { createSessionOffers } from '../agent-kits/session-offers.js';
-import { createInstallerShadow, runInstallerShadow } from '../agent-kits/installer-shadow.js';
+import { customClientStore } from '../agent-kits/custom-clients.js';
+import { createCustomClients } from './custom-client-connection.js';
 import { CODEX_HOOK_TRUST_CLIENT } from '../agents/codex/hook-trust.js';
 import { readFormatOperations } from '../data-format/operations-log.js';
 
@@ -40,13 +40,15 @@ export function createSystemService({
   readSettings = readRuntimeSettings,
   writeSettings = writeRuntimeSettings,
   settingsApplier = createSettingsApplier({ paths, writeSettings }),
+  agentKits = agentKitPorts(paths, { runtimeConfigPath }),
+  customClients = customClientStore({ extensionsDir: agentKits.clientInstaller.extensionsDir }),
   clientObserver = createClientConnectionObserver({
-    discover: discoverAgents,
-    context: expectedIntegration(paths, runtimeConfigPath),
+    installer: agentKits.clientInstaller,
+    targets: () => agentTargets({ dataDir: paths.dataDir }),
+    customClients,
     historyPath: join(paths.dataDir, 'client-connection-observations.json')
   }),
-  agentKits = agentKitPorts(paths),
-  clientInstaller = createClientInstaller({ paths, runtimeConfigPath }),
+  clientInstaller = createClientInstaller({ paths, runtimeConfigPath, installer: agentKits.clientInstaller }),
   executorAdapters = new Map(),
   versionChecker = createPackageVersionChecker(),
   update = consoleUpdate(paths.dataDir),
@@ -111,15 +113,11 @@ export function createSystemService({
   }
 
   const observeClients = () => clientObserver.observe();
-  // agent-installer's status beside FULI's own inspection, never shown to the person (rec#11 D-79).
-  const installerShadow = createInstallerShadow({ run: () => runInstallerShadow({ installer: agentKits.clientInstaller,
-    manifestPath: paths.installerManifestPath, context: expectedIntegration(paths, runtimeConfigPath),
-    discover: discoverAgents, inspect: inspectAgentInstallations }) });
   const doctor = createDoctor({ observeClients, previewDataFormats,
     formatOperations: () => readFormatOperations(paths.dataDir), graphStage: () => runtimeBroker.status().stage,
     hookTrustUnreadable: [CODEX_HOOK_TRUST_CLIENT],
     liveProcesses: () => liveMcpProcesses(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
-    lastUpdate: () => update.status(), internalDetails: () => ({ installerShadow: installerShadow.latest() }),
+    lastUpdate: () => update.status(),
     portMoves: () => {
       const state = readJson(paths.graphRuntimeStatePath, null);
       return state?.portMoves ? { movedAt: state.startedAt, moves: state.portMoves } : null;
@@ -142,6 +140,8 @@ export function createSystemService({
     // Whether the console offers to open recorded sessions (session-offers.js).
     sessionLaunchOffers: (sessions) => sessionOffers.offers(sessions),
     connectClient: clientInstaller,
+    // Clients the person describes by hand (custom-client-connection.js).
+    ...createCustomClients({ installer: agentKits.clientInstaller, store: customClients }),
     resources: () => resourceMonitor.sample(),
     // updateKind: how the console's one-click update installs it (console-update.js).
     versionStatus: async () => ({ ...await versionChecker.check(), updateKind: update.kind() }),
@@ -170,21 +170,6 @@ export function createSystemService({
       operation
     ),
     close: () => runtimeBroker.close()
-  };
-}
-
-// The same expected integration that `fuli setup` installs.
-function expectedIntegration(paths, runtimeConfigPath) {
-  return {
-    dataDir: paths.dataDir,
-    nodePath: paths.clientNodePath,
-    mcpServerPath: paths.mcpServerPath,
-    runtimeConfigPath,
-    sessionSkillPath: paths.sessionSkillPath,
-    projectSkillPath: paths.projectSkillPath,
-    reviewSkillPath: paths.reviewSkillPath,
-    operationSkillPath: paths.operationSkillPath,
-    sessionCommandSkillPath: paths.sessionCommandSkillPath
   };
 }
 

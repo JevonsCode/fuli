@@ -17,7 +17,8 @@ process, that a Hook delivered context, or that a tool call succeeded.**
    you only want local Fuli services without editing any client). Setup can finish even when no
    known client is installed.
 2. Prefer automatic setup when Codex, Claude Code, Cursor, or Claude Desktop is detected. For any
-   other MCP client, run `fuli connect`, or open **Settings → Client connection** in the console.
+   other MCP client, run `fuli connect`, or open **Settings → Client connection** in the console and
+   add it under **Connect by hand**.
 3. Merge the generated `fuli` entry into the client's MCP settings while keeping its other servers.
    Reload and trust the connection as required by that client. Quit and reopen apps that read MCP
    configuration only at launch, then open a new task so the new MCP process loads.
@@ -42,20 +43,35 @@ Clients that only ask for a command can use `fuli mcp` if `fuli` is on their `PA
 
 ### Client status in Settings
 
-**Settings → Client connection** lists supported local clients that Fuli found and whether their
-Fuli integration configuration is still in place: **Connected** (`connected`, current Fuli entry in
+**Settings → Client connection** is always open. Its summary counts the clients FULI is in (「已接入
+4/6 个客户端」), the detected clients on the left and the ones described by hand on the right. Which
+clients are on this computer, and whether FULI is in each, is
+[agent-installer](https://github.com/JevonsCode/agent-installer)'s `status` for FULI's product manifest
+(see [Shared client components](#shared-client-components)); FULI no longer probes clients itself. The
+list shows each detected client and whether its Fuli integration configuration is still in place: **Connected** (`connected`, current Fuli entry in
 config), **Configuration changed** (`changed`, Fuli entry present but differs from this version),
 **Skills only** (`skills_left`, Fuli MCP entry gone and only skill files remain), **Removed**
 (`removed` after an earlier connection), **Not connected** (`not_connected`), **Not found**
-(`not_detected`), or **Cannot confirm** (`unknown`) when a client's config, settings, hooks, or
-their folder cannot be read or parsed. Only a missing file counts as **Removed** (`removed`). The
-view re-reads configuration on open, on manual refresh, and every 15 seconds while the card is open
-and the page is visible. It describes **configuration files only** — it does not prove that a
+(`not_detected`), or **Cannot confirm** (`unknown`) when FULI's MCP entry cannot be read, parsed,
+or is a `fuli` entry FULI did not write. Only a missing entry counts as **Removed** (`removed`). The
+view re-reads configuration when it shows, on manual refresh, and every 15 seconds while the page is
+visible. When agent-installer cannot run (offline before its first download, or a platform without
+a release asset), the card says so and lists no client; the doctor reports clients as unchecked
+(`client_detection_unavailable`). It describes **configuration files only** — it does not prove that a
 client process is running, reachable, or able to invoke tools, and it never reinstalls anything
 automatically. Fuli keeps only the latest status and the last five changes per client in
 `client-connection-observations.json` in its data directory; if that file is damaged, history
 starts over, and if it cannot be saved, the console keeps history until restart with an unsaved
 notice.
+
+**Connect by hand** describes a client FULI has no writer for, such as a company's own agent client:
+a name, the MCP configuration file under the home folder (`~/.acme/mcp.json`) and its format. FULI
+writes it as `<client-id>.json` with only an `install` section into the shared `agent-clients`
+extension directory (`%APPDATA%\agent-clients\extensions` on Windows, `~/.config/agent-clients/extensions`
+elsewhere), so agent-installer detects FULI in it like a built-in client; the session launcher ignores
+such a file. agent-installer checks the file first, and one it cannot read as a client is removed
+again with its reason. The card shows where the entry goes; paste the standard MCP configuration
+there. Only this computer can add or remove one, and FULI removes only files of that shape.
 
 ## 2. First actual tool call and verification
 
@@ -156,7 +172,7 @@ into them (rec#11 D-79): [agent-session-launcher](https://github.com/JevonsCode/
 and [agent-installer](https://github.com/JevonsCode/agent-installer). FULI runs each as a pinned
 native executable through its own ports (`src/agent-kits/session-launcher.js`,
 `src/agent-kits/client-installer.js`); their Node bindings are vendored unchanged under
-`src/agent-kits/vendor/`. This first stage changes nothing a person sees, except as noted below:
+`src/agent-kits/vendor/`:
 
 - **Session links.** Settings → conversation launchers are written as the launcher's host
   configuration (`agent-kits/launcher.json` in the data directory, one `fuli-<application>` deep-link
@@ -174,12 +190,17 @@ native executable through its own ports (`src/agent-kits/session-launcher.js`,
   answer (`claude-code`, `claude-desktop` or the ambiguous `claude-code-unknown`) in the same
   record. Sessions recorded before this have no record and are classified from their source
   application alone.
-- **Installer status in shadow.** The console runs the installer's read-only `status` against
-  FULI's product manifest (`src/agent-kits/fuli-installer-manifest.json`, composed into
-  `agent-kits/fuli-installer.json`) beside FULI's own inspection, at most every ten minutes and
-  never in the doctor's way. Per-client agreement is in the doctor report's `internal.installerShadow`
-  (state codes only); the doctor's items and overall are unchanged. FULI's own writers still set
-  up every client.
+- **Client detection.** Every place FULI asks which agent clients are on this computer and whether
+  FULI is in them goes through the installer's read-only `status` for FULI's product manifest
+  (`src/agent-kits/fuli-installer-manifest.json`, composed into `agent-kits/fuli-installer.json`;
+  `src/agent-kits/client-detection.js`): the console's client list and its history, the doctor's
+  `client_outdated`, one-click connect, `fuli setup`, `fuli uninstall`, the client notice of
+  `fuli start` and `fuli clients update`. The manifest names OpenCode's plugin only where FULI's
+  writer keeps one (OpenCode 2.x), from a source written beside it (`agent-kits/opencode-plugin/`).
+  FULI's own writers still install every client; their adapters only say where they edit
+  (`agentTargets`). Without the installer FULI knows no client: setup connects none and says why,
+  uninstall removes FULI's entries from every client it can write, and the console and doctor say
+  detection is unavailable.
 
 **Where the executables come from**, first match wins: the developer override
 `FULI_AGENT_SESSION_LAUNCHER` / `FULI_AGENT_INSTALLER` (an absolute path), the Windows portable or
@@ -188,13 +209,15 @@ portable and tray inventories), then a copy downloaded into `native-runtime/agen
 directory the first time the console needs it (never at import time, never from a hook). Downloads
 use the pinned URL and are published only after their SHA-256 matches the pin; a copy that no longer
 matches is refused, not replaced. Offline or on a platform without a release asset the component is
-unavailable and FULI keeps its own behaviour.
+unavailable: session links keep FULI's own rules, and clients cannot be detected (see above).
 
 **Bumping a component.** Release the component, then in one change: copy the new tag's
 `bindings/node/index.mjs`, `index.d.ts` and `LICENSE` into `src/agent-kits/vendor/<component>/` and
 update that README's tag and commit; set `version` and every platform's SHA-256 in
-`src/agent-kits/pins.js` from the release's `SHA256SUMS`; run `test/agent-kits/` (the pin, bundle,
-launcher and shadow tests download and verify the new assets).
+`src/agent-kits/pins.js` from the release's `SHA256SUMS`; run `test/agent-kits/` and
+`test/windows-installed-client-config.test.js` (the pin, bundle, launcher and client detection tests
+download and verify the new assets). To try an unreleased build first, point `FULI_AGENT_INSTALLER` at
+it; the tests use it too.
 
 ## Common failure recovery
 
@@ -225,7 +248,7 @@ service. See the [remote connector setup](../README.md#remote-claude--cowork-con
 
 ## 自动发现与一键接入
 
-在设置 → 客户端接入展开“本机客户端”，点击已检测客户端的“接入”。操作只在运行控制台的本机可用：先备份已有配置，再安装并自检，成功后需重启客户端。客户端自己的信任/启用步骤仍由客户端提示；配置自检不代表 MCP 已成功运行。失败或部分完成时，可重试或运行 `fuli setup` 查看详细原因。
+在设置 → 客户端接入的“本机客户端”中，点击 agent-installer 检测到的客户端的“接入”；没有自动接入的客户端（例如公司内部的 Agent 客户端）在右侧“手动接入”里添加，按显示的位置粘贴通用 MCP 配置。操作只在运行控制台的本机可用：先备份已有配置，再安装并自检，成功后需重启客户端。客户端自己的信任/启用步骤仍由客户端提示；配置自检不代表 MCP 已成功运行。失败或部分完成时，可重试或运行 `fuli setup` 查看详细原因。
 
 | 客户端 | 全局配置 | 官方格式 |
 | --- | --- | --- |

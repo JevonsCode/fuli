@@ -26,26 +26,20 @@ const PLAN = Object.freeze({
   }]
 });
 
-test('uninstall planning is side-effect free and finds installed integration artifacts', () => {
-  const plan = planLocalUninstall({ dataDir: null }, {
+test('uninstall planning removes FULI where agent-installer finds it, and from every client without it', async () => {
+  const cursor = { id: 'cursor', label: 'Cursor', configPath: 'C:/Cursor/mcp.json' };
+  const gemini = { id: 'gemini', label: 'Gemini CLI', configPath: 'C:/Gemini/settings.json' };
+  const targets = () => [PLAN.agents[0], cursor, gemini];
+  const plan = await planLocalUninstall({ dataDir: null }, {
     resolvePaths: () => PLAN.paths,
-    discover: () => [
-      PLAN.agents[0],
-      {
-        id: 'cursor',
-        label: 'Cursor',
-        available: false,
-        configPath: 'C:/Cursor/mcp.json',
-        skillPath: 'C:/Cursor/skills/session',
-        projectSkillPath: 'C:/Cursor/skills/project',
-        reviewSkillPath: 'C:/Cursor/skills/flreview',
-        operationSkillPath: 'C:/Cursor/skills/operating-fuli'
-      }
-    ],
-    fileExists: (path) => path === 'C:/Cursor/mcp.json'
+    targets,
+    detect: async (paths, list) => ({ status: 'available', agents: list.map((agent) => ({ ...agent,
+      integrationStatus: agent.id === 'gemini' ? 'not_connected' : agent.id === 'cursor' ? 'update_available' : 'connected' })) })
   });
-
   assert.deepEqual(plan.agents.map(({ id }) => id), ['codex', 'cursor']);
+  const offline = await planLocalUninstall({ dataDir: null }, { resolvePaths: () => PLAN.paths, targets,
+    detect: async () => ({ status: 'unavailable', reason: 'offline' }) });
+  assert.deepEqual(offline.agents.map(({ id }) => id), ['codex', 'cursor', 'gemini']);
 });
 
 test('uninstall disconnects integrations, removes only bundled Skills, and preserves data', async () => {

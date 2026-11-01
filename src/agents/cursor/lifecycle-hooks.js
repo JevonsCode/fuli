@@ -44,8 +44,3 @@ export function withoutCursorLifecycleHooks(current) {
   return Object.keys(hooks).length ? { ...rest, hooks } : rest;
 }
 
-export function hasCurrentCursorLifecycleHooks(current, context, hooks) {
-  try {
-    return JSON.stringify(withCursorLifecycleHooks(current, context, hooks)) === JSON.stringify(current);
-  } catch { return false; }
-}

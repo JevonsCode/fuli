@@ -7,7 +7,7 @@ import { delimiter, join } from 'node:path';
 import {
   connectAgent,
   disconnectAgent,
-  discoverAgents
+  agentTargets
 } from '../src/setup/agents.js';
 
 const CONTEXT = Object.freeze({
@@ -16,19 +16,17 @@ const CONTEXT = Object.freeze({
   runtimeConfigPath: 'C:/Users/Test/Fuli/graph-runtime.json'
 });
 
-test('agent discovery reports Codex, Claude Code, and Cursor without failing on missing commands', () => {
-  const agents = discoverAgents({
+test('writer targets name where Codex, Claude Code and Cursor are edited, whatever is installed', () => {
+  const agents = agentTargets({
     platform: 'win32',
     env: { CODEX_HOME: 'C:/Codex' },
     homeDir: 'C:/Users/Test',
-    commandExists: (command) => command === 'claude'
+    fileExists: () => false,
+    commandVersion: () => null
   });
 
-  assert.deepEqual(agents.map(({ id, available }) => ({ id, available })), [
-    { id: 'codex', available: false },
-    { id: 'claude-code', available: true },
-    { id: 'cursor', available: false }
-  ]);
+  assert.deepEqual(agents.slice(0, 3).map(({ id }) => id), ['codex', 'claude-code', 'cursor']);
+  assert.equal(agents.some((agent) => 'available' in agent), false, 'agent-installer says which clients are installed');
   assert.equal(agents[0].configPath, 'C:\\Codex\\config.toml');
   assert.equal(agents[0].globalInstructionsPath, 'C:\\Codex\\AGENTS.md');
   assert.equal(agents[0].globalInstructionsOverridePath, 'C:\\Codex\\AGENTS.override.md');
@@ -52,28 +50,8 @@ test('agent discovery reports Codex, Claude Code, and Cursor without failing on 
   assert.equal(agents[2].sessionCommandSkillPath, 'C:\\Users\\Test\\.cursor\\skills\\fuli');
 });
 
-test('agent discovery recognizes installed Claude Code and Cursor config directories without CLIs', () => {
-  const existing = new Set([
-    'C:\\Users\\Test\\.claude',
-    'C:\\Users\\Test\\.cursor'
-  ]);
-  const agents = discoverAgents({
-    platform: 'win32',
-    env: {},
-    homeDir: 'C:/Users/Test',
-    commandExists: () => false,
-    fileExists: (filePath) => existing.has(filePath)
-  });
-
-  assert.deepEqual(agents.map(({ id, available }) => ({ id, available })), [
-    { id: 'codex', available: false },
-    { id: 'claude-code', available: true },
-    { id: 'cursor', available: true }
-  ]);
-});
-
 test('Claude connection delegates to its lifecycle-aware config connector', () => {
-  const agent = discoverAgents({ commandExists: () => true, commandVersion: () => null })[1];
+  const agent = agentTargets({ commandVersion: () => null })[1];
   const calls = [];
   const connected = connectAgent(agent, CONTEXT, {
     connectConfig(selectedAgent, context) {
@@ -93,7 +71,7 @@ test('Claude connection delegates to its lifecycle-aware config connector', () =
 });
 
 test('Codex connection delegates to its shared config connector', () => {
-  const codex = discoverAgents({ commandExists: () => true, commandVersion: () => null })[0];
+  const codex = agentTargets({ commandVersion: () => null })[0];
   const calls = [];
   const connected = connectAgent(codex, CONTEXT, {
     connectConfig(agent, context) {
@@ -107,7 +85,7 @@ test('Codex connection delegates to its shared config connector', () => {
 });
 
 test('Cursor connection delegates to its JSON config connector', () => {
-  const cursor = discoverAgents({ commandExists: () => true, commandVersion: () => null })[2];
+  const cursor = agentTargets({ commandVersion: () => null })[2];
   const calls = [];
   const connected = connectAgent(cursor, CONTEXT, {
     connectConfig(agent, context) {
@@ -123,7 +101,7 @@ test('Cursor connection delegates to its JSON config connector', () => {
 });
 
 test('Claude disconnect removes only its Fuli JSON registration', () => {
-  const claude = discoverAgents({ commandExists: () => true, commandVersion: () => null })[1];
+  const claude = agentTargets({ commandVersion: () => null })[1];
   const calls = [];
   const result = disconnectAgent(claude, {
     disconnectConfig(agent) {
@@ -138,7 +116,7 @@ test('Claude disconnect removes only its Fuli JSON registration', () => {
 
 // The real probe against a synthetic `opencode` on PATH that prints what
 // OpenCode 2.1.4 prints. No real OpenCode or home directory is touched.
-test('discovery reads OpenCode\'s real `opencode v2.1.4` version line', (t) => {
+test('the OpenCode target reads OpenCode\'s real `opencode v2.1.4` version line', (t) => {
   const bin = mkdtempSync(join(tmpdir(), 'p63-opencode-bin-'));
   const home = mkdtempSync(join(tmpdir(), 'p63-opencode-home-'));
   const path = process.env.PATH;
@@ -150,7 +128,6 @@ test('discovery reads OpenCode\'s real `opencode v2.1.4` version line', (t) => {
   if (process.platform === 'win32') writeFileSync(join(bin, 'opencode.cmd'), '@echo opencode v2.1.4\r\n');
   else writeFileSync(join(bin, 'opencode'), '#!/bin/sh\nprintf "opencode v2.1.4\n"\n', { mode: 0o755 });
   process.env.PATH = `${bin}${delimiter}${path}`;
-  const agent = discoverAgents({ homeDir: home, env: {}, includeUnavailable: true }).find(({ id }) => id === 'opencode');
-  assert.equal(agent.available, true);
+  const agent = agentTargets({ homeDir: home, env: {} }).find(({ id }) => id === 'opencode');
   assert.equal(agent.clientVersion, '2.1.4');
 });

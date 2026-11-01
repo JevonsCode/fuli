@@ -23,6 +23,8 @@ export interface ComponentStatus {
   component: Component;
   state: 'current' | 'outdated' | 'missing' | 'conflict' | 'unsupported';
   message?: string;
+  /** Where the component lives in this client, relative to home, e.g. `~/.acme/mcp.json`. */
+  paths?: string[];
 }
 
 export type ClientState =

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { discoverAgents } from '../src/setup/agents.js';
+import { agentTargets } from '../src/setup/agents.js';
 import { installAgent } from '../src/setup/install-agent.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -93,7 +93,7 @@ test('flreview keeps mutations behind explicit visualization actions', () => {
 
 // The lifecycle clients' Skill folders and review triggers come from their descriptor packs.
 function lifecycleClient(id, homeDir = '/home/test') {
-  return discoverAgents({ platform: 'linux', homeDir, env: {}, fileExists: () => false, commandExists: () => false })
+  return agentTargets({ platform: 'linux', homeDir, env: {}, fileExists: () => false, commandVersion: () => null })
     .find((agent) => agent.id === id);
 }
 
@@ -138,7 +138,7 @@ test('connecting a client installs its /fuli Skill next to the others', async ()
     const agent = lifecycleClient(id, `/home/${id}`);
     await installAgent(agent, {}, paths, { backupConfig: () => null, connect: () => ({ status: 'connected' }),
       installSkill: (target, { sourcePath }) => { installed.push([target.skillPath, sourcePath]); return { status: 'installed' }; },
-      inspectInstallations: null });
+      inspect: null });
     const fuli = installed.filter(([, source]) => source === '/pkg/skills/fuli');
     assert.deepEqual(fuli, id === 'codex' ? [] : [[`/home/${id}/.claude/skills/fuli`, '/pkg/skills/fuli']], id);
   }

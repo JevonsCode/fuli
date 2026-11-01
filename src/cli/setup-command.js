@@ -27,7 +27,7 @@ export async function runSetupCommand(args, dependencies = {}) {
   const selectAgents = dependencies.selectAgents ?? promptAgentSelection;
   const write = dependencies.write ?? writeLine;
   const copy = copyableValueStyle({ output: dependencies.output, env: dependencies.env });
-  let plan = planSetup(options, dependencies);
+  let plan = await planSetup(options, dependencies);
   if (options.connectedOnly) {
     plan = applyAgentSelection(plan, plan.agents.filter((agent) =>
       ['current', 'outdated'].includes(agent.integrationDetails?.mcp)
@@ -80,7 +80,9 @@ export function formatSetupPreview(plan, options, copy = String) {
   const selected = available.filter(({ selected }) => selected !== false);
   const agentSummary = options.skipAgents || (available.length > 0 && selected.length === 0)
     ? 'skipped'
-    : selected.map(({ label }) => label).join(', ') || 'none detected';
+    : plan.clientDetection
+      ? `clients could not be detected (${plan.clientDetection.reason})`
+      : selected.map(({ label }) => label).join(', ') || 'none detected';
   const runtimeSettings = plan.runtimeSettings ?? runtimeSettingsWithOverrides(
     DEFAULT_RUNTIME_SETTINGS,
     { consolePort: options.port }

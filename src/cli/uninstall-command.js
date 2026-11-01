@@ -10,7 +10,7 @@ export async function runUninstallCommand(args, dependencies = {}) {
   const confirm = dependencies.confirm
     ?? (() => confirmInTerminal('Remove local integrations? [y/N] ', { defaultYes: false }));
   const write = dependencies.write ?? writeLine;
-  const plan = planUninstall(options, dependencies);
+  const plan = await planUninstall(options, dependencies);
   write(formatUninstallPreview(plan));
 
   if (!options.yes && !await confirm()) {
