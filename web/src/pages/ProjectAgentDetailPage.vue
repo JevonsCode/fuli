@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import BackLink from '@/components/BackLink.vue'
+import Breadcrumb from '@/components/Breadcrumb.vue'
 import { coversClient } from '@/lib/source-coverage'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Badge } from '@/components/ui/badge'
@@ -62,7 +62,7 @@ const agents = roster.agents
 const agent = computed(() => (routeSpaceMatches.value && routeAgentId.value ? roster.find(routeAgentId.value) : null))
 const linkedProject = computed(() => typeof route.query.project === 'string' ? route.query.project : '')
 const linkedTask = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
-// "← 编排" goes Back when the collection opened this page, restoring its
+// The 编排 crumb goes Back when the collection opened this page, restoring its
 // filters, scroll and focused card.
 const collectionPath = '/project-agents/manage'
 const openedFromCollection = /^\/project-agents\/manage(\?|$)/
@@ -288,7 +288,7 @@ async function cleanup(person: ProjectAgentRecord) {
 <template>
   <section ref="pageRoot" class="view project-agent-manage" :aria-label="title">
     <div class="@container grid w-full gap-4">
-      <BackLink class="agent-profile-back" :to="collectionPath" :from="openedFromCollection">{{ t('shell.sections.orchestrate') }}</BackLink>
+      <Breadcrumb :parent="{ label: t('shell.sections.orchestrate'), to: collectionPath, from: openedFromCollection }" />
 
       <GrowthLoading v-if="pageLoading" :label="!store.state ? t('common.status.loadingConsole') : t('projectAgents.loading')" />
       <div v-else-if="pageError" class="ui-card project-agents-state is-error" role="alert">

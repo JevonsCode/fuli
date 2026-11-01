@@ -454,7 +454,7 @@ describe('employee workbench', () => {
     const wrapper = await setup('/employees/unknown')
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.text()).toContain('这位专属 Agent 暂不可用')
-    expect(wrapper.get('.employee-workbench-back').attributes('href')).toBe('/project-agents')
+    expect(wrapper.get('[data-breadcrumb-parent]').attributes('href')).toBe('/project-agents')
   })
 
   it('opens Bole as a native people panel without requiring a project or runtime iframe', async () => {

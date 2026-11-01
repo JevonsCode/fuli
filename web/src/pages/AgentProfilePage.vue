@@ -11,7 +11,7 @@ import { RouterLink, useRoute, useRouter } from "vue-router";
 import { getJson } from "@/api/client";
 import { useConsoleStore } from "@/stores/console";
 import { t } from "@/i18n";
-import BackLink from "@/components/BackLink.vue";
+import Breadcrumb from "@/components/Breadcrumb.vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import UiDisclosure from "@/components/UiDisclosure.vue";
 import AgentName from "@/features/agent-profile/AgentName.vue";
@@ -147,7 +147,7 @@ const tabsReady = computed(() => Boolean(route.query.tab) || workKnown.value);
 // fallback while it loads or when the Agent is unavailable.
 // The header shows the name, where the person can rename the Agent.
 usePageTitle(() => (agent.value ? agentDisplayName(agent.value) : ""), { inPage: true });
-// "← 全部 Agent" goes Back when the directory opened this page, restoring its
+// The 全部 Agent crumb goes Back when the directory opened this page, restoring its
 // filters, scroll and focused card.
 const openedFromDirectory = /^\/project-agents(\?|$)/;
 const collaborators = computed(() =>
@@ -343,7 +343,7 @@ onMounted(() => {
     :aria-label="agent ? agentDisplayName(agent) : t('agentProfiles.profile')"
   >
     <div class="@container grid w-full gap-4">
-      <BackLink class="agent-profile-back" to="/project-agents" :from="openedFromDirectory">{{ t("agentProfiles.back") }}</BackLink>
+      <Breadcrumb :parent="{ label: t('agentProfiles.back'), to: '/project-agents', from: openedFromDirectory }" />
 
       <GrowthLoading
         v-if="(loading || store.runtimeStatus === 'loading') && !agent"

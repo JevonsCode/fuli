@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
-import BackLink from '@/components/BackLink.vue'
+import Breadcrumb from '@/components/Breadcrumb.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Badge } from '@/components/ui/badge'
@@ -175,7 +175,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="view model-settings-view" :aria-label="t('modelSettings.title')">
     <div class="model-settings-column">
-      <BackLink to="/settings" :from="openedFromSettings">{{ t('modelSettings.back') }}</BackLink>
+      <Breadcrumb :parent="{ label: t('modelSettings.back'), to: '/settings', from: openedFromSettings }" :current="t('modelSettings.title')" />
 
       <GrowthLoading v-if="loading && !payload" :label="t('modelSettings.loading')" />
       <div v-else-if="loadError && !payload" class="ui-empty rounded-lg border bg-card" role="alert">
@@ -245,11 +245,11 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.model-settings-view { padding-top: clamp(16px, 3vw, 32px); padding-bottom: 96px; color: var(--color-ink); }
+.model-settings-view { padding-bottom: 96px; color: var(--color-ink); }
 /* Sections keep one rhythm (rec#38). */
 .model-settings-column { display: grid; gap: var(--space-8); width: 100%; }
-/* The back link stays its own width; align-self does that while the column lays out as a flex column around a loading (styles/vue.css). */
-.model-settings-column > :first-child { justify-self: start; align-self: start; margin-bottom: calc(var(--space-4) - var(--space-8)); }
+/* The breadcrumb sits closer to the first section than sections sit to each other. */
+.model-settings-column > .breadcrumb { margin-bottom: calc(var(--space-4) - var(--space-8)); }
 .model-role-list { min-width: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); }
 .model-role-row { position: relative; min-width: 0; transition: box-shadow var(--motion-fast); }
 .model-role-row:first-child { border-start-start-radius: inherit; border-start-end-radius: inherit; }

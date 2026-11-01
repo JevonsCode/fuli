@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import BackLink from '@/components/BackLink.vue'
+import Breadcrumb from '@/components/Breadcrumb.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { currentLocale, t } from '@/i18n'
@@ -42,7 +42,7 @@ const rt = useRoundtable({
 })
 const { threads, chats } = rt
 
-// "← 全部对话" goes Back when the list opened this conversation; a deep link opens the list instead.
+// The 全部对话 crumb goes Back when the list opened this conversation; a deep link opens the list instead.
 const openedFromList = /^\/roundtables\/?(\?.*)?$/
 const listPath = computed(() => router.resolve({ path: '/roundtables', query: route.query }).fullPath)
 const starting = ref(false)
@@ -84,7 +84,7 @@ const roomPath = (item: RoundtableChatRoom) => `/roundtables/chat/${encodeURICom
 
       <!-- An open conversation: its own page with a way back. -->
       <template v-if="rt.hasSelection.value">
-        <BackLink class="rt-back" :to="listPath" :from="openedFromList" data-roundtable-back>{{ t('roundtable.back') }}</BackLink>
+        <Breadcrumb :parent="{ label: t('roundtable.back'), to: listPath, from: openedFromList }" />
         <RoundtableThreadChat v-if="rt.thread.value" :thread="rt.thread.value" :time="time" :stale="rt.detailStale.value" @updated="rt.threadUpdated" />
         <RoundtableRoom v-else-if="rt.room.value" :room="rt.room.value" :time="time" :loading-later="rt.loadingLater.value" :later-failed="rt.laterFailed.value"
           :later-stuck="rt.laterStuck.value" :new-messages="rt.newMessages.value" @later="rt.loadLater" />
@@ -162,8 +162,6 @@ const roomPath = (item: RoundtableChatRoom) => `/roundtables/chat/${encodeURICom
 .rt-view.is-open { overflow: hidden; }
 .rt { display: flex; flex: 1 0 auto; flex-direction: column; gap: 24px; width: 100%; }
 .is-open .rt { flex: 1 1 0; gap: 12px; min-height: 0; }
-.rt-back { align-self: flex-start; color: var(--color-muted); font-size: var(--text-control); text-decoration: none; }
-.rt-back:hover { color: var(--color-ink); }
 .rt-bar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding-inline: 4px; }
 /* The total stays for screen readers and as the place focus returns to; each section shows its own count. */
 .rt-count { outline: none; }

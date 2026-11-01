@@ -113,17 +113,6 @@
   min-height: 140px;
 }
 
-.agent-profile-back {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2, 8px);
-  width: fit-content;
-  color: var(--color-muted);
-  font-size: 14px;
-  text-decoration: none;
-}
-
-.agent-profile-back:hover,
 .agent-section-heading > a {
   color: var(--color-accent);
 }
