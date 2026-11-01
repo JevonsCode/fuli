@@ -95,7 +95,7 @@ describe('permanent delete on the item page', () => {
     const wrapper = await open()
     expect(wrapper.get('[data-hard-delete-open]').text()).toBe('删除…')
     await openDialog(wrapper)
-    expect(postJson).toHaveBeenCalledWith('/api/knowledge/entity/item-2/hard-delete/preview', { personalSpaceId: 'space' })
+    expect(postJson).toHaveBeenCalledWith('/api/knowledge/entity/item-2/hard-delete/preview', { personalSpaceId: 'space' }, expect.objectContaining({ schema: expect.anything() }))
     expect(dialog()!.textContent).toContain('正在列出将彻底删除的内容')
     answer(preview())
     await flushPromises()
@@ -143,9 +143,9 @@ describe('permanent delete on the item page', () => {
     expect(exported.source_text).toBe('full')
     expect(exported.removed_episodes[0].content).toBe('synthetic full source')
     expect(postJson.mock.calls[1]).toEqual(['/api/knowledge/entity/item-2/hard-delete/export',
-      { personalSpaceId: 'space', previewId: 'a'.repeat(64) }])
+      { personalSpaceId: 'space', previewId: 'a'.repeat(64) }, expect.objectContaining({ schema: expect.anything() })])
     expect(postJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-2/hard-delete', {
-      personalSpaceId: 'space', previewId: 'a'.repeat(64), confirmation: '删除' })
+      personalSpaceId: 'space', previewId: 'a'.repeat(64), confirmation: '删除' }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.get('[data-hard-deleted]').attributes('data-hard-deleted-state')).toBe('complete')
     create.mockRestore(); revoke.mockRestore(); click.mockRestore()
     wrapper.unmount()
@@ -171,7 +171,7 @@ describe('permanent delete on the item page', () => {
     await openDialog(wrapper)
     await submit()
     expect(postJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-2/hard-delete', {
-      personalSpaceId: 'space', previewId: 'a'.repeat(64), confirmation: '删除' })
+      personalSpaceId: 'space', previewId: 'a'.repeat(64), confirmation: '删除' }, expect.objectContaining({ schema: expect.anything() }))
     expect(dialog()!.querySelector('[data-hard-delete-submit]')!.textContent).toContain('正在彻底删除这条知识')
     finish(deletedResult())
     await flushPromises()
@@ -209,7 +209,7 @@ describe('permanent delete on the item page', () => {
     expect(postJson).toHaveBeenCalledTimes(3)
     await submit()
     expect(postJson).toHaveBeenCalledWith('/api/knowledge/entity/item-2/hard-delete', {
-      personalSpaceId: 'space', previewId: fresh, confirmation: '删除' })
+      personalSpaceId: 'space', previewId: fresh, confirmation: '删除' }, expect.objectContaining({ schema: expect.anything() }))
     // Deleted from the graph, local cleanup left: said so, with its retry.
     expect(wrapper.get('[data-hard-deleted]').attributes('data-hard-deleted-state')).toBe('local_pending')
     expect(wrapper.get('[data-hard-deleted-local-pending]').text()).toContain('图谱里已经删除，本机记录还没清理完')
@@ -231,7 +231,7 @@ describe('permanent delete on the item page', () => {
     expect(wrapper.text()).not.toContain('没有删除')
     expect(wrapper.get('[data-hard-deleted]').attributes('data-hard-deleted-state')).toBe('unknown')
     expect(wrapper.get('[data-hard-deleted-unknown]').text()).toContain('FULI 不会再发一次删除，只会去核对')
-    expect(postJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-2/hard-delete/status', { personalSpaceId: 'space' })
+    expect(postJson).toHaveBeenLastCalledWith('/api/knowledge/entity/item-2/hard-delete/status', { personalSpaceId: 'space' }, expect.objectContaining({ schema: expect.anything() }))
     // The graph answers on the second look: it was deleted.
     postJson.mockImplementation(async () => deletedResult())
     await wrapper.get('[data-hard-deleted-recheck]').trigger('click')
@@ -275,7 +275,7 @@ describe('permanent delete on the item page', () => {
     })
     await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(postJson).toHaveBeenCalledWith('/api/knowledge/entity/item-2/hard-delete/status', { personalSpaceId: 'space' })
+    expect(postJson).toHaveBeenCalledWith('/api/knowledge/entity/item-2/hard-delete/status', { personalSpaceId: 'space' }, expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.get('[data-hard-deleted]').text()).toContain('只保留了删除时间和数量')
     expect(wrapper.get('[data-hard-deleted-when]').text()).toContain('删除时间')
     expect(wrapper.get('[data-hard-deleted-disclosure]').text()).toContain('数据库内部文件和事务日志里可能还残留字节')

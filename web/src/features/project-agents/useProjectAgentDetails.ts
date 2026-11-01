@@ -1,5 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
+import { z } from 'zod'
 import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
+import { shapeOf } from '@/api/response-shape'
 import { isAgentTaskDataComplete, taskHasAgent } from '@/features/agent-profile/agent-work-summary'
 import { t } from '@/i18n'
 import type {
@@ -43,6 +45,13 @@ function actionIdempotencyKey(prefix: string) {
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`
   return `${prefix}:${suffix}`
 }
+
+// The provider answers each source as a list or as a record that holds one,
+// under snake_case or camelCase names (see the normalizers in
+// agent-roster-records.ts), so the answer is checked to be one of the two and
+// assertReportedCollection checks which collection it reports.
+const reportedShape = shapeOf(z.union([z.array(z.unknown()), z.looseObject({})]))
+const taskRecordShape = shapeOf(z.looseObject({}))
 
 function assertReportedCollection(value: unknown, keys: string[], allowRecord = false) {
   if (Array.isArray(value)) return
@@ -105,7 +114,7 @@ export function useProjectAgentDetails(
     // space and apply the shared ownership rules so owner-only tasks remain visible.
     const query = new URLSearchParams({ personalSpaceId: space, limit: '200' })
     if (project) query.set('personalProjectId', project)
-    const value = await getJson<unknown>(`/api/project-agent-tasks?${query}`)
+    const value = await getJson(`/api/project-agent-tasks?${query}`, reportedShape)
     assertReportedCollection(value, ['tasks', 'items'])
     const belongs = (task: ProjectAgentTaskRecord) =>
       (!task.personalSpaceId || task.personalSpaceId === space)
@@ -113,7 +122,7 @@ export function useProjectAgentDetails(
       && taskHasAgent(task, id)
     const tasks = taskValues(value).filter(belongs)
     if (taskId && !tasks.some(task => task.taskId === taskId)) {
-      const task = normalizeTask(await getJson<unknown>(`/api/project-agent-tasks/${encodeURIComponent(taskId)}?${query}`))
+      const task = normalizeTask(await getJson(`/api/project-agent-tasks/${encodeURIComponent(taskId)}?${query}`, taskRecordShape))
       if (task && belongs(task)) tasks.unshift(task)
     }
     return { tasks, partial: !isAgentTaskDataComplete(value) }
@@ -203,13 +212,13 @@ export function useProjectAgentDetails(
     const scope = taskScope()
     const taskRequested = ++taskVersion
     const requests: Record<DetailSource, Promise<unknown>> = {
-      assignments: getJson<unknown>(`/api/project-agent-assignments?${query}`),
+      assignments: getJson(`/api/project-agent-assignments?${query}`, reportedShape),
       tasks: loadScopedTasks(space, id, scope.project, scope.task),
-      activity: getJson<unknown>(`/api/project-agent-activity?${activityQuery}`),
-      recruitments: getJson<unknown>(`/api/project-agent-recruitments?personalSpaceId=${spaceQuery}`),
-      executors: getJson<unknown>(`/api/executors?personalSpaceId=${spaceQuery}`),
-      routingRules: getJson<unknown>(`/api/executor-routing-rules?personalSpaceId=${spaceQuery}`),
-      learning: getJson<unknown>(`/api/project-agent-routing-learning?${query}`),
+      activity: getJson(`/api/project-agent-activity?${activityQuery}`, reportedShape),
+      recruitments: getJson(`/api/project-agent-recruitments?personalSpaceId=${spaceQuery}`, reportedShape),
+      executors: getJson(`/api/executors?personalSpaceId=${spaceQuery}`, reportedShape),
+      routingRules: getJson(`/api/executor-routing-rules?personalSpaceId=${spaceQuery}`, reportedShape),
+      learning: getJson(`/api/project-agent-routing-learning?${query}`, reportedShape),
     }
     await Promise.all(DETAIL_SOURCES.map(async (source) => {
       try {
