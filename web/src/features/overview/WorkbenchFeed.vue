@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { motion } from 'motion-v'
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,13 +13,17 @@ import { SPRING } from '@/lib/motion'
 import type { ProjectAgentTaskRecord } from '@/types'
 import OverviewReadStatus from './OverviewReadStatus.vue'
 import { taskKey } from './workbench-model'
+import { useTeamWork } from '@/features/team-work/useTeamWork'
+import { useConsoleStore } from '@/stores/console'
+import WidgetSlot from '@/widgets/WidgetSlot.vue'
 
 type ReadState = InstanceType<typeof OverviewReadStatus>['$props']['state']
 
 // The workbench's right half, one scrolling column: what waits for you (only
-// when something does), the other work in progress (a click puts it on the
+// when something does), whatever the layout puts in the feed slot (team
+// cards by default), the other work in progress (a click puts it on the
 // stage) and what was just finished.
-defineProps<{
+const props = defineProps<{
   requests: AgentAttention[]
   requestsState: ReadState
   requestTotal: number
@@ -34,6 +39,15 @@ defineProps<{
   flying: string
 }>()
 const emit = defineEmits<{ select: [task: ProjectAgentTaskRecord]; retryRequests: []; retryTasks: [] }>()
+// A task FLAs do together already has its team card; 进行中 keeps the rest.
+// Until the team cards have loaded, nothing is held back.
+const store = useConsoleStore()
+const team = useTeamWork(computed(() => store.activePersonalSpace?.id ?? ''))
+const solo = computed(() => {
+  if (team.state.value !== 'ready') return props.running
+  const together = new Set(team.sheets.value.map(sheet => sheet.taskId))
+  return props.running.filter(task => !together.has(task.taskId))
+})
 </script>
 
 <template>
@@ -59,11 +73,12 @@ const emit = defineEmits<{ select: [task: ProjectAgentTaskRecord]; retryRequests
     </section>
 
     <!-- With nothing else in progress the stage already says so; the card stays away. -->
-    <section v-if="running.length || tasksState.loading || tasksState.error" class="workbench-card" aria-labelledby="workbench-running-heading" data-workbench-running>
+    <WidgetSlot place="workbench.feed" />
+    <section v-if="solo.length || tasksState.loading || tasksState.error" class="workbench-card" aria-labelledby="workbench-running-heading" data-workbench-running>
       <header class="workbench-card-head"><h2 id="workbench-running-heading">{{ t('overview.sections.currentWork') }}</h2></header>
       <OverviewReadStatus :state="tasksState" :label="t('overview.work.loading')" :failed="t('overview.work.loadFailed')" @retry="emit('retryTasks')" />
-      <ul v-if="running.length" class="workbench-rows">
-        <li v-for="task in running" :key="taskKey(task)">
+      <ul v-if="solo.length" class="workbench-rows">
+        <li v-for="task in solo" :key="taskKey(task)">
           <Button variant="ghost" class="workbench-row workbench-pick" :aria-label="t('overview.stage.switchTo', { title: title(task) })" data-workbench-pick @click="emit('select', task)">
             <span class="workbench-face" :style="agentIdentityStyle(task.leadAgentId ?? task.ownerAgentId)" aria-hidden="true">
               <img v-if="task.leadAgentId || task.ownerAgentId" :src="agentAvatarUrl(task.leadAgentId ?? task.ownerAgentId ?? '')" alt="" />

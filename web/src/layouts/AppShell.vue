@@ -19,6 +19,7 @@ import { useConsoleStore } from '@/stores/console'
 import { UiIcon, UiIconButton, UiNotice } from '@/ui'
 import { FULI_VERSION } from '@/version'
 import AppDock from './AppDock.vue'
+import WidgetSlot from '@/widgets/WidgetSlot.vue'
 import SectionTabs from './SectionTabs.vue'
 import { activeDestination, activeSection, navDestinations } from './nav-destinations'
 import { pageLayout } from './page-layout'
@@ -146,6 +147,7 @@ watchEffect(() => {
       <GlossaryLayer />
       <CaptureOnboardingDialog />
     </main>
+    <WidgetSlot place="shell.aboveDock" />
     <AppDock :destinations="dockDestinations" :active-key="destination?.key" :space-id="activeSpaceId" :folded="dockFolded" />
   </div>
   </MotionConfig>
