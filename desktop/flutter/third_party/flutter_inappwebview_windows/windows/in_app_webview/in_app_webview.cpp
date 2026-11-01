@@ -1682,6 +1682,23 @@ namespace flutter_inappwebview_plugin
       virtualKeys_.state(), 0, point);
   }
 
+  // FULI patch: gives the page keyboard focus unless one of WebView2's own
+  // windows already holds it. Composition hosting does not take focus on a
+  // click by itself, and leaving it to Flutter's FocusNode sent focus through
+  // the Flutter view first, which blurred the page on every other click.
+  void InAppWebView::moveFocus()
+  {
+    HWND parentWindow = nullptr;
+    if (!webViewController || failedAndLog(webViewController->get_ParentWindow(&parentWindow))) {
+      return;
+    }
+    HWND focused = GetFocus();
+    if (focused && (focused == parentWindow || IsChild(parentWindow, focused))) {
+      return;
+    }
+    failedLog(webViewController->MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC));
+  }
+
   void InAppWebView::setPointerUpdate(int32_t pointer,
     InAppWebViewPointerEventKind eventKind, double x,
     double y, double size, double pressure)
