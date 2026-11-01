@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../api/http_fuli_api.dart';
@@ -25,6 +26,7 @@ import 'os_notifier.dart';
 import 'system_tray.dart';
 import 'windows_instance.dart';
 import 'windows_login_launch.dart';
+import 'windows_notification_identity.dart';
 import 'windows_url_scheme.dart';
 
 /// Composition root on Windows and macOS: wires the real HTTP API, FULI's
@@ -44,8 +46,9 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
   await window.open(title: strings.appName, show: !quiet);
   final caption = await DesktopCaption.create();
   const opener = BrowserUrlOpener();
-  final notifier = await OsNotifier.create(
-      onClick: window.show, windowsIcon: '$exeDir\\data\\flutter_assets\\assets\\app\\fuli.png');
+  final packageRoot = await _registeringPackage(exeDir);
+  if (packageRoot != null) await _registry(WindowsNotificationIdentity(packageRoot: packageRoot).apply());
+  final notifier = await OsNotifier.create(onClick: window.show);
   final console = await ConsoleWebView.create(opener,
       saver: DownloadSaver(),
       onSaved: (file) => unawaited(notifier.notify(strings.fileSaved, file.path)),
@@ -57,7 +60,6 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
     notifier: notifier,
     strings: strings,
   );
-  final packageRoot = Platform.isWindows ? installedPackageRoot(exeDir) : null;
   final loginLaunch = packageRoot == null ? null : WindowsLoginLaunch(packageRoot: packageRoot);
   bool? launchAtLogin = await _registry(loginLaunch?.apply());
   if (packageRoot != null) unawaited(_registry(WindowsUrlScheme(packageRoot: packageRoot).apply()));
@@ -154,6 +156,14 @@ Future<({WindowsInstance instance, LinkInbox? inbox, bool linkLeft})?> _claimIns
   if (claim != InstanceClaim.owner) exit(0);
   return (instance: instance!, inbox: inbox, linkLeft: linkLeft);
 }
+
+// The package that registers itself with Windows, or null: on macOS, for a
+// debug or profile build (flutter run), and for a release build that is not
+// the current version of an installation (a build folder, a package copy, a
+// version kept for rollback). The entries are one per user and shared by every
+// FULI build on the machine, so only the installed version may write them.
+Future<String?> _registeringPackage(String exeDir) async =>
+    Platform.isWindows && kReleaseMode ? installedPackageRoot(exeDir) : null;
 
 // reg.exe may not run: the menu entry and the registrations stay as they
 // were, and the next start tries again.

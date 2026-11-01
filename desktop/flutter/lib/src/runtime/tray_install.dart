@@ -21,7 +21,7 @@ Future<String?> locateTrayInstall({required String exeDir, required Map<String, 
   if (localAppData == null || localAppData.isEmpty) return null;
   final installRoot = _join([localAppData, 'Programs', 'Fuli']);
 
-  final active = await _activeVersion(installRoot);
+  final active = await installedVersion(installRoot);
   if (active != null && _complete(active)) return active;
 
   final versions = Directory(_join([installRoot, 'versions']));
@@ -37,7 +37,9 @@ Future<String?> locateTrayInstall({required String exeDir, required Map<String, 
   return complete.first.$1;
 }
 
-Future<String?> _activeVersion(String installRoot) async {
+/// The version folder installRoot's installation.json names as installed, or
+/// null without a readable record.
+Future<String?> installedVersion(String installRoot) async {
   try {
     final record = jsonDecode(await File(_join([installRoot, 'installation.json'])).readAsString());
     if (record is Map && record['status'] == 'installed' && record['packageRoot'] is String) {

@@ -1,7 +1,4 @@
-import 'dart:io';
-
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fuli_desktop/src/platform/desktop/installed_package.dart';
 import 'package:fuli_desktop/src/platform/desktop/windows_login_launch.dart';
 import 'package:fuli_desktop/src/platform/desktop/windows_registry.dart';
 
@@ -54,15 +51,5 @@ void main() {
     const command = '\r\nHKEY_CURRENT_USER\\Software\\Classes\\fuli\\shell\\open\\command\r\n    (默认)    REG_SZ    "C:\\F\\Fuli.exe" "%1"\r\n\r\n';
     expect(regDefaultValue(command), r'"C:\F\Fuli.exe" "%1"');
     expect(regDefaultValue('\r\nHKEY_CURRENT_USER\\Software\\Classes\\fuli\r\n'), isNull);
-  });
-
-  test('only an installed package registers itself', () {
-    final temp = Directory.systemTemp.createTempSync('fuli-scheme-installed-');
-    addTearDown(() => temp.deleteSync(recursive: true));
-    final client = Directory('${temp.path}${Platform.pathSeparator}client')..createSync();
-    expect(installedPackageRoot(client.path), isNull);
-    File('${temp.path}${Platform.pathSeparator}installed-context.json').writeAsStringSync('{}');
-    // It joins with a backslash, as on Windows; elsewhere the file is not found.
-    expect(installedPackageRoot(client.path), Platform.isWindows ? temp.path : null);
   });
 }
