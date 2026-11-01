@@ -64,17 +64,26 @@ defineProps<{ destinations: readonly NavDestination[]; activeKey?: string; space
   transition: opacity var(--motion-fast), translate var(--motion-spring) var(--motion-ease-spring); translate: 0 4px;
 }
 .app-dock-link[data-tip]:hover::after, .app-dock-link[data-tip]:focus-visible::after { opacity: 1; translate: 0 0; }
-/* Pinned FLAs rise in their own capsule; the transparent bridge keeps the hover alive on the way up. */
+/* Pinned FLAs rise in their own capsule once the pointer rests on the FLAs button (hover intent),
+   so sweeping across the dock or moving up from it never opens them; keyboard focus opens them at once.
+   Hidden, the capsule takes no pointer, so only the button's own 44px box starts it. Open, a bridge
+   exactly as tall as the gap keeps it open on the way up. */
 .app-dock-pins {
   position: absolute; bottom: calc(100% + 14px); left: 50%; transform: translate(-50%, 10px);
-  opacity: 0; pointer-events: none;
-  transition: opacity var(--motion-fast), transform var(--motion-spring) var(--motion-ease-spring);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity var(--motion-fast), transform var(--motion-spring) var(--motion-ease-spring), visibility 0s linear var(--motion-fast);
 }
-.app-dock-pins::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 22px; }
-.app-dock-item.has-pins:hover .app-dock-pins, .app-dock-item.has-pins:focus-within .app-dock-pins, .app-dock-pins:has(.is-holding) { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
-/* The portraits rise one after another, nearest the dock first. */
+.app-dock-pins::after { content: ''; position: absolute; top: 100%; right: 0; left: 0; height: 14px; }
+.app-dock-item.has-pins:hover .app-dock-pins {
+  transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto; transition-delay: var(--motion-intent);
+}
+.app-dock-item.has-pins:focus-within .app-dock-pins, .app-dock-pins:has(.is-holding) {
+  transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s;
+}
+/* The portraits rise one after another, nearest the dock first, after the same rest on hover. */
 .app-dock-pins :deep(.dock-pin) { opacity: 0; translate: 0 10px; scale: .8; transition: opacity var(--motion-fast), translate var(--motion-spring) var(--motion-ease-spring), scale var(--motion-spring) var(--motion-ease-spring), transform var(--motion-fast); transition-delay: calc(var(--pin-index, 0) * 35ms); }
-.app-dock-item.has-pins:is(:hover, :focus-within) .app-dock-pins :deep(.dock-pin), .app-dock-pins:has(.is-holding) :deep(.dock-pin) { opacity: 1; translate: 0 0; scale: 1; }
+.app-dock-item.has-pins:hover .app-dock-pins :deep(.dock-pin) { opacity: 1; translate: 0 0; scale: 1; transition-delay: calc(var(--motion-intent) + var(--pin-index, 0) * 35ms); }
+.app-dock-item.has-pins:focus-within .app-dock-pins :deep(.dock-pin), .app-dock-pins:has(.is-holding) :deep(.dock-pin) { opacity: 1; translate: 0 0; scale: 1; transition-delay: calc(var(--pin-index, 0) * 35ms); }
 /* Folded: only the current destination shows until the dock is hovered or focused. */
 .app-dock.is-folded:not(:hover, :focus-within) .app-dock-item:not(.is-active) { max-width: 0; overflow: hidden; opacity: 0; }
 .app-dock.is-folded:not(:hover, :focus-within) .app-dock-items { gap: 0; }
