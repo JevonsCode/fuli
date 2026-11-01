@@ -11,6 +11,7 @@ export const doctorMessages = {
     repairFailed: '有 {count} 件没能自动修复：{reason}',
     repairFailedShort: '自动修复没完成',
     listLabel: '需要你处理的事',
+    since: '{time} 起',
     open: '去处理',
     kinds: {
       client_outdated: '客户端的 FULI 连接需要更新',
@@ -50,6 +51,7 @@ export const doctorMessages = {
     repairFailed: '{count} could not be fixed automatically: {reason}',
     repairFailedShort: 'Automatic repair did not finish',
     listLabel: 'Things that need you',
+    since: 'Since {time}',
     open: 'Open',
     kinds: {
       client_outdated: 'A client’s FULI connection needs an update',

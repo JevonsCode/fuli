@@ -107,10 +107,11 @@ const item = (id, kind, severity, fix, data) => ({ id, kind, severity, fix, data
 
 // A client the person connected before whose integration changed or lost its
 // MCP entry. A client FULI cannot install by itself is the person's to reconnect.
+// since: when the client's connection history first saw this state.
 function clientItems(clients) {
   return clients.filter((client) => OUTDATED_CLIENT.has(client.status) && client.previouslyConnected)
     .map((client) => item(`client_outdated:${client.id}`, 'client_outdated', 'warning', canInstall(client) ? 'auto' : 'person',
-      { clientId: client.id, label: client.label, status: client.status }));
+      { clientId: client.id, label: client.label, status: client.status, ...(client.since ? { since: client.since } : {}) }));
 }
 
 // Steps that wait for the person's confirmation, and stores FULI cannot use
@@ -155,14 +156,16 @@ async function stillWaiting(lastGraph, readOperations) {
 // Open client sessions whose MCP server still runs another FULI version; only
 // restarting those sessions loads the installed one. sessions names the ones
 // the servers answered calls for, so the console can offer to open them; a
-// server that answered none still counts.
+// server that answered none still counts. since: when the oldest of those
+// servers started, so the person sees how long they have run the older FULI.
 function sessionItems(processes, version) {
   const groups = new Map();
   for (const record of processes.filter((candidate) => candidate.version !== version)) {
     const client = record.sourceApplication ?? 'other';
     const key = `${client}:${record.version}`;
-    const group = groups.get(key) ?? { client, count: 0, runningVersion: record.version, sessions: new Map() };
+    const group = groups.get(key) ?? { client, count: 0, runningVersion: record.version, since: null, sessions: new Map() };
     group.count += 1;
+    if (typeof record.startedAt === 'string' && (!group.since || record.startedAt < group.since)) group.since = record.startedAt;
     if (record.sourceApplication) {
       for (const sessionId of Array.isArray(record.sessionIds) ? record.sessionIds : []) {
         if (typeof sessionId === 'string') group.sessions.set(sessionId, { sourceApplication: client, sessionId });
@@ -170,8 +173,8 @@ function sessionItems(processes, version) {
     }
     groups.set(key, group);
   }
-  return [...groups].map(([key, { sessions, ...group }]) => item(`sessions_outdated:${key}`, 'sessions_outdated', 'warning', 'person',
-    { ...group, sessions: [...sessions.values()].slice(0, MAX_OUTDATED_SESSIONS) }));
+  return [...groups].map(([key, { sessions, since, ...group }]) => item(`sessions_outdated:${key}`, 'sessions_outdated', 'warning', 'person',
+    { ...group, ...(since ? { since } : {}), sessions: [...sessions.values()].slice(0, MAX_OUTDATED_SESSIONS) }));
 }
 
 // Ports this console's start moved because Windows reserved them or another

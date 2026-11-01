@@ -46,6 +46,8 @@ export interface DoctorItemView {
   title: string
   subject: string
   hint: string
+  // Since when it has been so (the doctor's data.since), formatted, or ''.
+  since: string
   // Where the person handles it in the console, or null.
   to: string | null
 }
@@ -91,6 +93,16 @@ export const outdatedSessionLabel = (session: OutdatedSession) =>
 // One item in plain words: never its kind code. A kind this console does not
 // know yet still reads as something to look at.
 export function doctorItemView(item: DoctorItem): DoctorItemView {
+  const since = sinceLabel(item.data.since)
+  return { ...itemView(item), since }
+}
+
+const sinceLabel = (value: unknown) => {
+  const time = text(value) ? formatDateTime(text(value), currentLocale(), DATE_TIME_MINUTE, { missing: '', invalid: '' }) : ''
+  return time ? t('doctor.since', { time }) : ''
+}
+
+function itemView(item: DoctorItem): Omit<DoctorItemView, 'since'> {
   const title = tableLabel('doctor.kinds', item.kind) ?? t('doctor.kinds.other')
   const data = item.data
   switch (item.kind) {
