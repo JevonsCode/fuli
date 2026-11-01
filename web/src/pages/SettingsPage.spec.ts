@@ -76,7 +76,6 @@ describe('SettingsPage', () => {
     await flushPromises()
     const ports = wrapper.get('.ports-card')
     expect(ports.attributes('data-search-hidden')).toBeUndefined()
-    expect(ports.attributes('data-state')).toBe('open')
     // A search looks through every tab, not only the open one.
     expect(wrapper.get('[data-settings-tab="network"]').attributes('hidden')).toBeUndefined()
     expect(wrapper.get('.behavior-card').attributes('data-search-hidden')).toBe('')
@@ -86,7 +85,6 @@ describe('SettingsPage', () => {
     await search.setValue('')
     await flushPromises()
     expect(wrapper.findAll('[data-search-hidden]')).toHaveLength(0)
-    expect(ports.attributes('data-state')).toBe('closed')
     expect(wrapper.get('[data-settings-tab="network"]').attributes('hidden')).toBeDefined()
     wrapper.unmount()
   })
@@ -438,7 +436,29 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
-  it('opens the clients tab on its main section expanded, not on closed headings only', async () => {
+  it('shows every settings topic as its own open card, with no accordion or 高级 box', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    const withNotifications = { ...configured, notifications: { needsPersonUrl: '' } }
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      if (String(input) === '/api/system/settings') return Response.json({ configured: withNotifications, active: withNotifications, restartRequired: false })
+      return Response.json({}, { status: 503 })
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
+    await flushPromises()
+    expect(wrapper.find('details, [data-slot="accordion"], [data-slot="accordion-trigger"]').exists()).toBe(false)
+    const titles = wrapper.findAll('.settings-card [data-slot="card-title"]').map(title => title.text())
+    for (const title of ['会话链接', '会话打开方式', '通知', '服务端口']) expect(titles).toContain(title)
+    expect(titles).not.toContain('高级')
+    expect(new Set(titles).size).toBe(titles.length)
+    // A launcher that is off shows only its name and switch.
+    const claude = wrapper.findAll('.conversation-launcher-row').find((row) => row.text().includes('Claude') && !row.text().includes('Claude Code'))!
+    expect(claude.find('.conversation-launcher-fields').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('opens a linked card in its tab, scrolls to it and marks it', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     useConsoleStore().runtimeStatus = 'ready'
@@ -446,16 +466,42 @@ describe('SettingsPage', () => {
       if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
       return Response.json({}, { status: 503 })
     }))
-    const router = settingsRouter()
-    await router.push('/settings?tab=clients')
-    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, router] }, attachTo: document.body })
+    const scrolled: Element[] = []
+    vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) { scrolled.push(this) })
+    window.history.replaceState(null, '', '/settings#conversation-launchers')
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] }, attachTo: document.body })
     await flushPromises()
+    const launchers = wrapper.get('.conversation-launcher-card')
     expect(wrapper.get('[data-settings-tab="clients"]').attributes('hidden')).toBeUndefined()
-    expect(wrapper.get('.conversation-launcher-card').attributes('data-state')).toBe('open')
-    // The person can still close it.
-    await wrapper.get('.conversation-launcher-card button').trigger('click')
-    expect(wrapper.get('.conversation-launcher-card').attributes('data-state')).toBe('closed')
+    expect(scrolled).toEqual([launchers.element])
+    expect(launchers.attributes('data-settings-linked')).toBe('')
+    // Moving on to another tab clears the mark.
+    await wrapper.get('[data-settings-tab-trigger="network"]').trigger('mousedown', { button: 0 })
+    await flushPromises()
+    expect(launchers.attributes('data-settings-linked')).toBeUndefined()
     wrapper.unmount()
+    window.history.replaceState(null, '', '/')
+  })
+
+  it('narrows a ?setting= link to its card and scrolls to it', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
+      if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
+      return Response.json({}, { status: 503 })
+    }))
+    const scrolled: Element[] = []
+    vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) { scrolled.push(this) })
+    window.history.replaceState(null, '', '/settings?setting=ports')
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] }, attachTo: document.body })
+    await flushPromises()
+    const ports = wrapper.get('.ports-card')
+    expect(ports.attributes('data-search-hidden')).toBeUndefined()
+    expect(scrolled).toEqual([ports.element])
+    expect(ports.attributes('data-settings-linked')).toBe('')
+    wrapper.unmount()
+    window.history.replaceState(null, '', '/')
   })
 
   it('switches capture per client while the clients keep reading memory', async () => {

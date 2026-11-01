@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import BackLink from '@/components/BackLink.vue'
+import Breadcrumb from '@/components/Breadcrumb.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -161,7 +161,7 @@ onBeforeUnmount(() => reading?.abort())
 <template>
   <section class="view data-format-view" :aria-label="t('dataFormat.title')">
     <div class="data-format-content">
-      <BackLink to="/settings" :from="openedFromSettings">{{ t('dataFormat.back') }}</BackLink>
+      <Breadcrumb :parent="{ label: t('dataFormat.back'), to: '/settings', from: openedFromSettings }" :current="t('dataFormat.title')" />
       <p class="data-format-lede">{{ t('dataFormat.lede') }}</p>
 
       <GrowthLoading v-if="loading && !plan" :label="t('dataFormat.loading')" />
@@ -324,7 +324,6 @@ onBeforeUnmount(() => reading?.abort())
 
 <style scoped>
 .data-format-view {
-  padding-top: clamp(16px, 3vw, 32px);
   padding-bottom: 96px;
   color: var(--color-ink);
 }
