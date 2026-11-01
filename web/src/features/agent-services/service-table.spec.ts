@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentService } from './agent-services'
-import { readServiceTableQuery, serviceOwners, serviceTableLocationQuery, visibleServices } from './service-table'
+import { readServiceSearch, serviceGroups, serviceSearchLocationQuery, visibleServices } from './service-table'
 import { logDetailText } from './service-labels'
 
 const service = (overrides: Partial<AgentService> = {}): AgentService => ({
@@ -21,19 +21,18 @@ const rows = [
     address: null, command: 'node service/main.js', pid: 4300, startedAt: '2026-10-27T07:00:00Z', live: { state: 'unknown', process: 'unverified', port: 'not_checked' } }),
 ]
 const ids = (list: AgentService[]) => list.map(item => item.serviceId)
-const query = (raw: Record<string, string> = {}) => readServiceTableQuery(raw)
 
-describe('services table', () => {
-  it('filters by FLA, project, kind and live state, and keeps running services first', () => {
-    expect(ids(visibleServices(rows, query(), names, 'zh-CN'))).toEqual(['svc-1', 'svc-2', 'svc-3'])
-    expect(ids(visibleServices(rows, query({ agent: 'fla-b' }), names, 'zh-CN'))).toEqual(['svc-2'])
-    expect(ids(visibleServices(rows, query({ project: 'project-a' }), names, 'zh-CN'))).toEqual(['svc-1'])
-    expect(ids(visibleServices(rows, query({ kind: 'workbench' }), names, 'zh-CN'))).toEqual(['svc-3'])
-    expect(ids(visibleServices(rows, query({ state: 'stopped' }), names, 'zh-CN'))).toEqual(['svc-2'])
+describe('services list', () => {
+  it('lists the latest start first and groups running, unconfirmed, then stopped', () => {
+    const visible = visibleServices(rows, '', names, 'zh-CN')
+    expect(ids(visible)).toEqual(['svc-2', 'svc-1', 'svc-3'])
+    expect(serviceGroups(visible).map(group => [group.key, ids(group.rows)]))
+      .toEqual([['running', ['svc-1']], ['unknown', ['svc-3']], ['stopped', ['svc-2']]])
+    expect(serviceGroups(rows.filter(service => service.serviceId === 'svc-2')).map(group => group.key)).toEqual(['stopped'])
   })
 
   it('searches purpose, address, command, PID and the FLA and project names', () => {
-    const search = (q: string) => ids(visibleServices(rows, query({ q }), names, 'en-US'))
+    const search = (q: string) => ids(visibleServices(rows, q, names, 'en-US'))
     expect(search('python')).toEqual(['svc-2'])
     expect(search('8080')).toEqual(['svc-2'])
     expect(search('4100')).toEqual(['svc-1'])
@@ -43,14 +42,10 @@ describe('services table', () => {
     expect(search('nothing-like-this')).toEqual([])
   })
 
-  it('keeps filters in the URL beside unrelated keys and falls back on unknown values', () => {
-    expect(serviceTableLocationQuery({ item: 'x', q: 'old' }, { search: ' api ', agent: 'fla-a', project: 'all', kind: 'workbench', state: 'all' }))
-      .toEqual({ item: 'x', q: 'api', agent: 'fla-a', kind: 'workbench' })
-    expect(query({ kind: 'nonsense', state: 'gone' })).toEqual({ search: '', agent: 'all', project: 'all', kind: 'all', state: 'all' })
-  })
-
-  it('offers each FLA and project the records name once', () => {
-    expect(serviceOwners(rows)).toEqual({ agents: ['fla-a', 'fla-b'], projects: ['project-a', 'project-b'] })
+  it('keeps the search in the URL beside unrelated keys', () => {
+    expect(serviceSearchLocationQuery({ item: 'x', q: 'old' }, ' api ')).toEqual({ item: 'x', q: 'api' })
+    expect(serviceSearchLocationQuery({ item: 'x', q: 'old' }, ' ')).toEqual({ item: 'x' })
+    expect(readServiceSearch({ q: ['', 'docs'] })).toBe('docs')
   })
 
   it('shows what a log entry recorded without its output', () => {

@@ -2,20 +2,16 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Input } from '@/components/ui/input'
 import { apiErrorReason, getJson } from '@/api/client'
 import ServiceLog from '@/features/agent-services/ServiceLog.vue'
 import {
   clearServiceLog, deleteService, listServices, readServiceLog, stopService, type AgentService, type ServiceLog as ServiceLogRecord,
 } from '@/features/agent-services/agent-services'
-import { liveStateTone } from '@/features/agent-services/service-labels'
-import {
-  readServiceTableQuery, SERVICE_KIND_FILTERS, SERVICE_STATE_FILTERS, serviceOwners, serviceTableLocationQuery, visibleServices,
-  type ServiceTableQuery,
-} from '@/features/agent-services/service-table'
+import { readServiceSearch, serviceGroups, serviceSearchLocationQuery, visibleServices } from '@/features/agent-services/service-table'
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
+import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { normalizeAgent } from '@/features/project-agents/agent-roster-records'
 import { agentValues } from '@/features/project-agents/task-evidence'
 import { formatDate, sourceLabel } from '@/features/project-agents/task-labels'
@@ -23,12 +19,13 @@ import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConversationSourceApplication } from '@/types'
 import { UiDialog, UiIcon } from '@/ui'
-import { OptionSelect } from '@/components/ui/select'
-import { OptionCombobox } from '@/components/ui/combobox'
 
 // 服务管理 (rec#11 D-71): every service an FLA started and each Agent's
-// workbench, with the state checked live on each read. Stopping a process
-// shows its exact PID and command first; the request carries that PID back.
+// workbench, with the state checked live on each read. Rows are grouped by
+// that state, one line each under the address; a running web address opens
+// from the right, and the owner, PID and command fold under the row with its
+// log, stop and delete. Stopping a process shows its exact PID and command first; the
+// request carries that PID back.
 const store = useConsoleStore()
 const route = useRoute()
 const router = useRouter()
@@ -77,21 +74,22 @@ async function load() {
 onMounted(() => { if (!store.state) void store.refresh(); void load(); void loadAgentNames() })
 watch(spaceId, () => { void loadAgentNames() })
 
-// Search and filters live in the URL.
-const tableQuery = computed(() => readServiceTableQuery(route.query))
-function setTableQuery(change: Partial<ServiceTableQuery>) {
-  void router.replace({ query: serviceTableLocationQuery(route.query, { ...tableQuery.value, ...change }) })
+// The search lives in the URL.
+const search = computed(() => readServiceSearch(route.query))
+function setSearch(value: string) {
+  void router.replace({ query: serviceSearchLocationQuery(route.query, value) })
 }
-const rows = computed(() => visibleServices(services.value, tableQuery.value, names, currentLocale()))
-const owners = computed(() => serviceOwners(services.value))
-const agentOptions = computed(() => [{ value: 'all', label: t('agentServices.filter.allAgents') },
-  ...owners.value.agents.map(id => ({ value: id, label: names.agent(id) }))])
-const projectOptions = computed(() => [{ value: 'all', label: t('agentServices.filter.allProjects') },
-  ...owners.value.projects.map(id => ({ value: id, label: names.project(id) }))])
-const kindOptions = computed(() => SERVICE_KIND_FILTERS.map(value => ({ value,
-  label: value === 'all' ? t('agentServices.filter.allKinds') : t(`agentServices.kind.${value}`) })))
-const stateOptions = computed(() => SERVICE_STATE_FILTERS.map(value => ({ value,
-  label: value === 'all' ? t('agentServices.filter.allStates') : t(`agentServices.state.${value}`) })))
+const rows = computed(() => visibleServices(services.value, search.value, names, currentLocale()))
+const groups = computed(() => serviceGroups(rows.value))
+const KIND_ICONS = { workbench: 'grid', agent_service: 'power' } as const
+const webAddress = (service: AgentService) => (service.address && /^https?:\/\//i.test(service.address) ? service.address : null)
+const openable = (service: AgentService) => service.live.state === 'running' && Boolean(webAddress(service))
+// One column for the right-hand action, kept for every row once any has one, so the chevrons line up.
+const actionSlot = computed(() => stopping.value || rows.value.some(openable))
+const ownerLine = (service: AgentService) => [names.agent(service.agentId), service.projectId ? names.project(service.projectId) : '',
+  [clientLabel(service), sessionShort(service.sessionId)].filter(Boolean).join(' ')].filter(Boolean).join(' · ')
+const openRow = ref('')
+const toggle = (id: string) => { openRow.value = openRow.value === id ? '' : id }
 const liveTitle = (service: AgentService) => [service.live.process && t(`agentServices.process.${service.live.process}`),
   service.address && t(`agentServices.port.${service.live.port}`)].filter(Boolean).join(' · ')
 const sessionShort = (id: string | null) => (id ? t('agentServices.sessionShort', { id: id.slice(0, 8) }) : '')
@@ -187,106 +185,74 @@ async function confirmDelete() {
 
 <template>
   <section class="view agent-services-view">
-    <div class="mx-auto flex w-full max-w-(--layout-max) flex-col gap-3">
-      <p class="page-lede m-0 text-sm text-muted-foreground">{{ t('agentServices.lede') }}</p>
-      <div class="flex flex-wrap items-center gap-2">
-        <label class="agent-services-search">
-          <span class="ui-sr-only">{{ t('agentServices.search') }}</span>
-          <input type="search" maxlength="120" :value="tableQuery.search" :placeholder="t('agentServices.search')"
-            data-service-search @input="setTableQuery({ search: ($event.target as HTMLInputElement).value })" />
-        </label>
-        <OptionCombobox class="agent-services-select" :model-value="tableQuery.agent" :options="agentOptions" :label="t('agentServices.filter.agent')"
-          data-service-agent-filter @update:model-value="setTableQuery({ agent: String($event) })" />
-        <OptionCombobox class="agent-services-select" :model-value="tableQuery.project" :options="projectOptions" :label="t('agentServices.filter.project')"
-          data-service-project-filter @update:model-value="setTableQuery({ project: String($event) })" />
-        <OptionSelect class="agent-services-select" :model-value="tableQuery.kind" :options="kindOptions" :label="t('agentServices.filter.kind')"
-          data-service-kind-filter @update:model-value="setTableQuery({ kind: $event as ServiceTableQuery['kind'] })" />
-        <OptionSelect class="agent-services-select" :model-value="tableQuery.state" :options="stateOptions" :label="t('agentServices.filter.state')"
-          data-service-state-filter @update:model-value="setTableQuery({ state: $event as ServiceTableQuery['state'] })" />
-        <div class="ml-auto flex items-center gap-2">
-          <GrowthLoading v-if="loading && services.length" variant="inline" :label="t('agentServices.loading')" />
-          <Button variant="ghost" size="sm" :disabled="loading" data-service-refresh @click="load">{{ t('agentServices.refresh') }}</Button>
-        </div>
-      </div>
-      <p v-if="notice" role="status" class="m-0 text-sm">{{ notice }}</p>
-      <p v-if="loadError && services.length" role="alert" class="inline-error m-0">
+    <div class="services">
+      <header v-if="services.length" class="services-bar">
+        <Input type="search" maxlength="120" class="services-search" :model-value="search" :placeholder="t('agentServices.search')"
+          :aria-label="t('agentServices.search')" data-service-search @update:model-value="setSearch(String($event))" />
+        <GrowthLoading v-if="loading" variant="inline" :label="t('agentServices.loading')" />
+        <Button variant="ghost" size="sm" :disabled="loading" data-service-refresh @click="load">
+          <UiIcon name="refresh" :size="14" />{{ t('agentServices.refresh') }}
+        </Button>
+      </header>
+      <p v-if="notice" role="status" class="services-notice">{{ notice }}</p>
+      <p v-if="loadError && services.length" role="alert" class="inline-error services-notice">
         {{ loadError }} <Button size="sm" variant="ghost" @click="load">{{ t('agentServices.retry') }}</Button>
       </p>
 
-      <div class="flex flex-col">
-        <GrowthLoading v-if="loading && !services.length" variant="compact" :label="t('agentServices.loading')" />
-        <div v-else-if="loadError && !services.length" class="ui-empty rounded-lg border bg-card text-destructive" role="alert">
-          <p class="m-0">{{ loadError }}</p>
-          <Button class="mt-3" size="sm" variant="outline" @click="load">{{ t('agentServices.retry') }}</Button>
-        </div>
-        <div v-else-if="loaded && !services.length" class="ui-empty rounded-lg border bg-card" data-service-empty>
-          <p class="m-0">{{ t('agentServices.empty') }}</p>
-        </div>
-        <Table v-else-if="services.length" class="min-w-[880px]" container-class="rounded-lg border bg-card">
-          <TableHeader class="bg-card shadow-[0_1px_0_var(--border)] [&_tr]:border-b-0">
-            <TableRow class="hover:bg-transparent">
-              <TableHead class="min-w-[220px] pl-4">{{ t('agentServices.columns.purpose') }}</TableHead>
-              <TableHead>{{ t('agentServices.columns.address') }}</TableHead>
-              <TableHead>{{ t('agentServices.columns.owner') }}</TableHead>
-              <TableHead>{{ t('agentServices.columns.started') }}</TableHead>
-              <TableHead>{{ t('agentServices.columns.state') }}</TableHead>
-              <TableHead>{{ t('agentServices.columns.command') }}</TableHead>
-              <TableHead class="w-12 pr-4 text-right"><span class="sr-only">{{ t('agentServices.columns.actions') }}</span></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            <TableRow v-for="service in rows" :key="service.serviceId" :data-service-row="service.serviceId">
-              <TableCell class="pl-4">
-                <span class="line-clamp-2 font-semibold [overflow-wrap:anywhere]" :title="service.purpose">{{ service.purpose }}</span>
-                <span class="block text-xs text-muted-foreground">{{ t(`agentServices.kind.${service.kind}`) }}</span>
-              </TableCell>
-              <TableCell class="max-w-[220px] [overflow-wrap:anywhere]">
-                <a v-if="service.address && /^https?:\/\//i.test(service.address)" :href="service.address" target="_blank" rel="noreferrer">{{ service.address }}</a>
-                <span v-else-if="service.address">{{ service.address }}</span>
-                <span v-else class="text-muted-foreground">{{ t('agentServices.noAddress') }}</span>
-              </TableCell>
-              <TableCell class="max-w-[240px]">
-                <span class="block font-medium">{{ names.agent(service.agentId) }}</span>
-                <span class="block text-xs text-muted-foreground">{{ names.project(service.projectId) }}</span>
-                <span class="block text-xs text-muted-foreground" :title="service.sessionId ?? undefined">
-                  {{ clientLabel(service) }}<template v-if="service.sessionId"> · {{ sessionShort(service.sessionId) }}</template>
+      <GrowthLoading v-if="loading && !services.length" :label="t('agentServices.loading')" />
+      <div v-else-if="loadError && !services.length" class="services-empty" role="alert">
+        <p>{{ loadError }}</p>
+        <Button size="sm" variant="outline" @click="load">{{ t('agentServices.retry') }}</Button>
+      </div>
+      <p v-else-if="loaded && !services.length" class="services-empty" data-service-empty>{{ t('agentServices.empty') }}</p>
+      <p v-else-if="services.length && !rows.length" class="services-empty">{{ t('agentServices.noMatch') }}</p>
+
+      <section v-for="group in groups" :key="group.key" class="services-group" :aria-labelledby="`services-group-${group.key}`" :data-service-group="group.key">
+        <h2 :id="`services-group-${group.key}`" class="services-group-label">{{ t(`agentServices.state.${group.key}`) }} <span class="ui-num">{{ group.rows.length }}</span></h2>
+        <ul class="services-list">
+          <li v-for="service in group.rows" :key="service.serviceId" class="service" :class="{ 'is-open': openRow === service.serviceId }" :data-service-row="service.serviceId">
+            <div class="service-head">
+              <Button variant="ghost" class="service-toggle" :aria-expanded="openRow === service.serviceId" :aria-controls="`service-detail-${service.serviceId}`"
+                data-service-toggle @click="toggle(service.serviceId)">
+                <span class="service-icon" aria-hidden="true"><UiIcon :name="KIND_ICONS[service.kind] ?? 'power'" :size="18" /></span>
+                <span class="service-text">
+                  <span class="service-title" :title="service.purpose">{{ service.purpose }}</span>
+                  <span class="service-meta">{{ service.address ?? t(`agentServices.kind.${service.kind}`) }}</span>
                 </span>
-              </TableCell>
-              <TableCell class="whitespace-nowrap tabular-nums">
-                {{ formatDate(service.startedAt) }}
-                <span v-if="service.stoppedAt" class="block text-xs text-muted-foreground">{{ t('agentServices.stoppedAt', { time: formatDate(service.stoppedAt) }) }}</span>
-              </TableCell>
-              <TableCell class="whitespace-nowrap">
+                <span class="service-face" :class="{ 'is-none': !service.agentId }" :style="service.agentId ? agentIdentityStyle(service.agentId) : undefined" :title="names.agent(service.agentId)">
+                  <img v-if="service.agentId" :src="agentAvatarUrl(service.agentId)" alt="" />
+                  <span class="ui-sr-only">{{ names.agent(service.agentId) }}</span>
+                </span>
+                <UiIcon name="chevron-down" :size="16" class="service-chevron" />
+              </Button>
+              <span v-if="actionSlot" class="service-action">
                 <GrowthLoading v-if="stopping && stopTarget?.serviceId === service.serviceId" variant="inline"
                   :label="t('agentServices.stop.stopping', { name: service.purpose })" />
-                <Badge v-else :variant="liveStateTone(service.live.state)" :title="liveTitle(service) || undefined" data-service-state>
-                  {{ t(`agentServices.state.${service.live.state}`) }}
-                </Badge>
-                <span v-if="service.pid" class="block text-xs tabular-nums text-muted-foreground">{{ t('agentServices.pid', { pid: service.pid }) }}</span>
-              </TableCell>
-              <TableCell class="max-w-[260px]">
-                <code class="line-clamp-2 text-xs [overflow-wrap:anywhere]" :title="service.commandLine ?? service.command ?? undefined">{{ service.command ?? service.commandLine }}</code>
-              </TableCell>
-              <TableCell class="pr-4 text-right">
-                <DropdownMenu>
-                  <DropdownMenuTrigger as-child>
-                    <Button variant="ghost" size="icon-sm" :aria-label="t('agentServices.rowActions', { name: service.purpose })" data-service-actions>
-                      <UiIcon name="more" :size="16" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem data-service-log-open @select="openLog(service)">{{ t('agentServices.actions.log') }}</DropdownMenuItem>
-                    <DropdownMenuItem v-if="service.live.state !== 'stopped'" data-service-stop @select="askStop(service)">{{ t('agentServices.actions.stop') }}</DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem data-service-delete @select="deleteTarget = service; deleteError = ''">{{ t('agentServices.actions.delete') }}</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-            </TableRow>
-            <TableEmpty v-if="!rows.length" :colspan="7">{{ t('agentServices.noMatch') }}</TableEmpty>
-          </TableBody>
-        </Table>
-      </div>
+                <Button v-else-if="openable(service)" as="a" variant="outline" size="sm"
+                  :href="webAddress(service)!" target="_blank" rel="noreferrer" data-service-open>
+                  {{ t('agentServices.open') }}<UiIcon name="external" :size="14" />
+                </Button>
+              </span>
+            </div>
+            <div v-if="openRow === service.serviceId" :id="`service-detail-${service.serviceId}`" class="service-detail" data-service-detail>
+              <dl class="service-facts">
+                <dt>{{ t('agentServices.facts.owner') }}</dt><dd :title="service.sessionId ?? undefined">{{ ownerLine(service) }}</dd>
+                <dt>{{ t('agentServices.facts.started') }}</dt><dd class="tabular-nums">
+                  {{ formatDate(service.startedAt) }}<template v-if="service.stoppedAt"> · {{ t('agentServices.stoppedAt', { time: formatDate(service.stoppedAt) }) }}</template>
+                </dd>
+                <template v-if="liveTitle(service)"><dt>{{ t('agentServices.facts.state') }}</dt><dd data-service-state>{{ liveTitle(service) }}</dd></template>
+                <template v-if="service.pid"><dt>PID</dt><dd class="tabular-nums">{{ service.pid }}</dd></template>
+                <template v-if="service.command ?? service.commandLine"><dt>{{ t('agentServices.facts.command') }}</dt><dd><code>{{ service.commandLine ?? service.command }}</code></dd></template>
+              </dl>
+              <div class="service-actions">
+                <Button variant="ghost" size="sm" data-service-delete @click="deleteTarget = service; deleteError = ''">{{ t('agentServices.actions.delete') }}</Button>
+                <Button variant="outline" size="sm" data-service-log-open @click="openLog(service)">{{ t('agentServices.actions.log') }}</Button>
+                <Button v-if="service.live.state !== 'stopped'" variant="outline" size="sm" data-service-stop @click="askStop(service)">{{ t('agentServices.actions.stop') }}</Button>
+              </div>
+            </div>
+          </li>
+        </ul>
+      </section>
     </div>
 
     <UiDialog :open="Boolean(logTarget)" size="lg" :title="t('agentServices.log.title', { name: logTarget?.purpose ?? '' })" :busy="clearing" @close="logTarget = null">
@@ -335,11 +301,52 @@ async function confirmDelete() {
 </template>
 
 <style scoped>
-/* The page is the one scroll container; the table grows with its rows. */
+/* The page is the one scroll container; the list grows with its rows. */
 .agent-services-view { padding-bottom: 16px; }
-.agent-services-search { flex: 1 1 220px; max-width: 320px; }
-.agent-services-search input { box-sizing: border-box; width: 100%; }
-.agent-services-view :deep(.agent-services-select) { flex: 0 0 160px; min-width: 0; }
+.services { display: flex; flex-direction: column; gap: 28px; width: 100%; max-width: 1120px; margin-inline: auto; }
+.services-bar { display: flex; align-items: center; gap: 12px; min-height: 36px; }
+.services-bar :deep(.services-search) { flex: 0 1 320px; margin-right: auto; }
+.services-notice { margin: 0; font-size: var(--text-control); }
+.services-empty { display: grid; justify-items: center; gap: 10px; margin: 0; padding: 48px 16px; border-radius: var(--radius-card); color: var(--color-muted); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border); text-align: center; }
+.services-empty p { margin: 0; }
+.services-group { display: grid; gap: 8px; }
+.services-group-label { display: flex; align-items: baseline; gap: 8px; margin: 0; padding-inline: 18px; color: var(--color-ink-soft); font-size: var(--text-control); font-weight: var(--weight-strong); }
+.services-group-label .ui-num { color: var(--color-faint); font-weight: var(--weight-medium); }
+/* An inset grouped list: one white surface, rows split by hairlines that start after the icon. */
+.services-list { margin: 0; padding: 0; overflow: hidden; border-radius: var(--radius-card); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border); list-style: none; }
+.service { position: relative; }
+.service + .service::before { content: ''; position: absolute; top: 0; right: 0; left: 64px; height: 1px; background: var(--color-border); }
+/* The whole head lights on hover, action column included. */
+.service-head { display: flex; align-items: center; gap: 12px; padding-right: 16px; transition: background-color var(--motion-fast) ease; }
+.service-head:hover, .service.is-open .service-head { background: var(--color-surface-hover); }
+.service-head .service-toggle:hover { background: transparent; }
+.service-toggle {
+  display: grid; flex: 1; grid-template-columns: 36px minmax(0, 1fr) auto 16px; align-items: center; gap: 14px; min-width: 0;
+  height: auto; padding: 12px 16px; border-radius: 0; color: var(--color-ink); font-weight: var(--weight-regular); text-align: left; white-space: normal;
+}
+.service-icon { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 10px; color: var(--color-ink-soft); background: var(--color-surface-hover); }
+.service-text { display: grid; gap: 2px; min-width: 0; }
+.service-title { overflow: hidden; font-size: var(--text-body); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.service-meta { overflow: hidden; color: var(--color-muted); font-size: var(--text-meta); text-overflow: ellipsis; white-space: nowrap; }
+.service-face { display: grid; width: 24px; height: 24px; overflow: hidden; place-items: center; border-radius: 50%; background: var(--agent-identity-soft, var(--color-surface-hover)); }
+.service-face.is-none { background: none; }
+.service-action { display: flex; flex: 0 0 auto; justify-content: flex-end; min-width: 76px; }
+.service-face img { width: 100%; height: 100%; object-fit: cover; }
+.service-chevron { color: var(--color-faint); transition: transform var(--motion-fast) ease; }
+.service.is-open .service-chevron { transform: rotate(180deg); }
+.service-detail { display: grid; gap: 12px; padding: 0 16px 16px 66px; }
+.service-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0; font-size: var(--text-control); }
+.service-facts dt { color: var(--color-muted); }
+.service-facts dd { margin: 0; overflow-wrap: anywhere; }
+.service-facts code { font-size: 12px; }
+.service-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+@media (max-width: 640px) {
+  .service-toggle { grid-template-columns: 36px minmax(0, 1fr) 16px; }
+  .service-face { display: none; }
+  .service-detail { padding-left: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { .service-chevron, .service-head { transition: none; } }
+:root[data-motion="reduced"] .service-chevron, :root[data-motion="reduced"] .service-head { transition: none; }
 .agent-services-identity { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: 13px; }
 .agent-services-identity dt { color: var(--color-muted); }
 .agent-services-identity dd { margin: 0; overflow-wrap: anywhere; }

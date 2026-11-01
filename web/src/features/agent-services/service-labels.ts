@@ -1,9 +1,4 @@
-import type { ServiceLiveState, ServiceLogEntry } from './agent-services'
-
-/** The badge tone of a live state: running is success, an unconfirmed one a warning. */
-export function liveStateTone(state: ServiceLiveState) {
-  return ({ running: 'success', stopped: 'secondary', unknown: 'warning' } as const)[state]
-}
+import type { ServiceLogEntry } from './agent-services'
 
 /**
  * One line of what a log entry recorded (who, which PID, why), without the
