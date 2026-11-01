@@ -75,7 +75,7 @@ const REQUIRED_AGENT_MUTATIONS = new Map([
   ['POST /api/external-knowledge/bindings/:bindingId/sync', 'sync_external_knowledge_binding'],
   ['DELETE /api/external-knowledge/bindings/:bindingId', 'delete_external_knowledge_binding'],
   ['PATCH /api/external-knowledge/conflict-policy', 'update_external_knowledge_conflict_policy'],
-  ['PATCH /api/external-knowledge/conflict-policy/default', 'update_default_external_knowledge_conflict_policy'],
+  ['PATCH /api/external-knowledge/conflict-policy/default', 'update_external_knowledge_conflict_policy'],
   ['DELETE /api/projects/:projectId', 'delete_public_project'],
 ]);
 
@@ -171,7 +171,7 @@ test('external knowledge configuration is controllable through explicit Agent to
   await callAgentTool(app, 'update_external_knowledge_conflict_policy', {
     personalSpaceId: 'space-a', personalProjectId: 'project-a', mode: 'agent_decide',
   });
-  await callAgentTool(app, 'update_default_external_knowledge_conflict_policy', { mode: 'agent_decide' });
+  await callAgentTool(app, 'update_external_knowledge_conflict_policy', { mode: 'agent_decide' });
   await callAgentTool(app, 'get_capture_policy', {});
   await callAgentTool(app, 'update_capture_policy', { enabled: false });
   await callAgentTool(app, 'delete_public_project', {

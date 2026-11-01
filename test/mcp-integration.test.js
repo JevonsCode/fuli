@@ -239,7 +239,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'check_external_knowledge_binding', 'sync_external_knowledge_binding',
     'retrieve_external_knowledge_binding', 'update_external_knowledge_binding_targets',
     'delete_external_knowledge_binding', 'get_external_knowledge_conflict_policy',
-    'update_external_knowledge_conflict_policy', 'update_default_external_knowledge_conflict_policy',
+    'update_external_knowledge_conflict_policy',
     'defer_preference_conflict',
     'delete_public_project',
     'list_employee_templates', 'recruit_employee', 'list_employee_tools', 'call_employee_tool',

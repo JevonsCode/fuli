@@ -84,10 +84,10 @@ const HANDLERS = Object.freeze({
     externalKnowledge(app).deleteBinding(input.bindingId),
   get_external_knowledge_conflict_policy: (app, input) =>
     connectedKnowledge(app).getConflictPolicy(input),
-  update_external_knowledge_conflict_policy: (app, input) =>
-    connectedKnowledge(app).updateConflictPolicy(input),
-  update_default_external_knowledge_conflict_policy: (app, input) =>
-    connectedKnowledge(app).updateDefaultConflictPolicy(input),
+  // Without a project it sets the default every project without its own choice follows.
+  update_external_knowledge_conflict_policy: (app, input) => input.personalProjectId
+    ? connectedKnowledge(app).updateConflictPolicy(input)
+    : connectedKnowledge(app).updateDefaultConflictPolicy(input),
   defer_preference_conflict: (app, input) => app.deferPreferenceConflict({
     ...input,
     operationActor: 'agent'
