@@ -12,6 +12,7 @@ import { personalProjectsPath } from '@/router/paths'
 import type { PersonalProject } from '@/types'
 import ProjectBoardSettings from './ProjectBoardSettings.vue'
 import ProjectTeamSummary from './ProjectTeamSummary.vue'
+import ProfileAuthorChip from './ProfileAuthorChip.vue'
 import ProjectCaptureSwitch from '@/features/capture/ProjectCaptureSwitch.vue'
 import ProjectJudgmentPolicy from '@/features/judgment/ProjectJudgmentPolicy.vue'
 
@@ -38,6 +39,7 @@ const visibleFrequentProjects = computed(() =>
       <div class="project-overview-title">
         <h2>{{ project.profile.name }}</h2>
         <p v-if="project.profile.purpose" class="project-overview-purpose">{{ project.profile.purpose }}</p>
+        <ProfileAuthorChip v-if="project.profile.purpose" class="project-overview-author" :author="project.profile.authors?.purpose" />
         <p v-else class="ui-meta">{{ t('projects.overview.noPurpose') }}</p>
       </div>
       <div class="project-overview-actions">
