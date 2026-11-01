@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "caption_frame.h"
 #include "win32_window.h"
 
 // A window that does nothing but host a Flutter view.
@@ -28,6 +29,9 @@ class FlutterWindow : public Win32Window {
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+
+  // The drawn title strip's maximise button and top resize edge.
+  std::unique_ptr<CaptionFrame> caption_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

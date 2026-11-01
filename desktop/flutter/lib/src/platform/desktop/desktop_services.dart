@@ -16,6 +16,7 @@ import '../../runtime/windows_tray_runtime.dart';
 import '../fuli_link.dart';
 import '../url_opener.dart';
 import 'console_webview.dart';
+import 'desktop_caption.dart';
 import 'desktop_window.dart';
 import 'download_saver.dart';
 import 'installed_package.dart';
@@ -41,6 +42,7 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
   final (instance, inbox) = (claimed?.instance, claimed?.inbox);
   final window = DesktopWindow();
   await window.open(title: strings.appName, show: !quiet);
+  final caption = await DesktopCaption.create();
   const opener = BrowserUrlOpener();
   final notifier = await OsNotifier.create(
       onClick: window.show, windowsIcon: '$exeDir\\data\\flutter_assets\\assets\\app\\fuli.png');
@@ -114,7 +116,8 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
     });
   }
   controller.startPolling();
-  return AppServices(controller: controller, strings: strings, opener: opener, consoleView: console?.build);
+  return AppServices(
+      controller: controller, strings: strings, opener: opener, consoleView: console?.build, caption: caption);
 }
 
 // Windows: the tray package's controller. macOS: the FULI inside this app

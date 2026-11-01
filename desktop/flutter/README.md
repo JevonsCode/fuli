@@ -8,6 +8,13 @@ A Windows and macOS app for people who do not use a terminal: one window and a t
   links open in the default browser. WebView2 keeps its data in `%LOCALAPPDATA%\FULI Desktop\WebView2`,
   outside the versioned program folder. Without a WebView runtime the window keeps the status page
   below and its 「打开控制台」 opens the browser.
+- The window draws its own title strip (`lib/src/ui/title_strip.dart`) in place of the OS's caption,
+  above whatever the window shows, so nothing in it moves while pages load. It holds no title; it moves the
+  window, a double click maximises or restores it and a right click opens the window menu. On Windows it
+  ends in the client's minimise, maximise and close buttons (close hides the window, as before); the frame
+  keeps its resize edges, shadow, rounded corners and snapping, and the runner hands the drawn maximise
+  button to the OS so hovering it opens Windows 11's snap layouts (`windows/runner/caption_frame.cpp`).
+  macOS keeps its traffic lights in the strip.
 - The status page is shown while there is no console to show (not started, not installed, not
   answering): it says whether FULI works and fixes what it can with buttons. Full width, one column:
   a pinned frosted-glass top line (the FULI mark and wordmark, a status dot and one sentence; the installed version

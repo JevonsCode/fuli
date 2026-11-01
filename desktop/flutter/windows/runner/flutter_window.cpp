@@ -26,6 +26,9 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  caption_ = std::make_unique<CaptionFrame>(
+      GetHandle(), flutter_controller_->view()->GetNativeWindow(),
+      flutter_controller_->engine()->messenger());
 
   // The window stays hidden until DesktopWindow.open shows it
   // (lib/src/platform/desktop/desktop_window.dart): a second launch exits
@@ -35,6 +38,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  caption_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -51,6 +55,14 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     std::optional<LRESULT> result =
         flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,
                                                       lparam);
+    if (result) {
+      return *result;
+    }
+  }
+
+  if (caption_) {
+    std::optional<LRESULT> result =
+        caption_->HandleMessage(message, wparam, lparam);
     if (result) {
       return *result;
     }

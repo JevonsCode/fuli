@@ -4,6 +4,7 @@ import '../app/app_services.dart';
 import 'brand.dart';
 import 'home_page.dart';
 import 'theme.dart';
+import 'title_strip.dart';
 import 'waiting_screen.dart';
 
 class FuliApp extends StatelessWidget {
@@ -70,7 +71,8 @@ class _WindowState extends State<_Window> {
     final controller = _services.controller;
     final strings = _services.strings;
     final consoleView = _services.consoleView;
-    return ListenableBuilder(
+    final caption = _services.caption;
+    final content = ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
         final snapshot = controller.snapshot;
@@ -107,5 +109,8 @@ class _WindowState extends State<_Window> {
             consoleLink: consoleView == null);
       },
     );
+    if (caption == null) return content;
+    // The title strip stays where it is whatever the window shows below it.
+    return Column(children: [TitleStrip(caption: caption, strings: strings), Expanded(child: content)]);
   }
 }
