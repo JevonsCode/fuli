@@ -53,6 +53,15 @@ function mountPage(read: () => Response, act: (action: string) => Response = () 
 describe('CaptureChangePage (rec#5 C4-2, rec#11 D-16)', () => {
   afterEach(() => { vi.unstubAllGlobals() })
 
+  it('centres its loading in the page: the root is the scroll area and the loading fills it', async () => {
+    const page = mountPage(() => new Promise<Response>(() => {}) as unknown as Response)
+    const wrapper = await page.mount()
+    expect(wrapper.element.matches('section.view')).toBe(true)
+    const loading = wrapper.get('.view > .capture-change > .view-loading')
+    expect(loading.attributes('role')).toBe('status')
+    expect(loading.classes()).toContain('growth-loading--page')
+  })
+
   it('shows FULI\'s exact sentence, the change in names, the settings now and who asked', async () => {
     const page = mountPage(() => Response.json(PREVIEW))
     const wrapper = await page.mount()

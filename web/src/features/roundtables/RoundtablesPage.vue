@@ -90,7 +90,7 @@ const roomPath = (item: RoundtableChatRoom) => `/roundtables/chat/${encodeURICom
           :later-stuck="rt.laterStuck.value" :new-messages="rt.newMessages.value" @later="rt.loadLater" />
         <div v-else class="rt-state">
           <template v-if="rt.detailState.value === 'loading'">
-            <GrowthLoading variant="compact" :label="t('roundtable.detailLoading')" />
+            <GrowthLoading :label="t('roundtable.detailLoading')" />
             <p v-if="rt.detailSlow.value" role="status">{{ t('roundtable.detailSlow') }}</p>
           </template>
           <p v-else-if="rt.detailState.value === 'missing'" role="alert">{{ t('roundtable.detailMissing') }}</p>

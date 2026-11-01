@@ -19,7 +19,7 @@ export default defineConfig({
     // multi-step page specs need more than the 5-second default there.
     testTimeout: 15_000,
     // Token, theme and shared chrome stylesheets are read as text by specs that
-    // check contrast, layering, divider lines and the motion rules.
-    css: { include: [/tokens\.css/, /styles[\\/]theme[\\/]/, /web[\\/]styles\.css/, /primitives\.css/, /motion\.css/] },
+    // check contrast, layering, divider lines, the motion rules and the page loading's layout.
+    css: { include: [/tokens\.css/, /styles[\\/]theme[\\/]/, /web[\\/]styles\.css/, /primitives\.css/, /motion\.css/, /styles[\\/]vue\.css/] },
   },
 })

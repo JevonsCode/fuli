@@ -72,7 +72,18 @@ const { ink } = FULI_MARK
   line-height: 1.4;
 }
 
+/* The page variant fills and centres through .view-loading (styles/vue.css);
+   the base rule's display would otherwise win over it. */
+.growth-loading--page {
+  display: grid;
+  place-items: center;
+}
+
+/* A section whose box has a height (a flex column, a grid row) centres the
+   compact variant in all of it; elsewhere it keeps its own 104px. */
 .growth-loading--compact {
+  flex-grow: 1;
+  align-self: stretch;
   display: grid;
   place-items: center;
   min-height: 104px;

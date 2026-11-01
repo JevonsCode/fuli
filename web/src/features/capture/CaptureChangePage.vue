@@ -126,6 +126,8 @@ onMounted(load)
 </script>
 
 <template>
+  <section class="view">
+  <!-- A page root like every other: the scroll area its loading centres in. -->
   <div class="capture-change" data-capture-change>
     <GrowthLoading v-if="loading" :label="t('capture.confirm.loading')" />
     <div v-else-if="loadError" class="capture-change-notice" role="alert">
@@ -218,6 +220,7 @@ onMounted(load)
       </Card>
     </template>
   </div>
+  </section>
 </template>
 
 <style scoped>
