@@ -1,12 +1,13 @@
 import { currentLocale, t } from '@/i18n'
 import { taskReason, type TaskReason } from '@/features/project-agents/task-reason'
-import type { ProjectAgentTaskEvent, ProjectAgentTaskRecord } from '@/types'
+import type { ProjectAgentTaskEvent, ProjectAgentTaskParticipant, ProjectAgentTaskRecord } from '@/types'
 import { taskLog } from './workbench-model'
 
 // A task's progress as a timeline: every recorded event, newest first and
 // grouped by day. Each event reads as one sentence (a recorded code becomes
 // its sentence through taskReason; an Agent's own words read as written),
-// and only its dot says it finished, was blocked or was unblocked.
+// and only its dot says it finished, was blocked or was unblocked. Beside it
+// stand the other FLAs that were at work at that moment.
 export type TimelineTone = 'done' | 'blocked' | 'unblocked' | 'plain'
 export interface TimelineEntry {
   id: string
@@ -15,6 +16,8 @@ export interface TimelineEntry {
   actorKind: string | null
   tone: TimelineTone
   reason: TaskReason
+  /** The other FLAs at work when it happened, in the task's participant order. */
+  crew: string[]
 }
 export interface TimelineDay { key: string; label: string; entries: TimelineEntry[] }
 
@@ -25,8 +28,34 @@ function tone(event: ProjectAgentTaskEvent): TimelineTone {
   return 'plain'
 }
 
+const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
+const parse = (value?: string | null) => {
+  const time = value ? Date.parse(value) : NaN
+  return Number.isNaN(time) ? null : time
+}
+
+// When an FLA was at work: from it started running (or joined) until it
+// ended; still open while its status is live. A window the record cannot
+// bound is no window, so no one is claimed to be working.
+function workWindow(participant: ProjectAgentTaskParticipant): [number, number] | null {
+  const start = parse(participant.runningSince ?? participant.joinedAt)
+  const end = parse(participant.endedAt) ?? (LIVE.has(participant.status) ? Number.POSITIVE_INFINITY : parse(participant.updatedAt))
+  return start === null || end === null ? null : [start, end]
+}
+
 /** Every recorded event of the task, newest first. */
 export function taskTimeline(task: ProjectAgentTaskRecord): TimelineEntry[] {
+  // An FLA reassigned to the task has several windows; it stands once.
+  const windows = (task.participants ?? []).flatMap(participant => {
+    const window = participant.agentId ? workWindow(participant) : null
+    return window ? [{ agentId: participant.agentId, window }] : []
+  })
+  const crewAt = (event: ProjectAgentTaskEvent) => {
+    const at = parse(event.createdAt)
+    return at === null ? [] : [...new Set(windows
+      .filter(({ agentId, window: [start, end] }) => agentId !== event.agentId && start <= at && at <= end)
+      .map(({ agentId }) => agentId))]
+  }
   return taskLog(task, Number.POSITIVE_INFINITY).map(event => ({
     id: event.eventId,
     at: event.createdAt ?? null,
@@ -34,6 +63,7 @@ export function taskTimeline(task: ProjectAgentTaskRecord): TimelineEntry[] {
     actorKind: event.actorKind ?? null,
     tone: tone(event),
     reason: taskReason(event.summary) ?? { text: event.summary, unknownCode: null, raw: null },
+    crew: crewAt(event),
   }))
 }
 

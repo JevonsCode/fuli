@@ -9,7 +9,8 @@ import { taskTimeline, timelineDays } from './task-timeline'
 const event = (id: string, at: string, patch: Partial<ProjectAgentTaskEvent> = {}): ProjectAgentTaskEvent => ({
   eventId: id, taskId: 'task-a', status: 'running', actorKind: 'agent', agentId: 'agent-a', summary: `Synthetic step ${id}`, createdAt: at, ...patch,
 } as ProjectAgentTaskEvent)
-const task = (events: ProjectAgentTaskEvent[]) => ({ taskId: 'task-a', events, participants: [] }) as unknown as ProjectAgentTaskRecord
+const task = (events: ProjectAgentTaskEvent[], participants: unknown[] = []) => ({ taskId: 'task-a', events, participants }) as unknown as ProjectAgentTaskRecord
+const fla = (agentId: string, from: string, patch: Record<string, unknown> = {}) => ({ agentId, role: 'collaborator', status: 'running', joinedAt: from, ...patch })
 
 beforeEach(() => setLocale('zh-CN', { persist: false }))
 
@@ -27,6 +28,33 @@ describe('the task timeline', () => {
     expect(gap.reason.text).toBe('小组里没有合适的成员，需要招聘')
     expect(gap.reason.raw).toBe('project_team_gap: project team lead remains accountable')
     expect(entries.find(entry => entry.id === 'c')!.reason).toEqual({ text: 'Shipped the synthetic thing', unknownCode: null, raw: null })
+  })
+
+  it('stands beside each event the other FLAs at work at that moment', () => {
+    const entries = taskTimeline(task([
+      event('early', '2026-11-01T08:30:00Z'),
+      event('mid', '2026-11-01T10:30:00Z'),
+      event('late', '2026-11-01T12:30:00Z', { agentId: 'agent-c' }),
+    ], [
+      fla('agent-a', '2026-11-01T08:00:00Z'),
+      fla('agent-b', '2026-11-01T09:00:00Z', { status: 'completed', runningSince: '2026-11-01T10:00:00Z', endedAt: '2026-11-01T11:00:00Z' }),
+      fla('agent-c', '2026-11-01T10:00:00Z'),
+      fla('agent-d', '2026-11-01T08:00:00Z', { status: 'completed' }),
+      fla('agent-b', '2026-11-01T12:00:00Z'),
+    ]))
+    const crew = Object.fromEntries(entries.map(entry => [entry.id, entry.crew]))
+    // The actor is named on the line, not stacked; an FLA ended without a time is not claimed; a reassigned FLA stands once.
+    expect(crew).toEqual({ early: [], mid: ['agent-b', 'agent-c'], late: ['agent-a', 'agent-b'] })
+  })
+
+  it('stacks up to three faces, then one dot for the rest', () => {
+    const crew = ['b', 'c', 'd', 'e'].map(id => fla(`agent-${id}`, '2026-11-01T08:00:00Z'))
+    const wrapper = mount(WorkbenchTimeline, { props: { entries: taskTimeline(task([event('a', '2026-11-01T09:00:00Z')], crew)),
+      taskKey: 'task-a', agentName: (id?: string | null) => `FLA ${id}` } })
+    const stack = wrapper.get('[data-timeline-crew]')
+    expect(stack.findAll('.timeline-crew-face')).toHaveLength(3)
+    expect(stack.find('[data-timeline-crew-more]').exists()).toBe(true)
+    expect(stack.attributes('title')).toBe('同时在干活：FLA agent-b、FLA agent-c、FLA agent-d和FLA agent-e')
   })
 
   it('groups by local day: today, yesterday, then the date', () => {
