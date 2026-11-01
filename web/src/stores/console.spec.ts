@@ -170,7 +170,7 @@ describe('console store policies', () => {
     getJson.mockReturnValueOnce(pending).mockResolvedValueOnce({ personalSpaces: [{ id: 'fresh' }], activePersonalSpaceId: 'fresh' })
     const store = useConsoleStore()
     const old = store.refresh()
-    const signal = getJson.mock.calls[0]![1].signal
+    const signal = getJson.mock.calls[0]![2].signal
     await store.refresh()
     expect(signal.aborted).toBe(true)
     fail(Object.assign(new Error('old denied'), { status: 403 })); await old

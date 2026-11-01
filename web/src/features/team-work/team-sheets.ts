@@ -1,42 +1,49 @@
+import { z } from 'zod'
 import { getJson } from '@/api/client'
+import { shapeOf } from '@/api/response-shape'
 
 // rec#11 D-82 task sheets as team work: a task several FLAs share, each with
 // its own share of the plan. Progress only ever comes from recorded steps;
 // a share without them shows its status and nothing else.
-export interface TeamProgress { completed: number; total: number }
-export interface TeamStep { id: string; title: string; status: string; agentId?: string | null }
-export interface TeamShare {
-  agentId: string
-  role: string | null
-  status: string
-  assignment: string | null
-  progress: TeamProgress | null
-  /** The plan step this share is doing now, if any. */
-  currentStepId?: string | null
-}
-export interface TeamSheet {
-  taskId: string
-  personalProjectId: string | null
-  title: string
-  objective: string | null
-  status: string
-  leadAgentId: string | null
-  updatedAt: string | null
-  blocker: { summary?: string | null } | null
-  progress: TeamProgress | null
-  steps: TeamStep[]
-  unassignedSteps: number
-  shares: TeamShare[]
-}
-export interface TeamSheets { partial: boolean; workbenches: TeamSheet[] }
+const progressSchema = z.looseObject({ completed: z.number(), total: z.number() })
+const stepSchema = z.looseObject({ id: z.string(), title: z.string(), status: z.string(), agentId: z.string().nullish() })
+const shareSchema = z.looseObject({
+  agentId: z.string(),
+  role: z.string().nullish(),
+  status: z.string(),
+  assignment: z.string().nullish(),
+  progress: progressSchema.nullable(),
+  /** The plan step this share is doing now, if any (older servers leave it out). */
+  currentStepId: z.string().nullish(),
+})
+const sheetSchema = z.looseObject({
+  taskId: z.string(),
+  personalProjectId: z.string().nullable(),
+  title: z.string(),
+  objective: z.string().nullable(),
+  status: z.string(),
+  leadAgentId: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+  blocker: z.looseObject({ summary: z.string().nullish() }).nullable(),
+  progress: progressSchema.nullable(),
+  steps: z.array(stepSchema),
+  unassignedSteps: z.number(),
+  shares: z.array(shareSchema),
+})
+const sheetsShape = shapeOf(z.looseObject({ partial: z.boolean(), workbenches: z.array(sheetSchema) }))
+
+export type TeamProgress = z.infer<typeof progressSchema>
+export type TeamStep = z.infer<typeof stepSchema>
+export type TeamShare = z.infer<typeof shareSchema>
+export type TeamSheet = z.infer<typeof sheetSchema>
 
 /** Every task one FLA takes part in, as the same sheets (its page's 任务单). */
 export const readAgentSheets = (personalSpaceId: string, agentId: string, signal?: AbortSignal) =>
-  getJson<TeamSheets>(`/api/project-agents/${encodeURIComponent(agentId)}/workbenches?${new URLSearchParams({ personalSpaceId })}`, { signal })
+  getJson(`/api/project-agents/${encodeURIComponent(agentId)}/workbenches?${new URLSearchParams({ personalSpaceId })}`, sheetsShape, { signal })
 
 /** Every open task two or more FLAs share in the space (one read for the home page and the island). */
 export const readTeamSheets = (personalSpaceId: string, signal?: AbortSignal) =>
-  getJson<TeamSheets>(`/api/workbenches?${new URLSearchParams({ personalSpaceId })}`, { signal })
+  getJson(`/api/workbenches?${new URLSearchParams({ personalSpaceId })}`, sheetsShape, { signal })
 
 const OPEN = new Set(['queued', 'running', 'blocked', 'paused', 'awaiting_review', 'awaiting_recruitment', 'backlog'])
 /** Team work: a task two or more FLAs take part in and that is not finished. */

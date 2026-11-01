@@ -632,7 +632,7 @@ describe('Jefa bounded progressive reads', () => {
     vi.useFakeTimers()
     let resolveCatalog!: (value: unknown) => void
     let catalogSignal: AbortSignal | undefined
-    getJson.mockImplementation((_url: string, init?: { signal: AbortSignal }) => {
+    getJson.mockImplementation((_url: string, _shape: unknown, init?: { signal: AbortSignal }) => {
       catalogSignal = init?.signal
       return new Promise(resolve => { resolveCatalog = resolve })
     })

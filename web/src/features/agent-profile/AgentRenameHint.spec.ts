@@ -2,6 +2,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProjectAgentRecord } from '@/types'
 import AgentRenameHint from './AgentRenameHint.vue'
+// Reads and writes pass their response shape (api/response-shape.ts) last.
+const SHAPE = expect.objectContaining({ schema: expect.anything() })
 
 const { putJson } = vi.hoisted(() => ({ putJson: vi.fn() }))
 vi.mock('@/api/client', () => ({ putJson }))
@@ -30,7 +32,7 @@ describe('AgentRenameHint', () => {
     await apply.trigger('click')
     await flushPromises()
     // Only the name changes, through the rename route (rec#11 D-89).
-    expect(putJson).toHaveBeenCalledWith('/api/project-agents/agent-ppt/name', { personalSpaceId: 'space-a', displayName: 'Iris Vale' })
+    expect(putJson).toHaveBeenCalledWith('/api/project-agents/agent-ppt/name', { personalSpaceId: 'space-a', displayName: 'Iris Vale' }, SHAPE)
     expect(wrapper.emitted('saved')).toEqual([[saved]])
   })
 

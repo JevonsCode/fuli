@@ -1,4 +1,6 @@
 import { ref } from 'vue'
+import { z } from 'zod'
+import { shapeFor } from '@/api/response-shape'
 import { ApiError, getJson } from '@/api/client'
 import { t } from '@/i18n'
 import { tableLabel } from '@/i18n/label-table'
@@ -73,6 +75,18 @@ export function employeeRoleLabel(template: Pick<EmployeeTemplate, 'id' | 'role'
   return tableLabel('employees.roles', template.id) ?? template.role
 }
 
+// The catalog as the API answers it: the fields the employee pages rely on.
+const catalogShape = shapeFor<{ templates: EmployeeTemplate[] }>(z.looseObject({
+  templates: z.array(z.looseObject({
+    id: z.string(),
+    name: z.string(),
+    role: z.string(),
+    runtimeStatus: z.string(),
+    agentId: z.string().nullable(),
+    assignments: z.array(z.looseObject({})),
+  })),
+}))
+
 export const employeeTemplates = ref<EmployeeTemplate[]>([])
 export const employeeCatalogLoading = ref(false)
 export const employeeCatalogError = ref('')
@@ -83,8 +97,8 @@ let generation = 0
 export async function fetchEmployeeCatalog(spaceId: string, init?: Pick<RequestInit, 'signal'>): Promise<EmployeeTemplate[]> {
   if (!spaceId) return []
   const url = `/api/employee-templates?${new URLSearchParams({ personalSpaceId: spaceId })}`
-  const result = await (init ? getJson<{ templates: EmployeeTemplate[] }>(url, init) : getJson<{ templates: EmployeeTemplate[] }>(url))
-  return Array.isArray(result.templates) ? result.templates : []
+  const result = await (init ? getJson(url, catalogShape, init) : getJson(url, catalogShape))
+  return result.templates
 }
 
 export function refreshEmployeeCatalog(spaceId: string): Promise<void> {

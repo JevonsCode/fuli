@@ -154,7 +154,7 @@ describe('Agent profile integration', () => {
       return normal(url)
     })
     const { wrapper } = await setup('/agents/space-a/employee.tonborg')
-    expect(getJson).toHaveBeenCalledWith('/api/employee-templates?personalSpaceId=space-a')
+    expect(getJson).toHaveBeenCalledWith('/api/employee-templates?personalSpaceId=space-a', expect.objectContaining({ schema: expect.anything() }))
     expect(wrapper.find('a[href="/employees/tonborg"]').exists()).toBe(true)
   })
 

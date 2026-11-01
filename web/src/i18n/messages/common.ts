@@ -23,6 +23,7 @@ export const commonMessages = {
       pageNotFoundCopy: '链接可能已失效。',
       requestFailed: '请求失败 ({status})',
       operationFailed: '操作失败',
+      invalidResponse: '服务返回的数据和控制台预期的不一致（{field}）。更新 FULI 后再试。',
     },
     status: {
       loadingConsole: '正在读取空间与服务状态…',
@@ -69,6 +70,7 @@ export const commonMessages = {
       pageNotFoundCopy: 'This link may be outdated.',
       requestFailed: 'Request failed ({status})',
       operationFailed: 'Operation failed',
+      invalidResponse: 'The service answered in a shape this console does not expect ({field}). Update FULI and try again.',
     },
     status: {
       loadingConsole: 'Loading spaces and service status…',

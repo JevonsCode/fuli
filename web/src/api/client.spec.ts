@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setLocale } from '@/i18n'
-import { ApiError, getJson, postJson } from './client'
+import { z } from 'zod'
+import { ApiError, RESPONSE_INVALID, apiErrorCode, apiErrorReason, getJson, postJson, putJson } from './client'
+import { shapeOf } from './response-shape'
 
 describe('API client errors', () => {
   beforeEach(() => {
@@ -59,4 +61,38 @@ it.each(['zh-CN', 'en-US'] as const)('gives code-specific recovery guidance on r
   await expect(postJson('/api/role-work/requests', { synthetic: true })).rejects.toMatchObject({ message, status: 503 })
   expect(fetch).toHaveBeenCalledTimes(2)
   vi.unstubAllGlobals()
+})
+
+describe('API response shapes', () => {
+  const shape = shapeOf(z.looseObject({ items: z.array(z.looseObject({ id: z.string() })) }))
+  const answer = (value: unknown) => vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(value), { status: 200 })))
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('returns a checked answer with the fields the server added left in place', async () => {
+    answer({ items: [{ id: 'a', addedLater: true }], total: 1 })
+    await expect(getJson('/api/synthetic', shape)).resolves.toEqual({ items: [{ id: 'a', addedLater: true }], total: 1 })
+  })
+
+  it('turns an answer of the wrong shape into one error that names the field, never its value', async () => {
+    setLocale('en-US', { persist: false })
+    answer({ items: [{ id: 'a' }, { id: 42, secret: 'synthetic-private-value' }] })
+    const error = await getJson('/api/synthetic', shape).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error).toMatchObject({ status: 200, message: expect.stringContaining('(items.1.id)') })
+    expect(apiErrorCode(error)).toBe(RESPONSE_INVALID)
+    expect(apiErrorReason(error)).toBe((error as ApiError).message)
+    expect(JSON.stringify(error)).not.toContain('synthetic-private-value')
+    expect((error as ApiError).message).not.toContain('42')
+  })
+
+  it('checks writes too, and keeps a signal passed after the shape', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [] }), { status: 200 }))
+    vi.stubGlobal('fetch', fetch)
+    const controller = new AbortController()
+    await postJson('/api/synthetic', { synthetic: true }, shape, { signal: controller.signal })
+    expect(fetch).toHaveBeenCalledWith('/api/synthetic', expect.objectContaining({ method: 'POST', signal: controller.signal, body: '{"synthetic":true}' }))
+    fetch.mockResolvedValue(new Response(JSON.stringify({ items: 'nope' }), { status: 200 }))
+    await expect(putJson('/api/synthetic', {}, shape)).rejects.toMatchObject({ message: expect.stringContaining('items') })
+  })
 })

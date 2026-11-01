@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
+// Reads and writes pass their response shape (api/response-shape.ts) last.
+const SHAPE = expect.objectContaining({ schema: expect.anything() })
 
 const { getJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn() }))
 vi.mock('@/api/client', async (original) => ({ ...(await original<typeof import('@/api/client')>()), getJson, putJson }))
@@ -17,7 +19,7 @@ describe('agent looks', () => {
     ] })
     await Promise.all([loadAgentLooks('space-a'), loadAgentLooks('space-a')])
     expect(getJson).toHaveBeenCalledTimes(1)
-    expect(getJson).toHaveBeenCalledWith('/api/agent-avatars?personalSpaceId=space-a')
+    expect(getJson).toHaveBeenCalledWith('/api/agent-avatars?personalSpaceId=space-a', SHAPE)
     expect([...agentLooks.value.keys()]).toEqual(['agent-a', 'agent-b'])
   })
 
@@ -36,7 +38,7 @@ describe('agent looks', () => {
     putJson.mockResolvedValue(saved)
     listed = [saved]
     await saveAgentLook('space-a', 'agent-a', { kind: 'generated', seed: 'seed-2' })
-    expect(putJson).toHaveBeenCalledWith('/api/agent-avatars/agent-a', { personalSpaceId: 'space-a', look: { kind: 'generated', seed: 'seed-2' } })
+    expect(putJson).toHaveBeenCalledWith('/api/agent-avatars/agent-a', { personalSpaceId: 'space-a', look: { kind: 'generated', seed: 'seed-2' } }, SHAPE)
     expect(agentLooks.value.get('agent-a')).toMatchObject({ kind: 'generated', seed: 'seed-2' })
     expect(getJson).toHaveBeenCalledTimes(2)
 

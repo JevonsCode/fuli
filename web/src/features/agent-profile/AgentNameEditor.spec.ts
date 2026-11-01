@@ -2,6 +2,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
 import type { ProjectAgentRecord } from '@/types'
+// Reads and writes pass their response shape (api/response-shape.ts) last.
+const SHAPE = expect.objectContaining({ schema: expect.anything() })
 
 const { putJson } = vi.hoisted(() => ({ putJson: vi.fn() }))
 vi.mock('@/api/client', async (original) => ({ ...(await original<typeof import('@/api/client')>()), putJson }))
@@ -38,7 +40,7 @@ describe('AgentNameEditor', () => {
     expect(input.attributes('maxlength')).toBe('64')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(putJson).toHaveBeenCalledWith('/api/project-agents/agent-synthetic/name', { personalSpaceId: 'space-a', displayName: 'Mira Stone' })
+    expect(putJson).toHaveBeenCalledWith('/api/project-agents/agent-synthetic/name', { personalSpaceId: 'space-a', displayName: 'Mira Stone' }, SHAPE)
     expect(wrapper.emitted('saved')).toEqual([[renamed]])
     expect(wrapper.find('[data-agent-name-input]').exists()).toBe(false)
   })
@@ -64,7 +66,7 @@ describe('AgentNameEditor', () => {
     expect(free.map(button => button.text())).toEqual(['Nora Lin', 'Theo Hart'])
     await free[1]!.trigger('click')
     await flushPromises()
-    expect(putJson).toHaveBeenLastCalledWith('/api/project-agents/agent-synthetic/name', { personalSpaceId: 'space-a', displayName: 'Theo Hart' })
+    expect(putJson).toHaveBeenLastCalledWith('/api/project-agents/agent-synthetic/name', { personalSpaceId: 'space-a', displayName: 'Theo Hart' }, SHAPE)
     expect(wrapper.find('[data-agent-name-free]').exists()).toBe(false)
   })
 
@@ -74,7 +76,7 @@ describe('AgentNameEditor', () => {
     expect(role.get('h1').text()).toBe('伯乐')
     await role.get('[data-agent-name-restore]').trigger('click')
     await flushPromises()
-    expect(putJson).toHaveBeenCalledWith('/api/project-agents/employee.bole/name', { personalSpaceId: 'space-a', displayName: null })
+    expect(putJson).toHaveBeenCalledWith('/api/project-agents/employee.bole/name', { personalSpaceId: 'space-a', displayName: null }, SHAPE)
     expect(mount(AgentNameEditor, { props: { agent: agent('employee.bole', 'Bole', null) } }).find('[data-agent-name-restore]').exists()).toBe(false)
     expect(mount(AgentNameEditor, { props: { agent: agent('agent-synthetic', 'Iris Vale', 'Mira') } }).find('[data-agent-name-restore]').exists()).toBe(false)
   })
