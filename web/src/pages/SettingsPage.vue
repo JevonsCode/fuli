@@ -17,7 +17,11 @@ import PeerSettings from '@/features/settings/PeerSettings.vue'
 import DiagnosticsSettings from '@/features/settings/DiagnosticsSettings.vue'
 import AgentNamingStyleField from '@/features/settings/AgentNamingStyleField.vue'
 import CaptureProjectSettings from '@/features/capture/CaptureProjectSettings.vue'
+import SettingsRestartNotice from '@/features/settings/SettingsRestartNotice.vue'
+import SettingsSaveCapsule from '@/features/settings/SettingsSaveCapsule.vue'
 import { waitForSettingsApply } from '@/features/settings/settings-apply'
+import { useSettingsAutoSave } from '@/features/settings/settings-autosave'
+import { PERSONAL_PORT_KEYS, pendingRestartFields, withoutRestartChanges } from '@/features/settings/settings-restart'
 import { captureSourceOff, withCaptureSource } from '@/features/capture/capture-sources'
 import { fieldErrorMessage } from '@/features/settings/settings-field-error'
 import { matchingSections, settingSearchTerm, useSettingsSearch } from '@/features/settings/settings-search'
@@ -44,14 +48,24 @@ const route = useRoute()
 const router = useRouter()
 const settings = ref<SystemSettingsResult | null>(null)
 const form = ref<RuntimeSettings | null>(null)
-// What the server last confirmed, to tell the person when a change still needs saving.
-const savedForm = ref('')
+const formElement = ref<HTMLFormElement | null>(null)
 const resources = ref<ResourceSnapshot | null>(null)
 const loading = ref(true)
-type SaveState = 'idle' | 'saving' | 'applying' | 'saved' | 'error'
-const saveState = ref<SaveState>('idle')
-const saving = computed(() => saveState.value === 'saving' || saveState.value === 'applying')
-const dirty = computed(() => Boolean(form.value) && JSON.stringify(form.value) !== savedForm.value)
+// A restart setting being applied: FULI restarts, so the form waits.
+const applying = ref(false)
+const applyError = ref('')
+// Every other setting saves itself (Jevons 11-01): typing after a pause, a switch
+// or a choice at once. Restart settings stay as FULI runs now until applied.
+const autoSave = useSettingsAutoSave({
+  read: () => withoutRestartChanges(form.value!, settings.value!.active),
+  save: persistSettings,
+  ready: () => !applying.value && checkFields().every(field => field.hasAttribute('data-restart-field')),
+})
+const { state: autoSaveState, failure: saveFailure } = autoSave
+const saveCapsuleState = computed(() => applying.value ? 'applying' : autoSaveState.value)
+const pendingRestart = computed(() => form.value && settings.value
+  ? pendingRestartFields(form.value, settings.value.active)
+  : new Set())
 
 // A few topic tabs over one form (D-03): the tab is part of the URL, every tab
 // stays mounted so unsaved edits survive switching, and a search looks
@@ -96,12 +110,6 @@ const resourceError = ref('')
 const saveController = new AbortController()
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-const personalPortKeys: Array<keyof RuntimePorts> = [
-  'console',
-  'personalProvider',
-  'personalNeo4jHttp',
-  'personalNeo4jBolt',
-]
 const locale = computed({
   get: () => currentLocale(),
   set: (value: AppLocale) => setLocale(value),
@@ -158,12 +166,19 @@ onBeforeUnmount(() => {
   saveController.abort()
 })
 
+// Typing in a field marks the change it makes as text, so it waits for a pause.
+let typing = false
+function noteTyping(event: Event) {
+  const field = event.target
+  typing = field instanceof HTMLTextAreaElement || (field instanceof HTMLInputElement && field.type !== 'checkbox' && field.type !== 'radio')
+}
+// Checked once the page shows the change: a launcher switched on shows its
+// fields, filled in, only after this render.
 watch(form, () => {
-  if (saveState.value === 'saved' && dirty.value) {
-    saveState.value = 'idle'
-    store.clearFeedback()
-  }
-}, { deep: true, flush: 'sync' })
+  const change = typing ? 'text' : 'choice'
+  typing = false
+  void nextTick(() => autoSave.changed(change))
+}, { deep: true })
 
 watch(
   () => form.value?.resourceRefreshSeconds,
@@ -173,17 +188,14 @@ watch(
 async function loadSettings() {
   try {
     const result = await getJson<SystemSettingsResult>('/api/system/settings')
-    settings.value = result
-    form.value = { ...structuredClone(result.configured), conversationLaunchers: normalizedConfiguration(result.configured.conversationLaunchers) }
-    savedForm.value = JSON.stringify(form.value)
-    setConversationLauncherConfiguration(result.configured.conversationLaunchers)
+    adoptSettings(result)
     loadError.value = ''
     const url = new URL(window.location.href)
     if (result.apply?.status === 'applying') {
-      saveState.value = 'applying'
-      await finishApplying(result)
+      applying.value = true
+      await finishApplying(result).catch(error => { if (!saveController.signal.aborted) store.reportError(error) })
+      applying.value = false
     } else if (result.apply?.status === 'applied' && url.searchParams.get('settingsApplied') === result.apply.id) {
-      saveState.value = 'saved'
       store.notify(t('settings.saved'))
       url.searchParams.delete('settingsApplied')
       window.history.replaceState(window.history.state, '', url)
@@ -202,7 +214,7 @@ async function retryLoad() {
 }
 
 async function loadResources() {
-  if (saving.value || loadingResources.value || document.visibilityState === 'hidden') return
+  if (applying.value || loadingResources.value || document.visibilityState === 'hidden') return
   loadingResources.value = true
   try {
     resources.value = await getJson<ResourceSnapshot>('/api/system/resources')
@@ -216,46 +228,56 @@ async function loadResources() {
   }
 }
 
-async function saveSettings() {
-  if (!form.value || saving.value) return
-  saveState.value = 'saving'
-  store.clearFeedback()
+// What the server holds becomes the form and is not sent again.
+function adoptSettings(result: SystemSettingsResult) {
+  settings.value = result
+  form.value = { ...structuredClone(result.configured), conversationLaunchers: normalizedConfiguration(result.configured.conversationLaunchers) }
+  autoSave.remember(withoutRestartChanges(form.value, result.active))
+  setConversationLauncherConfiguration(result.configured.conversationLaunchers)
+}
+
+const putSettings = (value: RuntimeSettings) => putJson<SystemSettingsResult>('/api/system/settings', value)
+
+// An automatic save leaves the form alone: the person may still be typing.
+async function persistSettings(value: RuntimeSettings) {
+  const result = await putSettings(value)
+  settings.value = result
+  setConversationLauncherConfiguration(result.configured.conversationLaunchers)
+}
+
+// The person's 应用并重启: the whole form, restart settings included.
+async function applyRestartSettings() {
+  if (!form.value || applying.value) return
+  applyError.value = ''
+  if (checkFields().length) {
+    applyError.value = t('settings.restart.invalid')
+    return
+  }
+  applying.value = true
   try {
-    const result = await putJson<SystemSettingsResult>('/api/system/settings', form.value)
-    settings.value = result
-    form.value = { ...structuredClone(result.configured), conversationLaunchers: normalizedConfiguration(result.configured.conversationLaunchers) }
-    savedForm.value = JSON.stringify(form.value)
-    setConversationLauncherConfiguration(result.configured.conversationLaunchers)
-    loadError.value = ''
+    const result = await putSettings(form.value)
+    adoptSettings(result)
     if (result.restartRequired) {
       if (!result.apply) throw new Error(t('settings.applyUnavailable'))
-      saveState.value = 'applying'
       await finishApplying(result)
     } else {
-      saveState.value = 'saved'
       store.notify(t('settings.saved'))
     }
   } catch (error) {
     if (saveController.signal.aborted) return
-    saveState.value = 'error'
-    store.reportError(new Error(apiErrorReason(error, t('settings.saveError'))))
+    applyError.value = apiErrorReason(error, t('settings.saveError'))
+  } finally {
+    applying.value = false
   }
 }
 
 async function finishApplying(result: SystemSettingsResult) {
   if (!result.apply) return
-  try {
-    const completed = await waitForSettingsApply(result.apply, saveController.signal)
-    if (completed.url) { window.location.assign(completed.url); return }
-    settings.value = completed.settings ?? result
-    saveState.value = 'saved'
-    store.notify(t('settings.saved'))
-    void store.refresh()
-  } catch (error) {
-    if (saveController.signal.aborted) return
-    saveState.value = 'error'
-    store.reportError(error)
-  }
+  const completed = await waitForSettingsApply(result.apply, saveController.signal)
+  if (completed.url) { window.location.assign(completed.url); return }
+  adoptSettings(completed.settings ?? result)
+  store.notify(t('settings.saved'))
+  void store.refresh()
 }
 
 function startPolling() {
@@ -343,56 +365,19 @@ function barWidth(bytes: number, maximum: number) {
 function formatTime(value: string | undefined) {
   return formatDateTime(value, locale.value, { hour: '2-digit', minute: '2-digit', second: '2-digit' }, { missing: '—' })
 }
-// Checked here rather than by the browser, which cannot focus a field in a
-// hidden tab, a closed section or a card the search filtered out: the first
-// invalid field's tab and section open (a search hiding it is cleared), then
-// it gets focus and says what is wrong right under it.
-type ValidatedField = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-let invalidField: ValidatedField | null = null
-// The name of the field that stopped the save, shown beside the save button.
-const invalidLabel = ref('')
-// The field that stopped the save (its data-settings-field key) and what is wrong with it.
-const FIELD_ERROR_ID = 'settings-field-error'
-const fieldError = ref<{ key: string; message: string } | null>(null)
-const errorFor = (key: string) => fieldError.value?.key === key ? fieldError.value.message : ''
-function revealInvalidField(event: Event) {
-  const field = event.target as ValidatedField
-  if (invalidField) return
-  invalidField = field
-  const tab = field.closest<HTMLElement>('[data-settings-tab]')?.dataset.settingsTab
-  if (tab) activeTab.value = tabFrom(tab)
-  // Opened as the person's own choice, so it stays open once a search clears.
-  const section = field.closest<HTMLElement>('[data-settings-section]')?.dataset.settingsSection
-  if (section && !openedSections.value.includes(section)) openedSections.value = [...openedSections.value, section]
-  let details = field.closest('details')
-  while (details) { details.open = true; details = details.parentElement?.closest('details') ?? null }
-}
-async function submitSettings(event: Event) {
-  const element = event.currentTarget as HTMLFormElement
-  invalidField = null
-  fieldError.value = null
-  if (!element.checkValidity()) {
-    const field = invalidField as ValidatedField | null
-    invalidField = null
-    if (!field) return
-    if (field.closest('[data-search-hidden]')) searchQuery.value = ''
-    await nextTick()
-    // An opening section shows its content a frame later; focus once it is visible.
-    for (let frame = 0; frame < 4 && !field.getClientRects().length; frame += 1) {
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-    }
-    invalidLabel.value = field.closest('label')?.querySelector('span')?.textContent?.trim() ?? ''
-    fieldError.value = { key: field.dataset.settingsField ?? '', message: fieldErrorMessage(field) }
-    field.setAttribute('aria-invalid', 'true')
-    field.addEventListener('input', () => {
-      field.removeAttribute('aria-invalid')
-      invalidLabel.value = ''
-      fieldError.value = null
-    }, { once: true })
-    field.focus()
-    return
-  }
-  await saveSettings()
+// Checked here rather than by the browser, whose bubble is off-system and
+// follows the browser's language: what is wrong shows right under each field,
+// and a field that cannot be saved keeps what the person typed.
+type ValidatedField = HTMLInputElement | HTMLTextAreaElement
+const fieldErrors = ref<Record<string, string>>({})
+const errorFor = (key: string) => fieldErrors.value[key] ?? ''
+const fieldErrorId = (key: string) => `settings-field-error-${key.replace(/\W/g, '-')}`
+// The invalid fields, each now saying what is wrong.
+function checkFields(): ValidatedField[] {
+  const fields = [...(formElement.value?.querySelectorAll<ValidatedField>(':is(input, textarea)[data-settings-field]') ?? [])]
+  const invalid = fields.filter(field => !field.validity.valid)
+  fieldErrors.value = Object.fromEntries(invalid.map(field => [field.dataset.settingsField ?? '', fieldErrorMessage(field)]))
+  return invalid
 }
 </script>
 
@@ -415,8 +400,10 @@ async function submitSettings(event: Event) {
         <p v-if="searching && searchMatches" class="settings-search-note" role="status">{{ t('settings.searchEverywhere') }}</p>
         <p v-if="searching && !searchMatches" class="settings-search-empty" role="status">{{ t('settings.search.empty', { query: searchQuery.trim() }) }}</p>
 
-        <form id="settings-form" class="settings-form" novalidate :aria-busy="saving" @submit.prevent="submitSettings" @invalid.capture="revealInvalidField">
-          <fieldset class="settings-fields" :disabled="saving">
+        <!-- Enter in a field saves at once instead of after the pause. -->
+        <form id="settings-form" ref="formElement" class="settings-form" novalidate :aria-busy="applying"
+          @submit.prevent="autoSave.changed('choice')" @input.capture="noteTyping">
+          <fieldset class="settings-fields" :disabled="applying">
             <!-- Memory and access -->
             <TabsContent value="memory" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="memory">
               <Card as="section" class="settings-card behavior-card" aria-labelledby="settings-capture-title">
@@ -527,8 +514,9 @@ async function submitSettings(event: Event) {
                               <span>{{ t('settings.conversationLaunchers.appName') }}</span>
                               <input v-model.trim="form.conversationLaunchers[application].appName" type="text" maxlength="64" required
                                 :data-settings-field="`launchers.${application}.appName`"
-                                :aria-describedby="errorFor(`launchers.${application}.appName`) ? FIELD_ERROR_ID : undefined" />
-                              <small v-if="errorFor(`launchers.${application}.appName`)" :id="FIELD_ERROR_ID" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.appName`) }}</small>
+                                :aria-invalid="errorFor(`launchers.${application}.appName`) ? 'true' : undefined"
+                                :aria-describedby="errorFor(`launchers.${application}.appName`) ? fieldErrorId(`launchers.${application}.appName`) : undefined" />
+                              <small v-if="errorFor(`launchers.${application}.appName`)" :id="fieldErrorId(`launchers.${application}.appName`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.appName`) }}</small>
                             </label>
                             <label class="conversation-launcher-template">
                               <span>
@@ -537,8 +525,9 @@ async function submitSettings(event: Event) {
                               </span>
                               <input v-model.trim="form.conversationLaunchers[application].urlTemplate" type="text" maxlength="1024" spellcheck="false" required
                                 :data-settings-field="`launchers.${application}.urlTemplate`"
-                                :aria-describedby="errorFor(`launchers.${application}.urlTemplate`) ? FIELD_ERROR_ID : undefined" />
-                              <small v-if="errorFor(`launchers.${application}.urlTemplate`)" :id="FIELD_ERROR_ID" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.urlTemplate`) }}</small>
+                                :aria-invalid="errorFor(`launchers.${application}.urlTemplate`) ? 'true' : undefined"
+                                :aria-describedby="errorFor(`launchers.${application}.urlTemplate`) ? fieldErrorId(`launchers.${application}.urlTemplate`) : undefined" />
+                              <small v-if="errorFor(`launchers.${application}.urlTemplate`)" :id="fieldErrorId(`launchers.${application}.urlTemplate`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`launchers.${application}.urlTemplate`) }}</small>
                             </label>
                           </div>
                         </article>
@@ -552,8 +541,9 @@ async function submitSettings(event: Event) {
                         <span><strong>{{ t('settings.notifications.needsPersonUrl') }}</strong><small>{{ t('settings.notifications.needsPersonUrlMeta') }}</small></span>
                         <input v-model.trim="form.notifications.needsPersonUrl" type="url" maxlength="2048" spellcheck="false"
                           placeholder="http://127.0.0.1:9123/fuli" data-needs-person-url data-settings-field="notifications.needsPersonUrl"
-                          :aria-describedby="errorFor('notifications.needsPersonUrl') ? FIELD_ERROR_ID : undefined" />
-                        <small v-if="errorFor('notifications.needsPersonUrl')" :id="FIELD_ERROR_ID" class="settings-field-error" data-settings-field-error>{{ errorFor('notifications.needsPersonUrl') }}</small>
+                          :aria-invalid="errorFor('notifications.needsPersonUrl') ? 'true' : undefined"
+                          :aria-describedby="errorFor('notifications.needsPersonUrl') ? fieldErrorId('notifications.needsPersonUrl') : undefined" />
+                        <small v-if="errorFor('notifications.needsPersonUrl')" :id="fieldErrorId('notifications.needsPersonUrl')" class="settings-field-error" data-settings-field-error>{{ errorFor('notifications.needsPersonUrl') }}</small>
                       </label>
                     </AccordionContent>
                   </AccordionItem>
@@ -571,6 +561,7 @@ async function submitSettings(event: Event) {
                     <Switch v-model="form.lanAccess" :aria-label="t('settings.behavior.lanAccess')" />
                   </label>
                 </div>
+                <SettingsRestartNotice v-if="pendingRestart.has('lanAccess')" class="settings-restart" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
               </Card>
               <PeerSettings />
               <Card as="section" class="settings-card settings-advanced-card" aria-labelledby="settings-network-advanced-title">
@@ -582,15 +573,17 @@ async function submitSettings(event: Event) {
                       <div class="port-section">
                         <h3>{{ t('settings.ports.personal') }}</h3>
                         <div class="port-grid">
-                          <label v-for="key in personalPortKeys" :key="key">
+                          <label v-for="key in PERSONAL_PORT_KEYS" :key="key">
                             <span>{{ t(`settings.ports.${key}`) }}</span>
                             <input v-model.number="form.ports[key]" type="number" min="1" max="65535" required
-                              :data-settings-field="`ports.${key}`"
-                              :aria-describedby="errorFor(`ports.${key}`) ? FIELD_ERROR_ID : undefined" />
-                            <small v-if="errorFor(`ports.${key}`)" :id="FIELD_ERROR_ID" class="settings-field-error" data-settings-field-error>{{ errorFor(`ports.${key}`) }}</small>
+                              :data-settings-field="`ports.${key}`" data-restart-field
+                              :aria-invalid="errorFor(`ports.${key}`) ? 'true' : undefined"
+                              :aria-describedby="errorFor(`ports.${key}`) ? fieldErrorId(`ports.${key}`) : undefined" />
+                            <small v-if="errorFor(`ports.${key}`)" :id="fieldErrorId(`ports.${key}`)" class="settings-field-error" data-settings-field-error>{{ errorFor(`ports.${key}`) }}</small>
                             <small>{{ t('settings.ports.active', { port: activePort(key) }) }}</small>
                           </label>
                         </div>
+                        <SettingsRestartNotice v-if="pendingRestart.has('ports')" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
                       </div>
                       <div class="port-section development-section">
                         <div>
@@ -662,6 +655,7 @@ async function submitSettings(event: Event) {
  />
                   </div>
                 </div>
+                <SettingsRestartNotice v-if="pendingRestart.has('graphRuntimeMode')" class="settings-restart" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
               </Card>
               <Card as="section" class="settings-card" aria-labelledby="settings-data-format-title">
                 <CardHeader>
@@ -736,20 +730,9 @@ async function submitSettings(event: Event) {
             </TabsContent>
           </fieldset>
           <p v-if="loadError" class="settings-error" role="alert">{{ loadError }}</p>
-          <!-- The save area sits at the end of the form and sticks to the bottom
-               while scrolling; at the end it takes its own space, so it never
-               covers the last field. -->
-          <div class="settings-savebar" data-settings-savebar>
-            <p class="settings-save-status" role="status" aria-live="polite">
-              <GrowthLoading v-if="saving" variant="inline" :label="t(saveState === 'applying' ? 'settings.applying' : 'settings.saving')" />
-              <span v-else-if="invalidLabel" class="settings-save-invalid">{{ t('settings.invalidField', { field: invalidLabel }) }}</span>
-              <template v-else-if="saveState === 'saved' && !dirty">{{ t('settings.savedShort') }}</template>
-              <template v-else-if="dirty">{{ t('settings.unsaved') }}</template>
-            </p>
-            <Button type="submit" :disabled="saving" data-settings-save>{{ t('settings.save') }}</Button>
-          </div>
         </form>
       </Tabs>
+      <SettingsSaveCapsule :state="saveCapsuleState" :failure="saveFailure" @retry="autoSave.retry" />
       <div v-if="!loading && !form" class="settings-load-error" role="alert">
         <p>{{ loadError || t('settings.loadError') }}</p>
         <Button size="sm" variant="outline" :disabled="retrying" @click="retryLoad">{{ t('common.actions.retry') }}</Button>
@@ -759,7 +742,7 @@ async function submitSettings(event: Event) {
 </template>
 
 <style scoped>
-.settings-view { scrollbar-gutter: stable; padding-bottom: 0; }
+.settings-view { scrollbar-gutter: stable; }
 .settings-tabbar { position: relative; }
 .settings-search { flex: 0 1 300px; min-width: 180px; }
 .settings-search input { box-sizing: border-box; width: 100%; min-height: var(--control-height-sm); padding-block: 4px; }
@@ -838,29 +821,25 @@ async function submitSettings(event: Event) {
 .notification-url input { width: 100%; min-width: 0; }
 
 .setting-list { display: grid; }
+/* A divider between rows has the card's own rhythm on each side (16px, like the
+   title-to-content gap), so the middle of a card is as roomy as its edges
+   (Jevons 11-01). The card's padding already frames the first and last row. */
 .setting-row {
-  min-height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  display: flex; align-items: center; justify-content: space-between; gap: 24px; padding-block: 16px;
   border-top: 1px solid var(--color-border); cursor: pointer;
 }
-.setting-row:first-child { border-top: 0; }
+.setting-row:first-child { padding-top: 0; border-top: 0; }
+.setting-row:last-child { padding-bottom: 0; }
 .setting-row > span { display: grid; min-width: 0; gap: 4px; }
 .setting-row strong { color: var(--color-ink); font-size: 14px; }
 .setting-row small { color: var(--color-muted); font-size: 12px; }
 .setting-note { margin: 0; padding: 4px 0 4px 20px; color: var(--color-muted); font-size: 12px; }
-.setting-row-nested { min-height: 48px; padding-left: 20px; border-top-style: dashed; }
+.setting-row-nested { padding-left: 20px; border-top-style: dashed; }
 .select-row .settings-select { flex: 0 0 180px; width: 180px; min-width: 0; }
 
-/* The save area floats over the form on an opaque panel (only the dock blurs live). */
-.settings-savebar {
-  position: sticky; bottom: 12px; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 16px;
-  margin-top: var(--space-2); padding: 10px 14px;
-  border: 1px solid var(--edge-glass); border-radius: var(--radius-panel);
-  background: var(--color-surface); box-shadow: inset 0 1px 0 var(--edge-glass), var(--shadow-sm), var(--shadow-lg);
-}
-.settings-save-invalid { color: var(--color-danger); }
+.settings-restart { margin-inline: 24px; }
 .settings-form .settings-field-error { color: var(--color-danger); font-size: 12px; line-height: 1.4; }
 .settings-form :is(input, textarea)[aria-invalid="true"] { border-color: var(--color-danger); box-shadow: 0 0 0 3px var(--color-danger-soft); }
-.settings-save-status { display: flex; align-items: center; min-height: 20px; margin: 0 auto 0 0; color: var(--color-muted); font-size: 13px; }
 
 .settings-load-error {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
@@ -880,11 +859,12 @@ async function submitSettings(event: Event) {
 @container (max-width: 420px) {
   .resource-totals, .port-grid, .conversation-launcher-fields { grid-template-columns: minmax(0, 1fr); }
   .conversation-launcher-template { grid-column: auto; }
-  .select-row { align-items: flex-start; flex-direction: column; padding: 14px 0; }
+  .select-row { align-items: flex-start; flex-direction: column; gap: 10px; }
   .select-row .settings-select { flex: auto; width: 100%; }
 }
 
 @media (max-width: 680px) {
   .settings-card :deep([data-slot="card-header"]), .setting-list, .settings-card > .settings-accordion, .resource-totals { padding-inline: var(--space-4); }
+  .settings-restart { margin-inline: var(--space-4); }
 }
 </style>
