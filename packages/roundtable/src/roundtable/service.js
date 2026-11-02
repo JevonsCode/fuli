@@ -24,7 +24,10 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   env = process.env, locateCwd = sessionWorkingDirectory, clientAvailable = (client) => Boolean(resolveClientCommand(client)),
   // Boot-anchor evidence recorded with a cleanup hold. Production records none
   // (null) until a separately verified proof exists; release stays disabled.
-  bootEvidence = async () => null, now = Date.now }) {
+  bootEvidence = async () => null, now = Date.now,
+  // The installed desktop app of a client, or null. Runtimes pass
+  // createDesktopApps (agents/desktop-registry.js); without it every ask wakes headlessly.
+  desktopApp = () => null }) {
   assertRoundtableHost(host);
   const spaceId = () => host.spaceId();
   // Opened on first use: most MCP processes never touch the roundtable.
@@ -291,6 +294,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     try { attempts = await targets(); }
     catch (error) { finishWake(ask); throw error; }
     if (!attempts.length) { finishWake(ask); return { status: 'queued', reason: noTargets() }; }
+    // A read-only turn cannot go to a desktop conversation, which runs with the person's own settings.
+    const app = readOnly ? null : desktopApp(attempts[0].client);
+    if (app) return handToDesktop({ thread, ask, target, delivery: attempts[0], app, timeoutMs, signal });
     try {
       const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, readOnly, issueGrant });
       finishWake(ask);
@@ -304,6 +310,27 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       store.updateMessage(ask.id, { status: 'queued', error: error.code ?? 'wake_failed' });
       return { status: 'queued', reason: error.code ?? 'wake_failed', cleanup: error.cleanup ?? null };
     }
+  }
+
+  // The ask joins the Agent's inbox conversation in the desktop app, where the
+  // person sees it being worked on; the conversation answers with
+  // reply_agent_message. The caller waits for that reply up to its timeout; after
+  // it, the ask stays queued and the reply still reaches the thread.
+  async function handToDesktop({ thread, ask, target, delivery, app, timeoutMs, signal }) {
+    const inbox = { spaceId: spaceId(), agentId: target.agentId, projectId: messageProject(ask) ?? '', client: delivery.client };
+    try {
+      const conversationId = store.desktopInboxes.find(inbox) ?? store.desktopInboxes.remember({ ...inbox,
+        conversationId: await app.createInbox({ cwd: delivery.cwd, greeting: inboxGreeting(target) }) });
+      store.updateMessage(ask.id, { status: 'queued', toClient: delivery.client, toSession: conversationId });
+      await app.handOff({ threadId: conversationId, message: wakePrompt({ thread, ask, target, senderName: ask.from_name,
+        senderClient: ask.from_client, targetProjectId: ask.target_project_id, replyInInbox: true }) });
+    } catch (error) {
+      store.updateMessage(ask.id, { status: 'queued', error: error.code ?? 'wake_failed' });
+      return { status: 'queued', reason: error.code ?? 'wake_failed' };
+    } finally { finishWake(ask); }
+    const replied = await waitForChatChange(() => store.messages(thread.id).find(message => message.in_reply_to === ask.id) ?? null,
+      { store: store.chat, signal, timeoutSeconds: timeoutMs / 1000, ready: Boolean }).catch(() => null);
+    return replied ? { status: 'answered', reply: replied, via: replied.via } : { status: 'queued', reason: 'waiting_in_desktop_app' };
   }
 
   function openThread(threadId, projectId, body) {
@@ -664,11 +691,18 @@ function inboxItem(message) {
     fromClient: message.from_client, body: message.body, createdAt: message.created_at };
 }
 
-function wakePrompt({ thread, target, senderName, senderClient, ask, targetProjectId = null }) {
+function wakePrompt({ thread, target, senderName, senderClient, ask, targetProjectId = null, replyInInbox = false }) {
   return `@{${encodeURIComponent(target.agentId)}} [FULI 圆桌 · ${thread.id}]\n`
     + (targetProjectId ? `在目标项目上下文执行：personalProjectId=${JSON.stringify(targetProjectId)}。原项目负责人保持不变，只回传本条限定需求的结果。\n` : '')
     + `${senderName}（${CLIENT_LABELS[senderClient] ?? senderClient}）发来消息：\n\n${ask.body}\n\n`
-    + `请直接回答对方，你的最终回复会原样转达。需要再问其他 Agent 时，调用 message_agent 并带上 threadId="${thread.id}"。`;
+    + (replyInInbox
+      ? `处理完后调用 reply_agent_message（messageId="${ask.id}"）回复对方，回复会原样转到圆桌。`
+      : '请直接回答对方，你的最终回复会原样转达。')
+    + `需要再问其他 Agent 时，调用 message_agent 并带上 threadId="${thread.id}"。`;
+}
+
+function inboxGreeting(target) {
+  return `FULI 圆桌会把发给「${label(target)}」的消息排进这个对话。现在只需回复「好」。`;
 }
 
 function label(agent) {

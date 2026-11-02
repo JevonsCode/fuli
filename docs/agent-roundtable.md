@@ -41,6 +41,19 @@ capability. Members send their results through the project lead.
 
 ## Delivery
 
+0. **Codex app.** When the recipient's first client is Codex and the Codex desktop
+   app is installed (Windows, or `/Applications/Codex.app` on macOS), nothing runs
+   headlessly. Each Agent has one inbox conversation in the app per project, created
+   on first use in the project folder with a short greeting turn (the app keeps a
+   conversation only after one finished turn). The ask is queued there with the
+   app's own `codex queue` and the app is opened with `codex://threads/wake/<id>`,
+   so the person sees the Agent work in the app with their own Codex settings. The
+   queued text starts with `@{agent}`, so task entry loads that Agent, and asks it
+   to answer with `reply_agent_message`. The caller waits up to its timeout for that
+   reply; after it the ask stays queued and the reply still lands in the thread. A
+   failed hand-off leaves the ask queued with the reason; it never falls back to a
+   headless run. Read-only group-discussion turns skip the app and wake as below.
+   The inbox conversation is recorded in `desktop_inboxes` (roundtable format 5).
 1. **Wake.** By default Fuli wakes the recipient in its own client, headlessly and
    read-only, and waits for its final answer (default 5 minutes, at most 15):
    - Claude Code resumes the conversation with `--resume <id> --fork-session`, so the

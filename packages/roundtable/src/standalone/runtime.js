@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { createPeerPort } from '../peer/peer-port.js';
+import { createDesktopApps } from '../agents/desktop-registry.js';
 import { createAgentRoundtable } from '../roundtable/service.js';
 import { createRoundtableStore } from '../roundtable/store.js';
 import { createStandaloneHost } from './host.js';
@@ -18,7 +19,7 @@ export function openStandalone({ home, env = process.env }) {
   const store = createStandaloneStore(join(home, 'standalone.sqlite'));
   const host = createStandaloneHost({ store });
   const peer = createPeerPort({ dataDir: home, host });
-  const roundtable = createAgentRoundtable({ host, peer, env,
+  const roundtable = createAgentRoundtable({ host, peer, env, desktopApp: createDesktopApps({ env }),
     openStore: () => createRoundtableStore(join(home, 'roundtable.sqlite')) });
   return { home, store, host, peer, roundtable,
     async close() { await roundtable.close(); peer.close(); store.close(); } };
