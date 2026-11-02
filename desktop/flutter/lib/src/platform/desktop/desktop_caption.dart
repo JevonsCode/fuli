@@ -7,8 +7,8 @@ import 'package:window_manager/window_manager.dart';
 
 import '../caption_controls.dart';
 
-// The traffic lights' width on macOS, from the window's left edge.
-const _trafficLightsWidth = 76.0;
+// The strip the traffic lights take along the top of the window on macOS.
+const _trafficLightsStrip = 28.0;
 
 /// The window's own caption over window_manager. The window is opened with
 /// its title bar hidden (desktop_window.dart). On Windows the runner gives the
@@ -42,8 +42,9 @@ class DesktopCaption with WindowListener implements CaptionControls {
   String get platform => Platform.isMacOS ? 'macos' : 'windows';
 
   @override
-  ({double start, double end}) get reserved =>
-      Platform.isMacOS ? (start: _trafficLightsWidth, end: 0) : (start: 0, end: captionButtonSize.width * 3);
+  ({double start, double end, double top}) get reserved => Platform.isMacOS
+      ? (start: 0, end: 0, top: _trafficLightsStrip)
+      : (start: 0, end: captionButtonSize.width * 3, top: 0);
 
   @override
   bool get drawsButtons => Platform.isWindows;

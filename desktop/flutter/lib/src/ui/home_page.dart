@@ -42,7 +42,7 @@ class HomePage extends StatelessWidget {
       body: Stack(
         children: [
           ListView(
-            padding: const EdgeInsets.fromLTRB(FuliSpace.space8, topLineHeight + FuliSpace.space6, FuliSpace.space8,
+            padding: EdgeInsets.fromLTRB(FuliSpace.space8, topLineExtent(context) + FuliSpace.space6, FuliSpace.space8,
                 statusActionsHeight + FuliSpace.space6),
             children: [
               for (final card in _cards(context)) ...[card, const SizedBox(height: FuliSpace.space3)],

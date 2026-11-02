@@ -8,6 +8,10 @@ import 'window_caption.dart';
 import 'wordmark.dart';
 
 const topLineHeight = 64.0;
+
+/// The top line's full height: [topLineHeight] plus the strip kept for the
+/// window's traffic lights on macOS.
+double topLineExtent(BuildContext context) => topLineHeight + captionRoom(context, padding: FuliSpace.space8).top;
 const _dot = 8.0;
 
 /// The window's top line: the FULI mark and the wordmark, then FULI's state in one sentence
@@ -31,9 +35,11 @@ class TopLine extends StatelessWidget {
     final room = captionRoom(context, padding: FuliSpace.space8);
     return CaptionDragArea(
         child: GlassBar(
-      height: topLineHeight,
+      height: topLineHeight + room.top,
       edge: AxisDirection.down,
-      child: Row(
+      child: Padding(
+        padding: EdgeInsets.only(top: room.top),
+        child: Row(
         children: [
           SizedBox(width: room.start),
           const FuliMark(),
@@ -72,6 +78,7 @@ class TopLine extends StatelessWidget {
           ],
           SizedBox(width: room.end),
         ],
+      ),
       ),
     ));
   }

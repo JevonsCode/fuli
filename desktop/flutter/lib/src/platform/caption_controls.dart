@@ -21,9 +21,10 @@ abstract interface class CaptionControls {
   /// keeps its traffic lights.
   bool get drawsButtons;
 
-  /// Room the window's own controls take in the top corners: the traffic
-  /// lights at the start (macOS), the drawn buttons at the end (Windows).
-  ({double start, double end}) get reserved;
+  /// Room the window's own controls take: the drawn buttons at the top end
+  /// (Windows); on macOS a strip along the top for the traffic lights, so the
+  /// brand sits below them rather than beside them (Jevons 11-02).
+  ({double start, double end, double top}) get reserved;
 
   ValueListenable<bool> get maximized;
 

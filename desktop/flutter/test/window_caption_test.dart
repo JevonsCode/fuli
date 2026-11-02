@@ -128,13 +128,15 @@ void main() {
     expect(consoleTaps, 0);
   });
 
-  testWidgets('macOS keeps its traffic lights: no drawn buttons, room for them, the top line still moves the window',
+  testWidgets('macOS keeps its traffic lights: no drawn buttons, the brand sits below them, the top line still moves the window',
       (tester) async {
     final caption = RecordingCaption(platform: 'macos');
     await tester.pumpWidget(window(caption));
 
     expect(find.byKey(const Key('caption-close')), findsNothing);
-    expect(tester.getRect(find.byType(FuliMark)).left, greaterThanOrEqualTo(76 + 8));
+    // Below the traffic lights (Jevons 11-02), at the page edge, not beside them.
+    expect(tester.getRect(find.byType(FuliMark)).left, 32);
+    expect(tester.getRect(find.byType(FuliMark)).top, greaterThanOrEqualTo(28));
     await tester.drag(find.byType(TopLine), const Offset(80, 0));
     await tester.pump(kDoubleTapTimeout);
     expect(caption.calls, ['startDragging']);

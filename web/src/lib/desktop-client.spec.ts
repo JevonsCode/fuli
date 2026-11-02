@@ -13,9 +13,9 @@ const TopBar = defineComponent({
   render: () => withDirectives(h('header', { 'data-bar': '' }, [h('h1', { 'data-title': '' }, 'Synthetic'), h('button', { 'data-control': '' }, 'Refresh')]), [[vWindowDrag]]),
 })
 
-function inClient(platform = 'windows', captionStart = 0, captionEnd = 138, answer: (...args: unknown[]) => unknown = () => undefined) {
+function inClient(platform = 'windows', captionStart = 0, captionEnd = 138, answer: (...args: unknown[]) => unknown = () => undefined, captionTop?: number) {
   const callHandler = vi.fn(async (...args: unknown[]) => answer(...args))
-  Object.assign(window as Desktop, { fuliDesktopClient: { platform, captionStart, captionEnd }, flutter_inappwebview: { callHandler } })
+  Object.assign(window as Desktop, { fuliDesktopClient: { platform, captionStart, captionEnd, ...(captionTop === undefined ? {} : { captionTop }) }, flutter_inappwebview: { callHandler } })
   return callHandler
 }
 
@@ -41,13 +41,13 @@ describe('connectDesktopClient', () => {
     expect(root.style.getPropertyValue('--desktop-caption-end')).toBe('146px')
   })
 
-  it('reserves the traffic lights on macOS', () => {
-    inClient('macos', 78, 0)
+  it('keeps a strip along the top for the traffic lights on macOS, so the brand sits below them', () => {
+    inClient('macos', 0, 0, () => undefined, 28)
     const root = document.createElement('html')
     connectDesktopClient(root)
     expect(root.dataset.desktopClient).toBe('macos')
-    expect(root.style.getPropertyValue('--desktop-caption-start')).toBe('86px')
-    expect(root.style.getPropertyValue('--desktop-caption-end')).toBe('0px')
+    expect(root.style.getPropertyValue('--desktop-caption-start')).toBe('0px')
+    expect(root.style.getPropertyValue('--desktop-caption-top')).toBe('28px')
   })
 
   it('changes nothing in a browser or for a malformed global', () => {

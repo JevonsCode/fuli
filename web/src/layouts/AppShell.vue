@@ -180,9 +180,10 @@ watchEffect(() => {
    page's edges, adding the room the page's scrollbar takes on the right. */
 .app-topbar { position: relative; z-index: var(--z-popover); flex: 0 0 auto; padding: 12px calc(var(--page-inline) + var(--scrollbar-size)) 8px var(--page-inline); }
 /* In the desktop client the bar is the window's title bar: its own minimise, maximise and
-   close (Windows) or the traffic lights (macOS) sit in the top corners, so the bar keeps
-   clear of them (lib/desktop-client.ts). */
+   close sit in the top right corner (Windows) and the bar keeps clear of them; on macOS the
+   traffic lights take a strip along the top and the brand sits below them (lib/desktop-client.ts). */
 :root[data-desktop-client] .app-topbar {
+  padding-top: calc(12px + var(--desktop-caption-top, 0px));
   padding-left: max(var(--page-inline), var(--desktop-caption-start));
   padding-right: max(calc(var(--page-inline) + var(--scrollbar-size)), var(--desktop-caption-end));
 }

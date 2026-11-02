@@ -74,7 +74,8 @@ class RecordingCaption implements CaptionControls {
   bool get drawsButtons => platform == 'windows';
 
   @override
-  ({double start, double end}) get reserved => drawsButtons ? (start: 0, end: 138) : (start: 76, end: 0);
+  ({double start, double end, double top}) get reserved =>
+      drawsButtons ? (start: 0, end: 138, top: 0) : (start: 0, end: 0, top: 28);
 
   @override
   final ValueNotifier<bool> maximized = ValueNotifier(false);

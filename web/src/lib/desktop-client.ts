@@ -10,7 +10,7 @@
 import type { ObjectDirective } from 'vue'
 
 interface DesktopBridge { callHandler(name: string, ...args: unknown[]): Promise<unknown> }
-interface DesktopClient { platform: 'windows' | 'macos', captionStart: number, captionEnd: number }
+interface DesktopClient { platform: 'windows' | 'macos', captionStart: number, captionEnd: number, captionTop: number }
 
 export const DESKTOP_WINDOW_HANDLER = 'fuliWindow'
 // Room between the window's controls and the top bar's own.
@@ -34,7 +34,10 @@ function desktopClient(): DesktopClient | null {
   if (client?.platform !== 'windows' && client?.platform !== 'macos') return null
   const captionStart = room(client.captionStart)
   const captionEnd = room(client.captionEnd)
-  return captionStart === null || captionEnd === null ? null : { platform: client.platform, captionStart, captionEnd }
+  // An older client names no top strip: none.
+  const captionTop = client.captionTop === undefined ? 0 : room(client.captionTop)
+  return captionStart === null || captionEnd === null || captionTop === null ? null
+    : { platform: client.platform, captionStart, captionEnd, captionTop }
 }
 
 /** Marks the page as shown by the desktop client and keeps its top bar clear of the window's controls. */
@@ -44,6 +47,8 @@ export function connectDesktopClient(root: HTMLElement = document.documentElemen
   root.dataset.desktopClient = client.platform
   root.style.setProperty('--desktop-caption-start', client.captionStart ? `${client.captionStart + CAPTION_GAP}px` : '0px')
   root.style.setProperty('--desktop-caption-end', client.captionEnd ? `${client.captionEnd + CAPTION_GAP}px` : '0px')
+  // macOS: the traffic lights take a strip along the top; the brand sits below them.
+  root.style.setProperty('--desktop-caption-top', `${client.captionTop}px`)
 }
 
 // Starting FULI when the person signs in to Windows: the client's own setting, shared with its tray menu
