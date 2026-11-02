@@ -179,6 +179,9 @@ class ConsoleWebView {
         onReceivedError: (_, request, _) {
           if (request.isForMainFrame ?? true) onLoaded();
         },
+        // macOS may end the page's web content process (memory pressure, a
+        // crash); the window would stay blank, so the page loads again (REC #65).
+        onWebContentProcessDidTerminate: (controller) => controller.reload(),
         // target=_blank and window.open: never a second window inside FULI.
         onCreateWindow: (_, action) async {
           final url = action.request.url;
