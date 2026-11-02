@@ -49,7 +49,9 @@ const formatOptions = computed(() => CUSTOM_CLIENT_FORMATS.map((value) => ({ val
 const clients = computed(() => shownClients(observation.value))
 const customClients = computed<CustomClient[]>(() => observation.value?.customClients ?? [])
 const summary = computed(() => connectionSummary(observation.value))
-const busy = computed(() => Boolean(connecting.value) || addPending.value || Boolean(removing.value))
+const busy = computed(() => Boolean(connecting.value) || connectingAll.value || addPending.value || Boolean(removing.value))
+// 一键接入 (Jevons 11-02): every client FULI can write that is not connected yet, one after another.
+const connectable = computed(() => clients.value.filter(client => canConnect(client) && client.status !== 'connected'))
 // A connected client gets the shared check icon; the other states keep their plain marks.
 const icons: Record<Exclude<ClientStatus, 'connected'>, string> = { changed: '!', skills_left: '!', removed: '×',
   not_connected: '○', not_detected: '○', unknown: '?' }
@@ -95,8 +97,8 @@ async function writing(run: () => Promise<void>) {
     void check()
   }
 }
-async function connect(client: ClientObservation) {
-  if (busy.value || !canConnect(client)) return
+// One client's write, shared by its own 接入 and 一键接入; its result shows on its tile.
+async function connectOne(client: ClientObservation) {
   connecting.value = client.id
   delete connectionFeedback.value[client.id]
   await writing(async () => {
@@ -107,6 +109,18 @@ async function connect(client: ClientObservation) {
       if (!unmounted) connectionFeedback.value[client.id] = 'connectError'
     } finally { connecting.value = '' }
   })
+}
+async function connect(client: ClientObservation) {
+  if (busy.value || !canConnect(client)) return
+  await connectOne(client)
+}
+const connectingAll = ref(false)
+async function connectAll() {
+  if (busy.value || !connectable.value.length) return
+  connectingAll.value = true
+  try {
+    for (const client of [...connectable.value]) await connectOne(client)
+  } finally { connectingAll.value = false }
 }
 async function addClient() {
   if (busy.value || !draft.name.trim() || !draft.mcpFile.trim()) return
@@ -196,8 +210,9 @@ async function copy() {
         <template v-if="observation?.available !== false && summary.total">{{ t('settings.connection.summary', summary) }}</template>
       </CardDescription>
       <CardAction class="connection-actions">
-        <Button variant="outline" size="sm" data-open-first-run-guide @click="store.reopenFirstRunGuide()">
-          {{ t('firstRun.reopen') }}
+        <Button size="sm" data-connect-all :disabled="busy || !connectable.length" :loading="connectingAll"
+          :loading-label="t('settings.connection.clients.connectingAll')" @click="connectAll">
+          {{ t('settings.connection.clients.connectAll') }}
         </Button>
         <Button variant="outline" size="icon-sm" class="connection-refresh" data-refresh-clients :disabled="checking"
           :title="t('settings.connection.clients.refresh')" :aria-label="t('settings.connection.clients.refresh')" @click="check">

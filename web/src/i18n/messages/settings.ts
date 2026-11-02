@@ -20,6 +20,8 @@ export const settingsMessages = {
       clients: {
         title: '本机客户端',
         connect: '接入',
+        connectAll: '一键接入',
+        connectingAll: '正在接入本机所有客户端…',
         connecting: '正在接入 {client}…',
         restart: '需要重启客户端，配置才会生效。',
         connectError: '接入未完成，客户端配置没有全部写好。确认它的配置文件可以写入，然后再试一次。',
@@ -309,6 +311,8 @@ export const settingsMessages = {
       guide: 'Connection guide',
       clients: {
         connect: 'Connect',
+        connectAll: 'Connect all',
+        connectingAll: 'Connecting every client on this computer…',
         connecting: 'Connecting {client}…',
         restart: 'Restart the client to apply this configuration.',
         connectError: 'Connection incomplete: the client configuration was not fully written. Make sure its configuration file can be written, then try again.',

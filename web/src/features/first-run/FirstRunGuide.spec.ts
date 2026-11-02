@@ -146,20 +146,6 @@ describe('first-run guide', () => {
     wrapper.unmount()
   })
 
-  it('opened again from 设置 › 客户端 without a capture question: 「完成」 closes it, nothing is recorded', async () => {
-    const { wrapper, store, guidePosts } = mountGuide({ ask: false, guide: false })
-    await flushPromises()
-    expect(find('[data-capture-onboarding]')).toBeNull()
-    store.reopenFirstRunGuide()
-    await flushPromises()
-    expect(find('[data-first-run-capture]')).toBeNull()
-    expect(find('[data-capture-scope-save]')?.textContent?.trim()).toBe('完成')
-    await click('[data-capture-scope-save]')
-    expect(find('[data-capture-onboarding]')).toBeNull()
-    expect(guidePosts).toEqual([])
-    wrapper.unmount()
-  })
-
   it('in the Windows desktop client, offers start at login, on by default, and saves a change through the bridge', async () => {
     let held = true
     const callHandler = vi.fn(async (_name: string, request: { enabled?: boolean }) => {

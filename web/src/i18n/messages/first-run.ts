@@ -5,7 +5,6 @@ export const firstRunMessages = {
     description: '接好 AI 客户端，之后就不用再管了。',
     skip: '跳过',
     done: '完成',
-    reopen: '打开入门引导',
     clients: {
       title: '接入你的 AI 客户端',
       connect: '一键接入',
@@ -36,7 +35,6 @@ export const firstRunMessages = {
     description: 'Connect your AI clients once and you are set.',
     skip: 'Skip',
     done: 'Done',
-    reopen: 'Open setup guide',
     clients: {
       title: 'Connect your AI clients',
       connect: 'Connect all',
