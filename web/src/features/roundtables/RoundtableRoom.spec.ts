@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
+import { openDetails } from './open-details.spec-support'
 import RoundtableRoom from './RoundtableRoom.vue'
 import type { RoundtableChatPage } from './roundtable-api'
 
@@ -19,9 +20,9 @@ const room: RoundtableChatPage = {
 
 describe('Roundtable portraits', () => {
   it('shares known Agent images between seats and messages, retaining text for unknown senders', async () => {
-    const wrapper = mount(RoundtableRoom, { props: { room, time: () => '' } })
+    const wrapper = mount(RoundtableRoom, { props: { room, time: () => '' }, attachTo: document.body })
     const expected = ['agent-lead', 'employee.bole'].map(agentAvatarUrl)
-    expect(wrapper.findAll('.roundtable-seat-face img').map(image => image.attributes('src'))).toEqual(expected)
+    expect((await openDetails(wrapper)).faces).toEqual(expected)
     expect(wrapper.findAll('.roundtable-chat-avatar img').map(image => image.attributes('src'))).toEqual(expected)
     const avatars = wrapper.findAll('.roundtable-chat-avatar')
     expect(avatars[2]!.find('img').exists()).toBe(false)
