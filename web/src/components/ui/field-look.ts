@@ -4,7 +4,7 @@
 // (or an open list) adds the same soft neutral halo as the search fields. The
 // first console's boxed form-field look is gone (Jevons, 11-01).
 export const FIELD_LOOK = 'rounded-(--radius-control) border border-border bg-card text-foreground outline-none transition-[border-color,box-shadow] hover:not-disabled:border-border-strong'
-export const FIELD_FOCUS = 'focus-visible:border-border-strong focus-visible:ring-4 focus-visible:ring-accent focus-visible:outline-none'
+export const FIELD_FOCUS = 'focus:border-border-strong focus:ring-4 focus:ring-accent'
 export const FIELD_FOCUS_WITHIN = 'focus-within:border-border-strong focus-within:ring-4 focus-within:ring-accent'
 export const FIELD_OPEN = 'data-[state=open]:border-border-strong data-[state=open]:ring-4 data-[state=open]:ring-accent'
 export const FIELD_DISABLED = 'disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground'

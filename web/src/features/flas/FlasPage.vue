@@ -3,6 +3,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
+import { OptionCombobox } from '@/components/ui/combobox'
+import type { SelectOption } from '@/components/ui/select'
 import { useFocusReturn } from '@/composables/useFocusReturn'
 import { useNearEnd } from '@/composables/useNearEnd'
 import { useScrollRestoration } from '@/composables/useScrollRestoration'
@@ -25,7 +27,7 @@ import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentRecord } from '@/types'
 import { UiIcon, UiNotice } from '@/ui'
 import FlaRow from './FlaRow.vue'
-import { flaGroup, groupFlas, type FlaGroupKey } from './fla-groups'
+import { FLA_GROUP_ORDER, flaGroup, groupFlas, type FlaGroupKey } from './fla-groups'
 
 // FLAs (重写, direction A): every FLA in one grouped list, what needs the
 // person first. A row opens the FLA's page; right-click pins it or copies
@@ -43,21 +45,44 @@ const roster = useAgentRosterPages(space, ref('all'))
 const agents = roster.agents
 
 const queryText = (value: unknown) => (typeof value === 'string' ? value : '')
+const queryList = (value: unknown) => queryText(value).split(',').map(item => item.trim()).filter(Boolean)
+const flaGroupKey = (value: string): value is FlaGroupKey => (FLA_GROUP_ORDER as readonly string[]).includes(value)
 const search = ref(queryText(route.query.q))
 const view = ref<View>(route.query.view === 'projects' ? 'projects' : 'work')
+// A filter depends on the grouping: statuses for 按状态, projects for 按项目.
+// Both live in the URL, so Back returns to the same filtered view.
+const statusFilter = ref<FlaGroupKey[]>(queryList(route.query.status).filter(flaGroupKey))
+const projectFilter = ref<string[]>(queryList(route.query.project))
 watch(() => route.query, (query) => {
   search.value = queryText(query.q)
   view.value = query.view === 'projects' ? 'projects' : 'work'
+  statusFilter.value = queryList(query.status).filter(flaGroupKey)
+  projectFilter.value = queryList(query.project)
 })
-watch([search, view], ([q, v]) => {
-  const next = { ...route.query, q: q.trim() ? q : undefined, view: v === 'projects' ? v : undefined }
-  if (queryText(route.query.q) === (next.q ?? '') && (route.query.view ?? undefined) === next.view) return
+watch([search, view, statusFilter, projectFilter], ([q, v, status, project]) => {
+  const next = { ...route.query, q: q.trim() ? q : undefined, view: v === 'projects' ? v : undefined, status: status.length ? status.join(',') : undefined, project: project.length ? project.join(',') : undefined }
+  if (queryText(route.query.q) === (next.q ?? '') && (route.query.view ?? undefined) === next.view
+    && queryList(route.query.status).join(',') === (next.status ?? '') && queryList(route.query.project).join(',') === (next.project ?? '')) return
   void router.replace({ query: next })
 })
 
 const projects = computed(() => (store.state?.personalProjects ?? []).filter(project => project.personal_space_id === space.value))
 const formalProjectIds = computed(() => projects.value.filter(isFormalProject).map(project => project.project_id))
 const projectNames = computed<Record<string, string>>(() => Object.fromEntries(projects.value.map(project => [project.project_id, projectDisplayName(project)])))
+// The filters shown beside the grouping switch: the status groups the page
+// renders (按状态), or the formal projects it groups by (按项目).
+const statusFilterOptions = computed<SelectOption[]>(() => FLA_GROUP_ORDER.map(key => ({ value: key, label: t(`flas.groups.${key}`) })))
+const projectFilterOptions = computed<SelectOption[]>(() => {
+  const names = new Map<string, number>()
+  for (const id of formalProjectIds.value) {
+    const name = projectNames.value[id] ?? id
+    names.set(name, (names.get(name) ?? 0) + 1)
+  }
+  return formalProjectIds.value.map(id => {
+    const name = projectNames.value[id] ?? id
+    return { value: id, label: name, ...((names.get(name) ?? 0) > 1 ? { meta: id } : {}) }
+  })
+})
 
 const entries = computed<Record<string, AgentWorkbenchEntry>>(() => Object.fromEntries(agents.value.map(agent => [
   agent.agentId,
@@ -75,15 +100,20 @@ const freshOrder = computed(() => agents.value
 const stable = useStableOrder(freshOrder, computed(() => !busy.value), space)
 const reorderAvailable = computed(() => !busy.value && stable.order.value.some((id, index) => id !== freshOrder.value[index]))
 
-const matches = (agent: ProjectAgentRecord) => !search.value.trim() || fuzzyMatch([
-  agentDisplayName(agent),
-  agent.employeeNumber ? `FLA ${agent.employeeNumber}` : '',
-  agentResponsibility(agent),
-  ...agent.profile.capabilities,
-  ...occupationLabels(agent.occupation),
-  entries.value[agent.agentId]?.title ?? '',
-  ...profileProjectIds(agent).map(id => projectNames.value[id] ?? ''),
-].join(' '), search.value)
+const matches = (agent: ProjectAgentRecord) => {
+  if (search.value.trim() && !fuzzyMatch([
+    agentDisplayName(agent),
+    agent.employeeNumber ? `FLA ${agent.employeeNumber}` : '',
+    agentResponsibility(agent),
+    ...agent.profile.capabilities,
+    ...occupationLabels(agent.occupation),
+    entries.value[agent.agentId]?.title ?? '',
+    ...profileProjectIds(agent).map(id => projectNames.value[id] ?? ''),
+  ].join(' '), search.value)) return false
+  if (view.value === 'work' && statusFilter.value.length && !statusFilter.value.includes(groupOf(agent))) return false
+  if (view.value === 'projects' && projectFilter.value.length && !profileProjectIds(agent).some(id => projectFilter.value.includes(id))) return false
+  return true
+}
 const rows = computed(() => stable.order.value.map(id => byId.value.get(id)).filter((agent): agent is ProjectAgentRecord => Boolean(agent) && matches(agent!)))
 
 const sections = computed(() => {
@@ -93,6 +123,8 @@ const sections = computed(() => {
   const ids = rows.value.map(agent => agent.agentId)
   const grouped = groupAgentsByProject(ids, id => profileProjectIds(byId.value.get(id)!), id => entries.value[id]?.status, formalProjectIds.value)
     .map(group => ({ key: group.projectId, label: projectNames.value[group.projectId] ?? group.projectId, rows: group.agentIds.map(id => byId.value.get(id)!) }))
+  // A project filter shows only the chosen projects' groups, even for an FLA that also works elsewhere.
+  if (projectFilter.value.length) return grouped.filter(group => projectFilter.value.includes(group.key))
   const formal = new Set(formalProjectIds.value)
   const unassigned = rows.value.filter(agent => !profileProjectIds(agent).some(id => formal.has(id)))
   return unassigned.length ? [...grouped, { key: '__none', label: t('flas.unassigned'), rows: unassigned }] : grouped
@@ -139,7 +171,14 @@ watch([nearEnd, roster.loading], ([near, loading]) => {
 const firstLoading = computed(() => busy.value && !agents.value.length)
 const loadFailed = computed(() => !agents.value.length && (Boolean(roster.error.value) || store.runtimeStatus === 'error'))
 const noFlas = computed(() => !busy.value && roster.complete.value && !agents.value.length && !loadFailed.value)
-const noMatch = computed(() => Boolean(search.value.trim()) && roster.complete.value && agents.value.length > 0 && !rows.value.length)
+const filtersActive = computed(() => (view.value === 'work' ? statusFilter.value.length : projectFilter.value.length) > 0)
+const noMatch = computed(() => (Boolean(search.value.trim()) || filtersActive.value) && roster.complete.value && agents.value.length > 0 && !rows.value.length)
+const noMatchCause = computed(() => (search.value.trim() ? 'search' : 'filter'))
+function clearFilters() {
+  search.value = ''
+  statusFilter.value = []
+  projectFilter.value = []
+}
 const showFirstTask = computed(() => !busy.value && store.runtimeStatus === 'ready' && !formalProjectIds.value.length && !loadFailed.value)
 function retry() {
   void roster.reload()
@@ -180,6 +219,10 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
           <button v-for="option in (['work', 'projects'] as const)" :key="option" type="button" role="radio" :aria-checked="view === option"
             :data-flas-view="option" @click="view = option">{{ t(`flas.view.${option}`) }}</button>
         </div>
+        <OptionCombobox v-if="view === 'work'" v-model="statusFilter" class="flas-filter" multiple :searchable="false"
+          :options="statusFilterOptions" :label="t('flas.filter.status')" :placeholder="t('flas.filter.allStatus')" />
+        <OptionCombobox v-else v-model="projectFilter" class="flas-filter" multiple
+          :options="projectFilterOptions" :label="t('flas.filter.project')" :placeholder="t('flas.filter.allProjects')" />
         <span class="flas-count" role="status">
           <GrowthLoading v-if="busy && agents.length" variant="inline" :label="t('flas.refreshing')" />
           <template v-else-if="agents.length">{{ t(roster.complete.value ? 'flas.count' : 'flas.countPartial', { count: agents.length }) }}</template>
@@ -207,8 +250,10 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
       </div>
       <p v-else-if="noFlas" class="flas-empty">{{ t('flas.empty') }}</p>
       <div v-else-if="noMatch" class="flas-empty" data-flas-no-match>
-        <p>{{ t('flas.noMatch', { query: search.trim() }) }}</p>
-        <Button size="sm" variant="ghost" @click="search = ''">{{ t('flas.clearSearch') }}</Button>
+        <p>{{ noMatchCause === 'search' ? t('flas.noMatch', { query: search.trim() }) : t('flas.filterEmpty') }}</p>
+        <Button size="sm" variant="ghost" @click="noMatchCause === 'search' ? (search = '') : clearFilters()">
+          {{ noMatchCause === 'search' ? t('flas.clearSearch') : t('flas.clearFilters') }}
+        </Button>
       </div>
 
       <section v-for="section in sections" :key="section.key" class="flas-group" :aria-labelledby="`flas-group-${section.key}`" :data-flas-group="section.key">
@@ -243,7 +288,7 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
   transition: box-shadow var(--motion-fast);
 }
 .flas-search:focus-within { box-shadow: 0 0 0 1px var(--color-border-strong), 0 0 0 4px var(--color-surface-hover); }
-.flas-search input { flex: 1; min-width: 0; min-height: 0; padding: 0; border: 0; outline: 0; color: var(--color-ink); background: transparent; font: inherit; font-size: var(--text-body); }
+.flas-search input { flex: 1; min-width: 0; min-height: 0; padding: 0; border: 0; outline: 0; box-shadow: none; color: var(--color-ink); background: transparent; font: inherit; font-size: var(--text-body); }
 .flas-switch { display: inline-flex; padding: 3px; border-radius: var(--radius-pill); background: var(--color-surface-hover); }
 .flas-switch button {
   height: calc(var(--control-height-md) - 6px); padding: 0 14px; border: 0; border-radius: var(--radius-pill); color: var(--color-muted); background: transparent;
@@ -251,6 +296,7 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
 }
 .flas-switch button[aria-checked="true"] { color: var(--color-ink); background: var(--color-surface); box-shadow: var(--shadow-xs); }
 .flas-switch button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+.flas-filter { width: 220px; }
 .flas-count { margin-left: auto; color: var(--color-muted); font-size: var(--text-control); font-variant-numeric: tabular-nums; }
 .flas-group { display: grid; gap: 8px; }
 .flas-group-label { display: flex; align-items: baseline; gap: 8px; margin: 0; padding-inline: 18px; color: var(--color-ink-soft); font-size: var(--text-control); font-weight: var(--weight-strong); }
