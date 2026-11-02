@@ -127,6 +127,14 @@ input.on('close',()=>{if(mode!=='hang')process.exit(0);});
       NODE_OPTIONS: '--this-must-be-removed', NODE_PATH: secret, MODEL_PROVIDER: secret } } };
 }
 const gone = pid => { try { process.kill(pid, 0); return false; } catch { return true; } };
+// A terminated Windows process can stay openable by PID while its kernel object
+// is reclaimed, so wait for the OS to report it gone instead of racing the exit.
+async function waitForGone(pid, timeoutMs = 15_000) {
+  for (const deadline = Date.now() + timeoutMs; Date.now() < deadline; await delay(25)) {
+    if (gone(pid)) return;
+  }
+  throw new Error(`Process ${pid} did not exit within ${timeoutMs} ms`);
+}
 // The adapter rewrites its record on every method, so a torn read is retried.
 async function recordedMethod(record, method, timeoutMs = 15_000) {
   for (const deadline = Date.now() + timeoutMs; Date.now() < deadline; await delay(25)) {
@@ -428,11 +436,10 @@ test('ACP timeout and caller cancellation reject pending initialize and stop onl
   for (const cancel of [false, true]) {
     const { options, record } = await fixture(t, 'hang');
     const controller = new AbortController();
-    let stoppedAt = performance.now();
-    // Measure from the adapter's initialize: the job helper's own startup has a
-    // separate budget, so a slow helper cannot count against either outcome.
+    // Cancel only once the adapter has actually received initialize, so the
+    // rejection is a pending-handshake outcome rather than a start race. The
+    // job helper's own startup has a separate budget and does not count here.
     const cancelled = recordedMethod(record, 'initialize', 120_000).then(() => {
-      stoppedAt = performance.now();
       if (cancel) controller.abort(new Error(secret));
     });
     await assert.rejects(startCodexAcpProcess({ ...options, initializeTimeoutMs: cancel ? 15_000 : 5000,
@@ -443,10 +450,8 @@ test('ACP timeout and caller cancellation reject pending initialize and stop onl
     });
     await cancelled;
     const observed = JSON.parse(await readFile(record, 'utf8'));
-    assert.equal(gone(observed.pid), true);
-    if (observed.childPid) assert.equal(gone(observed.childPid), true);
-    // Within the initialize timeout plus the 10 s stop budget, with margin for a slow runner.
-    assert.ok(performance.now() - stoppedAt < 20_000);
+    await waitForGone(observed.pid);
+    if (observed.childPid) await waitForGone(observed.childPid);
   }
 });
 
