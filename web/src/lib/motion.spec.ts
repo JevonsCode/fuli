@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { installPageTransitions, motionConfigReduced, PAGE_CHANGING } from './motion'
+import { installPageTransitions, motionConfigReduced, PAGE_CHANGING, suppressNextPageTransition } from './motion'
 import { setMotionPreference } from './motion-preference'
 
 const page = { template: '<div />' }
@@ -58,5 +58,15 @@ describe('page transitions', () => {
     await app.push('/')
     await app.push('/a')
     expect(app.currentRoute.value.path).toBe('/a')
+  })
+
+  it('skips the cross-fade for one in-page view switch, then animates again', async () => {
+    const app = router()
+    await app.push('/')
+    suppressNextPageTransition()
+    await app.push('/a')
+    expect(start).not.toHaveBeenCalled()
+    await app.push('/')
+    expect(start).toHaveBeenCalledOnce()
   })
 })

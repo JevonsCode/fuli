@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import VirtualDirectoryList from '@/components/VirtualDirectoryList.vue'
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import { UiStatRow, type UiStat } from '@/ui'
 import { versionStatusLabel } from '@/features/knowledge-quick-edit/model'
@@ -38,6 +40,8 @@ const props = defineProps<{
   selectedItem: KnowledgeItem | null
   listResetKey: unknown
   sourceLabel: (item: KnowledgeItem) => string
+  loadingMore: boolean
+  loadMoreFailed: boolean
 }>()
 
 // The same stat row as every memory page: each validity count is its filter.
@@ -52,6 +56,7 @@ const emit = defineEmits<{
   'change-section': [section: DirectorySection]
   'update-status': [status: ContentStatus]
   'select-item': [item: KnowledgeItem]
+  'retry-load-more': []
 }>()
 
 
@@ -115,7 +120,7 @@ const selectedMaterialIndex = computed(() => props.selectedItem
       aria-labelledby="directory-tab-knowledge"
     >
       <header class="directory-section-heading">
-        <div class="directory-section-copy">
+        <div v-if="!personalProjectsOnly" class="directory-section-copy">
           <strong>{{ t('knowledge.workspace.workspace.view.knowledgeContent') }}</strong>
         </div>
         <UiStatRow class="knowledge-status-filter" :items="statusStats" :label="t('knowledge.workspace.workspace.view.knowledgeStatusAria')"
@@ -207,6 +212,16 @@ const selectedMaterialIndex = computed(() => props.selectedItem
             }}
           </div>
         </template>
+
+        <template #footer>
+          <div v-if="loadingMore || loadMoreFailed" class="directory-load-more">
+            <GrowthLoading v-if="loadingMore" variant="inline" :label="t('knowledge.workspace.workspace.loadingMore')" />
+            <template v-else-if="loadMoreFailed">
+              <span>{{ t('knowledge.workspace.workspace.loadMoreFailed') }}</span>
+              <Button variant="outline" size="sm" @click="emit('retry-load-more')">{{ t('common.actions.retry') }}</Button>
+            </template>
+          </div>
+        </template>
       </VirtualDirectoryList>
     </div>
 
@@ -218,7 +233,7 @@ const selectedMaterialIndex = computed(() => props.selectedItem
       aria-labelledby="directory-tab-materials"
     >
       <header class="directory-section-heading">
-        <div class="directory-section-copy">
+        <div v-if="!personalProjectsOnly" class="directory-section-copy">
           <strong>{{ t('knowledge.workspace.workspace.view.projectMaterials') }}</strong>
         </div>
         <small class="directory-section-count">
@@ -272,6 +287,16 @@ const selectedMaterialIndex = computed(() => props.selectedItem
                 ? t('knowledge.workspace.workspace.view.noFilteredMaterials')
                 : t('knowledge.workspace.workspace.view.noMaterials')
             }}
+          </div>
+        </template>
+
+        <template #footer>
+          <div v-if="loadingMore || loadMoreFailed" class="directory-load-more">
+            <GrowthLoading v-if="loadingMore" variant="inline" :label="t('knowledge.workspace.workspace.loadingMore')" />
+            <template v-else-if="loadMoreFailed">
+              <span>{{ t('knowledge.workspace.workspace.loadMoreFailed') }}</span>
+              <Button variant="outline" size="sm" @click="emit('retry-load-more')">{{ t('common.actions.retry') }}</Button>
+            </template>
           </div>
         </template>
       </VirtualDirectoryList>

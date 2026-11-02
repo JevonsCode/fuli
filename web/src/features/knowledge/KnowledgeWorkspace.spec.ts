@@ -904,6 +904,107 @@ describe('KnowledgeWorkspace', () => {
     ).toBe('true')
     wrapper.unmount()
   })
+
+  it('lays the directory search and its four filters out in one compact row', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().state = { mode: 'personal_only', activePersonalSpaceId: 'space-1', personalSpaces: [{ id: 'space-1', name: 'Synthetic' }], personalProjects: [], projects: [], subscriptions: [] }
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/knowledge/:scope/:spaceId/:mode', component: { template: '<div />' } }] })
+    await router.push('/knowledge/personal/space-1/directory'); await router.isReady()
+    const wrapper = mount(KnowledgeWorkspace, { global: { plugins: [pinia, router] } })
+    await finishInitialLoading()
+
+    const bar = wrapper.get('.knowledge-filter-bar')
+    expect(bar.find('.search-form input').exists()).toBe(true)
+    expect(bar.findAll('[data-slot="option-select"]').map(select => select.attributes('data-select-id')))
+      .toEqual([
+        'knowledge-type-filter',
+        'knowledge-quadrant-filter',
+        'knowledge-profile-filter',
+        'knowledge-human-change-filter',
+      ])
+    wrapper.unmount()
+  })
+
+  it('loads the next directory page by itself when the person scrolls near the end', async () => {
+    getJson.mockResolvedValueOnce({ ...graph, truncated: true, next_offset: 360 })
+    getJson.mockResolvedValueOnce({
+      nodes: [{ id: 'knowledge-2', name: '知识二', type: 'Decision', summary: '第二页的知识。' }],
+      edges: [],
+      truncated: false,
+      next_offset: null,
+    })
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().state = { mode: 'personal_only', activePersonalSpaceId: 'space-1', personalSpaces: [{ id: 'space-1', name: 'Synthetic' }], personalProjects: [], projects: [], subscriptions: [] }
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/knowledge/:scope/:spaceId/:mode', component: { template: '<div />' } }] })
+    await router.push('/knowledge/personal/space-1/directory'); await router.isReady()
+    const wrapper = mount(KnowledgeWorkspace, { global: { plugins: [pinia, router] } })
+    await finishInitialLoading()
+
+    expect(wrapper.text()).toContain('知识一')
+    await wrapper.trigger('scroll')
+    await flushPromises()
+
+    expect(getJson.mock.calls.map(([url]) => String(url)).filter(url => url.startsWith('/api/graph?')))
+      .toEqual([
+        '/api/graph?spaceId=space-1&limit=360',
+        '/api/graph?spaceId=space-1&limit=360&offset=360',
+      ])
+    expect(wrapper.text()).toContain('知识二')
+    wrapper.unmount()
+  })
+
+  it('offers a back-to-top button and resets the list when filters change', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().state = { mode: 'personal_only', activePersonalSpaceId: 'space-1', personalSpaces: [{ id: 'space-1', name: 'Synthetic' }], personalProjects: [], projects: [], subscriptions: [] }
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/knowledge/:scope/:spaceId/:mode', component: { template: '<div />' } }] })
+    await router.push('/knowledge/personal/space-1/directory'); await router.isReady()
+    const wrapper = mount(KnowledgeWorkspace, { global: { plugins: [pinia, router] } })
+    await finishInitialLoading()
+
+    // The button appears only after scrolling down, and jumps back to the start.
+    const section = wrapper.element as HTMLElement
+    expect(wrapper.find('[data-back-to-top]').exists()).toBe(false)
+    section.scrollTop = 1200
+    await wrapper.trigger('scroll')
+    expect(wrapper.find('[data-back-to-top]').exists()).toBe(true)
+    await wrapper.get('[data-back-to-top]').trigger('click')
+    expect(section.scrollTop).toBe(0)
+    expect(wrapper.find('[data-back-to-top]').exists()).toBe(false)
+
+    // A filter change resets the list (its reset key changes, scrolling it back).
+    const panel = () => wrapper.getComponent({ name: 'KnowledgeDirectoryPanel' })
+    const before = panel().props('listResetKey')
+    await wrapper.get('[data-stat="historical"]').trigger('click')
+    await flushPromises()
+    expect(panel().props('listResetKey')).not.toBe(before)
+    wrapper.unmount()
+  })
+
+  it('switches to the graph view without reloading the graph or remounting the shell', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().state = { mode: 'personal_only', activePersonalSpaceId: 'space-1', personalSpaces: [{ id: 'space-1', name: 'Synthetic' }], personalProjects: [], projects: [], subscriptions: [] }
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/knowledge/:scope/:spaceId/:mode', component: { template: '<div />' } }] })
+    await router.push('/knowledge/personal/space-1/directory'); await router.isReady()
+    const wrapper = mount(KnowledgeWorkspace, { global: { plugins: [pinia, router] } })
+    await finishInitialLoading()
+
+    const readsBefore = getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/graph?')).length
+    const heading = wrapper.get('.knowledge-view-heading').element
+
+    await wrapper.get('[data-knowledge-mode="graph"]').trigger('mousedown', { button: 0 })
+    await flushPromises()
+
+    expect(router.currentRoute.value.params.mode).toBe('graph')
+    expect(getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/graph?')).length).toBe(readsBefore)
+    expect(wrapper.get('.knowledge-view-heading').element).toBe(heading)
+    expect(wrapper.find('.knowledge-directory-panel').exists()).toBe(false)
+    expect(wrapper.find('.graph-stage').exists()).toBe(true)
+    wrapper.unmount()
+  })
 })
 
 async function finishInitialLoading() {

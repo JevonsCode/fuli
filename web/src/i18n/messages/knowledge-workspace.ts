@@ -86,6 +86,8 @@ export const knowledgeWorkspaceMessages = {
         noSources: '无来源记录',
         primaryProject: '主要 {name}',
       },
+      loadingMore: '正在载入更多知识…',
+      loadMoreFailed: '载入更多知识失败',
       view: {
         modeAria: '知识查看方式',
         directory: '内容目录',
@@ -374,6 +376,8 @@ export const knowledgeWorkspaceMessages = {
         noSources: 'No source records',
         primaryProject: 'Primary {name}',
       },
+      loadingMore: 'Loading more knowledge…',
+      loadMoreFailed: 'Could not load more knowledge',
       view: {
         modeAria: 'Knowledge view mode',
         directory: 'Content directory',

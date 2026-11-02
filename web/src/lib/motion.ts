@@ -14,6 +14,17 @@ export const motionConfigReduced = computed(() => (motionPreference.value === 'r
 /** On the root element while a page transition runs (styles/motion.css). */
 export const PAGE_CHANGING = 'is-page-changing'
 
+let skipNextTransition = false
+
+/**
+ * Mark the next navigation as an in-page view switch (a tab, a mode) so it
+ * does not cross-fade the whole page. The flag is one-shot: the next path
+ * change is skipped, then every later navigation animates again.
+ */
+export function suppressNextPageTransition() {
+  skipNextTransition = true
+}
+
 type ViewTransitionDocument = Document & { startViewTransition?: (update: () => Promise<void>) => { finished: Promise<void> } }
 
 /**
@@ -32,6 +43,10 @@ export function installPageTransitions(router: Router) {
   router.beforeResolve((to, from) => {
     const doc = document as ViewTransitionDocument
     if (!doc.startViewTransition || motionReduced() || !from.matched.length || to.path === from.path) return
+    if (skipNextTransition) {
+      skipNextTransition = false
+      return
+    }
     // The top bar and dock take their transition names only while a page changes:
     // a named element is a backdrop root, and the dock's glass would stop blurring the page.
     const root = document.documentElement

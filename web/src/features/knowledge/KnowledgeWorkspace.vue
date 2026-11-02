@@ -3,8 +3,8 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { getJson } from '@/api/client'
+import BackToTop from '@/components/BackToTop.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import UiDisclosure from '@/components/UiDisclosure.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -16,7 +16,7 @@ import {
 } from '@/composables/useMinimumLoadingDisplay'
 import { t } from '@/i18n'
 import { createDebouncedAction } from '@/lib/debounce'
-import { compactIdentity, identitySearchText } from '@/lib/identity'
+import { suppressNextPageTransition } from '@/lib/motion'
 import { knowledgePath, personalProjectsPath, type KnowledgeMode, type KnowledgeScope } from '@/router/paths'
 import { useConsoleStore } from '@/stores/console'
 import type {
@@ -37,11 +37,11 @@ import { useKnowledgeConfirm } from './useKnowledgeConfirm'
 import KnowledgeWorkspaceDialogs from './KnowledgeWorkspaceDialogs.vue'
 import ProjectHierarchyAside from './ProjectHierarchyAside.vue'
 import ProjectOverview from '@/features/projects/ProjectOverview.vue'
-import { pickerOrder, projectDisplayName } from '@/features/projects/project-origin'
 import CreateProjectEntry from '@/features/projects/CreateProjectEntry.vue'
 import ProjectDropPanel from '@/features/projects/ProjectDropPanel.vue'
 import { useProjectOrganize } from '@/features/projects/useProjectOrganize'
 import {
+  appendKnowledgeGraphPage,
   currentKnowledgeGraph,
   filterKnowledgeItems,
   isManagementKnowledgeItem,
@@ -56,6 +56,7 @@ import {
   quadrantLabel,
   knowledgeItemKey,
 } from './model'
+import { useSpaceChoices } from './space-choices'
 import {
    discoverPersonalProjectResults,
   type KnowledgeSearchResult,
@@ -81,14 +82,6 @@ const props = withDefaults(defineProps<{
 
 type GraphCanvasApi = InstanceType<typeof GraphCanvas>
 type DirectorySection = 'knowledge' | 'materials'
-type SpaceChoice = {
-  key: string
-  scope: KnowledgeScope
-  spaceId: string
-  projectId: string | null
-  providerUrl: string | null
-  label: string
-}
 
 const store = useConsoleStore()
 const route = useRoute()
@@ -101,6 +94,8 @@ const initialLoading = computed(() => loadingPreview || (loading.value && !graph
 const showInitialLoading = useMinimumLoadingDisplay(initialLoading)
 const selectedItem = ref<KnowledgeItem | null>(null)
 const graphCanvas = ref<GraphCanvasApi | null>(null)
+// The page's own scroll container (the .view root in directory mode).
+const viewRoot = ref<HTMLElement | null>(null)
 const searchDraft = ref(queryValue(route.query.q))
 const searchMessage = ref('')
 const searching = ref(false)
@@ -121,6 +116,13 @@ let searchAbortController: AbortController | null = null
 let loadedGraphContextKey: string | null = null
 // True while the item in the URL is the entry this page pushed (see closePeek).
 let peekPushed = false
+// Directory paging: the graph reads one page at a time and loads the next
+// when the person scrolls near the end of the list.
+const loadingMore = ref(false)
+const loadMoreFailed = ref(false)
+const hasMore = ref(false)
+let nextOffset: number | null = null
+const LOAD_MORE_NEAR_END_PX = 360
 
 const scope = computed<KnowledgeScope>(() => {
   if (props.personalProjectsOnly) return 'personal'
@@ -303,63 +305,13 @@ const availableContexts = computed(() =>
   personalProjects.value.filter(project => project.project_id !== projectId.value
     && (!props.personalProjectsOnly || isListedProject(project, projectListingOptions.value))),
 )
-const spaceChoices = computed<SpaceChoice[]>(() => {
-  const state = store.state
-  if (!state) return []
-  const personal = state.personalSpaces.flatMap((space) => {
-    const aggregate: SpaceChoice = {
-      key: choiceKey('personal', space.id, null),
-      scope: 'personal',
-      spaceId: space.id,
-      projectId: null,
-      providerUrl: null,
-      label: t('knowledge.workspace.workspace.spaces.allPersonalProjects', {
-        name: space.name,
-      }),
-    }
-    const projects = pickerOrder((state.personalProjects ?? [])
-      .filter(project => project.personal_space_id === space.id
-        && (!props.personalProjectsOnly || isListedProject(project, {
-          ...projectListingOptions.value,
-          selectedProjectId: space.id === spaceId.value ? projectId.value : null,
-        }))))
-      .map((project): SpaceChoice => ({
-        key: choiceKey('personal', space.id, project.project_id),
-        scope: 'personal',
-        spaceId: space.id,
-        projectId: project.project_id,
-        providerUrl: null,
-        label: t('knowledge.workspace.workspace.spaces.personalProject', {
-          name: projectDisplayName(project),
-        }),
-      }))
-    return [aggregate, ...projects]
-  })
-  if (props.personalProjectsOnly) return personal
-  const publicProjects = state.projects.map((project): SpaceChoice => ({
-    key: choiceKey('public', project.id, null),
-    scope: 'public',
-    spaceId: project.id,
-    projectId: null,
-    providerUrl: project.providerUrl,
-    label: t('knowledge.workspace.workspace.spaces.publicProject', {
-      name: project.name,
-    }),
-  }))
-  return [...personal, ...publicProjects]
+const { spaceChoices, selectedChoiceKey, spaceSelectOptions } = useSpaceChoices({
+  personalProjectsOnly: props.personalProjectsOnly,
+  spaceId,
+  projectId,
+  scope,
+  projectListingOptions,
 })
-const selectedChoiceKey = computed(() => choiceKey(scope.value, spaceId.value, projectId.value))
-const spaceSelectOptions = computed(() =>
-  spaceChoices.value.map((choice) => {
-    const identity = choice.projectId ?? choice.spaceId
-    return {
-      value: choice.key,
-      label: choice.label,
-      meta: `#${compactIdentity(identity, 26)}`,
-      search: identitySearchText(identity),
-    }
-  }),
-)
 const editable = computed(() => scope.value === 'personal')
 const { confirm: confirmItem, confirming } = useKnowledgeConfirm({ personalSpaceId: () => store.activePersonalSpace?.id ?? spaceId.value,
   personalProjectId: knowledgeMutationProjectId, accessDenied: revokeKnowledgeAccess, reload: loadGraph })
@@ -512,6 +464,11 @@ async function loadGraph() {
     reconcileKnowledgeWrites(store.activePersonalSpace?.id ?? spaceId.value, knowledgeItems(value))
     graph.value = value
     loadedGraphContextKey = contextKey
+    // The first page of the read; more pages load as the person scrolls.
+    nextOffset = value.next_offset ?? null
+    hasMore.value = value.truncated === true && nextOffset !== null
+    loadingMore.value = false
+    loadMoreFailed.value = false
     selectDeepLinkedItem()
     if (mode.value === 'graph' && searchDraft.value.trim()) {
       await nextTick()
@@ -535,18 +492,51 @@ async function loadPersonalProjectContext() {
   return mergeKnowledgeGraphs([active, ...contexts])
 }
 
-function readGraph(personalProjectId: string | null): Promise<KnowledgeGraph> {
+function readGraph(personalProjectId: string | null, offset: number | null = null): Promise<KnowledgeGraph> {
   const query = new URLSearchParams({ spaceId: spaceId.value, limit: '360' })
   if (scope.value === 'public') {
     const project = publicProject()
     if (project?.providerUrl) query.set('providerUrl', project.providerUrl)
   }
   if (personalProjectId) query.set('personalProjectId', personalProjectId)
+  if (offset !== null) query.set('offset', String(offset))
   return getJson<KnowledgeGraph>(`/api/graph?${query}`)
 }
 
 function publicProject(): PublicProject | null {
   return store.state?.projects.find(({ id }) => id === spaceId.value) ?? null
+}
+
+// The next directory page, merged onto the loaded graph. Reading is bounded:
+// a page that answers without a further offset is the last one.
+async function loadNextPage() {
+  if (loadingMore.value || !hasMore.value || nextOffset === null) return
+  const sequence = loadSequence
+  loadingMore.value = true
+  loadMoreFailed.value = false
+  try {
+    const page = await readGraph(projectId.value, nextOffset)
+    if (sequence !== loadSequence) return
+    reconcileKnowledgeWrites(store.activePersonalSpace?.id ?? spaceId.value, knowledgeItems(page))
+    graph.value = appendKnowledgeGraphPage(graph.value, page)
+    nextOffset = page.next_offset ?? null
+    hasMore.value = page.truncated === true && nextOffset !== null
+  } catch (error) {
+    if (sequence !== loadSequence) return
+    loadMoreFailed.value = true
+    store.reportError(error)
+  } finally {
+    if (sequence === loadSequence) loadingMore.value = false
+  }
+}
+
+// Near the end of the directory list, load the next page by itself.
+function onDirectoryScroll() {
+  if (mode.value !== 'directory' || loadingMore.value || !hasMore.value) return
+  const element = viewRoot.value
+  if (!element) return
+  const remaining = element.scrollHeight - element.scrollTop - element.clientHeight
+  if (remaining <= LOAD_MORE_NEAR_END_PX) void loadNextPage()
 }
 
 // This workspace's path in a view, optionally with one item's quick look open.
@@ -566,6 +556,9 @@ async function changeMode(nextMode: KnowledgeMode, replace = false) {
     if (isManagementKnowledgeItem(item)) query.section = 'materials'
     else delete query.section
   }
+  // The directory, graph and overview are one page's views; switching them is
+  // an in-page change and must not cross-fade the whole page.
+  suppressNextPageTransition()
   await router[replace ? 'replace' : 'push']({ path, query })
 }
 
@@ -994,10 +987,6 @@ function sourceLabel(item: KnowledgeItem) {
 }
 
 
-function choiceKey(choiceScope: KnowledgeScope, choiceSpaceId: string, choiceProjectId: string | null) {
-  return JSON.stringify([choiceScope, choiceSpaceId, choiceProjectId])
-}
-
 function queryValue(value: unknown) {
   return typeof value === 'string' ? value : ''
 }
@@ -1011,8 +1000,10 @@ function queryValues(value: unknown) {
 
 <template>
   <section
+    ref="viewRoot"
     class="view graph-view vue-knowledge-view"
     :class="{ 'graph-canvas-active': mode === 'graph', 'is-project-overview': mode === 'overview', 'is-directory': mode === 'directory' }"
+    @scroll.passive="onDirectoryScroll"
   >
     <div class="knowledge-canvas">
     <Breadcrumb v-if="overviewAvailable" :parent="allProjectsCrumb(spaceId)" />
@@ -1099,19 +1090,11 @@ function queryValues(value: unknown) {
         </div>
       </details>
 
-      <form class="search-form" role="search" :aria-label="t('knowledge.workspace.workspace.search.aria')" @submit.prevent="submitSearch">
+      <form v-if="mode !== 'directory'" class="search-form" role="search" :aria-label="t('knowledge.workspace.workspace.search.aria')" @submit.prevent="submitSearch">
         <Input
           type="search"
-          :placeholder="
-            mode === 'directory' && directorySection === 'materials'
-              ? t('knowledge.workspace.workspace.search.materialsPlaceholder')
-              : t('knowledge.workspace.workspace.search.contentPlaceholder')
-          "
-          :aria-label="
-            mode === 'directory' && directorySection === 'materials'
-              ? t('knowledge.workspace.workspace.search.materialsPlaceholder')
-              : t('knowledge.workspace.workspace.search.knowledgeAria')
-          "
+          :placeholder="t('knowledge.workspace.workspace.search.contentPlaceholder')"
+          :aria-label="t('knowledge.workspace.workspace.search.knowledgeAria')"
           autocomplete="off"
           enterkeyhint="search"
           :model-value="searchDraft"
@@ -1140,38 +1123,53 @@ function queryValues(value: unknown) {
       </div>
     </div>
 
-    <UiDisclosure v-if="mode === 'directory' && directorySection === 'knowledge'" class="knowledge-filter-disclosure" :title="t('ui.filters')" :open="filters.type !== 'all' || filters.quadrant !== 'all' || filters.profile !== 'all' || filters.humanChange !== 'all'">
-      <div class="knowledge-filter-controls">
+    <div v-if="mode === 'directory'" class="knowledge-filter-bar">
+      <form class="search-form" role="search" :aria-label="t('knowledge.workspace.workspace.search.aria')" @submit.prevent="submitSearch">
+        <Input
+          type="search"
+          :placeholder="directorySection === 'materials'
+            ? t('knowledge.workspace.workspace.search.materialsPlaceholder')
+            : t('knowledge.workspace.workspace.search.contentPlaceholder')"
+          :aria-label="directorySection === 'materials'
+            ? t('knowledge.workspace.workspace.search.materialsPlaceholder')
+            : t('knowledge.workspace.workspace.search.knowledgeAria')"
+          autocomplete="off"
+          enterkeyhint="search"
+          :model-value="searchDraft"
+          @update:model-value="handleSearchInput(String($event))"
+        />
+      </form>
+      <template v-if="directorySection === 'knowledge'">
         <OptionSelect
           :model-value="filters.type"
           :options="typeSelectOptions"
           :label="t('knowledge.workspace.workspace.view.contentType')"
           control-id="knowledge-type-filter"
           @update:model-value="updateQuery('type', $event)"
- />
+        />
         <OptionSelect
           :model-value="filters.quadrant"
           :options="quadrantSelectOptions"
           :label="t('knowledge.workspace.workspace.view.discoveryQuadrant')"
           control-id="knowledge-quadrant-filter"
           @update:model-value="updateQuery('quadrant', $event)"
- />
+        />
         <OptionSelect
           :model-value="filters.profile"
           :options="profileSelectOptions"
           :label="t('knowledge.workspace.workspace.view.classification')"
           control-id="knowledge-profile-filter"
           @update:model-value="updateQuery('profile', $event)"
- />
+        />
         <OptionSelect
           :model-value="filters.humanChange"
           :options="humanChangeSelectOptions"
           :label="t('knowledge.workspace.workspace.view.humanChangeStatus')"
           control-id="knowledge-human-change-filter"
           @update:model-value="updateQuery('human', $event)"
- />
-      </div>
-    </UiDisclosure>
+        />
+      </template>
+    </div>
 
     <GrowthLoading
       v-if="showInitialLoading"
@@ -1195,9 +1193,12 @@ function queryValues(value: unknown) {
         :selected-item="selectedItem"
         :list-reset-key="directoryListResetKey"
         :source-label="sourceLabel"
+        :loading-more="loadingMore"
+        :load-more-failed="loadMoreFailed"
         @change-section="changeDirectorySection"
         @update-status="updateQuery('status', $event)"
         @select-item="selectItem"
+        @retry-load-more="loadNextPage"
       />
 
       <div
@@ -1258,6 +1259,8 @@ function queryValues(value: unknown) {
     />
     </template>
     </div>
+
+    <BackToTop v-if="mode === 'directory'" :scroller="viewRoot" />
 
     <KnowledgeWorkspaceDialogs
       :editing-item="editingItem"

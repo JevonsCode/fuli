@@ -18,6 +18,7 @@ describe('KnowledgeDirectoryPanel', () => {
         personalProjectsOnly: false, directorySection: 'knowledge', knowledgeTabCount: '', materialTabCount: '',
         contentStatus: 'current', currentItemCount: 44, historicalItemCount: 0, allItems: [], visibleItems: [],
         projectMaterialItems: [], visibleProjectMaterialItems: [], selectedItem: null, listResetKey: 0, sourceLabel: () => '',
+        loadingMore: false, loadMoreFailed: false,
       },
     })
     const heading = wrapper.get('.directory-section-heading')
@@ -35,5 +36,12 @@ describe('KnowledgeDirectoryPanel', () => {
     expect(rule(primitives, '.ui-disclosure')).not.toMatch(/border/)
     // The tabs keep their underline.
     expect(rule(pageStyles, '.directory-kind-tabs')).toMatch(/border-bottom/)
+  })
+
+  it('lays the four filters and the search in one compact row, never spread apart', () => {
+    const bar = rule(pageStyles, '.knowledge-filter-bar')
+    expect(bar).toMatch(/display: flex/)
+    expect(bar).not.toMatch(/justify-content: space-between/)
+    expect(rule(pageStyles, '.knowledge-filter-bar .search-form')).toMatch(/flex:/)
   })
 })
