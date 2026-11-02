@@ -44,7 +44,7 @@ export const codexWake = Object.freeze({
 });
 
 // The Codex app keeps each CLI version in its own folder; the newest is current.
-function newestBundledCodex(root) {
+export function newestBundledCodex(root) {
   const candidates = [join(root, 'codex.exe'), ...listDirectory(root).map((entry) => join(root, entry, 'codex.exe'))]
     .filter((path) => existsSync(path));
   return candidates.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0] ?? null;

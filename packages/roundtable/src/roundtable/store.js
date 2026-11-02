@@ -3,6 +3,7 @@ import { CHAT_SCHEMA, createChatStore } from './chat-store.js';
 import { ATTENTION_INBOX_SCHEMA, createAttentionInboxStore } from './attention-inbox-store.js';
 import { GROUP_DISCUSSION_TABLES, createGroupDiscussionStore } from './group-discussion-store.js';
 import { THREAD_SUBSCRIPTION_TABLES, createThreadSubscriptionStore } from './thread-subscriptions.js';
+import { DESKTOP_INBOX_TABLES, createDesktopInboxStore } from './desktop-inbox-store.js';
 
 export const ROUNDTABLE_FORMAT = sqliteFormat({
   store: 'roundtable',
@@ -40,6 +41,9 @@ export const ROUNDTABLE_FORMAT = sqliteFormat({
   }, {
     id: 'roundtable/4-thread-subscriptions', to: 4, kind: 'add-table', table: 'thread_subscriptions',
     summary: 'who is subscribed to each thread and whether a post wakes them at once', create: THREAD_SUBSCRIPTION_TABLES
+  }, {
+    id: 'roundtable/5-desktop-inboxes', to: 5, kind: 'add-table', table: 'desktop_inboxes',
+    summary: 'the desktop-app conversation each Agent answers roundtable asks in', create: DESKTOP_INBOX_TABLES
   }],
   pragmas: 'PRAGMA journal_mode = WAL;'
 });
@@ -54,6 +58,7 @@ export function createRoundtableStore(path = ':memory:') {
   const attention = createAttentionInboxStore(database, chat);
   const discussions = createGroupDiscussionStore(database, chat);
   const subscriptions = createThreadSubscriptionStore(database, chat);
+  const desktopInboxes = createDesktopInboxStore(database);
   const transaction = (work) => {
     database.exec('BEGIN IMMEDIATE');
     let result;
@@ -68,6 +73,7 @@ export function createRoundtableStore(path = ':memory:') {
     attention,
     discussions,
     subscriptions,
+    desktopInboxes,
     transaction,
     createThread({ id, spaceId, projectId = null, subject }) {
       const at = now();

@@ -10,6 +10,7 @@ import { createAgentServices } from '../agent-services/port.js';
 import { callAgentTool, listAgentTools } from '../agent-tools.js';
 import { createAgentRoundtable } from '../../packages/roundtable/src/roundtable/service.js';
 import { createRoundtableStore } from '../../packages/roundtable/src/roundtable/store.js';
+import { createDesktopApps } from '../../packages/roundtable/src/agents/desktop-registry.js';
 import { createPeerPort } from '../../packages/roundtable/src/peer/peer-port.js';
 import { createFuliRoundtableHost } from './roundtable-host.js';
 import { attachJudgmentRuntime } from '../judgment/runtime.js';
@@ -85,6 +86,8 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
     host: app.roundtableHost,
     peer: app.peer,
     env,
+    // Asks to a Codex FLA go to its inbox conversation in the Codex app when that app is installed.
+    desktopApp: createDesktopApps({ env }),
     openStore: () => createRoundtableStore(join(dataDir, 'agent-roundtable.sqlite'))
   });
 }
