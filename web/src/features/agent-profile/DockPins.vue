@@ -9,9 +9,10 @@ import type { ProjectAgentRecord } from '@/types'
 import { agentAvatarUrl } from './agent-avatar'
 import { agentIdentityStyle } from './agent-identity-color'
 import { agentPinsText, useAgentPinsState } from './agent-pins'
-import { readAgentWorkSurfaces, type AgentWorkSurfaces } from './agent-work-surfaces'
 import { agentDisplayName, agentProfilePath } from './profile-model'
 import { useAgentRecords } from './useAgentRecords'
+import { useAgentWorkSurfaces } from './use-agent-work-surfaces'
+import { usePortraitShake } from './use-portrait-shake'
 
 // Pinned FLAs rise out of the dock's FLAs item in their own capsule. A click
 // opens the FLA's profile; right-click (or the context-menu key) offers its
@@ -29,8 +30,8 @@ const agents = computed(() => pins.agentIds.value.map(id => records.value[id]).f
 const isActive = (agentId: string) => route.path === agentProfilePath(props.spaceId, agentId)
 
 // Read once per FLA while the console is open; a failed read is retried on the next open.
-type SurfaceState = { status: 'loading' } | { status: 'ready'; surfaces: AgentWorkSurfaces } | { status: 'error' }
-const surfaces = ref<Record<string, SurfaceState>>({})
+const { surfaces, open: readSurfaces, ready } = useAgentWorkSurfaces(spaceId)
+const { shake } = usePortraitShake()
 // The FLA whose menu is open. The capsule stays up while it is: the pointer and
 // focus are in the menu, outside the dock.
 const menuAgentId = ref<string | null>(null)
@@ -93,7 +94,7 @@ function returnFocus(event: Event) {
   if (openedBy === 'pointer') event.preventDefault()
 }
 
-async function opened(open: boolean, agent: ProjectAgentRecord) {
+function opened(open: boolean, agent: ProjectAgentRecord) {
   pressing.value = false
   clearTimeout(pressTimer)
   if (open) {
@@ -104,20 +105,9 @@ async function opened(open: boolean, agent: ProjectAgentRecord) {
     menuAgentId.value = null
     dismissed.value = openedBy === 'pointer'
   }
-  const current = surfaces.value[agent.agentId]
-  if (!open || current?.status === 'ready' || current?.status === 'loading') return
-  surfaces.value[agent.agentId] = { status: 'loading' }
-  try {
-    surfaces.value[agent.agentId] = { status: 'ready', surfaces: await readAgentWorkSurfaces(props.spaceId, agent) }
-  } catch {
-    surfaces.value[agent.agentId] = { status: 'error' }
-  }
+  if (open) void readSurfaces(agent)
 }
 
-const ready = (agentId: string) => {
-  const state = surfaces.value[agentId]
-  return state?.status === 'ready' ? state.surfaces : null
-}
 const go = (to: RouteLocationRaw) => { void router.push(to) }
 const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath(props.spaceId, agentId), query: { tab: 'overview' } })
 </script>
@@ -130,7 +120,7 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
         <ContextMenuTrigger as-child>
           <RouterLink class="dock-pin" :class="{ 'is-active': isActive(agent.agentId) }" :to="agentProfilePath(spaceId, agent.agentId)"
             :aria-current="isActive(agent.agentId) ? 'page' : undefined" :aria-label="`${agentDisplayName(agent)} · ${t('agentProfiles.profile')}`"
-            :data-name="agentDisplayName(agent)" :data-pinned-agent="agent.agentId" :style="agentIdentityStyle(agent.agentId)" @pointerdown="pressed">
+            :data-name="agentDisplayName(agent)" :data-pinned-agent="agent.agentId" :style="agentIdentityStyle(agent.agentId)" @click="shake" @pointerdown="pressed">
             <img :src="agentAvatarUrl(agent.agentId)" alt="" />
           </RouterLink>
         </ContextMenuTrigger>

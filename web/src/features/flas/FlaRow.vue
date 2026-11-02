@@ -4,14 +4,20 @@ import PinIcon from '@/components/PinIcon.vue'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
+import AgentPortraitActions from '@/features/agent-profile/AgentPortraitActions.vue'
 import { t } from '@/i18n'
+import type { ProjectAgentRecord } from '@/types'
 import { UiIcon } from '@/ui'
 import type { FlaGroupKey } from './fla-groups'
 
 // One FLA in the grouped list: the whole row opens its page, like a row in an
 // iOS list; right-click (or the context-menu key) offers pin and copy #FLA.
+// The portrait alone keeps the shared FLA menu (进入主页 / Workbench / Workflow)
+// and a playful shake, like every other FLA portrait.
 defineProps<{
   agentId: string
+  agent: ProjectAgentRecord
+  spaceId: string
   name: string
   meta: string
   work: { group: FlaGroupKey; text: string }
@@ -28,7 +34,9 @@ const emit = defineEmits<{ 'toggle-pin': [pinned: boolean]; copy: []; open: [] }
     <ContextMenu>
       <ContextMenuTrigger as-child>
         <RouterLink :to="to" class="fla-row" :data-fla="agentId" :data-return-focus="agentId">
-          <span class="fla-face" :style="agentIdentityStyle(agentId)" aria-hidden="true"><img :src="agentAvatarUrl(agentId)" alt="" /></span>
+          <AgentPortraitActions :agent="agent" :space-id="spaceId">
+            <span class="fla-face" :style="agentIdentityStyle(agentId)" aria-hidden="true"><img :src="agentAvatarUrl(agentId)" alt="" /></span>
+          </AgentPortraitActions>
           <span class="fla-who">
             <span class="fla-name">{{ name }}</span>
             <span v-if="meta" class="fla-meta">{{ meta }}</span>

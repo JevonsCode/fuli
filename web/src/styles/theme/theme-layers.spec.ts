@@ -61,4 +61,12 @@ describe('theme layers', () => {
     for (const selector of ['button', '[data-slot="button"]', '[role="button"]', '[role="tab"]', 'summary', 'nav a']) expect(rule, selector).toContain(selector)
     expect(rule).toContain('user-select: none')
   })
+
+  it('styles one thin scrollbar everywhere: a transparent track and a muted-ink thumb that darkens on hover', () => {
+    expect(elements).toContain('* { scrollbar-width: thin; scrollbar-color: var(--color-muted) transparent; }')
+    expect(elements).toContain('::-webkit-scrollbar { width: 8px; height: 8px; }')
+    expect(elements).toContain('::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }')
+    expect(elements).toContain('::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: var(--color-muted) padding-box; }')
+    expect(elements).toContain('::-webkit-scrollbar-thumb:hover { background-color: var(--color-ink-soft); }')
+  })
 })

@@ -214,7 +214,7 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
       <section v-for="section in sections" :key="section.key" class="flas-group" :aria-labelledby="`flas-group-${section.key}`" :data-flas-group="section.key">
         <h2 :id="`flas-group-${section.key}`" class="flas-group-label">{{ section.label }} <span class="ui-num">{{ section.rows.length }}</span></h2>
         <ul class="flas-list">
-          <FlaRow v-for="agent in section.rows" :key="agent.agentId" :agent-id="agent.agentId" :name="agentDisplayName(agent)" :meta="meta(agent)"
+          <FlaRow v-for="agent in section.rows" :key="agent.agentId" :agent-id="agent.agentId" :agent="agent" :space-id="space" :name="agentDisplayName(agent)" :meta="meta(agent)"
             :work="workLine(agent)" :time="lastUpdate(agent)" :to="profilePath(agent)"
             :pinned="pins.agentIds.value.includes(agent.agentId)" :pin-pending="pins.savingAgentId.value === agent.agentId"
             @click="focusReturn.remember(agent.agentId)" @open="open(agent)" @copy="copyMention(agent)" @toggle-pin="pins.setPinned(agent.agentId, $event)" />
