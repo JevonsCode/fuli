@@ -106,6 +106,26 @@ describe('悬浮岛', () => {
     expect(island.find('[data-team-card="task-1"]').exists()).toBe(false)
   })
 
+  it('folds the whole row behind a round button that says how many, and opens it again', async () => {
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/workbenches?')) return { partial: false, workbenches: [sheet(), sheet({ taskId: 'task-2', title: 'Second synthetic task' })] }
+      if (url.startsWith('/api/project-agents/')) return { agentId: url.split('/')[3]!.split('?')[0], profile: { name: 'X' } }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    localStorage.removeItem('fuli.teamIsland.folded')
+    const island = await mountIsland()
+    const fold = island.get('[data-team-island-fold]')
+    expect(fold.attributes('aria-expanded')).toBe('true')
+    await fold.trigger('click')
+    expect(island.findAll('[data-team-island-pill]')).toHaveLength(0)
+    expect(fold.text()).toBe('2')
+    expect(fold.attributes('aria-label')).toBe('展开 2 个一起做的任务')
+    expect(localStorage.getItem('fuli.teamIsland.folded')).toBe('1')
+    await fold.trigger('click')
+    expect(island.findAll('[data-team-island-pill]')).toHaveLength(2)
+    expect(localStorage.getItem('fuli.teamIsland.folded')).toBeNull()
+  })
+
   it('is not there when nothing runs together, nor when the server cannot say', async () => {
     getJson.mockResolvedValue({ partial: false, workbenches: [sheet({ status: 'queued' })] })
     expect((await mountIsland()).find('[data-team-island-pill]').exists()).toBe(false)

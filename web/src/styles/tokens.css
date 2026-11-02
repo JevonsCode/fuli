@@ -28,6 +28,8 @@
   --measure: 72ch;
   --page-gutter: clamp(20px, 2.4vw, 56px);
   --page-inline: max(var(--page-gutter), calc((100% - var(--canvas-max)) / 2));
+  /* What floats over the page (dock, pins, island) starts a little left of the content's edge (Jevons 11-02). */
+  --float-inline: max(8px, calc(var(--page-inline) - 12px));
   /* The page's scrollbar width (layouts/scrollbar-size.ts sets it; 0 with
      overlay scrollbars): the top bar and the fixed controls leave the same
      room on the right, so their edges stay on the page's edges. */
