@@ -11,7 +11,7 @@ import { usePortraitShake } from '@/features/agent-profile/use-portrait-shake'
 import { useConsoleStore } from '@/stores/console'
 import { getJson } from '@/api/client'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
-import { normalizeAgent } from '@/features/project-agents/agent-roster-records'
+import { projectAgentShape } from '@/features/agent-profile/agent-record-shape'
 import type { ProjectAgentRecord } from '@/types'
 import { readContextTarget, type ContextTarget } from './context-target'
 import { replaceFieldRange, selectAllInField } from './field-edit'
@@ -38,7 +38,8 @@ const agentName = (agentId: string) => { const record = agents.value[agentId]; r
 async function readAgent(agentId: string) {
   if (!agents.value[agentId]) {
     try {
-      agents.value[agentId] = normalizeAgent(await getJson<unknown>(`/api/project-agents/${encodeURIComponent(agentId)}?${new URLSearchParams({ personalSpaceId: spaceId.value })}`), spaceId.value)
+      agents.value[agentId] = await getJson(`/api/project-agents/${encodeURIComponent(agentId)}?${new URLSearchParams({ personalSpaceId: spaceId.value })}`,
+        projectAgentShape)
     } catch {
       agents.value[agentId] = 'missing'
     }
