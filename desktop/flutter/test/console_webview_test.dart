@@ -34,9 +34,9 @@ void main() {
     final windows = ConsoleWebView.desktopClientScript(RecordingCaption());
     expect(windows.injectionTime, UserScriptInjectionTime.AT_DOCUMENT_START);
     expect(windows.source,
-        'window.fuliDesktopClient = Object.freeze({"platform":"windows","captionStart":0.0,"captionEnd":138.0});');
+        'window.fuliDesktopClient = Object.freeze({"platform":"windows","captionStart":0.0,"captionEnd":138.0,"captionTop":0.0});');
     expect(ConsoleWebView.desktopClientScript(RecordingCaption(platform: 'macos')).source,
-        contains('"platform":"macos","captionStart":76.0,"captionEnd":0.0'));
+        contains('"platform":"macos","captionStart":0.0,"captionEnd":0.0,"captionTop":28.0'));
   });
 
   test('the page moves or maximises the window, and nothing else', () async {

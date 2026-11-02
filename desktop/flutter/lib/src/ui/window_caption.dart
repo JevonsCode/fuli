@@ -52,11 +52,14 @@ class _CaptionScope extends InheritedWidget {
 }
 
 /// Room a top bar keeps clear for the window's own controls, beyond its own
-/// padding of [padding]: none outside [WindowChrome].
-({double start, double end}) captionRoom(BuildContext context, {required double padding}) {
+/// padding of [padding] at the sides, and the strip above it (macOS's traffic
+/// lights): none outside [WindowChrome].
+({double start, double end, double top}) captionRoom(BuildContext context, {required double padding}) {
   final reserved = context.dependOnInheritedWidgetOfExactType<_CaptionScope>()?.caption.reserved;
   double beyond(double side) => side == 0 ? 0 : math.max(0, side + FuliSpace.space2 - padding);
-  return reserved == null ? (start: 0, end: 0) : (start: beyond(reserved.start), end: beyond(reserved.end));
+  return reserved == null
+      ? (start: 0, end: 0, top: 0)
+      : (start: beyond(reserved.start), end: beyond(reserved.end), top: reserved.top);
 }
 
 /// Makes a top bar the window's title bar: dragging it moves the window, a

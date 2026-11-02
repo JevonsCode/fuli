@@ -22,7 +22,7 @@ class WaitingScreen extends StatelessWidget {
           Expanded(
             child: Center(
               child: Padding(
-                padding: const EdgeInsets.only(bottom: topLineHeight),
+                padding: EdgeInsets.only(bottom: topLineExtent(context)),
                 child: GrowthLoading(label: label, variant: GrowthLoadingVariant.page),
               ),
             ),

@@ -87,6 +87,7 @@ class ConsoleWebView {
       'platform': caption.platform,
       'captionStart': caption.reserved.start,
       'captionEnd': caption.reserved.end,
+      'captionTop': caption.reserved.top,
     };
     return UserScript(
         source: 'window.fuliDesktopClient = Object.freeze(${jsonEncode(client)});',
