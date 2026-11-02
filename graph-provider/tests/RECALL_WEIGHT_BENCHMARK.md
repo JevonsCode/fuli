@@ -21,8 +21,9 @@ commit `92bdd16b65d0c7f1c643c235bdfc0203447866bc` (main before the unified
 weight); its scores are frozen in `MAIN_BASELINE` so the gate needs no Git
 history. `--base-ref <revision>` re-scores a baseline from Git instead.
 
-On 2026-11-01 the unified weight scored nDCG@5 0.8671 and MRR 1.0 against the
-baseline's 0.7973 and 0.70, with no trusted-first violations in either.
+On 2026-11-01 the unified weight scored nDCG@5 0.8671, MRR 1.0 and
+irrelevant@5 0.3533 against the baseline's 0.7973, 0.70 and 0.32, with no
+trusted-first violations in either.
 
 The runner extracts the real lexical relevance, ranking, and entity deduplication
 functions and their dependencies from source. It pins the PR weight clock to
@@ -32,11 +33,13 @@ confirmation states while the actual ranking and weight functions still run.
 The adapter is not suitable for real records.
 
 The table reports mean nDCG@5 with gain `2^grade - 1`, MRR over all ranked
-results (any grade greater than zero is relevant), and the number of inverted
-trusted-first pairs in the first five results. A pair is an earlier pending or
-attention-flagged item followed by an unflagged human/authoritative confirmed
-item with the same positive relevance grade. Multiple pairs in a query each
-count. The test allows an absolute mean nDCG@5 decrease of at most **0.03**.
+results (any grade greater than zero is relevant), the number of inverted
+trusted-first pairs in the first five results, and `irrelevant@5`, the mean
+share of grade-0 (irrelevant) items among each query's first five results. A
+pair is an earlier pending or attention-flagged item followed by an unflagged
+human/authoritative confirmed item with the same positive relevance grade.
+Multiple pairs in a query each count. The test allows an absolute mean nDCG@5
+decrease of at most **0.03**.
 
 This measures entity ordering over the complete synthetic candidate set, with
 pending records included. It does not measure graph retrieval, default pending

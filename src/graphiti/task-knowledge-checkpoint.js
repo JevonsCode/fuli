@@ -163,6 +163,16 @@ export async function checkpointTaskKnowledge(application, {
     else memoryRequest = { expected_revision: prepared.request.expected_revision,
       memory: prepared.request.memory };
   }
+  // rec#63: record that the Agent reported using these shown items, so ranking
+  // can later learn "shown and used". Recording only; it never fails the
+  // checkpoint and only updates rows this task's entry already showed.
+  if (knowledgeUsage) {
+    try {
+      application.recallImpressions?.markUsed({ taskContextToken, items: knowledgeUsage });
+    } catch {
+      // Ignore: the impression must never fail the checkpoint.
+    }
+  }
   const recorded = { disposition, reason, fingerprint, captureStatus: null,
     ...(knowledgeUsage ? { knowledgeUsage } : {}),
     ...(task.projectAgentId ? { workLog: workLog ?? {

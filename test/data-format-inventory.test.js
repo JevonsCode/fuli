@@ -13,6 +13,7 @@ import { createStandaloneStore } from '../packages/roundtable/src/standalone/sto
 import { AgentAppStore } from '../src/agent-apps/store.js';
 import { AgentServiceStore } from '../src/agent-services/store.js';
 import { AgentWorkflowStore } from '../src/agent-workflows/store.js';
+import { RecallImpressionsStore } from '../src/knowledge-impressions/store.js';
 import { AgentAvatarStore } from '../src/agent-avatars/store.js';
 import { WorkSurfaceStore } from '../src/work-surfaces/store.js';
 import { localStoreFiles } from '../src/data-format/local-stores.js';
@@ -36,6 +37,7 @@ const SQLITE_STORES = {
   'agent-apps': (path) => { const store = new AgentAppStore(path); void store.database; return () => store.close(); },
   'agent-services': (path) => { const store = new AgentServiceStore(path); void store.db; return () => store.close(); },
   'agent-workflows': (path) => { const store = new AgentWorkflowStore(path); void store.db; return () => store.close(); },
+  'recall-impressions': (path) => { const store = new RecallImpressionsStore(path); void store.db; return () => store.close(); },
   'agent-avatars': (path) => { const store = new AgentAvatarStore(path); void store.db; return () => store.close(); },
   'work-surfaces': (path) => { const store = new WorkSurfaceStore(path); void store.db; return () => store.close(); },
   'employee-management': (path) => {
