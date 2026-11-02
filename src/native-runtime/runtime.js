@@ -43,6 +43,7 @@ import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { isProcessAlive } from '../local-runtime/processes.js';
 import { parseProviderEnv } from '../setup/provider-env.js';
 import { nativeInstanceLogPaths } from '../setup/paths.js';
+import { providerServerArguments } from './provider-arguments.js';
 
 export const NATIVE_NEO4J_VERSION = '5.26.28';
 export const NATIVE_NEO4J_SHA256 =
@@ -783,11 +784,7 @@ function spawnNativeDatabase(spec) {
 function spawnNativeProvider(spec) {
   const log = openChildProcessLog(spec.logPath);
   try {
-    const child = spawn(spec.python, [
-      '-m', 'uvicorn', 'fuli_graph.app:app',
-      '--host', '127.0.0.1',
-      '--port', String(spec.port)
-    ], {
+    const child = spawn(spec.python, providerServerArguments(spec.port), {
       detached: true,
       windowsHide: true,
       stdio: ['ignore', log, log],

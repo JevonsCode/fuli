@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import { openChildProcessLog } from '../src/local-runtime/child-process-log.js';
 import { createNativeGraphServices } from '../src/native-runtime/runtime.js';
+import { providerServerArguments } from '../src/native-runtime/provider-arguments.js';
 import { spawnWindowsNativeProvider } from '../src/native-runtime/windows-processes.js';
 import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
 
@@ -95,3 +96,20 @@ test('the Windows owned-process spawn rotates its full log before the child star
     assert.equal(firstLine(`${logPath}.1`), 'previous-run');
     assert.ok(statSync(logPath).size < LIMIT);
   });
+
+test('only the owner reads a child log and its kept copies',
+  { skip: process.platform === 'win32' && 'Windows keeps the profile ACLs' }, t => {
+    const logPath = join(temporaryDirectory(t), 'provider.log');
+    writeFileSync(logPath, 'current', { mode: 0o644 });
+    writeFileSync(`${logPath}.1`, 'older', { mode: 0o644 });
+    closeSync(openChildProcessLog(logPath));
+    assert.equal(statSync(logPath).mode & 0o777, 0o600);
+    assert.equal(statSync(`${logPath}.1`).mode & 0o777, 0o600);
+  });
+
+test('the Graph Provider serves without an access log, so task-context paths stay out of its log', () => {
+  const args = providerServerArguments(2729);
+  assert.ok(args.includes('--no-access-log'));
+  assert.deepEqual(args.slice(0, 3), ['-m', 'uvicorn', 'fuli_graph.app:app']);
+  assert.equal(args[args.indexOf('--port') + 1], '2729');
+});
