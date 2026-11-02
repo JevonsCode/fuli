@@ -113,7 +113,7 @@ body { margin: 0; min-width: 320px; }
 .graph-view {
   overflow: hidden; display: flex; flex-direction: column;
 }
-.graph-view.graph-canvas-active { overflow: hidden; }
+.graph-view.graph-canvas-active { overflow: hidden; padding-bottom: 20px !important; }
 /* One centred work canvas (D-03); an item opens in a quick look over it. */
 .knowledge-canvas {
   display: flex; flex: 1; flex-direction: column; width: 100%; min-height: 0;
@@ -123,7 +123,7 @@ body { margin: 0; min-width: 320px; }
 .knowledge-view-heading { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .graph-toolbar {
   min-height: 48px; display: flex; flex-wrap: wrap; gap: 8px 10px;
-  align-items: center; padding: 8px 0;
+  align-items: center; padding: 4px 0;
 }
 
 
@@ -204,6 +204,13 @@ body { margin: 0; min-width: 320px; }
 #knowledge-type-filter { max-width: 160px; }
 #knowledge-quadrant-filter { max-width: 130px; }
 #knowledge-profile-filter { max-width: 135px; }
+/* The directory's one compact filter row: search beside the four filters,
+   controls lined up on the shared --control-height, never spread apart. */
+.knowledge-filter-bar {
+  flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  min-height: var(--control-height); padding: 4px 0;
+}
+.knowledge-filter-bar .search-form { flex: 1 1 240px; min-width: 200px; }
 /* Spacing, not separator lines, sets the toolbar, filters and table apart. */
 .graph-view-actions { display: flex; align-items: center; gap: 3px; margin-left: auto; }
 .graph-controls { display: flex; gap: 3px; }
@@ -245,7 +252,7 @@ body { margin: 0; min-width: 320px; }
 .directory-section-heading {
   min-width: 0; display: flex; flex-wrap: wrap; align-items: center;
   justify-content: space-between; gap: 8px 14px;
-  padding: 12px 16px; background: var(--color-surface-subtle);
+  padding: 8px 16px; background: var(--color-surface-subtle);
 }
 .directory-section-copy {
   min-width: 0; flex: 1 1 260px; display: flex; align-items: baseline; gap: 10px;
@@ -260,6 +267,13 @@ body { margin: 0; min-width: 320px; }
 .knowledge-status-filter { flex: 0 0 auto; }
 .knowledge-directory-virtual-list,
 .project-material-virtual-list { min-width: 0; min-height: 0; flex: 1; }
+/* The paged directory's footer: a quiet "loading more" line, or the retry for a
+   page that failed to load, kept clear of the floating dock. */
+.directory-load-more {
+  display: flex; align-items: center; gap: 12px; padding: 10px 16px 20px;
+  color: var(--color-muted); font-size: 12px;
+}
+.directory-load-more .growth-loading--inline { font-size: 12px; }
 /* Project materials read as a table: name, description, type and the way in,
    each in its own column, so a wide screen spreads them instead of leaving a
    long empty gap between a stacked title and its link. */
