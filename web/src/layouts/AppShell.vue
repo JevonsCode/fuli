@@ -4,7 +4,6 @@ import { MotionConfig } from 'motion-v'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import GrowingBackdrop from '@/components/GrowingBackdrop.vue'
-import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import { loadAgentLooks } from '@/features/agent-profile/agent-looks'
 import { loadRoleNames } from '@/features/agent-profile/role-names'
@@ -137,7 +136,6 @@ watchEffect(() => {
         <div class="app-actions">
           <DoctorBanner />
           <GlossaryToggle />
-          <LocaleSwitcher />
           <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" data-shell-refresh @click="refreshConsole" />
           <!-- 待决策 is a tray: empty when nothing waits, with papers in it when something does. -->
           <RouterLink to="/inbox" class="app-round" :class="{ 'is-full': attention.total }" :aria-label="inboxLabel" :title="inboxLabel"
