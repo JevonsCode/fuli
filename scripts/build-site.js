@@ -66,11 +66,12 @@ function renderPage(template, base, route, locale, catalog) {
   return { document, pageUrl };
 }
 
-// The client download is the Windows setup of the version this build packages (package.json).
+// The client downloads are the Windows setup and the macOS disk image of the version this
+// build packages (package.json), as .github/workflows/release.yml attaches them.
 function linkDownloads(document, version) {
-  for (const link of document.querySelectorAll('[data-download-windows]')) {
-    link.href = `https://github.com/JevonsCode/fuli/releases/download/v${version}/FULI-Setup-${version}.exe`;
-  }
+  const release = `https://github.com/JevonsCode/fuli/releases/download/v${version}/`;
+  for (const link of document.querySelectorAll('[data-download-windows]')) link.href = release + `FULI-Setup-${version}.exe`;
+  for (const link of document.querySelectorAll('[data-download-macos]')) link.href = release + `fuli-macos-arm64-${version}.dmg`;
 }
 
 function homePages(template, version, files) {

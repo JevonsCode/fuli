@@ -52,6 +52,18 @@ test('release attaches the Windows tray package the one-click update downloads, 
   assert.match(trayAction, /build-windows-tray\.js [^\n]*--client "[^"\n]*\\desktop\\flutter\\build\\windows\\x64\\runner\\Release"/);
 });
 
+test('release attaches the macOS disk image after npm publishes, once it starts from the image', () => {
+  const job = releaseWorkflow.slice(releaseWorkflow.indexOf('\n  macos-dmg:'));
+  assert.ok(releaseWorkflow.indexOf('publish --access public') < releaseWorkflow.indexOf('\n  macos-dmg:'));
+  assert.match(job, /needs: publish/);
+  assert.match(job, /runs-on: macos-15/);
+  assert.match(job, /permissions:\n {6}contents: write/);
+  assert.match(job, /uses: \.\/\.github\/actions\/macos-app/);
+  const smoke = job.indexOf('scripts/macos-app-smoke.js');
+  const upload = job.indexOf('gh release upload "$GITHUB_REF_NAME" "${{ steps.mac.outputs.release }}"/*');
+  assert.ok(smoke > 0 && upload > smoke, 'the image is attached only after the smoke test');
+});
+
 test('all pull requests, including release branches, run the Windows installed update acceptance workflow', () => {
   assert.match(installedUpdateWorkflow, /pull_request:\s*\n  workflow_dispatch:/);
   assert.match(installedUpdateWorkflow, /runs-on: windows-latest/);

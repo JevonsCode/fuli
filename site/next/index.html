@@ -268,7 +268,7 @@
         </ul></div>
         <div><h3 data-i18n="next.c.upgrade">升级前要知道</h3><ul>
           <li data-i18n="next.c.upgrade.1">新增两个本地存储（agent-workflows.sqlite、session-clients/），第一次使用时创建；从 0.22.1 升级不需要确认迁移。</li>
-          <li data-i18n="next.c.upgrade.2">桌面客户端是 Beta：内嵌控制台在一台 Windows 11 电脑上实际用过，托盘、通知和开机启动还没完整验证；macOS 版客户端还不在发布包里。</li>
+          <li data-i18n="next.c.upgrade.2">桌面客户端是 Beta：内嵌控制台在一台 Windows 11 电脑上实际用过，托盘、通知和开机启动还没完整验证；macOS 版客户端（Apple 芯片）第一次随发布提供，还没在真机上装过。</li>
         </ul></div>
       </section>
 
@@ -277,7 +277,7 @@
         <div class="install-choice install-client">
           <h3 data-i18n="next.clientTitle">下载客户端（推荐）</h3>
           <p data-i18n="next.clientDescription">双击安装，不用终端。Node.js、图数据库都已内置。已经装过 FULI 的，安装包会直接更新，数据保留。</p>
-          <p class="start-links"><a data-i18n="next.clientWindows" data-download-windows class="button" href="https://github.com/JevonsCode/fuli/releases">下载 Windows 版</a><span data-i18n="next.clientMac">macOS 版即将推出，现在可以用下面的终端方式。</span></p>
+          <p class="start-links"><a data-i18n="next.clientWindows" data-download-windows class="button" href="https://github.com/JevonsCode/fuli/releases">下载 Windows 版</a><a data-i18n="next.clientMacDownload" data-download-macos class="button" href="https://github.com/JevonsCode/fuli/releases">下载 macOS 版</a><span data-i18n="next.clientMac">macOS 版需要 Apple 芯片和 macOS 13.5 以上，暂未签名：第一次打开被拦下时，到「系统设置 › 隐私与安全性」点「仍要打开」。</span></p>
         </div>
         <h3 data-i18n="next.terminalTitle">用终端安装</h3>
         <p data-i18n="next.installDescription">已经装了 FULI 的话，先运行 fuli stop，并备份数据目录。下面的命令用原来的安装脚本，只是把安装的包换成 fuli-context@beta，装完会接着运行 fuli setup。</p>

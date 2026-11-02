@@ -5,9 +5,11 @@ FULI.app to Applications, open it. FULI.app is the desktop client
 (`desktop/flutter`) with FULI and everything it runs inside it, so the Mac needs
 no Node, Java, Python, uv or Homebrew.
 
-Status: built and smoke-tested by CI (`.github/workflows/desktop-client.yml`,
-job `macos-dmg`, artifact `fuli-macos-dmg`); not attached to releases yet.
-Apple silicon only, macOS 13.5 or later.
+Status: every release attaches `fuli-macos-arm64-<version>.dmg` and its SHA-256
+(`.github/workflows/release.yml`, job `macos-dmg`), built and smoke-tested the
+same way pull requests build it (`.github/workflows/desktop-client.yml`, artifact
+`fuli-macos-dmg`). Apple silicon only, macOS 13.5 or later; Intel Macs use the
+terminal install.
 
 ## Install
 

@@ -84,7 +84,10 @@ Pick one of two ways:
   finds the AI clients on your computer and connects them in one click, and offers start at login.
   If FULI is already installed, the setup updates it and keeps your data. The installer is not
   code-signed yet, so Windows may show "Windows protected your PC": choose "More info → Run anyway".
-  The macOS app is coming soon; use the terminal install below for now.
+- **Download the app (macOS, Apple silicon):** get `fuli-macos-arm64-<version>.dmg` from the same
+  release, open it and drag FULI.app to Applications. macOS 13.5 or later; Intel Macs use the terminal
+  install. The app is not signed yet: the first time it is blocked, open System Settings › Privacy &
+  Security and choose "Open Anyway". See [docs/macos-app.md](docs/macos-app.md).
 - **Install from the terminal:** for developers, and for macOS / Linux.
 
 With Node.js 24.12+ and Docker Compose v2 available (default container mode; see

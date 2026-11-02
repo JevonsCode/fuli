@@ -120,10 +120,11 @@ test('a stable version has no newer preview, so /next/ says so and links home in
   assert.doesNotMatch(site.get('sitemap.xml'), /\/next\//);
 });
 
-test('the client download on both pages is the Windows setup of the packaged version', () => {
-  const setup = `https://github.com/JevonsCode/fuli/releases/download/v${version}/FULI-Setup-${version}.exe`;
+test('the client downloads on both pages are the Windows setup and macOS image of the packaged version', () => {
+  const release = `https://github.com/JevonsCode/fuli/releases/download/v${version}/`;
   for (const path of ['index.html', 'en/index.html', 'next/index.html', 'next/en/index.html']) {
     const { document } = parseHTML(files.get(path));
-    assert.equal(document.querySelector('[data-download-windows]').href, setup, path);
+    assert.equal(document.querySelector('[data-download-windows]').href, release + `FULI-Setup-${version}.exe`, path);
+    assert.equal(document.querySelector('[data-download-macos]').href, release + `fuli-macos-arm64-${version}.dmg`, path);
   }
 });
