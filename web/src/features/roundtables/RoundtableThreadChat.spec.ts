@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const postJson = vi.fn()
@@ -104,9 +105,45 @@ describe('RoundtableThreadChat', () => {
     try {
       const wide = mountChat(conversation())
       const side = wide.get('[data-roundtable-side]')
-      expect(side.get('h3').text()).toBe('参与者（1）')
-      expect(wide.findAll('[data-roundtable-seat]').map(seat => seat.text())).toEqual([expect.stringContaining('Ada Vale')])
-      expect(side.findAll('[data-roundtable-seat]')).toHaveLength(1)
+      expect(side.get('h3').text()).toBe('参与者（2）')
+      expect(wide.findAll('[data-roundtable-seat]').map(seat => seat.text())).toEqual([expect.stringContaining('我'), expect.stringContaining('Ada Vale')])
+      expect(side.findAll('[data-roundtable-seat]')).toHaveLength(2)
+
+      // The person is 「我」: a link to their page with a plain face, never an FLA portrait; the head shows only the others.
+      const me = side.get('[data-roundtable-seat-me]')
+      expect(me.get('a[data-me-link]').text()).toBe('我')
+      expect(me.get('a[data-me-link]').attributes('href')).toBe('/preferences?aspect=taste')
+      expect(me.find('[data-agent-portrait]').exists()).toBe(false)
+      expect(me.get('.roundtable-seat-face').text()).toBe('我')
+      expect(me.text()).toContain('发言 2 次')
+      expect(wide.get('.rt-chat-faces').findAll('[data-agent-portrait]').map(face => face.attributes('data-agent-portrait'))).toEqual(['ada'])
     } finally { vi.unstubAllGlobals() }
+  })
+
+  it('renders a reply as Markdown and opens its FULI receipt link on the Agent page inside the console', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/agents/:spaceId/:agentId', name: 'agent-profile', component: { template: '<div />' } },
+    ] })
+    await router.push('/')
+    const receipt = 'Shipped **v2** with `npm test`.\n\nFULI Agent：[Ada Vale \\[fuli 负责人\\]](<fuli://agents/space-1/ada>)'
+    const thread = conversation({ messages: [ask('p1', { status: 'answered', body: 'Ship <b>it</b>?' }),
+      { id: 'r1', kind: 'reply', status: 'sent', body: receipt, inReplyTo: 'p1', via: null, error: null,
+        createdAt: '2026-10-27T08:01:00Z', from: ada, to: you }] })
+    const wrapper = mount(RoundtableThreadChat, { attachTo: document.body, props: { thread, time: () => '08:00' }, global: { plugins: [router] } })
+    try {
+      const [mine, reply] = wrapper.findAll('[data-roundtable-bubble]')
+      expect(mine!.get('.rt-bubble').text()).toBe('Ship <b>it</b>?')
+      expect(mine!.find('.rt-bubble b').exists()).toBe(false)
+      expect(reply!.get('.rt-bubble strong').text()).toBe('v2')
+      expect(reply!.get('.rt-bubble code').text()).toBe('npm test')
+      const link = reply!.get('.rt-bubble a')
+      expect(link.text()).toBe('Ada Vale [fuli 负责人]')
+      expect(link.attributes('href')).toBe('/agents/space-1/ada')
+      await link.trigger('click', { button: 0 })
+      await flushPromises()
+      expect(router.currentRoute.value.name).toBe('agent-profile')
+      expect(router.currentRoute.value.params).toEqual({ spaceId: 'space-1', agentId: 'ada' })
+    } finally { wrapper.unmount() }
   })
 })

@@ -40,12 +40,22 @@ describe('roundtable model', () => {
     expect(deliveryInFlight(bubbles)).toBe(false)
   })
 
-  it('seats every Agent once, never the person, and marks only those owing an open reply', () => {
-    const messages = [message('a1', 'ask', agent('a'), agent('b')), message('a2', 'ask', agent('b'), agent('c'), { status: 'failed' }),
-      message('p1', 'ask', you, agent('a'), { status: 'answered' })]
+  it('seats every Agent once and marks only those owing an open reply', () => {
+    const messages = [message('a1', 'ask', agent('a'), agent('b')), message('a2', 'ask', agent('b'), agent('c'), { status: 'failed' })]
     expect(tableSeats(messages).map(seat => [seat.key, seat.spoke, seat.awaited])).toEqual([
       ['a', 1, false], ['b', 1, true], ['c', 0, false],
     ])
+  })
+
+  it('seats the person once they post or are answered, counting what they said', () => {
+    const named: RoundtablePerson = { agentId: null, name: 'Synthetic Person', client: 'person' }
+    const messages = [message('a1', 'ask', agent('a'), agent('b'), { status: 'answered' }),
+      message('p1', 'ask', you, agent('a'), { status: 'answered' }), message('r1', 'reply', agent('a'), named),
+      message('p2', 'ask', named, agent('b'))]
+    expect(tableSeats(messages).map(seat => [seat.key, seat.person.client, seat.spoke, seat.awaited])).toEqual([
+      ['a', 'codex', 2, false], ['b', 'codex', 0, true], ['person', 'person', 2, false],
+    ])
+    expect(tableSeats([message('r1', 'reply', agent('a'), you)]).map(seat => seat.key)).toEqual(['a', 'person'])
   })
 
   it('posts to the subscribers, or in an Agents-only thread to its local FLAs', () => {
