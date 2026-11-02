@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { agentDisplayName, agentResponsibility } from '@/features/agent-profile/profile-model'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
-import AgentPortraitActions from '@/features/agent-profile/AgentPortraitActions.vue'
 import AgentMentionCopy from '@/features/agent-profile/AgentMentionCopy.vue'
 import { mentionKind } from '@/features/agent-profile/fla-mention'
 import { t } from '@/i18n'
@@ -58,15 +57,13 @@ function surfaceClick(event: MouseEvent) {
     @click="surfaceClick"
   >
     <div class="flex items-start gap-3">
-      <AgentPortraitActions :agent="agent" :space-id="spaceId">
-        <span
-          class="agent-portrait small agent-card-identity"
-          :style="agentIdentityStyle(agent.agentId)"
-          aria-hidden="true"
-        >
-          <img :src="agentAvatarUrl(agent.agentId)" alt="" />
-        </span>
-      </AgentPortraitActions>
+      <span
+        class="agent-portrait small agent-card-identity"
+        :style="agentIdentityStyle(agent.agentId)"
+        aria-hidden="true"
+      >
+        <img :src="agentAvatarUrl(agent.agentId)" :data-agent-portrait="agent.agentId" alt="" />
+      </span>
       <div class="min-w-0 flex-1">
         <div class="flex min-w-0 items-start gap-1.5">
           <RouterLink class="agent-card-name" :to="path" :title="name" data-agent-manage-link>{{ name }}</RouterLink>

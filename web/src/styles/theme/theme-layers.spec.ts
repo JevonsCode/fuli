@@ -62,11 +62,12 @@ describe('theme layers', () => {
     expect(rule).toContain('user-select: none')
   })
 
-  it('styles one thin scrollbar everywhere: a transparent track and a muted-ink thumb that darkens on hover', () => {
-    expect(elements).toContain('* { scrollbar-width: thin; scrollbar-color: var(--color-muted) transparent; }')
+  it('styles one thin scrollbar everywhere: a transparent track and a thumb that darkens on hover', () => {
+    // Chromium draws its native bar when scrollbar-width is set, so the standard properties are for other browsers only.
+    expect(elements).toContain('@supports not selector(::-webkit-scrollbar) {\n  * { scrollbar-width: thin;')
     expect(elements).toContain('::-webkit-scrollbar { width: 8px; height: 8px; }')
     expect(elements).toContain('::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }')
-    expect(elements).toContain('::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: var(--color-muted) padding-box; }')
-    expect(elements).toContain('::-webkit-scrollbar-thumb:hover { background-color: var(--color-ink-soft); }')
+    expect(elements).toContain('::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: var(--color-border-strong) padding-box; }')
+    expect(elements).toContain('::-webkit-scrollbar-thumb:hover { background-color: var(--color-muted); }')
   })
 })

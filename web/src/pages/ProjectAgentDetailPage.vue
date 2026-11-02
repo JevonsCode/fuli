@@ -11,7 +11,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { agentDisplayName, agentProfilePath, agentResponsibility } from '@/features/agent-profile/profile-model'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
-import AgentPortraitActions from '@/features/agent-profile/AgentPortraitActions.vue'
 import { employeeTemplateIdForAgent, employeeTemplates } from '@/features/employees/catalog'
 import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
@@ -301,15 +300,13 @@ async function cleanup(person: ProjectAgentRecord) {
         <!-- The name is the page's H1 (in the top bar), so this card carries
              only what the name does not say. -->
         <Card as="header" class="agent-resume-header project-agent-summary">
-          <AgentPortraitActions :agent="agent" :space-id="spaceId">
-            <span
-              class="agent-portrait agent-card-identity"
-              :style="agentIdentityStyle(agent.agentId)"
-              aria-hidden="true"
-            >
-              <img :src="agentAvatarUrl(agent.agentId)" alt="" />
-            </span>
-          </AgentPortraitActions>
+          <span
+            class="agent-portrait agent-card-identity"
+            :style="agentIdentityStyle(agent.agentId)"
+            aria-hidden="true"
+          >
+            <img :src="agentAvatarUrl(agent.agentId)" :data-agent-portrait="agent.agentId" alt="" />
+          </span>
           <div class="grid min-w-0 gap-2">
             <p class="project-agent-summary-meta" data-agent-identity>
               <span>{{ t(`projectAgents.agentType.${agent.profile.agentType ?? 'durable'}`) }}</span>

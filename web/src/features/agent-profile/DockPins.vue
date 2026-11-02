@@ -12,7 +12,6 @@ import { agentPinsText, useAgentPinsState } from './agent-pins'
 import { agentDisplayName, agentProfilePath } from './profile-model'
 import { useAgentRecords } from './useAgentRecords'
 import { useAgentWorkSurfaces } from './use-agent-work-surfaces'
-import { usePortraitShake } from './use-portrait-shake'
 
 // Pinned FLAs rise out of the dock's FLAs item in their own capsule. A click
 // opens the FLA's profile; right-click (or the context-menu key) offers its
@@ -31,7 +30,6 @@ const isActive = (agentId: string) => route.path === agentProfilePath(props.spac
 
 // Read once per FLA while the console is open; a failed read is retried on the next open.
 const { surfaces, open: readSurfaces, ready } = useAgentWorkSurfaces(spaceId)
-const { shake } = usePortraitShake()
 // The FLA whose menu is open. The capsule stays up while it is: the pointer and
 // focus are in the menu, outside the dock.
 const menuAgentId = ref<string | null>(null)
@@ -120,8 +118,8 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
         <ContextMenuTrigger as-child>
           <RouterLink class="dock-pin" :class="{ 'is-active': isActive(agent.agentId) }" :to="agentProfilePath(spaceId, agent.agentId)"
             :aria-current="isActive(agent.agentId) ? 'page' : undefined" :aria-label="`${agentDisplayName(agent)} · ${t('agentProfiles.profile')}`"
-            :data-name="agentDisplayName(agent)" :data-pinned-agent="agent.agentId" :style="agentIdentityStyle(agent.agentId)" @click="shake" @pointerdown="pressed">
-            <img :src="agentAvatarUrl(agent.agentId)" alt="" />
+            :data-name="agentDisplayName(agent)" :data-pinned-agent="agent.agentId" :style="agentIdentityStyle(agent.agentId)" @pointerdown="pressed">
+            <img :src="agentAvatarUrl(agent.agentId)" :data-agent-portrait="agent.agentId" alt="" />
           </RouterLink>
         </ContextMenuTrigger>
         <ContextMenuContent data-pin-menu @close-auto-focus="returnFocus">

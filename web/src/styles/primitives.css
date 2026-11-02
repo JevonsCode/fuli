@@ -47,7 +47,7 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(var(-
 .ui-dialog[open] { animation: ui-dialog-in 180ms var(--motion-ease); }
 @keyframes ui-dialog-in { from { opacity: 0; transform: translateY(6px) scale(.99); } }
 
-/* A FLA portrait's playful click shake (Jevons 11-02): the wrapper adds the
+/* An FLA portrait's playful click shake (Jevons 11-02): the app context menu adds the
    class for ~400ms and never prevents the click, so a portrait inside a link
    still follows it. The reduced-motion rules below already shorten it to none,
    and the click handler skips it under reduced motion. */

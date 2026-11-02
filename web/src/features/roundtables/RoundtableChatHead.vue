@@ -19,7 +19,7 @@ const open = ref(false)
   <header class="rt-chat-head">
     <span class="rt-chat-faces" aria-hidden="true">
       <span v-for="seat in seats.slice(0, 4)" :key="seat.key" :style="agentIdentityStyle(seat.person.agentId)"><img
-        v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" alt="" /><template v-else>{{ (seat.person.name ?? '?').slice(0, 1) }}</template></span>
+        v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" :data-agent-portrait="seat.person.agentId" alt="" /><template v-else>{{ (seat.person.name ?? '?').slice(0, 1) }}</template></span>
     </span>
     <h2 tabindex="-1" class="rt-chat-title" :title="title" data-roundtable-detail-title>{{ title }}</h2>
     <p class="rt-chat-meta">{{ meta }}</p>

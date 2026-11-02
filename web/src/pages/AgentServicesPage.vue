@@ -220,7 +220,7 @@ async function confirmDelete() {
                   <span class="service-meta">{{ service.address ?? t(`agentServices.kind.${service.kind}`) }}</span>
                 </span>
                 <span class="service-face" :class="{ 'is-none': !service.agentId }" :style="service.agentId ? agentIdentityStyle(service.agentId) : undefined" :title="names.agent(service.agentId)">
-                  <img v-if="service.agentId" :src="agentAvatarUrl(service.agentId)" alt="" />
+                  <img v-if="service.agentId" :src="agentAvatarUrl(service.agentId)" :data-agent-portrait="service.agentId" alt="" />
                   <span class="ui-sr-only">{{ names.agent(service.agentId) }}</span>
                 </span>
                 <UiIcon name="chevron-down" :size="16" class="service-chevron" />

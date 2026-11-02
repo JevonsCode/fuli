@@ -37,7 +37,7 @@ const pick = (id: string) => { only.value = only.value === id ? null : id }
             :aria-label="only === fla.agentId ? t('overview.cast.all') : t('overview.cast.only', { name: agentName(fla.agentId) })"
             :data-cast-fla="fla.agentId" @click="pick(fla.agentId)">
             <span class="cast-face" :style="agentIdentityStyle(fla.agentId)" aria-hidden="true">
-              <img :src="agentAvatarUrl(fla.agentId)" alt="" />
+              <img :src="agentAvatarUrl(fla.agentId)" :data-agent-portrait="fla.agentId" alt="" />
               <span v-if="fla.status === 'completed'" class="cast-done"><UiIcon name="check" :size="8" /></span>
             </span>
             <span class="cast-who">

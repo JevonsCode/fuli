@@ -28,7 +28,6 @@ import { occupationLabels } from "./agent-occupation";
 import { agentManagementPath } from "@/features/project-agents/orchestration-filters";
 import { statusTone } from "@/features/project-agents/task-labels";
 import type { ProjectAgentRecord } from "@/types";
-import AgentPortraitActions from "./AgentPortraitActions.vue";
 
 const WORKING_RING_MS = 2400;
 
@@ -155,17 +154,15 @@ function surfaceClick(event: MouseEvent) {
     @click="surfaceClick"
   >
     <div class="agent-card-topline flex items-start gap-3">
-      <AgentPortraitActions :agent="agent" :space-id="spaceId">
-        <span
-          class="agent-portrait small agent-card-identity"
-          :class="{ 'is-working': workStatus === 'running' }"
-          :style="[agentIdentityStyle(agent.agentId), { '--working-phase': workingPhase }]"
-          aria-hidden="true"
-          data-card-portrait
-        >
-          <img :src="agentAvatarUrl(agent.agentId)" alt="" />
-        </span>
-      </AgentPortraitActions>
+      <span
+        class="agent-portrait small agent-card-identity"
+        :class="{ 'is-working': workStatus === 'running' }"
+        :style="[agentIdentityStyle(agent.agentId), { '--working-phase': workingPhase }]"
+        aria-hidden="true"
+        data-card-portrait
+      >
+        <img :src="agentAvatarUrl(agent.agentId)" :data-agent-portrait="agent.agentId" alt="" />
+      </span>
       <div class="min-w-0 flex-1">
         <div class="agent-directory-name flex min-w-0 items-start gap-1.5">
           <RouterLink

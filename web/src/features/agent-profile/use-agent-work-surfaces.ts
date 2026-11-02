@@ -9,9 +9,8 @@ export type SurfaceState =
 
 /**
  * Reads each FLA's work surfaces once, on the first menu open, and keeps the
- * result (or the failure) for the rest of the console session. The dock's pins
- * and every portrait's right-click menu share this, so an FLA's surfaces are
- * read once, not once per menu.
+ * result (or the failure) for as long as its owner lives. The dock's pins and
+ * the app's portrait menu (AppContextMenu) each keep one.
  */
 export function useAgentWorkSurfaces(spaceId: Ref<string>) {
   const surfaces = ref<Record<string, SurfaceState>>({})

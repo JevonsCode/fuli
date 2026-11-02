@@ -99,7 +99,7 @@ onMounted(async () => {
         <GrowthLoading v-if="loadingTeam" variant="inline" :label="t('knowledge.workspace.projectPeek.loadingTeam')" />
         <ul v-else-if="people.length" class="project-peek-people">
           <li v-for="(person, index) in people" :key="person.agentId" :class="{ 'is-working': working(person.agentId) }" data-project-person>
-            <span class="project-peek-avatar"><img :src="agentAvatarUrl(person.agentId)" alt="" /></span>
+            <span class="project-peek-avatar"><img :src="agentAvatarUrl(person.agentId)" :data-agent-portrait="person.agentId" alt="" /></span>
             <span class="project-peek-person">
               <strong>{{ person.name }}</strong>
               <small>{{ index === 0 && team?.lead ? t('knowledge.workspace.projectPeek.lead') : person.responsibility }}</small>
