@@ -412,3 +412,13 @@ test('a definite remote queue rejection releases the source execution claim', as
   await assert.rejects(roundtable.messageAgent({taskContextToken:'token-milo',sourceApplication:'claude_code',to,body:'snapshot',chatWake:{}}),/queue full/);
   assert.deepEqual(store.executionState('space',to),{busy:false,held:false});
 });
+
+test('an unknown thread is reported as the thread, never as a missing Agent (rec#68)', async () => {
+  const { roundtable } = fixture();
+  await assert.rejects(roundtable.messageAgent({ to: 'Milo Reed', body: 'x', threadId: 'host-session-7',
+    sourceApplication: 'codex', wait: false }), error => {
+    assert.match(error.message, /Roundtable thread host-session-7 not found\. Agent Milo Reed exists/);
+    assert.match(error.message, /Omit threadId to start a new thread/);
+    return true;
+  });
+});

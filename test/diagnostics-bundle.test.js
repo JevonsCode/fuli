@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { createDiagnosticsBundle } from '../src/system/diagnostics-bundle.js';
+import { createLogRetention, fuliLogPaths } from '../src/system/log-retention.js';
 import { createRedactor, REDACTION_KINDS } from '../src/system/diagnostics-redaction.js';
 import { handleDiagnosticsApiRequest } from '../src/http/diagnostics-api-router.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
@@ -135,9 +136,40 @@ test('the route answers only this computer in the active personal space, and no 
   assert.equal((await api(system, path, '127.0.0.1', 'POST')).status, 405);
   assert.equal((await api(null, path)).handled, false);
 
-  const console = ['src/system/diagnostics-bundle.js', 'src/http/diagnostics-api-router.js'].map((file) => join(ROOT, file));
+  const console = ['src/system/diagnostics-bundle.js', 'src/system/log-retention.js', 'src/http/diagnostics-api-router.js'].map((file) => join(ROOT, file));
   for (const entry of ['src/mcp-server.js', 'src/agent-tools.js', 'src/mcp/create-mcp-server.js']) {
     const modules = reachableModules(join(ROOT, entry));
     assert.deepEqual(console.filter((file) => modules.has(file)), [], entry);
   }
+});
+
+test('old logs are sized and cleared only from this computer, in the active personal space', async () => {
+  const cleared = [];
+  const system = { logArchives: () => ({ files: 2, bytes: 1024 }), clearLogArchives: () => { cleared.push(true); return { freedBytes: 1024 }; } };
+  const path = '/api/system/log-archives?personalSpaceId=space-a';
+  assert.deepEqual((await api(system, path)).body, { files: 2, bytes: 1024 });
+  assert.equal((await api(system, path, '192.0.2.10', 'DELETE')).body.code, 'local_user_only');
+  assert.equal((await api(system, '/api/system/log-archives?personalSpaceId=space-b', '127.0.0.1', 'DELETE')).status, 403);
+  assert.deepEqual(cleared, []);
+  assert.deepEqual((await api(system, path, '127.0.0.1', 'DELETE')).body, { freedBytes: 1024 });
+  assert.equal((await api(system, path, '127.0.0.1', 'POST')).status, 405);
+});
+
+test('log retention checks every FULI log on a timer and clears only kept copies', (t) => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'fuli-log-retention-'));
+  t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+  const paths = { logPath: join(dataDir, 'logs', 'console.log'), nativePersonalDir: join(dataDir, 'personal'),
+    nativeWorkspaceDir: join(dataDir, 'workspace') };
+  const logs = fuliLogPaths(paths);
+  assert.equal(logs.length, 5);
+  for (const log of logs) { mkdirSync(dirname(log), { recursive: true }); writeFileSync(log, 'current'); }
+  writeFileSync(`${logs[1]}.1`, 'older');
+  let check = null, cancelled = false;
+  const retention = createLogRetention({ paths, schedule: (run) => { check = run; return {}; }, cancel: () => { cancelled = true; } });
+  check();
+  assert.deepEqual(retention.archives(), { files: 1, bytes: 5 });
+  assert.deepEqual(retention.clearArchives(), { freedBytes: 5 });
+  assert.deepEqual(logs.map((log) => readFileSync(log, 'utf8')), Array(5).fill('current'));
+  retention.close();
+  assert.equal(cancelled, true);
 });

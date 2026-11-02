@@ -1,5 +1,8 @@
-import { currentLocale, t } from '@/i18n'
+import { t } from '@/i18n'
+import { formatBytes } from '@/lib/format-bytes'
 import type { AgentAppRow } from './agent-apps'
+
+export { formatBytes }
 
 // How an app reads in the list: which group it sits in and its one status line.
 // Everything comes from the app's recorded status, versions, run gate and
@@ -43,8 +46,3 @@ export const versionStateLabel = (state: string) => known(`agentApps.versionStat
 export const historyLabel = (action: string) => known(`agentApps.history.${action}`, action)
 
 /** A data size in the reader's language: bytes, KB or MB, one decimal at most. */
-export function formatBytes(bytes: number): string {
-  const units = [['megabyte', 1024 * 1024], ['kilobyte', 1024]] as const
-  const [unit, size] = units.find(([, size]) => bytes >= size) ?? ['byte', 1]
-  return new Intl.NumberFormat(currentLocale(), { style: 'unit', unit, unitDisplay: 'short', maximumFractionDigits: 1 }).format(bytes / size)
-}

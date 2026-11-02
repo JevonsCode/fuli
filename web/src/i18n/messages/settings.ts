@@ -280,6 +280,11 @@ export const settingsMessages = {
       exported: '已导出诊断包',
       exportedTo: '已导出诊断包：{path}',
       exportError: '无法导出诊断包：{reason}',
+      oldLogs: '旧日志占用 {size}（轮转留下的副本，当前日志不受影响）',
+      clearOldLogs: '清理旧日志',
+      clearingOldLogs: '正在删除旧日志副本…',
+      oldLogsCleared: '已删除旧日志副本，释放 {size}',
+      oldLogsError: '无法清理旧日志：{reason}',
       kinds: {
         home_directory: '用户目录',
         username: '用户名',
@@ -580,6 +585,11 @@ export const settingsMessages = {
       exported: 'Diagnostics bundle exported',
       exportedTo: 'Diagnostics bundle exported: {path}',
       exportError: 'Could not export the diagnostics bundle: {reason}',
+      oldLogs: 'Old logs use {size} (copies left by rotation; current logs are kept)',
+      clearOldLogs: 'Clear old logs',
+      clearingOldLogs: 'Deleting old log copies…',
+      oldLogsCleared: 'Old log copies deleted, {size} freed',
+      oldLogsError: 'Could not clear old logs: {reason}',
       kinds: {
         home_directory: 'home folder',
         username: 'user name',

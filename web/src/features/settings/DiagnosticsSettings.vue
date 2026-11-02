@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { apiErrorReason } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import UiNotice from '@/ui/UiNotice.vue'
 import { t } from '@/i18n'
+import { formatBytes } from '@/lib/format-bytes'
 import { saveFile } from '@/lib/save-file'
 import { useConsoleStore } from '@/stores/console'
-import { diagnosticsExport, readDiagnosticsBundle, redactionSummary, type DiagnosticsBundle } from './diagnostics-bundle'
+import { clearLogArchives, diagnosticsExport, readDiagnosticsBundle, readLogArchives, redactionSummary, type DiagnosticsBundle } from './diagnostics-bundle'
 
 // 诊断包: 「生成诊断包」 shows exactly the files that would leave this
 // computer, what was hidden on top; 「导出」 saves that same bundle as one file.
@@ -18,6 +19,36 @@ const exporting = ref(false)
 const error = ref('')
 const exported = ref('')
 const hidden = computed(() => bundle.value ? redactionSummary(bundle.value.redactions) : [])
+// 「清理旧日志」: the kept copies rotation left (REC #67) stay until the person
+// clears them here; a card with none says nothing about them.
+const oldLogBytes = ref(0)
+const clearing = ref(false)
+const cleared = ref('')
+
+onMounted(async () => {
+  const spaceId = store.activePersonalSpace?.id
+  if (!spaceId) return
+  try {
+    oldLogBytes.value = (await readLogArchives(spaceId)).bytes
+  } catch {
+    // Without the size there is nothing to offer; the bundle still works.
+  }
+})
+
+async function clearOldLogs() {
+  const spaceId = store.activePersonalSpace?.id
+  if (clearing.value || !spaceId) return
+  clearing.value = true; error.value = ''; cleared.value = ''
+  try {
+    const { freedBytes } = await clearLogArchives(spaceId)
+    oldLogBytes.value = 0
+    cleared.value = t('settings.diagnostics.oldLogsCleared', { size: formatBytes(freedBytes) })
+  } catch (caught) {
+    error.value = t('settings.diagnostics.oldLogsError', { reason: apiErrorReason(caught) })
+  } finally {
+    clearing.value = false
+  }
+}
 
 async function generate() {
   const spaceId = store.activePersonalSpace?.id
@@ -61,6 +92,14 @@ async function exportBundle() {
     </CardHeader>
     <div class="diagnostics-body">
       <UiNotice v-if="error" tone="error">{{ error }}</UiNotice>
+      <div v-if="oldLogBytes" class="diagnostics-old-logs" data-diagnostics-old-logs>
+        <span>{{ t('settings.diagnostics.oldLogs', { size: formatBytes(oldLogBytes) }) }}</span>
+        <Button type="button" size="sm" variant="outline" :loading="clearing" :loading-label="t('settings.diagnostics.clearingOldLogs')"
+          data-diagnostics-clear-logs @click="clearOldLogs">
+          {{ t('settings.diagnostics.clearOldLogs') }}
+        </Button>
+      </div>
+      <UiNotice v-if="cleared" tone="success">{{ cleared }}</UiNotice>
       <template v-if="bundle">
         <p class="diagnostics-redactions" data-diagnostics-redactions>
           <strong>{{ t('settings.diagnostics.redactions') }}</strong>
@@ -99,5 +138,6 @@ async function exportBundle() {
   max-height: 320px; margin: 0; padding: 8px 10px; overflow: auto; border-top: 1px solid var(--color-border);
   font-size: var(--text-meta); white-space: pre-wrap; overflow-wrap: anywhere;
 }
+.diagnostics-old-logs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: var(--text-meta); color: var(--color-muted); }
 .diagnostics-export { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 </style>

@@ -48,7 +48,19 @@ export async function currentTaskPreferences(input, { sourceApplication, current
     taskContextToken: task.token, sourceApplication, sourceSessionId: input.session_id, sourceSessionVerified: true
   });
   if (recovered?.status === SESSION_FULI_OFF) return { status: 'fuli_off' };
-  return { status: 'refreshed', context: compactTaskContext(recovered) };
+  return { status: 'refreshed', context: compactTaskContext(withoutHookCursor(recovered)) };
+}
+
+// A cursor belongs to the reader process that paged this result; the Agent's
+// own MCP reader never honours it (rec#68). A hook frame hands out its first
+// page only, and the Agent reads every page itself from the start.
+const HOOK_PAGE_GUIDANCE = 'This frame is only the first page and carries no cursor. Call read_task_preferences '
+  + 'with this taskContextToken and no cursor, then follow its next_cursor until preferences_complete=true; '
+  + 'apply nothing before every page of that one revision is present.';
+function withoutHookCursor(value) {
+  if (value?.preference_delivery?.status !== 'paginated') return value;
+  const { next_cursor: _cursor, ...delivery } = value.preference_delivery;
+  return { ...value, preference_delivery: { ...delivery, guidance: HOOK_PAGE_GUIDANCE } };
 }
 
 // `inlineChars` is the inline limit of a host that keeps only a preview of a
