@@ -6,9 +6,10 @@
 //   0.x `cn` package upstream switched to on 2026-10-15.
 // - data-variant and data-size are set for the defaults too, as in shadcn/ui.
 // - A native button defaults to type="button", so it never submits by accident.
-// - `loading` replaces the content with GrowthLoading (inline) and
-//   `loadingLabel`, and disables the button so a pending action cannot be
-//   sent twice (AGENTS.md, Loading Feedback).
+// - `loading` shows GrowthLoading (inline, named by `loadingLabel`) over the
+//   content, which keeps its room but turns invisible, so the button never
+//   changes size and nothing beside it moves (Jevons 11-02); it also disables
+//   the button so a pending action cannot be sent twice (AGENTS.md, Loading Feedback).
 import type { PrimitiveProps } from "reka-ui"
 import type { HTMLAttributes } from "vue"
 import type { ButtonVariants } from "."
@@ -49,9 +50,23 @@ const native = computed(() => props.as === "button" && !props.asChild)
     :type="native ? type : undefined"
     :disabled="native && (disabled || loading) ? true : undefined"
     :aria-busy="loading || undefined"
-    :class="cn(buttonVariants({ variant, size }), props.class)"
+    :class="cn(buttonVariants({ variant, size }), props.class, loading && 'is-loading')"
   >
-    <GrowthLoading v-if="loading" variant="inline" :label="loadingLabel" />
-    <slot v-else />
+    <!-- asChild hands every attribute to the one child (a link), so it gets no wrapper. -->
+    <slot v-if="asChild" />
+    <template v-else>
+      <span class="button-content"><slot /></span>
+      <GrowthLoading v-if="loading" class="button-loading" variant="inline" :label="loadingLabel" />
+    </template>
   </Primitive>
 </template>
+
+<style scoped>
+/* The content keeps laying out the button (display: contents) and only turns invisible while loading. */
+.button-content { display: contents; }
+.is-loading { position: relative; }
+.is-loading > .button-content { visibility: hidden; }
+/* The mark sits over the content; its words are its accessible name, not drawn in the narrow button. */
+.button-loading { position: absolute; inset: 0; justify-content: center; }
+.button-loading :deep(.growth-loading__label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>

@@ -75,12 +75,11 @@ describe('design system adoption', () => {
 
 // Controls of their own kind whose height is not a row control's (a card's
 // corner handle, a choice card, a To: chip row's bare search, a composer's
-// borderless textarea, the language switcher's tiny toggle).
+// borderless textarea).
 const HAND_SIZED_ALLOWED = [
   'features/employees/EmployeeTaskBoard.vue .employee-all-projects-drag-handle',
   'features/preferences/PreferenceConflictDialog.vue .conflict-resolution-options > button',
   'features/roundtables/RoundtableComposer.vue .rt-compose-input',
-  'styles/vue.css .locale-switcher button',
 ]
 const CONTROL_SELECTOR = /\binput\b(?!\[type=["']?(?:checkbox|radio))|\bselect\b|\btextarea\b|\bbutton\b|\[data-slot=["']?(?:button|input|select-trigger|option-select|option-combobox|combobox-anchor)|-(?:search|select|input|trigger|picker)\b|-picker\s*>\s*summary/
 const PIXEL_HEIGHT = /(?<![-\w])(?:min-)?height\s*:\s*(?:[2-9]\d|\d{3,})(?:\.\d+)?px/
