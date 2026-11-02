@@ -147,6 +147,7 @@ test('the console reads the moved ports from its runtime state', async (t) => {
     clientObserver: { observe: () => ({ clients: [] }) }, clientInstaller: async () => assert.fail('nothing to connect'),
     versionChecker: { peek: () => null, check: async () => assert.fail('the doctor never waits on the network') },
     update: { status: () => null, kind: () => 'npm' },
+    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }),
     previewDataFormats: async () => ({ digest: null, stores: [], blocked: [], undoable: [] }) });
   const answer = await service.doctor();
   assert.deepEqual(answer.unchecked, []);
@@ -243,18 +244,39 @@ test('a graph step seen waiting stays a finding while the provider sleeps, until
 
 test('a client whose host keeps its hook trust unreadable is named unchecked, never guessed', async (t) => {
   const checkup = doctor(t, {
-    hookTrustUnreadable: ['codex'],
+    hookTrust: async () => ({ codex: { readable: false, reason: 'codex_missing' } }),
     observeClients: () => ({ clients: [client('codex', 'connected'), client('claude_code', 'connected')] })
   });
   const answer = await checkup.check();
   assert.equal(answer.overall, 'ok');
   assert.deepEqual(answer.items, []);
   assert.deepEqual(answer.unchecked, ['hook_trust:codex']);
-  assert.deepEqual(answer.uncheckedReasons, { 'hook_trust:codex': 'host_trust_unreadable' });
+  assert.deepEqual(answer.uncheckedReasons, { 'hook_trust:codex': 'codex_missing' });
   // Without FULI's integration there are no FULI hooks to trust.
-  const absent = doctor(t, { hookTrustUnreadable: ['codex'],
+  const absent = doctor(t, { hookTrust: async () => ({ codex: { readable: false, reason: 'codex_missing' } }),
     observeClients: () => ({ clients: [client('codex', 'not_connected')] }) });
   assert.deepEqual((await absent.check()).unchecked, []);
+});
+
+test('a client whose host does not trust FULI\'s hooks is one warning; a trusted one is not listed', async (t) => {
+  const untrusted = doctor(t, {
+    hookTrust: async () => ({ codex: { readable: true, untrusted: ['preCompact', 'UserPromptSubmit'] } }),
+    observeClients: () => ({ clients: [client('codex', 'connected')] })
+  });
+  const answer = await untrusted.check();
+  assert.equal(answer.overall, 'needs_person');
+  assert.deepEqual(answer.items, [{ id: 'hook_trust_untrusted:codex', kind: 'hook_trust_untrusted', severity: 'warning',
+    fix: 'person', data: { clientId: 'codex', label: 'CODEX', untrusted: ['preCompact', 'UserPromptSubmit'] } }]);
+  assert.deepEqual(answer.unchecked, []);
+
+  const trusted = doctor(t, {
+    hookTrust: async () => ({ codex: { readable: true, untrusted: [] } }),
+    observeClients: () => ({ clients: [client('codex', 'connected')] })
+  });
+  const healthy = await trusted.check();
+  assert.equal(healthy.overall, 'ok');
+  assert.deepEqual(healthy.items, []);
+  assert.deepEqual(healthy.unchecked, []);
 });
 
 // A client installer and update journal in memory: what each repair did.
@@ -393,6 +415,7 @@ test('the system service reads its own sources: this data directory\'s live serv
     },
     versionChecker: { peek: () => null, check: async () => assert.fail('the doctor never waits on the network') },
     update: { status: () => null, kind: () => 'npm' },
+    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }),
     previewDataFormats: async () => ({ digest: null, stores: [], blocked: [], undoable: [] }) });
 
   const answer = await system.doctor();

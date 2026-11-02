@@ -138,6 +138,21 @@ describe('DoctorBanner', () => {
     expect(wrapper.get('[data-doctor-items]').text()).toContain('1 个会话还在用 0.21.0，重启这些会话就会用上新版。')
   })
 
+  it('names a client whose hooks are not trusted and points to its /hooks', async () => {
+    const untrusted = item('hook_trust_untrusted:codex', 'hook_trust_untrusted', 'warning', 'person',
+      { clientId: 'codex', label: 'Codex', untrusted: ['preCompact'] })
+    api.getJson.mockResolvedValue(report('needs_person', [untrusted]))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    const text = wrapper.get('[data-doctor-items]').text()
+    expect(text).toContain('有客户端的 FULI hooks 还没被信任：Codex')
+    expect(text).toContain('请在 Codex 里打开 /hooks，审阅并信任 FULI 的 hooks。')
+    expect(text).not.toMatch(/hook_trust_untrusted/)
+    expect(wrapper.findAllComponents(RouterLinkStub)).toHaveLength(0)
+    expect(wrapper.find('[data-doctor-repair]').exists()).toBe(false)
+  })
+
   it('reads a kind it does not know yet as something to look at', async () => {
     api.getJson.mockResolvedValue(report('needs_person', [item('graph_offline', 'graph_offline', 'warning', 'person')]))
     const { wrapper } = mountBanner()

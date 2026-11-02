@@ -19,6 +19,7 @@ export const doctorMessages = {
       data_format_blocked: '有数据暂时用不了',
       sessions_outdated: '打开的会话还在用旧版 FULI',
       update_left_work: '上次更新还有没做完的事',
+      hook_trust_untrusted: '有客户端的 FULI hooks 还没被信任',
       other: '还有一件事需要你看看',
     },
     hints: {
@@ -29,6 +30,7 @@ export const doctorMessages = {
       sessions: '{count} 个会话还在用 {version}，重启这些会话就会用上新版。',
       updateReconnect: '新版已经装好，客户端还没重新连接；自动修复会补上。',
       updateFailed: '更新没有完成：{reason}',
+      hookTrustUntrusted: '请在 {client} 里打开 /hooks，审阅并信任 FULI 的 hooks。',
     },
     otherClient: '其他 Agent',
     sessionLinks: {
@@ -59,6 +61,7 @@ export const doctorMessages = {
       data_format_blocked: 'Some data cannot be used right now',
       sessions_outdated: 'Open sessions still run an older FULI',
       update_left_work: 'The last update left something undone',
+      hook_trust_untrusted: 'A client’s FULI hooks are not trusted yet',
       other: 'Something else needs a look',
     },
     hints: {
@@ -69,6 +72,7 @@ export const doctorMessages = {
       sessions: '{count} sessions still run {version}; restart them to load the new version.',
       updateReconnect: 'The new version is installed but the clients were not reconnected; fixing automatically finishes that.',
       updateFailed: 'The update did not finish: {reason}',
+      hookTrustUntrusted: 'Open /hooks in {client} and trust FULI’s hooks there.',
     },
     otherClient: 'Other Agent',
     sessionLinks: {

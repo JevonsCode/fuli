@@ -4,7 +4,9 @@ import { readJsonFile, writeJsonFileAtomic } from '../../storage/json-file.js';
 import { platformPath } from '../../system/platform-path.js';
 
 const TOOLS = new Set(['begin_task_context', 'verify_task_checkpoint']);
-const COMMAND_MARKER = '--fuli-lifecycle';
+// The argument FULI's lifecycle hook command always carries; a hook whose
+// command contains it is FULI's (also read by hook-trust-reader.js).
+export const COMMAND_MARKER = '--fuli-lifecycle';
 const TOML_HOOK_GROUP = /^\s*\[\[hooks\.([A-Za-z][A-Za-z0-9_]*)]]\s*(?:#.*)?$/;
 const TOML_TABLE = /^\s*\[{1,2}([^\]]+)\]{1,2}\s*(?:#.*)?$/;
 

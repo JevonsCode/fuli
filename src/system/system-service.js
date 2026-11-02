@@ -27,7 +27,7 @@ import { sessionClientRecords } from '../agent-kits/session-clients.js';
 import { createSessionOffers } from '../agent-kits/session-offers.js';
 import { customClientStore } from '../agent-kits/custom-clients.js';
 import { createCustomClients } from './custom-client-connection.js';
-import { CODEX_HOOK_TRUST_CLIENT } from '../agents/codex/hook-trust.js';
+import { CODEX_HOOK_TRUST_CLIENT, createCodexHookTrust } from '../agents/codex/hook-trust.js';
 import { readFormatOperations } from '../data-format/operations-log.js';
 
 export function createSystemService({
@@ -54,6 +54,8 @@ export function createSystemService({
   update = consoleUpdate(paths.dataDir),
   // The data format plan (migration-plan.js) the doctor reads; null without a local installation.
   previewDataFormats = null,
+  // Reads Codex's hook trust from its app-server (src/agents/codex/hook-trust.js).
+  codexHookTrust = createCodexHookTrust(),
   runtimeBroker = createAdaptiveRuntimeBroker({
     paths,
     settings: readAdaptiveRuntimeSettings(paths.adaptiveRuntimeSettingsPath),
@@ -117,7 +119,7 @@ export function createSystemService({
   const observeClients = () => clientObserver.observe();
   const doctor = createDoctor({ observeClients, previewDataFormats,
     formatOperations: () => readFormatOperations(paths.dataDir), graphStage: () => runtimeBroker.status().stage,
-    hookTrustUnreadable: [CODEX_HOOK_TRUST_CLIENT],
+    hookTrust: async () => ({ [CODEX_HOOK_TRUST_CLIENT]: await codexHookTrust() }),
     liveProcesses: () => liveMcpProcesses(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
     lastUpdate: () => update.status(),
     portMoves: () => {

@@ -39,12 +39,15 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 // liveProcesses: live MCP server records (process-registry.js).
 // latestVersion: the version checker's last answer without waiting, or null.
 // lastUpdate: the console update journal's status (console-update.js), or null.
-// hookTrustUnreadable: IDs of clients whose host keeps its trust in FULI's
-//   hooks where FULI cannot read it (src/agents/<client>/hook-trust.js).
+// hookTrust: whether each client's host trusts FULI's lifecycle hooks, read by
+//   that client's own reader (src/agents/<client>/hook-trust-reader.js): an
+//   async function returning { [clientId]: { readable: true, untrusted: [eventName...] }
+//   | { readable: false, reason } }. A readable client with untrusted hooks is a
+//   warning; an unreadable one stays in unchecked, never guessed healthy.
 // portMoves: the ports the running console's start moved by itself
 // ({ movedAt, moves }, blocked-port-recovery.js), or null.
 export function createDoctor({ observeClients, previewDataFormats = null, formatOperations = () => [],
-  graphStage = () => null, liveProcesses, latestVersion, lastUpdate, hookTrustUnreadable = [],
+  graphStage = () => null, liveProcesses, latestVersion, lastUpdate, hookTrust = async () => ({}),
   portMoves = () => null, version = FULI_VERSION, now = () => new Date() }) {
   // The personal graph's last answer while its provider answered: the step it
   // waited on, or null, and when that was seen.
@@ -74,9 +77,15 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
         if (lastGraph?.waiting) rememberedGraph = [waitingItem(lastGraph.waiting, { lastSeenAt: lastGraph.seenAt })];
       }
     }
-    for (const client of (clients?.clients ?? []).filter((candidate) =>
-      hookTrustUnreadable.includes(candidate.id) && PRESENT_CLIENT.has(candidate.status))) {
-      notChecked(`hook_trust:${client.id}`, 'host_trust_unreadable');
+    const trust = await read('hook_trust', hookTrust) ?? {};
+    const untrustedHooks = [];
+    for (const client of (clients?.clients ?? []).filter((candidate) => PRESENT_CLIENT.has(candidate.status))) {
+      const result = trust[client.id];
+      if (!result) continue;
+      if (result.readable !== true) notChecked(`hook_trust:${client.id}`, result.reason);
+      else if (Array.isArray(result.untrusted) && result.untrusted.length) {
+        untrustedHooks.push(hookTrustUntrustedItem(client, result.untrusted));
+      }
     }
     const processes = await read('sessions', liveProcesses);
     const latest = await read('update', latestVersion);
@@ -84,6 +93,7 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
     const moved = await read('runtime', portMoves);
     const items = [
       ...clientItems(clients?.clients ?? []),
+      ...untrustedHooks,
       ...dataFormatItems(formats),
       ...rememberedGraph,
       ...sessionItems(processes ?? [], version),
@@ -110,6 +120,14 @@ function clientItems(clients) {
   return clients.filter((client) => OUTDATED_CLIENT.has(client.status) && client.previouslyConnected)
     .map((client) => item(`client_outdated:${client.id}`, 'client_outdated', 'warning', canInstall(client) ? 'auto' : 'person',
       { clientId: client.id, label: client.label, status: client.status, ...(client.since ? { since: client.since } : {}) }));
+}
+
+// A client whose host does not trust FULI's lifecycle hooks: the person opens
+// that client's own hook review and trusts them there. One item per client,
+// naming the untrusted events.
+function hookTrustUntrustedItem(client, untrusted) {
+  return item(`hook_trust_untrusted:${client.id}`, 'hook_trust_untrusted', 'warning', 'person',
+    { clientId: client.id, label: client.label, untrusted });
 }
 
 // Steps that wait for the person's confirmation, and stores FULI cannot use

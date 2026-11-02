@@ -122,6 +122,9 @@ function itemView(item: DoctorItem): Omit<DoctorItemView, 'since'> {
       return { title, subject: '', to: null, hint: data.status === 'failed'
         ? t('doctor.hints.updateFailed', { reason: text(data.error) })
         : t('doctor.hints.updateReconnect') }
+    case 'hook_trust_untrusted':
+      return { title, subject: text(data.label), to: null,
+        hint: t('doctor.hints.hookTrustUntrusted', { client: text(data.label) }) }
     default:
       return { title, subject: '', hint: '', to: null }
   }
