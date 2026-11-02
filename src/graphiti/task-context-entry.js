@@ -93,6 +93,22 @@ export async function beginTaskFromPreferences(application, preferences, {
     workLogRequired: Boolean(preferences.project_agent_context?.memory),
     entryVia
   });
+  // rec#63: record which recalled items the Agent was shown, so ranking can
+  // later learn "shown but not used" from "shown and used". Recording only;
+  // it never fails task entry and is skipped for a resumed task.
+  if (!resumed && preferences.task_knowledge_recall) {
+    try {
+      application.recallImpressions?.recordShown({
+        taskContextToken: task.token,
+        personalSpaceId: preferences.context?.personal_space_id,
+        personalProjectId: preferences.context?.personal_project_id ?? null,
+        facts: preferences.task_knowledge_recall.facts,
+        entities: preferences.task_knowledge_recall.entities
+      });
+    } catch {
+      // Ignore: the impression must never fail task entry.
+    }
+  }
   // Only the Provider can establish that a fallback has no claim or worker /
   // coordination associations. Missing metadata keeps the legacy requirement.
   // A request to keep something is never a routine auto-closed task.

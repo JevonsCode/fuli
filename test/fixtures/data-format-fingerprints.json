@@ -56,6 +56,10 @@
       "version": 5,
       "fingerprint": "2d50b7475bb31cb33f5c4104db13c4766b5b1eb654fe2e510992a7a142c422d4"
     },
+    "recall-impressions": {
+      "version": 1,
+      "fingerprint": "cbab735c1ab9b8b38ef95a2fc1f2148352e1bd5399c12eba78a3033d7447248c"
+    },
     "standalone": {
       "version": 1,
       "fingerprint": "d2c2d2c979da20f5546582c0240911615bd1b64d39c5f022c4be1dd7f767d62c"

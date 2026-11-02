@@ -21,6 +21,7 @@ import {
 } from '../model-backends/runtime.js';
 import { createStandingAssignments } from '../standing-assignments/port.js';
 import { createAgentWorkflows } from '../agent-workflows/port.js';
+import { RecallImpressionsStore } from '../knowledge-impressions/store.js';
 import { createAgentAvatars } from '../agent-avatars/port.js';
 import { createWorkSurfaces } from '../work-surfaces/port.js';
 import { workSurfaceNames, workSurfaceSources } from '../work-surfaces/sources.js';
@@ -75,6 +76,8 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   app.standingAssignments = createStandingAssignments({ path: paths.standingAssignmentsPath });
   // Each Agent's own workflows (rec#60 D-78); the file is created by the first proposal.
   app.agentWorkflows = createAgentWorkflows({ path: join(dataDir, 'agent-workflows.sqlite') });
+  // Which knowledge the automatic recall showed and which the Agent reported using (rec#63); recording only.
+  app.recallImpressions = new RecallImpressionsStore(join(dataDir, 'recall-impressions.sqlite'));
   // Each Agent's look as the person chose it (rec#11 D-89); the file is created by the first choice.
   app.agentAvatars = createAgentAvatars({ path: join(dataDir, 'agent-avatars.sqlite') });
   // Every FLA's work surfaces in one table, with 全部暂停 and 恢复 (rec#11 D-85); the file is created by the first pause.
@@ -97,6 +100,7 @@ export function closeLocalRuntimes(app) {
   app.judgment?.close();
   app.standingAssignments?.close();
   app.agentWorkflows?.close();
+  app.recallImpressions?.close();
   app.agentAvatars?.close();
   app.workSurfaces?.close();
   app.roleWork?.close();

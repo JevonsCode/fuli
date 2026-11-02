@@ -24,7 +24,7 @@ NOW = datetime(2026, 11, 1, tzinfo=timezone.utc)
 MAX_NDCG_DROP = 0.03
 # BASE_REF's scores on this fixture, frozen so the gate needs no Git history
 # (CI checks out one commit). Re-run with --base-ref to refresh them.
-MAIN_BASELINE = {'ndcg5': 0.7973, 'mrr': 0.7, 'violations': 0}
+MAIN_BASELINE = {'ndcg5': 0.7973, 'mrr': 0.7, 'violations': 0, 'irrelevant@5': 0.32}
 
 
 def git_source(ref, name):
@@ -135,7 +135,7 @@ def ranked_items(ranker, items, query):
 
 
 def metrics(ranker, fixture):
-    ndcg, reciprocal, violations = [], [], 0
+    ndcg, reciprocal, violations, irrelevant = [], [], 0, []
     for case in fixture['queries']:
         judgments = case['judgments']
         ranked = ranked_items(ranker, fixture['items'], case['query'])
@@ -146,6 +146,8 @@ def metrics(ranker, fixture):
         ndcg.append(dcg / idcg)
         reciprocal.append(next((1 / (i + 1) for i, grade in enumerate(grades) if grade > 0), 0))
         top = ranked[:5]
+        # Mean share of grade-0 items among the first five results.
+        irrelevant.append(sum(1 for item in top if judgments.get(item['id'], 0) == 0) / len(top) if top else 0.0)
         for i, item in enumerate(top):
             grade = judgments.get(item['id'], 0)
             if grade <= 0 or not (item['confirmation_status'] == 'pending' or item['requires_attention']):
@@ -156,7 +158,8 @@ def metrics(ranker, fixture):
                 for other in top[i + 1:]
             )
     count = len(fixture['queries'])
-    return {'ndcg5': sum(ndcg) / count, 'mrr': sum(reciprocal) / count, 'violations': violations}
+    return {'ndcg5': sum(ndcg) / count, 'mrr': sum(reciprocal) / count, 'violations': violations,
+            'irrelevant@5': sum(irrelevant) / count}
 
 
 def load_fixture():
@@ -181,9 +184,10 @@ def main():
                         help=f'Git revision to score as the baseline (default: frozen scores of {BASE_REF[:8]})')
     args = parser.parse_args()
     main_result, candidate_result = run(args.candidate_ref, args.base_ref)
-    print(f"{'ranking':<12} {'nDCG@5':>8} {'MRR':>8} {'violations@5':>14}")
+    print(f"{'ranking':<12} {'nDCG@5':>8} {'MRR':>8} {'violations@5':>14} {'irrelevant@5':>14}")
     for name, result in [('main', main_result), ('candidate', candidate_result)]:
-        print(f"{name:<12} {result['ndcg5']:>8.4f} {result['mrr']:>8.4f} {result['violations']:>14}")
+        print(f"{name:<12} {result['ndcg5']:>8.4f} {result['mrr']:>8.4f} {result['violations']:>14} "
+              f"{result['irrelevant@5']:>14.4f}")
     print(f'Pinned now: {NOW.isoformat()}; permitted nDCG@5 drop: {MAX_NDCG_DROP:.2f}')
 
 
