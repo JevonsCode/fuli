@@ -13,6 +13,7 @@ import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
 import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
 import { writeWhileReaderHoldsOpen } from '../test-support/open-file-reader.js';
 import { assertFileMode, refusesRenameOverOpenFile } from '../test-support/platform-capabilities.js';
+import { CHILD_HANG_GUARD_MS } from '../test-support/child-process-guard.js';
 
 const adapter = { normalize: normalizeCodexRecord, verify: verifyCodexTranscript };
 const header = JSON.stringify({ type: 'session_meta', payload: { id: 'session' } }) + '\n';
@@ -369,7 +370,9 @@ test('a killed hook leaves resumable state and its OS lock is released on proces
       await guard.write({ version: 1, phase: 'scan', owner: transcriptDigest('old'), prompt: transcriptDigest('incoming'), scanCursor: 123, userMessages: 0, omitted: false });
       process.exit(0);
     });`;
-  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script, moduleUrl, f.runtime, JSON.stringify(f.input)], { encoding: 'utf8', timeout: 5000 });
+  // A loaded Windows runner can exceed a few seconds just starting Node; the
+  // timeout is a hang guard only, never the deadline under test.
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script, moduleUrl, f.runtime, JSON.stringify(f.input)], { encoding: 'utf8', timeout: CHILD_HANG_GUARD_MS });
   assert.equal(child.status, 0, child.stderr);
   await f.run(async guard => { assert.equal(guard.value.scanCursor, 123); });
 });
