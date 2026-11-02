@@ -107,3 +107,20 @@ test('system settings distinguish immediately applied refresh changes from resta
   assert.equal(changedPort.apply.status, 'applying');
   assert.deepEqual(await service.versionStatus(), { updateAvailable: true, updateKind: 'windows-tray' });
 });
+
+test('a Docker graph is not switched to an empty built-in one from settings; it moves through the migration', async () => {
+  const container = { ...structuredClone(DEFAULT_RUNTIME_SETTINGS), graphRuntimeMode: 'container' };
+  let writes = 0;
+  const service = createSystemService({
+    paths: PATHS, packageRoot: '/package', activePort: 2727, activeLan: false,
+    settingsApplier: { status: () => null, prepare: async () => ({ id: 'test-apply', status: 'applying' }) },
+    readJson: (path, fallback) => path === PATHS.graphRuntimeStatePath ? { port: 2727, runtimeSettings: container } : fallback,
+    readSettings: () => container,
+    writeSettings: () => { writes += 1; },
+    resourceMonitor: { sample: async () => ({ status: 'ready' }) },
+    versionChecker: { check: async () => ({}) },
+    update: { kind: () => 'windows-tray' }
+  });
+  await assert.rejects(service.updateSettings({ ...container, graphRuntimeMode: 'native' }), /迁移到内置图数据库/);
+  assert.equal(writes, 0);
+});

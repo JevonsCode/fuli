@@ -13,6 +13,7 @@ const _knownKinds = {
   'update_available',
   'update_left_work',
   'ports_moved',
+  'graph_container',
 };
 
 /// One doctor item as a card: its plain sentence and the one button that
