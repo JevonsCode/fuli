@@ -15,6 +15,7 @@ export const doctorMessages = {
     open: '去处理',
     kinds: {
       client_outdated: '客户端的 FULI 连接需要更新',
+      graph_container: '知识还在旧版 Docker 图数据库里',
       data_format_waiting: '数据格式更新等你确认',
       data_format_blocked: '有数据暂时用不了',
       sessions_outdated: '打开的会话还在用旧版 FULI',
@@ -24,6 +25,8 @@ export const doctorMessages = {
     },
     hints: {
       clientAuto: '自动修复会重新连接它（会先备份它的配置）。',
+      graphContainer: '在设置里一键迁移到内置图数据库。',
+      graphMigrationFailed: '上次迁移没完成。可在设置里重试，或按 AI 迁移指南处理。',
       clientPerson: '请在设置的客户端里重新连接它。',
       dataFormat: '请在数据格式页看一下再确认。',
       dataFormatLastSeen: '这是图谱 {time} 时的状态，它现在空闲没有运行。确认之前 FULI 写不进图谱；请在数据格式页看一下再确认。',
@@ -57,6 +60,7 @@ export const doctorMessages = {
     open: 'Open',
     kinds: {
       client_outdated: 'A client’s FULI connection needs an update',
+      graph_container: 'Knowledge is still in the old Docker graph',
       data_format_waiting: 'A data format update waits for you',
       data_format_blocked: 'Some data cannot be used right now',
       sessions_outdated: 'Open sessions still run an older FULI',
@@ -66,6 +70,8 @@ export const doctorMessages = {
     },
     hints: {
       clientAuto: 'Fixing automatically reconnects it (its configuration is backed up first).',
+      graphContainer: 'Move it to the built-in graph with one click in Settings.',
+      graphMigrationFailed: 'The last move did not finish. Retry in Settings, or follow the AI migration guide.',
       clientPerson: 'Reconnect it under Settings → Clients.',
       dataFormat: 'Review it on the data format page before you confirm.',
       dataFormatLastSeen: 'This is what the graph reported at {time}; it is idle now. FULI cannot write to the graph until you confirm; review it on the data format page first.',

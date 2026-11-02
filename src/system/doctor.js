@@ -1,5 +1,6 @@
 import { PERSONAL_GRAPH_LABEL } from '../data-format/format-status.js';
 import { FULI_VERSION } from '../package-metadata.js';
+import { LEGACY_MIGRATION_GUIDE_URL } from './graph-migration.js';
 
 // FULI's 体检 (doctor): whether this installation works and what needs fixing,
 // read from what the console already observes. It only reads; the repair
@@ -46,9 +47,11 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 //   warning; an unreadable one stays in unchecked, never guessed healthy.
 // portMoves: the ports the running console's start moved by itself
 // ({ movedAt, moves }, blocked-port-recovery.js), or null.
+// graphRuntime: { mode, migration } — the active graph runtime mode and the
+// last one-click migration (graph-migration.js), or null.
 export function createDoctor({ observeClients, previewDataFormats = null, formatOperations = () => [],
   graphStage = () => null, liveProcesses, latestVersion, lastUpdate, hookTrust = async () => ({}),
-  portMoves = () => null, version = FULI_VERSION, now = () => new Date() }) {
+  portMoves = () => null, graphRuntime = () => null, version = FULI_VERSION, now = () => new Date() }) {
   // The personal graph's last answer while its provider answered: the step it
   // waited on, or null, and when that was seen.
   let lastGraph = null;
@@ -91,7 +94,9 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
     const latest = await read('update', latestVersion);
     const update = await read('update', lastUpdate);
     const moved = await read('runtime', portMoves);
+    const runtime = await read('runtime', graphRuntime);
     const items = [
+      ...graphRuntimeItems(runtime),
       ...clientItems(clients?.clients ?? []),
       ...untrustedHooks,
       ...dataFormatItems(formats),
@@ -112,6 +117,20 @@ function overallOf(items) {
 }
 
 const item = (id, kind, severity, fix, data) => ({ id, kind, severity, fix, data });
+
+// An install from before the built-in graph still keeps its knowledge in a
+// Docker (container) graph. Newer FULI only grows on the built-in one, so the
+// person moves it once: one click in Settings, or the external guide an AI
+// can follow when the click cannot finish (graph-migration.js).
+function graphRuntimeItems(runtime) {
+  if (runtime?.mode !== 'container') return [];
+  const migration = runtime.migration;
+  return [item('graph_container', 'graph_container', 'warning', 'person', {
+    migration: migration ? { status: migration.status, error: migration.error ?? null,
+      finishedAt: migration.finishedAt ?? null } : null,
+    guideUrl: LEGACY_MIGRATION_GUIDE_URL
+  })];
+}
 
 // A client the person connected before whose integration changed or lost its
 // MCP entry. A client FULI cannot install by itself is the person's to reconnect.

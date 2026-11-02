@@ -15,6 +15,7 @@ import ClientConnectionSettings from '@/features/settings/ClientConnectionSettin
 import ClientLinksSettings from '@/features/settings/ClientLinksSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
 import DiagnosticsSettings from '@/features/settings/DiagnosticsSettings.vue'
+import GraphMigrationRow from '@/features/settings/GraphMigrationRow.vue'
 import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
 import { offersUpdate, useChannelVersionStatus } from '@/features/update/version-status'
 import { FULI_VERSION } from '@/version'
@@ -131,10 +132,6 @@ const refreshOptions = computed(() => refreshIntervals.map((seconds) => ({
   value: String(seconds),
   label: t('settings.resources.refreshUnit', { seconds }),
 })))
-const runtimeModeOptions = computed(() => [
-  { value: 'native', label: t('settings.behavior.runtimeModes.native') },
-  { value: 'container', label: t('settings.behavior.runtimeModes.container') },
-])
 const conversationIdFormatOptions = computed(() => [
   { value: 'any', label: t('settings.conversationLaunchers.idFormats.any') },
   { value: 'uuid', label: t('settings.conversationLaunchers.idFormats.uuid') },
@@ -158,12 +155,6 @@ const diskMax = computed(() => Math.max(
   1,
   ...(resources.value?.disk.components.map(({ bytes }) => bytes) ?? [1]),
 ))
-const showsRuntimeMode = computed(() => settings.value?.active.graphRuntimeMode === 'container' || form.value?.graphRuntimeMode === 'container')
-const recommendsNativeRuntime = computed(() =>
-  form.value?.graphRuntimeMode === 'container'
-  && Number.isFinite(resources.value?.memory.hostTotalBytes)
-  && Number(resources.value?.memory.hostTotalBytes) <= 16 * 1024 ** 3,
-)
 
 onMounted(async () => {
   if (store.runtimeStatus === 'idle') void store.refresh()
@@ -338,11 +329,6 @@ function updateRefreshInterval(value: string) {
   const seconds = refreshIntervals.find((option) => String(option) === value)
   if (seconds === undefined || !form.value) return
   form.value.resourceRefreshSeconds = seconds
-}
-
-function updateRuntimeMode(value: string) {
-  if (!form.value || (value !== 'native' && value !== 'container')) return
-  form.value.graphRuntimeMode = value
 }
 
 function conversationApplicationLabel(application: ConversationSourceApplication) {
@@ -639,26 +625,9 @@ function checkFields(): ValidatedField[] {
               <Card as="section" class="settings-card" aria-labelledby="settings-runtime-title">
                 <CardHeader><CardTitle id="settings-runtime-title" as="h2">{{ t('settings.groups.runtime') }}</CardTitle></CardHeader>
                 <div class="setting-list">
-                  <!-- Native is the default runtime; the choice only matters while an
-                       older container install still needs to move over. -->
-                  <div v-if="showsRuntimeMode" class="setting-row select-row">
-                    <span>
-                      <strong>{{ t('settings.behavior.runtimeMode') }}</strong>
-                      <small>{{ recommendsNativeRuntime
-                        ? t('settings.behavior.runtimeRecommendation')
-                        : t('settings.behavior.runtimeModeMeta', {
-                          mode: t(`settings.behavior.runtimeModes.${settings?.active.graphRuntimeMode ?? form.graphRuntimeMode}`),
-                        }) }}</small>
-                    </span>
-                    <OptionSelect
-                      class="settings-select"
-                      control-id="settings-runtime-mode"
-                      :model-value="form.graphRuntimeMode"
-                      :options="runtimeModeOptions"
-                      :label="t('settings.behavior.runtimeMode')"
-                      @update:model-value="updateRuntimeMode"
- />
-                  </div>
+                  <!-- Native is the only runtime that grows; an older Docker install
+                       moves over once through the migration, never by switching here. -->
+                  <GraphMigrationRow v-if="settings?.active.graphRuntimeMode === 'container'" />
                   <div class="setting-row select-row">
                     <span><strong>{{ t('settings.resources.refresh') }}</strong></span>
                     <OptionSelect
@@ -671,7 +640,6 @@ function checkFields(): ValidatedField[] {
  />
                   </div>
                 </div>
-                <SettingsRestartNotice v-if="pendingRestart.has('graphRuntimeMode')" class="settings-restart" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
               </Card>
               <Card as="section" class="settings-card" aria-labelledby="settings-data-format-title">
                 <CardHeader>

@@ -6,6 +6,7 @@ import { createGraphBackupAdapter, managedGraphInstances } from '../backup/runti
 import { migrateContainerGraphToNative } from '../backup/runtime-migration.js';
 import { readWindowsNativeBundle, resolveWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { resolveSetupPaths } from '../setup/paths.js';
+import { recordGraphMigration } from '../system/graph-migration.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
 import { localRuntimeControl } from './local-runtime-control.js';
 import { runSetupCommand } from './setup-command.js';
@@ -33,30 +34,16 @@ export async function runGraphMigrateCommand(args, dependencies = {}) {
   const runtime = dependencies.runtime ?? localRuntimeControl(paths, env, write);
   const setup = dependencies.setup ?? runSetupCommand;
   const workspace = managedGraphInstances(paths).includes('workspace');
-  const result = await (dependencies.migrate ?? migrateContainerGraphToNative)({
-    backupRoot: paths.graphBackupDir,
-    ports: {
-      runtimeMode: () => readRuntimeSettings(paths.runtimeSettingsPath).graphRuntimeMode,
-      checkNative: dependencies.checkNative ?? (() => checkNativeAssets(paths)),
-      consoleRunning: runtime.consoleRunning,
-      stopRuntime: runtime.stop,
-      startRuntime: runtime.start,
-      createAdapter: (mode) => (dependencies.createAdapter ?? createGraphBackupAdapter)({
-        mode, paths, onProgress: write
-      }),
-      exportGraph: ({ adapter, outputDir }) => exportGraphData({
-        outputDir, sourceMode: 'container', instances: adapter.instances, adapter
-      }),
-      importGraph: ({ adapter, inputDir }) => importGraphData({
-        inputDir, targetMode: 'native', rollbackDir: paths.graphBackupDir, adapter
-      }),
-      setupRuntime: (mode) => setup([
-        '--yes', '--skip-agents', '--runtime-mode', mode,
-        workspace ? '--with-dev-public' : '--personal-only', '--data-dir', paths.dataDir
-      ], { env, write }),
-      write
-    }
-  });
+  // The console's one-click migration (graph-migration.js) reads how this run ended.
+  const record = dependencies.record ?? ((outcome) => recordGraphMigration(paths, outcome));
+  let result;
+  try {
+    result = await migrate();
+  } catch (error) {
+    record({ status: 'failed', error: error.message });
+    throw error;
+  }
+  record({ status: result.status, ...(result.backupDir ? { backupDir: result.backupDir } : {}) });
   write(result.status === 'already_native'
     ? 'This data already uses the native graph runtime. Nothing was changed.'
     : [
@@ -65,6 +52,33 @@ export async function runGraphMigrateCommand(args, dependencies = {}) {
       'The container volume was left stopped and unchanged. Remove it yourself once you no longer need it.'
     ].join('\n'));
   return result;
+
+  function migrate() {
+    return (dependencies.migrate ?? migrateContainerGraphToNative)({
+      backupRoot: paths.graphBackupDir,
+      ports: {
+        runtimeMode: () => readRuntimeSettings(paths.runtimeSettingsPath).graphRuntimeMode,
+        checkNative: dependencies.checkNative ?? (() => checkNativeAssets(paths)),
+        consoleRunning: runtime.consoleRunning,
+        stopRuntime: runtime.stop,
+        startRuntime: runtime.start,
+        createAdapter: (mode) => (dependencies.createAdapter ?? createGraphBackupAdapter)({
+          mode, paths, onProgress: write
+        }),
+        exportGraph: ({ adapter, outputDir }) => exportGraphData({
+          outputDir, sourceMode: 'container', instances: adapter.instances, adapter
+        }),
+        importGraph: ({ adapter, inputDir }) => importGraphData({
+          inputDir, targetMode: 'native', rollbackDir: paths.graphBackupDir, adapter
+        }),
+        setupRuntime: (mode) => setup([
+          '--yes', '--skip-agents', '--runtime-mode', mode,
+          workspace ? '--with-dev-public' : '--personal-only', '--data-dir', paths.dataDir
+        ], { env, write }),
+        write
+      }
+    });
+  }
 }
 
 export function parseGraphMigrateOptions(args = []) {

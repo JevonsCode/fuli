@@ -305,17 +305,20 @@ describe('SettingsPage', () => {
     await wrapper.get('[data-settings-tab-trigger="system"]').trigger('mousedown')
     await flushPromises()
     expect(router.currentRoute.value.query.tab).toBe('system')
-    await chooseOption(wrapper, 'settings-runtime-mode', '原生（低内存）')
     await chooseOption(wrapper, 'settings-refresh-interval', '10 秒')
     expect(puts).toHaveLength(1)
     expect(puts[0]).toMatchObject({ resourceRefreshSeconds: 10, lanAccess: false, graphRuntimeMode: 'container' })
     expect(puts[0]!.ports.console).toBe(2727)
-    expect(wrapper.find('[data-settings-tab="system"] [data-settings-restart-notice]').exists()).toBe(true)
+    // A Docker graph is moved by the migration, never switched here (src/system/graph-migration.js).
+    expect(wrapper.find('[data-graph-migration]').exists()).toBe(true)
+    expect(wrapper.find('[data-select-id="settings-runtime-mode"]').exists()).toBe(false)
 
-    await wrapper.get('[data-settings-tab="system"] [data-settings-restart-apply]').trigger('click')
+    await wrapper.get('[data-settings-tab-trigger="network"]').trigger('mousedown')
+    await flushPromises()
+    await wrapper.get('[data-settings-tab="network"] [data-settings-restart-apply]').trigger('click')
     await flushPromises()
     expect(puts).toHaveLength(2)
-    expect(puts[1]).toMatchObject({ resourceRefreshSeconds: 10, lanAccess: true, graphRuntimeMode: 'native' })
+    expect(puts[1]).toMatchObject({ resourceRefreshSeconds: 10, lanAccess: true, graphRuntimeMode: 'container' })
     expect(puts[1]!.ports.console).toBe(3030)
     expect(store.feedback?.message).toContain('设置已保存并生效')
     expect(wrapper.find('[data-settings-restart-notice]').exists()).toBe(false)
@@ -386,7 +389,7 @@ describe('SettingsPage', () => {
     expect(wrapper.get('.development-section').text()).toContain('开发中')
     expect(wrapper.get('.development-section').text()).toContain('fuli-server')
     expect(wrapper.findAll('.select-row > select')).toHaveLength(0)
-    expect(wrapper.findAll('.settings-select [role="combobox"]')).toHaveLength(3)
+    expect(wrapper.findAll('.settings-select [role="combobox"]')).toHaveLength(2)
     expect(wrapper.findAll('.conversation-launcher-row')).toHaveLength(7)
     expect(wrapper.get('.conversation-launcher-card').text()).toContain('会话打开方式')
     const claudeLauncher = wrapper
@@ -396,7 +399,7 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
-  it('hides the runtime-mode choice once the install already runs native', async () => {
+  it('offers no migration once the install already runs native', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     useConsoleStore().runtimeStatus = 'ready'
@@ -406,7 +409,7 @@ describe('SettingsPage', () => {
       : Response.json({}, { status: 503 })))
     const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
     await flushPromises()
-    expect(wrapper.find('[data-select-id="settings-runtime-mode"]').exists()).toBe(false)
+    expect(wrapper.find('[data-graph-migration]').exists()).toBe(false)
     wrapper.unmount()
   })
 

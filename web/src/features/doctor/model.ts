@@ -115,6 +115,10 @@ function itemView(item: DoctorItem): Omit<DoctorItemView, 'since'> {
       return { title, subject: text(data.label), to: '/settings/data-format', hint: text(data.lastSeenAt)
         ? t('doctor.hints.dataFormatLastSeen', { time: formatDateTime(text(data.lastSeenAt), currentLocale(), DATE_TIME_MINUTE, { missing: '' }) })
         : t('doctor.hints.dataFormat') }
+    // An older install's Docker graph (src/system/graph-migration.js): moved from Settings.
+    case 'graph_container':
+      return { title, subject: '', to: '/settings?tab=system',
+        hint: t((data.migration as { status?: string } | null)?.status === 'failed' ? 'doctor.hints.graphMigrationFailed' : 'doctor.hints.graphContainer') }
     case 'sessions_outdated':
       return { title, subject: sourceApplicationName(text(data.client) as ConversationSourceApplication) ?? t('doctor.otherClient'),
         hint: t('doctor.hints.sessions', { count: Number(data.count) || 0, version: text(data.runningVersion) }), to: null }

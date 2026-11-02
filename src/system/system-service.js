@@ -21,6 +21,7 @@ import { consoleUpdate } from './console-update.js';
 import { createDoctor } from './doctor.js';
 import { createDoctorRepair } from './doctor-repair.js';
 import { createDiagnosticsBundle } from './diagnostics-bundle.js';
+import { readGraphMigration, startGraphMigration } from './graph-migration.js';
 import { liveMcpProcesses } from '../mcp/process-registry.js';
 import { agentKitPorts } from '../agent-kits/ports.js';
 import { sessionClientRecords } from '../agent-kits/session-clients.js';
@@ -100,6 +101,11 @@ export function createSystemService({
   async function updateSettings(input) {
     const configured = normalizeRuntimeSettings(input, { strict: true });
     const active = activeSettings();
+    // Switching alone would start an empty built-in graph: the Docker graph
+    // moves only through the migration, which counts and checks every item.
+    if (active.graphRuntimeMode === 'container' && configured.graphRuntimeMode === 'native') {
+      throw new TypeError('Move your Docker graph with 「迁移到内置图数据库」 instead of switching the runtime here.');
+    }
     const result = settingsResult(configured, active);
     if (settingsApplier.status()?.status === 'applying') {
       throw new TypeError('Settings are already being applied. Please wait.');
@@ -122,6 +128,9 @@ export function createSystemService({
     hookTrust: async () => ({ [CODEX_HOOK_TRUST_CLIENT]: await codexHookTrust() }),
     liveProcesses: () => liveMcpProcesses(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
     lastUpdate: () => update.status(),
+    // Only a graph that was set up has a mode; a fresh data directory has nothing to move.
+    graphRuntime: () => readJson(paths.graphRuntimeStatePath, null)
+      ? { mode: activeSettings().graphRuntimeMode, migration: readGraphMigration(paths) } : null,
     portMoves: () => {
       const state = readJson(paths.graphRuntimeStatePath, null);
       return state?.portMoves ? { movedAt: state.startedAt, moves: state.portMoves } : null;
@@ -159,6 +168,9 @@ export function createSystemService({
     // FULI's 体检 and its repair of what needs no person (doctor.js, doctor-repair.js).
     doctor: () => doctor.check(),
     diagnostics,
+    // The one-click move of an older install's Docker graph (graph-migration.js).
+    graphMigration: () => readGraphMigration(paths),
+    startGraphMigration: () => startGraphMigration(paths, { runtimeMode: () => activeSettings().graphRuntimeMode }),
     repairDoctor: createDoctorRepair({ check: doctor.check, connectClient: clientInstaller, observeClients,
       recordClientsReconnected: (id) => update.recordClientsReconnected(id) }),
     runtimeStatus: () => runtimeBroker.status(),

@@ -141,6 +141,9 @@ class Strings {
           : _t('更新到 v${text('version')} 后，还有 Agent 没有重新接入 FULI。',
               'After the update to v${text('version')}, some Agents have not reconnected to FULI.'),
       'ports_moved' => _portsMoved(data['moves']),
+      // An older install's Docker graph (src/system/graph-migration.js), moved from the console's Settings.
+      'graph_container' => _t('知识还在旧版 Docker 图数据库里，请在控制台「设置」里一键迁移。',
+          "Your knowledge is still in the old Docker graph; move it with one click in the console's Settings."),
       _ => _t('FULI 发现一件需要处理的事，打开控制台可以看到详情。', 'FULI found something to take care of; open the console for details.'),
     };
   }

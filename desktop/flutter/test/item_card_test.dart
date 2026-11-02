@@ -51,6 +51,15 @@ void main() {
     }
   });
 
+  testWidgets('a Docker graph reads as one sentence pointing to Settings, never its kind code', (tester) async {
+    const item = DoctorItem(id: 'graph_container', kind: 'graph_container', severity: DoctorSeverity.warning,
+        fix: DoctorFix.person);
+    await show(tester, item);
+    expect(find.text('知识还在旧版 Docker 图数据库里，请在控制台「设置」里一键迁移。'), findsOneWidget);
+    expect(find.text('graph_container'), findsNothing);
+    expect(buttons, findsNothing);
+  });
+
   testWidgets('while an operation runs, the card button waits', (tester) async {
     await show(tester, demoItems.first, enabled: false);
     await tester.tap(find.text('自动修复'));
