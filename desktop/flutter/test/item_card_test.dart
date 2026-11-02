@@ -55,7 +55,7 @@ void main() {
     const item = DoctorItem(id: 'graph_container', kind: 'graph_container', severity: DoctorSeverity.warning,
         fix: DoctorFix.person);
     await show(tester, item);
-    expect(find.text('知识还在旧版 Docker 图数据库里，请在控制台「设置」里一键迁移。'), findsOneWidget);
+    expect(find.text('你的数据还在旧版 Docker 图数据库里，请在控制台「设置」里迁移。'), findsOneWidget);
     expect(find.text('graph_container'), findsNothing);
     expect(buttons, findsNothing);
   });
