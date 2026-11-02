@@ -13,6 +13,9 @@ function trayMutexScript(dataDir) {
 }
 
 const powershellPath = () => join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+// The lock itself is taken at once (WaitOne(0)); this only bounds PowerShell's
+// start, which takes well over 15 s on a busy machine running FULI's services.
+const LOCK_START_TIMEOUT_MS = 60_000;
 const encoded = script => ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')];
 
 // Hold the same per-user/data mutex as the tray app for the entire transaction.
@@ -31,7 +34,7 @@ export async function acquireWindowsUpdateLock(dataDir) {
   child.stderr.resume();
   await new Promise((resolve, reject) => {
     let output = '';
-    const timer = setTimeout(() => { child.kill(); reject(new Error('Timed out acquiring the Windows tray lock.')); }, 15000);
+    const timer = setTimeout(() => { child.kill(); reject(new Error('Timed out acquiring the Windows tray lock.')); }, LOCK_START_TIMEOUT_MS);
     const fail = () => { clearTimeout(timer); reject(new Error('Close the FULI desktop client and other FULI updaters, then try again.')); };
     child.once('error', fail); child.once('close', fail);
     child.stdout.on('data', bytes => {

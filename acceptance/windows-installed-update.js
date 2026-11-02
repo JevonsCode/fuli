@@ -109,6 +109,11 @@ async function main() {
     await run(join(process.env.SystemRoot, 'System32/tar.exe'), ['-xf', archive, '-C', source]);
     assert.equal((await json(join(source, 'package.json'))).version, previous.version);
     for (const name of ['desktop', 'start-menu']) await mkdir(join(root, name));
+    // The published installer gives PowerShell 30 s to write its shortcuts. In
+    // this smoke's fresh profile PowerShell's first start builds its module
+    // cache and can take longer, so start it once here under the same profile.
+    await run(join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe'),
+      ['-NoProfile', '-NonInteractive', '-Command', 'Get-Command New-Object | Out-Null']);
     await run(join(source, 'runtime/node/node.exe'), [join(source, 'src/desktop/windows-install.js'), '--yes',
       '--install-root', install, '--data-dir', data, '--desktop-dir', join(root, 'desktop'), '--start-menu-dir', join(root, 'start-menu')]);
     const ports = {};
