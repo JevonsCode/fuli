@@ -73,19 +73,19 @@ async function picked(event: Event) {
 <template>
   <Popover v-model:open="open">
     <PopoverTrigger as-child>
-      <button type="button" class="person-avatar-trigger" :disabled="disabled" :aria-label="t('preferences.home.avatar.change')" data-person-avatar-trigger>
+      <Button variant="ghost" class="person-avatar-trigger" :disabled="disabled" :aria-label="t('preferences.home.avatar.change')" data-person-avatar-trigger>
         <MeAvatar :size="88" />
         <span class="person-avatar-badge" aria-hidden="true"><UiIcon name="edit" :size="13" /></span>
-      </button>
+      </Button>
     </PopoverTrigger>
     <PopoverContent align="start" :aria-label="t('preferences.home.avatar.title')" data-person-avatar-panel>
       <div class="person-avatar-panel">
         <p class="person-avatar-label">{{ t('preferences.home.avatar.choices') }}</p>
         <div class="person-avatar-choices">
-          <button v-for="(seed, index) in seeds" :key="seed" type="button" class="person-avatar-choice" :disabled="busy"
+          <Button v-for="(seed, index) in seeds" :key="seed" variant="ghost" class="person-avatar-choice" :disabled="busy"
             :aria-label="`${t('preferences.home.avatar.choices')} ${index + 1}`" data-person-avatar-choice @click="save({ kind: 'generated', seed })">
             <img :src="generatedAvatarUrl(seed)" alt="" />
-          </button>
+          </Button>
         </div>
         <GrowthLoading v-if="saving" variant="inline" :label="t('preferences.home.avatar.saving')" />
         <GrowthLoading v-else-if="reading" variant="inline" :label="t('preferences.home.avatar.reading')" />
@@ -104,11 +104,14 @@ async function picked(event: Event) {
 </template>
 
 <style scoped>
+/* Both are the shared Button (ghost) drawn as the picture itself: no box, no
+   control height, no hover tint; the picture and its badge are the affordance. */
 .person-avatar-trigger {
-  position: relative; display: block; flex: none; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer;
-  -webkit-user-select: none; user-select: none;
+  position: relative; display: block; flex: none; width: auto; height: auto; min-height: 0; padding: 0; border: 0;
+  border-radius: 50%; background: none; cursor: pointer; -webkit-user-select: none; user-select: none;
 }
-.person-avatar-trigger:disabled { cursor: default; }
+.person-avatar-trigger:hover:not(:disabled) { background: none; }
+.person-avatar-trigger:disabled { cursor: default; opacity: 1; }
 .person-avatar-trigger:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 .person-avatar-badge {
   position: absolute; right: 2px; bottom: 2px; display: grid; width: 26px; height: 26px; place-items: center; border-radius: 50%;
@@ -121,11 +124,12 @@ async function picked(event: Event) {
 .person-avatar-label { margin: 0; color: var(--color-muted); font-size: var(--text-meta); }
 .person-avatar-choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .person-avatar-choice {
-  display: block; aspect-ratio: 1; overflow: hidden; padding: 0; border: 0; border-radius: 50%; background: var(--color-surface-subtle);
+  display: block; width: 100%; height: auto; min-height: 0; aspect-ratio: 1; overflow: hidden; padding: 0; border: 0;
+  border-radius: 50%; background: var(--color-surface-subtle);
   cursor: pointer; transition: transform var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) var(--motion-ease);
   -webkit-user-select: none; user-select: none;
 }
-.person-avatar-choice:hover:not(:disabled) { box-shadow: 0 0 0 2px var(--color-border-strong); transform: translateY(-1px); }
+.person-avatar-choice:hover:not(:disabled) { background: var(--color-surface-subtle); box-shadow: 0 0 0 2px var(--color-border-strong); transform: translateY(-1px); }
 .person-avatar-choice:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 .person-avatar-choice img { width: 100%; height: 100%; object-fit: cover; }
 .person-avatar-error { margin: 0; color: var(--color-danger); font-size: var(--text-meta); }
