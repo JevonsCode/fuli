@@ -143,42 +143,20 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
-  it('saves an edited Agent naming style and its restored default as no style', async () => {
+  it('leaves the FLA naming preference to the person\'s home page', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     useConsoleStore().runtimeStatus = 'ready'
     const withStyle = { ...configured, agentNamingStyle: '用两个字的植物名' }
-    const puts: Array<{ agentNamingStyle: string }> = []
-    vi.stubGlobal('fetch', vi.fn(async (input, init?: RequestInit) => {
-      if (String(input) === '/api/system/settings' && init?.method === 'PUT') {
-        const body = JSON.parse(String(init.body))
-        puts.push(body)
-        return Response.json({ configured: body, active: body, restartRequired: false })
-      }
+    vi.stubGlobal('fetch', vi.fn(async (input) => {
       if (String(input) === '/api/system/settings') return Response.json({ configured: withStyle, active: withStyle, restartRequired: false })
       return Response.json({}, { status: 503 })
     }))
     const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
     await flushPromises()
-    const card = wrapper.get('[data-agent-naming-card]')
-    expect(card.text()).toContain('Agent 取名风格')
-    expect(card.text()).toContain('建议 100 字左右')
-    const field = wrapper.get<HTMLTextAreaElement>('[data-agent-naming-style]')
-    expect(field.element.value).toBe('用两个字的植物名')
-    expect(card.text()).toContain('8 / 建议 100 字')
-
-    await field.setValue('像北欧神话里的名字')
-    // Enter (the form's submit) saves at once instead of after the pause.
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    await wrapper.get('[data-agent-naming-reset]').trigger('click')
-    expect(field.element.value).toContain('Lyra North')
-    expect(wrapper.get('[data-agent-naming-reset]').attributes('disabled')).toBeDefined()
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-    expect(puts.map(body => body.agentNamingStyle)).toEqual(['像北欧神话里的名字', ''])
-    expect(field.element.value).toContain('Lyra North')
-    expect(wrapper.get('[data-settings-save-capsule]').text()).toBe('已自动保存')
+    expect(wrapper.find('#settings-form').exists()).toBe(true)
+    expect(wrapper.find('[data-agent-naming-style]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('取名')
     wrapper.unmount()
   })
 

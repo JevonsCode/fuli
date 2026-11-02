@@ -1,16 +1,23 @@
 <script setup lang="ts">
+import MeLink from '@/components/MeLink.vue'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
+import MeAvatar from '@/features/person-home/MeAvatar.vue'
 import { t } from '@/i18n'
 import type { RoundtableSeat } from './roundtable-model'
 
-// Who is in the conversation, as one row of chips; anyone still owing a reply is marked.
-defineProps<{ seats: RoundtableSeat[] }>()
+// Who is in the conversation, as one row of chips; anyone still owing a reply
+// is marked. The person, when at the table, sits first as 「我」 with their own picture.
+defineProps<{ seats: RoundtableSeat[]; withMe?: boolean }>()
 const initial = (seat: RoundtableSeat) => (seat.person.name ?? '?').trim().slice(0, 1).toUpperCase()
 </script>
 
 <template>
-  <ul class="roundtable-seats" :aria-label="t('roundtable.table', { count: seats.length })">
+  <ul class="roundtable-seats" :aria-label="t('roundtable.table', { count: seats.length + Number(withMe) })">
+    <li v-if="withMe" class="roundtable-seat" data-roundtable-me-seat>
+      <MeAvatar class="roundtable-seat-face" :size="20" />
+      <span class="roundtable-seat-name"><MeLink /></span>
+    </li>
     <li v-for="seat in seats" :key="seat.key" class="roundtable-seat" :class="{ 'is-awaited': seat.awaited }" :style="agentIdentityStyle(seat.person.agentId)" data-roundtable-seat>
       <span class="roundtable-seat-face" aria-hidden="true"><img v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" :data-agent-portrait="seat.person.agentId" alt="" /><template v-else>{{ initial(seat) }}</template></span>
       <span class="roundtable-seat-name">{{ seat.person.name ?? t('roundtable.unknownAgent') }}</span>

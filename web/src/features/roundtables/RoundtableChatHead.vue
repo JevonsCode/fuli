@@ -11,7 +11,7 @@ import type { RoundtableSeat } from './roundtable-model'
 // An open conversation's head in one line (Jevons 11-02): its portraits, its
 // title and when it started; everything else — the full title, who is in it,
 // a stale read — opens in 详情.
-defineProps<{ seats: RoundtableSeat[]; title: string; meta: string; stale?: boolean }>()
+defineProps<{ seats: RoundtableSeat[]; withMe?: boolean; title: string; meta: string; stale?: boolean }>()
 const open = ref(false)
 </script>
 
@@ -32,8 +32,8 @@ const open = ref(false)
           <DialogDescription>{{ meta }}</DialogDescription>
         </DialogHeader>
         <p v-if="stale" class="rt-chat-meta" role="status">{{ t('roundtable.stale') }}</p>
-        <h3 class="rt-chat-people-label">{{ t('roundtable.participants', { count: seats.length }) }}</h3>
-        <RoundtableSeats :seats="seats" />
+        <h3 class="rt-chat-people-label">{{ t('roundtable.participants', { count: seats.length + Number(withMe) }) }}</h3>
+        <RoundtableSeats :seats="seats" :with-me="withMe" />
       </DialogContent>
     </Dialog>
   </header>

@@ -16,20 +16,20 @@ function preferencesRouter() {
 }
 
 describe('MeLink', () => {
-  it('names the current person 我 / Me as a quiet, focusable link to their preferences', () => {
+  it('names the current person 我 / Me as a quiet, focusable link to their home', () => {
     const wrapper = mount(MeLink)
     const link = wrapper.get('a')
     expect(link.text()).toBe('我')
-    expect(link.attributes('href')).toBe('/preferences?aspect=taste')
-    expect(link.attributes('aria-label')).toBe('我的偏好')
+    expect(link.attributes('href')).toBe('/preferences')
+    expect(link.attributes('aria-label')).toBe('我的主页')
     expect(link.attributes('tabindex')).toBeUndefined()
     setLocale('en-US', { persist: false })
     const english = mount(MeLink).get('a')
     expect(english.text()).toBe('Me')
-    expect(english.attributes('aria-label')).toBe('My preferences')
+    expect(english.attributes('aria-label')).toBe('My home')
   })
 
-  it('opens the taste view of 偏好 inside the console, and the glossary explains it', async () => {
+  it('opens their home inside the console, and the glossary explains it', async () => {
     const router = preferencesRouter()
     await router.push('/')
     const wrapper = mount(MeLink, { attachTo: document.body, global: { plugins: [router] } })
@@ -37,7 +37,7 @@ describe('MeLink', () => {
     await router.isReady()
     await new Promise(resolve => setTimeout(resolve))
     expect(router.currentRoute.value.name).toBe('personal-profile')
-    expect(router.currentRoute.value.query.aspect).toBe('taste')
+    expect(router.currentRoute.value.query.aspect).toBeUndefined()
     expect(findTerm(wrapper.get('a').element)?.term.id).toBe('concept.me')
   })
 

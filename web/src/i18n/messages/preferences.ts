@@ -1,5 +1,34 @@
 export const preferenceMessages = {
   'zh-CN': {
+    // The person's own home (「我」): their picture, what FULI calls them and how Bole names FLAs.
+    home: {
+      aria: '我的主页',
+      preferences: '我的偏好',
+      avatar: {
+        change: '更换我的头像',
+        title: '我的头像',
+        choices: '选一个头像',
+        shuffle: '换一批',
+        upload: '上传图片',
+        reset: '恢复默认',
+        reading: '正在缩小图片',
+        saving: '正在保存我的头像',
+        failed: '头像没有保存：{reason}',
+      },
+      name: {
+        title: 'FULI 怎么称呼你？',
+        placeholder: '你的名字或昵称',
+        hint: 'Agent 会这样称呼你；页面上仍写「我」。',
+      },
+      naming: {
+        title: 'FLA 取名偏好',
+        bole: '@:{\'roleNames.bole\'} 按这个风格给新 FLA 取名。',
+        failed: '没能读取 FLA 取名偏好。',
+        default: '像人一样的英文名：一个名加一个姓，比如 Lyra North、Milo Reed；不用职位名',
+        count: '{count} / 建议 100 字',
+        reset: '恢复默认',
+      },
+    },
     detail: {
       accessDenied: "访问权限已撤回，请重新读取授权状态。",
       scopeUnknown: "范围待核实",
@@ -173,6 +202,34 @@ export const preferenceMessages = {
     },
   },
   'en-US': {
+    home: {
+      aria: 'My home',
+      preferences: 'My preferences',
+      avatar: {
+        change: 'Change my picture',
+        title: 'My picture',
+        choices: 'Pick a picture',
+        shuffle: 'Show others',
+        upload: 'Upload a picture',
+        reset: 'Restore default',
+        reading: 'Scaling the picture down',
+        saving: 'Saving my picture',
+        failed: 'The picture was not saved: {reason}',
+      },
+      name: {
+        title: 'What should FULI call you?',
+        placeholder: 'Your name or a nickname',
+        hint: 'Agents address you by it; pages still say “Me”.',
+      },
+      naming: {
+        title: 'FLA naming preference',
+        bole: '@:{\'roleNames.bole\'} names new FLAs in this style.',
+        failed: 'Could not read the FLA naming preference.',
+        default: 'Person-like English names: a first name and a surname, like Lyra North or Milo Reed; no job titles',
+        count: '{count} / about 100 suggested',
+        reset: 'Restore default',
+      },
+    },
     detail: {
       accessDenied: "Access was revoked. Reload the authorized state.",
       scopeUnknown: "Scope needs review",

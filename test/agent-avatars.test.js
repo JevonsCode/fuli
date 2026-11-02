@@ -6,7 +6,8 @@ import { Readable } from 'node:stream';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
-import { createAgentAvatars, MAX_IMAGE_BYTES } from '../src/agent-avatars/port.js';
+import { createAgentAvatars } from '../src/agent-avatars/port.js';
+import { MAX_AVATAR_PICTURE_BYTES } from '../src/avatars/look.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
 import { handleAgentAvatarsRequest } from '../src/http/agent-avatars-api-router.js';
 
@@ -50,7 +51,7 @@ test('a picture is a small raster image told by its bytes', (t) => {
   const set = (data) => avatars.set({ personalSpaceId: 'space-a', agentId: 'fla-1', look: { kind: 'image', data } });
   assert.equal(set(WEBP.toString('base64')).kind, 'image');
   assert.equal(avatars.image({ personalSpaceId: 'space-a', agentId: 'fla-1' }).mediaType, 'image/webp');
-  for (const data of [SVG.toString('base64'), 'not base64!', '', Buffer.alloc(MAX_IMAGE_BYTES + 1, 0xff).toString('base64')]) {
+  for (const data of [SVG.toString('base64'), 'not base64!', '', Buffer.alloc(MAX_AVATAR_PICTURE_BYTES + 1, 0xff).toString('base64')]) {
     assert.throws(() => set(data), { code: 'invalid_input' }, data.slice(0, 20));
   }
   for (const look of [null, { kind: 'emoji' }, { kind: 'generated' }, { kind: 'generated', seed: 'x'.repeat(65) }]) {

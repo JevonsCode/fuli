@@ -104,9 +104,13 @@ describe('RoundtableThreadChat', () => {
     try {
       const wide = mountChat(conversation())
       const side = wide.get('[data-roundtable-side]')
-      expect(side.get('h3').text()).toBe('参与者（1）')
+      expect(side.get('h3').text()).toBe('参与者（2）')
       expect(wide.findAll('[data-roundtable-seat]').map(seat => seat.text())).toEqual([expect.stringContaining('Ada Vale')])
       expect(side.findAll('[data-roundtable-seat]')).toHaveLength(1)
+      // The person sits first as 「我」, on the neutral face until they choose a picture.
+      const me = side.get('[data-roundtable-me-seat]')
+      expect(me.get('[data-me-link]').text()).toBe('我')
+      expect(me.find('[data-me-avatar-face]').exists()).toBe(true)
     } finally { vi.unstubAllGlobals() }
   })
 })

@@ -60,7 +60,7 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
   ...['manual', 'shared', 'autonomous'].map(key =>
     taggedTerm('tonborg', key, `judgment.mode.${key}`, `glossary.tonborg.${key}`)),
   taggedTerm('tonborg', 'escalate', 'judgment.workbench.outcome.escalate', 'glossary.tonborg.escalate'),
-  term('setting', 'agentNamingStyle', 'settings.agentNaming.title', 'glossary.setting.agentNamingStyle'),
+  term('setting', 'agentNamingStyle', 'preferences.home.naming.title', 'glossary.setting.agentNamingStyle'),
   term('setting', 'topicPromotion', 'settings.topicPromotion.title', 'glossary.setting.topicPromotion'),
   term('setting', 'diagnostics', 'settings.diagnostics.title', 'glossary.setting.diagnostics'),
 ]

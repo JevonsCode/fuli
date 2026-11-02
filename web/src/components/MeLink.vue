@@ -4,10 +4,10 @@ import { useRouter } from 'vue-router'
 import { t } from '@/i18n'
 
 // 「我」 / "Me": the one name for the current person wherever the console
-// names them as an actor (Jevons 11-02). It opens their own page; until there
-// is a sign-in that is their preferences, on taste. Embedded without a router
-// (previews, tests) it is a plain link.
-const MY_PAGE = '/preferences?aspect=taste'
+// names them as an actor (Jevons 11-02). It opens their own home: their
+// picture, what FULI calls them, then their preferences. Embedded without a
+// router (previews, tests) it is a plain link.
+const MY_PAGE = '/preferences'
 const router = useRouter() as ReturnType<typeof useRouter> | undefined
 const href = router ? router.resolve(MY_PAGE).href : MY_PAGE
 

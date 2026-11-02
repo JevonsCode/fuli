@@ -91,7 +91,7 @@ describe('PersonalProfilePage', () => {
 
   it('requires both graph pages and conflicts, invalidates late authorization, and permits only complete retries', async () => {
     let rejectConflict!: (error: unknown) => void
-    getJson.mockImplementation((url: string) => url.startsWith('/api/graph') ? Promise.resolve(profileGraph()) : new Promise((_, reject) => { rejectConflict = reject }))
+    getJson.mockImplementation((url: string) => url.startsWith('/api/graph') ? Promise.resolve(profileGraph()) : !url.startsWith('/api/preference-conflicts') ? Promise.resolve([]) : new Promise((_, reject) => { rejectConflict = reject }))
     const { wrapper } = await fixture()
     expect(wrapper.find('.personal-profile-row').exists()).toBe(false)
     rejectConflict({ status: 503 })
@@ -103,7 +103,7 @@ describe('PersonalProfilePage', () => {
     await wrapper.get('.personal-profile-open').trigger('click')
     expect(body().find('.inspector-edit-action').exists()).toBe(true)
     let deny!: (error: unknown) => void
-    getJson.mockImplementation((url: string) => url.startsWith('/api/graph') ? Promise.reject({ status: 503 }) : new Promise((_, reject) => { deny = reject }))
+    getJson.mockImplementation((url: string) => url.startsWith('/api/graph') ? Promise.reject({ status: 503 }) : !url.startsWith('/api/preference-conflicts') ? Promise.resolve([]) : new Promise((_, reject) => { deny = reject }))
     await wrapper.get('button[aria-label="刷新"]').trigger('click')
     await finishProfileLoading()
     expect(wrapper.text()).toContain('全局品味')
@@ -371,6 +371,28 @@ describe('PersonalProfilePage', () => {
     expect(count.attributes('data-term')).toBe('memory.preferenceCount')
     await wrapper.get('[data-profile-aspects] button:nth-child(3)').trigger('click')
     expect(wrapper.get('[data-profile-count]').text()).toBe('个性 1 条 · 共 3 条')
+  })
+
+  it('opens as the person\'s home: their picture and name on top, Bole\'s naming field, then the preferences', async () => {
+    getJson.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/graph') ? profileGraph()
+      : url.startsWith('/api/person-profile') ? { name: 'Synthetic', look: { kind: 'default' }, updatedAt: 'x' }
+        : url === '/api/system/settings' ? { configured: { agentNamingStyle: '' }, active: {}, restartRequired: false } : []))
+    // Its own space: the person's profile is read once per space for the whole console.
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().state = { mode: 'personal_only', activePersonalSpaceId: 'home-space', personalSpaces: [{ id: 'home-space', name: 'Synthetic' }], personalProjects: [], projects: [], subscriptions: [] }
+    const wrapper = mount(PersonalProfilePage, { global: { plugins: [pinia] } })
+    await finishProfileLoading()
+    const home = wrapper.get('[data-person-home]')
+    expect(home.get('[data-me-avatar-face]').text()).toBe('我')
+    expect(home.get<HTMLInputElement>('[data-person-name]').element.value).toBe('Synthetic')
+    expect(home.get('[data-person-naming-bole]').attributes('src')).toBeTruthy()
+    expect(home.get<HTMLTextAreaElement>('[data-agent-naming-style]').element.value).toContain('Lyra North')
+    // The preferences follow the home, never above it.
+    const order = [...wrapper.element.querySelectorAll('[data-person-home], .personal-profile-list')].map(element => element.className)
+    expect(order[0]).toContain('person-home')
+    expect(order[1]).toContain('personal-profile-list')
+    wrapper.unmount()
   })
 
   it('filters collaboration preferences by global or one exact personal project', async () => {

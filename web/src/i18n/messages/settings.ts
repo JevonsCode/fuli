@@ -197,13 +197,6 @@ export const settingsMessages = {
       needsPersonUrl: '需要你时通知',
       needsPersonUrlMeta: 'Agent 举手等你决定时，FULI 把事件发到这个本机地址（例如 DingDong）。只接受 127.0.0.1、localhost 或 [::1]；留空就关闭。',
     },
-    agentNaming: {
-      title: 'Agent 取名风格',
-      description: '这是 FULI 默认的取名规则，改成你想要的，之后新建的 Agent 就按它取名。建议 100 字左右；已有 Agent 不会改名。',
-      default: '像人一样的英文名：一个名加一个姓，比如 Lyra North、Milo Reed；不用职位名',
-      count: '{count} / 建议 100 字',
-      reset: '恢复默认',
-    },
     topicPromotion: {
       title: '话题自动升级为项目',
       description: '同一个话题 2 天里聊了 3 次以上，@:{\'roleNames.astro\'} 直接建项目并在回执里告诉你，可以改名或撤销。关掉后只提建议。',
@@ -496,13 +489,6 @@ export const settingsMessages = {
       title: 'Notifications',
       needsPersonUrl: 'Notify when you are needed',
       needsPersonUrlMeta: 'When an Agent raises a hand for your decision, FULI posts the event to this address on this machine (for example DingDong). Only 127.0.0.1, localhost or [::1]; leave empty to turn it off.',
-    },
-    agentNaming: {
-      title: 'Agent naming style',
-      description: 'This is FULI\'s default naming rule. Change it to what you want and Agents created from now on are named that way. About 100 characters is suggested; existing Agents keep their names.',
-      default: 'Person-like English names: a first name and a surname, like Lyra North or Milo Reed; no job titles',
-      count: '{count} / about 100 suggested',
-      reset: 'Restore default',
     },
     topicPromotion: {
       title: 'Topics grow into projects',

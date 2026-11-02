@@ -27,3 +27,18 @@ export function sendJson(response, status, body) {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   response.end(JSON.stringify(body));
 }
+
+// An uploaded portrait (an Agent's look, the person's 「我」) by its version:
+// the URL carries the version, so a changed picture is a new URL and one
+// version can be kept by the browser; the type comes from the bytes. missing
+// is the 404 body when there is no picture.
+export function sendPortrait(response, picture, missing) {
+  if (!picture) {
+    sendJson(response, 404, missing);
+    return;
+  }
+  response.writeHead(200, { 'content-type': picture.mediaType, 'content-length': picture.bytes.length,
+    'cache-control': 'private, max-age=31536000, immutable', etag: `"${picture.version}"`,
+    'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'" });
+  response.end(picture.bytes);
+}

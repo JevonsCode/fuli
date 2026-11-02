@@ -23,6 +23,7 @@ import { createStandingAssignments } from '../standing-assignments/port.js';
 import { createAgentWorkflows } from '../agent-workflows/port.js';
 import { RecallImpressionsStore } from '../knowledge-impressions/store.js';
 import { createAgentAvatars } from '../agent-avatars/port.js';
+import { createPersonProfile } from '../person-profile/port.js';
 import { createWorkSurfaces } from '../work-surfaces/port.js';
 import { workSurfaceNames, workSurfaceSources } from '../work-surfaces/sources.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
@@ -80,6 +81,8 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   app.recallImpressions = new RecallImpressionsStore(join(dataDir, 'recall-impressions.sqlite'));
   // Each Agent's look as the person chose it (rec#11 D-89); the file is created by the first choice.
   app.agentAvatars = createAgentAvatars({ path: join(dataDir, 'agent-avatars.sqlite') });
+  // The person's own name and picture (「我」); the file is created by the first change.
+  app.personProfile = createPersonProfile({ path: join(dataDir, 'person-profile.json') });
   // Every FLA's work surfaces in one table, with 全部暂停 and 恢复 (rec#11 D-85); the file is created by the first pause.
   app.workSurfaces = createWorkSurfaces({ path: join(dataDir, 'work-surfaces.sqlite'), sources: workSurfaceSources(app),
     names: (personalSpaceId) => workSurfaceNames(app, personalSpaceId) });

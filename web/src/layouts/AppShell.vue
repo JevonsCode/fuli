@@ -6,6 +6,7 @@ import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import GrowingBackdrop from '@/components/GrowingBackdrop.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import { loadAgentLooks } from '@/features/agent-profile/agent-looks'
+import { loadPersonProfile } from '@/features/person-home/person-profile'
 import { loadRoleNames } from '@/features/agent-profile/role-names'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
 import CaptureOnboardingDialog from '@/features/capture/CaptureOnboardingDialog.vue'
@@ -72,6 +73,8 @@ const sectionTabs = computed(() => route.meta.detail ? [] : destination.value?.s
 provide(AGENT_PINS_KEY, useAgentPins(activeSpaceId))
 // The looks the person chose for their Agents, read once for every portrait.
 watch(activeSpaceId, id => void loadAgentLooks(id), { immediate: true })
+// The person's own picture, for every 「我」 (person-home/MeAvatar.vue).
+watch(activeSpaceId, id => void loadPersonProfile(id), { immediate: true })
 // The names the built-in roles go by now, for every label that names one.
 watch(activeSpaceId, id => void loadRoleNames(id), { immediate: true })
 

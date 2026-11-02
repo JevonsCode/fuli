@@ -47,6 +47,7 @@ import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-st
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
 import { CLIENT_LINKS_STATE_FORMAT } from '../client-links/registry.js';
 import { SESSION_CLIENT_FORMAT } from '../agent-kits/session-clients.js';
+import { PERSON_PROFILE_FORMAT } from '../person-profile/port.js';
 
 // Every FULI store kept in one data directory, by the path its owner opens
 // (rec#17 D-09). Labels are relative to the data directory, so a report names
@@ -113,7 +114,9 @@ const jsonStores = () => [
   // Evaluations of a role's model run on this computer, shown on the settings page (rec#10 D-36.6).
   ['model-evaluations.json', MODEL_EVALUATIONS_FORMAT],
   // The applied client link manifest, its auto-update switch and what each update changed.
-  ['client-links.json', CLIENT_LINKS_STATE_FORMAT]
+  ['client-links.json', CLIENT_LINKS_STATE_FORMAT],
+  // The person's own name and picture (「我」), changed only in the console on this computer.
+  ['person-profile.json', PERSON_PROFILE_FORMAT]
 ];
 // One small record per session.
 const jsonDirectories = () => [
