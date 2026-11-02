@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../app/app_services.dart';
@@ -42,6 +44,9 @@ class _Window extends StatefulWidget {
 class _WindowState extends State<_Window> {
   // The console page that finished its first load in the window.
   Uri? _loaded;
+  // Bumped whenever the console stops answering, so the page is built and
+  // loaded anew when it answers again, even within the same frame (REC #65).
+  int _generation = 0;
 
   AppServices get _services => widget.services;
 
@@ -59,7 +64,10 @@ class _WindowState extends State<_Window> {
 
   // A console that stops answering leaves the window; the next one loads anew.
   void _forgetClosedConsole() {
-    if (_services.controller.snapshot?.reached != true) _loaded = null;
+    if (_services.controller.snapshot?.reached != true) {
+      _loaded = null;
+      _generation++;
+    }
   }
 
   void _consoleLoaded(Uri console) {
@@ -83,13 +91,18 @@ class _WindowState extends State<_Window> {
             backgroundColor: FuliColors.bg,
             body: Stack(
               children: [
-                Positioned.fill(child: consoleView(console, () => _consoleLoaded(console))),
+                Positioned.fill(
+                    child: KeyedSubtree(
+                        key: ValueKey(_generation), child: consoleView(console, () => _consoleLoaded(console)))),
                 Positioned.fill(
                   child: AnimatedSwitcher(
                     duration: still ? Duration.zero : FuliMotion.medium,
                     child: _loaded == console
                         ? const SizedBox.shrink()
-                        : WaitingScreen(label: strings.openingConsole),
+                        : _ConsoleCover(
+                            key: ValueKey(_generation),
+                            label: strings.openingConsole,
+                            onGiveUp: () => _consoleLoaded(console)),
                   ),
                 ),
               ],
@@ -113,4 +126,38 @@ class _WindowState extends State<_Window> {
     // The window's own controls stay where they are whatever the window shows.
     return WindowChrome(caption: caption, strings: strings, child: content);
   }
+}
+
+/// The waiting screen over a console page that is still loading. A load that
+/// never reports back (a missed callback, a WebView that went quiet) must not
+/// hide a working console for ever: after [patience] the page shows as it is.
+class _ConsoleCover extends StatefulWidget {
+  const _ConsoleCover({super.key, required this.label, required this.onGiveUp});
+
+  static const patience = Duration(seconds: 20);
+
+  final String label;
+  final VoidCallback onGiveUp;
+
+  @override
+  State<_ConsoleCover> createState() => _ConsoleCoverState();
+}
+
+class _ConsoleCoverState extends State<_ConsoleCover> {
+  late final Timer _patience;
+
+  @override
+  void initState() {
+    super.initState();
+    _patience = Timer(_ConsoleCover.patience, () => widget.onGiveUp());
+  }
+
+  @override
+  void dispose() {
+    _patience.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => WaitingScreen(label: widget.label);
 }

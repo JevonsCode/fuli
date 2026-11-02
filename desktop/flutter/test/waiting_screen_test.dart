@@ -88,6 +88,24 @@ void main() {
     expect(find.text('console ${controller.consoleUri}'), findsOneWidget);
   });
 
+  testWidgets('a console page that never reports its load still shows after a while, never covered for ever',
+      (tester) async {
+    final controller = await showStopped(tester);
+    await controller.refresh();
+    await tester.pump();
+    await tester.tap(find.text('启动 FULI'));
+    await tester.pump();
+    await settleStart(tester, controller);
+    expect(find.text('正在打开控制台…'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 19));
+    expect(find.text('正在打开控制台…'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(find.byType(WaitingScreen), findsNothing);
+    expect(find.text('console ${controller.consoleUri}'), findsOneWidget);
+  });
+
   testWidgets('without a WebView the start ends on the status page', (tester) async {
     final controller = await showStopped(tester, webView: false);
     await controller.refresh();
