@@ -17,7 +17,6 @@ export const teamWorkMessages = {
     island: {
       region: 'FLA 一起在做的任务',
       label: '{count} 位 FLA 正在一起做「{title}」',
-      fold: '收起',
     },
   },
   'en-US': {
@@ -37,7 +36,6 @@ export const teamWorkMessages = {
     island: {
       region: 'Tasks FLAs are doing together',
       label: '{count} FLAs are working on “{title}”',
-      fold: 'Fold',
     },
   },
 }

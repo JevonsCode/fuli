@@ -77,7 +77,7 @@ describe('悬浮岛', () => {
     return wrapper
   }
 
-  it('floats one capsule per task, and opens one into its team card while the others step aside', async () => {
+  it('floats one capsule per task; a click opens its team card above the row and the capsules stay put', async () => {
     getJson.mockImplementation(async (url: string) => {
       if (url.startsWith('/api/workbenches?')) return { partial: false, workbenches: [sheet(), sheet({ taskId: 'task-2', title: 'Second synthetic task' })] }
       if (url.startsWith('/api/project-agents/')) return { agentId: url.split('/')[3]!.split('?')[0], profile: { name: names[url.split('/')[3]!.split('?')[0]!] ?? 'X' } }
@@ -89,11 +89,19 @@ describe('悬浮岛', () => {
     const pill = capsules[0]!.get('[data-team-island-pill]')
     expect(pill.text()).toContain('3 位 FLA 正在一起做「Synthetic export upgrade」')
     expect(pill.text()).toContain('2/5')
+    // Hovering opens nothing (Jevons 11-02: it opened cards by accident).
+    await capsules[1]!.trigger('pointerenter')
+    expect(island.find('[data-team-card]').exists()).toBe(false)
     await pill.trigger('click')
-    // Open, the capsule is the card: its title is said once.
     expect(island.find('[data-team-card="task-1"]').exists()).toBe(true)
-    expect(island.find('[data-team-island="task-1"] [data-team-island-pill]').exists()).toBe(false)
-    expect(island.get('[data-team-island="task-2"]').classes()).toContain('is-aside')
+    expect(pill.attributes('aria-expanded')).toBe('true')
+    // Both capsules stay; the second opens its own card in the same place.
+    expect(island.findAll('[data-team-island-pill]')).toHaveLength(2)
+    await capsules[1]!.get('[data-team-island-pill]').trigger('click')
+    expect(island.find('[data-team-card="task-2"]').exists()).toBe(true)
+    await capsules[1]!.get('[data-team-island-pill]').trigger('click')
+    expect(island.find('[data-team-card]').exists()).toBe(false)
+    await pill.trigger('click')
     await island.get('[data-widget="team-island"]').trigger('keydown', { key: 'Escape' })
     expect(island.find('[data-team-card="task-1"]').exists()).toBe(false)
   })

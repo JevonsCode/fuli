@@ -1,27 +1,20 @@
 <script setup lang="ts">
-import { motion } from 'motion-v'
-import { computed, useId } from 'vue'
+import { computed } from 'vue'
 import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
-import { SPRING } from '@/lib/motion'
-import { UiIconButton } from '@/ui'
-import TeamCard from './TeamCard.vue'
 import TeamFaces from './TeamFaces.vue'
 import { currentStepOf, fill, type TeamSheet } from './team-sheets'
 
-// One task in the 悬浮岛: folded, a glass capsule saying who is doing what and
-// how far; open, the same capsule grown into that task's 团队卡片 (a layout
-// morph on the shared spring, interruptible).
+// One task in the 悬浮岛: a glass capsule saying who is doing what and how far.
+// A click opens its 团队卡片 above the row (TeamIsland.vue); the capsule stays
+// where it is and shows that it is the open one.
 const props = defineProps<{
   sheet: TeamSheet
   open: boolean
   wide: boolean
-  spaceId: string
-  nameOf: (agentId: string) => string
-  projectName: (projectId: string) => string
+  panelId: string
 }>()
 const emit = defineEmits<{ toggle: [] }>()
-const panelId = useId()
 const faces = computed(() => props.sheet.shares.slice(0, 4).map(share => ({
   agentId: share.agentId,
   lead: share.agentId === props.sheet.leadAgentId,
@@ -32,8 +25,9 @@ const total = computed(() => fill(props.sheet.progress))
 </script>
 
 <template>
-  <motion.div layout class="island" :class="{ 'is-open': open, 'is-wide': wide }" :transition="SPRING" :data-team-island="sheet.taskId">
-    <Button v-if="!open" variant="ghost" class="island-head" :aria-expanded="false" :aria-controls="panelId" data-team-island-pill @click="emit('toggle')">
+  <div class="island" :class="{ 'is-open': open, 'is-wide': wide }" :data-team-island="sheet.taskId">
+    <Button variant="ghost" class="island-head" :aria-expanded="open" :aria-controls="open ? panelId : undefined"
+      data-team-island-pill @click="emit('toggle')">
       <TeamFaces :faces="faces" :size="24" />
       <span class="island-label">{{ t('teamWork.island.label', { count: sheet.shares.length, title: sheet.title }) }}</span>
       <template v-if="total !== null">
@@ -41,12 +35,7 @@ const total = computed(() => fill(props.sheet.progress))
         <span class="island-count ui-num">{{ sheet.progress!.completed }}/{{ sheet.progress!.total }}</span>
       </template>
     </Button>
-    <!-- Open, the capsule is the card itself; the title is said once, by the card. -->
-    <div v-else :id="panelId" class="island-panel">
-      <UiIconButton class="island-fold" icon="chevron-down" size="sm" :label="t('teamWork.island.fold')" data-team-island-fold @click="emit('toggle')" />
-      <TeamCard :sheet="sheet" :space-id="spaceId" :name-of="nameOf" :project-name="projectName" default-open />
-    </div>
-  </motion.div>
+  </div>
 </template>
 
 <style scoped>
@@ -55,9 +44,11 @@ const total = computed(() => fill(props.sheet.progress))
   width: min(var(--island-width, 330px), 100%); min-width: 0; padding: 4px; border: 1px solid var(--edge-glass); border-radius: 30px;
   background: var(--surface-glass-strong); -webkit-backdrop-filter: blur(24px) saturate(160%); backdrop-filter: blur(24px) saturate(160%);
   box-shadow: 0 0 0 .5px rgb(var(--shadow-rgb) / 8%), 0 10px 30px -10px rgb(var(--shadow-rgb) / 26%);
+  transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
 }
 .island.is-wide { --island-width: 440px; }
-.island.is-open { width: min(620px, 100%); border-radius: 26px; box-shadow: 0 0 0 .5px rgb(var(--shadow-rgb) / 8%), 0 24px 60px -12px rgb(var(--shadow-rgb) / 30%); }
+/* The open one lifts a little and takes the gold edge; it does not move. */
+.island.is-open { border-color: var(--color-gold); box-shadow: 0 0 0 .5px rgb(var(--shadow-rgb) / 8%), 0 14px 34px -12px rgb(var(--shadow-rgb) / 32%); }
 .island-head {
   display: flex; justify-content: flex-start; gap: 10px; width: 100%; height: auto; min-width: 0; padding: 4px 14px 4px 6px;
   border-radius: var(--radius-pill); color: var(--color-ink); font-size: var(--text-control); font-weight: var(--weight-regular); text-align: left; white-space: nowrap;
@@ -66,7 +57,4 @@ const total = computed(() => fill(props.sheet.progress))
 .island-bar { position: relative; flex: none; width: 44px; height: 4px; overflow: hidden; border-radius: 4px; background: var(--color-surface-hover); }
 .island-bar i { position: absolute; inset: 0; border-radius: inherit; background: var(--color-gold); transform-origin: left center; transition: transform var(--motion-spring) var(--motion-ease-spring); }
 .island-count { flex: none; color: var(--color-muted); font-size: var(--text-meta); }
-.island-panel { position: relative; padding: 4px; }
-.island-fold { position: absolute; top: -4px; right: -4px; z-index: 1; background: var(--surface-glass-strong); box-shadow: var(--shadow-sm); }
-.island-panel :deep(.team-card) { max-height: min(60vh, 520px); overflow-y: auto; box-shadow: none; }
 </style>
