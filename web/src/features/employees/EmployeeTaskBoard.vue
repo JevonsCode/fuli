@@ -533,9 +533,9 @@ onBeforeUnmount(() => {
 .employee-all-projects-notice { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; min-height: 38px; padding: 8px 12px; border-radius: 10px; background: var(--color-warning-soft); color: var(--color-warning); font-size: 13px; }
 .employee-all-projects-notice.is-error { background: var(--color-danger-soft); color: var(--color-danger); }
 .employee-all-projects-board-shell { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 8px; }
-.employee-all-projects-board { display: grid; flex: 1; grid-template-columns: repeat(var(--board-column-count, 5), minmax(230px, 1fr)); gap: 12px; min-height: 0; overflow-x: auto; padding: 2px 2px 4px; }
+.employee-all-projects-board { display: grid; flex: 1; grid-template-columns: repeat(var(--board-column-count, 5), minmax(150px, 1fr)); gap: 12px; min-height: 0; overflow-x: auto; padding: 2px 2px 4px; }
 .employee-all-projects-board:focus { outline: none; }
-.employee-all-projects-column { display: flex; min-width: 230px; min-height: 0; flex-direction: column; overflow: hidden; border-radius: 14px; background: var(--color-surface-subtle); transition: background-color 160ms ease, box-shadow 160ms ease; }
+.employee-all-projects-column { display: flex; min-width: 150px; min-height: 0; flex-direction: column; overflow: hidden; border-radius: 14px; background: var(--color-surface-subtle); transition: background-color 160ms ease, box-shadow 160ms ease; }
 .employee-all-projects-column.is-drop-target { background: var(--color-surface-subtle); box-shadow: inset 0 0 0 1px var(--color-accent-line); }
 .employee-all-projects-column > header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 10px; padding: 13px 14px 10px; }
 .employee-all-projects-column h3 { margin: 0; font-size: 14px; font-weight: 650; }
