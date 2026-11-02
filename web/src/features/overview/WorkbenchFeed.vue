@@ -115,7 +115,7 @@ const solo = computed(() => {
 .workbench-feed { display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; padding: 0 6px 112px 0; overflow: auto; overscroll-behavior: contain; }
 .workbench-card {
   display: grid; gap: 6px; padding: 14px 18px; border-radius: var(--radius-panel);
-  background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border);
+  background: var(--surface-panel-glass); -webkit-backdrop-filter: var(--filter-panel); backdrop-filter: var(--filter-panel); box-shadow: 0 0 0 1px var(--color-border);
 }
 .workbench-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
 .workbench-card-head h2 { margin: 0; font-size: var(--text-section); }
