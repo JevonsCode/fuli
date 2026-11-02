@@ -76,7 +76,7 @@ const pinLabel = computed(() =>
   <template v-else>
     <DialogHeader class="flex-row items-start gap-3">
       <span class="agent-portrait small agent-card-identity" :style="agentIdentityStyle(agent.agentId)" aria-hidden="true">
-        <img :src="agentAvatarUrl(agent.agentId)" alt="" />
+        <img :src="agentAvatarUrl(agent.agentId)" :data-agent-portrait="agent.agentId" alt="" />
       </span>
       <div class="grid min-w-0 gap-1">
         <DialogTitle class="text-xl leading-tight [overflow-wrap:anywhere]">{{ name }}</DialogTitle>

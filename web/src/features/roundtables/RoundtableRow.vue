@@ -42,7 +42,7 @@ const foldedName = computed(() => [props.title, props.waiting].filter(Boolean).j
       :aria-label="collapsed ? foldedName : undefined" :title="collapsed ? foldedName : undefined" :data-delivery="delivery">
       <span class="rt-faces" :class="`has-${faces.length}`" aria-hidden="true">
         <span v-for="face in faces" :key="face.key" class="rt-face" :style="face.agentId ? agentIdentityStyle(face.agentId) : undefined">
-          <img v-if="face.agentId" :src="agentAvatarUrl(face.agentId)" alt="" />
+          <img v-if="face.agentId" :src="agentAvatarUrl(face.agentId)" :data-agent-portrait="face.agentId" alt="" />
           <template v-else>{{ face.initial }}</template>
         </span>
         <span class="rt-mode" data-roundtable-mode><UiIcon :name="delivery" :size="10" /></span>

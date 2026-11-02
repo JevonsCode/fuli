@@ -62,7 +62,7 @@ function toggle(id: string) {
       <ol class="timeline-list">
         <li v-for="(entry, index) in day.entries" :key="entry.id" class="timeline-entry" :data-tone="entry.tone" :data-timeline-entry="entry.id"
           :class="{ 'is-now': live && order.get(entry.id) === 0 }" :style="{ '--i': Math.min(order.get(entry.id) ?? 0, PAGE) }">
-          <span v-if="entry.agentId" class="timeline-mark timeline-face" :style="agentIdentityStyle(entry.agentId)" aria-hidden="true"><img :src="agentAvatarUrl(entry.agentId)" alt="" /></span>
+          <span v-if="entry.agentId" class="timeline-mark timeline-face" :style="agentIdentityStyle(entry.agentId)" aria-hidden="true"><img :src="agentAvatarUrl(entry.agentId)" :data-agent-portrait="entry.agentId" alt="" /></span>
           <span v-else class="timeline-mark timeline-dot" :data-actor="entry.actorKind === 'human' ? 'you' : 'system'" aria-hidden="true" />
           <span v-if="entry.tone !== 'plain'" class="sr-only">{{ t(`overview.timeline.tones.${entry.tone}`) }}</span>
           <div class="timeline-body">
@@ -71,7 +71,7 @@ function toggle(id: string) {
               <strong class="timeline-actor"><MeLink v-if="!entry.agentId && entry.actorKind === 'human'" /><template v-else>{{ actor(entry) }}</template></strong>
               <span v-if="entry.crew.length" class="timeline-crew" :title="t('overview.timeline.crew', { names: crewNames(entry) })" data-timeline-crew>
                 <span v-for="id in entry.crew.slice(0, CREW_FACES)" :key="id" class="timeline-crew-face" :style="agentIdentityStyle(id)" aria-hidden="true">
-                  <img :src="agentAvatarUrl(id)" alt="" />
+                  <img :src="agentAvatarUrl(id)" :data-agent-portrait="id" alt="" />
                 </span>
                 <span v-if="entry.crew.length > CREW_FACES" class="timeline-crew-more" aria-hidden="true" data-timeline-crew-more><span /><span /><span /></span>
                 <span class="sr-only">{{ t('overview.timeline.crew', { names: crewNames(entry) }) }}</span>

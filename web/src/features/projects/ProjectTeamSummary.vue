@@ -114,7 +114,7 @@ function number(person: ProjectTeamPerson) {
         :aria-label="`${t('projects.overview.lead')} ${team.lead.name}. ${expanded ? t('projects.overview.hideOrganization') : t('projects.overview.showOrganization')}`"
         @click="expanded = !expanded"
       >
-        <span class="project-team-avatar" aria-hidden="true"><img :src="agentAvatarUrl(team.lead.agentId)" alt="" /></span>
+        <span class="project-team-avatar" aria-hidden="true"><img :src="agentAvatarUrl(team.lead.agentId)" :data-agent-portrait="team.lead.agentId" alt="" /></span>
         <span class="project-team-lead-text">
           <span class="project-team-lead-name">
             <strong>{{ team.lead.name }}</strong>
@@ -152,7 +152,7 @@ function number(person: ProjectTeamPerson) {
         <div v-for="group in memberGroups" :key="group.key" class="project-team-group" :class="[`is-${group.key}`, { 'is-sub-team': group.lead || group.unavailableLead }]" :data-team-group="group.key">
           <h4>{{ group.title }}</h4>
           <p v-if="group.lead" class="project-team-sub-lead">
-            <span class="project-team-avatar is-small" aria-hidden="true"><img :src="agentAvatarUrl(group.lead.agentId)" alt="" /></span>
+            <span class="project-team-avatar is-small" aria-hidden="true"><img :src="agentAvatarUrl(group.lead.agentId)" :data-agent-portrait="group.lead.agentId" alt="" /></span>
             <AgentName :space-id="spaceId" :agent-id="group.lead.agentId" :name="group.lead.name" />
             <span class="ui-meta">{{ t('projects.overview.subLead') }}</span>
           </p>
@@ -161,7 +161,7 @@ function number(person: ProjectTeamPerson) {
           </p>
           <ul v-if="group.people.length" class="project-team-list">
             <li v-for="person in group.people" :key="person.agentId">
-              <span class="project-team-avatar is-small" aria-hidden="true"><img :src="agentAvatarUrl(person.agentId)" alt="" /></span>
+              <span class="project-team-avatar is-small" aria-hidden="true"><img :src="agentAvatarUrl(person.agentId)" :data-agent-portrait="person.agentId" alt="" /></span>
               <span class="project-team-person">
                 <span>
                   <AgentName :space-id="spaceId" :agent-id="person.agentId" :name="person.name" />
@@ -184,7 +184,7 @@ function number(person: ProjectTeamPerson) {
             <h4>{{ group.title }}</h4>
             <ul class="project-team-list">
               <li v-for="person in group.people" :key="person.agentId">
-                <span class="project-team-avatar is-small" aria-hidden="true"><img :src="agentAvatarUrl(person.agentId)" alt="" /></span>
+                <span class="project-team-avatar is-small" aria-hidden="true"><img :src="agentAvatarUrl(person.agentId)" :data-agent-portrait="person.agentId" alt="" /></span>
                 <span class="project-team-person">
                   <span>
                     <AgentName :space-id="spaceId" :agent-id="person.agentId" :name="person.name" />

@@ -5,12 +5,15 @@
  * already did. Tailwind's preflight is not used; this is FULI's own reset.
  */
 * { box-sizing: border-box; }
-/* One scrollbar everywhere (Jevons 10-27): thin, a quiet rounded thumb and
-   no track. Scrollers that hide their bar (tab strips) keep their own
-   `scrollbar-width: none`. Browsers that support the standard properties use
-   them; the ::-webkit rules shape the thumb where they do not. */
-* { scrollbar-width: thin; scrollbar-color: var(--color-border-strong) transparent; }
-::-webkit-scrollbar { width: 10px; height: 10px; }
+/* One scrollbar everywhere (Jevons 10-27, 11-02): thin, a rounded thumb that darkens on hover, and no
+   track. Chromium (and the desktop client's WebView2) draws its own native bar as soon as
+   `scrollbar-width` is set, ignoring the ::-webkit rules, so the standard properties apply only
+   where ::-webkit-scrollbar is not supported (Firefox). Scrollers that hide their bar (tab strips)
+   keep their own `scrollbar-width: none`. */
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: var(--color-border-strong) transparent; }
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: var(--color-border-strong) padding-box; }
 ::-webkit-scrollbar-thumb:hover { background-color: var(--color-muted); }

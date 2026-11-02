@@ -46,6 +46,19 @@ dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(var(-
 .ui-dialog--xl { width: min(1040px, calc(100vw - 32px)); }
 .ui-dialog[open] { animation: ui-dialog-in 180ms var(--motion-ease); }
 @keyframes ui-dialog-in { from { opacity: 0; transform: translateY(6px) scale(.99); } }
+
+/* An FLA portrait's playful click shake (Jevons 11-02): the app context menu adds the
+   class for ~400ms and never prevents the click, so a portrait inside a link
+   still follows it. The reduced-motion rules below already shorten it to none,
+   and the click handler skips it under reduced motion. */
+@keyframes agent-portrait-shake {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-5deg); }
+  40% { transform: rotate(4deg); }
+  60% { transform: rotate(-2deg); }
+  80% { transform: rotate(1deg); }
+}
+.agent-portrait-shake { animation: agent-portrait-shake 400ms var(--motion-ease); }
 .ui-dialog__shell { display: flex; flex-direction: column; max-height: calc(100dvh - 50px); min-height: 0; }
 .ui-dialog__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 24px 0; }
 .ui-dialog__header h2 { margin: 0; font-size: var(--text-section); font-weight: var(--weight-strong); letter-spacing: -.01em; }

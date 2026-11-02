@@ -320,7 +320,7 @@ function formattedDate(value: string) {
           <ul v-if="filteredAgents.length" class="bole-agent-list m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3 @min-[1400px]:grid-cols-4">
             <li v-for="agent in filteredAgents" :key="agent.id" class="bole-card bole-agent-card">
               <div class="bole-agent-identity">
-                <span class="bole-agent-mark" aria-hidden="true"><img :src="agentAvatarUrl(agent.id)" alt=""></span>
+                <span class="bole-agent-mark" aria-hidden="true"><img :src="agentAvatarUrl(agent.id)" :data-agent-portrait="agent.id" alt=""></span>
                 <div><strong><AgentName :space-id="personalSpaceId" :agent-id="agent.id" :name="agent.name" /></strong><AgentHand :agent-id="agent.id" /><small>{{ agent.responsibility || typeLabel(agent.type) }}</small></div>
               </div>
               <div class="bole-agent-work">

@@ -1,19 +1,59 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { t } from '@/i18n'
+import GrowthLoading from '@/components/GrowthLoading.vue'
+import { agentPinsText } from '@/features/agent-profile/agent-pins'
+import { agentProfilePath } from '@/features/agent-profile/profile-model'
+import { useAgentWorkSurfaces } from '@/features/agent-profile/use-agent-work-surfaces'
+import { usePortraitShake } from '@/features/agent-profile/use-portrait-shake'
+import { useConsoleStore } from '@/stores/console'
+import { getJson } from '@/api/client'
+import { agentDisplayName } from '@/features/agent-profile/profile-model'
+import { projectAgentShape } from '@/features/agent-profile/agent-record-shape'
+import type { ProjectAgentRecord } from '@/types'
 import { readContextTarget, type ContextTarget } from './context-target'
 import { replaceFieldRange, selectAllInField } from './field-edit'
 
 // The app's one right-click menu (Jevons 11-01): the WebView's native menu
 // never shows. A right-click on selected text, a text field or a link opens
 // this glass menu with what makes sense there; anywhere else, nothing opens.
-// A component with its own right-click menu (the dock's pins, an FLA row) or
-// the glossary mode claims the event first and keeps it.
+// A component with its own right-click menu (the dock's pins) or the glossary
+// mode claims the event first and keeps it. Every FLA portrait in the console
+// (`data-agent-portrait`) gets the dock pins' menu here, and a click on one
+// gives it a short shake (Jevons 11-02).
 type MenuAction = 'cut' | 'copy' | 'paste' | 'selectAll' | 'open' | 'copyLink'
 
 const router = useRouter()
+const store = useConsoleStore()
+const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
+const work = useAgentWorkSurfaces(spaceId)
+const { shake } = usePortraitShake()
+const agentTarget = computed(() => target.value?.kind === 'agent' ? target.value : null)
+// A portrait names only its FLA's id: the menu reads that FLA's record for its name and,
+// with it, where its workbench and workflows are. Records read once stay for the visit.
+const agents = ref<Record<string, ProjectAgentRecord | 'missing'>>({})
+const agentName = (agentId: string) => { const record = agents.value[agentId]; return record && record !== 'missing' ? agentDisplayName(record) : agentId }
+async function readAgent(agentId: string) {
+  if (!agents.value[agentId]) {
+    try {
+      agents.value[agentId] = await getJson(`/api/project-agents/${encodeURIComponent(agentId)}?${new URLSearchParams({ personalSpaceId: spaceId.value })}`,
+        projectAgentShape)
+    } catch {
+      agents.value[agentId] = 'missing'
+    }
+  }
+  const record = agents.value[agentId]
+  if (record !== 'missing') void work.open(record)
+}
+function goAgent(to: Parameters<typeof router.push>[0]) { void router.push(to) }
+function onPortraitClick(event: MouseEvent) {
+  const portrait = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-agent-portrait]') : null
+  // The face around the picture (its only child) shakes, so a round, clipped portrait moves as one.
+  const face = portrait?.parentElement?.childElementCount === 1 ? portrait.parentElement : portrait
+  if (face) shake(face)
+}
 const open = ref(false)
 const point = ref({ x: 0, y: 0 })
 const target = ref<ContextTarget | null>(null)
@@ -58,6 +98,7 @@ async function onContextMenu(event: MouseEvent) {
   if (!found) return
   await nextTick()
   target.value = found
+  if (found.kind === 'agent') void readAgent(found.agentId)
   point.value = menuPoint(event)
   returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
   dismissedOutside = false
@@ -106,7 +147,8 @@ async function cut(current: FieldTarget) {
 
 function run(action: MenuAction) {
   const current = target.value
-  if (!current) return
+  // A portrait's menu runs its own items (goAgent), never these.
+  if (!current || current.kind === 'agent') return
   if (current.kind === 'link') {
     if (action === 'copyLink') return writeClipboard(current.url.href)
     // An outside link opens the way the app opens every outside link: a new window, which the desktop client hands to the browser.
@@ -124,12 +166,14 @@ function run(action: MenuAction) {
 onMounted(() => {
   void watchClipboardRead()
   window.addEventListener('contextmenu', onContextMenu)
+  window.addEventListener('click', onPortraitClick, true)
   window.addEventListener('scroll', onScroll, true)
   window.addEventListener('blur', close)
   window.addEventListener('resize', close)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('contextmenu', onContextMenu)
+  window.removeEventListener('click', onPortraitClick, true)
   window.removeEventListener('scroll', onScroll, true)
   window.removeEventListener('blur', close)
   window.removeEventListener('resize', close)
@@ -144,7 +188,25 @@ onBeforeUnmount(() => {
     </ContextMenuTrigger>
     <ContextMenuContent class="app-context-menu" :collision-padding="8" data-app-context-menu
       @close-auto-focus="onCloseAutoFocus" @interact-outside="onInteractOutside">
-      <ContextMenuItem v-for="action in actions" :key="action" :data-context-action="action" @select="run(action)">
+      <template v-if="agentTarget">
+        <ContextMenuLabel>{{ agentName(agentTarget.agentId) }}</ContextMenuLabel>
+        <ContextMenuItem data-portrait-action="home" @select="goAgent({ path: agentProfilePath(spaceId, agentTarget.agentId), query: { tab: 'overview' } })">
+          {{ agentPinsText('menu.home', 'Open profile') }}
+        </ContextMenuItem>
+        <ContextMenuItem v-if="work.surfaces.value[agentTarget.agentId]?.status === 'loading'" disabled>
+          <GrowthLoading variant="inline" :label="t('agentPins.menu.reading', { name: agentName(agentTarget.agentId) })" />
+        </ContextMenuItem>
+        <ContextMenuItem v-else-if="work.surfaces.value[agentTarget.agentId]?.status === 'error'" disabled>
+          {{ t('agentPins.menu.readError', { name: agentName(agentTarget.agentId) }) }}
+        </ContextMenuItem>
+        <ContextMenuItem v-if="work.ready(agentTarget.agentId)?.workbench" data-portrait-action="workbench" @select="goAgent(work.ready(agentTarget.agentId)!.workbench!)">
+          {{ agentPinsText('menu.workbench', 'Open Workbench') }}
+        </ContextMenuItem>
+        <ContextMenuItem v-if="work.ready(agentTarget.agentId)?.workflow" data-portrait-action="workflow" @select="goAgent(work.ready(agentTarget.agentId)!.workflow!)">
+          {{ agentPinsText('menu.workflow', 'Open Workflow') }}
+        </ContextMenuItem>
+      </template>
+      <ContextMenuItem v-for="action in actions" v-else :key="action" :data-context-action="action" @select="run(action)">
         {{ t(`contextMenu.${action}`) }}
       </ContextMenuItem>
     </ContextMenuContent>

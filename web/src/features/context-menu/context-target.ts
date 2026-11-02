@@ -11,6 +11,8 @@ export type ContextTarget =
   | { kind: 'field'; field: EditableField; range: FieldRange; selected: string; actions: FieldAction[] }
   | { kind: 'text'; text: string }
   | { kind: 'link'; url: URL; internal: boolean }
+  /** An FLA portrait (`data-agent-portrait` = its agentId): the dock pins' menu without 取消置顶. */
+  | { kind: 'agent'; agentId: string }
 
 export interface ContextTargetOptions {
   selection: Selection | null
@@ -77,6 +79,10 @@ export function readContextTarget(target: EventTarget | null, { selection, origi
   }
   const text = selectedText(element, selection)
   if (text) return { kind: 'text', text }
+  // A portrait inside a link offers the FLA's menu, not the link's.
+  const portrait = element.closest<HTMLElement>('[data-agent-portrait]')
+  const agentId = portrait?.dataset.agentPortrait
+  if (agentId) return { kind: 'agent', agentId }
   const link = linkAt(element, origin)
   return link ? { kind: 'link', ...link } : null
 }

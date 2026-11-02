@@ -1,9 +1,16 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent, h } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import AppContextMenu from './AppContextMenu.vue'
+
+const { getJson } = vi.hoisted(() => ({ getJson: vi.fn() }))
+vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson }))
+vi.mock('@/features/agent-profile/agent-work-surfaces', () => ({
+  readAgentWorkSurfaces: vi.fn(async () => ({ workbench: { path: '/agents/space/agent-1', query: { tab: 'workbench' } }, workflow: null })),
+}))
 
 const clipboard = { writeText: vi.fn(async (_text: string) => {}), readText: vi.fn(async () => 'there') }
 
@@ -26,6 +33,8 @@ const Page = defineComponent(() => () => h('div', [
   h('input', { id: 'field', value: 'hello world' }),
   h('a', { id: 'inner', href: '/inbox' }, 'Inbox'),
   h('a', { id: 'outer', href: 'https://example.com/docs' }, 'Docs'),
+  // An FLA portrait inside a link, as in the FLAs list.
+  h('a', { id: 'card', href: '/inbox' }, [h('span', { id: 'face' }, [h('img', { id: 'portrait', 'data-agent-portrait': 'agent-1', alt: '' })]), ' Ada Vale']),
   h(ContextMenu, () => [
     h(ContextMenuTrigger, { asChild: true }, () => h('div', { id: 'own' }, 'Pinned FLA')),
     h(ContextMenuContent, { 'data-own-menu': '' }, () => h(ContextMenuItem, () => 'Unpin')),
@@ -34,6 +43,8 @@ const Page = defineComponent(() => () => h('div', [
 ]))
 
 async function setup() {
+  setActivePinia(createPinia())
+  getJson.mockResolvedValue({ agentId: 'agent-1', personalSpaceId: 'space', profile: { name: 'Ada Vale', displayName: 'Ada Vale', status: 'active', capabilities: [] } })
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { render: () => null } }, { path: '/inbox', component: { render: () => null } }] })
   await router.push('/')
   const wrapper = mount(Page, { global: { plugins: [router] }, attachTo: document.body })
@@ -128,6 +139,23 @@ describe('AppContextMenu', () => {
     await rightClick('#outer')
     await choose('copyLink')
     expect(clipboard.writeText).toHaveBeenCalledWith('https://example.com/docs')
+  })
+
+  it('gives an FLA portrait the dock pins menu, read from its record, even inside a link', async () => {
+    await setup()
+    await rightClick('#portrait')
+    await flushPromises()
+    expect(document.querySelector('[data-app-context-menu]')?.textContent).toContain('Ada Vale')
+    expect([...document.querySelectorAll('[data-app-context-menu] [data-portrait-action]')].map(item => item.getAttribute('data-portrait-action'))).toEqual(['home', 'workbench'])
+    expect(actions()).toEqual([])
+    expect(document.querySelector('[data-app-context-menu]')?.textContent).not.toContain('取消置顶')
+  })
+
+  it('shakes the face of a clicked FLA portrait, and not under reduced motion', async () => {
+    await setup()
+    const face = document.querySelector<HTMLElement>('#face')!
+    document.querySelector<HTMLElement>('#portrait')!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(face.classList.contains('agent-portrait-shake')).toBe(true)
   })
 
   it('lets a component with its own right-click menu keep it', async () => {

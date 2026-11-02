@@ -305,7 +305,7 @@ async function cleanup(person: ProjectAgentRecord) {
             :style="agentIdentityStyle(agent.agentId)"
             aria-hidden="true"
           >
-            <img :src="agentAvatarUrl(agent.agentId)" alt="" />
+            <img :src="agentAvatarUrl(agent.agentId)" :data-agent-portrait="agent.agentId" alt="" />
           </span>
           <div class="grid min-w-0 gap-2">
             <p class="project-agent-summary-meta" data-agent-identity>

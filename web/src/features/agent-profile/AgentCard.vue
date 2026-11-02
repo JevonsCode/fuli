@@ -161,7 +161,7 @@ function surfaceClick(event: MouseEvent) {
         aria-hidden="true"
         data-card-portrait
       >
-        <img :src="agentAvatarUrl(agent.agentId)" alt="" />
+        <img :src="agentAvatarUrl(agent.agentId)" :data-agent-portrait="agent.agentId" alt="" />
       </span>
       <div class="min-w-0 flex-1">
         <div class="agent-directory-name flex min-w-0 items-start gap-1.5">

@@ -63,7 +63,7 @@ const solo = computed(() => {
       <OverviewReadStatus :state="requestsState" :label="t('overview.attention.loading')" :failed="t('overview.attention.loadFailed')" @retry="emit('retryRequests')" />
       <TransitionGroup name="ui-list" tag="ul" class="workbench-rows">
         <li v-for="item in requests" :key="item.requestId" class="workbench-row" data-workbench-request>
-          <span class="workbench-face" :style="agentIdentityStyle(item.agentId)" aria-hidden="true"><img :src="agentAvatarUrl(item.agentId)" alt="" /></span>
+          <span class="workbench-face" :style="agentIdentityStyle(item.agentId)" aria-hidden="true"><img :src="agentAvatarUrl(item.agentId)" :data-agent-portrait="item.agentId" alt="" /></span>
           <div class="workbench-row-text">
             <p class="workbench-row-title">{{ item.title?.trim() || t('overview.missing.requestTitle') }}</p>
             <p class="workbench-meta">{{ t('overview.attention.meta', { name: agentName(item.agentId), time: formatTime(item.createdAt) }) }}</p>
@@ -82,7 +82,7 @@ const solo = computed(() => {
         <li v-for="task in solo" :key="taskKey(task)">
           <Button variant="ghost" class="workbench-row workbench-pick" :aria-label="t('overview.stage.switchTo', { title: title(task) })" data-workbench-pick @click="emit('select', task)">
             <span class="workbench-face" :style="agentIdentityStyle(task.leadAgentId ?? task.ownerAgentId)" aria-hidden="true">
-              <img v-if="task.leadAgentId || task.ownerAgentId" :src="agentAvatarUrl(task.leadAgentId ?? task.ownerAgentId ?? '')" alt="" />
+              <img v-if="task.leadAgentId || task.ownerAgentId" :src="agentAvatarUrl(task.leadAgentId ?? task.ownerAgentId ?? '')" :data-agent-portrait="task.leadAgentId ?? task.ownerAgentId ?? ''" alt="" />
             </span>
             <span class="workbench-row-text">
               <motion.span :layout-id="flying === taskKey(task) ? `work-title-${flying}` : undefined" class="workbench-row-title" :transition="SPRING">{{ title(task) }}</motion.span>

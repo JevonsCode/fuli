@@ -97,7 +97,7 @@ watch(() => props.thread.messages.length, async (length, previous) => {
             <div class="rt-msg-row">
               <template v-if="!bubble.mine">
                 <span v-if="marks[index]!.runStart" class="rt-face roundtable-avatar" :style="agentIdentityStyle(bubble.from.agentId)" aria-hidden="true"><img
-                  v-if="bubble.from.agentId" :src="agentAvatarUrl(bubble.from.agentId)" alt="" /><template v-else>{{ initial(bubble) }}</template></span>
+                  v-if="bubble.from.agentId" :src="agentAvatarUrl(bubble.from.agentId)" :data-agent-portrait="bubble.from.agentId" alt="" /><template v-else>{{ initial(bubble) }}</template></span>
                 <span v-else class="rt-face-gap" aria-hidden="true" />
               </template>
               <div class="rt-msg-col">

@@ -94,7 +94,7 @@ function changed() { void load() }
                 <span class="app-meta">{{ appTypeLabel(app.type) }}<template v-if="app.version"> · v{{ app.version }}</template></span>
               </span>
               <span class="app-owner" :title="t('agentApps.by', { name: ownerName(app.agentId) })">
-                <span class="app-face" :style="agentIdentityStyle(app.agentId)" aria-hidden="true"><img :src="agentAvatarUrl(app.agentId)" alt="" /></span>
+                <span class="app-face" :style="agentIdentityStyle(app.agentId)" aria-hidden="true"><img :src="agentAvatarUrl(app.agentId)" :data-agent-portrait="app.agentId" alt="" /></span>
                 <span class="ui-sr-only">{{ t('agentApps.by', { name: ownerName(app.agentId) }) }}</span>
               </span>
               <span class="app-status" :data-tone="appStatus(app).tone">{{ appStatus(app).text }}</span>

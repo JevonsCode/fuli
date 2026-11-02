@@ -88,7 +88,7 @@ onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { captu
           <p v-if="marks[index]!.separator" class="rt-sep"><time :datetime="message.createdAt">{{ time(message.createdAt) }}</time></p>
           <div class="rt-msg-row">
             <span v-if="marks[index]!.runStart" class="rt-face roundtable-chat-avatar" :style="agentIdentityStyle(sender(message.from)?.agentId ?? null)" aria-hidden="true"><img
-              v-if="senderAvatar(message.from)" :src="senderAvatar(message.from)" alt="" /><template v-else>{{ initial(message.from) }}</template></span>
+              v-if="senderAvatar(message.from)" :src="senderAvatar(message.from)" :data-agent-portrait="sender(message.from)?.agentId" alt="" /><template v-else>{{ initial(message.from) }}</template></span>
             <span v-else class="rt-face-gap" aria-hidden="true" />
             <div class="rt-msg-col">
               <p v-if="marks[index]!.runStart" class="rt-byline"><strong>{{ senderName(message.from) }}</strong></p>

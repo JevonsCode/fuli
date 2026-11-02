@@ -12,7 +12,7 @@ const initial = (seat: RoundtableSeat) => (seat.person.name ?? '?').trim().slice
 <template>
   <ul class="roundtable-seats" :aria-label="t('roundtable.table', { count: seats.length })">
     <li v-for="seat in seats" :key="seat.key" class="roundtable-seat" :class="{ 'is-awaited': seat.awaited }" :style="agentIdentityStyle(seat.person.agentId)" data-roundtable-seat>
-      <span class="roundtable-seat-face" aria-hidden="true"><img v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" alt="" /><template v-else>{{ initial(seat) }}</template></span>
+      <span class="roundtable-seat-face" aria-hidden="true"><img v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" :data-agent-portrait="seat.person.agentId" alt="" /><template v-else>{{ initial(seat) }}</template></span>
       <span class="roundtable-seat-name">{{ seat.person.name ?? t('roundtable.unknownAgent') }}</span>
       <small class="roundtable-seat-state">{{ seat.awaited ? t('roundtable.seatAwaited') : t('roundtable.seatSpoke', { count: seat.spoke }) }}</small>
     </li>

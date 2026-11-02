@@ -377,7 +377,7 @@ async function projectsSaved() {
       <Breadcrumb :parent="{ label: t('agentProfiles.back'), to: '/project-agents', from: openedFromAgents }" />
       <div class="employee-workbench-identity">
         <span class="employee-workbench-mark" aria-hidden="true">
-          <img v-if="employeeAvatarUrl(templateId)" :src="agentAvatarUrl(`employee.${templateId}`)" alt="" />
+          <img v-if="employeeAvatarUrl(templateId)" :src="agentAvatarUrl(`employee.${templateId}`)" :data-agent-portrait="`employee.${templateId}`" alt="" />
           <template v-else>{{ template ? employeeName(template).slice(0, 1) : 'A' }}</template>
         </span>
         <span class="employee-workbench-role" data-employee-role>{{ employeeRoleLabel({ id: templateId, role: template?.role ?? '' }) }}</span>

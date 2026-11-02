@@ -61,4 +61,13 @@ describe('theme layers', () => {
     for (const selector of ['button', '[data-slot="button"]', '[role="button"]', '[role="tab"]', 'summary', 'nav a']) expect(rule, selector).toContain(selector)
     expect(rule).toContain('user-select: none')
   })
+
+  it('styles one thin scrollbar everywhere: a transparent track and a thumb that darkens on hover', () => {
+    // Chromium draws its native bar when scrollbar-width is set, so the standard properties are for other browsers only.
+    expect(elements).toContain('@supports not selector(::-webkit-scrollbar) {\n  * { scrollbar-width: thin;')
+    expect(elements).toContain('::-webkit-scrollbar { width: 8px; height: 8px; }')
+    expect(elements).toContain('::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }')
+    expect(elements).toContain('::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: var(--color-border-strong) padding-box; }')
+    expect(elements).toContain('::-webkit-scrollbar-thumb:hover { background-color: var(--color-muted); }')
+  })
 })
