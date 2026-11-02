@@ -95,13 +95,14 @@ describe('RoundtableThreadChat', () => {
   it('lists the participants beside the conversation on a very wide window, once', () => {
     const narrow = mountChat(conversation())
     expect(narrow.find('[data-roundtable-side]').exists()).toBe(false)
-    expect(narrow.findAll('details.rt-chat-people [data-roundtable-seat]').map(seat => seat.text())).toEqual([expect.stringContaining('Ada Vale')])
+    // The head is one line; who is in it opens in 详情.
+    expect(narrow.find('[data-roundtable-details]').exists()).toBe(true)
+    expect(narrow.findAll('[data-roundtable-seat]')).toHaveLength(0)
     const matchMedia = vi.fn((query: string) => ({ matches: query === '(min-width: 1440px)', media: query,
       addEventListener: vi.fn(), removeEventListener: vi.fn() }))
     vi.stubGlobal('matchMedia', matchMedia)
     try {
       const wide = mountChat(conversation())
-      expect(wide.find('details.rt-chat-people').exists()).toBe(false)
       const side = wide.get('[data-roundtable-side]')
       expect(side.get('h3').text()).toBe('参与者（1）')
       expect(wide.findAll('[data-roundtable-seat]').map(seat => seat.text())).toEqual([expect.stringContaining('Ada Vale')])

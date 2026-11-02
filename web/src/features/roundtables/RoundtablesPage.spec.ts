@@ -16,6 +16,7 @@ vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typ
   putJson: (url: string, body: unknown) => putJson(url, body) }))
 
 import { setLocale } from '@/i18n'
+import { openDetails } from './open-details.spec-support'
 import RoundtablesPage from './RoundtablesPage.vue'
 import { useRoundtableListCollapse } from './roundtable-list-collapse'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
@@ -44,7 +45,7 @@ async function mountAt(path: string) {
     { path: '/roundtables/:threadId?', component: RoundtablesPage },
   ] })
   await router.push(path)
-  const wrapper = mount(RoundtablesPage, { global: { plugins: [router] } })
+  const wrapper = mount(RoundtablesPage, { global: { plugins: [router] }, attachTo: document.body })
   await flushPromises()
   return wrapper
 }
@@ -60,14 +61,15 @@ describe('RoundtablesPage', () => {
   it('gives each participant one stable identity colour across the participant chips and timeline', async () => {
     getJson.mockImplementation(async (url: string) => url === '/api/roundtable/threads' ? { threads: [thread] } : detail)
     const wrapper = await mountAt('/roundtables/thread-1')
-    const faces = wrapper.findAll('[data-roundtable-seat]').map((seat) => seat.attributes('style'))
+    const details = await openDetails(wrapper)
+    const faces = details.seats.map((seat) => seat.attributes('style'))
     const avatars = wrapper.findAll('.roundtable-avatar').map((avatar) => avatar.attributes('style'))
     expect(faces[0]).toMatch(/--agent-identity: var\(--identity-[0-7]\)/)
     expect(avatars).toEqual(faces)
     expect(wrapper.findAll('.roundtable-avatar img').map(image => image.attributes('src'))).toEqual(
       ['lead-1', 'reviewer-1'].map(agentAvatarUrl),
     )
-    expect(wrapper.findAll('.roundtable-seat-face img').map(image => image.attributes('src'))).toEqual(
+    expect(details.faces).toEqual(
       ['lead-1', 'reviewer-1'].map(agentAvatarUrl),
     )
     wrapper.unmount()
@@ -115,7 +117,7 @@ describe('RoundtablesPage', () => {
     expect(bubbles[2]!.text()).toContain('没能立即叫醒 Cora Fenn：对方没有这台电脑上能叫醒的客户端')
     expect(bubbles[3]!.text()).toContain('没有送到 Remote Lead：发送到对方设备失败')
     expect(wrapper.find('[data-roundtable-record]').exists()).toBe(false)
-    const seats = wrapper.findAll('[data-roundtable-seat]')
+    const { seats } = await openDetails(wrapper)
     expect(seats.map(seat => seat.text())).toEqual([
       expect.stringContaining('Milo Reed'), expect.stringContaining('Nova Lane'),
       expect.stringContaining('Cora Fenn'), expect.stringContaining('Remote Lead'),
@@ -152,7 +154,7 @@ describe('RoundtablesPage', () => {
     expect(open.findAll('[data-roundtable-chat-message]').map(item => item.text())).toEqual([
       expect.stringContaining('部署窗口定在今晚'), expect.stringContaining('收到，我来值守'),
     ])
-    expect(open.findAll('[data-roundtable-seat]').map(seat => seat.text())).toEqual([
+    expect((await openDetails(open)).seats.map(seat => seat.text())).toEqual([
       expect.stringContaining('Milo Reed'), expect.stringContaining('Cora Fenn'),
     ])
     wrapper.unmount()

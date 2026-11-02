@@ -11,6 +11,7 @@ import { deliveryLabel, deliveryTone, reasonLabel, viaLabel } from './roundtable
 import { chatRunMarks } from './chat-runs'
 import { chatBubbles, postRecipients, tableSeats, type ChatBubble } from './roundtable-model'
 import { gapToEnd, scrollToEnd, TAIL_FOLLOW_PX } from './roundtable-scroll'
+import RoundtableChatHead from './RoundtableChatHead.vue'
 import RoundtableComposer from './RoundtableComposer.vue'
 import RoundtableSeats from './RoundtableSeats.vue'
 
@@ -85,19 +86,8 @@ watch(() => props.thread.messages.length, async (length, previous) => {
 <template>
   <article class="rt-chat roundtable-thread-chat" data-testid="roundtable-timeline">
     <div class="rt-thread-main">
-      <header class="rt-chat-head">
-        <span class="rt-chat-faces" aria-hidden="true">
-          <span v-for="seat in seats.slice(0, 4)" :key="seat.key" :style="agentIdentityStyle(seat.person.agentId)"><img
-            v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" alt="" /><template v-else>{{ (seat.person.name ?? '?').slice(0, 1) }}</template></span>
-        </span>
-        <h2 tabindex="-1" class="rt-chat-title" data-roundtable-detail-title>{{ thread.subject }}</h2>
-        <p class="rt-chat-meta">{{ t('roundtable.messages', { count: thread.messages.length }) }} · {{ time(thread.createdAt) }}</p>
-        <p v-if="stale" class="rt-chat-meta" role="status">{{ t('roundtable.stale') }}</p>
-        <details v-if="!wide" class="rt-chat-people">
-          <summary>{{ t('roundtable.participants', { count: seats.length }) }}</summary>
-          <RoundtableSeats :seats="seats" />
-        </details>
-      </header>
+      <RoundtableChatHead :seats="seats" :title="thread.subject" :stale="stale"
+        :meta="`${t('roundtable.messages', { count: thread.messages.length })} · ${time(thread.createdAt)}`" />
       <div ref="body" class="rt-chat-body">
         <p v-if="!bubbles.length" class="rt-chat-empty">{{ t('roundtable.emptyConversation') }}</p>
         <ol v-else class="rt-bubbles">

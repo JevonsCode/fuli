@@ -59,8 +59,11 @@ const showDetail = computed(() => !narrow.value || rt.hasSelection.value)
 </template>
 
 <style scoped>
-/* The page fills the window above the dock; the list and the conversation each scroll inside it. */
-.rt-view { display: flex; flex-direction: column; overflow: hidden; }
+/* The list and the conversation fill the window down to its bottom edge, under the floating dock
+   (Jevons 11-02); each scrolls inside itself and keeps its last line and the composer clear of the dock. */
+.rt-view { --rt-dock-room: calc(var(--dock-clearance) - 40px); display: flex; flex-direction: column; overflow: hidden; padding-bottom: 20px !important; }
+.rt :deep(.rt-composer) { padding-bottom: var(--rt-dock-room); }
+.rt :deep(.rt-chat:not(.roundtable-thread-chat) .rt-chat-body), .rt :deep(.rt-list-body) { padding-bottom: var(--rt-dock-room); }
 .rt {
   --rt-list-width: 300px;
   display: grid; flex: 1 1 0; grid-template-columns: var(--rt-list-width) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr);

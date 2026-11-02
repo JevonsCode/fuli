@@ -64,7 +64,8 @@ defineExpose({ clear: () => { body.value = '' } })
 /* Like Messages: one rounded field with a round send button inside its end; how the message travels sits just above. */
 .rt-composer { display: grid; flex: 0 0 auto; gap: 8px; padding: 10px 20px 16px; border-top: 1px solid var(--color-border); }
 .rt-modes { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding-inline: 6px; }
-.rt-mode { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px 2px 4px; border-radius: var(--radius-pill); color: var(--color-muted); font-size: var(--text-meta); cursor: pointer; transition: background var(--motion-fast), color var(--motion-fast); }
+/* The hidden radio takes no room, so the pill pads both sides alike and its words sit in the middle. */
+.rt-mode { display: inline-flex; align-items: center; justify-content: center; min-height: 26px; padding: 3px 12px; user-select: none; border-radius: var(--radius-pill); color: var(--color-muted); font-size: var(--text-meta); cursor: pointer; transition: background var(--motion-fast), color var(--motion-fast); }
 .rt-mode[data-selected] { color: var(--color-ink); background: var(--color-surface-hover); font-weight: var(--weight-medium); }
 .rt-mode-hint { color: var(--color-faint); font-size: var(--text-meta); }
 /* The radio stays for keyboards and screen readers; the pill shows the choice. */
