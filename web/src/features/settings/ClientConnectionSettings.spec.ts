@@ -278,14 +278,21 @@ it('adds a client by hand, shows why one was refused, and removes one FULI added
   wrapper.unmount()
 })
 
-it('opens the first-run guide again from 设置 › 客户端', async () => {
-  routed(() => Response.json(statusOf([{}])))
+it('connects every client FULI can write with 一键接入, one after another, and offers no guide', async () => {
+  const posted: string[] = []
+  routed(() => Response.json(statusOf([{ id: 'codex', status: 'not_connected' }, { id: 'cursor', label: 'Cursor', status: 'not_connected' },
+    { id: 'claude-code', label: 'Claude Code', status: 'connected' }])), (url, init) => {
+    if (!url.endsWith('/connect')) return Response.json(configuration)
+    posted.push(JSON.parse(String(init?.body)).clientId)
+    return Response.json({ status: 'connected' })
+  })
   const wrapper = mount(ClientConnectionSettings)
   await flushPromises()
-  const store = useConsoleStore()
-  expect(store.firstRunGuideShown).toBe(false)
-  await wrapper.get('[data-open-first-run-guide]').trigger('click')
-  expect(wrapper.get('[data-open-first-run-guide]').text()).toBe('打开入门引导')
-  expect(store.firstRunGuideShown).toBe(true)
+  expect(wrapper.find('[data-open-first-run-guide]').exists()).toBe(false)
+  const all = wrapper.get('[data-connect-all]')
+  expect(all.text()).toBe('一键接入')
+  await all.trigger('click')
+  await flushPromises()
+  expect(posted).toEqual(['codex', 'cursor'])
   wrapper.unmount()
 })

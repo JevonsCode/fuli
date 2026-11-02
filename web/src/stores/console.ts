@@ -200,13 +200,11 @@ export const useConsoleStore = defineStore('console', () => {
     return read
   }
 
-  // The first-run guide: shown once per installation, opened again from 设置 › 客户端.
-  const firstRunGuideReopened = ref(false)
-  const firstRunGuideShown = computed(() => state.value?.firstRunGuide?.open === true || firstRunGuideReopened.value)
-  function reopenFirstRunGuide() { firstRunGuideReopened.value = true }
+  // The first-run guide: shown once, after the first install (Jevons 11-02: not opened again elsewhere;
+  // 设置 › 客户端 has 一键接入 instead).
+  const firstRunGuideShown = computed(() => state.value?.firstRunGuide?.open === true)
   // Closed here at once; a close the server did not record leaves the guide for the next visit.
   async function closeFirstRunGuide(outcome: FirstRunGuideOutcome) {
-    firstRunGuideReopened.value = false
     if (state.value?.firstRunGuide?.open !== true) return
     state.value = { ...state.value, firstRunGuide: { open: false } }
     await postJson('/api/first-run-guide', { outcome }, firstRunGuideShape).catch(() => undefined)
@@ -316,7 +314,6 @@ export const useConsoleStore = defineStore('console', () => {
     answerCaptureScope,
     readCaptureOnboarding,
     firstRunGuideShown,
-    reopenFirstRunGuide,
     closeFirstRunGuide,
     rememberCapturePolicy,
     updateAgentAccessPolicy,
