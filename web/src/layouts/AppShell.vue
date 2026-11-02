@@ -168,8 +168,10 @@ watchEffect(() => {
 /* The page root (.view) is the scroll container: body never scrolls, so the
    main column keeps a fixed height and lets the routed page take the rest.
    The page itself is plain: surfaces and type carry the design (direction A). */
-.app-frame { position: relative; isolation: isolate; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; color: var(--color-ink); background: var(--color-bg); }
-.app-main { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+/* clip, not hidden: a hidden box can still be scrolled by scrollIntoView or focus, which pushed the top bar
+   out of the window (Jevons 11-02: 用着用着头部不见了). A clipped box never scrolls. */
+.app-frame { position: relative; isolation: isolate; display: flex; flex-direction: column; height: 100dvh; overflow: clip; color: var(--color-ink); background: var(--color-bg); }
+.app-main { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: clip; }
 /* Every page keeps its last lines clear of the floating dock. A page that
    ends with another block after its .view (项目's history card) keeps that
    space below the block instead, so no gap opens in the middle of the page. */

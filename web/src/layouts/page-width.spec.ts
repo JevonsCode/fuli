@@ -33,6 +33,11 @@ describe('one page width', () => {
     expect(shell).not.toMatch(/data-layout|--layout-max/)
   })
 
+  it('clips the frame and the main column, so no scrollIntoView can push the top bar out of the window', () => {
+    expect(shell).toMatch(/.app-frame {[^}]*overflow: clip;/)
+    expect(shell).toMatch(/.app-main {[^}]*overflow: clip;/)
+  })
+
   it('keeps no narrower page measure anywhere', () => {
     const offenders = Object.entries(sources).filter(([, source]) => /--(layout-max|form-measure|form-max|column-max)\b/.test(source))
     expect(offenders.map(([file]) => file)).toEqual([])
