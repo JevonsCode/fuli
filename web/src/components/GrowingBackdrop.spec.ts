@@ -1,6 +1,5 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import primitives from '@/styles/primitives.css?raw'
 import { pageBackdrop } from '@/lib/page-backdrops'
 import GrowingBackdrop from './GrowingBackdrop.vue'
 import source from './GrowingBackdrop.vue?raw'
@@ -34,11 +33,10 @@ describe('GrowingBackdrop', () => {
     expect(style).not.toMatch(/\b\d+m?s\b/)
   })
 
-  it('rests while motion is reduced: the shared rule zeroes every animation, the system’s and the app’s', () => {
-    // No fill mode, so a zero-length animation leaves each layer at its resting pose.
-    expect(style).not.toMatch(/forwards|both|animation-fill-mode/)
-    expect(primitives).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation-duration: 0s !important/)
-    expect(primitives).toMatch(/:root\[data-motion="reduced"\] \*[\s\S]*animation-duration: 0s !important/)
+  it('rests while motion is reduced, the system’s and the app’s: no animation, no parallax lean', () => {
+    const rest = 'animation: none !important; translate: none !important;'
+    expect(style).toContain(`@media (prefers-reduced-motion: reduce) { .backdrop-layer { ${rest} } }`)
+    expect(style).toContain(`:root[data-motion="reduced"] .backdrop-layer { ${rest} }`)
   })
 
   it('leans with the mouse and lets go of the pointer when it leaves', () => {

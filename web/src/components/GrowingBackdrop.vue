@@ -8,7 +8,7 @@ import { pageBackdrop } from '@/lib/page-backdrops'
 // lib/page-backdrops), painted once per layer. Each layer drifts and breathes
 // on its own long clock, by transform and opacity only, so the compositor
 // moves it and nothing is laid out or painted again; reduced motion zeroes
-// those animations in primitives.css and the layers rest. A mouse leans the
+// and leans them out (below), so the layers rest. A mouse leans the
 // layers a few pixels by depth (lib/backdrop-parallax). A change of
 // destination crossfades the motifs. It sits behind the page and takes no input.
 const props = defineProps<{ destination?: string }>()
@@ -70,6 +70,12 @@ onBeforeUnmount(() => stopParallax?.())
   from { opacity: 1; }
   to { opacity: .15; }
 }
+/* Reduced motion (the system's or the app's switch) rests every layer at its own
+   pose, unshifted and fully drawn: a zero-length animation alone would freeze it
+   wherever its delay landed, and the parallax lean would stay until the next move.
+   !important outranks the per-layer :nth-child animation rules above. */
+@media (prefers-reduced-motion: reduce) { .backdrop-layer { animation: none !important; translate: none !important; } }
+:root[data-motion="reduced"] .backdrop-layer { animation: none !important; translate: none !important; }
 .backdrop-fade-enter-active, .backdrop-fade-leave-active { transition: opacity var(--motion-crossfade) var(--motion-ease-out); }
 .backdrop-fade-enter-from, .backdrop-fade-leave-to { opacity: 0; }
 </style>
