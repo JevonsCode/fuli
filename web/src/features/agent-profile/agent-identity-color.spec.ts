@@ -1,28 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import tokens from '@/styles/theme/semantic.css?raw'
+import { channels, contrast, semanticToken as token } from '@/test-support/colour-contrast'
 import { AGENT_IDENTITY_COUNT, agentIdentityStyle, agentIdentitySwatch } from './agent-identity-color'
 
 // The swatches are semantic tokens (light block of theme/semantic.css); read them from there.
-const lightTokens = tokens.slice(0, tokens.indexOf('@media'))
-const token = (name: string) => {
-  const match = lightTokens.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6});`))
-  if (!match) throw new Error(`missing token ${name}`)
-  return match[1]!
-}
 const AGENT_IDENTITY_PALETTE = Array.from({ length: AGENT_IDENTITY_COUNT }, (_, index) => ({
   color: token(`--identity-${index}`),
   soft: token(`--identity-${index}-soft`),
 }))
 
-const channels = (hex: string) => [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16) / 255)
-const luminance = (hex: string) => {
-  const [r, g, b] = channels(hex).map((value) => value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
-  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
-}
-const contrast = (a: string, b: string) => {
-  const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x)
-  return (light! + 0.05) / (dark! + 0.05)
-}
 const hue = (hex: string) => {
   const [r, g, b] = channels(hex) as [number, number, number]
   const max = Math.max(r, g, b)

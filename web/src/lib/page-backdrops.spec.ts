@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { navDestinations } from '@/layouts/nav-destinations'
+import { contrast, mixOver, semanticToken } from '@/test-support/colour-contrast'
 import { pageBackdrop } from './page-backdrops'
 
 const dockKeys = navDestinations({ spaceId: 'space-1', publicProjects: true })
@@ -31,16 +32,17 @@ describe('page backdrops', () => {
       const background = layers.join(', ')
       expect(background).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i)
       const tokens = new Set(background.match(/var\(--[\w-]+\)/g))
-      expect([...tokens].every(token => ['var(--color-gold)', 'var(--color-success)', 'var(--color-ink)'].includes(token))).toBe(true)
+      expect([...tokens].every(token => ['var(--color-glow-gold)', 'var(--color-glow-success)', 'var(--color-ink)'].includes(token))).toBe(true)
     }
   })
 
-  it('keeps every layer as faint as the first backdrop’s strongest glow', () => {
-    for (const { layers } of everyBackdrop) {
-      for (const layer of layers) {
-        const strengths = [...layer.matchAll(/\) (\d+)%, transparent\)/g)].map(([, percent]) => Number(percent))
-        expect(strengths.length).toBeGreaterThan(0)
-        expect(Math.max(...strengths)).toBeLessThanOrEqual(13)
+  it('keeps muted text over every glow at 4.5:1 at its strongest', () => {
+    const [page, muted] = [semanticToken('--color-bg'), semanticToken('--color-muted')]
+    for (const { key, layers } of everyBackdrop) {
+      const tints = [...layers.join(', ').matchAll(/var\((--[\w-]+)\) (\d+)%, transparent\)/g)]
+      expect(tints.length).toBeGreaterThan(0)
+      for (const [, token, percent] of tints) {
+        expect(contrast(muted, mixOver(page, semanticToken(token!), Number(percent))), `${key} ${token} ${percent}%`).toBeGreaterThanOrEqual(4.5)
       }
     }
   })

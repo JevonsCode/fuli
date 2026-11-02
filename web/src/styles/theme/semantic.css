@@ -58,6 +58,11 @@
   --edge-dock: rgb(var(--shadow-rgb) / 8%);
   --color-success: #2e7d5b;
   --color-success-soft: #e8f2ec;
+  /* The page backdrop's glows (11-02: the motion must read at a glance): a light honey gold and a
+     pale jade. They change hue more than lightness, so a glow strong enough to see breathing
+     keeps muted text at 4.5:1 (page-backdrops.spec.ts). */
+  --color-glow-gold: #f3d68c;
+  --color-glow-success: #b2e6cc;
   --color-warning: #8a5a12;
   --color-warning-soft: #f8f0e0;
   --color-danger: #a8392e;

@@ -40,18 +40,18 @@ onBeforeUnmount(() => stopParallax?.())
   translate: calc(var(--parallax-x, 0) * var(--depth) * 1px) calc(var(--parallax-y, 0) * var(--depth) * 1px);
   animation:
     backdrop-drift-1 var(--motion-backdrop-cycle) ease-in-out infinite alternate,
-    backdrop-breathe calc(var(--motion-backdrop-cycle) * .57) ease-in-out infinite alternate;
+    backdrop-breathe calc(var(--motion-backdrop-cycle) * .37) ease-in-out infinite alternate;
 }
 .backdrop-layer:nth-child(2) {
   --depth: 2;
   animation-name: backdrop-drift-2, backdrop-breathe;
-  animation-duration: calc(var(--motion-backdrop-cycle) * 1.27), calc(var(--motion-backdrop-cycle) * .43);
+  animation-duration: calc(var(--motion-backdrop-cycle) * 1.27), calc(var(--motion-backdrop-cycle) * .31);
   animation-delay: calc(var(--motion-backdrop-cycle) * -.4), calc(var(--motion-backdrop-cycle) * -.2);
 }
 .backdrop-layer:nth-child(3) {
   --depth: 3;
   animation-name: backdrop-drift-3, backdrop-breathe;
-  animation-duration: calc(var(--motion-backdrop-cycle) * .77), calc(var(--motion-backdrop-cycle) * .63);
+  animation-duration: calc(var(--motion-backdrop-cycle) * .77), calc(var(--motion-backdrop-cycle) * .41);
   animation-delay: calc(var(--motion-backdrop-cycle) * -.25), calc(var(--motion-backdrop-cycle) * -.3);
 }
 @keyframes backdrop-drift-1 {
@@ -68,7 +68,7 @@ onBeforeUnmount(() => stopParallax?.())
 }
 @keyframes backdrop-breathe {
   from { opacity: 1; }
-  to { opacity: .4; }
+  to { opacity: .15; }
 }
 .backdrop-fade-enter-active, .backdrop-fade-leave-active { transition: opacity var(--motion-crossfade) var(--motion-ease-out); }
 .backdrop-fade-enter-from, .backdrop-fade-leave-to { opacity: 0; }
