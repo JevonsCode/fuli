@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { AnimatePresence, motion } from 'motion-v'
 import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
+import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import { SPRING } from '@/lib/motion'
 import { UiIcon } from '@/ui'
@@ -60,11 +61,11 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
         <TeamCard :sheet="openSheet" :space-id="spaceId" :name-of="people.nameOf" :project-name="people.projectName" default-open />
       </motion.div>
     </AnimatePresence>
-    <button type="button" class="island-fold" :aria-expanded="!folded" :aria-label="t(folded ? 'teamWork.island.unfold' : 'teamWork.island.fold', { count: team.running.value.length })"
+    <Button variant="ghost" class="island-fold" :aria-expanded="!folded" :aria-label="t(folded ? 'teamWork.island.unfold' : 'teamWork.island.fold', { count: team.running.value.length })"
       data-team-island-fold @click="toggleFolded">
       <span v-if="folded" class="island-fold-count ui-num">{{ team.running.value.length }}</span>
       <UiIcon v-else name="chevron-left" :size="16" />
-    </button>
+    </Button>
     <TeamIslandCapsule v-for="(sheet, index) in folded ? [] : team.running.value" :key="sheet.taskId" :sheet="sheet" :open="openId === sheet.taskId"
       :wide="index === 0" :panel-id="panelId" @toggle="toggle(sheet.taskId)" />
   </div>
