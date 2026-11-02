@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { execute, OWNED_PROCESS_TYPE, powershell } from '../local-runtime/windows-process-handle.js';
+import { providerServerArguments } from './provider-arguments.js';
 
 const samePath = (left, right) => typeof left === 'string' && typeof right === 'string'
   && normalize(left).toLowerCase() === normalize(right).toLowerCase();
@@ -209,8 +210,7 @@ export function spawnWindowsNativeDatabase(spec) {
 }
 
 export function spawnWindowsNativeProvider(spec) {
-  return spawnOwned(spec.python, ['-B', '-X', 'utf8', '-m', 'uvicorn', 'fuli_graph.app:app', '--host', '127.0.0.1',
-    '--port', String(spec.port), '--app-dir', spec.sourcePath],
+  return spawnOwned(spec.python, ['-B', '-X', 'utf8', ...providerServerArguments(spec.port), '--app-dir', spec.sourcePath],
   spec.environment, spec.logPath, { provider: true });
 }
 
