@@ -97,8 +97,8 @@ async function writing(run: () => Promise<void>) {
     void check()
   }
 }
-async function connect(client: ClientObservation) {
-  if (busy.value || !canConnect(client)) return
+// One client's write, shared by its own 接入 and 一键接入; its result shows on its tile.
+async function connectOne(client: ClientObservation) {
   connecting.value = client.id
   delete connectionFeedback.value[client.id]
   await writing(async () => {
@@ -110,24 +110,17 @@ async function connect(client: ClientObservation) {
     } finally { connecting.value = '' }
   })
 }
+async function connect(client: ClientObservation) {
+  if (busy.value || !canConnect(client)) return
+  await connectOne(client)
+}
 const connectingAll = ref(false)
 async function connectAll() {
   if (busy.value || !connectable.value.length) return
   connectingAll.value = true
   try {
-    for (const client of [...connectable.value]) {
-      delete connectionFeedback.value[client.id]
-      connecting.value = client.id
-      await writing(async () => {
-        try {
-          const result = await postJson<ConnectionResult>('/api/system/client-connection/connect', { clientId: client.id })
-          if (!unmounted) connectionFeedback.value[client.id] = result.status === 'connected' ? 'restart' : 'connectError'
-        } catch {
-          if (!unmounted) connectionFeedback.value[client.id] = 'connectError'
-        }
-      })
-    }
-  } finally { connecting.value = ''; connectingAll.value = false }
+    for (const client of [...connectable.value]) await connectOne(client)
+  } finally { connectingAll.value = false }
 }
 async function addClient() {
   if (busy.value || !draft.name.trim() || !draft.mcpFile.trim()) return
