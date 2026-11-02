@@ -68,15 +68,18 @@ export function chatBubbles(thread: Pick<RoundtableThread, 'messages' | 'subscri
 export const deliveryInFlight = (bubbles: ChatBubble[]) =>
   bubbles.some(bubble => bubble.deliveries.some(item => ['replying', 'waking'].includes(item.state.kind)))
 
-const keyOf = (person: RoundtablePerson) => person.agentId ?? person.name ?? ''
+const keyOf = (person: RoundtablePerson) => isPerson(person) ? PERSON_CLIENT : person.agentId ?? person.name ?? ''
 
-/** Every Agent at the table, in first-appearance order, with how often they spoke. */
+/**
+ * Everyone at the table, in first-appearance order, with how often they spoke:
+ * every Agent, and the person once they posted or were answered here.
+ */
 export function tableSeats(messages: RoundtableMessage[]): RoundtableSeat[] {
   const seats = new Map<string, RoundtableSeat>()
   for (const message of messages) {
     for (const person of [message.from, message.to]) {
       const key = keyOf(person)
-      if (key && !isPerson(person) && !seats.has(key)) seats.set(key, { key, person, spoke: 0, awaited: false })
+      if (key && !seats.has(key)) seats.set(key, { key, person, spoke: 0, awaited: false })
     }
     const speaker = seats.get(keyOf(message.from))
     if (speaker) speaker.spoke += 1

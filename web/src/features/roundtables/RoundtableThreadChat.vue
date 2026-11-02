@@ -3,13 +3,14 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import MarkdownText from '@/components/MarkdownText.vue'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
 import { postMessage, setThreadMode, type RoundtableDelivery, type RoundtablePerson, type RoundtableThread } from './roundtable-api'
 import { deliveryLabel, deliveryTone, reasonLabel, viaLabel } from './roundtable-delivery'
 import { chatRunMarks } from './chat-runs'
-import { chatBubbles, isPerson, postRecipients, tableSeats, type ChatBubble } from './roundtable-model'
+import { chatBubbles, postRecipients, tableSeats, type ChatBubble } from './roundtable-model'
 import { gapToEnd, scrollToEnd, TAIL_FOLLOW_PX } from './roundtable-scroll'
 import RoundtableChatHead from './RoundtableChatHead.vue'
 import RoundtableComposer from './RoundtableComposer.vue'
@@ -29,8 +30,6 @@ const wide = useMediaQuery(SIDE_MIN_WIDTH)
 
 const bubbles = computed(() => chatBubbles(props.thread))
 const seats = computed(() => tableSeats(props.thread.messages))
-// The person sits at the table too, as 「我」, once they wrote or were written to.
-const withMe = computed(() => props.thread.messages.some(message => isPerson(message.from) || isPerson(message.to)))
 const recipients = computed(() => postRecipients(props.thread))
 const marks = computed(() => chatRunMarks(bubbles.value.map(bubble => ({ from: bubble.mine ? 'me' : bubble.from.agentId ?? bubble.from.name ?? '?', at: bubble.createdAt }))))
 const subscribed = computed(() => Boolean(props.thread.subscribers?.length))
@@ -88,7 +87,7 @@ watch(() => props.thread.messages.length, async (length, previous) => {
 <template>
   <article class="rt-chat roundtable-thread-chat" data-testid="roundtable-timeline">
     <div class="rt-thread-main">
-      <RoundtableChatHead :seats="seats" :with-me="withMe" :title="thread.subject" :stale="stale"
+      <RoundtableChatHead :seats="seats" :title="thread.subject" :stale="stale"
         :meta="`${t('roundtable.messages', { count: thread.messages.length })} · ${time(thread.createdAt)}`" />
       <div ref="body" class="rt-chat-body">
         <p v-if="!bubbles.length" class="rt-chat-empty">{{ t('roundtable.emptyConversation') }}</p>
@@ -108,7 +107,7 @@ watch(() => props.thread.messages.length, async (length, previous) => {
                   <span v-if="client(bubble.from)" class="rt-client">{{ client(bubble.from) }}</span>
                 </p>
                 <p v-else class="ui-sr-only">{{ sender(bubble) }}</p>
-                <p class="rt-bubble" :title="time(bubble.createdAt)">{{ bubble.body }}</p>
+                <MarkdownText class="rt-bubble" :title="time(bubble.createdAt)" :source="bubble.body" />
                 <p v-if="viaLabel(bubble.via) && bubble.kind === 'reply'" class="rt-status">{{ viaLabel(bubble.via) }}</p>
                 <ul v-if="bubble.deliveries.length" class="rt-statuses rt-status">
                   <li v-for="delivery in bubble.deliveries" :key="delivery.messageId" :data-roundtable-delivery="delivery.state.kind"
@@ -134,8 +133,8 @@ watch(() => props.thread.messages.length, async (length, previous) => {
       <p v-else class="roundtable-recipients ui-meta" data-roundtable-no-recipients>{{ t('roundtable.composer.noRecipients') }}</p>
     </div>
     <aside v-if="wide" class="rt-thread-side" aria-labelledby="rt-thread-people" data-roundtable-side>
-      <h3 id="rt-thread-people" class="rt-thread-side-label">{{ t('roundtable.participants', { count: seats.length + Number(withMe) }) }}</h3>
-      <RoundtableSeats :seats="seats" :with-me="withMe" />
+      <h3 id="rt-thread-people" class="rt-thread-side-label">{{ t('roundtable.participants', { count: seats.length }) }}</h3>
+      <RoundtableSeats :seats="seats" />
     </aside>
   </article>
 </template>

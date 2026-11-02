@@ -4,23 +4,23 @@ import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import MeAvatar from '@/features/person-home/MeAvatar.vue'
 import { t } from '@/i18n'
-import type { RoundtableSeat } from './roundtable-model'
+import { isPerson, type RoundtableSeat } from './roundtable-model'
 
 // Who is in the conversation, as one row of chips; anyone still owing a reply
-// is marked. The person, when at the table, sits first as 「我」 with their own picture.
-defineProps<{ seats: RoundtableSeat[]; withMe?: boolean }>()
+// is marked. The person's own seat is 「我」, a link to their page, with the
+// picture they chose there or the neutral 「我」 face (never an Agent portrait, so no FLA menu).
+defineProps<{ seats: RoundtableSeat[] }>()
 const initial = (seat: RoundtableSeat) => (seat.person.name ?? '?').trim().slice(0, 1).toUpperCase()
 </script>
 
 <template>
-  <ul class="roundtable-seats" :aria-label="t('roundtable.table', { count: seats.length + Number(withMe) })">
-    <li v-if="withMe" class="roundtable-seat" data-roundtable-me-seat>
-      <MeAvatar class="roundtable-seat-face" :size="20" />
-      <span class="roundtable-seat-name"><MeLink /></span>
-    </li>
-    <li v-for="seat in seats" :key="seat.key" class="roundtable-seat" :class="{ 'is-awaited': seat.awaited }" :style="agentIdentityStyle(seat.person.agentId)" data-roundtable-seat>
-      <span class="roundtable-seat-face" aria-hidden="true"><img v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" :data-agent-portrait="seat.person.agentId" alt="" /><template v-else>{{ initial(seat) }}</template></span>
-      <span class="roundtable-seat-name">{{ seat.person.name ?? t('roundtable.unknownAgent') }}</span>
+  <ul class="roundtable-seats" :aria-label="t('roundtable.table', { count: seats.length })">
+    <li v-for="seat in seats" :key="seat.key" class="roundtable-seat" :class="{ 'is-awaited': seat.awaited, 'is-me': isPerson(seat.person) }"
+      :style="isPerson(seat.person) ? undefined : agentIdentityStyle(seat.person.agentId)" data-roundtable-seat :data-roundtable-seat-me="isPerson(seat.person) || undefined">
+      <MeAvatar v-if="isPerson(seat.person)" class="roundtable-seat-face" :size="20" />
+      <span v-else class="roundtable-seat-face" aria-hidden="true"><img v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" :data-agent-portrait="seat.person.agentId" alt="" /><template v-else>{{ initial(seat) }}</template></span>
+      <MeLink v-if="isPerson(seat.person)" class="roundtable-seat-name" />
+      <span v-else class="roundtable-seat-name">{{ seat.person.name ?? t('roundtable.unknownAgent') }}</span>
       <small class="roundtable-seat-state">{{ seat.awaited ? t('roundtable.seatAwaited') : t('roundtable.seatSpoke', { count: seat.spoke }) }}</small>
     </li>
   </ul>
@@ -31,6 +31,7 @@ const initial = (seat: RoundtableSeat) => (seat.person.name ?? '?').trim().slice
 .roundtable-seat { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 10px 3px 3px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface); font-size: 12px; }
 .roundtable-seat-face img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .roundtable-seat-face { display: grid; flex: 0 0 auto; width: 20px; height: 20px; place-items: center; border-radius: 50%; color: var(--agent-identity, var(--color-accent)); background: var(--agent-identity-soft, var(--color-accent-soft)); font-size: 11px; font-weight: 650; }
+.roundtable-seat.is-me .roundtable-seat-face { color: var(--color-ink-soft); background: var(--color-surface-hover); }
 .roundtable-seat-name { min-width: 0; overflow: hidden; color: var(--color-ink); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .roundtable-seat-state { color: var(--color-faint); font-size: 11px; white-space: nowrap; }
 .roundtable-seat.is-awaited { border-color: var(--color-warning); }

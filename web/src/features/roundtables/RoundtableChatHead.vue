@@ -1,24 +1,26 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { t } from '@/i18n'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import RoundtableSeats from './RoundtableSeats.vue'
-import type { RoundtableSeat } from './roundtable-model'
+import { isPerson, type RoundtableSeat } from './roundtable-model'
 
 // An open conversation's head in one line (Jevons 11-02): its portraits, its
 // title and when it started; everything else — the full title, who is in it,
 // a stale read — opens in 详情.
-defineProps<{ seats: RoundtableSeat[]; withMe?: boolean; title: string; meta: string; stale?: boolean }>()
+// The portraits are the others at the table, as in Messages; 「我」 is listed in 详情.
+const props = defineProps<{ seats: RoundtableSeat[]; title: string; meta: string; stale?: boolean }>()
+const faces = computed(() => props.seats.filter(seat => !isPerson(seat.person)).slice(0, 4))
 const open = ref(false)
 </script>
 
 <template>
   <header class="rt-chat-head">
     <span class="rt-chat-faces" aria-hidden="true">
-      <span v-for="seat in seats.slice(0, 4)" :key="seat.key" :style="agentIdentityStyle(seat.person.agentId)"><img
+      <span v-for="seat in faces" :key="seat.key" :style="agentIdentityStyle(seat.person.agentId)"><img
         v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" :data-agent-portrait="seat.person.agentId" alt="" /><template v-else>{{ (seat.person.name ?? '?').slice(0, 1) }}</template></span>
     </span>
     <h2 tabindex="-1" class="rt-chat-title" :title="title" data-roundtable-detail-title>{{ title }}</h2>
@@ -32,8 +34,8 @@ const open = ref(false)
           <DialogDescription>{{ meta }}</DialogDescription>
         </DialogHeader>
         <p v-if="stale" class="rt-chat-meta" role="status">{{ t('roundtable.stale') }}</p>
-        <h3 class="rt-chat-people-label">{{ t('roundtable.participants', { count: seats.length + Number(withMe) }) }}</h3>
-        <RoundtableSeats :seats="seats" :with-me="withMe" />
+        <h3 class="rt-chat-people-label">{{ t('roundtable.participants', { count: seats.length }) }}</h3>
+        <RoundtableSeats :seats="seats" />
       </DialogContent>
     </Dialog>
   </header>
