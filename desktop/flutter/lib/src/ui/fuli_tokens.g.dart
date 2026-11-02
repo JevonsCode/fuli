@@ -27,6 +27,8 @@ abstract final class FuliColors {
   static const link = Color(0xFF7A5A28);
   static const success = Color(0xFF2E7D5B);
   static const successSoft = Color(0xFFE8F2EC);
+  static const glowGold = Color(0xFFF3D68C);
+  static const glowSuccess = Color(0xFFB2E6CC);
   static const warning = Color(0xFF8A5A12);
   static const warningSoft = Color(0xFFF8F0E0);
   static const danger = Color(0xFFA8392E);
