@@ -80,9 +80,10 @@ export class RecallImpressionsStore {
     });
   }
 
-  // Only updates rows that exist: an item used but never shown is ignored.
+  // Only updates rows that exist: an item used but never shown is ignored, and a
+  // store nothing was ever shown in is not created.
   markUsed({ taskContextToken, items }) {
-    if (!items?.length) return;
+    if (!items?.length || !this.readable) return;
     const taskKey = taskKeyFor(taskContextToken);
     const usedAt = this.now().toISOString();
     this.transaction(() => {
