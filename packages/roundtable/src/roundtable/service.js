@@ -251,7 +251,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const targetProjectId = projectId ?? agentProjectOutsideSender(target, from) ?? from.projectId;
     const crossProject = Boolean(targetProjectId && from.projectId && targetProjectId !== from.projectId);
     if (from.agent?.agentId === target.agentId && !crossProject && !threadId) throw validation('An Agent cannot open a thread with itself');
-    const { thread, history } = openThread(threadId, from.projectId, body);
+    const { thread, history } = openThread(threadId, from.projectId, body, label(target));
     const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body, status: 'queued',
       from: { agentId: from.agent?.agentId, name: from.agent ? label(from.agent) : CLIENT_LABELS[from.client] ?? from.client,
         client: from.client, session: from.session },
@@ -333,9 +333,14 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     return replied ? { status: 'answered', reply: replied, via: replied.via } : { status: 'queued', reason: 'waiting_in_desktop_app' };
   }
 
-  function openThread(threadId, projectId, body) {
+  // The recipient is resolved before the thread, so an unknown threadId never
+  // means the Agent is missing (rec#68): say which one exists and how to go on.
+  function openThread(threadId, projectId, body, recipientName) {
     let thread = threadId ? store.getThread(threadId) : null;
-    if (threadId && (!thread || thread.space_id !== spaceId())) throw validation('Thread not found');
+    if (threadId && (!thread || thread.space_id !== spaceId())) {
+      throw validation(`Roundtable thread ${threadId} not found. Agent ${recipientName} exists; threadId takes only a FULI `
+        + 'roundtable thread ID from an earlier message_agent result, never a host session or conversation ID. Omit threadId to start a new thread.');
+    }
     if (thread && thread.project_id !== projectId) throw validation('This thread belongs to another project');
     const history = thread ? store.messages(thread.id) : [];
     if (history.length >= THREAD_MESSAGE_LIMIT) throw validation('This thread reached its message limit; start a new one');
@@ -351,7 +356,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const from = await sender({ taskContextToken, sourceApplication });
     if (!from.agent || !from.projectId) throw validation('A remote message must come from an active project task of a FULI Agent; pass taskContextToken');
     const target = await peer.resolveRemote(to);
-    const { thread } = openThread(threadId, from.projectId, body);
+    const { thread } = openThread(threadId, from.projectId, body, target.name);
     if (thread.project_id !== from.projectId) throw validation('This thread belongs to another project');
     const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body, status: 'sent', via: 'peer',
       from: { agentId: from.agent.agentId, name: label(from.agent), client: from.client, session: from.session },
