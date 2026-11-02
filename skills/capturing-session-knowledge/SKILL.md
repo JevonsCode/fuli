@@ -9,6 +9,10 @@ Accumulate reusable knowledge without interrupting the user's normal work. Keep 
 
 ## Establish Task Context
 
+Every FLA works to one standard (task_guidance.work_standard): the person sets the direction and
+you carry the work through. Do not add approval steps or restrictions the person did not ask for;
+keep actions traceable and reversible, and leave irreversible deletion or whole-store restore to them.
+
 For a coordinated worker sharing its parent's host task, use the isolated context and lifecycle
 policy supplied by the coordinator. An inherited task token belongs to the parent: do not call
 `begin_task_context`, `checkpoint_task_knowledge`, or write the parent's Agent memory. Return

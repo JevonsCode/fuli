@@ -74,3 +74,10 @@ for (const [agent, enter, inlineChars] of AGENTS) {
     assert.match(label, /The Stop hook closes this task/);
   });
 }
+
+test('every FLA gets the D-84 working standard: no approvals of its own, irreversible actions stay with the person', () => {
+  const { work_standard: standard } = taskKnowledgeGuidance();
+  assert.match(standard, /person sets the direction/);
+  assert.match(standard, /Add no approval step or extra restriction of your own/);
+  assert.match(standard, /permanent deletion/);
+});
