@@ -2,8 +2,8 @@ name: Desktop client
 
 # The Flutter desktop client (desktop/flutter), the Windows tray package
 # that ships it (.github/actions/windows-tray, the same build a release
-# attaches) and the macOS .dmg (.github/actions/macos-app). Builds are
-# workflow artifacts for testing, not release assets; they are unsigned
+# attaches) and the macOS .dmg (.github/actions/macos-app, also what a
+# release attaches). Builds here are workflow artifacts for testing; they are unsigned
 # (the .dmg is signed only when the Developer ID secrets exist).
 on:
   pull_request:
@@ -153,7 +153,7 @@ jobs:
   # Neo4j and the Provider's Python inside, for Apple silicon. Unsigned unless
   # the Developer ID secrets exist. The smoke test mounts it, copies FULI.app
   # out, and starts FULI from it with a temporary HOME, ephemeral ports and no
-  # Node, Java, Python or uv on PATH. Not attached to releases yet.
+  # Node, Java, Python or uv on PATH. A release attaches the same image (release.yml).
   macos-dmg:
     needs: test
     runs-on: macos-15

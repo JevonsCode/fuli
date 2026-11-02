@@ -104,3 +104,37 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           gh release upload "$env:GITHUB_REF_NAME" (Get-ChildItem "${{ steps.tray.outputs.release }}").FullName --clobber
+
+  # The macOS disk image fuli-macos-arm64-<version>.dmg (Apple silicon) and its
+  # SHA-256, built from this tag by .github/actions/macos-app and smoke-tested
+  # the way desktop-client.yml does before it is attached. Unsigned (ad hoc)
+  # until the Developer ID secrets exist; then signed, notarized and stapled.
+  macos-dmg:
+    if: github.repository == 'JevonsCode/fuli'
+    needs: publish
+    runs-on: macos-15
+    timeout-minutes: 60
+    # Writes release assets only; no OIDC grant.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: npm ci
+      - id: mac
+        uses: ./.github/actions/macos-app
+        with:
+          certificate-p12: ${{ secrets.MACOS_CERT_P12 }}
+          certificate-password: ${{ secrets.MACOS_CERT_PASSWORD }}
+          apple-id: ${{ secrets.APPLE_ID }}
+          team-id: ${{ secrets.APPLE_TEAM_ID }}
+          app-password: ${{ secrets.APPLE_APP_PASSWORD }}
+      - name: Install and start FULI from the disk image
+        run: node scripts/macos-app-smoke.js "$(ls "${{ steps.mac.outputs.release }}"/*.dmg)"
+      - name: Attach the disk image to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "${{ steps.mac.outputs.release }}"/* --clobber
