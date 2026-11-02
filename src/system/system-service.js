@@ -21,6 +21,7 @@ import { consoleUpdate } from './console-update.js';
 import { createDoctor } from './doctor.js';
 import { createDoctorRepair } from './doctor-repair.js';
 import { createDiagnosticsBundle } from './diagnostics-bundle.js';
+import { createLogRetention } from './log-retention.js';
 import { liveMcpProcesses } from '../mcp/process-registry.js';
 import { agentKitPorts } from '../agent-kits/ports.js';
 import { sessionClientRecords } from '../agent-kits/session-clients.js';
@@ -131,6 +132,7 @@ export function createSystemService({
   // settings for it never syncs the launcher's configuration as getSettings does.
   const diagnostics = createDiagnosticsBundle({ paths, doctor: () => doctor.check(), installKind: () => update.kind(),
     settings: () => ({ configured: configuredSettings(), active: activeSettings() }) });
+  const logRetention = createLogRetention({ paths });
 
   return {
     getSettings,
@@ -159,6 +161,9 @@ export function createSystemService({
     // FULI's 体检 and its repair of what needs no person (doctor.js, doctor-repair.js).
     doctor: () => doctor.check(),
     diagnostics,
+    // The kept copies of FULI's logs and the person's 「清理旧日志」 (log-retention.js).
+    logArchives: () => logRetention.archives(),
+    clearLogArchives: () => logRetention.clearArchives(),
     repairDoctor: createDoctorRepair({ check: doctor.check, connectClient: clientInstaller, observeClients,
       recordClientsReconnected: (id) => update.recordClientsReconnected(id) }),
     runtimeStatus: () => runtimeBroker.status(),
@@ -173,7 +178,10 @@ export function createSystemService({
       { kind: 'executor', executorId, owner },
       operation
     ),
-    close: () => runtimeBroker.close()
+    close: () => {
+      logRetention.close();
+      return runtimeBroker.close();
+    }
   };
 }
 

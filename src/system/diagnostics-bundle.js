@@ -3,8 +3,8 @@ import { arch, homedir, platform, release, userInfo } from 'node:os';
 import { relative, sep } from 'node:path';
 
 import { FULI_VERSION } from '../package-metadata.js';
-import { nativeInstanceLogPaths } from '../setup/paths.js';
 import { createRedactor } from './diagnostics-redaction.js';
+import { fuliLogPaths } from './log-retention.js';
 
 // 诊断包: what a person sends FULI's developers so they can tell what went
 // wrong, previewed in the console before it leaves this computer (GET
@@ -34,7 +34,7 @@ export function createDiagnosticsBundle({ paths, doctor, settings, installKind, 
         os: { platform: host.platform, release: host.release, arch: host.arch }, node: host.nodeVersion }) },
       { name: 'settings.json', content: json(withoutPersonalValues(settings())) },
       { name: 'doctor.json', content: json(await doctorReport(doctor)) },
-      ...logFiles(paths).flatMap((path) => {
+      ...fuliLogPaths(paths).flatMap((path) => {
         const content = readLogTail(path);
         return content === null ? [] : [{ name: relative(paths.dataDir, path).split(sep).join('/'), content }];
       })
@@ -43,13 +43,6 @@ export function createDiagnosticsBundle({ paths, doctor, settings, installKind, 
   };
 }
 
-// Where FULI writes its logs: the console's, and each native graph instance's provider and Neo4j console.
-function logFiles(paths) {
-  return [paths.logPath, ...[paths.nativePersonalDir, paths.nativeWorkspaceDir].flatMap((instanceDir) => {
-    const logs = nativeInstanceLogPaths(instanceDir);
-    return [logs.provider, logs.database];
-  })];
-}
 
 async function doctorReport(doctor) {
   try { return await doctor(); } catch (error) { return { error: error?.message ?? String(error) }; }
