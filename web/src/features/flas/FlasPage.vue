@@ -123,6 +123,8 @@ const sections = computed(() => {
   const ids = rows.value.map(agent => agent.agentId)
   const grouped = groupAgentsByProject(ids, id => profileProjectIds(byId.value.get(id)!), id => entries.value[id]?.status, formalProjectIds.value)
     .map(group => ({ key: group.projectId, label: projectNames.value[group.projectId] ?? group.projectId, rows: group.agentIds.map(id => byId.value.get(id)!) }))
+  // A project filter shows only the chosen projects' groups, even for an FLA that also works elsewhere.
+  if (projectFilter.value.length) return grouped.filter(group => projectFilter.value.includes(group.key))
   const formal = new Set(formalProjectIds.value)
   const unassigned = rows.value.filter(agent => !profileProjectIds(agent).some(id => formal.has(id)))
   return unassigned.length ? [...grouped, { key: '__none', label: t('flas.unassigned'), rows: unassigned }] : grouped
@@ -286,7 +288,7 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
   transition: box-shadow var(--motion-fast);
 }
 .flas-search:focus-within { box-shadow: 0 0 0 1px var(--color-border-strong), 0 0 0 4px var(--color-surface-hover); }
-.flas-search input { flex: 1; min-width: 0; min-height: 0; padding: 0; border: 0; outline: 0; color: var(--color-ink); background: transparent; font: inherit; font-size: var(--text-body); }
+.flas-search input { flex: 1; min-width: 0; min-height: 0; padding: 0; border: 0; outline: 0; box-shadow: none; color: var(--color-ink); background: transparent; font: inherit; font-size: var(--text-body); }
 .flas-switch { display: inline-flex; padding: 3px; border-radius: var(--radius-pill); background: var(--color-surface-hover); }
 .flas-switch button {
   height: calc(var(--control-height-md) - 6px); padding: 0 14px; border: 0; border-radius: var(--radius-pill); color: var(--color-muted); background: transparent;

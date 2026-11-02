@@ -19,7 +19,7 @@ const fla = (index: number, name: string, extra: Record<string, unknown> = {}, s
 const roster = [
   fla(1, 'Aster', { workStatus: 'idle' }),
   fla(2, 'Birch', { workStatus: 'blocked', currentTaskId: 'task-b' }),
-  fla(3, 'Cedar', { workStatus: 'running', currentTaskId: 'task-c', assignments: [{ personalProjectId: 'project-a', status: 'active' }] }),
+  fla(3, 'Cedar', { workStatus: 'running', currentTaskId: 'task-c', assignments: [{ personalProjectId: 'project-a', status: 'active' }, { personalProjectId: 'project-b', status: 'active' }] }),
   // A state the console does not know is reported as unknown, never as free.
   fla(4, 'Dahlia', { workStatus: 'something-new', assignments: [{ personalProjectId: 'project-b', status: 'active' }] }),
   fla(5, 'Elm', { workStatus: 'running' }, 'archived'),
@@ -104,7 +104,7 @@ describe('FLAs page', () => {
     expect(router.currentRoute.value.query.view).toBe('projects')
     expect(groupNames(wrapper)).toEqual([
       ['project-a', ['Cedar']],
-      ['project-b', ['Dahlia']],
+      ['project-b', ['Cedar', 'Dahlia']],
       ['__none', ['Elm', 'Birch', 'Aster']],
     ])
   })
@@ -140,7 +140,7 @@ describe('FLAs page', () => {
     await flushPromises()
     expect(optionLabels(wrapper)).toEqual(['Beta project'])
     await toggleOption(wrapper, 'Beta project')
-    expect(groupNames(wrapper)).toEqual([['project-b', ['Dahlia']]])
+    expect(groupNames(wrapper)).toEqual([['project-b', ['Cedar', 'Dahlia']]])
     expect(router.currentRoute.value.query.project).toBe('project-b')
   })
 
