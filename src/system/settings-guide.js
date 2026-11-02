@@ -33,9 +33,9 @@ export function describeSettings({ settings, capturePolicy, consoleUrl }) {
       {
         key: 'agentNamingStyle',
         value: settings.agentNamingStyle ?? '',
-        effect: 'The person\'s wish for the names of Agents created from now on (about 100 characters suggested); empty means FULI\'s generated names, whose rule the settings field shows as its editable default. Existing Agents keep their names. Recruiting Agents read it with get_agent_naming_style.',
+        effect: 'The person\'s wish for the names of Agents created from now on (about 100 characters suggested); empty means FULI\'s generated names, whose rule the field shows as its editable default. Existing Agents keep their names. Recruiting Agents read it with get_agent_naming_style. The field is on the person\'s home page (「我」), not the settings page.',
         changedBy: PERSON,
-        settingsUrl: link('agentNamingStyle'),
+        settingsUrl: new URL('/preferences', consoleUrl).href,
       },
       {
         key: 'topicPromotion',

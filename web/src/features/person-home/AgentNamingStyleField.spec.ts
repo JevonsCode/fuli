@@ -8,7 +8,7 @@ const ZH_DEFAULT = '像人一样的英文名：一个名加一个姓，比如 Ly
 
 function mountField(modelValue: string) {
   const wrapper = mount(AgentNamingStyleField, {
-    props: { modelValue, 'onUpdate:modelValue': (style: string) => wrapper.setProps({ modelValue: style }) },
+    props: { modelValue, labelledby: 'naming-title', describedby: 'naming-note', 'onUpdate:modelValue': (style: string) => wrapper.setProps({ modelValue: style }) },
   })
   return wrapper
 }
@@ -56,7 +56,7 @@ describe('AgentNamingStyleField', () => {
     setLocale('en-US', { persist: false })
     await nextTick()
     await nextTick()
-    expect(field(wrapper).element.value).toBe(t('settings.agentNaming.default'))
+    expect(field(wrapper).element.value).toBe(t('preferences.home.naming.default'))
     expect(field(wrapper).element.value).toContain('Lyra North')
     expect(emitted(wrapper)).toEqual([])
   })

@@ -59,6 +59,8 @@ project. Human or authoritative-source confirmation outranks explicitly marked
 `agent_confirmed` preferences. Pending preferences remain search-only; invalid and
 unrelated-project preferences are intentionally excluded. Automatic preference injection is
 not usage evidence.
+When the entry's `context.address_as` is present, it is what the person asked FULI to call them
+(set on their home page); address them by it, and do not save it as knowledge.
 When `get_collaboration_preferences` returns a `deferred_conflict`, leave it untouched unless
 the current task would use either side. Before using a relevant deferred conflict, compare both
 sides and call `resolve_deferred_preference_conflict`; apply only the successfully resolved

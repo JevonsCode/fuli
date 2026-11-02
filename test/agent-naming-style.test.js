@@ -95,5 +95,6 @@ test('each schema that creates an Agent points its displayName at the style, whi
     capturePolicy: {}, consoleUrl: 'http://127.0.0.1:2727' }).settings.find(({ key }) => key === 'agentNamingStyle');
   assert.equal(row.value, STYLE);
   assert.equal(row.changedBy, 'person');
-  assert.equal(row.settingsUrl, 'http://127.0.0.1:2727/settings?setting=agentNamingStyle');
+  // The field lives on the person's home page (「我」), next to Bole.
+  assert.equal(row.settingsUrl, 'http://127.0.0.1:2727/preferences');
 });

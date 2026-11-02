@@ -19,7 +19,6 @@ import GraphMigrationRow from '@/features/settings/GraphMigrationRow.vue'
 import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
 import { offersUpdate, useChannelVersionStatus } from '@/features/update/version-status'
 import { FULI_VERSION } from '@/version'
-import AgentNamingStyleField from '@/features/settings/AgentNamingStyleField.vue'
 import CaptureProjectSettings from '@/features/capture/CaptureProjectSettings.vue'
 import SettingsRestartNotice from '@/features/settings/SettingsRestartNotice.vue'
 import SettingsSaveCapsule from '@/features/settings/SettingsSaveCapsule.vue'
@@ -449,13 +448,6 @@ function checkFields(): ValidatedField[] {
                     <Switch :model-value="agentAccessEnabled" :aria-label="t('settings.behavior.agentAccess')" @update:model-value="toggleAgentAccess" />
                   </label>
                 </div>
-              </Card>
-              <Card v-if="form.agentNamingStyle !== undefined" as="section" class="settings-card" aria-labelledby="settings-agent-naming-title" data-agent-naming-card>
-                <CardHeader>
-                  <CardTitle id="settings-agent-naming-title" as="h2">{{ t('settings.agentNaming.title') }}</CardTitle>
-                  <CardDescription id="settings-agent-naming-description">{{ t('settings.agentNaming.description') }}</CardDescription>
-                </CardHeader>
-                <AgentNamingStyleField v-model="form.agentNamingStyle" class="setting-list" />
               </Card>
               <Card v-if="form.topicPromotion !== undefined" as="section" class="settings-card" aria-labelledby="settings-topic-promotion-title" data-topic-promotion-card>
                 <div class="setting-list">

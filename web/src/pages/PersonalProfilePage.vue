@@ -14,6 +14,7 @@ import { useKnowledgeConfirm } from '@/features/knowledge/useKnowledgeConfirm'
 import { useKnowledgeItemPeek } from '@/features/knowledge/useKnowledgeItemPeek'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import PreferenceConflictDialog from '@/features/preferences/PreferenceConflictDialog.vue'
+import PersonHomeHeader from '@/features/person-home/PersonHomeHeader.vue'
 import {
   detectPreferenceConflicts,
     preferenceValue,
@@ -542,6 +543,8 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 <template>
   <section ref="pageElement" class="view vue-personal-profile">
     <div class="profile-canvas">
+    <PersonHomeHeader v-if="store.activePersonalSpace?.id" :space-id="store.activePersonalSpace.id" />
+    <h2 class="profile-group-label">{{ t('preferences.home.preferences') }}</h2>
     <UiStatRow v-if="graph" :items="stats" :label="t('preferences.profile.summaryAria')" @select="selectStat" />
 
     <UiToolbar>
@@ -973,8 +976,10 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
 
 <style scoped>
 .vue-personal-profile { padding-bottom: calc(80px + env(safe-area-inset-bottom) + 16px); min-width: 0; }
-/* One centred work canvas (D-03); a preference opens in a quick look over it. */
+/* One centred work canvas (D-03): the person's home on top, their preferences
+   under it; a preference opens in a quick look over the list. */
 .profile-canvas { display: flex; flex-direction: column; gap: 14px; width: 100%; }
+.profile-group-label { margin: 10px 0 -4px; color: var(--color-muted); font-size: var(--text-meta); font-weight: var(--weight-medium); }
 .personal-profile-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 12px; overflow: visible; border: 0; border-radius: 0; background: transparent; }
 .personal-profile-row { min-width: 0; scroll-margin-top: 80px; }
 /* The open row lifts as a card while its quick look is up (never a side bar). */

@@ -76,7 +76,14 @@ export async function getCollaborationPreferences(
       ...(taskKnowledgeRecall ? { task_knowledge_recall: taskKnowledgeRecall } : {})
     };
   }
-  return projectAgentCollaborationPreferences(result, projectResolution, { projectAgentId, taskScope, taskKnowledgeRecall });
+  const projected = projectAgentCollaborationPreferences(result, projectResolution, { projectAgentId, taskScope, taskKnowledgeRecall });
+  return withAddressAs(projected, application.personProfile?.addressAs() ?? '');
+}
+
+// What the person asked FULI to call them (their home page, 「我」): one short
+// field of the context the Agent already reads, present only when they said.
+function withAddressAs(preferences, addressAs) {
+  return addressAs ? { ...preferences, context: { ...preferences.context, address_as: addressAs } } : preferences;
 }
 
 // Rule text that does not depend on the task; the compact task entry

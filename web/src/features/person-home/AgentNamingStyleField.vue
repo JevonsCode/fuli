@@ -1,18 +1,19 @@
 <script setup lang="ts">
-// The person's Agent naming style (Agent 取名风格). With no saved style the
-// field starts with FULI's own naming rule as editable text, so the person
-// sees what they would change. The model stays what the server stores: ''
-// means FULI generates the names, so the untouched (or restored) default is
-// never saved as a style and recruiting keeps FULI's generated names.
+// The person's FLA naming preference (FLA 取名偏好), which Bole follows. With
+// no saved style the field starts with FULI's own naming rule as editable
+// text, so the person sees what they would change. The model stays what the
+// server stores: '' means FULI generates the names, so the untouched (or
+// restored) default is never saved as a style and recruiting keeps FULI's
+// generated names.
 import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { t } from '@/i18n'
 
-const props = defineProps<{ modelValue: string }>()
+const props = defineProps<{ modelValue: string; labelledby: string; describedby: string }>()
 const emit = defineEmits<{ 'update:modelValue': [style: string] }>()
 
-const defaultStyle = computed(() => t('settings.agentNaming.default'))
+const defaultStyle = computed(() => t('preferences.home.naming.default'))
 const draft = ref(props.modelValue || defaultStyle.value)
 const isDefault = computed(() => draft.value.trim() === defaultStyle.value)
 
@@ -37,12 +38,12 @@ watch(defaultStyle, (now, before) => {
 <template>
   <div class="agent-naming-field">
     <Textarea v-model="draft" rows="2" maxlength="500" :placeholder="defaultStyle"
-      aria-labelledby="settings-agent-naming-title" aria-describedby="settings-agent-naming-description settings-agent-naming-count"
-      data-agent-naming-style data-settings-field="agentNamingStyle" />
+      :aria-labelledby="labelledby" :aria-describedby="`${describedby} agent-naming-count`"
+      data-agent-naming-style />
     <div class="agent-naming-actions">
-      <small id="settings-agent-naming-count">{{ t('settings.agentNaming.count', { count: draft.length }) }}</small>
+      <small id="agent-naming-count">{{ t('preferences.home.naming.count', { count: draft.length }) }}</small>
       <Button type="button" variant="ghost" size="sm" :disabled="isDefault" data-agent-naming-reset @click="draft = defaultStyle">
-        {{ t('settings.agentNaming.reset') }}
+        {{ t('preferences.home.naming.reset') }}
       </Button>
     </div>
   </div>

@@ -7,6 +7,7 @@ const putJson = vi.fn()
 vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(),
   postJson: (url: string, body: unknown) => postJson(url, body), putJson: (url: string, body: unknown) => putJson(url, body) }))
 
+import { personProfile } from '@/features/person-home/person-profile'
 import { setLocale } from '@/i18n'
 import type { RoundtableMessage, RoundtableThread } from './roundtable-api'
 import RoundtableThreadChat from './RoundtableThreadChat.vue'
@@ -112,9 +113,10 @@ describe('RoundtableThreadChat', () => {
       // The person is 「我」: a link to their page with a plain face, never an FLA portrait; the head shows only the others.
       const me = side.get('[data-roundtable-seat-me]')
       expect(me.get('a[data-me-link]').text()).toBe('我')
-      expect(me.get('a[data-me-link]').attributes('href')).toBe('/preferences?aspect=taste')
+      expect(me.get('a[data-me-link]').attributes('href')).toBe('/preferences')
       expect(me.find('[data-agent-portrait]').exists()).toBe(false)
       expect(me.get('.roundtable-seat-face').text()).toBe('我')
+      expect(me.find('[data-me-avatar-face]').exists()).toBe(true)
       expect(me.text()).toContain('发言 2 次')
       expect(wide.get('.rt-chat-faces').findAll('[data-agent-portrait]').map(face => face.attributes('data-agent-portrait'))).toEqual(['ada'])
     } finally { vi.unstubAllGlobals() }
@@ -145,5 +147,25 @@ describe('RoundtableThreadChat', () => {
       expect(router.currentRoute.value.name).toBe('agent-profile')
       expect(router.currentRoute.value.params).toEqual({ spaceId: 'space-1', agentId: 'ada' })
     } finally { wrapper.unmount() }
+  })
+
+  it('shows the picture the person chose on their home in their seat, and the neutral face when it cannot load', async () => {
+    personProfile.value = { name: 'Synthetic', look: { kind: 'generated', seed: 'synthetic-seed' } }
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query === '(min-width: 1440px)', media: query,
+      addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+    try {
+      const drawn = mountChat(conversation()).get('[data-roundtable-side] [data-roundtable-seat-me]')
+      expect(drawn.get('[data-me-avatar-picture]').attributes('src')).toMatch(/^data:image\/svg\+xml/)
+      expect(drawn.find('[data-agent-portrait]').exists()).toBe(false)
+
+      personProfile.value = { name: 'Synthetic', look: { kind: 'image', imageVersion: 'abcdef0123456789' } }
+      const pictured = mountChat(conversation()).get('[data-roundtable-side] [data-roundtable-seat-me]')
+      await pictured.get('[data-me-avatar-picture]').trigger('error')
+      expect(pictured.find('[data-me-avatar-picture]').exists()).toBe(false)
+      expect(pictured.get('[data-me-avatar-face]').text()).toBe('我')
+    } finally {
+      personProfile.value = null
+      vi.unstubAllGlobals()
+    }
   })
 })

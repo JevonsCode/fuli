@@ -41,12 +41,12 @@ time the Agent is provisioned falls back to a generated name). The job stays in 
 the occupation and the responsibility. An update that omits `displayName` keeps the stored one;
 changing it to a name another Agent uses is refused the same way.
 
-The person's Agent naming style (Agent 取名风格, `agentNamingStyle` in the console settings,
-local-user-only) is free text, so only a model can follow it: the recruiting Agent reads it with
+The person's FLA naming preference (FLA 取名偏好, `agentNamingStyle` in the device settings, edited on
+the person's home page beside Bole, local-user-only) is free text, so only a model can follow it: the recruiting Agent reads it with
 `get_agent_naming_style` right before it proposes a new Agent's `displayName`, and FULI only
 checks that the name is free. It is never added to a task entry. A clash means proposing another
 name in the same style; an Agent that cannot find one tells the person. No style means the
-generated names above; the settings field shows that rule as editable starting text, and leaving
+generated names above; the field shows that rule as editable starting text, and leaving
 or restoring it saves no style. Existing Agents are never renamed
 automatically: when an Agent's shown name reads as a job title, reading it returns
 `nameSuggestion`, a free nickname the profile page offers as a one-click rename.

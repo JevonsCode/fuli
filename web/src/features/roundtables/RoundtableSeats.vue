@@ -2,21 +2,23 @@
 import MeLink from '@/components/MeLink.vue'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
+import MeAvatar from '@/features/person-home/MeAvatar.vue'
 import { t } from '@/i18n'
 import { isPerson, type RoundtableSeat } from './roundtable-model'
 
 // Who is in the conversation, as one row of chips; anyone still owing a reply
-// is marked. The person's own seat is 「我」, a link to their page, with a
-// plain initial instead of an Agent portrait (so no FLA menu).
+// is marked. The person's own seat is 「我」, a link to their page, with the
+// picture they chose there or the neutral 「我」 face (never an Agent portrait, so no FLA menu).
 defineProps<{ seats: RoundtableSeat[] }>()
-const initial = (seat: RoundtableSeat) => (isPerson(seat.person) ? t('common.me.name') : seat.person.name ?? '?').trim().slice(0, 1).toUpperCase()
+const initial = (seat: RoundtableSeat) => (seat.person.name ?? '?').trim().slice(0, 1).toUpperCase()
 </script>
 
 <template>
   <ul class="roundtable-seats" :aria-label="t('roundtable.table', { count: seats.length })">
     <li v-for="seat in seats" :key="seat.key" class="roundtable-seat" :class="{ 'is-awaited': seat.awaited, 'is-me': isPerson(seat.person) }"
       :style="isPerson(seat.person) ? undefined : agentIdentityStyle(seat.person.agentId)" data-roundtable-seat :data-roundtable-seat-me="isPerson(seat.person) || undefined">
-      <span class="roundtable-seat-face" aria-hidden="true"><img v-if="seat.person.agentId && !isPerson(seat.person)" :src="agentAvatarUrl(seat.person.agentId)" :data-agent-portrait="seat.person.agentId" alt="" /><template v-else>{{ initial(seat) }}</template></span>
+      <MeAvatar v-if="isPerson(seat.person)" class="roundtable-seat-face" :size="20" />
+      <span v-else class="roundtable-seat-face" aria-hidden="true"><img v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" :data-agent-portrait="seat.person.agentId" alt="" /><template v-else>{{ initial(seat) }}</template></span>
       <MeLink v-if="isPerson(seat.person)" class="roundtable-seat-name" />
       <span v-else class="roundtable-seat-name">{{ seat.person.name ?? t('roundtable.unknownAgent') }}</span>
       <small class="roundtable-seat-state">{{ seat.awaited ? t('roundtable.seatAwaited') : t('roundtable.seatSpoke', { count: seat.spoke }) }}</small>
