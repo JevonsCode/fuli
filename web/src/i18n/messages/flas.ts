@@ -3,6 +3,7 @@ export const flasMessages = {
   'zh-CN': {
     search: '搜索名字、职业或任务',
     view: { label: '分组方式', work: '按状态', projects: '按项目' },
+    filter: { status: '筛选状态', project: '筛选项目', allStatus: '全部状态', allProjects: '全部项目' },
     groups: { attention: '需要你看', working: '正在工作', idle: '空闲', unknown: '状态未上报', inactive: '已停用' },
     count: '{count} 位 FLA',
     countPartial: '已读取 {count} 位 FLA',
@@ -15,6 +16,8 @@ export const flasMessages = {
     empty: '还没有 FLA。',
     noMatch: '没有找到「{query}」。',
     clearSearch: '清除搜索',
+    filterEmpty: '没有符合筛选条件的 FLA。',
+    clearFilters: '清除筛选',
     more: { load: '读取更多 FLA', loading: '正在读取更多 FLA', failed: '更多 FLA 没有读到。' },
     reorder: { hint: '工作状态有变化', apply: '重新排列' },
     row: { pinned: '已固定到 Dock' },
@@ -23,6 +26,7 @@ export const flasMessages = {
   'en-US': {
     search: 'Search names, occupations or work',
     view: { label: 'Group by', work: 'By status', projects: 'By project' },
+    filter: { status: 'Filter status', project: 'Filter projects', allStatus: 'All statuses', allProjects: 'All projects' },
     groups: { attention: 'Needs you', working: 'Working', idle: 'Free', unknown: 'Not reported', inactive: 'Switched off' },
     count: '{count} FLAs',
     countPartial: '{count} FLAs read so far',
@@ -35,6 +39,8 @@ export const flasMessages = {
     empty: 'No FLAs yet.',
     noMatch: 'Nothing matches “{query}”.',
     clearSearch: 'Clear search',
+    filterEmpty: 'No FLAs match the filters.',
+    clearFilters: 'Clear filters',
     more: { load: 'Read more FLAs', loading: 'Reading more FLAs', failed: 'More FLAs could not be read.' },
     reorder: { hint: 'Work status changed', apply: 'Reorder' },
     row: { pinned: 'Pinned to the dock' },

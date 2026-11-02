@@ -63,7 +63,7 @@ b, strong { font-weight: var(--weight-strong); }
 :where(textarea) { resize: vertical; line-height: 1.6; }
 :where(input:not([type=checkbox]):not([type=radio]), textarea, select):hover:not(:disabled) { border-color: var(--color-border-strong); }
 :where(input:not([type=checkbox]):not([type=radio]), textarea, select):focus {
-  border-color: var(--color-accent); box-shadow: 0 0 0 3px var(--color-accent-soft); outline: none;
+  border-color: var(--color-border-strong); box-shadow: 0 0 0 4px var(--color-surface-hover); outline: none;
 }
 :where(input, textarea, select):disabled { color: var(--color-muted); background: var(--color-surface-subtle); cursor: not-allowed; }
 :where(select) {

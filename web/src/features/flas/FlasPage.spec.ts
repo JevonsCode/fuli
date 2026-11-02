@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { forgetLoadedRosters } from '@/features/agent-profile/useAgentRosterPages'
 import { useConsoleStore } from '@/stores/console'
+import { openCombobox, optionLabels, toggleOption } from '@/test-support/option-pickers'
 import FlasPage from './FlasPage.vue'
 
 const { getJson, putJson } = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn() }))
@@ -20,7 +21,7 @@ const roster = [
   fla(2, 'Birch', { workStatus: 'blocked', currentTaskId: 'task-b' }),
   fla(3, 'Cedar', { workStatus: 'running', currentTaskId: 'task-c', assignments: [{ personalProjectId: 'project-a', status: 'active' }] }),
   // A state the console does not know is reported as unknown, never as free.
-  fla(4, 'Dahlia', { workStatus: 'something-new' }),
+  fla(4, 'Dahlia', { workStatus: 'something-new', assignments: [{ personalProjectId: 'project-b', status: 'active' }] }),
   fla(5, 'Elm', { workStatus: 'running' }, 'archived'),
 ]
 const mounted: Array<{ unmount: () => void }> = []
@@ -31,7 +32,7 @@ beforeEach(() => {
   const store = useConsoleStore()
   store.state = {
     mode: 'connected', activePersonalSpaceId: 'space-a', personalSpaces: [{ id: 'space-a', name: 'Synthetic space' }],
-    personalProjects: [{ project_id: 'project-a', personal_space_id: 'space-a', profile: { name: 'Synthetic project' } }], projects: [], subscriptions: [],
+    personalProjects: [{ project_id: 'project-a', personal_space_id: 'space-a', profile: { name: 'Synthetic project' } }, { project_id: 'project-b', personal_space_id: 'space-a', profile: { name: 'Beta project' } }], projects: [], subscriptions: [],
   } as never
   store.runtimeStatus = 'ready'
   getJson.mockReset()
@@ -103,8 +104,49 @@ describe('FLAs page', () => {
     expect(router.currentRoute.value.query.view).toBe('projects')
     expect(groupNames(wrapper)).toEqual([
       ['project-a', ['Cedar']],
-      ['__none', ['Elm', 'Birch', 'Dahlia', 'Aster']],
+      ['project-b', ['Dahlia']],
+      ['__none', ['Elm', 'Birch', 'Aster']],
     ])
+  })
+
+  it('filters by status under 按状态 and keeps it in the address; an empty selection shows everything', async () => {
+    const { router, wrapper } = await setup()
+    await openCombobox(wrapper)
+    expect(optionLabels(wrapper)).toEqual(['需要你看', '正在工作', '空闲', '状态未上报', '已停用'])
+    await toggleOption(wrapper, '正在工作')
+    expect(groupNames(wrapper)).toEqual([['working', ['Cedar']]])
+    expect(router.currentRoute.value.query.status).toBe('working')
+    await toggleOption(wrapper, '空闲')
+    expect(groupNames(wrapper)).toEqual([['working', ['Cedar']], ['idle', ['Aster']]])
+    expect(router.currentRoute.value.query.status).toBe('working,idle')
+    await toggleOption(wrapper, '空闲')
+    await toggleOption(wrapper, '正在工作')
+    expect(groupNames(wrapper)).toEqual([
+      ['attention', ['Birch']],
+      ['working', ['Cedar']],
+      ['idle', ['Aster']],
+      ['unknown', ['Dahlia']],
+      ['inactive', ['Elm']],
+    ])
+    expect(router.currentRoute.value.query.status).toBeUndefined()
+  })
+
+  it('filters by project with a searchable multi-select under 按项目', async () => {
+    const { router, wrapper } = await setup()
+    await wrapper.get('[data-flas-view="projects"]').trigger('click')
+    await flushPromises()
+    await openCombobox(wrapper)
+    await wrapper.get('input[role="combobox"]').setValue('Beta')
+    await flushPromises()
+    expect(optionLabels(wrapper)).toEqual(['Beta project'])
+    await toggleOption(wrapper, 'Beta project')
+    expect(groupNames(wrapper)).toEqual([['project-b', ['Dahlia']]])
+    expect(router.currentRoute.value.query.project).toBe('project-b')
+  })
+
+  it('restores a filter from the address', async () => {
+    const { wrapper } = await setup('/project-agents?view=projects&project=project-a')
+    expect(groupNames(wrapper)).toEqual([['project-a', ['Cedar']]])
   })
 
   it('pins from the row menu', async () => {
