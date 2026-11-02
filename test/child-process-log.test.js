@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { closeSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { openChildProcessLog } from '../src/local-runtime/child-process-log.js';
+import { boundChildProcessLog, childLogArchives, openChildProcessLog, removeChildLogArchives } from '../src/local-runtime/child-process-log.js';
 import { createNativeGraphServices } from '../src/native-runtime/runtime.js';
 import { providerServerArguments } from '../src/native-runtime/provider-arguments.js';
 import { spawnWindowsNativeProvider } from '../src/native-runtime/windows-processes.js';
@@ -18,13 +18,15 @@ function temporaryDirectory(t) {
   return directory;
 }
 
-// Extends the file without writing its bytes, so a test past the limit stays cheap.
+// Extends the file without writing its bytes, so a test past the limit stays
+// cheap; the marker ends the file, where a kept copy's tail still holds it.
 function syntheticLog(path, marker, size) {
-  writeFileSync(path, marker);
-  truncateSync(path, size);
+  writeFileSync(path, '');
+  truncateSync(path, size - marker.length);
+  appendFileSync(path, marker);
 }
 
-const firstLine = path => readFileSync(path).subarray(0, 32).toString('utf8').replace(/\0+$/, '');
+const lastText = path => readFileSync(path).subarray(-32).toString('utf8').replace(/^\0+/, '');
 
 test('a log at the limit keeps growing in place', t => {
   const logPath = join(temporaryDirectory(t), 'provider.log');
@@ -40,7 +42,7 @@ test('a log past the limit becomes .1 and the next child starts a fresh file', t
   syntheticLog(logPath, 'current', LIMIT + 1);
   closeSync(openChildProcessLog(logPath));
   assert.equal(statSync(logPath).size, 0);
-  assert.equal(firstLine(`${logPath}.1`), 'current');
+  assert.equal(lastText(`${logPath}.1`), 'current');
 });
 
 test('rotation keeps three older copies and drops the oldest', t => {
@@ -48,7 +50,7 @@ test('rotation keeps three older copies and drops the oldest', t => {
   syntheticLog(logPath, 'current', LIMIT + 1);
   for (const copy of [1, 2, 3]) writeFileSync(`${logPath}.${copy}`, `copy-${copy}`);
   closeSync(openChildProcessLog(logPath));
-  assert.deepEqual([1, 2, 3].map(copy => firstLine(`${logPath}.${copy}`)), ['current', 'copy-1', 'copy-2']);
+  assert.deepEqual([1, 2, 3].map(copy => lastText(`${logPath}.${copy}`)), ['current', 'copy-1', 'copy-2']);
   assert.equal(existsSync(`${logPath}.4`), false);
 });
 
@@ -80,7 +82,7 @@ test('the native Provider spawn rotates its full log before the child starts', a
     fetchImpl: async () => Response.json({ status: 'ok', transcript_contract: 1 })
   });
   await services.start();
-  assert.equal(firstLine(`${logPath}.1`), 'previous-run');
+  assert.equal(lastText(`${logPath}.1`), 'previous-run');
   assert.ok(statSync(logPath).size < LIMIT);
 });
 
@@ -93,7 +95,7 @@ test('the Windows owned-process spawn rotates its full log before the child star
     const entry = await spawnWindowsNativeProvider({ python: process.execPath, port: 9, sourcePath: tmpdir(),
       environment: process.env, logPath }).catch(() => null);
     if (entry) try { process.kill(entry.pid); } catch { /* already exited */ }
-    assert.equal(firstLine(`${logPath}.1`), 'previous-run');
+    assert.equal(lastText(`${logPath}.1`), 'previous-run');
     assert.ok(statSync(logPath).size < LIMIT);
   });
 
@@ -112,4 +114,31 @@ test('the Graph Provider serves without an access log, so task-context paths sta
   assert.ok(args.includes('--no-access-log'));
   assert.deepEqual(args.slice(0, 3), ['-m', 'uvicorn', 'fuli_graph.app:app']);
   assert.equal(args[args.indexOf('--port') + 1], '2729');
+});
+
+test('a log that grows past the limit while its child writes is bounded in place (REC #67)', t => {
+  const logPath = join(temporaryDirectory(t), 'provider.log');
+  const child = openChildProcessLog(logPath);
+  t.after(() => closeSync(child));
+  syntheticLog(logPath, 'running', LIMIT * 3);
+  assert.equal(boundChildProcessLog(logPath), true);
+  assert.equal(statSync(logPath).size, 0);
+  // The kept copy is only the tail: never larger than the limit.
+  assert.equal(statSync(`${logPath}.1`).size, LIMIT);
+  assert.equal(lastText(`${logPath}.1`), 'running');
+  // The child keeps appending at the new end, not at its old offset.
+  writeSync(child, 'next line\n');
+  assert.equal(readFileSync(logPath, 'utf8'), 'next line\n');
+  assert.equal(boundChildProcessLog(logPath), false);
+});
+
+test('clearing old logs deletes only the kept copies and says how much it freed', t => {
+  const logPath = join(temporaryDirectory(t), 'provider.log');
+  writeFileSync(logPath, 'current');
+  writeFileSync(`${logPath}.1`, 'older-1');
+  writeFileSync(`${logPath}.3`, 'older-three');
+  assert.deepEqual(childLogArchives(logPath).map(({ bytes }) => bytes), [7, 11]);
+  assert.equal(removeChildLogArchives(logPath), 18);
+  assert.deepEqual(childLogArchives(logPath), []);
+  assert.equal(readFileSync(logPath, 'utf8'), 'current');
 });

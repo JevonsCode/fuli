@@ -1,4 +1,6 @@
-import { getJson } from '@/api/client'
+import { z } from 'zod'
+import { deleteJson, getJson } from '@/api/client'
+import { shapeOf } from '@/api/response-shape'
 import { t } from '@/i18n'
 import { tableLabel } from '@/i18n/label-table'
 
@@ -24,3 +26,11 @@ export function diagnosticsExport(bundle: DiagnosticsBundle): { name: string; co
   const stamp = bundle.generatedAt.replace(/\.\d+Z$/, 'Z').replace(/[:]/g, '-')
   return { name: `fuli-diagnostics-${stamp}.json`, content: `${JSON.stringify(bundle, null, 2)}\n` }
 }
+
+// The kept copies of FULI's logs (src/system/log-retention.js): how much they
+// hold, and 「清理旧日志」, which deletes only them, never a current log.
+const logArchivesShape = shapeOf(z.looseObject({ files: z.number(), bytes: z.number() }))
+const clearedShape = shapeOf(z.looseObject({ freedBytes: z.number() }))
+const logArchivesPath = (personalSpaceId: string) => `/api/system/log-archives?personalSpaceId=${encodeURIComponent(personalSpaceId)}`
+export const readLogArchives = (personalSpaceId: string) => getJson(logArchivesPath(personalSpaceId), logArchivesShape)
+export const clearLogArchives = (personalSpaceId: string) => deleteJson(logArchivesPath(personalSpaceId), undefined, clearedShape)
