@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import MarkdownText from '@/components/MarkdownText.vue'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
@@ -106,7 +107,7 @@ watch(() => props.thread.messages.length, async (length, previous) => {
                   <span v-if="client(bubble.from)" class="rt-client">{{ client(bubble.from) }}</span>
                 </p>
                 <p v-else class="ui-sr-only">{{ sender(bubble) }}</p>
-                <p class="rt-bubble" :title="time(bubble.createdAt)">{{ bubble.body }}</p>
+                <MarkdownText class="rt-bubble" :title="time(bubble.createdAt)" :source="bubble.body" />
                 <p v-if="viaLabel(bubble.via) && bubble.kind === 'reply'" class="rt-status">{{ viaLabel(bubble.via) }}</p>
                 <ul v-if="bubble.deliveries.length" class="rt-statuses rt-status">
                   <li v-for="delivery in bubble.deliveries" :key="delivery.messageId" :data-roundtable-delivery="delivery.state.kind"

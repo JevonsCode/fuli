@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
 import { Button } from '@/components/ui/button'
+import MarkdownText from '@/components/MarkdownText.vue'
 import type { RoundtableChatPage } from './roundtable-api'
 import { chatRunMarks } from './chat-runs'
 import { chatRoomName } from './roundtable-model'
@@ -93,7 +94,7 @@ onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { captu
             <div class="rt-msg-col">
               <p v-if="marks[index]!.runStart" class="rt-byline"><strong>{{ senderName(message.from) }}</strong></p>
               <p v-else class="ui-sr-only">{{ senderName(message.from) }}</p>
-              <p class="rt-bubble roundtable-chat-body" :title="time(message.createdAt)">{{ message.body }}</p>
+              <MarkdownText class="rt-bubble roundtable-chat-body" :title="time(message.createdAt)" :source="message.body" />
             </div>
           </div>
         </li>
