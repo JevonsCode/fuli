@@ -1,13 +1,13 @@
 /**
  * The backdrop's pointer parallax: as a mouse moves, the backdrop's layers
- * lean a few pixels away from it, the deeper layers further, then glide to
+ * lean away from it, the deeper layers further, then glide to
  * rest. Only `--parallax-x` / `--parallax-y` on the stage change (the layers
  * turn them into a composited translate), at most once per frame and only
  * while there is still distance to cover; when the pointer is still, no frame
  * is requested. Touch and pen never move it, and reduced motion keeps it centred.
  */
 /** The shift, in px, of the nearest layer with the pointer at a window edge. */
-export const PARALLAX_SHIFT = 3
+export const PARALLAX_SHIFT = 14
 /** The share of the remaining distance covered each frame: a glide, not a snap. */
 const GLIDE = 0.08
 /** Closer than this, in px, the layers are at rest. */
