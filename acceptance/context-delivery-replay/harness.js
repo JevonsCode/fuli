@@ -311,7 +311,8 @@ function measure({ session, view, frame, text, visible, baseline, skeleton, retr
     skeleton_revision_field_bytes: frame.skeleton_revision
       ? bytes(`,"skeleton_revision":${JSON.stringify(frame.skeleton_revision)}`) : 0,
     skeleton_delivery: frame.skeleton_unchanged ? 'unchanged' : 'full',
-    skeleton_fields_omitted: typeof frame.skeleton_unchanged === "string" ? "all" : Object.values(frame.skeleton_unchanged ?? {}).flat().length,
+    skeleton_fields_omitted: typeof frame.skeleton_unchanged === 'string' || Array.isArray(frame.skeleton_unchanged) ? 'all'
+      : Object.values(frame.skeleton_unchanged ?? {}).flat().length,
     messages_sent: recovery?.messages?.length ?? 0, messages_omitted: omitted,
     withdrawn_sequences: recovery?.withdrawn?.sequences ?? [],
     preferences_sent: preferenceItems(frame).length,
@@ -342,15 +343,20 @@ function applySkeleton(view, frame, text) {
   if (label !== null) own[SKELETON_LABEL] = label;
   view.skeleton = { ...own };
   view.skeletonUnlocated = false;
-  // A bare revision names every part of that frame.
-  const unchanged = typeof frame.skeleton_unchanged === 'string'
-    ? { [frame.skeleton_unchanged]: Object.keys(view.skeletons.get(frame.skeleton_unchanged) ?? { missing: true }) }
-    : frame.skeleton_unchanged ?? {};
-  for (const [revision, parts] of Object.entries(unchanged)) {
-    const base = view.skeletons.get(revision);
-    for (const part of parts) {
-      if (base && Object.hasOwn(base, part)) view.skeleton[part] = base[part];
-      else view.skeletonUnlocated = true;
+  // Revisions alone: every part of those frames, later over earlier, under
+  // this frame's own. A map: each named part from its frame.
+  const unchanged = frame.skeleton_unchanged;
+  if (typeof unchanged === 'string' || Array.isArray(unchanged)) {
+    const bases = [unchanged].flat().map(revision => view.skeletons.get(revision));
+    view.skeletonUnlocated = bases.some(base => !base);
+    view.skeleton = Object.assign({}, ...bases.filter(Boolean), own);
+  } else {
+    for (const [revision, parts] of Object.entries(unchanged ?? {})) {
+      const base = view.skeletons.get(revision);
+      for (const part of parts) {
+        if (base && Object.hasOwn(base, part)) view.skeleton[part] = base[part];
+        else view.skeletonUnlocated = true;
+      }
     }
   }
   if (frame.skeleton_revision) view.skeletons.set(frame.skeleton_revision, own);

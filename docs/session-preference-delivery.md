@@ -350,9 +350,12 @@ task: `agent_receipt`, the rule references (`task_guidance`,
 `task_knowledge_recall`, and the hook's own label above the JSON. Every hook
 frame that still shows one of these carries `skeleton_revision` (12 hex over
 those fields and its label). A later hook frame leaves out each part that a
-base shows byte for byte and names it in `skeleton_unchanged`: a map from the
-base's revision to the parts taken from it, or that revision alone when the
-base gives every part. Its label is then a single sentence saying so.
+base shows byte for byte and names it in `skeleton_unchanged`. When the bases'
+own parts, applied oldest first and under the frame's own parts, give exactly
+the parts left out (label included), it is just their revisions: a bare one for
+a single base, else a list, later over earlier. Otherwise it maps each base's
+revision to the parts taken from it. A frame that names its label shows a
+single sentence instead.
 
 A base is a frame of the current context generation that the host recorded in
 the session's own transcript, whose revision matches what it shows there, and
@@ -362,7 +365,11 @@ the same Agent (a repeated prompt). The session record keeps those prompts as
 `[token, prompt, project and Agent]` hashes only (record version 3). A new task,
 another project or FLA, a frame that was produced but not recorded, and
 everything before a compaction or reset have no base, so those frames carry the
-whole skeleton. MCP results never take part. An in-place notification refresh
+whole skeleton. A new session's transcript does not exist yet when its first
+hooks run; a transcript this session's record has never seen and that is not
+there yet starts at its start (floor 0), so that first frame carries its
+revisions and a later turn confirms it from the file. A transcript the record
+has seen before and that is gone keeps the boundary unknown. MCP results never take part. An in-place notification refresh
 uses the same evidence rules for preferences and recovery instead of a forced
 full frame.
 

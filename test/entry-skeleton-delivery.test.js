@@ -76,9 +76,12 @@ test('a new task with another prompt, another project or a changed part gets tha
   const moved = await f.turn(entry(f.sessionId, 'task-d', { project: 'project-b' }), 'Do the thing');
   assert.equal(moved.frame.skeleton_unchanged, undefined, 'another project');
   const changed = await f.turn(entry(f.sessionId, 'task-a', { receipt: 'Synthetic new owner' }), 'notification');
+  // The base's parts apply under the frame's own new receipt.
   assert.equal(changed.frame.agent_receipt.markdown, 'Synthetic new owner');
-  assert.deepEqual(Object.values(changed.frame.skeleton_unchanged).flat().sort(),
-    ['context', 'judgment_context', 'label', 'project_agent_context', 'task_guidance']);
+  assert.equal(changed.frame.skeleton_unchanged, first.frame.skeleton_revision);
+  for (const field of ['context', 'judgment_context', 'project_agent_context', 'task_guidance']) {
+    assert.equal(Object.hasOwn(changed.frame, field), false, field);
+  }
   assert.match(changed.frame.skeleton_revision, /^[0-9a-f]{12}$/, 'what is still sent can be named later');
 }));
 
@@ -130,3 +133,25 @@ test('a frame blocked by the inline limit or the delivery budget carries its who
   assert.equal(budget.frame.agent_receipt.markdown, 'Synthetic owner');
   assert.deepEqual(budget.frame.context, { personal_project_id: 'project', project_agent_id: 'lead' });
 }));
+
+// Claude Code writes a new session's transcript only after its first prompt
+// hook, so that first frame carries a revision a later turn can confirm.
+test('the first frame of a new session, before its transcript exists, can be named later', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-entry-skeleton-new-'));
+  try {
+    const sessionId = randomUUID();
+    const host = syntheticHost(directory, 'claude_code', sessionId);
+    const delivery = createSessionPreferenceDelivery({ directory: join(directory, 'cache'),
+      locate: async () => ({ path: host.path, adapter: claudePreferenceEvidence }) });
+    const turn = async prompt => JSON.parse((await preferenceHookOutput(entry(sessionId, 'task-a'), 'UserPromptSubmit',
+      { session_id: sessionId, transcript_path: host.path, prompt }, delivery, 'claude_code', LABEL))
+      .hookSpecificOutput.additionalContext.split('\n').at(-1));
+    // Claude Code's SessionStart reset runs first, before the transcript exists.
+    assert.equal(await delivery.reset({ sourceApplication: 'claude_code', nativeSessionId: sessionId, transcriptPath: host.path }), true);
+    const first = await turn('Do the thing');
+    assert.match(first.skeleton_revision, /^[0-9a-f]{12}$/);
+    await host.start();
+    await host.inject(`${LABEL}\n${JSON.stringify(first)}`);
+    assert.equal((await turn('Do the thing')).skeleton_unchanged, first.skeleton_revision);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});

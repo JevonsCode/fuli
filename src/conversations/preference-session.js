@@ -49,10 +49,14 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
       });
     } finally { await release(); }
   }
+  // `absent`: the host has not written this session's transcript yet (a new
+  // session's first hooks), so nothing earlier exists and its boundary is its
+  // start. Any other unreadable transcript stays unknown.
   async function observe(source, sessionId, origin, recordOffsets) {
     const target = await locate(source, sessionId, { env, transcriptPath: origin.transcriptPath });
-    return target ? { ...await readPreferenceEvidence(target.path, sessionId, target.adapter, recordOffsets),
-      adapter: target.adapter } : { known: false };
+    if (!target) return { known: false };
+    const proof = await readPreferenceEvidence(target.path, sessionId, target.adapter, recordOffsets);
+    return { ...proof, adapter: target.adapter, ...(proof.known ? {} : { absent: await missing(target.path) }) };
   }
   return {
     async recordConversation(value, origin, format) {
@@ -98,15 +102,18 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           // stays unknown: nothing before it counts and nothing is saved.
           state = generationState(state, proof, nativeGeneration);
           // Without a readable generation no frame can ever be confirmed, so
-          // none carries a revision.
+          // none carries a revision. A transcript the host has not written yet
+          // shows nothing so far, and a later turn reads this frame there.
           const { baseline, shown } = proof.known && state.floor !== null ? acknowledgedSnapshot(value, snapshot, state, proof)
-            : { baseline: null, shown: null };
+            : proof.absent && state.floor !== null ? { baseline: null, shown: new Map() } : { baseline: null, shown: null };
           const floor = state.floor === null ? null : state.floor ?? 0;
           const evidence = origin.forceFull ? undefined
             : recentEvidence(proof, state.recent, { sessionId: snapshot.sessionId, adapter: proof.adapter, floor });
           // A forced full frame still carries its skeleton revision, so later
-          // frames of the generation can name it.
-          const skeleton = origin.taskPrompt === undefined || !proof.known || floor === null ? null
+          // frames of the generation can name it. So does a frame produced
+          // before the host wrote the transcript at all: a later turn confirms
+          // it from there.
+          const skeleton = origin.taskPrompt === undefined || !(proof.known || proof.absent) || floor === null ? null
             : skeletonEvidence(origin.forceFull ? { known: false } : proof, value,
               { floor, prompts: state.prompts, prompt: origin.taskPrompt });
           const project = candidate => {
@@ -162,11 +169,12 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
     async reset(origin) {
       if (!SESSION.test(origin.nativeSessionId ?? '')) return true;
       try {
-        await locked(origin.sourceApplication, origin.nativeSessionId, async (_state, save) => {
+        await locked(origin.sourceApplication, origin.nativeSessionId, async (state, save) => {
           const proof = await observe(origin.sourceApplication, origin.nativeSessionId, origin);
           // An unreadable or unfinished transcript proves no boundary: it stays
           // unknown until a delivery can read the file, never the file's start.
-          await save({ pending: [], recent: [], prompts: [], floor: proof.known ? proof.size : null,
+          // One the host has not written yet starts at its start.
+          await save({ pending: [], recent: [], prompts: [], floor: boundary(proof, state),
             ...(origin.nativeGeneration ? { nativeGeneration: contentHash(origin.nativeGeneration) } : {}),
             ...(proof.known ? { fileId: proof.fileId, generation: proof.generation } : {}) });
         });
@@ -178,13 +186,25 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
   };
 }
 
+// Where a new generation starts: the transcript's current end, its start when
+// the host has not written it yet, or unknown (null). A transcript this
+// session's record has seen before and that is gone now was moved away, not
+// unwritten: that boundary stays unknown.
+function boundary(proof, state) {
+  return proof.known ? proof.size : proof.absent && !state.fileId ? 0 : null;
+}
+
+async function missing(path) {
+  try { await lstat(path); return false; } catch (error) { return error?.code === 'ENOENT'; }
+}
+
 // A replaced or shortened file proves nothing that is in it now, so the next
 // generation starts at its end. A reset record (compaction) of the same file
 // starts a generation after that record, where the evidence reader begins.
 function generationState(state, proof, nativeGeneration) {
   if (state.untrusted || state.floor === null
       || (nativeGeneration && state.nativeGeneration && nativeGeneration !== state.nativeGeneration)) {
-    return { pending: [], recent: [], prompts: [], floor: proof.known ? proof.size : null };
+    return { pending: [], recent: [], prompts: [], floor: boundary(proof, state) };
   }
   if (!proof.known) return state;
   const replaced = (state.fileId && state.fileId !== proof.fileId) || (state.floor ?? 0) > proof.size
