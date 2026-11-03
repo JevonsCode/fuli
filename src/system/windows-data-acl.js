@@ -68,7 +68,9 @@ export function windowsDataAcl({ platform = process.platform, run = execute,
     await run(icacls, [directory, '/inheritance:r', '/grant:r', `*${user}:${FULL_CONTROL_INHERITED}`,
       `*${SYSTEM_SID}:${FULL_CONTROL_INHERITED}`, '/C', '/Q'], { timeout: RESTRICT_TIMEOUT_MS });
     if (resetFailure) throw resetFailure;
-    if ((await sharedWith(directory)).length) throw new Error('Other accounts can still open the data directory.');
+    // The SIDs (never names or paths) say who is left, so a report can be acted on.
+    const left = await sharedWith(directory);
+    if (left.length) throw new Error(`Other accounts can still open the data directory: ${left.join(', ')}.`);
   }
 
   return { sharedWith, restrictToOwner };
