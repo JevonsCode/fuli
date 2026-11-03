@@ -1,0 +1,43 @@
+<script setup lang="ts">
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
+import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
+
+// The folded 悬浮岛 (TeamIsland.vue): the FLAs working right now circle the
+// round button as tiny portraits, evenly spaced and always upright, with how
+// many tasks wait behind it in the middle (Jevons 11-03). The ring turns with
+// a compositor-only transform; reduced motion stops it where it is.
+const props = defineProps<{ agentIds: string[]; count: number }>()
+const placed = (index: number) => ({ '--turn': `${(index * 360) / props.agentIds.length}deg` })
+</script>
+
+<template>
+  <span class="team-orbit" aria-hidden="true" data-team-orbit>
+    <span class="team-orbit-ring">
+      <span v-for="(agentId, index) in agentIds" :key="agentId" class="team-orbit-seat" :style="placed(index)">
+        <span class="team-orbit-face" :style="agentIdentityStyle(agentId)">
+          <img :src="agentAvatarUrl(agentId)" :data-agent-portrait="agentId" alt="" />
+        </span>
+      </span>
+    </span>
+    <span class="team-orbit-count ui-num">{{ count }}</span>
+  </span>
+</template>
+
+<style scoped>
+.team-orbit { position: relative; display: grid; width: 100%; height: 100%; place-items: center; }
+.team-orbit-ring { position: absolute; inset: 0; animation: team-orbit-turn 9s linear infinite; }
+/* Each seat sits on the ring at its own angle; the face turns back so it stays upright. */
+.team-orbit-seat { position: absolute; top: 50%; left: 50%; width: 0; height: 0; transform: rotate(var(--turn)) translateY(-14px); }
+.team-orbit-face {
+  position: absolute; top: -8px; left: -8px; display: grid; width: 16px; height: 16px; place-items: center; border-radius: 50%;
+  background: var(--agent-identity-soft, var(--color-surface-hover)); box-shadow: 0 0 0 1.5px var(--color-surface);
+  transform: rotate(calc(-1 * var(--turn))); animation: team-orbit-upright 9s linear infinite;
+}
+.team-orbit-face img { width: 14px; height: 14px; border-radius: 50%; object-fit: cover; }
+.team-orbit-count { position: relative; color: var(--color-muted); font-size: var(--text-meta); font-weight: var(--weight-medium); }
+@keyframes team-orbit-turn { to { transform: rotate(360deg); } }
+@keyframes team-orbit-upright {
+  from { transform: rotate(calc(-1 * var(--turn))); }
+  to { transform: rotate(calc(-1 * var(--turn) - 360deg)); }
+}
+</style>
