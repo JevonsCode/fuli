@@ -718,11 +718,12 @@ function checkFields(): ValidatedField[] {
                       <Switch :model-value="form.updateChannel === 'beta'" :aria-label="t('settings.version.beta')" data-update-channel
                         @update:model-value="value => form && (form.updateChannel = value ? 'beta' : 'stable')" />
                     </label>
-                    <div class="setting-row version-latest" aria-live="polite" data-version-latest>
+                    <div class="setting-row version-latest" :class="{ 'version-latest-offer': offersUpdate(versionStatus) }"
+                      aria-live="polite" data-version-latest>
                       <GrowthLoading v-if="!versionStatus && !versionFailed" variant="inline" :label="t('settings.version.checking')" />
                       <span v-else-if="versionFailed || versionStatus?.status === 'unavailable'"><strong>{{ t('settings.version.unavailable') }}</strong></span>
                       <template v-else-if="offersUpdate(versionStatus)">
-                        <span><strong>{{ t('settings.version.available', { version: versionStatus.latestVersion }) }}</strong>
+                        <span class="version-offer-head"><strong>{{ t('settings.version.available', { version: versionStatus.latestVersion }) }}</strong>
                           <small>{{ t('settings.version.checkedAt', { time: versionCheckedAt(versionStatus.checkedAt) }) }}</small></span>
                         <ConsoleUpdate :version="versionStatus.latestVersion" :kind="versionStatus.updateKind ?? 'npm'" />
                       </template>
@@ -838,6 +839,10 @@ function checkFields(): ValidatedField[] {
 .setting-row small { color: var(--color-muted); font-size: 12px; }
 .version-number { font-variant-numeric: tabular-nums; font-weight: var(--weight-medium); }
 .version-latest { min-height: var(--control-height); cursor: default; }
+/* A newer version: its name and check time on one line, the update below at
+   full width, so the explanation is not squeezed beside a narrow heading. */
+.version-latest-offer { flex-direction: column; align-items: stretch; gap: 10px; }
+.version-latest-offer > .version-offer-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
 .setting-note { margin: 0; padding: 4px 0 4px 20px; color: var(--color-muted); font-size: 12px; }
 .setting-row-nested { padding-left: 20px; border-top-style: dashed; }
 .select-row .settings-select { flex: 0 0 180px; width: 180px; min-width: 0; }

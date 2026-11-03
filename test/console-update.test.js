@@ -36,6 +36,41 @@ test('the console starts the update in a detached worker and refuses a second on
   assert.throws(() => update.start(), /already running/);
 });
 
+test('the macOS app updates in one click too: it downloads the newer version, swaps the app, and journals each step', async (t) => {
+  const root = dataDir(t);
+  const spawned = [];
+  const update = consoleUpdate(root, { platform: 'darwin', macosBundle: () => ({ arch: 'arm64' }), spawnWorker: fakeWorker(spawned) });
+  assert.equal(update.kind(), 'macos-app');
+  assert.throws(() => update.start({ version: null }), /No newer FULI version/);
+  const { id } = update.start({ version: '99.0.0' });
+  assert.equal(spawned.length, 1);
+  const steps = [];
+  await runConsoleUpdate({ dataDir: root }, id, { env: {}, packageRoot: '/Applications/FULI.app/Contents/Resources/fuli',
+    updateMacosApp: async ({ packageRoot, version, progress }) => {
+      assert.equal(packageRoot, '/Applications/FULI.app/Contents/Resources/fuli');
+      assert.equal(version, '99.0.0');
+      for (const step of ['downloading', 'verifying', 'preparing', 'restarting']) { progress(step); steps.push(update.status().step); }
+      return { status: 'updated', version };
+    } });
+  assert.deepEqual(steps, ['downloading', 'verifying', 'preparing', 'restarting']);
+  assert.deepEqual({ status: update.status().status, version: update.status().version }, { status: 'updated', version: '99.0.0' });
+  assert.equal(consoleUpdate(root, { platform: 'darwin', macosBundle: () => null, spawnWorker: fakeWorker([]) }).kind(), 'npm');
+});
+
+test('a failed update journals the reason the page names in Chinese, and the console is started again', async (t) => {
+  const root = dataDir(t);
+  const update = consoleUpdate(root, { platform: 'darwin', macosBundle: () => ({ arch: 'arm64' }), spawnWorker: fakeWorker([]) });
+  const { id } = update.start({ version: '99.0.0' });
+  let started = 0;
+  await runConsoleUpdate({ dataDir: root }, id, { env: {},
+    updateMacosApp: async () => { throw Object.assign(new Error('v99.0.0 did not start, so the previous version was restored.'), { code: 'start_failed' }); },
+    control: { consoleRunning: async () => false, start: async () => { started += 1; } } });
+  const status = update.status();
+  assert.deepEqual({ status: status.status, errorCode: status.errorCode, started: status.started },
+    { status: 'failed', errorCode: 'start_failed', started: true });
+  assert.equal(started, 1);
+});
+
 const TRAY = { kind: 'windows-user-installation', installRoot: 'C:\\Users\\p\\AppData\\Local\\Programs\\Fuli',
   packageRoot: 'C:\\Users\\p\\AppData\\Local\\Programs\\Fuli\\versions\\a', dataDir: 'C:\\Users\\p\\AppData\\Local\\Fuli' };
 

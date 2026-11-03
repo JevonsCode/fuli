@@ -4,10 +4,11 @@ import { getJson, postJson } from '@/api/client'
 // update notice. An npm installation runs the same update `fuli update --yes`
 // runs; a Windows tray installation downloads the release's verified package
 // and runs its own updater. It stops and restarts FULI, so the page asks for
-// the outcome until the console answers.
+// the outcome until the console answers. The macOS app downloads the
+// release's .dmg and swaps itself the same way (src/desktop/macos-app-update.js).
 
-export type ConsoleUpdateKind = 'npm' | 'windows-tray'
-export type ConsoleUpdateStep = 'downloading' | 'verifying' | 'exitingTray' | 'installing'
+export type ConsoleUpdateKind = 'npm' | 'windows-tray' | 'macos-app'
+export type ConsoleUpdateStep = 'downloading' | 'verifying' | 'exitingTray' | 'installing' | 'preparing' | 'restarting'
 
 // A FULI process that kept the update from switching versions.
 export interface ConsoleUpdateBlocker {
@@ -27,6 +28,8 @@ export interface ConsoleUpdateStatus {
   step: ConsoleUpdateStep | null
   started: boolean | null
   error: string | null
+  // Why it failed, when the update names it (src/desktop/macos-app-update.js).
+  errorCode: string | null
   blockers: ConsoleUpdateBlocker[] | null
 }
 

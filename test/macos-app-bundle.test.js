@@ -79,11 +79,11 @@ test('the app controller uses the bundled Node and FULI\'s macOS data directory'
   assert.throws(() => loadMacosAppContext({ packageRoot: npm.packageRoot }), /bundled runtime/);
 });
 
-test('the app is updated by replacing it, never through npm', async t => {
+test('the app updates itself from the console, never through npm', async t => {
   const { packageRoot } = await appPackage(t);
   await assert.rejects(runUpdateCommand(['--yes'], { platform: 'darwin', packageRoot,
     resolveLatestVersion: () => assert.fail('nothing is checked'),
-    stopRuntime: async () => assert.fail('nothing is stopped'), write: () => {} }), /drag FULI\.app to Applications/);
+    stopRuntime: async () => assert.fail('nothing is stopped'), write: () => {} }), /updates itself, not through npm/);
 });
 
 test('a Developer ID build gives each runtime executable only its own entitlements', async () => {
