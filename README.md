@@ -320,8 +320,8 @@ directory, and resolution follows this order:
 3. Match the current directory name exactly to a registered project ID.
 4. At a workspace root, match one registered direct child only when exactly one child contains
    `.git`, `package.json`, `pyproject.toml`, `Cargo.toml`, or `go.mod`.
-5. Multiple candidates, including a remote recorded by several projects, return `ambiguous`; no
-   candidate returns `unmatched`. Neither state applies project preferences or guesses a project.
+5. Multiple candidates return `ambiguous`; no candidate returns `unmatched` (a remote recorded by
+   several projects counts as several). Neither state applies project preferences or guesses a project.
 
 For an unregistered repository with an unambiguous identity, the installed capture skill may call
 `upsert_personal_project` before the first project-scoped write to create a minimal local private
