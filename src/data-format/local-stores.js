@@ -48,6 +48,8 @@ import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
 import { CLIENT_LINKS_STATE_FORMAT } from '../client-links/registry.js';
 import { SESSION_CLIENT_FORMAT } from '../agent-kits/session-clients.js';
 import { PERSON_PROFILE_FORMAT } from '../person-profile/port.js';
+import { AGENT_DELEGATION_FORMAT } from '../agent-delegation/operation-log.js';
+import { AGENT_DELEGATION_POLICY_FORMAT } from '../agent-delegation/policy-store.js';
 
 // Every FULI store kept in one data directory, by the path its owner opens
 // (rec#17 D-09). Labels are relative to the data directory, so a report names
@@ -77,6 +79,8 @@ const sqliteStores = () => [
   ['agent-avatars.sqlite', AGENT_AVATARS_FORMAT],
   // 全部暂停 snapshots of every FLA's work surfaces and each pause and resume (rec#11 D-85).
   ['work-surfaces.sqlite', WORK_SURFACES_FORMAT],
+  // Each console change an FLA made for the person under their AI permissions (rec#11 D-81); never pruned.
+  ['agent-delegation.sqlite', AGENT_DELEGATION_FORMAT],
   ['employees/data/management.sqlite', EMPLOYEE_MANAGEMENT_FORMAT],
   // Jefa's built-in task board: tasks, their revisions, sharing and session titles.
   ['employees/data/jefa/board.sqlite', JEFA_BOARD_FORMAT],
@@ -93,6 +97,8 @@ const jsonStores = () => [
   ['runtime-configs/native.json', GRAPH_RUNTIME_CONFIG_FORMAT],
   ['recall-policy.json', RECALL_POLICY_FORMAT],
   ['agent-access-policy.json', AGENT_ACCESS_POLICY_FORMAT],
+  // Which categories of console changes FLAs may make for the person (AI permissions, rec#11 D-81).
+  ['agent-delegation-policy.json', AGENT_DELEGATION_POLICY_FORMAT],
   ['capture-policy.json', CAPTURE_POLICY_FORMAT],
   // An Agent's previewed capture changes waiting for the person's answer (rec#5 C4-2).
   ['capture-change-previews.json', CAPTURE_CHANGE_PREVIEW_FORMAT],

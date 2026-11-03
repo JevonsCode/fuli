@@ -45,6 +45,7 @@ import { knowledgeTagsMessages } from './messages/knowledge-tags'
 import { captureMessages } from './messages/capture'
 import { firstRunMessages } from './messages/first-run'
 import { clientLinksMessages } from './messages/client-links'
+import { agentDelegationMessages } from './messages/agent-delegation'
 import { taskBlockerMessages } from './messages/task-blocker'
 import { taskReasonMessages } from './messages/task-reason'
 import { doctorMessages } from './messages/doctor'
@@ -125,6 +126,7 @@ export const messages = {
     capture: captureMessages['zh-CN'],
     firstRun: firstRunMessages['zh-CN'],
     clientLinks: clientLinksMessages['zh-CN'],
+    agentDelegation: agentDelegationMessages['zh-CN'],
     taskBlocker: taskBlockerMessages['zh-CN'],
     taskReason: taskReasonMessages['zh-CN'],
     doctor: doctorMessages['zh-CN'],
@@ -178,6 +180,7 @@ export const messages = {
     capture: captureMessages['en-US'],
     firstRun: firstRunMessages['en-US'],
     clientLinks: clientLinksMessages['en-US'],
+    agentDelegation: agentDelegationMessages['en-US'],
     taskBlocker: taskBlockerMessages['en-US'],
     taskReason: taskReasonMessages['en-US'],
     doctor: doctorMessages['en-US'],

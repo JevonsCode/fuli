@@ -1,8 +1,5 @@
-import { activeAgentHostClient } from '../app/agent-request-context.js';
 import { ApplicationError } from '../app/application-error.js';
-import { requiredString } from '../validation/values.js';
-
-const TOKEN_LIMIT = 256;
+import { callingTask } from '../app/calling-task.js';
 
 // The Agent side of the work-surfaces table (rec#11 D-85). Any Agent may
 // list, pause and resume every FLA's work surfaces in its person's space, as
@@ -25,7 +22,6 @@ function surfaces(app) {
 }
 
 async function agentActor(app, input) {
-  const token = requiredString(input?.taskContextToken, 'taskContextToken', TOKEN_LIMIT);
-  const task = await app.taskContextRegistry.context(token, activeAgentHostClient() ?? input.sourceApplication ?? 'other');
+  const task = await callingTask(app, input);
   return { type: 'agent', agentId: task.projectAgentId ?? null, sessionId: task.sessionId ?? null };
 }

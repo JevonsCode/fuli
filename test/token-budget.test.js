@@ -172,7 +172,10 @@ const BASELINE = Object.freeze({
   // Conflict policy default + exceptions: one full-profile tool sets the default for every project,
   // the project tool takes mode null to drop an exception and the read tool lists them without a
   // project: 199,378 -> 199,999 B (+621 B), measured; chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 199999,
+  // rec#11 D-81 run_delegated_action: one full-profile tool for all 52 console changes the person
+  // lets FLAs make for them (instead of a tool each): 199,999 -> 200,801 B (+802 B), measured;
+  // chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 200801,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

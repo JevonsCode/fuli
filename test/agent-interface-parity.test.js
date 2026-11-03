@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
 import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
-import { agentInterfaceCatalog } from '../src/agent-tools/interface-catalog.js';
+import { agentInterfaceCatalog, interfaceForRequest } from '../src/agent-tools/interface-catalog.js';
 import { normalizeAgentSessionInput } from '../src/mcp/session-id.js';
 import { annotationsFor } from '../src/mcp/tool-annotations.js';
 import { jsonSchemaToZod } from '../src/mcp/tool-schema.js';
@@ -79,16 +79,30 @@ const REQUIRED_AGENT_MUTATIONS = new Map([
   ['DELETE /api/projects/:projectId', 'delete_public_project'],
 ]);
 
+// rec#11 D-81: never delegable, whatever the person's AI permissions say.
 const REQUIRED_LOCAL_USER_BOUNDARIES = new Set([
   'PATCH /api/agent-access-policy',
-  'PUT /api/system/settings',
-  'POST /api/system/client-connection/connect',
+  'PUT /api/agent-delegation/categories/:category',
+  'PUT /api/model-backends/keys/:reference',
+  'POST /api/knowledge/:itemKind/:itemId/hard-delete/preview',
+  'POST /api/knowledge/:itemKind/:itemId/hard-delete/export',
+  'POST /api/knowledge/:itemKind/:itemId/hard-delete/status',
+  'POST /api/knowledge/:itemKind/:itemId/hard-delete',
+  'POST /api/data-format/apply',
+  'POST /api/data-format/rollback',
+  'POST /api/data-format/prune',
+  'POST /api/data-format/restore',
+  'POST /api/agent-apps/:appId/delete-code',
+  'POST /api/agent-apps/:appId/delete-data',
+  'POST /api/roundtable/threads',
+  'POST /api/roundtable/threads/:threadId/messages',
+  'POST /api/agent-attention/respond',
+  'POST /api/judgment/feedback',
   'POST /api/data-format/dismiss-notices',
   'POST /api/knowledge/batch-confirmation',
   'POST /api/knowledge/:itemKind/:itemId/preference-scope',
   'POST /api/preference-conflicts/:conflictId/complete',
   'PATCH /employee-workspaces/:templateId/:projectId/api/work-items/:itemId/status',
-  'PATCH /employee-workspaces/:templateId/:projectId/api/projects/:projectId/sharing',
 ]);
 
 test('Agent interface catalog covers UI mutations with a tool or an explicit local-user boundary', () => {
@@ -104,7 +118,7 @@ test('Agent interface catalog covers UI mutations with a tool or an explicit loc
   for (const route of REQUIRED_LOCAL_USER_BOUNDARIES) {
     const entry = byRoute.get(route);
     assert.equal(entry?.access, 'local_user_only', route);
-    assert.match(entry?.reason ?? '', /human|local|device|access/i, route);
+    assert.match(entry?.reason ?? '', /human|local|device|access|person/i, route);
     assert.equal(entry?.toolName, undefined, route);
   }
   for (const entry of catalog.uiMutationParity.filter(({ access }) => access === 'agent')) {
@@ -121,9 +135,44 @@ test('Agent interface catalog covers UI mutations with a tool or an explicit loc
   ]);
   assert.equal(catalog.coverage.total, catalog.uiMutationParity.length);
   assert.equal(
-    catalog.coverage.agentControlled + catalog.coverage.localUserOnly,
+    catalog.coverage.agentControlled + catalog.coverage.agentDelegable + catalog.coverage.agentDelegableOff
+      + catalog.coverage.localUserOnly,
     catalog.coverage.total,
   );
+});
+
+test('rec#11 D-81: every delegable entry names a known category, its default and its undo, and no tool', () => {
+  const catalog = agentInterfaceCatalog();
+  const defaults = new Map(catalog.delegationCategories.map(({ id, defaultEnabled }) => [id, defaultEnabled]));
+  assert.deepEqual([...defaults], [['settings', true], ['organisation', true], ['projects', true],
+    ['services_apps', true], ['roundtable', true], ['lan_roundtable', false], ['model_settings', false],
+    ['public_projects', false]]);
+  const delegable = catalog.uiMutationParity.filter(({ access }) => access.startsWith('agent_delegable'));
+  for (const entry of delegable) {
+    assert.equal(entry.access, defaults.get(entry.category) ? 'agent_delegable' : 'agent_delegable_off', entry.route);
+    assert.ok(entry.undo?.length > 0, entry.route);
+    assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
+  }
+  assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.localUserOnly],
+    [42, 10, 31]);
+  const byRoute = new Map(catalog.uiMutationParity.map((entry) => [entry.route, entry]));
+  for (const [route, category] of [['PUT /api/system/settings', 'settings'], ['POST /api/system/update', 'settings'],
+    ['POST /api/occupations', 'organisation'], ['POST /api/topic-proposals/accept', 'projects'],
+    ['POST /api/agent-services/:serviceId/stop', 'services_apps'], ['PUT /api/roundtable/threads/:threadId/mode', 'roundtable'],
+    ['POST /api/peer/join', 'lan_roundtable'], ['PUT /api/model-backends/roles/:role', 'model_settings'],
+    ['PATCH /employee-workspaces/:templateId/:projectId/api/projects/:projectId/sharing', 'public_projects']]) {
+    assert.equal(byRoute.get(route)?.category, category, route);
+  }
+});
+
+test('rec#11 D-81: a request matches the most specific catalog route', () => {
+  assert.equal(interfaceForRequest('POST', '/api/knowledge/entity/item-a/scope')?.route,
+    'POST /api/knowledge/:itemKind/:itemId/scope');
+  assert.equal(interfaceForRequest('POST', '/api/knowledge/entity/item-a/hard-delete')?.access, 'local_user_only');
+  assert.equal(interfaceForRequest('POST', '/api/knowledge/session-migration')?.route, 'POST /api/knowledge/session-migration');
+  assert.equal(interfaceForRequest('DELETE', '/api/agent-services/svc-a/log')?.route, 'DELETE /api/agent-services/:serviceId/log');
+  assert.equal(interfaceForRequest('POST', '/api/agent-services//stop'), null);
+  assert.equal(interfaceForRequest('GET', '/api/system/settings'), null);
 });
 
 test('external knowledge configuration is controllable through explicit Agent tools', async () => {
@@ -197,9 +246,10 @@ test('Agent interface catalog lists roundtable reads and requested-Agent identit
   const byRoute = new Map(catalog.uiMutationParity.map((entry) => [entry.route, entry]));
   assert.equal(byRoute.get('POST /api/roundtable/messages/:messageId/cancel')?.toolName, 'cancel_agent_message');
   assert.equal(byRoute.get('POST /api/roundtable/chats')?.toolName, 'agent_chat');
+  // rec#11 D-81: an FLA pairs and shares only after the person turns lan_roundtable on.
   for (const route of ['POST /api/peer/coordinator', 'POST /api/peer/invitations', 'POST /api/peer/join',
     'PUT /api/peer/shares', 'POST /api/peer/devices/:nodeId/revoke', 'POST /api/peer/disable']) {
-    assert.equal(byRoute.get(route)?.access, 'local_user_only', route);
+    assert.equal(byRoute.get(route)?.access, 'agent_delegable_off', route);
   }
 });
 

@@ -34,6 +34,7 @@ import { ProviderTaskContextRegistry } from '../mcp/provider-task-context-regist
 import { readTaskPreferences } from './task-preference-reader.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { createNeedsPersonNotifier } from '../notifications/needs-person.js';
+import { createDelegatedConsoleClient } from '../agent-delegation/console-client.js';
 import { fuliLinkOrigin } from '../desktop/fuli-links.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
 import { describeSettings } from '../system/settings-guide.js';
@@ -165,6 +166,8 @@ export function openFederatedGraphApplication({
       readUrl: () => readRuntimeSettings(paths.runtimeSettingsPath).notifications.needsPersonUrl });
     app.explainSettings = () => describeSettings({ settings: readRuntimeSettings(paths.runtimeSettingsPath),
       capturePolicy: app.getCapturePolicy(), consoleUrl: app.consoleUrl });
+    // An FLA's console change for the person goes to the running console (rec#11 D-81).
+    app.delegatedConsole = createDelegatedConsoleClient({ consoleUrl: () => sourceConsoleUrl(runtimeConfigPath), fetchImpl });
     app.agentNamingStyle = () => readRuntimeSettings(paths.runtimeSettingsPath).agentNamingStyle;
     app.topicPromotion = () => readRuntimeSettings(paths.runtimeSettingsPath).topicPromotion;
   }

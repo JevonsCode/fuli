@@ -108,6 +108,8 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   // Stops and starts other Agents' processes and apps.
   pause_work_surfaces: LAUNCH,
   resume_work_surfaces: LAUNCH,
+  // The person's own console changes, made for them (rec#11 D-81).
+  run_delegated_action: LAUNCH,
 
   // Local, but a session, a local path, another Agent's records or the
   // person's own settings and reviews: not confined to an app's scope.

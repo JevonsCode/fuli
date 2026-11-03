@@ -1,8 +1,7 @@
-import { activeAgentHostClient } from '../app/agent-request-context.js';
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
+import { callingTask } from '../app/calling-task.js';
 import { requiredString } from '../validation/values.js';
 
-const TOKEN_LIMIT = 256;
 const CANDIDATE_READ_LIMIT = 100;
 
 // The Agent side of its workflows (rec#60 D-78). The owner is the Agent the
@@ -30,8 +29,7 @@ function workflows(app) {
 }
 
 async function boundAgent(app, input) {
-  const token = requiredString(input?.taskContextToken, 'taskContextToken', TOKEN_LIMIT);
-  const task = await app.taskContextRegistry.context(token, activeAgentHostClient() ?? input.sourceApplication ?? 'other');
+  const task = await callingTask(app, input);
   if (!task.projectAgentId) {
     throw new ApplicationError('agent_not_bound', 'Workflows belong to an Agent; this task is not bound to one', { status: 409 });
   }

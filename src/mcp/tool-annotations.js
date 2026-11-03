@@ -69,7 +69,7 @@ const WRITE_TOOLS = new Set([
   'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'pin_agent', 'role_work',
   'control_project_agent_task_run', 'register_standing_assignment', 'report_agent_service',
   'propose_agent_workflow', 'record_agent_workflow_run',
-  'pause_work_surfaces', 'resume_work_surfaces',
+  'pause_work_surfaces', 'resume_work_surfaces', 'run_delegated_action',
   'message_agent', 'reply_agent_message', 'cancel_agent_message',
   'record_agent_verification',
   'request_agent_loan', 'decide_agent_loan',
