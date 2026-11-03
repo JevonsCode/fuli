@@ -116,6 +116,28 @@ void main() {
     expect(controller.snapshot!.installed, isFalse);
   });
 
+  test('a running FULI whose console does not answer is checked on schedule, rechecked and restarted', () async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.running));
+    final controller = controllerFor(api, runtime);
+    await controller.refresh();
+    await controller.refresh();
+    expect(controller.snapshot!.problem, zh.noAnswer);
+    // No backoff while FULI runs: the next check comes on the normal schedule.
+    expect(pollDelay(visible: true, failures: 0), const Duration(seconds: 15));
+
+    api.reachable = true;
+    await controller.recheck();
+    expect(controller.snapshot!.reached, isTrue);
+    expect(controller.notice, isNull);
+
+    api.reachable = false;
+    await controller.refresh();
+    runtime.calls.clear();
+    await controller.restart();
+    expect(runtime.calls.where((call) => call != 'status'), ['stop', 'start']);
+  });
+
   test('follows the port `fuli status` reports when the settings file names another', () async {
     final api = DemoFuliApi()..reachable = false;
     final ports = <int>[];

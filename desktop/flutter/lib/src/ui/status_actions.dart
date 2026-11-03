@@ -14,10 +14,11 @@ const statusActionsHeight = 72.0;
 // "Open the install page"), so swapping 启动 and 停止 moves nothing.
 const _primaryWidth = 176.0;
 
-/// The status page's pinned bottom bar. 「打开控制台」 keeps the left end and
-/// the one primary action (启动 / 停止 FULI, or the install page) the right
-/// end; between them, the operation running now or the last one's outcome.
-/// Nothing that appears or goes moves either button.
+/// The status page's pinned bottom bar. 「打开控制台」 (or, while the console
+/// does not answer, 「重新检查」) keeps the left end and the one primary action
+/// (启动 / 停止 / 重启 FULI, or the install page) the right end; between them,
+/// the operation running now or the last one's outcome. Nothing that appears
+/// or goes moves either button.
 class StatusActions extends StatelessWidget {
   const StatusActions({
     super.key,
@@ -42,7 +43,14 @@ class StatusActions extends StatelessWidget {
       edge: AxisDirection.up,
       child: Row(
         children: [
-          if (consoleLink)
+          if (snapshot.installed && !snapshot.reached)
+            TextButton.icon(
+              key: const Key('recheck'),
+              onPressed: controller.pending != null ? null : controller.recheck,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: Text(strings.recheck),
+            )
+          else if (consoleLink)
             TextButton.icon(
               key: const Key('open-console'),
               onPressed: snapshot.reached ? () => opener.open(controller.consoleUri) : null,
@@ -84,6 +92,10 @@ class StatusActions extends StatelessWidget {
     final busy = controller.pending != null;
     if (!snapshot.installed) {
       return FilledButton(onPressed: () => opener.open(installPage), child: Text(strings.installPage));
+    }
+    // Running without an answering console: restarting is what fixes it.
+    if (snapshot.running && !snapshot.reached) {
+      return FilledButton(onPressed: busy ? null : controller.restart, child: Text(strings.restartFuli));
     }
     return snapshot.running
         ? OutlinedButton(onPressed: busy ? null : controller.stop, child: Text(strings.stopFuli))

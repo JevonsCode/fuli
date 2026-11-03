@@ -141,7 +141,9 @@ class FuliController extends ChangeNotifier {
 
   void _show(FuliSnapshot snapshot) {
     _snapshot = snapshot;
-    _failures = snapshot.reached ? 0 : _failures + 1;
+    // FULI running without an answering console is checked on the normal
+    // schedule: backing off would leave the page stale for minutes (11-03).
+    _failures = snapshot.reached || snapshot.running ? 0 : _failures + 1;
     if (snapshot.condition != FuliCondition.notRunning) _stoppedByPerson = false;
     if (_gate.observe(snapshot.condition, quiet: _stoppedByPerson || _pending != null)) {
       unawaited(notifier.notify('FULI', snapshot.sentence(strings)));
@@ -267,6 +269,36 @@ class FuliController extends ChangeNotifier {
     return _operate(strings.stopping, () async {
       final report = await _call(runtime.stop);
       if (report.error != null) _notice = Notice(strings.stopFailed(report.error!), error: true);
+    });
+  }
+
+  /// Forgets what earlier checks learned (the port `fuli status` reported,
+  /// the backoff, the last outcome) and checks again now: the way out of a
+  /// state that went stale, such as a console that no longer answers.
+  Future<void> recheck() {
+    if (_pending != null) return Future.value();
+    _runtimePort = null;
+    _failures = 0;
+    _notice = null;
+    if (!_disposed) notifyListeners();
+    return refresh();
+  }
+
+  /// Stops FULI and starts it again: the fix when it runs but its console
+  /// does not answer.
+  Future<void> restart() {
+    _stoppedByPerson = false;
+    return _bringUp(strings.restarting, () async {
+      final stopped = await _call(runtime.stop);
+      final stopError = stopped.error;
+      if (stopError != null) {
+        _notice = Notice(strings.stopFailed(stopError), error: true);
+        return;
+      }
+      _runtimePort = null;
+      final started = await _call(runtime.start);
+      final error = started.error;
+      if (error != null) _notice = Notice(strings.startFailed(error), error: true);
     });
   }
 

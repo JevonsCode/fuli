@@ -6,6 +6,7 @@ import 'package:fuli_desktop/src/app/app_services.dart';
 import 'package:fuli_desktop/src/app/fuli_controller.dart';
 import 'package:fuli_desktop/src/l10n/strings.dart';
 import 'package:fuli_desktop/src/preview/demo_fuli.dart';
+import 'package:fuli_desktop/src/runtime/fuli_runtime.dart';
 import 'package:fuli_desktop/src/ui/fuli_app.dart';
 
 import 'support/brand.dart';
@@ -56,6 +57,23 @@ void main() {
     await tester.pump();
     expect(find.descendant(of: primary, matching: find.text('停止 FULI')), findsOneWidget);
     expect((at(openConsole), at(primary)), places);
+  });
+
+  testWidgets('a running FULI whose console does not answer offers 重新检查 and 重启 FULI', (tester) async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.running));
+    final controller = FuliController(apiFor: (_) => api, runtime: runtime, notifier: RecordingNotifier(), strings: zh);
+    await tester.pumpWidget(FuliApp(brand: testBrand, services: AppServices(controller: controller, strings: zh, opener: RecordingOpener())));
+    await controller.refresh();
+    await tester.pump();
+    expect(find.descendant(of: primary, matching: find.text('重启 FULI')), findsOneWidget);
+    expect(find.byKey(const Key('recheck')), findsOneWidget);
+
+    runtime.calls.clear();
+    await tester.tap(find.text('重启 FULI'));
+    await tester.pump();
+    await tester.pump();
+    expect(runtime.calls.where((call) => call != 'status'), ['stop', 'start']);
   });
 
   testWidgets('without FULI the primary place opens the install page', (tester) async {
