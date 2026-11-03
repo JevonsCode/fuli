@@ -128,7 +128,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
 .island-card :deep(.team-card) { max-height: min(60vh, 520px); overflow-y: auto; box-shadow: none; }
 @media (max-width: 720px) {
   .team-islands { right: 0; left: 0; flex-direction: column; align-items: center; margin-inline: auto; bottom: calc(12px + 58px + 10px + env(safe-area-inset-bottom)); }
-  .island-slot { flex: none; width: min(330px, 100%); }
+  /* In a column flex-basis is a height: the wide slot's 440px basis made the first capsule 440px tall. */
+  .island-slot, .island-slot.is-wide { flex: none; width: min(330px, 100%); }
   .island-slot.is-wide { width: min(440px, 100%); }
   .island-card { left: 50%; translate: -50% 0; }
 }
