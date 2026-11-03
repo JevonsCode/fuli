@@ -234,7 +234,10 @@ class StoreTaskContexts:
             raise HTTPException(status_code=404, detail='Task context is unknown or superseded')
         record = task_context_record(rows[0])
         if record['source_application'] != source_application:
-            raise HTTPException(status_code=404, detail='Task context not found for this client')
+            # A token stays with the client that began it; say so, and how to get one here (rec#69).
+            raise HTTPException(status_code=404, detail=(
+                f"Task context not found for this client: it was begun in {record['source_application']}, "
+                f'not {source_application}. Call begin_task_context in this client for a token of its own.'))
         if rows[0].get('worker_run_id'):
             await self.guard_worker_task_context(actor, space_id, token)
         return record

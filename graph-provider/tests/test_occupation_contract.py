@@ -79,8 +79,10 @@ def test_recruitment_requires_explicit_occupation_and_default_lead_is_lead():
         personal_space_id='space', personal_project_id='project', idempotency_key='test-recruit',
         title='Build', objective='Build the sample', work_kind='custom-work', routing_reason='test',
     )
-    with pytest.raises(HTTPException, match='occupation'):
+    with pytest.raises(HTTPException, match='occupation') as refused:
         StoreProjectAgentTaskRecruitment._normalized_recruitment_profile(request)
+    # The refusal names the work kind and the ways out, so a one-off step need not recruit (rec#69).
+    assert 'custom-work' in refused.value.detail and 'lead_agent_id' in refused.value.detail
     explicit = ProjectAgentTaskSubmit.model_validate({**request.model_dump(),
         'recruitment_occupation': {'role': 'engineering'}})
     assert StoreProjectAgentTaskRecruitment._normalized_recruitment_profile(explicit)[0] == 'durable'
