@@ -17,6 +17,7 @@ import { noteEntryTask } from '../conversations/entry-budget.js';
 import { withSharedProjectList } from './shared-project-list.js';
 import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 import { standingOwnerEntry } from './task-entry-standing-owner.js';
+import { roundtableAskEntry } from './task-entry-roundtable-ask.js';
 
 export async function finishTaskEntryPreferences(application, preferences, input) {
   if (!input.agentInvocation || input.agentToolName !== 'get_collaboration_preferences') return preferences;
@@ -136,7 +137,7 @@ async function entryPreferences(application, projectResolution, {
       includeTeam ? taskJudgmentContext(application, projectResolution.personalProjectId) : null
     ]);
   });
-  const [preferences, management, [context, judgmentContext], triage, capture, formatNotices] = await Promise.all([
+  const [preferences, management, [context, judgmentContext], triage, capture, formatNotices, roundtableAsk] = await Promise.all([
     getCollaborationPreferencesWorkflow(
       application,
       projectResolution,
@@ -160,7 +161,10 @@ async function entryPreferences(application, projectResolution, {
     selection?.agent?.agentId === ASSISTANT_AGENT_ID && !projectResolution.personalProjectId
       ? triageCandidates(application) : null,
     reads.capture,
-    reads.formatNotices
+    reads.formatNotices,
+    // "去看看 / 问问 X 项目": which project's lead to ask on the roundtable (rec#71).
+    includeMessages && agentInvocation ? roundtableAskEntry(application, { taskPrompt, sessionId },
+      { personalProjectId: projectResolution.personalProjectId ?? null, agentId: selection?.agent?.agentId ?? null }) : null
   ]);
   const managedPreferences = management ? { ...preferences, project_management_context: management } : preferences;
   if (context) applyAgentAssignment(context, selection);
@@ -184,6 +188,7 @@ async function entryPreferences(application, projectResolution, {
     ...(waiting.length ? { agent_messages: waiting,
       agent_messages_guidance: 'Other Agents are waiting for your answers. Reply to each with reply_agent_message.' } : {}),
     ...(answered.length ? { attention_replies: answered, attention_replies_guidance: ATTENTION_REPLIES_GUIDANCE } : {}),
+    ...(roundtableAsk ? { roundtable_ask: roundtableAsk } : {}),
     agent_receipt: taskAgentReceipt(application, {
       projectId: projectResolution.personalProjectId, agentId: selection?.agent?.agentId ?? null,
       name: context?.role?.name, role: selection?.agent?.profile?.name, sourceApplication,

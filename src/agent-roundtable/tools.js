@@ -32,7 +32,7 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
   {
     name: 'message_agent',
     title: 'ROUNDTABLE · Ask another Agent',
-    description: 'Ask an Agent, or project:<id> for that project\'s lead. Requires the current taskContextToken for execution. Cross-project asks keep the source lead, run read-only in the target\'s verified folder/session, and return a bounded reply. projectPath may supply that verified folder; threadId continues the source thread. Missing leads use existing Bole staffing; unavailable clients never trigger replacement hiring. Undelivered asks wait in the target inbox. peer:<device>:<binding> addresses a shared lead on a paired device (LAN Beta). Exchanges are recorded.',
+    description: 'Ask an Agent, or project:<id|name> for that project\'s lead. Needs the current taskContextToken. Cross-project asks keep the source lead, run read-only in the target\'s verified folder/session, and return a bounded reply. projectPath may supply that verified folder; threadId continues the source thread. Missing leads use existing Bole staffing; unavailable clients never trigger replacement hiring. Undelivered asks wait in the target inbox. peer:<device>:<binding> addresses a shared lead on a paired device (LAN Beta). Exchanges are recorded.',
     inputSchema: objectSchema({
       taskContextToken: text(160),
       to: text(160),

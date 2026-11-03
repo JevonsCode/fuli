@@ -117,5 +117,5 @@ the person to confirm on your home page; until then it is not active.
 Open these files next to this skill only when the task reaches that step; ordinary tasks need none of them.
 
 - `references/retrieval.md`: searching remembered context beyond the entry recall, the generated taste Skill, citing online sources.
-- `references/coordination.md`: coordinating project Agents and reporting actual worker execution.
+- `references/coordination.md`: coordinating project Agents, asking another project's lead on the roundtable, and reporting actual worker execution.
 - `references/capture.md`: knowledge state, personal profile growth, routing by ownership, child-knowledge convergence, registering the local project, and structuring and flushing a capture.
