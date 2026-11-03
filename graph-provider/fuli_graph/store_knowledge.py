@@ -23,7 +23,7 @@ from .models import (
 )
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
-from .knowledge_versions import link_reasserted, lock_knowledge, reasserted_entities
+from .knowledge_versions import link_reasserted, lock_knowledge, reasserted_entities, restated_relationships
 from .provider_values import now_utc, stable_uuid
 from .store_transactions import query_store_transaction
 from .workflow_candidates import materialize_workflow_candidates
@@ -216,6 +216,10 @@ class StoreKnowledge:
             stated_relationship_ids = list(relationship_ids)
             renamed_relationships = await fresh_identities(self, space, stated_relationship_ids)
             relationship_ids = [renamed_relationships.get(item_id, item_id) for item_id in relationship_ids]
+            # The same words said again after their item ended are a new
+            # current item; landing on the ended one hid them (rec#63).
+            restated = await restated_relationships(self, space, relationship_ids)
+            relationship_ids = [restated.get(item_id, item_id) for item_id in relationship_ids]
             entity_input_by_key = {
                 entity.key: entity for entity in episode.entities
             }
@@ -292,6 +296,11 @@ class StoreKnowledge:
                     raise HTTPException(status_code=409, detail={
                         'code': 'versions_changed',
                         'message': 'something this capture names was permanently deleted meanwhile; retry the capture'})
+                if restated != await restated_relationships(scoped, space, [
+                        renamed_relationships.get(item_id, item_id) for item_id in stated_relationship_ids]):
+                    raise HTTPException(status_code=409, detail={
+                        'code': 'versions_changed',
+                        'message': 'something this capture names ended meanwhile; retry the capture'})
                 if reasserted != await reasserted_entities(scoped, space, captured_ids, episode_id):
                     raise HTTPException(status_code=409, detail={
                         'code': 'versions_changed',

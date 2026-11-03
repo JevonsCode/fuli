@@ -10,10 +10,12 @@ from pydantic import ValidationError
 
 from fuli_graph.knowledge_audit_models import KnowledgeRevisionRecord
 from fuli_graph.knowledge_records import revision_record
+from fuli_graph.provider_values import stable_uuid
 from fuli_graph.knowledge_versions import (
     creates_version,
     keyed_relation,
     keyed_replacement,
+    restated_relationships,
     terminal,
     version_status,
     version_value,
@@ -225,3 +227,27 @@ def test_a_supersede_after_the_restore_is_terminal():
 
 def test_any_replaced_by_item_id_is_terminal():
     assert terminal({'replaced_by_item_id': 'newer'}, []) is True
+
+
+class _EndedGraph:
+    """A driver whose relationships ended at the given times."""
+
+    def __init__(self, ended):
+        self.runtime = self
+        self.driver = self
+        self.ended = ended
+
+    async def execute_query(self, _query, *, item_ids, **_):
+        return [{'item_id': item_id, 'ended_at': self.ended[item_id]}
+                for item_id in item_ids if item_id in self.ended], None, None
+
+
+@pytest.mark.asyncio
+async def test_the_same_words_after_their_relationship_ended_take_the_id_that_ending_names():
+    first = stable_uuid('old', 'restated', 't1')
+    space = {'group_id': 'synthetic'}
+    assert await restated_relationships(_EndedGraph({}), space, ['old']) == {}
+    assert await restated_relationships(_EndedGraph({'old': 't1'}), space, ['old', 'live']) == {'old': first}
+    # The new item ended in turn: the next statement takes the one after it.
+    chained = await restated_relationships(_EndedGraph({'old': 't1', first: 't2'}), space, ['old'])
+    assert chained == {'old': stable_uuid(first, 'restated', 't2')}
