@@ -179,6 +179,29 @@ describe('DoctorBanner', () => {
     expect(wrapper.find('[data-doctor-repair]').exists()).toBe(false)
   })
 
+  it('names a data folder other accounts can read and says what its repair is doing', async () => {
+    const shared = item('data_dir_shared', 'data_dir_shared', 'warning', 'auto', { principals: ['BU'] })
+    api.getJson.mockResolvedValue(report('needs_person', [shared]))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    api.postJson.mockReturnValueOnce(new Promise(() => {}))
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    expect(wrapper.get('[data-doctor-items]').text()).toBe('数据目录其他账户也能读自动修复会只留给你自己和系统。')
+    await wrapper.get('[data-doctor-repair]').trigger('click')
+    expect(wrapper.getComponent(GrowthLoading).props()).toMatchObject({ variant: 'inline', label: '正在自动修复：数据目录只留给你自己和系统…' })
+  })
+
+  it('names both repairs while it reconnects clients and limits the data folder', async () => {
+    const shared = item('data_dir_shared', 'data_dir_shared', 'warning', 'auto', { principals: ['BU'] })
+    api.getJson.mockResolvedValue(report('needs_person', [OUTDATED, shared]))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    api.postJson.mockReturnValueOnce(new Promise(() => {}))
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    await wrapper.get('[data-doctor-repair]').trigger('click')
+    expect(wrapper.getComponent(GrowthLoading).props().label).toBe('正在自动修复：重新连接客户端，数据目录只留给你和系统…')
+  })
+
   it('says what could not be repaired and keeps the banner', async () => {
     api.getJson.mockResolvedValue(report('needs_person', [OUTDATED]))
     const { wrapper } = mountBanner()

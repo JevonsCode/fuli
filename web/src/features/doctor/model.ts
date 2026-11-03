@@ -42,6 +42,14 @@ export const attentionItems = (report: DoctorReport | null) => report?.items.fil
 
 export const canRepair = (items: DoctorItem[]) => items.some(item => item.fix === 'auto')
 
+// What the repair is doing: reconnecting clients, limiting the data folder (Windows), or both.
+export function repairingLabel(items: DoctorItem[]) {
+  const automatic = items.filter(item => item.fix === 'auto')
+  const dataDir = automatic.some(item => item.kind === 'data_dir_shared')
+  if (!dataDir) return t('doctor.repairing')
+  return t(automatic.every(item => item.kind === 'data_dir_shared') ? 'doctor.repairingDataDir' : 'doctor.repairingBoth')
+}
+
 export interface DoctorItemView {
   title: string
   subject: string
@@ -126,6 +134,9 @@ function itemView(item: DoctorItem): Omit<DoctorItemView, 'since'> {
       return { title, subject: '', to: null, hint: data.status === 'failed'
         ? t('doctor.hints.updateFailed', { reason: text(data.error) })
         : t('doctor.hints.updateReconnect') }
+    // On Windows other accounts or sandboxes can open the data folder (src/system/windows-data-acl.js).
+    case 'data_dir_shared':
+      return { title, subject: '', hint: t('doctor.hints.dataDirShared'), to: null }
     case 'hook_trust_untrusted':
       return { title, subject: text(data.label), to: null,
         hint: t('doctor.hints.hookTrustUntrusted', { client: text(data.label) }) }

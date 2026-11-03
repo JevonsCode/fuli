@@ -30,6 +30,7 @@ import { customClientStore } from '../agent-kits/custom-clients.js';
 import { createCustomClients } from './custom-client-connection.js';
 import { CODEX_HOOK_TRUST_CLIENT, createCodexHookTrust } from '../agents/codex/hook-trust.js';
 import { readFormatOperations } from '../data-format/operations-log.js';
+import { windowsDataAcl } from './windows-data-acl.js';
 
 export function createSystemService({
   paths,
@@ -56,6 +57,8 @@ export function createSystemService({
   previewDataFormats = null,
   // Reads Codex's hook trust from its app-server (src/agents/codex/hook-trust.js).
   codexHookTrust = createCodexHookTrust(),
+  // Who can open the data directory on Windows (windows-data-acl.js).
+  dataDirAcl = windowsDataAcl(),
   runtimeBroker = createAdaptiveRuntimeBroker({
     paths,
     settings: readAdaptiveRuntimeSettings(paths.adaptiveRuntimeSettingsPath),
@@ -127,6 +130,7 @@ export function createSystemService({
     hookTrust: async () => ({ [CODEX_HOOK_TRUST_CLIENT]: await codexHookTrust() }),
     liveProcesses: () => liveMcpProcesses(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
     lastUpdate: () => update.status(),
+    dataDirShared: () => dataDirAcl.sharedWith(paths.dataDir),
     // Only a graph that was set up has a mode; a fresh data directory has nothing to move.
     graphRuntime: () => readJson(paths.graphRuntimeStatePath, null)
       ? { mode: activeSettings().graphRuntimeMode, migration: readGraphMigration(paths) } : null,
@@ -175,7 +179,8 @@ export function createSystemService({
     logArchives: () => logRetention.archives(),
     clearLogArchives: () => logRetention.clearArchives(),
     repairDoctor: createDoctorRepair({ check: doctor.check, connectClient: clientInstaller, observeClients,
-      recordClientsReconnected: (id) => update.recordClientsReconnected(id) }),
+      recordClientsReconnected: (id) => update.recordClientsReconnected(id),
+      restrictDataDir: () => dataDirAcl.restrictToOwner(paths.dataDir) }),
     runtimeStatus: () => runtimeBroker.status(),
     acquireRuntimeLease: (input) => runtimeBroker.acquire(input),
     refreshRuntimeLease: (leaseId) => runtimeBroker.refresh(leaseId),

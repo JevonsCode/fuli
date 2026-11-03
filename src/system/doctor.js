@@ -49,9 +49,12 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 // ({ movedAt, moves }, blocked-port-recovery.js), or null.
 // graphRuntime: { mode, migration } — the active graph runtime mode and the
 // last one-click migration (graph-migration.js), or null.
+// dataDirShared: the principals besides the person and SYSTEM that the data
+// directory's ACL lets in (windows-data-acl.js); none outside Windows.
 export function createDoctor({ observeClients, previewDataFormats = null, formatOperations = () => [],
   graphStage = () => null, liveProcesses, latestVersion, lastUpdate, hookTrust = async () => ({}),
-  portMoves = () => null, graphRuntime = () => null, version = FULI_VERSION, now = () => new Date() }) {
+  portMoves = () => null, graphRuntime = () => null, dataDirShared = async () => [], version = FULI_VERSION,
+  now = () => new Date() }) {
   // The personal graph's last answer while its provider answered: the step it
   // waited on, or null, and when that was seen.
   let lastGraph = null;
@@ -95,6 +98,7 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
     const update = await read('update', lastUpdate);
     const moved = await read('runtime', portMoves);
     const runtime = await read('runtime', graphRuntime);
+    const shared = await read('data_dir', dataDirShared);
     const items = [
       ...graphRuntimeItems(runtime),
       ...clientItems(clients?.clients ?? []),
@@ -103,7 +107,8 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
       ...rememberedGraph,
       ...sessionItems(processes ?? [], version),
       ...updateItems(latest, update, version),
-      ...portItems(moved)
+      ...portItems(moved),
+      ...dataDirItems(shared)
     ].sort((left, right) => SEVERITY_ORDER[left.severity] - SEVERITY_ORDER[right.severity]);
     return { checkedAt, version, overall: overallOf(items), items, unchecked: [...new Set(unchecked)], uncheckedReasons };
   }
@@ -218,6 +223,14 @@ function sessionItems(processes, version) {
 function portItems(moved) {
   if (!moved?.moves?.length) return [];
   return [item(`ports_moved:${moved.movedAt}`, 'ports_moved', 'info', 'person', moved)];
+}
+
+// On Windows the data directory, with the human-review token and every
+// store, is open to other accounts or sandboxes (rec#53). The repair limits
+// it to the person and SYSTEM; principals are SIDs or SDDL aliases.
+function dataDirItems(shared) {
+  if (!shared?.length) return [];
+  return [item('data_dir_shared', 'data_dir_shared', 'warning', 'auto', { principals: shared })];
 }
 
 function updateItems(latest, update, version) {

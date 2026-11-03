@@ -112,6 +112,13 @@ No administrator permission is requested. Defaults:
 - Application: `%LOCALAPPDATA%\Programs\Fuli\versions\<installation-id>`.
 - Client-configuration launcher: `%LOCALAPPDATA%\Programs\Fuli\FuliNode.exe` (see below).
 - Data: `%LOCALAPPDATA%\Fuli`, created only by an explicit first start from the desktop client.
+  It would inherit `AppData\Local`'s ACL, which can let other accounts and sandboxes (such as
+  `CodexSandboxUsers` or AppContainer capabilities) read the human-review token and every store.
+  `fuli setup` (the first start, every update, `setup --connected-only`) therefore removes inheritance
+  and grants full control only to the current user and SYSTEM, for the folder and what it holds; the
+  体检 reports a folder others can still open as `data_dir_shared` and its 「自动修复」 does the same
+  (`src/system/windows-data-acl.js`). This stops other accounts and sandboxes; it does not stop
+  processes that run as the same account. macOS and Linux keep 0700/0600 instead.
 - Shortcuts: current user's Windows Desktop and Start menu Programs folders.
 
 `planFirstWindowsInstall(options)` performs a read-only validation and preview.

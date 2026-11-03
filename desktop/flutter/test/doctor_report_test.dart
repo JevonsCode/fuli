@@ -58,6 +58,7 @@ void main() {
       'sessions_outdated': {'client': 'claude_code', 'count': 2, 'runningVersion': '0.21.0'},
       'update_available': {'latest': '0.23.0'},
       'update_left_work': {'clients': 'not_reconnected', 'version': '0.23.0'},
+      'data_dir_shared': {'principals': ['BU']},
       'ports_moved': {
         'moves': [
           {'key': 'console', 'from': 2727, 'to': 2734, 'reason': 'reserved'}

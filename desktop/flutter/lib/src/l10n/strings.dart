@@ -60,6 +60,8 @@ class Strings {
   // What is running right now
   String reconnecting(String client) => _t('正在重新接入 $client…', 'Reconnecting $client…');
   String get reconnectingAgents => _t('正在重新接入 Agent…', 'Reconnecting Agents…');
+  String get restrictingDataDir =>
+      _t('正在让数据目录只留给你自己和系统…', 'Limiting the data folder to you and the system…');
   String get repairingOne => _t('正在修复…', 'Fixing…');
   String repairingMany(int count) => _t('正在修复 $count 件事…', 'Fixing ${_things(count)}…');
   String get starting => _t('正在启动 FULI…', 'Starting FULI…');
@@ -144,6 +146,9 @@ class Strings {
           : _t('更新到 v${text('version')} 后，还有 Agent 没有重新接入 FULI。',
               'After the update to v${text('version')}, some Agents have not reconnected to FULI.'),
       'ports_moved' => _portsMoved(data['moves']),
+      // On Windows other accounts or sandboxes can open the data folder (src/system/windows-data-acl.js).
+      'data_dir_shared' => _t('数据目录其他账户也能读。自动修复会只留给你自己和系统。',
+          'Other accounts can read the data folder. Fixing automatically limits it to you and the system.'),
       // An older install's Docker graph (src/system/graph-migration.js), moved from the console's Settings.
       'graph_container' => _t('你的数据还在旧版 Docker 图数据库里，请在控制台「设置」里迁移。',
           "Your knowledge is still in the old Docker graph; move it with one click in the console's Settings."),
