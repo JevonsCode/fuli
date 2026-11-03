@@ -43,7 +43,7 @@ class StatusActions extends StatelessWidget {
       edge: AxisDirection.up,
       child: Row(
         children: [
-          if (snapshot.installed && !snapshot.reached)
+          if (snapshot.running && !snapshot.reached)
             TextButton.icon(
               key: const Key('recheck'),
               onPressed: controller.pending != null ? null : controller.recheck,
