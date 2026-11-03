@@ -85,15 +85,21 @@ export async function runSettingsApply(paths, id, {
   } catch (error) {
     let rolledBack = false;
     try {
-      await stop(paths, paths.graphEnvPath, { runtimeMode: job.configured.graphRuntimeMode,
-        personalOnly: !(previousConfig?.workspaces ?? []).some(item => item.managedDevelopment) });
-      writeRuntimeSettings(paths.runtimeSettingsPath, job.previous);
-      if (previousConfig) {
-        writeJsonFileAtomic(paths.graphRuntimeConfigPath, previousConfig);
-        chmodSync(paths.graphRuntimeConfigPath, 0o600);
+      if (error?.nothingStopped) {
+        // The running FULI was left untouched; only the saved settings go back.
+        writeRuntimeSettings(paths.runtimeSettingsPath, job.previous);
+        rolledBack = true;
+      } else {
+        await stop(paths, paths.graphEnvPath, { runtimeMode: job.configured.graphRuntimeMode,
+          personalOnly: !(previousConfig?.workspaces ?? []).some(item => item.managedDevelopment) });
+        writeRuntimeSettings(paths.runtimeSettingsPath, job.previous);
+        if (previousConfig) {
+          writeJsonFileAtomic(paths.graphRuntimeConfigPath, previousConfig);
+          chmodSync(paths.graphRuntimeConfigPath, 0o600);
+        }
+        await start({ ...input(job.previous), previousRuntimeMode: job.previous.graphRuntimeMode });
+        rolledBack = true;
       }
-      await start({ ...input(job.previous), previousRuntimeMode: job.previous.graphRuntimeMode });
-      rolledBack = true;
     } catch { /* Keep the failed status; never report an unverified recovery. */ }
     saveOperation(paths, { ...job, status: 'failed', rolledBack,
       error: error instanceof Error ? error.message : 'Could not apply settings.' });

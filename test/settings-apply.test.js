@@ -63,6 +63,22 @@ test('failed application restores the previous settings and graph connection bef
   assert.equal(applier.status().rolledBack, true);
 });
 
+test('a refused restart that stopped nothing only puts the previous settings back', async (t) => {
+  const paths = fixture(t);
+  const applier = createSettingsApplier({ paths, checkPorts: async () => {} });
+  const pending = await applier.prepare({ ...DEFAULT_RUNTIME_SETTINGS, lanAccess: true }, DEFAULT_RUNTIME_SETTINGS);
+  await runSettingsApply(paths, pending.id, {
+    restart: async () => {
+      throw Object.assign(new Error('Synthetic refusal; restart was refused.'), { nothingStopped: true });
+    },
+    stop: async () => assert.fail('the running FULI is left alone'),
+    start: async () => assert.fail('the running FULI is left alone'),
+  });
+  assert.equal(readRuntimeSettings(paths.runtimeSettingsPath).lanAccess, false);
+  assert.equal(applier.status().status, 'failed');
+  assert.equal(applier.status().rolledBack, true);
+});
+
 test('occupied target port is rejected before persisting or restarting', async (t) => {
   const paths = fixture(t);
   const occupied = createServer();

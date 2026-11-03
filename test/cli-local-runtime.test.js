@@ -217,3 +217,14 @@ test('fl start --lan prints protected LAN addresses and the temporary access cod
   assert.match(output[0], /Temporary access code: temporary-access-code/);
   assert.doesNotMatch(output[0], /[\p{Script=Han}]/u);
 });
+
+test('fl stop says nothing was stopped when the running console could not be verified', async () => {
+  const output = [];
+  await runLocalRuntimeCommand('stop', [], {
+    resolvePaths: () => ({ dataDir: 'C:/Fuli' }),
+    stop: async () => ({ status: 'partial', console: 'unverified', providers: 'kept' }),
+    write: (line) => output.push(line)
+  }).catch(() => {});
+
+  assert.match(output.join('\n'), /could not be verified, so nothing was stopped/);
+});
