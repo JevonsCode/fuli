@@ -9,6 +9,7 @@ import '../l10n/strings.dart';
 import '../platform/ports.dart';
 import '../runtime/fuli_runtime.dart';
 import 'attention_watch.dart';
+import 'check_log.dart';
 import 'fuli_condition.dart';
 import 'notification_gate.dart';
 
@@ -47,8 +48,10 @@ class FuliController extends ChangeNotifier {
     required this.strings,
     Future<void> Function(Duration) wait = Future.delayed,
     DateTime Function() now = DateTime.now,
+    CheckLog checkLog = const SilentCheckLog(),
   })  : _wait = wait,
-        _now = now;
+        _now = now,
+        _checkLog = checkLog;
 
   final ApiFactory apiFor;
   final FuliRuntime runtime;
@@ -56,6 +59,7 @@ class FuliController extends ChangeNotifier {
   final Strings strings;
   final Future<void> Function(Duration) _wait;
   final DateTime Function() _now;
+  final CheckLog _checkLog;
   final _gate = NotificationGate();
   final _attention = AttentionWatch();
 
@@ -176,10 +180,18 @@ class FuliController extends ChangeNotifier {
       );
     } on FuliHttpError catch (error) {
       if (error.status == 404) return _withoutDoctor(api, port, installed);
+      _checkLog.failed(_now(), 'http-${error.status}', '$error');
       return _consoleFailed(port, installed, '$error');
     } on FormatException catch (error) {
+      _checkLog.failed(_now(), 'unreadable', error.message);
       return _consoleFailed(port, installed, error.message);
-    } on FuliUnreachable {
+    } on FuliUnreachable catch (error) {
+      final timedOut = error.reason == 'timeout';
+      _checkLog.failed(_now(), timedOut ? 'doctor-timeout' : 'unreachable', error.reason);
+      if (timedOut) {
+        final answered = await _healthAfterSlowDoctor(api, port, installed);
+        if (answered != null) return answered;
+      }
       final report = installed ? await runtime.status() : const RuntimeReport(RuntimeState.notFound);
       final reported = report.consolePort;
       if (report.running && reported != null && reported != port && !retried) {
@@ -200,6 +212,28 @@ class FuliController extends ChangeNotifier {
         reached: false,
       );
     }
+  }
+
+  // The doctor's checks can wait on the graph (a paused Neo4j, rec#70): a
+  // doctor that times out while the health route answers at once is a slow
+  // check, not a console that does not answer. The last answer stays shown.
+  Future<FuliSnapshot?> _healthAfterSlowDoctor(FuliApi api, int port, bool installed) async {
+    final HealthInfo health;
+    try {
+      health = await api.health();
+    } on Exception catch (error) {
+      _checkLog.failed(_now(), 'health', '$error');
+      return null;
+    }
+    final last = _snapshot;
+    if (last != null && last.reached && last.port == port) return last;
+    return FuliSnapshot(
+      condition: health.ready ? FuliCondition.ok : FuliCondition.degraded,
+      port: port,
+      installed: installed,
+      running: true,
+      version: health.version,
+    );
   }
 
   FuliSnapshot _consoleFailed(int port, bool installed, String detail) => FuliSnapshot(

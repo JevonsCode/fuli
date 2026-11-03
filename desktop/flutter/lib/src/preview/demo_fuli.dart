@@ -20,6 +20,8 @@ class DemoFuliApi implements FuliApi {
   String installedVersion;
   bool hasDoctor;
   bool reachable = true;
+  // The doctor times out (its checks wait on a paused graph) while the rest answers.
+  bool doctorSlow = false;
   String? latest;
   MigrationPlan plan;
   List<AttentionNotice> attention = const [];
@@ -41,6 +43,7 @@ class DemoFuliApi implements FuliApi {
   @override
   Future<DoctorReport> doctor() async {
     _call('doctor');
+    if (doctorSlow) throw const FuliUnreachable('timeout');
     if (!hasDoctor) throw const FuliHttpError(404, message: 'Not found');
     final attention = items.any((item) => item.severity != DoctorSeverity.info);
     final blocking = items.any((item) => item.severity == DoctorSeverity.blocking);

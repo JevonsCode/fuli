@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fuli_desktop/src/api/fuli_api.dart';
+import 'package:fuli_desktop/src/app/check_log.dart';
 import 'package:fuli_desktop/src/app/fuli_condition.dart';
 import 'package:fuli_desktop/src/app/fuli_controller.dart';
 import 'package:fuli_desktop/src/doctor/doctor_report.dart';
@@ -24,6 +25,13 @@ class _GatedRuntime extends FixedRuntime {
 
   @override
   Future<RuntimeReport> start() => started;
+}
+
+class _RecordingCheckLog implements CheckLog {
+  final kinds = <String>[];
+
+  @override
+  void failed(DateTime at, String kind, String reason) => kinds.add(kind);
 }
 
 void main() {
@@ -136,6 +144,27 @@ void main() {
     runtime.calls.clear();
     await controller.restart();
     expect(runtime.calls.where((call) => call != 'status'), ['stop', 'start']);
+  });
+
+  test('a doctor that times out while the console answers its health keeps the last answer, and is logged', () async {
+    final api = DemoFuliApi(items: [codexOutdated]);
+    final log = _RecordingCheckLog();
+    final controller = FuliController(
+        apiFor: (_) => api, runtime: FixedRuntime(const RuntimeReport(RuntimeState.running)),
+        notifier: notifier, strings: zh, checkLog: log);
+    await controller.refresh();
+    final before = controller.snapshot!;
+
+    api.doctorSlow = true;
+    await controller.refresh();
+    expect(controller.snapshot, same(before));
+    expect(controller.snapshot!.problem, isNull);
+    expect(log.kinds, ['doctor-timeout']);
+
+    api.reachable = false;
+    await controller.refresh();
+    expect(controller.snapshot!.problem, zh.noAnswer);
+    expect(log.kinds.last, 'unreachable');
   });
 
   test('follows the port `fuli status` reports when the settings file names another', () async {
