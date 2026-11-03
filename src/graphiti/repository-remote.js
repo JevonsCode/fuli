@@ -60,6 +60,13 @@ export function projectsWithRemote(projects, remote) {
     REPOSITORY_SOURCE_KINDS.has(source.kind) && typeof source.uri === 'string' && remoteKey(source.uri) === remote));
 }
 
+// True when the project records a repository source at some other remote: a
+// checkout of that remote is not this project, whatever its folder is called.
+export function recordsOtherRemote(project, remote) {
+  return (project?.profile?.sources ?? []).some(source => REPOSITORY_SOURCE_KINDS.has(source.kind)
+    && typeof source.uri === 'string' && remoteKey(source.uri) !== null && remoteKey(source.uri) !== remote);
+}
+
 // host/path with scheme, user, port, trailing slashes and .git removed and the
 // host lowercased, so ssh and https forms of one repository are equal. Local
 // paths and file URLs name no shared repository and give null.

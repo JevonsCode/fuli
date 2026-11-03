@@ -310,18 +310,18 @@ not guess from fuzzy directory similarity. Normally the `project_id` matches the
 directory name, so `/workspace/fuli` maps to `fuli`. Standard calls pass only the current working
 directory, and resolution follows this order:
 
-1. Find the nearest Git repository root and match its directory name exactly to a registered
-   `project_id`.
-2. For a Codex worktree, recover the original repository ID from its `.git` pointer.
-3. When neither folder name is registered, read the repository's `origin` remote from its
-   `.git/config` (a worktree's common directory) and match it exactly to one registered project's
-   recorded repository source URL; ssh and https forms of the same repository are equal. A
-   separate clone under another folder name therefore resolves to its project (`git_remote`).
-4. Match the current directory name exactly to a registered project ID.
-5. At a workspace root, match one registered direct child only when exactly one child contains
+1. Find the nearest Git repository root, read its `origin` remote from its `.git/config` (a
+   worktree's common directory) and match it exactly to one registered project's recorded
+   repository source URL; ssh and https forms of the same repository are equal. Any clone or
+   worktree therefore resolves to its project (`git_remote`), whatever its folder is called.
+2. Otherwise match the repository directory name exactly to a registered `project_id`; for a
+   Codex worktree, the original repository ID from its `.git` pointer. A project that records a
+   different repository source is never matched by name (`repository_remote_conflict`).
+3. Match the current directory name exactly to a registered project ID.
+4. At a workspace root, match one registered direct child only when exactly one child contains
    `.git`, `package.json`, `pyproject.toml`, `Cargo.toml`, or `go.mod`.
-6. Multiple candidates return `ambiguous`; no candidate returns `unmatched`. Neither state applies
-   project preferences or guesses a project.
+5. Multiple candidates return `ambiguous`; no candidate returns `unmatched` (a remote recorded by
+   several projects counts as several). Neither state applies project preferences or guesses a project.
 
 For an unregistered repository with an unambiguous identity, the installed capture skill may call
 `upsert_personal_project` before the first project-scoped write to create a minimal local private

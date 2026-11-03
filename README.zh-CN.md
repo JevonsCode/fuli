@@ -238,16 +238,16 @@ Fuli 只匹配已经登记在“个人项目”中的稳定 `project_id`，不�
 `project_id` 与仓库目录名一致，例如仓库 `/workspace/fuli` 对应项目 `fuli`。标准调用只传
 当前工作目录，解析顺序如下：
 
-1. 向上找到最近的 Git 仓库根；仓库目录名与已登记 `project_id` 完全相同时命中。
-2. 如果当前目录是 Codex worktree，从 `.git` 指向的原始仓库恢复项目 ID。
-3. 两个目录名都没有登记时，从仓库的 `.git/config`（worktree 读其公共目录）读取 `origin`
+1. 向上找到最近的 Git 仓库根，从 `.git/config`（worktree 读其公共目录）读取 `origin`
    远程地址，与某一个已登记项目记录的仓库来源 URL 完全相同时命中；同一仓库的 ssh 与 https
-   写法视为相同。因此换了目录名的独立克隆也能解析到原项目（`git_remote`）。
-4. 当前目录名与已登记项目 ID 完全相同时命中。
-5. 如果当前目录是工作区根，并且正好只有一个已登记的直接子目录带 `.git`、`package.json`、
+   写法视为相同。因此任何目录名的克隆或 worktree 都解析到原项目（`git_remote`）。
+2. 否则按仓库目录名与已登记 `project_id` 完全相同时命中；Codex worktree 用 `.git` 指向的
+   原始仓库名。记录了另一个仓库地址的项目不会因为同名被命中（`repository_remote_conflict`）。
+3. 当前目录名与已登记项目 ID 完全相同时命中。
+4. 如果当前目录是工作区根，并且正好只有一个已登记的直接子目录带 `.git`、`package.json`、
    `pyproject.toml`、`Cargo.toml` 或 `go.mod`，命中这个唯一子项目。
-6. 多个候选返回 `ambiguous`，没有候选返回 `unmatched`；两种情况都不会应用项目级偏好，也
-   不会猜一个项目。
+5. 多个候选返回 `ambiguous`，没有候选返回 `unmatched`（同一远程地址被多个项目记录也算多个候选）；
+   两种情况都不会应用项目级偏好，也不会猜一个项目。
 
 第一次进入尚未登记、但身份明确的仓库时，已安装的沉淀 Skill 可以在首次项目级写入前通过
 `upsert_personal_project` 创建最小的本机私有项目；它不会自动创建或订阅公共项目。若工作区
