@@ -6,6 +6,7 @@ import { localRuntimeControl } from '../cli/local-runtime-control.js';
 import { runUpdateCommand } from '../cli/update-command.js';
 import { readWindowsInstallation } from '../desktop/windows-installation-context.js';
 import { updateWindowsTrayFromRelease } from '../desktop/windows-tray-update.js';
+import { readMacosNativeBundle } from '../native-runtime/macos-assets.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { claimDetachedJob, detachedJob } from './detached-job.js';
@@ -17,7 +18,9 @@ import { claimDetachedJob, detachedJob } from './detached-job.js';
 // package, refresh services and connected clients through the new version's
 // setup). A per-user Windows installation (the tray) downloads the release's
 // verified tray package and runs its own Update-Fuli
-// (src/desktop/windows-tray-update.js).
+// (src/desktop/windows-tray-update.js). The macOS app cannot replace itself
+// while it runs, so it has no one-click update: the page offers the release's
+// .dmg to install over it instead.
 
 const JOURNAL = 'console-update.json';
 const WORKER = fileURLToPath(new URL('./console-update-worker.js', import.meta.url));
@@ -25,9 +28,10 @@ const RUNNING = new Set(['updating']);
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 export function consoleUpdate(dataDir, { packageRoot = PACKAGE_ROOT, platform = process.platform,
-  installation = readWindowsInstallation, spawnWorker, now } = {}) {
+  installation = readWindowsInstallation, macosBundle = readMacosNativeBundle, spawnWorker, now } = {}) {
   const job = detachedJob(join(dataDir, JOURNAL), { worker: WORKER, running: RUNNING, spawnWorker, now });
-  const kind = () => platform === 'win32' && installation(packageRoot) ? 'windows-tray' : 'npm';
+  const kind = () => platform === 'win32' && installation(packageRoot) ? 'windows-tray'
+    : platform === 'darwin' && macosBundle(packageRoot) ? 'macos-app' : 'npm';
   function status() {
     const current = job.read();
     return current && { id: current.id, status: current.status, kind: current.kind ?? 'npm', fromVersion: current.fromVersion,
@@ -47,6 +51,9 @@ export function consoleUpdate(dataDir, { packageRoot = PACKAGE_ROOT, platform = 
     // channel: the update channel the version came from; an npm installation installs from it too.
     start({ version = null, channel = 'stable', stopProcesses = [] } = {}) {
       const updateKind = kind();
+      if (updateKind === 'macos-app') {
+        throw new InvalidInputError('The FULI app is updated by installing the newer .dmg over it; nothing was changed.');
+      }
       if (updateKind === 'windows-tray' && !version) throw new InvalidInputError('No newer FULI version was found to update to.');
       const named = new Set((job.read()?.blockers ?? []).map(({ pid, createdFileTime }) => pid + ':' + createdFileTime));
       if (!Array.isArray(stopProcesses) || stopProcesses.some(item => !named.has(item))) {

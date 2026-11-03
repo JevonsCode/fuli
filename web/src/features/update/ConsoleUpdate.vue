@@ -4,16 +4,19 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { t } from '@/i18n'
 import {
-  blockerKey, readConsoleUpdate, startConsoleUpdate, updateFinished,
+  blockerKey, macosDmgUrl, readConsoleUpdate, startConsoleUpdate, updateFinished,
   type ConsoleUpdateKind, type ConsoleUpdateStatus, type ConsoleUpdateStep,
 } from './model'
 
 // 「更新到 vX」 in the update notice: one click starts the update. FULI stops
 // while it installs, so a failed read is expected; the page reloads once the
 // new version answers. A tray installation reports each real step while the
-// console still answers (download, verify, tray exit), then the install.
+// console still answers (download, verify, tray exit), then the install. The
+// macOS app offers its .dmg instead of a button that could only fail. A
+// failure says so in one line; the recorded reason opens in 「查看详情」.
 const POLL_MS = 3000
 const GIVE_UP_MS = 15 * 60_000
 
@@ -26,6 +29,7 @@ const step = ref<ConsoleUpdateStep | null>(null)
 const outcome = ref<ConsoleUpdateStatus | null>(null)
 const notBack = ref(false)
 const error = ref('')
+const detailsOpen = ref(false)
 let timer: ReturnType<typeof setTimeout> | undefined
 let unmounted = false
 
@@ -85,12 +89,23 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="console-update" data-console-update>
+    <template v-if="kind === 'macos-app'">
+      <p>{{ t('console.update.macCopy') }}</p>
+      <Button as-child size="sm">
+        <a :href="macosDmgUrl(version)" target="_blank" rel="noopener noreferrer" data-console-update-dmg>
+          {{ t('console.update.macAction', { version }) }}
+        </a>
+      </Button>
+    </template>
+    <template v-else>
     <p>{{ kind === 'windows-tray' ? t('console.update.trayCopy', { version }) : t('console.update.copy') }}</p>
     <GrowthLoading v-if="running" variant="inline" :label="runningLabel" />
     <Button v-else size="sm" data-console-update-start @click="start()">{{ t('console.update.action', { version }) }}</Button>
     <p v-if="outcome?.status === 'unchanged'" role="status">{{ t('console.update.unchanged') }}</p>
     <p v-if="outcome?.status === 'failed'" role="alert" class="console-update-error">
-      {{ t('console.update.failed', { reason: outcome.error ?? '' }) }}
+      {{ t('console.update.failed') }}
+      <button v-if="outcome.error" type="button" class="console-update-details" data-console-update-details
+        @click="detailsOpen = true">{{ t('common.actions.viewDetails') }}</button>
     </p>
     <template v-if="blockers.length && !running">
       <p>{{ t('console.update.blockers') }}</p>
@@ -106,6 +121,16 @@ onBeforeUnmount(() => {
     </template>
     <p v-if="notBack" role="alert" class="console-update-error">{{ t('console.update.notBack') }}</p>
     <p v-if="error" role="alert" class="console-update-error">{{ error }}</p>
+    </template>
+    <Dialog v-model:open="detailsOpen">
+      <DialogContent size="md" data-console-update-reason>
+        <DialogHeader>
+          <DialogTitle>{{ t('console.update.detailsTitle') }}</DialogTitle>
+          <DialogDescription>{{ t('console.update.detailsCopy') }}</DialogDescription>
+        </DialogHeader>
+        <p class="console-update-reason">{{ outcome?.error }}</p>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
@@ -115,4 +140,8 @@ onBeforeUnmount(() => {
 .console-update-blockers { margin: 0; padding-left: 16px; color: var(--color-muted); font-size: 12px; line-height: 1.5;
   overflow-wrap: anywhere; }
 .console-update-error { color: var(--color-danger) !important; }
+.console-update-details { margin-left: 6px; padding: 0; border: 0; background: none; color: inherit; font: inherit;
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer; user-select: none; }
+.console-update-reason { margin: 0; color: var(--color-muted); font-family: var(--font-mono); font-size: 12px; line-height: 1.6;
+  overflow-wrap: anywhere; }
 </style>

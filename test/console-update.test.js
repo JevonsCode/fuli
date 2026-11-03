@@ -36,6 +36,17 @@ test('the console starts the update in a detached worker and refuses a second on
   assert.throws(() => update.start(), /already running/);
 });
 
+test('the macOS app offers its .dmg instead of a one-click update, and never starts one', (t) => {
+  const root = dataDir(t);
+  const spawned = [];
+  const update = consoleUpdate(root, { platform: 'darwin', macosBundle: () => ({ arch: 'arm64' }), spawnWorker: fakeWorker(spawned) });
+  assert.equal(update.kind(), 'macos-app');
+  assert.throws(() => update.start({ version: '99.0.0' }), /installing the newer .dmg/);
+  assert.equal(spawned.length, 0);
+  assert.equal(update.status(), null);
+  assert.equal(consoleUpdate(root, { platform: 'darwin', macosBundle: () => null, spawnWorker: fakeWorker([]) }).kind(), 'npm');
+});
+
 const TRAY = { kind: 'windows-user-installation', installRoot: 'C:\\Users\\p\\AppData\\Local\\Programs\\Fuli',
   packageRoot: 'C:\\Users\\p\\AppData\\Local\\Programs\\Fuli\\versions\\a', dataDir: 'C:\\Users\\p\\AppData\\Local\\Fuli' };
 

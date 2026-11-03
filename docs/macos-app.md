@@ -71,7 +71,8 @@ refuses and names the migration command, as on Windows.
 
 - Update: quit FULI (menu bar icon > 退出, then 「停止 FULI」 if it should stop),
   open the newer .dmg and drag FULI.app to Applications again, replacing the old
-  one. `fuli update` and the console's one-click update refuse in the app.
+  one. `fuli update` refuses in the app; where other installations show a
+  one-click update, the console's 设置 › 版本 links the newer .dmg instead.
 - Removal: stop FULI, move FULI.app to the Trash. The data directory stays;
   delete `~/Library/Application Support/Fuli` yourself only if you mean to.
 
