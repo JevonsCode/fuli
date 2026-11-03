@@ -1,4 +1,5 @@
 import { ApplicationError } from '../app/application-error.js';
+import { FULI_VERSION } from '../package-metadata.js';
 import { activeAgentRequestSignal } from '../app/agent-request-context.js';
 import { graphReadPath, preferenceConflictsPath, publicationDraftsPath } from './knowledge-reader.js';
 import { preferenceTaskSession } from './preference-task-scope.js';
@@ -973,7 +974,8 @@ export class GraphitiProviderClient {
     signal: requestSignal = activeAgentRequestSignal(),
     timeoutMs = this.requestTimeoutMs
   } = {}) {
-    const headers = { accept: stream ? 'text/event-stream' : 'application/json' };
+    // The provider names an older connection in its refusals by this (rec#74).
+    const headers = { accept: stream ? 'text/event-stream' : 'application/json', 'x-fuli-client-version': FULI_VERSION };
     if (authenticated) headers.authorization = `Bearer ${this.accessToken}`;
     if (workflowObservation) {
       headers['x-fuli-workflow-observation-token'] = this.#workflowObservationToken;
