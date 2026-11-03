@@ -5,6 +5,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { OptionCombobox } from '@/components/ui/combobox'
 import type { SelectOption } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { useFocusReturn } from '@/composables/useFocusReturn'
 import { useNearEnd } from '@/composables/useNearEnd'
 import { useScrollRestoration } from '@/composables/useScrollRestoration'
@@ -25,14 +26,21 @@ import { currentLocale, t } from '@/i18n'
 import { formatRelativeTime } from '@/lib/relative-time'
 import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentRecord } from '@/types'
-import { UiIcon, UiNotice } from '@/ui'
+import { UiIcon, UiNotice, UiSegmented } from '@/ui'
 import FlaRow from './FlaRow.vue'
-import { FLA_GROUP_ORDER, flaGroup, groupFlas, type FlaGroupKey } from './fla-groups'
+import { FLA_GROUP_ORDER, flaGroup, groupFlas, groupFlasByScope, type FlaGroupKey } from './fla-groups'
+import { useFlaLayout, type FlaLayout } from './fla-layout'
 
-// FLAs (重写, direction A): every FLA in one grouped list, what needs the
-// person first. A row opens the FLA's page; right-click pins it or copies
-// #FLA. Search and grouping live in the URL, so Back returns to the same view.
-type View = 'work' | 'projects'
+// FLAs (重写, direction A): every FLA as cards or one dense list, grouped by
+// team (the FLAs working together on a project, then the global ones), by
+// status (what needs the person first) or by project. Switched-off FLAs stay
+// out of sight until the person asks for them (11-03). A card or row opens
+// the FLA's page; right-click pins it or copies #FLA. Search, grouping and
+// filters live in the URL, so Back returns to the same view; the layout is
+// kept per browser.
+type View = 'team' | 'work' | 'projects'
+const VIEWS: readonly View[] = ['team', 'work', 'projects']
+const viewOf = (value: unknown): View => (value === 'work' || value === 'projects' ? value : 'team')
 const store = useConsoleStore()
 const route = useRoute()
 const router = useRouter()
@@ -40,7 +48,7 @@ const space = computed(() => store.activePersonalSpace?.id ?? '')
 useOccupationCatalog(space)
 const pins = useAgentPinsState(space)
 const work = useAgentWorkSummary(space)
-// Every member status: switched-off FLAs are grouped at the end, not hidden.
+// Every member status: switched-off FLAs are read too, and shown on request.
 const roster = useAgentRosterPages(space, ref('all'))
 const agents = roster.agents
 
@@ -48,20 +56,27 @@ const queryText = (value: unknown) => (typeof value === 'string' ? value : '')
 const queryList = (value: unknown) => queryText(value).split(',').map(item => item.trim()).filter(Boolean)
 const flaGroupKey = (value: string): value is FlaGroupKey => (FLA_GROUP_ORDER as readonly string[]).includes(value)
 const search = ref(queryText(route.query.q))
-const view = ref<View>(route.query.view === 'projects' ? 'projects' : 'work')
-// A filter depends on the grouping: statuses for 按状态, projects for 按项目.
+const view = ref<View>(viewOf(route.query.view))
+const showInactive = ref(route.query.inactive === '1')
+const { layout, set: setLayout } = useFlaLayout()
+const layoutOptions = computed(() => (['cards', 'list'] as const).map(value => ({
+  value, label: t(`flas.layout.${value}`), icon: value === 'cards' ? 'grid' as const : 'list' as const, iconOnly: true,
+})))
+// A filter depends on the grouping: statuses for 按团队 and 按状态, projects for 按项目.
 // Both live in the URL, so Back returns to the same filtered view.
 const statusFilter = ref<FlaGroupKey[]>(queryList(route.query.status).filter(flaGroupKey))
 const projectFilter = ref<string[]>(queryList(route.query.project))
 watch(() => route.query, (query) => {
   search.value = queryText(query.q)
-  view.value = query.view === 'projects' ? 'projects' : 'work'
+  view.value = viewOf(query.view)
+  showInactive.value = query.inactive === '1'
   statusFilter.value = queryList(query.status).filter(flaGroupKey)
   projectFilter.value = queryList(query.project)
 })
-watch([search, view, statusFilter, projectFilter], ([q, v, status, project]) => {
-  const next = { ...route.query, q: q.trim() ? q : undefined, view: v === 'projects' ? v : undefined, status: status.length ? status.join(',') : undefined, project: project.length ? project.join(',') : undefined }
-  if (queryText(route.query.q) === (next.q ?? '') && (route.query.view ?? undefined) === next.view
+watch([search, view, statusFilter, projectFilter, showInactive], ([q, v, status, project, inactive]) => {
+  const next = { ...route.query, q: q.trim() ? q : undefined, view: v === 'team' ? undefined : v, status: status.length ? status.join(',') : undefined,
+    project: project.length ? project.join(',') : undefined, inactive: inactive ? '1' : undefined }
+  if (queryText(route.query.q) === (next.q ?? '') && (route.query.view ?? undefined) === next.view && (route.query.inactive ?? undefined) === next.inactive
     && queryList(route.query.status).join(',') === (next.status ?? '') && queryList(route.query.project).join(',') === (next.project ?? '')) return
   void router.replace({ query: next })
 })
@@ -70,8 +85,10 @@ const projects = computed(() => (store.state?.personalProjects ?? []).filter(pro
 const formalProjectIds = computed(() => projects.value.filter(isFormalProject).map(project => project.project_id))
 const projectNames = computed<Record<string, string>>(() => Object.fromEntries(projects.value.map(project => [project.project_id, projectDisplayName(project)])))
 // The filters shown beside the grouping switch: the status groups the page
-// renders (按状态), or the formal projects it groups by (按项目).
-const statusFilterOptions = computed<SelectOption[]>(() => FLA_GROUP_ORDER.map(key => ({ value: key, label: t(`flas.groups.${key}`) })))
+// renders (按团队, 按状态), or the formal projects it groups by (按项目).
+// Switched-off FLAs have their own switch beside them instead of a status.
+const statusFilterOptions = computed<SelectOption[]>(() => FLA_GROUP_ORDER.filter(key => key !== 'inactive')
+  .map(key => ({ value: key, label: t(`flas.groups.${key}`) })))
 const projectFilterOptions = computed<SelectOption[]>(() => {
   const names = new Map<string, number>()
   for (const id of formalProjectIds.value) {
@@ -90,6 +107,7 @@ const entries = computed<Record<string, AgentWorkbenchEntry>>(() => Object.fromE
 ])))
 const byId = computed(() => new Map(agents.value.map(agent => [agent.agentId, agent])))
 const groupOf = (agent: ProjectAgentRecord): FlaGroupKey => flaGroup(agent.profile.status, entries.value[agent.agentId]?.status)
+const inactiveCount = computed(() => agents.value.filter(agent => groupOf(agent) === 'inactive').length)
 
 // Rows keep the order the person first saw; a change of work offers a reorder instead of moving rows under the pointer.
 const busy = computed(() => (roster.loading.value && !agents.value.length) || work.loading.value || store.runtimeStatus === 'loading')
@@ -110,13 +128,20 @@ const matches = (agent: ProjectAgentRecord) => {
     entries.value[agent.agentId]?.title ?? '',
     ...profileProjectIds(agent).map(id => projectNames.value[id] ?? ''),
   ].join(' '), search.value)) return false
-  if (view.value === 'work' && statusFilter.value.length && !statusFilter.value.includes(groupOf(agent))) return false
+  const group = groupOf(agent)
+  if (group === 'inactive') return showInactive.value
+  if (view.value !== 'projects' && statusFilter.value.length && !statusFilter.value.includes(group)) return false
   if (view.value === 'projects' && projectFilter.value.length && !profileProjectIds(agent).some(id => projectFilter.value.includes(id))) return false
   return true
 }
 const rows = computed(() => stable.order.value.map(id => byId.value.get(id)).filter((agent): agent is ProjectAgentRecord => Boolean(agent) && matches(agent!)))
 
+const formalIds = computed(() => new Set(formalProjectIds.value))
 const sections = computed(() => {
+  if (view.value === 'team') {
+    return groupFlasByScope(rows.value, agent => profileProjectIds(agent).some(id => formalIds.value.has(id)))
+      .map(group => ({ key: group.key, label: t(`flas.scopes.${group.key}`), rows: group.rows }))
+  }
   if (view.value === 'work') {
     return groupFlas(rows.value, groupOf).map(group => ({ key: group.key, label: t(`flas.groups.${group.key}`), rows: group.rows }))
   }
@@ -125,19 +150,20 @@ const sections = computed(() => {
     .map(group => ({ key: group.projectId, label: projectNames.value[group.projectId] ?? group.projectId, rows: group.agentIds.map(id => byId.value.get(id)!) }))
   // A project filter shows only the chosen projects' groups, even for an FLA that also works elsewhere.
   if (projectFilter.value.length) return grouped.filter(group => projectFilter.value.includes(group.key))
-  const formal = new Set(formalProjectIds.value)
-  const unassigned = rows.value.filter(agent => !profileProjectIds(agent).some(id => formal.has(id)))
+  const unassigned = rows.value.filter(agent => !profileProjectIds(agent).some(id => formalIds.value.has(id)))
   return unassigned.length ? [...grouped, { key: '__none', label: t('flas.unassigned'), rows: unassigned }] : grouped
 })
 
 function meta(agent: ProjectAgentRecord) {
   return [...occupationLabels(agent.occupation).slice(0, 2), agent.employeeNumber ? `FLA ${agent.employeeNumber}` : ''].filter(Boolean).join(' · ')
 }
-// The group heading already says free, not reported or switched off; those
-// rows say what the FLA is for instead of repeating it.
+// Under 按状态 the heading already says free, not reported or switched off;
+// those rows say what the FLA is for instead of repeating it. Elsewhere a
+// switched-off FLA says so first.
 function workLine(agent: ProjectAgentRecord) {
   const group = groupOf(agent)
   const entry = entries.value[agent.agentId]
+  if (group === 'inactive' && view.value !== 'work') return { group, text: `${t('flas.inactive.tag')} · ${agentResponsibility(agent)}` }
   if (group === 'inactive' || group === 'unknown' || group === 'idle') return { group, text: agentResponsibility(agent) }
   if (group === 'working') return { group, text: entry?.title ?? t(`agentRedesign.workStatus.${entry!.status}`) }
   const detail = workbenchStatusDetail(entry) ?? entry?.title
@@ -171,7 +197,7 @@ watch([nearEnd, roster.loading], ([near, loading]) => {
 const firstLoading = computed(() => busy.value && !agents.value.length)
 const loadFailed = computed(() => !agents.value.length && (Boolean(roster.error.value) || store.runtimeStatus === 'error'))
 const noFlas = computed(() => !busy.value && roster.complete.value && !agents.value.length && !loadFailed.value)
-const filtersActive = computed(() => (view.value === 'work' ? statusFilter.value.length : projectFilter.value.length) > 0)
+const filtersActive = computed(() => (view.value === 'projects' ? projectFilter.value.length : statusFilter.value.length) > 0)
 const noMatch = computed(() => (Boolean(search.value.trim()) || filtersActive.value) && roster.complete.value && agents.value.length > 0 && !rows.value.length)
 const noMatchCause = computed(() => (search.value.trim() ? 'search' : 'filter'))
 function clearFilters() {
@@ -216,17 +242,24 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
           <input v-model="search" type="search" maxlength="160" :placeholder="t('flas.search')" data-flas-search @keydown.esc="search = ''" />
         </label>
         <div class="flas-switch" role="radiogroup" :aria-label="t('flas.view.label')">
-          <button v-for="option in (['work', 'projects'] as const)" :key="option" type="button" role="radio" :aria-checked="view === option"
+          <button v-for="option in VIEWS" :key="option" type="button" role="radio" :aria-checked="view === option"
             :data-flas-view="option" @click="view = option">{{ t(`flas.view.${option}`) }}</button>
         </div>
-        <OptionCombobox v-if="view === 'work'" v-model="statusFilter" class="flas-filter" multiple :searchable="false"
+        <OptionCombobox v-if="view !== 'projects'" v-model="statusFilter" class="flas-filter" multiple :searchable="false"
           :options="statusFilterOptions" :label="t('flas.filter.status')" :placeholder="t('flas.filter.allStatus')" />
         <OptionCombobox v-else v-model="projectFilter" class="flas-filter" multiple
           :options="projectFilterOptions" :label="t('flas.filter.project')" :placeholder="t('flas.filter.allProjects')" />
+        <label class="flas-inactive">
+          <Switch v-model="showInactive" data-flas-inactive />
+          <span>{{ t('flas.inactive.show') }}</span>
+          <span class="ui-num">{{ inactiveCount }}</span>
+        </label>
         <span class="flas-count" role="status">
           <GrowthLoading v-if="busy && agents.length" variant="inline" :label="t('flas.refreshing')" />
           <template v-else-if="agents.length">{{ t(roster.complete.value ? 'flas.count' : 'flas.countPartial', { count: agents.length }) }}</template>
         </span>
+        <UiSegmented :model-value="layout" :options="layoutOptions" :label="t('flas.layout.label')" data-flas-layout
+          @update:model-value="setLayout($event as FlaLayout)" />
       </header>
 
       <UiNotice v-if="pins.error.value" tone="error">
@@ -258,8 +291,8 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
 
       <section v-for="section in sections" :key="section.key" class="flas-group" :aria-labelledby="`flas-group-${section.key}`" :data-flas-group="section.key">
         <h2 :id="`flas-group-${section.key}`" class="flas-group-label">{{ section.label }} <span class="ui-num">{{ section.rows.length }}</span></h2>
-        <ul class="flas-list">
-          <FlaRow v-for="agent in section.rows" :key="agent.agentId" :agent-id="agent.agentId" :name="agentDisplayName(agent)" :meta="meta(agent)"
+        <ul class="flas-list" :data-layout="layout">
+          <FlaRow v-for="agent in section.rows" :key="agent.agentId" :layout="layout" :agent-id="agent.agentId" :name="agentDisplayName(agent)" :meta="meta(agent)"
             :work="workLine(agent)" :time="lastUpdate(agent)" :to="profilePath(agent)"
             :pinned="pins.agentIds.value.includes(agent.agentId)" :pin-pending="pins.savingAgentId.value === agent.agentId"
             @click="focusReturn.remember(agent.agentId)" @open="open(agent)" @copy="copyMention(agent)" @toggle-pin="pins.setPinned(agent.agentId, $event)" />
@@ -297,6 +330,8 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
 .flas-switch button[aria-checked="true"] { color: var(--color-ink); background: var(--color-surface); box-shadow: var(--shadow-xs); }
 .flas-switch button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
 .flas-filter { width: 220px; }
+.flas-inactive { display: inline-flex; align-items: center; gap: 8px; color: var(--color-muted); font-size: var(--text-control); white-space: nowrap; cursor: pointer; user-select: none; }
+.flas-inactive .ui-num { color: var(--color-faint); }
 .flas-count { margin-left: auto; color: var(--color-muted); font-size: var(--text-control); font-variant-numeric: tabular-nums; }
 .flas-group { display: grid; gap: 8px; }
 .flas-group-label { display: flex; align-items: baseline; gap: 8px; margin: 0; padding-inline: 18px; color: var(--color-ink-soft); font-size: var(--text-control); font-weight: var(--weight-strong); }
@@ -305,6 +340,8 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
 .flas-list { margin: 0; padding: 0; list-style: none; border-radius: var(--radius-card); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border); }
 .flas-list > :first-child :deep(.fla-row) { border-start-start-radius: var(--radius-card); border-start-end-radius: var(--radius-card); }
 .flas-list > :last-child :deep(.fla-row) { border-end-start-radius: var(--radius-card); border-end-end-radius: var(--radius-card); }
+/* Cards: each FLA its own tile, as many across as the width allows. */
+.flas-list[data-layout="cards"] { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 12px; border-radius: 0; background: none; box-shadow: none; }
 .flas-empty { display: grid; justify-items: center; gap: 12px; margin: 0; padding: 56px 24px; color: var(--color-muted); text-align: center; }
 .flas-empty p { margin: 0; }
 .flas-more { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--color-muted); font-size: var(--text-control); }

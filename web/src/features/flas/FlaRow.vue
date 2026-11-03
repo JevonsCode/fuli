@@ -7,10 +7,13 @@ import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-colo
 import { t } from '@/i18n'
 import { UiIcon } from '@/ui'
 import type { FlaGroupKey } from './fla-groups'
+import type { FlaLayout } from './fla-layout'
 
-// One FLA in the grouped list: the whole row opens its page, like a row in an
-// iOS list; right-click (or the context-menu key) offers pin and copy #FLA.
+// One FLA in the grouped list, as a row or a card: the whole of it opens its
+// page, like a row in an iOS list; right-click (or the context-menu key)
+// offers pin and copy #FLA.
 defineProps<{
+  layout: FlaLayout
   agentId: string
   name: string
   meta: string
@@ -27,13 +30,13 @@ const emit = defineEmits<{ 'toggle-pin': [pinned: boolean]; copy: []; open: [] }
   <li class="fla-item">
     <ContextMenu>
       <ContextMenuTrigger as-child>
-        <RouterLink :to="to" class="fla-row" :data-fla="agentId" :data-return-focus="agentId">
+        <RouterLink :to="to" class="fla-row" :data-layout="layout" :data-fla="agentId" :data-return-focus="agentId">
           <span class="fla-face" :style="agentIdentityStyle(agentId)" aria-hidden="true"><img :src="agentAvatarUrl(agentId)" :data-agent-portrait="agentId" alt="" /></span>
           <span class="fla-who">
             <span class="fla-name">{{ name }}</span>
             <span v-if="meta" class="fla-meta">{{ meta }}</span>
           </span>
-          <span class="fla-work" :data-group="work.group"><span class="fla-dot" aria-hidden="true" />{{ work.text }}</span>
+          <span class="fla-work" :data-group="work.group"><span class="fla-dot" aria-hidden="true" /><span class="fla-work-text">{{ work.text }}</span></span>
           <span class="fla-end">
             <template v-if="pinned"><PinIcon filled class="fla-pin" /><span class="ui-sr-only">{{ t('flas.row.pinned') }}</span></template>
             <time v-if="time">{{ time }}</time>
@@ -55,7 +58,7 @@ const emit = defineEmits<{ 'toggle-pin': [pinned: boolean]; copy: []; open: [] }
 </template>
 
 <style scoped>
-.fla-item + .fla-item .fla-row::before { content: ''; position: absolute; top: 0; right: 0; left: 66px; height: 1px; background: var(--color-border); }
+.fla-item + .fla-item .fla-row:not([data-layout="cards"])::before { content: ''; position: absolute; top: 0; right: 0; left: 66px; height: 1px; background: var(--color-border); }
 .fla-row {
   position: relative; display: grid; grid-template-columns: 36px minmax(140px, 220px) minmax(0, 1fr) auto 16px; align-items: center; gap: 16px;
   min-height: 60px; padding: 10px 18px; color: var(--color-ink); text-decoration: none;
@@ -72,7 +75,8 @@ const emit = defineEmits<{ 'toggle-pin': [pinned: boolean]; copy: []; open: [] }
 .fla-name { overflow: hidden; font-size: var(--text-body); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
 .fla-meta, .fla-end { color: var(--color-muted); font-size: var(--text-meta); }
 .fla-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fla-work { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; color: var(--color-ink-soft); font-size: var(--text-control); text-overflow: ellipsis; white-space: nowrap; }
+.fla-work { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--color-ink-soft); font-size: var(--text-control); }
+.fla-work-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fla-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--status-idle); }
 .fla-work[data-group="working"] .fla-dot { background: var(--status-working); }
 .fla-work[data-group="attention"] { color: var(--color-warning); }
@@ -82,6 +86,23 @@ const emit = defineEmits<{ 'toggle-pin': [pinned: boolean]; copy: []; open: [] }
 .fla-end { display: flex; align-items: center; justify-content: flex-end; gap: 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .fla-pin { width: 13px; height: 13px; color: var(--color-gold); }
 .fla-chevron { color: var(--color-faint); }
+/* A card: portrait, name and time on top, two lines of what it is doing below; it rises on hover. */
+.fla-row[data-layout="cards"] {
+  grid-template-columns: 44px minmax(0, 1fr) auto; grid-template-areas: "face who end" "work work work"; align-content: start; gap: 14px 12px;
+  height: 100%; min-height: 124px; padding: 16px 18px; border-radius: var(--radius-card); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border);
+  transition: translate var(--motion-move), box-shadow var(--motion-move), background var(--motion-fast);
+}
+.fla-row[data-layout="cards"]:hover { translate: 0 -2px; background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border-strong), var(--shadow-md); }
+.fla-row[data-layout="cards"][data-state="open"] { translate: 0 -2px; box-shadow: var(--shadow-lg); }
+.fla-row[data-layout="cards"] .fla-face { grid-area: face; width: 44px; height: 44px; }
+.fla-row[data-layout="cards"] .fla-who { grid-area: who; align-self: center; }
+.fla-row[data-layout="cards"] .fla-end { grid-area: end; align-self: start; }
+.fla-row[data-layout="cards"] .fla-work { grid-area: work; align-items: flex-start; }
+.fla-row[data-layout="cards"] .fla-dot { margin-top: .5lh; translate: 0 -50%; }
+.fla-row[data-layout="cards"] .fla-work-text { display: -webkit-box; white-space: normal; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.fla-row[data-layout="cards"] .fla-chevron { display: none; }
+@media (prefers-reduced-motion: reduce) { .fla-row[data-layout="cards"]:hover { translate: none; } }
+:root[data-motion="reduced"] .fla-row[data-layout="cards"]:hover { translate: none; }
 @media (max-width: 640px) {
   .fla-row { grid-template-columns: 36px minmax(0, 1fr) auto; grid-template-areas: "face who end" "face work work"; gap: 2px 12px; }
   .fla-face { grid-area: face; align-self: start; }

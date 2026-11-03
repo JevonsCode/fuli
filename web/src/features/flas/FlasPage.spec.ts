@@ -46,7 +46,10 @@ beforeEach(() => {
   putJson.mockReset()
   putJson.mockResolvedValue({ revision: 2, agentIds: ['agent-3', 'agent-1'] })
 })
-afterEach(() => mounted.splice(0).forEach(wrapper => wrapper.unmount()))
+afterEach(() => {
+  mounted.splice(0).forEach(wrapper => wrapper.unmount())
+  localStorage.clear()
+})
 
 async function setup(path = '/project-agents') {
   const router = createRouter({ history: createMemoryHistory(), routes: [
@@ -64,8 +67,43 @@ const groupNames = (wrapper: Awaited<ReturnType<typeof setup>>['wrapper']) =>
   wrapper.findAll('[data-flas-group]').map(group => [group.attributes('data-flas-group'), group.findAll('.fla-name').map(name => name.text())])
 
 describe('FLAs page', () => {
-  it('lists what needs the person first and never shows an unreported FLA as free', async () => {
+  it('opens on cards grouped by team: the FLAs on a project together, the global ones after, switched-off ones hidden', async () => {
     const { wrapper } = await setup()
+    expect(groupNames(wrapper)).toEqual([
+      ['team', ['Cedar', 'Dahlia']],
+      ['global', ['Birch', 'Aster']],
+    ])
+    expect(wrapper.get('[data-flas-group="team"] h2').text()).toContain('一起干活的')
+    expect(wrapper.get('[data-flas-group="global"] h2').text()).toContain('全局的')
+    expect(wrapper.get('.flas-list').attributes('data-layout')).toBe('cards')
+    expect(wrapper.get('[data-fla="agent-3"]').attributes('data-layout')).toBe('cards')
+  })
+
+  it('shows switched-off FLAs only when asked, and keeps that in the address', async () => {
+    const { router, wrapper } = await setup()
+    expect(wrapper.find('[data-fla="agent-5"]').exists()).toBe(false)
+    expect(wrapper.get('.flas-inactive').text()).toContain('1')
+    await wrapper.get('[data-flas-inactive]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.inactive).toBe('1')
+    expect(wrapper.get('[data-fla="agent-5"] .fla-work').text()).toBe('已停用 · Elm looks after synthetic work')
+    expect(groupNames(wrapper)).toEqual([
+      ['team', ['Cedar', 'Dahlia']],
+      ['global', ['Elm', 'Birch', 'Aster']],
+    ])
+  })
+
+  it('switches to the dense list and remembers it in this browser', async () => {
+    const { wrapper } = await setup()
+    await wrapper.get('[data-flas-layout] [data-value="list"]').trigger('click')
+    expect(wrapper.get('.flas-list').attributes('data-layout')).toBe('list')
+    expect(localStorage.getItem('fuli.flas.layout')).toBe('list')
+    await wrapper.get('[data-flas-layout] [data-value="cards"]').trigger('click')
+    expect(localStorage.getItem('fuli.flas.layout')).toBeNull()
+  })
+
+  it('lists what needs the person first under 按状态 and never shows an unreported FLA as free', async () => {
+    const { wrapper } = await setup('/project-agents?view=work&inactive=1')
     expect(groupNames(wrapper)).toEqual([
       ['attention', ['Birch']],
       ['working', ['Cedar']],
@@ -105,14 +143,14 @@ describe('FLAs page', () => {
     expect(groupNames(wrapper)).toEqual([
       ['project-a', ['Cedar']],
       ['project-b', ['Cedar', 'Dahlia']],
-      ['__none', ['Elm', 'Birch', 'Aster']],
+      ['__none', ['Birch', 'Aster']],
     ])
   })
 
   it('filters by status under 按状态 and keeps it in the address; an empty selection shows everything', async () => {
-    const { router, wrapper } = await setup()
+    const { router, wrapper } = await setup('/project-agents?view=work')
     await openCombobox(wrapper)
-    expect(optionLabels(wrapper)).toEqual(['需要你看', '正在工作', '空闲', '状态未上报', '已停用'])
+    expect(optionLabels(wrapper)).toEqual(['需要你看', '正在工作', '空闲', '状态未上报'])
     await toggleOption(wrapper, '正在工作')
     expect(groupNames(wrapper)).toEqual([['working', ['Cedar']]])
     expect(router.currentRoute.value.query.status).toBe('working')
@@ -126,7 +164,6 @@ describe('FLAs page', () => {
       ['working', ['Cedar']],
       ['idle', ['Aster']],
       ['unknown', ['Dahlia']],
-      ['inactive', ['Elm']],
     ])
     expect(router.currentRoute.value.query.status).toBeUndefined()
   })
