@@ -21,12 +21,10 @@ FULI records who wrote `purpose`, `scope`, `technicalSummary` and `boundaries` i
 Every source needs a stable `key`, `kind`, and `title`. Add `uri` and `summary` only when supported by evidence.
 
 For a `repository`, `frontend_repository`, or `backend_repository` source, use the repository's
-`origin` remote URL (without credentials) as `uri` when it is known. FULI resolves a separate clone
-of that repository under another folder name to this project only when exactly one registered
-project records the same remote; ssh and https forms of one repository are equal. This remote
-match takes precedence over directory names, including the parent repository name of a worktree.
-Missing or ambiguous remote bindings stay unresolved; existing profiles without a repository source
-need an explicit source added before checkout-based matching can work. Keep the source
+`origin` remote URL (without credentials) as `uri` when it is known. FULI resolves any clone or
+worktree of that repository to this project when exactly one registered project records the same
+remote, before any folder name; ssh and https forms of one repository are equal. A checkout whose
+folder is named after a project that records another repository does not resolve to it. Keep the source
 `private` unless the user approved the remote for public inclusion.
 
 Supported kinds:

@@ -1,8 +1,10 @@
+import { captureDecision } from './capture-decision.js';
 import { buildUserTasteSkill } from './user-taste-skill.js';
 import {
   taskEntryPreferences,
   finishTaskEntryPreferences
 } from './task-entry-preferences.js';
+import { TASK_ENTRY_TOOLS, registerRepositoryProject } from './repository-project-registration.js';
 import { resolveTaskEntryProject } from './task-entry-project-scope.js';
 import { withSharedProjectList } from './shared-project-list.js';
 import { recordAgentViews } from './agent-view-records.js';
@@ -32,6 +34,14 @@ async function collaborationPreferences(application, {
   sessionTask
 } = {}) {
   let projectResolution = await resolvePreferenceProject(application, { personalProjectId, projectPath });
+  if (projectResolution.repositoryProjectId && agentInvocation && TASK_ENTRY_TOOLS.has(agentToolName)
+    && (await captureDecision(application, { sourceApplication, projectPath, sessionId,
+      personalProjectId: projectResolution.repositoryProjectId })).allowed) {
+    // Every task gets a FULI Agent, so a task in an unregistered repository
+    // registers it, unless neither the folder nor the project it would
+    // become is recorded.
+    projectResolution = await registerRepositoryProject(application, projectResolution, { sessionId, projectPath });
+  }
   projectResolution = await resolveTaskEntryProject(application, projectResolution, {
     sessionId, sourceSessionId, sourceApplication, agentInvocation, agentToolName, projectAgentId, taskPrompt, sessionTask
   });

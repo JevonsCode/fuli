@@ -1,6 +1,9 @@
 // A repository's identity by its origin remote, read from Git's own files as
 // text: a separate clone under another folder name is still the same project.
 
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 const REPOSITORY_SOURCE_KINDS = new Set(['repository', 'frontend_repository', 'backend_repository']);
 const SECTION = /^\s*\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]\s*(.*)$/;
 const URL_ENTRY = /^\s*url\s*=\s*(.*)$/i;
@@ -9,7 +12,7 @@ const URL_FORM = /^(?:[a-z][a-z0-9+.-]*):\/\/(?:[^@/]*@)?(\[[^\]]+\]|[^/:]+)(?::
 const SCP_FORM = /^(?:[^@/]+@)?([^/:]{2,}):(?!\/\/)(.+)$/;
 
 // The gitdir a .git file points to (a worktree, a submodule); null for a .git directory.
-function linkedGitDirectory(gitMarkerPath, { readText, pathApi }) {
+export function linkedGitDirectory(gitMarkerPath, { readText, pathApi }) {
   const gitDirectory = /^gitdir:\s*(.+)$/im.exec(readText(gitMarkerPath))?.[1]?.trim();
   if (!gitDirectory) return null;
   return pathApi.isAbsolute(gitDirectory)
@@ -33,10 +36,35 @@ function originRemoteUrl(repositoryRoot, { readText, pathApi }) {
   return originUrl(readText(pathApi.join(configDirectory, 'config')));
 }
 
+// A source suitable for a newly registered profile, without remote credentials.
+export function originRemoteSource(repositoryRoot) {
+  const remote = originRemoteUrl(repositoryRoot, { pathApi: path, readText: readTextOrEmpty });
+  if (!remote) return null;
+  const safeRemote = remote.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@]*@/i, '$1')
+    .replace(/^[^/@:]+:[^/@]+@(?=[^/]+:)/, '');
+  const key = remoteKey(safeRemote);
+  const normalizable = /^(?:https?|ssh):\/\//i.test(safeRemote) || SCP_FORM.test(safeRemote);
+  const uri = normalizable && key ? `https://${key}` : safeRemote;
+  const titlePath = key?.split('/').slice(1).join('/') ?? uri.replace(/\\/g, '/');
+  const title = titlePath.replace(/\/+$/, '').replace(/\.git$/i, '').split('/').filter(Boolean).slice(-2).join('/') || uri;
+  return { key: 'origin-remote', kind: 'repository', title, uri, sensitivity: 'normal' };
+}
+
+function readTextOrEmpty(filePath) {
+  try { return readFileSync(filePath, 'utf8'); } catch { return ''; }
+}
+
 // The registered projects whose profile records a repository source at remote.
 export function projectsWithRemote(projects, remote) {
   return projects.filter(project => (project.profile?.sources ?? []).some(source =>
     REPOSITORY_SOURCE_KINDS.has(source.kind) && typeof source.uri === 'string' && remoteKey(source.uri) === remote));
+}
+
+// True when the project records a repository source at some other remote: a
+// checkout of that remote is not this project, whatever its folder is called.
+export function recordsOtherRemote(project, remote) {
+  return (project?.profile?.sources ?? []).some(source => REPOSITORY_SOURCE_KINDS.has(source.kind)
+    && typeof source.uri === 'string' && remoteKey(source.uri) !== null && remoteKey(source.uri) !== remote);
 }
 
 // host/path with scheme, user, port, trailing slashes and .git removed and the

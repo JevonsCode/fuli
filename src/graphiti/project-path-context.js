@@ -7,7 +7,7 @@ import {
 import path from 'node:path';
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { hostPathOfCallerPath } from '../system/platform-path.js';
-import { originRemoteKey, projectsWithRemote } from './repository-remote.js';
+import { linkedGitDirectory, originRemoteKey, projectsWithRemote, recordsOtherRemote } from './repository-remote.js';
 
 // Says what to pass, never the path the caller sent.
 const INVALID_PATH_MESSAGE = 'projectPath must be an existing absolute directory. '
@@ -56,9 +56,37 @@ export function resolvePersonalProjectPath(projectPath, projects, {
     fileExists,
     pathApi
   });
-  // A checkout's basename is not a repository identity. Unknown remotes stay
-  // unresolved instead of registering a new project for each clone directory.
-  if (repositoryRoot) return remoteProject(repositoryRoot, registered, { readText, pathApi });
+  // An unregistered repository can be registered under this exact ID.
+  let repositoryProjectId = null;
+  if (repositoryRoot) {
+    // The origin remote decides first (#632): a clone or worktree whose folder
+    // is named after another project still belongs to its own repository.
+    const remote = originRemoteKey(repositoryRoot, { readText, pathApi });
+    const byRemote = remote && remoteProject(remote, registered);
+    if (byRemote) return byRemote;
+    // Without a recorded remote the folder names the project, as before,
+    // unless that project records another repository: then nothing matches
+    // and no registration under its ID is offered.
+    const otherRepository = resolution => Boolean(remote && resolution?.personalProjectId && recordsOtherRemote(
+      registered.find(({ project_id: projectId }) => projectId === resolution.personalProjectId), remote));
+    const worktreeId = worktreeOriginProjectId(
+      pathApi.join(repositoryRoot, '.git'),
+      { readText, pathApi }
+    );
+    // A worktree's folder name is arbitrary; only its original repository
+    // identifies the project, even when the folder names another project.
+    const candidateId = worktreeId ?? pathApi.basename(repositoryRoot);
+    const named = resolveProjectId(candidateId, projectIds, worktreeId ? 'git_worktree_origin' : 'repository_root');
+    if (otherRepository(named)) return unresolved('unmatched', { reason: 'repository_remote_conflict' });
+    if (named) return named;
+    if (worktreeId) {
+      return unresolved('unmatched', safeProjectId(worktreeId, pathApi) ? { repositoryProjectId: worktreeId } : {});
+    }
+    if (safeProjectId(candidateId, pathApi)) repositoryProjectId = candidateId;
+  }
+
+  const directory = resolveProjectId(pathApi.basename(currentPath), projectIds, 'directory_name');
+  if (directory) return directory;
 
   const childMatches = [...projectIds].filter((projectId) => (
     CHILD_PROJECT_MARKERS.some((marker) =>
@@ -66,12 +94,20 @@ export function resolvePersonalProjectPath(projectPath, projects, {
     )
   ));
   if (childMatches.length === 1) {
-    return unresolved('unmatched', { reason: 'workspace_requires_repository_path' });
+    return matched(childMatches[0], 'workspace_child');
   }
   if (childMatches.length > 1) {
     return unresolved('ambiguous', { candidateCount: childMatches.length });
   }
-  return unresolved('unmatched', { reason: 'no_git_repository' });
+  return unresolved('unmatched', repositoryProjectId ? { repositoryProjectId } : {});
+}
+
+function resolveProjectId(candidate, projectIds, basis) {
+  if (projectIds.has(candidate)) return matched(candidate, basis);
+  const matches = [...projectIds].filter((id) => id.toLowerCase() === candidate.toLowerCase());
+  if (matches.length === 1) return matched(matches[0], `${basis}_case_insensitive`);
+  if (matches.length > 1) return unresolved('ambiguous', { candidateCount: matches.length });
+  return null;
 }
 
 export function findRepositoryRoot(projectPath, {
@@ -98,17 +134,24 @@ function hostProjectPath(projectPath, pathApi) {
   return hostPath;
 }
 
+function worktreeOriginProjectId(gitMarkerPath, {
+  readText,
+  pathApi
+}) {
+  const resolved = linkedGitDirectory(gitMarkerPath, { readText, pathApi });
+  if (!resolved) return null;
+  const marker = /[\\/]\.git[\\/]worktrees[\\/]/i.exec(resolved);
+  if (!marker) return null;
+  return pathApi.basename(resolved.slice(0, marker.index));
+}
+
 // A clone under another folder name: its origin URL equals exactly one
 // project's recorded repository URL.
-function remoteProject(repositoryRoot, projects, { readText, pathApi }) {
-  const remote = originRemoteKey(repositoryRoot, { readText, pathApi });
-  if (!remote) return unresolved('unmatched', { reason: 'repository_remote_unavailable' });
+function remoteProject(remote, projects) {
   const matches = projectsWithRemote(projects, remote);
   if (matches.length === 1) return matched(matches[0].project_id, 'git_remote');
-  if (matches.length > 1) return unresolved('ambiguous', {
-    reason: 'repository_remote_ambiguous', candidateCount: matches.length
-  });
-  return unresolved('unmatched', { reason: 'repository_remote_unregistered' });
+  if (matches.length > 1) return unresolved('ambiguous', { candidateCount: matches.length });
+  return null;
 }
 
 function safeProjectId(projectId, pathApi) {

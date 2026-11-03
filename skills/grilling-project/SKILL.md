@@ -27,8 +27,6 @@ Read [project-profile.md](references/project-profile.md) before assessing eviden
 3. Match by stable project ID or an existing publication mapping first. Use repository evidence second. Never merge projects from name similarity alone; ask one identity question when the match is ambiguous.
 4. If a public project already corresponds to it, treat publication as a profile sync, not a second project.
 
-For a Git checkout, resolve ownership by its normalized `origin` remote against existing repository sources. Different clone directories and worktrees of that remote belong to the same project. A folder name is not identity evidence. If the remote is missing, unregistered, or shared by multiple project profiles, leave ownership unresolved and establish the repository source explicitly before reusing a project. Do not auto-register a new project per checkout directory. A non-Git workspace also needs explicit project selection.
-
 Use a stable, human-readable `projectId` derived from the repository/project name. Do not derive it from a local absolute path, username, hostname, or confidential identifier.
 
 ## Discover before asking

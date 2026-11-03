@@ -1,3 +1,4 @@
+import { TASK_ENTRY_TOOLS } from './repository-project-registration.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { projectNamedInPrompt } from './task-entry-project-mention.js';
 import { sessionTaskContext, withStandingOwner } from './task-entry-standing-owner.js';
@@ -5,8 +6,6 @@ import { namedFlaRequest, namedFlaResolution, namedFlaTask } from './task-entry-
 import { groupDiscussionRequest } from './task-entry-group-discussion.js';
 import { leadingAgentAddress } from './fla-mention.js';
 import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
-
-const TASK_ENTRY_TOOLS = new Set(['begin_task_context', 'get_collaboration_preferences']);
 
 // Restore only exact session provenance; a normal folder name is not a role binding.
 // An unclaimed conversation never creates a project or hires a lead: it stays
@@ -26,8 +25,6 @@ export async function resolveTaskEntryProject(application, resolution, input) {
   const group = groupDiscussionRequest(application, input, sessionTask);
   const named = fla && namedFlaResolution(fla);
   if (named) return group ? { ...named, group } : named;
-  // Unknown repository ownership cannot inherit a previous checkout's project.
-  if (resolution.reason?.startsWith('repository_remote_')) return resolution;
   const home = await sessionEntryProject(application, resolution, input, readSessionTask);
   const routed = group?.holdsProject ? home : await withStandingOwner(application, home, input);
   return fla || group ? { ...routed, ...(fla ? { fla } : {}), ...(group ? { group } : {}) } : routed;
@@ -46,7 +43,8 @@ function sessionTaskReader(application, input) {
 }
 
 async function sessionEntryProject(application, resolution, input, readSessionTask) {
-  // Outside a repository, explicit prompt and session bindings may establish scope.
+  // An unregistered repository ID is only a hint: when auto-registration did
+  // not apply, the prompt, the session and the assistant still decide.
   if (resolution.personalProjectId
     || !['unmatched', 'not_provided'].includes(resolution.status)) return resolution;
   // An explicit FLA outside a project uses its independent global context.

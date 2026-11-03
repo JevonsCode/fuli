@@ -147,7 +147,7 @@ test('ordinary entries stay pending for the assistant and payload claims cannot 
     resolution: { status: 'unmatched', personalProjectId: null, repositoryProjectId: 'synthetic-repo' } });
   try {
     const result = await run({ projectPath });
-    assert.equal(result.context.personal_project_id, null);
-    assert.equal(writes.length, 0);
+    assert.equal(result.context.personal_project_id, 'synthetic-repo');
+    assert.equal(writes.length, 1);
   } finally { close(); }
 });

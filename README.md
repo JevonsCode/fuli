@@ -43,8 +43,8 @@ Desktop with a compact chat tool profile). See [client connections](docs/client-
   their sources, scope, and confirmation status.
 - **A team when needed:** coordinate specialist agents and record actual worker execution through
   an available, authorized host client or executor.
-- **Every task has an owner:** ask for work inside a registered repository; Fuli resolves its remote
-  to the project and its lead agent. The reply ends with who led and who helped.
+- **Every task has an owner:** ask for work inside a project directory; Fuli registers the project
+  and staffs a lead agent. The reply ends with who led and who helped.
 - **Three built-in specialists:** Jefa manages projects, Bole handles AR (Agent Resources) for
   recruiting and staffing, and Tonborg helps with judgment. Every space starts with all three.
 - **Judgment guided by your preferences:** [Tonborg](docs/judgment-and-autonomy.md) reviews items
@@ -116,7 +116,7 @@ The setup wizard shows its plan before changing your environment.
    `http://127.0.0.1:2727`).
 2. Confirm Fuli tools appear in the client and **make one actual tool call** inside a project
    directory (for example, ask the Agent to load project collaboration preferences or coordinate a
-   small task). Verify that Fuli resolves the right project (using its recorded repository source) and
+   small task). Verify that Fuli resolves the right project (or registers/staffs a lead Agent) and
    asks for missing context rather than inventing it.
 3. Optional cross-tool handoff: use the Agent's continuation instruction in another client
    connected to the same data and verify that it recovers the same Agent, project, and prior work.
@@ -305,25 +305,29 @@ at equal authority, the exact project variant overrides the global one.
 
 ### How Fuli identifies the current project
 
-Fuli matches only stable `project_id` values already registered under Personal projects. For a
-Git checkout, identity comes from its normalized `origin` remote, never its directory name.
-Standard calls pass the current working directory:
+Fuli matches only stable `project_id` values already registered under Personal projects; it does
+not guess from fuzzy directory similarity. Normally the `project_id` matches the repository
+directory name, so `/workspace/fuli` maps to `fuli`. Standard calls pass only the current working
+directory, and resolution follows this order:
 
-1. Find the nearest Git repository root and read its `origin` remote from `.git/config`; a
-   worktree reads the common Git directory named by its `.git` pointer and `commondir`.
-2. Match that remote to one registered project's `repository`, `frontend_repository`, or
-   `backend_repository` source URL. SSH and HTTPS forms of the same repository are equal.
-   Different clone directories and worktrees share the same project (`git_remote`).
-3. Multiple candidates return `ambiguous`; no candidate returns `unmatched`. A missing remote
-   also remains unmatched. Neither directory names nor an earlier session's project resolve it.
-4. A non-Git workspace needs an explicit project selection or the actual repository path;
-   a same-named directory or child is insufficient.
+1. Find the nearest Git repository root, read its `origin` remote from its `.git/config` (a
+   worktree's common directory) and match it exactly to one registered project's recorded
+   repository source URL; ssh and https forms of the same repository are equal. Any clone or
+   worktree therefore resolves to its project (`git_remote`), whatever its folder is called.
+2. Otherwise match the repository directory name exactly to a registered `project_id`; for a
+   Codex worktree, the original repository ID from its `.git` pointer. A project that records a
+   different repository source is never matched by name (`repository_remote_conflict`).
+3. Match the current directory name exactly to a registered project ID.
+4. At a workspace root, match one registered direct child only when exactly one child contains
+   `.git`, `package.json`, `pyproject.toml`, `Cargo.toml`, or `go.mod`.
+5. Multiple candidates, including a remote recorded by several projects, return `ambiguous`; no
+   candidate returns `unmatched`. Neither state applies project preferences or guesses a project.
 
-Repository entry does not automatically register a project from its directory name or README.
-For an existing project, add the verified remote as a private repository source. For a genuinely
-new project, explicitly register it with `upsert_personal_project` and include that source.
-Existing projects and history are not merged, deleted, or renamed. Explicit named FLA routing
-remains available independently of checkout identity.
+For an unregistered repository with an unambiguous identity, the installed capture skill may call
+`upsert_personal_project` before the first project-scoped write to create a minimal local private
+project. It never creates or subscribes to a public project automatically. If a workspace has
+multiple candidates, run the Agent from the exact project directory or explicitly register and
+select the project first.
 
 ### Which tool the Agent calls and when
 
@@ -351,7 +355,7 @@ The important part of a matched response resembles:
     "personal_project_id": "fuli",
     "project_resolution": {
       "status": "matched",
-      "basis": "git_remote",
+      "basis": "repository_root",
       "personal_project_id": "fuli"
     }
   },
