@@ -13,6 +13,7 @@ import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.v
 import PageColumns from '@/components/PageColumns.vue'
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
 import ClientLinksSettings from '@/features/settings/ClientLinksSettings.vue'
+import AgentDelegationSettings from '@/features/settings/AgentDelegationSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
 import DiagnosticsSettings from '@/features/settings/DiagnosticsSettings.vue'
 import GraphMigrationRow from '@/features/settings/GraphMigrationRow.vue'
@@ -449,6 +450,7 @@ function checkFields(): ValidatedField[] {
                   </label>
                 </div>
               </Card>
+              <AgentDelegationSettings />
               <Card v-if="form.topicPromotion !== undefined" as="section" class="settings-card" aria-labelledby="settings-topic-promotion-title" data-topic-promotion-card>
                 <div class="setting-list">
                   <label class="setting-row">

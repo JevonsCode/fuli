@@ -40,6 +40,7 @@ const NAMES = [
   'control_project_agent_task_run', 'register_standing_assignment', 'report_agent_service',
   'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
   'list_work_surfaces', 'pause_work_surfaces', 'resume_work_surfaces',
+  'run_delegated_action',
   'read_task_preferences',
   'begin_task_context',
   'checkpoint_task_knowledge',
@@ -351,6 +352,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       .map(name => [name, async (input) => calls.push([`surfaces-${name}`, input])])),
     agentWorkflows: Object.fromEntries(['propose', 'index', 'read', 'recordRun']
       .map(name => [name, async (owner, input) => calls.push([`workflow-${name}`, input])])),
+    delegatedConsole: { send: async (input) => { calls.push(['delegated-send', input]); return { result: {}, operationId: 'op-1' }; } },
     controlProjectAgentTaskRun: async input => calls.push(['task-run-control', input]),
     queryAgentConversations: async input => calls.push(['conversations-' + input.mode, input]),
     resumeAgentConversation: async input => calls.push(['conversation-resume', input]),
@@ -539,6 +541,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       // A tag change and a service report name their write; every other probe is the bare tool name.
       const probe = { change_knowledge_tags: { action: 'create' },
         report_agent_service: { action: 'register', taskContextToken: 'fuli-task-probe' },
+        run_delegated_action: { taskContextToken: 'fuli-task-probe', route: 'PATCH /api/recall-policy', reason: 'probe' },
         ...Object.fromEntries(['propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
           'pause_work_surfaces', 'resume_work_surfaces'].map(tool => [tool, { taskContextToken: 'fuli-task-probe' }])) }[name];
       await callAgentTool(app, name, { probe: name, ...probe });
@@ -555,6 +558,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'model-usage', 'role-work-claim', 'agent-score-card', 'task-run-control', 'standing-assignment', 'service-register',
     'workflow-propose', 'workflow-index', 'workflow-read', 'workflow-recordRun',
     'surfaces-list', 'surfaces-pause', 'surfaces-resume',
+    'delegated-send',
     'read-task-preferences',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',

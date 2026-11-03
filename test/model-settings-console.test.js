@@ -187,9 +187,10 @@ test('the real console refuses a save from outside the local process boundary an
   assert.deepEqual(listed.roles.map(role => role.trust?.reason ?? null), [null, null, null, 'session_answer']);
 });
 
-test('no MCP or Agent tool entry reaches the save, and the catalog marks it local_user_only', () => {
+// rec#11 D-81: an FLA saves it for the person only after they turn model_settings on.
+test('no MCP or Agent tool entry reaches the save, and the catalog delegates it only when turned on', () => {
   const entry = agentInterfaceCatalog().uiMutationParity.find(item => item.route === 'PUT /api/model-backends/roles/:role');
-  assert.equal(entry?.access, 'local_user_only');
+  assert.deepEqual([entry?.access, entry?.category], ['agent_delegable_off', 'model_settings']);
   const save = join(ROOT, 'src/model-backends/role-settings.js');
   for (const start of ['src/mcp-server.js', 'src/agent-tools.js', 'src/mcp/create-mcp-server.js']) {
     assert.equal(reachableModules(join(ROOT, start)).has(save), false, start);

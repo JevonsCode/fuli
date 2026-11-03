@@ -359,7 +359,8 @@ test('only the local console can undo, and no Agent tool reaches the undo channe
   const entry = agentInterfaceCatalog().uiMutationParity.find(item => item.route === 'POST /api/judgment/undo');
   assert.equal(entry.access, 'local_user_only');
   const trustEntry = agentInterfaceCatalog().uiMutationParity.find(item => item.route === 'PUT /api/model-backends/roles/:role/trust');
-  assert.equal(trustEntry.access, 'local_user_only');
+  // rec#11 D-81: an FLA switches it for the person only after they turn model_settings on.
+  assert.deepEqual([trustEntry.access, trustEntry.category], ['agent_delegable_off', 'model_settings']);
   const request = Object.assign(Readable.from([Buffer.from('{}')]), { method: 'POST',
     headers: { 'content-type': 'application/json' }, socket: { remoteAddress: '192.168.1.20' } });
   const sent = {};

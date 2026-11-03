@@ -90,7 +90,7 @@ test('a move is made only on this computer and never by an Agent tool', async ()
   assert.equal(calls.length, 0);
   const entry = agentInterfaceCatalog().uiMutationParity
     .find(({ route }) => route === 'POST /api/personal-projects/:projectId/parent');
-  assert.equal(entry.access, 'local_user_only');
+  assert.equal(entry.access, 'agent_delegable', 'rec#11 D-81: only through the console delegation gate');
   assert.deepEqual(listAgentTools().filter(({ name }) => /move_.*project|project_parent/.test(name)), []);
   const writing = ['src/project-hierarchy/console-port.js', 'src/http/project-hierarchy-api-router.js']
     .map((path) => join(ROOT, path));

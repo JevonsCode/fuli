@@ -29,18 +29,22 @@ const MANIFEST = Object.freeze({
 });
 const FILES = Object.freeze([{ path: 'web/index.html', content: '<h1>Synthetic dispatch log</h1>' }]);
 const LOCAL_ROUTES = [
-  'POST /api/agent-apps/:appId/approve',
-  'POST /api/agent-apps/:appId/disable',
-  'POST /api/agent-apps/:appId/rollback',
   'POST /api/agent-apps/:appId/delete-code',
   'POST /api/agent-apps/:appId/data-deletion',
   'POST /api/agent-apps/:appId/delete-data',
+  'POST /api/agent-apps/:appId/confirm',
+  'POST /api/agent-apps/:appId/reveal-export'
+];
+// rec#11 D-81: an FLA runs these for the person with run_delegated_action
+// while the services_apps permission is on; no Agent tool of their own.
+const DELEGABLE_ROUTES = [
+  'POST /api/agent-apps/:appId/approve',
+  'POST /api/agent-apps/:appId/disable',
+  'POST /api/agent-apps/:appId/rollback',
   'POST /api/agent-apps/:appId/start',
   'POST /api/agent-apps/:appId/stop',
   'POST /api/agent-apps/:appId/restart',
-  'POST /api/agent-apps/:appId/confirm',
-  'POST /api/agent-apps/:appId/export',
-  'POST /api/agent-apps/:appId/reveal-export'
+  'POST /api/agent-apps/:appId/export'
 ];
 
 function fixture(t) {
@@ -92,6 +96,10 @@ test('the Agent tool submits and lists app versions but can never approve or cha
   for (const route of LOCAL_ROUTES) {
     assert.equal(byRoute.get(route)?.access, 'local_user_only', route);
     assert.match(byRoute.get(route).reason, /local/i, route);
+  }
+  for (const route of DELEGABLE_ROUTES) {
+    assert.deepEqual([byRoute.get(route)?.access, byRoute.get(route)?.category, byRoute.get(route)?.toolName],
+      ['agent_delegable', 'services_apps', undefined], route);
   }
 });
 

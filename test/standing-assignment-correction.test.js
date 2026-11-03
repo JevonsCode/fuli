@@ -303,6 +303,7 @@ test('the console lists and changes assignments on this computer only, at the re
 
   const catalog = new Map(agentInterfaceCatalog().uiMutationParity.map(entry => [entry.route, entry.access]));
   for (const action of ['retire', 'reassign', 'terms']) {
-    assert.equal(catalog.get(`POST /api/standing-assignments/:assignmentId/${action}`), 'local_user_only');
+    // rec#11 D-81: an FLA makes it for the person only through the console's delegation gate.
+    assert.equal(catalog.get(`POST /api/standing-assignments/:assignmentId/${action}`), 'agent_delegable');
   }
 });

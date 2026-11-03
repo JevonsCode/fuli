@@ -101,7 +101,7 @@ test('only the person marks a block cleared: on this computer, never by an Agent
   assert.equal(calls.length, 0);
   const entry = agentInterfaceCatalog().uiMutationParity
     .find(({ route }) => route === 'POST /api/project-agent-tasks/:taskId/blocker/clear');
-  assert.equal(entry.access, 'local_user_only');
+  assert.equal(entry.access, 'agent_delegable', 'rec#11 D-81: only through the console delegation gate');
   assert.deepEqual(listAgentTools().filter(({ name }) => /unblock|blocker/.test(name)), []);
   // The Agent's own status report cannot claim the person's clear either.
   const activity = listAgentTools().find(({ name }) => name === 'record_project_agent_task_activity');

@@ -112,7 +112,7 @@ test('a migration is confirmed only on this computer and never by an Agent tool'
   assert.equal(remote.body.code, 'local_user_only');
   assert.equal(calls.length, 0);
   const entry = agentInterfaceCatalog().uiMutationParity.find(item => item.route === 'POST /api/knowledge/session-migration');
-  assert.equal(entry.access, 'local_user_only');
+  assert.equal(entry.access, 'agent_delegable', 'rec#11 D-81: only through the console delegation gate');
   assert.ok(!JSON.stringify(listAgentTools()).includes('session-migration'));
   // No MCP or Agent tool module reaches the port, the router or the channel that posts it.
   const writing = ['src/knowledge-scope/console-port.js', 'src/http/knowledge-scope-api-router.js',

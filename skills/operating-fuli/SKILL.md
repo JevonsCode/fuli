@@ -10,7 +10,7 @@ Operate FULI through its structured Agent interfaces. Treat the UI and Agent too
 ## Required workflow
 
 1. Establish the exact scope from the current task. Resolve real `personalSpaceId`, `personalProjectId`, item IDs, and versions through read tools. Never guess an identifier or infer one from a display name.
-2. Call `list_agent_interfaces` before the first mutation. Use its catalog to determine whether the UI capability is `agent` accessible or intentionally `local_user_only`.
+2. Call `list_agent_interfaces` before the first mutation. Use its catalog to determine whether the UI capability is `agent` accessible (a named tool), `agent_delegable` / `agent_delegable_off` (made for the person with `run_delegated_action`, see below), or intentionally `local_user_only`.
 3. Inspect the exact input schema for the selected tool. Prefer one domain-specific tool over generic HTTP, shell, database, or browser access.
 4. Read the current record immediately before changing it. Before `upsert_personal_project`, call `list_personal_projects` with the exact `projectId` to read its full profile and check that the result is not truncated. Preserve fields the user did not ask to change. Profile text fields a person wrote (`profile.authors` kind `person` or `both`) are never overwritten by an Agent; FULI returns them in `refused_fields`, so report them instead of retrying.
 5. Check the safety boundary below. Stop if the action needs missing user authority or is marked `local_user_only`.
@@ -22,17 +22,26 @@ If an expected capability is absent from `list_agent_interfaces`, report an Agen
 ## Safety boundary
 
 - Never enable or weaken Agent access through an Agent tool. The Agent-access kill switch remains a local-user control.
-- Never change device/runtime settings or complete human confirmation queues on the user's behalf when the catalog marks them `local_user_only`.
+- Never complete a change the catalog marks `local_user_only`, whatever the person's AI permissions say.
 - Never mark a Jefa work item complete through its human-acceptance workbench route; use an Agent task-update tool only for non-acceptance workflow changes. A custom column that stands for `done` is the same acceptance: never move a task there.
 - Set a project's own project manager or board (custom columns, external board link) only on the person's request; a project with an external board is tracked at its link, so do not mirror its tasks on Jefa's board.
 - By default there is no approval step: the person sets direction and you carry it out, keeping each action traceable and reversible (re-read, report, undo) instead of asking first. Add a confirmation only where the person said they must confirm it.
 - Require explicit user authorization for deletes, publication, destructive conflict decisions, or changes that affect another project. An unambiguous request already authorizes that exact action; do not ask again unless the target or consequences remain unclear.
 - Use environment-variable references for connector secrets. Never request, print, store, or copy secret values into knowledge records, logs, Skill files, or tool arguments that expect only a reference.
 - Stay inside the exact FULI workspace and registered project scopes. Do not use home-directory-wide discovery as a fallback.
-- Record every long-running server you start with `report_agent_service` and update it when you stop it. Stopping one service through FULI, deleting its record and clearing its log are the person's actions in the console.
+- Record every long-running server you start with `report_agent_service` and update it when you stop it. Stopping one service through FULI, deleting its record and clearing its log go through `run_delegated_action` (services_apps permission).
 - All FLAs' work surfaces (Agent services, Agent apps, workflows, workbenches): `list_work_surfaces` finds them by FLA, project, kind, state or text. When the person asks to pause all (or all matching), call `pause_work_surfaces` with the same filter and keep its `pauseId`; `resume_work_surfaces` reopens exactly what that pause turned off and leaves what was already off. Only Agent services and Agent apps can be paused; workflows and workbenches are listed only. FULI does not restart an Agent service: a `restart_required` result means its owner restarts it with the returned command. Report each item's result as returned; never call a `failed` or `refused` item paused or resumed.
-- Your own workflows: call `list_agent_workflows` first and `read_agent_workflow` only for the one the task needs. `propose_agent_workflow` (a repeated `list_workflow_candidates` candidate or your own steps) only proposes; the person alone confirms, rejects or retires it on your home page. Never follow a workflow that is not active, never describe a proposal as active, and record a run you did with `record_agent_workflow_run`.
+- Your own workflows: call `list_agent_workflows` first and `read_agent_workflow` only for the one the task needs. `propose_agent_workflow` (a repeated `list_workflow_candidates` candidate or your own steps) only proposes; it waits for a decision: the person's on your home page, or one recorded for them with `run_delegated_action` (organisation permission) when they ask for it. Never follow a workflow that is not active, never describe a proposal as active, and record a run you did with `record_agent_workflow_run`.
 - Browser automation may be used only for optional visual verification after a structured operation. It must not be the mechanism that changes FULI data.
+
+## Changes made for the person (AI permissions)
+
+Console changes without their own tool are `agent_delegable` (on by default) or `agent_delegable_off` (off until the person turns the category on) in `list_agent_interfaces`. Make one only when the person asks or the task needs it: call `run_delegated_action` with the current `taskContextToken`, the exact catalog `route`, its `params`, the JSON `body` the console page sends and a short `reason`. The console checks the person's switch, runs the change and records who (FLA, task), what and the entry's `undo`; put the returned `delegation_receipt.markdown` in your reply.
+
+- On by default: settings (runtime settings, recall, session links, one-click update, client connections, doctor repair, confirming capture changes), organisation (occupations, an FLA's occupation and look, workflow decisions, standing assignments, marking a block cleared), projects (hierarchy, Astro's project proposals, conversation owners, temporary-project moves, one item's scope, tag governance), services and apps (stop services, delete records, clear logs; start, stop, restart, approve, roll back, disable, export apps), roundtable board/chat mode.
+- Off until the person turns it on: LAN roundtable (listen, pair, share, revoke, leave), built-in Agent model settings (model, egress, budget, 「只给建议」), public project visibility.
+- Never delegable: permanent knowledge deletion and its preview/export, data-format migration apply/rollback/prune/restore, deleting an Agent app's code or data, the Agent-access switch, AI permissions themselves, model API keys.
+- The person's own words stay theirs: their roundtable messages, replies to your attention requests, Tonborg votes and reasons, preference-conflict rulings, batch confirmation, Jefa acceptance. Where your own tool does the same thing, it is recorded as agent-confirmed, never as the person.
 
 ## Selecting tools
 
@@ -52,6 +61,7 @@ Read each returned worker's `context.agent.profile.allowedClients` and `executor
 
 - On revision or timestamp conflict, re-read, explain what changed, and recompute the intended patch. Do not blindly retry stale input.
 - On permission or `local_user_only` errors, identify the exact local UI action required. Do not bypass the boundary.
+- On `delegation_category_off`, show the returned message: the person took that category back and turns it on in 设置 › AI 权限 (Settings › AI permissions). Do not retry through another route.
 - On partial external sync, preserve the binding, report per-target/source failures, and let the user choose whether to retry.
 - On an unknown tool or missing parity mapping, record the missing capability as a product defect instead of substituting browser automation.
 

@@ -20,6 +20,7 @@ import { handleAgentServicesRequest } from './agent-services-api-router.js';
 import { handleAgentWorkflowsRequest } from './agent-workflows-api-router.js';
 import { handleAgentAvatarsRequest } from './agent-avatars-api-router.js';
 import { handleWorkSurfacesRequest } from './work-surfaces-api-router.js';
+import { handleAgentDelegationRequest } from './agent-delegation-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
@@ -52,12 +53,14 @@ export async function handleApiRequest({
   modelSecrets = null,
   readModelEvaluation = null,
   judgmentUndo = null,
-  clientLinks = null
+  clientLinks = null,
+  agentDelegation = null
 }) {
   const url = new URL(request.url, 'http://127.0.0.1');
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
   if (await handleModelKeyRequest({ request, response, url, secrets: modelSecrets })) return true;
   if (await handleClientLinksRequest({ request, response, url, clientLinks })) return true;
+  if (await handleAgentDelegationRequest({ request, response, url, delegation: agentDelegation })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
   const modelBackendRequest = () => handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,

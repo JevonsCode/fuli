@@ -263,7 +263,8 @@ test('the person changes and governs tags only on this computer, on the human-re
   const catalog = agentInterfaceCatalog().uiMutationParity;
   assert.deepEqual(catalog.find(({ route }) => route === 'POST /api/knowledge-tags'),
     { route: 'POST /api/knowledge-tags', access: 'agent', toolName: 'change_knowledge_tags' });
-  assert.equal(catalog.find(({ route }) => route === 'POST /api/knowledge-tags/governance').access, 'local_user_only');
+  // rec#11 D-81: an FLA applies it for the person only through the console's delegation gate.
+  assert.equal(catalog.find(({ route }) => route === 'POST /api/knowledge-tags/governance').access, 'agent_delegable');
   // No MCP or Agent tool module reaches the port, the router or the channel that posts it.
   const writing = ['src/knowledge-tags/console-port.js', 'src/http/knowledge-tags-api-router.js',
     'src/graphiti/human-review-channel.js'].map(path => join(ROOT, path));

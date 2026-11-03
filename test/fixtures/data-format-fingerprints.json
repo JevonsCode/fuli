@@ -75,6 +75,10 @@
     "work-surfaces": {
       "version": 1,
       "fingerprint": "4972c8b13efb1c57a3f5f2388d408687ba8ced3629921b0dadd46e2b65531189"
+    },
+    "agent-delegation": {
+      "version": 1,
+      "fingerprint": "450e1b997fc2280031c3b815210d2bc1ed5b0f0c56e7f16e66b9a79efb056e7e"
     }
   }
 }

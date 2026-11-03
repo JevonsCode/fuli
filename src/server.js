@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
 import { handleAgentAppPageRequest } from './http/agent-app-page-router.js';
 import { handleApiRequest } from './http/api-router.js';
+import { handleDelegatedRequest } from './http/agent-delegation-gate.js';
 import { mapHttpError } from './http/error-mapping.js';
 import { isCrossSiteNavigation, localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';
 import { sendJson } from './http/response.js';
@@ -43,6 +44,7 @@ import { createModelRoleSettings } from './model-backends/role-settings.js';
 import { createModelSecretStore } from './model-backends/secret-store.js';
 import { latestEvaluation } from './model-backends/evaluation-record.js';
 import { createClientLinksRegistry } from './client-links/registry.js';
+import { createAgentDelegation } from './agent-delegation/port.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -142,6 +144,9 @@ export async function createServer(options = {}) {
   const clientLinks = options.clientLinks ?? (localOptions.runtimeConfigPath
     ? createClientLinksRegistry({ statePath: resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).clientLinksPath })
     : null);
+  // What the person lets FLAs change for them, and each change made (rec#11 D-81).
+  const agentDelegation = options.agentDelegation ?? (localOptions.runtimeConfigPath
+    ? createAgentDelegation(dirname(localOptions.runtimeConfigPath)) : null);
   knowledgeHardDelete?.reconcile().catch((error) => {
     console.warn(`Permanent deletes were not reconciled: ${error?.message ?? error}`);
   });
@@ -156,7 +161,7 @@ export async function createServer(options = {}) {
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopClientLinkUpdates(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => runtime.close(),
+      for (const close of [() => stopJudgment(), () => stopClientLinkUpdates(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
         () => releaseDataDirectory()]) {
         try {
           const pending = close();
@@ -239,6 +244,7 @@ export async function createServer(options = {}) {
       readModelEvaluation,
       judgmentUndo,
       clientLinks,
+      agentDelegation,
       authority,
       lanAuthorities: allowedLanAuthorities,
       lanAccessToken: lanToken
@@ -339,6 +345,7 @@ async function handleRequest({
   readModelEvaluation,
   judgmentUndo,
   clientLinks,
+  agentDelegation,
   authority,
   lanAuthorities,
   lanAccessToken
@@ -358,28 +365,32 @@ async function handleRequest({
     serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
     return;
   }
-  if (await handleApiRequest({
-    request,
-    response,
-    app,
-    system,
-    externalKnowledge,
-    connectedKnowledge,
-    peer,
-    dataFormats,
-    dataFormatMigrations,
-    knowledgeHardDelete,
-    knowledgeScope,
-    projectHierarchy,
-    taskBlockers,
-    knowledgeOwnerReads,
-    knowledgeTags,
-    modelRoleSettings,
-    modelSecrets,
-    readModelEvaluation,
-    judgmentUndo,
-    clientLinks
-  })) return;
+  // An FLA's change for the person passes the delegation gate first (rec#11 D-81).
+  if (await handleDelegatedRequest({ request, response, delegation: agentDelegation,
+    agentAccessEnabled: () => app.getAgentAccessPolicy?.().enabled !== false,
+    handle: () => handleApiRequest({
+      request,
+      response,
+      app,
+      system,
+      externalKnowledge,
+      connectedKnowledge,
+      peer,
+      dataFormats,
+      dataFormatMigrations,
+      knowledgeHardDelete,
+      knowledgeScope,
+      projectHierarchy,
+      taskBlockers,
+      knowledgeOwnerReads,
+      knowledgeTags,
+      modelRoleSettings,
+      modelSecrets,
+      readModelEvaluation,
+      judgmentUndo,
+      clientLinks,
+      agentDelegation
+    }) })) return;
   serveStatic(new URL(request.url, 'http://127.0.0.1').pathname, response);
 }
 

@@ -163,10 +163,12 @@ test('a long receipt\'s full list reads every episode it links, in the Provider\
   assert.equal(none.status, 400);
 });
 
-test('scope changes are a local person\'s decision, never an Agent tool', () => {
+// rec#11 D-81: no Agent tool of its own; an FLA makes it for the person only
+// under the projects permission, through the console's delegation gate.
+test('scope changes are the person\'s, delegable to an FLA, never an Agent tool', () => {
   const entry = agentInterfaceCatalog().uiMutationParity
     .find(item => item.route === 'POST /api/knowledge/:itemKind/:itemId/scope');
-  assert.equal(entry.access, 'local_user_only');
+  assert.deepEqual([entry.access, entry.category, entry.toolName], ['agent_delegable', 'projects', undefined]);
 });
 
 test('rec#11 D-22.1: a scope change from another computer is refused before the Provider', async () => {

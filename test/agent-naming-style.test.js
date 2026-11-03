@@ -88,7 +88,8 @@ test('each schema that creates an Agent points its displayName at the style, whi
 
   const catalog = agentInterfaceCatalog();
   const settingsWrite = catalog.uiMutationParity.find(({ route }) => route === 'PUT /api/system/settings');
-  assert.equal(settingsWrite.access, 'local_user_only');
+  // rec#11 D-81: an FLA saves it for the person only under the settings permission.
+  assert.deepEqual([settingsWrite.access, settingsWrite.category], ['agent_delegable', 'settings']);
   assert.ok(catalog.readWorkflows.some(({ toolNames }) => toolNames.includes('get_agent_naming_style')));
 
   const row = describeSettings({ settings: { ...DEFAULT_RUNTIME_SETTINGS, agentNamingStyle: STYLE },

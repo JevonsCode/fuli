@@ -8,7 +8,7 @@ export const AGENT_SERVICE_DEFINITIONS = [
   {
     name: 'report_agent_service',
     title: 'WRITE · Record a service you started',
-    description: 'After you start a long-running server (dev server, Node/Python server, anything that listens), register it: address, purpose, pid, command. When you stop or restart it, update it (serviceId; state stopped|running, new pid). Owner comes from the task. Only the person stops services through FULI.',
+    description: 'After you start a long-running server (dev server, Node/Python server, anything that listens), register it: address, purpose, pid, command. When you stop or restart it, update it (serviceId; state stopped|running, new pid). Owner comes from the task. FULI stops one only via run_delegated_action.',
     inputSchema: objectSchema({
       action: enumSchema(['register', 'update']),
       taskContextToken: boundedString(256),
