@@ -155,6 +155,8 @@ class WorkflowCommitDriver:
             return [], None, None  # nothing was permanently deleted (rec#5 C9)
         if 'item.fuli_replaced_by_item_id IS NOT NULL' in query:
             return [], None, None  # no captured entity has later versions (rec#5 C8-3)
+        if 'item.expired_at IS NOT NULL' in query:
+            return [], None, None  # no stated relationship already ended
         if 'HAS_WORKFLOW_CANDIDATE' in query:
             if not self.candidates:
                 return [], None, None
