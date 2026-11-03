@@ -11,6 +11,10 @@ bumps, so two writes that race inside one request cannot both land.
 """
 from fastapi import HTTPException
 
+# Revisions that queue an item for its person, like feedback, and edit
+# nothing: a page open on the item still saves after one.
+EDIT_NEUTRAL_ACTIONS = ('possibly_outdated',)
+
 
 def lock_version(record: dict) -> int:
     return int(record.get('ai_review_lock_version') or 0)
@@ -21,9 +25,16 @@ async def edit_revision(store, space: dict, item_kind: str, item_id: str) -> int
         '''
         MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_KNOWLEDGE_REVISION]->
               (revision:FuliKnowledgeRevision {item_id: $item_id, item_kind: $item_kind})
+        WHERE NOT revision.action IN $neutral
         RETURN count(revision) AS revisions
-        ''', space_id=space['id'], item_id=item_id, item_kind=item_kind, routing_='r')
+        ''', space_id=space['id'], item_id=item_id, item_kind=item_kind,
+        neutral=list(EDIT_NEUTRAL_ACTIONS), routing_='r')
     return int(records[0]['revisions']) if records else 0
+
+
+def edit_revision_of(revisions) -> int:
+    """edit_revision from revisions already read."""
+    return sum(revision.action not in EDIT_NEUTRAL_ACTIONS for revision in revisions)
 
 
 async def require_edit_revision(store, space: dict, item_kind: str, item_id: str,

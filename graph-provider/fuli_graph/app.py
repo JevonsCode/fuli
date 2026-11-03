@@ -10,6 +10,7 @@ from .auth import (
     matches_human_review_token,
     matches_workflow_observation_token,
 )
+from .client_version_note import install_client_version_note
 from .config import Settings, get_settings
 from .temporary_project_scope import TemporaryProjectEnsure, ensure_temporary_project
 from .publication_submission_models import PublicationSubmissionDecision
@@ -201,6 +202,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.store = store
     application.state.settings = resolved_settings
+    install_client_version_note(application)
 
     @application.exception_handler(GraphFormatUnavailable)
     async def graph_format_unavailable(_request, error: GraphFormatUnavailable):

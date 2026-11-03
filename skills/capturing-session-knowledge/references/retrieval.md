@@ -17,6 +17,10 @@ Use `search_connected_knowledge` for a project-bound third-party source or expli
 public project. Keep its source sets separate and obey the project's conflict policy;
 `agent_decide` affects only the current response and never mutates or confirms a source.
 
+Every search and the automatic recall answer with current versions only. Pass
+`includeHistorical: true` only when the task is about what used to hold (an earlier port, a
+previous owner); each historical record then carries `invalid_at` and is never the current answer.
+
 Search when prior durable context can materially improve the task.
 Before saying that a stable fact is unknown or asking the user to provide it again, search
 Fuli if it may have been learned earlier. Strong triggers include URLs, deployment routes,
@@ -109,7 +113,11 @@ wins, while equal-layer conflicting instructions remain deferred and weight cann
 
 After a retrieved personal item materially affects the final answer or a completed action, call
 `record_knowledge_usage` once for that task and item with `cited` or `applied`. Do not record
-retrieval, inspection, automatic preference injection, or unused context. Usage evidence can
+retrieval, inspection, automatic preference injection, or unused context. For an item the
+automatic `task_knowledge_recall` delivered, report the same material use in
+`checkpoint_task_knowledge` `knowledgeUsage`: the entry recall orders later candidates partly by
+how often a recalled item was used once shown. That order shift is bounded, never hides or drops an
+item, and never changes confirmation; so do not report use you did not make. Usage evidence can
 promote only to `agent_confirmed`; it never substitutes for human confirmation or makes an item
 eligible for public publication. Use the current user task's caller-stable identifier as
 `taskId` and reuse it on retries; never generate another ID to recount the same task.

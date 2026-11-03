@@ -129,7 +129,16 @@ export function taskCaptureReceipt(scope, input, result) {
   }
   return { scope, personal_project_id: input.personalProjectId, status: result.status,
     episode_id: saved ? result.episode_id : null,
-    entity_ids: saved ? result.entity_ids : [], relationship_ids: saved ? result.relationship_ids : [] };
+    entity_ids: saved ? result.entity_ids : [], relationship_ids: saved ? result.relationship_ids : [],
+    ...settledOlderKnowledge(result) };
+}
+
+// Older knowledge this capture replaced (a confirmed keyed value) or may have
+// made stale (still current, waiting for the person). Named only when present.
+function settledOlderKnowledge(result) {
+  return Object.fromEntries(['superseded', 'possibly_outdated']
+    .filter(key => Array.isArray(result?.[key]) && result[key].length)
+    .map(key => [key, result[key].map(({ item_kind, item_id }) => ({ item_kind, item_id }))]));
 }
 
 // A capture sent without routing is saved where its input names: the task's

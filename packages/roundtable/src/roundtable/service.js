@@ -6,6 +6,7 @@ import { createAgentChat } from './chat.js';
 import { createGroupDiscussion } from './group-discussion.js';
 import { createPersonConversation } from './person-conversation.js';
 import { ATTENTION_REPLIES_GUIDANCE, createAttentionInbox } from './attention-inbox.js';
+import { createReplyInbox } from './reply-inbox.js';
 import { agentDiscoveryProfile, matchesAgentDiscovery } from './discovery.js';
 
 import { RoundtableError } from '../errors.js';
@@ -276,6 +277,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         lifetimeSeconds: lifetime }),
       replyTo: { agentId: from.agent?.agentId, name: ask.from_name, client: from.client, session: from.session } });
     if (woken.status !== 'answered') return { ...queued(thread, ask, target, woken.reason), ...cleanupView(woken.cleanup) };
+    replyInbox.handOver(woken.reply, 'message_agent');
     const observation = await observeReturnedMemory(host, store, { ask, reply: woken.reply, from, taskContextToken });
     return { status: 'answered', threadId: thread.id, messageId: ask.id, recipient: { agentId: target.agentId, name: label(target) },
       ...(observation ? { memoryObservation: observation } : {}),
@@ -303,7 +305,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       store.updateMessage(ask.id, { status: 'answered', via });
       const reply = store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent',
         inReplyTo: ask.id, via, from: { agentId: target.agentId, name: label(target), client: delivery.client,
-          session: answer.sessionId }, to: replyTo });
+          session: answer.sessionId }, to: replyTo, delivery: replyInbox.pendingFor(replyTo) });
       return { status: 'answered', reply, via };
     } catch (error) {
       finishWake(ask, error);
@@ -380,7 +382,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       throw error;
     }
     if (wait) state = await peer.waitFor(ask.id, Math.min(Math.max(timeoutSeconds, 30), 900) * 1000, { signal });
-    return remoteView(applyRemote(ask.id, state));
+    return handedOver(remoteView(applyRemote(ask.id, state)), 'message_agent');
   }
 
   function applyRemote(messageId, state) {
@@ -389,9 +391,10 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const status = state.status === 'queued' ? 'sent' : state.status;
     if (status === 'answered' && state.reply) {
       store.updateMessage(ask.id, { status: 'answered', via: state.via ?? 'peer' });
+      const to = { agentId: ask.from_agent, name: ask.from_name, client: ask.from_client, session: ask.from_session };
       store.appendMessage(ask.thread_id, { id: idFactory(), kind: 'reply', body: state.reply, status: 'sent', inReplyTo: ask.id,
         via: state.via ?? 'peer', from: { agentId: ask.to_agent, name: ask.to_name, client: state.via?.split(':')[0] ?? null },
-        to: { agentId: ask.from_agent, name: ask.from_name, client: ask.from_client, session: ask.from_session } });
+        to, delivery: replyInbox.pendingFor(to) });
     } else if (status !== ask.status) {
       store.updateMessage(ask.id, { status, error: state.error ?? null });
     }
@@ -474,6 +477,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     if (![ask.from_agent, ask.to_agent].includes(me.agent.agentId)) throw validation('No such message for this Agent');
     const result = await statusOf(ask);
     const reply = store.messages(ask.thread_id).find(message => message.in_reply_to === ask.id);
+    if (ask.from_agent === me.agent.agentId) replyInbox.handOver(reply, 'get_agent_message_status');
     const observation = await observeReturnedMemory(host, store, { ask: store.getMessage(ask.id), reply, from: me, taskContextToken });
     return { ...result, ...(observation ? { memoryObservation: observation } : {}) };
   }
@@ -531,9 +535,12 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const me = await sender({ taskContextToken, sourceApplication });
     if (!me.agent) return { messages: [] };
     const attentionReplies = me.projectId ? attentionInbox.read(me.agent.agentId, me.projectId) : [];
+    const { replies, more } = me.projectId ? replyInbox.read(me.agent.agentId, me.projectId) : { replies: [] };
     return { messages: store.pendingFor(spaceId(), me.agent.agentId)
       .filter(message => messageProject(message) === me.projectId).map(inboxItem),
       guidance: 'Answer each with reply_agent_message.',
+      ...(replies.length ? { replies, repliesGuidance: `Answers to asks you sent, each returned once.${more
+        ? ' More are waiting: call read_agent_messages again.' : ''}` } : {}),
       ...(attentionReplies.length ? { attentionReplies, attentionRepliesGuidance: ATTENTION_REPLIES_GUIDANCE } : {}) };
   }
 
@@ -548,9 +555,10 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     if (ask.status === 'answered') throw validation('This message was already answered');
     if (ask.from_agent?.startsWith('peer:')) throw validation('A remote device message is answered by its delivery, not from the inbox');
     store.updateMessage(ask.id, { status: 'answered', via: `${me.client}:inbox` });
+    const to = { agentId: ask.from_agent, name: ask.from_name, client: ask.from_client, session: ask.from_session };
     store.appendMessage(ask.thread_id, { id: idFactory(), kind: 'reply', body, status: 'sent', inReplyTo: ask.id,
       via: `${me.client}:inbox`, from: { agentId: me.agent.agentId, name: label(me.agent), client: me.client, session: me.session },
-      to: { agentId: ask.from_agent, name: ask.from_name, client: ask.from_client, session: ask.from_session } });
+      to, delivery: replyInbox.pendingFor(to) });
     return { status: 'sent', threadId: ask.thread_id };
   }
 
@@ -602,11 +610,15 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     }) };
   }
 
-  function thread({ threadId }) {
+  // Whole message bodies, oldest first. after/limit page by seq; nextAfter says where the next page starts.
+  function thread({ threadId, after = 0, limit = Infinity }) {
     const record = store.getThread(threadId);
     if (!record || record.space_id !== spaceId()) throw validation('Thread not found');
+    const rest = store.messages(record.id).filter((message) => message.seq > after);
+    const page = rest.slice(0, limit);
     return { id: record.id, subject: record.subject, projectId: record.project_id, createdAt: record.created_at,
-      messages: store.messages(record.id).map((message) => ({ id: message.id, kind: message.kind, status: message.status,
+      ...(rest.length > page.length ? { nextAfter: page.at(-1).seq } : {}),
+      messages: page.map((message) => ({ id: message.id, seq: message.seq, kind: message.kind, status: message.status,
         body: message.body, inReplyTo: message.in_reply_to, via: message.via, error: message.error,
         ...cleanupView(storedCleanup(message)), createdAt: message.created_at,
         from: { agentId: message.from_agent, name: message.from_name, client: message.from_client },
@@ -622,6 +634,12 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
 
   const messageProject = message => message.target_project_id ?? store.getThread(message.thread_id)?.project_id ?? null;
   const attentionInbox = createAttentionInbox({ store, spaceId });
+  const replyInbox = createReplyInbox({ store, spaceId });
+  // A reply returned to the asker directly is not delivered again from its inbox.
+  const handedOver = (view, via) => {
+    if (view.reply) replyInbox.handOver(store.messages(view.threadId).find(message => message.in_reply_to === view.messageId), via);
+    return view;
+  };
   // False when an earlier run of this Agent may still be running (a cleanup hold).
   const waitUntilIdle = async (agentId, signal) => {
     const state = await waitForChatChange(() => store.executionState(spaceId(), agentId),
@@ -630,7 +648,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   };
   const wakeClientsFor = agent => (agent.profile.allowedClients ?? []).filter(client => WAKE_CLIENTS.includes(client) && clientAvailable(client));
   const canWake = agent => wakeClientsFor(agent).length > 0;
-  const { memberChat, ...chat } = createAgentChat({ host, peer, store, agents, idFactory, messageAgent, attentionInbox, waitUntilIdle, canWake });
+  const { memberChat, ...chat } = createAgentChat({ host, peer, store, agents, idFactory, messageAgent, attentionInbox, waitUntilIdle, canWake,
+    isThread: id => store.getThread(id)?.space_id === spaceId() });
   // A discussion member that did not answer keeps no ask in its inbox.
   const withdraw = messageId => {
     const ask = store.getMessage(messageId);
@@ -659,6 +678,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       .filter(message => projectId === undefined || messageProject(message) === projectId).map(inboxItem),
     deliverAttentionReply: attentionInbox.deliver,
     attentionReplies: attentionInbox.taskEntry,
+    agentReplies: replyInbox.announce,
     ownerThread,
     ownerSend: async input => ownerThread({ threadId: await person.send(input) }),
     ownerSetMode: async input => ownerThread({ threadId: await person.setMode(input) }),

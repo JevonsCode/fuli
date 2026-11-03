@@ -5,6 +5,7 @@ import {
   GraphitiProviderClient,
   ProviderRequestError
 } from '../src/graphiti/provider-client.js';
+import { FULI_VERSION } from '../src/package-metadata.js';
 
 test('hard-deletion watermark uses ordinary auth and sends only the personal space', async () => {
   const calls = [];
@@ -18,6 +19,8 @@ test('hard-deletion watermark uses ordinary auth and sends only the personal spa
   assert.deepEqual(JSON.parse(calls[0].options.body), { personal_space_id: 'synthetic-space' });
   assert.equal(calls[0].options.headers.authorization, 'Bearer synthetic-token');
   assert.equal(calls[0].options.headers['x-fuli-human-review-token'], undefined);
+  // The provider names an older connection by it (rec#74).
+  assert.equal(calls[0].options.headers['x-fuli-client-version'], FULI_VERSION);
 });
 
 test('conversation triage reaches every Provider operation, decline and reopen included', async () => {

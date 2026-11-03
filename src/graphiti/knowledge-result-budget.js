@@ -38,9 +38,13 @@ function marker(value, consoleUrl) {
   return createFuliSourceMarker({ ...value, consoleUrl, projectScopePriority: 'strict' });
 }
 
+// Automatic recall answers with current knowledge only: a historical version
+// (one with invalid_at) is never delivered, whatever the search returned.
+const current = item => item.invalid_at == null;
+
 export function budgetAutomaticRecall(value, { consoleUrl, compare }) {
-  const entries = [...value.facts.map(item => ({ kind: 'facts', item })),
-    ...value.entities.map(item => ({ kind: 'entities', item }))].sort((a, b) => compare(a.item, b.item));
+  const entries = [...value.facts.filter(current).map(item => ({ kind: 'facts', item })),
+    ...value.entities.filter(current).map(item => ({ kind: 'entities', item }))].sort((a, b) => compare(a.item, b.item));
   const selected = [];
   const render = () => {
     const facts = selected.filter(entry => entry.kind === 'facts').map(entry => entry.view);
@@ -207,11 +211,14 @@ function pageKnowledgeSearch(value, { cursor, context, consoleUrl, toolName, lim
   return result;
 }
 
+// A historical version keeps its end date in every preview, so it is never
+// read as current; a current one spends no bytes saying so.
 function identityPreview(item) {
-  return Object.fromEntries(['id', 'space_id', 'scope', 'key', 'defined_project_id',
+  return { ...Object.fromEntries(['id', 'space_id', 'scope', 'key', 'defined_project_id',
     'inherited_from_project_id', 'scope_distance', 'confirmation_status', 'score',
     'name', 'type', 'source_entity', 'target_entity', 'relationship', 'fact', 'summary', 'source_uris']
-    .filter(key => item[key] !== undefined).map(key => [key, item[key]]));
+    .filter(key => item[key] !== undefined).map(key => [key, item[key]])),
+  ...(item.invalid_at ? { invalid_at: item.invalid_at } : {}) };
 }
 
 // Fields every query group shares move to the top level once; a field that
