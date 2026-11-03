@@ -151,6 +151,7 @@ test('task-only employee captures project candidates without writing long-term A
     config: { personal: { spaceId: 'space-a' } },
     getCapturePolicy: () => ({ enabled: true }),
     validateCaptureSessionKnowledge: value => calls.push(['validate', value]),
+    preflightPersonalKnowledgeCaptures: async values => { calls.push(['preflight', values]); return { status: 'validated', count: values.length }; },
     captureSessionKnowledge: async value => { calls.push(['capture', value]); return { status: 'committed' }; },
     taskContextRegistry: {
       context: async () => task,
@@ -164,7 +165,7 @@ test('task-only employee captures project candidates without writing long-term A
     workLog: { status: 'incomplete', summary: 'Candidate captured; executor work not started.' }
   });
   assert.equal(result.status, 'checkpointed');
-  assert.deepEqual(calls.map(([name]) => name), ['validate', 'prepare', 'capture', 'checkpoint']);
+  assert.deepEqual(calls.map(([name]) => name), ['validate', 'preflight', 'prepare', 'capture', 'checkpoint']);
   const capture = calls.find(([name]) => name === 'capture')[1];
   assert.equal(capture.personalProjectId, task.personalProjectId);
   assert.equal(capture.projectAgentId, null);

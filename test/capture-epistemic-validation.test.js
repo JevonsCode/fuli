@@ -329,6 +329,28 @@ test('legacy capture keeps its Agent scope and retain_nothing records only the r
   assert.equal(empty.registry.context(empty.task.token, 'codex').checkpoint.disposition, 'retain_nothing');
 });
 
+// rec#79: a legacy capture the Provider rejects (confirmedBy without
+// confirmedAt) must fail before the token is bound, so corrected input saves.
+test('a legacy capture the Provider rejects leaves the task free to retry with corrected input', async () => {
+  const fixture = checkpointFixture();
+  const { captureRouting, ...input } = fixture.input;
+  const unpaired = capture => capture.entities.some(item => Boolean(item.confirmationBasis?.confirmedBy) !== Boolean(item.confirmationBasis?.confirmedAt));
+  fixture.app.preflightPersonalKnowledgeCaptures = async captures => {
+    if (captures.some(unpaired)) throw new ApplicationError('validation', 'confirmed_by and confirmed_at must be recorded together');
+    return { status: 'validated', count: captures.length };
+  };
+  const rejected = scopedEpisode();
+  rejected.entities[0].confirmationBasis = { ...rejected.entities[0].confirmationBasis, confirmedBy: { kind: 'user', label: 'Synthetic user' } };
+  await assert.rejects(checkpointTaskKnowledge(fixture.app, { ...input, capture: rejected }), /recorded together/);
+  assert.equal(fixture.writes.length, 0);
+  assert.equal(fixture.registry.context(fixture.task.token, 'codex').checkpoint, null);
+  const corrected = structuredClone(rejected);
+  corrected.entities[0].confirmationBasis.confirmedAt = '2026-11-04T01:40:00Z';
+  const saved = await checkpointTaskKnowledge(fixture.app, { ...input, capture: corrected });
+  assert.equal(saved.capture.status, 'committed');
+  assert.equal(fixture.writes.length, 1);
+});
+
 test('scoped capture defaults proposals to pending and reports a disabled policy without saved IDs', async () => {
   const fixture = checkpointFixture();
   delete fixture.input.capture.entities[0].confirmationStatus;
