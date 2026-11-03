@@ -38,6 +38,11 @@ describe('one page width', () => {
     expect(shell).toMatch(/.app-main {[^}]*overflow: clip;/)
   })
 
+  it('always backs the top bar with the dock glass on its own layer, so it never flips between bare and solid', () => {
+    expect(shell).toMatch(/\.app-topbar::before \{[^}]*background: var\(--surface-dock\);[^}]*backdrop-filter: var\(--filter-dock\);/)
+    expect(shell).not.toMatch(/\.app-topbar \{[^}]*backdrop-filter/)
+  })
+
   it('keeps no narrower page measure anywhere', () => {
     const offenders = Object.entries(sources).filter(([, source]) => /--(layout-max|form-measure|form-max|column-max)\b/.test(source))
     expect(offenders.map(([file]) => file)).toEqual([])

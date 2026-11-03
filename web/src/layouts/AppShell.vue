@@ -182,6 +182,15 @@ watchEffect(() => {
 /* Every page has the workbench's width (tokens.css --page-inline); the top bar and the feedback line keep the
    page's edges, adding the room the page's scrollbar takes on the right. */
 .app-topbar { position: relative; z-index: var(--z-popover); flex: 0 0 auto; padding: 12px calc(var(--page-inline) + var(--scrollbar-size)) 8px var(--page-inline); }
+/* The bar is always the dock's frosted glass, never bare: bare, it looked solid where
+   the drifting backdrop was empty and clear where a glow passed under it (Jevons 11-03:
+   有时候透明有时候不透明). The glass lives on its own layer, as the dock's does, so the bar
+   stays no backdrop root or containing block for what it opens. */
+.app-topbar::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: var(--surface-dock); -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock);
+  box-shadow: 0 1px 0 var(--edge-dock);
+}
 /* In the desktop client the bar is the window's title bar: its own minimise, maximise and
    close sit in the top right corner (Windows) and the bar keeps clear of them; on macOS the
    traffic lights take a strip along the top and the brand sits below them (lib/desktop-client.ts). */
