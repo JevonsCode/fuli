@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { liveMcpProcesses, outdatedMcpNotice, outdatedMcpProcesses, registerMcpProcess, withOutdatedMcpNotice } from '../src/mcp/process-registry.js';
+import { liveMcpProcesses, outdatedMcpNotice, outdatedMcpProcesses, registerMcpProcess, TASK_ENTRY_CONTRACT, withOutdatedMcpNotice }
+  from '../src/mcp/process-registry.js';
 
 const fixture = () => {
   const dir = mkdtempSync(join(tmpdir(), 'fuli-mcp-registry-'));
@@ -26,6 +27,51 @@ test('an older server of the same client is reported once per session, others st
     assert.equal(outdatedMcpNotice(config, { sourceApplication: 'codex', version: '0.20.0', sessionId: 'thread-a', isAlive }), null);
     assert.ok(outdatedMcpNotice(config, { sourceApplication: 'codex', version: '0.20.0', sessionId: 'thread-b', isAlive }));
     assert.equal(outdatedMcpNotice(config, { sourceApplication: 'claude_code', version: '0.19.0', sessionId: 'x', isAlive }), null);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a server on an older task-entry contract is named as possibly unable to read the token, and recorded', () => {
+  const { dir, config } = fixture();
+  try {
+    const isAlive = () => true;
+    const clock = () => new Date('2026-11-04T00:00:00.000Z');
+    // A server from before the contract records none.
+    const { recordSession } = registerMcpProcess(config, { sourceApplication: 'claude_code', version: '0.23.0-beta.4', pid: 501,
+      entryContract: null });
+    recordSession('session-old');
+
+    const own = outdatedMcpNotice(config, { sourceApplication: 'claude_code', version: '0.23.0-beta.8', sessionId: 'session-old',
+      isAlive, clock });
+    assert.match(own, /^This session's FULI MCP connection runs FULI 0\.23\.0-beta\.4, older than the installed 0\.23\.0-beta\.8; it may not read this taskContextToken\./);
+    assert.match(own, /restart this session's FULI MCP connection or open a new session/);
+    assert.match(own, /get_collaboration_preferences/);
+    assert.match(own, /本会话的 FULI MCP 连接还是 0\.23\.0-beta\.4/);
+
+    const other = outdatedMcpNotice(config, { sourceApplication: 'claude_code', version: '0.23.0-beta.8', sessionId: 'session-new',
+      isAlive, clock });
+    assert.match(other, /^1 open claude_code session\(s\) still have a FULI MCP connection on FULI 0\.23\.0-beta\.4.*If this session is one and a FULI call with it fails/);
+
+    const recorded = readdirSync(join(dir, 'mcp-processes')).filter(name => name.startsWith('noticed-'))
+      .map(name => JSON.parse(readFileSync(join(dir, 'mcp-processes', name), 'utf8')));
+    assert.deepEqual(recorded.map(({ sessionId, kind }) => [sessionId, kind]).sort(),
+      [['session-new', 'maybe_this_session'], ['session-old', 'this_session']]);
+    assert.deepEqual(recorded[0].versions, ['0.23.0-beta.4']);
+    assert.equal(recorded[0].installed, '0.23.0-beta.8');
+    assert.equal(recorded[0].noticedAt, '2026-11-04T00:00:00.000Z');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a server of another version on the same contract only hears about the update', () => {
+  const { dir, config } = fixture();
+  try {
+    const { recordSession } = registerMcpProcess(config, { sourceApplication: 'claude_code', version: '0.23.0-beta.8', pid: 601,
+      entryContract: TASK_ENTRY_CONTRACT });
+    recordSession('session-a');
+    const notice = outdatedMcpNotice(config, { sourceApplication: 'claude_code', version: '0.23.0-beta.9', sessionId: 'session-a',
+      isAlive: () => true });
+    assert.match(notice, /^FULI 0\.23\.0-beta\.9 is installed, but 1 open claude_code session\(s\) still run FULI 0\.23\.0-beta\.8\. Restart/);
+    assert.doesNotMatch(notice, /taskContextToken/);
+    assert.equal(liveMcpProcesses(config, { isAlive: () => true })[0].entryContract, TASK_ENTRY_CONTRACT);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

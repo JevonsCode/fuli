@@ -4,6 +4,7 @@ import { detectSensitiveContent } from '../security/sensitive-content.js';
 import { budgetAutomaticRecall } from './knowledge-result-budget.js';
 import { entryTimeBelow } from '../conversations/entry-time.js';
 import { utf8Preview } from '../text/utf8-preview.js';
+import { NEUTRAL, usagePriorLookup } from '../knowledge-impressions/ranking-prior.js';
 
 const MAX_QUERIES = 4;
 const MAX_ITEMS_PER_KIND = 3;
@@ -200,20 +201,15 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
     .map(({ value }) => ({ facts: withoutPreferences(value.facts), entities: withoutPreferences(value.entities) }));
   const failedQueryCount = settlements.length - results.length;
   const focusTerms = distinctivePromptTerms(singleLine(taskPrompt).slice(0, 8192));
-  const facts = rankedUnique(
-    confirmedFirst(filterRecallCandidates(
-      results.flatMap(({ facts = [] }) => facts),
-      focusTerms
-    )),
-    'relationship'
-  ).slice(0, MAX_ITEMS_PER_KIND).map(compactFact);
-  const entities = rankedUnique(
-    confirmedFirst(filterRecallCandidates(
-      results.flatMap(({ entities = [] }) => entities),
-      focusTerms
-    )),
-    'entity'
-  ).slice(0, MAX_ITEMS_PER_KIND).map(compactEntity);
+  const factCandidates = confirmedFirst(filterRecallCandidates(results.flatMap(({ facts = [] }) => facts), focusTerms));
+  const entityCandidates = confirmedFirst(filterRecallCandidates(results.flatMap(({ entities = [] }) => entities), focusTerms));
+  // rec#63: how often Agents used each candidate once shown reorders, within
+  // the same place, by a bounded factor on the score; it never drops one.
+  const prior = usagePriorLookup(application.recallImpressions, {
+    personalSpaceId: application.config.personal.spaceId, facts: factCandidates, entities: entityCandidates });
+  const compare = (left, right) => compareRecallItems(left, right, prior);
+  const facts = rankedUnique(factCandidates, 'relationship', compare).slice(0, MAX_ITEMS_PER_KIND).map(compactFact);
+  const entities = rankedUnique(entityCandidates, 'entity', compare).slice(0, MAX_ITEMS_PER_KIND).map(compactEntity);
   const pendingSlots = Object.entries({ facts, entities })
     .filter(([, items]) => items.some((item) => !isConfirmed(item))).map(([slot]) => slot);
   const sourceMarker = createFuliSourceMarker({
@@ -245,7 +241,7 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
     entities
   };
   return facts.length || entities.length ? budgetAutomaticRecall(result, {
-    consoleUrl: application.consoleUrl, compare: compareRecallItems
+    consoleUrl: application.consoleUrl, compare
   }) : result;
 }
 
@@ -365,17 +361,19 @@ function isConfirmed(item) {
   return CONFIRMED.has(item?.confirmation_status);
 }
 
-function rankedUnique(items, itemKind) {
+function rankedUnique(items, itemKind, compare = compareRecallItems) {
   const selected = new Map();
   for (const item of items) {
     const key = `${itemKind}:${item.id}`;
     const current = selected.get(key);
-    if (!current || compareRecallItems(item, current) < 0) selected.set(key, item);
+    if (!current || compare(item, current) < 0) selected.set(key, item);
   }
-  return [...selected.values()].sort(compareRecallItems);
+  return [...selected.values()].sort(compare);
 }
 
-function compareRecallItems(left, right) {
+// prior is the usage factor of an item (ranking-prior.js): it scales the score,
+// the last key, so locality, scope distance and role still decide first.
+function compareRecallItems(left, right, prior = NEUTRAL) {
   const leftLocal = left.defined_project_id ? 1 : 0;
   const rightLocal = right.defined_project_id ? 1 : 0;
   if (leftLocal !== rightLocal) return rightLocal - leftLocal;
@@ -385,7 +383,7 @@ function compareRecallItems(left, right) {
   const leftSupporting = knowledgeItemRole(left) === 'supporting' ? 1 : 0;
   const rightSupporting = knowledgeItemRole(right) === 'supporting' ? 1 : 0;
   if (leftSupporting !== rightSupporting) return leftSupporting - rightSupporting;
-  return Number(right.score ?? 0) - Number(left.score ?? 0);
+  return Number(right.score ?? 0) * prior(right) - Number(left.score ?? 0) * prior(left);
 }
 
 function compactFact(fact) {
