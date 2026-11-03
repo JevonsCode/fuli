@@ -17,6 +17,10 @@ Use `search_connected_knowledge` for a project-bound third-party source or expli
 public project. Keep its source sets separate and obey the project's conflict policy;
 `agent_decide` affects only the current response and never mutates or confirms a source.
 
+Every search and the automatic recall answer with current versions only. Pass
+`includeHistorical: true` only when the task is about what used to hold (an earlier port, a
+previous owner); each historical record then carries `invalid_at` and is never the current answer.
+
 Search when prior durable context can materially improve the task.
 Before saying that a stable fact is unknown or asking the user to provide it again, search
 Fuli if it may have been learned earlier. Strong triggers include URLs, deployment routes,

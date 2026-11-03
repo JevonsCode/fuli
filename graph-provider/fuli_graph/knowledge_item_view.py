@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from .knowledge_basis_review import basis_review
 from .knowledge_dependencies import dependents_of, item_bases
 from .knowledge_hard_delete_traces import hard_deletions_in_episodes, require_not_hard_deleted, unavailable_source_bases
+from .knowledge_item_version import edit_revision_of
 from .knowledge_item_view_models import (
     KnowledgeEvidenceSource,
     KnowledgeItemRef,
@@ -146,7 +147,7 @@ async def item_summary(store, space, item_kind, item_id, current, *, source_ids,
     title = current.get('name') if item_kind == 'entity' else current.get('type')
     content = (current.get('summary') or current.get('name')) if item_kind == 'entity' else current.get('fact')
     return KnowledgeItemSummary(
-        item_kind=item_kind, item_id=item_id, version=len(revisions),
+        item_kind=item_kind, item_id=item_id, version=edit_revision_of(revisions),
         title=title or item_id, content=content or title or '', type=current.get('type') or 'Entity',
         profile_aspect=current.get('profile_aspect'),
         category=item_category(current.get('profile_aspect'), current.get('type') or ''),
