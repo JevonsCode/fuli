@@ -45,6 +45,8 @@ const failure = computed(() => {
   const code = outcome.value?.errorCode
   return code && REASONS.has(code) ? t(`console.update.reasons.${code}`) : t('console.update.failed')
 })
+// One line for a failed or refused update: the reason in Chinese, the raw text behind 「查看详情」.
+const alert = computed(() => outcome.value?.status === 'failed' ? failure.value : error.value)
 const copy = computed(() => props.kind === 'macos-app' ? t('console.update.macCopy', { version: props.version })
   : props.kind === 'windows-tray' ? t('console.update.trayCopy', { version: props.version }) : t('console.update.copy'))
 const blockers = computed(() => outcome.value?.status === 'failed' ? outcome.value.blockers ?? [] : [])
@@ -107,10 +109,10 @@ onBeforeUnmount(() => {
     <GrowthLoading v-if="running" variant="inline" :label="runningLabel" />
     <Button v-else size="sm" data-console-update-start @click="start()">{{ t('console.update.action', { version }) }}</Button>
     <p v-if="outcome?.status === 'unchanged'" role="status">{{ t('console.update.unchanged') }}</p>
-    <p v-if="outcome?.status === 'failed'" role="alert" class="console-update-error">
-      {{ failure }}
-      <button v-if="details" type="button" class="console-update-details" data-console-update-details
-        @click="detailsOpen = true">{{ t('common.actions.viewDetails') }}</button>
+    <p v-if="alert" role="alert" class="console-update-error">
+      {{ alert }}
+      <Button v-if="details" variant="link" size="sm" class="console-update-details" data-console-update-details
+        @click="detailsOpen = true">{{ t('common.actions.viewDetails') }}</Button>
     </p>
     <template v-if="blockers.length && !running">
       <p>{{ t('console.update.blockers') }}</p>
@@ -125,12 +127,6 @@ onBeforeUnmount(() => {
       </Button>
     </template>
     <p v-if="notBack" role="alert" class="console-update-error">{{ t('console.update.notBack') }}</p>
-    <p v-if="error" role="alert" class="console-update-error">
-      {{ error }}
-      <button v-if="details" type="button" class="console-update-details" @click="detailsOpen = true">
-        {{ t('common.actions.viewDetails') }}
-      </button>
-    </p>
     <Dialog v-model:open="detailsOpen">
       <DialogContent size="md" data-console-update-reason>
         <DialogHeader>
@@ -149,7 +145,7 @@ onBeforeUnmount(() => {
 .console-update-blockers { margin: 0; padding-left: 16px; color: var(--color-muted); font-size: 12px; line-height: 1.5;
   overflow-wrap: anywhere; }
 .console-update-error { color: var(--color-danger) !important; }
-.console-update-details { margin-left: 6px; padding: 0; border: 0; background: none; color: inherit; font: inherit;
+.console-update-details { height: auto; margin-left: 6px; padding: 0; border: 0; background: none; color: inherit; font: inherit;
   text-decoration: underline; text-underline-offset: 2px; cursor: pointer; user-select: none; }
 .console-update-reason { margin: 0; color: var(--color-muted); font-family: var(--font-mono); font-size: 12px; line-height: 1.6;
   overflow-wrap: anywhere; }
