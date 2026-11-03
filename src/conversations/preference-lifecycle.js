@@ -7,6 +7,7 @@ import { ALWAYS_INLINE_OMITTED_LABEL, fitUncached, inlineEntryFit, OMITTED_CONFL
   WHOLE_ENTRY } from './entry-inline-budget.js';
 import { BLOCKED_PREFERENCE_LABEL } from '../mcp/preference-delivery.js';
 import { taskReceiptInstruction } from '../agents/lifecycle-message.js';
+import { skeletonFrameLabel } from './entry-skeleton.js';
 
 export const PREFERENCE_RESET_EVENTS = Object.freeze(['SessionStart', 'PreCompact']);
 const RESTORED_LABEL = 'Fuli restored current mandatory preferences for the same owned task. Apply this full result; no replacement task or Agent was selected.';
@@ -69,16 +70,20 @@ function withoutHookCursor(value) {
 // leaves out its snake_case copy; MCP results keep both (rec#11 D-72).
 // `boundedLabel` replaces `label` for a frame that leaves something out. A
 // blocked frame keeps the receipt sentence: its agent_receipt is still copied.
+// The turn's prompt (null for a reset) lets a frame of the same task name an
+// earlier frame's skeleton instead of repeating it (entry-skeleton.js).
 export async function preferenceHookOutput(entry, event, input, delivery, sourceApplication, label, forceFull = false,
   { inlineChars = null, boundedLabel = label } = {}) {
   const { task_context_token: _copy, ...rest } = entry;
   const value = copyPreferenceScope(entry, rest);
+  const frameLabel = projected => omittedLabel(label, boundedLabel, projected);
   const format = projected => hookAdditionalContextToolResult(projected, { hookEventName: event,
-    label: omittedLabel(label, boundedLabel, projected), limitBytes: 128 * 1024, itemLimit: 1000,
+    label: skeletonFrameLabel(frameLabel(projected), projected), limitBytes: 128 * 1024, itemLimit: 1000,
     blockedLabel: `${BLOCKED_PREFERENCE_LABEL} ${taskReceiptInstruction(value)}`.trim() });
   const fit = inlineChars ? inlineEntryFit(inlineChars, hookContextLength) : WHOLE_ENTRY;
   const result = delivery ? await delivery.deliver(value, { sourceApplication,
-    nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull }, format, fit)
+    nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull,
+    taskPrompt: typeof input.prompt === 'string' ? input.prompt : null, label: frameLabel }, format, fit)
     : fitUncached(fit, value, projected => format(withoutDeliveryProofs(projected)));
   return JSON.parse(result.content[0].text);
 }

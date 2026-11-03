@@ -13,6 +13,7 @@ import { deliveredConversationFrame, deliveredRecentFrame, MAX_RECENT_FRAMES, ow
 import { preferenceDeliveryReason } from '../mcp/preference-delivery.js';
 import { locatePreferenceTranscript } from '../agents/preference-evidence.js';
 import { fitUncached, WHOLE_ENTRY } from './entry-inline-budget.js';
+import { projectSkeleton, rememberSkeletonPrompt, skeletonEvidence, validSkeletonPrompts } from './entry-skeleton.js';
 
 const SESSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_PENDING = 16;
@@ -24,8 +25,11 @@ const MAX_PENDING = 16;
 // A pending item's `scene` (rec#15 D-29.2) is the scene its frame was produced
 // for; an item written without one never confirms, so its frame is resent in
 // full. An older FULI ignores it and still binds the frame to its own scope hash.
-const RECORD_VERSION = 2;
-export const PREFERENCE_SESSION_FORMAT = jsonFormat({ store: 'preference-session', versions: [1, RECORD_VERSION] });
+// Version 3 adds `prompts`: [token, prompt, project and Agent] hashes of the
+// tasks a hook delivered here (entry-skeleton.js, rec#76). A version 2 record
+// has none, so its next hook frame carries the whole skeleton.
+const RECORD_VERSION = 3;
+export const PREFERENCE_SESSION_FORMAT = jsonFormat({ store: 'preference-session', versions: [1, 2, RECORD_VERSION] });
 
 // This private cache contains only hashes/cursors. It never stores instruction
 // bodies or grants authority. Native evidence is re-read on every use.
@@ -71,6 +75,9 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
     },
     // `fit` bounds the entry to a host's inline limit (entry-inline-budget.js);
     // the pending record is for the set the chosen frame actually delivers.
+    // A hook entry passes its `taskPrompt` (null when it has none) and its
+    // `label` (the instructions above a frame, by frame): only its frames
+    // carry a skeleton revision or leave the skeleton out.
     async deliver(value, origin, format, fit = WHOLE_ENTRY) {
       const output = projected => format(withoutDeliveryProofs(projected));
       const snapshot = preferenceSnapshot(value);
@@ -94,16 +101,25 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           // none carries a revision.
           const { baseline, shown } = proof.known && state.floor !== null ? acknowledgedSnapshot(value, snapshot, state, proof)
             : { baseline: null, shown: null };
+          const floor = state.floor === null ? null : state.floor ?? 0;
           const evidence = origin.forceFull ? undefined
-            : recentEvidence(proof, state.recent, { sessionId: snapshot.sessionId, adapter: proof.adapter,
-              floor: state.floor === null ? null : state.floor ?? 0 });
+            : recentEvidence(proof, state.recent, { sessionId: snapshot.sessionId, adapter: proof.adapter, floor });
+          // A forced full frame still carries its skeleton revision, so later
+          // frames of the generation can name it.
+          const skeleton = origin.taskPrompt === undefined || !proof.known || floor === null ? null
+            : skeletonEvidence(origin.forceFull ? { known: false } : proof, value,
+              { floor, prompts: state.prompts, prompt: origin.taskPrompt });
           const project = candidate => {
             const preferences = origin.forceFull ? completePreferenceFrame(candidate, shown)
               : projectPreferenceDelta(candidate, baseline, shown);
             const recent = projectRecentContext(preferences, evidence);
-            return { candidate, recent, result: output(recent.value) };
+            const trimmed = { ...recent, value: projectSkeleton(recent.value, skeleton, origin.label) };
+            return { candidate, recent: trimmed, result: output(trimmed.value) };
           };
-          const complete = candidate => ({ candidate, result: output(completePreferenceFrame(candidate, shown)) });
+          // A complete frame names its skeleton as any frame would, so the fit
+          // sizes the bytes it would really send.
+          const complete = candidate => ({ candidate, result: output(projectSkeleton(completePreferenceFrame(candidate, shown),
+            skeleton && { bases: [] }, origin.label)) });
           const chosen = fit(value, { deliver: project, complete });
           const { recent } = chosen;
           const projected = recent.value;
@@ -125,7 +141,8 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           }
           const frame = deliveredRecentFrame(recent.frame, projected, result);
           if (frame) next.recent = [...state.recent.filter(item => item.frameHash !== frame.frameHash), frame].slice(-MAX_RECENT_FRAMES);
-          if (state.floor !== null && (next.pending !== state.pending || next.recent !== state.recent)) {
+          if (skeleton && !result.isError) next.prompts = rememberSkeletonPrompt(state.prompts, value, origin.taskPrompt);
+          if (state.floor !== null && (next.pending !== state.pending || next.recent !== state.recent || next.prompts !== state.prompts)) {
             await save({ ...next, ...(nativeGeneration ? { nativeGeneration } : {}),
               ...(proof.known ? { fileId: proof.fileId, generation: proof.generation } : {}) });
           }
@@ -143,7 +160,7 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           const proof = await observe(origin.sourceApplication, origin.nativeSessionId, origin);
           // An unreadable or unfinished transcript proves no boundary: it stays
           // unknown until a delivery can read the file, never the file's start.
-          await save({ pending: [], recent: [], floor: proof.known ? proof.size : null,
+          await save({ pending: [], recent: [], prompts: [], floor: proof.known ? proof.size : null,
             ...(origin.nativeGeneration ? { nativeGeneration: contentHash(origin.nativeGeneration) } : {}),
             ...(proof.known ? { fileId: proof.fileId, generation: proof.generation } : {}) });
         });
@@ -161,13 +178,13 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
 function generationState(state, proof, nativeGeneration) {
   if (state.untrusted || state.floor === null
       || (nativeGeneration && state.nativeGeneration && nativeGeneration !== state.nativeGeneration)) {
-    return { pending: [], recent: [], floor: proof.known ? proof.size : null };
+    return { pending: [], recent: [], prompts: [], floor: proof.known ? proof.size : null };
   }
   if (!proof.known) return state;
   const replaced = (state.fileId && state.fileId !== proof.fileId) || (state.floor ?? 0) > proof.size
     || (state.generation && state.generation !== proof.generation && !proof.since);
-  if (replaced) return { pending: [], recent: [], floor: proof.size };
-  if (state.generation && state.generation !== proof.generation) return { pending: [], recent: [], floor: 0 };
+  if (replaced) return { pending: [], recent: [], prompts: [], floor: proof.size };
+  if (state.generation && state.generation !== proof.generation) return { pending: [], recent: [], prompts: [], floor: 0 };
   return state;
 }
 
@@ -214,7 +231,7 @@ function verifiedFrame(value, frame, expected, revision, shown) {
 // A session with no record yet starts fresh at the file's beginning. Any other
 // record this FULI cannot read as its own is untrusted, not fresh: it may hold
 // the boundary of a reset that is not visible in the native file.
-const FRESH = Object.freeze({ pending: Object.freeze([]), recent: Object.freeze([]) });
+const FRESH = Object.freeze({ pending: Object.freeze([]), recent: Object.freeze([]), prompts: Object.freeze([]) });
 const UNTRUSTED = Object.freeze({ ...FRESH, untrusted: true });
 
 async function readState(path) {
@@ -234,7 +251,8 @@ async function readState(path) {
         || value.pending.some(item => ![item.scopeHash, item.snapshotHash, item.frameHash]
           .every(hash => /^[a-f0-9]{64}$/.test(hash)) || !(item.scene === undefined || validScene(item.scene)))) return UNTRUSTED;
     const recent = value.recent ?? [];
-    return validRecentFrames(recent) ? { ...value, recent } : UNTRUSTED;
+    const prompts = value.prompts ?? [];
+    return validRecentFrames(recent) && validSkeletonPrompts(prompts) ? { ...value, recent, prompts } : UNTRUSTED;
   } catch { return UNTRUSTED; }
   finally { await file.close(); }
 }

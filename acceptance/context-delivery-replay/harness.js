@@ -5,7 +5,10 @@
 // model, reads FULI data or a real transcript. It measures UTF-8 bytes only;
 // it never estimates tokens. The reset hooks get no currentTask, so a
 // SessionStart resume covers the next prompt after the reset, not the restored
-// frame an active task would receive at once.
+// frame an active task would receive at once. Every entry carries a synthetic
+// skeleton shaped like a real one (rec#76): receipt, rule references, the
+// project Agent, the managers and the judgment policy. A notification turn runs
+// the real in-place refresh with read_task_preferences.
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -20,10 +23,16 @@ import { beginConversation, resumeConversation } from '../../src/graphiti/agent-
 import { createMcpServer } from '../../src/mcp/create-mcp-server.js';
 import { projectAgentCollaborationPreferences } from '../../src/graphiti/collaboration-preference-workflow.js';
 import { PROVIDER_RECOVERY_WINDOW, replayPreferences, syntheticHost, syntheticJournal } from '../../test-support/synthetic-context-session.js';
+import { entryRules } from '../../src/conversations/entry-rules.js';
+import { SKELETON_FIELDS, SKELETON_LABEL, SKELETON_UNCHANGED_LABEL } from '../../src/conversations/entry-skeleton.js';
+import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 
 const SPACE = 'synthetic-space';
 const PROJECT = 'project';
 const AGENT = 'lead';
+// A prompt that names another FLA, and the folder of another project.
+const OTHER_AGENT = 'reviewer';
+const OTHER_PROJECT_FOLDER = 'other-project';
 const HOOKS = { codex: codexLifecycleOutput, claude_code: claudeLifecycleOutput };
 // The SessionStart sources after which the host replays the same transcript
 // into the model's context, so the model keeps what it saw: Claude Code's
@@ -106,25 +115,42 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
     personal: { conversation: provider.conversation },
     taskContextRegistry: { context: async token => tasks.get(token) } };
 
+  // The Provider's preferences filtered for the task's scene, as an entry or
+  // a refresh reads them.
+  const taskPreferences = task => {
+    provider.calls.preferences++;
+    const projection = projectAgentCollaborationPreferences({ personal_space_id: SPACE, personal_project_id: task.personalProjectId,
+      project_agent_id: task.projectAgentId, effective_preferences: structuredClone(world.items), truncated: false,
+      source_windows: { candidates_truncated: false, project_ancestors_truncated: false, queued_conflicts_truncated: false } },
+    { personalProjectId: task.personalProjectId }, { projectAgentId: task.projectAgentId,
+      taskScope: { sessionId: task.sessionId, workKind: task.workKind } });
+    return { ...projection, taskContextToken: task.token, task_context_token: task.token, checkpoint_required: true,
+      context: { personal_project_id: task.personalProjectId, project_agent_id: task.projectAgentId } };
+  };
+  const scoped = (task, value) => withPreferenceScope(value, { personal_space_id: SPACE, personal_project_id: task.personalProjectId,
+    project_agent_id: task.projectAgentId, session_id: task.sessionId, source_application: task.sourceApplication,
+    preference_scope: { version: 1, work_kind: task.workKind, workflow: null } });
+
   // begin_task_context as the hooks invoke it: the conversation entry, then
   // the Provider's preferences filtered for the persisted scene.
   const beginTask = async args => {
     const token = `task-${String(tasks.size + 1).padStart(4, '0')}`;
-    const task = { token, projectAgentId: AGENT, personalProjectId: PROJECT, sessionId: args.sessionId,
-      sourceApplication: args.sourceApplication };
+    const task = { token, sessionId: args.sessionId, sourceApplication: args.sourceApplication, workKind: args.workKind ?? null,
+      projectAgentId: args.taskPrompt?.startsWith(`#FLA ${OTHER_AGENT}`) ? OTHER_AGENT : AGENT,
+      personalProjectId: args.projectPath?.endsWith(OTHER_PROJECT_FOLDER) ? `${PROJECT}-b` : PROJECT };
     tasks.set(token, task);
     const conversation = await beginConversation(app, task);
-    provider.calls.preferences++;
-    const workKind = args.workKind ?? null;
-    const projection = projectAgentCollaborationPreferences({ personal_space_id: SPACE, personal_project_id: PROJECT,
-      project_agent_id: AGENT, effective_preferences: structuredClone(world.items), truncated: false,
-      source_windows: { candidates_truncated: false, project_ancestors_truncated: false, queued_conflicts_truncated: false } },
-    { personalProjectId: PROJECT }, { projectAgentId: AGENT, taskScope: { sessionId: args.sessionId, workKind } });
-    return withPreferenceScope({ ...projection, taskContextToken: token, task_context_token: token, checkpoint_required: true,
-      context: { personal_project_id: PROJECT, project_agent_id: AGENT }, conversation },
-    { personal_space_id: SPACE, personal_project_id: PROJECT, project_agent_id: AGENT, session_id: args.sessionId,
-      source_application: args.sourceApplication, preference_scope: { version: 1, work_kind: workKind, workflow: null } });
+    return scoped(task, { ...taskPreferences(task), ...syntheticSkeleton(task, 'task_entry', world.recall), conversation });
   };
+  // read_task_preferences for an in-place refresh: the same task, its role
+  // replayed without the entry's memory, team and managers.
+  const readTask = token => {
+    const task = tasks.get(token);
+    return scoped(task, { ...taskPreferences(task), ...syntheticSkeleton(task, 'preference_recovery'),
+      preference_delivery: { status: 'complete' }, preferences_complete: true, same_task_recovery_available: true, truncated: false });
+  };
+  const currentTask = async (sessionId, sourceApplication) => [...tasks.values()]
+    .findLast(task => task.sessionId === sessionId && task.sourceApplication === sourceApplication) ?? null;
 
   const open = async (client, label) => {
     const sessionId = randomUUID();
@@ -132,9 +158,11 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
     hosts.set(`${client}:${sessionId}`, host);
     await host.start();
     const session = { client, label, host, sessionId, generation: 0, token: null };
-    const model = () => ({ messages: new Map(), views: new Map(), preferences: new Map(), sent: new Set(), turns: 0, unlocated: false });
+    const model = () => ({ messages: new Map(), views: new Map(), preferences: new Map(), sent: new Set(), turns: 0, unlocated: false,
+      skeletons: new Map(), skeleton: {}, skeletonUnlocated: false });
     let view = model();
     const input = extra => ({ session_id: sessionId, transcript_path: host.path, cwd: directory, ...extra });
+    const projectFolder = { this: directory, other: join(directory, OTHER_PROJECT_FOLDER) };
     const resetHook = (event, extra = {}) => HOOKS[client](event, input(extra), async () => ({}), { delivery });
 
     // The person or the model says something natively; the transcript
@@ -188,24 +216,33 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
     // One prompt through the real hook entry. `record: false` loses the
     // output before the host records it; `preview` records only a head/tail
     // preview, as a host does with an oversized hook output.
-    session.turn = async (prompt, { record = true, preview = false, note = '' } = {}) => {
+    // `project: 'other'` runs the prompt in another project's folder. A
+    // prompt that is one host-notification envelope is refreshed in place by
+    // the hook: the same task re-read with read_task_preferences, never a new one.
+    session.turn = async (prompt, { record = true, preview = false, note = '', project = 'this' } = {}) => {
       const before = { ...provider.calls };
       let context, scene;
       const invoke = async (name, args) => {
+        if (name === 'read_task_preferences') {
+          context = readTask(args.taskContextToken);
+          scene = tasks.get(args.taskContextToken).workKind;
+          return context;
+        }
         if (name !== 'begin_task_context') throw new Error(`Unexpected tool ${name}`);
         scene = args.workKind ?? null;
         context = await beginTask(args);
         session.token = context.taskContextToken;
         return context;
       };
-      const text = (await HOOKS[client]('UserPromptSubmit', input({ prompt }), invoke, { delivery }))
+      const prompted = input({ prompt, cwd: projectFolder[project] });
+      const text = (await HOOKS[client]('UserPromptSubmit', prompted, invoke, { delivery, currentTask }))
         .hookSpecificOutput.additionalContext;
       const retrieval = Object.fromEntries(READS.map(name => [name, provider.calls[name] - before[name]]));
       // The same entry through the same hook with no session cache. It reuses
       // this turn's Provider snapshot: a fair serialization comparison, not an
       // independent second retrieval.
-      const uncached = async entry => (await HOOKS[client]('UserPromptSubmit', input({ prompt }), async () => entry, {}))
-        .hookSpecificOutput.additionalContext;
+      const uncached = async entry => (await HOOKS[client]('UserPromptSubmit', prompted, async () => entry,
+        { currentTask: async () => ({ ...tasks.get(entry.taskContextToken) }) })).hookSpecificOutput.additionalContext;
       const baseline = await uncached(structuredClone(context));
       // Diagnostic only (D-29.8): the same entry with no preference and no
       // message, uncached. The cache cannot remove these bytes.
@@ -218,8 +255,8 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
       if (record) await host.inject(visible);
       const turn = measure({ session, view, frame, text, visible, baseline, skeleton, retrieval, delivered, note, prompt,
         scene });
-      if (delivered) applyFrame(view, frame);
-      turn.correctness = delivered ? correctness(view, frameOf(baseline), world.withdrawn ?? {}) : null;
+      if (delivered) applyFrame(view, frame, text);
+      turn.correctness = delivered ? correctness(view, frameOf(baseline), world.withdrawn ?? {}, labelOf(baseline)) : null;
       // A delta or scene switch whose base the model cannot locate by the
       // delivery rules: it must call read_task_preferences (entry-rules.js).
       turn.rereads_required = delivered && view.unlocated ? 1 : 0;
@@ -271,6 +308,10 @@ function measure({ session, view, frame, text, visible, baseline, skeleton, retr
     produced_bytes: bytes(text), host_visible_bytes: bytes(visible), no_cache_bytes: bytes(baseline), skeleton_bytes: bytes(skeleton),
     // The exact encoding a complete frame adds so a later frame can name it.
     revision_field_bytes: frame.revision ? bytes(`,"revision":${JSON.stringify(frame.revision)}`) : 0,
+    skeleton_revision_field_bytes: frame.skeleton_revision
+      ? bytes(`,"skeleton_revision":${JSON.stringify(frame.skeleton_revision)}`) : 0,
+    skeleton_delivery: frame.skeleton_unchanged ? 'unchanged' : 'full',
+    skeleton_fields_omitted: typeof frame.skeleton_unchanged === "string" ? "all" : Object.values(frame.skeleton_unchanged ?? {}).flat().length,
     messages_sent: recovery?.messages?.length ?? 0, messages_omitted: omitted,
     withdrawn_sequences: recovery?.withdrawn?.sequences ?? [],
     preferences_sent: preferenceItems(frame).length,
@@ -281,13 +322,100 @@ function measure({ session, view, frame, text, visible, baseline, skeleton, retr
 
 // What the model holds once the host recorded the frame it was shown. A
 // frame whose base the model cannot locate leaves it without preferences.
-function applyFrame(view, frame) {
+function applyFrame(view, frame, text) {
+  applySkeleton(view, frame, text);
   const recovery = recoveryOf(frame);
   for (const sequence of recovery?.withdrawn?.sequences ?? []) view.messages.delete(`${recovery.conversation_id}:${sequence}`);
   for (const message of recovery?.messages ?? []) view.messages.set(messageKey(recovery, message), message.content);
   const held = replayPreferences(view.views, frame);
   view.unlocated = !held;
   view.preferences = held ?? new Map();
+}
+
+// The skeleton the model holds for this frame: its own fields and label, and
+// each part it names as unchanged, taken from the earlier frame of this view
+// with that skeleton_revision. A base the view never held, or one without
+// that part, cannot be located.
+function applySkeleton(view, frame, text) {
+  const own = Object.fromEntries(SKELETON_FIELDS.filter(field => Object.hasOwn(frame, field)).map(field => [field, frame[field]]));
+  const label = ownLabel(labelOf(text));
+  if (label !== null) own[SKELETON_LABEL] = label;
+  view.skeleton = { ...own };
+  view.skeletonUnlocated = false;
+  // A bare revision names every part of that frame.
+  const unchanged = typeof frame.skeleton_unchanged === 'string'
+    ? { [frame.skeleton_unchanged]: Object.keys(view.skeletons.get(frame.skeleton_unchanged) ?? { missing: true }) }
+    : frame.skeleton_unchanged ?? {};
+  for (const [revision, parts] of Object.entries(unchanged)) {
+    const base = view.skeletons.get(revision);
+    for (const part of parts) {
+      if (base && Object.hasOwn(base, part)) view.skeleton[part] = base[part];
+      else view.skeletonUnlocated = true;
+    }
+  }
+  if (frame.skeleton_revision) view.skeletons.set(frame.skeleton_revision, own);
+}
+
+// The instructions above a hook frame, and the hook's own part of them.
+const labelOf = text => {
+  const lines = text.split('\n');
+  return lines.slice(0, lines.findIndex(line => line.startsWith('{'))).join('\n');
+};
+function ownLabel(label) {
+  if (label === SKELETON_UNCHANGED_LABEL) return null;
+  return label.endsWith(` ${SKELETON_UNCHANGED_LABEL}`) ? label.slice(0, -SKELETON_UNCHANGED_LABEL.length - 1) : label;
+}
+
+// A skeleton shaped like a real entry's (task-context-view.js, rec#76), all
+// synthetic: the receipt, the project Agent with its role, brief, memory,
+// team and folder, the managers and the judgment policy. A refresh replays
+// the role without memory, team or managers, as read_task_preferences does.
+// `recall` adds an unmatched recall block, as a real entry has (rec#76
+// scenarios; the older ones keep their size envelope).
+function syntheticSkeleton(task, wake, recall = false) {
+  const rules = entryRules().sections;
+  const agent = task.projectAgentId;
+  const memory = scope => ({ scope, revision: 0, current: null,
+    guidance: scope === 'private_agent_global' ? rules.global_memory_guidance : rules.memory_guidance });
+  const roster = ['Synthetic Lead', 'Synthetic Coder', 'Synthetic Tester', 'Synthetic Reviewer', 'Synthetic Writer']
+    .map((name, index) => ({ agent_id: `agent-${index}`, name, occupation: index ? 'engineering' : null }));
+  const entry = wake === 'task_entry';
+  const resolution = { status: 'matched', basis: entry ? 'git_worktree_origin' : 'owned_task_context',
+    personal_project_id: task.personalProjectId };
+  return {
+    context: { personal_space_id: SPACE, personal_project_id: task.personalProjectId, project_agent_id: agent,
+      global_preference_count: 2, project_preference_count: 1, project_resolution: resolution, task_scope_excluded_count: 1,
+      task_scope_filter: 'provider_before_conflicts', ...(entry ? {} : { session_id: task.sessionId,
+        source_application: task.sourceApplication, source_session_id: task.sessionId,
+        preference_scope: { version: 1, work_kind: task.workKind } }) },
+    ...(entry && recall ? { task_knowledge_recall: { status: 'no_match', trigger_categories: ['release_delivery'], query_count: 2,
+      noMatchSourceMarker: { required: true, label: 'FULI 来源', status: 'no_match', count: 0,
+        leadMarkdown: '**[◇ FULI · 已检索，未命中](http://127.0.0.1:2828/)**', markdown: '' },
+      facts: [], entities: [], guidance_ref: 'fuli://rules/task-entry/application_guidance' } } : {}),
+    agent_receipt: { required: true, guidance: rules.receipt_guidance,
+      markdown: `FULI Agent：[Synthetic ${agent} \\[${task.personalProjectId} 负责人\\]](<fuli://agents/${SPACE}/${agent}>)` },
+    task_guidance: structuredClone(rules.task_guidance),
+    project_agent_context: { status: 'ready', project_agent_id: agent, personal_project_id: task.personalProjectId,
+      source_application: task.sourceApplication, wake_mode: wake, worker_started: false, selection_reason: 'project_team_lead',
+      role: { name: `Synthetic ${agent}`, responsibility: '负责合成项目的开发、修复、测试与交付，并延续项目上下文。',
+        initial_preferences: ['先理解现有实现与约定，再修改。', '结论附带可复现的验证证据。'] },
+      project_brief: { name: `Synthetic ${task.personalProjectId}`, summary: 'AI draft (editable): synthetic project brief',
+        authors: { purpose: 'agent 50% AI 草稿，可改' } },
+      ...(entry ? { memory: memory('private_agent_project'), global_memory: memory('private_agent_global'),
+        team: { roster, guidance: rules.team_guidance },
+        directorySnapshot: { status: 'current', path: `agents/${'a'.repeat(32)}/${'b'.repeat(32)}/${'c'.repeat(32)}`,
+          files: ['AGENTS.md', 'MEMORY.md', 'TEAM.md'].map(path => ({ path, state: 'unchanged' })) } } : {}),
+      guidance: rules.continuity_guidance },
+    ...(entry ? { project_management_context: { status: 'ready', managers: [{ template_id: 'synthetic-manager',
+      agent_id: 'employee.synthetic-manager', name: 'Synthetic Manager', personal_project_id: task.personalProjectId,
+      scope_mode: 'all', title_mode: 'auto', title_style: 'emoji', board: { version: 0, total: 0 },
+      session: { sourceApplication: task.sourceApplication, sessionId: task.sessionId },
+      tools: { discover: 'list_employee_tools', call: 'call_employee_tool', read_board: 'read_board', prepare_title: 'prepare_session_title' },
+      guidance: rules.manager_guidance }] } } : {}),
+    judgment_context: { agentId: 'employee.synthetic-judge', policy: { mode: 'autonomous', quality: 'quality',
+      client: task.sourceApplication, revision: 0, globalRevision: 5, inherited: true, personalProjectId: task.personalProjectId },
+    guidance: rules.judgment_guidance }
+  };
 }
 
 // The same entry without any preference or message: what every turn costs.
@@ -301,7 +429,7 @@ function skeletonEntry(context) {
 // The model view against the same entry without a cache: every current
 // message and preference present, nothing stale, nothing withdrawn, and the
 // base of every delta or scene switch located.
-function correctness(view, expected, withdrawn) {
+function correctness(view, expected, withdrawn, label) {
   const recovery = recoveryOf(expected);
   const messages = recovery?.messages ?? [];
   const missingMessages = messages.filter(message => view.messages.get(messageKey(recovery, message)) !== message.content)
@@ -313,8 +441,13 @@ function correctness(view, expected, withdrawn) {
     ...(withdrawn.preferences ?? []).filter(key => view.preferences.has(key)).map(key => `preference:${key}`),
     ...(withdrawn.messages ?? []).filter(content => [...view.messages.values()].includes(content)).map(content => `message:${content.slice(0, 32)}`)
   ];
-  const ok = !view.unlocated && !missingMessages.length && !missingPreferences.length && !extraPreferences.length
-    && !withdrawnPresent.length;
-  return { ok, base_unlocated: view.unlocated, missing_messages: missingMessages, missing_preferences: missingPreferences,
+  // Every skeleton field of the uncached entry, exactly, and no other.
+  const skeleton = SKELETON_FIELDS.filter(field => Object.hasOwn(expected, field) !== Object.hasOwn(view.skeleton, field)
+    || (Object.hasOwn(expected, field) && canonicalJson(expected[field]) !== canonicalJson(view.skeleton[field])));
+  if (view.skeleton[SKELETON_LABEL] !== label) skeleton.push(SKELETON_LABEL);
+  const ok = !view.unlocated && !view.skeletonUnlocated && !missingMessages.length && !missingPreferences.length
+    && !extraPreferences.length && !withdrawnPresent.length && !skeleton.length;
+  return { ok, base_unlocated: view.unlocated, skeleton_unlocated: view.skeletonUnlocated, skeleton_mismatch: skeleton,
+    missing_messages: missingMessages, missing_preferences: missingPreferences,
     extra_preferences: extraPreferences, withdrawn_present: withdrawnPresent };
 }

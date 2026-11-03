@@ -70,8 +70,11 @@ test('working-memory previews give way to hard rules, global layer first, and ke
       arguments: { personalSpaceId: 'synthetic-space', personalProjectId: 'project', agentId: 'lead' } });
     assert.equal(memory.revision, 7);
     // Without hard rules the project layer stays, ahead of any other preference.
+    // A session of its own: a repeated prompt here would name the skeleton
+    // already shown (rec#76) and leave room for more.
     const soft = syntheticPreferences(4, { hardEvery: 100 });
-    const few = await session.turn(await syntheticWorkingEntry({ items: soft, sessionId: session.sessionId }));
+    const few = await claudeEntrySession(async fresh =>
+      fresh.turn(await syntheticWorkingEntry({ items: soft, sessionId: fresh.sessionId })));
     assert.ok(few.text.length <= INLINE_CHARS, `${few.text.length} chars`);
     assert.equal(few.frame.project_agent_context.global_memory.view, 'omitted');
     const project = few.frame.project_agent_context.memory;
