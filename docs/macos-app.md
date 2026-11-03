@@ -69,10 +69,16 @@ refuses and names the migration command, as on Windows.
 
 ## Update and removal
 
-- Update: quit FULI (menu bar icon > 退出, then 「停止 FULI」 if it should stop),
-  open the newer .dmg and drag FULI.app to Applications again, replacing the old
-  one. `fuli update` refuses in the app; where other installations show a
-  one-click update, the console's 设置 › 版本 links the newer .dmg instead.
+- Update: 设置 › 版本 「更新到 vX」, the same one click as on Windows
+  (`src/desktop/macos-app-update.js`, run by the console's update worker). It
+  downloads `fuli-macos-<arch>-<version>.dmg` and checks its published SHA-256,
+  copies the new FULI.app next to the installed one without the quarantine flag,
+  closes the window, stops FULI, swaps the two bundles, starts FULI from the new
+  one and opens the window again. A new version that does not start is swapped
+  back and the previous one started. FULI must run from a folder it may write
+  (Applications, not the disk image); macOS may ask to allow FULI under Privacy &
+  Security › App Management. The data directory is never touched. Dragging a
+  newer FULI.app over the old one still works too. `fuli update` refuses in the app.
 - Removal: stop FULI, move FULI.app to the Trash. The data directory stays;
   delete `~/Library/Application Support/Fuli` yourself only if you mean to.
 

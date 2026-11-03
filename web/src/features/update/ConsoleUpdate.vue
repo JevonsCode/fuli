@@ -7,16 +7,17 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { t } from '@/i18n'
 import {
-  blockerKey, macosDmgUrl, readConsoleUpdate, startConsoleUpdate, updateFinished,
+  blockerKey, readConsoleUpdate, startConsoleUpdate, updateFinished,
   type ConsoleUpdateKind, type ConsoleUpdateStatus, type ConsoleUpdateStep,
 } from './model'
 
 // 「更新到 vX」 in the update notice: one click starts the update. FULI stops
 // while it installs, so a failed read is expected; the page reloads once the
-// new version answers. A tray installation reports each real step while the
-// console still answers (download, verify, tray exit), then the install. The
-// macOS app offers its .dmg instead of a button that could only fail. A
-// failure says so in one line; the recorded reason opens in 「查看详情」.
+// new version answers. The Windows tray and the macOS app report each real
+// step while the console still answers (download, verify, then closing the
+// window and switching versions); the app's window opens again by itself. A
+// failure is one Chinese line, by its reason code when the update names one;
+// the recorded text opens in 「查看详情」.
 const POLL_MS = 3000
 const GIVE_UP_MS = 15 * 60_000
 
@@ -30,12 +31,22 @@ const outcome = ref<ConsoleUpdateStatus | null>(null)
 const notBack = ref(false)
 const error = ref('')
 const detailsOpen = ref(false)
+// The text 「查看详情」 shows: the recorded reason, or why the update could not start.
+const details = ref('')
+const REASONS = new Set(['not_installed', 'no_permission', 'download_failed', 'checksum_mismatch', 'start_failed',
+  'rollback_failed'])
 let timer: ReturnType<typeof setTimeout> | undefined
 let unmounted = false
 
 const runningLabel = computed(() => step.value
-  ? t(`console.update.steps.${step.value}`, { version: props.version })
+  ? t(`console.update.${props.kind === 'macos-app' ? 'macSteps' : 'steps'}.${step.value}`, { version: props.version })
   : t('console.update.running', { version: props.version }))
+const failure = computed(() => {
+  const code = outcome.value?.errorCode
+  return code && REASONS.has(code) ? t(`console.update.reasons.${code}`) : t('console.update.failed')
+})
+const copy = computed(() => props.kind === 'macos-app' ? t('console.update.macCopy', { version: props.version })
+  : props.kind === 'windows-tray' ? t('console.update.trayCopy', { version: props.version }) : t('console.update.copy'))
 const blockers = computed(() => outcome.value?.status === 'failed' ? outcome.value.blockers ?? [] : [])
 
 function busy(value: boolean) {
@@ -45,6 +56,7 @@ function busy(value: boolean) {
 
 async function start(stopProcesses: string[] = []) {
   error.value = ''
+  details.value = ''
   outcome.value = null
   notBack.value = false
   step.value = null
@@ -53,7 +65,8 @@ async function start(stopProcesses: string[] = []) {
   try {
     started = await startConsoleUpdate(stopProcesses)
   } catch (cause) {
-    error.value = apiErrorReason(cause)
+    error.value = t('console.update.notStarted')
+    details.value = apiErrorReason(cause)
     busy(false)
     return
   }
@@ -67,6 +80,7 @@ async function start(stopProcesses: string[] = []) {
     if (updateFinished(latest, started.id)) {
       if (latest.status === 'updated') { props.reload(); return }
       outcome.value = latest
+      details.value = latest.error ?? ''
       busy(false)
       return
     }
@@ -89,22 +103,13 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="console-update" data-console-update>
-    <template v-if="kind === 'macos-app'">
-      <p>{{ t('console.update.macCopy') }}</p>
-      <Button as-child size="sm">
-        <a :href="macosDmgUrl(version)" target="_blank" rel="noopener noreferrer" data-console-update-dmg>
-          {{ t('console.update.macAction', { version }) }}
-        </a>
-      </Button>
-    </template>
-    <template v-else>
-    <p>{{ kind === 'windows-tray' ? t('console.update.trayCopy', { version }) : t('console.update.copy') }}</p>
+    <p>{{ copy }}</p>
     <GrowthLoading v-if="running" variant="inline" :label="runningLabel" />
     <Button v-else size="sm" data-console-update-start @click="start()">{{ t('console.update.action', { version }) }}</Button>
     <p v-if="outcome?.status === 'unchanged'" role="status">{{ t('console.update.unchanged') }}</p>
     <p v-if="outcome?.status === 'failed'" role="alert" class="console-update-error">
-      {{ t('console.update.failed') }}
-      <button v-if="outcome.error" type="button" class="console-update-details" data-console-update-details
+      {{ failure }}
+      <button v-if="details" type="button" class="console-update-details" data-console-update-details
         @click="detailsOpen = true">{{ t('common.actions.viewDetails') }}</button>
     </p>
     <template v-if="blockers.length && !running">
@@ -120,15 +125,19 @@ onBeforeUnmount(() => {
       </Button>
     </template>
     <p v-if="notBack" role="alert" class="console-update-error">{{ t('console.update.notBack') }}</p>
-    <p v-if="error" role="alert" class="console-update-error">{{ error }}</p>
-    </template>
+    <p v-if="error" role="alert" class="console-update-error">
+      {{ error }}
+      <button v-if="details" type="button" class="console-update-details" @click="detailsOpen = true">
+        {{ t('common.actions.viewDetails') }}
+      </button>
+    </p>
     <Dialog v-model:open="detailsOpen">
       <DialogContent size="md" data-console-update-reason>
         <DialogHeader>
           <DialogTitle>{{ t('console.update.detailsTitle') }}</DialogTitle>
           <DialogDescription>{{ t('console.update.detailsCopy') }}</DialogDescription>
         </DialogHeader>
-        <p class="console-update-reason">{{ outcome?.error }}</p>
+        <p class="console-update-reason">{{ details }}</p>
       </DialogContent>
     </Dialog>
   </div>

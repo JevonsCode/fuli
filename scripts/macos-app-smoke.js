@@ -6,6 +6,8 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { copyFile } from 'node:fs/promises';
+import { updateMacosAppFromRelease } from '../src/desktop/macos-app-update.js';
 import { isMainModule } from '../src/system/main-module.js';
 import { DEFAULT_RUNTIME_SETTINGS, PORT_KEYS, writeRuntimeSettings } from '../src/system/runtime-settings.js';
 
@@ -13,7 +15,9 @@ import { DEFAULT_RUNTIME_SETTINGS, PORT_KEYS, writeRuntimeSettings } from '../sr
 // mount it, copy FULI.app out as a person would, and start FULI the way the
 // desktop client does (macos-controller.js on the bundled Node) with a
 // temporary HOME, ephemeral ports, and a PATH with no Node, Java, Python or uv,
-// then check the console answers, stop it, and launch the client itself.
+// then check the console answers, update the running app in place from the
+// same image the way the console's one-click update does (macos-app-update.js:
+// stop, swap FULI.app, start the new one), stop it, and launch the client.
 
 const CONTROLLER_TIMEOUT_MS = 15 * 60_000;
 const CLIENT_SETTLE_MS = 15_000;
@@ -73,6 +77,22 @@ async function smokeMacosDmg(dmg) {
       'Java and the Provider run from the app');
     assert.ok(manifest.neo4jHome.startsWith(dataDir), 'Neo4j is unpacked into the data directory');
     step('The console answers on its port; Java and Python come from FULI.app, Neo4j from the data directory');
+
+    const version = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8')).version;
+    const steps = [];
+    const updated = await updateMacosAppFromRelease({ packageRoot, version, progress: name => steps.push(name) }, {
+      // The image under test stands in for the release download; no window is open to close.
+      download: async ({ name, directory }) => { await copyFile(dmg, join(directory, name)); return join(directory, name); },
+      client: { close: async () => false, open: () => {} }, env
+    });
+    assert.deepEqual(updated, { status: 'updated', version });
+    assert.deepEqual(steps, ['preparing', 'restarting']);
+    assert.equal(reply(await controller('status')).status, 'running');
+    const again = await fetch(`http://127.0.0.1:${ports.console}/api/health`, { signal: AbortSignal.timeout(10_000) });
+    assert.equal(again.status, 200);
+    assert.deepEqual((await readdir(join(root, 'Applications'))).sort(), ['FULI.app'], 'no staged or previous bundle is left');
+    await command('/usr/bin/codesign', ['--verify', '--deep', '--strict', app]);
+    step('One-click update swapped FULI.app in place from the image, restarted FULI, and the console answers again');
 
     const stop = reply(await controller('stop'));
     assert.equal(stop.ok, true, 'stop failed: ' + stop.error);
