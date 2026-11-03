@@ -10,8 +10,9 @@ import { downloadVerifiedReleaseAsset, failure } from './release-asset.js';
 // The console's one-click update of FULI.app, the macOS twin of the Windows
 // tray update (windows-tray-update.js): download and verify the release's
 // .dmg, copy the new FULI.app next to the installed one, stop FULI and close
-// its window, swap the two bundles, start FULI from the new one and open its
-// window again. A new version that does not start is swapped back and the
+// its window, swap the two bundles, start FULI from the new one, refresh the
+// Agent clients that were already connected (setup --connected-only, as the
+// Windows switch does) and open its window again. A new version that does not start is swapped back and the
 // previous one started again. The data directory is never touched. Runs in
 // the console's detached update worker, on the old bundle's Node, which keeps
 // running after its bundle moves.
@@ -31,9 +32,9 @@ const CLIENT_EXIT_TIMEOUT_MS = 15_000;
 export const macosDmgName = (version, arch) => `fuli-macos-${arch}-${version}.dmg`;
 
 // packageRoot: FULI.app/Contents/Resources/fuli of the running app.
-// Returns { status: 'updated', version }.
-export async function updateMacosAppFromRelease({ packageRoot, version, progress = () => {} }, {
-  download = downloadVerifiedReleaseAsset, runCommand = run, controller = runController,
+// Returns { status: 'updated', version, clients: 'reconnected' | 'not_reconnected' }.
+export async function updateMacosAppFromRelease({ packageRoot, dataDir, version, progress = () => {} }, {
+  download = downloadVerifiedReleaseAsset, runCommand = run, controller = runController, cli = runCli,
   client = macosDesktopClient, readBundle = readMacosNativeBundle, tempRoot = tmpdir(), env = process.env
 } = {}) {
   const app = installedApp(packageRoot);
@@ -68,9 +69,12 @@ export async function updateMacosAppFromRelease({ packageRoot, version, progress
       throw failure(`v${version} did not start, so the previous version was restored and started again. ${started.error ?? ''}`.trim(),
         'start_failed');
     }
+    // The clients' MCP entries name paths inside FULI.app, which stay the same;
+    // their Skills and hooks come from the new version's client packs.
+    const reconnect = await cli(bundleRoot(app), ['setup', '--yes', '--connected-only', '--data-dir', dataDir], env);
     if (clientWasRunning) client.open(app);
     rmSync(previous, { recursive: true, force: true });
-    return { status: 'updated', version };
+    return { status: 'updated', version, clients: reconnect.code === 0 ? 'reconnected' : 'not_reconnected' };
   } finally {
     rmSync(staged, { recursive: true, force: true });
     rmSync(directory, { recursive: true, force: true });
@@ -159,6 +163,15 @@ function runController(root, action, env) {
         try { resolveRun(JSON.parse(line)); }
         catch { resolveRun({ ok: false, error: error?.message ?? 'The FULI controller did not answer.' }); }
       });
+  });
+}
+
+// The new bundle's CLI; its output is not kept (setup can print an access code).
+function runCli(root, args, env) {
+  return new Promise(resolveRun => {
+    execFile(join(root, 'runtime', 'node', 'bin', 'node'), [join(root, 'src', 'cli.js'), ...args],
+      { cwd: root, env, encoding: 'utf8', timeout: CONTROLLER_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024 },
+      error => resolveRun({ code: error ? error.code ?? 1 : 0 }));
   });
 }
 

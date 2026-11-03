@@ -45,7 +45,8 @@ function setup(t, { imageVersion = '0.24.0', starts = [true] } = {}) {
       : { ok: true, status: 'stopped' };
   };
   const client = { close: async () => { calls.push(['client', 'close']); return true; }, open: () => calls.push(['client', 'open']) };
-  const deps = { download: async ({ name, directory }) => { calls.push(['download', name]); return join(directory, name); },
+  const cli = async (root, args) => { calls.push(['cli', args.slice(0, 3).join(' '), versionOf(dirname(dirname(dirname(root))))]); return { code: 0 }; };
+  const deps = { cli, download: async ({ name, directory }) => { calls.push(['download', name]); return join(directory, name); },
     runCommand: tools(imageVersion, calls), controller, client, readBundle: () => ({ arch: 'arm64' }), tempRoot: root, env: {} };
   return { app, packageRoot, calls, deps };
 }
@@ -53,13 +54,15 @@ function setup(t, { imageVersion = '0.24.0', starts = [true] } = {}) {
 test('the app downloads its image, swaps FULI.app for the new one, starts it and opens its window again', async t => {
   const { app, packageRoot, calls, deps } = setup(t);
   const steps = [];
-  const result = await updateMacosAppFromRelease({ packageRoot, version: '0.24.0', progress: step => steps.push(step) }, deps);
-  assert.deepEqual(result, { status: 'updated', version: '0.24.0' });
+  const result = await updateMacosAppFromRelease({ packageRoot, dataDir: '/data', version: '0.24.0',
+    progress: step => steps.push(step) }, deps);
+  assert.deepEqual(result, { status: 'updated', version: '0.24.0', clients: 'reconnected' });
   assert.equal(versionOf(app), '0.24.0');
   assert.deepEqual(steps, ['preparing', 'restarting']);
   assert.equal(calls.filter(([kind]) => kind === 'ditto').length, 1);
   assert.deepEqual(calls.filter(([kind]) => !['hdiutil', 'xattr', 'ditto'].includes(kind)), [
-    ['download', 'fuli-macos-arm64-0.24.0.dmg'], ['client', 'close'], ['controller', 'stop', '0.23.0'], ['controller', 'start', '0.24.0'], ['client', 'open']
+    ['download', 'fuli-macos-arm64-0.24.0.dmg'], ['client', 'close'], ['controller', 'stop', '0.23.0'], ['controller', 'start', '0.24.0'],
+    ['cli', 'setup --yes --connected-only', '0.24.0'], ['client', 'open']
   ]);
   assert.equal(existsSync(join(dirname(app), '.FULI.app.previous')), false, 'the previous bundle is removed once the new one runs');
   assert.equal(existsSync(join(dirname(app), '.FULI.app.update')), false);
@@ -81,7 +84,7 @@ test('an image of another version changes nothing and stops nothing', async t =>
   await assert.rejects(updateMacosAppFromRelease({ packageRoot, version: '0.24.0' }, deps),
     error => error.code === 'download_failed' && /contains v0\.23\.9/.test(error.message));
   assert.equal(versionOf(app), '0.23.0');
-  assert.equal(calls.some(([kind]) => kind === 'controller' || kind === 'client'), false);
+  assert.equal(calls.some(([kind]) => ['controller', 'client', 'cli'].includes(kind)), false);
   assert.equal(existsSync(join(dirname(app), '.FULI.app.update')), false);
 });
 

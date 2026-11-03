@@ -80,12 +80,12 @@ async function smokeMacosDmg(dmg) {
 
     const version = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8')).version;
     const steps = [];
-    const updated = await updateMacosAppFromRelease({ packageRoot, version, progress: name => steps.push(name) }, {
+    const updated = await updateMacosAppFromRelease({ packageRoot, dataDir, version, progress: name => steps.push(name) }, {
       // The image under test stands in for the release download; no window is open to close.
       download: async ({ name, directory }) => { await copyFile(dmg, join(directory, name)); return join(directory, name); },
       client: { close: async () => false, open: () => {} }, env
     });
-    assert.deepEqual(updated, { status: 'updated', version });
+    assert.deepEqual(updated, { status: 'updated', version, clients: 'reconnected' });
     assert.deepEqual(steps, ['preparing', 'restarting']);
     assert.equal(reply(await controller('status')).status, 'running');
     const again = await fetch(`http://127.0.0.1:${ports.console}/api/health`, { signal: AbortSignal.timeout(10_000) });

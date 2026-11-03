@@ -80,13 +80,13 @@ export async function runConsoleUpdate(paths, id, { update = runUpdateCommand, u
   try {
     const progress = step => record({ step });
     const result = job.kind === 'macos-app'
-      ? await updateMacosApp({ packageRoot, version: job.targetVersion, progress })
+      ? await updateMacosApp({ packageRoot, dataDir: paths.dataDir, version: job.targetVersion, progress })
       : job.kind === 'windows-tray'
       ? await updateTray({ installation: installation(PACKAGE_ROOT), version: job.targetVersion, stopPids: job.stopPids,
         progress })
       : await update(['--yes', ...(job.channel === 'beta' ? ['--beta'] : []), ...dataDirArgs], { env, write: () => {} });
-    // clients: a tray update reports whether it reconnected the connected
-    // clients; an npm update fails instead when its setup does not finish.
+    // clients: a tray or app update reports whether it reconnected the
+    // connected clients; an npm update fails instead when its setup does not finish.
     record({ status: result.status === 'updated' ? 'updated' : 'unchanged', version: result.version ?? null,
       ...(result.clients ? { clients: result.clients } : {}) });
   } catch (error) {

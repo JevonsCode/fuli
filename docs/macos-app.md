@@ -74,7 +74,8 @@ refuses and names the migration command, as on Windows.
   downloads `fuli-macos-<arch>-<version>.dmg` and checks its published SHA-256,
   copies the new FULI.app next to the installed one without the quarantine flag,
   closes the window, stops FULI, swaps the two bundles, starts FULI from the new
-  one and opens the window again. A new version that does not start is swapped
+  one, refreshes the Agent clients that were already connected
+  (`setup --connected-only`) and opens the window again. A new version that does not start is swapped
   back and the previous one started. FULI must run from a folder it may write
   (Applications, not the disk image); macOS may ask to allow FULI under Privacy &
   Security › App Management. The data directory is never touched. Dragging a
