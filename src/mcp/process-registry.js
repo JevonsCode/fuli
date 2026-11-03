@@ -11,6 +11,12 @@ import { writeJsonFileAtomic } from '../storage/json-file.js';
 // client still runs an older FULI and should be restarted.
 const directory = runtimeConfigPath => join(dirname(runtimeConfigPath), 'mcp-processes');
 
+// What a task entry hands an MCP server (taskContextToken, frames, rule
+// references). Raise it when an older server can no longer read what the
+// installed hook delivers; a record without it predates this contract. A
+// server of another version on the same contract only misses the update.
+export const TASK_ENTRY_CONTRACT = 2;
+
 const alive = pid => {
   try { process.kill(pid, 0); return true; } catch (error) { return error?.code === 'EPERM'; }
 };
@@ -23,9 +29,11 @@ const MAX_SESSION_ID = 512;
 // Returns { recordSession, unregister }. recordSession(sessionId) notes the
 // session of a call; the file is rewritten only when the list changes, and a
 // failed write never fails the call.
-export function registerMcpProcess(runtimeConfigPath, { sourceApplication, version, pid = process.pid }) {
+export function registerMcpProcess(runtimeConfigPath, { sourceApplication, version, pid = process.pid,
+  entryContract = TASK_ENTRY_CONTRACT }) {
   const path = join(directory(runtimeConfigPath), `${pid}.json`);
-  const record = { pid, version, sourceApplication: sourceApplication ?? null, startedAt: new Date().toISOString(), sessionIds: [] };
+  const record = { pid, version, entryContract, sourceApplication: sourceApplication ?? null,
+    startedAt: new Date().toISOString(), sessionIds: [] };
   try { writeJsonFileAtomic(path, record); } catch { return { recordSession: () => {}, unregister: () => {} }; }
   return {
     recordSession(sessionId) {
@@ -38,7 +46,7 @@ export function registerMcpProcess(runtimeConfigPath, { sourceApplication, versi
   };
 }
 
-// Every live server's record ({ pid, version, sourceApplication, startedAt, sessionIds });
+// Every live server's record ({ pid, version, entryContract, sourceApplication, startedAt, sessionIds });
 // files of exited processes are removed on the way.
 export function liveMcpProcesses(runtimeConfigPath, { isAlive = alive } = {}) {
   let names;
@@ -63,18 +71,46 @@ export function outdatedMcpProcesses(runtimeConfigPath, { sourceApplication, ver
 }
 
 // The one-time notice for this session, or null. Shown again only when the
-// set of outdated versions changes.
-export function outdatedMcpNotice(runtimeConfigPath, { sourceApplication, version, sessionId, isAlive = alive }) {
+// set of outdated versions changes. The marker records whom it told and what.
+// A server on an older task-entry contract may not read this entry's token
+// (rec#74), so the notice then says so and what to do; one that answered this
+// very session is named as this session's own.
+export function outdatedMcpNotice(runtimeConfigPath, { sourceApplication, version, sessionId, isAlive = alive,
+  clock = () => new Date() }) {
   const outdated = outdatedMcpProcesses(runtimeConfigPath, { sourceApplication, version, isAlive });
   if (!outdated.length || typeof sessionId !== 'string') return null;
   const versions = [...new Set(outdated.map(record => record.version))].sort();
+  const incompatible = outdated.filter(record => record.entryContract !== TASK_ENTRY_CONTRACT);
+  const own = incompatible.filter(record => Array.isArray(record.sessionIds) && record.sessionIds.includes(sessionId));
+  const kind = own.length ? 'this_session' : incompatible.length ? 'maybe_this_session' : 'update_only';
   const marker = join(directory(runtimeConfigPath), `noticed-${createHash('sha256')
     .update(JSON.stringify([sourceApplication, sessionId, versions])).digest('hex').slice(0, 24)}`);
-  try { writeFileSync(marker, '', { flag: 'wx' }); } catch { return null; }
-  return `FULI ${version} is installed, but ${outdated.length} open ${sourceApplication} session(s) still run FULI ${versions.join(', ')}. `
-    + 'Restart those sessions to load it (it uses fewer tokens). / 已安装 FULI ' + version + '，但有 ' + outdated.length
-    + ' 个打开的会话还在用旧版 ' + versions.join('、') + '，重启这些会话即可加载新版（更省 Token）。';
+  try {
+    writeFileSync(marker, JSON.stringify({ sourceApplication, sessionId, installed: version, versions, kind,
+      noticedAt: clock().toISOString() }), { flag: 'wx' });
+  } catch { return null; }
+  if (kind === 'update_only') return restartNotice(version, outdated.length, sourceApplication, versions);
+  const older = own.length ? own : incompatible;
+  return tokenNotice(version, [...new Set(older.map(record => record.version))].sort(), own.length ? null : older.length,
+    sourceApplication);
 }
+
+const restartNotice = (version, count, sourceApplication, versions) =>
+  `FULI ${version} is installed, but ${count} open ${sourceApplication} session(s) still run FULI ${versions.join(', ')}. `
+  + 'Restart those sessions to load it (it uses fewer tokens). / 已安装 FULI ' + version + '，但有 ' + count
+  + ' 个打开的会话还在用旧版 ' + versions.join('、') + '，重启这些会话即可加载新版（更省 Token）。';
+
+// count is null when this session's own server is one of them.
+const tokenNotice = (version, versions, count, sourceApplication) => (count === null
+  ? `This session's FULI MCP connection runs FULI ${versions.join(', ')}, older than the installed ${version}; `
+    + 'it may not read this taskContextToken. If a FULI call with it fails, '
+  : `${count} open ${sourceApplication} session(s) still have a FULI MCP connection on FULI ${versions.join(', ')}, `
+    + `older than the installed ${version}, which may not read this taskContextToken. If this session is one and a FULI call with it fails, `)
+  + 'ask the person to restart this session\'s FULI MCP connection or open a new session, and meanwhile call '
+  + 'get_collaboration_preferences for a token that connection can read. / '
+  + (count === null ? `本会话的 FULI MCP 连接还是 ${versions.join('、')}，早于已安装的 ${version}，可能读不了本轮 token。`
+    : `有 ${count} 个打开的会话的 FULI MCP 连接还是 ${versions.join('、')}，早于已安装的 ${version}，可能读不了本轮 token；如果本会话是其中之一，`)
+  + '带它的 FULI 调用失败时，请用户重连本会话的 FULI MCP 或新开会话，在此之前先调 get_collaboration_preferences 换一个它能读的 token。';
 
 // Adds the notice to a UserPromptSubmit hook output without touching anything else.
 export function withOutdatedMcpNotice(output, notice) {

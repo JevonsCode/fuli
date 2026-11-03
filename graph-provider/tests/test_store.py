@@ -43,8 +43,11 @@ def test_graphiti_group_id_uses_only_supported_characters():
 async def test_structured_supersession_stores_the_exact_replacement_relationship():
     # The episode is new, nothing it names was permanently deleted (rec#5
     # C9) and no captured entity has later versions; then, in one
-    # transaction, the space lock, the same checks again, and the write.
-    driver = SequentialDriver([[]] * 13)
+    # transaction, the space lock, the same checks again, the write, and the
+    # write-time supersession reads: two entities and the relationship (which
+    # is no keyed value) find nothing older. Before and inside it, the
+    # relationship is checked for an ended item of the same words.
+    driver = SequentialDriver([[]] * 19)
     store = StoreKnowledge()
     store.runtime = RuntimeStub(driver)
     store._group_locks = {}
@@ -83,14 +86,17 @@ async def test_structured_supersession_stores_the_exact_replacement_relationship
     assert 'deleted_item_keys' in driver.calls[1][0]
     assert 'item.fuli_replaced_by_item_id IS NOT NULL' in driver.calls[2][0]
     assert 'deleted_item_keys' in driver.calls[3][0]
-    assert 'deleted_source_turn_keys' in driver.calls[4][0]
-    assert 'removed_episode_ids' in driver.calls[5][0]
-    assert '_knowledge_lock' in driver.calls[6][0]
-    assert 'deleted_source_turn_keys' in driver.calls[7][0]
-    assert 'removed_episode_ids' in driver.calls[8][0]
-    assert all('deleted_item_keys' in driver.calls[index][0] for index in (9, 10))
-    assert 'item.fuli_replaced_by_item_id IS NOT NULL' in driver.calls[11][0]
-    query, parameters = driver.calls[12]
+    assert 'item.expired_at IS NOT NULL' in driver.calls[4][0]
+    assert 'deleted_source_turn_keys' in driver.calls[5][0]
+    assert 'removed_episode_ids' in driver.calls[6][0]
+    assert '_knowledge_lock' in driver.calls[7][0]
+    assert 'deleted_source_turn_keys' in driver.calls[8][0]
+    assert 'removed_episode_ids' in driver.calls[9][0]
+    assert all('deleted_item_keys' in driver.calls[index][0] for index in (10, 11))
+    assert 'item.expired_at IS NOT NULL' in driver.calls[12][0]
+    assert 'item.fuli_replaced_by_item_id IS NOT NULL' in driver.calls[13][0]
+    assert all('write-time supersession' in query for query, _ in driver.calls[15:])
+    query, parameters = driver.calls[14]
     assert 'old.fuli_replaced_by_item_id = replacement.replacement_id' in query
     assert "old.fuli_replaced_by_item_kind = 'relationship'" in query
     assert 'NOT (old.uuid IN $relationship_ids)' in query

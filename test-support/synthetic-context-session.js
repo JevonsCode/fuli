@@ -46,7 +46,9 @@ export function syntheticHost(directory, client, sessionId, { fileName = `${clie
         internal_chat_message_metadata_passthrough: { content_item_kinds: ['hooks.additional_context'],
           content_item_metadata: [{ provenance: { type: 'harness', hook: true } }] } } }
       : { type: 'attachment', sessionId, uuid: `attachment-${size}`,
-        attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit' }, rendered: [{ content: text }] }),
+        attachment: { type: 'hook_additional_context', hookEvent: 'UserPromptSubmit' },
+        // As Claude Code records it: the hook's text inside its reminder wrapper.
+        rendered: [{ content: `<system-reminder>\nUserPromptSubmit hook additional context: ${text}\n</system-reminder>` }] }),
     compact: () => write(codex ? { type: 'compacted', payload: { window_id: 'next' } }
       : { type: 'system', subtype: 'compact_boundary', sessionId, parentUuid: null }),
     // A FULI tool result whose structured copy and visible text may differ.

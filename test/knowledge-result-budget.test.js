@@ -341,3 +341,26 @@ test('general search offers the same index view', async () => {
     `Index carried ${index.retrieval_budget.returned_items} records, a full page ${full.retrieval_budget.returned_items}`);
   assert.ok(index.entities.every(item => Number.isInteger(item.approx_tokens)));
 });
+
+// Synthetic: an old and a new version of the same deployment port fact.
+const portVersion = (suffix, port, invalidAt) => ({ ...record(suffix), key: 'aurora-port', name: 'Aurora 端口',
+  summary: `Aurora listens on port ${port}.`, source_uris: [], attributes: {}, invalid_at: invalidAt });
+
+test('automatic recall delivers the current version only, even when the search returned history', async () => {
+  const app = application([portVersion('-old', 3000, '2026-10-01T00:00:00Z'), portVersion('-new', 4000, null)]);
+  const result = await recallTaskKnowledge(app, resolution, '沿用之前 Aurora 的端口配置');
+  assert.equal(result.status, 'matched');
+  assert.deepEqual(result.entities.map(item => item.id), ['aurora-runbook-new']);
+  assert.doesNotMatch(JSON.stringify(result), /port 3000/);
+  assert.ok(app.calls.every(call => call.includeHistorical === false), 'recall never asks for history');
+});
+
+test('an index view of an explicit history search marks the old version and only the old one', async () => {
+  const app = application([portVersion('-new', 4000, null), portVersion('-old', 3000, '2026-10-01T00:00:00Z')]);
+  const index = await searchCurrentProjectKnowledge(app, resolution,
+    { queries: ['Aurora 端口'], includeHistorical: true, view: 'index' });
+  const listed = Object.fromEntries(index.results[0].entities.map(item => [item.id, item]));
+  assert.equal(listed['aurora-runbook-old'].invalid_at, '2026-10-01T00:00:00Z');
+  assert.equal('invalid_at' in listed['aurora-runbook-new'], false, 'a current record spends no bytes on it');
+  assert.ok(app.calls.every(call => call.includeHistorical === true));
+});

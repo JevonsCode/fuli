@@ -43,6 +43,10 @@ import {
 
 const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   agent_chat: 512 * 1024,
+  message_agent: 128 * 1024,
+  get_agent_message_status: 128 * 1024,
+  read_agent_messages: 1024 * 1024,
+  read_agent_thread: 600 * 1024,
   find_agents: 128 * 1024,
   read_agent_conversation: 600 * 1024,
   list_agent_conversations: 32 * 1024,
@@ -106,6 +110,9 @@ const NATIVE_CHOICE_TOOLS = new Set(['checkpoint_task_knowledge', 'review_with_t
   'list_judgments', 'request_agent_attention', 'list_agent_attention']);
 // A truncated result would be a misleading partial file, so these fail instead.
 const COMPLETE_RESULT_TOOLS = new Set(['export_project_agent_memory', 'get_agent_handoff']);
+// Roundtable message bodies are delivered whole or not at all (rec#77): a cut
+// reply reads as complete. read_agent_thread pages with after/limit instead.
+const WHOLE_MESSAGE_TOOLS = new Set(['message_agent', 'get_agent_message_status', 'read_agent_messages', 'read_agent_thread']);
 const NATIVE_CONTEXT = Symbol('fuli.nativeMcpRequestContext');
 
 export function createMcpServer(
@@ -176,9 +183,11 @@ export function createMcpServer(
   return server;
 }
 
-// Chat clients list only a few tools. Hosts that do not refresh after
-// tools/list_changed can still call a discovered tool through this one name;
-// the call is validated and run exactly as the original tool.
+// Chat clients list only a few tools and run every other one through this one
+// name; the call is validated and run exactly as the original tool. The listed
+// tools never change during a session: a client caches its prompt up to and
+// after the tool list, so adding a discovered tool to it would make every
+// later request pay for the whole prompt again (rec#76).
 const DISPATCH_TOOL = 'fuli_call';
 function registerDispatchTool(server) {
   server.registerTool(DISPATCH_TOOL, {
@@ -301,17 +310,13 @@ function registerTool(server, tool, chat = false) {
 function registerCallHandler(server, tools, onDemandTools, resolveNativeContext = null) {
   server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     assertToolInputWithinBudget(request.params.arguments);
+    let tool = tools.get(request.params.name);
     if (request.params.name === DISPATCH_TOOL && onDemandTools) {
       const { toolName, input } = request.params.arguments ?? {};
-      const target = toolName === DISPATCH_TOOL ? null : tools.get(toolName) ?? onDemandTools.get(toolName);
-      if (!target) return errorToolResult(new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
-      if (!tools.has(target.definition.name)) {
-        tools.set(target.definition.name, target);
-        registerTool(server, target);
-      }
-      request = { ...request, params: { ...request.params, name: target.definition.name, arguments: input ?? {} } };
+      tool = toolName === DISPATCH_TOOL ? null : tools.get(toolName) ?? onDemandTools.get(toolName);
+      if (!tool) return errorToolResult(new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
+      request = { ...request, params: { ...request.params, name: tool.definition.name, arguments: input ?? {} } };
     }
-    const tool = tools.get(request.params.name);
     if (!tool) {
       return errorToolResult(new ApplicationError(
         ApplicationErrorCode.NOT_FOUND,
@@ -331,16 +336,7 @@ function registerCallHandler(server, tools, onDemandTools, resolveNativeContext 
     let native;
     try { native = resolveNativeContext?.(request.params._meta); }
     catch (error) { return errorToolResult(error); }
-    const result = await invokeTool(tool, parsed.data, native ? { ...extra, [NATIVE_CONTEXT]: native } : extra);
-    if (!result.isError && tool.definition.name === 'list_agent_interfaces' && parsed.data.toolName && onDemandTools) {
-      const discovered = onDemandTools.get(parsed.data.toolName);
-      if (!discovered) return errorToolResult(new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
-      if (!tools.has(discovered.definition.name)) {
-        tools.set(discovered.definition.name, discovered);
-        registerTool(server, discovered); // SDK sends tools/list_changed.
-      }
-    }
-    return result;
+    return invokeTool(tool, parsed.data, native ? { ...extra, [NATIVE_CONTEXT]: native } : extra);
   });
 }
 
@@ -354,6 +350,7 @@ async function invokeTool(tool, input, requestContext = null) {
       ? Math.max(TOOL_RESULT_LIMIT_BYTES[tool.definition.name] ?? 0, 32 * 1024)
       : TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
     if (tool.definition.name === 'agent_chat') return completeToolResult(parseChatResult(value), limitBytes);
+    if (WHOLE_MESSAGE_TOOLS.has(tool.definition.name)) return completeToolResult(value, limitBytes);
     if (['search_knowledge_graph', 'search_current_project_knowledge'].includes(tool.definition.name)
       && value?.retrieval_budget) return completeToolResult(value, limitBytes);
     if (['begin_task_context', 'get_collaboration_preferences', 'read_task_preferences'].includes(tool.definition.name)) {

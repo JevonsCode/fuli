@@ -48,10 +48,12 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
         if (event.type === 'reset') { calls.clear(); frames = []; generation = contentHash({ offset, line }); since = end; }
         if (event.type === 'call' && typeof event.id === 'string') calls.set(event.id, evidenceToolName(event));
         // A host-recorded Hook context is model-facing like a tool result; each
-        // line is parsed on its own, so only a complete JSON frame counts.
+        // line is parsed on its own, so only a complete JSON frame counts. Its
+        // label is the text the model saw above the frame (entry-skeleton.js).
         if (event.type === 'context') {
+          const label = contextLabel(event.output);
           for (const { value, visible, confirms = true } of preferenceFrames({ hookSpecificOutput: { additionalContext: event.output } })) {
-            frames.push({ value, visible, confirms, offset, end, recordHash: contentHash(line) });
+            frames.push({ value, visible, confirms, label, offset, end, recordHash: contentHash(line) });
           }
           continue;
         }
@@ -125,6 +127,13 @@ function evidenceToolName(event) {
     const direct = `mcp__fuli__${input?.toolName}`;
     return DIRECT_TOOLS.test(direct) ? direct : null;
   } catch { return null; }
+}
+
+// The lines a hook context shows before its first JSON frame, or null.
+function contextLabel(text) {
+  const lines = typeof text === 'string' ? text.split('\n') : [];
+  const at = lines.findIndex(line => line.startsWith('{'));
+  return at > 0 ? lines.slice(0, at).join('\n') : null;
 }
 
 export function preferenceFrameHash(value) {

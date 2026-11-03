@@ -28,6 +28,13 @@ recall and never stores or returns that prompt. Apply the returned `task_knowled
 preferences, then retain the opaque task token for any required checkpoint;
 do not redundantly call `get_collaboration_preferences`.
 
+After a FULI update an open session can still have a FULI MCP connection on the older version.
+The hook then says so once, in a notice after the task context. If a FULI call with the hook's
+token then fails ("Task context ... not found", or a refusal that names an older connection),
+tell the person to restart this session's FULI MCP connection or open a new session. Until they
+do, call `get_collaboration_preferences` for a token that connection can read. Never retry the
+hook's token as if the failure were transient.
+
 When the host has not supplied lifecycle context, call exactly
 `get_collaboration_preferences` before any other tool or answer. Pass `projectPath` as the current
 working directory and `taskPrompt` as the current user request. This is the prompt-only fallback

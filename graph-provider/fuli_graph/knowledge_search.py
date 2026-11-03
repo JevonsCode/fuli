@@ -385,7 +385,7 @@ async def _personal_entities(
         RETURN node.uuid AS id, node.group_id AS group_id,
                node.name AS name, coalesce(node.fuli_type, 'Entity') AS type,
                coalesce(node.summary, '') AS summary,
-               node.created_at AS created_at,
+               node.created_at AS created_at, node.fuli_invalid_at AS invalid_at,
                coalesce(node.fuli_origin_quadrant, 'known_known') AS origin_quadrant,
                coalesce(node.fuli_current_quadrant, 'known_known') AS current_quadrant,
                coalesce(node.fuli_epistemic_status, 'confirmed') AS epistemic_status,
@@ -671,7 +671,7 @@ def _dedupe_ranked_edges(
     selected = {}
     for score, edge in ranked:
         metadata = metadata_by_id.get(edge.uuid, {})
-        key = metadata.get('key') or edge.uuid
+        key = _dedupe_key(metadata.get('key'), edge.uuid, edge.invalid_at)
         quality = (
             _scope_precedence(metadata, active_project_id, project_agent_id),
             -score,
@@ -690,7 +690,7 @@ def _dedupe_ranked_edges(
 def _dedupe_ranked_entities(ranked, active_project_id, project_agent_id=None):
     selected = {}
     for record, score in ranked:
-        key = record.get('key') or record.get('id')
+        key = _dedupe_key(record.get('key'), record.get('id'), record.get('invalid_at'))
         quality = (
             _scope_precedence(record, active_project_id, project_agent_id),
             -score,
@@ -704,6 +704,12 @@ def _dedupe_ranked_entities(ranked, active_project_id, project_agent_id=None):
         key=lambda item: (-item[1], -_tie_weight(item[0]), _scope_precedence(
             item[0], active_project_id, project_agent_id), item[0]['id']),
     )
+
+
+def _dedupe_key(key, item_id, invalid_at):
+    """One current item per key across scopes. A historical version, asked
+    for explicitly, never stands in for the current one: each is its own."""
+    return ('current', key or item_id) if invalid_at is None else ('historical', item_id)
 
 
 def _tie_weight(metadata) -> float:
@@ -725,6 +731,7 @@ def _entity_search_result(record, score: float, space_id: str) -> EntitySearchRe
     basis = json_object(value.pop('confirmation_basis_json', None))
     source_references = value.pop('source_references', [])
     created_at = _native_datetime(value.pop('created_at', None))
+    invalid_at = _native_datetime(value.pop('invalid_at', None))
     last_human_changed_at = _native_datetime(
         value.pop('last_human_changed_at', None)
     )
@@ -753,6 +760,7 @@ def _entity_search_result(record, score: float, space_id: str) -> EntitySearchRe
         **value,
         space_id=space_id,
         created_at=created_at,
+        invalid_at=invalid_at,
         last_human_changed_at=last_human_changed_at,
         last_agent_viewed_at=last_agent_viewed_at,
         last_agent_reviewed_at=last_agent_reviewed_at,

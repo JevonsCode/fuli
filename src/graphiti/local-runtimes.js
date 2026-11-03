@@ -77,7 +77,7 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   app.standingAssignments = createStandingAssignments({ path: paths.standingAssignmentsPath });
   // Each Agent's own workflows (rec#60 D-78); the file is created by the first proposal.
   app.agentWorkflows = createAgentWorkflows({ path: join(dataDir, 'agent-workflows.sqlite') });
-  // Which knowledge the automatic recall showed and which the Agent reported using (rec#63); recording only.
+  // Which knowledge the automatic recall showed and which the Agent reported using (rec#63); recall reads it as a ranking prior.
   app.recallImpressions = new RecallImpressionsStore(join(dataDir, 'recall-impressions.sqlite'));
   // Each Agent's look as the person chose it (rec#11 D-89); the file is created by the first choice.
   app.agentAvatars = createAgentAvatars({ path: join(dataDir, 'agent-avatars.sqlite') });

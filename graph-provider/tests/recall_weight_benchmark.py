@@ -119,6 +119,8 @@ def load_ranker(ref):
              'LATIN_QUERY_FILLERS', 'CHINESE_QUERY_FILLERS'}
     if 'def _tie_weight(' in search:
         names.add('_tie_weight')
+    if 'def _dedupe_key(' in search:
+        names.add('_dedupe_key')
     definitions(search, names, search_ns)
     return search_ns
 
