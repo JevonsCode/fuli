@@ -3,7 +3,7 @@ import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
 // The only FULI operations that state a turn belongs to a task (rec#15). A
 // read, a refresh, a search or any automatic hook call naming the task's token
 // does not. Claude Code names a tool of the MCP server setup registers as
-// "fuli" (src/setup/claude-code-config.js) mcp__fuli__<tool>.
+// "fuli" (src/agent-kits/fuli-installer-manifest.json) mcp__fuli__<tool>.
 const EXPLICIT_TASK_CONTINUATIONS = Object.freeze(['checkpoint_task_knowledge']);
 const CONTINUATION_TOOLS = new Set(EXPLICIT_TASK_CONTINUATIONS.map(name => `mcp__fuli__${name}`));
 // One turn of native history read for evidence; a longer turn stays unresolved.

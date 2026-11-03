@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { formatSetupPreview, formatSetupResult, runSetupCommand } from '../src/cli/setup-command.js';
 import { applyLocalSetup, planLocalSetup } from '../src/setup/setup.js';
 import { DEFAULT_RUNTIME_SETTINGS } from '../src/system/runtime-settings.js';
+import { fakeClientInstaller } from '../test-support/fake-client-installer.js';
 
 const OPTIONS = Object.freeze({
   dataDir: null,
@@ -38,8 +39,8 @@ test('connected-only setup refreshes existing MCP clients, not newly detected or
   const agents = [
     { id: 'codex', available: true, integrationDetails: { mcp: 'current' } },
     { id: 'cursor', available: true, integrationDetails: { mcp: 'outdated' } },
-    { id: 'claude-code', label: 'Claude Code', available: true, skillPath: '/client/skills', integrationStatus: 'update_available', integrationDetails: { mcp: 'missing', skills: 'outdated' } },
-    { id: 'claude-desktop', label: 'Claude Desktop', available: true, integrationStatus: 'not_connected', integrationDetails: { mcp: 'missing', skills: 'current' } }
+    { id: 'claude-code', label: 'Claude Code', available: true, integrationStatus: 'update_available', integrationDetails: { mcp: 'missing', skills: 'outdated' } },
+    { id: 'claude-desktop', label: 'Claude Desktop', available: true, integrationStatus: 'not_connected', integrationDetails: { mcp: 'missing' } }
   ];
   await runSetupCommand(['--yes', '--connected-only'], {
     planSetup: () => ({ ...samplePlan(), agents }),
@@ -206,12 +207,11 @@ test('first setup on Windows picks ports outside the ranges Windows reserves; sa
   assert.deepEqual(platforms, ['win32']);
 });
 
-test('applying setup starts the runtime, backs up configs, and connects available agents',
+test('applying setup starts the runtime and connects available agents through agent-installer',
   async () => {
-    const calls = [];
     let runtimeInput = null;
-    const plan = samplePlan();
-    const result = await applyLocalSetup(plan, { ...OPTIONS, memoryProfile: 'low' }, {
+    const installer = fakeClientInstaller([{ id: 'codex' }], { actionCodes: { codex: ['new_session', 'trust_hooks'] } });
+    const result = await applyLocalSetup(samplePlan(), { ...OPTIONS, memoryProfile: 'low' }, {
       ensureRuntime: async (input) => {
         runtimeInput = input;
         return ({
@@ -220,28 +220,10 @@ test('applying setup starts the runtime, backs up configs, and connects availabl
           pid: 123
         });
       },
-      backupConfig(agent) {
-        calls.push(`backup:${agent.id}`);
-        return `C:/backup/${agent.id}.bak`;
-      },
-      connect(agent) {
-        calls.push(`connect:${agent.id}`);
-        return { id: agent.id, label: agent.label, status: 'connected' };
-      },
-      installSkill(agent) {
-        calls.push(`skill:${agent.id}:${agent.skillPath.split('/').at(-1)}`);
-        return { status: 'installed', path: agent.skillPath, backupPath: null };
-      }
+      clientInstaller: installer
     });
 
-    assert.deepEqual(calls, [
-      'backup:codex',
-      'connect:codex',
-      'skill:codex:capturing-session-knowledge',
-      'skill:codex:grilling-project',
-      'skill:codex:flreview',
-      'skill:codex:operating-fuli'
-    ]);
+    assert.deepEqual(installer.calls, [['apply', ['codex']]]);
     assert.equal(runtimeInput.personalOnly, true);
     assert.equal(runtimeInput.memoryProfile, 'low');
     assert.equal(runtimeInput.adaptiveRuntimeSettings, undefined);
@@ -251,29 +233,10 @@ test('applying setup starts the runtime, backs up configs, and connects availabl
       id: 'codex',
       label: 'Codex',
       status: 'connected',
-      backupPath: 'C:/backup/codex.bak',
-      skills: [
-        {
-          status: 'installed',
-          path: 'C:/Users/Test/.agents/skills/capturing-session-knowledge',
-          backupPath: null
-        },
-        {
-          status: 'installed',
-          path: 'C:/Users/Test/.agents/skills/grilling-project',
-          backupPath: null
-        },
-        {
-          status: 'installed',
-          path: 'C:/Users/Test/.agents/skills/flreview',
-          backupPath: null
-        },
-        {
-          status: 'installed',
-          path: 'C:/Users/Test/.agents/skills/operating-fuli',
-          backupPath: null
-        }
-      ]
+      restartRequired: false,
+      newTaskRequired: true,
+      nextSteps: ['Step trust_hooks.'],
+      selfCheck: { status: 'passed', details: { mcp: 'current' } }
     }]);
   });
 
@@ -297,10 +260,11 @@ test('applying setup forwards the selected graph runtime mode', async () => {
 });
 
 test('an agent failure is isolated and reported without blocking the local runtime', async () => {
+  const installer = { ...fakeClientInstaller([{ id: 'codex' }]),
+    apply: async () => { throw Object.assign(new Error('Could not connect Codex to Fuli'), { code: 'write_failed' }); } };
   const result = await applyLocalSetup(samplePlan(), OPTIONS, {
     ensureRuntime: async () => ({ status: 'running', url: 'http://127.0.0.1:2727', pid: 1 }),
-    backupConfig: () => null,
-    connect: () => { throw new Error('Could not connect Codex to Fuli'); }
+    clientInstaller: installer
   });
 
   assert.equal(result.status, 'partial');
@@ -312,22 +276,21 @@ test('an agent failure is isolated and reported without blocking the local runti
   }]);
 });
 
-test('setup reports partial Agent artifacts when Skill installation fails after connection', async () => {
-  let skillCalls = 0;
+test('an installer that times out is never retried and says the client may have changed', async () => {
+  const installer = { ...fakeClientInstaller([{ id: 'codex' }]),
+    apply: async () => { throw Object.assign(new Error('No answer'), { code: 'unknown_outcome' }); } };
   const result = await applyLocalSetup(samplePlan(), OPTIONS, {
     ensureRuntime: async () => ({ status: 'running', url: null, pid: 1 }),
-    backupConfig: () => 'synthetic-backup.toml',
-    connect: (agent) => ({
-      id: agent.id,
-      label: agent.label,
-      status: 'connected',
-      newTaskRequired: true
-    }),
-    installSkill: (agent) => {
-      skillCalls += 1;
-      if (skillCalls === 2) throw new Error('Synthetic Skill write failure');
-      return { status: 'installed', path: agent.skillPath, backupPath: null };
-    }
+    clientInstaller: installer
+  });
+  assert.equal(result.agents[0].status, 'failed');
+  assert.match(result.agents[0].message, /may or may not have changed.*did not retry/);
+});
+
+test('setup reports a partially connected Agent when agent-installer left a component alone', async () => {
+  const result = await applyLocalSetup(samplePlan(), OPTIONS, {
+    ensureRuntime: async () => ({ status: 'running', url: null, pid: 1 }),
+    clientInstaller: fakeClientInstaller([{ id: 'codex' }], { problems: { codex: ['skills: It was changed by hand, so it is left as it is.'] } })
   });
 
   assert.equal(result.status, 'partial');
@@ -335,45 +298,42 @@ test('setup reports partial Agent artifacts when Skill installation fails after 
     id: 'codex',
     label: 'Codex',
     status: 'partial',
-    newTaskRequired: true,
-    backupPath: 'synthetic-backup.toml',
-    skills: [{
-      status: 'installed',
-      path: samplePlan().agents[0].skillPath,
-      backupPath: null
-    }],
-    message: 'Synthetic Skill write failure'
+    restartRequired: false,
+    message: 'skills: It was changed by hand, so it is left as it is.'
   }]);
 });
 
+test('without agent-installer setup connects nothing and says the client component could not be downloaded', async () => {
+  const result = await applyLocalSetup(samplePlan(), OPTIONS, {
+    ensureRuntime: async () => ({ status: 'running', url: null, pid: 1 }),
+    clientInstaller: fakeClientInstaller([{ id: 'codex' }], { unavailable: 'offline' })
+  });
+  assert.equal(result.status, 'partial');
+  assert.equal(result.agents[0].status, 'failed');
+  assert.equal(result.agents[0].reason, 'client_component_unavailable');
+  assert.match(formatSetupResult(result, samplePlan()), /Codex: connection failed \(无法下载客户端组件 agent-installer，请检查网络后重试。 The client component agent-installer could not be downloaded; check your network connection and try again\.\)/);
+  // When it cannot even list the clients, the preview and the result say so.
+  const plan = await planLocalSetup({ ...OPTIONS, dataDir: 'C:/Fuli' }, {
+    resolvePaths: () => samplePlan().paths, detect: async () => ({ status: 'unavailable', reason: 'agent-installer could not be downloaded: offline' }),
+    readSettings: () => SAVED_RUNTIME_SETTINGS, readAdaptiveSettings: () => ({ enabled: false }), settingsExist: () => true
+  });
+  assert.match(formatSetupPreview(plan, OPTIONS), /Automatic client setup: not possible here\. 无法下载客户端组件/);
+  const applied = await applyLocalSetup(plan, OPTIONS, { ensureRuntime: async () => ({ status: 'running', url: null, pid: 1 }) });
+  assert.equal(applied.status, 'partial');
+  assert.match(formatSetupResult(applied, plan), /Agent clients: not set up\. 无法下载客户端组件.*check your network connection and try again\./);
+});
+
 test('applying setup connects only the agents selected during setup', async () => {
-  const calls = [];
+  const installer = fakeClientInstaller(multiAgentPlan().map(({ id }) => ({ id })));
   const result = await applyLocalSetup({
     ...samplePlan(),
     agents: multiAgentPlan()
   }, OPTIONS, {
     ensureRuntime: async () => ({ status: 'running', url: null, pid: 1 }),
-    backupConfig: (agent) => {
-      calls.push(`backup:${agent.id}`);
-      return null;
-    },
-    connect: (agent) => {
-      calls.push(`connect:${agent.id}`);
-      return { id: agent.id, label: agent.label, status: 'connected' };
-    },
-    installSkill: (agent) => ({
-      status: 'current',
-      path: agent.skillPath,
-      backupPath: null
-    })
+    clientInstaller: installer
   });
 
-  assert.deepEqual(calls, [
-    'backup:claude-code',
-    'connect:claude-code',
-    'backup:cursor',
-    'connect:cursor'
-  ]);
+  assert.deepEqual(installer.calls, [['apply', ['claude-code']], ['apply', ['cursor']]]);
   assert.deepEqual(result.agents.map(({ id }) => id), ['claude-code', 'cursor']);
 });
 
@@ -491,63 +451,20 @@ function samplePlan() {
       dataDir: 'C:/Fuli',
       backupDir: 'C:/Fuli/backups/agents',
       mcpServerPath: 'C:/Package/src/mcp-server.js',
-      graphRuntimeConfigPath: 'C:/Fuli/graph-runtime.json',
-      sessionSkillPath: 'C:/Package/skills/capturing-session-knowledge',
-      projectSkillPath: 'C:/Package/skills/grilling-project',
-      reviewSkillPath: 'C:/Package/skills/flreview',
-      operationSkillPath: 'C:/Package/skills/operating-fuli'
+      graphRuntimeConfigPath: 'C:/Fuli/graph-runtime.json'
     },
     agents: [
-      {
-        id: 'codex',
-        label: 'Codex',
-        available: true,
-        configPath: 'C:/Codex/config.toml',
-        skillPath: 'C:/Users/Test/.agents/skills/capturing-session-knowledge',
-        projectSkillPath: 'C:/Users/Test/.agents/skills/grilling-project',
-        reviewSkillPath: 'C:/Users/Test/.agents/skills/flreview',
-        operationSkillPath: 'C:/Users/Test/.agents/skills/operating-fuli'
-      },
-      { id: 'claude-code', label: 'Claude Code', available: false, configPath: 'C:/x' }
+      { id: 'codex', label: 'Codex', available: true },
+      { id: 'claude-code', label: 'Claude Code', available: false }
     ]
   };
 }
 
 function multiAgentPlan() {
   return [
-    {
-      id: 'codex',
-      label: 'Codex',
-      available: true,
-      selected: false,
-      configPath: 'C:/Codex/config.toml',
-      skillPath: 'C:/Users/Test/.agents/skills/capturing-session-knowledge',
-      projectSkillPath: 'C:/Users/Test/.agents/skills/grilling-project',
-      reviewSkillPath: 'C:/Users/Test/.agents/skills/flreview',
-      operationSkillPath: 'C:/Users/Test/.agents/skills/operating-fuli'
-    },
-    {
-      id: 'claude-code',
-      label: 'Claude Code',
-      available: true,
-      selected: true,
-      configPath: 'C:/Users/Test/.claude.json',
-      skillPath: 'C:/Users/Test/.claude/skills/capturing-session-knowledge',
-      projectSkillPath: 'C:/Users/Test/.claude/skills/grilling-project',
-      reviewSkillPath: 'C:/Users/Test/.claude/skills/flreview',
-      operationSkillPath: 'C:/Users/Test/.claude/skills/operating-fuli'
-    },
-    {
-      id: 'cursor',
-      label: 'Cursor',
-      available: true,
-      selected: true,
-      configPath: 'C:/Users/Test/.cursor/mcp.json',
-      skillPath: 'C:/Users/Test/.cursor/skills/capturing-session-knowledge',
-      projectSkillPath: 'C:/Users/Test/.cursor/skills/grilling-project',
-      reviewSkillPath: 'C:/Users/Test/.cursor/skills/flreview',
-      operationSkillPath: 'C:/Users/Test/.cursor/skills/operating-fuli'
-    }
+    { id: 'codex', label: 'Codex', available: true, selected: false },
+    { id: 'claude-code', label: 'Claude Code', available: true, selected: true },
+    { id: 'cursor', label: 'Cursor', available: true, selected: true }
   ];
 }
 
@@ -563,40 +480,11 @@ test('setup output explains why an Agent was not fully connected', () => {
 test('applyLocalSetup runs post-connection self-check and formatSetupResult prints the 2-step first-try guide', async () => {
   const result = await applyLocalSetup(samplePlan(), OPTIONS, {
     ensureRuntime: async () => ({ status: 'running', url: 'http://127.0.0.1:2727', pid: 1 }),
-    backupConfig: () => 'C:/backup/codex.bak',
-    connect: (agent) => ({
-      id: agent.id,
-      label: agent.label,
-      status: 'connected',
-      newTaskRequired: true
-    }),
-    installSkill: (agent) => ({
-      status: 'installed',
-      path: agent.skillPath,
-      backupPath: null
-    }),
-    inspect: async (agent) => ({
-      ...agent,
-      integrationStatus: 'connected',
-      integrationDetails: {
-        mcp: 'current',
-        skills: 'current',
-        instructions: 'current',
-        hooks: 'current'
-      }
-    })
+    clientInstaller: fakeClientInstaller([{ id: 'codex' }], { actionCodes: { codex: ['new_session'] } })
   });
 
   assert.equal(result.status, 'ready');
-  assert.deepEqual(result.agents[0].selfCheck, {
-    status: 'passed',
-    details: {
-      mcp: 'current',
-      skills: 'current',
-      instructions: 'current',
-      hooks: 'current'
-    }
-  });
+  assert.deepEqual(result.agents[0].selfCheck, { status: 'passed', details: { mcp: 'current' } });
 
   const output = formatSetupResult(result, samplePlan());
   assert.match(output, /Codex: connected \(self-check passed\); create or reopen a task/);
@@ -606,34 +494,27 @@ test('applyLocalSetup runs post-connection self-check and formatSetupResult prin
 test('applyLocalSetup downgrades an Agent to partial when post-connection self-check detects missing or outdated components', async () => {
   const result = await applyLocalSetup(samplePlan(), OPTIONS, {
     ensureRuntime: async () => ({ status: 'running', url: 'http://127.0.0.1:2727', pid: 1 }),
-    backupConfig: () => 'C:/backup/codex.bak',
-    connect: (agent) => ({
-      id: agent.id,
-      label: agent.label,
-      status: 'connected'
-    }),
-    installSkill: (agent) => ({
-      status: 'installed',
-      path: agent.skillPath,
-      backupPath: null
-    }),
-    inspect: async (agent) => ({
-      ...agent,
-      integrationStatus: 'update_available',
-      integrationDetails: {
-        mcp: 'current',
-        skills: 'current',
-        hooks: 'outdated'
-      }
-    })
+    clientInstaller: fakeClientInstaller([{ id: 'codex' }], { afterApply: 'update_available' })
   });
 
   assert.equal(result.status, 'partial');
   assert.equal(result.agents[0].status, 'partial');
   assert.equal(result.agents[0].selfCheck.status, 'failed');
-  assert.match(result.agents[0].message, /Self-check failed \(hooks=outdated\)/);
+  assert.match(result.agents[0].message, /Self-check failed \(mcp=outdated\)/);
 
   const output = formatSetupResult(result, samplePlan());
-  assert.match(output, /Codex: partially configured \(Self-check failed \(hooks=outdated\)\); retry fuli setup/);
+  assert.match(output, /Codex: partially configured \(Self-check failed \(mcp=outdated\)\); retry fuli setup/);
 });
 
+test('a changed MCP-only client is restarted to load FULI; one that already had it is not', async () => {
+  const changed = await applyLocalSetup({ ...samplePlan(), agents: [{ id: 'gemini', label: 'Gemini CLI', available: true }] }, OPTIONS, {
+    ensureRuntime: async () => ({ status: 'running', url: null, pid: 1 }),
+    clientInstaller: fakeClientInstaller([{ id: 'gemini' }])
+  });
+  assert.equal(changed.agents[0].restartRequired, true);
+  const current = await applyLocalSetup({ ...samplePlan(), agents: [{ id: 'gemini', label: 'Gemini CLI', available: true }] }, OPTIONS, {
+    ensureRuntime: async () => ({ status: 'running', url: null, pid: 1 }),
+    clientInstaller: fakeClientInstaller([{ id: 'gemini', state: 'connected', mcp: 'current' }])
+  });
+  assert.equal(current.agents[0].restartRequired, false);
+});

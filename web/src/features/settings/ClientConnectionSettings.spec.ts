@@ -240,6 +240,19 @@ it('reports partial installs without claiming success and allows retry', async (
   wrapper.unmount()
 })
 
+it('says the client component could not be downloaded when agent-installer is missing, and allows retry', async () => {
+  routed(() => Response.json(statusOf([{ id: 'gemini', status: 'not_connected' }])),
+    (url) => Response.json(url.endsWith('/connect')
+      ? { id: 'gemini', status: 'failed', restartRequired: false, reason: 'client_component_unavailable' } : configuration))
+  const wrapper = mount(ClientConnectionSettings)
+  await flushPromises()
+  await wrapper.get('[data-connect-client="gemini"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).toBe('无法下载客户端组件 agent-installer，请检查网络后重试。')
+  expect(wrapper.get('[data-connect-client="gemini"]').attributes('disabled')).toBeUndefined()
+  wrapper.unmount()
+})
+
 it('adds a client by hand, shows why one was refused, and removes one FULI added', async () => {
   let custom: Custom[] = []
   const replies: Record<string, () => Response> = {}

@@ -1,14 +1,11 @@
 import { installAgent } from './install-agent.js';
-import { backupAgentConfig } from './config-backup.js';
 import { existsSync } from 'node:fs';
 import { totalmem } from 'node:os';
-import { detectAgents, inspectAgent } from '../agent-kits/client-detection.js';
+import { detectAgents } from '../agent-kits/client-detection.js';
+import { CLIENT_COMPONENT_UNAVAILABLE } from '../agent-kits/client-installer.js';
 import { agentKitPorts } from '../agent-kits/ports.js';
-import { agentTargets, connectAgent } from './agents.js';
-import { integrationContext } from './integration-context.js';
 import { resolveSetupPaths } from './paths.js';
 import { ensureGraphRuntime } from './graph-runtime.js';
-import { installSessionSkill } from './session-skill.js';
 import { beginFirstRunCapture } from './first-run-capture.js';
 import { reconcileLocalKnowledge } from '../knowledge-hard-delete/reconcile-local.js';
 import {
@@ -23,12 +20,12 @@ import {
   readAdaptiveRuntimeSettings
 } from '../adaptive-runtime/settings.js';
 
-// detect: which of FULI's writer targets agent-installer finds on this
-// machine (client-detection.js detectAgents), for the setup paths.
+// detect: the clients agent-installer finds on this machine
+// (client-detection.js detectAgents), for the setup paths.
 export async function planLocalSetup(options, {
   env = process.env,
   resolvePaths = resolveSetupPaths,
-  detect = (paths) => detectAgents(agentKitPorts(paths, { env }).clientInstaller, agentTargets({ env, dataDir: paths.dataDir })),
+  detect = (paths) => detectAgents(agentKitPorts(paths, { env }).clientInstaller),
   readSettings = readRuntimeSettings,
   readAdaptiveSettings = readAdaptiveRuntimeSettings,
   settingsExist = existsSync,
@@ -74,7 +71,8 @@ export async function planLocalSetup(options, {
     adaptiveRuntimeSettings,
     agents,
     // Why no client could be detected, when agent-installer was unavailable.
-    ...(detection.status === 'available' ? {} : { clientDetection: { status: 'unavailable', reason: detection.reason } })
+    ...(detection.status === 'available' ? {}
+      : { clientDetection: { status: 'unavailable', reason: detection.reason, message: CLIENT_COMPONENT_UNAVAILABLE } })
   };
 }
 
@@ -91,14 +89,6 @@ function graphRuntimeModeRecommendation({ platform, hostTotalBytes }) {
 
 export async function applyLocalSetup(plan, options, dependencies = {}) {
   const ensureRuntime = dependencies.ensureRuntime ?? ensureGraphRuntime;
-  const backupConfig = dependencies.backupConfig ?? backupAgentConfig;
-  const connect = dependencies.connect ?? connectAgent;
-  const installSkill = dependencies.installSkill ?? installSessionSkill;
-  // Real writers are self-checked through agent-installer; stubbed ones in tests are not.
-  const realWriters = connect === connectAgent && installSkill === installSessionSkill;
-  const installer = realWriters && !dependencies.inspect
-    ? agentKitPorts(plan.paths, { env: dependencies.env ?? process.env }).clientInstaller : null;
-  const inspect = dependencies.inspect ?? (installer ? (agent) => inspectAgent(installer, agent) : null);
   // Stubbed runtimes in tests never touch the data directory they name.
   const beginFirstRun = dependencies.beginFirstRun ?? (ensureRuntime === ensureGraphRuntime ? beginFirstRunCapture : () => {});
   const runtimeSettings = plan.runtimeSettings ?? runtimeSettingsWithOverrides(
@@ -122,25 +112,24 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
     env: dependencies.env ?? process.env,
     onProgress: dependencies.onProgress
   });
-  const context = integrationContext(plan.paths);
+  // Every client is written through agent-installer (client-installer.js).
+  const selected = plan.agents.filter(({ available, selected }) => available && selected !== false);
+  const installer = selected.length
+    ? dependencies.clientInstaller ?? agentKitPorts(plan.paths, { env: dependencies.env ?? process.env }).clientInstaller
+    : null;
   const agents = [];
-
-  for (const agent of plan.agents.filter(
-    ({ available, selected }) => available && selected !== false
-  )) {
-    agents.push(await installAgent(agent, context, plan.paths, {
-      backupConfig, connect, installSkill, inspect
-    }));
-  }
+  for (const agent of selected) agents.push(await installAgent(installer, agent));
 
   const agentsReady = agents.every(({ status }) => status === 'connected');
   const reconcileKnowledge = dependencies.reconcileKnowledge
     ?? (ensureRuntime === ensureGraphRuntime ? reconcileLocalKnowledge : null);
   const knowledgeRecovery = agentsReady && reconcileKnowledge
     ? await reconcileKnowledge(plan.paths, { fetchImpl: dependencies.fetchImpl ?? globalThis.fetch }) : null;
+  // Without agent-installer no client was set up: setup does not finish ready.
   return {
-    status: agentsReady && knowledgeRecovery?.status !== 'pending' ? 'ready' : 'partial',
+    status: agentsReady && !plan.clientDetection && knowledgeRecovery?.status !== 'pending' ? 'ready' : 'partial',
     ...(knowledgeRecovery ? { knowledgeRecovery } : {}),
+    ...(plan.clientDetection ? { clientDetection: plan.clientDetection } : {}),
     runtime,
     agents
   };

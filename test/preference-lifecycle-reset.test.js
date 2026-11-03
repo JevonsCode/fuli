@@ -2,16 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { codexLifecycleOutput } from '../src/agents/codex/lifecycle-hook.js';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
-import { withCodexLifecycleHooks, withCodexTomlLifecycleHooks, withoutCodexLifecycleHooks } from '../src/agents/codex/lifecycle-hooks.js';
-import { connectClaudeCode } from '../src/setup/claude-code-config.js';
+import { packManifestClient } from '../src/agent-kits/pack-manifest.js';
 import { builtInClientPack } from '../test-support/client-packs.js';
-
-const CODEX_HOOKS = builtInClientPack('codex').lifecycleHooks;
 
 const session = '019fc6ed-02a5-7832-8821-68e3b03e7cef';
 const input = { session_id: session, transcript_path: '/synthetic/native.jsonl', source: 'compact' };
-const context = { nodePath: '/synthetic/node', mcpServerPath: '/synthetic/src/mcp-server.js',
-  runtimeConfigPath: '/synthetic/runtime.json' };
 
 // Claude Code's resume replays the same transcript, so it keeps the delivery
 // base instead (rec#11 D-69, the next test).
@@ -72,24 +67,12 @@ test('reset recovery never selects another owner or restores a completed task', 
   }), /same owned native task/);
 });
 
-test('managed command hook definitions add generation reset events and preserve other hooks without changing trust', () => {
-  const unrelated = { hooks: [{ type: 'command', command: 'echo user-hook' }] };
-  const initial = { hooks: { SessionStart: [unrelated] } };
-  const next = withCodexLifecycleHooks(initial, { context, hooks: CODEX_HOOKS });
-  assert.deepEqual(next.hooks.SessionStart[0], unrelated);
-  assert.match(next.hooks.SessionStart[1].hooks[0].command, /SessionStart/);
-  assert.match(next.hooks.PreCompact[0].hooks[0].command, /PreCompact/);
-  assert.deepEqual(withoutCodexLifecycleHooks(next), initial);
-  assert.equal(withCodexLifecycleHooks(next, { context, hooks: CODEX_HOOKS }).hooks.SessionStart.length, 2);
-  const toml = withCodexTomlLifecycleHooks('', { context, hooks: CODEX_HOOKS });
-  assert.match(toml, /\[\[hooks\.SessionStart\]\]/);
-  assert.match(toml, /\[\[hooks\.PreCompact\]\]/);
-  const writes = new Map();
-  connectClaudeCode(builtInClientPack('claude-code'), { id: 'claude', configPath: 'config', settingsPath: 'settings' }, context,
-    { readConfig: path => path === 'settings' ? initial : {}, writeConfig: (path, value) => writes.set(path, value) });
-  const claude = writes.get('settings');
-  assert.deepEqual(claude.hooks.SessionStart[0], unrelated);
-  assert.match(claude.hooks.SessionStart[1].hooks[0].command, /SessionStart/);
-  assert.match(claude.hooks.PreCompact[0].hooks[0].command, /PreCompact/);
-  assert.equal(claude.trusted, undefined);
+test('the managed hook definitions add the generation reset events for Claude Code and Codex', () => {
+  for (const id of ['claude-code', 'codex']) {
+    const { hooks } = packManifestClient(builtInClientPack(id));
+    for (const [key, event] of [['sessionStart', 'SessionStart'], ['preCompact', 'PreCompact']]) {
+      const command = hooks.events[key].command;
+      assert.equal(command[command.indexOf('--event') + 1], event, `${id} ${event}`);
+    }
+  }
 });

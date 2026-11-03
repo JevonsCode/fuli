@@ -1,14 +1,15 @@
 import { spawn } from 'node:child_process';
 
 import { resolveClientCommand } from '../../../packages/roundtable/src/roundtable/wake.js';
-import { COMMAND_MARKER } from './lifecycle-hooks.js';
 
 // Reads whether Codex trusts FULI's lifecycle hooks by asking Codex's own
 // app-server (JSON-RPC over stdio). Codex keeps its trust record in its own
 // config.toml and only it can say whether each hook is trusted, so FULI reads
 // the answer instead of guessing (src/agents/codex/hook-trust.js). A hook is
-// FULI's when its command carries COMMAND_MARKER; anything but trustStatus
-// "trusted" means not trusted.
+// FULI's when its command carries COMMAND_MARKER, the argument FULI's Codex
+// hook command always has (src/agent-kits/pack-manifest.js); anything but
+// trustStatus "trusted" means not trusted.
+const COMMAND_MARKER = '--fuli-lifecycle';
 const HOOKS_LIST_TIMEOUT_MS = 10_000;
 
 const INITIALIZE = { id: 1, method: 'initialize', params: { clientInfo: { name: 'fuli', version: '1' },

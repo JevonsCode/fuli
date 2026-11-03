@@ -29,7 +29,7 @@ const observation = ref<ConnectionStatus | null>(null)
 const checking = ref(false)
 const checkError = ref(false)
 const connecting = ref('')
-const connectionFeedback = ref<Record<string, 'restart' | 'connectError'>>({})
+const connectionFeedback = ref<Record<string, 'restart' | 'connectError' | 'componentUnavailable'>>({})
 const adding = ref(false)
 const addPending = ref(false)
 const addError = ref('')
@@ -104,7 +104,8 @@ async function connectOne(client: ClientObservation) {
   await writing(async () => {
     try {
       const result = await postJson<ConnectionResult>('/api/system/client-connection/connect', { clientId: client.id })
-      if (!unmounted) connectionFeedback.value[client.id] = result.status === 'connected' ? 'restart' : 'connectError'
+      if (!unmounted) connectionFeedback.value[client.id] = result.status === 'connected' ? 'restart'
+        : result.reason === 'client_component_unavailable' ? 'componentUnavailable' : 'connectError'
     } catch {
       if (!unmounted) connectionFeedback.value[client.id] = 'connectError'
     } finally { connecting.value = '' }
@@ -238,7 +239,7 @@ async function copy() {
                 <span class="client-row__label">{{ t(`settings.connection.clients.status.${client.status}`) }}</span>
               </div>
               <p>{{ explanation(client) }}</p>
-              <p v-if="connectionFeedback[client.id]" :role="connectionFeedback[client.id] === 'connectError' ? 'alert' : 'status'">
+              <p v-if="connectionFeedback[client.id]" :role="connectionFeedback[client.id] === 'restart' ? 'status' : 'alert'">
                 {{ t(`settings.connection.clients.${connectionFeedback[client.id]}`) }}
               </p>
               <a v-if="client.manualOnly && client.manualUrl" :href="client.manualUrl" target="_blank" rel="noopener noreferrer">

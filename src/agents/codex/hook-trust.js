@@ -6,8 +6,8 @@ import { createCodexHookTrustReader } from './hook-trust-reader.js';
 // own normalized form of the hook. The form changes with Codex releases, so
 // FULI never recomputes it. Codex's app-server now reports the trust status it
 // stored (hooks/list), so the doctor reads that answer instead of guessing
-// (hook-trust-reader.js). Installing never edits Codex's trust
-// (lifecycle-hooks.js).
+// (hook-trust-reader.js). Installing never edits Codex's trust: agent-installer
+// leaves it to the person (its `trust_hooks` step).
 export const CODEX_HOOK_TRUST_CLIENT = 'codex';
 
 // A read spawns Codex's CLI, so the doctor asks at most once per check and

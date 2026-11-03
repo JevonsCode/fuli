@@ -128,30 +128,15 @@ test('capture writes are decided only by the capture port', () => {
   ]) assert.equal(captureDecisionsOutsidePort(path, bypass).length, 1, `${path}: ${bypass}`);
 });
 
-// rec#18 D-10: one agent adapter port, two implementations. Only the registry
-// knows whether a client is descriptor-backed or code-backed, so no caller can
-// branch on which ids are still legacy.
-const AGENT_REGISTRY = 'src/setup/agents/registry.js';
-const AGENT_IMPLEMENTATION_IMPORT = /from '[^']*(?:descriptor-adapter|descriptor-packs|(?:agents\/|\.\/)[a-z-]+\/index)\.js'/;
+// rec#11 #11: agent client configuration is written in one place,
+// agent-installer, reached only through the client installer port.
+const CLIENT_INSTALLER_PORT = 'src/agent-kits/client-installer.js';
+const INSTALLER_BINDING_IMPORT = /from '[^']*vendor\/agent-installer\/index\.mjs'/;
 
-function agentImplementationImports(path, source) {
-  // Package lifecycle owners validate data descriptors, never select code adapters.
-  if (['src/setup/agents/client-pack-store.js', 'src/setup/agents/client-pack-change.js'].includes(path)) {
-    source = source.replace(/^import \{ loadClientDescriptorPacks \} from '\.\/descriptor-packs\.js';$/m, '');
-  }
-  if (path === AGENT_REGISTRY || path.endsWith('.test.js')) return [];
-  return source.split(/\r?\n/).flatMap((line, index) =>
-    AGENT_IMPLEMENTATION_IMPORT.test(line) && (path.startsWith('src/setup/') || /setup\/agents\//.test(line))
-      ? [`- ${path}:${index + 1}: ${line.trim()}`] : []);
-}
-
-test('agent adapters are reached only through the registry port', () => {
+test('agent client configuration is written only through the client installer port', () => {
   const offenders = sourceFiles('src').filter(path => extname(path) === '.js')
-    .flatMap(path => agentImplementationImports(path.split('\\').join('/'), readFileSync(path, 'utf8')));
-  assert.deepEqual(offenders, [], `Use agentAdapter(id) from ${AGENT_REGISTRY}:\n${offenders.join('\n')}`);
-  for (const [path, bypass] of [
-    ['src/setup/agents.js', "import { adapter } from './agents/gemini/index.js';"],
-    ['src/system/client-connection-status.js', "import { descriptorAdapter } from '../setup/agents/descriptor-adapter.js';"],
-    ['src/setup/setup.js', "import { loadClientDescriptorPacks } from './agents/descriptor-packs.js';"]
-  ]) assert.equal(agentImplementationImports(path, bypass).length, 1, `${path}: ${bypass}`);
+    .map(path => path.split('\\').join('/'))
+    .filter(path => path !== CLIENT_INSTALLER_PORT && INSTALLER_BINDING_IMPORT.test(readFileSync(path, 'utf8')));
+  assert.deepEqual(offenders, [], `Reach agent-installer through ${CLIENT_INSTALLER_PORT}`);
+  assert.match(readFileSync(CLIENT_INSTALLER_PORT, 'utf8'), INSTALLER_BINDING_IMPORT);
 });

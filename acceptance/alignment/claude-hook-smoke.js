@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { connectAgent } from '../../src/setup/agents.js';
+import { writeClaudeCodeFixture } from './client-config-fixture.js';
 import {
   resolveAlignmentTimeouts,
   summarizeClaudeExecutionError,
@@ -38,17 +38,11 @@ try {
   );
   writeFileSync(mcpConfigPath, '{"mcpServers":{}}\n', { mode: 0o600 });
   writeFileSync(settingsPath, '{}\n', { mode: 0o600 });
-  connectAgent({
-    id: 'claude-code',
-    label: 'Claude Code',
-    configPath: mcpConfigPath,
-    settingsPath
-  }, {
+  writeClaudeCodeFixture({ configPath: mcpConfigPath, settingsPath }, {
     nodePath: process.execPath,
     mcpServerPath: join(directory, 'hook-smoke-mcp.js'),
-    runtimeConfigPath: join(temporaryRoot, 'unused-runtime.json'),
-    hookTimeoutSec: timeouts.hookTimeoutSec
-  });
+    runtimeConfigPath: join(temporaryRoot, 'unused-runtime.json')
+  }, { hookTimeoutSec: timeouts.hookTimeoutSec });
   // This fixture verifies the MCP hook wire contract with an in-memory registry.
   // Production uses the independent Claude command adapter; its regression tests
   // must also pass when the host has no Fuli MCP connection.

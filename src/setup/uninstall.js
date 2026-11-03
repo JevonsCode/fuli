@@ -1,34 +1,28 @@
 import { isAbsolute, relative } from 'node:path';
 
 import { stopLocalRuntime } from '../local-runtime/lifecycle.js';
-import { backupAgentConfig } from './config-backup.js';
 import { detectAgents } from '../agent-kits/client-detection.js';
+import { CLIENT_COMPONENT_UNAVAILABLE } from '../agent-kits/client-installer.js';
 import { agentKitPorts } from '../agent-kits/ports.js';
-import { agentTargets, disconnectAgent } from './agents.js';
 import { resolveSetupPaths } from './paths.js';
-import { removeBundledSkill } from './session-skill.js';
 
-// The clients agent-installer finds FULI in. Without it, every client FULI
-// writes: each writer removes only FULI's entries and leaves an absent file alone.
+// The clients agent-installer finds FULI in. Without agent-installer FULI
+// cannot remove itself from any client: the plan says why and names none.
 export async function planLocalUninstall(options, {
   env = process.env,
   resolvePaths = resolveSetupPaths,
-  targets = agentTargets,
-  detect = (paths, list) => detectAgents(agentKitPorts(paths, { env }).clientInstaller, list)
+  detect = (paths) => detectAgents(agentKitPorts(paths, { env }).clientInstaller)
 } = {}) {
   const paths = resolvePaths({ dataDir: options.dataDir, env });
-  const all = targets({ env, dataDir: paths.dataDir });
-  const detection = await detect(paths, all);
-  const agents = detection.status === 'available'
-    ? detection.agents.filter(({ integrationStatus }) => integrationStatus !== 'not_connected') : all;
-  return { paths, agents };
+  const detection = await detect(paths);
+  if (detection.status !== 'available') {
+    return { paths, agents: [], clientDetection: { status: 'unavailable', reason: detection.reason, message: CLIENT_COMPONENT_UNAVAILABLE } };
+  }
+  return { paths, agents: detection.agents.filter(({ integrationStatus }) => integrationStatus !== 'not_connected') };
 }
 
 export async function applyLocalUninstall(plan, dependencies = {}) {
   const stopRuntime = dependencies.stopRuntime ?? stopLocalRuntime;
-  const backupConfig = dependencies.backupConfig ?? backupAgentConfig;
-  const disconnect = dependencies.disconnect ?? disconnectAgent;
-  const removeSkill = dependencies.removeSkill ?? removeBundledSkill;
   let runtime;
 
   try {
@@ -44,53 +38,38 @@ export async function applyLocalUninstall(plan, dependencies = {}) {
     };
   }
 
-  const agents = plan.agents.map((agent) => {
-    const errors = [];
-    let backupPath = null;
-    let connection;
-    const skills = [];
-    try {
-      backupPath = backupConfig(agent, { backupDir: plan.paths.backupDir });
-      connection = disconnect(agent);
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : 'Agent disconnect failed');
-      connection = { status: 'failed' };
-    }
+  const installer = plan.agents.length
+    ? dependencies.clientInstaller ?? agentKitPorts(plan.paths, { env: dependencies.env ?? process.env }).clientInstaller
+    : null;
+  const agents = [];
+  for (const agent of plan.agents) agents.push(await removeAgent(installer, agent));
 
-    // A client without a Skill path (e.g. no session command Skill on Codex) has nothing to remove there.
-    for (const [skillPath, sourcePath] of [
-      [agent.skillPath, plan.paths.sessionSkillPath],
-      [agent.projectSkillPath, plan.paths.projectSkillPath],
-      [agent.reviewSkillPath, plan.paths.reviewSkillPath],
-      [agent.operationSkillPath, plan.paths.operationSkillPath],
-      [agent.sessionCommandSkillPath, plan.paths.sessionCommandSkillPath]
-    ].filter(([skillPath]) => skillPath)) {
-      try {
-        skills.push(removeSkill({ ...agent, skillPath }, { sourcePath }));
-      } catch (error) {
-        errors.push(error instanceof Error ? error.message : 'Skill removal failed');
-      }
-    }
-
-    return {
-      id: agent.id,
-      label: agent.label,
-      status: errors.length ? 'partial' : connection.status,
-      backupPath,
-      skills,
-      ...(errors.length ? { errors } : {})
-    };
-  });
-
-  const partial = runtime.status !== 'stopped' ||
+  const partial = runtime.status !== 'stopped' || Boolean(plan.clientDetection) ||
     agents.some(({ status }) => status === 'partial');
   return {
     status: partial ? 'partial' : 'ready',
     runtime,
     agents,
+    ...(plan.clientDetection ? { clientDetection: plan.clientDetection } : {}),
     data: { status: 'preserved', path: plan.paths.dataDir },
     removal: removalTarget(plan.paths)
   };
+}
+
+// agent-installer backs up each file before it removes FULI's entries, and
+// leaves a Skill the person changed (a problem names it).
+async function removeAgent(installer, agent) {
+  const removed = (status, errors = []) => ({ id: agent.id, label: agent.label, status, ...(errors.length ? { errors } : {}) });
+  let answer;
+  try {
+    answer = await installer.remove([agent.id]);
+  } catch (error) {
+    return removed('partial', [error instanceof Error ? error.message : 'Agent disconnect failed']);
+  }
+  if (answer.status !== 'available') return removed('partial', [CLIENT_COMPONENT_UNAVAILABLE]);
+  const client = answer.clients.find(({ id }) => id === agent.id);
+  if (client?.problems.length) return removed('partial', client.problems);
+  return removed(client?.changes.length ? 'disconnected' : 'not_connected');
 }
 
 // How the remaining program files are removed. A portable folder is deleted

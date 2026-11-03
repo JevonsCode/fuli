@@ -81,7 +81,7 @@ export function formatSetupPreview(plan, options, copy = String) {
   const agentSummary = options.skipAgents || (available.length > 0 && selected.length === 0)
     ? 'skipped'
     : plan.clientDetection
-      ? `clients could not be detected (${plan.clientDetection.reason})`
+      ? `not possible here. ${plan.clientDetection.message} (${plan.clientDetection.reason})`
       : selected.map(({ label }) => label).join(', ') || 'none detected';
   const runtimeSettings = plan.runtimeSettings ?? runtimeSettingsWithOverrides(
     DEFAULT_RUNTIME_SETTINGS,
@@ -117,7 +117,7 @@ export function formatSetupPreview(plan, options, copy = String) {
       'select it with --runtime-mode native');
   }
   if (options.connectedOnly) {
-    for (const agent of available.filter((agent) => agent.selected === false && agent.skillPath &&
+    for (const agent of available.filter((agent) => agent.selected === false &&
       ['current', 'outdated'].includes(agent.integrationDetails?.skills))) {
       lines.push(`${agent.label}: skipped because there is no Fuli MCP entry; existing Skills were left unchanged. Run fuli setup to reconnect.`);
     }
@@ -144,6 +144,7 @@ export function formatSetupResult(result, plan, copy = String) {
     );
   }
   lines.push('Knowledge storage: Graphiti / Neo4j');
+  if (result.clientDetection) lines.push(`Agent clients: not set up. ${result.clientDetection.message}`);
   for (const agent of result.agents) {
     if (agent.status !== 'connected') {
       const state = agent.status === 'partial' ? 'partially configured' : 'connection failed';

@@ -12,6 +12,8 @@ const PRESENT = new Set(['connected', 'changed']);
 const STATUSES = new Set(['connected', 'changed', 'skills_left', 'removed', 'not_connected', 'not_detected']);
 // Component states that leave FULI's files in a client.
 const LEFT = new Set(['current', 'outdated', 'conflict']);
+// Where a client agent-installer leaves to the person documents its configuration.
+const MANUAL_URLS = Object.freeze({ opencode: 'https://opencode.ai/docs/config/' });
 
 /**
  * Observe which agent clients are on this machine and whether FULI is in
@@ -19,11 +21,10 @@ const LEFT = new Set(['current', 'outdated', 'conflict']);
  * This reads configuration only: it never proves a client is running or
  * that its MCP session is reachable, and it never reinstalls.
  *
- * installer: the client installer port. targets: FULI's writer targets
- * (agentTargets): a built-in client without one is the person's to connect.
- * customClients: the custom client store (custom-clients.js).
+ * installer: the client installer port. customClients: the custom client
+ * store (custom-clients.js).
  */
-export function createClientConnectionObserver({ installer, targets, customClients, historyPath, now = () => new Date() }) {
+export function createClientConnectionObserver({ installer, customClients, historyPath, now = () => new Date() }) {
   // History that could not be written stays reliable for this observer.
   let retained = null;
 
@@ -33,14 +34,12 @@ export function createClientConnectionObserver({ installer, targets, customClien
     if (answer.status !== 'available') {
       return { scope: 'configuration', observedAt, available: false, historySaved: true, clients: [], customClients: [] };
     }
-    const writers = new Map(targets().map((target) => [target.id, target]));
     const builtin = answer.clients.filter((client) => client.builtin);
     const history = sanitizeHistory(retained ?? readHistory(historyPath), builtin.map(({ id }) => id));
     let dirty = retained !== null;
     const clients = builtin.map((client) => {
-      const writer = writers.get(client.id);
-      const extra = { manualOnly: client.manual || !writer || Boolean(writer.manualOnly),
-        ...(writer?.manualUrl ? { manualUrl: writer.manualUrl } : {}) };
+      const extra = { manualOnly: client.manual,
+        ...(client.manual && MANUAL_URLS[client.id] ? { manualUrl: MANUAL_URLS[client.id] } : {}) };
       const record = history.clients[client.id] ?? { status: null, previouslyConnected: false, since: null, changes: [] };
       // A FULI entry FULI cannot read or call its own is never reported as a removal.
       if (client.components.mcp === 'conflict') {
