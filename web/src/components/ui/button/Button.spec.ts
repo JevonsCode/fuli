@@ -2,6 +2,7 @@ import { mount, RouterLinkStub } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { h } from 'vue'
 import { Button } from '.'
+import source from './Button.vue?raw'
 
 describe('Button', () => {
   it('names its variant and size, defaults included, and never submits by accident', () => {
@@ -26,6 +27,10 @@ describe('Button', () => {
     expect(button.attributes('disabled')).toBeUndefined()
     expect(button.attributes('aria-busy')).toBeUndefined()
     expect(button.text()).toBe('保存')
+  })
+
+  it('passes its corners through the content wrapper, so a portrait filling it stays rounded', () => {
+    expect(source).toMatch(/.button-content {[^}]*display: contents;[^}]*border-radius: inherit;/)
   })
 
   it('keeps an explicit disabled state', () => {

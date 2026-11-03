@@ -62,8 +62,10 @@ const native = computed(() => props.as === "button" && !props.asChild)
 </template>
 
 <style scoped>
-/* The content keeps laying out the button (display: contents) and only turns invisible while loading. */
-.button-content { display: contents; }
+/* The content keeps laying out the button (display: contents) and only turns invisible while loading.
+   It passes the button's corners on, so content that takes `border-radius: inherit` (a portrait
+   filling the button) keeps them instead of turning square (11-03: 头像框角上漏出底色). */
+.button-content { display: contents; border-radius: inherit; }
 .is-loading { position: relative; }
 .is-loading > .button-content { visibility: hidden; }
 /* The mark sits over the content; its words are its accessible name, not drawn in the narrow button. */

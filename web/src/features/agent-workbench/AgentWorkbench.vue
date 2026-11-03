@@ -10,22 +10,19 @@ import { agentManagementPath } from '@/features/project-agents/orchestration-fil
 import { readProjectBoard } from '@/features/projects/project-board-settings'
 import { t } from '@/i18n'
 import type { ProjectAgentTaskRecord } from '@/types'
-import AgentWorkflowList from './AgentWorkflowList.vue'
 import { agentTaskBoards } from './agent-task-board'
-import type { AgentWorkflow } from './agent-workflows'
 
-// An Agent's home tab (rec#60 D-78): its tasks on the shared task board and
-// its own workflows. Loaded only while the tab is open; nothing here polls.
+// An Agent's 工作台 tab (rec#60 D-78): its tasks on the shared task board.
+// Its workflows are their own tab beside it (11-03). Loaded only while the
+// tab is open; nothing here polls.
 const props = defineProps<{
   personalSpaceId: string
   agentId: string
   tasks: ProjectAgentTaskRecord[]
   projectName: (projectId: string) => string
-  workflows: AgentWorkflow[]
   /** Part of the Agent's tasks could not be read. */
   incomplete: boolean
 }>()
-const emit = defineEmits<{ 'workflows-changed': [] }>()
 const router = useRouter()
 
 const boards = computed(() => agentTaskBoards(props.tasks,
@@ -74,9 +71,6 @@ function openTask(item: EmployeeBoardItem) {
         :incomplete="incomplete"
         @select-task="openTask"
       />
-    </Card>
-    <Card as="section" class="agent-resume-section">
-      <AgentWorkflowList :workflows="workflows" @changed="emit('workflows-changed')" />
     </Card>
   </div>
 </template>
