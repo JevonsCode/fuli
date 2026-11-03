@@ -21,6 +21,9 @@ async def edit_revision(store, space: dict, item_kind: str, item_id: str) -> int
         '''
         MATCH (:FuliSpace {id: $space_id, kind: 'personal'})-[:HAS_KNOWLEDGE_REVISION]->
               (revision:FuliKnowledgeRevision {item_id: $item_id, item_kind: $item_kind})
+        // A staleness flag queues the item for its person, like feedback; it
+        // edits nothing, so a page open on it still saves.
+        WHERE revision.action <> 'possibly_outdated'
         RETURN count(revision) AS revisions
         ''', space_id=space['id'], item_id=item_id, item_kind=item_kind, routing_='r')
     return int(records[0]['revisions']) if records else 0

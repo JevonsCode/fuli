@@ -147,6 +147,11 @@ GRAPH_MIGRATIONS = (
         "a task block the person marked cleared in the console (blocker_cleared_by 'person')",
         fields_only=True,
     ),
+    GraphMigration(
+        'graph/15-possibly-outdated', 15, 'schema',
+        "knowledge newer knowledge may replace, queued for a person (revision action 'possibly_outdated')",
+        fields_only=True,
+    ),
 )
 
 GRAPH_FORMAT_VERSION = GRAPH_MIGRATIONS[-1].to_version
