@@ -359,7 +359,8 @@ function applySkeleton(view, frame, text) {
       }
     }
   }
-  if (frame.skeleton_revision) view.skeletons.set(frame.skeleton_revision, own);
+  // A revision stands for everything the frame gave, what it named included.
+  if (frame.skeleton_revision) view.skeletons.set(frame.skeleton_revision, { ...view.skeleton });
 }
 
 // The instructions above a hook frame, and the hook's own part of them.

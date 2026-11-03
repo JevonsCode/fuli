@@ -12,7 +12,7 @@ export const SKELETON_FIELDS = Object.freeze(['agent_receipt', 'task_guidance', 
   'project_agent_context', 'project_management_context', 'judgment_context', 'context', 'task_knowledge_recall']);
 // The hook's own instructions above the frame, as the host recorded them.
 export const SKELETON_LABEL = 'label';
-export const SKELETON_UNCHANGED_LABEL = 'skeleton_unchanged: parts left out, as earlier FULI frames gave them, by skeleton_revision: '
+export const SKELETON_UNCHANGED_LABEL = 'skeleton_unchanged: parts left out, as earlier FULI frames gave them (what they named included), by skeleton_revision: '
   + 'revision(s) whose parts apply, later over earlier, under this frame\'s own, or a map revision → parts (label: the text above the JSON).';
 const HASH = /^[a-f0-9]{64}$/;
 export const MAX_SKELETON_PROMPTS = 16;
@@ -31,10 +31,12 @@ function namesLabel(frame) {
   return typeof unchanged === 'string' || Array.isArray(unchanged) || Object.values(unchanged ?? {}).flat().includes(SKELETON_LABEL);
 }
 
-// The earlier frames one delivery of `value` may name, oldest first. A frame
-// of this generation is a base only when the host recorded it, its own
-// skeleton_revision matches what it shows (fields and label), and it belongs
-// to this task: the same token (a host notification refreshed in place; a
+// The earlier frames one delivery of `value` may name, oldest first, each with
+// everything it gave: its own parts over those it named itself. A frame of
+// this generation is a base only when the host recorded it, its own
+// skeleton_revision matches what it shows (fields, label and the frames it
+// names), whatever it names resolves to a base before it, and it belongs to
+// this task: the same token (a host notification refreshed in place; a
 // task never changes project or Agent) or a task begun here with this exact
 // prompt in the same project for the same Agent (a repeated prompt). A new
 // task, another project or Agent, or anything after a compaction (floor) has
@@ -44,17 +46,42 @@ export function skeletonEvidence(proof, value, { floor, prompts, prompt }) {
   const begun = new Map(prompts.map(([token, ...task]) => [token, task.join()]));
   const repeated = [skeletonPromptHash(prompt), skeletonOwnerHash(value)].join();
   const sameTask = token => token === value.taskContextToken || begun.get(skeletonTokenHash(token)) === repeated;
-  return { bases: proof.frames.filter(({ confirms, offset, visible, label }) => confirms && offset >= floor
-    && typeof visible?.taskContextToken === 'string' && sameTask(visible.taskContextToken)
-    && visible.skeleton_revision === skeletonRevision(visible, labelPart(label)))
-    .map(({ visible, label }) => ({ revision: visible.skeleton_revision, parts: { ...delivered(skeletonOf(visible)),
-      ...(labelPart(label) === null ? {} : { [SKELETON_LABEL]: labelPart(label) }) } })) };
+  const given = new Map();
+  const bases = [];
+  for (const { confirms, offset, visible, label } of proof.frames) {
+    if (!confirms || offset < floor || typeof visible?.taskContextToken !== 'string'
+      || visible.skeleton_revision !== skeletonRevision(visible, labelPart(label))) continue;
+    const named = namedParts(visible.skeleton_unchanged, given);
+    if (!named) continue;
+    const parts = { ...named, ...delivered(skeletonOf(visible)),
+      ...(labelPart(label) === null ? {} : { [SKELETON_LABEL]: labelPart(label) }) };
+    if (!given.has(visible.skeleton_revision)) given.set(visible.skeleton_revision, parts);
+    if (sameTask(visible.taskContextToken)) bases.push({ revision: visible.skeleton_revision, parts });
+  }
+  return { bases };
+}
+
+// What a frame's skeleton_unchanged gives, from the frames before it, or null
+// when one of them is not known.
+function namedParts(unchanged, given) {
+  if (unchanged === undefined) return {};
+  if (typeof unchanged === 'string' || Array.isArray(unchanged)) {
+    const frames = [unchanged].flat().map(revision => given.get(revision));
+    return frames.every(Boolean) ? Object.assign({}, ...frames) : null;
+  }
+  const parts = {};
+  for (const [revision, names] of Object.entries(unchanged ?? {})) {
+    const frame = given.get(revision);
+    if (!frame || !Array.isArray(names) || !names.every(name => Object.hasOwn(frame, name))) return null;
+    for (const name of names) parts[name] = frame[name];
+  }
+  return parts;
 }
 
 // The frame to send for `value` under the hook's `label` (a function of the
 // frame): each skeleton part an eligible base shows exactly so is left out
 // and named by the latest such base; what is still sent carries its own
-// skeleton_revision. When the bases' own parts, applied oldest first, give
+// skeleton_revision. When what the bases gave, applied oldest first, gives
 // exactly the parts left out, label included, they are named by revision
 // alone (a bare one for a single base); otherwise each part is named under
 // its base. The complete frame is sent when that is no larger.
@@ -131,7 +158,8 @@ function labelPart(text) {
 }
 
 function skeletonRevision(frame, label) {
-  return contentHash({ purpose: 'task-entry-skeleton-v2', skeleton: delivered(skeletonOf(frame)), label }).slice(0, 12);
+  return contentHash({ purpose: 'task-entry-skeleton-v3', skeleton: delivered(skeletonOf(frame)), label,
+    named: frame.skeleton_unchanged ?? null }).slice(0, 12);
 }
 
 function skeletonOf(value) {

@@ -173,8 +173,9 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           const proof = await observe(origin.sourceApplication, origin.nativeSessionId, origin);
           // An unreadable or unfinished transcript proves no boundary: it stays
           // unknown until a delivery can read the file, never the file's start.
-          // One the host has not written yet starts at its start.
-          await save({ pending: [], recent: [], prompts: [], floor: boundary(proof, state),
+          // A session the host says has just started has none yet: it starts
+          // at its start.
+          await save({ pending: [], recent: [], prompts: [], floor: boundary(proof, origin.sessionStarted === true),
             ...(origin.nativeGeneration ? { nativeGeneration: contentHash(origin.nativeGeneration) } : {}),
             ...(proof.known ? { fileId: proof.fileId, generation: proof.generation } : {}) });
         });
@@ -186,12 +187,12 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
   };
 }
 
-// Where a new generation starts: the transcript's current end, its start when
-// the host has not written it yet, or unknown (null). A transcript this
-// session's record has seen before and that is gone now was moved away, not
-// unwritten: that boundary stays unknown.
-function boundary(proof, state) {
-  return proof.known ? proof.size : proof.absent && !state.fileId ? 0 : null;
+// Where a new generation starts: the transcript's current end, or unknown
+// (null). Only a session the host says has just started has no transcript
+// yet because nothing was written: then the boundary is its start. Any other
+// missing transcript may have been moved away and stays unknown (dot 6362902224).
+function boundary(proof, started) {
+  return proof.known ? proof.size : proof.absent && started ? 0 : null;
 }
 
 async function missing(path) {
@@ -204,7 +205,7 @@ async function missing(path) {
 function generationState(state, proof, nativeGeneration) {
   if (state.untrusted || state.floor === null
       || (nativeGeneration && state.nativeGeneration && nativeGeneration !== state.nativeGeneration)) {
-    return { pending: [], recent: [], prompts: [], floor: boundary(proof, state) };
+    return { pending: [], recent: [], prompts: [], floor: boundary(proof, false) };
   }
   if (!proof.known) return state;
   const replaced = (state.fileId && state.fileId !== proof.fileId) || (state.floor ?? 0) > proof.size

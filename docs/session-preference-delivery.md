@@ -366,10 +366,16 @@ the same Agent (a repeated prompt). The session record keeps those prompts as
 another project or FLA, a frame that was produced but not recorded, and
 everything before a compaction or reset have no base, so those frames carry the
 whole skeleton. A new session's transcript does not exist yet when its first
-hooks run; a transcript this session's record has never seen and that is not
-there yet starts at its start (floor 0), so that first frame carries its
-revisions and a later turn confirms it from the file. A transcript the record
-has seen before and that is gone keeps the boundary unknown. MCP results never take part. An in-place notification refresh
+hooks run. When the host's SessionStart says the session has just started
+(`startup`) and the transcript is not there, its boundary is its start (floor
+0), so the first frame carries its revisions and a later turn confirms it from
+the file. Any other missing transcript may have been moved away and keeps the
+boundary unknown.
+
+A revision stands for everything its frame gave: its own parts over what it
+named itself, so a list or map resolves the same way however far back it
+reaches. The revision covers the frame's fields, its label and its own
+`skeleton_unchanged`. MCP results never take part. An in-place notification refresh
 uses the same evidence rules for preferences and recovery instead of a forced
 full frame.
 

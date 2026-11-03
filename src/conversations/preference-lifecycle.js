@@ -27,7 +27,9 @@ export async function preferenceLifecycleOutput(event, input, { sourceApplicatio
     throw new TypeError('Preference reset requires a native session identifier');
   }
   if (event === 'SessionStart' && replayedSources.includes(input?.source)) return {};
-  const origin = { sourceApplication, nativeSessionId: input?.session_id, transcriptPath: input?.transcript_path };
+  // A host's SessionStart "startup" is a session that has just begun.
+  const origin = { sourceApplication, nativeSessionId: input?.session_id, transcriptPath: input?.transcript_path,
+    sessionStarted: event === 'SessionStart' && input?.source === 'startup' };
   await delivery?.reset(origin);
   if (event !== 'SessionStart' || !['compact', 'resume', 'fork'].includes(input?.source)) return {};
   const refresh = await currentTaskPreferences(input, { sourceApplication, currentTask, invoke });

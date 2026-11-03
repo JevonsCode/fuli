@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createSessionPreferenceDelivery } from '../src/conversations/preference-session.js';
@@ -147,7 +147,8 @@ test('the first frame of a new session, before its transcript exists, can be nam
       { session_id: sessionId, transcript_path: host.path, prompt }, delivery, 'claude_code', LABEL))
       .hookSpecificOutput.additionalContext.split('\n').at(-1));
     // Claude Code's SessionStart reset runs first, before the transcript exists.
-    assert.equal(await delivery.reset({ sourceApplication: 'claude_code', nativeSessionId: sessionId, transcriptPath: host.path }), true);
+    assert.equal(await delivery.reset({ sourceApplication: 'claude_code', nativeSessionId: sessionId, transcriptPath: host.path,
+      sessionStarted: true }), true);
     const first = await turn('Do the thing');
     assert.match(first.skeleton_revision, /^[0-9a-f]{12}$/);
     await host.start();
@@ -155,3 +156,53 @@ test('the first frame of a new session, before its transcript exists, can be nam
     assert.equal((await turn('Do the thing')).skeleton_unchanged, first.skeleton_revision);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+// Review of #642: only a session that has just started has an unwritten
+// transcript. Resets while a known transcript is moved away keep the boundary
+// unknown, so nothing from before them is named after it comes back.
+test('resets while the transcript is moved away never let an earlier frame be named', () => fixture(async f => {
+  await f.turn(entry(f.sessionId, 'task-a'), 'Do the thing');
+  assert.equal(typeof (await f.turn(entry(f.sessionId, 'task-a'), 'notification')).frame.skeleton_unchanged, 'string');
+  await rename(f.host.path, `${f.host.path}.away`);
+  const origin = { sourceApplication: 'claude_code', nativeSessionId: f.sessionId, transcriptPath: f.host.path };
+  assert.equal(await createSessionPreferenceDelivery(f.options).reset(origin), true);
+  assert.equal(await createSessionPreferenceDelivery(f.options).reset(origin), true);
+  await rename(`${f.host.path}.away`, f.host.path);
+  const after = await f.turn(entry(f.sessionId, 'task-a'), 'notification');
+  assert.equal(after.frame.skeleton_unchanged, undefined);
+  assert.equal(after.frame.agent_receipt.markdown, 'Synthetic owner');
+}));
+
+// Review of #642: a revision stands for everything its frame gave, what it
+// named included, so a list of revisions resolves the same way read either way.
+test('a revision names what its frame gave, including what that frame named itself', () => fixture(async f => {
+  const variant = (receipt, judgment, recall) => {
+    const value = entry(f.sessionId, 'task-a', { receipt });
+    value.judgment_context = { agentId: 'employee.synthetic-judge', policy: { mode: judgment } };
+    if (recall) value.task_knowledge_recall = { status: 'no_match', marker: recall };
+    return value;
+  };
+  const resolve = (frames, frame) => {
+    const at = revision => frames.find(item => item.frame.skeleton_revision === revision);
+    const named = frame.skeleton_unchanged;
+    const base = named === undefined ? {} : typeof named === 'string' || Array.isArray(named)
+      ? Object.assign({}, ...[named].flat().map(revision => resolve(frames, at(revision).frame)))
+      : Object.fromEntries(Object.entries(named).flatMap(([revision, parts]) => {
+        const whole = resolve(frames, at(revision).frame);
+        return parts.map(part => [part, whole[part]]);
+      }));
+    const own = Object.fromEntries(['agent_receipt', 'judgment_context', 'task_knowledge_recall', 'context', 'task_guidance',
+      'project_agent_context'].filter(field => Object.hasOwn(frame, field)).map(field => [field, frame[field]]));
+    return { ...base, ...own };
+  };
+  const frames = [];
+  for (const [receipt, judgment, recall] of [['r', 'g1', 'P'], ['r', 'g2', 'P'], ['R', 'g1', 'P'], ['R', 'g2', null]]) {
+    const value = variant(receipt, judgment, recall);
+    const sent = await f.turn(value, 'notification');
+    frames.push(sent);
+    const got = resolve(frames, sent.frame);
+    assert.equal(got.agent_receipt.markdown, receipt);
+    assert.equal(got.judgment_context.policy.mode, judgment);
+    assert.equal(got.task_knowledge_recall?.marker ?? null, recall);
+  }
+}));
