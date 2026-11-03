@@ -1,5 +1,9 @@
 import { normalizeClaudeRecord, verifyClaudeTranscript } from './conversation-transcript.js';
 
+// Claude Code shows the model a hook context inside this wrapper; inside it is
+// exactly what the hook returned, label included (entry-skeleton.js, rec#76).
+const HOOK_WRAPPER = /^<system-reminder>\nUserPromptSubmit hook additional context: ([\s\S]*)\n<\/system-reminder>$/;
+
 export const claudePreferenceEvidence = Object.freeze({
   verify: verifyClaudeTranscript,
   // The same reading the transcript collector stores, so a session's own
@@ -25,7 +29,7 @@ export const claudePreferenceEvidence = Object.freeze({
         && record.attachment.hookEvent === 'UserPromptSubmit' && typeof record.uuid === 'string') {
       const text = (Array.isArray(record.rendered) ? record.rendered : []).map(block => block?.content)
         .filter(content => typeof content === 'string').join('\n');
-      return text ? [{ type: 'context', output: text }] : [];
+      return text ? [{ type: 'context', output: HOOK_WRAPPER.exec(text)?.[1] ?? text }] : [];
     }
     if (!['assistant', 'user'].includes(record.type) || !Array.isArray(record.message?.content)) return [];
     return record.message.content.flatMap(block => {

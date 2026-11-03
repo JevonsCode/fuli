@@ -183,9 +183,11 @@ export function createMcpServer(
   return server;
 }
 
-// Chat clients list only a few tools. Hosts that do not refresh after
-// tools/list_changed can still call a discovered tool through this one name;
-// the call is validated and run exactly as the original tool.
+// Chat clients list only a few tools and run every other one through this one
+// name; the call is validated and run exactly as the original tool. The listed
+// tools never change during a session: a client caches its prompt up to and
+// after the tool list, so adding a discovered tool to it would make every
+// later request pay for the whole prompt again (rec#76).
 const DISPATCH_TOOL = 'fuli_call';
 function registerDispatchTool(server) {
   server.registerTool(DISPATCH_TOOL, {
@@ -308,17 +310,13 @@ function registerTool(server, tool, chat = false) {
 function registerCallHandler(server, tools, onDemandTools, resolveNativeContext = null) {
   server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     assertToolInputWithinBudget(request.params.arguments);
+    let tool = tools.get(request.params.name);
     if (request.params.name === DISPATCH_TOOL && onDemandTools) {
       const { toolName, input } = request.params.arguments ?? {};
-      const target = toolName === DISPATCH_TOOL ? null : tools.get(toolName) ?? onDemandTools.get(toolName);
-      if (!target) return errorToolResult(new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
-      if (!tools.has(target.definition.name)) {
-        tools.set(target.definition.name, target);
-        registerTool(server, target);
-      }
-      request = { ...request, params: { ...request.params, name: target.definition.name, arguments: input ?? {} } };
+      tool = toolName === DISPATCH_TOOL ? null : tools.get(toolName) ?? onDemandTools.get(toolName);
+      if (!tool) return errorToolResult(new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
+      request = { ...request, params: { ...request.params, name: tool.definition.name, arguments: input ?? {} } };
     }
-    const tool = tools.get(request.params.name);
     if (!tool) {
       return errorToolResult(new ApplicationError(
         ApplicationErrorCode.NOT_FOUND,
@@ -338,16 +336,7 @@ function registerCallHandler(server, tools, onDemandTools, resolveNativeContext 
     let native;
     try { native = resolveNativeContext?.(request.params._meta); }
     catch (error) { return errorToolResult(error); }
-    const result = await invokeTool(tool, parsed.data, native ? { ...extra, [NATIVE_CONTEXT]: native } : extra);
-    if (!result.isError && tool.definition.name === 'list_agent_interfaces' && parsed.data.toolName && onDemandTools) {
-      const discovered = onDemandTools.get(parsed.data.toolName);
-      if (!discovered) return errorToolResult(new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
-      if (!tools.has(discovered.definition.name)) {
-        tools.set(discovered.definition.name, discovered);
-        registerTool(server, discovered); // SDK sends tools/list_changed.
-      }
-    }
-    return result;
+    return invokeTool(tool, parsed.data, native ? { ...extra, [NATIVE_CONTEXT]: native } : extra);
   });
 }
 

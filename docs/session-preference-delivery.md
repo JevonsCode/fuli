@@ -207,6 +207,14 @@ task token. Never restart task entry to recover. Older clients that do not
 support continuation see incomplete delivery and must stop; small-result
 compatibility remains unchanged.
 
+A hook that refreshes or restores its task in place reads through its own
+process, which holds the cursors. It joins every page of the revision into the
+complete result (`joinTaskPreferencePages`), with the task's own scope, then
+compacts it and bounds it to the host's inline limit. The page budget applies to
+the uncompacted reader result, so even a few preferences with the full rule
+texts page; handing the model only the first page would block the turn and could
+never confirm a delta (rec#76). No cursor ever reaches the model.
+
 ## Native boundaries
 
 - Local Codex stdio accepts the host's per-request `threadId`, `sessionId` and
@@ -333,6 +341,44 @@ cache failures and absent instruction identity conservatively return full data.
 Installing changed Hook definitions still uses the host's existing trust review.
 These source changes do not install or approve daily Hook configurations.
 
+## Task-entry skeleton (rec#76)
+
+A hook frame also carries a skeleton that repeats from turn to turn of one
+task: `agent_receipt`, the rule references (`task_guidance`,
+`application_guidance`, `checkpoint_guidance`), `project_agent_context`,
+`project_management_context`, `judgment_context`, `context`,
+`task_knowledge_recall`, and the hook's own label above the JSON. Every hook
+frame that still shows one of these carries `skeleton_revision` (12 hex over
+those fields and its label). A later hook frame leaves out each part that a
+base shows byte for byte and names it in `skeleton_unchanged`. When the bases'
+own parts, applied oldest first and under the frame's own parts, give exactly
+the parts left out (label included), it is just their revisions: a bare one for
+a single base, else a list, later over earlier. Otherwise it maps each base's
+revision to the parts taken from it. A frame that names its label shows a
+single sentence instead.
+
+A base is a frame of the current context generation that the host recorded in
+the session's own transcript, whose revision matches what it shows there, and
+that belongs to the same task: the same token (a host notification refreshed in
+place) or a task this session began with the same prompt in the same project for
+the same Agent (a repeated prompt). The session record keeps those prompts as
+`[token, prompt, project and Agent]` hashes only (record version 3). A new task,
+another project or FLA, a frame that was produced but not recorded, and
+everything before a compaction or reset have no base, so those frames carry the
+whole skeleton. A new session's transcript does not exist yet when its first
+hooks run. When the host's SessionStart says the session has just started
+(`startup`) and the transcript is not there, its boundary is its start (floor
+0), so the first frame carries its revisions and a later turn confirms it from
+the file. Any other missing transcript may have been moved away and keeps the
+boundary unknown.
+
+A revision stands for everything its frame gave: its own parts over what it
+named itself, so a list or map resolves the same way however far back it
+reaches. The revision covers the frame's fields, its label and its own
+`skeleton_unchanged`. MCP results never take part. An in-place notification refresh
+uses the same evidence rules for preferences and recovery instead of a forced
+full frame.
+
 ## Verification
 
 Protocol, lifecycle and ownership tests use explicit synthetic records.
@@ -345,7 +391,9 @@ message, packed into the default 4000-byte `context_budget`), so the uncached
 baseline holds only what the Provider would return.
 `test/context-delivery-replay.test.js` holds the gates on these fixed fixtures:
 no turn costs more than the uncached entry except a complete frame's revision
-field (26 B) and a `recovery.withdrawn` block (128 B), no scenario costs more in
+field (26 B), a `skeleton_revision` field (35 B) and a `recovery.withdrawn`
+block (128 B), repeated notifications and prompts name the skeleton they already
+showed (rec#76), no scenario costs more in
 total, the scaled scenarios that reuse context cost less, no turn needs a reread
 under the delivery rules, and every model view is whole.
 `test/agents/claude-code/entry-inline-budget.test.js` checks the inline
