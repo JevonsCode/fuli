@@ -2,7 +2,8 @@ import { compactTaskContext } from './task-context-view.js';
 import { hookAdditionalContextToolResult } from '../mcp/tool-result.js';
 import { SESSION_FULI_OFF } from '../agent-tools/session-fuli-gate.js';
 import { withoutDeliveryProofs } from './recent-context.js';
-import { copyPreferenceScope } from './preference-snapshot.js';
+import { copyPreferenceScope, taskPreferenceMetadata, withPreferenceScope } from './preference-snapshot.js';
+import { joinTaskPreferencePages } from '../graphiti/task-preference-pages.js';
 import { ALWAYS_INLINE_OMITTED_LABEL, fitUncached, inlineEntryFit, OMITTED_CONFLICTS_LABEL, OMITTED_PREFERENCES_LABEL,
   WHOLE_ENTRY } from './entry-inline-budget.js';
 import { BLOCKED_PREFERENCE_LABEL } from '../mcp/preference-delivery.js';
@@ -45,23 +46,22 @@ export async function currentTaskPreferences(input, { sourceApplication, current
   if (!task) return { status: 'no_task' };
   if (task.checkpoint?.phase === 'complete') return { status: 'task_closed' };
   if (task.sessionId !== input.session_id || task.sourceApplication !== sourceApplication) return { status: 'other_session' };
-  const recovered = await invoke('read_task_preferences', {
-    taskContextToken: task.token, sourceApplication, sourceSessionId: input.session_id, sourceSessionVerified: true
+  // The reader pages its uncompacted result at the MCP budget. The hook holds
+  // those cursors in its own process, so it reads the whole revision and
+  // compacts and bounds it itself: a first page alone is an incomplete frame
+  // that blocks the turn and can never be confirmed (rec#76). Joined pages
+  // carry the scope the reader gives an unpaged result: the task's own, in the
+  // personal space the reader verified.
+  const read = { taskContextToken: task.token, sourceApplication, sourceSessionId: input.session_id, sourceSessionVerified: true };
+  let paged = false;
+  const recovered = await joinTaskPreferencePages(cursor => {
+    if (cursor) paged = true;
+    return invoke('read_task_preferences', cursor ? { ...read, cursor } : read);
   });
   if (recovered?.status === SESSION_FULI_OFF) return { status: 'fuli_off' };
-  return { status: 'refreshed', context: compactTaskContext(withoutHookCursor(recovered)) };
-}
-
-// A cursor belongs to the reader process that paged this result; the Agent's
-// own MCP reader never honours it (rec#68). A hook frame hands out its first
-// page only, and the Agent reads every page itself from the start.
-const HOOK_PAGE_GUIDANCE = 'This frame is only the first page and carries no cursor. Call read_task_preferences '
-  + 'with this taskContextToken and no cursor, then follow its next_cursor until preferences_complete=true; '
-  + 'apply nothing before every page of that one revision is present.';
-function withoutHookCursor(value) {
-  if (value?.preference_delivery?.status !== 'paginated') return value;
-  const { next_cursor: _cursor, ...delivery } = value.preference_delivery;
-  return { ...value, preference_delivery: { ...delivery, guidance: HOOK_PAGE_GUIDANCE } };
+  const whole = paged ? withPreferenceScope(recovered, taskPreferenceMetadata(task, recovered.context?.personal_space_id))
+    : recovered;
+  return { status: 'refreshed', context: compactTaskContext(whole) };
 }
 
 // `inlineChars` is the inline limit of a host that keeps only a preview of a

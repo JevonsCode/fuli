@@ -207,6 +207,14 @@ task token. Never restart task entry to recover. Older clients that do not
 support continuation see incomplete delivery and must stop; small-result
 compatibility remains unchanged.
 
+A hook that refreshes or restores its task in place reads through its own
+process, which holds the cursors. It joins every page of the revision into the
+complete result (`joinTaskPreferencePages`), with the task's own scope, then
+compacts it and bounds it to the host's inline limit. The page budget applies to
+the uncompacted reader result, so even a few preferences with the full rule
+texts page; handing the model only the first page would block the turn and could
+never confirm a delta (rec#76). No cursor ever reaches the model.
+
 ## Native boundaries
 
 - Local Codex stdio accepts the host's per-request `threadId`, `sessionId` and
