@@ -395,6 +395,31 @@ async def link_reasserted(store, space, reasserted: dict, *, episode_id, actor_i
                 changed_by='agent', created_at=created_at)
 
 
+async def restated_relationships(store, space, relationship_ids) -> dict[str, str]:
+    """For each relationship a capture states that already ended (invalidated,
+    out of date or replaced), the ID its new statement takes instead: a later
+    capture of the same words is a new current item, never a silent landing on
+    the ended one, and the ended one keeps its history untouched (only a
+    person's restore takes it back). The new ID is salted with that ending, so
+    every later statement of the same words lands on the same new item, and a
+    new item that ended in turn takes the next one."""
+    renamed, pending = {}, {item_id: item_id for item_id in dict.fromkeys(relationship_ids)}
+    while pending:
+        records, _, _ = await store.runtime.driver.execute_query(
+            '''
+            MATCH ()-[item:RELATES_TO {group_id: $group_id}]->()
+            WHERE item.uuid IN $item_ids AND (item.invalid_at IS NOT NULL OR item.expired_at IS NOT NULL)
+            RETURN item.uuid AS item_id, toString(coalesce(item.expired_at, item.invalid_at)) AS ended_at
+            ''', item_ids=list(pending.values()), group_id=space['group_id'], routing_='r')
+        ended = {record['item_id']: record['ended_at'] for record in records}
+        for stated, current in pending.items():
+            if current not in ended and current != stated:
+                renamed[stated] = current
+        pending = {stated: stable_uuid(current, 'restated', ended[current])
+                   for stated, current in pending.items() if current in ended}
+    return renamed
+
+
 async def _went_out_of_date(store, space, item_id) -> bool:
     revisions = (await item_revisions(store, space, 'entity', [item_id])).get(item_id, [])
     return _END_OF_VALIDITY.get(ending_action(revisions)) in REASSERTABLE
