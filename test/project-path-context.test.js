@@ -11,90 +11,23 @@ import {
 import { errorToolResult } from '../src/mcp/tool-result.js';
 
 const PROJECTS = Object.freeze([
-  { project_id: 'fuli' },
-  { project_id: 'projectb' }
+  { project_id: 'fuli', profile: { sources: [{ kind: 'repository', uri: 'https://example.test/team/fuli' }] } },
+  { project_id: 'projectb', profile: { sources: [{ kind: 'repository', uri: 'https://example.test/team/projectb' }] } }
 ]);
 
-test('project path resolves an exact repository id without fuzzy matching', () => {
-  const existing = new Set([
-    '/work/fuli/src',
-    '/work/fuli/.git'
-  ]);
-  const resolution = resolvePersonalProjectPath('/work/fuli/src', PROJECTS, {
-    fileExists: (candidate) => existing.has(candidate),
-    isDirectory: (candidate) => candidate === '/work/fuli/src',
-    pathApi: path.posix
+test('a matching directory name without a remote cannot establish ownership', () => {
+  const existing = new Set(['/work/fuli/src', '/work/fuli/.git']);
+  const options = { fileExists: candidate => existing.has(candidate),
+    isDirectory: () => true, readText: () => '', pathApi: path.posix };
+  assert.deepEqual(resolvePersonalProjectPath('/work/fuli/src', PROJECTS, options), {
+    status: 'unmatched', basis: null, personalProjectId: null, reason: 'repository_remote_unavailable'
   });
-
-  assert.deepEqual(resolution, {
-    status: 'matched',
-    basis: 'repository_root',
-    personalProjectId: 'fuli'
-  });
-  assert.equal(
-    findRepositoryRoot('/work/fuli/src', {
-      fileExists: (candidate) => existing.has(candidate),
-      pathApi: path.posix
-    }),
-    '/work/fuli'
-  );
-});
-
-test('project path resolves the original repository behind a Codex worktree', () => {
-  const existing = new Set([
-    '/worktrees/task-1',
-    '/worktrees/task-1/.git'
-  ]);
-  const resolution = resolvePersonalProjectPath('/worktrees/task-1', PROJECTS, {
-    fileExists: (candidate) => existing.has(candidate),
-    isDirectory: (candidate) => candidate === '/worktrees/task-1',
-    readText: () => 'gitdir: /projects/fuli/.git/worktrees/task-1\n',
-    pathApi: path.posix
-  });
-
-  assert.equal(resolution.personalProjectId, 'fuli');
-  assert.equal(resolution.basis, 'git_worktree_origin');
-});
-
-test('repository directory case can differ from one unambiguous registered project ID', () => {
-  const existing = new Set(['/work/ProjectA', '/work/ProjectA/.git']);
-  const resolution = resolvePersonalProjectPath('/work/ProjectA', [{ project_id: 'projecta' }], {
-    fileExists: value => existing.has(value), isDirectory: () => true,
-    readText: () => '', pathApi: path.posix
-  });
-  assert.equal(resolution.personalProjectId, 'projecta');
-  assert.equal(resolution.basis, 'repository_root_case_insensitive');
-});
-
-test('worktree origin wins over a folder named after another project and supports case differences', () => {
-  const existing = new Set(['/worktrees/fuli', '/worktrees/fuli/.git']);
-  const options = {
-    fileExists: value => existing.has(value), isDirectory: () => true,
-    readText: () => 'gitdir: /projects/ProjectA/.git/worktrees/task\n', pathApi: path.posix
-  };
-  const resolution = resolvePersonalProjectPath('/worktrees/fuli', [
-    { project_id: 'fuli' }, { project_id: 'projecta' }
-  ], options);
-  assert.equal(resolution.personalProjectId, 'projecta');
-  assert.equal(resolution.basis, 'git_worktree_origin_case_insensitive');
-  assert.equal(resolvePersonalProjectPath('/worktrees/fuli', [{ project_id: 'fuli' }], options).status, 'unmatched');
-});
-
-test('case-insensitive resolution never guesses between colliding IDs or similar names', () => {
-  const options = {
-    fileExists: () => true, isDirectory: () => true, readText: () => '', pathApi: path.posix
-  };
-  assert.equal(resolvePersonalProjectPath('/work/PROJECTA', [
-    { project_id: 'projecta' }, { project_id: 'ProjectA' }
-  ], options).status, 'ambiguous');
-  assert.equal(resolvePersonalProjectPath('/work/ProjectA', [{ project_id: 'projecta' }], {
-    ...options, readText: () => 'gitdir: /projects/project-a/.git/worktrees/task'
-  }).status, 'unmatched');
+  assert.equal(findRepositoryRoot('/work/fuli/src', options), '/work/fuli');
 });
 
 // Synthetic paths must not reach the host filesystem: wherever /workspace or
 // /outside exists (such as T:\workspace on Windows), realpath would rewrite it.
-test('a workspace root resolves only one exact registered child project', () => {
+test('a workspace root requires the actual repository path even with one named child', () => {
   const existing = new Set([
     '/workspace',
     '/workspace/fuli/.git'
@@ -106,8 +39,8 @@ test('a workspace root resolves only one exact registered child project', () => 
     pathApi: path.posix
   });
 
-  assert.equal(resolution.personalProjectId, 'fuli');
-  assert.equal(resolution.basis, 'workspace_child');
+  assert.equal(resolution.personalProjectId, null);
+  assert.equal(resolution.reason, 'workspace_requires_repository_path');
 });
 
 test('ambiguous, unmatched, and invalid project paths never guess a project', () => {
@@ -162,7 +95,7 @@ test('ambiguous, unmatched, and invalid project paths never guess a project', ()
   );
 });
 
-test('an unregistered repository is reported as the exact ID to register', () => {
+test('an unregistered repository never offers a directory-derived registration ID', () => {
   const existing = new Set(['/work/new-app/src', '/work/new-app/.git', '/work/tree', '/work/tree/.git']);
   const options = {
     fileExists: (candidate) => existing.has(candidate),
@@ -172,9 +105,9 @@ test('an unregistered repository is reported as the exact ID to register', () =>
     pathApi: path.posix
   };
   assert.deepEqual(resolvePersonalProjectPath('/work/new-app/src', PROJECTS, options), {
-    status: 'unmatched', basis: null, personalProjectId: null, repositoryProjectId: 'new-app'
+    status: 'unmatched', basis: null, personalProjectId: null, reason: 'repository_remote_unavailable'
   });
-  assert.equal(resolvePersonalProjectPath('/work/tree', PROJECTS, options).repositoryProjectId, 'origin-app');
+  assert.equal(resolvePersonalProjectPath('/work/tree', PROJECTS, options).repositoryProjectId, undefined);
   assert.equal(resolvePersonalProjectPath('/outside', PROJECTS, {
     ...options, fileExists: (candidate) => candidate === '/outside'
   }).repositoryProjectId, undefined);
@@ -187,7 +120,7 @@ function windowsHost(existing, extra = {}) {
     fileExists: (candidate) => existing.has(candidate),
     isDirectory: (candidate) => existing.has(candidate) && !candidate.endsWith('.txt'),
     realPath: (candidate) => candidate,
-    readText: () => '',
+    readText: file => file.endsWith('config') ? '[remote \"origin\"]\nurl = https://example.test/team/fuli' : '',
     pathApi: path.win32,
     ...extra
   };
@@ -196,7 +129,7 @@ function windowsHost(existing, extra = {}) {
 test('a WSL drive path resolves on Windows exactly like the native drive path', () => {
   const host = windowsHost(new Set(['T:\\work\\fuli\\src', 'T:\\work\\fuli\\.git']));
   const native = resolvePersonalProjectPath('T:\\work\\fuli\\src', PROJECTS, host);
-  assert.deepEqual(native, { status: 'matched', basis: 'repository_root', personalProjectId: 'fuli' });
+  assert.deepEqual(native, { status: 'matched', basis: 'git_remote', personalProjectId: 'fuli' });
   for (const wslPath of ['/mnt/t/work/fuli/src', '/mnt/T/work/fuli/src', '/mnt/t/work/fuli/src/',
     '/mnt/t/work//fuli/src//', '///mnt/t/work/fuli/src', '/mnt/t/work/./tmp/../fuli/src']) {
     assert.deepEqual(resolvePersonalProjectPath(wslPath, PROJECTS, host), native, wslPath);
@@ -276,7 +209,7 @@ test('POSIX hosts resolve /mnt and /home paths unchanged', () => {
     fileExists: (candidate) => existing.has(candidate),
     isDirectory: () => true,
     realPath: (candidate) => candidate,
-    readText: () => '',
+    readText: file => file.endsWith('config') ? `[remote \"origin\"]\nurl = https://example.test/team/${file.includes('projectb') ? 'projectb' : 'fuli'}` : '',
     pathApi: path.posix
   };
   assert.equal(resolvePersonalProjectPath('/mnt/t/work/fuli', PROJECTS, host).personalProjectId, 'fuli');
@@ -322,14 +255,14 @@ test('a clone under another folder name resolves by its origin remote', (t) => {
   }
 });
 
-test('the folder name still wins over the remote, and the remote never matches partially', (t) => {
+test('the remote wins over the folder name and never matches partially', (t) => {
   const { clone } = cloneFixture(t, 'projectb', originConfig('https://github.com/JevonsCode/fuli.git'));
   assert.equal(resolvePersonalProjectPath(clone, [repositoryProject('fuli', 'https://github.com/JevonsCode/fuli'),
-    { project_id: 'projectb' }]).personalProjectId, 'projectb');
+    { project_id: 'projectb' }]).personalProjectId, 'fuli');
   for (const uri of ['https://github.com/JevonsCode/fuli-web', 'https://github.com/JevonsCode', 'https://github.com/jevonscode/fuli',
     'https://github.com/JevonsCode/fuli/tree/main', 'https://gitlab.com/JevonsCode/fuli']) {
     assert.deepEqual(resolvePersonalProjectPath(clone, [repositoryProject('fuli', uri)]), {
-      status: 'unmatched', basis: null, personalProjectId: null, repositoryProjectId: 'projectb'
+      status: 'unmatched', basis: null, personalProjectId: null, reason: 'repository_remote_unregistered'
     }, uri);
   }
 });
@@ -338,7 +271,7 @@ test('a remote shared by two projects is ambiguous, and temporary or non-reposit
   const { clone } = cloneFixture(t, 'task-clone', originConfig('https://github.com/JevonsCode/fuli.git'));
   const uri = 'git@github.com:JevonsCode/fuli.git';
   assert.deepEqual(resolvePersonalProjectPath(clone, [repositoryProject('fuli', uri), repositoryProject('fuli-old', uri)]), {
-    status: 'ambiguous', basis: null, personalProjectId: null, candidateCount: 2
+    status: 'ambiguous', basis: null, personalProjectId: null, reason: 'repository_remote_ambiguous', candidateCount: 2
   });
   assert.equal(resolvePersonalProjectPath(clone, [repositoryProject('fuli', uri),
     repositoryProject('scratch', uri, { scope_type: 'temporary' })]).personalProjectId, 'fuli');
@@ -357,9 +290,9 @@ test('a worktree reads the origin remote from its common directory', (t) => {
   assert.deepEqual(resolvePersonalProjectPath(worktree, [repositoryProject('fuli', 'git@github.com:JevonsCode/fuli.git')]), {
     status: 'matched', basis: 'git_remote', personalProjectId: 'fuli'
   });
-  assert.equal(resolvePersonalProjectPath(worktree, [{ project_id: 'repo-copy' }]).basis, 'git_worktree_origin');
+  assert.equal(resolvePersonalProjectPath(worktree, [{ project_id: 'repo-copy' }]).reason, 'repository_remote_unregistered');
   assert.equal(resolvePersonalProjectPath(worktree, [repositoryProject('fuli', 'https://github.com/JevonsCode/other')])
-    .repositoryProjectId, 'repo-copy');
+    .repositoryProjectId, undefined);
 });
 
 test('a clone without an origin remote or with a local origin stays unmatched', (t) => {

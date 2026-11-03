@@ -37,7 +37,7 @@ MCP 配置，有适配器的客户端还支持自动配置（Codex、Claude Code
 - **搭档留得住**：任务结束后，Agent 的职责、合作记录与工作记忆继续保留。
 - **上下文有边界**：按需取回项目知识、决定与偏好，保留来源、作用域和确认状态。
 - **需要时一起做**：协调不同专长的 Agent，通过可用且获授权的客户端或执行器开展任务，记录真实执行。
-- **每个任务都有负责人**：在项目目录里直接提需求，Fuli 自动登记项目并安排一位负责 Agent；回复最后一行写明谁负责、谁协助。
+- **每个任务都有负责人**：在已登记的仓库目录里直接提需求，Fuli 按远端匹配项目及其负责 Agent；回复最后一行写明谁负责、谁协助。
 - **三位专职随时在岗**：Jefa 管项目，Bole 做 AR（Agent Resources），负责招募与人员安排，Tonborg 帮你做判断；每个空间都自带这三位。
 - **按你的偏好判断**：[Tonborg](docs/judgment-and-autonomy.md) 在你设定的自主程度内协助审核、建议客户端与模型。每次判断都有记录，点赞、点踩或补一句理由，帮助它改进后续判断。
 - **Agent 之间直接对话**：通过[圆桌](#agent-圆桌)，一个 Agent 可以直接去问另一段对话里的 Agent，往来全程留痕。
@@ -234,24 +234,20 @@ Agent 在酒店项目工作时先搜索酒店本地知识，再沿显式的 `PAR
 
 ### Fuli 怎么识别当前项目
 
-Fuli 只匹配已经登记在“个人项目”中的稳定 `project_id`，不根据目录内容做模糊猜测。通常让
-`project_id` 与仓库目录名一致，例如仓库 `/workspace/fuli` 对应项目 `fuli`。标准调用只传
-当前工作目录，解析顺序如下：
+Fuli 只匹配已经登记在“个人项目”中的稳定 `project_id`。Git 仓库的归属以规范化后的
+`origin` 远端地址为准，不以本地目录名为准。标准调用传入当前工作目录：
 
-1. 向上找到最近的 Git 仓库根；仓库目录名与已登记 `project_id` 完全相同时命中。
-2. 如果当前目录是 Codex worktree，从 `.git` 指向的原始仓库恢复项目 ID。
-3. 两个目录名都没有登记时，从仓库的 `.git/config`（worktree 读其公共目录）读取 `origin`
-   远程地址，与某一个已登记项目记录的仓库来源 URL 完全相同时命中；同一仓库的 ssh 与 https
-   写法视为相同。因此换了目录名的独立克隆也能解析到原项目（`git_remote`）。
-4. 当前目录名与已登记项目 ID 完全相同时命中。
-5. 如果当前目录是工作区根，并且正好只有一个已登记的直接子目录带 `.git`、`package.json`、
-   `pyproject.toml`、`Cargo.toml` 或 `go.mod`，命中这个唯一子项目。
-6. 多个候选返回 `ambiguous`，没有候选返回 `unmatched`；两种情况都不会应用项目级偏好，也
-   不会猜一个项目。
+1. 向上找到最近的 Git 仓库根，从 `.git/config` 读取 `origin`；worktree 通过 `.git`
+   指针和 `commondir` 读取公共 Git 目录。
+2. 与已登记项目的 `repository`、`frontend_repository` 或 `backend_repository` 来源 URL
+   匹配。同一仓库的 SSH 与 HTTPS 写法视为相同，不同目录的 clone 和 worktree 共享项目（`git_remote`）。
+3. 多个候选返回 `ambiguous`，没有候选返回 `unmatched`；缺失远端同样不匹配。
+   不再按目录名回退，也不继承另一个仓库的历史会话归属。
+4. 非 Git 工作区需要明确选择项目，或传入实际仓库路径；目录或子目录同名不足以证明归属。
 
-第一次进入尚未登记、但身份明确的仓库时，已安装的沉淀 Skill 可以在首次项目级写入前通过
-`upsert_personal_project` 创建最小的本机私有项目；它不会自动创建或订阅公共项目。若工作区
-有多个候选，应进入精确项目目录运行 Agent，或先在“个人项目”中明确选择和登记。
+仓库入口不再根据目录名或 README 自动注册项目。已有项目需要补充已核实的私有仓库来源；
+确为新项目时，通过 `upsert_personal_project` 明确登记并包含仓库来源。现有项目和历史不会
+自动合并、删除或改名。显式点名 FLA 的路由仍然可用，与仓库身份识别独立。
 
 ### Agent 什么时候调用什么
 
@@ -278,7 +274,7 @@ Code、Codex 和 Cursor 生命周期适配器。已加载、获信任的入口 H
     "personal_project_id": "fuli",
     "project_resolution": {
       "status": "matched",
-      "basis": "repository_root",
+      "basis": "git_remote",
       "personal_project_id": "fuli"
     }
   },
