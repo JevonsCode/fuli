@@ -47,6 +47,8 @@ class Strings {
   String get openConsole => _t('打开控制台', 'Open console');
   String get startFuli => _t('启动 FULI', 'Start FULI');
   String get stopFuli => _t('停止 FULI', 'Stop FULI');
+  String get restartFuli => _t('重启 FULI', 'Restart FULI');
+  String get recheck => _t('重新检查', 'Check again');
   String get openFuli => _t('打开 FULI', 'Open FULI');
   String get quit => _t('退出', 'Quit');
   String get exportDiagnostics => _t('导出诊断包…', 'Export diagnostics bundle…');
@@ -62,6 +64,7 @@ class Strings {
   String repairingMany(int count) => _t('正在修复 $count 件事…', 'Fixing ${_things(count)}…');
   String get starting => _t('正在启动 FULI…', 'Starting FULI…');
   String get stopping => _t('正在停止 FULI…', 'Stopping FULI…');
+  String get restarting => _t('正在重启 FULI…', 'Restarting FULI…');
   String get changingPort => _t('正在换端口并重启 FULI…', 'Moving FULI to another port and restarting it…');
   String get checkingAfterUpdate => _t('正在检查更新后的 FULI…', 'Checking FULI after the update…');
   // The steps the core reports (src/system/console-update.js).
