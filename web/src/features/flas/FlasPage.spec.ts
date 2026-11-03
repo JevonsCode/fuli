@@ -186,6 +186,23 @@ describe('FLAs page', () => {
     expect(groupNames(wrapper)).toEqual([['project-a', ['Cedar']]])
   })
 
+  it('fills in missing occupations from each FLA’s own words, one write each, and leaves the unknown ones', async () => {
+    putJson.mockImplementation(async (url: string) => url.endsWith('/occupation') ? {} : { revision: 2, agentIds: [] })
+    const { wrapper } = await setup()
+    // Aster, Birch, Cedar and Dahlia say only "looks after synthetic work": nothing to guess, no offer.
+    expect(wrapper.find('[data-flas-occupations]').exists()).toBe(false)
+
+    roster[0] = fla(1, 'Aster', { workStatus: 'idle', profile: { name: 'Aster', responsibility: '负责回归测试', capabilities: [], initialPreferences: [], status: 'active' } })
+    forgetLoadedRosters()
+    const again = await setup()
+    expect(again.wrapper.get('[data-flas-occupations]').text()).toContain('1 位 FLA 还没有职业')
+    await again.wrapper.get('[data-flas-occupations-fill]').trigger('click')
+    await flushPromises()
+    expect(putJson).toHaveBeenCalledWith('/api/project-agents/agent-1/occupation', { personalSpaceId: 'space-a', role: 'testing', tags: [] })
+    expect(putJson.mock.calls.filter(([url]) => String(url).endsWith('/occupation'))).toHaveLength(1)
+    roster[0] = fla(1, 'Aster', { workStatus: 'idle' })
+  })
+
   it('pins from the row menu', async () => {
     const { wrapper } = await setup()
     await wrapper.get('[data-fla="agent-1"]').trigger('contextmenu')
