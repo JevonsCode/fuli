@@ -124,6 +124,25 @@ test('Claude requires the same session and paired non-error tool_use/tool_result
   assert.equal((await inspect([call, result], claudePreferenceEvidence)).frames.length, 0);
 });
 
+// rec#15: a long session's transcript outgrows the read limit, yet only what
+// follows its last compaction counts, so that tail is all that is read.
+test('a transcript over the read limit is read from its last compaction in the final window', async () => {
+  const header = { sessionId: session, type: 'user', message: { content: 'Synthetic start' } };
+  const filler = { sessionId: session, type: 'user', message: { content: 'x'.repeat(32 * 1024 * 1024 + 1024) } };
+  const boundary = { sessionId: session, type: 'system', subtype: 'compact_boundary' };
+  const call = { sessionId: session, type: 'assistant', message: { content: [{ type: 'tool_use', id: 'use-a', name: 'mcp__fuli__get_collaboration_preferences' }] } };
+  const result = { sessionId: session, type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'use-a', content: JSON.stringify(envelope(value)) }] } };
+  const proof = await inspect([header, filler, boundary, call, result], claudePreferenceEvidence);
+  assert.equal(proof.known, true);
+  assert.equal(proof.frames.length, 1);
+  assert.ok(proof.since > 32 * 1024 * 1024 && proof.frames[0].offset >= proof.since);
+  // No compaction in the final window, or only one before it: nothing is proven.
+  assert.equal((await inspect([header, filler, call, result], claudePreferenceEvidence)).known, false);
+  assert.equal((await inspect([header, boundary, filler, call, result], claudePreferenceEvidence)).known, false);
+  // The first record still names the session.
+  assert.equal((await inspect([{ ...header, sessionId: 'foreign' }, filler, boundary, call, result], claudePreferenceEvidence)).known, false);
+});
+
 test('Claude Hook task entry recorded as a rendered attachment establishes delivery', async () => {
   const rendered = text => [{ content: `<system-reminder>
 UserPromptSubmit hook additional context: Fuli task context.

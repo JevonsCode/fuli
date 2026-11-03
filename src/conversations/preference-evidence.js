@@ -5,6 +5,7 @@ import { preferenceAuthorityView } from '../mcp/preference-delivery.js';
 import { conversationResultRecovery } from './recent-context.js';
 
 const MAX_BYTES = 32 * 1024 * 1024;
+const MAX_FIRST_RECORD_BYTES = 1024 * 1024;
 const DIRECT_TOOLS = /^(?:mcp__fuli__|mcp__fuli\.)(?:get_collaboration_preferences|begin_task_context|read_task_preferences|resume_agent_conversation|read_agent_conversation)$/;
 const CODE_MODE = new Set(['functions.exec', 'functions.wait']);
 
@@ -12,7 +13,9 @@ const CODE_MODE = new Set(['functions.exec', 'functions.wait']);
 // an assistant's claim, or a cache hit. Bounds/format uncertainty means full.
 // since is where the current context generation starts (after the last reset
 // record); records holds the complete native records that start at the
-// requested byte offsets, as parsed.
+// requested byte offsets, as parsed. A transcript over MAX_BYTES is read from
+// its last reset in the final MAX_BYTES (rec#15: a long session otherwise got
+// a full context on every turn).
 export async function readPreferenceEvidence(path, sessionId, adapter, recordOffsets = new Set()) {
   let file;
   try {
@@ -22,21 +25,22 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
     // is next to the old one could read as the same file and keep confirming
     // what only the old one held (recent-context.test.js, PR #356 CI).
     const stat = await file.stat({ bigint: true });
-    if (!stat.isFile() || !stat.size || stat.size > MAX_BYTES) return { known: false };
-    const bytes = Buffer.alloc(Number(stat.size));
-    const { bytesRead } = await file.read(bytes, 0, bytes.length, 0);
-    if (bytesRead !== bytes.length || bytes.at(-1) !== 10) return { known: false };
+    if (!stat.isFile() || !stat.size) return { known: false };
+    const size = Number(stat.size);
+    const first = await firstRecord(file, size);
+    if (first === null || !adapter.verify(JSON.parse(first), sessionId)) return { known: false };
+    const window = await readWindow(file, size);
+    if (window === null) return { known: false };
+    const start = window.offset === 0 ? 0 : lastResetOffset(window, adapter, sessionId);
+    if (start === null) return { known: false };
     const calls = new Map();
     const records = new Map();
     const tree = { parents: new Map(), ids: new Map(), leaf: null };
-    let frames = [], offset = 0, generation = null, since = 0;
-    for (const line of bytes.toString('utf8').split('\n').slice(0, -1)) {
+    let frames = [], offset = start, since = 0;
+    let generation = start === 0 ? contentHash(first) : null;
+    for (const line of window.bytes.subarray(start - window.offset).toString('utf8').split('\n').slice(0, -1)) {
       const end = offset + Buffer.byteLength(line) + 1;
       const record = JSON.parse(line);
-      if (offset === 0) {
-        if (!adapter.verify(record, sessionId)) return { known: false };
-        generation = contentHash(line);
-      }
       const link = adapter.link?.(record, sessionId);
       if (link) { tree.parents.set(link.id, link.parent); tree.ids.set(offset, link.id); tree.leaf = link.id; }
       if (recordOffsets.has(offset)) records.set(offset, record);
@@ -67,9 +71,40 @@ export async function readPreferenceEvidence(path, sessionId, adapter, recordOff
       frames = frames.filter(frame => active.has(tree.ids.get(frame.offset)));
       for (const at of records.keys()) if (!active.has(tree.ids.get(at))) records.delete(at);
     }
-    return { known: true, fileId: `${stat.dev}:${stat.ino}`, size: bytes.length, generation, since, frames, records };
+    return { known: true, fileId: `${stat.dev}:${stat.ino}`, size, generation, since, frames, records };
   } catch { return { known: false }; }
   finally { await file?.close(); }
+}
+
+// The first record, which names the session; null unless it is one whole line.
+async function firstRecord(file, size) {
+  const head = Buffer.alloc(Math.min(size, MAX_FIRST_RECORD_BYTES));
+  const { bytesRead } = await file.read(head, 0, head.length, 0);
+  const end = head.subarray(0, bytesRead).indexOf(10);
+  return end < 0 ? null : head.subarray(0, end).toString('utf8');
+}
+
+// The whole file, or its last MAX_BYTES from the first record that starts in
+// them; null unless the file ends with a complete record.
+async function readWindow(file, size) {
+  const from = size > MAX_BYTES ? size - MAX_BYTES - 1 : 0;
+  const bytes = Buffer.alloc(size - from);
+  const { bytesRead } = await file.read(bytes, 0, bytes.length, from);
+  if (bytesRead !== bytes.length || bytes.at(-1) !== 10) return null;
+  if (from === 0) return { offset: 0, bytes };
+  const skip = bytes.indexOf(10) + 1;
+  return { offset: from + skip, bytes: bytes.subarray(skip) };
+}
+
+// Where the last reset record of a tail window starts, or null without one.
+// Nothing before a reset is evidence, so nothing earlier has to be read.
+function lastResetOffset(window, adapter, sessionId) {
+  let offset = window.offset, found = null;
+  for (const line of window.bytes.toString('utf8').split('\n').slice(0, -1)) {
+    if (adapter.events(JSON.parse(line), sessionId).some(event => event.type === 'reset')) found = offset;
+    offset += Buffer.byteLength(line) + 1;
+  }
+  return found;
 }
 
 // For a host whose records form a tree (an adapter with `link`), only the
