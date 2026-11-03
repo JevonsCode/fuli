@@ -656,8 +656,9 @@ try {
   assert.equal(data.project_agent_context.memory.current.memory.summary,'SYNTHETIC_MEMORY_project');
   assert.equal(data.project_agent_context.global_memory.current.memory.summary,'SYNTHETIC_MEMORY_global');
   // A new native worker chat does not implicitly resume an older conversation
-  // (#159). Explicit own-project/global history reads below remain available.
-  assert.equal(data.conversation.recovery,null,JSON.stringify(data.conversation));
+  // (#159). Explicit own-project/global history reads below remain available. A timed-out
+  // begin (below) carries no recovery field at all, which is the same answer.
+  assert.equal(data.conversation.recovery ?? null,null,JSON.stringify(data.conversation));
   // The worker's entry opens its own conversation in one Provider request (rec#11 D-53). The
   // capture budget is fixed on purpose (750 ms), and a cold CI machine can spend it before the
   // Provider answers. Nothing later continues a worker's begin (no hook transcript import), so
