@@ -106,6 +106,32 @@ describe('悬浮岛', () => {
     expect(island.find('[data-team-card="task-1"]').exists()).toBe(false)
   })
 
+  // Jevons 11-03: on a narrow screen the row over the page was in the way.
+  it('on a narrow screen sits beside the dock as one button and opens the tasks in a sheet from the bottom', async () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query === '(max-width: 720px)', media: query,
+      addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false })))
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/workbenches?')) return { partial: false, workbenches: [sheet(), sheet({ taskId: 'task-2', title: 'Second synthetic task' })] }
+      if (url.startsWith('/api/project-agents/')) return { agentId: url.split('/')[3]!.split('?')[0], profile: { name: 'X' } }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    try {
+      const island = await mountIsland()
+      expect(island.find('[data-widget="team-island"]').exists()).toBe(false)
+      // The dock moves left to make room only while the button is there.
+      expect(document.documentElement.hasAttribute('data-island-docked')).toBe(true)
+      const button = island.get('[data-team-island-docked]')
+      expect(button.attributes('aria-label')).toBe('展开 2 个一起做的任务')
+      await button.trigger('click')
+      await flushPromises()
+      const sheetEl = document.querySelector('[data-team-island-sheet]')!
+      expect([...sheetEl.querySelectorAll('[data-team-card]')].map(card => card.getAttribute('data-team-card'))).toEqual(['task-1', 'task-2'])
+      island.unmount()
+      mounted.splice(mounted.indexOf(island), 1)
+      expect(document.documentElement.hasAttribute('data-island-docked')).toBe(false)
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('folds the whole row behind a round button that says how many, and opens it again', async () => {
     getJson.mockImplementation(async (url: string) => {
       if (url.startsWith('/api/workbenches?')) return { partial: false, workbenches: [sheet(), sheet({ taskId: 'task-2', title: 'Second synthetic task' })] }
