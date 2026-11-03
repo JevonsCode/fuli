@@ -97,23 +97,20 @@ class FuliBrand {
   }
 }
 
-/// Hands the loaded brand to every mark below it, with the wordmark for the
-/// client's language: 复利 when it speaks Chinese, FULI otherwise.
+/// Hands the loaded brand to every mark below it. The wordmark beside the mark
+/// is FULI in every language (Jevons 11-03: the title bar always says FULI,
+/// never 复利); the Chinese wordmark stays in the brand for other uses.
 class FuliBrandScope extends InheritedWidget {
-  const FuliBrandScope({super.key, required this.brand, required this.chinese, required super.child});
+  const FuliBrandScope({super.key, required this.brand, required super.child});
 
   final FuliBrand brand;
-  final bool chinese;
 
   static FuliBrandScope _of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<FuliBrandScope>()!;
 
   static FuliBrand of(BuildContext context) => _of(context).brand;
 
-  static WordmarkGeometry wordmarkOf(BuildContext context) {
-    final scope = _of(context);
-    return scope.chinese ? scope.brand.chineseWordmark : scope.brand.latinWordmark;
-  }
+  static WordmarkGeometry wordmarkOf(BuildContext context) => _of(context).brand.latinWordmark;
 
   @override
-  bool updateShouldNotify(FuliBrandScope old) => old.brand != brand || old.chinese != chinese;
+  bool updateShouldNotify(FuliBrandScope old) => old.brand != brand;
 }
