@@ -86,7 +86,9 @@ export function formatLocalRuntimeResult(command, result, copy = String) {
   if (command === 'stop') {
     if (result.status === 'partial') {
       return [
-        'The local Fuli Provider stopped, but the unverified UI process was left running.',
+        result.providers === 'kept'
+          ? 'The local UI process could not be verified, so nothing was stopped.'
+          : 'The local Fuli Provider stopped, but the unverified UI process was left running.',
         'Run fl status to inspect it without risking another process.'
       ].join('\n');
     }
