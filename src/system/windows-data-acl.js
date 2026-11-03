@@ -50,9 +50,12 @@ export function windowsDataAcl({ platform = process.platform, run = execute,
   }
 
   // The principals other than the current user and SYSTEM the ACL lets in.
+  // SDDL writes the machine's built-in Administrator account (RID 500) as LA,
+  // so when that is who runs FULI, LA is the current user too.
   async function sharedWith(directory) {
     const [user, principals] = await Promise.all([currentUserSid(), daclOf(directory)]);
-    return [...new Set(principals.filter((sid) => sid !== user && sid !== SYSTEM_SID))];
+    const self = new Set([user, SYSTEM_SID, ...(user.endsWith('-500') ? ['LA'] : [])]);
+    return [...new Set(principals.filter((sid) => !self.has(sid)))];
   }
 
   // First every entry under the directory goes back to plain inheritance (no

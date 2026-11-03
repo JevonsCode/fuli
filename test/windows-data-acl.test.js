@@ -31,12 +31,12 @@ function scratchRoot(t) {
 
 // A fake whoami and icacls: /save writes the record icacls would (UTF-16LE,
 // name line then SDDL); /reset and /inheritance change the fake ACL.
-function fakeTools(t, { sddl, failReset = false, failSave = false, keepShared = false }) {
+function fakeTools(t, { sddl, failReset = false, failSave = false, keepShared = false, user = USER }) {
   const calls = [];
   const state = { sddl };
   const run = async (command, args, options = {}) => {
     calls.push([command, args, options]);
-    if (command === WHOAMI) return { stdout: `"desktop\\someone","${USER}"\r\n`, stderr: '' };
+    if (command === WHOAMI) return { stdout: `"desktop\\someone","${user}"\r\n`, stderr: '' };
     if (args[1] === '/save') {
       if (failSave) throw new Error('Access is denied.');
       writeFileSync(args[2], Buffer.from(`Fuli\r\n${state.sddl}\r\n`, 'utf16le'));
@@ -67,6 +67,12 @@ test('owner-only, deny and audit entries are not sharing; a null DACL is everyon
   const conditional = `D:PAI(A;OICI;FA;;;SY)(XA;OICI;FA;;;AU;(@User.Project == "x"))(A;OICI;FA;;;${USER})(A;;FR;;;BU)`;
   assert.deepEqual(await fakeTools(t, { sddl: conditional }).acl.sharedWith(DATA_DIR), ['AU', 'BU']);
   assert.deepEqual(await fakeTools(t, { sddl: 'D:NO_ACCESS_CONTROL' }).acl.sharedWith(DATA_DIR), ['WD']);
+});
+
+test('the built-in Administrator (RID 500), written LA in SDDL, is the person when it runs FULI', async (t) => {
+  const builtIn = 'D:PAI(A;OICI;FA;;;LA)(A;OICI;FA;;;SY)';
+  assert.deepEqual(await fakeTools(t, { sddl: builtIn, user: 'S-1-5-21-1000-2000-3000-500' }).acl.sharedWith(DATA_DIR), []);
+  assert.deepEqual(await fakeTools(t, { sddl: builtIn }).acl.sharedWith(DATA_DIR), ['LA']);
 });
 
 test('an ACL that cannot be read is an error, never an owner-only answer, and leaves no scratch file', async (t) => {
