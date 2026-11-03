@@ -76,6 +76,19 @@ as that worker's history and leaves the task status unchanged; record it once an
 as a status change. In a team without sub-teams, the Agent dispatching from its own task becomes
 the new task's coordinator: omit `coordinatorAgentId` rather than naming the project lead.
 
+## Ask Another Project's Lead
+
+When the person asks about another project ("去看看 X 项目", "问问 X 项目", "ask the X project"), the
+current project lead asks that project's lead on the roundtable; the person names neither the lead
+nor the roundtable. Task entry lists the project in `roundtable_ask.projects` with its `address`
+when the prompt says so; otherwise address it as `project:<projectId>` or `project:<exact name>`.
+Call `message_agent` with that address, the question plus what you already know, `wait: true`
+and the current `taskContextToken`. The target lead looks it up read-only inside its own project
+and may ask its own specialists. Answer from the reply and name `recipient.name` as the source. A
+`queued` result is still waiting: say so and check later with `get_agent_message_status`. Never
+read the other project's repository, sessions or files yourself instead, and never call an answer
+found that way a roundtable reply.
+
 ## Report Actual Worker Execution
 
 When a FULI task or task view returns a non-empty Provider `executionSummary`, append a compact

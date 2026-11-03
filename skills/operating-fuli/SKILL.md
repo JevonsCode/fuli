@@ -53,6 +53,10 @@ For read-only questions, use the narrowest list/get/search tool and return sourc
 
 When the user addresses AR or Bole to ask about organization or find someone, resolve the existing dedicated AR identity and read `list_project_agents` plus `get_project_agent_coordination_policy` for the exact personal space and relevant project. Use recorded roles, assignments and team membership; do not invent an organization or recruit a replacement AR. Match names, responsibilities and capabilities, but never guess between ambiguous or duplicate names. Link each resolved name to its personal page at `/agents/{encodedPersonalSpaceId}/{encodedAgentId}`. Answering in the AR role does not mean a worker has started; report actual execution separately.
 
+## Asking another project
+
+"去看看 X 项目" / "问问 X 项目" means asking X's lead on the roundtable, not reading X yourself: `message_agent(to: "project:<id or exact name>", wait: true)` with the current `taskContextToken` (task entry's `roundtable_ask` gives the address). Answer from the reply, naming who answered; a `queued` reply is checked later with `get_agent_message_status`. Only the current project's lead asks across projects.
+
 ## Before starting collaborators
 
 Read each returned worker's `context.agent.profile.allowedClients` and `executorPolicy`, together with the task's effective executor policy. A client list that names `other` but not `opencode` or `antigravity` also allows that client: older profiles used `other` for them. Intersect the restrictions before starting either a native or external worker; the lead's selected executor does not authorize every collaborator. A locked allow-list applies even when the current host has an idle worker. If the intended platform is outside any effective lock, select an eligible Agent/executor or report the constraint before launch. Never relax the lock, relabel the worker, or invent model evidence to satisfy reporting. FULI context recovery and a ready worker plan are not execution authorization by themselves.
