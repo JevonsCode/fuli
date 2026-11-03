@@ -13,11 +13,12 @@ import { windowsDataAcl } from '../src/system/windows-data-acl.js';
 const tool = (name) => join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', name);
 
 // Every allow ACE's SID, read independently of the module under test.
-function allowedSids(path, scratch) {
+// SDDL writes SYSTEM as SY and the built-in Administrator (RID 500, CI's runner) as LA.
+function allowedSids(path, scratch, user = '') {
   const saved = join(scratch, `acl-${Math.random().toString(36).slice(2)}`);
   execFileSync(tool('icacls.exe'), [path, '/save', saved], { windowsHide: true });
   const sddl = readFileSync(saved).toString('utf16le').split(/\r?\n/)[1];
-  return [...sddl.matchAll(/\((?:A|OA|XA|ZA);[^;]*;[^;]*;[^;]*;[^;]*;([^;)]+)/g)].map(([, sid]) => sid === 'SY' ? 'S-1-5-18' : sid);
+  return [...sddl.matchAll(/\((?:A|OA|XA|ZA);[^;]*;[^;]*;[^;]*;[^;]*;([^;)]+)/g)].map(([, sid]) => sid === 'SY' ? 'S-1-5-18' : sid === 'LA' && user.endsWith('-500') ? user : sid);
 }
 
 test('the data directory ACL keeps only the current user and SYSTEM, for the directory and what it holds',
@@ -39,9 +40,9 @@ test('the data directory ACL keeps only the current user and SYSTEM, for the dir
 
     assert.deepEqual(await acl.sharedWith(dataDir), []);
     for (const path of [dataDir, join(dataDir, 'graph-provider.env'), join(dataDir, 'stores'), join(dataDir, 'stores', 'synthetic.json')]) {
-      assert.deepEqual([...new Set(allowedSids(path, root))].sort(), [user, 'S-1-5-18'].sort(), path);
+      assert.deepEqual([...new Set(allowedSids(path, root, user))].sort(), [user, 'S-1-5-18'].sort(), path);
     }
     // A file created afterwards inherits the same two principals.
     writeFileSync(join(dataDir, 'later.json'), '{}\n');
-    assert.deepEqual([...new Set(allowedSids(join(dataDir, 'later.json'), root))].sort(), [user, 'S-1-5-18'].sort());
+    assert.deepEqual([...new Set(allowedSids(join(dataDir, 'later.json'), root, user))].sort(), [user, 'S-1-5-18'].sort());
   });
