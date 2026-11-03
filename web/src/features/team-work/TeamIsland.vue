@@ -8,6 +8,8 @@ import { UiIcon } from '@/ui'
 import { useConsoleStore } from '@/stores/console'
 import TeamCard from './TeamCard.vue'
 import TeamIslandCapsule from './TeamIslandCapsule.vue'
+import TeamOrbit from './TeamOrbit.vue'
+import { currentStepOf } from './team-sheets'
 import { useTeamPeople } from './useTeamPeople'
 import { useTeamWork } from './useTeamWork'
 
@@ -17,7 +19,8 @@ import { useTeamWork } from './useTeamWork'
 // clicked, and the capsules stay where they are (Jevons 11-02: hovering opened
 // cards by accident, and a card grew out of whichever capsule it was). Another
 // click on the capsule, Esc or a click elsewhere folds it. A round button before
-// the row folds the whole row away, showing only how many there are, and opens
+// the row folds the whole row away, showing only how many there are (and, while
+// FLAs are working, their tiny portraits circling it: TeamOrbit.vue), and opens
 // it again; the choice is remembered on this computer. The button and the
 // capsules share one height and one centre line (--island-height), and the
 // capsules slide out of and back into the button instead of cutting.
@@ -40,6 +43,11 @@ function toggleFolded() {
 
 const openId = ref<string | null>(null)
 const panelId = useId()
+// The FLAs working right now across the running tasks, at most six, for the folded button.
+const ORBIT_LIMIT = 6
+const working = computed(() => [...new Set(team.running.value.flatMap(sheet => sheet.shares
+  .filter(share => share.status === 'running' || currentStepOf(sheet, share))
+  .map(share => share.agentId)))].slice(0, ORBIT_LIMIT))
 // Capsules slide in one after another from the fold button and back into it.
 const capsules = computed(() => folded.value ? [] : team.running.value)
 const SLIDE_IN = { opacity: 0, x: -14, scale: 0.96 }
@@ -73,7 +81,8 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
       <AnimatePresence mode="wait" :initial="false">
         <motion.span :key="folded ? 'count' : 'chevron'" class="island-fold-face" :initial="{ opacity: 0, scale: 0.6 }"
           :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.6, transition: { duration: 0.1 } }">
-          <span v-if="folded" class="island-fold-count ui-num">{{ team.running.value.length }}</span>
+          <TeamOrbit v-if="folded && working.length" :agent-ids="working" :count="team.running.value.length" />
+          <span v-else-if="folded" class="island-fold-count ui-num">{{ team.running.value.length }}</span>
           <UiIcon v-else name="chevron-left" :size="16" />
         </motion.span>
       </AnimatePresence>
@@ -114,7 +123,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
 }
 .island-fold:hover { transform: translateY(-1px); }
 .island-fold:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
-.island-fold-face { display: grid; place-items: center; }
+.island-fold-face { display: grid; width: 100%; height: 100%; place-items: center; }
 .island-fold-count { font-size: var(--text-control); font-weight: var(--weight-medium); }
 .island-card :deep(.team-card) { max-height: min(60vh, 520px); overflow-y: auto; box-shadow: none; }
 @media (max-width: 720px) {

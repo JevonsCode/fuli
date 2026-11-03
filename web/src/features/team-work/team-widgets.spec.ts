@@ -119,11 +119,28 @@ describe('悬浮岛', () => {
     await fold.trigger('click')
     expect(island.findAll('[data-team-island-pill]')).toHaveLength(0)
     expect(fold.text()).toBe('2')
+    // Who is working right now circles the button as tiny portraits; the queued one does not.
+    expect(fold.findAll('[data-team-orbit] [data-agent-portrait]').map(face => face.attributes('data-agent-portrait'))).toEqual(['lead', 'a'])
     expect(fold.attributes('aria-label')).toBe('展开 2 个一起做的任务')
     expect(localStorage.getItem('fuli.teamIsland.folded')).toBe('1')
     await fold.trigger('click')
     expect(island.findAll('[data-team-island-pill]')).toHaveLength(2)
     expect(localStorage.getItem('fuli.teamIsland.folded')).toBeNull()
+  })
+
+  it('folded with nobody working, the button shows only the count', async () => {
+    const idle = sheet({ steps: [], shares: [{ agentId: 'lead', role: 'lead', status: 'queued', assignment: null, progress: null },
+      { agentId: 'a', role: 'collaborator', status: 'queued', assignment: null, progress: null }] })
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/workbenches?')) return { partial: false, workbenches: [idle] }
+      if (url.startsWith('/api/project-agents/')) return { agentId: 'lead', profile: { name: 'X' } }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    localStorage.setItem('fuli.teamIsland.folded', '1')
+    const fold = (await mountIsland()).get('[data-team-island-fold]')
+    expect(fold.find('[data-team-orbit]').exists()).toBe(false)
+    expect(fold.text()).toBe('1')
+    localStorage.removeItem('fuli.teamIsland.folded')
   })
 
   it('is not there when nothing runs together, nor when the server cannot say', async () => {
