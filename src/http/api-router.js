@@ -166,10 +166,12 @@ export async function handleApiRequest({
     return true;
   }
 
-  // ?cached=1 answers from the checker's last answer and never waits on npm.
+  // ?cached=1 answers from the checker's last answer and never waits on npm;
+  // ?fresh=1 asks npm again unless the last answer is under a minute old.
   if (system && url.pathname === '/api/system/version' && request.method === 'GET') {
     sendJson(response, 200, url.searchParams.get('cached') === '1'
-      ? system.cachedVersionStatus() : await system.versionStatus());
+      ? system.cachedVersionStatus()
+      : await system.versionStatus({ fresh: url.searchParams.get('fresh') === '1' }));
     return true;
   }
 

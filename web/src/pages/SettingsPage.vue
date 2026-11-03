@@ -68,7 +68,7 @@ const autoSave = useSettingsAutoSave({
 })
 const { state: autoSaveState, failure: saveFailure } = autoSave
 // 版本: the newest release on the update channel the form holds.
-const { status: versionStatus, failed: versionFailed } = useChannelVersionStatus(computed(() => form.value?.updateChannel))
+const { status: versionStatus, failed: versionFailed, checking: versionChecking, recheck: recheckVersion } = useChannelVersionStatus(computed(() => form.value?.updateChannel))
 const versionCheckedAt = (value: string) => formatDateTime(value, locale.value, { dateStyle: 'medium', timeStyle: 'short' }, { missing: '—' })
 const saveCapsuleState = computed(() => applying.value ? 'applying' : autoSaveState.value)
 const pendingRestart = computed(() => form.value && settings.value
@@ -729,6 +729,10 @@ function checkFields(): ValidatedField[] {
                       </template>
                       <span v-else-if="versionStatus"><strong>{{ t('settings.version.upToDate') }}</strong>
                         <small>{{ t('settings.version.checkedAt', { time: versionCheckedAt(versionStatus.checkedAt) }) }}</small></span>
+                      <!-- Asks npm again now; the update button takes over once a newer release is found. -->
+                      <Button v-if="!offersUpdate(versionStatus) && (versionStatus || versionFailed)" type="button" variant="outline" size="sm"
+                        class="version-recheck" :loading="versionChecking" :loading-label="t('settings.version.checking')"
+                        data-version-recheck @click="recheckVersion">{{ t('settings.version.recheck') }}</Button>
                     </div>
                   </div>
                 </Card>
