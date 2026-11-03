@@ -455,6 +455,8 @@ class MemoryGraph:
     def _answer(self, query, p):
         if 'active_groups' in p or 'PERSONAL_PROJECT_RELATION*1..2' in query:
             return []
+        if 'write-time supersession' in query:
+            return []  # nothing older to replace or queue
         if 'RETURN project' in query and 'FuliPersonalProject {project_id: $project_id}' in query:
             known = p['project_id'] in self.projects
             return [{'project': {'project_id': p['project_id']}}] if known else []

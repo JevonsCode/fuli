@@ -149,6 +149,8 @@ class WorkflowCommitDriver:
             }], None, None
         if '_knowledge_lock' in query:
             return [], None, None  # the space's knowledge lock (rec#5 C7/C8)
+        if 'write-time supersession' in query:
+            return [], None, None  # nothing older to replace or queue
         if "action: 'hard_delete'" in query:
             return [], None, None  # nothing was permanently deleted (rec#5 C9)
         if 'item.fuli_replaced_by_item_id IS NOT NULL' in query:

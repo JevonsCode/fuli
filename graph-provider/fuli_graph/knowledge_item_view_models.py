@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import Field, model_serializer, model_validator
 
-from .knowledge_audit_models import KnowledgeChangeActor, KnowledgeItemKind, KnowledgeRevisionRecord
+from .knowledge_audit_models import KnowledgeChangeActor, KnowledgeItemKey, KnowledgeItemKind, KnowledgeRevisionRecord
 from .knowledge_tag_models import KnowledgeTagReference
 from .model_base import StrictModel
 from .models import AgentReaderRef, ConfirmationStatus, ContentSource, SearchRequest
@@ -179,11 +179,6 @@ class KnowledgeItemView(KnowledgeItemSummary):
 class KnowledgeTurnReceiptRead(AgentReaderRef):
     personal_space_id: str = Field(min_length=1, max_length=128)
     episode_ids: list[str] = Field(min_length=1, max_length=MAX_RECEIPT_EPISODES)
-
-
-class KnowledgeItemKey(StrictModel):
-    item_kind: KnowledgeItemKind
-    item_id: str = Field(min_length=1, max_length=256)
 
 
 class KnowledgeVisibleItemsRead(AgentReaderRef):

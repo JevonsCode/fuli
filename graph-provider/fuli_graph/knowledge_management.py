@@ -159,6 +159,9 @@ async def revise_knowledge_item(store, actor: dict, item_id: str, request: Knowl
         if review:
             changed = await _settle_review(scoped, actor, space, request.item_kind, item_id, **review,
                                            reason=request.reason, created_at=created_at)
+        if request.action == 'confirm':
+            await _settle_older_knowledge(scoped, actor, space, [(request.item_kind, item_id)],
+                                          created_at=created_at)
         if request.operation_actor == 'human':
             await record_human_change(
                 scoped,
@@ -197,6 +200,12 @@ async def _lock_knowledge(scoped, space):
     await lock_knowledge(scoped, space)
 
 
+async def _settle_older_knowledge(scoped, actor, space, items, *, created_at):
+    from .knowledge_outdated import settle_older_knowledge  # deferred: it builds on this module
+
+    await settle_older_knowledge(scoped, actor, space, items, created_at=created_at)
+
+
 async def _settle_review(scoped, actor, space, item_kind, item_id, **options):
     from .knowledge_basis_review import settle_review  # deferred: it builds on this module
 
@@ -219,8 +228,8 @@ async def _version_lifecycle(
     from .knowledge_basis_review import apply_meaning, basis_review, settle_review
     from .knowledge_outdated import mark_item_outdated, report_outdated_to_person
     from .knowledge_versions import (
-        creates_version, current_version_id, item_revisions, lock_knowledge, terminal, version_status,
-        version_value, write_version,
+        creates_version, current_version_id, item_revisions, keyed_replacement, lock_knowledge,
+        restore_keyed_value, terminal, version_status, version_value, write_version,
     )
 
     revisions = (await item_revisions(store, space, request.item_kind, [item_id])).get(item_id, [])
@@ -235,6 +244,11 @@ async def _version_lifecycle(
                 'message': 'this version was replaced or went out of date; its end stays as it was'})
         return None
     if request.action == 'restore':
+        # A keyed replacement is the one end a person can take back.
+        if (request.operation_actor == 'human' and request.item_kind == 'relationship'
+                and keyed_replacement(current, revisions)):
+            return await restore_keyed_value(store, actor, space, item_id, previous, reason=request.reason,
+                                             created_at=created_at, revision_id=revision_id)
         if terminal(current, revisions):
             raise HTTPException(status_code=409, detail={
                 'code': 'reassert_as_new_version',

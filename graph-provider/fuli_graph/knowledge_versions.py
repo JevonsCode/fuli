@@ -20,19 +20,26 @@ import json
 from fastapi import HTTPException
 
 from .graph_field_contract import carried_fields, stored_fields
-from .knowledge_audit import _item_match
+from .knowledge_audit import _item_match, record_human_change
+from .knowledge_audit_models import KnowledgeRevisionRecord
 from .knowledge_item_version import lock_version
 from .knowledge_item_view_models import KnowledgeVersionStatus as VersionStatus
 from .knowledge_management import _read_assignment, _update_item, write_project_assignment
 from .knowledge_records import revision_record
 from .knowledge_tags import tag_link_id
-from .provider_values import native_datetime, stable_uuid
+from .provider_values import json_object, native_datetime, stable_uuid
+from .store_transactions import query_store_transaction
 
 # The revision that ended an item's validity names why it is history.
 # `invalidate` is a plain deactivation unless it named a replacement.
 _END_OF_VALIDITY = {'supersede': 'superseded', 'mark_outdated': 'outdated',
                     'basis_outdated': 'basis_outdated', 'invalidate': None}
 EXCERPT_LIMIT = 2048
+# Words of a relation type that name a value its subject has only one of: a
+# confirmed new value ends the old one (keyed replacement). Obsolete values
+# mislead more than missing ones, and a key decides it without a model.
+KEYED_RELATION_WORDS = frozenset({'URL', 'URI', 'ENDPOINT', 'HOST', 'PORT', 'COMMAND', 'OWNER', 'OWNED'})
+KEYED_REPLACEMENT_REASON = 'A confirmed value for the same subject and relation replaced it.'
 # Copied from the old version would describe a review or a person's change of
 # the old words, not of the new ones; the new version earns its own.
 _NOT_CARRIED = frozenset({
@@ -79,9 +86,13 @@ TERMINAL_ACTIONS = frozenset({'supersede', 'mark_outdated', 'basis_outdated', 'r
 
 def terminal(current: dict, revisions) -> bool:
     """From durable facts, not the latest action: a successor link (a newer
-    version, a capture's supersedes, a re-assertion) or any recorded end."""
+    version, a capture's supersedes, a re-assertion) or any recorded end. Only
+    a keyed replacement can be restored, so an end before a restore is not
+    one any more."""
+    restored = max((revision.created_at for revision in revisions if revision.action == 'restore'), default=None)
     return bool(current.get('replaced_by_item_id')) or any(
-        revision.action in TERMINAL_ACTIONS for revision in revisions)
+        revision.action in TERMINAL_ACTIONS and (restored is None or revision.created_at > restored)
+        for revision in revisions)
 
 
 def ending_action(revisions) -> str | None:
@@ -202,6 +213,112 @@ async def write_version(scoped, actor, space, item_kind, item_id, current, value
                  **({'carriedLegacyKeys': legacy_keys} if legacy_keys else {})},
         changed_by=changed_by, created_at=created_at)
     return new_id
+
+
+def keyed_relation(relation: str, attributes: dict) -> bool:
+    """A relation that holds one value per subject: its type names such a
+    value (HAS_URL, RUNS_ON_PORT, START_COMMAND, OWNED_BY), or the capture
+    said so with attributes.singleValued."""
+    stated = attributes.get('singleValued')
+    if isinstance(stated, bool):
+        return stated
+    return bool(KEYED_RELATION_WORDS & set(relation.split('_')))
+
+
+async def keyed_value(store, space, item_id) -> dict | None:
+    """The relationship as a value of a keyed relation, if it is a current one.
+    Its subject is its source entity, whose ID already carries the project and
+    FLA it was said in. Preferences have their own conflict review."""
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        // write-time supersession: the keyed value
+        MATCH (source:Entity)-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()
+        WHERE item.invalid_at IS NULL AND item.fuli_profile_aspect IS NULL
+        RETURN source.uuid AS source_id, item.uuid AS item_id, item.name AS relation,
+               item.fuli_attributes_json AS attributes_json, item.valid_at AS valid_at,
+               coalesce(item.fuli_confirmation_status, 'pending') AS confirmation_status
+        ''', item_id=item_id, group_id=space['group_id'], routing_='r')
+    if not records or not keyed_relation(records[0]['relation'] or '', json_object(records[0]['attributes_json'])):
+        return None
+    return dict(records[0])
+
+
+async def end_keyed_values(scoped, actor, space, value, *, changed_by, created_at) -> list[str]:
+    """Make `value` (from keyed_value) the only current value of its subject
+    and relation, inside the caller's transaction. Every other current value
+    ends where it starts and links to it, as a capture's `supersedes` does: it
+    keeps its words and stays readable as history, and a person's restore
+    gives it back (restore_keyed_value). No model decides it. Returns the
+    IDs it ended."""
+    await lock_knowledge(scoped, space)
+    records, _, _ = await scoped.runtime.driver.execute_query(
+        '''
+        MATCH (:Entity {uuid: $source_id, group_id: $group_id})-[old:RELATES_TO {group_id: $group_id}]->()
+        WHERE old.name = $relation AND old.uuid <> $item_id
+          AND old.invalid_at IS NULL AND old.fuli_profile_aspect IS NULL
+        WITH old ORDER BY old.uuid
+        SET old.fuli_ai_review_lock_version = coalesce(old.fuli_ai_review_lock_version, 0) + 1,
+            old.invalid_at = CASE WHEN $valid_at IS NOT NULL AND $valid_at <= $created_at
+                                       AND (old.valid_at IS NULL OR old.valid_at < $valid_at)
+                                  THEN $valid_at ELSE $created_at END,
+            old.expired_at = coalesce(old.expired_at, $created_at),
+            old.fuli_replaced_by_item_id = $item_id, old.fuli_replaced_by_item_kind = 'relationship'
+        RETURN old.uuid AS item_id, old.fact AS fact, old.invalid_at AS invalid_at
+        ''', source_id=value['source_id'], item_id=value['item_id'], relation=value['relation'],
+        valid_at=value['valid_at'], group_id=space['group_id'], created_at=created_at)
+    for record in records:
+        await record_version_revision(
+            scoped, actor, space, 'relationship', record['item_id'],
+            revision_id=stable_uuid(space['id'], 'knowledge-revision', 'keyed-replacement', record['item_id'],
+                                    value['item_id'], created_at.isoformat()),
+            action='supersede', reason=KEYED_REPLACEMENT_REASON,
+            previous={'fact': record['fact'], 'invalidAt': None},
+            current={'fact': record['fact'], 'invalidAt': native_datetime(record['invalid_at']).isoformat(),
+                     'replacedByItemId': value['item_id'], 'replacedByItemKind': 'relationship',
+                     'keyedReplacement': {'relation': value['relation']}},
+            changed_by=changed_by, created_at=created_at)
+    return [record['item_id'] for record in records]
+
+
+def keyed_replacement(current: dict, revisions) -> bool:
+    """Whether a keyed replacement ended this version and its link still
+    points where that replacement put it."""
+    ended = max((revision for revision in revisions if revision.action in _END_OF_VALIDITY),
+                key=lambda revision: revision.created_at, default=None)
+    return bool(ended and ended.action == 'supersede' and ended.current.get('keyedReplacement')
+                and current.get('replaced_by_item_id') == ended.current.get('replacedByItemId'))
+
+
+async def restore_keyed_value(store, actor, space, item_id, previous, *, reason, created_at,
+                              revision_id) -> KnowledgeRevisionRecord:
+    """A person's restore of a value a keyed replacement ended: it is the
+    current value again and the values that replaced it end the same way, so
+    the subject keeps one current value and both ends stay in history."""
+    async with query_store_transaction(store) as scoped:
+        await lock_knowledge(scoped, space)
+        records, _, _ = await scoped.runtime.driver.execute_query(
+            '''
+            MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()
+            WHERE item.invalid_at IS NOT NULL
+            SET item.fuli_ai_review_lock_version = coalesce(item.fuli_ai_review_lock_version, 0) + 1,
+                item.invalid_at = NULL, item.expired_at = NULL,
+                item.fuli_replaced_by_item_id = NULL, item.fuli_replaced_by_item_kind = NULL
+            RETURN item.uuid AS item_id
+            ''', item_id=item_id, group_id=space['group_id'])
+        if not records:
+            raise HTTPException(status_code=409, detail='knowledge changed while it was being restored; read it again')
+        restored = {**previous, 'invalidAt': None, 'replacedByItemId': None, 'replacedByItemKind': None}
+        await record_version_revision(scoped, actor, space, 'relationship', item_id, revision_id=revision_id,
+                                      action='restore', reason=reason, previous=previous, current=restored,
+                                      changed_by='user', created_at=created_at)
+        value = await keyed_value(scoped, space, item_id)
+        if value:
+            await end_keyed_values(scoped, actor, space, value, changed_by='user', created_at=created_at)
+        await record_human_change(scoped, actor, space, item_id, 'relationship', reason=reason,
+                                  operation='knowledge_restore')
+    return KnowledgeRevisionRecord(id=revision_id, item_id=item_id, item_kind='relationship', action='restore',
+                                   reason=reason, previous=previous, current=restored, created_at=created_at,
+                                   changed_by='user')
 
 
 async def reasserted_entities(store, space, entity_ids, episode_id) -> dict[str, dict]:

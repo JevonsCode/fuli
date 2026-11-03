@@ -2,13 +2,22 @@
 edit writes a new version, what the new version starts with, and the request
 shapes of the outdated mark and of a conclusion's bases."""
 
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
 
 from fuli_graph.knowledge_audit_models import KnowledgeRevisionRecord
-from fuli_graph.knowledge_versions import creates_version, version_status, version_value
+from fuli_graph.knowledge_records import revision_record
+from fuli_graph.knowledge_versions import (
+    creates_version,
+    keyed_relation,
+    keyed_replacement,
+    terminal,
+    version_status,
+    version_value,
+)
 from fuli_graph.model_validation import require_public_eligible_episode
 from fuli_graph.models import EntityInput, KnowledgeRevisionCreate, RelationshipInput, StructuredEpisode
 
@@ -127,3 +136,92 @@ def test_a_conclusion_that_names_personal_bases_cannot_enter_public_review():
                       'confirmation_basis': basis, 'derived_from': ['personal-item']}]})
     with pytest.raises(ValueError, match='cannot enter public review'):
         require_public_eligible_episode(episode)
+
+
+def stored_revision(action, current_json, minutes=0):
+    """A revision as it comes back from storage: a record dict, not the model."""
+    return revision_record({
+        'id': f'{action}-{minutes}',
+        'item_id': 'item',
+        'item_kind': 'relationship',
+        'action': action,
+        'reason': 'Synthetic.',
+        'previous_json': json.dumps({}),
+        'current_json': json.dumps(current_json),
+        'created_at': NOW + timedelta(minutes=minutes),
+    })
+
+
+@pytest.mark.parametrize('relation', ['HAS_URL', 'BASE_URL', 'RUNS_ON_PORT', 'LISTENS_ON_PORT',
+                                      'START_COMMAND', 'BUILD_COMMAND', 'OWNED_BY', 'HAS_OWNER',
+                                      'API_ENDPOINT', 'DB_HOST', 'DOCS_URI'])
+def test_a_relation_type_that_names_one_value_per_subject_is_keyed(relation):
+    assert keyed_relation(relation, {}) is True
+
+
+@pytest.mark.parametrize('relation', ['USES', 'DEPENDS_ON', 'IMPLEMENTED_IN', 'OWNS',
+                                      'HOSTED_ON', 'PORTED_FROM', 'COMMANDS_LIST'])
+def test_a_relation_type_that_names_many_values_is_not_keyed(relation):
+    assert keyed_relation(relation, {}) is False
+
+
+def test_a_capture_saying_single_valued_decides_keyed_and_a_non_boolean_is_ignored():
+    assert keyed_relation('USES', {'singleValued': True}) is True
+    assert keyed_relation('HAS_URL', {'singleValued': False}) is False
+    # A non-boolean value is ignored: the relation type's words decide.
+    assert keyed_relation('USES', {'singleValued': 'yes'}) is False
+    assert keyed_relation('HAS_URL', {'singleValued': 'no'}) is True
+
+
+def test_a_keyed_supersede_whose_link_still_points_at_its_replacement_is_keyed():
+    current = {'replaced_by_item_id': 'new-version'}
+    revisions = [stored_revision('supersede', {
+        'keyedReplacement': {'relation': 'RUNS_ON_PORT'},
+        'replacedByItemId': 'new-version',
+    })]
+    assert keyed_replacement(current, revisions) is True
+
+
+def test_a_plain_supersede_is_not_keyed():
+    current = {'replaced_by_item_id': 'new-version'}
+    revisions = [stored_revision('supersede', {'replacedByItemId': 'new-version'})]
+    assert keyed_replacement(current, revisions) is False
+
+
+def test_a_later_ordinary_supersede_makes_the_keyed_one_history():
+    current = {'replaced_by_item_id': 'new-version'}
+    revisions = [
+        stored_revision('supersede', {'keyedReplacement': {'relation': 'RUNS_ON_PORT'},
+                                      'replacedByItemId': 'new-version'}, minutes=0),
+        stored_revision('supersede', {'replacedByItemId': 'latest-version'}, minutes=5),
+    ]
+    assert keyed_replacement(current, revisions) is False
+
+
+def test_a_keyed_supersede_whose_link_points_elsewhere_is_not_keyed():
+    current = {'replaced_by_item_id': 'somewhere-else'}
+    revisions = [stored_revision('supersede', {
+        'keyedReplacement': {'relation': 'RUNS_ON_PORT'},
+        'replacedByItemId': 'new-version',
+    })]
+    assert keyed_replacement(current, revisions) is False
+
+
+def test_a_supersede_before_a_restore_is_not_terminal():
+    revisions = [
+        stored_revision('supersede', {'replacedByItemId': 'new-version'}, minutes=0),
+        stored_revision('restore', {}, minutes=5),
+    ]
+    assert terminal({}, revisions) is False
+
+
+def test_a_supersede_after_the_restore_is_terminal():
+    revisions = [
+        stored_revision('restore', {}, minutes=0),
+        stored_revision('supersede', {'replacedByItemId': 'new-version'}, minutes=5),
+    ]
+    assert terminal({}, revisions) is True
+
+
+def test_any_replaced_by_item_id_is_terminal():
+    assert terminal({'replaced_by_item_id': 'newer'}, []) is True
