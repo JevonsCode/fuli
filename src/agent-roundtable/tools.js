@@ -47,7 +47,7 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
   {
     name: 'read_agent_messages',
     title: 'ROUNDTABLE · Read messages for me',
-    description: 'Read messages other Agents sent to the current task\'s Agent that are still waiting for an answer, and the person\'s new answers to its attention requests.',
+    description: 'The current task Agent\'s unanswered asks, replies to its own asks (once each) and the person\'s new answers to its attention asks.',
     inputSchema: objectSchema({ taskContextToken: text(160) }, ['taskContextToken'])
   },
   {
@@ -60,13 +60,14 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
   {
     name: 'read_agent_thread',
     title: 'ROUNDTABLE · Read a thread',
-    description: 'Read every message of one Agent conversation thread.',
-    inputSchema: objectSchema({ threadId: text(128) }, ['threadId'])
+    description: 'A message_agent thread, whole bodies; next page after=nextAfter',
+    inputSchema: objectSchema({ threadId: text(128), after: integerSchema({ minimum: 0 }), limit: integerSchema({ minimum: 1, maximum: 24 }) },
+      ['threadId'])
   },
   {
     name: 'get_agent_message_status',
     title: 'ROUNDTABLE · Check a message',
-    description: 'Check whether a message you sent or received in the current task\'s project was answered, including asks to a shared project lead on another paired device (LAN roundtable Beta). "unknown" means the receiving device lost track of the attempt; it may or may not have run and is not retried.',
+    description: 'Check whether a message you sent or received in the current task\'s project was answered, incl. asks to a paired device\'s lead (LAN Beta). "unknown": that device lost the attempt; it may have run, not retried.',
     inputSchema: objectSchema({ taskContextToken: text(160), messageId: text(128) }, ['taskContextToken', 'messageId'])
   },
   {

@@ -44,6 +44,12 @@ export const ROUNDTABLE_FORMAT = sqliteFormat({
   }, {
     id: 'roundtable/5-desktop-inboxes', to: 5, kind: 'add-table', table: 'desktop_inboxes',
     summary: 'the desktop-app conversation each Agent answers roundtable asks in', create: DESKTOP_INBOX_TABLES
+  }, {
+    // A reply waits for its asker until handed over once (reply-inbox.js).
+    // Rows written before this migration carry none and are never announced.
+    id: 'roundtable/6-reply-delivery', to: 6, kind: 'add-columns', table: 'messages',
+    summary: 'whether each reply reached the Agent that asked, and through which tool',
+    columns: { delivery_status: 'TEXT', delivered_via: 'TEXT', delivered_at: 'TEXT' }
   }],
   pragmas: 'PRAGMA journal_mode = WAL;'
 });
@@ -95,11 +101,13 @@ export function createRoundtableStore(path = ':memory:') {
         const seq = (database.prepare('SELECT coalesce(max(seq), 0) AS seq FROM messages WHERE thread_id = ?').get(threadId).seq) + 1;
         database.prepare(`INSERT INTO messages(id, thread_id, seq, kind, body, status, in_reply_to,
           from_agent, from_name, from_client, from_session, to_agent, to_name, to_client, to_session,
-          via, error, created_at, updated_at, target_project_id, source_context_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+          via, error, created_at, updated_at, target_project_id, source_context_hash, delivery_status)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
           message.id, threadId, seq, message.kind, message.body, message.status, message.inReplyTo ?? null,
           message.from?.agentId ?? null, message.from?.name ?? null, message.from?.client ?? null, message.from?.session ?? null,
           message.to?.agentId ?? null, message.to?.name ?? null, message.to?.client ?? null, message.to?.session ?? null,
-          message.via ?? null, null, at, at, message.targetProjectId ?? null, message.sourceContextHash ?? null);
+          message.via ?? null, null, at, at, message.targetProjectId ?? null, message.sourceContextHash ?? null,
+          message.delivery ?? null);
         database.prepare('UPDATE threads SET updated_at = ? WHERE id = ?').run(at, threadId);
         return this.getMessage(message.id);
       });
@@ -193,6 +201,18 @@ export function createRoundtableStore(path = ':memory:') {
       return database.prepare(`SELECT m.* FROM messages m JOIN threads t ON t.id = m.thread_id
         WHERE t.space_id = ? AND m.to_agent = ? AND m.kind = 'ask' AND m.status = 'queued'
         ORDER BY m.created_at LIMIT ?`).all(spaceId, agentId, limit);
+    },
+    // Replies addressed to this Agent in one project, in one of the given delivery states.
+    repliesFor(spaceId, agentId, projectId, states, limit) {
+      return database.prepare(`SELECT m.*, t.subject FROM messages m JOIN threads t ON t.id = m.thread_id
+        WHERE t.space_id = ? AND t.project_id = ? AND m.to_agent = ? AND m.kind = 'reply'
+          AND m.delivery_status IN (${states.map(() => '?').join(',')})
+        ORDER BY m.created_at, m.seq LIMIT ?`).all(spaceId, projectId, agentId, ...states, limit);
+    },
+    // Compare-and-set: true only for the one call that moved the reply on.
+    markReplyDelivery(id, from, to, via) {
+      return database.prepare(`UPDATE messages SET delivery_status = ?, delivered_via = ?, delivered_at = ?
+        WHERE id = ? AND delivery_status IN (${from.map(() => '?').join(',')})`).run(to, via, now(), id, ...from).changes === 1;
     },
     close() { chat.close(); database.close(); }
   };
