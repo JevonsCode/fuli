@@ -10,6 +10,7 @@ import '../../app/app_services.dart';
 import '../../app/fuli_controller.dart';
 import '../../app/tray_view.dart';
 import '../../l10n/strings.dart';
+import '../../runtime/console_port.dart';
 import '../../runtime/fuli_runtime.dart';
 import '../../runtime/macos_app_runtime.dart';
 import '../../runtime/shell_cli_runtime.dart';
@@ -20,6 +21,7 @@ import 'console_webview.dart';
 import 'desktop_caption.dart';
 import 'desktop_window.dart';
 import 'download_saver.dart';
+import 'file_check_log.dart';
 import 'installed_package.dart';
 import 'link_inbox.dart';
 import 'os_notifier.dart';
@@ -55,6 +57,7 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
     runtime: runtime,
     notifier: notifier,
     strings: strings,
+    checkLog: FileCheckLog(defaultDataDir(os: Platform.operatingSystem, env: Platform.environment)),
   );
   final loginLaunch = packageRoot == null ? null : WindowsLoginLaunch(packageRoot: packageRoot);
   bool? launchAtLogin = await _registry(loginLaunch?.apply());
