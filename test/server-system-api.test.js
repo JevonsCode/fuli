@@ -86,7 +86,8 @@ test('system API exposes resource samples and validates persisted settings throu
       memory: { usedBytes: 42 },
       disk: { usedBytes: 84 }
     }),
-    versionStatus: async () => ({
+    versionStatus: async (options) => ({
+      fresh: options?.fresh === true,
       status: 'ready',
       currentVersion: '0.7.7',
       latestVersion: '0.7.8',
@@ -100,6 +101,8 @@ test('system API exposes resource samples and validates persisted settings throu
     assert.equal((await getJson(`${url}/api/system/settings`)).configured.ports.console, 2727);
     assert.equal((await getJson(`${url}/api/system/resources`)).memory.usedBytes, 42);
     assert.equal((await getJson(`${url}/api/system/version`)).latestVersion, '0.7.8');
+    assert.equal((await getJson(`${url}/api/system/version`)).fresh, false);
+    assert.equal((await getJson(`${url}/api/system/version?fresh=1`)).fresh, true);
     const next = { ...configured, ports: { ...configured.ports, console: 3030 } };
     const response = await requestJson(`${url}/api/system/settings`, {
       method: 'PUT',

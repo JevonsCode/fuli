@@ -4,6 +4,9 @@ import { compareSemanticVersions, parseSemanticVersion } from '../semantic-versi
 const DEFAULT_TIMEOUT_MS = 3_000;
 const DEFAULT_SUCCESS_CACHE_MS = 6 * 60 * 60 * 1_000;
 const DEFAULT_FAILURE_CACHE_MS = 5 * 60 * 1_000;
+// A fresh check (设置 › 版本 opened, or 「检查更新」) asks npm again once the
+// last answer is at least this old, so opening the page repeatedly never floods npm.
+const DEFAULT_FRESH_COOLDOWN_MS = 60 * 1_000;
 
 // The update channels a person can follow: stable takes npm's `latest` only;
 // beta takes whichever of `latest` and `beta` is newer, so a stable release
@@ -27,13 +30,15 @@ export function createPackageVersionChecker({
   channel = () => 'stable',
   timeoutMs = DEFAULT_TIMEOUT_MS,
   successCacheMs = DEFAULT_SUCCESS_CACHE_MS,
-  failureCacheMs = DEFAULT_FAILURE_CACHE_MS
+  failureCacheMs = DEFAULT_FAILURE_CACHE_MS,
+  freshCooldownMs = DEFAULT_FRESH_COOLDOWN_MS
 } = {}) {
   const registryUrl = `https://registry.npmjs.org/-/package/${encodeURIComponent(packageName)}/dist-tags`;
   const packageUrl = `https://www.npmjs.com/package/${encodeURIComponent(packageName)}`;
   let cached = null;
   let cachedChannel = null;
   let expiresAt = 0;
+  let answeredAt = 0;
   let inFlight = null;
 
   async function resolveStatus(followed) {
@@ -68,15 +73,19 @@ export function createPackageVersionChecker({
     }
   }
 
-  async function check() {
+  // fresh: the person is looking at the version now; an answer older than the
+  // cooldown is asked again instead of served from the cache.
+  async function check({ fresh = false } = {}) {
     const timestamp = now();
     const followed = channel();
-    if (cached && cachedChannel === followed && timestamp < expiresAt) return cached;
+    const stale = fresh && timestamp - answeredAt >= freshCooldownMs;
+    if (cached && cachedChannel === followed && timestamp < expiresAt && !stale) return cached;
     if (inFlight && inFlight.channel === followed) return inFlight;
     const pending = resolveStatus(followed)
       .then((result) => {
         cached = result;
         cachedChannel = followed;
+        answeredAt = now();
         expiresAt = now() + (result.status === 'ready' ? successCacheMs : failureCacheMs);
         return result;
       })

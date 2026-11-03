@@ -35,6 +35,34 @@ test('package version checker reports newer npm releases and caches successful c
   assert.equal(requests, 2);
 });
 
+test('package version checker asks npm again for a fresh check once the last answer is a minute old', async () => {
+  let now = Date.UTC(2026, 10, 3, 8);
+  let beta = '0.23.0-beta.6';
+  let requests = 0;
+  const checker = createPackageVersionChecker({
+    currentVersion: '0.23.0-beta.6',
+    channel: () => 'beta',
+    now: () => now,
+    fetchImpl: async () => {
+      requests += 1;
+      return { ok: true, json: async () => ({ latest: '0.22.1', beta }) };
+    }
+  });
+
+  assert.equal((await checker.check()).updateAvailable, false);
+  beta = '0.23.0-beta.7';
+  now += 30 * 1_000;
+  assert.equal((await checker.check({ fresh: true })).updateAvailable, false, 'inside the cooldown the cache answers');
+  assert.equal(requests, 1);
+  now += 30 * 1_000;
+  const fresh = await checker.check({ fresh: true });
+  assert.equal(fresh.latestVersion, '0.23.0-beta.7');
+  assert.equal(fresh.updateAvailable, true);
+  assert.equal(requests, 2);
+  assert.equal((await checker.check()).latestVersion, '0.23.0-beta.7', 'a plain check reuses the fresh answer');
+  assert.equal(requests, 2);
+});
+
 test('package version checker fails closed and briefly caches registry errors', async () => {
   let now = Date.UTC(2026, 8, 3, 8);
   let requests = 0;

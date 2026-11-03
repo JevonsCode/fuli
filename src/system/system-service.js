@@ -157,7 +157,7 @@ export function createSystemService({
     ...createCustomClients({ installer: agentKits.clientInstaller, store: customClients }),
     resources: () => resourceMonitor.sample(),
     // updateKind: how the console's one-click update installs it (console-update.js).
-    versionStatus: async () => ({ ...await versionChecker.check(), updateKind: update.kind() }),
+    versionStatus: async (options) => ({ ...await versionChecker.check(options), updateKind: update.kind() }),
     // The checker's last answer without asking npm (`fuli status`); 'unchecked' before its first.
     cachedVersionStatus: () => versionChecker.peek() ?? { status: 'unchecked' },
     updateStatus: () => update.status(),
