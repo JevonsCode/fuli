@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaQuery } from '@vueuse/core'
 import { AnimatePresence, motion } from 'motion-v'
 import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { Button } from '@/components/ui/button'
@@ -8,6 +9,7 @@ import { UiIcon } from '@/ui'
 import { useConsoleStore } from '@/stores/console'
 import TeamCard from './TeamCard.vue'
 import TeamIslandCapsule from './TeamIslandCapsule.vue'
+import TeamIslandDocked from './TeamIslandDocked.vue'
 import TeamOrbit from './TeamOrbit.vue'
 import { currentStepOf } from './team-sheets'
 import { useTeamPeople } from './useTeamPeople'
@@ -23,7 +25,10 @@ import { useTeamWork } from './useTeamWork'
 // FLAs are working, their tiny portraits circling it: TeamOrbit.vue), and opens
 // it again; the choice is remembered on this computer. The button and the
 // capsules share one height and one centre line (--island-height), and the
-// capsules slide out of and back into the button instead of cutting.
+// capsules slide out of and back into the button instead of cutting. On a
+// narrow screen there is no row over the page: TeamIslandDocked.vue puts one
+// button beside the dock and the tasks in a sheet from the bottom.
+const narrow = useMediaQuery('(max-width: 720px)')
 const store = useConsoleStore()
 const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
 const team = useTeamWork(spaceId)
@@ -68,7 +73,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
 </script>
 
 <template>
-  <div v-if="team.running.value.length" ref="root" class="team-islands" role="region"
+  <TeamIslandDocked v-if="narrow && team.running.value.length" :sheets="team.running.value" :working="working" :space-id="spaceId"
+    :name-of="people.nameOf" :project-name="people.projectName" />
+  <div v-else-if="team.running.value.length" ref="root" class="team-islands" role="region"
     :aria-label="t('teamWork.island.region')" data-widget="team-island" data-term="work.island" @keydown.esc="close">
     <AnimatePresence>
       <motion.div v-if="openSheet" :id="panelId" :key="openSheet.taskId" class="island-card" :initial="{ opacity: 0, y: 8 }"
@@ -126,10 +133,4 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside))
 .island-fold-face { display: grid; width: 100%; height: 100%; place-items: center; }
 .island-fold-count { font-size: var(--text-control); font-weight: var(--weight-medium); }
 .island-card :deep(.team-card) { max-height: min(60vh, 520px); overflow-y: auto; box-shadow: none; }
-@media (max-width: 720px) {
-  .team-islands { right: 0; left: 0; flex-direction: column; align-items: center; margin-inline: auto; bottom: calc(12px + 58px + 10px + env(safe-area-inset-bottom)); }
-  .island-slot { flex: none; width: min(330px, 100%); }
-  .island-slot.is-wide { width: min(440px, 100%); }
-  .island-card { left: 50%; translate: -50% 0; }
-}
 </style>

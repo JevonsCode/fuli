@@ -48,6 +48,9 @@ KnowledgeRevisionAction = Literal[
     'batch_confirm',
     'promote_common',
     'replace_common_duplicate',
+    # Newer knowledge may silently replace this item; it stays current and a
+    # person decides (the write-time staleness check).
+    'possibly_outdated',
 ]
 PreferenceScope = Literal['global', 'project']
 
@@ -75,6 +78,11 @@ class PreferenceScopeChange(StrictModel):
         if self.scope == 'global' and self.project_id:
             raise ValueError('project_id is only valid for project preference scope')
         return self
+
+
+class KnowledgeItemKey(StrictModel):
+    item_kind: KnowledgeItemKind
+    item_id: str = Field(min_length=1, max_length=256)
 
 
 class KnowledgeRevisionRecord(StrictModel):

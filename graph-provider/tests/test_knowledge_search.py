@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from fuli_graph.knowledge_search import (
+    _dedupe_ranked_edges,
     _dedupe_ranked_entities,
     _edge_relevance,
     _entity_search_result,
@@ -539,3 +540,61 @@ class SearchDriver:
                 {'uuid': 'target-unrelated', 'name': '象限迁移历史'},
             ], None, None
         return [], None, None
+
+
+def test_a_historical_and_a_current_entity_sharing_one_key_both_survive_dedupe():
+    historical = {
+        'id': 'old-entity',
+        'key': 'aurora.deployment',
+        'invalid_at': datetime(2026, 10, 20, tzinfo=timezone.utc),
+    }
+    current = {'id': 'current-entity', 'key': 'aurora.deployment', 'invalid_at': None}
+
+    survived = _dedupe_ranked_entities(
+        [(historical, 12.0), (current, 4.0)],
+        'aurora-project',
+    )
+
+    assert {record['id'] for record, _ in survived} == {'old-entity', 'current-entity'}
+
+
+def test_two_current_entities_sharing_one_key_collapse_to_one():
+    first = {'id': 'entity-a', 'key': 'aurora.deployment', 'invalid_at': None}
+    second = {'id': 'entity-b', 'key': 'aurora.deployment', 'invalid_at': None}
+
+    survived = _dedupe_ranked_entities(
+        [(first, 8.0), (second, 2.0)],
+        'aurora-project',
+    )
+
+    assert [record['id'] for record, _ in survived] == ['entity-a']
+
+
+def test_a_historical_and_a_current_edge_sharing_one_key_both_survive_dedupe():
+    historical = SimpleNamespace(
+        uuid='old-edge', invalid_at=datetime(2026, 10, 20, tzinfo=timezone.utc),
+    )
+    current = SimpleNamespace(uuid='current-edge', invalid_at=None)
+    metadata = {'old-edge': {'key': 'aurora.port'}, 'current-edge': {'key': 'aurora.port'}}
+
+    survived = _dedupe_ranked_edges(
+        [(12.0, historical), (4.0, current)],
+        metadata,
+        'aurora-project',
+    )
+
+    assert {edge.uuid for _, edge in survived} == {'old-edge', 'current-edge'}
+
+
+def test_two_current_edges_sharing_one_key_collapse_to_one():
+    first = SimpleNamespace(uuid='edge-a', invalid_at=None)
+    second = SimpleNamespace(uuid='edge-b', invalid_at=None)
+    metadata = {'edge-a': {'key': 'aurora.port'}, 'edge-b': {'key': 'aurora.port'}}
+
+    survived = _dedupe_ranked_edges(
+        [(8.0, first), (2.0, second)],
+        metadata,
+        'aurora-project',
+    )
+
+    assert [edge.uuid for _, edge in survived] == ['edge-a']

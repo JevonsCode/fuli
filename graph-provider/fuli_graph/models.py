@@ -23,6 +23,7 @@ from .knowledge_audit_models import (
     KnowledgeHumanChangeItem,
     KnowledgeHumanChangeSearchRequest,
     KnowledgeHumanChangeSearchResult,
+    KnowledgeItemKey,
     KnowledgeItemKind,
     KnowledgeOperationActor,
     KnowledgeRevisionAction,
@@ -767,6 +768,10 @@ class CommitResult(StrictModel):
     episode_id: str
     entity_ids: list[str]
     relationship_ids: list[str]
+    # Older values a confirmed keyed value ended, and older items this capture
+    # may silently replace that now wait for a person (still current).
+    superseded: list[KnowledgeItemKey] = Field(default_factory=list)
+    possibly_outdated: list[KnowledgeItemKey] = Field(default_factory=list)
 
 
 class ProposalCreate(StrictModel):
@@ -846,6 +851,8 @@ class EntitySearchResult(KnowledgeWeightView):
     type: str
     summary: str
     created_at: datetime | None = None
+    # Set only on a historical version, which a search returns when asked to.
+    invalid_at: datetime | None = None
     origin_quadrant: EpistemicQuadrant = 'known_known'
     current_quadrant: EpistemicQuadrant = 'known_known'
     epistemic_status: EpistemicStatus = 'confirmed'

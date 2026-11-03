@@ -29,6 +29,7 @@ async def confirm_knowledge_batch(
 
     # Deferred: review and versions build on knowledge_management, as this does.
     from .knowledge_basis_review import confirmation_review, settle_review
+    from .knowledge_outdated import settle_older_knowledge
     from .knowledge_versions import lock_knowledge
 
     confirmed_at = datetime.now(timezone.utc)
@@ -160,6 +161,9 @@ async def confirm_knowledge_batch(
         for (item_kind, item_id), review in reviews.items():
             await settle_review(scoped, actor, space, item_kind, item_id, **review,
                                 reason=request.reason, created_at=confirmed_at)
+        await settle_older_knowledge(scoped, actor, space,
+                                     [(item.item_kind, item.item_id) for item in request.items],
+                                     created_at=confirmed_at)
     return KnowledgeBatchConfirmationResult(
         group_kind=request.group_kind,
         group_value=request.group_value,
