@@ -32,14 +32,15 @@ built-in automatically takes precedence; `clients status` reports retired overri
 
 `update` and `update --check` only validate and preview descriptors in memory. They
 never write client files or storage. Unavailable sources or no newer pack are no-ops.
-`--apply` shows the complete built-in and proposed descriptors and asks to install,
-then makes the pack active. For a client FULI is in, it shows agent-installer's plan
-with the new pack (each changed file and its diff) and asks before agent-installer
-writes it; agent-installer backs up every file under `backups/agents/` in the data
-directory first and keeps unrelated entries. Every answer defaults to no; `--yes`
-bypasses none of these questions. Noninteractive invocations decline confirmation. A
-declined or unavailable write leaves the client as it was: the pack stays active and
-the next `fuli setup` (or the console's reconnect) updates the client.
+`--apply` shows the complete built-in and proposed descriptors and asks to install.
+For a client FULI is in, it then shows agent-installer's plan with the candidate pack
+(each changed file and its diff) and asks before agent-installer writes it;
+agent-installer backs up every file under `backups/agents/` in the data directory first
+and keeps unrelated entries. The pack becomes active only after the person agrees (or
+when the client has nothing to change, or FULI is not in it). Every answer defaults to
+no; `--yes` bypasses none of these questions. Noninteractive invocations decline
+confirmation. A declined or unavailable write leaves both the active pack and the
+client as they were.
 
 Versions and the operation ledger live in the version-guarded `client-packs.json` in
 FULI's data directory. Rollback uses the same review and confirmation, never going below

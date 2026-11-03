@@ -36,6 +36,7 @@ async function clients(t, f) {
   // OpenCode 2.x, so its plugin is part of the connection.
   const installer = (context) => createClientInstallerPort({ manifestPath: join(f.root, 'agent-kits', 'fuli-installer.json'), context,
     backupsDir: join(f.root, 'backups'), extensionsDir: join(f.root, 'extensions'), openCode: () => ({ plugin: true, nextStep: null }),
+    retireLegacy: () => [],
     executables: agentKitExecutables({ nativeRuntimeDir: join(f.root, 'native-runtime'), env: { FULI_AGENT_INSTALLER: executable } }) });
   // Skills are copies checked on their own; only the MCP entry, hooks, plugin and instructions are under test.
   const inspect = async context => (await detectClients(installer(context))).clients.filter(({ id }) => WRITTEN.includes(id))

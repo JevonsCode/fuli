@@ -207,7 +207,11 @@ native executable through its own ports (`src/agent-kits/session-launcher.js`,
   console's one-click connect (`apply`, then `status` as the self-check), `fuli uninstall`
   (`remove`), and `fuli clients update|rollback` (`plan` shown, then `apply` on consent).
   agent-installer copies every file it changes to `backups/agents/<client>/` in the data directory
-  first, keeps the person's own entries and leaves a Skill they changed by hand. Without the
+  first, keeps the person's own entries and leaves a Skill they changed by hand. Before each
+  `apply`, FULI removes the `mcp_tool` hooks an earlier FULI registered in Claude Code and Codex
+  (`begin_task_context`, `verify_task_checkpoint`; `src/agent-kits/legacy-hook-cleanup.js`),
+  which agent-installer cannot recognize as FULI's, after copying the file to
+  `backups/agents/<client>/legacy-hooks/`; nothing is touched where none is left. Without the
   installer nothing is written and there is no fallback: setup and one-click connect fail with
   「无法下载客户端组件 agent-installer，请检查网络后重试。」 and its English text, uninstall leaves
   every client as it is and says why, and the console and doctor say detection is unavailable.

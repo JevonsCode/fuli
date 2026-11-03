@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { integrationContext } from '../setup/integration-context.js';
 import { createClientInstallerPort } from './client-installer.js';
 import { agentKitExecutables } from './executables.js';
+import { retireLegacyHooks } from './legacy-hook-cleanup.js';
 import { openCodePluginGate } from './opencode-plugin-gate.js';
 import { createSessionLauncherPort } from './session-launcher.js';
 
@@ -14,6 +15,7 @@ export function agentKitPorts(paths, { env = process.env, homeDir = homedir(), r
     sessionLauncher: createSessionLauncherPort({ executables, configPath: paths.launcherHostConfigPath }),
     clientInstaller: createClientInstallerPort({ executables, manifestPath: paths.installerManifestPath,
       context: integrationContext(paths, runtimeConfigPath), backupsDir: paths.backupDir,
-      openCode: () => openCodePluginGate({ env, homeDir }) })
+      openCode: () => openCodePluginGate({ env, homeDir }),
+      retireLegacy: (ids) => retireLegacyHooks(ids, { env, homeDir, backupsDir: paths.backupDir }) })
   };
 }

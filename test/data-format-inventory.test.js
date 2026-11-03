@@ -248,6 +248,7 @@ const UNVERSIONED_JSON_WRITERS = new Map([
   ['src/storage/json-format.js', 'the versioned writer itself'],
   ['src/agents/directory-snapshots.js', 'generated Markdown views and their manifest, regenerated from the database'],
   ['src/conversations/transcript-guard.js', 'a hook\'s per-session handoff state that expires within a minute'],
+  ['src/agent-kits/legacy-hook-cleanup.js', 'Claude Code and Codex hook configuration, owned by the client, backed up before the one-time legacy hook removal'],
   ['src/agent-kits/custom-clients.js', 'client descriptions in the shared agent-clients extension directory, owned by the person and agent-installer'],
   ['src/agent-kits/derived-file.js', 'the session launcher\'s host configuration, the installer\'s product manifest and its OpenCode plugin source, regenerated from settings and packs'],
   ['src/desktop/windows-installation-switch.js', 'installation record and shortcuts, checked by content before each replace'],

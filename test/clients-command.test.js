@@ -57,6 +57,10 @@ test('CLI trust -> check -> apply -> agent-installer plan and apply -> rollback;
   const applied = await f.run(['update', '--apply', 'codex@99.0.0']);
   assert.deepEqual([applied.status, applied.version], ['applied', '99.0.0']);
   assert.deepEqual(f.installer.calls, [['plan', ['codex']], ['apply', ['codex']]]);
+  // Both were asked with the candidate pack, before it was active.
+  for (const packs of f.installer.packs) {
+    assert.ok(packs.find(pack => pack.id === 'codex').instructions.global.includes('Synthetic rule'));
+  }
   assert.match(f.output.join('\n'), /File: ~\/\.codex\/config\.json \(update\)/);
   assert.match(f.composed().manifest, /Synthetic rule/, 'the active pack is what agent-installer is asked to write');
   const active = (await f.run(['status'])).find(pack => pack.id === 'codex'); assert.equal(active.version, '99.0.0');
@@ -66,15 +70,34 @@ test('CLI trust -> check -> apply -> agent-installer plan and apply -> rollback;
   assert.equal((await f.run(['status'])).find(pack => pack.id === 'codex').version, '1.0.0');
 });
 
-test('--yes cannot bypass file consent: a declined plan writes nothing and setup updates the client later', async t => {
+test('--yes cannot bypass file consent: a declined plan leaves the active pack and the client unchanged', async t => {
   const f = fixture(t); await f.run(['trust', f.source, '--sha256', f.sha256]);
+  const before = snapshot(f.dataDir);
   let calls = 0;
   const result = await f.run(['update', '--apply', 'codex@99.0.0', '--yes'], { confirm: async () => ++calls === 1 });
   assert.equal(calls, 2);
-  assert.deepEqual([result.status, result.files], ['applied', 0]);
+  assert.equal(result.status, 'cancelled');
   assert.deepEqual(f.installer.calls, [['plan', ['codex']]]);
-  assert.match(f.output.at(-1), /not changed; run fuli setup/);
+  assert.match(f.output.at(-1), /client pack and the client files were not changed/);
+  const lockless = (files) => Object.fromEntries(Object.entries(files).filter(([path]) => !path.endsWith('.lock')));
+  assert.deepEqual(lockless(snapshot(f.dataDir)), lockless(before), 'no pack state was written');
+  assert.equal((await f.run(['status'])).find(pack => pack.id === 'codex').version, '1.0.0');
+  assert.doesNotMatch(f.composed().manifest, /Synthetic rule/);
+});
+
+test('a declined file write on rollback keeps the newer pack active', async t => {
+  const f = fixture(t); await f.run(['trust', f.source, '--sha256', f.sha256]);
+  await f.run(['update', '--apply', 'codex@99.0.0']);
+  // The client would change again for the rollback; the person says no to the files.
+  const changing = fakeClientInstaller([{ id: 'codex', state: 'update_available', mcp: 'current' }]);
+  let calls = 0;
+  const result = await f.run(['rollback', 'codex'], { clientInstaller: () => changing, confirm: async () => ++calls === 1 });
+  assert.equal(result.status, 'cancelled');
+  assert.deepEqual(changing.calls, [['plan', ['codex']]]);
+  assert.ok(!changing.packs[0].find(pack => pack.id === 'codex').instructions.global.includes('Synthetic rule'),
+    'the plan used the rollback target');
   assert.equal((await f.run(['status'])).find(pack => pack.id === 'codex').version, '99.0.0');
+  assert.match(f.composed().manifest, /Synthetic rule/);
 });
 
 test('an unreachable pinned manifest leaves every file unchanged', async t => {
