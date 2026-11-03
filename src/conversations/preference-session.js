@@ -113,8 +113,14 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
             const preferences = origin.forceFull ? completePreferenceFrame(candidate, shown)
               : projectPreferenceDelta(candidate, baseline, shown);
             const recent = projectRecentContext(preferences, evidence);
-            const trimmed = { ...recent, value: projectSkeleton(recent.value, skeleton, origin.label) };
-            return { candidate, recent: trimmed, result: output(trimmed.value) };
+            const value = projectSkeleton(recent.value, skeleton, origin.label);
+            const result = output(value);
+            // A frame the renderer blocks keeps the receipt and identity of
+            // what it was given, so it is given the whole skeleton.
+            if (value !== recent.value && result.structuredContent?.preferences_complete === false) {
+              return { candidate, recent, result: output(recent.value) };
+            }
+            return { candidate, recent: { ...recent, value }, result };
           };
           // A complete frame names its skeleton as any frame would, so the fit
           // sizes the bytes it would really send.

@@ -56,10 +56,11 @@ export function skeletonEvidence(proof, value, { floor, prompts, prompt }) {
 // skeleton_revision. A base that gives exactly every part is named by its
 // bare revision. The complete frame is sent when that is no larger.
 // `evidence` null means this delivery can never be confirmed, so it carries
-// no revision.
+// no revision. An incomplete or blocked frame keeps its whole skeleton under
+// its own label: it is never a base and names none.
 export function projectSkeleton(value, evidence, label) {
   const own = delivered(skeletonOf(value));
-  if (!evidence || !Object.keys(own).length) return value;
+  if (!evidence || !Object.keys(own).length || value.preferences_complete === false) return value;
   const parts = { ...own, [SKELETON_LABEL]: label(value) };
   const names = [SKELETON_LABEL, ...SKELETON_FIELDS].filter(name => Object.hasOwn(parts, name));
   const from = {};

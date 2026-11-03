@@ -38,9 +38,9 @@ async function fixture(fn) {
   const delivery = createSessionPreferenceDelivery(options);
   // One prompt through the hook output; the host records what it returned
   // unless `record` is false.
-  const turn = async (value, prompt, { record = true } = {}) => {
+  const turn = async (value, prompt, { record = true, inlineChars = null } = {}) => {
     const output = await preferenceHookOutput(value, 'UserPromptSubmit',
-      { session_id: sessionId, transcript_path: host.path, prompt }, delivery, 'claude_code', LABEL);
+      { session_id: sessionId, transcript_path: host.path, prompt }, delivery, 'claude_code', LABEL, false, { inlineChars });
     const text = output.hookSpecificOutput.additionalContext;
     if (record) await host.inject(text);
     return { text, frame: JSON.parse(text.split('\n').at(-1)) };
@@ -109,4 +109,24 @@ test('a delivery without a prompt (an MCP result) never carries or leaves out a 
   assert.equal(result.structuredContent.skeleton_revision, undefined);
   assert.equal(result.structuredContent.skeleton_unchanged, undefined);
   assert.equal(result.structuredContent.agent_receipt.markdown, 'Synthetic owner');
+}));
+
+// A blocked frame keeps the receipt and identity it was given and says it is
+// blocked; it never names an earlier frame's label or parts.
+test('a frame blocked by the inline limit or the delivery budget carries its whole skeleton', () => fixture(async f => {
+  await f.turn(entry(f.sessionId, 'task-a'), 'Do the thing');
+  const long = entry(f.sessionId, 'task-a');
+  long.project_agent_context = { ...long.project_agent_context, role: { name: 'Synthetic Lead', responsibility: 'y'.repeat(20000) } };
+  const inline = await f.turn(long, 'notification', { inlineChars: 9000 });
+  assert.equal(inline.frame.preferences_complete, false);
+  assert.equal(inline.frame.skeleton_unchanged, undefined);
+  assert.equal(inline.frame.agent_receipt.markdown, 'Synthetic owner');
+  const many = entry(f.sessionId, 'task-a');
+  many.effective_preferences = Array.from({ length: 200 }, (_, i) => ({ preference_key: `rule-${i}`, preference_scope: 'project',
+    instruction: `Synthetic rule ${i}: ${'z'.repeat(1000)}` }));
+  const budget = await f.turn(many, 'notification');
+  assert.equal(budget.frame.preferences_complete, false);
+  assert.equal(budget.frame.skeleton_unchanged, undefined);
+  assert.equal(budget.frame.agent_receipt.markdown, 'Synthetic owner');
+  assert.deepEqual(budget.frame.context, { personal_project_id: 'project', project_agent_id: 'lead' });
 }));
