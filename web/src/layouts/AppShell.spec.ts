@@ -180,20 +180,23 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('draws the brand with the official wordmark for the interface language, the service dot on its middle', async () => {
+  it('draws the brand with the FULI wordmark in every language, the service dot on its middle', async () => {
     const { wrapper } = await setup('/')
     const wordmark = wrapper.get('[data-wordmark]')
     expect(wordmark.element.tagName).toBe('IMG')
-    expect(wordmark.attributes('src')).toBe(fuliWordmarkUrl('zh-CN'))
-    expect(wordmark.attributes('alt')).toBe('复利')
+    expect(wordmark.attributes('src')).toBe(fuliWordmarkUrl('en-US'))
+    expect(wordmark.attributes('alt')).toBe('FULI')
     expect(wordmark.attributes('draggable')).toBe('false')
     // The wordmark and the service dot share one row; no brand name is typed in the UI font.
     expect(wrapper.get('.app-brand-word').element.contains(wrapper.get('[data-runtime]').element)).toBe(true)
     expect(wrapper.get('.app-brand').text()).not.toContain('复利')
+    // Switching the language leaves the title bar alone.
     setLocale('en-US', { persist: false })
     await flushPromises()
     expect(wrapper.get('[data-wordmark]').attributes('src')).toBe(fuliWordmarkUrl('en-US'))
     setLocale('zh-CN', { persist: false })
+    await flushPromises()
+    expect(wrapper.get('[data-wordmark]').attributes('src')).toBe(fuliWordmarkUrl('en-US'))
     wrapper.unmount()
   })
 

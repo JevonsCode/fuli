@@ -19,7 +19,7 @@ import 'support/fakes.dart';
 const en = Strings(chinese: false);
 
 Widget branded(Widget home) => MaterialApp(
-    builder: (context, child) => FuliBrandScope(brand: testBrand, chinese: false, child: child!), home: home);
+    builder: (context, child) => FuliBrandScope(brand: testBrand, child: child!), home: home);
 
 Widget window(RecordingCaption caption, {Widget? content}) => branded(WindowChrome(
         caption: caption,
