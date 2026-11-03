@@ -29,7 +29,7 @@ const GRAPH = { space_id: 'synthetic-space', nodes: [{ id: 'entity-1', name: 'Sy
 // Provider reads that send a POST body; every other non-GET request writes.
 // rec#20 part 2: the session migration preview is a read sent as POST, like the other Provider queries.
 const PROVIDER_READ_POSTS = new Set(['/v1/search', '/v1/agent-conversations/query', '/v1/project-agent-context/resolve',
-  '/v1/knowledge/session-migrations/preview']);
+  '/v1/knowledge/session-migrations/preview', '/v1/knowledge/commits/preflight']);
 const CODEX_TRANSCRIPT = { normalize: normalizeCodexRecord, verify: verifyCodexTranscript };
 // Words from a session the user chose not to record. No store or receipt may keep them.
 const PRIVATE = 'synthetic-private-words';
@@ -59,6 +59,8 @@ async function fixture(t, writePolicy) {
       if (pathname === '/v1/project-agents/synthetic-lead') return Response.json(LEAD);
       if (pathname === '/v1/search') return Response.json({ items: [] });
       if (pathname === '/v1/spaces/synthetic-space/graph') return Response.json(GRAPH);
+      // The Provider checks a capture before the checkpoint binds it (rec#79).
+      if (pathname === '/v1/knowledge/commits/preflight') return Response.json({ status: 'validated', count: JSON.parse(options.body).length });
       if (pathname === '/v1/agent-conversations/query') return Response.json({ conversation_id: 'synthetic-conversation', messages: [] });
       return Response.json([]);
     }
