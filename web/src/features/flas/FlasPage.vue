@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch'
 import { useFocusReturn } from '@/composables/useFocusReturn'
 import { useNearEnd } from '@/composables/useNearEnd'
 import { useScrollRestoration } from '@/composables/useScrollRestoration'
-import { occupationLabels } from '@/features/agent-profile/agent-occupation'
+import { occupationLabels, saveAgentOccupation } from '@/features/agent-profile/agent-occupation'
 import { useAgentPinsState } from '@/features/agent-profile/agent-pins'
 import { agentWorkbenchEntry, compareWorkbenchRows, type AgentWorkbenchEntry } from '@/features/agent-profile/agent-workbench'
 import { groupAgentsByProject } from '@/features/agent-profile/directory-project-groups'
@@ -30,6 +30,7 @@ import { UiIcon, UiNotice, UiSegmented } from '@/ui'
 import FlaRow from './FlaRow.vue'
 import { FLA_GROUP_ORDER, flaGroup, groupFlas, groupFlasByScope, type FlaGroupKey } from './fla-groups'
 import { useFlaLayout, type FlaLayout } from './fla-layout'
+import { lacksOccupation, suggestedOccupation } from './occupation-backfill'
 
 // FLAs (重写, direction A): every FLA as cards or one dense list, grouped by
 // team (the FLAs working together on a project, then the global ones), by
@@ -108,6 +109,39 @@ const entries = computed<Record<string, AgentWorkbenchEntry>>(() => Object.fromE
 const byId = computed(() => new Map(agents.value.map(agent => [agent.agentId, agent])))
 const groupOf = (agent: ProjectAgentRecord): FlaGroupKey => flaGroup(agent.profile.status, entries.value[agent.agentId]?.status)
 const inactiveCount = computed(() => agents.value.filter(agent => groupOf(agent) === 'inactive').length)
+
+// Older FLAs without an occupation (11-03): one click gives each the occupation
+// its own words point to (occupation-backfill.ts). Only those with a guess are
+// offered; the rest stay for the person to set on their page. Each is an
+// ordinary occupation change, so it can be changed back there.
+const occupationFills = computed(() => agents.value.filter(lacksOccupation)
+  .map(agent => ({ agent, role: suggestedOccupation(agent) }))
+  .filter((fill): fill is { agent: ProjectAgentRecord; role: string } => Boolean(fill.role)))
+const fillingOccupations = ref(false)
+async function fillOccupations() {
+  if (fillingOccupations.value) return
+  fillingOccupations.value = true
+  const fills = occupationFills.value
+  const unknown = agents.value.filter(lacksOccupation).length - fills.length
+  let done = 0
+  try {
+    // One at a time: a few dozen small writes, never a burst at the provider.
+    for (const { agent, role } of fills) {
+      try {
+        await saveAgentOccupation(space.value, agent.agentId, { role, tags: agent.occupation?.tags ?? [] })
+        done += 1
+      } catch {
+        // Counted below; the FLA keeps its empty occupation and the offer stays.
+      }
+    }
+    await roster.reload()
+  } finally {
+    fillingOccupations.value = false
+  }
+  const failed = fills.length - done
+  if (done) store.notify([t('flas.occupations.done', { count: done }), unknown ? t('flas.occupations.unknown', { count: unknown }) : ''].filter(Boolean).join(' '))
+  if (failed) store.reportError(new Error(t('flas.occupations.failed', { count: failed })))
+}
 
 // Rows keep the order the person first saw; a change of work offers a reorder instead of moving rows under the pointer.
 const busy = computed(() => (roster.loading.value && !agents.value.length) || work.loading.value || store.runtimeStatus === 'loading')
@@ -273,6 +307,13 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
       <UiNotice v-if="reorderAvailable" tone="info" data-flas-reorder>
         {{ t('flas.reorder.hint') }}
         <template #actions><Button size="sm" variant="ghost" @click="stable.apply()">{{ t('flas.reorder.apply') }}</Button></template>
+      </UiNotice>
+      <UiNotice v-if="occupationFills.length && !busy" tone="info" data-flas-occupations>
+        {{ t('flas.occupations.offer', { count: occupationFills.length }) }}
+        <template #actions>
+          <Button size="sm" variant="ghost" :loading="fillingOccupations" :loading-label="t('flas.occupations.filling')"
+            data-flas-occupations-fill @click="fillOccupations">{{ t('flas.occupations.fill') }}</Button>
+        </template>
       </UiNotice>
       <ProjectAgentFirstTask v-if="showFirstTask" :personal-space-id="space" />
 
