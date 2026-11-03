@@ -129,15 +129,22 @@ class StoreProjectAgentTaskActivity:
                 raise HTTPException(403, 'Judgment acceptance requires the current accountable lead')
         blocker = self._blocker_from_row(row)
         worker_only = self._worker_evidence_only(raw_task.get('status'), request)
+        from_blocking_session = blocked_in_session(
+            blocker, request.source_application, request.source_session_id,
+        )
         if not worker_only:
             self._validate_task_transition(
                 raw_task.get('status'),
                 request.status,
                 has_actual_executor=bool(request.actual_executor_id),
-                from_blocking_session=blocked_in_session(
-                    blocker, request.source_application, request.source_session_id,
-                ),
+                from_blocking_session=from_blocking_session,
+                from_lead=bool(request.agent_id) and request.agent_id == raw_task.get('lead_agent_id'),
             )
+        # A report from another session that moves a blocked task on is the
+        # Agent's word that the block is resolved; its event says so.
+        blocker_cleared_by = 'agent' if (
+            blocker and not worker_only and not from_blocking_session and request.status != 'blocked'
+        ) else None
         expected_revision = getattr(request, 'expected_revision', None)
         if expected_revision is None:
             expected_revision = raw_task.get('revision') or 0
@@ -301,6 +308,7 @@ class StoreProjectAgentTaskActivity:
                           event.worker_status = $worker_status,
                           event.token_usage_json = $token_usage_json,
                           event.worker_runtime_json = $worker_runtime_json,
+                          event.blocker_cleared_by = $blocker_cleared_by,
                           event.activity_date = CASE
                             WHEN $terminal_at IS NULL THEN null
                             ELSE date($terminal_at) END,
@@ -417,6 +425,7 @@ class StoreProjectAgentTaskActivity:
             worker_status=worker_status,
             token_usage_json=evidence_json.get('token_usage'),
             worker_runtime_json=evidence_json.get('worker_runtime'),
+            blocker_cleared_by=blocker_cleared_by,
             terminal_at=terminal_at,
             updated_at=now,
         )

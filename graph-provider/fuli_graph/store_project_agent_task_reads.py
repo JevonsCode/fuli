@@ -19,7 +19,7 @@ from .project_agent_task_models import (
     ProjectAgentWorkerRuntime,
 )
 from .provider_values import native_datetime
-from .task_blocker import current_blocker, person_clear_note
+from .task_blocker import blocker_clear_note, current_blocker
 from .temporary_project_scope import TEMPORARY_SCOPE
 from .task_activity_origin import read_activity_origin
 
@@ -222,7 +222,7 @@ class StoreProjectAgentTaskReads:
             ):
                 if name in ProjectAgentTaskEventRecord.model_fields:
                     fields[name] = event.get(name)
-            fields['blocker_clear_note'] = person_clear_note(event.get('blocker_cleared_by'), event['summary'])
+            fields['blocker_clear_note'] = blocker_clear_note(event.get('blocker_cleared_by'), event['summary'])
             fields.update(cls._event_json_fields(event))
             if event.get('execution_plan_json'):
                 fields['execution_plan'] = ProjectAgentExecutionPlan.model_validate_json(event['execution_plan_json'])
@@ -236,7 +236,7 @@ class StoreProjectAgentTaskReads:
         raw = dict(row['task'])
         if raw.get('status') != 'blocked':
             return None
-        return current_blocker('blocked', cls._events_from_row(row), raw.get('result_summary'))
+        return current_blocker('blocked', cls._events_from_row(row), raw.get('result_summary'), raw)
 
     def _task_from_row(self, row):
         raw = dict(row['task'])
@@ -323,7 +323,7 @@ class StoreProjectAgentTaskReads:
             'events': events,
         }
         fields['execution_summary'] = self._execution_summary(row, events)
-        fields['blocker'] = current_blocker(raw['status'], events, raw.get('result_summary'))
+        fields['blocker'] = current_blocker(raw['status'], events, raw.get('result_summary'), raw)
         executor_raw = json.loads(raw['executor_decision_json']) \
             if raw.get('executor_decision_json') else None
         executor_policy_raw = raw.get('executor_policy_json')

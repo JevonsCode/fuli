@@ -53,9 +53,14 @@ executor/model use. If the host cannot start a worker, report the task as blocke
 not fabricate an execution-summary row. The Provider's `executionSummary` remains authoritative.
 A blocked report should say what it waits for; the Provider records when and in which session.
 The block clears itself when that same session continues (a checkpoint or a new prompt there) or
-the person answers its request; activity in another session does not clear it, so do not report
-the task running from elsewhere to work around a block. Only the person can mark a block cleared
-otherwise (「标记为已解除」 in the console); no Agent tool does it.
+the person answers its request. A checkpoint in another session by one of the task's Agents only
+marks the block probably resolved; the person confirms it in the console. When you have just fixed
+what blocked a task from another session, say so once: as its lead, report the task's next status
+with `record_project_agent_task_activity` (the summary says what you fixed); otherwise call
+`run_delegated_action` with `POST /api/project-agent-tasks/:taskId/blocker/clear`
+(`params.taskId`; body `personalSpaceId`, `personalProjectId`; `reason` = what you fixed). The task
+history keeps the block and records you and your reason. Never clear or move a block you did not
+resolve; the person can still mark it cleared (「标记为已解除」).
 
 `workerStatus` requires `workerId` and the participating `agentId`. Structured actual executor,
 provider and model form one report and must match authorized preflight evidence. When that

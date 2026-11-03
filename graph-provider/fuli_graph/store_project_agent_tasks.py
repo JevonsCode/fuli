@@ -707,7 +707,7 @@ class StoreProjectAgentTasks(
 
     @staticmethod
     def _validate_task_transition(
-        current, requested, *, has_actual_executor=False, from_blocking_session=False,
+        current, requested, *, has_actual_executor=False, from_blocking_session=False, from_lead=False,
     ):
         if not current:
             return
@@ -735,8 +735,9 @@ class StoreProjectAgentTasks(
         }
         if current == 'blocked' and has_actual_executor:
             allowed['blocked'] = {'queued', 'running', 'cancelled', 'failed'}
-        if current == 'blocked' and from_blocking_session:
-            # The session that reported the block resolved it there and moves on.
+        if current == 'blocked' and (from_blocking_session or from_lead):
+            # The session that reported the block resolved it there and moves
+            # on, or the task's lead says from another session that it did.
             allowed['blocked'] = {
                 'queued', 'running', 'paused', 'awaiting_review',
                 'completed', 'cancelled', 'failed',

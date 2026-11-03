@@ -10,7 +10,7 @@ import TaskRunControls from './TaskRunControls.vue'
 import TaskBlockerNotice from './TaskBlockerNotice.vue'
 import TaskReason from './TaskReason.vue'
 import TaskBlockerClear from './TaskBlockerClear.vue'
-import { lastBlockerClear } from './task-blocker'
+import { blockerClearLine, lastBlockerClear } from './task-blocker'
 import { parallelPlanHasEvidence, workerEventEvidence } from './task-evidence'
 import {
   actualExecution,
@@ -86,8 +86,7 @@ function toggle(event: Event) {
     <TaskBlockerNotice v-if="blocked" compact :blocker="task.blocker!" :updated-at="task.updatedAt" />
     <TaskReason v-else-if="task.resultSummary || task.failureReason" class="task-card-line" :reason="task.resultSummary || task.failureReason" :fallback="t('projectAgents.notReported')" />
     <p v-if="blockerClear" class="project-agent-muted task-card-line" data-blocker-cleared :data-cause="blockerClear.cause">
-      <template v-if="blockerClear.cause === 'person'">{{ t('taskBlocker.clearedByYou', { time: formatDate(blockerClear.at) }) }}</template>
-      <template v-else>{{ t('taskBlocker.cleared', { time: formatDate(blockerClear.at), cause: t(`taskBlocker.causes.${blockerClear.cause}`) }) }}</template>
+      {{ blockerClearLine(blockerClear) }}
       <span v-if="blockerClear.note" class="project-agent-task-clear-note" data-blocker-clear-note>{{ t('taskBlocker.clearNote', { note: blockerClear.note }) }}</span>
     </p>
 

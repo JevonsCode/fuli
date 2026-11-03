@@ -1,4 +1,4 @@
-"""A blocked task says what, since when and where; its own session or the person ends it."""
+"""A blocked task says what, since when and where; its own session, its Agents or the person end it."""
 
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -16,12 +16,14 @@ from fuli_graph.project_agent_task_models import (
     ProjectAgentTaskActivityCreate,
     ProjectAgentTaskBlockerClear,
     ProjectAgentTaskBlockerPersonClear,
+    ProjectAgentTaskBlockerProgress,
+    ProjectAgentTaskBlockerProgressResult,
     ProjectAgentTaskEventRecord,
 )
 from fuli_graph.store_project_agent_attention import StoreProjectAgentAttention
 from fuli_graph.store_project_agent_task_reads import StoreProjectAgentTaskReads
 from fuli_graph.store_project_agent_tasks import StoreProjectAgentTasks
-from fuli_graph.task_blocker import PERSON_CLEAR_SUMMARY, current_blocker
+from fuli_graph.task_blocker import PERSON_CLEAR_SUMMARY, PERSON_CONFIRM_SUMMARY, current_blocker
 from test_project_agent_tasks import ActivityStore
 
 T0 = datetime(2026, 10, 27, 8, 0, tzinfo=UTC)
@@ -316,3 +318,156 @@ def test_the_console_route_takes_only_the_human_review_actor():
     body = {'personal_space_id': 'personal-space', 'personal_project_id': 'project-a', 'note': 'Done.'}
     assert client.post('/v1/project-agent-tasks/task-a/blocker/clear', json=body).status_code == 403
     assert calls == []
+
+
+# Evidence from another session (graph 15). The task's lead saying the task
+# moves on is the Agent's word and ends the block; other work by one of its
+# Agents only marks it probably resolved, for the person to confirm.
+def lead_row(**task_changes):
+    row = blocked_row()
+    row['task'] = row['task'] | {'lead_agent_id': 'agent-a'} | task_changes
+    return row
+
+
+APPLIED = [{'task': {}, 'event': {}, 'same_payload': True, 'applied_transition': True}]
+
+
+@pytest.mark.asyncio
+async def test_the_lead_moves_its_task_on_from_another_session_and_the_event_says_an_agent_resolved_it():
+    store = ActivityStore(lead_row(), event_rows=APPLIED)
+    await store.record_project_agent_task_activity({'id': 'principal'}, activity('running', SESSION_B, 'resume-b-2'))
+    [(_, write)] = store.runtime.driver.event_calls
+    assert (write['status'], write['blocker_cleared_by'], write['source_session_id']) == ('running', 'agent', SESSION_B)
+    [closed] = [call[1] for call in store.runtime.driver.calls if 'FuliAgentAttention' in call[0]]
+    assert closed['task_id'] == 'task-a'
+
+
+@pytest.mark.asyncio
+async def test_the_blocking_sessions_own_report_is_not_marked_as_a_clear():
+    store = ActivityStore(lead_row(), event_rows=APPLIED)
+    await store.record_project_agent_task_activity({'id': 'principal'}, activity('running', SESSION_A, 'resume-a-2'))
+    [(_, write)] = store.runtime.driver.event_calls
+    assert write['blocker_cleared_by'] is None
+
+
+def hint(minutes, session=SESSION_B, application='codex'):
+    return {'blocker_hint_agent_id': 'agent-a', 'blocker_hint_source_application': application,
+            'blocker_hint_source_session_id': session, 'blocker_hint_at': T0 + timedelta(minutes=minutes)}
+
+
+def test_work_after_the_latest_report_in_another_session_is_a_probable_resolution():
+    events = [ProjectAgentTaskEventRecord(**row) for row in BLOCKED_ROWS]
+    later = current_blocker('blocked', events, None, hint(15)).probably_resolved
+    assert (later.agent_id, later.source_session_id, later.at) == ('agent-a', SESSION_B, T0 + timedelta(minutes=15))
+    # Reported again after that work: the block stands as reported.
+    assert current_blocker('blocked', events, None, hint(7)).probably_resolved is None
+    # The reporting session's own work is not evidence from elsewhere.
+    assert current_blocker('blocked', events, None, hint(15, SESSION_A)).probably_resolved is None
+    assert current_blocker('blocked', events, None, {}).probably_resolved is None
+    # A block no session reported (an HR or routing block) takes the evidence too.
+    assert current_blocker('blocked', events[:1], 'No lead.', hint(15)).probably_resolved.agent_id == 'agent-a'
+
+
+def progress(session_id=SESSION_B):
+    return ProjectAgentTaskBlockerProgress(personal_space_id='personal-space', personal_project_id='project-a',
+                                           agent_id='agent-a', source_application='codex',
+                                           source_session_id=session_id)
+
+
+@pytest.mark.asyncio
+async def test_an_agents_work_in_another_session_marks_its_tasks_probably_resolved_and_keeps_them_blocked():
+    store = BlockerStore(blocked_row())
+    result = await store.note_blocker_progress({'id': 'principal'}, progress())
+    assert result.hinted_task_ids == ['task-a']
+    [lookup] = store.runtime.driver.writes('RETURN DISTINCT task.task_id')
+    assert (lookup['project_id'], lookup['agent_id']) == ('project-a', 'agent-a')
+    [hinted] = store.runtime.driver.writes('SET task.blocker_hint_agent_id')
+    assert (hinted['agent_id'], hinted['application'], hinted['session_id']) == ('agent-a', 'codex', SESSION_B)
+    assert store.runtime.driver.writes('CREATE (event') == []
+    assert store.runtime.driver.writes('SET task.status') == []
+
+
+@pytest.mark.asyncio
+async def test_the_reporting_sessions_own_work_leaves_no_hint():
+    store = BlockerStore(blocked_row())
+    assert (await store.note_blocker_progress({'id': 'principal'}, progress(SESSION_A))).hinted_task_ids == []
+    assert store.runtime.driver.writes('SET task.blocker_hint_agent_id') == []
+
+
+def confirm():
+    return ProjectAgentTaskBlockerPersonClear(personal_space_id='personal-space', personal_project_id='project-a',
+                                              confirm_hint=True)
+
+
+@pytest.mark.asyncio
+async def test_the_person_confirms_a_probable_resolution_and_history_names_the_evidence():
+    store = BlockerStore(lead_row(**hint(15)))
+    await store.clear_task_blocker_by_person(PERSON, 'task-a', confirm())
+    [cleared] = store.runtime.driver.writes('CREATE (event:FuliProjectAgentTaskEvent')
+    assert (cleared['cause'], cleared['actor_kind'], cleared['summary']) == (
+        'person_confirmed', 'human', PERSON_CONFIRM_SUMMARY)
+    assert (cleared['agent_id'], cleared['application'], cleared['session_id']) == ('agent-a', 'codex', SESSION_B)
+
+
+@pytest.mark.asyncio
+async def test_confirming_without_a_probable_resolution_is_refused_without_a_write():
+    store = BlockerStore(lead_row(**hint(7)))
+    with pytest.raises(HTTPException) as refused:
+        await store.clear_task_blocker_by_person(PERSON, 'task-a', confirm())
+    assert refused.value.status_code == 409
+    assert store.runtime.driver.writes('CREATE (event') == []
+
+
+@pytest.mark.asyncio
+async def test_an_fla_clears_a_block_it_solved_for_the_person_and_history_keeps_who_and_why():
+    store = BlockerStore(blocked_row())
+    await store.clear_task_blocker_by_person(PERSON, 'task-a', ProjectAgentTaskBlockerPersonClear(
+        personal_space_id='personal-space', personal_project_id='project-a', note='Set the staging database.',
+        cleared_by='agent', agent_id='agent-b', source_application='claude_code', source_session_id=SESSION_B))
+    [cleared] = store.runtime.driver.writes('CREATE (event:FuliProjectAgentTaskEvent')
+    assert (cleared['cause'], cleared['actor_kind'], cleared['summary']) == (
+        'agent', 'agent', 'Set the staging database.')
+    assert (cleared['agent_id'], cleared['application'], cleared['session_id']) == (
+        'agent-b', 'claude_code', SESSION_B)
+
+
+@pytest.mark.parametrize('changes', [
+    {'cleared_by': 'agent', 'agent_id': 'agent-b'},
+    {'cleared_by': 'agent', 'note': 'Fixed.', 'confirm_hint': True},
+    {'agent_id': 'agent-b', 'note': 'Fixed.'},
+    {'source_session_id': SESSION_B},
+])
+def test_an_agent_clear_says_why_and_only_the_person_confirms_a_hint(changes):
+    with pytest.raises(ValueError):
+        ProjectAgentTaskBlockerPersonClear(personal_space_id='personal-space', personal_project_id='project-a',
+                                           **changes)
+
+
+def test_the_task_history_reads_an_agents_reason_but_not_the_confirmation_sentence():
+    rows = BLOCKED_ROWS + [
+        event('running', 12, 'Set the staging database.', blocker_cleared_by='agent'),
+        event('blocked', 20),
+        event('running', 25, PERSON_CONFIRM_SUMMARY, actor_kind='human', blocker_cleared_by='person_confirmed'),
+    ]
+    events = StoreProjectAgentTaskReads._events_from_row({'event_rows': rows})
+    assert [(item.blocker_cleared_by, item.blocker_clear_note) for item in events if item.blocker_cleared_by] == [
+        ('agent', 'Set the staging database.'), ('person_confirmed', None)]
+
+
+def test_the_progress_route_notifies_each_task_it_marked(monkeypatch):
+    notified = []
+    monkeypatch.setattr('fuli_graph.project_agent_routes.register_task_notification_routes',
+                        lambda *_: lambda space, task: notified.append((space, task)))
+
+    async def actor():
+        return {'id': 'principal'}
+
+    async def note_blocker_progress(actor_value, request):
+        return ProjectAgentTaskBlockerProgressResult(hinted_task_ids=['task-a'])
+
+    app = FastAPI()
+    register_project_agent_routes(app, SimpleNamespace(note_blocker_progress=note_blocker_progress),
+                                  Annotated[dict, Depends(actor)], Annotated[dict, Depends(actor)])
+    response = TestClient(app).post('/v1/project-agent-task-blockers/progress', json=progress().model_dump())
+    assert response.json() == {'hinted_task_ids': ['task-a']}
+    assert notified == [('personal-space', 'task-a')]

@@ -4,8 +4,10 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
+import { DELEGATION_HEADER, encodeDelegation } from '../src/agent-delegation/delegation-header.js';
 import { listAgentTools } from '../src/agent-tools.js';
 import { agentInterfaceCatalog } from '../src/agent-tools/interface-catalog.js';
+import { handleDelegatedRequest } from '../src/http/agent-delegation-gate.js';
 import { handleTaskBlockerRequest } from '../src/http/task-blocker-api-router.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
 import { taskBlockerConsole } from '../src/task-blockers/console-port.js';
@@ -36,20 +38,27 @@ function blockers(reply = () => ({ status: 200, body: CLEARED })) {
   return { port, calls };
 }
 
-async function post(port, path, body, remoteAddress = '127.0.0.1') {
+async function post(port, path, body, remoteAddress = '127.0.0.1', headers = {}) {
   const sent = {};
-  const response = { setHeader() {}, writeHead(status) { sent.status = status; },
+  const response = { statusCode: 200, setHeader() {}, writeHead(status) { sent.status = status; this.statusCode = status; },
     end(text) { sent.body = text ? JSON.parse(text) : null; } };
   const request = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), {
-    method: 'POST', headers: { 'content-type': 'application/json' }, socket: { remoteAddress } });
+    method: 'POST', url: path, headers: { 'content-type': 'application/json', ...headers }, socket: { remoteAddress } });
+  const handle = () => handleTaskBlockerRequest({ request, response,
+    url: new URL(`http://127.0.0.1${path}`), app, blockerConsole: port });
   try {
-    const handled = await handleTaskBlockerRequest({ request, response,
-      url: new URL(`http://127.0.0.1${path}`), app, blockerConsole: port });
+    const handled = await handleDelegatedRequest({ request, response, handle, agentAccessEnabled: () => true,
+      delegation: { authorize: () => ({ category: 'organisation' }), record() {} } });
     return { handled, ...sent };
   } catch (error) {
     return { handled: true, ...mapHttpError(error) };
   }
 }
+
+// What run_delegated_action sends for an FLA that solved the block (rec#11 D-81).
+const DELEGATED = { [DELEGATION_HEADER]: encodeDelegation({ reason: 'Set the staging database name in the config.',
+  actor: { agentId: 'fla-synthetic', projectId: 'project-a', client: 'claude_code', sessionId: 'session-b' },
+  bodyFields: ['personalSpaceId', 'personalProjectId'] }) };
 
 const PATH = '/api/project-agent-tasks/task-a/blocker/clear';
 
@@ -69,6 +78,34 @@ test('the clear goes to the Provider on the human-review channel and returns the
     { path: '/v1/project-agent-tasks/task-a/blocker/clear', review: true,
       body: { personal_space_id: 'personal-space', personal_project_id: 'project-a', note: null } },
   ]);
+});
+
+test('the person confirms a probable resolution with one click', async () => {
+  const { port, calls } = blockers();
+  const confirmed = await post(port, PATH, { personalSpaceId: 'personal-space', personalProjectId: 'project-a',
+    confirmHint: true });
+  assert.equal(confirmed.status, 200);
+  assert.deepEqual(calls[0].body, { personal_space_id: 'personal-space', personal_project_id: 'project-a',
+    note: null, confirm_hint: true });
+  assert.equal((await post(port, PATH, { personalSpaceId: 'personal-space', personalProjectId: 'project-a',
+    confirmHint: 'yes' })).status, 400);
+  assert.equal(calls.length, 1);
+});
+
+test('an FLA that solved the block clears it for the person, recorded as itself with its reason', async () => {
+  const { port, calls } = blockers();
+  const cleared = await post(port, PATH, { personalSpaceId: 'personal-space', personalProjectId: 'project-a',
+    confirmHint: true }, '127.0.0.1', DELEGATED);
+  assert.equal(cleared.status, 200);
+  // Who comes from the calling task, never from the body; a confirmation is the person's alone.
+  assert.deepEqual(calls[0].body, { personal_space_id: 'personal-space', personal_project_id: 'project-a',
+    note: 'Set the staging database name in the config.', cleared_by: 'agent', agent_id: 'fla-synthetic',
+    source_application: 'claude_code', source_session_id: 'session-b' });
+  assert.equal(calls[0].review, true);
+  // Its own note wins over the delegation's reason.
+  await post(port, PATH, { personalSpaceId: 'personal-space', personalProjectId: 'project-a', note: 'Region set.' },
+    '127.0.0.1', DELEGATED);
+  assert.equal(calls[1].body.note, 'Region set.');
 });
 
 test('a task that is no longer blocked comes back with the Provider\'s refusal', async () => {
