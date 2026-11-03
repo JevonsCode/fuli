@@ -51,6 +51,7 @@ import { usePageTitle } from "@/layouts/page-title";
 import { agentManagementPath } from "@/features/project-agents/orchestration-filters";
 import { isBoardTask } from "@/features/agent-workbench/agent-task-board";
 import { openWorkflows, readAgentWorkflows, type AgentWorkflow } from "@/features/agent-workbench/agent-workflows";
+import AgentWorkflowList from "@/features/agent-workbench/AgentWorkflowList.vue";
 
 // The workbench (board and workflows) loads only when its tab opens (rec#60 D-78).
 const AgentWorkbench = defineAsyncComponent({
@@ -61,6 +62,7 @@ const AgentWorkbench = defineAsyncComponent({
 
 type ProfileTab =
   | "workbench"
+  | "workflows"
   | "overview"
   | "history"
   | "style"
@@ -106,14 +108,17 @@ const workKnown = ref(false);
 const partial = ref(false);
 const showSettings = ref(false);
 
-// A built-in role's workbench is its own page (the header's 工作台); another
-// Agent's is the first tab here, and only when it has tasks or workflows.
-const hasWorkbench = computed(() => !workbench.value
-  && (tasks.value.some(isBoardTask) || openWorkflows(workflows.value).length > 0));
-const defaultTab = computed<ProfileTab>(() => (hasWorkbench.value ? "workbench" : "overview"));
+// A built-in role's workbench is its own page (the header's 工作台). Another
+// Agent's work has two sibling tabs (11-03): 工作台, its task board, only when
+// it has tasks, and 工作流, the routines it proposed or runs, only when it has
+// some. An Agent with neither opens on 概览; no FLA gets an empty board.
+const hasWorkbench = computed(() => !workbench.value && tasks.value.some(isBoardTask));
+const hasWorkflows = computed(() => !workbench.value && openWorkflows(workflows.value).length > 0);
+const defaultTab = computed<ProfileTab>(() => (hasWorkbench.value ? "workbench" : hasWorkflows.value ? "workflows" : "overview"));
 const profileTabs = computed(() => {
   const tabs: Array<{ id: ProfileTab; label: string }> = [
     ...(hasWorkbench.value ? [{ id: "workbench" as const, label: t("agentProfiles.workbench") }] : []),
+    ...(hasWorkflows.value ? [{ id: "workflows" as const, label: t("agentWorkbench.workflows.title") }] : []),
     { id: "overview", label: t("agentProfiles.overviewTab") },
     { id: "history", label: t("agentProfiles.experience") },
     { id: "style", label: t("agentProfiles.about") },
@@ -467,10 +472,14 @@ onMounted(() => {
                 :agent-id="agent.agentId"
                 :tasks="tasks"
                 :project-name="projectName"
-                :workflows="workflows"
                 :incomplete="partial"
-                @workflows-changed="reloadWorkflows"
               />
+            </TabsContent>
+
+            <TabsContent v-if="hasWorkflows" value="workflows" class="agent-profile-panel" data-profile-panel="workflows">
+              <Card as="section" class="agent-resume-section">
+                <AgentWorkflowList :workflows="workflows" heading-hidden @changed="reloadWorkflows" />
+              </Card>
             </TabsContent>
 
             <TabsContent value="overview" class="agent-profile-panel" data-profile-panel="overview">

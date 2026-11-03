@@ -481,7 +481,7 @@ describe('Agent profile integration', () => {
   })
 })
 
-// rec#60 D-78: an Agent's home is its workbench, a view of its tasks plus its own workflows.
+// rec#60 D-78 / 11-03: an Agent's 工作台 (its tasks) and 工作流 (its workflows) are sibling tabs.
 const workflowVersion = (version: number, name: string) => ({ workflowId: 'wf-1', version, name, purpose: 'Synthetic repeated check',
   steps: [{ title: 'Read the synthetic issue' }, { title: 'Run the focused tests' }], source: 'candidate:c-1', createdBy: 'agent', createdAt: '2026-10-30T00:00:00Z' })
 const proposed = { workflowId: 'wf-1', status: 'proposed', personalProjectId: 'project-a', versionCount: 1, active: null,
@@ -532,11 +532,22 @@ describe('Agent workbench', () => {
     expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')).toBe('overview')
   })
 
+  it('gives workflows their own tab beside the board, and no board to an Agent without tasks', async () => {
+    answer({ tasks: [task('t-run', 'alpha', 'Synthetic running work', 'running')], workflows: [proposed] })
+    const { wrapper } = await setup()
+    await settle()
+    expect(wrapper.findAll('[role="tab"]').map((tab) => tab.attributes('data-profile-tab')).slice(0, 3)).toEqual(['workbench', 'workflows', 'overview'])
+    await openTab(wrapper, 'workflows')
+    expect(wrapper.get('[data-profile-panel="workflows"] [data-workflow="wf-1"]').text()).toContain('Synthetic check flow')
+  })
+
   it('shows a proposed workflow and sends the person\'s answer for the version shown', async () => {
     answer({ tasks: [], workflows: [proposed] })
     postJson.mockImplementation(async () => ({ status: 'confirmed' }))
     const { wrapper } = await setup()
     await settle()
+    expect(wrapper.find('[data-profile-tab="workbench"]').exists()).toBe(false)
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')).toBe('workflows')
     expect(wrapper.find('[data-workbench-board]').exists()).toBe(false)
     const card = wrapper.get('[data-workflow="wf-1"]')
     expect(card.text()).toContain('Synthetic check flow')

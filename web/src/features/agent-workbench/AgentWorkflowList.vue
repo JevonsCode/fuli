@@ -12,7 +12,8 @@ import { decideAgentWorkflow, openWorkflows, type AgentWorkflow, type AgentWorkf
 // The workflows an Agent proposed and the ones the person confirmed (rec#60
 // D-78). Only the person decides, here, on the version this list shows; the
 // page reads the list again afterwards (`changed`).
-const props = defineProps<{ workflows: AgentWorkflow[] }>()
+// headingHidden: the list fills a tab that already names it.
+const props = defineProps<{ workflows: AgentWorkflow[]; headingHidden?: boolean }>()
 const emit = defineEmits<{ changed: [] }>()
 
 const shown = computed(() => openWorkflows(props.workflows))
@@ -63,7 +64,8 @@ async function decide(workflow: AgentWorkflow, decision: AgentWorkflowDecision) 
 <template>
   <section class="agent-workflows" aria-labelledby="agent-workflows-heading">
     <div class="agent-section-heading">
-      <h2 id="agent-workflows-heading">{{ t('agentWorkbench.workflows.title') }}</h2>
+      <!-- In its own tab the tab already names it: the heading stays for screen readers only. -->
+      <h2 id="agent-workflows-heading" :class="{ 'ui-sr-only': headingHidden }">{{ t('agentWorkbench.workflows.title') }}</h2>
       <span v-if="shown.length">{{ shown.length }}</span>
     </div>
     <UiNotice v-if="notice" :tone="notice.tone" data-workflow-notice>{{ notice.text }}</UiNotice>
