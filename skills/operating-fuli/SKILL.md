@@ -41,7 +41,7 @@ Console changes without their own tool are `agent_delegable` (on by default) or 
 - On by default: settings (runtime settings, recall, session links, one-click update, client connections, doctor repair, confirming capture changes), organisation (occupations, an FLA's occupation and look, workflow decisions, standing assignments, marking a block cleared), projects (hierarchy, Astro's project proposals, conversation owners, temporary-project moves, one item's scope, tag governance), services and apps (stop services, delete records, clear logs; start, stop, restart, approve, roll back, disable, export apps), roundtable board/chat mode.
 - Off until the person turns it on: LAN roundtable (listen, pair, share, revoke, leave), built-in Agent model settings (model, egress, budget, 「只给建议」), public project visibility.
 - Never delegable: permanent knowledge deletion and its preview/export, data-format migration apply/rollback/prune/restore, deleting an Agent app's code or data, the Agent-access switch, AI permissions themselves, model API keys.
-- The person's own words stay theirs: their roundtable messages, replies to your attention requests, Tonborg votes and reasons, preference-conflict rulings, batch confirmation, Jefa acceptance. Where your own tool does the same thing, it is recorded as agent-confirmed, never as the person.
+- The person's own words stay theirs: their roundtable messages, replies to your attention requests, Tonborg votes and reasons, keeping or dropping an FLA's learned experiences, preference-conflict rulings, batch confirmation, Jefa acceptance. Where your own tool does the same thing, it is recorded as agent-confirmed, never as the person.
 
 ## Selecting tools
 

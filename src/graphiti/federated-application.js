@@ -83,6 +83,7 @@ import {
   searchCurrentProjectKnowledge,
   searchKnowledge
 } from './knowledge-graph-reads.js';
+import { getAgentGrowth } from './agent-growth.js';
 import {
   applyCommonKnowledgePromotion,
   applyKnowledgeProjectAction,
@@ -337,6 +338,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async getKnowledgeGraph(input, ownerReads) {
     return getKnowledgeGraph(this, input, ownerReads);
+  }
+
+  async getAgentGrowth(input, ownerReads) {
+    return getAgentGrowth(this, input, ownerReads);
   }
 
   async startKnowledgeReview(input) {

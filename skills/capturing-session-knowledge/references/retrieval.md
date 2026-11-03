@@ -114,6 +114,11 @@ promote only to `agent_confirmed`; it never substitutes for human confirmation o
 eligible for public publication. Use the current user task's caller-stable identifier as
 `taskId` and reuse it on retries; never generate another ID to recount the same task.
 
+This is also how an FLA grows: a reusable experience it reported counts only when a later task
+records applying it. Experiences used across several tasks appear on the FLA's page (「学会了」),
+where the person keeps or drops each; never confirm or drop your own experiences instead. When the
+person corrects your approach, report the corrected approach as an experience with its `boundary`.
+
 ## Use the Generated Taste Skill
 
 When a UI, writing, product, architecture, code, or other judgment call would benefit from the
