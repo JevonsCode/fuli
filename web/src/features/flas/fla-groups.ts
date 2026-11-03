@@ -37,3 +37,16 @@ export function groupFlas<T>(rows: readonly T[], groupOf: (row: T) => FlaGroupKe
   }
   return FLA_GROUP_ORDER.filter(key => groups.has(key)).map(key => ({ key, rows: groups.get(key)! }))
 }
+
+/**
+ * The other way to group them: the FLAs who work together on a project, and
+ * the global ones who belong to no project (the assistant, Jefa, Bole and
+ * the like, or an FLA not yet given one).
+ */
+export type FlaScopeKey = 'team' | 'global'
+
+/** Rows in their given order, team first, dropping an empty group. */
+export function groupFlasByScope<T>(rows: readonly T[], onProject: (row: T) => boolean): { key: FlaScopeKey; rows: T[] }[] {
+  const groups: [FlaScopeKey, T[]][] = [['team', rows.filter(onProject)], ['global', rows.filter(row => !onProject(row))]]
+  return groups.filter(([, group]) => group.length).map(([key, group]) => ({ key, rows: group }))
+}

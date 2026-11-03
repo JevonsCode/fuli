@@ -2,7 +2,10 @@
 export const flasMessages = {
   'zh-CN': {
     search: '搜索名字、职业或任务',
-    view: { label: '分组方式', work: '按状态', projects: '按项目' },
+    view: { label: '分组方式', team: '按团队', work: '按状态', projects: '按项目' },
+    scopes: { team: '一起干活的', global: '全局的' },
+    layout: { label: '布局', cards: '卡片', list: '列表' },
+    inactive: { show: '显示已停用', tag: '已停用' },
     filter: { status: '筛选状态', project: '筛选项目', allStatus: '全部状态', allProjects: '全部项目' },
     groups: { attention: '需要你看', working: '正在工作', idle: '空闲', unknown: '状态未上报', inactive: '已停用' },
     count: '{count} 位 FLA',
@@ -25,7 +28,10 @@ export const flasMessages = {
   },
   'en-US': {
     search: 'Search names, occupations or work',
-    view: { label: 'Group by', work: 'By status', projects: 'By project' },
+    view: { label: 'Group by', team: 'By team', work: 'By status', projects: 'By project' },
+    scopes: { team: 'Working together', global: 'Global' },
+    layout: { label: 'Layout', cards: 'Cards', list: 'List' },
+    inactive: { show: 'Show switched off', tag: 'Switched off' },
     filter: { status: 'Filter status', project: 'Filter projects', allStatus: 'All statuses', allProjects: 'All projects' },
     groups: { attention: 'Needs you', working: 'Working', idle: 'Free', unknown: 'Not reported', inactive: 'Switched off' },
     count: '{count} FLAs',
