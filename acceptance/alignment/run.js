@@ -19,7 +19,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { FederatedGraphApplication } from '../../src/graphiti/federated-application.js';
-import { connectAgent } from '../../src/setup/agents.js';
+import { writeClaudeCodeFixture, writeCursorMcpFixture } from './client-config-fixture.js';
 import {
   classifyClaudeCaseStatus,
   composeResourcesRemoved,
@@ -265,17 +265,11 @@ async function executeBenchmark() {
     writePrivateJson(runtimeConfigPath, runtimeConfig);
     writePrivateJson(mcpConfigPath, { mcpServers: {} });
     writePrivateJson(claudeSettingsPath, {});
-    connectAgent({
-      id: 'claude-code',
-      label: 'Claude Code',
-      configPath: mcpConfigPath,
-      settingsPath: claudeSettingsPath
-    }, {
+    writeClaudeCodeFixture({ configPath: mcpConfigPath, settingsPath: claudeSettingsPath }, {
       nodePath: process.execPath,
       mcpServerPath: join(REPOSITORY_ROOT, 'src', 'mcp-server.js'),
-      runtimeConfigPath,
-      hookTimeoutSec: ALIGNMENT_TIMEOUTS.hookTimeoutSec
-    });
+      runtimeConfigPath
+    }, { hookTimeoutSec: ALIGNMENT_TIMEOUTS.hookTimeoutSec });
     const claudeMcpConfig = JSON.parse(readFileSync(mcpConfigPath, 'utf8'));
     claudeMcpConfig.mcpServers.fuli.env = {
       FULI_ACCEPTANCE_LIFECYCLE_AUDIT_PATH: lifecycleAuditPath,
@@ -2150,11 +2144,7 @@ async function runMultiAgentNetworkCases({
     runtimeConfigPath
   };
   for (const projectId of [PROJECTS.travel, PROJECTS.related]) {
-    connectAgent({
-      id: 'cursor',
-      label: 'Cursor',
-      configPath: join(emptyWorkspaces, projectId, '.cursor', 'mcp.json')
-    }, cursorContext);
+    writeCursorMcpFixture({ configPath: join(emptyWorkspaces, projectId, '.cursor', 'mcp.json') }, cursorContext);
   }
 
   const cursorD = await runCursor({

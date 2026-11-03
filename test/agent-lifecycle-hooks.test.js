@@ -13,11 +13,6 @@ const RUNTIME_CONFIG = join(RUNTIME_ROOT, 'runtime.json');
 after(() => rmSync(RUNTIME_ROOT, { recursive: true, force: true }));
 
 import {
-  withCodexLifecycleHooks,
-  withoutCodexLifecycleHooks,
-  withoutCodexTomlLifecycleHooks
-} from '../src/agents/codex/lifecycle-hooks.js';
-import {
   codexStopLifecycleOutput,
   runCodexLifecycleHook
 } from '../src/agents/codex/lifecycle-hook.js';
@@ -25,23 +20,6 @@ import {
   cursorLifecycleOutput,
   runCursorLifecycleHook
 } from '../src/agents/cursor/lifecycle-hook.js';
-import { withCursorLifecycleHooks, withoutCursorLifecycleHooks } from '../src/agents/cursor/lifecycle-hooks.js';
-import { builtInClientPack } from '../test-support/client-packs.js';
-
-const CURSOR_HOOKS = builtInClientPack('cursor').lifecycleHooks;
-
-test('Codex lifecycle config preserves other hooks and deduplicates only Fuli entries', () => {
-  const other = { hooks: [{ type: 'command', command: 'echo other' }] };
-  const original = { description: 'User hooks', hooks: { Stop: [other] } };
-  const configured = withCodexLifecycleHooks(original);
-  assert.deepEqual(configured.hooks.Stop[0], other);
-  assert.deepEqual(configured.hooks.UserPromptSubmit[0].hooks[0].input, {
-    sessionId: '${session_id}', turnId: '${turn_id}', projectPath: '${cwd}', taskPrompt: '${prompt}'
-  });
-  assert.equal(configured.hooks.Stop[1].hooks[0].tool, 'verify_task_checkpoint');
-  assert.deepEqual(withCodexLifecycleHooks(configured), configured);
-  assert.deepEqual(withoutCodexLifecycleHooks(configured), original);
-});
 
 test('Codex Stop adapter reports an unfinished checkpoint without blocking', async () => {
   const calls = [];
@@ -319,41 +297,6 @@ test('Cursor multi-root input never guesses which project owns private memory', 
   assert.equal(output.continue, true);
   assert.match(output.user_message, /exact project/i);
 });
-
-test('Cursor config is idempotent, bounded and removes only managed commands', () => {
-  const context = { nodePath: '/synthetic runtime/node', mcpServerPath: '/synthetic/src/mcp-server.js',
-    runtimeConfigPath: '/synthetic/config.json', platform: 'darwin' };
-  const original = { version: 1, hooks: { stop: [{ command: 'user-script' }] } };
-  const configured = withCursorLifecycleHooks(original, context, CURSOR_HOOKS);
-  assert.equal(configured.hooks.stop.length, 2);
-  assert.equal(configured.hooks.stop[1].loop_limit, 2);
-  assert.match(configured.hooks.beforeSubmitPrompt[0].command, /--fuli-lifecycle/);
-  assert.deepEqual(withCursorLifecycleHooks(configured, context, CURSOR_HOOKS), configured);
-  assert.deepEqual(withoutCursorLifecycleHooks(configured), original);
-});
-
-test('Codex TOML cleanup removes only a managed handler from a mixed hook group', () => {
-  const source = [
-    '[[hooks.Stop]]',
-    'matcher = "always"',
-    '',
-    '[[hooks.Stop.hooks]]',
-    'type = "command"',
-    'command = "node lifecycle-hook.js --fuli-lifecycle --event Stop"',
-    '',
-    '[[hooks.Stop.hooks]]',
-    'type = "command"',
-    'command = "notify-me"',
-    'timeout = 5',
-    ''
-  ].join('\n');
-
-  const cleaned = withoutCodexTomlLifecycleHooks(source);
-  assert.match(cleaned, /\[\[hooks\.Stop]]/);
-  assert.match(cleaned, /command = "notify-me"/);
-  assert.doesNotMatch(cleaned, /--fuli-lifecycle|lifecycle-hook\.js/);
-});
-
 
 test('Cursor does not restart the model or write a checkpoint during Stop', async () => {
   const calls = [];

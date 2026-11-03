@@ -245,18 +245,9 @@ test('SQLite is opened and shaped only through a declared store format', () => {
 // FULI's JSON data files refuse to overwrite a newer FULI's file
 // (writeVersionedJsonFileAtomic). These write JSON that is not FULI data.
 const UNVERSIONED_JSON_WRITERS = new Map([
-  ['src/setup/agents/client-pack-change.js', 'client-owned configuration and byte backups; package state uses the versioned client-packs store'],
   ['src/storage/json-format.js', 'the versioned writer itself'],
   ['src/agents/directory-snapshots.js', 'generated Markdown views and their manifest, regenerated from the database'],
   ['src/conversations/transcript-guard.js', 'a hook\'s per-session handoff state that expires within a minute'],
-  ['src/agents/codex/lifecycle-hooks.js', 'Codex hook configuration, owned by the client'],
-  ['src/setup/agents/json-mcp.js', 'MCP client configuration, owned by each client'],
-  ['src/setup/claude-code-config.js', 'Claude Code configuration, owned by the client'],
-  ['src/setup/claude-desktop-config.js', 'Claude Desktop configuration, owned by the client'],
-  ['src/setup/cursor-config.js', 'Cursor configuration, owned by the client'],
-  ['src/setup/agents/opencode/config-writer.js', 'OpenCode configuration and FULI\'s plugin file, owned by the client'],
-  ['src/setup/codex-config.js', 'Codex configuration and hooks, owned by the client'],
-  ['src/setup/codex-bootstrap.js', 'Codex configuration, owned by the client'],
   ['src/agent-kits/custom-clients.js', 'client descriptions in the shared agent-clients extension directory, owned by the person and agent-installer'],
   ['src/agent-kits/derived-file.js', 'the session launcher\'s host configuration, the installer\'s product manifest and its OpenCode plugin source, regenerated from settings and packs'],
   ['src/desktop/windows-installation-switch.js', 'installation record and shortcuts, checked by content before each replace'],

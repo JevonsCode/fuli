@@ -1,18 +1,20 @@
-import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { runClientsCommand } from '../src/cli/clients-command.js';
+import { prepareInstallerManifest } from '../src/agent-kits/installer-manifest.js';
+import { FULI_VERSION } from '../src/package-metadata.js';
 import { descriptorDigest } from '../src/setup/agents/descriptor-schema.js';
-import { agentAdapter } from '../src/setup/agents/registry.js';
-import { agentTargets } from '../src/setup/agents.js';
-import { writeTextFileAtomic } from '../src/storage/json-file.js';
 import { readClientPackState, writeClientPackState } from '../src/setup/agents/client-pack-store.js';
+import { fakeClientInstaller } from '../test-support/fake-client-installer.js';
+
+// A synthetic data directory and pinned manifest; agent-installer is
+// simulated in memory, so no client file exists or is written.
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
-function fixture(t, id = 'codex', { connect = true } = {}) {
+function fixture(t, id = 'codex', { connect = true, unavailable = null } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'fuli-clients-e2e-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const dataDir = join(root, 'data'); mkdirSync(dataDir);
@@ -24,13 +26,18 @@ function fixture(t, id = 'codex', { connect = true } = {}) {
   const manifest = JSON.stringify({ schemaVersion: 1, entries: [{ id: pack.id, version: pack.version, sha256: hash(bytes), source: 'pack.json' }] });
   const source = join(root, 'manifest.json'); writeFileSync(source, manifest);
   const env = { FULI_DATA_DIR: dataDir }; const output = [];
-  const options = { env, homeDir, confirm: async () => true, write: text => output.push(text) };
-  // agent-installer is simulated: it finds FULI's MCP entry exactly where this fixture connected the client.
-  const detect = async () => ({ status: 'available', clients: [{ id, components: { mcp: connect ? 'current' : 'missing' } }] });
-  const run = (args, overrides = {}) => runClientsCommand(args, { ...options, detect, ...overrides });
-  const agent = agentTargets({ homeDir, env, commandVersion: () => '2.1.4' }).find(value => value.id === id);
-  if (connect) agentAdapter(id).connect(agent, { nodePath: process.execPath, mcpServerPath: join(root, 'fake-server.js'), runtimeConfigPath: join(dataDir, 'graph-runtime.json') });
-  return { root, dataDir, homeDir, source, sha256: hash(manifest), run, agent, env, output };
+  // A connected client the new pack would change.
+  const installer = fakeClientInstaller([{ id, ...(connect ? { state: 'update_available', mcp: 'current' } : {}) }], { unavailable });
+  const options = { env, homeDir, confirm: async () => true, write: text => output.push(text), clientInstaller: () => installer };
+  const run = (args, overrides = {}) => runClientsCommand(args, { ...options, ...overrides });
+  // What FULI's manifest now asks agent-installer to write, from this data directory's active packs.
+  const composed = () => {
+    const manifestPath = join(root, 'composed', 'fuli-installer.json');
+    prepareInstallerManifest({ manifestPath, openCodePlugin: true, context: { dataDir, nodePath: 'node',
+      mcpServerPath: join(root, 'src', 'mcp-server.js'), runtimeConfigPath: 'runtime.json', skillsDir: join(root, 'skills') } });
+    return { manifest: readFileSync(manifestPath, 'utf8'), plugin: readFileSync(join(root, 'composed', 'opencode-plugin', 'index.js'), 'utf8') };
+  };
+  return { root, dataDir, homeDir, source, sha256: hash(manifest), run, env, output, installer, composed };
 }
 function snapshot(root) {
   const result = {};
@@ -40,46 +47,36 @@ function snapshot(root) {
   }
   return result;
 }
-test('CLI trust -> check -> apply -> registry -> rollback; preview is read-only', async t => {
+test('CLI trust -> check -> apply -> agent-installer plan and apply -> rollback; preview is read-only', async t => {
   const f = fixture(t);
   await f.run(['trust', f.source, '--sha256', f.sha256]);
   const before = snapshot(f.root);
   assert.equal((await f.run(['update', '--check'])).packs.length, 1);
   assert.deepEqual(snapshot(f.root), before);
-  assert.equal((await f.run(['update', '--apply', 'codex@99.0.0'])).status, 'applied');
-  assert.match(readFileSync(f.agent.globalInstructionsPath, 'utf8'), /Synthetic rule/);
-  assert.equal(agentTargets({ env: f.env, homeDir: f.homeDir, commandVersion: () => null }).find(agent => agent.id === 'codex').label, 'Synthetic Client');
+  assert.deepEqual(f.installer.calls, []);
+  const applied = await f.run(['update', '--apply', 'codex@99.0.0']);
+  assert.deepEqual([applied.status, applied.version], ['applied', '99.0.0']);
+  assert.deepEqual(f.installer.calls, [['plan', ['codex']], ['apply', ['codex']]]);
+  assert.match(f.output.join('\n'), /File: ~\/\.codex\/config\.json \(update\)/);
+  assert.match(f.composed().manifest, /Synthetic rule/, 'the active pack is what agent-installer is asked to write');
   const active = (await f.run(['status'])).find(pack => pack.id === 'codex'); assert.equal(active.version, '99.0.0');
   const after = snapshot(f.root); await f.run(['update']); assert.deepEqual(snapshot(f.root), after);
   assert.equal((await f.run(['rollback', 'codex'])).status, 'applied');
-  assert.doesNotMatch(readFileSync(f.agent.globalInstructionsPath, 'utf8'), /Synthetic rule/);
+  assert.doesNotMatch(f.composed().manifest, /Synthetic rule/);
   assert.equal((await f.run(['status'])).find(pack => pack.id === 'codex').version, '1.0.0');
-});
-test('--yes cannot bypass file consent, and failed file writes restore the previous active version', async t => {
-  const f = fixture(t); await f.run(['trust', f.source, '--sha256', f.sha256]);
-  const before = snapshot(f.homeDir);
-  await assert.rejects(f.run(['update', '--apply', 'codex@99.0.0'], { writeFile: () => { throw new Error('synthetic disk error'); } }), /synthetic disk error/);
-  assert.deepEqual(snapshot(f.homeDir), before);
-  assert.equal((await f.run(['status'])).find(pack => pack.id === 'codex').version, '1.0.0');
-  const state = JSON.parse(readFileSync(join(f.dataDir, 'client-packs.json'))); assert.equal(state.ledger.at(-1).status, 'failed');
-  let calls = 0;
-  await f.run(['update', '--apply', 'codex@99.0.0', '--yes'], { confirm: async () => ++calls === 1 });
-  assert.ok(calls > 1); assert.deepEqual(snapshot(f.homeDir), before);
 });
 
-for (const id of ['claude-code', 'cursor']) {
-  test(`${id}: update and rollback reuse the connected configuration writer`, async t => {
-    const f = fixture(t, id);
-    await f.run(['trust', f.source, '--sha256', f.sha256]);
-    const before = snapshot(f.homeDir);
-    await f.run(['update', '--apply', `${id}@99.0.0`]);
-    assert.notDeepEqual(snapshot(f.homeDir), before);
-    assert.equal((await f.run(['status'])).find(pack => pack.id === id).version, '99.0.0');
-    await f.run(['rollback', id]);
-    assert.equal((await f.run(['status'])).find(pack => pack.id === id).version, '1.0.0');
-    assert.match(readFileSync(f.agent.configPath, 'utf8'), /fuli/);
-  });
-}
+test('--yes cannot bypass file consent: a declined plan writes nothing and setup updates the client later', async t => {
+  const f = fixture(t); await f.run(['trust', f.source, '--sha256', f.sha256]);
+  let calls = 0;
+  const result = await f.run(['update', '--apply', 'codex@99.0.0', '--yes'], { confirm: async () => ++calls === 1 });
+  assert.equal(calls, 2);
+  assert.deepEqual([result.status, result.files], ['applied', 0]);
+  assert.deepEqual(f.installer.calls, [['plan', ['codex']]]);
+  assert.match(f.output.at(-1), /not changed; run fuli setup/);
+  assert.equal((await f.run(['status'])).find(pack => pack.id === 'codex').version, '99.0.0');
+});
+
 test('an unreachable pinned manifest leaves every file unchanged', async t => {
   const f = fixture(t);
   await f.run(['trust', f.source, '--sha256', f.sha256]);
@@ -89,27 +86,14 @@ test('an unreachable pinned manifest leaves every file unchanged', async t => {
   assert.deepEqual(snapshot(f.root), before);
 });
 
-test('process interruption leaves the prior active version and requires explicit reviewed recovery', async t => {
-  const f = fixture(t); await f.run(['trust', f.source, '--sha256', f.sha256]);
-  const before = snapshot(f.homeDir);
-  const script = `import { runClientsCommand } from './src/cli/clients-command.js';
-    import { writeTextFileAtomic } from './src/storage/json-file.js';
-    await runClientsCommand(['update','--apply','codex@99.0.0'], {
-      env: ${JSON.stringify(f.env)}, homeDir: ${JSON.stringify(f.homeDir)}, confirm: async()=>true, write:()=>{},
-      detect: async () => ({ status: 'available', clients: [{ id: 'codex', components: { mcp: 'current' } }] }),
-      writeFile: (path,text)=>{ writeTextFileAtomic(path,text,{durable:true}); process.exit(73); }
-    });`;
-  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], { cwd: process.cwd(), encoding: 'utf8' });
-  assert.equal(child.status, 73, child.stderr);
-  assert.notDeepEqual(snapshot(f.homeDir), before);
-  const status = (await f.run(['status'])).find(pack => pack.id === 'codex');
-  assert.equal(status.version, '1.0.0'); assert.equal(status.recoveryRequired, true);
-  await assert.rejects(f.run(['update', '--apply', 'codex@99.0.0']), /interrupted/);
-  assert.equal((await f.run(['rollback', 'codex'], { confirm: async () => false })).status, 'recovery_required');
-  assert.equal((await f.run(['rollback', 'codex'])).status, 'recovered');
-  assert.deepEqual(snapshot(f.homeDir), before);
-  assert.equal((await f.run(['status'])).find(pack => pack.id === 'codex').recoveryRequired, false);
+test('without agent-installer no pack is changed and the client component message says why', async t => {
+  const f = fixture(t, 'codex', { unavailable: 'offline' });
+  await f.run(['trust', f.source, '--sha256', f.sha256]);
+  assert.equal((await f.run(['update', '--apply', 'codex@99.0.0'])).status, 'unavailable');
+  assert.match(f.output.at(-1), /无法下载客户端组件.*check your network connection and try again\. \(offline\); no changes\./);
+  assert.equal((await f.run(['status'])).find(pack => pack.id === 'codex').version, '1.0.0');
 });
+
 test('client pack store v1 keeps its schema fingerprint and refuses unknown stored fields', async t => {
   const f = fixture(t); await f.run(['trust', f.source, '--sha256', f.sha256]);
   await f.run(['update', '--apply', 'codex@99.0.0']);
@@ -121,33 +105,7 @@ test('client pack store v1 keeps its schema fingerprint and refuses unknown stor
   writeFileSync(path, JSON.stringify({ ...state, unexpected: true }));
   await assert.rejects(f.run(['status']), /unrecognized|Unrecognized/);
 });
-import { FULI_VERSION } from '../src/package-metadata.js';
-import { createClientInstaller } from '../src/system/client-connection-install.js';
-import { createClientConnectionObserver } from '../src/system/client-connection-status.js';
-import { planLocalUninstall } from '../src/setup/uninstall.js';
-import { runLocalRuntimeCommand } from '../src/cli/local-runtime-command.js';
-import { resolveSetupPaths } from '../src/setup/paths.js';
 
-for (const absent of [false, true]) {
-  test(`failed apply preserves an intervening edit to a ${absent ? 'new' : 'previously existing'} file`, async t => {
-    const f = fixture(t);
-    if (absent) rmSync(f.agent.globalInstructionsPath);
-    await f.run(['trust', f.source, '--sha256', f.sha256]);
-    let first; let count = 0;
-    const edit = 'External client edit must survive\n';
-    await assert.rejects(f.run(['update', '--apply', 'codex@99.0.0'], { writeFile: (path, text) => {
-      if (++count === 1) { first = path; writeFileSync(path, text); return; }
-      writeFileSync(first, edit); throw new Error('synthetic later write failure');
-    } }));
-    assert.equal(readFileSync(first, 'utf8'), edit);
-    const state = JSON.parse(readFileSync(join(f.dataDir, 'client-packs.json')));
-    assert.match(state.ledger.at(-1).restoreFailures.join('\n'), /intervening edit/);
-    const status = (await f.run(['status'])).find(pack => pack.id === 'codex');
-    assert.equal(status.version, '1.0.0'); assert.equal(status.recoveryRequired, true);
-    await assert.rejects(f.run(['rollback', 'codex']), /intervening edit/);
-    assert.equal(readFileSync(first, 'utf8'), edit);
-  });
-}
 test('update identifies its npm built-in release and the package upgrade path', async t => {
   const f = fixture(t); const before = snapshot(f.root);
   await f.run(['update']);
@@ -156,151 +114,34 @@ test('update identifies its npm built-in release and the package upgrade path', 
   assert.deepEqual(snapshot(f.root), before);
 });
 
-for (const caller of ['install', 'observe', 'uninstall', 'start']) {
-  test(`${caller} targets overridden paths and skills from its explicit data directory`, async t => {
-    const f = fixture(t);
-    const packPath = join(f.root, 'pack.json'); const pack = JSON.parse(readFileSync(packPath));
-    pack.detection.clientHome.path = ['.codex-custom']; pack.detection.skillsRoot = { from: 'clientHome', path: ['skills'] }; pack.digest = descriptorDigest(pack);
-    const bytes = JSON.stringify(pack); writeFileSync(packPath, bytes);
-    const manifest = JSON.parse(readFileSync(f.source)); manifest.entries[0].sha256 = hash(bytes);
-    const manifestBytes = JSON.stringify(manifest); writeFileSync(f.source, manifestBytes);
-    await f.run(['trust', f.source, '--sha256', hash(manifestBytes)]);
-    await f.run(['update', '--apply', 'codex@99.0.0']);
-    const paths = resolveSetupPaths({ dataDir: f.dataDir, env: {}, homeDir: f.homeDir });
-    const targets = options => agentTargets({ ...options,
-      env: { FULI_DATA_DIR: join(f.root, 'different-default') }, homeDir: f.homeDir, commandVersion: () => null });
-    const installer = { status: async () => ({ status: 'available', extensionErrors: [], clients: [{ id: 'codex', name: 'Codex',
-      builtin: true, detected: true, platformSupported: true, state: 'not_connected', componentStates: [{ component: 'mcp', state: 'missing' }] }] }) };
-    const detected = async (paths, list) => {
-      const answer = await (await import('../src/agent-kits/client-detection.js')).detectAgents(installer, list);
-      return { ...answer, agents: answer.agents.map((agent) => ({ ...agent, integrationStatus: 'update_available' })) };
-    };
-    const check = agent => {
-      assert.equal(agent.configPath, join(f.homeDir, '.codex-custom', 'config.toml'));
-      assert.ok(agent.skillPath.startsWith(join(f.homeDir, '.codex-custom')));
-    };
-    if (caller === 'install') {
-      const install = createClientInstaller({ paths, installer, targets: () => targets({ dataDir: paths.dataDir }),
-        install: async agent => { check(agent); return { status: 'connected' }; } });
-      await install({ clientId: 'codex' });
-    } else if (caller === 'observe') {
-      // The observer reads writer targets only to know which clients FULI writes and how.
-      let read = false;
-      const observer = createClientConnectionObserver({ installer, customClients: { removable: () => new Set() },
-        targets: () => { const list = targets({ dataDir: paths.dataDir }); check(list.find(a => a.id === 'codex')); read = true; return list; },
-        historyPath: join(paths.dataDir, 'observations.json') });
-      await observer.observe();
-      assert.equal(read, true);
-    } else if (caller === 'uninstall') {
-      const plan = await planLocalUninstall({ dataDir: f.dataDir }, { env: {}, targets, detect: detected, resolvePaths: () => paths });
-      check(plan.agents.find(a => a.id === 'codex'));
-    } else {
-      let inspected = false;
-      const result = await runLocalRuntimeCommand('start', ['--data-dir', f.dataDir], { env: {},
-        resolvePaths: () => paths, detectAgents: async () => {
-          const answer = await detected(paths, targets({ dataDir: paths.dataDir }));
-          check(answer.agents.find(a => a.id === 'codex')); inspected = true; return answer;
-        }, start: async () => ({ status: 'started', url: 'http://synthetic.invalid' }), write: () => {} });
-      assert.equal(result.agentSetupCheck.status, 'checked'); assert.equal(inspected, true);
-    }
-  });
-}
-test('apply checks each file again before writing after another file was changed', async t => {
-  const f = fixture(t); await f.run(['trust', f.source, '--sha256', f.sha256]);
-  const beforeInstructions = readFileSync(f.agent.globalInstructionsPath, 'utf8');
-  const edit = '{"external":"intervening hook edit"}\n'; let first = true;
-  await assert.rejects(f.run(['update', '--apply', 'codex@99.0.0'], { writeFile: (path, text) => {
-    writeFileSync(path, text);
-    if (first) { first = false; writeFileSync(f.agent.hooksPath, edit); }
-  } }), /changed during/);
-  assert.equal(readFileSync(f.agent.hooksPath, 'utf8'), edit);
-  assert.equal(readFileSync(f.agent.globalInstructionsPath, 'utf8'), beforeInstructions);
-});
-
-test('an external edit between refused rename and retry survives apply and retains recovery state', async t => {
-  const f = fixture(t); await f.run(['trust', f.source, '--sha256', f.sha256]);
-  let target; let attempts = 0;
-  const external = 'External edit during rename retry\n';
-  await assert.rejects(f.run(['update', '--apply', 'codex@99.0.0'], { writeFile: (path, text, options) => {
-    target ??= path;
-    writeTextFileAtomic(path, text, { ...options, io: {
-      renameSync(from, to) {
-        if (++attempts === 1) throw Object.assign(new Error('busy'), { code: 'EPERM' });
-        renameSync(from, to);
-      },
-      pauseSync() { writeFileSync(target, external); }
-    } });
-  } }));
-  assert.equal(attempts, 1, 'a changed target must not reach the next rename');
-  assert.equal(readFileSync(target, 'utf8'), external);
-  const status = (await f.run(['status'])).find(pack => pack.id === 'codex');
-  assert.equal(status.version, '1.0.0'); assert.equal(status.recoveryRequired, true);
-});
-
 test('an equal-version npm descriptor retires the installed override and status reports its source priority', async t => {
   const f = fixture(t);
   const builtin = JSON.parse(readFileSync(new URL('../src/setup/agents/codex/descriptor.json', import.meta.url)));
-  const override = { ...builtin, label: 'Retired override with equal version' };
+  const override = { ...builtin, instructions: { global: [...builtin.instructions.global, 'Retired override line'] } };
   override.digest = descriptorDigest(override);
   const state = readClientPackState(f.dataDir); const key = `${override.id}@${override.version}`;
   state.packages[key] = override; state.active[override.id] = key;
   writeClientPackState(f.dataDir, state);
-  assert.equal(agentTargets({ env: f.env, homeDir: f.homeDir, commandVersion: () => null }).find(agent => agent.id === 'codex').label, builtin.label);
+  assert.doesNotMatch(f.composed().manifest, /Retired override line/, 'the npm built-in wins a tie');
   const status = (await f.run(['status'])).find(pack => pack.id === 'codex');
   assert.equal(status.version, builtin.version); assert.equal(status.retired, true);
 });
 
-for (const phase of ['failure restoration', 'explicit recovery']) {
-  test(`an external edit during a rename retry survives ${phase}`, async t => {
-    const f = fixture(t); let target; let attempts = 0; let writes = 0;
-    const external = `External edit during ${phase}\n`;
-    const guardedWriter = (path, text, options) => {
-      if (phase === 'failure restoration' && !options?.durable) {
-        if (++writes === 2) throw new Error('synthetic second write failure');
-        target = path; writeTextFileAtomic(path, text, options); return;
-      }
-      writeTextFileAtomic(path, text, { ...options, io: {
-        renameSync(from, to) {
-          if (++attempts === 1) throw Object.assign(new Error('busy'), { code: 'EACCES' });
-          renameSync(from, to);
-        },
-        pauseSync() { writeFileSync(target, external); }
-      } });
-    };
-    if (phase === 'failure restoration') {
-      await f.run(['trust', f.source, '--sha256', f.sha256]);
-      await assert.rejects(f.run(['update', '--apply', 'codex@99.0.0'], { writeFile: guardedWriter }), /restoration failed/);
-    } else {
-      target = f.agent.globalInstructionsPath;
-      const before = readFileSync(target, 'utf8'); const after = 'Synthetic interrupted update\n';
-      const backupPath = join(f.dataDir, 'synthetic-recovery.bak'); writeFileSync(backupPath, before);
-      const state = readClientPackState(f.dataDir);
-      state.ledger.push({ operation: 'synthetic', id: 'codex', from: '1.0.0', to: '99.0.0', status: 'pending',
-        files: [{ path: target, backupPath, beforeDigest: hash(before), afterDigest: hash(after) }] });
-      writeClientPackState(f.dataDir, state); writeFileSync(target, after);
-      await assert.rejects(f.run(['rollback', 'codex'], { writeFile: guardedWriter }), /changed before replacement/);
-    }
-    assert.equal(attempts, 1);
-    assert.equal(readFileSync(target, 'utf8'), external);
-    const status = (await f.run(['status'])).find(pack => pack.id === 'codex');
-    assert.equal(status.version, '1.0.0'); assert.equal(status.recoveryRequired, true);
-  });
-}
-test('an OpenCode pack update applies without touching files when OpenCode is not configured', async t => {
+test('an OpenCode pack update applies without touching any client when OpenCode is not connected', async t => {
   const f = fixture(t, 'opencode', { connect: false });
   await f.run(['trust', f.source, '--sha256', f.sha256]);
-  const before = snapshot(f.homeDir);
   const applied = await f.run(['update', '--apply', 'opencode@99.0.0']);
   assert.deepEqual([applied.status, applied.files], ['applied', 0]);
-  assert.deepEqual(snapshot(f.homeDir), before);
+  assert.deepEqual(f.installer.calls, []);
   assert.equal((await f.run(['rollback', 'opencode'])).status, 'applied');
 });
-test('an OpenCode pack update rewrites the installed plugin with the new hook timeout', async t => {
+
+test('an OpenCode pack update gives the plugin agent-installer writes the new hook timeout', async t => {
   const f = fixture(t, 'opencode');
-  assert.match(readFileSync(f.agent.pluginPath, 'utf8'), /"timeoutMs": 15000/);
+  assert.match(f.composed().plugin, /"timeoutMs": 15000/);
   await f.run(['trust', f.source, '--sha256', f.sha256]);
   assert.equal((await f.run(['update', '--apply', 'opencode@99.0.0'])).status, 'applied');
-  assert.match(readFileSync(f.agent.pluginPath, 'utf8'), /"timeoutMs": 16000/);
+  assert.match(f.composed().plugin, /"timeoutMs": 16000/);
   assert.equal((await f.run(['rollback', 'opencode'])).status, 'applied');
-  assert.match(readFileSync(f.agent.pluginPath, 'utf8'), /"timeoutMs": 15000/);
+  assert.match(f.composed().plugin, /"timeoutMs": 15000/);
 });

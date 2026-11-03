@@ -23,7 +23,7 @@ const CURSOR_EVENTS = Object.freeze({ sessionStart: 'sessionStart', beforeSubmit
 // Claude Code's hook gives itself two seconds less than the client waits.
 const claudeHookTimeoutMs = (timeoutSec) => String(Math.max(100, timeoutSec * 1000 - 2000));
 
-const WRITERS = Object.freeze({
+const SECTIONS = Object.freeze({
   'claude-code-settings': (pack) => ({
     mcp: mcpOf(pack, CHAT_PROFILE),
     hooks: hooksOf(pack, ['--fuli-'], capitalizedEvent, ({ event, statusMessage }) => ({
@@ -54,7 +54,7 @@ const WRITERS = Object.freeze({
 });
 
 export function packManifestClient(pack) {
-  const section = WRITERS[pack.configWriter];
+  const section = SECTIONS[pack.configWriter];
   if (!section) throw new TypeError(`Unknown client config writer: ${pack.configWriter}`);
   return section(pack);
 }

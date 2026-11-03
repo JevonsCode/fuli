@@ -22,8 +22,6 @@ function fixture(t) {
   const historyPath = join(home, 'data', 'client-connection-observations.json');
   const make = (options = {}) => createClientConnectionObserver({
     installer: { status: async () => answer },
-    targets: () => [{ id: 'codex' }, { id: 'claude-code' }, { id: 'gemini' }, { id: 'antigravity' },
-      { id: 'opencode', manualOnly: true, manualUrl: 'https://opencode.ai/docs/config/' }],
     customClients: { removable: () => new Set(['acme-agent']) },
     historyPath,
     now: () => new Date(clock += 60_000),
@@ -34,12 +32,12 @@ function fixture(t) {
 }
 const byId = (result, id) => result.clients.find((client) => client.id === id);
 
-test('installer states map to FULI\'s client statuses, under FULI\'s client IDs', async (t) => {
+test('installer states map to FULI\'s client statuses', async (t) => {
   const { make, answer } = fixture(t);
   answer([
     installerClient('codex', { state: 'connected', components: [state('mcp', 'current'), state('skills', 'current')] }),
     installerClient('claude-code', { state: 'update_available', components: [state('mcp', 'outdated'), state('hooks', 'current')] }),
-    installerClient('gemini-cli', { name: 'Gemini CLI' }),
+    installerClient('gemini', { name: 'Gemini CLI' }),
     installerClient('antigravity', { name: 'Antigravity', detected: false }),
     installerClient('claude-desktop', { platformSupported: false, state: 'unsupported', components: [] }),
     installerClient('opencode', { state: 'manual' })
@@ -56,10 +54,12 @@ test('installer states map to FULI\'s client statuses, under FULI\'s client IDs'
   assert.equal(result.scope, 'configuration');
 });
 
-test('a built-in client FULI has no writer for is the person\'s to connect', async (t) => {
+test('every built-in client agent-installer writes is FULI\'s to connect; only its manual ones are the person\'s', async (t) => {
   const { make, answer } = fixture(t);
-  answer([installerClient('kiro')]);
-  assert.equal(byId(await make().observe(), 'kiro').manualOnly, true);
+  answer([installerClient('kiro'), installerClient('qwen-code', { state: 'manual' })]);
+  const result = await make().observe();
+  assert.deepEqual([byId(result, 'kiro').manualOnly, byId(result, 'qwen-code').manualOnly], [false, true]);
+  assert.equal(byId(result, 'qwen-code').manualUrl, undefined);
 });
 
 test('leftover Skills, a removal and an unreadable entry are told apart, with bounded history', async (t) => {

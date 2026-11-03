@@ -8,17 +8,19 @@ import { updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { confirmInTerminal, interactiveTerminal } from './terminal-io.js';
 import { readPinnedClientManifest } from '../setup/agents/client-manifest.js';
 import { installedClientPacks, readClientPackState } from '../setup/agents/client-pack-store.js';
-import { clientDescriptorPacks, clientPackTarget } from '../setup/agents/registry.js';
-import { changeClientPack, recoverClientPack } from '../setup/agents/client-pack-change.js';
+import { loadClientDescriptorPacks as clientDescriptorPacks } from '../setup/agents/descriptor-packs.js';
+import { changeClientPack } from '../setup/agents/client-pack-change.js';
 import { detectClients } from '../agent-kits/client-detection.js';
 import { agentKitPorts } from '../agent-kits/ports.js';
+import { CLIENT_COMPONENT_UNAVAILABLE } from '../agent-kits/client-installer.js';
 import { compareSemanticVersions } from '../semantic-version.js';
-import { platformPath } from '../system/platform-path.js';
 
+// clientInstaller: the client installer port for the setup paths
+// (client-installer.js); agent-installer writes every client file.
 export async function runClientsCommand(args, { env = process.env, write = console.log, fetchImpl = fetch,
   confirm = (question, options) => interactiveTerminal() ? confirmInTerminal(question, options) : false,
-  homeDir = homedir(), platform = process.platform, writeFile,
-  detect = (paths) => detectClients(agentKitPorts(paths, { env }).clientInstaller) } = {}) {
+  homeDir = homedir(), platform = process.platform,
+  clientInstaller = (paths) => agentKitPorts(paths, { env, homeDir }).clientInstaller } = {}) {
   const [action, ...rest] = args;
   if (!action || ['--help', '-h'].includes(action)) {
     write('fuli clients trust <https-url|local-path> --sha256 DIGEST [--data-dir DIR]\nfuli clients update [--check | --apply id@version] [--data-dir DIR]\nfuli clients status | rollback ID [--data-dir DIR]\nUpdates only preview unless --apply is given. Installation and each client file require separate default-no terminal confirmation; --yes never authorizes them.');
@@ -55,7 +57,6 @@ export async function runClientsCommand(args, { env = process.env, write = conso
     const state = readClientPackState(paths.dataDir);
     const builtins = clientDescriptorPacks();
     const status = active.map(pack => ({ id: pack.id, version: pack.version,
-      recoveryRequired: state.ledger.some(entry => entry.id === pack.id && (entry.status === 'pending' || entry.restoreFailures?.length)),
       retired: Boolean(state.active[pack.id] && compareSemanticVersions(state.packages[state.active[pack.id]].version,
         builtins.find(builtin => builtin.id === pack.id).version) <= 0) }));
     write(JSON.stringify(status, null, 2)); return status;
@@ -63,9 +64,7 @@ export async function runClientsCommand(args, { env = process.env, write = conso
   let pack;
   if (action === 'rollback') {
     if (positional.length !== 1) throw new TypeError('rollback needs one client id');
-    const recovered = await recoverClientPack({ dataDir: paths.dataDir, id: positional[0], confirm, write, writeFile });
-    if (recovered) return recovered;
-    pack = readClientPackState(paths.dataDir).history[positional[0]]?.at(-1);
+    pack =readClientPackState(paths.dataDir).history[positional[0]]?.at(-1);
     if (!pack) { write('No prior client pack; no changes.'); return { status: 'current' }; }
     const builtin = clientDescriptorPacks().find(value => value.id === pack.id);
     if (compareSemanticVersions(pack.version, builtin.version) < 0) pack = builtin;
@@ -86,15 +85,13 @@ export async function runClientsCommand(args, { env = process.env, write = conso
     pack = newer.find(candidate => `${candidate.id}@${candidate.version}` === options.get('--apply'));
     if (!pack) { write('Requested newer pack unavailable; no changes.'); return { status: 'current' }; }
   } else throw new TypeError(`Unknown clients command: ${action}`);
-  const current = active.find(value => value.id === pack.id);
-  const environment = { env, homeDir, pathApi: platformPath(platform), fileExists: existsSync };
-  const context = { nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, runtimeConfigPath: runtimePath };
   // Only a client agent-installer finds FULI's MCP entry in has files to change.
-  const detection = await detect(paths);
+  const installer = clientInstaller(paths);
+  const detection = await detectClients(installer);
   if (detection.status !== 'available') {
-    write(`Client detection unavailable (${detection.reason}); no changes.`);
+    write(`${CLIENT_COMPONENT_UNAVAILABLE} (${detection.reason}); no changes.`);
     return { status: 'unavailable' };
   }
-  const connected = ['current', 'outdated'].includes(detection.clients.find(({ id }) => id === current.id)?.components.mcp);
-  return changeClientPack({ dataDir: paths.dataDir, pack, rollback: action === 'rollback', agent: connected ? clientPackTarget(pack, environment) : null, context, confirm, write, writeFile });
+  const connected = ['current', 'outdated'].includes(detection.clients.find(({ id }) => id === pack.id)?.components.mcp);
+  return changeClientPack({ dataDir: paths.dataDir, pack, rollback: action === 'rollback', installer: connected ? installer : null, confirm, write });
 }

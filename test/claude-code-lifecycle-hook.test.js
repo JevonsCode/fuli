@@ -6,8 +6,9 @@ import { dirname, join } from 'node:path';
 import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { claudeLifecycleOutput, claudeLifecycleUnavailable, runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
-import { claudeLifecycleCommand } from '../src/agents/claude-code/lifecycle-hooks.js';
 import { transcriptCaptureLedger } from '../src/conversations/transcript-capture-gap.js';
+import { packManifestClient } from '../src/agent-kits/pack-manifest.js';
+import { builtInClientPack } from '../test-support/client-packs.js';
 
 // A private runtime directory, so no hook reaches a shared absolute path.
 const RUNTIME_ROOT = mkdtempSync(join(tmpdir(), 'fuli-claude-hook-'));
@@ -252,16 +253,12 @@ test('Claude runtime failure preserves a known native session for fallback witho
   assert.doesNotMatch(result.stdout, /DO_NOT|private-missing|Synthetic hook verification/);
 });
 
-test('Claude command quotes shell metacharacters and never interpolates user input', () => {
-  // A POSIX fixture: pin the platform and the hook path so the Windows host's
-  // path.join and quoting rules do not apply to it.
-  const command = claudeLifecycleCommand({ platform: 'linux', nodePath: "/synthetic/node's bin/node",
-    mcpServerPath: '/synthetic/$(touch do-not-run)/mcp-server.js',
-    claudeLifecycleHookPath: '/synthetic/$(touch do-not-run)/agents/claude-code/lifecycle-hook.js',
-    runtimeConfigPath: '/synthetic/runtime.json' }, 'Stop', 30);
-  assert.match(command, /'\\''/);
-  assert.match(command, /'\/synthetic\/\$\(touch do-not-run\)/);
-  assert.doesNotMatch(command, /\$\{prompt\}|\$\{session_id\}/);
+test('Claude hook commands never interpolate user input; agent-installer quotes their arguments', () => {
+  // The manifest passes argv; `${…}` would be left for Claude Code to expand.
+  for (const { command } of Object.values(packManifestClient(builtInClientPack('claude-code')).hooks.events)) {
+    assert.ok(Array.isArray(command));
+    assert.doesNotMatch(command.join('\n'), /\$\{/);
+  }
 });
 
 test('Claude blocked handoff delivers a fresh task without importing history or changing the pending guard', async () => {

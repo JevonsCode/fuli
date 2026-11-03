@@ -2,74 +2,52 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { join } from 'node:path';
 
-import { formatUninstallResult, runUninstallCommand } from '../src/cli/uninstall-command.js';
+import { formatUninstallPreview, formatUninstallResult, runUninstallCommand } from '../src/cli/uninstall-command.js';
 import { applyLocalUninstall, planLocalUninstall, removalTarget } from '../src/setup/uninstall.js';
+import { fakeClientInstaller } from '../test-support/fake-client-installer.js';
 
 const PLAN = Object.freeze({
   paths: {
     dataDir: 'C:/Fuli',
-    backupDir: 'C:/Fuli/backups/agents',
-    sessionSkillPath: 'C:/Package/skills/capturing-session-knowledge',
-    projectSkillPath: 'C:/Package/skills/grilling-project',
-    reviewSkillPath: 'C:/Package/skills/flreview',
-    operationSkillPath: 'C:/Package/skills/operating-fuli'
+    backupDir: 'C:/Fuli/backups/agents'
   },
-  agents: [{
-    id: 'codex',
-    label: 'Codex',
-    available: true,
-    configPath: 'C:/Codex/config.toml',
-    skillPath: 'C:/Skills/capturing-session-knowledge',
-    projectSkillPath: 'C:/Skills/grilling-project',
-    reviewSkillPath: 'C:/Skills/flreview',
-    operationSkillPath: 'C:/Skills/operating-fuli'
-  }]
+  agents: [{ id: 'codex', label: 'Codex', available: true, integrationStatus: 'connected' }]
 });
 
-test('uninstall planning removes FULI where agent-installer finds it, and from every client without it', async () => {
-  const cursor = { id: 'cursor', label: 'Cursor', configPath: 'C:/Cursor/mcp.json' };
-  const gemini = { id: 'gemini', label: 'Gemini CLI', configPath: 'C:/Gemini/settings.json' };
-  const targets = () => [PLAN.agents[0], cursor, gemini];
+test('uninstall planning removes FULI where agent-installer finds it; without it, from none, and says why', async () => {
   const plan = await planLocalUninstall({ dataDir: null }, {
     resolvePaths: () => PLAN.paths,
-    targets,
-    detect: async (paths, list) => ({ status: 'available', agents: list.map((agent) => ({ ...agent,
-      integrationStatus: agent.id === 'gemini' ? 'not_connected' : agent.id === 'cursor' ? 'update_available' : 'connected' })) })
+    detect: async () => ({ status: 'available', agents: [PLAN.agents[0],
+      { id: 'cursor', label: 'Cursor', integrationStatus: 'update_available' },
+      { id: 'gemini', label: 'Gemini CLI', integrationStatus: 'not_connected' }] })
   });
   assert.deepEqual(plan.agents.map(({ id }) => id), ['codex', 'cursor']);
-  const offline = await planLocalUninstall({ dataDir: null }, { resolvePaths: () => PLAN.paths, targets,
+  const offline = await planLocalUninstall({ dataDir: null }, { resolvePaths: () => PLAN.paths,
     detect: async () => ({ status: 'unavailable', reason: 'offline' }) });
-  assert.deepEqual(offline.agents.map(({ id }) => id), ['codex', 'cursor', 'gemini']);
+  assert.deepEqual(offline.agents, []);
+  assert.match(formatUninstallPreview(offline), /Agent integrations: left in place\. 无法下载客户端组件.*check your network connection and try again\./);
+  const result = await applyLocalUninstall(offline, { stopRuntime: async () => ({ status: 'stopped' }) });
+  assert.equal(result.status, 'partial');
+  assert.match(formatUninstallResult(result), /Agent integrations were left in place: 无法下载客户端组件/);
 });
 
-test('uninstall disconnects integrations, removes only bundled Skills, and preserves data', async () => {
-  const calls = [];
-  const result = await applyLocalUninstall(PLAN, {
+test('uninstall removes FULI through agent-installer, reports what it left, and preserves data', async () => {
+  const installer = fakeClientInstaller([{ id: 'codex', state: 'connected', mcp: 'current' },
+    { id: 'cursor', state: 'connected', mcp: 'current' }, { id: 'gemini' }], { problems: { cursor: ['skills: It was changed by hand, so it is left as it is.'] } });
+  const result = await applyLocalUninstall({ ...PLAN, agents: [PLAN.agents[0], { id: 'cursor', label: 'Cursor' }, { id: 'gemini', label: 'Gemini CLI' }] }, {
     stopRuntime: async () => ({ status: 'stopped' }),
-    backupConfig: (agent) => {
-      calls.push(`backup:${agent.id}`);
-      return 'C:/Fuli/backups/agents/codex.toml';
-    },
-    disconnect: (agent) => {
-      calls.push(`disconnect:${agent.id}`);
-      return { status: 'disconnected' };
-    },
-    removeSkill: (agent) => {
-      calls.push(`skill:${agent.skillPath.split('/').at(-1)}`);
-      return { status: 'removed', path: agent.skillPath };
-    }
+    clientInstaller: installer
   });
 
-  assert.equal(result.status, 'ready');
+  assert.deepEqual(installer.calls, [['remove', ['codex']], ['remove', ['cursor']], ['remove', ['gemini']]]);
+  assert.equal(result.status, 'partial');
   assert.deepEqual(result.data, { status: 'preserved', path: 'C:/Fuli' });
-  assert.deepEqual(calls, [
-    'backup:codex',
-    'disconnect:codex',
-    'skill:capturing-session-knowledge',
-    'skill:grilling-project',
-    'skill:flreview',
-    'skill:operating-fuli'
+  assert.deepEqual(result.agents, [
+    { id: 'codex', label: 'Codex', status: 'disconnected' },
+    { id: 'cursor', label: 'Cursor', status: 'partial', errors: ['skills: It was changed by hand, so it is left as it is.'] },
+    { id: 'gemini', label: 'Gemini CLI', status: 'not_connected' }
   ]);
+  assert.match(formatUninstallResult(result), /Cursor: skills: It was changed by hand/);
 });
 
 test('uninstall stays partial when the local process cannot be safely confirmed stopped', async () => {
@@ -150,14 +128,4 @@ test('a data folder whose name starts with two dots is still inside the portable
 test('Windows portable data checks accept backslashes and reject another drive', { skip: process.platform !== 'win32' }, () => {
   assert.equal(removalTarget({ portableRoot: 'C:\\Portable Fuli', dataDir: 'C:\\Portable Fuli\\..data\\graph' }).dataInside, true);
   assert.equal(removalTarget({ portableRoot: 'C:\\Portable Fuli', dataDir: 'D:\\Portable Fuli\\data' }).dataInside, false);
-});
-
-test('uninstall removes the /fuli session command Skill where it was installed', async () => {
-  const removed = [];
-  await applyLocalUninstall({ paths: { ...PLAN.paths, sessionCommandSkillPath: 'C:/Package/skills/fuli' },
-    agents: [{ ...PLAN.agents[0], id: 'claude-code', sessionCommandSkillPath: 'C:/Claude/skills/fuli' }] }, {
-    stopRuntime: async () => ({ status: 'stopped' }), backupConfig: () => null, disconnect: () => ({ status: 'disconnected' }),
-    removeSkill: (agent, { sourcePath }) => { removed.push([agent.skillPath, sourcePath]); return { status: 'removed' }; }
-  });
-  assert.deepEqual(removed.at(-1), ['C:/Claude/skills/fuli', 'C:/Package/skills/fuli']);
 });

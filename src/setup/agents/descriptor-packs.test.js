@@ -4,8 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadClientDescriptorPacks } from './descriptor-packs.js';
 import { descriptorDigest } from './descriptor-schema.js';
-import { CONFIG_WRITERS } from './config-writers.js';
-import { agentAdapters } from './registry.js';
+import { packManifestClient } from '../../agent-kits/pack-manifest.js';
 
 const builtIn = loadClientDescriptorPacks();
 const cursor = builtIn.find(({ id }) => id === 'cursor');
@@ -19,23 +18,19 @@ function variant(change, base = cursor) {
 }
 const load = (external) => loadClientDescriptorPacks({ external: [external] });
 
-test('built-in packs are the four lifecycle clients, each with a known config writer and a matching digest', () => {
+test('built-in packs are the four lifecycle clients, each with a known manifest mapping and a matching digest', () => {
   assert.deepEqual(builtIn.map(({ id }) => id), ['codex', 'claude-code', 'cursor', 'opencode']);
   for (const pack of builtIn) {
     assert.equal(pack.schemaVersion, 1);
     assert.equal(pack.digest, descriptorDigest(pack));
-    assert.ok(Object.hasOwn(CONFIG_WRITERS, pack.configWriter), pack.configWriter);
+    assert.ok(packManifestClient(pack).mcp, pack.configWriter);
     assert.ok(Object.isFrozen(pack.mcpServer.args));
   }
 });
 
-test('an external pack can never claim a built-in or code-adapter id', () => {
+test('an external pack can never claim a built-in id', () => {
   for (const id of ['cursor', 'codex', 'claude-code', 'opencode']) {
     assert.throws(() => load(variant((pack) => { pack.id = id; })), { code: 'client_pack_reserved' });
-  }
-  for (const id of agentAdapters.map((adapter) => adapter.id).filter((id) => !builtIn.some((pack) => pack.id === id))) {
-    assert.throws(() => loadClientDescriptorPacks({ reservedIds: [id], external: [variant((pack) => { pack.id = id; })] }),
-      { code: 'client_pack_reserved' }, id);
   }
   const other = variant((pack) => { pack.id = 'cursor-nightly'; pack.label = 'Cursor Nightly'; });
   assert.deepEqual(load(other).map(({ id }) => id), ['codex', 'claude-code', 'cursor', 'opencode', 'cursor-nightly']);

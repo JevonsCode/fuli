@@ -13,7 +13,6 @@ import { createAdaptiveRuntimeBroker } from '../adaptive-runtime/runtime-broker.
 import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
 import { createPackageVersionChecker } from './package-version-checker.js';
 import { clientConnectionConfig } from '../setup/client-connection.js';
-import { agentTargets } from '../setup/agents.js';
 import { createClientConnectionObserver } from './client-connection-status.js';
 import { createClientInstaller } from './client-connection-install.js';
 import { createSettingsApplier } from './settings-apply.js';
@@ -46,11 +45,10 @@ export function createSystemService({
   customClients = customClientStore({ extensionsDir: agentKits.clientInstaller.extensionsDir }),
   clientObserver = createClientConnectionObserver({
     installer: agentKits.clientInstaller,
-    targets: () => agentTargets({ dataDir: paths.dataDir }),
     customClients,
     historyPath: join(paths.dataDir, 'client-connection-observations.json')
   }),
-  clientInstaller = createClientInstaller({ paths, runtimeConfigPath, installer: agentKits.clientInstaller }),
+  clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller }),
   executorAdapters = new Map(),
   versionChecker = null,
   update = consoleUpdate(paths.dataDir),

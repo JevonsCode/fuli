@@ -29,7 +29,7 @@ export function formatUninstallPreview(plan) {
   return [
     'Ready to remove local Fuli integrations',
     'Local services: stop',
-    `Agent integrations: ${labels}`,
+    plan.clientDetection ? `Agent integrations: left in place. ${plan.clientDetection.message}` : `Agent integrations: ${labels}`,
     'Skills: remove only copies identical to this package; preserve locally modified copies',
     `Data: preserve ${plan.paths.dataDir}`,
     ...(removal.kind === 'portable_folder' ? [] : ['Neo4j volumes: preserve']),
@@ -48,9 +48,8 @@ export function formatUninstallResult(result) {
   if (result.runtime.status !== 'stopped') {
     lines.push(`Local services: ${result.runtime.message ?? 'could not safely confirm they stopped'}`);
   }
+  if (result.clientDetection) lines.push(`Agent integrations were left in place: ${result.clientDetection.message}`);
   for (const agent of result.agents) {
-    const modified = agent.skills.some(({ status }) => status === 'preserved_modified');
-    if (modified) lines.push(`${agent.label}: preserved a locally modified Skill`);
     if (agent.errors?.length) lines.push(`${agent.label}: ${agent.errors.join('; ')}`);
   }
   return lines.join('\n');

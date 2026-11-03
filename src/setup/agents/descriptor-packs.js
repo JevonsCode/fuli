@@ -12,14 +12,14 @@ function builtInPack(id) {
 
 // Only the pinned-manifest installation path supplies trustedOverrides. Ordinary
 // external descriptors cannot claim an npm id. New npm packs always win ties.
-export function loadClientDescriptorPacks({ reservedIds = [], external = [], trustedOverrides = [] } = {}) {
+export function loadClientDescriptorPacks({ external = [], trustedOverrides = [] } = {}) {
   const builtIn = BUILT_IN_PACKS.map(builtInPack);
-  const claimed = new Set([...reservedIds, ...BUILT_IN_PACKS]);
+  const claimed = new Set(BUILT_IN_PACKS);
   const overrides = new Map();
   for (const value of trustedOverrides) {
     const pack = parseClientDescriptor(value);
     const base = builtIn.find(candidate => candidate.id === pack.id);
-    if (!base || reservedIds.includes(pack.id)) throw new ApplicationError('client_pack_reserved',
+    if (!base) throw new ApplicationError('client_pack_reserved',
       `Client override id is reserved or unknown: ${pack.id}`, { status: 409 });
     if (overrides.has(pack.id)) throw new TypeError(`Duplicate client override: ${pack.id}`);
     if (['configWriter', 'command', 'schemaVersion'].some(field => pack[field] !== base[field])) {

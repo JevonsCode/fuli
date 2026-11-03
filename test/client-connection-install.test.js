@@ -1,63 +1,43 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, readdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, posix } from 'node:path';
 import { createClientInstaller } from '../src/system/client-connection-install.js';
-import { adapter } from '../src/setup/agents/gemini/index.js';
+import { fakeClientInstaller } from '../test-support/fake-client-installer.js';
 
-// agent-installer's answers are synthetic; FULI's writer edits a temporary home only.
-const installerAnswer = (clients) => ({ status: async () => ({ status: 'available', extensionErrors: [], clients: clients.map(
-  ({ id, detected = true, state = 'not_connected', mcp = 'missing' }) => ({ id, name: id, builtin: true, detected,
-    platformSupported: true, state, componentStates: [{ component: 'mcp', state: mcp }] })) }) });
+// agent-installer is simulated in memory; nothing is written.
 
-test('one-click connection writes a client agent-installer found, backs up first and self-checks', async (t) => {
-  const home = mkdtempSync(join(tmpdir(), 'fuli-connect-'));
-  t.after(() => rmSync(home, { recursive: true, force: true }));
-  const agent = adapter.target({ homeDir: home, pathApi: posix });
-  mkdirSync(join(home, '.gemini'));
-  const original = '{"theme":"dark"}';
-  writeFileSync(agent.configPath, original);
-  const paths = { backupDir: join(home, 'backups'), mcpServerPath: '/pkg/mcp.js', graphRuntimeConfigPath: '/data/runtime.json' };
-  // The installer sees what the writer wrote.
-  const installer = { status: () => {
-    const connected = readFileSync(agent.configPath, 'utf8').includes('"fuli"');
-    return installerAnswer([{ id: 'gemini-cli', state: connected ? 'connected' : 'not_connected',
-      mcp: connected ? 'current' : 'missing' }]).status();
-  } };
-  const connect = createClientInstaller({ paths, installer, targets: () => [agent] });
+test('one-click connection applies a client agent-installer found and self-checks it', async () => {
+  const installer = fakeClientInstaller([{ id: 'gemini' }]);
+  const connect = createClientInstaller({ installer });
   for (const input of [null, {}, { clientId: 'unknown' }, { clientId: 'gemini', configPath: '/bad' }, { clientId: '__proto__' }]) {
     await assert.rejects(() => connect(input));
   }
-  assert.equal(readFileSync(agent.configPath, 'utf8'), original);
-  const result = await connect({ clientId: 'gemini' });
-  assert.deepEqual(result, { id: 'gemini', status: 'connected', restartRequired: true });
-  assert.equal(readFileSync(join(paths.backupDir, readdirSync(paths.backupDir)[0]), 'utf8'), original);
-  assert.ok(!JSON.stringify(result).includes(home));
+  assert.deepEqual(installer.calls, []);
+  assert.deepEqual(await connect({ clientId: 'gemini' }), { id: 'gemini', status: 'connected', restartRequired: true });
+  assert.deepEqual(installer.calls, [['apply', ['gemini']]]);
 });
 
-test('the self-check reads agent-installer: a write it does not see as connected is partial', async (t) => {
-  const home = mkdtempSync(join(tmpdir(), 'fuli-connect-check-'));
-  t.after(() => rmSync(home, { recursive: true, force: true }));
-  const agent = adapter.target({ homeDir: home, pathApi: posix });
-  const paths = { backupDir: join(home, 'backups'), mcpServerPath: '/pkg/mcp.js', graphRuntimeConfigPath: '/data/runtime.json' };
-  const connect = createClientInstaller({ paths, installer: installerAnswer([{ id: 'gemini-cli', state: 'update_available', mcp: 'outdated' }]),
-    targets: () => [agent] });
+test('the self-check reads agent-installer: a write it does not see as connected is partial', async () => {
+  const connect = createClientInstaller({ installer: fakeClientInstaller([{ id: 'gemini' }], { afterApply: 'update_available' }) });
   assert.deepEqual(await connect({ clientId: 'gemini' }), { id: 'gemini', status: 'partial', restartRequired: false });
 });
 
-test('manual, absent or undetectable clients never write, and simultaneous requests cannot overlap', async () => {
-  const targets = () => [{ id: 'opencode' }, { id: 'gemini' }];
-  for (const [installer, clientId] of [
-    [installerAnswer([{ id: 'opencode', state: 'manual' }]), 'opencode'],
-    [installerAnswer([{ id: 'gemini-cli', detected: false }]), 'gemini'],
-    [{ status: async () => ({ status: 'unavailable', reason: 'offline' }) }, 'gemini']
-  ]) {
-    const connect = createClientInstaller({ paths: {}, installer, targets, install: () => assert.fail('no writes') });
+test('without agent-installer nothing is written and the answer says the component could not be downloaded', async () => {
+  const connect = createClientInstaller({ installer: fakeClientInstaller([{ id: 'gemini' }], { unavailable: 'offline' }),
+    install: () => assert.fail('no writes') });
+  const result = await connect({ clientId: 'gemini' });
+  assert.deepEqual({ ...result, message: undefined }, { id: 'gemini', status: 'failed', restartRequired: false,
+    reason: 'client_component_unavailable', message: undefined });
+  assert.match(result.message, /无法下载客户端组件.*请检查网络后重试/);
+  assert.match(result.message, /could not be downloaded; check your network connection and try again/);
+});
+
+test('manual or absent clients never write, and simultaneous requests cannot overlap', async () => {
+  for (const [client, clientId] of [[{ id: 'opencode', state: 'manual' }, 'opencode'], [{ id: 'gemini', detected: false }, 'gemini']]) {
+    const connect = createClientInstaller({ installer: fakeClientInstaller([client]), install: () => assert.fail('no writes') });
     await assert.rejects(() => connect({ clientId }), /unavailable/);
   }
   let release;
-  const connect = createClientInstaller({ paths: {}, installer: installerAnswer([{ id: 'gemini-cli' }]), targets,
+  const connect = createClientInstaller({ installer: fakeClientInstaller([{ id: 'gemini' }]),
     install: () => new Promise((resolve) => { release = resolve; }) });
   const first = connect({ clientId: 'gemini' });
   await assert.rejects(() => connect({ clientId: 'gemini' }), /already/);

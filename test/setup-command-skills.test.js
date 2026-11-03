@@ -4,8 +4,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { agentTargets } from '../src/setup/agents.js';
-import { installAgent } from '../src/setup/install-agent.js';
+import { packManifestClient } from '../src/agent-kits/pack-manifest.js';
+import { builtInClientPack } from '../test-support/client-packs.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SKILL_PATH = join(PROJECT_ROOT, 'skills', 'flreview', 'SKILL.md');
@@ -91,55 +91,34 @@ test('flreview keeps mutations behind explicit visualization actions', () => {
   assert.match(skill, /finish_knowledge_review.*paused.*completed/is);
 });
 
-// The lifecycle clients' Skill folders and review triggers come from their descriptor packs.
-function lifecycleClient(id, homeDir = '/home/test') {
-  return agentTargets({ platform: 'linux', homeDir, env: {}, fileExists: () => false, commandVersion: () => null })
-    .find((agent) => agent.id === id);
+// The Skills FULI's installer manifest gives a descriptor pack client.
+function manifestSkills(id) {
+  return packManifestClient(builtInClientPack(id)).skills.map(({ name, source }) => [name, source]);
 }
 
 test('review skill adaptations keep agent-specific triggers in the client descriptor packs', () => {
-  const codex = lifecycleClient('codex');
-  const claude = lifecycleClient('claude-code');
-  const cursor = lifecycleClient('cursor');
-
-  assert.equal(codex.reviewSkillPath, '/home/test/.agents/skills/flreview');
-  assert.equal(claude.reviewSkillPath, '/home/test/.claude/skills/flreview');
-  assert.equal(cursor.reviewSkillPath, '/home/test/.cursor/skills/flreview');
-  assert.deepEqual(codex.reviewSkillTrigger, {
+  for (const id of ['codex', 'claude-code', 'cursor']) {
+    assert.deepEqual(manifestSkills(id).find(([name]) => name === 'flreview'), ['flreview', '{skillsDir}/flreview'], id);
+  }
+  assert.deepEqual(builtInClientPack('codex').commandSkills.review, {
     userCommand: 'fuli review',
     nativeInvocation: '$flreview'
   });
-  assert.equal(claude.reviewSkillTrigger.nativeInvocation, '/flreview');
-  assert.equal(cursor.reviewSkillTrigger.nativeInvocation, '/flreview');
+  assert.equal(builtInClientPack('claude-code').commandSkills.review.nativeInvocation, '/flreview');
+  assert.equal(builtInClientPack('cursor').commandSkills.review.nativeInvocation, '/flreview');
 });
 
 // rec#5 C3b: /fuli start|stop|restart|status is a native command where the client turns
 // a Skill into one; the prompt hook answers the line, so the Skill never runs on its own.
 test('the FULI session command Skill is installed only where a client takes it as /fuli', () => {
-  const adapt = id => lifecycleClient(id);
-  assert.equal(adapt('claude-code').sessionCommandSkillPath, '/home/test/.claude/skills/fuli');
-  assert.equal(adapt('cursor').sessionCommandSkillPath, '/home/test/.cursor/skills/fuli');
-  assert.equal(Object.hasOwn(adapt('codex'), 'sessionCommandSkillPath'), false,
-    'Codex rejects user-defined slash commands; the person types `fuli stop` there');
+  const hasFuli = id => manifestSkills(id).some(([name]) => name === 'fuli');
+  assert.equal(hasFuli('claude-code'), true);
+  assert.equal(hasFuli('cursor'), true);
+  assert.equal(hasFuli('codex'), false, 'Codex rejects user-defined slash commands; the person types `fuli stop` there');
+  assert.equal(hasFuli('opencode'), false);
 
   const skill = readFileSync(join(PROJECT_ROOT, 'skills', 'fuli', 'SKILL.md'), 'utf8');
   assert.match(skill, /^---\nname: fuli\ndescription: .+\ndisable-model-invocation: true\nargument-hint: start\|stop\|restart\|status\n---\n/);
   assert.match(skill, /do not say FULI was started or stopped/);
   assert.doesNotMatch(skill, /Codex|Claude|Cursor/, 'no client branching in the shared Skill');
-});
-
-test('connecting a client installs its /fuli Skill next to the others', async () => {
-  const installed = [];
-  const paths = { backupDir: '/backups', sessionSkillPath: '/pkg/skills/capturing-session-knowledge',
-    projectSkillPath: '/pkg/skills/grilling-project', reviewSkillPath: '/pkg/skills/flreview',
-    operationSkillPath: '/pkg/skills/operating-fuli', sessionCommandSkillPath: '/pkg/skills/fuli' };
-  for (const id of ['claude-code', 'codex']) {
-    installed.length = 0;
-    const agent = lifecycleClient(id, `/home/${id}`);
-    await installAgent(agent, {}, paths, { backupConfig: () => null, connect: () => ({ status: 'connected' }),
-      installSkill: (target, { sourcePath }) => { installed.push([target.skillPath, sourcePath]); return { status: 'installed' }; },
-      inspect: null });
-    const fuli = installed.filter(([, source]) => source === '/pkg/skills/fuli');
-    assert.deepEqual(fuli, id === 'codex' ? [] : [[`/home/${id}/.claude/skills/fuli`, '/pkg/skills/fuli']], id);
-  }
 });

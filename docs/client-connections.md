@@ -64,7 +64,7 @@ automatically. Fuli keeps only the latest status and the last five changes per c
 starts over, and if it cannot be saved, the console keeps history until restart with an unsaved
 notice.
 
-**Connect by hand** describes a client FULI has no writer for, such as a company's own agent client:
+**Connect by hand** describes a client agent-installer does not know, such as a company's own agent client:
 a name, the MCP configuration file under the home folder (`~/.acme/mcp.json`) and its format. FULI
 writes it as `<client-id>.json` with only an `install` section into the shared `agent-clients`
 extension directory (`%APPDATA%\agent-clients\extensions` on Windows, `~/.config/agent-clients/extensions`
@@ -190,17 +190,27 @@ native executable through its own ports (`src/agent-kits/session-launcher.js`,
   answer (`claude-code`, `claude-desktop` or the ambiguous `claude-code-unknown`) in the same
   record. Sessions recorded before this have no record and are classified from their source
   application alone.
-- **Client detection.** Every place FULI asks which agent clients are on this computer and whether
-  FULI is in them goes through the installer's read-only `status` for FULI's product manifest
-  (`src/agent-kits/fuli-installer-manifest.json`, composed into `agent-kits/fuli-installer.json`;
-  `src/agent-kits/client-detection.js`): the console's client list and its history, the doctor's
-  `client_outdated`, one-click connect, `fuli setup`, `fuli uninstall`, the client notice of
-  `fuli start` and `fuli clients update`. The manifest names OpenCode's plugin only where FULI's
-  writer keeps one (OpenCode 2.x), from a source written beside it (`agent-kits/opencode-plugin/`).
-  FULI's own writers still install every client; their adapters only say where they edit
-  (`agentTargets`). Without the installer FULI knows no client: setup connects none and says why,
-  uninstall removes FULI's entries from every client it can write, and the console and doctor say
-  detection is unavailable.
+- **Client detection and configuration.** agent-installer is the one place FULI reads and writes
+  agent client configuration (#11); FULI has no config writer of its own. The client installer port
+  (`src/agent-kits/client-installer.js`) answers `status`, `plan`, `apply` and `remove` for FULI's
+  product manifest: the MCP-only clients are data in `src/agent-kits/fuli-installer-manifest.json`,
+  and Claude Code, Codex, Cursor and OpenCode come from their active descriptor packs
+  (`src/agent-kits/pack-manifest.js`: MCP arguments with each client's `--source-application` and
+  `--tool-profile`, lifecycle hooks, Claude Code's permission allowlist, the Codex instruction
+  block, the Skills, and `fuli` as a Skill where the client takes it as `/fuli`). It is composed
+  into `agent-kits/fuli-installer.json` in the data directory. The manifest names OpenCode's
+  plugin only for OpenCode 2.x, or an OpenCode whose version cannot be read that already has
+  FULI's plugin (`src/agent-kits/opencode-plugin-gate.js`), from a source written beside it
+  (`agent-kits/opencode-plugin/`). FULI's client IDs are agent-installer's except `gemini`
+  (`gemini-cli`), mapped in the port only. Reads: the console's client list and its history, the
+  doctor's `client_outdated`, the client notice of `fuli start`. Writes: `fuli setup` and the
+  console's one-click connect (`apply`, then `status` as the self-check), `fuli uninstall`
+  (`remove`), and `fuli clients update|rollback` (`plan` shown, then `apply` on consent).
+  agent-installer copies every file it changes to `backups/agents/<client>/` in the data directory
+  first, keeps the person's own entries and leaves a Skill they changed by hand. Without the
+  installer nothing is written and there is no fallback: setup and one-click connect fail with
+  「无法下载客户端组件 agent-installer，请检查网络后重试。」 and its English text, uninstall leaves
+  every client as it is and says why, and the console and doctor say detection is unavailable.
 
 **Where the executables come from**, first match wins: the developer override
 `FULI_AGENT_SESSION_LAUNCHER` / `FULI_AGENT_INSTALLER` (an absolute path), the Windows portable or
@@ -209,15 +219,18 @@ portable and tray inventories), then a copy downloaded into `native-runtime/agen
 directory the first time the console needs it (never at import time, never from a hook). Downloads
 use the pinned URL and are published only after their SHA-256 matches the pin; a copy that no longer
 matches is refused, not replaced. Offline or on a platform without a release asset the component is
-unavailable: session links keep FULI's own rules, and clients cannot be detected (see above).
+unavailable: session links keep FULI's own rules, and clients can be neither detected nor
+connected (see above).
 
 **Bumping a component.** Release the component, then in one change: copy the new tag's
 `bindings/node/index.mjs`, `index.d.ts` and `LICENSE` into `src/agent-kits/vendor/<component>/` and
 update that README's tag and commit; set `version` and every platform's SHA-256 in
 `src/agent-kits/pins.js` from the release's `SHA256SUMS`; run `test/agent-kits/` and
 `test/windows-installed-client-config.test.js` (the pin, bundle, launcher and client detection tests
-download and verify the new assets). To try an unreleased build first, point `FULI_AGENT_INSTALLER` at
-it; the tests use it too.
+download and verify the new assets; the client tests connect and remove every built-in client in a
+temporary home). To try an unreleased build first, point `FULI_AGENT_INSTALLER` (or
+`AGENT_INSTALLER_BIN`) at it; the tests use it too. A change to what the manifest asks for shows
+in `test/fixtures/installer-manifest-snapshot.json` (`test/agent-kits/installer-manifest.test.js`).
 
 ## Common failure recovery
 
@@ -248,7 +261,7 @@ service. See the [remote connector setup](../README.md#remote-claude--cowork-con
 
 ## 自动发现与一键接入
 
-在设置 → 客户端接入的“本机客户端”中，点击 agent-installer 检测到的客户端的“接入”；没有自动接入的客户端（例如公司内部的 Agent 客户端）在右侧“手动接入”里添加，按显示的位置粘贴通用 MCP 配置。操作只在运行控制台的本机可用：先备份已有配置，再安装并自检，成功后需重启客户端。客户端自己的信任/启用步骤仍由客户端提示；配置自检不代表 MCP 已成功运行。失败或部分完成时，可重试或运行 `fuli setup` 查看详细原因。
+在设置 → 客户端接入的“本机客户端”中，点击 agent-installer 检测到的客户端的“接入”；没有自动接入的客户端（例如公司内部的 Agent 客户端）在右侧“手动接入”里添加，按显示的位置粘贴通用 MCP 配置。操作只在运行控制台的本机可用：由 agent-installer 先把要改的配置备份到数据目录的 `backups/agents/`，再安装并自检，成功后需重启客户端。客户端自己的信任/启用步骤仍由客户端提示；配置自检不代表 MCP 已成功运行。失败或部分完成时，可重试或运行 `fuli setup` 查看详细原因。agent-installer 无法下载时（离线，或这个平台没有它的发布版本）不会写入任何客户端，提示“无法下载客户端组件，请检查网络后重试”。
 
 | 客户端 | 全局配置 | 官方格式 |
 | --- | --- | --- |
@@ -258,12 +271,12 @@ service. See the [remote connector setup](../README.md#remote-claude--cowork-con
 | Kiro | `~/.kiro/settings/mcp.json` | [`mcpServers`，command + args](https://kiro.dev/docs/mcp/configuration/) |
 | Antigravity | `~/.gemini/config/mcp_config.json`（桌面应用和 `agy` CLI 共用） | `mcpServers`，command + args（远程服务用 `url`，按本机实际文件确认） |
 
-新接入使用 chat 工具配置，已有显式 profile 会保留。一键接入 Cursor 也会补上 chat；旧 CLI Cursor 配置仍兼容。现有 Codex、Claude Code、Cursor 的生命周期/技能安装和 Claude Desktop 的 MCP 接入继续复用原流程。Gemini CLI、Qwen Code、Kiro、Antigravity 仅安装 MCP，不导入聊天历史、不安装采集 Hook、不替用户批准工具信任。
+新接入使用 chat 工具配置，已有显式 profile 会保留（清单的 `preserveArgs`）；Cursor 不写 profile，除非已有配置里选过。所有客户端都按 FULI 的产品清单由 agent-installer 写入：Codex、Claude Code、Cursor 的生命周期 Hook、Codex 的全局说明块、Claude Code 的权限白名单、Skills 和 OpenCode 2.x 插件，以及 Claude Desktop 的 MCP。Gemini CLI、Qwen Code、Kiro、Antigravity 仅安装 MCP，不导入聊天历史、不安装采集 Hook、不替用户批准工具信任（Gemini CLI、Kiro 的生命周期 Hook 留作后续）。
 
 Antigravity（rec#11 D-80）在找到 `agy` 命令、上面的配置文件，或 `~/.gemini/antigravity`、`~/.gemini/antigravity-cli` 目录之一时显示为可接入。它用自己的来源名 `antigravity`，不与 Gemini CLI 共用；只改 `mcpServers.fuli`，其他服务（包括 `url` 远程服务）原样保留。FULI 不对 Antigravity 套用 Gemini CLI 的 `GEMINI_CLI_HOME`。和 OpenCode 一样，在它有自己的名字之前记作 `other`：读取时列表里有 `other` 而没有 `antigravity`，就同样算作包含 `antigravity`，所以在这之前招的 Agent（包括项目负责人）在 Antigravity 里照样可用；以前关掉了 `other` 的记录，Antigravity 仍然不记，可在设置里单独打开。
 
 OpenCode 2.x 另装一个 FULI 插件（`<配置目录>/plugins/fuli/index.js`，随 `fuli clients update|rollback` 的客户端包更新），并把 FULI 的 Skills 装进 `<配置目录>/skills/`（OpenCode 会加载这个目录）。OpenCode 用自己的来源名 `opencode`（MCP 入口的 `--source-application` 和插件一致），可在设置里单独关闭记录。在它有自己的名字之前，OpenCode 记作 `other`：已保存的列表不会被改写，读取时只要列表里有 `other` 而没有 `opencode`，就同样算作包含 `opencode`。所以以前关掉了 `other` 的记录，OpenCode 仍然不记；以前允许了 `other` 的 Agent，在 OpenCode 里照样可用。在设置里打开 OpenCode 的记录时，这条旧的 `other` 设置会一并取消。插件在每轮提问时调用 FULI 的任务入口，把入口内容作为本轮的 system 文本交给模型，不改用户原文；在上一轮运行时排队的提问，等 OpenCode 真正送达它时才开始自己的任务。执行成功结束时（或 `opencode run` 退出、插件卸载时）像 Stop hook 一样收尾，每轮只收尾一次；失败或中断不收尾。FULI 慢或不可用时提问照常进行，最多多一行提示。OpenCode 1.x 的插件 API 不兼容，检测到时只接入 MCP 并给出提示；读不到版本（`opencode --version`）时不新装插件。OpenCode 的会话原文只能通过 API 或 `opencode session export` 读取，目前还不自动采集。FULI 在 Windows 上看不到 WSL 里的 OpenCode；WSL 里的 OpenCode 请在 WSL 里运行 `fuli setup`。
 
-OpenCode 的 [配置分层](https://opencode.ai/docs/config/) 可覆盖全局配置；同时存在全局 JSON/JSONC，或设置了配置覆盖环境变量时，界面提供官方手动接入指引，不自动写入。其他项目级配置也可能覆盖全局项。Kiro CLI 的 agent 配置或 `includeMcpJson` 设置可能覆盖/禁用全局 MCP，需按官方说明检查。格式不合法时自动接入会失败并保留原文件。
+OpenCode 的 [配置分层](https://opencode.ai/docs/config/) 可覆盖全局配置；设置了配置覆盖环境变量（`OPENCODE_CONFIG`、`OPENCODE_CONFIG_CONTENT`、`OPENCODE_CONFIG_DIR`）时，agent-installer 把它标为手动接入，界面提供官方手动接入指引，不自动写入。全局 `opencode.jsonc` 存在时写入它，否则写 `opencode.json`。其他项目级配置也可能覆盖全局项。Kiro CLI 的 agent 配置或 `includeMcpJson` 设置可能覆盖/禁用全局 MCP，需按官方说明检查。格式不合法时自动接入会失败并保留原文件。
 
-配置目录遵循客户端官方覆盖变量：Gemini 的 `GEMINI_CLI_HOME` 替代主目录后追加 `.gemini/settings.json`，Qwen 的 `QWEN_HOME` 替代 `.qwen`，Kiro 的 `KIRO_HOME` 替代 `.kiro`。后两者分别追加 `settings.json` 和 `settings/mcp.json`。
+配置目录遵循客户端官方覆盖变量（由 agent-installer 读取）：Gemini 的 `GEMINI_CLI_HOME` 替代主目录后追加 `.gemini/settings.json`，Codex 的 `CODEX_HOME` 替代 `.codex`，Qwen 的 `QWEN_HOME` 替代 `.qwen`，Kiro 的 `KIRO_HOME` 替代 `.kiro`。后两者分别追加 `settings.json` 和 `settings/mcp.json`。

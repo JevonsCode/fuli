@@ -7,7 +7,6 @@ import {
 } from '../local-runtime/lifecycle.js';
 import { detectAgents } from '../agent-kits/client-detection.js';
 import { agentKitPorts } from '../agent-kits/ports.js';
-import { agentTargets } from '../setup/agents.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
@@ -51,7 +50,7 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
   // Read beside the start, through agent-installer (client-detection.js).
   const agentSetup = command === 'start'
     ? checkAgentSetup(dependencies.detectAgents
-      ?? (() => detectAgents(agentKitPorts(paths, { env }).clientInstaller, agentTargets({ env, dataDir: paths.dataDir }))))
+      ?? (() => detectAgents(agentKitPorts(paths, { env }).clientInstaller)))
     : null;
   const result = await handlers[command](input, dependencies.lifecycleDependencies);
   const agentSetupCheck = agentSetup ? await agentSetup : null;

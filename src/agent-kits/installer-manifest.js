@@ -3,7 +3,6 @@ import { dirname, join } from 'node:path';
 
 import { openCodePluginSource } from '../agents/opencode/plugin-file.js';
 import { FULI_VERSION } from '../package-metadata.js';
-import { openCodePluginKept } from '../setup/agents/opencode/config-writer.js';
 import { installedClientPacks } from '../setup/agents/client-pack-store.js';
 import { writeDerivedJson, writeDerivedText } from './derived-file.js';
 import { packManifestClient } from './pack-manifest.js';
@@ -24,15 +23,13 @@ function fuliInstallerManifest({ packs, openCodePlugin }) {
   return manifest;
 }
 
-// Writes the manifest for this machine and answers its variables. FULI's
-// OpenCode writer keeps a plugin only in OpenCode 2.x (rec#11 D-63), so the
-// manifest names it only where the writer would: the plugin's source is
-// written beside the manifest as `opencode-plugin/index.js`, the file the
-// writer puts at `<OpenCode config>/plugins/fuli/index.js`.
-// targets: FULI's writer targets (agentTargets), for OpenCode's version.
-export function prepareInstallerManifest({ manifestPath, context, targets, packs = installedClientPacks(context.dataDir) }) {
-  const opencode = targets.find((target) => target.id === 'opencode');
-  const plugin = Boolean(opencode?.pluginPath) && openCodePluginKept(opencode);
+// Writes the manifest for this machine and answers its variables.
+// openCodePlugin: whether OpenCode gets FULI's plugin here
+// (opencode-plugin-gate.js). Its source is written beside the manifest as
+// `opencode-plugin/index.js`; agent-installer puts it at
+// `<OpenCode config>/plugins/fuli/index.js`.
+export function prepareInstallerManifest({ manifestPath, context, openCodePlugin: plugin,
+  packs = installedClientPacks(context.dataDir) }) {
   const pluginDir = join(dirname(manifestPath), 'opencode-plugin');
   if (plugin) {
     const pack = packs.find((candidate) => candidate.id === 'opencode');
@@ -42,7 +39,7 @@ export function prepareInstallerManifest({ manifestPath, context, targets, packs
   return installerVariables(context, plugin ? pluginDir : null);
 }
 
-// The same expected integration `fuli setup` installs (integration-context.js).
+// The paths of this installation (integration-context.js).
 function installerVariables(context, openCodePlugin) {
   const agents = join(dirname(context.mcpServerPath), 'agents');
   return {
@@ -52,7 +49,7 @@ function installerVariables(context, openCodePlugin) {
     claudeHook: join(agents, 'claude-code', 'lifecycle-hook.js'),
     codexHook: join(agents, 'codex', 'lifecycle-hook.js'),
     cursorHook: join(agents, 'cursor', 'lifecycle-hook.js'),
-    skillsDir: dirname(context.sessionSkillPath),
+    skillsDir: context.skillsDir,
     ...(openCodePlugin ? { openCodePlugin } : {})
   };
 }

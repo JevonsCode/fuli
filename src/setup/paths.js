@@ -88,11 +88,8 @@ export function resolveSetupPaths({
     mcpServerPath: launcher ? join('src', 'mcp-server.js') : join(root, 'src', 'mcp-server.js'),
     graphSetupPath: join(root, 'src', 'graphiti', 'setup.js'),
     graphComposePath: join(root, 'compose.graphiti.yml'),
-    sessionSkillPath: join(root, 'skills', 'capturing-session-knowledge'),
-    projectSkillPath: join(root, 'skills', 'grilling-project'),
-    reviewSkillPath: join(root, 'skills', 'flreview'),
-    operationSkillPath: join(root, 'skills', 'operating-fuli'),
-    sessionCommandSkillPath: join(root, 'skills', 'fuli')
+    // The packaged Skills, one folder each, that agent-installer copies into clients.
+    skillsDir: join(root, 'skills')
   };
 }
 

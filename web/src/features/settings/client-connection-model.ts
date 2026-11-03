@@ -8,7 +8,9 @@ export type CustomClient = { id: string, label: string, detected: boolean, statu
 // `available` is false when agent-installer could not be run: nothing is known about any client then.
 export type ConnectionStatus = { observedAt: string, historySaved: boolean, available?: boolean, clients: ClientObservation[],
   customClients?: CustomClient[] }
-export type ConnectionResult = { id: string, status: 'connected' | 'partial' | 'failed', restartRequired: boolean }
+// `reason` names a failure the person can act on: agent-installer could not be downloaded here.
+export type ConnectionResult = { id: string, status: 'connected' | 'partial' | 'failed', restartRequired: boolean,
+  reason?: 'client_component_unavailable' }
 // The MCP file formats a custom client can name (agent-installer's write formats).
 export const CUSTOM_CLIENT_FORMATS = ['mcp-servers-json', 'opencode-json', 'codex-toml'] as const
 export type CustomClientFormat = typeof CUSTOM_CLIENT_FORMATS[number]

@@ -2,28 +2,36 @@ import { z } from 'zod';
 import { contentHash } from '../../../packages/roundtable/src/canonical-json.js';
 import { packageIdentifier, packageVersion } from '../../employees/manifest.js';
 import { deepFreeze } from '../../validation/values.js';
-import { CLAUDE_CODE_FULI_PERMISSIONS } from '../claude-code-config.js';
 import { codexMcpServerSchema } from './codex/descriptor-schema.js';
 
-// rec#18 D-10: a client descriptor pack is data only. It names where a client
-// keeps its files, which built-in probe finds it, what the FULI MCP entry looks
-// like and which lifecycle events to register. It never carries a shell
-// command, script, remote URL or free path: commands are built by the built-in
-// lifecycle entries, paths stay under the home or the client's documented home
-// override, and `configWriter` picks one writer from a fixed code set.
+// rec#18 D-10: a client descriptor pack is data only. It says what the FULI
+// MCP entry looks like and which lifecycle events to register. It never
+// carries a shell command, script, remote URL or free path: commands are
+// built by the built-in lifecycle entries, and `configWriter` picks one
+// mapping onto FULI's installer manifest from a fixed code set
+// (src/agent-kits/pack-manifest.js). agent-installer writes the files.
 
 const DIGEST_PREFIX = 'sha256:';
 const MAX_EVENTS = 8;
+// The only permission rules a Claude Code pack may grant: the model-initiated
+// fallback restore and final checkpoint calls.
+const CLAUDE_CODE_FULI_PERMISSIONS = Object.freeze([
+  'mcp__fuli__get_collaboration_preferences',
+  'mcp__fuli__checkpoint_task_knowledge'
+]);
 
 const text = (maximum) => z.string().trim().min(1).max(maximum);
 const pathSegment = z.string().regex(/^[A-Za-z0-9._-]{1,64}$/)
   .refine((value) => value !== '.' && value !== '..', 'Path segments stay inside their base');
 const segments = z.array(pathSegment).min(1).max(6);
 
-export const CLIENT_FILE_KEYS = Object.freeze(['configPath', 'settingsPath', 'hooksPath',
+const CLIENT_FILE_KEYS = Object.freeze(['configPath', 'settingsPath', 'hooksPath',
   'globalInstructionsPath', 'globalInstructionsOverridePath', 'pluginPath']);
 const pathRef = z.object({ from: z.enum(['homeDir', 'clientHome']), path: segments }).strict();
 
+// No longer read: agent-installer finds each client and its files (rec#11
+// D-79, #11). Still validated so the schema-1 packs already published, and
+// the built-in packs, keep their digests; drop it with the next pack schema.
 const detection = z.object({
   // Only client-documented home variables; a pack cannot read any other environment value.
   clientHome: z.object({ from: z.literal('homeDir'), path: segments, envOverride: z.enum(['CODEX_HOME']).optional(),
@@ -34,9 +42,6 @@ const detection = z.object({
   files: z.object(Object.fromEntries(CLIENT_FILE_KEYS.map((key) =>
     [key, key === 'configPath' ? pathRef : pathRef.optional()]))).strict(),
   skillsRoot: pathRef,
-  // No longer read: agent-installer detects clients (rec#11 D-79). Accepted
-  // so the schema-1 packs already published, and the built-in packs that
-  // still carry it, keep their digests; drop it with the next pack schema.
   availableWhen: z.array(z.discriminatedUnion('probe', [
     z.object({ probe: z.literal('commandOnPath') }).strict(),
     z.object({ probe: z.literal('pathExists'), target: z.enum(['clientHome', ...CLIENT_FILE_KEYS]) }).strict()
