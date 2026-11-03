@@ -28,7 +28,12 @@ def recruitment_occupation(request):
     }
     role = roles.get(request.work_kind)
     if not role:
-        raise HTTPException(422, 'recruitment_occupation with a primary role is required for this work kind')
+        # Say what would work instead (rec#69): a known work kind, an explicit
+        # occupation, or an existing FLA, so a one-off step need not recruit.
+        raise HTTPException(422, (
+            f'recruitment_occupation with a primary role is required for this work kind ({request.work_kind}). '
+            f'Use a known work kind ({", ".join(sorted(roles))}), pass recruitment_occupation.role with an '
+            'active occupation key, or give the step to an existing FLA with lead_agent_id so no one is recruited.'))
     return ProjectAgentOccupationInput(role=role)
 
 

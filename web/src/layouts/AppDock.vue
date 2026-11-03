@@ -171,7 +171,9 @@ function escape() {
 .app-dock-item { transition: max-width var(--motion-spring) var(--motion-ease-spring), opacity var(--motion-medium) var(--motion-ease-out); }
 
 @media (max-width: 720px) {
-  .app-dock { bottom: calc(12px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); }
+  .app-dock { bottom: calc(12px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); transition: left var(--motion-spring) var(--motion-ease-spring); }
+  /* The island's button sits beside the dock (TeamIslandDocked.vue): the pair is centred, so the dock moves left by half of it. */
+  :root[data-island-docked] .app-dock { left: calc(50% - 29px); }
   /* A phone has no hover: the dock stays open. */
   .app-dock.is-folded:not(.is-open) .app-dock-item:not(.is-active) { max-width: 44px; overflow: visible; opacity: 1; }
   .app-dock.is-folded:not(.is-open) .app-dock-items { gap: 4px; }
@@ -180,6 +182,6 @@ function escape() {
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .app-dock { background: var(--color-surface); }
 }
-@media (prefers-reduced-motion: reduce) { .app-dock-link, .app-dock-link::after, .app-dock-pins, .app-dock-item { transition: none; } }
-:root[data-motion="reduced"] .app-dock-link, :root[data-motion="reduced"] .app-dock-link::after, :root[data-motion="reduced"] .app-dock-pins, :root[data-motion="reduced"] .app-dock-item { transition: none; }
+@media (prefers-reduced-motion: reduce) { .app-dock, .app-dock-link, .app-dock-link::after, .app-dock-pins, .app-dock-item { transition: none; } }
+:root[data-motion="reduced"] .app-dock, :root[data-motion="reduced"] .app-dock-link, :root[data-motion="reduced"] .app-dock-link::after, :root[data-motion="reduced"] .app-dock-pins, :root[data-motion="reduced"] .app-dock-item { transition: none; }
 </style>

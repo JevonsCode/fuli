@@ -38,7 +38,10 @@ async def require_active_occupations(store, space_id, keys):
         builtin_occupation_keys=BUILTIN_OCCUPATION_KEYS,
     )
     if not rows or not rows[0]['valid']:
-        occupation_error(422, 'occupation_inactive', 'Every occupation role and tag must be active in this personal space.')
+        # Name what was asked for and what exists, so the caller can pick one (rec#69).
+        occupation_error(422, 'occupation_inactive', (
+            f'Every occupation role and tag must be active in this personal space; asked for: {", ".join(keys)}. '
+            f'Built-in keys: {", ".join(BUILTIN_OCCUPATION_KEYS)}; custom ones are in the space\'s occupation catalog.'))
 
 
 class StoreOccupationCatalog:

@@ -174,6 +174,27 @@ test('fl stop refuses to kill a reused or unverifiable PID', async () => {
   assert.equal(result.console, 'unverified');
 });
 
+test('a console that cannot be verified keeps its graph Providers; restart refuses with nothing stopped', async () => {
+  const calls = [];
+  const deps = {
+    readConfig: () => ({ workspaces: [] }),
+    readState: () => ({ version: 4, pid: 27, url: 'http://127.0.0.1:2727' }),
+    fileExists: () => true,
+    isProcessAlive: () => true,
+    consoleHealth: async () => false,
+    waitForExit: async () => false,
+    stopProcess: () => calls.push('killed'),
+    stopProviders: async () => calls.push('providers'),
+    ensureRuntime: async () => calls.push('started')
+  };
+  const stopped = await stopLocalRuntime(input(), deps);
+  assert.equal(stopped.status, 'partial');
+  assert.equal(stopped.providers, 'kept');
+  await assert.rejects(restartLocalRuntime(input(), deps),
+    error => /restart was refused/.test(error.message) && error.nothingStopped === true);
+  assert.deepEqual(calls, []);
+});
+
 test('fl stop waits for a console that is already shutting down instead of failing', async () => {
   const calls = [];
   const result = await stopLocalRuntime(input(), {

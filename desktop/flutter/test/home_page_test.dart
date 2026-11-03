@@ -40,10 +40,10 @@ void main() {
     final (_, controller) = await showScenario(tester, 'ok');
 
     expect(find.text('FULI 正常工作'), findsOneWidget);
-    // A Chinese client's top line shows 复利 right of the mark.
+    // Even a Chinese client's top line shows FULI right of the mark (11-03).
     final wordmark = tester.getRect(find.byType(FuliWordmark));
-    final chinese = testBrand.chineseWordmark.viewBox;
-    expect(wordmark.width / wordmark.height, closeTo(chinese.width / chinese.height, .001));
+    final latin = testBrand.latinWordmark.viewBox;
+    expect(wordmark.width / wordmark.height, closeTo(latin.width / latin.height, .001));
     expect(wordmark.left, greaterThan(tester.getRect(find.byType(FuliMark)).right));
     expect(find.byTooltip('已安装 v0.22.0'), findsOneWidget);
     expect(find.text('已安装 v0.22.0'), findsNothing);

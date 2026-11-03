@@ -12,9 +12,8 @@ import 'package:fuli_desktop/src/ui/wordmark.dart';
 
 import 'support/brand.dart';
 
-Widget _framed(Widget child, {bool still = false, bool chinese = false}) => FuliBrandScope(
+Widget _framed(Widget child, {bool still = false}) => FuliBrandScope(
       brand: testBrand,
-      chinese: chinese,
       child: MaterialApp(
         home: MediaQuery(data: MediaQueryData(disableAnimations: still), child: Center(child: child)),
       ),
@@ -90,12 +89,10 @@ void main() {
     expect(testBrand.latinWordmark.viewBox.width, greaterThan(testBrand.chineseWordmark.viewBox.width));
   });
 
-  testWidgets('the wordmark is 复利 in Chinese and FULI otherwise, 15 px tall', (tester) async {
-    for (final (chinese, wordmark) in [(true, testBrand.chineseWordmark), (false, testBrand.latinWordmark)]) {
-      await tester.pumpWidget(_framed(const FuliWordmark(), chinese: chinese));
-      final box = wordmark.viewBox;
-      expect(tester.getSize(find.byType(FuliWordmark)), Size(15 * box.width / box.height, 15));
-    }
+  testWidgets('the wordmark is FULI in every language, 15 px tall', (tester) async {
+    await tester.pumpWidget(_framed(const FuliWordmark()));
+    final box = testBrand.latinWordmark.viewBox;
+    expect(tester.getSize(find.byType(FuliWordmark)), Size(15 * box.width / box.height, 15));
   });
 
   testWidgets('the mark is the master geometry from 28 px up and the micro one below', (tester) async {

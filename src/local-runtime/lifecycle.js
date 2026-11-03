@@ -75,8 +75,12 @@ export async function stopLocalRuntime(input, dependencies = {}) {
   const activeRuntimeMode = state?.runtimeSettings?.graphRuntimeMode ??
     runtimeSettings.graphRuntimeMode;
 
+  // A console that could not be identified is still serving; stopping its
+  // graph providers would leave it running without a graph (rec#70).
   let providers = 'not_initialized';
-  if (deps.fileExists(input.paths.graphEnvPath)) {
+  if (consoleResult === 'unverified') {
+    providers = 'kept';
+  } else if (deps.fileExists(input.paths.graphEnvPath)) {
     await deps.stopProviders(input.paths, input.paths.graphEnvPath, {
       personalOnly: !managesDevelopmentWorkspace,
       runtimeMode: activeRuntimeMode,
@@ -100,7 +104,10 @@ export async function restartLocalRuntime(input, dependencies = {}) {
     ?.runtimeSettings?.graphRuntimeMode;
   const stopped = await stopLocalRuntime(input, dependencies);
   if (stopped.status === 'partial') {
-    throw new Error('Could not safely verify the existing local UI process; restart was refused.');
+    throw Object.assign(
+      new Error('Could not safely verify the existing local UI process; restart was refused.'),
+      { nothingStopped: stopped.console === 'unverified' }
+    );
   }
   const started = await startLocalRuntime({ ...input, previousRuntimeMode }, dependencies);
   return { stopped, ...started, status: 'restarted' };

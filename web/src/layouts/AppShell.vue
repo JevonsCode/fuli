@@ -15,7 +15,7 @@ import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
 import { useRoundtableLive } from '@/features/roundtables/roundtable-live'
-import { currentLocale, t } from '@/i18n'
+import { t } from '@/i18n'
 import { fuliWordmarkUrl } from '@/lib/brand'
 import { vWindowDrag } from '@/lib/desktop-client'
 import { SPRING, motionConfigReduced } from '@/lib/motion'
@@ -117,10 +117,11 @@ watchEffect(() => {
       <div class="app-topbar-inner">
         <div class="app-brand">
           <BrandEasterEgg compact />
-          <!-- The official wordmark (复利 in Chinese, FULI in English), centred on the mark as in the
+          <!-- The official FULI wordmark in every language (Jevons 11-03: the title bar always says FULI,
+               never 复利, and switching languages leaves it alone), centred on the mark as in the
                brand lockup; the service dot sits on its middle. -->
           <span class="app-brand-word">
-            <img class="app-wordmark" :src="fuliWordmarkUrl(currentLocale())" :alt="t('shell.brand')" draggable="false" data-wordmark />
+            <img class="app-wordmark" :src="fuliWordmarkUrl('en-US')" alt="FULI" draggable="false" data-wordmark />
             <!-- The service dot says ready on its own; its words show only when the service is not ready. -->
             <span class="app-runtime" :class="{ 'is-ready': runtimeReady }" role="status"
               :title="t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')" data-runtime>

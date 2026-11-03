@@ -22,7 +22,9 @@ function taskNotificationEnvelope(prompt) {
 }
 
 // One outer <ci-monitor-event>…</ci-monitor-event> with content; nested events
-// are part of it, two envelopes side by side are not one.
+// are part of it, two envelopes side by side are not one. The desktop app's
+// own text names the tag in prose, an opening tag that is never closed, so
+// only a close before the end ends the envelope early (rec#15).
 function ciMonitorEnvelope(prompt) {
   const text = typeof prompt === 'string' ? prompt.trim() : '';
   if (!text.startsWith('<ci-monitor-event>') || !text.endsWith('</ci-monitor-event>')) return false;
@@ -31,6 +33,6 @@ function ciMonitorEnvelope(prompt) {
     depth += tag[1] ? -1 : 1;
     if (depth < 0 || (depth === 0 && tag.index + tag[0].length !== text.length)) return false;
   }
-  return depth === 0 && text.length > '<ci-monitor-event></ci-monitor-event>'.length
+  return text.length > '<ci-monitor-event></ci-monitor-event>'.length
     && Boolean(text.slice('<ci-monitor-event>'.length, -'</ci-monitor-event>'.length).trim());
 }

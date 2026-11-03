@@ -322,10 +322,20 @@ test('a clone under another folder name resolves by its origin remote', (t) => {
   }
 });
 
-test('the folder name still wins over the remote, and the remote never matches partially', (t) => {
+// #632: a clone whose folder is named after another project belongs to its remote.
+test('the remote wins over the folder name, and the remote never matches partially', (t) => {
   const { clone } = cloneFixture(t, 'projectb', originConfig('https://github.com/JevonsCode/fuli.git'));
-  assert.equal(resolvePersonalProjectPath(clone, [repositoryProject('fuli', 'https://github.com/JevonsCode/fuli'),
-    { project_id: 'projectb' }]).personalProjectId, 'projectb');
+  assert.deepEqual(resolvePersonalProjectPath(clone, [repositoryProject('fuli', 'https://github.com/JevonsCode/fuli'),
+    { project_id: 'projectb' }]), { status: 'matched', basis: 'git_remote', personalProjectId: 'fuli' });
+  // A project without a recorded repository is still named by its folder.
+  assert.equal(resolvePersonalProjectPath(clone, [{ project_id: 'projectb' }]).basis, 'repository_root');
+  // One that records another repository is not this checkout, and no registration under its ID is offered.
+  for (const projects of [[repositoryProject('projectb', 'https://github.com/someone/projectb')],
+    [repositoryProject('ProjectB', 'git@github.com:someone/projectb.git')]]) {
+    assert.deepEqual(resolvePersonalProjectPath(clone, projects), {
+      status: 'unmatched', basis: null, personalProjectId: null, reason: 'repository_remote_conflict'
+    });
+  }
   for (const uri of ['https://github.com/JevonsCode/fuli-web', 'https://github.com/JevonsCode', 'https://github.com/jevonscode/fuli',
     'https://github.com/JevonsCode/fuli/tree/main', 'https://gitlab.com/JevonsCode/fuli']) {
     assert.deepEqual(resolvePersonalProjectPath(clone, [repositoryProject('fuli', uri)]), {
@@ -360,6 +370,8 @@ test('a worktree reads the origin remote from its common directory', (t) => {
   assert.equal(resolvePersonalProjectPath(worktree, [{ project_id: 'repo-copy' }]).basis, 'git_worktree_origin');
   assert.equal(resolvePersonalProjectPath(worktree, [repositoryProject('fuli', 'https://github.com/JevonsCode/other')])
     .repositoryProjectId, 'repo-copy');
+  assert.equal(resolvePersonalProjectPath(worktree, [repositoryProject('repo-copy', 'https://github.com/JevonsCode/other')])
+    .reason, 'repository_remote_conflict');
 });
 
 test('a clone without an origin remote or with a local origin stays unmatched', (t) => {

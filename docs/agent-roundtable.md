@@ -14,9 +14,9 @@ All tools are on the normal `fuli` MCP server.
 | --- | --- |
 | `find_agents` | Active FULI Agents, their clients and recent Claude Code / Codex conversations |
 | `message_agent` | Ask an Agent; returns its answer, or queues the message |
-| `read_agent_messages` | Messages waiting for the current task's Agent, plus the person's new answers to its attention requests |
+| `read_agent_messages` | Messages waiting for the current task's Agent, replies to asks it sent (whole body, each once), plus the person's new answers to its attention requests |
 | `reply_agent_message` | Answer one of them |
-| `read_agent_thread` | Every message of one thread |
+| `read_agent_thread` | One thread, whole bodies; `after`/`limit` page it and `nextAfter` starts the next page |
 
 `message_agent` takes `to` (Agent ID, exact name, or employee number such as
 `FLA 000001`), `body`, the caller's
@@ -70,6 +70,19 @@ capability. Members send their results through the project lead.
    wake timed out), the message waits. The next time that Agent starts a task,
    task entry includes it under `agent_messages`, and the Agent answers with
    `reply_agent_message`.
+3. **Reply to the asker.** A reply the asker did not get back from its own
+   `message_agent` call (an inbox, desktop-app or late remote reply) waits for it
+   (`delivery_status`, roundtable format 6). The asker's next task entry in the asking
+   project announces it once under `agent_replies` (thread ID, sender, a short
+   preview); `read_agent_messages` returns the whole body once under `replies`, five
+   at a time. A reply already returned by `message_agent` or
+   `get_agent_message_status` counts as read. Replies written before format 6 are not
+   announced; `read_agent_thread` still shows them.
+
+Roundtable tools return message bodies whole: a result that does not fit fails with
+`result_too_large` instead of cutting a body, and `read_agent_thread` then takes a
+smaller `limit`. A thread ID passed to `agent_chat` is answered with
+`chat_not_found` naming `read_agent_thread`.
 
 A thread holds at most 24 messages and at most 3 asks may be waiting on each other
 inside one thread, so Agents cannot loop forever. Woken Agents run read-only.

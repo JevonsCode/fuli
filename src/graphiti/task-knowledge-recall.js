@@ -417,6 +417,8 @@ function compactItem(item, content) {
     confirmation_status: item.confirmation_status ?? null,
     source_uris: item.source_uris ?? [],
     score: item.score ?? null,
+    // Kept so the budget can refuse a historical version (knowledge-result-budget.js).
+    ...(item.invalid_at ? { invalid_at: item.invalid_at } : {}),
     ...content
   };
 }
