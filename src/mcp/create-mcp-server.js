@@ -43,6 +43,10 @@ import {
 
 const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   agent_chat: 512 * 1024,
+  message_agent: 128 * 1024,
+  get_agent_message_status: 128 * 1024,
+  read_agent_messages: 1024 * 1024,
+  read_agent_thread: 600 * 1024,
   find_agents: 128 * 1024,
   read_agent_conversation: 600 * 1024,
   list_agent_conversations: 32 * 1024,
@@ -106,6 +110,9 @@ const NATIVE_CHOICE_TOOLS = new Set(['checkpoint_task_knowledge', 'review_with_t
   'list_judgments', 'request_agent_attention', 'list_agent_attention']);
 // A truncated result would be a misleading partial file, so these fail instead.
 const COMPLETE_RESULT_TOOLS = new Set(['export_project_agent_memory', 'get_agent_handoff']);
+// Roundtable message bodies are delivered whole or not at all (rec#77): a cut
+// reply reads as complete. read_agent_thread pages with after/limit instead.
+const WHOLE_MESSAGE_TOOLS = new Set(['message_agent', 'get_agent_message_status', 'read_agent_messages', 'read_agent_thread']);
 const NATIVE_CONTEXT = Symbol('fuli.nativeMcpRequestContext');
 
 export function createMcpServer(
@@ -354,6 +361,7 @@ async function invokeTool(tool, input, requestContext = null) {
       ? Math.max(TOOL_RESULT_LIMIT_BYTES[tool.definition.name] ?? 0, 32 * 1024)
       : TOOL_RESULT_LIMIT_BYTES[tool.definition.name];
     if (tool.definition.name === 'agent_chat') return completeToolResult(parseChatResult(value), limitBytes);
+    if (WHOLE_MESSAGE_TOOLS.has(tool.definition.name)) return completeToolResult(value, limitBytes);
     if (['search_knowledge_graph', 'search_current_project_knowledge'].includes(tool.definition.name)
       && value?.retrieval_budget) return completeToolResult(value, limitBytes);
     if (['begin_task_context', 'get_collaboration_preferences', 'read_task_preferences'].includes(tool.definition.name)) {

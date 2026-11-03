@@ -3,7 +3,9 @@ import { PeerError } from '../peer/protocol.js';
 import { createChatService } from './chat-service.js';
 
 // The current task supplies the sender. Neither MCP nor HTTP accepts a from ID.
-export function createAgentChat({ host, peer = null, store, agents, idFactory, messageAgent, canWake, waitUntilIdle, attentionInbox }) {
+// isThread: whether an ID names a message_agent thread, which agent_chat cannot read.
+export function createAgentChat({ host, peer = null, store, agents, idFactory, messageAgent, canWake, waitUntilIdle, attentionInbox,
+  isThread = () => false }) {
   const scope = host.spaceId();
   const local = createChatService({ store: new Proxy({}, { get: (_, key) => store.chat[key] }),
     transaction: work => store.transaction(work), scope, transport: 'local', idFactory,
@@ -72,7 +74,11 @@ export function createAgentChat({ host, peer = null, store, agents, idFactory, m
       const result = await local({ address: `local:${sender.agentId}` }, request, { ...options, authorize,
         inbox: attentionInbox.forWait(sender.agentId, task.personalProjectId),
         onMessage: delivery => wakes.dispatch({ ...delivery, targets: delivery.targets.filter(address =>
-          currentAgents.some(agent => address === `local:${agent.agentId}` && canWake(agent))) }, { taskContextToken, sourceApplication, authorize }) });
+          currentAgents.some(agent => address === `local:${agent.agentId}` && canWake(agent))) }, { taskContextToken, sourceApplication, authorize }) })
+        .catch(error => {
+          if (error.code !== 'chat_not_found' || !request.chatId || !isThread(request.chatId)) throw error;
+          throw new PeerError('chat_not_found', `${request.chatId} is a message_agent thread, not a chat: read it with read_agent_thread`, 404);
+        });
       if (request.action === 'list' && !transport && peer?.chat && peer.configured()) {
         try {
           const remote = await peer.chat({ request, taskContextToken, sourceApplication, agentId: sender.agentId,

@@ -50,7 +50,8 @@ export function createStandaloneMcp({ roundtable, host, store, client, cwd, woke
       run: async input => roundtable.messageStatus(await own(input))
     },
     read_agent_messages: {
-      title: 'Read messages for me', description: 'Questions other Agents sent you that still wait for an answer.',
+      title: 'Read messages for me',
+      description: 'Questions other Agents sent you that still wait for an answer, and replies to asks you sent (each returned once).',
       inputSchema: {},
       run: async input => roundtable.readMessages(await own(input))
     },
@@ -60,8 +61,8 @@ export function createStandaloneMcp({ roundtable, host, store, client, cwd, woke
       run: writable(async input => roundtable.replyMessage(await own(input)))
     },
     read_agent_thread: {
-      title: 'Read a thread', description: 'Every message of one thread.',
-      inputSchema: { threadId: text(128) },
+      title: 'Read a thread', description: 'Messages of one thread with whole bodies; after/limit page it, nextAfter continues.',
+      inputSchema: { threadId: text(128), after: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(24).optional() },
       run: input => roundtable.thread(input)
     },
     agent_chat: {
