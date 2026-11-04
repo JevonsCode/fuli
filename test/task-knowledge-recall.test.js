@@ -359,3 +359,32 @@ test('a person who wants every answer checked against the files gets no confirme
   assert.equal(recall.status, 'matched');
   assert.equal('confirmed_use' in recall, false);
 });
+
+// rec#63: facts are stored under their concept; queries of file paths and
+// category words found none of them, and "no match" stopped the search.
+test('a change request full of file paths still queries the fact it names by concept', () => {
+  const plan = planTaskKnowledgeRecall('Make `fetchRate` in `src/rates.js` retry failed requests following the retry '
+    + 'policy we agreed for the rates client. Keep the signature, so tests do not wait. Add tests to `test/rates.test.js`.');
+  assert.equal(plan.status, 'planned');
+  assert.equal(plan.queries[0], 'retry failed requests policy agreed');
+  assert.ok(plan.queries.every((query) => !/tests do not wait|not wait/.test(query)), plan.queries.join(' | '));
+});
+
+test('a convention, an owner or "the way we" do something is a recall intent of its own', () => {
+  const owner = planTaskKnowledgeRecall('Add the CODEOWNERS entry for `src/ledger/` naming the team that owns the ledger code.');
+  assert.deepEqual(owner.trigger_categories, ['project_convention']);
+  assert.equal(owner.queries[0], 'codeowners naming team owns ledger');
+  assert.deepEqual(planTaskKnowledgeRecall('Add a `NegativeAmountError` following our error code convention.').queries[0],
+    'our error code convention');
+  assert.equal(planTaskKnowledgeRecall('按我们约定的重试策略改一下 fetchRate').queries[0], '按约定重试策略改 fetchrate');
+});
+
+test('a search that found nothing says it was one quick search, not the whole store', async () => {
+  const recall = await recallTaskKnowledge(recallApplication([]), { personalProjectId: 'delta' },
+    'Use the retry policy we agreed for the rates client.');
+  assert.equal(recall.status, 'no_match');
+  assert.match(recall.next, /search_current_project_knowledge/);
+  const found = await recallTaskKnowledge(recallApplication([ledgerNote('n', 'confirmed', 2)]), { personalProjectId: 'delta' },
+    'Use the amount format we decided previously for Delta Ledger.');
+  assert.equal(found.next, undefined);
+});
