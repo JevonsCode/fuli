@@ -7,6 +7,8 @@ export const doctorMessages = {
     hide: '收起',
     repair: '自动修复',
     repairing: '正在自动修复：重新连接客户端…',
+    repairingDataDir: '正在自动修复：数据目录只留给你自己和系统…',
+    repairingBoth: '正在自动修复：重新连接客户端，数据目录只留给你和系统…',
     repaired: '已自动修复 {count} 件事',
     repairFailed: '有 {count} 件没能自动修复：{reason}',
     repairFailedShort: '自动修复没完成',
@@ -21,6 +23,7 @@ export const doctorMessages = {
       sessions_outdated: '打开的会话还在用旧版 FULI',
       update_left_work: '上次更新还有没做完的事',
       hook_trust_untrusted: '有客户端的 FULI hooks 还没被信任',
+      data_dir_shared: '数据目录其他账户也能读',
       other: '还有一件事需要你看看',
     },
     hints: {
@@ -34,6 +37,7 @@ export const doctorMessages = {
       updateReconnect: '新版已经装好，客户端还没重新连接；自动修复会补上。',
       updateFailed: '更新没有完成：{reason}',
       hookTrustUntrusted: '请在 {client} 里打开 /hooks，审阅并信任 FULI 的 hooks。',
+      dataDirShared: '自动修复会只留给你自己和系统。',
     },
     otherClient: '其他 Agent',
     sessionLinks: {
@@ -52,6 +56,8 @@ export const doctorMessages = {
     hide: 'Hide',
     repair: 'Fix automatically',
     repairing: 'Fixing automatically: reconnecting clients…',
+    repairingDataDir: 'Fixing automatically: limiting the data folder to you and the system…',
+    repairingBoth: 'Fixing automatically: reconnecting clients, limiting the data folder to you and the system…',
     repaired: 'Fixed {count} things automatically',
     repairFailed: '{count} could not be fixed automatically: {reason}',
     repairFailedShort: 'Automatic repair did not finish',
@@ -66,6 +72,7 @@ export const doctorMessages = {
       sessions_outdated: 'Open sessions still run an older FULI',
       update_left_work: 'The last update left something undone',
       hook_trust_untrusted: 'A client’s FULI hooks are not trusted yet',
+      data_dir_shared: 'Other accounts can read the data folder',
       other: 'Something else needs a look',
     },
     hints: {
@@ -79,6 +86,7 @@ export const doctorMessages = {
       updateReconnect: 'The new version is installed but the clients were not reconnected; fixing automatically finishes that.',
       updateFailed: 'The update did not finish: {reason}',
       hookTrustUntrusted: 'Open /hooks in {client} and trust FULI’s hooks there.',
+      dataDirShared: 'Fixing automatically limits it to you and the system.',
     },
     otherClient: 'Other Agent',
     sessionLinks: {

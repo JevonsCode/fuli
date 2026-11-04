@@ -132,6 +132,9 @@ export function formatSetupResult(result, plan, copy = String) {
       ? 'Fuli setup needs knowledge recovery before local stores are ready.'
       : 'Fuli started, but one or more Agents are not connected.'];
   if (result.knowledgeRecovery) lines.push(knowledgeReconciliationMessage(result.knowledgeRecovery));
+  if (result.dataDirPrivate === false) {
+    lines.push('Data directory: other accounts may still read it; the console\'s 体检 (doctor) can limit it to you and SYSTEM.');
+  }
   lines.push(...(result.runtime.portMoves ?? []).map(portMoveSentence));
   if (result.runtime.url) lines.push(`Open: ${copy(result.runtime.url)}`);
   if (result.runtime.lan === true) {

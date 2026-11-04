@@ -446,6 +446,7 @@ class FuliController extends ChangeNotifier {
       'client_outdated' => strings.reconnecting(Strings.clientName(
           '${item.data['label'] ?? item.data['clientId'] ?? ''}')),
       'update_left_work' => strings.reconnectingAgents,
+      'data_dir_shared' => strings.restrictingDataDir,
       _ => strings.repairingOne,
     };
   }
