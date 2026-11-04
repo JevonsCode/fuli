@@ -15,6 +15,11 @@ export const debugTurnsMessages = {
     legend: '来源',
     sources: { person: '你', fuli: 'FULI', ai: 'AI', host: '客户端', not_visible: 'FULI 看不到' },
     kinds: {
+      model_system: '系统提示词',
+      model_client_tools: '客户端工具定义',
+      model_fuli_tools: 'FULI 工具定义',
+      model_context: '随消息附带的内容',
+      model_usage: 'Token 用量',
       system_prompt: '系统提示',
       no_transcript: '没有对话记录',
       mcp_instructions: 'FULI MCP 说明',
@@ -62,6 +67,11 @@ export const debugTurnsMessages = {
     legend: 'Sources',
     sources: { person: 'You', fuli: 'FULI', ai: 'AI', host: 'Client', not_visible: 'Not visible to FULI' },
     kinds: {
+      model_system: 'System prompt',
+      model_client_tools: 'Client tool definitions',
+      model_fuli_tools: 'FULI tool definitions',
+      model_context: 'Sent with the message',
+      model_usage: 'Token usage',
       system_prompt: 'System prompt',
       no_transcript: 'No transcript',
       mcp_instructions: 'FULI MCP instructions',

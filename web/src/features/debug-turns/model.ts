@@ -46,7 +46,7 @@ export const partIsLong = (item: DebugPart) => item.bytes > LONG_PART_BYTES || i
 
 // The record's labels: a count for the tool list and the history, the event or
 // tool name otherwise. An unknown kind keeps its code.
-const COUNTED: Record<string, string> = { mcp_tools: 'debugTurns.toolCount', history: 'debugTurns.messageCount' }
+const COUNTED: Record<string, string> = { mcp_tools: 'debugTurns.toolCount', model_client_tools: 'debugTurns.toolCount', model_fuli_tools: 'debugTurns.toolCount', history: 'debugTurns.messageCount' }
 
 /** The design token that colours a source, for its parts and its legend entry. */
 export const sourceColour = (source: DebugSource) => `var(--color-source-${source.replace('_', '-')})`

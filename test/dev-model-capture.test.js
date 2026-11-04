@@ -6,7 +6,9 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { startProxy } from '../scripts/dev-model-capture/proxy.js';
-import { reportLine, requestSections, usageFrom } from '../scripts/dev-model-capture/report.js';
+import { opensTurn, reportLine, requestParts, requestSections, usageFrom } from '../scripts/dev-model-capture/report.js';
+import { buildModelRequestRecord } from '../src/debug-turns/record.js';
+import { debugTurnStore } from '../src/debug-turns/store.js';
 
 const body = { model: 'synthetic-model', system: [{ type: 'text', text: 'Synthetic system.' }],
   tools: [{ name: 'Read', description: 'x' }, { name: 'mcp__fuli__fuli_call', description: 'y' }],
@@ -71,4 +73,32 @@ test('the proxy passes the request through unchanged and keeps credentials out o
   const stored = await readFile(join(directory, file), 'utf8');
   assert.doesNotMatch(stored, /synthetic-secret-key/);
   assert.equal(JSON.parse(stored).usage.input_tokens, 7);
+});
+
+test('the request that opens a turn becomes a Debug record with everything in it', () => {
+  assert.equal(opensTurn(body), true);
+  assert.equal(opensTurn({ ...body, tools: [] }), false, 'a side request such as a title is left out');
+  assert.equal(opensTurn({ ...body, messages: [{ role: 'user', content: [{ type: 'tool_result', content: 'x' }] }] }), false);
+  const { prompt, parts } = requestParts(body, { input_tokens: 7 });
+  assert.equal(prompt, 'Hello.');
+  const record = buildModelRequestRecord({ sourceApplication: 'claude_code', prompt, parts });
+  const kinds = record.parts.map(({ source, kind }) => `${source}:${kind}`);
+  assert.deepEqual(kinds, ['host:model_system', 'host:model_client_tools', 'fuli:model_fuli_tools', 'fuli:model_context', 'person:prompt', 'host:model_usage']);
+  assert.match(record.parts[0].text, /Synthetic system/);
+  assert.ok(record.totals.fuli > 0);
+});
+
+test('with a data folder the proxy puts the turn on the Debug page', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'fuli-model-capture-'));
+  const upstream = createServer((request, response) => {
+    request.resume();
+    request.on('end', () => { response.writeHead(200); response.end('{"usage":{"input_tokens":7}}'); });
+  }).listen(0, '127.0.0.1');
+  await new Promise(done => upstream.once('listening', done));
+  const proxy = await startProxy({ port: 0, upstream: `http://127.0.0.1:${upstream.address().port}`, directory: join(directory, 'raw'), dataDir: directory, log: () => {} });
+  t.after(async () => { proxy.close(); upstream.close(); await rm(directory, { recursive: true, force: true }); });
+  await (await fetch(`http://127.0.0.1:${proxy.address().port}/v1/messages`, { method: 'POST', body: JSON.stringify(body) })).text();
+  await new Promise(done => setTimeout(done, 50));
+  const [listed] = debugTurnStore(directory).list();
+  assert.equal(listed.promptLine, 'Hello.');
 });

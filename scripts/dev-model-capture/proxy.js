@@ -4,12 +4,15 @@
 // hook can't see a client's system prompt or built-in tools).
 //
 //   node scripts/dev-model-capture/proxy.js [--port 8788] [--upstream https://api.anthropic.com] [--out <dir>]
+//     [--data-dir <FULI data folder>] [--client claude_code]
 //   ANTHROPIC_BASE_URL=http://127.0.0.1:8788 claude -p "..."
 //   node scripts/dev-model-capture/proxy.js --report [--out <dir>] [--last 5]
 //
 // It listens on this computer only and forwards everything unchanged. Request
 // headers are never written, so a key or sign-in token stays out of the files.
 // The files do hold the full prompt: they stay in --out and the newest 50 are kept.
+// With --data-dir, the request that opens each turn also appears on the console's
+// Debug page, secrets masked, among that computer's debug records.
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
@@ -17,7 +20,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { reportLine, requestSections, usageFrom } from './report.js';
+import { buildModelRequestRecord } from '../../src/debug-turns/record.js';
+import { debugTurnStore } from '../../src/debug-turns/store.js';
+import { opensTurn, reportLine, requestParts, requestSections, usageFrom } from './report.js';
 
 const KEEP = 50;
 const HOP_HEADERS = new Set(['host', 'connection', 'content-length', 'accept-encoding', 'transfer-encoding']);
@@ -32,15 +37,18 @@ function keepNewest(directory) {
   for (const name of files.slice(0, Math.max(0, files.length - KEEP))) rmSync(join(directory, name), { force: true });
 }
 
-function record(directory, sequence, body, responseText) {
+function record({ directory, dataDir, client }, sequence, body, responseText) {
   const parsed = JSON.parse(body);
   const entry = { at: new Date().toISOString(), model: parsed.model ?? null, sections: requestSections(parsed),
     usage: usageFrom(responseText), body: parsed };
   writeFileSync(join(directory, `${entry.at.replace(/[:.]/g, '-')}-${sequence}.json`), JSON.stringify(entry));
   keepNewest(directory);
+  if (dataDir && opensTurn(parsed)) {
+    debugTurnStore(dataDir).write(buildModelRequestRecord({ sourceApplication: client, ...requestParts(parsed, entry.usage) }));
+  }
 }
 
-export function startProxy({ port, upstream, directory, log = console.log }) {
+export function startProxy({ port, upstream, directory, dataDir = null, client = 'claude_code', log = console.log }) {
   mkdirSync(directory, { recursive: true });
   const target = new URL(upstream);
   const send = target.protocol === 'https:' ? httpsRequest : httpRequest;
@@ -62,7 +70,7 @@ export function startProxy({ port, upstream, directory, log = console.log }) {
           outgoing.end();
           if (incoming.method !== 'POST' || !/\/messages(\?|$)/.test(incoming.url ?? '')) return;
           try {
-            record(directory, ++sequence, body.toString('utf8'), Buffer.concat(seen).toString('utf8'));
+            record({ directory, dataDir, client }, ++sequence, body.toString('utf8'), Buffer.concat(seen).toString('utf8'));
             log(`captured ${incoming.url} (${body.length} bytes)`);
           } catch (error) { log(`not captured: ${error?.name ?? 'error'}`); }
         });
@@ -91,7 +99,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   else {
     const port = Number(option(args, '--port', '8788'));
     const upstream = option(args, '--upstream', 'https://api.anthropic.com');
-    await startProxy({ port, upstream, directory });
+    await startProxy({ port, upstream, directory, dataDir: option(args, '--data-dir', null), client: option(args, '--client', 'claude_code') });
     console.log(`model capture on http://127.0.0.1:${port} -> ${upstream}, files in ${directory}`);
   }
 }
