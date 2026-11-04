@@ -77,6 +77,7 @@ const REQUIRED_AGENT_MUTATIONS = new Map([
   ['PATCH /api/external-knowledge/conflict-policy', 'update_external_knowledge_conflict_policy'],
   ['PATCH /api/external-knowledge/conflict-policy/default', 'update_external_knowledge_conflict_policy'],
   ['DELETE /api/projects/:projectId', 'delete_public_project'],
+  ['POST /api/project-agents/:agentId/dismissal', 'dismiss_project_agent'],
 ]);
 
 // rec#11 D-81: never delegable, whatever the person's AI permissions say.

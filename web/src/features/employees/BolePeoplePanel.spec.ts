@@ -5,9 +5,11 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { defineComponent, h, ref } from 'vue'
 
-const { getJson } = vi.hoisted(() => ({ getJson: vi.fn() }))
-vi.mock('@/api/client', () => ({ getJson }))
+const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
+vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson, postJson }))
 
+import { ApiError } from '@/api/client'
+import { useConsoleStore } from '@/stores/console'
 import BolePeoplePanel from './BolePeoplePanel.vue'
 import { provideWorkbenchToolbarActions } from './workbench-toolbar'
 
@@ -15,11 +17,28 @@ const projects = [
   { project_id: 'project-a', personal_space_id: 'space-a', profile: { name: '复利' } },
   { project_id: 'project-b', personal_space_id: 'space-a', profile: { name: '第二项目' } },
 ]
+const insufficient = (sample: number) => ({ status: 'insufficient_data', sample, label: '数据不足' })
+const scoreCard = (dimensions: Record<string, unknown> = {}) => ({
+  minimumSample: 3,
+  dimensions: { completion: insufficient(0), firstPass: insufficient(0), userFeedback: insufficient(0), review: insufficient(0), ...dimensions },
+  toolFlags: [], disputedReviewCount: 0, staleReviewCount: 0, asOf: '2026-10-20T08:00:00.000Z',
+})
+const researcherCard = {
+  ...scoreCard({
+    completion: { status: 'scored', sample: 8, passed: 4, rate: 0.5, tier: { label: 'B', evidenceCount: 8 } },
+    firstPass: { status: 'scored', sample: 4, passed: 4, rate: 1, tier: { label: 'S', evidenceCount: 4 } },
+    userFeedback: insufficient(2),
+  }),
+  toolFlags: [{ dimension: 'completion', executorId: 'executor-b', rate: 0, comparedExecutorId: 'executor-a', comparedRate: 1 }],
+  disputedReviewCount: 1,
+}
 
 let router: Router
 function mountPanel() {
   return mount(BolePeoplePanel, { props: { personalSpaceId: 'space-a', projects }, global: { plugins: [router] } })
 }
+const listReads = () => getJson.mock.calls.map(([url]) => url as string).filter(url => /^\/api\/project-agent(s|-tasks|-recruitments)\?/.test(url))
+const agentCard = (wrapper: ReturnType<typeof mountPanel>, name: string) => wrapper.findAll('.bole-agent-card').find(card => card.text().includes(name))!
 
 beforeEach(async () => {
   router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
@@ -27,7 +46,10 @@ beforeEach(async () => {
   await router.isReady()
   setActivePinia(createPinia())
   getJson.mockReset()
+  postJson.mockReset()
   getJson.mockImplementation(async (url: string) => {
+    if (url.includes('/score-card?')) return url.includes('agent.researcher') ? researcherCard : scoreCard()
+    if (url.startsWith('/api/project-agent-coordination-policy?')) return { teamLeadAgentId: 'employee.jefa' }
     if (url.startsWith('/api/project-agents?')) return { agents: [
       {
         agent_id: 'employee.bole', personal_space_id: 'space-a',
@@ -165,7 +187,7 @@ describe('Bole people panel', () => {
     expect(refresh.textContent).toContain('刷新')
     refresh.click()
     await flushPromises()
-    expect(getJson).toHaveBeenCalledTimes(6)
+    expect(listReads()).toHaveLength(6)
     wrapper.unmount()
     target.remove()
   })
@@ -199,7 +221,7 @@ describe('Bole people panel', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    expect(getJson.mock.calls.map(([url]) => url)).toEqual([
+    expect(listReads()).toEqual([
       '/api/project-agents?personalSpaceId=space-a',
       '/api/project-agent-tasks?personalSpaceId=space-a&limit=200',
       '/api/project-agent-recruitments?personalSpaceId=space-a',
@@ -241,7 +263,7 @@ describe('Bole people panel', () => {
     await roleButton.trigger('click')
     expect(wrapper.findAll('.bole-agent-card')).toHaveLength(1)
     expect(wrapper.get('.bole-agent-card').text()).toContain('Bole')
-    expect(getJson).toHaveBeenCalledTimes(3)
+    expect(listReads()).toHaveLength(3)
   })
 
   it('supports no selected projects, unassigned Agents and clearing filters', async () => {
@@ -299,5 +321,156 @@ describe('Bole people panel', () => {
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
     expect(getJson).toHaveBeenCalledTimes(6)
+  })
+
+  describe('performance', () => {
+    it('shows each scored dimension with its evidence, and too little data as just that', async () => {
+      const wrapper = mountPanel()
+      await flushPromises()
+      expect(getJson).toHaveBeenCalledWith('/api/project-agents/agent.researcher/score-card?personalSpaceId=space-a', expect.anything())
+      const line = agentCard(wrapper, 'Researcher').get('[data-bole-performance]')
+      expect(line.get('[data-dimension="completion"]').text()).toBe('完成 B · 8 条')
+      expect(line.get('[data-dimension="firstPass"]').text()).toBe('一次通过 S · 4 条')
+      expect(line.text()).toContain('2 项数据不足')
+      expect(agentCard(wrapper, 'Bole').get('[data-bole-performance]').text()).toBe('绩效数据不足')
+      expect(wrapper.find('.bole-controls [role="status"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('keeps one team indicator while the cards are read, and a failed read is never a result', async () => {
+      let release = (_: unknown) => {}
+      const original = getJson.getMockImplementation()!
+      getJson.mockImplementation(async (url: string) => {
+        if (url.includes('employee.jefa/score-card')) return new Promise((resolve) => { release = resolve })
+        if (url.includes('agent.researcher/score-card')) throw new Error('暂时不可用')
+        return original(url)
+      })
+      const wrapper = mountPanel()
+      await flushPromises()
+      expect(wrapper.findAll('[aria-label="正在读取团队绩效…"]')).toHaveLength(1)
+      expect(agentCard(wrapper, 'Jefa').get('[data-bole-performance]').text()).toBe('—')
+      const failed = agentCard(wrapper, 'Researcher')
+      expect(failed.get('[data-bole-performance]').text()).toBe('绩效暂时读不到')
+
+      await failed.get('[data-bole-open-performance]').trigger('click')
+      expect(wrapper.get('dialog [role="alert"]').text()).toContain('绩效读取失败')
+      getJson.mockImplementation(original)
+      await wrapper.get('dialog [role="alert"] button').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('dialog [role="alert"]').exists()).toBe(false)
+      expect(wrapper.get('dialog [data-dimension="completion"]').text()).toContain('50%')
+      release(scoreCard())
+      await flushPromises()
+      expect(wrapper.find('[aria-label="正在读取团队绩效…"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('opens a person into separate dimensions with no total', async () => {
+      const wrapper = mountPanel()
+      await flushPromises()
+      await agentCard(wrapper, 'Researcher').get('[data-bole-open-performance]').trigger('click')
+      const dialog = wrapper.get('dialog')
+      expect(dialog.get('h2').text()).toBe('Researcher 的绩效')
+      expect(dialog.findAll('[data-dimension]').map(row => row.attributes('data-dimension'))).toEqual(['completion', 'firstPass', 'userFeedback', 'review'])
+      expect(dialog.get('[data-dimension="completion"]').text()).toContain('通过 4 / 8')
+      expect(dialog.get('[data-dimension="userFeedback"]').text()).toContain('数据不足：已有 2 条，需要 3 条')
+      expect(dialog.text()).toContain('executor-b 0%，executor-a 100%')
+      expect(dialog.text()).toContain('1 条验收有异议')
+      expect(dialog.text()).not.toContain('过期')
+      wrapper.unmount()
+    })
+  })
+
+  describe('dismissal', () => {
+    const reason = '两次没跑测试就报告完成。'
+    const receipt = { agentId: 'agent.researcher', name: 'Researcher', status: 'dismissed' }
+
+    async function openDismissal() {
+      const wrapper = mountPanel()
+      await flushPromises()
+      await agentCard(wrapper, 'Researcher').get('[data-bole-dismiss]').trigger('click')
+      return wrapper
+    }
+
+    it('offers it only to Agents who can leave: never a built-in role, and not while busy or leading', async () => {
+      const original = getJson.getMockImplementation()!
+      getJson.mockImplementation(async (url: string) => {
+        const result = await original(url)
+        if (url.startsWith('/api/project-agents?')) result.agents.push(
+          { agent_id: 'agent.lead', profile: { name: 'Lead', status: 'active', agent_type: 'durable' }, personal_project_id: 'project-b' },
+          { agent_id: 'agent.busy', profile: { name: 'Busy', status: 'active', agent_type: 'durable' } },
+          { agent_id: 'employee.tonborg', profile: { name: 'Tonborg', status: 'active', agent_type: 'durable' } },
+          { agent_id: 'employee.assistant', profile: { name: 'Astro', status: 'active', agent_type: 'durable' } },
+        )
+        if (url.startsWith('/api/project-agent-tasks?')) result.items.push({ task_id: 'task-z', title: '收尾', status: 'queued', participants: [{ agent_id: 'agent.busy', status: 'queued' }] })
+        if (url.includes('personalProjectId=project-b')) return { teamLeadAgentId: 'agent.lead' }
+        return result
+      })
+      const wrapper = mountPanel()
+      await flushPromises()
+      for (const name of ['Bole', 'Jefa', 'Tonborg', 'Astro']) expect(agentCard(wrapper, name).find('[data-bole-dismiss]').exists()).toBe(false)
+      expect(agentCard(wrapper, 'Researcher').get('[data-bole-dismiss]').attributes('disabled')).toBeUndefined()
+      const lead = agentCard(wrapper, 'Lead').get('[data-bole-dismiss]')
+      expect(lead.attributes('disabled')).toBeDefined()
+      expect(lead.attributes('title')).toBe('Lead 负责项目，交接后才能开除')
+      const busy = agentCard(wrapper, 'Busy').get('[data-bole-dismiss]')
+      expect(busy.attributes('disabled')).toBeDefined()
+      expect(busy.attributes('title')).toBe('Busy 有未完成的任务，处理后才能开除')
+      wrapper.unmount()
+    })
+
+    it('needs a written reason and treats it as the confirmation', async () => {
+      postJson.mockResolvedValue(receipt)
+      const wrapper = await openDismissal()
+      const submit = wrapper.get('dialog button[type="submit"]')
+      expect(wrapper.get('dialog h2').text()).toBe('开除 Researcher')
+      expect(submit.attributes('disabled')).toBeDefined()
+      await wrapper.get('#bole-dismiss-reason').setValue('   不好 ')
+      expect(submit.attributes('disabled')).toBeDefined()
+      await wrapper.get('#bole-dismiss-reason').setValue(`  ${reason} `)
+      expect(submit.attributes('disabled')).toBeUndefined()
+      await wrapper.get('dialog form').trigger('submit')
+      await flushPromises()
+
+      expect(postJson).toHaveBeenCalledTimes(1)
+      expect(postJson).toHaveBeenCalledWith('/api/project-agents/agent.researcher/dismissal',
+        { personalSpaceId: 'space-a', reason }, expect.anything())
+      expect(wrapper.find('dialog').exists()).toBe(false)
+      expect(agentCard(wrapper, 'Researcher')).toBeUndefined()
+      expect(wrapper.get('[data-testid="people-total"]').text()).toContain('2')
+      expect(useConsoleStore().feedback).toMatchObject({ message: 'Researcher 已开除，交接已保留。', link: { to: '/agents/space-a/agent.researcher' } })
+      await wrapper.get('[data-bole-view="history"]').trigger('mousedown')
+      expect(wrapper.get('.bole-recruitment-identity a').text()).toBe('Researcher')
+      wrapper.unmount()
+    })
+
+    it('sends one lesson per line and holds back what the tool would refuse', async () => {
+      postJson.mockResolvedValue(receipt)
+      const wrapper = await openDismissal()
+      await wrapper.get('#bole-dismiss-reason').setValue(reason)
+      const lessons = wrapper.get('#bole-dismiss-lessons')
+      await lessons.setValue('一\n二\n三')
+      expect(wrapper.get('dialog [data-slot="field-error"]').text()).toContain('最多 3 条')
+      expect(wrapper.get('dialog button[type="submit"]').attributes('disabled')).toBeDefined()
+      await lessons.setValue('先跑相关测试再报告完成\n\n  报告里写清验证结果 ')
+      await wrapper.get('dialog form').trigger('submit')
+      await flushPromises()
+      expect(postJson.mock.calls[0]![1]).toEqual({ personalSpaceId: 'space-a', reason,
+        lessons: ['先跑相关测试再报告完成', '报告里写清验证结果'] })
+      wrapper.unmount()
+    })
+
+    it('keeps the person and the written text when the dismissal is refused', async () => {
+      postJson.mockRejectedValueOnce(new ApiError('refused', 409))
+      const wrapper = await openDismissal()
+      await wrapper.get('#bole-dismiss-reason').setValue(reason)
+      await wrapper.get('dialog form').trigger('submit')
+      await flushPromises()
+      expect(wrapper.get('dialog [role="alert"]').text()).toContain('现在不能开除')
+      expect((wrapper.get('#bole-dismiss-reason').element as HTMLTextAreaElement).value).toBe(reason)
+      expect(agentCard(wrapper, 'Researcher')).toBeDefined()
+      expect(wrapper.get('[data-testid="people-total"]').text()).toContain('3')
+      wrapper.unmount()
+    })
   })
 })

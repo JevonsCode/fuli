@@ -266,6 +266,16 @@ export async function handleGraphApiRequest({
   const agentMemoryExportPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/memory\/export$/);
   const agentOccupationPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/occupation$/);
   const agentNamePath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/name$/);
+  const agentDismissalPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/dismissal$/);
+  if (agentDismissalPath && request.method === 'POST') {
+    // The person's own dismissal from Bole's workbench: only their words pass through.
+    const { personalSpaceId, reason, lessons } = await readJson(request);
+    sendJson(response, 200, await app.dismissProjectAgent({
+      personalSpaceId, reason, lessons,
+      agentId: decodeURIComponent(agentDismissalPath[1])
+    }));
+    return true;
+  }
   if (agentNamePath && request.method === 'PUT') {
     const body = await readJson(request);
     sendJson(response, 200, await app.renameProjectAgent({
