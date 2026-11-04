@@ -149,6 +149,14 @@ def test_recruitment_accepts_canonical_role_work_kinds(kind):
     assert recruitment_occupation(request).role == kind
 
 
+@pytest.mark.parametrize(('kind', 'role'), [('project_management', 'project_manager'), ('planning', 'management')])
+def test_recruitment_reads_a_project_manager_from_project_management_only(kind, role):
+    from fuli_graph.project_agent_task_models import ProjectAgentTaskSubmit
+    request = ProjectAgentTaskSubmit(personal_space_id='space', personal_project_id='project',
+        idempotency_key='test-role', title='Task', objective='Task', work_kind=kind, routing_reason='test')
+    assert recruitment_occupation(request).role == role
+
+
 @pytest.mark.parametrize('explicit', [False, True])
 def test_bole_cannot_recruit_another_assistant_identity(explicit):
     from fuli_graph.project_agent_task_models import ProjectAgentTaskSubmit

@@ -13,7 +13,7 @@ import type { ProjectTeam, ProjectTeamPerson } from './project-team-api'
 export interface DraftColumn { key: string; id?: string; label: string; mapsTo: EmployeeBoardStatus }
 export interface BoardDraft { kind: 'builtin' | 'external'; columns: DraftColumn[]; url: string; label: string }
 
-const PROJECT_MANAGER_OCCUPATION = { role: 'management', tags: [] as string[] }
+const PROJECT_MANAGER_OCCUPATION = { role: 'project_manager', tags: [] as string[] }
 const PROJECT_MANAGER_EMOJI = '🧭'
 const KNOWN_ERRORS = ['version_conflict', 'project_manager_not_assigned', 'project_manager_peer_role', 'project_board_not_saved', 'assignment_required']
 
@@ -36,7 +36,7 @@ export async function saveProjectBoard(personalSpaceId: string, personalProjectI
     { requestId: requestId('project-page-board'), ...change })).projectBoard
 }
 
-/** A new durable Agent with the 管理 occupation, assigned to the project and made its manager in one assignment. */
+/** A new durable Agent with the 项目经理 occupation, assigned to the project and made its manager in one assignment. */
 export async function recruitProjectManager(input: { personalSpaceId: string; projectId: string; projectName: string; name: string; board: BoardInput }) {
   const agentId = requestId('project-manager')
   const responsibility = t('employees.projectBoard.recruitResponsibility', { project: input.projectName })

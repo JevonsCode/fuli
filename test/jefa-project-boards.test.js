@@ -30,7 +30,7 @@ async function jefa(t) {
 async function projectAgent(app, agentId, { personalProjectId = PROJECT, capabilities = [] } = {}) {
   await app.upsertProjectAgent({ personalSpaceId: 'employee-test-space', agentId,
     profile: { name: agentId, responsibility: 'Synthetic project management', status: 'active', capabilities },
-    occupation: { role: 'management', tags: [] } });
+    occupation: { role: 'project_manager', tags: [] } });
   if (personalProjectId) {
     await app.createProjectAgentAssignment({ personalSpaceId: 'employee-test-space', personalProjectId, agentId,
       idempotencyKey: `assign-${agentId}`, responsibility: 'Synthetic project management', reason: 'Synthetic test' });
