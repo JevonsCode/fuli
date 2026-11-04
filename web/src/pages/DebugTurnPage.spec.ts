@@ -74,3 +74,11 @@ it('says when the record no longer exists', async () => {
   expect(wrapper.find('[data-debug-turn-remove]').exists()).toBe(false)
   wrapper.unmount()
 })
+
+// What a real turn that fit whole looks like: the record says cut: null.
+it('reads a record that nothing was cut from', async () => {
+  const { wrapper } = await mountPage(() => Response.json({ ...RECORD, cut: null }))
+  expect(wrapper.find('[data-debug-part]').exists() || wrapper.text().includes('#debug')).toBe(true)
+  expect(wrapper.text()).not.toContain('没有读取成功')
+  wrapper.unmount()
+})

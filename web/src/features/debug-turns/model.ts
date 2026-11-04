@@ -15,7 +15,8 @@ const summary = z.looseObject({ id: z.string(), createdAt: z.string(), sourceApp
 const record = z.looseObject({
   id: z.string(), createdAt: z.string(), sourceApplication: z.string(),
   transcript: z.enum(['read', 'unavailable', 'not_supported']), parts: z.array(part), totals,
-  cut: z.looseObject({ historyMessages: z.number(), historyBytes: z.number(), parts: z.array(z.number()) }),
+  // null when the turn fit whole.
+  cut: z.looseObject({ historyMessages: z.number(), historyBytes: z.number(), parts: z.array(z.number()) }).nullable(),
 })
 export type DebugTotals = z.infer<typeof totals>
 export type DebugPart = z.infer<typeof part>

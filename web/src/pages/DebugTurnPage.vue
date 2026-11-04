@@ -97,10 +97,10 @@ onBeforeUnmount(() => reading?.abort())
             <small>{{ formatBytes(record.totals[source]) }}</small>
           </li>
         </ul>
-        <UiNotice v-if="record.cut.historyMessages" tone="warning">
+        <UiNotice v-if="record.cut?.historyMessages" tone="warning">
           {{ t('debugTurns.historyCut', { count: record.cut.historyMessages, size: formatBytes(record.cut.historyBytes) }) }}
         </UiNotice>
-        <UiNotice v-if="record.cut.parts.length" tone="warning">{{ t('debugTurns.partsCut', { count: record.cut.parts.length }) }}</UiNotice>
+        <UiNotice v-if="record.cut?.parts.length" tone="warning">{{ t('debugTurns.partsCut', { count: record.cut.parts.length }) }}</UiNotice>
         <div class="debug-turn-parts">
           <DebugTurnPart v-for="(part, index) in record.parts" :key="index" :part="part" />
         </div>
