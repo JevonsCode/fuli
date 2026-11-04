@@ -1,3 +1,4 @@
+import { relayedDecision } from '../agent-delegation/delegation-header.js';
 import { readJson, sendJson } from './response.js';
 import { testToolsEnabled } from '../app/test-tools.js';
 import { handleAgentAttentionRequest } from './agent-attention-api-router.js';
@@ -11,6 +12,9 @@ import { handleCaptureChangeRequest } from './capture-change-api-router.js';
 import { handleCaptureOnboardingRequest, handleFirstRunGuideRequest } from './capture-onboarding-api-router.js';
 import { parsePersonalDraftDecision } from '../graphiti/publication-draft-input.js';
 import { PERSON_WRITER } from '../graphiti/project-profile-authors.js';
+
+// The Provider keeps a confirmer's label of at most this many characters.
+const CONFIRMER_LABEL_LIMIT = 160;
 
 export async function handleGraphApiRequest({
   request,
@@ -170,11 +174,15 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/knowledge/batch-confirmation' && request.method === 'POST') {
+    // A confirmation an FLA relays in the person's words (rec#80) is the
+    // person's, kept with the FLA that relayed it, whatever the body claims.
+    const relay = relayedDecision(request);
     sendJson(
       response,
       200,
       await app.confirmKnowledgeBatch({
         ...(await readJson(request)),
+        ...(relay ? { confirmer: { kind: 'user', label: relayedConfirmerLabel(relay) } } : {}),
         operationActor: 'human'
       })
     );
@@ -735,4 +743,8 @@ function nonNegativeNumberParam(url, name, fallback) {
     throw new TypeError(`${name} must be a non-negative integer`);
   }
   return value;
+}
+
+function relayedConfirmerLabel(relay) {
+  return `由 ${relay.relayedBy ?? 'FLA'} 转达`.slice(0, CONFIRMER_LABEL_LIMIT);
 }

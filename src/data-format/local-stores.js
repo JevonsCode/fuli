@@ -48,6 +48,7 @@ import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-st
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
 import { CLIENT_LINKS_STATE_FORMAT } from '../client-links/registry.js';
 import { SESSION_CLIENT_FORMAT } from '../agent-kits/session-clients.js';
+import { ENTRY_PROMPT_FORMAT } from '../agent-delegation/entry-prompts.js';
 import { PERSON_PROFILE_FORMAT } from '../person-profile/port.js';
 import { AGENT_DELEGATION_FORMAT } from '../agent-delegation/operation-log.js';
 import { AGENT_DELEGATION_POLICY_FORMAT } from '../agent-delegation/policy-store.js';
@@ -143,6 +144,8 @@ const jsonDirectories = () => [
   ['capture-session-pause/pins/off', CAPTURE_SESSION_PAUSE_FORMAT],
   // Which client each session ran in, as the session launcher classified it (rec#11 D-79).
   ['session-clients', SESSION_CLIENT_FORMAT],
+  // The prompt of the session's current hook-entered task, until its checkpoint (rec#80 relay check).
+  ['entry-prompts', ENTRY_PROMPT_FORMAT],
   // The #fulidebug turn records the person reads in Settings › 系统, newest 20 within 50 MB; local only.
   ['debug-turns', DEBUG_TURN_FORMAT],
   // The turn a #fulidebug prompt began, until its Stop records it.

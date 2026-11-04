@@ -24,7 +24,8 @@ At the start of every user task, first use the lifecycle context supplied by the
 exists. A Claude Code `UserPromptSubmit` hook calls `begin_task_context`, which already loads
 collaboration preferences and resolves the exact local personal project from the current working
 directory. It also uses the submitted prompt transiently for bounded automatic project-memory
-recall and never stores or returns that prompt. Apply the returned `task_knowledge_recall` and
+recall and never returns that prompt; it keeps it on this computer only so `run_delegated_action`
+can check words relayed as the person's decision in the same turn, until the task checkpoints. Apply the returned `task_knowledge_recall` and
 preferences, then retain the opaque task token for any required checkpoint;
 do not redundantly call `get_collaboration_preferences`.
 

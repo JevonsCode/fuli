@@ -22,7 +22,8 @@ test('attention requires an explicit actionable request and never exposes human 
   assert.equal(definitions.has('respond_to_agent_attention'), false);
   assert.deepEqual(await callAgentTool({ getAgentAccessPolicy: () => ({ enabled: true }), requestAgentAttention: value => value }, 'request_agent_attention', input), input);
   const reply = agentInterfaceCatalog().uiMutationParity.find(item => item.route === 'POST /api/agent-attention/respond');
-  assert.equal(reply.access, 'local_user_only');
+  // rec#80: an FLA relays only the person's own reply, in their words.
+  assert.deepEqual([reply.access, reply.category], ['agent_relayed', 'decisions']);
 });
 
 test('an open attention request carries explicit native choices without a response authority', async () => {

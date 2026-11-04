@@ -112,9 +112,10 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       await prepareStore(parsed.personalSpaceId);
       return acceptanceReviewVerdicts(store().acceptances(parsed.personalSpaceId, parsed.agentId, parsed.personalProjectId ?? null));
     },
-    async feedback(input) { const parsed = parse(feedbackSchema, input); space(parsed);
+    // relay: the person's vote an FLA relayed in their words (rec#80), or null.
+    async feedback(input, relay = null) { const parsed = parse(feedbackSchema, input); space(parsed);
       await prepareStore(parsed.personalSpaceId);
-      return store().feedback(parsed.personalSpaceId, parsed.decisionId, parsed.vote, parsed.reason, parsed.expectedRevision); },
+      return store().feedback(parsed.personalSpaceId, parsed.decisionId, parsed.vote, parsed.reason, parsed.expectedRevision, relay); },
     async review(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.review(service, input); },
     async reviewAutomatic(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.reviewAutomatic(service, input); },
     async assess(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.assess(service, input); },

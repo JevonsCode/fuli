@@ -20,7 +20,7 @@ import { createCaptureOnboarding } from './capture-onboarding.js';
 import { createFirstRunGuide, firstRunGuidePathForRuntime } from './first-run-guide.js';
 import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from './capture-session-pause.js';
 import { setSessionCapturePause } from './session-capture-pause-request.js';
-import { readOwnSessionRecords } from './session-records.js';
+import { readOwnSessionRecords, recentSessionUserMessages } from './session-records.js';
 import {
   AgentAccessPolicyStore,
   agentAccessPolicyPathForRuntime
@@ -616,6 +616,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   // An Agent's "这次都记了我什么" for the session of its current task (rec#5 C6).
   readOwnSessionRecords(input) {
     return readOwnSessionRecords(this, input);
+  }
+
+  // The person's newest saved messages in a task's own session (rec#80).
+  recentSessionUserMessages(task, limit) {
+    return recentSessionUserMessages(this, task, limit);
   }
 
   getRecallPolicy() {

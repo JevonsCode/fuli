@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { callAgentTool, listAgentTools } from '../src/agent-tools.js';
 import { notRecordedEvent } from '../src/conversations/transcript-capture-gap.js';
-import { readOwnSessionRecords, readSessionRecords } from '../src/graphiti/session-records.js';
+import { readOwnSessionRecords, readSessionRecords, recentSessionUserMessages } from '../src/graphiti/session-records.js';
 
 // rec#5 C6 "本会话记了什么". Synthetic Provider only: it plays the
 // authoritative store, so the list is checked against what was stored.
@@ -311,4 +311,18 @@ test('after two citations in A, B\'s one citation keeps the item, and the last c
   const entry = page.entries.find(candidate => candidate.key === 'entity:pref');
   assert.deepEqual(entry.detail.sources.at(-1), { episode_id: 'e-b2', turn: 'turn:task-4' });
   assert.ok(page.entries.find(candidate => candidate.key === 'turn:task-4').detail.items.includes('entity:pref'));
+});
+
+test('rec#80: the person\'s newest saved messages are read from the task\'s own session and project, oldest first', async () => {
+  const read = sessionRead();
+  read.turns[0] = turn(1, 10, 1, { personal_project_id: 'ledger',
+    messages: [{ role: 'user', text: '另一个项目里的话', created_at: at(10, 1) }] });
+  const { app: application, reads } = app(read);
+  const task = { token: 'fuli-task-b', sessionId: SESSION, sourceApplication: 'codex', personalProjectId: 'thesis' };
+  const messages = await recentSessionUserMessages(application, task, 3);
+  assert.deepEqual(messages.map(({ text }) => text), ['第 4 轮：引用格式怎么改', '第 5 轮：引用格式怎么改',
+    '第 14 轮：引用格式怎么改']);
+  assert.deepEqual(messages.at(-1).ref, { taskId: 'task-14', conversationId: 'conversation-1', at: at(15, 10) });
+  assert.ok(!(await recentSessionUserMessages(application, task, 20)).some(({ text }) => text.includes('另一个项目')));
+  assert.deepEqual(reads.map(({ session_id: session }) => session), [SESSION, SESSION]);
 });

@@ -1,3 +1,4 @@
+import { relayedDecision } from '../agent-delegation/delegation-header.js';
 import { readJson, sendJson } from '../http/response.js';
 import { refuseRemoteDecision } from '../http/request-policy.js';
 import { EmployeeError } from '../employees/manifest.js';
@@ -56,7 +57,7 @@ export async function handleJudgmentApiRequest({ request, response, url, app, un
     'PUT /api/judgment/policy': async () => app.judgment.setPolicy(await readJson(request)),
     'GET /api/judgment/policies': () => app.judgment.policyOverrides({ personalSpaceId: query.personalSpaceId }),
     'GET /api/judgment/records': () => app.judgment.records({ ...query, ...recordPage(url.searchParams) }),
-    'POST /api/judgment/feedback': async () => app.judgment.feedback(await readJson(request)),
+    'POST /api/judgment/feedback': async () => app.judgment.feedback(await readJson(request), relayedDecision(request)),
     'POST /api/judgment/review': async () => app.judgment.review(await readJson(request)),
     'POST /api/judgment/assess': async () => app.judgment.assess(await readJson(request)),
     'POST /api/judgment/accept': async () => app.judgment.accept(await readJson(request)),

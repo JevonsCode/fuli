@@ -67,6 +67,12 @@ export const JEFA_BOARD_FORMAT = sqliteFormat({
     // Absent on existing tasks: they show in the first column for their state.
     id: 'jefa-board/3-task-board-columns', to: 3, kind: 'add-columns', table: 'jefa_work_items',
     summary: 'the custom board column a task was moved to', columns: { board_column: 'TEXT' }
+  }, {
+    // A move the person decided and an FLA relayed in their words (rec#80);
+    // every other revision keeps both NULL.
+    id: 'jefa-board/4-relayed-moves', to: 4, kind: 'add-columns', table: 'jefa_work_item_revisions',
+    summary: 'which FLA relayed a task move the person decided, and the words of theirs it relayed',
+    columns: { relayed_by: 'TEXT', person_words: 'TEXT' }
   }],
   pragmas: 'PRAGMA journal_mode = WAL;'
 });
@@ -124,10 +130,11 @@ export class JefaBoardStore {
 
   item(scope, id) {
     const item = itemFromRow(this.#row(scope, id));
-    const history = this.database.prepare(`SELECT revision, actor, record, recorded_at FROM jefa_work_item_revisions
+    const history = this.database.prepare(`SELECT revision, actor, record, recorded_at, relayed_by, person_words FROM jefa_work_item_revisions
       WHERE space_id = ? AND project_id = ? AND id = ? ORDER BY revision DESC LIMIT ?`)
       .all(scope.spaceId, scope.projectId, id, TASK_HISTORY_LIMIT)
-      .map((row) => ({ revision: row.revision, actor: row.actor, status: JSON.parse(row.record).status, recordedAt: row.recorded_at }));
+      .map((row) => ({ revision: row.revision, actor: row.actor, status: JSON.parse(row.record).status, recordedAt: row.recorded_at,
+        ...(row.person_words === null ? {} : { decidedBy: 'person', relayedBy: row.relayed_by, personWords: row.person_words }) }));
     return { ...item, history };
   }
 
@@ -159,7 +166,8 @@ export class JefaBoardStore {
   }
 
   // The person's own move, from the console: no version check, as the board shows it.
-  setStatus(scope, id, status, column) {
+  // relay: the FLA that relayed the person's move and their words (rec#80), or null.
+  setStatus(scope, id, status, column, relay = null) {
     return this.#transaction(() => {
       const row = this.#row(scope, id);
       const current = itemFromRow(row);
@@ -167,7 +175,7 @@ export class JefaBoardStore {
       const updatedAt = this.#nextTime(current.updatedAt);
       const item = this.#placed(scope, { ...current, status, updatedAt }, { status, boardColumn: column }, 'person', current);
       if (item.status !== current.status) item.acceptedAt = status === 'done' ? updatedAt : undefined;
-      return this.#write(scope, item, row.revision + 1, 'person');
+      return this.#write(scope, item, row.revision + 1, 'person', relay);
     });
   }
 
@@ -304,7 +312,7 @@ export class JefaBoardStore {
   }
 
   // Returns the task as stored.
-  #write(scope, item, revision, actor) {
+  #write(scope, item, revision, actor, relay = null) {
     this.database.prepare(`INSERT INTO jefa_work_items(space_id, project_id, id, revision, title, summary, status, priority,
         visibility, work_type, acceptance_criteria, tags, accepted_at, created_at, updated_at, board_column)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -315,9 +323,10 @@ export class JefaBoardStore {
       .run(scope.spaceId, scope.projectId, item.id, revision, item.title, item.summary, item.status, item.priority,
         item.visibility, item.workType ?? null, JSON.stringify(item.acceptanceCriteria), JSON.stringify(item.tags),
         item.acceptedAt ?? null, item.createdAt, item.updatedAt, item.boardColumn ?? null);
-    this.database.prepare(`INSERT INTO jefa_work_item_revisions(space_id, project_id, id, revision, actor, record, recorded_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(scope.spaceId, scope.projectId, item.id, revision, actor, JSON.stringify(item), item.updatedAt);
+    this.database.prepare(`INSERT INTO jefa_work_item_revisions(space_id, project_id, id, revision, actor, record, recorded_at,
+        relayed_by, person_words) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(scope.spaceId, scope.projectId, item.id, revision, actor, JSON.stringify(item), item.updatedAt,
+        relay?.relayedBy ?? null, relay?.personWords ?? null);
     this.#bumpProject(scope);
     return itemFromRow(this.#row(scope, item.id));
   }
