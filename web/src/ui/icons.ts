@@ -19,6 +19,7 @@ export const ICONS = {
   search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>',
   sort: '<path d="M7 4v16M3.5 16.5 7 20l3.5-3.5"/><path d="M17 20V4M13.5 7.5 17 4l3.5 3.5"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  expand: '<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>',
   more: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',
   // The check is Lucide's `check` (https://lucide.dev, ISC License; "Copyright (c) for portions
   // of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c)

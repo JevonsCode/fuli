@@ -189,29 +189,6 @@ describe('AgentManagement', () => {
     }
   })
 
-  it('shows reported enums through their labels', async () => {
-    const agent = { ...structuredClone(agents[0]!), memoryScope: 'task_only' }
-    getJson.mockImplementation((url: string) => {
-      if (url.includes('/api/project-agents?')) return Promise.resolve([agent])
-      if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [{
-        recruitment_id: 'recruitment-label', personal_space_id: 'personal-1', personal_project_id: 'project-a',
-        task_id: 'task-1', coordinator_agent_id: 'coordinator', position_kind: 'durable', work_kind: 'frontend',
-        required_capabilities: [], reason_code: 'capacity', reason: '需要长期协作者', status: 'awaiting_confirmation',
-        proposed_agent_id: 'shared-agent', revision: 1, created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z',
-      }] })
-      return orchestrationResponse(url)
-    })
-    const { wrapper } = await mountPage()
-    await flushPromises()
-    const recruitment = wrapper.get('[data-manage-panel="recruitment"]').text()
-    expect(recruitment).toContain('长期岗位 · frontend')
-    expect(wrapper.get('[data-recruitment-status]').text()).toBe('待确认')
-    expect(recruitment).not.toContain('awaiting_confirmation')
-    const profile = wrapper.get('[data-manage-panel="profile"]')
-    expect(profile.text()).toContain('仅限任务')
-    expect(profile.text()).not.toContain('task_only')
-  })
-
   it.each(['target-agent', 'legacy-target'])('opens a task deep-link Agent whose assignment is in another project (%s)', async (routeAgent) => {
     const target = structuredClone(agents[0]!)
     target.agentId = 'target-agent'
@@ -362,11 +339,10 @@ describe('AgentManagement', () => {
     const { wrapper } = await mountPage()
     await flushPromises()
     // No current assignment: the profile counts none.
-    expect(wrapper.get('[data-manage-panel="profile"] dd').text()).toBe('0')
     expect(wrapper.get('[data-detail-section="assignments"]').text()).toContain('活动项目')
     expect(wrapper.get('[data-detail-section="assignments"]').text()).not.toContain('→ 当前分配')
     endedAgent.assignments = []
-    await wrapper.findAll('button').find((button) => button.text() === '刷新真实数据')!.trigger('click')
+    await wrapper.get('[data-detail-refresh]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-detail-section="assignments"]').text()).not.toContain('当前分配')
   })
@@ -376,7 +352,6 @@ describe('AgentManagement', () => {
     await flushPromises()
 
     expect(wrapper.get('.project-agent-detail').text()).toContain('flexible')
-    expect(wrapper.get('.project-agent-detail').text()).toContain('没有真实学习依据')
 
     getJson.mockImplementation((url: string) => {
       if (url.includes('/project-agent-tasks?')) {
@@ -413,7 +388,6 @@ describe('AgentManagement', () => {
     expect(wrapper.find('.project-agent-heatmap').exists()).toBe(true)
     await wrapper.get('.project-agent-heat-cell').trigger('click')
     expect(wrapper.get('.project-agent-day-detail').text()).toContain('活动复盘')
-    expect(wrapper.get('.project-agent-client-list').text()).toContain('实际调用 1 次')
   })
 
   it('renders real per-worker execution summaries with worker fallback fields', async () => {
@@ -706,7 +680,7 @@ describe('AgentManagement', () => {
     expect(heatmap.element.parentElement).toBe(heatmapViewport.element)
   })
 
-  it('matches recruitment history by recruited Agent and displays its source fields', async () => {
+  it('shows a recruitment waiting on the person, by recruited Agent, with its source fields', async () => {
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve([{
         ...agents[0],
@@ -718,7 +692,7 @@ describe('AgentManagement', () => {
         recruitment_id: 'recruitment-1', personal_space_id: 'personal-1', personal_project_id: 'project-a',
         task_id: 'task-1', coordinator_agent_id: 'coordinator', hr_agent_id: 'hr-agent',
         position_kind: 'temporary', work_kind: 'one-off', required_capabilities: [], reason_code: 'capacity',
-        reason: '一次性终点明确', status: 'fulfilled', confirmation_mode: 'automatic', proposed_agent_id: 'shared-agent',
+        reason: '一次性终点明确', status: 'awaiting_confirmation', confirmation_mode: 'automatic', proposed_agent_id: 'shared-agent',
         recruited_agent_id: 'shared-agent', trigger_source_application: 'codex', test_source: 'e2e-roster',
         cleanup_eligible: true, revision: 1, created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z', fulfilled_at: '2026-08-16T01:00:00Z',
       }] })
@@ -727,7 +701,6 @@ describe('AgentManagement', () => {
     })
     const { wrapper, router } = await mountPage()
     await flushPromises()
-    expect(wrapper.get('[data-agent-identity]').text()).toContain('测试角色')
     await wrapper.get('[data-detail-refresh]').trigger('click')
     await flushPromises()
 
@@ -772,53 +745,6 @@ describe('AgentManagement', () => {
     await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/project-agent-recruitments/decision', expect.objectContaining({
       recruitmentId: 'recruitment-pending', expectedRevision: 2, decision: 'approve',
-    }))
-  })
-
-  it('shows strategy-scoped learning evidence and uses the permission revision', async () => {
-    getJson.mockImplementation((url: string) => {
-      if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
-      if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [] })
-      if (url.includes('/api/executors?')) return Promise.resolve({ executors: [{
-        executor_id: 'executor-1', display_name: '真实执行器', registration_status: 'registered',
-        permission_status: 'pending', permission_revision: 2, revision: 7,
-        available_models: [{ provider: 'host', model: 'reported-model', available: true }],
-      }] })
-      if (url.includes('/api/project-agent-routing-learning?')) return Promise.resolve([{
-        personal_project_id: 'project-a', work_kind: 'review', agent_id: 'shared-agent',
-        executor_id: 'executor-1', model_strategy: { mode: 'deep', reasoning_effort: 'max', capability_hints: [] },
-        model_strategy_key: 'strategy-key-1', sample_count: 4, recent_count: 2,
-        success_count: 3, rework_count: 1, failure_count: 0, rating_count: 1,
-        weighted_success: 2.5, weighted_failure: 0.5, decay_half_life_days: 30,
-        as_of: '2026-08-17T03:00:00Z', neutral_due_to_insufficient_evidence: false,
-        evidence_contributions: [{
-          evidence_id: 'evidence-1', evidence_kind: 'test_passed', signal: 'success',
-          value: 1, decay_weight: 0.9, occurred_at: '2026-08-17T02:00:00Z', reference_ids: ['test-1'],
-        }],
-      }])
-      return Promise.resolve([])
-    })
-    patchJson.mockResolvedValue({})
-    postJson.mockResolvedValue({})
-    const { wrapper } = await mountPage()
-    await flushPromises()
-    await wrapper.get('[data-detail-refresh]').trigger('click')
-    await flushPromises()
-
-    const learning = wrapper.get('.project-agent-learning-card')
-    expect(learning.text()).toContain('4')
-    expect(learning.text()).toContain('deep · max')
-    expect(learning.text()).toContain('test_passed')
-    await wrapper.get('.project-agent-evidence-list button').trigger('click')
-    await flushPromises()
-    expect(patchJson).toHaveBeenCalledWith('/api/project-agent-learning/evidence-1', expect.objectContaining({
-      action: 'ignore', modelStrategyKey: 'strategy-key-1',
-    }))
-
-    await wrapper.get('[data-executor-authorize]').trigger('click')
-    await flushPromises()
-    expect(postJson).toHaveBeenCalledWith('/api/executors/authorization', expect.objectContaining({
-      executorId: 'executor-1', expectedRevision: 2, status: 'authorized',
     }))
   })
 

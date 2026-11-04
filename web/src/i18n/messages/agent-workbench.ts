@@ -3,7 +3,8 @@ export const agentWorkbenchMessages = {
     opening: '正在打开工作台',
     readingBoard: '正在读取这个项目的看板列',
     workflows: {
-      title: '工作流',
+      title: 'Workflow',
+      search: '搜索 Workflow',
       none: '还没有工作流。Agent 发现自己反复做的事后，会在这里提议，由你确认。',
       awaiting: '待你确认',
       changeAwaiting: '有修改待确认',
@@ -31,7 +32,8 @@ export const agentWorkbenchMessages = {
     opening: 'Opening the workbench',
     readingBoard: 'Reading this project\'s board columns',
     workflows: {
-      title: 'Workflows',
+      title: 'Workflow',
+      search: 'Search Workflows',
       none: 'No workflows yet. When the Agent notices work it keeps repeating, it proposes one here for you to confirm.',
       awaiting: 'Awaiting you',
       changeAwaiting: 'Change awaiting you',
