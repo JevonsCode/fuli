@@ -35,8 +35,6 @@ describe('localized route metadata', () => {
   it('marks record pages as details and keeps the sticky save bar on settings', () => {
     // An Agent's profile and its 编排 page are detail pages; settings keeps a sticky save bar.
     expect(router.resolve('/agents/space/agent').meta.detail).toBe(true)
-    expect(router.resolve('/project-agents/manage/space/agent').name).toBe('agent-management-detail')
-    expect(router.resolve('/project-agents/manage/space/agent').meta.detail).toBe(true)
     expect(router.resolve('/project-agents/manage').meta.detail).toBeUndefined()
     expect(router.resolve('/project-agents').meta.detail).toBeUndefined()
     expect(router.resolve('/project-agents/occupations').meta.detail).toBeUndefined()
@@ -67,7 +65,6 @@ describe('localized route metadata', () => {
     expect(routeMetaText(router.resolve('/agents/space/agent').meta.title)).toBe('主页')
     expect(routeMetaText(router.resolve('/project-agents/manage').meta.title)).toBe('编排')
     // An Agent's 编排 page falls back to a name of its own, never the 编排 crumb above it.
-    expect(routeMetaText(router.resolve('/project-agents/manage/space/agent').meta.title)).toBe('Agent')
     setLocale('en-US', { persist: false })
     expect(routeMetaText(router.resolve('/agents/space/agent').meta.title)).toBe('Profile')
   })

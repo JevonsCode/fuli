@@ -185,6 +185,8 @@ The console board shows the project's own columns when the filter shows that pro
 
 ## Verification and release boundary
 
+A built-in role's workbench is the first tab of its one FLA page (`/agents/<space>/employee.<role>`); `/employees/<role>` stays a link that lands there. The task board is Jefa's own: no other FLA has one, and an FLA's former 编排 management page is that page's 高级管理 tab.
+
 Jefa uses one native `EmployeeTaskBoard` for every project scope. `/employees/jefa` and
 `?project=all` show the current managed projects; legacy `__all__` is normalized. A single
 project query or repeated `project` query parameters filter the same board, without changing

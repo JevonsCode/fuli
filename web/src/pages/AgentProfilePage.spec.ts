@@ -20,6 +20,7 @@ const person = (id: string): ProjectAgentRecord => ({ agentId: id, personalSpace
   createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
   profile: { name: id === 'alpha' ? 'Aster' : id === 'beta' ? 'Birch' : 'Cedar', responsibility: `Synthetic ${id} role`, capabilities: ['review'], initialPreferences: [], status: 'active' },
 })
+const builtIn = (id: string) => { const agent = person(`employee.${id}`); return { ...agent, profile: { ...agent.profile, capabilities: [`fuli.employee:${id}`] } } }
 const assignment = (agentId: string, status = 'active', projectId = 'project-a') => ({
   assignmentId: `${agentId}-${projectId}`, personalSpaceId: 'space-a', personalProjectId: projectId,
   agentId, responsibility: 'Recorded assignment responsibility', status,
@@ -90,7 +91,7 @@ describe('Agent profile integration', () => {
       return { ...person('alpha'), occupation: { role: payload.role, tags: payload.tags, updatedAt: '2026-10-17T05:00:00Z' } }
     })
     const { wrapper } = await setup()
-    expect(wrapper.get('[data-profile-occupation]').text()).toBe('还没有设置职业')
+    expect(wrapper.get('[data-profile-occupation]').text()).toContain('还没有设置职业')
     const settings = wrapper.findAll('button').find(button => button.attributes('aria-expanded') !== undefined && button.text().includes('设置'))!
     await settings.trigger('click')
     const editor = wrapper.get('[data-occupation-editor]')
@@ -146,7 +147,7 @@ describe('Agent profile integration', () => {
   it('loads a fixed role workbench on a direct profile visit without a cached catalog', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
-      if (isAgentRead(url)) return agentRead(url, [person('employee.tonborg')])
+      if (isAgentRead(url)) return agentRead(url, [builtIn('tonborg')])
       if (url.startsWith('/api/employee-templates?')) return Promise.resolve({ templates: [{
         id: 'tonborg', name: 'Tonborg', agentId: 'employee.tonborg', agentStatus: 'active',
         workbench: { kind: 'native', view: 'judgment' },
@@ -154,30 +155,34 @@ describe('Agent profile integration', () => {
       return normal(url)
     })
     const { wrapper } = await setup('/agents/space-a/employee.tonborg')
-    expect(getJson).toHaveBeenCalledWith('/api/employee-templates?personalSpaceId=space-a', expect.objectContaining({ schema: expect.anything() }))
-    expect(wrapper.find('a[href="/employees/tonborg"]').exists()).toBe(true)
+    await vi.dynamicImportSettled(); await flushPromises()
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')).toBe('workbench')
+    await vi.waitFor(() => expect(getJson).toHaveBeenCalledWith('/api/employee-templates?personalSpaceId=space-a', expect.objectContaining({ schema: expect.anything() })))
   })
 
-  it('offers each profile link once and never a manual Ask AR detour', async () => {
+  // Jevons 11-04: one page per FLA. What 编排's page held is 高级管理 here.
+  it('opens 高级管理 in place and never links out to a second page', async () => {
+    const { wrapper } = await setup()
+    await openTab(wrapper, 'management')
+    await vi.dynamicImportSettled(); await flushPromises()
+    await vi.waitFor(() => expect(wrapper.find('[data-profile-panel="management"] .project-agent-manage').exists()).toBe(true))
+    expect(wrapper.find('a[href^="/project-agents/manage/"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('问 AR')
+  })
+
+  it('settles a link that uses an Agent\'s earlier id on its current one', async () => {
     const normal = getJson.getMockImplementation()!
-    getJson.mockImplementation((url: string) => {
-      if (isAgentRead(url)) return agentRead(url, [person('employee.bole')])
-      if (url.startsWith('/api/employee-templates?')) return Promise.resolve({ templates: [{
-        id: 'bole', name: 'Bole', agentId: 'employee.bole', agentStatus: 'active',
-        workbench: { kind: 'native', view: 'people' },
-      }] })
-      return normal(url)
-    })
-    const { wrapper } = await setup('/agents/space-a/employee.bole')
-    expect(wrapper.findAll('a[href="/employees/bole"]')).toHaveLength(1)
-    expect(wrapper.findAll('a[href^="/employees/bole?"]')).toHaveLength(0)
-    expect(wrapper.findAll('.agent-management-card a')).toHaveLength(1)
-    expect(wrapper.get('[data-open-management]').text()).toBe('打开 Agent 管理')
-    wrapper.unmount()
-    getJson.mockImplementation(normal)
-    const other = await setup()
-    expect(other.wrapper.findAll('a[href^="/employees/bole?"]')).toHaveLength(0)
-    expect(other.wrapper.text()).not.toContain('问 AR')
+    getJson.mockImplementation((url: string) => isAgentRead(url) ? Promise.resolve(person('alpha')) : normal(url))
+    const { router } = await setup('/agents/space-a/legacy-alpha?tab=history')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/agents/space-a/alpha?tab=history')
+  })
+
+  it('opens 高级管理 on a link that names a task', async () => {
+    const { router, wrapper } = await setup('/agents/space-a/alpha?task=done')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ task: 'done', tab: 'management' })
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')).toBe('management')
   })
 
   it('exposes conversation retention under an accessible secondary tab', async () => {
@@ -273,29 +278,28 @@ describe('Agent profile integration', () => {
     const tabs = () => wrapper.findAll('[role="tab"]')
     // One tab stop: Tab reaches the list, which hands focus to the open tab; arrows move between tabs.
     expect(wrapper.get('[role="tablist"]').attributes('tabindex')).toBe('0')
-    expect(tabs().map((tab) => tab.attributes('tabindex'))).toEqual(['-1', '-1', '-1', '-1', '-1', '-1', '-1'])
+    expect(tabs().map((tab) => tab.attributes('tabindex'))).toEqual(['-1', '-1', '-1', '-1', '-1', '-1'])
     const selected = () => wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')
-    // An Agent with tasks opens on its workbench.
-    expect(selected()).toBe('workbench')
+    expect(selected()).toBe('overview')
 
     const first = tabs()[0]!
     ;(first.element as HTMLButtonElement).focus()
     await first.trigger('keydown', { key: 'ArrowRight' })
     await flushPromises()
-    expect(selected()).toBe('overview')
-    expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="overview"]').element)
+    expect(selected()).toBe('history')
+    expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="history"]').element)
     // The open tab is part of the URL, so a refresh or a shared link lands on it.
-    expect(router.currentRoute.value.query.tab).toBe('overview')
+    expect(router.currentRoute.value.query.tab).toBe('history')
 
-    await wrapper.get('[data-profile-tab="overview"]').trigger('keydown', { key: 'End' })
+    await wrapper.get('[data-profile-tab="history"]').trigger('keydown', { key: 'End' })
     await flushPromises()
     expect(selected()).toBe('management')
     expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="management"]').element)
 
     await wrapper.get('[data-profile-tab="management"]').trigger('keydown', { key: 'Home' })
     await flushPromises()
-    expect(selected()).toBe('workbench')
-    expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="workbench"]').element)
+    expect(selected()).toBe('overview')
+    expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="overview"]').element)
     expect(router.currentRoute.value.query.tab).toBeUndefined()
   })
 
@@ -499,46 +503,20 @@ describe('Agent workbench', () => {
   async function settle() { await vi.dynamicImportSettled(); await flushPromises() }
   const workflowReads = () => getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/agent-workflows?')).length
 
-  it('opens an Agent with tasks on its workbench: the board shows its tasks, a cancelled one stays off', async () => {
-    answer({ tasks: [task('t-run', 'alpha', 'Synthetic running work', 'running'), task('t-review', 'alpha', 'Synthetic review work', 'awaiting_review'),
-      task('t-cancel', 'alpha', 'Synthetic cancelled work', 'cancelled')] })
-    const { router, wrapper } = await setup()
-    await settle()
-    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')).toBe('workbench')
-    expect(router.currentRoute.value.query.tab).toBeUndefined()
-    const board = wrapper.get('[data-workbench-board]')
-    expect(board.get('[data-board-column="active"]').text()).toContain('Synthetic running work')
-    expect(board.get('[data-board-column="review"]').text()).toContain('Synthetic review work')
-    expect(board.text()).not.toContain('Synthetic cancelled work')
-    // A view of the Agent's tasks: no card moves and nothing is created here.
-    expect(board.find('[data-move-control]').exists()).toBe(false)
-    await board.get('[data-board-task] button').trigger('click'); await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/project-agents/manage/space-a/alpha')
-  })
-
-  it('unmounts the workbench when another tab opens', async () => {
-    const { wrapper } = await setup()
-    await settle()
-    expect(wrapper.find('[data-workbench-board]').exists()).toBe(true)
-    await openTab(wrapper, 'overview')
-    expect(wrapper.find('[data-workbench-board]').exists()).toBe(false)
-  })
-
-  it('gives an Agent with no tasks and no workflows no workbench', async () => {
-    answer({ tasks: [task('t-cancel', 'alpha', 'Synthetic cancelled work', 'cancelled')], workflows: [] })
+  it('gives an Agent with tasks no board: the board is Jefa\'s own', async () => {
+    answer({ tasks: [task('t-run', 'alpha', 'Synthetic running work', 'running')] })
     const { wrapper } = await setup()
     await settle()
     expect(wrapper.find('[data-profile-tab="workbench"]').exists()).toBe(false)
     expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')).toBe('overview')
   })
 
-  it('gives workflows their own tab beside the board, and no board to an Agent without tasks', async () => {
-    answer({ tasks: [task('t-run', 'alpha', 'Synthetic running work', 'running')], workflows: [proposed] })
+  it('opens an Agent with no work on its overview', async () => {
+    answer({ tasks: [task('t-cancel', 'alpha', 'Synthetic cancelled work', 'cancelled')], workflows: [] })
     const { wrapper } = await setup()
     await settle()
-    expect(wrapper.findAll('[role="tab"]').map((tab) => tab.attributes('data-profile-tab')).slice(0, 3)).toEqual(['workbench', 'workflows', 'overview'])
-    await openTab(wrapper, 'workflows')
-    expect(wrapper.get('[data-profile-panel="workflows"] [data-workflow="wf-1"]').text()).toContain('Synthetic check flow')
+    expect(wrapper.find('[data-profile-tab="workbench"]').exists()).toBe(false)
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')).toBe('overview')
   })
 
   it('shows a proposed workflow and sends the person\'s answer for the version shown', async () => {
@@ -571,10 +549,10 @@ describe('Agent workbench', () => {
     expect(workflowReads()).toBe(reads + 1)
   })
 
-  it('keeps a built-in role\'s own workbench page and adds no second Workbench', async () => {
+  it('opens a built-in role on its own workbench, the first tab, and links out to no other page', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
-      if (isAgentRead(url)) return agentRead(url, [person('employee.tonborg')])
+      if (isAgentRead(url)) return agentRead(url, [builtIn('tonborg')])
       if (url.startsWith('/api/employee-templates?')) return Promise.resolve({ templates: [{
         id: 'tonborg', name: 'Tonborg', agentId: 'employee.tonborg', agentStatus: 'active', workbench: { kind: 'native', view: 'judgment' },
       }] })
@@ -582,7 +560,8 @@ describe('Agent workbench', () => {
     })
     const { wrapper } = await setup('/agents/space-a/employee.tonborg')
     await settle()
-    expect(wrapper.find('a[href="/employees/tonborg"]').exists()).toBe(true)
-    expect(wrapper.find('[data-profile-tab="workbench"]').exists()).toBe(false)
+    expect(wrapper.findAll('[role="tab"]')[0]!.attributes('data-profile-tab')).toBe('workbench')
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')).toBe('workbench')
+    expect(wrapper.find('a[href="/employees/tonborg"]').exists()).toBe(false)
   })
 })

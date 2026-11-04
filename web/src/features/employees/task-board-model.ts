@@ -43,6 +43,12 @@ function isEmployeeBoardStatus(value: unknown): value is EmployeeBoardStatus {
   return EMPLOYEE_BOARD_STATUSES.some((entry) => entry.value === value)
 }
 
+/** Every task with a known update, latest first. */
+export function recentBoardItems(boards: readonly EmployeeProjectBoard[]) {
+  return boards.flatMap(board => board.items).filter(item => item.updatedAt)
+    .sort((a, b) => b.updatedAt!.localeCompare(a.updatedAt!))
+}
+
 /** A task is unique by project and id; the same id can exist in two projects. */
 export function boardItemKey(item: Pick<EmployeeBoardItem, 'projectId' | 'id'>) {
   return `${item.projectId}:${item.id}`

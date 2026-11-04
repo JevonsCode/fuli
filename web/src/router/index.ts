@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import { agentManagementPath, formerManagementQuery } from '@/features/project-agents/orchestration-filters'
+
 import { updateDocumentTitle } from './meta'
 import { installNavigationRecovery } from './navigation-recovery'
 
@@ -84,11 +86,11 @@ export const router = createRouter({
     { path: '/project-agents/apps', name: 'agent-apps', component: () => import('@/features/agent-apps/AgentAppsPage.vue'), meta: { title: 'agentApps.title' } },
     { path: '/project-agents/apps/:appId', name: 'agent-app', component: () => import('@/features/agent-apps/AppViewerPage.vue'), meta: { title: 'agentApps.title', detail: true } },
     { path: '/project-agents/manage', name: 'agent-management', component: () => import('@/pages/ProjectAgentsPage.vue'), meta: { title: 'shell.sections.orchestrate' } },
-    { path: '/project-agents/manage/:spaceId/:agentId', name: 'agent-management-detail', component: () => import('@/pages/ProjectAgentDetailPage.vue'), meta: { title: 'projectAgents.pageTitle', detail: true } },
+    { path: '/project-agents/manage/:spaceId/:agentId', name: 'agent-management-detail', redirect: to => ({ path: agentManagementPath(String(to.params.spaceId), String(to.params.agentId)), query: formerManagementQuery(to.query), hash: to.hash }), meta: { title: 'projectAgents.pageTitle', detail: true } },
     {
       path: '/employees/:templateId',
       name: 'employee-workbench',
-      component: () => import('@/pages/EmployeeWorkbenchPage.vue'),
+      component: () => import('@/pages/EmployeeRedirectPage.vue'),
       meta: { title: 'routes.employeeWorkbench.title', detail: true },
     },
     {

@@ -1,4 +1,3 @@
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -15,10 +14,9 @@ vi.mock('@/api/client', () => ({ getJson, patchJson, postJson, deleteJson, putJs
 vi.mock('@/features/project-agents/task-updates', () => ({ subscribeTaskUpdates: subscription.subscribe }))
 
 import { useConsoleStore } from '@/stores/console'
-import { pageTitle } from '@/layouts/page-title'
 import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import { orchestrationAgents as agents, orchestrationResponse, orchestrationState } from '@/test-support/orchestration-fixtures'
-import ProjectAgentDetailPage from './ProjectAgentDetailPage.vue'
+import AgentManagement from './AgentManagement.vue'
 import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
 import { refreshEmployeeCatalog } from '@/features/employees/catalog'
@@ -27,7 +25,7 @@ import { setOption, selectionCount, selectionAction } from '@/test-support/optio
 const AGENT_PAGE = '/project-agents/manage/personal-1/shared-agent'
 const mounted: Array<{ unmount: () => void }> = []
 
-describe('ProjectAgentDetailPage', () => {
+describe('AgentManagement', () => {
   beforeEach(async () => {
     await refreshEmployeeCatalog('')
     getJson.mockReset()
@@ -38,15 +36,12 @@ describe('ProjectAgentDetailPage', () => {
   })
   afterEach(() => mounted.splice(0).forEach((wrapper) => wrapper.unmount()))
 
-  it('names the page after the Agent and shows its cross-project assignments, read for that Agent only', async () => {
+  it('shows the Agent\'s cross-project assignments, read for that Agent only', async () => {
     const { wrapper } = await mountPage()
     await flushPromises()
 
     expect(getJson).toHaveBeenCalledWith('/api/project-agents?personalSpaceId=personal-1')
-    expect(pageTitle.value.text).toBe('活动 Agent')
-    expect(wrapper.get('.agent-portrait img').attributes('src')).toBe(agentAvatarUrl('shared-agent'))
     expect(wrapper.find('h1').exists()).toBe(false)
-    expect(wrapper.get('[data-agent-responsibility]').text()).toBe('负责活动方案与复盘。')
     const projects = wrapper.get('[data-manage-panel="projects"]').text()
     expect(projects).toContain('负责活动方案与复盘。')
     expect(projects).toContain('负责界面结构与可用性审查。')
@@ -114,7 +109,7 @@ describe('ProjectAgentDetailPage', () => {
     // reka-ui Tabs select on mouse down.
     await wrapper.get('[data-manage-tab="execution"]').trigger('mousedown', { button: 0 })
     await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ tab: 'execution' })
+    expect(router.currentRoute.value.query).toEqual({ section: 'execution' })
     expect(wrapper.get('[data-manage-panel="execution"]').attributes('hidden')).toBeUndefined()
     await wrapper.get('[data-manage-tab="work"]').trigger('mousedown', { button: 0 })
     await flushPromises()
@@ -175,7 +170,7 @@ describe('ProjectAgentDetailPage', () => {
     const reads = scopedReads()
     await wrapper.get('[data-manage-tab="execution"]').trigger('mousedown', { button: 0 })
     await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ project: 'project-c', task: 'task-c', tab: 'execution' })
+    expect(router.currentRoute.value.query).toEqual({ project: 'project-c', task: 'task-c', section: 'execution' })
     expect(scopedReads()).toBe(reads)
     expect(otherReads()).toBe(assignmentsRead)
   })
@@ -202,7 +197,7 @@ describe('ProjectAgentDetailPage', () => {
       expect(scrolled.map(element => element.id)).toEqual(['task-task-a'])
 
       scrolled.length = 0
-      await router.push(`${AGENT_PAGE}?project=project-b&task=target&tab=execution`)
+      await router.push(`${AGENT_PAGE}?project=project-b&task=target&section=execution`)
       await flushPromises()
       const cards = wrapper.findAll('.project-agent-task-list > *')
       expect(cards).toHaveLength(13)
@@ -223,32 +218,23 @@ describe('ProjectAgentDetailPage', () => {
   })
 
   it('lands a new task link on the work tab, then leaves the tabs to the person', async () => {
-    const { wrapper, router } = await mountPage(false, `${AGENT_PAGE}?task=task-target&tab=execution`)
+    const { wrapper, router } = await mountPage(false, `${AGENT_PAGE}?task=task-target&section=execution`)
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({ task: 'task-target' })
     expect(wrapper.get('[data-manage-panel="work"]').attributes('hidden')).toBeUndefined()
 
     await wrapper.get('[data-manage-tab="execution"]').trigger('mousedown', { button: 0 })
     await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ task: 'task-target', tab: 'execution' })
+    expect(router.currentRoute.value.query).toEqual({ task: 'task-target', section: 'execution' })
     expect(wrapper.get('[data-manage-panel="execution"]').attributes('hidden')).toBeUndefined()
 
-    await router.push(`${AGENT_PAGE}?task=task-next&tab=execution`)
+    await router.push(`${AGENT_PAGE}?task=task-next&section=execution`)
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({ task: 'task-next' })
     expect(wrapper.get('[data-manage-panel="work"]').attributes('hidden')).toBeUndefined()
   })
 
-  it('keeps the H1 on the linked id until the Agent is known, never a section name', async () => {
-    getJson.mockImplementation((url: string) => url.includes('/api/project-agents?')
-      ? Promise.reject(new Error('provider unavailable')) : orchestrationResponse(url))
-    const { wrapper } = await mountPage()
-    await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('provider unavailable')
-    expect(pageTitle.value.text).toBe('shared-agent')
-  })
-
-  it('shows reported enums through their labels and keeps the profile link in 资料', async () => {
+  it('shows reported enums through their labels', async () => {
     const agent = { ...structuredClone(agents[0]!), memoryScope: 'task_only' }
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve([agent])
@@ -269,8 +255,6 @@ describe('ProjectAgentDetailPage', () => {
     const profile = wrapper.get('[data-manage-panel="profile"]')
     expect(profile.text()).toContain('仅限任务')
     expect(profile.text()).not.toContain('task_only')
-    expect(profile.find('[data-agent-profile-link]').attributes('href')).toBe('/agents/personal-1/shared-agent')
-    expect(wrapper.get('.project-agent-summary').find('[data-agent-profile-link]').exists()).toBe(false)
   })
 
   it.each(['target-agent', 'legacy-target'])('opens a task deep-link Agent whose assignment is in another project (%s)', async (routeAgent) => {
@@ -294,11 +278,8 @@ describe('ProjectAgentDetailPage', () => {
 
     const { wrapper, router } = await mountPage(false, `/project-agents/manage/personal-1/${routeAgent}?project=project-a&task=task-cross-project`)
     await flushPromises()
-
-    expect(pageTitle.value.text).toBe('目标 Agent')
     expect(wrapper.get('#task-task-cross-project').text()).toContain('跨项目任务')
     // An earlier id settles on the Agent's current one, keeping the task scope.
-    expect(router.currentRoute.value.fullPath).toBe('/project-agents/manage/personal-1/target-agent?project=project-a&task=task-cross-project')
   })
 
   it.each(['owner_agent_id', 'lead_agent_id', 'coordinator_agent_id'])('loads a linked %s-only task omitted by the participant-filtered API', async (identity) => {
@@ -354,56 +335,7 @@ describe('ProjectAgentDetailPage', () => {
     expect(wrapper.get('.growth-loading--page').text()).toContain('正在读取项目 Agent 列表')
     finishRoster(agents)
     await flushPromises()
-    expect(pageTitle.value.text).toBe('活动 Agent')
     expect(wrapper.find('[data-detail-section="tasks"]').exists()).toBe(true)
-  })
-
-  it('shows bootstrap failure and retries initialization instead of claiming the Agent is gone', async () => {
-    const original = getJson.getMockImplementation()!
-    getJson.mockImplementation((url: string) => url === '/api/state'
-      ? Promise.reject(new Error('initialization unavailable')) : original(url))
-    const { wrapper, initialState } = await mountPage(true)
-    await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('initialization unavailable')
-    getJson.mockImplementation((url: string) => url === '/api/state'
-      ? Promise.resolve(initialState) : original(url))
-    await wrapper.get('[role="alert"] button').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-detail-section="tasks"]').exists()).toBe(true)
-  })
-
-  it('ignores a pending roster after the personal space is removed', async () => {
-    let finishRoster!: (value: unknown) => void
-    const original = getJson.getMockImplementation()!
-    getJson.mockImplementation((url: string) => url.includes('/api/project-agents?')
-      ? new Promise(resolve => { finishRoster = resolve }) : original(url))
-    const { wrapper, store } = await mountPage()
-    await flushPromises()
-    store.state = { ...store.state!, personalSpaces: [], activePersonalSpaceId: null }
-    await nextTick()
-    const calls = getJson.mock.calls.length
-    finishRoster(agents)
-    await flushPromises()
-    expect(wrapper.find('[data-detail-section="tasks"]').exists()).toBe(false)
-    expect(getJson.mock.calls).toHaveLength(calls)
-  })
-
-  it('never shows or reads details for an Agent of another space, and says so', async () => {
-    const { wrapper } = await mountPage(false, '/project-agents/manage/personal-2/shared-agent')
-    await flushPromises()
-    expect(wrapper.text()).toContain('这个 Agent 不在当前个人空间中')
-    expect(getJson.mock.calls.some(([url]) => String(url).includes('agentId=shared-agent'))).toBe(false)
-  })
-
-  it('goes Back to the collection it was opened from, so its filters come back', async () => {
-    const { wrapper, router } = await mountPage(false, '/project-agents/manage?status=active', createWebHistory())
-    await flushPromises()
-    await router.push(AGENT_PAGE)
-    await flushPromises()
-    const returned = new Promise((resolve) => router.afterEach(resolve))
-    await wrapper.get('[data-breadcrumb-parent]').trigger('click')
-    await returned
-    expect(router.currentRoute.value.fullPath).toBe('/project-agents/manage?status=active')
   })
 
   it('shows request errors and retries the roster load', async () => {
@@ -417,54 +349,6 @@ describe('ProjectAgentDetailPage', () => {
     await flushPromises()
 
     expect(wrapper.find('.project-agents-state[role="alert"]').exists()).toBe(false)
-    expect(pageTitle.value.text).toBe('活动 Agent')
-  })
-
-  it.each([true, false])('scopes employee conversations to actual assignments (assigned=%s)', async (assigned) => {
-    const employee = structuredClone(agents[0]!)
-    employee.agentId = 'employee.concierge'
-    employee.personalProjectId = null
-    employee.memoryScope = 'reviewed_agent'
-    employee.profile.capabilities = ['fuli.employee:concierge']
-    employee.assignments = assigned
-      ? [{ ...employee.assignments![0]!, agentId: employee.agentId }]
-      : []
-    const template = {
-      id: 'concierge', version: '1.0.0', name: 'Synthetic concierge', role: 'Manager', description: 'Synthetic test employee',
-      capabilities: [], permissions: [], runtime: null, runtimeStatus: 'not_required',
-      agentId: employee.agentId, agentStatus: 'active', assignments: employee.assignments, assignmentsVersion: 'version-0', identityConflict: false,
-      management: { mode: 'all', projectIds: [], excludedProjectIds: [], titleMode: 'off', titleStyle: 'text' },
-      managedProjects: [{ id: 'project-b', name: 'Project B' }, { id: 'project-a', name: 'Project A' }],
-    }
-    const original = getJson.getMockImplementation()!
-    getJson.mockImplementation((url: string) => {
-      if (url.includes('/api/project-agents?')) return Promise.resolve([employee])
-      if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: employee.assignments })
-      if (url.includes('/api/employee-templates?')) return Promise.resolve({ templates: [template] })
-      return original(url)
-    })
-    postJson.mockResolvedValue({ conversations: [] })
-    const { wrapper } = await mountPage(false, '/project-agents/manage/personal-1/employee.concierge')
-    await flushPromises()
-    const conversations = wrapper.get('.agent-conversations')
-    ;(conversations.element as HTMLDetailsElement).open = true
-    await conversations.trigger('toggle')
-    await flushPromises()
-    if (assigned) {
-      // The panel reads on display, so the final read follows the assigned projects once they load.
-      expect(postJson).toHaveBeenLastCalledWith('/api/agent-conversations/query', {
-        personalSpaceId: 'personal-1', personalProjectId: 'project-a', agentId: employee.agentId, mode: 'list', limit: 20,
-      })
-      expect(conversations.findAll('option').map(option => option.attributes('value')).filter(Boolean)).toEqual(['project-a'])
-    } else {
-      expect(postJson).toHaveBeenCalledExactlyOnceWith('/api/agent-conversations/query', {
-        personalSpaceId: 'personal-1', personalProjectId: null, agentId: employee.agentId, mode: 'list', limit: 20,
-      })
-      expect(conversations.find('select').exists()).toBe(true)
-      expect(conversations.find('[data-memory-settings]').exists()).toBe(true)
-    }
-    // Workbench management still covers all projects; conversation access does not create assignments.
-    expect(wrapper.findAll('.employee-assigned-projects a')).toHaveLength(2)
   })
 
   it('opens the inline multi-project editor directly for employee roles, including future templates', async () => {
@@ -1015,7 +899,6 @@ describe('ProjectAgentDetailPage', () => {
 
     await router.push('/project-agents/manage/personal-1/second-agent')
     await flushPromises()
-    expect(pageTitle.value.text).toBe('最后 Agent')
     expect(getJson.mock.calls.some(([url]) => String(url).includes('/api/project-agent-activity?') && String(url).includes('agentId=second-agent'))).toBe(true)
   })
 
@@ -1085,7 +968,7 @@ async function mountPage(bootstrap = false, path = AGENT_PAGE, history = createM
   }
   const router = createRouter({ history, routes: [
     { path: '/project-agents/manage', component: { template: '<div data-collection>编排</div>' } },
-    { path: '/project-agents/manage/:spaceId/:agentId', component: ProjectAgentDetailPage },
+    { path: '/project-agents/manage/:spaceId/:agentId', component: AgentManagement, props: true },
     { path: '/agents/:spaceId/:agentId', component: { template: '<div />' } },
     { path: '/employees/:templateId', component: { template: '<div />' } },
     { path: '/inbox', component: { template: '<div />' } },

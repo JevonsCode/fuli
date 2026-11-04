@@ -168,7 +168,7 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('offers a pinned FLA its profile, its Workbench only when it has one, and unpinning from the right-click menu', async () => {
+  it('offers a pinned FLA its profile and unpinning from the right-click menu, and no Workbench it does not have', async () => {
     pinnedIds = ['agent-a']
     const { wrapper } = await setup('/project-agents')
     await wrapper.get('[data-pinned-agent="agent-a"]').trigger('contextmenu', { clientX: 40, clientY: 600 })
@@ -176,7 +176,7 @@ describe('AppShell', () => {
     const menu = document.querySelector('[data-pin-menu]')
     expect(menu?.textContent).toContain('Ada')
     const actions = () => [...document.querySelectorAll('[data-pin-action]')].map(item => item.getAttribute('data-pin-action'))
-    expect(actions()).toEqual(['home', 'workbench', 'unpin'])
+    expect(actions()).toEqual(['home', 'unpin'])
     wrapper.unmount()
   })
 
