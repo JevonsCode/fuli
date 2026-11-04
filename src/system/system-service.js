@@ -240,7 +240,8 @@ function settingsResult(configured, active) {
         conversationLaunchers: active.conversationLaunchers,
         notifications: active.notifications,
         agentNamingStyle: active.agentNamingStyle,
-        topicPromotion: active.topicPromotion
+        topicPromotion: active.topicPromotion,
+        updateChannel: active.updateChannel
       },
       active
     )
