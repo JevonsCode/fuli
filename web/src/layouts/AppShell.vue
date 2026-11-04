@@ -48,7 +48,7 @@ const destination = computed(() => activeDestination(destinations.value, route.p
 const section = computed(() => activeSection(destination.value, route.path))
 const dockDestinations = computed(() => destinations.value.filter(item => item.placement === 'dock'))
 const settingsActive = computed(() => destination.value?.key === 'settings')
-// Holding the settings button opens the #debug records (Jevons 11-04): nothing in Settings names them.
+// Holding the settings button opens the #fulidebug records (Jevons 11-04): nothing in Settings names them.
 const router = useRouter()
 const settingsHold = useHold(() => { void router.push('/debug') })
 // The dock stays open on the workbench and folds to the current destination

@@ -75,7 +75,7 @@
   --color-chart-rose: #a3445f;
   --color-chart-cyan: #23707f;
   --color-chart-slate: #66706a;
-  /* A #debug turn record (Settings › 系统 › 调试记录): one colour per source of its parts. */
+  /* A #fulidebug turn record (Settings › 系统 › 调试记录): one colour per source of its parts. */
   --color-source-person: var(--color-chart-blue);
   --color-source-fuli: var(--color-chart-amber);
   --color-source-ai: var(--color-chart-teal);

@@ -175,7 +175,7 @@ export function createSystemService({
     // The kept copies of FULI's logs and the person's 「清理旧日志」 (log-retention.js).
     logArchives: () => logRetention.archives(),
     clearLogArchives: () => logRetention.clearArchives(),
-    // The #debug turn records the person reads in Settings › 系统 (debug-turns/store.js).
+    // The #fulidebug turn records the person reads in Settings › 系统 (debug-turns/store.js).
     debugTurns: debugTurnStore(paths.dataDir),
     repairDoctor: createDoctorRepair({ check: doctor.check, connectClient: clientInstaller, observeClients,
       recordClientsReconnected: (id) => update.recordClientsReconnected(id) }),

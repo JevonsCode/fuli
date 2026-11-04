@@ -4,7 +4,7 @@ import { shapeOf } from '@/api/response-shape'
 import { t } from '@/i18n'
 import { tableLabel } from '@/i18n/label-table'
 
-// The #debug turn records (src/debug-turns/): one turn of a session with all
+// The #fulidebug turn records (src/debug-turns/): one turn of a session with all
 // the context FULI saw, as ordered parts, each from one source.
 export const DEBUG_SOURCES = ['person', 'fuli', 'ai', 'host', 'not_visible'] as const
 export type DebugSource = typeof DEBUG_SOURCES[number]
