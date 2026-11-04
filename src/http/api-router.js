@@ -249,7 +249,7 @@ export async function handleApiRequest({
   const graphRequest = async () =>
     await handleDataFormatApiRequest({ request, response, url, migrations: dataFormatMigrations }) ||
     await handleKnowledgeHardDeleteRequest({ request, response, url, app, hardDelete: knowledgeHardDelete }) ||
-    await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: knowledgeScope }) ||
+    await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: knowledgeScope, ownerReads: knowledgeOwnerReads }) ||
     await handleProjectHierarchyRequest({ request, response, url, app, hierarchyConsole: projectHierarchy }) ||
     await handleTaskBlockerRequest({ request, response, url, app, blockerConsole: taskBlockers }) ||
     await handleKnowledgeTagsRequest({ request, response, url, app, tagsConsole: knowledgeTags }) ||
