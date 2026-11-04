@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
 import { interfaceForRequest } from '../src/agent-tools/interface-catalog.js';
@@ -12,8 +13,8 @@ import { handleApiRequest } from '../src/http/api-router.js';
 import { mapHttpError } from '../src/http/error-mapping.js';
 import { reachableModules } from '../test-support/module-graph.js';
 
-// Settings › 系统 › 调试记录: GET /api/debug-turns, GET and DELETE
-// /api/debug-turns/:id, from this computer only. Synthetic records in a temp directory.
+// The Debug page: GET /api/debug-turns, GET and DELETE /api/debug-turns/:id and
+// POST /api/debug-turns/delete, from this computer only. Synthetic records in a temp directory.
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 async function api(system, path, { method = 'GET', remoteAddress = '127.0.0.1' } = {}) {
@@ -68,4 +69,30 @@ test('an FLA deletes a record only through the settings permission; no Agent ent
     const modules = reachableModules(join(ROOT, start));
     assert.deepEqual(console.filter((file) => modules.has(file)), [], start);
   }
+});
+
+test('several records go in one request, and only what was there is reported', async (t) => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'fuli-debug-many-'));
+  t.after(() => rm(dataDir, { recursive: true, force: true }));
+  const store = debugTurnStore(dataDir);
+  const ids = ['a', 'b'].map((prompt) => {
+    const record = buildDebugRecord({ sourceApplication: 'codex', sessionId: 's', prompt, frames: [], surface: null,
+      transcript: { status: 'unavailable' }, lastAssistantMessage: null });
+    store.write(record);
+    return record.id;
+  });
+  assert.deepEqual(store.removeMany([ids[0], '00000000-0000-4000-8000-000000000000']), [ids[0]]);
+  assert.deepEqual(store.list().map(({ id }) => id), [ids[1]]);
+  const { handleDebugTurnsRequest } = await import('../src/http/debug-turns-api-router.js');
+  const post = async (body, remoteAddress = '127.0.0.1') => {
+    const sent = {};
+    const request = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), { method: 'POST', headers: { 'content-type': 'application/json' }, socket: { remoteAddress } });
+    const response = { destroyed: false, setHeader() {}, writeHead(status) { sent.status = status; }, end(text) { sent.body = text ? JSON.parse(text) : null; } };
+    await handleDebugTurnsRequest({ request, response, url: new URL('http://127.0.0.1/api/debug-turns/delete'), debugTurns: store });
+    return sent;
+  };
+  assert.equal((await post({ ids: [ids[1]] }, '192.0.2.10')).status, 403);
+  assert.equal((await post({ ids: [] })).status, 400);
+  assert.deepEqual((await post({ ids: [ids[1]] })).body, { deleted: [ids[1]] });
+  assert.equal(interfaceForRequest('POST', '/api/debug-turns/delete').category, 'settings');
 });

@@ -56,6 +56,10 @@ export function debugTurnStore(dataDir) {
       removeVersionedJsonFileAtomic(recordPath(id), DEBUG_TURN_FORMAT);
       return true;
     },
+    // The ones of these IDs that were there and are now gone.
+    removeMany(ids) {
+      return ids.filter((id) => this.remove(id));
+    },
     // The turn a #debug prompt began in this session, until its Stop.
     pending: {
       read(sourceApplication, sessionId) {

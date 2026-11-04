@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { deleteJson, getJson } from '@/api/client'
+import { deleteJson, getJson, postJson } from '@/api/client'
 import { shapeOf } from '@/api/response-shape'
 import { t } from '@/i18n'
 import { tableLabel } from '@/i18n/label-table'
@@ -30,6 +30,7 @@ const recordPath = (id: string) => `/api/debug-turns/${encodeURIComponent(id)}`
 export const listDebugTurns = async (signal?: AbortSignal) => (await getJson('/api/debug-turns', listShape, { signal })).records
 export const readDebugTurn = (id: string, signal?: AbortSignal) => getJson(recordPath(id), recordShape, { signal })
 export const deleteDebugTurn = (id: string) => deleteJson(recordPath(id), undefined, deletedShape)
+export const deleteDebugTurns = (ids: string[]) => postJson('/api/debug-turns/delete', { ids }, shapeOf(z.looseObject({ deleted: z.array(z.string()) })))
 
 /** The bytes FULI added to the turn and their share of all it saw, as a whole percent (0 when empty). */
 export function fuliShare(sums: DebugTotals): { bytes: number; total: number; percent: number } {

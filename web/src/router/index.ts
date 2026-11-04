@@ -218,7 +218,7 @@ export const router = createRouter({
       },
     },
     {
-      path: '/settings/debug-turns',
+      path: '/debug',
       name: 'debug-turns',
       component: () => import('@/pages/DebugTurnsPage.vue'),
       meta: {
@@ -227,7 +227,7 @@ export const router = createRouter({
       },
     },
     {
-      path: '/settings/debug-turns/:id',
+      path: '/debug/:id',
       name: 'debug-turn',
       component: () => import('@/pages/DebugTurnPage.vue'),
       meta: {

@@ -19,14 +19,15 @@ export async function recordDebugTurn({ runtimeConfigPath, sourceApplication, ev
     const sessionId = input?.session_id;
     if (!runtimeConfigPath || typeof sessionId !== 'string' || !sessionId) return;
     const store = debugTurnStore(dirname(runtimeConfigPath));
-    const frame = { event, text: redactDebugText(JSON.stringify(output ?? null)) };
+    // Only a #debug turn pays for this: every other turn leaves here untouched.
+    const frame = () => ({ event, text: redactDebugText(JSON.stringify(output ?? null)) });
     if (event === 'UserPromptSubmit') {
       if (!isDebugPrompt(input.prompt)) {
         store.pending.remove(sourceApplication, sessionId);
         return;
       }
       store.pending.write(sourceApplication, sessionId, { prompt: redactDebugText(input.prompt),
-        promptDigest: debugPromptDigest(input.prompt), frames: [frame] });
+        promptDigest: debugPromptDigest(input.prompt), frames: [frame()] });
       return;
     }
     if (event !== 'Stop') return;
@@ -38,7 +39,7 @@ export async function recordDebugTurn({ runtimeConfigPath, sourceApplication, ev
         readDebugTranscript(input.transcript_path, sessionId, adapter, pending.promptDigest)
       ]);
       store.write(buildDebugRecord({ sourceApplication, sessionId, prompt: pending.prompt,
-        frames: [...pending.frames, frame], surface: mcp, transcript,
+        frames: [...pending.frames, frame()], surface: mcp, transcript,
         lastAssistantMessage: input.last_assistant_message ?? null }, { now }));
     } finally {
       store.pending.remove(sourceApplication, sessionId);

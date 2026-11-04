@@ -23,10 +23,10 @@ async function mountPage(answer: (url: string, init?: RequestInit) => Response) 
   const fetch = vi.fn(async (url: string, init?: RequestInit) => answer(url, init))
   vi.stubGlobal('fetch', fetch)
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/settings/debug-turns', component: { template: '<div data-list />' } },
-    { path: '/settings/debug-turns/:id', component: DebugTurnPage },
+    { path: '/debug', component: { template: '<div data-list />' } },
+    { path: '/debug/:id', component: DebugTurnPage },
   ] })
-  await router.push('/settings/debug-turns/record-1')
+  await router.push('/debug/record-1')
   const wrapper = mount(DebugTurnPage, { attachTo: document.body, global: { plugins: [router] } })
   await flushPromises()
   return { fetch, router, wrapper }
@@ -64,7 +64,7 @@ it('deletes the record only after the person confirms, then returns to the list'
   document.querySelector<HTMLButtonElement>('[data-debug-turn-remove-confirm]')!.click()
   await flushPromises()
   expect(fetch.mock.calls.filter(([, init]) => init?.method === 'DELETE').map(([url]) => url)).toEqual(['/api/debug-turns/record-1'])
-  expect(router.currentRoute.value.path).toBe('/settings/debug-turns')
+  expect(router.currentRoute.value.path).toBe('/debug')
   wrapper.unmount()
 })
 

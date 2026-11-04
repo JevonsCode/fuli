@@ -27,7 +27,7 @@ const confirming = ref(false)
 const removing = ref(false)
 const removeError = ref('')
 let reading: AbortController | null = null
-const openedFromList = /^\/settings\/debug-turns(?:[?#]|$)/
+const openedFromList = /^\/debug(?:[?#]|$)/
 
 const id = computed(() => String(route.params.id ?? ''))
 const share = computed(() => record.value ? fuliShare(record.value.totals) : null)
@@ -59,7 +59,7 @@ async function remove() {
   try {
     await deleteDebugTurn(id.value)
     confirming.value = false
-    await router.replace('/settings/debug-turns')
+    await router.replace('/debug')
   } catch (cause) {
     removeError.value = t('debugTurns.removeFailed', { reason: apiErrorReason(cause) })
   } finally {
@@ -75,7 +75,7 @@ onBeforeUnmount(() => reading?.abort())
   <section class="view debug-turn-view" :aria-label="t('debugTurns.title')">
     <div class="debug-turn-content">
       <div class="debug-turn-bar">
-        <Breadcrumb :parent="{ label: t('debugTurns.title'), to: '/settings/debug-turns', from: openedFromList }" />
+        <Breadcrumb :parent="{ label: t('debugTurns.title'), to: '/debug', from: openedFromList }" />
         <Button v-if="record" type="button" size="sm" variant="outline" data-debug-turn-remove @click="confirming = true">
           {{ t('debugTurns.remove') }}
         </Button>
