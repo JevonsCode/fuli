@@ -3,13 +3,13 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import DebugTurnPage from './DebugTurnPage.vue'
 
-// One synthetic #debug turn record, as GET /api/debug-turns/:id answers it.
+// One synthetic #fulidebug turn record, as GET /api/debug-turns/:id answers it.
 const RECORD = {
   version: 1, id: 'record-1', createdAt: '2026-11-04T08:00:00.000Z', sourceApplication: 'claude_code', transcript: 'read',
   parts: [
     { source: 'not_visible', kind: 'system_prompt', label: '', text: 'The client’s own system prompt is not visible to FULI.', bytes: 55 },
     { source: 'fuli', kind: 'mcp_tools', label: '6', text: 'x'.repeat(900), bytes: 900 },
-    { source: 'person', kind: 'prompt', label: '', text: '#debug synthetic ask', bytes: 20 },
+    { source: 'person', kind: 'prompt', label: '', text: '#fulidebug synthetic ask', bytes: 20 },
     { source: 'ai', kind: 'assistant_message', label: '', text: 'Synthetic answer.', bytes: 17 },
     { source: 'host', kind: 'tool_call', label: 'Bash', text: '{"name":"Bash"}', bytes: 8 },
   ],
@@ -78,7 +78,7 @@ it('says when the record no longer exists', async () => {
 // What a real turn that fit whole looks like: the record says cut: null.
 it('reads a record that nothing was cut from', async () => {
   const { wrapper } = await mountPage(() => Response.json({ ...RECORD, cut: null }))
-  expect(wrapper.find('[data-debug-part]').exists() || wrapper.text().includes('#debug')).toBe(true)
+  expect(wrapper.find('[data-debug-part]').exists() || wrapper.text().includes('#fulidebug')).toBe(true)
   expect(wrapper.text()).not.toContain('没有读取成功')
   wrapper.unmount()
 })

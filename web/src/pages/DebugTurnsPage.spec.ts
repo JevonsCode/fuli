@@ -20,10 +20,10 @@ async function mountPage(records: unknown[]) {
 
 it('lists each record by its first prompt line, client and FULI’s share, linking to the record', async () => {
   const wrapper = await mountPage([{ id: 'r 1', createdAt: '2026-11-04T08:00:00.000Z', sourceApplication: 'codex',
-    promptLine: '#debug synthetic ask', totals: { person: 50, fuli: 25, ai: 25, host: 0, not_visible: 0 } }])
+    promptLine: '#fulidebug synthetic ask', totals: { person: 50, fuli: 25, ai: 25, host: 0, not_visible: 0 } }])
   const row = wrapper.get('[data-debug-turn-row]')
   expect(row.attributes('href')).toBe('/debug/r%201')
-  expect(row.text()).toContain('#debug synthetic ask')
+  expect(row.text()).toContain('#fulidebug synthetic ask')
   expect(row.text()).toContain('Codex')
   expect(row.text()).toContain('25%')
 })
@@ -31,11 +31,11 @@ it('lists each record by its first prompt line, client and FULI’s share, linki
 it('says how to make one when there is none', async () => {
   const wrapper = await mountPage([])
   expect(wrapper.find('[data-debug-turn-row]').exists()).toBe(false)
-  expect(wrapper.text()).toContain('以 #debug 开头提问')
+  expect(wrapper.text()).toContain('以 #fulidebug 开头提问')
 })
 
 it('deletes the selected records after a second click in place', async () => {
-  const row = (id: string) => ({ id, createdAt: '2026-11-04T08:00:00.000Z', sourceApplication: 'codex', promptLine: '#debug ' + id,
+  const row = (id: string) => ({ id, createdAt: '2026-11-04T08:00:00.000Z', sourceApplication: 'codex', promptLine: '#fulidebug ' + id,
     totals: { person: 1, fuli: 1, ai: 1, host: 0, not_visible: 0 } })
   const wrapper = await mountPage([row('a'), row('b'), row('c')])
   const fetch = vi.mocked(globalThis.fetch)

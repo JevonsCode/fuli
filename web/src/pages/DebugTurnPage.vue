@@ -15,7 +15,7 @@ import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import { formatBytes } from '@/lib/format-bytes'
 import { UiDialog, UiEmpty, UiNotice } from '@/ui'
 
-// One #debug turn record: its parts in order, each coloured by its source,
+// One #fulidebug turn record: its parts in order, each coloured by its source,
 // and how much of the turn FULI added.
 const route = useRoute()
 const router = useRouter()

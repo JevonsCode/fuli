@@ -6,8 +6,8 @@ import { readJsonFile } from '../storage/json-file.js';
 import { jsonFormat, readJsonRecord, removeVersionedJsonFileAtomic, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { DEBUG_RECORD_VERSION } from './record.js';
 
-// The #debug turn records of one data directory (Jevons 11-04), one file per
-// turn under debug-turns/, and the turn a #debug prompt began, kept until its
+// The #fulidebug turn records of one data directory (Jevons 11-04), one file per
+// turn under debug-turns/, and the turn a #fulidebug prompt began, kept until its
 // Stop under debug-turns/pending/. Local only: nothing here reaches the Provider.
 export const DEBUG_TURN_FORMAT = jsonFormat({ store: 'debug-turns', versions: [DEBUG_RECORD_VERSION] });
 export const DEBUG_TURN_PENDING_FORMAT = jsonFormat({ store: 'debug-turn-pending', versions: [1] });
@@ -60,7 +60,7 @@ export function debugTurnStore(dataDir) {
     removeMany(ids) {
       return ids.filter((id) => this.remove(id));
     },
-    // The turn a #debug prompt began in this session, until its Stop.
+    // The turn a #fulidebug prompt began in this session, until its Stop.
     pending: {
       read(sourceApplication, sessionId) {
         try {

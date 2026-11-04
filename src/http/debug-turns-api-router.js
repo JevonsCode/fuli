@@ -1,7 +1,7 @@
 import { refuseRemoteDecision } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
 
-// The Debug page, held open from the settings button: the #debug turn records (src/debug-turns/).
+// The Debug page, held open from the settings button: the #fulidebug turn records (src/debug-turns/).
 // They hold whole conversations of this computer's sessions, so only a
 // request from this computer lists, reads or deletes one. An FLA deletes one
 // for the person only through run_delegated_action (interface-catalog.js).

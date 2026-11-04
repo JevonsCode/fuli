@@ -6,26 +6,24 @@ import { debugPromptDigest, readDebugTranscript } from './transcript-reader.js';
 import { isDebugPrompt } from './trigger.js';
 import { fuliMcpSurface } from './fuli-surface.js';
 
-// The one call an Agent's lifecycle hook makes for #debug (Jevons 11-04),
-// after its output is final: it only reads what the hook already decided and
-// writes local files. A #debug prompt's entry frame is kept until the turn's
-// Stop, which builds the record from it, the Stop frame and the host's
-// transcript (adapter: the Agent's transcript port, or null for a host without
-// one). Recording never changes or fails the turn: an error is logged and the
-// hook goes on.
+// The one call an Agent's lifecycle hook makes for #fulidebug (Jevons 11-04),
+// after its output is final, a failed hook included: that turn is the one worth
+// reading. It only reads what the hook decided and writes local files. A marked
+// prompt's entry frame is kept until a Stop, which builds the record from it,
+// the Stop frame and the host's transcript (adapter: the Agent's transcript port,
+// or null for a host without one). A message queued mid-turn leaves it in place.
+// Recording never changes or fails the turn: an error is logged and the hook
+// goes on.
 export async function recordDebugTurn({ runtimeConfigPath, sourceApplication, event, input, output, adapter = null },
   { surface = fuliMcpSurface, log = defaultLog, now = () => new Date() } = {}) {
   try {
     const sessionId = input?.session_id;
     if (!runtimeConfigPath || typeof sessionId !== 'string' || !sessionId) return;
     const store = debugTurnStore(dirname(runtimeConfigPath));
-    // Only a #debug turn pays for this: every other turn leaves here untouched.
+    // Only a marked turn pays for this: every other turn leaves here untouched.
     const frame = () => ({ event, text: redactDebugText(JSON.stringify(output ?? null)) });
     if (event === 'UserPromptSubmit') {
-      if (!isDebugPrompt(input.prompt)) {
-        store.pending.remove(sourceApplication, sessionId);
-        return;
-      }
+      if (!isDebugPrompt(input.prompt)) return;
       store.pending.write(sourceApplication, sessionId, { prompt: redactDebugText(input.prompt),
         promptDigest: debugPromptDigest(input.prompt), frames: [frame()] });
       return;
@@ -46,7 +44,7 @@ export async function recordDebugTurn({ runtimeConfigPath, sourceApplication, ev
     }
   } catch (error) {
     // No prompt, path or message: only what kind of failure it was.
-    log(`FULI: this #debug turn was not recorded (${error?.code ?? error?.name ?? 'error'}).`);
+    log(`FULI: this #fulidebug turn was not recorded (${error?.code ?? error?.name ?? 'error'}).`);
   }
 }
 

@@ -141,9 +141,9 @@ const jsonDirectories = () => [
   ['capture-session-pause/pins/off', CAPTURE_SESSION_PAUSE_FORMAT],
   // Which client each session ran in, as the session launcher classified it (rec#11 D-79).
   ['session-clients', SESSION_CLIENT_FORMAT],
-  // The #debug turn records the person reads in Settings › 系统, newest 20 within 50 MB; local only.
+  // The #fulidebug turn records the person reads in Settings › 系统, newest 20 within 50 MB; local only.
   ['debug-turns', DEBUG_TURN_FORMAT],
-  // The turn a #debug prompt began, until its Stop records it.
+  // The turn a #fulidebug prompt began, until its Stop records it.
   ['debug-turns/pending', DEBUG_TURN_PENDING_FORMAT]
 ];
 // The worst state of a directory's records names the directory's state.
