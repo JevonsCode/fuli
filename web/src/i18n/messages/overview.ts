@@ -54,7 +54,7 @@ export const overviewMessages = {
     },
     missing: { taskTitle: '未提供任务标题', requestTitle: '未提供请求标题', owner: '还没有负责人', name: '姓名未提供',
       nameLoading: '正在读取负责人姓名…', nameUnavailable: '负责人姓名暂不可用', project: '项目名未提供', status: '状态未识别', time: '时间未提供' },
-    actions: { request: '查看请求', task: '查看任务', blocked: '查看阻塞详情', failed: '查看失败详情', awaiting_review: '查看交付记录' },
+    actions: { request: '查看请求', task: '查看任务', blocked: '查看详情', failed: '查看详情', awaiting_review: '查看交付记录' },
   },
   'en-US': {
     sections: {
@@ -111,6 +111,6 @@ export const overviewMessages = {
     },
     missing: { taskTitle: 'Task title not provided', requestTitle: 'Request title not provided', owner: 'No lead yet', name: 'Name not provided',
       nameLoading: 'Reading owner names…', nameUnavailable: 'Owner name unavailable', project: 'Project name not provided', status: 'Unrecognized status', time: 'Time not provided' },
-    actions: { request: 'View request', task: 'View task', blocked: 'View blocking details', failed: 'View failure details', awaiting_review: 'View delivery record' },
+    actions: { request: 'View request', task: 'View task', blocked: 'View details', failed: 'View details', awaiting_review: 'View delivery record' },
   },
 } as const

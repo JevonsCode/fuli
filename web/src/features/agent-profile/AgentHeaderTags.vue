@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useResizeObserver } from '@vueuse/core'
 import { computed, nextTick, ref, watch } from 'vue'
+import { Button } from '@/components/ui/button'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import OccupationChip from '@/features/occupations/OccupationChip.vue'
 import { t } from '@/i18n'
@@ -15,7 +16,7 @@ const props = defineProps<{ agent: ProjectAgentRecord; occupationKeys: string[] 
 
 const GAP = 6
 const row = ref<HTMLElement | null>(null)
-const more = ref<HTMLElement | null>(null)
+const more = ref<InstanceType<typeof Button> | null>(null)
 const shown = ref(props.occupationKeys.length)
 const folded = computed(() => props.occupationKeys.slice(shown.value))
 const open = ref(false)
@@ -27,7 +28,7 @@ function fit() {
   const fixed = [...element.querySelectorAll<HTMLElement>('[data-tag-fixed]')]
   const tags = [...element.querySelectorAll<HTMLElement>('[data-tag-slot]')]
   const taken = fixed.reduce((sum, tag) => sum + tag.offsetWidth + GAP, 0)
-  shown.value = fittingTagCount(tags.map(tag => tag.offsetWidth), element.clientWidth - taken, GAP, more.value?.offsetWidth ?? 36)
+  shown.value = fittingTagCount(tags.map(tag => tag.offsetWidth), element.clientWidth - taken, GAP, (more.value?.$el as HTMLElement | undefined)?.offsetWidth ?? 36)
 }
 useResizeObserver(row, fit)
 watch(() => props.occupationKeys.join('\n'), async () => {
@@ -49,9 +50,9 @@ watch(() => props.occupationKeys.join('\n'), async () => {
     <span v-if="!occupationKeys.length" class="ui-meta" data-tag-fixed>{{ t('agentRedesign.occupation.notSet') }}</span>
     <HoverCard v-model:open="open" :open-delay="120" :close-delay="120">
       <HoverCardTrigger as-child>
-        <button ref="more" type="button" class="agent-header-more" :class="{ 'is-idle': !folded.length }"
+        <Button ref="more" variant="outline" size="xs" class="agent-header-more" :class="{ 'is-idle': !folded.length }"
           :aria-label="t('agentProfiles.moreTags', { count: folded.length })" :aria-hidden="!folded.length" :tabindex="folded.length ? 0 : -1"
-          data-tags-more @click="open = !open">…</button>
+          data-tags-more @click="open = !open">…</Button>
       </HoverCardTrigger>
       <HoverCardContent v-if="folded.length" align="start" class="agent-header-tags-card" data-tags-card>
         <span v-for="key in folded" :key="key">{{ occupationLabel(key) }}</span>
@@ -63,14 +64,12 @@ watch(() => props.occupationKeys.join('\n'), async () => {
 <style scoped>
 .agent-header-tags { position: relative; display: flex; flex: 1 1 0; align-items: center; gap: 6px; min-width: 0; overflow: hidden; }
 .agent-header-tags > [data-tag-fixed] { flex: 0 0 auto; white-space: nowrap; }
+/* Every tag in the row is one height and one padding, whatever component draws it. */
+.agent-header-tags > .ui-badge { box-sizing: border-box; height: 24px; padding: 0 10px; border: 1px solid transparent; font-size: 12px; line-height: 1; }
+.agent-header-tags :deep(.occupation-chip) { box-sizing: border-box; height: 24px; line-height: 1; font-weight: var(--weight-medium); }
 .agent-header-tag { display: inline-flex; flex: 0 0 auto; white-space: nowrap; }
 .agent-header-tag.is-folded, .agent-header-more.is-idle { position: absolute; visibility: hidden; pointer-events: none; }
-.agent-header-more {
-  display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 30px; height: 24px; border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill); color: var(--color-ink-soft); background: var(--color-surface); font: inherit; font-size: 12px; cursor: pointer; user-select: none;
-}
-.agent-header-more:hover { border-color: var(--color-border-strong); }
-.agent-header-more:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.agent-header-more { flex: 0 0 auto; border-radius: var(--radius-pill); user-select: none; }
 </style>
 
 <style>

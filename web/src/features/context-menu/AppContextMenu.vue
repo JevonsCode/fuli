@@ -8,6 +8,7 @@ import { agentPinsText } from '@/features/agent-profile/agent-pins'
 import { agentProfilePath } from '@/features/agent-profile/profile-model'
 import { useAgentWorkSurfaces } from '@/features/agent-profile/use-agent-work-surfaces'
 import { usePortraitShake } from '@/features/agent-profile/use-portrait-shake'
+import { personalProjectsPath } from '@/router/paths'
 import { useConsoleStore } from '@/stores/console'
 import { getJson } from '@/api/client'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
@@ -31,6 +32,13 @@ const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
 const work = useAgentWorkSurfaces(spaceId)
 const { shake } = usePortraitShake()
 const agentTarget = computed(() => target.value?.kind === 'agent' ? target.value : null)
+const projectTarget = computed(() => target.value?.kind === 'project' ? target.value : null)
+const projectsByName = computed(() => new Map((store.state?.personalProjects ?? [])
+  .filter(project => project.personal_space_id === spaceId.value && project.profile.name)
+  .map(project => [project.profile.name, project.project_id])))
+function editProject(projectId: string) {
+  void router.push({ path: personalProjectsPath(spaceId.value, 'overview', projectId), query: { edit: 'profile' } })
+}
 // A portrait names only its FLA's id: the menu reads that FLA's record for its name and,
 // with it, where its workbench and workflows are. Records read once stay for the visit.
 const agents = ref<Record<string, ProjectAgentRecord | 'missing'>>({})
@@ -88,7 +96,7 @@ function menuPoint(event: MouseEvent) {
 }
 
 async function onContextMenu(event: MouseEvent) {
-  const found = readContextTarget(event.target, { selection: window.getSelection(), origin: window.location.origin, canPaste: canPaste() })
+  const found = readContextTarget(event.target, { selection: window.getSelection(), origin: window.location.origin, projects: projectsByName.value, canPaste: canPaste() })
   // A component's own menu decides a tick later (reka-ui's trigger does); let it claim the event first.
   await nextTick()
   if (event.defaultPrevented) return
@@ -148,7 +156,7 @@ async function cut(current: FieldTarget) {
 function run(action: MenuAction) {
   const current = target.value
   // A portrait's menu runs its own items (goAgent), never these.
-  if (!current || current.kind === 'agent') return
+  if (!current || current.kind === 'agent' || current.kind === 'project') return
   if (current.kind === 'link') {
     if (action === 'copyLink') return writeClipboard(current.url.href)
     // An outside link opens the way the app opens every outside link: a new window, which the desktop client hands to the browser.
@@ -188,7 +196,12 @@ onBeforeUnmount(() => {
     </ContextMenuTrigger>
     <ContextMenuContent class="app-context-menu" :collision-padding="8" data-app-context-menu
       @close-auto-focus="onCloseAutoFocus" @interact-outside="onInteractOutside">
-      <template v-if="agentTarget">
+      <template v-if="projectTarget">
+        <ContextMenuLabel>{{ projectTarget.name }}</ContextMenuLabel>
+        <ContextMenuItem data-project-action="copy-name" @select="writeClipboard(projectTarget.name)">{{ t('contextMenu.copyProjectName') }}</ContextMenuItem>
+        <ContextMenuItem data-project-action="edit" @select="editProject(projectTarget.projectId)">{{ t('contextMenu.editProject') }}</ContextMenuItem>
+      </template>
+      <template v-else-if="agentTarget">
         <ContextMenuLabel>{{ agentName(agentTarget.agentId) }}</ContextMenuLabel>
         <ContextMenuItem data-portrait-action="home" @select="goAgent({ path: agentProfilePath(spaceId, agentTarget.agentId), query: { tab: 'overview' } })">
           {{ agentPinsText('menu.home', 'Open profile') }}
