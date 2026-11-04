@@ -91,6 +91,7 @@ export interface JudgmentDecisionRecord {
 
 // The console's 需要人工 / 全部 views; the server applies isHumanNeeded's rule to every record.
 export type JudgmentRecordFilter = 'human' | 'all'
+export type JudgmentView = 'records' | 'standards'
 
 export interface JudgmentRecordPageQuery {
   filter: JudgmentRecordFilter

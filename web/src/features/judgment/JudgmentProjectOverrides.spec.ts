@@ -30,7 +30,9 @@ describe('JudgmentProjectOverrides', () => {
     const wrapper = mount(JudgmentProjectOverrides, { props: { personalSpaceId: 'space', projects } })
     await flushPromises()
     expect(getJson).toHaveBeenCalledWith('/api/judgment/policies?personalSpaceId=space', expect.objectContaining({ schema: expect.anything() }))
-    expect(wrapper.get('[data-judgment-default]').text()).toMatch(/共同决策|Shared/)
+    // An open card, not a disclosure; the default is the card beside it.
+    expect(wrapper.find('details').exists()).toBe(false)
+    expect(wrapper.get('[data-judgment-overrides]').text()).toMatch(/1 (个项目|projects)/)
     const rows = () => wrapper.findAll('[data-project-judgment]').map(row => row.attributes('data-project-judgment'))
     expect(rows()).toEqual(['ledger'])
     expect(wrapper.get('[data-project-judgment="ledger"]').text()).toContain('家庭账本')

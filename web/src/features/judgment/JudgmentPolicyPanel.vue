@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
+import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { computed, ref, watch } from 'vue'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -18,8 +19,8 @@ import {
   type JudgmentPolicySelection,
 } from './judgment-types'
 
-// Tonborg's default judgment, for every project without its own (set on the
-// project page or in Tonborg's workbench).
+// Tonborg's default judgment, for every project without its own (set beside
+// this card or on the project page).
 const props = defineProps<{ personalSpaceId: string }>()
 
 const policy = ref<JudgmentPolicy | null>(null)
@@ -103,15 +104,14 @@ function undo() {
 </script>
 
 <template>
-  <section class="judgment-policy-panel" :aria-label="judgmentText('settings.title')">
-    <header class="judgment-panel-heading">
-      <div>
-        <h3>{{ judgmentText('settings.title') }}</h3>
-        <p>{{ judgmentText('settings.hint') }}</p>
-      </div>
-      <GrowthLoading v-if="saving" variant="inline" :label="judgmentText('settings.saving')" />
-    </header>
+  <Card as="section" :aria-label="judgmentText('settings.title')">
+    <CardHeader>
+      <CardTitle as="h2">{{ judgmentText('settings.title') }}</CardTitle>
+      <CardDescription>{{ judgmentText('settings.hint') }}</CardDescription>
+      <CardAction v-if="saving"><GrowthLoading variant="inline" :label="judgmentText('settings.saving')" /></CardAction>
+    </CardHeader>
 
+    <div class="judgment-policy-body">
     <GrowthLoading v-if="loading && !policy" variant="compact" :label="judgmentText('settings.loading')" />
     <div v-else-if="!props.personalSpaceId" class="judgment-policy-empty">
       {{ judgmentText('settings.loadError') }}
@@ -145,16 +145,14 @@ function undo() {
       </fieldset>
       <div v-if="saveError" class="judgment-policy-error" role="alert">{{ saveError }}</div>
     </template>
-  </section>
+    </div>
+  </Card>
 </template>
 
 <style scoped>
-.judgment-policy-panel { display: grid; gap: 18px; }
-.judgment-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.judgment-panel-heading h3 { margin: 0; color: var(--color-ink); font-size: 16px; }
-.judgment-panel-heading p { margin: 6px 0 0; color: var(--color-muted); font-size: 13px; line-height: 1.55; }
+.judgment-policy-body { display: grid; gap: 18px; padding: 0 var(--space-5, 20px); }
 .judgment-policy-fields { display: grid; gap: 10px; min-width: 0; padding: 0; border: 0; }
-.judgment-policy-fields legend { margin-bottom: 2px; color: var(--color-muted); font-size: 12px; }
+.judgment-policy-fields legend { margin-bottom: 2px; padding: 0; color: var(--color-muted); font-size: 12px; }
 .judgment-mode-option { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-control); cursor: pointer; }
 .judgment-mode-option.is-selected { border-color: var(--color-accent); background: var(--color-accent-soft); }
 .judgment-mode-option input { margin-top: 3px; accent-color: var(--color-accent); }
@@ -163,6 +161,7 @@ function undo() {
 .judgment-mode-option small { color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 .judgment-progressive-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
 .judgment-policy-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.judgment-policy-actions:empty { display: none; }
 .judgment-policy-saved { color: var(--color-muted); font-size: 12px; }
 .judgment-policy-error { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 12px; border-radius: var(--radius-control); color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
 .judgment-policy-empty { color: var(--color-muted); font-size: 13px; }

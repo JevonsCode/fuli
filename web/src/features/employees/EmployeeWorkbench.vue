@@ -20,6 +20,7 @@ import EmployeeShareDialog from '@/features/employees/EmployeeShareDialog.vue'
 import { useProjectBoardFilter } from '@/features/employees/project-board-filter'
 import { provideWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
 import JudgmentWorkbench from '@/features/judgment/JudgmentWorkbench.vue'
+import type { JudgmentView } from '@/features/judgment/judgment-types'
 import { useConsoleStore } from '@/stores/console'
 import { t } from '@/i18n'
 import { employeeName, employeeTemplates, employeeCatalogError, employeeCatalogLoading, employeeErrorMessage, refreshEmployeeCatalog, type EmployeeWorkspace } from '@/features/employees/catalog'
@@ -202,6 +203,14 @@ const shownTaskRef = computed(() => (openTaskRevoked.value ? null : openTaskRef.
 watch([projectFilter.selection, () => openTaskRef.value?.projectId], () => { if (isJefa.value) jefaRead.selectionChanged() })
 const pageRoot = ref<HTMLElement | null>(null)
 // Bole and Tonborg put their actions in this row instead of a title row of their own.
+// Tonborg's two tabs are part of the URL, like the page's own (?view=standards).
+const judgmentView = computed<JudgmentView>({
+  get: () => route.query.view === 'standards' ? 'standards' : 'records',
+  set: (view) => {
+    const { view: _previous, ...query } = route.query
+    void router.replace({ query: view === 'records' ? query : { ...query, view }, hash: route.hash })
+  },
+})
 const toolbarActions = ref<HTMLElement | null>(null)
 provideWorkbenchToolbarActions(toolbarActions)
 // A shared link scrolls its card into view once, after the board shows it.
@@ -382,7 +391,7 @@ async function projectsSaved() {
     <div v-else-if="visibleError" class="employee-workbench-state" role="alert"><p>{{ visibleError }}</p><Button size="sm" variant="ghost" @click="retry">{{ t('employees.retry') }}</Button></div>
     <div v-else-if="!template && !(isJefa && (jefaRead.loading || jefaRead.timedOut || jefaRead.failure))" class="employee-workbench-state"><p>{{ t('employees.unavailable') }}</p></div>
     <BolePeoplePanel v-else-if="isNativePeople" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" />
-    <JudgmentWorkbench v-else-if="isNativeJudgment" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" />
+    <JudgmentWorkbench v-else-if="isNativeJudgment" v-model:view="judgmentView" :personal-space-id="personalSpaceId" :projects="store.state?.personalProjects ?? []" />
     <UnassignedConversationsPanel v-else-if="isNativeUnclaimed" :space-id="personalSpaceId" :focus-conversation-id="typeof route.query.conversation === 'string' ? route.query.conversation : undefined" :formal-projects="spaceProjects.filter(isFormalProject)" :existing-project-ids="spaceProjects.map(project => project.project_id)" @project-created="store.rememberPersonalProject" />
     <div v-else-if="!projectId && !(isJefa && (jefaRead.loading || jefaRead.timedOut || jefaRead.failure))" class="employee-workbench-state"><h2>{{ t('employees.emptyWorkbench') }}</h2><p>{{ t('employees.manageHint') }}</p><Button size="sm" variant="ghost" @click="manageProjectsOpen = true">{{ t('employees.manageProjects') }}</Button></div>
     <EmployeeTaskBoard
@@ -435,9 +444,13 @@ async function projectsSaved() {
 .fills-height .employee-workbench-canvas { flex: 1 1 0; min-height: 0; }
 .employee-workbench-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; }
 .employee-workbench-toolbar:has(.employee-workbench-actions:empty) { display: none; }
-/* A native panel's actions sit in the corner of the card, on the row of its own tabs. */
-.is-native .employee-workbench-toolbar { position: absolute; top: 10px; right: 14px; z-index: 1; }
+/* A native panel's actions sit in the corner of the card, on the row of its own
+   tabs: the card's padding and the tabs' height put them on the same centre line. */
+.is-native .employee-workbench-toolbar { position: absolute; top: 14px; right: 18px; z-index: 1; height: var(--control-height); }
 .employee-workbench-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* Below the width where the Agent page stops scrolling (AgentProfilePage) there
+   is no height to fill, so Tonborg's workbench takes one of its own. */
+@media (max-width: 1099px) { .is-native.fills-height .employee-workbench-canvas { flex: 0 0 auto; height: 70vh; } }
 .employee-workbench-view :deep(.employee-all-projects) { flex: 1 0 460px; padding: 0; background: transparent; }
 .employee-workbench-frame { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
 .employee-workbench-state { display: grid; flex: 1; gap: 14px; place-content: center; justify-items: center; padding: 30px; color: var(--color-muted); font-size: 14px; text-align: center; }
