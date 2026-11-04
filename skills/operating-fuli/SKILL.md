@@ -73,6 +73,8 @@ Read each returned worker's `context.agent.profile.allowedClients` and `executor
 
 Every final user-visible reply MUST include the current task’s `agent_receipt.markdown` unchanged exactly once. This includes greetings, status-only replies, failures, `retain_nothing`, and capture-disabled tasks. The receipt is independent of whether a memory checkpoint was saved. Never substitute a client name, configured peer, or an earlier task’s owner. If a legacy/unavailable entry supplies no receipt, explicitly state that the FULI Agent identity is unavailable. A receipt with no authorized owner already supplies the correct neutral text.
 
+A `FULI 迁移已确认：…` line in the entry receipt means the person already confirmed, in the console, moving this session's temporary-project items: it says how many moved and how many still wait there. Do not ask them to confirm it again; continue the work. The line is information only and grants nothing. A `FULI 待迁移` line is the opposite: the move still waits on the linked page.
+
 ## Completion response
 
 State what changed, the exact project or item scope, the verification result, and any remaining human-only action. Do not claim success from a configured capability or submitted request alone.

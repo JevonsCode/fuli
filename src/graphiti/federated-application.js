@@ -26,6 +26,7 @@ import {
   agentAccessPolicyPathForRuntime
 } from './agent-access-policy.js';
 import { RecallPolicyStore, recallPolicyPathForRuntime } from './recall-policy.js';
+import { sessionMigrationNoticesForRuntime } from './session-migration-notices.js';
 import {
   sourceConsoleUrl
 } from './source-marker.js';
@@ -222,6 +223,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     this.firstRunGuide = firstRunGuide;
     this.sessionCapturePauseStore = sessionCapturePauseStore;
     this.runtimeConfigPath = runtimeConfigPath;
+    // A confirmed session migration waiting for that session's next task entry (rec#82).
+    this.sessionMigrationNotices = sessionMigrationNoticesForRuntime(runtimeConfigPath);
     this.agentAccessPolicyStore = agentAccessPolicyStore;
     this.recallPolicyStore = recallPolicyStore;
     this.consoleUrl = consoleUrl;

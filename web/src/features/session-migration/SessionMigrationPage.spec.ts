@@ -21,6 +21,9 @@ function item(id: string, version = 0, overrides = {}) {
     tags: [], confirmation_status: 'pending', content_source: 'agent_inferred', ...overrides }
 }
 
+const moveResult = (moved: string[], delivery: object = { state: 'waiting' }) => ({ migration_id: 'move-1',
+  target_project_id: 'alpha', held_count: 0, moved: moved.map(id => ({ item_kind: 'entity', item_id: id })), delivery })
+
 const preview = (items: object[]) => ({ temporary_project_id: 'temporary-x', target_project: { id: 'alpha', name: 'Alpha' },
   held_count: items.length, linked_task_count: 1, items, next_offset: null })
 
@@ -51,8 +54,7 @@ describe('SessionMigrationPage', () => {
     getJson.mockResolvedValueOnce(preview([item('a', 2), item('b', 0, { confirmation_status: 'confirmed',
       content_source: 'user_explicit' }), item('c')]))
       .mockResolvedValueOnce(preview([item('b', 0)]))
-    postJson.mockResolvedValue({ target_project_id: 'alpha', moved: [{ item_kind: 'entity', item_id: 'a' },
-      { item_kind: 'entity', item_id: 'c' }] })
+    postJson.mockResolvedValue(moveResult(['a', 'c']))
     const wrapper = await open()
     expect(getJson).toHaveBeenCalledWith('/api/knowledge/session-migration?personalSpaceId=space&sessionId=session-1&client=codex&projectId=alpha&offset=0')
     const cards = wrapper.findAll('[data-migration-item]')
@@ -73,8 +75,9 @@ describe('SessionMigrationPage', () => {
     await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/knowledge/session-migration', { personalSpaceId: 'space',
       sourceApplication: 'codex', sessionId: 'session-1', projectId: 'alpha', reason: '这个会话属于「Alpha」',
-      items: [{ itemKind: 'entity', itemId: 'a', expectedVersion: 2 }, { itemKind: 'entity', itemId: 'c', expectedVersion: 0 }] })
-    expect(wrapper.get('[data-migration-notice]').text()).toBe('已把 2 条迁入「Alpha」，它们的确认状态没有变。')
+      items: [{ itemKind: 'entity', itemId: 'a', expectedVersion: 2 }, { itemKind: 'entity', itemId: 'c', expectedVersion: 0 }],
+      migrationId: expect.any(String) }, expect.anything())
+    expect(wrapper.get('[data-migration-notice] p').text()).toBe('已把 2 条迁入「Alpha」，它们的确认状态没有变。')
     // What is left is what the person left out, still not chosen.
     expect(wrapper.findAll('[data-migration-item]').map(card => card.attributes('data-migration-item'))).toEqual(['b'])
     expect(wrapper.get('[data-migration-item="b"]').attributes('data-chosen')).toBe('false')
@@ -97,7 +100,7 @@ describe('SessionMigrationPage', () => {
     expect(wrapper.find('[data-migration-item="a"] [data-migration-changed]').exists()).toBe(true)
     expect(wrapper.find('[data-migration-item="b"] [data-migration-changed]').exists()).toBe(false)
     // The next confirm names the versions read now.
-    postJson.mockResolvedValueOnce({ target_project_id: 'alpha', moved: [] })
+    postJson.mockResolvedValueOnce(moveResult([]))
     getJson.mockResolvedValueOnce(preview([]))
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -139,7 +142,7 @@ describe('SessionMigrationPage', () => {
     const page = Array.from({ length: 100 }, (_, index) => item(`i${index}`))
     getJson.mockResolvedValueOnce({ ...preview(page), held_count: 101, next_offset: 100 })
       .mockResolvedValueOnce({ ...preview([item('i100', 3)]), held_count: 101, next_offset: null })
-    postJson.mockResolvedValue({ target_project_id: 'alpha', moved: [{ item_kind: 'entity', item_id: 'i100' }] })
+    postJson.mockResolvedValue(moveResult(['i100']))
     const wrapper = await open()
     expect(wrapper.get('[data-migration-chosen]').text()).toBe('已选 100 / 101 条')
     await wrapper.get('[data-migration-more] button').trigger('click')
@@ -187,5 +190,59 @@ describe('SessionMigrationPage', () => {
     const failed = await open()
     expect(failed.get('[role="alert"]').text()).toContain('读不到本会话暂存的知识')
     failed.unmount()
+  })
+
+  it('rec#82: says the chat is told when it next runs, then that it was, without claiming it went on by itself', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    try {
+      getJson.mockResolvedValueOnce(preview([item('a')])).mockResolvedValueOnce(preview([]))
+      postJson.mockResolvedValueOnce(moveResult(['a']))
+      const wrapper = await open()
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      const delivery = () => wrapper.get('[data-migration-delivery]')
+      expect(delivery().attributes('data-state')).toBe('waiting')
+      expect(delivery().text()).toContain('下次运行时告诉它')
+      expect(delivery().text()).toContain('还没送达')
+      expect(delivery().text()).not.toMatch(/已继续|继续执行/)
+      // Read again while it waits; the chat's next entry carried the line.
+      getJson.mockResolvedValueOnce({ migration_id: 'move-1', delivery: { state: 'delivered', delivered_at: '2026-11-05T08:30:00Z' } })
+      vi.advanceTimersByTime(4000)
+      await flushPromises()
+      expect(getJson).toHaveBeenLastCalledWith('/api/knowledge/session-migration/delivery?personalSpaceId=space&sessionId=session-1'
+        + '&client=codex&projectId=alpha&migrationId=move-1', expect.anything())
+      expect(delivery().attributes('data-state')).toBe('delivered')
+      expect(delivery().text()).toMatch(/^已在 .+ 告诉那个对话。$/)
+      // Delivered is final: no more reads.
+      const reads = getJson.mock.calls.length
+      vi.advanceTimersByTime(8000)
+      await flushPromises()
+      expect(getJson).toHaveBeenCalledTimes(reads)
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rec#82: says when the chat cannot be reached, and a retry after a lost answer reuses the confirm\'s id', async () => {
+    getJson.mockResolvedValue(preview([item('a')]))
+    postJson.mockRejectedValueOnce(new ApiError('Unavailable', 503, JSON.stringify({ error: 'console busy' })))
+      .mockResolvedValueOnce(moveResult(['a'], { state: 'unreachable', reason: 'session_stopped' }))
+    const wrapper = await open()
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.find('[data-migration-delivery]').exists()).toBe(false)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(postJson.mock.calls[1][1].migrationId).toBe(postJson.mock.calls[0][1].migrationId)
+    expect(wrapper.get('[data-migration-delivery]').text()).toContain('停用了 FULI，结果送不到')
+    wrapper.unmount()
+    getJson.mockResolvedValue(preview([item('b')]))
+    postJson.mockResolvedValueOnce(moveResult(['b'], { state: 'unreachable', reason: 'not_recorded' }))
+    const unrecorded = await open()
+    await unrecorded.get('form').trigger('submit')
+    await flushPromises()
+    expect(unrecorded.get('[data-migration-delivery]').text()).toContain('它不会自动知道')
+    unrecorded.unmount()
   })
 })

@@ -17,7 +17,8 @@ import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
 import { readTurnReceipt } from '../src/agents/turn-receipt.js';
 import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
-import { sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
+import { applySessionMigration, sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
+import { entryAgentReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
 import { claudeEntrySession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences }
   from '../test-support/synthetic-large-entry.js';
@@ -297,7 +298,12 @@ const BASELINE = Object.freeze({
   // undecided: one line after its receipt (149 chars). No tool, schema or instruction text.
   sessionMigrationNoneChars: 0,
   sessionMigrationOfferChars: 152,
-  sessionMigrationTurnChars: 149
+  sessionMigrationTurnChars: 149,
+  // rec#82: a migration the person confirmed for this session, told at its next task entry: one
+  // plain line with its separator (what moved and what still waits; no link, no instruction),
+  // once per confirm. A session with none reads no file and adds nothing.
+  sessionMigrationConfirmedNoneChars: 0,
+  sessionMigrationConfirmedChars: 35
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
@@ -410,7 +416,30 @@ async function measure() {
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,
     codexReviewGuidanceBytes: codexReviewGuidanceBytes(), ...await turnReceiptChars(), ...await migrationReceiptChars(),
-    ...await sessionMigrationChars() };
+    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars() };
+}
+
+// rec#82: the entry receipt's growth for a session with and without a confirmed migration,
+// recorded through the real apply in a synthetic data directory.
+async function sessionMigrationConfirmedChars() {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-migration-notice-budget-'));
+  try {
+    const app = new FederatedGraphApplication({ version: 1, workspaces: [], personal: { providerUrl: 'http://127.0.0.1:8787',
+      accessToken: 'synthetic-test-token', principalId: 'synthetic-user', spaceId: 'space' } },
+    { runtimeConfigPath: join(root, 'graph-runtime.json'), fetchImpl: async () => { throw new Error('Unexpected Provider request'); } });
+    app.personal.previewSessionMigration = async () => ({ held_count: 0, linked_task_count: 2 });
+    const task = { sessionId: '0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b84', sourceApplication: 'claude_code',
+      personalProjectId: 'sample', token: 'fuli-task-synthetic-budget', unreadTurnReceipts: [] };
+    const receipt = { required: true, markdown: 'FULI Agent：负责人 Synthetic lead' };
+    const added = async () => (await entryAgentReceipt(app, task, receipt)).markdown.length - receipt.markdown.length;
+    const none = await added();
+    await applySessionMigration(app, { applySessionMigration: async () => ({ target_project_id: 'sample',
+      moved: Array.from({ length: 12 }, (_, index) => ({ item_kind: 'entity', item_id: `item-${index}` })) }) },
+    { personalSpaceId: 'space', sourceApplication: 'claude_code', sessionId: task.sessionId, projectId: 'sample',
+      reason: 'Synthetic', migrationId: 'budget-move', items: [{ itemKind: 'entity', itemId: 'item-0', expectedVersion: 0 }] },
+    { ownerReads: { sessionMigration: async () => ({ held_count: 3 }) } });
+    return { sessionMigrationConfirmedNoneChars: none, sessionMigrationConfirmedChars: await added() };
+  } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
 // rec#20 part 2: the migration link line with its separator, measured with a UUID session

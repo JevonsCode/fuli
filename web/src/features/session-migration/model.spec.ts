@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { KnowledgeItemSummary } from '@/features/knowledge-quick-edit/model'
 import type { SessionEntry, SessionRecordsView } from '@/features/session-records/model'
 import {
-  MAX_MOVE, appendPage, defaultReason, migrationPath, migrationRefusal, migrationRequest, reconcileChoice, sessionMigrationOffers,
+  MAX_MOVE, appendPage, defaultReason, migrationDeliveryNotice, migrationPath, migrationRefusal, migrationRequest, reconcileChoice, sessionMigrationOffers,
   type SessionMigrationPreview,
 } from './model'
 
@@ -74,5 +74,12 @@ describe('session migration model', () => {
     expect(sessionMigrationOffers(view(turns))).toEqual([])
     expect(sessionMigrationOffers(view([turns[0], held]))).toEqual([])
     expect(sessionMigrationOffers(null)).toEqual([])
+  })
+
+  it('rec#82: names each delivery state and which of them may still change', () => {
+    expect(migrationDeliveryNotice({ state: 'waiting' })).toEqual({ settled: false, text: expect.stringContaining('下次运行时') })
+    expect(migrationDeliveryNotice({ state: 'delivered', delivered_at: '2026-11-05T08:30:00Z' }).settled).toBe(true)
+    expect(migrationDeliveryNotice({ state: 'unreachable', reason: 'session_stopped' }).settled).toBe(false)
+    expect(migrationDeliveryNotice({ state: 'unreachable', reason: 'not_recorded' }).settled).toBe(true)
   })
 })

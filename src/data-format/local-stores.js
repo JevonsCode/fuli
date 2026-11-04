@@ -52,6 +52,7 @@ import { PERSON_PROFILE_FORMAT } from '../person-profile/port.js';
 import { AGENT_DELEGATION_FORMAT } from '../agent-delegation/operation-log.js';
 import { AGENT_DELEGATION_POLICY_FORMAT } from '../agent-delegation/policy-store.js';
 import { DEBUG_TURN_FORMAT, DEBUG_TURN_PENDING_FORMAT } from '../debug-turns/store.js';
+import { SESSION_MIGRATION_NOTICE_DIRECTORY, SESSION_MIGRATION_NOTICE_FORMAT } from '../graphiti/session-migration-notices.js';
 
 // Every FULI store kept in one data directory, by the path its owner opens
 // (rec#17 D-09). Labels are relative to the data directory, so a report names
@@ -144,7 +145,9 @@ const jsonDirectories = () => [
   // The #fulidebug turn records the person reads in Settings › 系统, newest 20 within 50 MB; local only.
   ['debug-turns', DEBUG_TURN_FORMAT],
   // The turn a #fulidebug prompt began, until its Stop records it.
-  ['debug-turns/pending', DEBUG_TURN_PENDING_FORMAT]
+  ['debug-turns/pending', DEBUG_TURN_PENDING_FORMAT],
+  // A person's confirmed session migration until that session's next task entry claims it (rec#82).
+  [SESSION_MIGRATION_NOTICE_DIRECTORY, SESSION_MIGRATION_NOTICE_FORMAT]
 ];
 // The worst state of a directory's records names the directory's state.
 const STATE_ORDER = ['unavailable', 'newer_format', 'half_applied', 'pending_confirmation', 'unsupported',
