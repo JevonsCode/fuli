@@ -329,9 +329,11 @@ async def reasserted_entities(store, space, entity_ids, episode_id) -> dict[str,
     itself:
     - the head is current (an edit, a re-assertion): the mention lands there
       as ordinary evidence;
-    - the head went out of date: the capture asserts it again and writes a new
-      version (item_id) after head_id, with its episode as the new evidence; a
-      replay of the same episode finds the same version."""
+    - the head went out of date or was invalidated: the capture asserts it
+      again and writes a new version (item_id) after head_id, with its episode
+      as the new evidence; a replay of the same episode finds the same version.
+      Landing on the ended head answered committed while the statement stayed
+      ended and unsearchable (rec#63); the ended head keeps its history."""
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         UNWIND $item_ids AS id
@@ -359,8 +361,8 @@ async def _reassertion_landing(store, space, entity_id, episode_id) -> dict | No
         if record['replaced_by_item_id'] == version_id:
             return {'item_id': version_id, 'head_id': item_id}
         if not record['replaced_by_item_id']:
-            out_of_date = bool(record['invalid_at']) and await _went_out_of_date(store, space, item_id)
-            return {'item_id': version_id, 'head_id': item_id} if out_of_date else {'item_id': item_id}
+            restated = bool(record['invalid_at']) and await _ended_for_restatement(store, space, item_id)
+            return {'item_id': version_id, 'head_id': item_id} if restated else {'item_id': item_id}
         if record['replaced_by_item_kind'] not in (None, 'entity'):
             return {'item_id': item_id}
         item_id = record['replaced_by_item_id']
@@ -420,9 +422,14 @@ async def restated_relationships(store, space, relationship_ids) -> dict[str, st
     return renamed
 
 
-async def _went_out_of_date(store, space, item_id) -> bool:
+async def _ended_for_restatement(store, space, item_id) -> bool:
+    """Whether a capture that states this ended entity again writes a new
+    version: it went out of date, or it was invalidated (as for relationships,
+    the same words said again are a new statement; only a person's restore takes
+    the invalidated version itself back)."""
     revisions = (await item_revisions(store, space, 'entity', [item_id])).get(item_id, [])
-    return _END_OF_VALIDITY.get(ending_action(revisions)) in REASSERTABLE
+    action = ending_action(revisions)
+    return action == 'invalidate' or _END_OF_VALIDITY.get(action) in REASSERTABLE
 
 
 async def record_version_revision(store, actor, space, item_kind, item_id, *, revision_id, action, reason,
