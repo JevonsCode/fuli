@@ -82,6 +82,11 @@ boundary and applies everywhere. Set `attributes.constraint` only when the user 
 keeps a rule in every scene, `"soft"` lets small talk leave it out. The compact `remember` items
 take the same `constraint`, `workKind` and `tasteDomain` fields.
 
+When the person asks to keep something for later ("remember", "keep this for later sessions",
+"from now on", 记住, 以后都…), task entry adds `remember_guidance` and the task is never auto-closed:
+record it with `checkpoint_task_knowledge` `remember` before finishing. Writing it into a repository
+file or the host's own memory files does not put it in FULI.
+
 ## Route by Ownership
 
 - Route global personal knowledge to `targetKind: personal` without `personalProjectId`; it is written directly to the local personal graph.
