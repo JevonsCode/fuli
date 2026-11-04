@@ -598,3 +598,12 @@ def test_two_current_edges_sharing_one_key_collapse_to_one():
     )
 
     assert [edge.uuid for _, edge in survived] == ['edge-a']
+
+
+def test_a_concept_matches_whatever_word_form_the_question_uses():
+    # rec#63: "the team that owns the ledger code" never met "Ledger code owner".
+    record = {'name': 'Orbit ledger code owner', 'type': 'ProjectKnowledge',
+              'summary': 'The ledger code is owned by the ledger squad, who review every change there.'}
+    assert _relevance('owns codes', record) > 0
+    assert _relevance('who reviews changes', record) > 0
+    assert _relevance('release freeze window', record) == 0

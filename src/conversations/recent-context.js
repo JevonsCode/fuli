@@ -90,8 +90,10 @@ export function projectRecentContext(value, { frames, native } = NO_EVIDENCE) {
   }
   const omitted = recovery.messages.length - messages.length;
   const seenAll = omitted && !messages.length && !withdrawn.length;
-  // Nothing new: only where the window stands and the latest saved result.
-  const view = seenAll ? { conversation_id: recovery.conversation_id, revision: recovery.revision,
+  // Nothing new: only where the window stands and the latest saved result. The
+  // conversation's own id and revision are not repeated (rec#76).
+  const own = recovery.conversation_id === value.conversation.conversation_id && recovery.revision === value.conversation.revision;
+  const view = seenAll ? { ...(own ? {} : { conversation_id: recovery.conversation_id, revision: recovery.revision }),
     latest_checkpoint: recovery.latest_checkpoint ?? null, summary_role: recovery.summary_role,
     messages_omitted: omitted, omitted_reason: 'seen_in_session' }
     : { ...recovery, messages,

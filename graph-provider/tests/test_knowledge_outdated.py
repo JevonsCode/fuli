@@ -13,7 +13,7 @@ from fuli_graph.knowledge_outdated import similar_share
     ('restart the aurora service and check its logs afterwards',
      'restart aurora service then check the logs', 0.8333),
     ('build the aurora image then run the tests',
-     'run tests after building aurora image', 0.6667),
+     'run tests after building aurora image', 0.8333),  # "building" is "build"
     # Identical after case and space normalisation is a duplicate, not a
     # replacement.
     ('Deploy Aurora  To Staging', 'deploy aurora to staging', None),

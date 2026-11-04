@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../lifecycle-message.js';
+import { hookFailureCause, PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../lifecycle-message.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { preferenceHookOutput } from '../../conversations/preference-lifecycle.js';
 import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliOffContext } from '../../conversations/session-fuli-entry.js';
@@ -141,7 +141,7 @@ export async function runOpenCodeLifecycleCommand(args, dependencies = {}) {
     const running = runWithEntryBudget(budget, () => runOpenCodeLifecycleHook(args, { ...dependencies,
       signal: controller.signal, onCleanup: close => { cleanup = close; } }))
       .then(output => { write(output); return { timedOut: false }; },
-        () => { write(event === 'prompt' ? { context: openCodeUnavailableContext('the hook failed') } : {}); return { timedOut: false }; });
+        (error) => { write(event === 'prompt' ? { context: openCodeUnavailableContext(hookFailureCause(error)) } : {}); return { timedOut: false }; });
     return await Promise.race([running, expired]);
   } finally {
     clearTimeout(deadline);

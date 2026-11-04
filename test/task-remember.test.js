@@ -68,3 +68,18 @@ test('remembered items are keyed by content, so later tasks never collide with e
   assert.equal(first, same, 'remembering the same fact again keeps one item');
   assert.equal(rememberCapture(task, [fact, fact]).capture.entities.length, 1);
 });
+
+// rec#63: both capture prompts of the eval went unnoticed and only a
+// repository file got the decision.
+test('a request to keep something for later is noticed however it is phrased', async () => {
+  const { rememberRequested } = await import('../src/graphiti/task-remember.js');
+  for (const prompt of [
+    'We decided today that amounts use banker\'s rounding; make sure this decision is remembered for future work.',
+    'Heads-up: there is a release freeze from December 15 to January 5. Keep this for later sessions.',
+    'From now on the staging port is 7413.',
+    '以后都按这个格式写提交说明。',
+    '记住这个项目的发布命令。'
+  ]) assert.equal(rememberRequested(prompt), true, prompt);
+  for (const prompt of ['Fix the login page styles.', 'Add a retry to fetchRate and a test for it.', '修一下登录页的样式。'])
+    assert.equal(rememberRequested(prompt), false, prompt);
+});

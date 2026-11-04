@@ -75,6 +75,12 @@
   --color-chart-rose: #a3445f;
   --color-chart-cyan: #23707f;
   --color-chart-slate: #66706a;
+  /* A #debug turn record (Settings › 系统 › 调试记录): one colour per source of its parts. */
+  --color-source-person: var(--color-chart-blue);
+  --color-source-fuli: var(--color-chart-amber);
+  --color-source-ai: var(--color-chart-teal);
+  --color-source-host: var(--color-chart-slate);
+  --color-source-not-visible: var(--color-faint);
   --color-overlay: rgb(24 28 26 / 32%);
   /* Every modal scrim (native <dialog> and shadcn-vue Dialog) blurs the page the same. */
   --overlay-blur: 2px;

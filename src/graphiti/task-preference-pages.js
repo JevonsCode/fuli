@@ -18,6 +18,26 @@ const PAGE_GUIDANCE = 'Collect every page of this revision in page_index order w
   + 'A final page alone is not the complete set. If a cursor expires/is rejected or the snapshot changes, '
   + 'discard all pages and call this reader without cursor using the same token; never restart task entry.';
 
+// The whole result of one revision from its pages in order, as the reader
+// would return it unpaged; any other result as it is. `read(cursor)` reads one
+// page (no cursor: the first). Only the process that read the first page holds
+// its cursors (rec#68), so this is for a reader that compacts and bounds the
+// result itself, such as a hook refreshing its task in place (rec#76).
+export async function joinTaskPreferencePages(read) {
+  let page = await read(undefined);
+  if (page?.preference_delivery?.status !== 'paginated') return page;
+  const { revision } = page.preference_delivery;
+  const whole = { ...page };
+  while (page.preference_delivery.next_cursor) {
+    page = await read(page.preference_delivery.next_cursor);
+    if (page?.preference_delivery?.status !== 'paginated' || page.preference_delivery.revision !== revision) {
+      throw new ApplicationError('preference_cursor_invalid', 'Preference pages changed while they were read.');
+    }
+    for (const [field, item] of Object.entries(page)) whole[field] = COLLECTIONS.includes(field) ? [...whole[field], ...item] : item;
+  }
+  return { ...whole, preference_delivery: { status: 'complete' }, preferences_complete: true };
+}
+
 // Private, bounded process-local cursor metadata only: no preference bodies,
 // disk cache or new authority. A process restart/eviction rejects old cursors.
 // The owning reader reauthorizes and reads current sources before every call.

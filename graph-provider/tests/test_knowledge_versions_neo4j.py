@@ -639,3 +639,26 @@ async def test_the_same_words_captured_after_their_relationship_ended_are_a_new_
         assert await view(client, space_id, old_id, 'relationship') == ended, 'the ended item keeps its history'
         later = await commit(client, space_id, endpoints, relationships=[relation], key=f'later-{uuid4()}')
         assert later['relationship_ids'] == [new_id], 'saying it once more lands on the same current item'
+
+
+@pytest.mark.asyncio
+async def test_the_same_entity_captured_after_it_was_invalidated_is_a_new_current_version():
+    """rec#63: an entity's mention landed on its invalidated head, so the capture
+    answered committed while the statement stayed ended and unsearchable."""
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        entity = {'key': 'freeze', 'name': 'Release freeze', 'type': 'Rule',
+                  'summary': 'No releases from December 15 to January 5'}
+        [old_id] = (await commit(client, space_id, [entity]))['entity_ids']
+        old = await view(client, space_id, old_id)
+        ok(await client.patch(f'/v1/knowledge/items/{old_id}', json={
+            'personal_space_id': space_id, 'item_kind': 'entity', 'action': 'invalidate',
+            'reason': 'Synthetic reset.', 'operation_actor': 'human', 'expected_version': old['version']}))
+        again = await commit(client, space_id, [entity], key=f'again-{uuid4()}')
+        [new_id] = again['entity_ids']
+        assert new_id != old_id
+        current = await view(client, space_id, new_id)
+        assert (current['status'], current['content']) == ('current', 'No releases from December 15 to January 5')
+        assert again['episode_id'] in {source['episode_id'] for source in current['evidence']}
+        assert (await view(client, space_id, old_id))['status'] != 'current'

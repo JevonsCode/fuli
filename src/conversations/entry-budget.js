@@ -26,7 +26,7 @@ export function entryHintSkipped() {
 // delivered as it is at the deadline, so a partial entry still says how to
 // checkpoint, and that the person asked to keep something.
 const DELIVERED_AT_DEADLINE = Object.freeze(['checkpoint_required', 'checkpoint_guidance', 'remember_guidance',
-  'previous_checkpoint_missing', 'project_scope']);
+  'update_guidance', 'previous_checkpoint_missing', 'project_scope']);
 
 // The task this entry wrote, with its opening writes done in time. One noted
 // after the deadline was cut short and is never delivered. The entry is kept

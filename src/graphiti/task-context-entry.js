@@ -2,6 +2,7 @@ import { taskAgentAssignment, withRouteMarkers } from './task-agent-assignment.j
 import { FLA_ROUTE } from './task-entry-named-fla.js';
 import { beginConversation } from './agent-conversations.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
+import { UPDATE_GUIDANCE, updateRequested } from './task-update-request.js';
 import { withRecoveredSource } from './task-knowledge-recall.js';
 import { entryAgentReceipt } from './turn-receipt-delivery.js';
 import { taskPreferenceScope } from '../mcp/provider-task-context-registry.js';
@@ -113,7 +114,9 @@ export async function beginTaskFromPreferences(application, preferences, {
   // coordination associations. Missing metadata keeps the legacy requirement.
   // A request to keep something is never a routine auto-closed task.
   const remembering = rememberRequested(taskPrompt);
-  const autoClosed = !remembering && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
+  const updating = updateRequested(taskPrompt);
+  const autoClosed = !remembering && !updating
+    && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
   const conversation = await beginConversation(application, task);
   const receipt = preferences.agent_receipt ? await entryAgentReceipt(application, task, preferences.agent_receipt) : null;
   return withPreferenceScope({
@@ -123,6 +126,7 @@ export async function beginTaskFromPreferences(application, preferences, {
     checkpoint_required: !autoClosed && task.checkpoint?.phase !== 'complete',
     ...(autoClosed ? { checkpoint_guidance: STOP_HOOK_CHECKPOINT_GUIDANCE } : {}),
     ...(remembering ? { remember_guidance: REMEMBER_GUIDANCE } : {}),
+    ...(updating ? { update_guidance: UPDATE_GUIDANCE } : {}),
     resumed_checkpoint: Boolean(resumed),
     previous_checkpoint_missing: task.previousCheckpointMissing,
     ...preferences, ...(receipt ? { agent_receipt: receipt } : {}),

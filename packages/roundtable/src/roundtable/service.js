@@ -1,6 +1,6 @@
 import { waitForChatChange } from './chat-wait.js';
 import { createHash, randomUUID } from 'node:crypto';
-import { projectAddress, resolveProjectLead, verifiedProjectFolder } from './project-target.js';
+import { projectAddress, resolveProjectAddress, resolveProjectLead, verifiedProjectFolder } from './project-target.js';
 import { observeReturnedMemory, taskContextHash } from './memory-observation.js';
 import { createAgentChat } from './chat.js';
 import { createGroupDiscussion } from './group-discussion.js';
@@ -242,7 +242,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       return messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal });
     }
     const from = await sender({ taskContextToken, sourceApplication });
-    const projectId = projectAddress(to);
+    const address = projectAddress(to);
+    const projectId = address && await resolveProjectAddress(host, address);
     if (roundtableProjectId && (from.projectId !== roundtableProjectId || (projectId && projectId !== roundtableProjectId))) {
       throw validation('This scoped consultation cannot leave its project');
     }
