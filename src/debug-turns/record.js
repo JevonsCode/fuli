@@ -65,7 +65,7 @@ export function buildDebugRecord(turn, { now = () => new Date(), id = randomUUID
   return withTotals(withinCap(record, history));
 }
 
-// One model request from the dev capture proxy (scripts/dev-model-capture): the
+// One model request from the dev capture proxy (model-capture.js): the
 // whole request, so nothing here is out of sight. `parts` come in reading order.
 export function buildModelRequestRecord({ sourceApplication, prompt, parts }, { now = () => new Date(), id = randomUUID() } = {}) {
   const record = { version: DEBUG_RECORD_VERSION, id, createdAt: now().toISOString(), sourceApplication, sessionId: 'model-capture',
