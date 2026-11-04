@@ -107,13 +107,15 @@ separate evidence.
 Quit and reopen Claude Desktop afterwards; it only reads the file at launch.
 
 Chat apps load exposed tool schemas into each conversation, so Claude Desktop and newly configured
-Claude Code connections get the **chat profile** (`--tool-profile chat`): 21 initial tools for
-preferences, project knowledge, recording, completion checkpoints, conversation recovery, the
-Roundtable, and tool discovery. `list_agent_interfaces` defaults to a schema-free directory.
-Request one exact `toolName` to read its complete schema and expose that original named tool
-through `tools/list_changed`, then call the original name under the client's normal permissions.
-This also provides management, routing, publishing, and recruitment on demand; discovery grants no
-permission. If the client does not refresh its tool list, reconnect using
+Claude Code connections get the **chat profile** (`--tool-profile chat`): the task-entry fallback,
+project and graph search, the completion checkpoint, tool discovery and `fuli_call`. Everything else
+(recording, conversation recovery, the Roundtable, management) is discovered on demand.
+`list_agent_interfaces` defaults to a schema-free directory.
+Request one exact `toolName` to read its complete schema, then run it with
+`fuli_call(toolName, input)`: the same validation and permissions as calling it directly. This also
+provides management, routing, publishing, and recruitment on demand; discovery grants no permission.
+The listed tools and the server instructions never change during a session, so a client's prompt
+cache stays valid (rec#76); a client that needs every tool listed under its own name connects with
 `fuli connect --profile full`. Generated full configuration keeps the explicit `--tool-profile
 full` choice so managed upgrades preserve it. Legacy Claude Code setup entries without an explicit
 profile migrate to chat; `alwaysLoad` remains enabled for its initial tools. Claude Desktop

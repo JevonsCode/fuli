@@ -148,3 +148,25 @@ test('a delivery attempt records its client and session together', () => {
   const failed = store.updateMessage(ask.id, { status: 'queued', error: 'wake_failed' });
   assert.deepEqual([failed.to_client, failed.to_session], ['codex', null]);
 });
+
+test('project:<name> asks the lead of the project the person named, ignoring case (rec#71)', async () => {
+  const f = fixture();
+  f.app.personal.listPersonalProjects = async () => [
+    { project_id: 'source', profile: { name: 'Saturn', lifecycle: 'active' } },
+    { project_id: 'target', profile: { name: 'AICG', lifecycle: 'active' } }];
+  const result = await f.roundtable.messageAgent({ taskContextToken: 'source', to: 'project:aicg',
+    body: 'How did the synthetic binding take effect?' });
+  assert.equal(result.status, 'answered');
+  assert.equal(result.recipient.agentId, 'target-lead');
+  assert.equal(f.grants[0].target_personal_project_id, 'target');
+});
+
+test('a project name several projects share is refused with their IDs, and nothing is sent', async () => {
+  const f = fixture();
+  f.app.personal.listPersonalProjects = async () => [
+    { project_id: 'source', profile: { name: 'Twin', lifecycle: 'active' } },
+    { project_id: 'target', profile: { name: 'Twin', lifecycle: 'active' } }];
+  await assert.rejects(f.roundtable.messageAgent({ taskContextToken: 'source', to: 'project:twin', body: 'Which one?' }),
+    /Several projects are named "twin".*source, target/);
+  assert.equal(f.wakes.length, 0);
+});

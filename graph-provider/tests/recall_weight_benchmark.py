@@ -121,6 +121,8 @@ def load_ranker(ref):
         names.add('_tie_weight')
     if 'def _dedupe_key(' in search:
         names.add('_dedupe_key')
+    if 'def _word_stem(' in search:
+        names.add('_word_stem')
     definitions(search, names, search_ns)
     return search_ns
 

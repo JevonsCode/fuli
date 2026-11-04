@@ -212,6 +212,22 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
+  // Jevons 11-04: the update dot sits at the version's top-right, never on the mark.
+  it('marks a newer release with a dot on the version, not on the mark', async () => {
+    const quiet = await setup('/')
+    expect(quiet.wrapper.find('[data-update-dot]').exists()).toBe(false)
+    quiet.wrapper.unmount()
+    const base = vi.mocked(getJson).getMockImplementation()!
+    vi.mocked(getJson).mockImplementation(async (url: string, ...rest) => url === '/api/system/version'
+      ? { status: 'ready', currentVersion: '0.20.0', latestVersion: '0.21.0', updateAvailable: true, packageUrl: '', checkedAt: '' }
+      : base(url, ...rest))
+    const { wrapper } = await setup('/')
+    expect(wrapper.find('[data-app-version] [data-update-dot]').exists()).toBe(true)
+    expect(wrapper.get('[data-app-version]').attributes('aria-label')).toContain('0.21.0')
+    expect(wrapper.find('.brand-compact-update').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('shows 待决策 as a full tray with papers while requests wait, and an empty tray otherwise', async () => {
     attentionTotal = 12
     const { wrapper } = await setup('/')

@@ -422,3 +422,28 @@ test('an unknown thread is reported as the thread, never as a missing Agent (rec
     return true;
   });
 });
+
+test('task entry tells the lead which project the person asked about and how to ask it (rec#71)', async () => {
+  const { taskEntryPreferences } = await import('../src/graphiti/task-entry-preferences.js');
+  const application = {
+    config: { personal: { spaceId: 'space' } }, consoleUrl: 'http://127.0.0.1:2727',
+    roundtable: { pending: () => [] },
+    personal: {
+      resolveProjectAgentContext: async () => ({ status: 'ready', reason: 'project_team_lead', agent: { agent_id: 'lead-1',
+        profile: { name: 'Synthetic Lead', status: 'active', allowed_clients: ['codex'], work_kinds: ['planning'] } } }),
+      getProjectAgentMemory: async () => null, getPersonalProject: async () => null,
+      listPersonalProjects: async () => [{ project_id: 'app', profile: { name: 'App', lifecycle: 'active' } },
+        { project_id: 'other', profile: { name: 'Other Shop', lifecycle: 'active' } }],
+      listProjectAgentTasks: async () => [], getProjectAgentCoordinationPolicy: async () => ({ team_lead_agent_id: 'lead-1' }),
+      collaborationPreferences: async () => ({ effective_preferences: [] }), listPreferenceConflicts: async () => []
+    },
+    searchKnowledge: async () => ({ facts: [], entities: [] })
+  };
+  const entry = taskPrompt => taskEntryPreferences(application, { status: 'matched', personalProjectId: 'app' }, {
+    projectPath: '/work/app', taskPrompt, sourceApplication: 'codex', agentInvocation: true,
+    agentToolName: 'begin_task_context', sessionId: 's', turnId: 't'
+  }, async () => {});
+  const asked = await entry('去看看 Other Shop 项目是怎么做导出的');
+  assert.deepEqual(asked.roundtable_ask.projects, [{ projectId: 'other', name: 'Other Shop', address: 'project:other' }]);
+  assert.equal((await entry('verify the export')).roundtable_ask, undefined);
+});

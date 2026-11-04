@@ -7,8 +7,8 @@ import { t } from '@/i18n'
 import { fuliMarkUrl } from '@/lib/brand'
 import { FULI_VERSION } from '@/version'
 
-// compact: the icon rail shows only the mark; the mark only pops and the effect ends on a short timer,
-// and an available update appears as a dot on the mark.
+// compact: the icon rail shows only the mark; the mark only pops and the effect ends on a short timer.
+// An available update is the top bar's dot on the version (AppShell), never on the mark.
 const props = withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
 const root = ref<HTMLElement | null>(null)
 const versionButton = ref<HTMLButtonElement | null>(null)
@@ -76,7 +76,7 @@ function handleBlur() {
 onMounted(() => {
   window.addEventListener('pointerdown', handleGlobalPointerDown, true)
   window.addEventListener('keydown', handleGlobalKeyDown, true)
-  void readVersionStatus(versionRequestController.signal).then((status) => {
+  if (!props.compact) void readVersionStatus(versionRequestController.signal).then((status) => {
     versionStatus.value = status
   }).catch(() => {
     // Version checks are advisory and must never interrupt the local console.
@@ -116,10 +116,6 @@ onBeforeUnmount(() => {
         </template>
       </span>
     </button>
-    <button v-if="props.compact && updateAvailable" ref="versionButton" class="brand-compact-update" type="button"
-      :aria-label="t('console.update.aria', { version: latestVersion })" :aria-expanded="isUpdateOpen"
-      aria-controls="brand-update-details" @click="toggleUpdateDetails" />
-
     <span v-if="!props.compact" class="brand-copy">
       <span class="brand-title-row">
         <span class="brand-name">{{ t('common.brand') }}</span>
@@ -350,11 +346,6 @@ onBeforeUnmount(() => {
 .brand-block.is-compact { flex: 0 0 auto; width: auto; justify-content: center; padding: 0; }
 .brand-block.is-compact.is-sparkling::before { content: none; }
 .brand-block.is-compact .brand-effect-button:active .brand-mark { transform: scale(.9); transition: transform 90ms ease-out; }
-.brand-compact-update {
-  position: absolute; top: -2px; right: 10px; width: 12px; height: 12px; padding: 0;
-  border: 2px solid var(--color-sidebar); border-radius: 50%; background: var(--status-waiting); cursor: pointer;
-}
-.brand-block.is-compact .brand-update-popover { top: 0; left: 64px; right: auto; width: 260px; }
 
 .brand-update-popover {
   position: absolute;

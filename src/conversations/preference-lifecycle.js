@@ -2,11 +2,13 @@ import { compactTaskContext } from './task-context-view.js';
 import { hookAdditionalContextToolResult } from '../mcp/tool-result.js';
 import { SESSION_FULI_OFF } from '../agent-tools/session-fuli-gate.js';
 import { withoutDeliveryProofs } from './recent-context.js';
-import { copyPreferenceScope } from './preference-snapshot.js';
+import { copyPreferenceScope, taskPreferenceMetadata, withPreferenceScope } from './preference-snapshot.js';
+import { joinTaskPreferencePages } from '../graphiti/task-preference-pages.js';
 import { ALWAYS_INLINE_OMITTED_LABEL, fitUncached, inlineEntryFit, OMITTED_CONFLICTS_LABEL, OMITTED_PREFERENCES_LABEL,
   WHOLE_ENTRY } from './entry-inline-budget.js';
 import { BLOCKED_PREFERENCE_LABEL } from '../mcp/preference-delivery.js';
 import { taskReceiptInstruction } from '../agents/lifecycle-message.js';
+import { skeletonFrameLabel } from './entry-skeleton.js';
 
 export const PREFERENCE_RESET_EVENTS = Object.freeze(['SessionStart', 'PreCompact']);
 const RESTORED_LABEL = 'Fuli restored current mandatory preferences for the same owned task. Apply this full result; no replacement task or Agent was selected.';
@@ -25,7 +27,9 @@ export async function preferenceLifecycleOutput(event, input, { sourceApplicatio
     throw new TypeError('Preference reset requires a native session identifier');
   }
   if (event === 'SessionStart' && replayedSources.includes(input?.source)) return {};
-  const origin = { sourceApplication, nativeSessionId: input?.session_id, transcriptPath: input?.transcript_path };
+  // A host's SessionStart "startup" is a session that has just begun.
+  const origin = { sourceApplication, nativeSessionId: input?.session_id, transcriptPath: input?.transcript_path,
+    sessionStarted: event === 'SessionStart' && input?.source === 'startup' };
   await delivery?.reset(origin);
   if (event !== 'SessionStart' || !['compact', 'resume', 'fork'].includes(input?.source)) return {};
   const refresh = await currentTaskPreferences(input, { sourceApplication, currentTask, invoke });
@@ -44,23 +48,22 @@ export async function currentTaskPreferences(input, { sourceApplication, current
   if (!task) return { status: 'no_task' };
   if (task.checkpoint?.phase === 'complete') return { status: 'task_closed' };
   if (task.sessionId !== input.session_id || task.sourceApplication !== sourceApplication) return { status: 'other_session' };
-  const recovered = await invoke('read_task_preferences', {
-    taskContextToken: task.token, sourceApplication, sourceSessionId: input.session_id, sourceSessionVerified: true
+  // The reader pages its uncompacted result at the MCP budget. The hook holds
+  // those cursors in its own process, so it reads the whole revision and
+  // compacts and bounds it itself: a first page alone is an incomplete frame
+  // that blocks the turn and can never be confirmed (rec#76). Joined pages
+  // carry the scope the reader gives an unpaged result: the task's own, in the
+  // personal space the reader verified.
+  const read = { taskContextToken: task.token, sourceApplication, sourceSessionId: input.session_id, sourceSessionVerified: true };
+  let paged = false;
+  const recovered = await joinTaskPreferencePages(cursor => {
+    if (cursor) paged = true;
+    return invoke('read_task_preferences', cursor ? { ...read, cursor } : read);
   });
   if (recovered?.status === SESSION_FULI_OFF) return { status: 'fuli_off' };
-  return { status: 'refreshed', context: compactTaskContext(withoutHookCursor(recovered)) };
-}
-
-// A cursor belongs to the reader process that paged this result; the Agent's
-// own MCP reader never honours it (rec#68). A hook frame hands out its first
-// page only, and the Agent reads every page itself from the start.
-const HOOK_PAGE_GUIDANCE = 'This frame is only the first page and carries no cursor. Call read_task_preferences '
-  + 'with this taskContextToken and no cursor, then follow its next_cursor until preferences_complete=true; '
-  + 'apply nothing before every page of that one revision is present.';
-function withoutHookCursor(value) {
-  if (value?.preference_delivery?.status !== 'paginated') return value;
-  const { next_cursor: _cursor, ...delivery } = value.preference_delivery;
-  return { ...value, preference_delivery: { ...delivery, guidance: HOOK_PAGE_GUIDANCE } };
+  const whole = paged ? withPreferenceScope(recovered, taskPreferenceMetadata(task, recovered.context?.personal_space_id))
+    : recovered;
+  return { status: 'refreshed', context: compactTaskContext(whole) };
 }
 
 // `inlineChars` is the inline limit of a host that keeps only a preview of a
@@ -69,16 +72,20 @@ function withoutHookCursor(value) {
 // leaves out its snake_case copy; MCP results keep both (rec#11 D-72).
 // `boundedLabel` replaces `label` for a frame that leaves something out. A
 // blocked frame keeps the receipt sentence: its agent_receipt is still copied.
+// The turn's prompt (null for a reset) lets a frame of the same task name an
+// earlier frame's skeleton instead of repeating it (entry-skeleton.js).
 export async function preferenceHookOutput(entry, event, input, delivery, sourceApplication, label, forceFull = false,
   { inlineChars = null, boundedLabel = label } = {}) {
   const { task_context_token: _copy, ...rest } = entry;
   const value = copyPreferenceScope(entry, rest);
+  const frameLabel = projected => omittedLabel(label, boundedLabel, projected);
   const format = projected => hookAdditionalContextToolResult(projected, { hookEventName: event,
-    label: omittedLabel(label, boundedLabel, projected), limitBytes: 128 * 1024, itemLimit: 1000,
+    label: skeletonFrameLabel(frameLabel(projected), projected), limitBytes: 128 * 1024, itemLimit: 1000,
     blockedLabel: `${BLOCKED_PREFERENCE_LABEL} ${taskReceiptInstruction(value)}`.trim() });
   const fit = inlineChars ? inlineEntryFit(inlineChars, hookContextLength) : WHOLE_ENTRY;
   const result = delivery ? await delivery.deliver(value, { sourceApplication,
-    nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull }, format, fit)
+    nativeSessionId: input.session_id, transcriptPath: input.transcript_path, forceFull,
+    taskPrompt: typeof input.prompt === 'string' ? input.prompt : null, label: frameLabel }, format, fit)
     : fitUncached(fit, value, projected => format(withoutDeliveryProofs(projected)));
   return JSON.parse(result.content[0].text);
 }

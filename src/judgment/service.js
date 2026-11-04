@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { InvalidInputError } from '../app/application-error.js';
 import { JudgmentStore } from './store.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { judgmentHumanInteraction } from './conversation.js';
@@ -149,8 +150,12 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
 const agentReaderSchema = z.object({ personalProjectId: id, projectAgentId: id }).strict();
 
 // The FLA an Agent names, in the one project it reads; null for a plain session.
+// An FLA with no project is refused, saying what to do (rec#83: it surfaced as internal_error).
 function agentReader(input, projectAgentId) {
   if (projectAgentId === null) return null;
+  if (!input.personalProjectId) {
+    throw new InvalidInputError('projectAgentId reads in one project: pass its personalProjectId, or leave projectAgentId out for a global read');
+  }
   return taskKnowledgeReader(parse(agentReaderSchema, { personalProjectId: input.personalProjectId, projectAgentId }));
 }
 

@@ -77,6 +77,12 @@ test('system settings distinguish immediately applied refresh changes from resta
     update: { kind: () => 'windows-tray' }
   });
 
+  const updateChannel = configured.updateChannel === 'stable' ? 'beta' : 'stable';
+  const channelOnly = await service.updateSettings({ ...configured, updateChannel });
+  assert.equal(channelOnly.restartRequired, false);
+  assert.equal(channelOnly.apply, undefined);
+  assert.equal(service.getSettings().configured.updateChannel, updateChannel);
+
   const refreshOnly = await service.updateSettings({
     ...configured,
     resourceRefreshSeconds: 30

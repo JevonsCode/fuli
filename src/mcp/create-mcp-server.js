@@ -104,7 +104,9 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   get_agent_score_card: 32 * 1024,
   list_knowledge_review_candidates: 32 * 1024,
   list_workflow_candidates: 32 * 1024,
-  recommend_next_workflow_steps: 32 * 1024
+  recommend_next_workflow_steps: 32 * 1024,
+  role_work: 256 * 1024,
+  plan_agent_collaboration: 64 * 1024
 });
 const NATIVE_CHOICE_TOOLS = new Set(['checkpoint_task_knowledge', 'review_with_tonborg',
   'list_judgments', 'request_agent_attention', 'list_agent_attention']);
@@ -112,7 +114,10 @@ const NATIVE_CHOICE_TOOLS = new Set(['checkpoint_task_knowledge', 'review_with_t
 const COMPLETE_RESULT_TOOLS = new Set(['export_project_agent_memory', 'get_agent_handoff']);
 // Roundtable message bodies are delivered whole or not at all (rec#77): a cut
 // reply reads as complete. read_agent_thread pages with after/limit instead.
-const WHOLE_MESSAGE_TOOLS = new Set(['message_agent', 'get_agent_message_status', 'read_agent_messages', 'read_agent_thread']);
+const WHOLE_MESSAGE_TOOLS = new Set(['message_agent', 'get_agent_message_status', 'read_agent_messages', 'read_agent_thread',
+  // A claimed work package without its schema and lease cannot be submitted, and a
+  // plan with cut nextSteps cannot be run (rec#81): whole, or an error saying so.
+  'role_work', 'plan_agent_collaboration']);
 const NATIVE_CONTEXT = Symbol('fuli.nativeMcpRequestContext');
 
 export function createMcpServer(
@@ -151,7 +156,6 @@ export function createMcpServer(
   const environmentThread = nativeSessionFromEnv(authoritativeSourceApplication, env);
   const nativeThreadId = hostSessionId === null || hostSessionId === environmentThread ? environmentThread : null;
   const effectiveHostSessionId = hostSessionId ?? environmentThread ?? mcpHostSessionId({});
-  const preferenceState = { resets: new Map() };
   const projectActionPreviews = createProjectActionPreviewTokens();
   const tools = createToolMap(
     app,
@@ -165,7 +169,6 @@ export function createMcpServer(
     prepareToolInput,
     env,
     workerTaskContext,
-    preferenceState,
     onSession
   );
   // Only the named chat profile expands on demand. Restricted custom/remote
@@ -176,16 +179,18 @@ export function createMcpServer(
   if (registerResources && !workerTaskContext) registerFuliContextResources(server, app, { withRuntimeLease });
   const onDemandTools = isChatProfile ? createToolMap(app,
     projectActionPreviews, nativeThreadId, effectiveHostSessionId,
-    clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env, null, preferenceState, onSession) : null;
+    clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env, null, onSession) : null;
   if (onDemandTools) registerDispatchTool(server);
   registerCallHandler(server, tools, onDemandTools,
     !workerTaskContext && hostSessionId === null ? nativeRequestContext : null);
   return server;
 }
 
-// Chat clients list only a few tools. Hosts that do not refresh after
-// tools/list_changed can still call a discovered tool through this one name;
-// the call is validated and run exactly as the original tool.
+// Chat clients list only a few tools and run every other one through this one
+// name; the call is validated and run exactly as the original tool. The listed
+// tools never change during a session: a client caches its prompt up to and
+// after the tool list, so adding a discovered tool to it would make every
+// later request pay for the whole prompt again (rec#76).
 const DISPATCH_TOOL = 'fuli_call';
 function registerDispatchTool(server) {
   server.registerTool(DISPATCH_TOOL, {
@@ -214,7 +219,6 @@ function createToolMap(
   prepareToolInput,
   env = process.env,
   workerTaskContext = null,
-  preferenceState,
   onSession
 ) {
   const commonKnowledgePreviews = createCommonKnowledgePreviewTokens();
@@ -240,7 +244,6 @@ function createToolMap(
     definition,
     worker: Boolean(workerTaskContext),
     preferenceDelivery: workerTaskContext ? null : app.preferenceDelivery,
-    preferenceState,
     preferenceOrigin: { sourceApplication, nativeSessionId: nativeThreadId === hostSessionId ? nativeThreadId : null },
     catalogDefinitions: definition.name === 'list_agent_interfaces' ? definitions.filter(item =>
       includeTestTools || !isTestOnlyToolName(item.name)) : null,
@@ -305,27 +308,31 @@ function registerTool(server, tool, chat = false) {
   }, (input, extra) => invokeTool(tool, input, extra));
 }
 
+// Task entry tells a caller to pass taskContextToken to every FULI call; a tool
+// that has no use for it ignores it instead of refusing the call (rec#86).
+function withoutUnusedTaskToken(tool, input) {
+  if (Object.hasOwn(tool.definition.inputSchema?.properties ?? {}, 'taskContextToken')) return input;
+  const { taskContextToken: _unused, ...rest } = input;
+  return rest;
+}
+
 function registerCallHandler(server, tools, onDemandTools, resolveNativeContext = null) {
   server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     assertToolInputWithinBudget(request.params.arguments);
+    let tool = tools.get(request.params.name);
     if (request.params.name === DISPATCH_TOOL && onDemandTools) {
       const { toolName, input } = request.params.arguments ?? {};
-      const target = toolName === DISPATCH_TOOL ? null : tools.get(toolName) ?? onDemandTools.get(toolName);
-      if (!target) return errorToolResult(new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
-      if (!tools.has(target.definition.name)) {
-        tools.set(target.definition.name, target);
-        registerTool(server, target);
-      }
-      request = { ...request, params: { ...request.params, name: target.definition.name, arguments: input ?? {} } };
+      tool = toolName === DISPATCH_TOOL ? null : tools.get(toolName) ?? onDemandTools.get(toolName);
+      if (!tool) return errorToolResult(new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
+      request = { ...request, params: { ...request.params, name: tool.definition.name, arguments: input ?? {} } };
     }
-    const tool = tools.get(request.params.name);
     if (!tool) {
       return errorToolResult(new ApplicationError(
         ApplicationErrorCode.NOT_FOUND,
         'Unknown Fuli tool'
       ));
     }
-    const parsed = await tool.input.parse(request.params.arguments ?? {});
+    const parsed = await tool.input.parse(withoutUnusedTaskToken(tool, request.params.arguments ?? {}));
     if (!parsed.success) {
       return protocolErrorResult(
         'Input validation error',
@@ -338,16 +345,7 @@ function registerCallHandler(server, tools, onDemandTools, resolveNativeContext 
     let native;
     try { native = resolveNativeContext?.(request.params._meta); }
     catch (error) { return errorToolResult(error); }
-    const result = await invokeTool(tool, parsed.data, native ? { ...extra, [NATIVE_CONTEXT]: native } : extra);
-    if (!result.isError && tool.definition.name === 'list_agent_interfaces' && parsed.data.toolName && onDemandTools) {
-      const discovered = onDemandTools.get(parsed.data.toolName);
-      if (!discovered) return errorToolResult(new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
-      if (!tools.has(discovered.definition.name)) {
-        tools.set(discovered.definition.name, discovered);
-        registerTool(server, discovered); // SDK sends tools/list_changed.
-      }
-    }
-    return result;
+    return invokeTool(tool, parsed.data, native ? { ...extra, [NATIVE_CONTEXT]: native } : extra);
   });
 }
 
@@ -374,15 +372,16 @@ async function invokeTool(tool, input, requestContext = null) {
           limitBytes, itemLimit: 1000
         }) : successToolResult(projected, { limitBytes, itemLimit: 1000, preferenceContext: true });
       if (!tool.preferenceDelivery) return format(withoutDeliveryProofs(view));
-      // A new MCP process may be a resume/restart. It always establishes a new
-      // full baseline, even when an older process left valid cache metadata.
+      // A result without per-request window proof stays full. What the
+      // generation shows is read from the session's own transcript; a host
+      // execution or window change starts a new generation there.
       const native = requestContext?.[NATIVE_CONTEXT];
-      const origin = await deliveryOrigin(tool, native);
+      const origin = deliveryOrigin(tool, native);
       return await tool.preferenceDelivery.deliver(view,
         { ...origin, forceFull: name === 'read_task_preferences' || !native?.contextWindowId }, format);
     }
     if (['resume_agent_conversation', 'read_agent_conversation'].includes(tool.definition.name) && tool.preferenceDelivery) {
-      return await tool.preferenceDelivery.recordConversation(value, await deliveryOrigin(tool, requestContext?.[NATIVE_CONTEXT]),
+      return await tool.preferenceDelivery.recordConversation(value, deliveryOrigin(tool, requestContext?.[NATIVE_CONTEXT]),
         view => successToolResult(view, { limitBytes }));
     }
     if (tool.definition.name === 'list_agent_interfaces') {
@@ -405,18 +404,14 @@ async function invokeTool(tool, input, requestContext = null) {
   }
 }
 
-async function deliveryOrigin(tool, native) {
-  const origin = { ...tool.preferenceOrigin, ...(native ? { nativeSessionId: native.nativeSessionId,
+// A new MCP process does not reset the session's delivery record: a resumed
+// host replays the same transcript, and a compaction, a replaced transcript
+// or another execution or window (nativeGeneration) already starts a new
+// generation there (rec#15). Resetting here made the next hook frame whole
+// whenever the model first called a FULI tool in a process.
+function deliveryOrigin(tool, native) {
+  return { ...tool.preferenceOrigin, ...(native ? { nativeSessionId: native.nativeSessionId,
     nativeGeneration: { execution: native.nativeExecutionId, window: native.contextWindowId } } : {}) };
-  if (origin.nativeSessionId) {
-    const key = JSON.stringify([origin.nativeSessionId, origin.nativeGeneration]);
-    if (!tool.preferenceState.resets.has(key)) {
-      tool.preferenceState.resets.set(key, tool.preferenceDelivery.reset(origin));
-      if (tool.preferenceState.resets.size > 16) tool.preferenceState.resets.delete(tool.preferenceState.resets.keys().next().value);
-    }
-    await tool.preferenceState.resets.get(key);
-  }
-  return origin;
 }
 
 async function invokeAgentTool(

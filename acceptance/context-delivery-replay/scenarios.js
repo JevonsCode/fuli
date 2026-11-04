@@ -16,6 +16,12 @@ function holds(turn, items) {
 const WORK = '继续实现导出接口';
 const FRONTEND = '修复设置页面的按钮';
 const CHAT = '你好！';
+// Host notifications as Claude Code receives them (rec#76): a CI event whose
+// text names its own tag in prose, and a finished background task.
+const ciEvent = n => `<ci-monitor-event>Synthetic PR ${n}: check "unit" failed on the latest push. `
+  + 'The app sends each change as a <ci-monitor-event> message.</ci-monitor-event>';
+const taskDone = n => `<task-notification><task-id>synthetic-${n}</task-id><status>completed</status></task-notification>`;
+const NOTIFICATIONS = Array.from({ length: 10 }, (_, i) => (i % 3 === 2 ? taskDone(i) : ciEvent(i)));
 
 // One group of native messages; returns their texts.
 async function talk(session, world, group) {
@@ -218,6 +224,55 @@ export const SCENARIOS = {
           holds(turn, items) && turn.rereads_required === 0);
       }
     }
+  },
+
+  // rec#76: ten host notifications after one task entry. Each refreshes the
+  // same task in place and names the skeleton it already showed.
+  async notifications(world) {
+    world.recall = true;
+    const { general, spacing } = world.fixture;
+    world.items = [...general, ...spacing];
+    const h = await world.open('claude_code', 'H');
+    await talk(h, world, 'xxx');
+    const entry = await h.turn(WORK, { note: 'new task' });
+    world.check('the task entry carries the whole skeleton', entry.skeleton_delivery === 'full');
+    const turns = [];
+    for (const [index, prompt] of NOTIFICATIONS.entries()) turns.push(await h.turn(prompt, { note: `notification ${index + 1}` }));
+    world.check('every notification names the skeleton it already showed', turns.every(turn => turn.skeleton_delivery === 'unchanged'));
+    world.check('every notification is a preference delta', turns.every(turn => turn.preference_delivery === 'delta'));
+  },
+
+  // rec#76: the same prompt ten times (a scheduled prompt). Each is a new task
+  // with the same skeleton as the one it repeats.
+  async repeated_prompt(world) {
+    world.recall = true;
+    const { general, spacing } = world.fixture;
+    world.items = [...general, ...spacing];
+    const h = await world.open('claude_code', 'H');
+    const entry = await h.turn(WORK, { note: 'first' });
+    const turns = [];
+    for (let index = 1; index <= 10; index++) turns.push(await h.turn(WORK, { note: `repeat ${index}` }));
+    world.check('the first prompt carries the whole skeleton', entry.skeleton_delivery === 'full');
+    world.check('every repeat names the skeleton it already showed', turns.every(turn => turn.skeleton_delivery === 'unchanged'));
+  },
+
+  // rec#76: what must still get the whole skeleton in one session: a new
+  // task, another project, another FLA and the first turn after compaction.
+  async skeleton_boundaries(world) {
+    world.recall = true;
+    const { general } = world.fixture;
+    world.items = general;
+    const h = await world.open('claude_code', 'H');
+    await h.turn(WORK, { note: 'first' });
+    const full = turn => turn.skeleton_delivery === 'full' && turn.skeleton_revision_field_bytes > 0;
+    world.check('a new task gets the whole skeleton', full(await h.turn(FRONTEND, { note: 'new task' })));
+    world.check('a notification of that task names it', (await h.turn(ciEvent(1), { note: 'notification' })).skeleton_delivery === 'unchanged');
+    world.check('another project gets the whole skeleton', full(await h.turn(FRONTEND, { note: 'project switch', project: 'other' })));
+    world.check('another FLA gets the whole skeleton', full(await h.turn(`#FLA reviewer ${FRONTEND}`, { note: 'FLA switch' })));
+    await h.compact();
+    world.check('the first turn after compaction gets the whole skeleton', full(await h.turn(ciEvent(2), { note: 'after compaction' })));
+    world.check('the next notification names the frame after compaction', (await h.turn(ciEvent(3), { note: 'notification' }))
+      .skeleton_delivery === 'unchanged');
   },
 
   async no_match_chat(world) {
