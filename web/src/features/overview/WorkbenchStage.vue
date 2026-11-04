@@ -52,13 +52,15 @@ const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
 </script>
 
 <template>
-  <section class="workbench-stage" :aria-label="t('overview.stage.aria')" data-workbench-stage>
+  <!-- The same layout id on a task's title here and in the column moves it between the two; the stage
+       glows once as it lands (Jevons 11-04: a click that only made the row vanish read as a bug). -->
+  <section class="workbench-stage" :class="{ 'is-arriving': task && flying === taskKey(task) }" :aria-label="t('overview.stage.aria')" data-workbench-stage>
     <template v-if="task">
       <motion.div :key="taskKey(task)" class="workbench-stage-body" :initial="{ opacity: 0, y: 8 }" :animate="{ opacity: 1, y: 0 }" :transition="SPRING">
         <header class="workbench-stage-head">
           <div class="workbench-stage-heading">
             <p v-if="!timeline.length && !flas.length" class="workbench-meta">{{ projectName(task.personalProjectId) }}</p>
-            <motion.h2 :layout-id="flying === taskKey(task) ? `work-title-${flying}` : undefined" class="workbench-stage-title" :transition="SPRING">{{ title(task) }}</motion.h2>
+            <motion.h2 :layout-id="`work-title-${taskKey(task)}`" class="workbench-stage-title" :transition="SPRING">{{ title(task) }}</motion.h2>
             <div class="workbench-stage-actions">
               <Badge v-if="task.status !== 'running'" :variant="taskStatusTone(task.status)">{{ statusLabel(task.status) }}</Badge>
               <Button v-if="next" as-child size="sm"><RouterLink :to="next.to" data-workbench-next>{{ next.label }}</RouterLink></Button>
@@ -89,9 +91,18 @@ const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
 
 <style scoped>
 .workbench-stage {
-  display: flex; min-width: 0; min-height: 0; padding: 24px 28px; overflow: hidden;
+  position: relative; display: flex; min-width: 0; min-height: 0; padding: 24px 28px; overflow: hidden;
   border-radius: var(--radius-shell); background: var(--surface-panel-glass); -webkit-backdrop-filter: var(--filter-panel); backdrop-filter: var(--filter-panel); box-shadow: 0 0 0 1px var(--color-border);
 }
+/* A ring that brightens and fades once: opacity only, so it costs the compositor nothing. */
+.workbench-stage::after {
+  position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 2px var(--color-accent);
+  opacity: 0; pointer-events: none; content: '';
+}
+.workbench-stage.is-arriving::after { animation: workbench-arrive 900ms var(--motion-ease-spring, ease-out); }
+@keyframes workbench-arrive { 0% { opacity: 0; } 25% { opacity: .55; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .workbench-stage.is-arriving::after { animation: none; } }
+:root[data-motion="reduced"] .workbench-stage.is-arriving::after { animation: none; }
 .workbench-stage-body { display: flex; flex: 1; flex-direction: column; gap: 20px; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 .workbench-stage-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .workbench-stage-heading { display: grid; gap: 8px; min-width: 0; }

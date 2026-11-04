@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { ApplicationError } from '../app/application-error.js';
 
 export const temporaryProjectScope = Object.freeze({
   type: 'temporary', lifetime: 'task', persisted: true
@@ -13,6 +14,11 @@ export function isTemporaryProjectId(projectId) {
 
 // Explicit coordination owns provisioning. Preference and discovery reads never
 // create projects. Identity contains no filesystem paths, prompts or host IDs.
+// A task coordinates only in its own project (rec#86: this surfaced as
+// internal_error); it says what to do instead.
+export const otherProjectTask = () => new ApplicationError('task_context_other_project',
+  'This task belongs to another project. Begin a task in the target project with begin_task_context, then coordinate from it.');
+
 export async function resolveCoordinationScope(application, resolution, input, entryTask) {
   const projectId = resolution.personal_project_id ?? resolution.personalProjectId;
   if (projectId) {
@@ -24,7 +30,7 @@ export async function resolveCoordinationScope(application, resolution, input, e
   }
   if (!['unmatched', 'not_provided'].includes(resolution.status)) return resolution;
   if (entryTask?.personalProjectId && entryTask.projectScope?.type !== 'temporary') {
-    throw new TypeError('Coordination task context belongs to another project');
+    throw otherProjectTask();
   }
   const scopeKey = createHash('sha256').update(JSON.stringify([
     'fuli-temporary-task-v1', application.config.personal.spaceId,

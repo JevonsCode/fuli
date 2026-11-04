@@ -8,6 +8,7 @@ import { handleDataFormatApiRequest } from './data-format-api-router.js';
 import { handleDoctorApiRequest } from './doctor-api-router.js';
 import { handleDiagnosticsApiRequest } from './diagnostics-api-router.js';
 import { handleOldDataRequest } from './old-data-api-router.js';
+import { handleDebugTurnsRequest } from './debug-turns-api-router.js';
 import { handlePersonProfileRequest } from './person-profile-api-router.js';
 import { handleSessionLaunchRequest } from './session-launch-api-router.js';
 import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-router.js';
@@ -194,6 +195,7 @@ export async function handleApiRequest({
   if (await handleDoctorApiRequest({ request, response, url, system })) return true;
   if (await handleDiagnosticsApiRequest({ request, response, url, app, system })) return true;
   if (await handleOldDataRequest({ request, response, url, shelf: app.oldData, restore: dataFormatMigrations?.restore ?? null })) return true;
+  if (await handleDebugTurnsRequest({ request, response, url, debugTurns: system?.debugTurns ?? null })) return true;
   if (await handlePersonProfileRequest({ request, response, url, app })) return true;
   if (await handleSessionLaunchRequest({ request, response, url, system })) return true;
 

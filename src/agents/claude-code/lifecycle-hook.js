@@ -29,6 +29,7 @@ import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-regi
 import { FULI_VERSION } from '../../package-metadata.js';
 import { taskSceneInput } from '../../graphiti/task-scene.js';
 import { entryBudget, entryNotice, noteEntryNotice, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
+import { recordDebugTurn } from '../../debug-turns/recorder.js';
 
 // Claude Code shows the model only a preview (about the first 10,000
 // characters) of a hook context longer than that and saves the rest as a file
@@ -201,7 +202,10 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
       if (entered) await endTurnsObservedAtEntry(ledger, held, input, CLAUDE_UNRESOLVED_TURNS);
       return lifecycle;
     }), request);
-    return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, notice()) : output;
+    const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, notice()) : output;
+    await recordDebugTurn({ runtimeConfigPath, sourceApplication: 'claude_code', event, input,
+      output: delivered, adapter: CLAUDE_TRANSCRIPT });
+    return delivered;
   } finally {
     await Promise.allSettled([close(leases), close(app)]);
   }

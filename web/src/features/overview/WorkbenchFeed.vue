@@ -36,8 +36,6 @@ const props = defineProps<{
   owner: (task: ProjectAgentTaskRecord) => string
   statusLabel: (status: string) => string
   formatTime: (value?: string | null) => string
-  /** The task whose title is flying to the stage, if any. */
-  flying: string
 }>()
 const emit = defineEmits<{ select: [task: ProjectAgentTaskRecord]; retryRequests: []; retryTasks: [] }>()
 // A task FLAs do together already has its team card; 进行中 keeps the rest.
@@ -78,20 +76,23 @@ const solo = computed(() => {
     <section v-if="solo.length || tasksState.loading || tasksState.error" class="workbench-card" aria-labelledby="workbench-running-heading" data-workbench-running>
       <header class="workbench-card-head"><h2 id="workbench-running-heading">{{ t('overview.sections.currentWork') }}</h2></header>
       <OverviewReadStatus :state="tasksState" :label="t('overview.work.loading')" :failed="t('overview.work.loadFailed')" @retry="emit('retryTasks')" />
-      <ul v-if="solo.length" class="workbench-rows">
+      <!-- A picked task leaves with its title flying to the stage; the rest close up instead of jumping. -->
+      <TransitionGroup v-if="solo.length" name="ui-list" tag="ul" class="workbench-rows">
         <li v-for="task in solo" :key="taskKey(task)">
           <Button variant="ghost" class="workbench-row workbench-pick" :aria-label="t('overview.stage.switchTo', { title: title(task) })" data-workbench-pick @click="emit('select', task)">
             <span class="workbench-face" :style="agentIdentityStyle(task.leadAgentId ?? task.ownerAgentId)" aria-hidden="true">
               <img v-if="task.leadAgentId || task.ownerAgentId" :src="agentAvatarUrl(task.leadAgentId ?? task.ownerAgentId ?? '')" :data-agent-portrait="task.leadAgentId ?? task.ownerAgentId ?? ''" alt="" />
+              <!-- Nobody leads it yet: a quiet sign, not an empty circle that looks broken. -->
+              <UiIcon v-else name="agents" class="workbench-face-none" data-unassigned />
             </span>
             <span class="workbench-row-text">
-              <motion.span :layout-id="flying === taskKey(task) ? `work-title-${flying}` : undefined" class="workbench-row-title" :transition="SPRING">{{ title(task) }}</motion.span>
+              <motion.span :layout-id="`work-title-${taskKey(task)}`" class="workbench-row-title" :transition="SPRING">{{ title(task) }}</motion.span>
               <span class="workbench-meta">{{ owner(task) }}</span>
             </span>
             <Badge :variant="taskStatusTone(task.status)">{{ statusLabel(task.status) }}</Badge>
           </Button>
         </li>
-      </ul>
+      </TransitionGroup>
     </section>
 
     <section class="workbench-card" aria-labelledby="workbench-done-heading" data-workbench-done>
@@ -128,6 +129,7 @@ const solo = computed(() => {
 .workbench-clamp { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .workbench-face { display: grid; width: 34px; height: 34px; overflow: hidden; place-items: center; border-radius: 50%; background: var(--agent-identity-soft, var(--color-accent-soft)); }
 .workbench-face img { width: 100%; height: 100%; object-fit: cover; }
+.workbench-face-none { width: 16px; height: 16px; color: var(--color-muted); }
 .workbench-done-mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; color: var(--color-gold); background: var(--color-gold-soft); font-weight: var(--weight-strong); }
 /* A row that puts its work on the stage: the whole row is the button. */
 .workbench-pick {
