@@ -244,7 +244,7 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/project-agents' && request.method === 'PUT') {
-    sendJson(response, 200, await app.upsertProjectAgent(await readJson(request)));
+    sendJson(response, 200, await app.upsertProjectAgent({ ...(await readJson(request)), writer: PERSON_WRITER }));
     return true;
   }
   if (url.pathname === '/api/project-agent-context' && request.method === 'POST') {

@@ -462,6 +462,13 @@
   font-size: 14px;
 }
 
+.agent-preferences { display: grid; gap: var(--space-3, 12px); }
+.agent-preference { display: grid; gap: 4px; }
+.agent-preference-head { display: flex; align-items: center; gap: var(--space-2, 8px); min-height: var(--control-height-sm); }
+.agent-preference-label { color: var(--color-ink-soft); font-size: var(--text-meta, 12px); font-weight: var(--weight-medium); }
+.agent-preference-edit { margin-left: auto; color: var(--color-muted); }
+.agent-preference-text { margin: 0; color: var(--color-ink); line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+
 .agent-simple-settings small {
   color: var(--color-muted);
   font-size: 12px;

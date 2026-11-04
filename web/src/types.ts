@@ -222,6 +222,8 @@ export interface ProjectAgentProfile {
   displayName?: string | null
   responsibility: string
   character?: { judgment: string; taste: string; personality: string }
+  /** Who wrote each preference; text saved before these records has none. */
+  characterAuthors?: Partial<Record<'judgment' | 'taste' | 'personality', ProjectFieldAuthor>>
   expectations?: string
   capabilities: string[]
   initialPreferences: string[]

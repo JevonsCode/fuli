@@ -5,6 +5,7 @@ from pydantic import AliasChoices, Field, field_validator, model_validator
 
 from .model_validation import reject_credentials, validate_emoji_sequence
 from .models import SourceApplication, StrictModel
+from .project_profile_authors import ProjectFieldAuthor
 from .project_agent_occupation_models import ProjectAgentOccupation, ProjectAgentOccupationInput
 
 
@@ -113,6 +114,8 @@ class ProjectAgentProfile(StrictModel):
     )
     responsibility: str = Field(min_length=1, max_length=4096)
     character: ProjectAgentCharacter = Field(default_factory=ProjectAgentCharacter)
+    # Who wrote each preference; the rules live in Node (project-profile-authors.js).
+    character_authors: dict[Literal['judgment', 'taste', 'personality'], ProjectFieldAuthor] = Field(default_factory=dict)
     expectations: str = Field(default='', max_length=4096)
     agent_type: ProjectAgentType = 'durable'
     work_kinds: list[str] = Field(default_factory=list, max_length=32)
