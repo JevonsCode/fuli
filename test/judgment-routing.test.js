@@ -143,3 +143,10 @@ test('a failed executor judgment says where it stopped and what to do, without t
   assert.match(record.guidance, /no execution receipt/);
   assert.equal(JSON.stringify(record).includes('secret provider words'), false);
 });
+
+// rec#83: a global read naming an FLA crashed as internal_error.
+test('a global read that names an FLA reads as a plain session', async t => {
+  const { service } = routingFixture(t, { executors: [availableExecutor('space')] });
+  const answer = await service.agent.records({ personalSpaceId: 's', personalProjectId: null, projectAgentId: 'a', limit: 3 });
+  assert.ok(Array.isArray(answer.records));
+});

@@ -308,6 +308,14 @@ function registerTool(server, tool, chat = false) {
   }, (input, extra) => invokeTool(tool, input, extra));
 }
 
+// Task entry tells a caller to pass taskContextToken to every FULI call; a tool
+// that has no use for it ignores it instead of refusing the call (rec#86).
+function withoutUnusedTaskToken(tool, input) {
+  if (Object.hasOwn(tool.definition.inputSchema?.properties ?? {}, 'taskContextToken')) return input;
+  const { taskContextToken: _unused, ...rest } = input;
+  return rest;
+}
+
 function registerCallHandler(server, tools, onDemandTools, resolveNativeContext = null) {
   server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     assertToolInputWithinBudget(request.params.arguments);
@@ -324,7 +332,7 @@ function registerCallHandler(server, tools, onDemandTools, resolveNativeContext 
         'Unknown Fuli tool'
       ));
     }
-    const parsed = await tool.input.parse(request.params.arguments ?? {});
+    const parsed = await tool.input.parse(withoutUnusedTaskToken(tool, request.params.arguments ?? {}));
     if (!parsed.success) {
       return protocolErrorResult(
         'Input validation error',

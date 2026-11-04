@@ -148,9 +148,11 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
 
 const agentReaderSchema = z.object({ personalProjectId: id, projectAgentId: id }).strict();
 
-// The FLA an Agent names, in the one project it reads; null for a plain session.
+// The FLA an Agent names, in the one project it reads; null for a plain
+// session. With no project there is no FLA scope to read in, and a global read
+// is what a plain session reads (rec#83: it failed as internal_error).
 function agentReader(input, projectAgentId) {
-  if (projectAgentId === null) return null;
+  if (projectAgentId === null || !input.personalProjectId) return null;
   return taskKnowledgeReader(parse(agentReaderSchema, { personalProjectId: input.personalProjectId, projectAgentId }));
 }
 

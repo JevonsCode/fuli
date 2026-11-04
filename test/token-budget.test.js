@@ -175,7 +175,8 @@ const BASELINE = Object.freeze({
   // rec#11 D-81 run_delegated_action: one full-profile tool for all 52 console changes the person
   // lets FLAs make for them (instead of a tool each): 199,999 -> 200,801 B (+802 B), measured;
   // chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 200801,
+  // rec#83: remember[].workKind lists its enum so callers validate first: 200,801 -> 200,829 B (+28 B), measured.
+  fullToolSchemaBytes: 200829,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
