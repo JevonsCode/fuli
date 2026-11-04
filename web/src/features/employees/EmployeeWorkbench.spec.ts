@@ -519,6 +519,35 @@ describe('employee workbench', () => {
     expect(wrapper.vm.$route.query.project).toBeUndefined()
   })
 
+  it('keeps Tonborg\'s open tab in the URL, so a link can land on the standards', async () => {
+    const policy = { mode: 'manual', quality: 'quality', client: 'codex', revision: 0, globalRevision: 0, inherited: false, personalProjectId: null }
+    getJson.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/employee-templates?')) return { templates: [{
+        id: 'tonborg', name: 'Tonborg', role: '决策员', workbench: { kind: 'native', view: 'judgment' }, runtime: null,
+        runtimeStatus: 'not_required', capabilities: ['判断'], permissions: ['judgment.review'],
+        agentId: 'employee.tonborg', agentStatus: 'active', assignmentsVersion: 'version-tonborg', assignments: [],
+      }] }
+      if (url.startsWith('/api/judgment/records?')) return { records: [] }
+      if (url.startsWith('/api/judgment/policies?')) return { default: policy, overrides: [] }
+      if (url.startsWith('/api/judgment/policy?')) return policy
+      throw new Error(`unexpected URL: ${url}`)
+    })
+
+    const wrapper = await setup('/employees/tonborg?view=standards')
+    expect(wrapper.find('[data-judgment-standards]').exists()).toBe(true)
+    expect(wrapper.get('[data-judgment-view="standards"]').attributes('data-state')).toBe('active')
+    // The corner holds the records' actions only while they show: no row of its own either way.
+    expect(wrapper.get('.employee-workbench-actions').text()).toBe('')
+
+    await wrapper.get('[data-judgment-view="records"]').trigger('mousedown')
+    await flushPromises()
+    expect(wrapper.vm.$route.query.view).toBeUndefined()
+    expect(wrapper.get('.employee-workbench-actions').text()).toContain('刷新')
+    await wrapper.get('[data-judgment-view="standards"]').trigger('mousedown')
+    await flushPromises()
+    expect(wrapper.vm.$route.query.view).toBe('standards')
+  })
+
   it('keeps the first catalog request in a loading state instead of showing an unavailable Agent', async () => {
     let resolveCatalog!: (value: unknown) => void
     const pendingCatalog = new Promise((resolve) => { resolveCatalog = resolve })

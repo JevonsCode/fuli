@@ -4,11 +4,16 @@ import { defineComponent, h, ref } from 'vue'
 
 const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
 vi.mock('@/api/client', async original => ({ ...(await original<typeof import('@/api/client')>()), getJson, postJson }))
-// The per-project policy list has its own spec; here it only has to be in the workbench.
+// The policy editor and the per-project list have their own specs; here they only have to be on the standards tab.
 vi.mock('./JudgmentProjectOverrides.vue', async () => {
   const { defineComponent, h } = await import('vue')
   return { default: defineComponent({ props: { personalSpaceId: String, projects: Array },
     setup: props => () => h('div', { 'data-judgment-overrides': props.personalSpaceId }) }) }
+})
+vi.mock('./JudgmentPolicyPanel.vue', async () => {
+  const { defineComponent, h } = await import('vue')
+  return { default: defineComponent({ props: { personalSpaceId: String },
+    setup: props => () => h('div', { 'data-judgment-policy': props.personalSpaceId }) }) }
 })
 
 import { ApiError } from '@/api/client'
@@ -78,8 +83,50 @@ describe('JudgmentWorkbench', () => {
     expect(wrapper.get('[data-decision-card] h3').text()).toBe('release checklist')
     // A manual policy explains itself: no reason line.
     expect(wrapper.find('[data-escalation-reason]').exists()).toBe(false)
-    // Each project's own Tonborg judgment is set from the workbench too.
+  })
+
+  it('opens on the records and keeps the standards, the default and each project on the second tab', async () => {
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    await flushPromises()
+    expect(wrapper.findAll('[role="tab"]').map(tab => tab.text())).toEqual(['判断记录', '判断标准'])
+    expect(wrapper.find('[data-judgment-standards]').exists()).toBe(false)
+    expect(wrapper.find('[data-judgment-policy]').exists()).toBe(false)
+
+    await wrapper.get('[data-judgment-view="standards"]').trigger('mousedown')
+    await flushPromises()
+    expect(wrapper.findAll('[data-standard-group]').map(group => group.attributes('data-standard-group')).sort()).toEqual(['always', 'escalate', 'fact', 'preference'])
+    expect(wrapper.get('[data-standard-group="preference"]').text()).toContain('来源里有你自己的话')
+    expect(wrapper.get('[data-judgment-policy]').attributes('data-judgment-policy')).toBe('space-a')
     expect(wrapper.get('[data-judgment-overrides]').attributes('data-judgment-overrides')).toBe('space-a')
+    // Standards, then the default, then the projects.
+    const follows = (first: string, second: string) => Boolean(wrapper.get(first).element.compareDocumentPosition(wrapper.get(second).element) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(follows('[data-judgment-standards]', '[data-judgment-policy]')).toBe(true)
+    expect(follows('[data-judgment-policy]', '[data-judgment-overrides]')).toBe(true)
+  })
+
+  it('keeps the records and the search as they were across a look at the standards', async () => {
+    getJson.mockResolvedValue({ records: [record()], nextCursor: null })
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' } })
+    await flushPromises()
+    await wrapper.get('[data-judgment-search]').setValue('release')
+    await wrapper.get('[data-judgment-search]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const reads = getJson.mock.calls.length
+
+    await wrapper.get('[data-judgment-view="standards"]').trigger('mousedown')
+    await wrapper.get('[data-judgment-view="records"]').trigger('mousedown')
+    await flushPromises()
+    expect((wrapper.get('[data-judgment-search]').element as HTMLInputElement).value).toBe('release')
+    expect(wrapper.findAll('[data-decision-card]')).toHaveLength(1)
+    expect(getJson).toHaveBeenCalledTimes(reads)
+  })
+
+  it('opens the tab its page asks for and reports a switch', async () => {
+    const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a', view: 'standards' } })
+    await flushPromises()
+    expect(wrapper.find('[data-judgment-standards]').exists()).toBe(true)
+    await wrapper.get('[data-judgment-view="records"]').trigger('mousedown')
+    expect(wrapper.emitted('update:view')).toEqual([['records']])
   })
 
   it('says in one line why an autonomous record still needs confirmation (2026-10-27)', async () => {
@@ -230,6 +277,14 @@ describe('JudgmentWorkbench', () => {
     review.click()
     await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/judgment/review', expect.objectContaining({ personalSpaceId: 'space-a' }), expect.objectContaining({ schema: expect.anything() }))
+
+    // They act on the records, so they leave with that tab.
+    await wrapper.get('[data-judgment-view="standards"]').trigger('mousedown')
+    await flushPromises()
+    expect(target.querySelector('[data-action="review"]')).toBeNull()
+    await wrapper.get('[data-judgment-view="records"]').trigger('mousedown')
+    await flushPromises()
+    expect(target.querySelector('[data-action="review"]')).not.toBeNull()
     wrapper.unmount()
     target.remove()
   })

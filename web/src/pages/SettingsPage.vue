@@ -9,7 +9,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { apiErrorReason, getJson, putJson } from '@/api/client'
 import { Switch } from '@/components/ui/switch'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
-import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.vue'
 import PageColumns from '@/components/PageColumns.vue'
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
 import ClientLinksSettings from '@/features/settings/ClientLinksSettings.vue'
@@ -460,9 +459,16 @@ function checkFields(): ValidatedField[] {
                   </label>
                 </div>
               </Card>
-              <section class="settings-card judgment-settings-card">
-                <JudgmentPolicySettings />
-              </section>
+              <Card as="section" class="settings-card" aria-labelledby="settings-judgment-title">
+                <CardHeader>
+                  <CardTitle id="settings-judgment-title" as="h2">{{ t('judgment.settings.link') }}</CardTitle>
+                  <CardAction>
+                    <Button as-child size="sm" variant="outline">
+                      <RouterLink to="/employees/tonborg?view=standards" data-open-judgment-standards>{{ t('judgment.settings.open') }}</RouterLink>
+                    </Button>
+                  </CardAction>
+                </CardHeader>
+              </Card>
               <Card as="section" class="settings-card" aria-labelledby="settings-models-title">
                 <CardHeader>
                   <CardTitle id="settings-models-title" as="h2">{{ t('modelSettings.title') }}</CardTitle>
@@ -766,7 +772,6 @@ function checkFields(): ValidatedField[] {
 .settings-card { min-width: 0; container-type: inline-size; }
 .settings-card :deep([data-slot="card-header"]) { padding-inline: 24px; }
 .setting-list, .resource-details { padding-inline: 24px; }
-.judgment-settings-card { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); padding: 24px; }
 /* A card a link opened (#conversation-launchers, ?setting=…) is marked until the person moves on. */
 .settings-content :deep(.settings-card[data-settings-linked]) { box-shadow: 0 0 0 2px var(--ring); }
 
