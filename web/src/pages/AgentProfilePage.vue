@@ -59,7 +59,7 @@ const tabPanel = (loader: () => Promise<Component>, label: string) => defineAsyn
 const EmployeeWorkbench = tabPanel(() => import("@/features/employees/EmployeeWorkbench.vue"), "agentWorkbench.opening");
 const AgentManagement = tabPanel(() => import("@/features/project-agents/AgentManagement.vue"), "agentProfiles.detailLoading");
 
-type ProfileTab = "workbench" | "workflows" | "overview" | "history" | "settings";
+type ProfileTab = "workbench" | "overview" | "settings";
 
 const route = useRoute();
 const router = useRouter();
@@ -87,26 +87,18 @@ const tasks = ref<ProjectAgentTaskRecord[]>([]);
 const assignments = ref<ProjectAgentAssignmentRecord[] | undefined>(undefined);
 const workflows = ref<AgentWorkflow[]>([]);
 const detailsLoading = ref(false);
-// The tasks and workflows were read, so whether this Agent has a workbench is known.
-const workKnown = ref(false);
 const partial = ref(false);
 
-// One page per FLA (Jevons 11-04). 工作台 is a built-in role's own workbench:
-// the board is Jefa's, the others have theirs; no other FLA has one. 工作流, the
-// routines an FLA proposed or runs, shows only when it has some.
+// One page per FLA, flat (Jevons 11-04): an FLA has no tabs, only one page to
+// read. A built-in role also has its Workbench, which needs the room to itself:
+// that is the one reason for tabs here. 设置 is the header's button.
 const employeeId = computed(() => (agent.value ? employeeTemplateIdForAgent(agent.value) : null));
 const hasWorkbench = computed(() => Boolean(employeeId.value));
-const hasWorkflows = computed(() => !hasWorkbench.value && openWorkflows(workflows.value).length > 0);
-const defaultTab = computed<ProfileTab>(() => (hasWorkbench.value ? "workbench" : hasWorkflows.value ? "workflows" : "overview"));
-const profileTabs = computed(() => {
-  const tabs: Array<{ id: ProfileTab; label: string }> = [
-    ...(hasWorkbench.value ? [{ id: "workbench" as const, label: t("agentProfiles.workbench") }] : []),
-    ...(hasWorkflows.value ? [{ id: "workflows" as const, label: t("agentWorkbench.workflows.title") }] : []),
-    { id: "overview", label: t("agentProfiles.overviewTab") },
-    { id: "history", label: t("agentProfiles.experience") },
-  ];
-  return tabs;
-});
+const hasWorkflows = computed(() => openWorkflows(workflows.value).length > 0);
+const defaultTab = computed<ProfileTab>(() => (hasWorkbench.value ? "workbench" : "overview"));
+const profileTabs = computed<Array<{ id: ProfileTab; label: string }>>(() => hasWorkbench.value
+  ? [{ id: "workbench", label: t("agentProfiles.workbench") }, { id: "overview", label: t("agentProfiles.workRecord") }]
+  : [{ id: "overview", label: t("agentProfiles.workRecord") }]);
 // The open tab is part of the URL (?tab=), so a refresh or a shared link
 // lands on it; switching tabs replaces the entry instead of adding history.
 const activeTab = computed<ProfileTab>({
@@ -121,10 +113,10 @@ const activeTab = computed<ProfileTab>({
     void router.replace({ query: tab === defaultTab.value ? query : { ...query, tab }, hash: route.hash });
   },
 });
-// A link that names a task opens 工作经历, where that task is shown. Afterwards
-// the tabs are the person's again, though ?task= stays in the URL.
+// A link that names a task opens the work record, where that task is shown.
+// Afterwards the tabs are the person's again, though ?task= stays in the URL.
 watch(() => route.query.task, (task) => {
-  if (typeof task === "string" && task && activeTab.value !== "history") activeTab.value = "history";
+  if (typeof task === "string" && task && activeTab.value !== "overview") activeTab.value = "overview";
 }, { immediate: true });
 const settingsOpen = computed(() => activeTab.value === "settings");
 function toggleSettings() { activeTab.value = settingsOpen.value ? defaultTab.value : "settings"; }
@@ -134,9 +126,6 @@ function onWorkScroll(event: Event) {
   compactHeader.value = (event.target as HTMLElement).scrollTop > (compactHeader.value ? 4 : 32);
 }
 watch(activeTab, () => { compactHeader.value = false; });
-// Without ?tab the first tab depends on the tasks and workflows: wait for them
-// instead of opening 概览 and jumping.
-const tabsReady = computed(() => Boolean(route.query.tab) || hasWorkbench.value || workKnown.value);
 // The shell's one H1 is this Agent's real name; the route title is only the
 // fallback while it loads or when the Agent is unavailable.
 // The header shows the name, where the person can rename the Agent.
@@ -224,7 +213,6 @@ watch(
     const current = ++generation;
     tasks.value = [];
     workflows.value = [];
-    workKnown.value = false;
     assignments.value = undefined;
     partial.value = false;
     detailsLoading.value = false;
@@ -244,7 +232,6 @@ watch(
     ]);
     // A built-in role opens on its Workbench, which reads its own work: nothing here waits or competes with it.
     const builtIn = Boolean(employeeTemplateIdForAgent(person));
-    // Which tab opens first waits for the tasks and workflows only.
     const [taskResult, workflowResult] = await Promise.allSettled(builtIn ? [Promise.resolve([]), Promise.resolve([])] : [
       getJson<unknown>(`/api/project-agent-tasks?${params}&limit=200`),
       readAgentWorkflows(person.personalSpaceId, person.agentId),
@@ -274,7 +261,6 @@ watch(
     } else partial.value = true;
     if (workflowResult.status === "fulfilled") workflows.value = workflowResult.value;
     else partial.value = true;
-    workKnown.value = true;
     const [assignmentResult] = await assignmentRead;
     if (current !== generation) return;
     if (assignmentResult.status === "fulfilled") {
@@ -387,14 +373,8 @@ onMounted(() => {
             {{ error }}
           </p>
 
-          <GrowthLoading
-            v-if="!tabsReady"
-            variant="compact"
-            :label="t('agentProfiles.detailLoading')"
-          />
-          <!-- Hidden, not unmounted, while the first tab is unknown: switching Agents keeps one set of panels. -->
-          <Tabs v-show="tabsReady" v-model="activeTab" :unmount-on-hide="false" class="agent-profile-tabs mt-2 min-w-0">
-            <TabsList :aria-label="agentDisplayName(agent)">
+          <Tabs v-model="activeTab" :unmount-on-hide="false" class="agent-profile-tabs min-w-0">
+            <TabsList v-if="profileTabs.length > 1" :aria-label="agentDisplayName(agent)">
               <TabsTrigger v-for="tab in profileTabs" :key="tab.id" :value="tab.id" :data-profile-tab="tab.id">
                 {{ tab.label }}
               </TabsTrigger>
@@ -414,14 +394,8 @@ onMounted(() => {
               <EmployeeWorkbench v-if="activeTab === 'workbench' && employeeId" :key="employeeId" :template-id="employeeId" />
             </TabsContent>
 
-            <TabsContent v-if="hasWorkflows" value="workflows" class="agent-profile-panel" data-profile-panel="workflows">
-              <Card as="section" class="agent-resume-section">
-                <AgentWorkflowList :workflows="workflows" heading-hidden @changed="reloadWorkflows" />
-              </Card>
-            </TabsContent>
-
             <TabsContent value="overview" class="agent-profile-panel" data-profile-panel="overview">
-              <div class="agent-profile-primary-grid">
+              <div class="agent-profile-history-grid">
                 <!-- What sits here is the layout's call (widgets/layout.ts): by default this FLA's task sheets (rec#11 D-82). -->
                 <WidgetSlot place="fla.overview"
                   :context="{ spaceId: agent.personalSpaceId, agentId: agent.agentId, agentName: agentDisplayName(agent), projectName }" />
@@ -465,12 +439,11 @@ onMounted(() => {
                     {{ t("agentProfiles.noProject") }}
                   </p>
                 </Card>
-              </div>
-            </TabsContent>
+                <Card v-if="hasWorkflows" as="section" class="agent-resume-section">
+                  <AgentWorkflowList :workflows="workflows" @changed="reloadWorkflows" />
+                </Card>
+                <AgentManagement v-if="activeTab === 'overview'" :key="`work-${agent.agentId}`" :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :sections="['activity', 'work']" finished-only />
 
-            <TabsContent value="history" class="agent-profile-panel" data-profile-panel="history">
-              <div class="agent-profile-history-grid">
-                <AgentManagement v-if="activeTab === 'history'" :key="`work-${agent.agentId}`" :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :sections="['activity', 'work']" />
                 <Card v-if="previousProjects.length || agent.archiveReason || agent.recruitedAt || agent.recruitmentReason" as="section" class="agent-resume-section" aria-labelledby="agent-history-record-heading">
                   <h2 id="agent-history-record-heading">{{ t("agentProfiles.projectHistory") }}</h2>
                   <ol class="agent-work-timeline">
@@ -507,7 +480,7 @@ onMounted(() => {
                   <AgentConversations :key="agent.agentId" :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjects" />
                   <EmployeeWorkHistory :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjects" />
                 </Card>
-                <AgentManagement :key="`manage-${agent.agentId}`" :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :sections="['projects', 'recruitment', 'execution', 'profile']" @saved="saved" />
+                <AgentManagement :key="`manage-${agent.agentId}`" :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :sections="['projects', 'recruitment', 'execution']" />
               </div>
             </TabsContent>
           </Tabs>

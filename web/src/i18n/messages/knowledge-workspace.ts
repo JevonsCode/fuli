@@ -40,6 +40,8 @@ export const knowledgeWorkspaceMessages = {
       counts: {
         graph: '{nodes} 个节点 · {edges} 条当前关系',
         materials: '{count} 条项目资料',
+        projects: '{count} 个项目',
+        visibleProjects: '显示 {visible} / {total} 个项目',
         visibleMaterials: '显示 {visible} / {total} 条项目资料',
         knowledge: '{status} {count} 条知识内容',
         visibleKnowledge: '{status}：显示 {visible} / {total} 条知识内容',
@@ -64,6 +66,7 @@ export const knowledgeWorkspaceMessages = {
         failed: '搜索失败',
         aria: '知识搜索',
         materialsPlaceholder: '搜索项目资料',
+        projectsPlaceholder: '搜索项目',
         contentPlaceholder: '搜索内容、来源或关系',
         knowledgeAria: '搜索知识内容',
       },
@@ -115,6 +118,7 @@ export const knowledgeWorkspaceMessages = {
         directoryTypeAria: '目录内容类型',
         knowledgeContent: '知识内容',
         projectMaterials: '项目资料',
+        allProjects: '全部项目',
         knowledgeStatusAria: '知识内容状态',
         columns: {
           content: '内容',
@@ -330,6 +334,8 @@ export const knowledgeWorkspaceMessages = {
       counts: {
         graph: '{nodes} nodes · {edges} active relationships',
         materials: '{count} project material | {count} project materials',
+        projects: '{count} project | {count} projects',
+        visibleProjects: 'Showing {visible} / {total} projects',
         visibleMaterials: 'Showing {visible} / {total} project materials',
         knowledge: '{status}: {count} knowledge item | {status}: {count} knowledge items',
         visibleKnowledge: '{status}: showing {visible} / {total} knowledge items',
@@ -354,6 +360,7 @@ export const knowledgeWorkspaceMessages = {
         failed: 'Search failed',
         aria: 'Knowledge search',
         materialsPlaceholder: 'Search project materials',
+        projectsPlaceholder: 'Search projects',
         contentPlaceholder: 'Search content, sources, or relationships',
         knowledgeAria: 'Search knowledge content',
       },
@@ -405,6 +412,7 @@ export const knowledgeWorkspaceMessages = {
         directoryTypeAria: 'Directory content type',
         knowledgeContent: 'Knowledge content',
         projectMaterials: 'Project materials',
+        allProjects: 'All projects',
         knowledgeStatusAria: 'Knowledge content status',
         columns: {
           content: 'Content',

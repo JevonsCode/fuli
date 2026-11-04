@@ -1,5 +1,6 @@
 export const employeeMessages = {
   'zh-CN': {
+    fullscreen: '铺满窗口', fullscreenClose: '关闭全屏',
     workbench: 'Agent 工作台', unassigned: '暂不分配', permissions: '项目权限',
     boardRead: '读取所选项目的看板', boardWrite: '创建、修改任务与状态',
     installRequired: '这个 Agent 的工作台没有安装，目前只能作为 Agent 身份使用。',
@@ -143,6 +144,7 @@ export const employeeMessages = {
     },
   },
   'en-US': {
+    fullscreen: 'Fill the window', fullscreenClose: 'Close full view',
     workbench: 'Agent workspace', unassigned: 'Assign later', permissions: 'Project permissions',
     boardRead: 'Read the selected project board', boardWrite: 'Create and update tasks and status',
     installRequired: 'The workspace of this Agent is not installed, so it works as an Agent identity only.',
