@@ -17,6 +17,7 @@ namespace flutter_inappwebview_plugin
   constexpr auto kMethodSetSize = "setSize";
   constexpr auto kMethodSetPosition = "setPosition";
   constexpr auto kMethodSetCursorPos = "setCursorPos";
+  constexpr auto kMethodMoveFocus = "moveFocus";
   constexpr auto kMethodSetPointerUpdate = "setPointerUpdate";
   constexpr auto kMethodSetPointerButton = "setPointerButton";
   constexpr auto kMethodSetScrollDelta = "setScrollDelta";
@@ -241,6 +242,14 @@ namespace flutter_inappwebview_plugin
         return result->Success();
       }
       return result->Error(kErrorInvalidArgs);
+    }
+
+    // FULI patch: moveFocus: no arguments
+    if (method_name.compare(kMethodMoveFocus) == 0) {
+      if (view) {
+        view->moveFocus();
+      }
+      return result->Success();
     }
 
     // setPointerUpdate:
