@@ -6,7 +6,7 @@ import { localStoreFiles } from '../data-format/local-stores.js';
 import { readFormatOperations } from '../data-format/operations-log.js';
 import { childLogArchives } from '../local-runtime/child-process-log.js';
 import { allocatedPathSize } from '../system/resource-monitor.js';
-import { fuliLogPaths } from '../system/log-retention.js';
+import { fuliLogPaths } from '../system/log-paths.js';
 
 // 旧数据 (rec#80 group B): the copies FULI already keeps under the data
 // directory before it changes something, listed in one place so the person
