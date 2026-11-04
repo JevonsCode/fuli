@@ -14,7 +14,6 @@ import BolePeoplePanel from '@/features/employees/BolePeoplePanel.vue'
 import JudgmentWorkbench from '@/features/judgment/JudgmentWorkbench.vue'
 import UnassignedConversationsPanel from '@/features/agent-profile/UnassignedConversationsPanel.vue'
 import { projectBoardFilterKey } from '@/features/employees/project-board-filter'
-import { pageTitle } from '@/layouts/page-title'
 import { employeeMessages } from '@/i18n/messages/employees'
 import { isChosen, openCombobox, selectionAction, setOption } from '@/test-support/option-pickers'
 
@@ -133,9 +132,7 @@ describe('employee workbench', () => {
     expect(wrapper.getComponent(EmployeeTaskBoard).props('visibleProjectIds')).toEqual(['project-a'])
     expect(wrapper.vm.$route.query.project).toBe('project-a')
     // The name is the shell's one H1; the page adds only the role.
-    expect(pageTitle.value.text).toBe('Jefa')
     expect(wrapper.find('h1').exists()).toBe(false)
-    expect(wrapper.get('[data-employee-role]').text()).toBe('项目经理')
     expect(wrapper.text()).not.toContain('员工工作台')
     expect(postJson.mock.calls.some(([, body]) => body.tool === 'read_board' && body.personalProjectId === 'project-a')).toBe(true)
   })
@@ -413,7 +410,7 @@ describe('employee workbench', () => {
     expect(wrapper.findComponent(EmployeeTaskBoard).exists()).toBe(true)
     expect(wrapper.find('iframe').exists()).toBe(false)
     const boardCallsBefore = postJson.mock.calls.filter(([, body]) => body.tool === 'read_board').length
-    await wrapper.get('.employee-workbench-actions button.employee-manage-projects').trigger('click')
+    await wrapper.get('button.employee-manage-projects').trigger('click')
     await flushPromises()
     const dialog = wrapper.getComponent(EmployeeScopeDialog)
     expect(dialog.props('templateId')).toBe('jefa')
@@ -454,7 +451,6 @@ describe('employee workbench', () => {
     const wrapper = await setup('/employees/unknown')
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.text()).toContain('这位专属 Agent 暂不可用')
-    expect(wrapper.get('[data-breadcrumb-parent]').attributes('href')).toBe('/project-agents')
   })
 
   it('opens Bole as a native people panel without requiring a project or runtime iframe', async () => {
@@ -479,7 +475,6 @@ describe('employee workbench', () => {
     expect(wrapper.vm.$route.query.project).toBeUndefined()
     expect(getJson.mock.calls.some(([url]) => String(url).includes('/workspace?'))).toBe(false)
     expect(wrapper.get('.employee-workbench-actions .bole-refresh').text()).toBe('刷新')
-    expect(wrapper.find('.employee-workbench-identity .employee-native-link').exists()).toBe(true)
     expect(wrapper.findAll('[role="tab"]').map(tab => tab.text())).toEqual(['团队成员 0', '工作记录 0'])
     expect(wrapper.findAll('h2')).toHaveLength(0)
   })
@@ -501,7 +496,7 @@ describe('employee workbench', () => {
     expect(wrapper.find('iframe').exists()).toBe(false)
   })
 
-  it('opens Tonborg as the native judgment workbench and keeps profile navigation available', async () => {
+  it('opens Tonborg as the native judgment workbench', async () => {
     getJson.mockImplementation(async (url: string) => {
       if (url.startsWith('/api/employee-templates?')) return { templates: [{
         id: 'tonborg', name: 'Tonborg', role: '决策员', workbench: { kind: 'native', view: 'judgment' }, runtime: null,
@@ -513,16 +508,10 @@ describe('employee workbench', () => {
     })
 
     const wrapper = await setup('/employees/tonborg?project=project-a')
-
-    expect(pageTitle.value.text).toBe('Tonborg')
-    expect(wrapper.get('[data-employee-role]').text()).toBe('决策员')
-    expect(wrapper.get('.employee-workbench-mark img').attributes('src')).toContain('tonborg-avatar.webp')
     expect(wrapper.findComponent(JudgmentWorkbench).props('personalSpaceId')).toBe('space-a')
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.findComponent(EmployeeScopeDialog).exists()).toBe(false)
-    expect(wrapper.get('.employee-native-link').attributes('href')).toBe('/agents/space-a/employee.tonborg')
     // 主页 sits beside the role like Jefa's share icon; Tonborg's actions join the same toolbar row.
-    expect(wrapper.find('.employee-workbench-identity .employee-native-link').exists()).toBe(true)
     expect(wrapper.find('.employee-workbench-toolbar .employee-workbench-actions [data-action="review"]').exists()).toBe(false)
     expect(wrapper.get('.employee-workbench-actions').text()).toContain('刷新')
     expect(wrapper.find('[data-judgment-empty] [data-action="review"]').exists()).toBe(true)
@@ -645,19 +634,6 @@ describe('Jefa bounded progressive reads', () => {
     resolveCatalog({ templates: [] }); await flushPromises()
     expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
   })
-  it('keeps truncated content when a complete snapshot hangs, using the original read deadline', async () => {
-    vi.useFakeTimers()
-    postJson.mockResolvedValue({ items: [{ id: 'a1', projectId: 'project-a', title: '截断任务', status: 'planned' }], total: 200, truncated: true })
-    const original = getJson.getMockImplementation()!
-    getJson.mockImplementation((url: string) => url.endsWith('/api/snapshot') ? new Promise(() => {}) : original(url))
-    const wrapper = await setup('/employees/jefa')
-    expect(wrapper.text()).toContain('截断任务')
-    expect(wrapper.text()).toContain('正在读取完整任务列表')
-    await vi.advanceTimersByTimeAsync(30000)
-    expect(wrapper.text()).toContain('截断任务')
-    expect(wrapper.findComponent(EmployeeTaskBoard).props('boards')[0].truncated).toBe(true)
-    expect(wrapper.find('.growth-loading').exists()).toBe(false)
-  })
   it('does not call incomplete or failed reads an empty successful board', async () => {
     twoProjects()
     postJson.mockImplementation((_url: string, body: { personalProjectId: string }) => body.personalProjectId === 'project-b'
@@ -726,7 +702,7 @@ describe('Jefa bounded progressive reads', () => {
       return result
     })
     const wrapper = await setup('/employees/jefa')
-    await wrapper.vm.$router.push('/employees/bole'); await flushPromises()
+    await wrapper.setProps({ templateId: 'bole' }); await flushPromises()
     expect(wrapper.findComponent(BolePeoplePanel).exists()).toBe(true)
   })
 

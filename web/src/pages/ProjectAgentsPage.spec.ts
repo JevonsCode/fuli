@@ -41,7 +41,7 @@ describe('ProjectAgentsPage (编排 collection)', () => {
     expect(getJson).toHaveBeenCalledWith('/api/project-agents?personalSpaceId=personal-1')
     const cards = wrapper.findAll('.project-agent-card')
     expect(cards).toHaveLength(1)
-    expect(cards[0]!.get('[data-agent-manage-link]').attributes('href')).toBe('/project-agents/manage/personal-1/shared-agent')
+    expect(cards[0]!.get('[data-agent-manage-link]').attributes('href')).toBe('/agents/personal-1/shared-agent')
     expect(cards[0]!.get('[data-agent-type]').text()).toBe('长期')
     // Only a membership other than available is called out, as in the directory.
     expect(cards[0]!.find('[data-agent-status]').exists()).toBe(false)
@@ -227,7 +227,7 @@ describe('ProjectAgentsPage (编排 collection)', () => {
     const work = wrapper.get('.project-agent-row-work')
     expect(work.text()).toContain('正在整理活动复盘')
     expect(work.text()).toContain('运行中')
-    expect(work.get('a').attributes('href')).toBe('/project-agents/manage/personal-1/shared-agent?task=task-running')
+    expect(work.get('a').attributes('href')).toBe('/agents/personal-1/shared-agent?task=task-running')
   })
 
   it('keeps blocked work visible on the card', async () => {
@@ -276,8 +276,8 @@ describe('ProjectAgentsPage (编排 collection)', () => {
 
   it.each([
     ['an Agent and its task', '/project-agents/manage?agent=shared-agent&project=project-a&task=task-a#task-task-a',
-      '/project-agents/manage/personal-1/shared-agent?project=project-a&task=task-a#task-task-a'],
-    ['an Agent alone', '/project-agents/manage?agent=shared-agent', '/project-agents/manage/personal-1/shared-agent'],
+      '/agents/personal-1/shared-agent?project=project-a&task=task-a#task-task-a'],
+    ['an Agent alone', '/project-agents/manage?agent=shared-agent', '/agents/personal-1/shared-agent'],
   ])('opens the Agent page for an older link naming %s', async (_case, link, page) => {
     const { router } = await mountPage(false, link)
     await flushPromises()
@@ -291,7 +291,7 @@ describe('ProjectAgentsPage (编排 collection)', () => {
       : orchestrationResponse(url))
     const { router } = await mountPage(false, '/project-agents/manage?project=project-a&task=task-open')
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/project-agents/manage/personal-1/shared-agent?project=project-a&task=task-open')
+    expect(router.currentRoute.value.fullPath).toBe('/agents/personal-1/shared-agent?project=project-a&task=task-open')
   })
 
   it.each([
@@ -309,7 +309,7 @@ describe('ProjectAgentsPage (编排 collection)', () => {
     })
     const { router } = await mountPage(false, '/project-agents/manage?task=old-task')
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/project-agents/manage/personal-1/shared-agent?task=old-task')
+    expect(router.currentRoute.value.fullPath).toBe('/agents/personal-1/shared-agent?task=old-task')
     expect(getJson).toHaveBeenCalledWith('/api/project-agent-tasks/old-task?personalSpaceId=personal-1')
   })
 
@@ -334,7 +334,7 @@ describe('ProjectAgentsPage (编排 collection)', () => {
     await flushPromises()
     wrapper.getComponent(ProjectAgentDialog).vm.$emit('saved', { ...agents[0], agentId: 'new-agent', profile: { ...agents[0]!.profile, name: '新 Agent' } })
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/project-agents/manage/personal-1/new-agent')
+    expect(router.currentRoute.value.path).toBe('/agents/personal-1/new-agent')
   })
 })
 
@@ -375,7 +375,7 @@ describe('ProjectAgentsPage quick look (Peek)', () => {
     expect(document.activeElement?.hasAttribute('data-peek-open-full')).toBe(true)
     ;(dialog()!.querySelector('[data-peek-open-full]') as HTMLButtonElement).click()
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/project-agents/manage/personal-1/shared-agent')
+    expect(router.currentRoute.value.fullPath).toBe('/agents/personal-1/shared-agent')
   })
 
   it('edits from the quick look only after the quick look has closed', async () => {

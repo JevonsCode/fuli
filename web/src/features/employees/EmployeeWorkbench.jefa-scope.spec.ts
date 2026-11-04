@@ -261,22 +261,6 @@ describe('Jefa reads only the selected projects', () => {
     expect(boardReads()).toEqual([])
   })
 
-  it('keeps a truncated board in its slot while its complete list loads', async () => {
-    const selected = pick(0, 1, 2, 3, 4, 5)
-    answerBoards(id => boardOf(id, `任务 ${id}`, true))
-    const original = getJson.getMockImplementation()!
-    const snapshots: Array<(value: unknown) => void> = []
-    getJson.mockImplementation((url: string) => url.endsWith('/api/snapshot')
-      ? new Promise(resolve => { snapshots.push(resolve) }) : original(url))
-    const wrapper = await setup(deepLink(selected))
-    // Four boards answered and four complete lists in flight: the slots stay full.
-    expect(boardReads()).toEqual(selected.slice(0, 4))
-    expect(snapshots).toHaveLength(4)
-    expect(status(wrapper)).toContain('已显示 0/6 个项目；6 个仍在读取')
-    snapshots[0]!({ snapshot: { workItems: [] } }); await flushPromises()
-    expect(boardReads()).toEqual(selected.slice(0, 5))
-  })
-
   it('removes only the refused board on a 401 and keeps the others', async () => {
     const [kept, refused] = pick(40, 41) as [string, string]
     answerBoards(id => id === refused ? Promise.reject(new ApiError('unauthorized', 401)) : boardOf(id))
@@ -404,26 +388,19 @@ describe('Jefa reads only the selected projects', () => {
     expect(boardReads()).toEqual(selected.slice(0, 4))
   })
 
-  it('reads the complete list only for a selected truncated board, and a refresh re-reads only the selection', async () => {
-    const [truncated, plain] = pick(12, 120) as [string, string]
-    answerBoards(id => boardOf(id, `任务 ${id}`, id === truncated))
-    const snapshotUrl = `/employee-workspaces/jefa/${truncated}/api/snapshot`
-    const original = getJson.getMockImplementation()!
-    let snapshotAvailable = false
-    getJson.mockImplementation((url: string) => !url.endsWith('/api/snapshot') ? original(url)
-      : snapshotAvailable && url === snapshotUrl
-        ? Promise.resolve({ snapshot: { workItems: [{ id: 'full', projectId: truncated, title: '完整列表任务', status: 'planned' }] } })
-        : Promise.reject(new ApiError('unavailable', 503)))
-    const snapshots = () => getJson.mock.calls.map(([url]) => String(url)).filter(url => url.endsWith('/api/snapshot'))
-    const wrapper = await setup(deepLink([truncated, plain]))
-    expect(snapshots()).toEqual([snapshotUrl])
-    expect(wrapper.get('[role="alert"]').text()).toContain('部分项目暂不可用')
-    snapshotAvailable = true
-    await wrapper.get('.jefa-read-actions button').trigger('click'); await flushPromises()
-    expect(boardReads()).toEqual([truncated, plain, truncated, plain])
-    expect(snapshots()).toEqual([snapshotUrl, snapshotUrl])
-    expect(wrapper.text()).toContain('完整列表任务')
-    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+  // Jevons 11-04: a long history made the board crawl.
+  it('reads open work and what finished this week, and older work only on request', async () => {
+    const [project] = pick(12) as [string]
+    answerBoards(id => ({ ...boardOf(id), doneOlder: 3 }))
+    const wrapper = await setup(deepLink([project]))
+    const reads = () => postJson.mock.calls.map(([, body]) => body as { arguments: Record<string, unknown> })
+    expect(reads()[0]!.arguments).toMatchObject({ limit: 200, doneSince: expect.any(String) })
+    expect(getJson.mock.calls.some(([url]) => String(url).endsWith('/api/snapshot'))).toBe(false)
+    answerBoards(() => ({ items: [{ id: 'old', projectId: project, title: '上个月完成', status: 'done', updatedAt: '2026-10-01T00:00:00Z' }], total: 1, truncated: false, doneOlder: 0 }))
+    await wrapper.get('[data-board-older-done]').trigger('click'); await flushPromises()
+    expect(reads().at(-1)!.arguments).toMatchObject({ statuses: ['done'], doneBefore: reads()[0]!.arguments.doneSince })
+    expect(wrapper.text()).toContain('上个月完成')
+    expect(wrapper.find('[data-board-older-done]').exists()).toBe(false)
   })
 
   it('drops a selected project whose access is revoked on refresh, without reading unselected ones', async () => {

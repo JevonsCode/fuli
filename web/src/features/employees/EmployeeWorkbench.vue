@@ -1,35 +1,39 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
+import { useEventListener } from '@vueuse/core'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { boardItemKey, isEmployeeBoardItem } from '@/features/employees/task-board-model'
 import { useJefaBoardLoad } from '@/features/employees/useJefaBoardLoad'
 import JefaReadStatus from '@/features/employees/JefaReadStatus.vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { getJson, patchJson, postJson } from '@/api/client'
-import Breadcrumb from '@/components/Breadcrumb.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { useRoutePeek } from '@/composables/useRoutePeek'
-import { usePageTitle } from '@/layouts/page-title'
 import { boardTaskAccessRevoked, boardTaskPeekId, readBoardTaskPeekId } from '@/features/employees/board-task-peek'
 import EmployeeTaskBoard, { type EmployeeBoardItem, type BoardMoveTarget, type EmployeeProjectBoard } from '@/features/employees/EmployeeTaskBoard.vue'
 import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import BolePeoplePanel from '@/features/employees/BolePeoplePanel.vue'
 import UnassignedConversationsPanel from '@/features/agent-profile/UnassignedConversationsPanel.vue'
 import { isFormalProject } from '@/features/projects/project-origin'
+import BoardRecentActivity from '@/features/employees/BoardRecentActivity.vue'
 import EmployeeTaskDialog from '@/features/employees/EmployeeTaskDialog.vue'
 import EmployeeShareDialog from '@/features/employees/EmployeeShareDialog.vue'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
-import { roleName } from '@/features/agent-profile/role-names'
-import { employeeAvatarUrl } from '@/features/employees/avatars'
 import { useProjectBoardFilter } from '@/features/employees/project-board-filter'
 import { provideWorkbenchToolbarActions } from '@/features/employees/workbench-toolbar'
 import JudgmentWorkbench from '@/features/judgment/JudgmentWorkbench.vue'
-import UiIcon from '@/ui/UiIcon.vue'
-import { agentProfilePath } from '@/features/agent-profile/profile-model'
 import { useConsoleStore } from '@/stores/console'
 import { t } from '@/i18n'
-import { employeeName, employeeRoleLabel, employeeTemplates, employeeCatalogError, employeeCatalogLoading, employeeErrorMessage, refreshEmployeeCatalog, type EmployeeWorkspace } from '@/features/employees/catalog'
+import { UiIconButton } from '@/ui'
+import { employeeName, employeeTemplates, employeeCatalogError, employeeCatalogLoading, employeeErrorMessage, refreshEmployeeCatalog, type EmployeeWorkspace } from '@/features/employees/catalog'
 
+// A built-in role's own workbench, the first tab of its FLA page: Jefa's board,
+// Bole's people, Tonborg's judgments, Astro's unclaimed conversations. The page
+// above says who this is, so this holds only the work.
+const props = defineProps<{ templateId: string }>()
+// 全屏: the whole app, closed like a floating layer. Teleport moves the same
+// element, so the board keeps what it read and where it was scrolled.
+const fullscreen = ref(false)
+useEventListener(window, 'keydown', (event: KeyboardEvent) => { if (event.key === 'Escape') fullscreen.value = false })
 const route = useRoute()
 const router = useRouter()
 const store = useConsoleStore()
@@ -48,7 +52,7 @@ const manageProjectsOpen = ref(false)
 const shareOpen = ref(false)
 const createTaskOpen = ref(false)
 const personalSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
-const templateId = computed(() => String(route.params.templateId ?? ''))
+const templateId = computed(() => props.templateId)
 const isJefa = computed(() => templateId.value === 'jefa')
 const jefaRead = reactive(useJefaBoardLoad({
   enabled: isJefa, spaceId: personalSpaceId, boards: projectBoards, scopeValid: () => !projectFilter.invalidScope.value,
@@ -59,9 +63,6 @@ const jefaRead = reactive(useJefaBoardLoad({
   projectNames: computed(() => new Map((store.state?.personalProjects ?? []).filter(p => p.personal_space_id === personalSpaceId.value).map(p => [p.project_id, p.profile.name]))),
 }))
 const template = computed(() => isJefa.value ? jefaRead.template : employeeTemplates.value.find((entry) => entry.id === templateId.value))
-// The shell's H1 is the Agent's own name; the route title stands in until it is read.
-usePageTitle(() => (template.value ? employeeName(template.value) : isJefa.value ? roleName('jefa') : ''))
-const openedFromAgents = /^\/project-agents(\?|$)/
 const nativeWorkbenchView = computed(() => {
   const workbench = template.value?.workbench
   return workbench?.kind === 'native' ? (workbench as { view?: string }).view ?? null : null
@@ -123,6 +124,7 @@ const visibleProjectBoards = computed(() => {
   const visible = new Set(visibleProjectIds.value)
   return projectBoards.value.filter((board) => visible.has(board.project.id))
 })
+const olderDone = computed(() => visibleProjectBoards.value.reduce((sum, board) => sum + (board.doneOlder ?? 0), 0))
 const visibleFailedProjects = computed(() => {
   const visible = new Set(visibleProjectIds.value)
   return failedProjectIds.value.filter((projectId) => visible.has(projectId)).length
@@ -248,17 +250,8 @@ async function loadWorkspace() {
             tool: 'read_board',
             arguments: { limit: 100 },
           })
-          let items = Array.isArray(board.items) ? board.items.filter(isEmployeeBoardItem).filter(item => item.projectId === project.value) : []
-          let truncated = board.truncated
-          if (requestedTemplate === 'jefa' && truncated) {
-            try {
-              const snapshot = await getJson<{ snapshot: { workItems: unknown[] } }>(`/employee-workspaces/jefa/${encodeURIComponent(project.value)}/api/snapshot`)
-              if (!Array.isArray(snapshot.snapshot.workItems)) throw new Error('Invalid board snapshot')
-              items = snapshot.snapshot.workItems.filter(isEmployeeBoardItem).filter(item => item.projectId === project.value)
-              truncated = false
-            } catch { /* Keep the explicitly marked partial board if the full snapshot is unavailable. */ }
-          }
-          return { ok: true as const, board: { ...board, truncated, project: { id: project.value, name: project.label }, items } }
+          const items = Array.isArray(board.items) ? board.items.filter(isEmployeeBoardItem).filter(item => item.projectId === project.value) : []
+          return { ok: true as const, board: { ...board, project: { id: project.value, name: project.label }, items } }
         } catch (cause) {
           return { ok: false as const, cause, projectId: project.value }
         }
@@ -369,29 +362,14 @@ async function projectsSaved() {
 </script>
 
 <template>
-  <section ref="pageRoot" class="view employee-workbench-view" :class="{ 'fills-height': !isNativeWorkbench || isNativeJudgment }" :aria-label="template ? employeeName(template) : t('employees.workbench')">
-   <!-- The board, the iframe and Tonborg's record list fill the canvas and scroll inside; other native panels scroll with the page. -->
+ <Teleport to="body" :disabled="!fullscreen">
+  <section ref="pageRoot" class="employee-workbench-view" :class="{ 'fills-height': !isNativeWorkbench || isNativeJudgment, 'is-native': isNativeWorkbench, 'is-fullscreen': fullscreen }" :data-workbench-fullscreen="fullscreen || undefined" :aria-label="template ? employeeName(template) : t('employees.workbench')">
+   <!-- The board, the iframe and Tonborg's record list fill the tab and scroll inside; other native panels scroll with it. -->
    <div class="employee-workbench-canvas flex w-full flex-col gap-3">
-    <!-- The Agent's name is the shell's H1; this row says only what the name does not. -->
     <header class="employee-workbench-toolbar">
-      <Breadcrumb :parent="{ label: t('agentProfiles.back'), to: '/project-agents', from: openedFromAgents }" />
-      <div class="employee-workbench-identity">
-        <span class="employee-workbench-mark" aria-hidden="true">
-          <img v-if="employeeAvatarUrl(templateId)" :src="agentAvatarUrl(`employee.${templateId}`)" :data-agent-portrait="`employee.${templateId}`" alt="" />
-          <template v-else>{{ template ? employeeName(template).slice(0, 1) : 'A' }}</template>
-        </span>
-        <span class="employee-workbench-role" data-employee-role>{{ employeeRoleLabel({ id: templateId, role: template?.role ?? '' }) }}</span>
-        <Button v-if="isJefa && supportsAllProjects" variant="ghost" size="icon" class="employee-share-button" :aria-label="t('employees.share.title')" :title="t('employees.share.title')" @click="shareOpen = true">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7m0-7-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M7 16v-3m4 3v-1"/></svg>
-        </Button>
-        <Button v-if="isNativeWorkbench && template?.agentId && personalSpaceId" as-child variant="ghost" size="icon" class="employee-native-link">
-          <RouterLink :to="agentProfilePath(personalSpaceId, template.agentId)" :aria-label="t('agentProfiles.profile')" :title="t('agentProfiles.profile')">
-            <UiIcon name="agents" :size="18" />
-          </RouterLink>
-        </Button>
-      </div>
       <div ref="toolbarActions" class="employee-workbench-actions">
-        <Button v-if="template && !isNativeWorkbench" variant="ghost" class="employee-manage-projects" :disabled="!personalSpaceId" @click="manageProjectsOpen = true">
+        <UiIconButton v-if="!isJefa" :icon="fullscreen ? 'close' : 'expand'" size="sm" :label="t(fullscreen ? 'employees.fullscreenClose' : 'employees.fullscreen')" data-workbench-expand @click="fullscreen = !fullscreen" />
+        <Button v-if="template && !isNativeWorkbench && !isJefa" variant="ghost" class="employee-manage-projects" :disabled="!personalSpaceId" @click="manageProjectsOpen = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
           {{ t('employees.manageProjects') }}
         </Button>
@@ -428,6 +406,9 @@ async function projectsSaved() {
       :moving-item-keys="movingItemKeys"
       :selected-task="openTaskRef"
       :action-error="boardActionError"
+      :older-done="isJefa ? olderDone : 0"
+      :older-done-loading="jefaRead.olderDoneLoading"
+      @load-older-done="jefaRead.loadOlderDone"
       :resettable-filter="isJefa"
       :filter-storage-unavailable="projectFilter.storageUnavailable.value"
       @reset-project-filter="projectFilter.reset"
@@ -435,29 +416,45 @@ async function projectsSaved() {
       @select-task="openTask"
       @create-task="openTask()"
       @retry="loadWorkspace"
-    />
-    <div v-else-if="workspace && workspace.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p></div>
+    >
+      <template v-if="isJefa" #actions>
+        <UiIconButton :icon="fullscreen ? 'close' : 'expand'" size="sm" :label="t(fullscreen ? 'employees.fullscreenClose' : 'employees.fullscreen')" data-workbench-expand @click="fullscreen = !fullscreen" />
+        <Button variant="ghost" size="icon" class="employee-share-button" :aria-label="t('employees.share.title')" :title="t('employees.share.title')" @click="shareOpen = true">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7m0-7-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M7 16v-3m4 3v-1"/></svg>
+        </Button>
+        <Button variant="ghost" class="employee-manage-projects" :disabled="!personalSpaceId" @click="manageProjectsOpen = true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
+          {{ t('employees.manageProjects') }}
+        </Button>
+      </template>
+    </EmployeeTaskBoard>
+    <BoardRecentActivity v-if="isJefa && projectId === ALL_PROJECTS && supportsAllProjects" :boards="visibleProjectBoards" @select="openTask" />
+    <div v-if="workspace && workspace.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p></div>
     <iframe v-else-if="workspace" :key="workspace.workbenchUrl" :src="workspace.workbenchUrl" :title="`${workspace.name} · ${workspace.project.name}`" class="employee-workbench-frame" />
    </div>
   </section>
+ </Teleport>
 </template>
 
 <style scoped>
-.employee-workbench-view { display: flex; flex-direction: column; }
-/* The board and the workbench iframe take the rest of the canvas and scroll
-   inside it, so the page itself does not scroll behind them. */
-.employee-workbench-view.fills-height { overflow: hidden; padding-bottom: 16px; }
+/* The workbench is one card of its own, set apart from who this FLA is above it. */
+.employee-workbench-view { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; padding: 14px 18px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); box-shadow: var(--shadow-sm); }
+/* The board and the workbench iframe take the tab's room and scroll inside it.
+   Below them the tab itself scrolls, so a short window still shows the board. */
 .employee-workbench-canvas { flex: 1 0 auto; }
 .fills-height .employee-workbench-canvas { flex: 1 1 0; min-height: 0; }
-.employee-workbench-toolbar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
-.employee-workbench-identity { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.employee-workbench-mark { display: grid; place-items: center; flex: 0 0 28px; height: 28px; overflow: hidden; border-radius: var(--radius-control); background: var(--color-surface-subtle); color: var(--color-ink); font-size: 15px; font-weight: 650; }
-.employee-workbench-mark img { width: 100%; height: 100%; object-fit: cover; }
-.employee-workbench-role { color: var(--color-muted); font-size: 13px; overflow-wrap: anywhere; }
-.employee-workbench-actions { display: flex; align-items: center; gap: 8px; min-width: 0; margin-left: auto; }
-@media (max-width: 700px) { .employee-workbench-actions { margin-left: 0; } }
-/* On the canvas the board needs no frame of its own. */
-.employee-workbench-view :deep(.employee-all-projects) { padding: 0; background: transparent; }
+/* Over the whole app, below the window's own controls; the board keeps its controls. */
+.employee-workbench-view.is-fullscreen {
+  position: fixed; inset: 0; z-index: var(--z-dialog); overflow: auto; padding: calc(16px + var(--desktop-caption-top, 0px)) var(--page-inline, 24px) 16px;
+  border: 0; border-radius: 0; background: var(--color-bg); box-shadow: none;
+}
+.is-fullscreen.is-native .employee-workbench-toolbar { top: calc(10px + var(--desktop-caption-top, 0px)); right: var(--page-inline, 24px); }
+.employee-workbench-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; }
+.employee-workbench-toolbar:has(.employee-workbench-actions:empty) { display: none; }
+/* A native panel's actions sit in the corner of the card, on the row of its own tabs. */
+.is-native .employee-workbench-toolbar { position: absolute; top: 10px; right: 14px; z-index: 1; }
+.employee-workbench-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.employee-workbench-view :deep(.employee-all-projects) { flex: 1 0 460px; padding: 0; background: transparent; }
 .employee-workbench-frame { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
 .employee-workbench-state { display: grid; flex: 1; gap: 14px; place-content: center; justify-items: center; padding: 30px; color: var(--color-muted); font-size: 14px; text-align: center; }
 .employee-workbench-state h2 { font-size: 20px; font-weight: 600; color: var(--color-ink); }

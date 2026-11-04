@@ -51,8 +51,16 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
     return { ...context, tools };
   }
 
+  // Whether this call only reads: such a call may share a burst's authorization read.
+  async function readsOnly(input) {
+    try {
+      const tools = await (await registry.runtime(input.templateId)).describeTools();
+      return /\.read$/.test(tools.find((entry) => entry.name === input.tool)?.permission ?? '');
+    } catch { return false; }
+  }
+
   async function callTool(input) {
-    const context = await workspace(input);
+    const context = await workspace({ ...input, readOnly: await readsOnly(input) });
     const runtime = await registry.runtime(context.templateId);
     const tools = await runtime.describeTools();
     const tool = tools.find((entry) => entry.name === input.tool);

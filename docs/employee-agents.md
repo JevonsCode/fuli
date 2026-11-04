@@ -147,7 +147,7 @@ The nine tools, each limited by the permission it declares:
 
 | Tool | Permission | Contract |
 | --- | --- | --- |
-| `read_board` | `board.read` | Tasks ordered by status (active, blocked, review, planned, done), priority and recency. `limit` 1–200 (default 50), optional `statuses`. `version` changes on every board write; `truncated` says more tasks exist. `projectBoard` is the project's own board (below). |
+| `read_board` | `board.read` | Tasks ordered by status (active, blocked, review, planned, done), priority and recency. `doneSince` keeps finished tasks from that time on and `doneBefore` reads older ones, newest first; both answer `doneOlder`, the finished tasks left out. `limit` 1–200 (default 50), optional `statuses`. `version` changes on every board write; `truncated` says more tasks exist. `projectBoard` is the project's own board (below). |
 | `get_task` | `board.read` | One task with acceptance criteria, tags and its last 20 revisions. |
 | `create_tasks` | `board.write` | Up to 20 tasks. `messageId` makes a retry return the same tasks; the same ID with other content is `request_conflict`. New tasks are private and start `planned` unless a status other than `done` is given. |
 | `update_tasks` | `board.write` | Up to 50 updates, each with the `expectedUpdatedAt` it read. One stale update refuses the whole request with `version_conflict` and nothing is written. `requestId` makes a retry return the first answer. `done` is never accepted. |
@@ -184,6 +184,8 @@ The record lives in Jefa's board store (`jefa_project_boards`, with every revisi
 The console board shows the project's own columns when the filter shows that project alone; with several projects it keeps the built-in columns and labels each card with its project's column name. A project with an external board shows its link card instead of tasks.
 
 ## Verification and release boundary
+
+A built-in role's workbench is the first tab of its one FLA page (`/agents/<space>/employee.<role>`); `/employees/<role>` stays a link that lands there. The task board is Jefa's own: no other FLA has one, and an FLA's former 编排 management page is that page's 高级管理 tab.
 
 Jefa uses one native `EmployeeTaskBoard` for every project scope. `/employees/jefa` and
 `?project=all` show the current managed projects; legacy `__all__` is normalized. A single

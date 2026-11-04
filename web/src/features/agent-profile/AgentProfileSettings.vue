@@ -17,6 +17,7 @@ let originalPlatform = "";
 const platform = ref(""),
   expectations = ref("");
 const character = ref({ judgment: "", taste: "", personality: "" });
+const responsibility = ref("");
 const locked = computed(
   () => props.agent.profile.executorPolicy?.mode === "locked",
 );
@@ -64,6 +65,7 @@ watch(
   async () => {
     const agent = props.agent;
     const current = ++generation;
+    responsibility.value = agent.profile.responsibility ?? "";
     expectations.value = agent.profile.expectations ?? "";
     character.value = {
       judgment: "",
@@ -111,6 +113,7 @@ async function save() {
       agentId: agent.agentId,
       profile: {
         ...agent.profile,
+        responsibility: responsibility.value.trim() || agent.profile.responsibility,
         character: { ...character.value },
         expectations: expectations.value,
         executorPolicy:
@@ -167,6 +170,10 @@ async function save() {
       }}</small>
     </div>
     <label
+      >{{ t("agentProfiles.responsibility")
+      }}<textarea v-model="responsibility" rows="2" maxlength="4096" :disabled="saving" data-agent-responsibility />
+    </label>
+    <label
       >{{ t("agentProfiles.expectations")
       }}<textarea
         v-model="expectations"
@@ -176,8 +183,8 @@ async function save() {
         :placeholder="t('agentProfiles.expectationsPlaceholder')"
       />
     </label>
-    <details>
-      <summary>{{ t("agentProfiles.editCharacter") }}</summary>
+    <section class="agent-preferences" data-agent-preferences>
+      <h4>{{ t("agentProfiles.preferences") }}</h4>
       <label
         v-for="key in ['judgment', 'taste', 'personality'] as const"
         :key="key"
@@ -189,7 +196,7 @@ async function save() {
           :disabled="saving"
         />
       </label>
-    </details>
+    </section>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="saved" role="status">{{ t("agentProfiles.saved") }}</p>
     <Button size="sm" :disabled="loading" :loading="saving" :loading-label="t('agentProfiles.saving')" type="submit">

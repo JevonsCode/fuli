@@ -1,5 +1,6 @@
 export const employeeMessages = {
   'zh-CN': {
+    fullscreen: '铺满窗口', fullscreenClose: '关闭全屏',
     workbench: 'Agent Workbench', unassigned: '暂不分配', permissions: '项目权限',
     boardRead: '读取所选项目的看板', boardWrite: '创建、修改任务与状态',
     installRequired: '这个 Agent 的 Workbench 没有安装，目前只能作为 Agent 身份使用。',
@@ -8,7 +9,7 @@ export const employeeMessages = {
     roles: { jefa: '项目经理', bole: 'Agent 资源', tonborg: '决策员', assistant: '全局助手' },
     read: {
       incomplete: '任务读取尚未完整', incompleteHint: '部分项目仍在读取或暂不可用，当前结果不能确认任务为空。',
-      console: '正在读取控制台状态…', catalog: '正在读取 @:{\'roleNames.jefa\'} 的负责项目…', board: '正在读取任务看板…', snapshot: '正在读取完整任务列表…',
+      console: '正在读取控制台状态…', catalog: '正在读取 @:{\'roleNames.jefa\'} 的负责项目…', board: '正在读取任务看板…',
       updating: '正在更新任务看板…', long: '读取时间较长，你可以离开此页，稍后再试。',
       counts: '已显示 {loaded}/{total} 个项目；{pending} 个仍在读取，{failed} 个读取失败。',
       timeoutTitle: '任务看板读取超时', failedTitle: '任务看板读取失败', partialTitle: '部分项目暂不可用',
@@ -31,6 +32,8 @@ export const employeeMessages = {
       empty: '当前范围暂无任务', emptyHint: '当前负责的项目还没有任务。',
       noProjectsVisible: '没有显示任何项目', noProjectsVisibleHint: '重新勾选项目后，就能继续查看对应任务。', showAllProjects: '显示全部项目',
       noMatch: '没有匹配的任务', noMatchHint: '换个关键词，或清空搜索后查看全部任务。',
+      doneOlder: '查看更多（还有 {count} 个）', doneOlderLoading: '正在读取更早完成的任务',
+      recent: '最近活动', recentAll: '查看全部活动', recentLess: '收起',
       columnEmpty: '暂无任务', taskCount: '{count} 个任务',
       openTask: '在 {project} 中查看任务：{task}', dragHint: '拖动卡片或用“移动到…”菜单更新状态；键盘：空格拿起，方向键移动，空格放下，Esc 取消。',
       dragTask: '移动任务：{task}', saving: '正在保存任务状态…', movingTo: '正在移动到“{status}”…',
@@ -122,6 +125,7 @@ export const employeeMessages = {
     },
   },
   'en-US': {
+    fullscreen: 'Fill the window', fullscreenClose: 'Close full view',
     workbench: 'Agent workspace', unassigned: 'Assign later', permissions: 'Project permissions',
     boardRead: 'Read the selected project board', boardWrite: 'Create and update tasks and status',
     installRequired: 'The workspace of this Agent is not installed, so it works as an Agent identity only.',
@@ -129,7 +133,7 @@ export const employeeMessages = {
     roles: { jefa: 'Project manager', bole: 'Agent resources', tonborg: 'Decision maker', assistant: 'Global assistant' },
     read: {
       incomplete: 'Task loading is incomplete', incompleteHint: 'Some projects are still loading or unavailable. The current result cannot confirm there are no tasks.',
-      console: 'Reading console state…', catalog: 'Reading @:{\'roleNames.jefa\'}’s assigned projects…', board: 'Reading the task board…', snapshot: 'Reading the complete task list…',
+      console: 'Reading console state…', catalog: 'Reading @:{\'roleNames.jefa\'}’s assigned projects…', board: 'Reading the task board…',
       updating: 'Updating the task board…', long: 'This is taking longer than usual. You can leave this page and try again later.',
       counts: 'Showing {loaded}/{total} projects; {pending} still loading and {failed} failed.',
       timeoutTitle: 'Task board loading timed out', failedTitle: 'Task board loading failed', partialTitle: 'Some projects are unavailable',
@@ -152,6 +156,8 @@ export const employeeMessages = {
       empty: 'No tasks in the current scope', emptyHint: 'The assigned projects have no tasks yet.',
       noProjectsVisible: 'No projects shown', noProjectsVisibleHint: 'Select projects again to see their tasks.', showAllProjects: 'Show all projects',
       noMatch: 'No matching tasks', noMatchHint: 'Try another term, or clear search to see every task.',
+      doneOlder: 'Show more ({count} left)', doneOlderLoading: 'Reading older finished tasks',
+      recent: 'Recent activity', recentAll: 'View all activity', recentLess: 'Show less',
       columnEmpty: 'No tasks', taskCount: '{count} tasks',
       openTask: 'View task in {project}: {task}', dragHint: 'Drag a card or use its “Move to…” menu to update status. Keyboard: Space to lift, arrows to move, Space to drop, Esc to cancel.',
       dragTask: 'Move task: {task}', saving: 'Saving task status…', movingTo: 'Moving to {status}…',

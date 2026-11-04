@@ -16,7 +16,6 @@ import { pageMessages } from './messages/pages'
 import { preferenceMessages } from './messages/preferences'
 import { projectMessages } from './messages/projects'
 import { projectAgentMessages } from './messages/project-agents'
-import { projectHistoryMessages } from './messages/project-history'
 import { routeMessages } from './messages/routes'
 import { settingsMessages } from './messages/settings'
 import { employeeMessages } from './messages/employees'
@@ -148,7 +147,6 @@ export const messages = {
     preferences: preferenceMessages['zh-CN'],
     projects: projectMessages['zh-CN'],
     projectAgents: projectAgentMessages['zh-CN'],
-    projectHistory: projectHistoryMessages['zh-CN'],
     routes: routeMessages['zh-CN'],
     settings: settingsMessages['zh-CN'],
   },
@@ -203,7 +201,6 @@ export const messages = {
     preferences: preferenceMessages['en-US'],
     projects: projectMessages['en-US'],
     projectAgents: projectAgentMessages['en-US'],
-    projectHistory: projectHistoryMessages['en-US'],
     routes: routeMessages['en-US'],
     settings: settingsMessages['en-US'],
   },

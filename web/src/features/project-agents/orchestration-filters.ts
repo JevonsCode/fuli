@@ -72,7 +72,13 @@ export function projectChipGroups(projects: Array<{ name: string }>) {
   return [...groups].map(([name, count]) => ({ name, count }))
 }
 
-/** One Agent's management page under 编排. */
+/** An Agent's one page; with ?task= it opens the work record on that task. */
 export function agentManagementPath(spaceId: string, agentId: string) {
-  return `/project-agents/manage/${encodeURIComponent(spaceId)}/${encodeURIComponent(agentId)}`
+  return `/agents/${encodeURIComponent(spaceId)}/${encodeURIComponent(agentId)}`
+}
+
+/** Where a link to the former management page lands: its work is the work record, the rest 设置. */
+export function formerManagementQuery({ tab, ...query }: LocationQuery): LocationQuery {
+  const work = !tab || tab === 'work' || tab === 'activity'
+  return { ...query, tab: work ? 'overview' : 'settings' }
 }

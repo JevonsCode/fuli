@@ -6,6 +6,8 @@ export const contextMenuMessages = {
     selectAll: '全选',
     open: '打开',
     copyLink: '复制链接',
+    copyProjectName: '复制项目名称',
+    editProject: '修改项目信息',
   },
   'en-US': {
     cut: 'Cut',
@@ -14,5 +16,7 @@ export const contextMenuMessages = {
     selectAll: 'Select all',
     open: 'Open',
     copyLink: 'Copy link',
+    copyProjectName: 'Copy project name',
+    editProject: 'Edit project details',
   },
 } as const

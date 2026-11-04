@@ -80,3 +80,19 @@ describe('readContextTarget', () => {
     expect(readContextTarget(null, options())).toBeNull()
   })
 })
+
+// Jevons 11-04: every place that writes a project's name gets its menu.
+describe('a project name', () => {
+  const projects = new Map([['FULI', 'project-a']])
+  const options = { selection: null, origin: 'http://localhost', canPaste: false, projects }
+  it('offers the project wherever an element says exactly its name', () => {
+    const label = document.createElement('label')
+    label.innerHTML = '<input type="checkbox"><span>FULI</span>'
+    expect(readContextTarget(label.querySelector('span'), options)).toEqual({ kind: 'project', projectId: 'project-a', name: 'FULI' })
+  })
+  it('leaves a sentence that only mentions it alone', () => {
+    const line = document.createElement('p')
+    line.textContent = 'FULI needs a release'
+    expect(readContextTarget(line, options)).toBeNull()
+  })
+})

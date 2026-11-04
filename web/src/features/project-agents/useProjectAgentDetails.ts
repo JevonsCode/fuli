@@ -15,10 +15,8 @@ import type {
 import { activityRange, normalizeActivity } from './activity-evidence'
 import {
   assignmentValues,
-  clientValues,
   dedupeById,
   executorValues,
-  learningValues,
   recruitmentBelongsTo,
   recruitmentValues,
   routingValues,
@@ -28,7 +26,7 @@ import { normalizeTask, unknownRecord } from './task-evidence'
 
 const DETAIL_SOURCES = [
   'assignments', 'tasks', 'activity', 'recruitments',
-  'executors', 'routingRules', 'learning',
+  'executors', 'routingRules',
 ] as const
 export type DetailSource = typeof DETAIL_SOURCES[number]
 type DetailSourceStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -79,8 +77,6 @@ export function useProjectAgentDetails(
   const loading = ref(false)
   const notice = ref('')
   const cleanupBusy = ref(false)
-  const learningBusy = ref('')
-  const learningBusyAction = ref<'ignore' | 'reset' | ''>('')
   const recruitmentBusy = ref('')
   const recruitmentBusyAction = ref<'approve' | 'cancel' | 'disable' | ''>('')
   const executorBusy = ref('')
@@ -152,15 +148,11 @@ export function useProjectAgentDetails(
         break
       case 'executors':
         assertReportedCollection(value, ['executors', 'items'])
-        patch = { executorDirectory: executorValues(value), clientEvidence: clientValues(value) }
+        patch = { executorDirectory: executorValues(value) }
         break
       case 'routingRules':
         assertReportedCollection(value, ['rules', 'items'])
         patch = { routingRules: routingValues(value) }
-        break
-      case 'learning':
-        assertReportedCollection(value, ['learningEvidence', 'learning_evidence', 'items'], true)
-        patch = { learningEvidence: learningValues(value) }
         break
     }
     roster.update(person.agentId, (item) => ({ ...item, ...patch }))
@@ -218,7 +210,6 @@ export function useProjectAgentDetails(
       recruitments: getJson(`/api/project-agent-recruitments?personalSpaceId=${spaceQuery}`, reportedShape),
       executors: getJson(`/api/executors?personalSpaceId=${spaceQuery}`, reportedShape),
       routingRules: getJson(`/api/executor-routing-rules?personalSpaceId=${spaceQuery}`, reportedShape),
-      learning: getJson(`/api/project-agent-routing-learning?${query}`, reportedShape),
     }
     await Promise.all(DETAIL_SOURCES.map(async (source) => {
       try {
@@ -249,41 +240,6 @@ export function useProjectAgentDetails(
     if (id !== previousId || space !== previousSpace) void refresh()
     else void refreshTasks()
   }, { immediate: true })
-
-  async function updateLearning(evidence: ProjectAgentLearningEvidence, action: 'ignore' | 'reset', contributionEvidenceId?: string) {
-    const evidenceId = action === 'ignore' ? contributionEvidenceId : evidence.learningKey ?? evidence.modelStrategyKey
-    const person = agent.value
-    if (!evidenceId || !person || !spaceId.value || learningBusy.value) return
-    if (action === 'reset' && (!evidence.personalProjectId || !evidence.workKind || !evidence.executor)) {
-      notice.value = t('projectAgents.learning.resetUnavailable')
-      return
-    }
-    learningBusy.value = evidenceId
-    learningBusyAction.value = action
-    try {
-      await patchJson(`/api/project-agent-learning/${encodeURIComponent(evidenceId)}`, {
-        action,
-        personalSpaceId: spaceId.value,
-        personalProjectId: evidence.personalProjectId,
-        agentId: person.agentId,
-        workKind: evidence.workKind,
-        executorId: evidence.executor,
-        modelStrategy: evidence.modelStrategy,
-        modelStrategyKey: evidence.modelStrategyKey,
-        resetAt: action === 'reset' ? new Date().toISOString() : undefined,
-        idempotencyKey: action === 'ignore'
-          ? `console-learning:${evidenceId}:ignore`
-          : actionIdempotencyKey(`console-learning:${evidenceId}:reset`),
-        reason: `Console requested ${action} for explicit evidence`,
-      })
-      await refresh()
-    } catch (cause) {
-      notice.value = cause instanceof Error ? cause.message : t('projectAgents.learning.updateFailed')
-    } finally {
-      learningBusy.value = ''
-      learningBusyAction.value = ''
-    }
-  }
 
   async function decideRecruitment(recruitment: ProjectAgentRecruitmentRecord, decision: 'approve' | 'cancel') {
     if (!spaceId.value || recruitmentBusy.value) return
@@ -383,7 +339,7 @@ export function useProjectAgentDetails(
 
   return {
     state, taskListPartial, loading, notice, refresh,
-    cleanupBusy, learningBusy, learningBusyAction, recruitmentBusy, recruitmentBusyAction, executorBusy, executorBusyAction,
-    updateLearning, decideRecruitment, authorizeExecutor, disableRule, cleanupTestAgent, executorSaved, ruleSaved,
+    cleanupBusy, recruitmentBusy, recruitmentBusyAction, executorBusy, executorBusyAction,
+    decideRecruitment, authorizeExecutor, disableRule, cleanupTestAgent, executorSaved, ruleSaved,
   }
 }
