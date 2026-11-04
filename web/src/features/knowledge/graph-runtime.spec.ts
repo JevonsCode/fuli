@@ -65,6 +65,14 @@ describe('typed graph runtime', () => {
     }
   })
 
+  it('names the root of a personal graph 我, whatever the space was called at setup', () => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    document.body.append(svg)
+    const graph = renderKnowledgeGraph(svg, { nodes: [{ id: 'space:synthetic', name: 'Personal', type: 'PersonalSpace' }], edges: [] })
+    expect(svg.querySelector('.graph-node-label')?.textContent).toBe('我')
+    graph.destroy()
+  })
+
   it('renders caller-filtered temporary projects while retaining formal-only defaults', () => {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
     document.body.append(svg)
