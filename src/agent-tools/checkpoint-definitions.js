@@ -1,5 +1,5 @@
 import { arraySchema, boundedString, enumSchema, objectSchema, stringSchema } from './schema.js';
-import { PREFERENCE_CONSTRAINTS, WORK_KINDS } from '../graphiti/task-scene.js';
+import { PREFERENCE_CONSTRAINTS } from '../graphiti/task-scene.js';
 
 // Compact checkpoint inputs: the finishing host labels an unclaimed
 // conversation and records reusable approaches without building a capture graph.
@@ -24,8 +24,8 @@ export const checkpointRememberSchema = { ...arraySchema(objectSchema({
   scope: enumSchema(['global', 'project', 'unsure']),
   aspect: enumSchema(['taste', 'personality', 'judgment_preference']),
   constraint: enumSchema(PREFERENCE_CONSTRAINTS),
-  // The scene table's own list, so a caller can validate before submitting (rec#83).
-  workKind: enumSchema(WORK_KINDS),
+  // Checked against the versioned scene table (task-remember.js); kept short, chat lists it.
+  workKind: stringSchema(),
   tasteDomain: stringSchema()
 }, ['kind', 'text']), { minItems: 1, maxItems: 8 }),
 description: "Instead of capture: what the user asked to keep. preference: global (quote = their words), project, or unsure (held until the user places it); project_fact: this project. Pending; skip small talk. Qualifiers only as stated." };
