@@ -13,6 +13,7 @@ import { AGENT_SERVICES_FORMAT } from '../agent-services/store.js';
 import { AGENT_WORKFLOWS_FORMAT } from '../agent-workflows/store.js';
 import { RECALL_IMPRESSIONS_FORMAT } from '../knowledge-impressions/store.js';
 import { AGENT_AVATARS_FORMAT } from '../agent-avatars/store.js';
+import { PROJECT_CHANGE_LOG_FORMAT } from '../project-change-log/store.js';
 import { WORK_SURFACES_FORMAT } from '../work-surfaces/store.js';
 import { EMPLOYEE_MANAGEMENT_FORMAT } from '../employees/management-policy.js';
 import { JEFA_BOARD_FORMAT } from '../employees/builtin/jefa/board-store.js';
@@ -78,6 +79,8 @@ const sqliteStores = () => [
   ['recall-impressions.sqlite', RECALL_IMPRESSIONS_FORMAT],
   // Each Agent's look as the person chose it, every earlier choice kept (rec#11 D-89).
   ['agent-avatars.sqlite', AGENT_AVATARS_FORMAT],
+  // Who changed which field of a project's profile and when, with before and after text; never pruned.
+  ['project-change-log.sqlite', PROJECT_CHANGE_LOG_FORMAT],
   // 全部暂停 snapshots of every FLA's work surfaces and each pause and resume (rec#11 D-85).
   ['work-surfaces.sqlite', WORK_SURFACES_FORMAT],
   // Each console change an FLA made for the person under their AI permissions (rec#11 D-81); never pruned.

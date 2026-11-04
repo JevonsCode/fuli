@@ -116,6 +116,7 @@ import {
 } from './public-project-relations.js';
 import {
   agentProfileWriter,
+  listPersonalProjectHistory,
   listPersonalProjects,
   listProjectRelationWeights,
   upsertPersonalProject
@@ -465,6 +466,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async agentProfileWriter(input) {
     return agentProfileWriter(this, input);
+  }
+
+  listPersonalProjectHistory(input) {
+    return listPersonalProjectHistory(this, input);
   }
 
   async listPersonalProjects(input) {

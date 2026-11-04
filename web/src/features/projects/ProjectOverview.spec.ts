@@ -17,6 +17,14 @@ vi.mock('./ProjectBoardSettings.vue', () => ({
   },
 }))
 
+vi.mock('./ProjectChangeLog.vue', () => ({
+  default: {
+    name: 'ProjectChangeLog',
+    props: ['spaceId', 'projectId', 'projectName', 'updatedAt'],
+    template: '<div data-project-change-log-stub :data-project="projectId" :data-updated="updatedAt" />',
+  },
+}))
+
 vi.mock('@/features/capture/ProjectCaptureSwitch.vue', () => ({
   default: {
     name: 'ProjectCaptureSwitch',
@@ -48,6 +56,26 @@ function makeProject(): PersonalProject {
     },
   }
 }
+
+describe('ProjectOverview project history', () => {
+  beforeEach(() => setLocale('zh-CN'))
+
+  it('says when the project appeared under its title and hands the change log its project', () => {
+    const project = { ...makeProject(), created_at: '2026-03-04T12:00:00.000Z', updated_at: '2026-11-01T00:00:00.000Z' }
+    const wrapper = mount(ProjectOverview, { props: { spaceId: 'space-1', project },
+      global: { stubs: { RouterLink: RouterLinkStub } } })
+    expect(wrapper.get('[data-project-created]').text()).toBe('创建于 2026/3/4')
+    const log = wrapper.get('[data-project-change-log-stub]')
+    expect(log.attributes('data-project')).toBe('fuli')
+    expect(log.attributes('data-updated')).toBe('2026-11-01T00:00:00.000Z')
+  })
+
+  it('shows no creation line without a recorded time', () => {
+    const wrapper = mount(ProjectOverview, { props: { spaceId: 'space-1', project: makeProject() },
+      global: { stubs: { RouterLink: RouterLinkStub } } })
+    expect(wrapper.find('[data-project-created]').exists()).toBe(false)
+  })
+})
 
 describe('ProjectOverview frequent projects section', () => {
   beforeEach(() => {

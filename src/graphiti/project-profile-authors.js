@@ -3,7 +3,7 @@
 // person edited from an Agent's draft is shared. The Provider stores the
 // records and defaults profiles saved before them
 // (graph-provider/fuli_graph/project_profile_authors.py).
-const AUTHORED_FIELDS = Object.freeze(['purpose', 'scope', 'technical_summary', 'boundaries']);
+export const AUTHORED_FIELDS = Object.freeze(['purpose', 'scope', 'technical_summary', 'boundaries']);
 
 // Mirrors the knowledge weights the console explains: a person 100%, an Agent's
 // draft below an Agent-confirmed fact.
@@ -69,7 +69,7 @@ function agentRecord(kind, { agentId, agentName }, updatedAt) {
     updated_at: updatedAt };
 }
 
-function fieldText(value) {
+export function fieldText(value) {
   const lines = Array.isArray(value) ? value : [value];
   return lines.filter(line => typeof line === 'string' && line.trim()).map(line => line.trim()).join('\n');
 }
