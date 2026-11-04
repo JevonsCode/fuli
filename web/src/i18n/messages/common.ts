@@ -6,6 +6,7 @@ export const commonMessages = {
     back: '返回',
     breadcrumb: '页面位置',
     outline: '本页目录',
+    dayField: { none: '未设置', clear: '清除日期', previous: '上个月', next: '下个月' },
     language: {
       label: '界面语言',
       chinese: '中文',
@@ -59,6 +60,7 @@ export const commonMessages = {
     back: 'Back',
     breadcrumb: 'Breadcrumb',
     outline: 'On this page',
+    dayField: { none: 'Not set', clear: 'Clear date', previous: 'Previous month', next: 'Next month' },
     language: {
       label: 'Interface language',
       chinese: '中文',
