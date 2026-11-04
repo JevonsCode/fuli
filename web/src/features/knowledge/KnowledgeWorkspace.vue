@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { directorySectionFor, useProfileEditLink, type DirectorySection } from './directory-section'
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -80,7 +81,6 @@ const props = withDefaults(defineProps<{
 })
 
 type GraphCanvasApi = InstanceType<typeof GraphCanvas>
-type DirectorySection = 'knowledge' | 'materials'
 
 const store = useConsoleStore()
 const route = useRoute()
@@ -178,13 +178,7 @@ const selectableItems = computed(() => [
 ])
 const directorySection = computed<DirectorySection>(() => {
   if (!props.personalProjectsOnly) return 'knowledge'
-  if (mode.value === 'directory' && selectedItem.value) {
-    return isManagementKnowledgeItem(selectedItem.value) ? 'materials' : 'knowledge'
-  }
-  const section = queryValue(route.query.section)
-  // The directory of all projects opens on 全部项目 (Jevons 11-04); a project opens on its knowledge.
-  if (!projectId.value) return section === 'knowledge' ? 'knowledge' : 'materials'
-  return section === 'materials' ? 'materials' : 'knowledge'
+  return directorySectionFor(projectId.value, queryValue(route.query.section), mode.value === 'directory' ? selectedItem.value : null)
 })
 const typeSelectOptions = computed(() => [
   { value: 'all', label: t('knowledge.workspace.workspace.filters.allTypes') },
@@ -844,13 +838,7 @@ function editActiveProjectProfile() {
   managingMaterialType.value = 'PersonalProject'
   managingProject.value = activePersonalProject.value
 }
-// 修改项目信息 on any project name (the right-click menu) lands here with ?edit=profile.
-watch([() => route.query.edit, activePersonalProject], ([edit, project]) => {
-  if (edit !== 'profile' || !project) return
-  editActiveProjectProfile()
-  const { edit: _edit, ...query } = route.query
-  void router.replace({ query })
-}, { immediate: true })
+useProfileEditLink(route, router, activePersonalProject, editActiveProjectProfile)
 
 async function openItemInMode(item: KnowledgeItem, nextMode: KnowledgeMode) {
   const path = workspacePath(nextMode, item)

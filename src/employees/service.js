@@ -51,8 +51,10 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
     return { ...context, tools };
   }
 
-  // Whether this call only reads: such a call may share a burst's authorization read.
+  // The console opening a board may share a burst's authorization read. An Agent's
+  // call never does: a permission withdrawn a moment ago must stop it.
   async function readsOnly(input) {
+    if (input.sourceApplication) return false;
     try {
       const tools = await (await registry.runtime(input.templateId)).describeTools();
       return /\.read$/.test(tools.find((entry) => entry.name === input.tool)?.permission ?? '');
