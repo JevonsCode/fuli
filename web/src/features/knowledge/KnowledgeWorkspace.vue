@@ -64,7 +64,6 @@ import {
 } from './project-discovery'
 import Breadcrumb from '@/components/Breadcrumb.vue'
 import { allProjectsCrumb } from './all-projects-crumb'
-import ProjectHistoryPreview from '@/features/project-history/ProjectHistoryPreview.vue'
 import { isProjectNode } from './graph-runtime'
 import { separateParentProjects } from './project-hierarchy'
 import {
@@ -155,9 +154,12 @@ const listedGraph = computed(() => graph.value && props.personalProjectsOnly
   ? filterListedProjectGraph(graph.value, personalProjects.value, projectListingOptions.value)
   : graph.value)
 const allItems = computed(() => knowledgeItems(listedGraph.value))
-const projectMaterialItems = computed(() =>
-  props.personalProjectsOnly ? managementKnowledgeItems(listedGraph.value) : [],
-)
+// Above any one project this list is 全部项目: the projects themselves, not the space they sit in.
+const projectMaterialItems = computed(() => {
+  if (!props.personalProjectsOnly) return []
+  const items = managementKnowledgeItems(listedGraph.value)
+  return projectId.value ? items : items.filter(item => item.type !== 'PersonalSpace')
+})
 const visibleProjectMaterialItems = computed(() => {
   const query = searchDraft.value.trim().toLocaleLowerCase()
   if (!query) return projectMaterialItems.value
@@ -179,7 +181,10 @@ const directorySection = computed<DirectorySection>(() => {
   if (mode.value === 'directory' && selectedItem.value) {
     return isManagementKnowledgeItem(selectedItem.value) ? 'materials' : 'knowledge'
   }
-  return queryValue(route.query.section) === 'materials' ? 'materials' : 'knowledge'
+  const section = queryValue(route.query.section)
+  // The directory of all projects opens on 全部项目 (Jevons 11-04); a project opens on its knowledge.
+  if (!projectId.value) return section === 'knowledge' ? 'knowledge' : 'materials'
+  return section === 'materials' ? 'materials' : 'knowledge'
 })
 const typeSelectOptions = computed(() => [
   { value: 'all', label: t('knowledge.workspace.workspace.filters.allTypes') },
@@ -274,10 +279,10 @@ const countLabel = computed(() => {
   }
   if (directorySection.value === 'materials') {
     return visibleProjectMaterialItems.value.length === projectMaterialItems.value.length
-      ? t('knowledge.workspace.workspace.counts.materials', {
+      ? t(`knowledge.workspace.workspace.counts.${projectId.value ? 'materials' : 'projects'}`, {
           count: projectMaterialItems.value.length,
         })
-      : t('knowledge.workspace.workspace.counts.visibleMaterials', {
+      : t(`knowledge.workspace.workspace.counts.${projectId.value ? 'visibleMaterials' : 'visibleProjects'}`, {
           visible: visibleProjectMaterialItems.value.length,
           total: projectMaterialItems.value.length,
         })
@@ -566,8 +571,8 @@ async function changeDirectorySection(nextSection: DirectorySection) {
   if (!props.personalProjectsOnly || nextSection === directorySection.value) return
   selectedItem.value = null
   const query = { ...route.query }
-  if (nextSection === 'materials') query.section = 'materials'
-  else delete query.section
+  if (nextSection === (projectId.value ? 'knowledge' : 'materials')) delete query.section
+  else query.section = nextSection
   await router.push({
     path: personalProjectsPath(spaceId.value, 'directory', projectId.value),
     query,
@@ -1109,7 +1114,6 @@ function queryValues(value: unknown) {
         />
       </form>
       <div class="graph-view-actions">
-        <ProjectHistoryPreview v-if="personalProjectsOnly && !projectId && spaceId" :space-id="spaceId" />
         <Button variant="ghost"
           v-if="
             personalProjectsOnly
@@ -1135,10 +1139,10 @@ function queryValues(value: unknown) {
         <Input
           type="search"
           :placeholder="directorySection === 'materials'
-            ? t('knowledge.workspace.workspace.search.materialsPlaceholder')
+            ? t(`knowledge.workspace.workspace.search.${projectId ? 'materialsPlaceholder' : 'projectsPlaceholder'}`)
             : t('knowledge.workspace.workspace.search.contentPlaceholder')"
           :aria-label="directorySection === 'materials'
-            ? t('knowledge.workspace.workspace.search.materialsPlaceholder')
+            ? t(`knowledge.workspace.workspace.search.${projectId ? 'materialsPlaceholder' : 'projectsPlaceholder'}`)
             : t('knowledge.workspace.workspace.search.knowledgeAria')"
           autocomplete="off"
           enterkeyhint="search"
@@ -1188,6 +1192,7 @@ function queryValues(value: unknown) {
         v-if="mode === 'directory'"
         :personal-projects-only="personalProjectsOnly"
         :directory-section="directorySection"
+        :all-projects="!projectId"
         :knowledge-tab-count="knowledgeTabCount"
         :material-tab-count="materialTabCount"
         :content-status="contentStatus"

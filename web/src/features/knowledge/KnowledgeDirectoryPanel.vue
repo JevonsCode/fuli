@@ -28,6 +28,8 @@ type ContentStatus = 'current' | 'historical' | 'all'
 const props = defineProps<{
   personalProjectsOnly: boolean
   directorySection: DirectorySection
+  /** Above any one project: the materials list is 全部项目, and comes first. */
+  allProjects?: boolean
   knowledgeTabCount: string
   materialTabCount: string
   contentStatus: ContentStatus
@@ -70,6 +72,13 @@ const selectedMaterialIndex = computed(() => props.selectedItem
     )
   : -1,
 )
+
+const materialsLabel = computed(() => t(`knowledge.workspace.workspace.view.${props.allProjects ? 'allProjects' : 'projectMaterials'}`))
+const directoryTabs = computed(() => {
+  const knowledge = { id: 'knowledge' as const, label: t('knowledge.workspace.workspace.view.knowledgeContent'), count: props.knowledgeTabCount }
+  const materials = { id: 'materials' as const, label: materialsLabel.value, count: props.materialTabCount }
+  return props.allProjects ? [materials, knowledge] : [knowledge, materials]
+})
 </script>
 
 <template>
@@ -87,28 +96,18 @@ const selectedMaterialIndex = computed(() => props.selectedItem
       :aria-label="t('knowledge.workspace.workspace.view.directoryTypeAria')"
     >
       <button
-        id="directory-tab-knowledge"
+        v-for="tab in directoryTabs"
+        :id="`directory-tab-${tab.id}`"
+        :key="tab.id"
         class="directory-kind-tab"
         type="button"
         role="tab"
-        aria-controls="directory-panel-knowledge"
-        :aria-selected="directorySection === 'knowledge'"
-        @click="emit('change-section', 'knowledge')"
+        :aria-controls="`directory-panel-${tab.id}`"
+        :aria-selected="directorySection === tab.id"
+        @click="emit('change-section', tab.id)"
       >
-        <span>{{ t('knowledge.workspace.workspace.view.knowledgeContent') }}</span>
-        <small>{{ knowledgeTabCount }}</small>
-      </button>
-      <button
-        id="directory-tab-materials"
-        class="directory-kind-tab"
-        type="button"
-        role="tab"
-        aria-controls="directory-panel-materials"
-        :aria-selected="directorySection === 'materials'"
-        @click="emit('change-section', 'materials')"
-      >
-        <span>{{ t('knowledge.workspace.workspace.view.projectMaterials') }}</span>
-        <small>{{ materialTabCount }}</small>
+        <span>{{ tab.label }}</span>
+        <small>{{ tab.count }}</small>
       </button>
     </div>
 
@@ -234,7 +233,7 @@ const selectedMaterialIndex = computed(() => props.selectedItem
     >
       <header class="directory-section-heading">
         <div v-if="!personalProjectsOnly" class="directory-section-copy">
-          <strong>{{ t('knowledge.workspace.workspace.view.projectMaterials') }}</strong>
+          <strong>{{ materialsLabel }}</strong>
         </div>
         <small class="directory-section-count">
           {{ t('common.counts.items', { count: visibleProjectMaterialItems.length }) }}
