@@ -83,6 +83,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('organisation', 'PUT /api/agent-avatars/:agentId', 'Every earlier look is kept; choose the earlier one again.'),
   local('PUT /api/person-profile', 'What FULI calls the person and the picture they show as 「我」 are theirs to set, on their home page on this computer; Agents only read the name as context.address_as in their task entry.'),
   agent('DELETE /api/project-agents/:agentId', 'cleanup_test_project_agents'),
+  agent('POST /api/project-agents/:agentId/dismissal', 'dismiss_project_agent'),
   delegable('organisation', 'PUT /api/project-agents/:agentId/occupation', 'Set the earlier occupation again.'),
   delegable('organisation', 'POST /api/occupations', 'Archive it, or delete it while nobody holds it.'),
   delegable('organisation', 'PUT /api/occupations/:key', 'Save the earlier name and duties again.'),
