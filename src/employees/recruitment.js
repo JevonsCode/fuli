@@ -11,9 +11,27 @@ import { ASSISTANT_AGENT_ID } from '../graphiti/assistant-identity.js';
 // The global assistant (Astro) answers outside projects; it has no project scope.
 const globalOnly = manifest => employeeAgentId(manifest.id) === ASSISTANT_AGENT_ID;
 
+// Jefa's board opens with one read per project, and each asked the Provider for
+// every Agent and project: that, not the board, was the wait. Read-only calls in
+// a burst share one answer; anything that can write always reads fresh.
+const BURST_READ_MS = 2000;
+
+function sharedInBurst(read, now = Date.now) {
+  let at = 0;
+  let answer = null;
+  return () => {
+    if (answer && now() - at < BURST_READ_MS) return answer;
+    at = now();
+    answer = read().catch((error) => { answer = null; throw error; });
+    return answer;
+  };
+}
+
 export function createEmployeeRecruitment({ app, registry, managementStore }) {
   const locks = new Map();
   const spaceId = app.config.personal.spaceId;
+  const burstProjects = sharedInBurst(() => app.listPersonalProjects({ personalSpaceId: spaceId }));
+  const burstAgents = sharedInBurst(() => app.listProjectAgents({ personalSpaceId: spaceId }));
 
   function assertSpace(input) {
     if (input.personalSpaceId && input.personalSpaceId !== spaceId) {
@@ -26,7 +44,7 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
     const id = input.personalProjectId;
     if (!id && !required) return null;
     if (!id) throw new EmployeeError('Select a project before opening the workbench', 400, 'project_required');
-    const projects = await app.listPersonalProjects({ personalSpaceId: spaceId });
+    const projects = await (input.readOnly ? burstProjects() : app.listPersonalProjects({ personalSpaceId: spaceId }));
     const match = projects.find((entry) => entry.project_id === id);
     if (!match || match.profile?.lifecycle === 'archived') {
       throw new EmployeeError('Project is unavailable; create or select an active FULI project', 404, 'project_not_found');
@@ -199,7 +217,7 @@ export function createEmployeeRecruitment({ app, registry, managementStore }) {
     const selectedProject = await project(input, true);
     const { manifest } = registry.get(input.templateId);
     // All-project policy also covers projects without a materialized assignment.
-    const agents = await app.listProjectAgents({ personalSpaceId: spaceId });
+    const agents = await (input.readOnly ? burstAgents() : app.listProjectAgents({ personalSpaceId: spaceId }));
     const agent = agents.find((entry) => entry.agentId === employeeAgentId(manifest.id));
     const stored = managementStore.read(spaceId, manifest.id);
     const management = managementFor(manifest, agent, stored);

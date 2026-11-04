@@ -95,15 +95,26 @@ export class JefaBoardStore {
     return this.#database;
   }
 
-  board(scope, { limit, statuses }) {
-    const filter = statuses?.length ? `AND status IN (${statuses.map(() => '?').join(', ')})` : '';
-    const parameters = [scope.spaceId, scope.projectId, ...(statuses ?? [])];
+  // doneSince keeps finished tasks from that time on, and doneBefore those older
+  // than it, newest first; either way doneOlder counts the finished tasks left out.
+  board(scope, { limit, statuses, doneSince, doneBefore }) {
+    const filters = [];
+    const parameters = [scope.spaceId, scope.projectId];
+    if (statuses?.length) { filters.push(`AND status IN (${statuses.map(() => '?').join(', ')})`); parameters.push(...statuses); }
+    if (doneSince) { filters.push("AND (status != 'done' OR updated_at >= ?)"); parameters.push(doneSince); }
+    if (doneBefore) { filters.push("AND (status != 'done' OR updated_at < ?)"); parameters.push(doneBefore); }
+    const filter = filters.join(' ');
     const rows = this.database.prepare(`SELECT * FROM jefa_work_items WHERE space_id = ? AND project_id = ? ${filter}
-      ${BOARD_ORDER} LIMIT ?`).all(...parameters, limit + 1);
+      ${doneBefore ? 'ORDER BY updated_at DESC, id' : BOARD_ORDER} LIMIT ?`).all(...parameters, limit + 1);
     const { total } = this.database.prepare(`SELECT count(*) AS total FROM jefa_work_items
       WHERE space_id = ? AND project_id = ? ${filter}`).get(...parameters);
-    return { version: this.#projectRevision(scope), total, truncated: rows.length > limit,
-      items: rows.slice(0, limit).map(itemFromRow) };
+    const items = rows.slice(0, limit).map(itemFromRow);
+    const board = { version: this.#projectRevision(scope), total, truncated: rows.length > limit, items };
+    if (doneBefore) return { ...board, doneOlder: total - items.length };
+    if (!doneSince) return board;
+    const { older } = this.database.prepare(`SELECT count(*) AS older FROM jefa_work_items
+      WHERE space_id = ? AND project_id = ? AND status = 'done' AND updated_at < ?`).get(scope.spaceId, scope.projectId, doneSince);
+    return { ...board, doneOlder: older };
   }
 
   items(scope) {

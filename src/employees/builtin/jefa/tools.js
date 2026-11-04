@@ -29,8 +29,8 @@ const taskFields = {
 
 const DEFINITIONS = [
   tool('read_board', 'board.read', 'Read this project\'s board: tasks ordered by status (active, blocked, review, planned, done), then priority and recency. version changes on every board write; truncated means more tasks exist than limit. projectBoard is how the project\'s own board is set up: its project manager (managerAgentId, null when Jefa manages it directly) and board. A builtin board with columns names the person\'s own columns, each standing for one status; a task\'s boardColumn is the column it was moved to (none: the first column for its status). An external board means the project\'s work is tracked at its link, not here.',
-    objectSchema({ limit: integerSchema({ minimum: 1, maximum: BOARD_LIMIT_MAX }), statuses: arraySchema(enumSchema(ALL_STATUSES), { maxItems: 5 }) }),
-    (store, scope, input) => ({ ...store.board(scope, { limit: input.limit ?? BOARD_LIMIT_DEFAULT, statuses: input.statuses }),
+    objectSchema({ limit: integerSchema({ minimum: 1, maximum: BOARD_LIMIT_MAX }), statuses: arraySchema(enumSchema(ALL_STATUSES), { maxItems: 5 }), doneSince: boundedString(64), doneBefore: boundedString(64) }),
+    (store, scope, input) => ({ ...store.board(scope, { limit: input.limit ?? BOARD_LIMIT_DEFAULT, statuses: input.statuses, doneSince: input.doneSince, doneBefore: input.doneBefore }),
       projectBoard: store.projectBoard(scope) })),
   tool('get_task', 'board.read', 'Read one task with its acceptance criteria and recent change history. Its updatedAt is the version update_tasks expects.',
     objectSchema({ workItemId: id }, ['workItemId']),
