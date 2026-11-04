@@ -1,9 +1,10 @@
 import { mkdirSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, win32 } from 'node:path';
+import { join, win32, resolve } from 'node:path';
 
 import { execute } from '../local-runtime/windows-process-handle.js';
+import { defaultDataDir } from '../setup/paths.js';
 
 // Who can open FULI's data directory on Windows (rec#53 D-65). The default
 // %LOCALAPPDATA%\Fuli inherits AppData\Local's ACL, which can let sandboxes
@@ -82,9 +83,12 @@ export function windowsDataAcl({ platform = process.platform, run = execute,
 // `fuli setup`'s step: the data directory exists, and on Windows only its
 // owner and SYSTEM can open it. An installation from before this is limited
 // here too, since every update and the desktop client's first start run setup.
+// Only FULI's own default folder is changed unasked: a folder the person chose
+// may be shared on purpose, so the doctor reports it and 「自动修复」 is their click.
 // Returns false when the ACL could not be read or limited; setup goes on.
-export async function keepDataDirectoryPrivate(dataDir, acl = windowsDataAcl()) {
+export async function keepDataDirectoryPrivate(dataDir, acl = windowsDataAcl(), ownFolder = defaultDataDir()) {
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  if (resolve(dataDir).toLowerCase() !== resolve(ownFolder).toLowerCase()) return true;
   try {
     if ((await acl.sharedWith(dataDir)).length) await acl.restrictToOwner(dataDir);
     return true;

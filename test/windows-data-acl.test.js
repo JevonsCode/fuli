@@ -128,10 +128,16 @@ test('setup creates the data directory and limits it only when it is shared; a f
     restrictToOwner: async (directory) => { restricted.push(directory); }
   });
   const dataDir = join(root, 'Fuli');
-  assert.equal(await keepDataDirectoryPrivate(dataDir, acl(['BA'])), true);
+  assert.equal(await keepDataDirectoryPrivate(dataDir, acl(['BA']), dataDir), true);
   assert.equal(existsSync(dataDir), true);
   assert.deepEqual(restricted, [dataDir]);
-  assert.equal(await keepDataDirectoryPrivate(dataDir, acl([])), true);
+  assert.equal(await keepDataDirectoryPrivate(dataDir, acl([]), dataDir), true);
   assert.deepEqual(restricted, [dataDir]);
-  assert.equal(await keepDataDirectoryPrivate(dataDir, acl([], { fail: true })), false);
+  assert.equal(await keepDataDirectoryPrivate(dataDir, acl([], { fail: true }), dataDir), false);
+
+  // A folder the person chose may be shared on purpose: setup leaves its ACL alone.
+  const chosen = join(root, 'Shared');
+  assert.equal(await keepDataDirectoryPrivate(chosen, acl(['BA']), dataDir), true);
+  assert.equal(existsSync(chosen), true);
+  assert.deepEqual(restricted, [dataDir]);
 });
