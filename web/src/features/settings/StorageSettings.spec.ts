@@ -52,16 +52,17 @@ it('lists old data, restores at once and deletes after a second click in place',
   await wrapper.get('[data-old-data-open]').trigger('click')
   await flushPromises()
   const rows = () => [...document.querySelectorAll<HTMLElement>('[data-old-data-item]')]
-  expect(rows().map(row => row.querySelector('strong')?.textContent)).toEqual([FORMAT_BACKUP.left.zh, OLD_LOG.left.zh])
+  // The biggest kind first: the 50 MB old log above the 2 MB backup.
+  expect(rows().map(row => row.querySelector('strong')?.textContent)).toEqual([OLD_LOG.left.zh, FORMAT_BACKUP.left.zh])
   // Only a format backup has a restore in the console.
-  expect(rows().map(row => Boolean(row.querySelector('[data-old-data-restore]')))).toEqual([true, false])
+  expect(rows().map(row => Boolean(row.querySelector('[data-old-data-restore]')))).toEqual([false, true])
 
-  rows()[0].querySelector<HTMLButtonElement>('[data-old-data-restore]')!.click()
+  rows()[1].querySelector<HTMLButtonElement>('[data-old-data-restore]')!.click()
   await flushPromises()
   expect(fetch).toHaveBeenCalledWith(`/api/old-data/${encodeURIComponent(FORMAT_BACKUP.id)}/restore`, expect.objectContaining({ method: 'POST' }))
   expect(store.feedback?.message).toBe(`正在恢复「${FORMAT_BACKUP.left.zh}」，FULI 会重启一下`)
 
-  const remove = () => rows()[1].querySelector<HTMLButtonElement>('[data-old-data-delete]')!
+  const remove = () => rows()[0].querySelector<HTMLButtonElement>('[data-old-data-delete]')!
   remove().click()
   await flushPromises()
   expect(remove().textContent?.trim()).toBe('确认删除')
@@ -72,5 +73,27 @@ it('lists old data, restores at once and deletes after a second click in place',
   expect(store.feedback?.message).toBe(`已删除「${OLD_LOG.left.zh}」，释放 50 MB`)
   expect(rows().map(row => row.dataset.oldDataItem)).toEqual([FORMAT_BACKUP.id])
   expect(wrapper.get('[data-storage-headline]').text()).toBe('数据 1 GB · 旧数据 2 MB')
+  wrapper.unmount()
+})
+
+// Jevons 11-04: dozens of small client copies buried the big backups.
+it('groups old data by kind, the biggest first, and opens a kind of several copies on a click', async () => {
+  const copy = (n: number) => ({ ...OLD_LOG, id: `client_config_backup:backups/agents/codex/${n}`, kind: 'client_config_backup',
+    left: { zh: `接入前保存的 codex 原配置 ${n}`, en: `codex config ${n}` }, bytes: 16 * 1024 })
+  const { wrapper } = mountCard([withOld([copy(1), FORMAT_BACKUP, copy(2), copy(3)])])
+  await flushPromises()
+  await wrapper.get('[data-old-data-open]').trigger('click')
+  await flushPromises()
+  const kinds = () => [...document.querySelectorAll<HTMLElement>('[data-old-data-group]')].map(group => group.dataset.oldDataGroup)
+  expect(kinds()).toEqual(['format_backup', 'client_config_backup'])
+  const clients = () => document.querySelector<HTMLElement>('[data-old-data-group="client_config_backup"]')!
+  expect(clients().querySelector('[data-old-data-group-toggle]')?.textContent).toContain('客户端原配置')
+  expect(clients().querySelector('[data-old-data-group-toggle]')?.textContent).toContain('3 份')
+  expect(clients().querySelectorAll('[data-old-data-item]')).toHaveLength(0)
+  clients().querySelector<HTMLButtonElement>('[data-old-data-group-toggle]')!.click()
+  await flushPromises()
+  expect(clients().querySelectorAll('[data-old-data-item]')).toHaveLength(3)
+  // A kind of one copy shows it without a click.
+  expect(document.querySelector('[data-old-data-group="format_backup"] [data-old-data-item]')).not.toBeNull()
   wrapper.unmount()
 })

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatBytes as formatByteCount } from '@/lib/format-bytes'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -349,18 +350,9 @@ function componentLabel(component: ResourceComponent) {
   return i18n.global.te(key) ? t(key) : component.label
 }
 
+// One unit system with 存储 (lib/format-bytes): the two cards' sizes read alike.
 function formatBytes(bytes: number | null | undefined) {
-  if (!Number.isFinite(bytes)) return '—'
-  const value = Number(bytes)
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
-  let amount = value
-  let index = 0
-  while (amount >= 1024 && index < units.length - 1) {
-    amount /= 1024
-    index += 1
-  }
-  const digits = index === 0 ? 0 : amount >= 100 ? 0 : amount >= 10 ? 1 : 2
-  return `${amount.toFixed(digits)} ${units[index]}`
+  return Number.isFinite(bytes) ? formatByteCount(Number(bytes)) : '—'
 }
 
 function barWidth(bytes: number, maximum: number) {
