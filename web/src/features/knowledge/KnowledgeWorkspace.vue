@@ -1006,7 +1006,7 @@ function queryValues(value: unknown) {
     @scroll.passive="onDirectoryScroll"
   >
     <div class="knowledge-canvas">
-    <Breadcrumb v-if="overviewAvailable" :parent="allProjectsCrumb(spaceId)" />
+    <Breadcrumb v-if="overviewAvailable" :parent="allProjectsCrumb(spaceId)" :current="activePersonalProject?.profile.name" />
     <div class="knowledge-view-heading">
       <!-- The view is part of the URL; the tabs only change the route. -->
       <Tabs :model-value="mode" class="knowledge-mode-tabs" @update:model-value="changeMode($event as KnowledgeMode)">

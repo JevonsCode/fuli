@@ -85,7 +85,7 @@ onBeforeUnmount(() => reading?.abort())
 <template>
   <section class="view debug-turns-view" :aria-label="t('debugTurns.title')">
     <div class="debug-turns-content">
-      <Breadcrumb :parent="{ label: t('debugTurns.back'), to: '/settings', from: openedFromSettings }" />
+      <Breadcrumb :parent="{ label: t('debugTurns.back'), to: '/settings', from: openedFromSettings }" :current="t('debugTurns.title')" />
       <p class="debug-turns-lede">{{ t('debugTurns.lede') }}</p>
       <ModelCaptureSwitch />
       <GrowthLoading v-if="loading && !records" :label="t('debugTurns.loading')" />

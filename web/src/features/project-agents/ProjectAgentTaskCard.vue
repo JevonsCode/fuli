@@ -227,8 +227,4 @@ const people = computed(() => [...new Set((props.task.participants ?? []).map(pe
   </article>
 </template>
 
-<style scoped src="./ProjectAgentTaskCard.css">.task-card-people { display: inline-flex; align-items: center; }
-.task-card-people a { display: block; width: 24px; height: 24px; margin-left: -6px; overflow: hidden; border: 2px solid var(--color-surface); border-radius: 50%; background: var(--color-surface-subtle); }
-.task-card-people a:first-child { margin-left: 0; }
-.task-card-people img { display: block; width: 100%; height: 100%; object-fit: cover; }
-</style>
+<style scoped src="./ProjectAgentTaskCard.css"></style>

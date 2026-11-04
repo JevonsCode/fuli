@@ -35,7 +35,7 @@ const runnable = computed(() => app.value?.status === 'active' && app.value.run.
 
 <template>
   <section class="view app-viewer" :aria-label="title || t('agentApps.title')">
-    <Breadcrumb :parent="{ label: t('agentApps.viewer.back'), to: '/project-agents/apps', from: openedFromApps }" />
+    <Breadcrumb :parent="{ label: t('agentApps.viewer.back'), to: '/project-agents/apps', from: openedFromApps }" :current="title || undefined" />
     <GrowthLoading v-if="state === 'loading'" :label="t('agentApps.viewer.loading')" />
     <div v-else-if="state === 'failed'" class="app-viewer-empty" role="alert">
       <p>{{ t('agentApps.viewer.failed') }}</p>

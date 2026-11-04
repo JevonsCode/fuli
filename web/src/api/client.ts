@@ -20,12 +20,19 @@ export function isKnowledgeRecoveryPending(error: unknown): boolean {
   try { return JSON.parse(error.detail)?.code === 'knowledge_recovery_pending' } catch { return false }
 }
 
+/** The graph is read-only until the person confirms a data upgrade. */
+function isDataFormatPending(status: number, detail: string): boolean {
+  if (status !== 503) return false
+  try { return JSON.parse(detail)?.code === 'data_format_read_only' } catch { return false }
+}
+
 async function requestJson<T>(url: string, init?: RequestInit, shape?: ResponseShape<T>): Promise<T> {
   const response = await fetch(url, init)
   if (!response.ok) {
     const detail = (await response.text()).trim()
     const message = isKnowledgeRecoveryPending({ status: response.status, detail })
-      ? t('common.errors.knowledgeRecoveryPending') : response.status >= 500
+      ? t('common.errors.knowledgeRecoveryPending') : isDataFormatPending(response.status, detail)
+      ? t('common.errors.dataFormatPending') : response.status >= 500
       ? t('common.errors.serviceUnavailable', { status: response.status })
       : detail || t('common.errors.requestFailed', { status: response.status })
     throw new ApiError(message, response.status, detail)

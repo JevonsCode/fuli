@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch, type ObjectDirective } from 'vue'
 
+import { useNow } from '@vueuse/core'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { OptionCombobox } from '@/components/ui/combobox'
@@ -11,6 +12,7 @@ import { boardTaskPeekId, type BoardTaskRef } from './board-task-peek'
 import { bindBoardScroller, bindDraggableCard, bindDropColumn, monitorBoardDrag, type BoardDropLocation } from './task-board-dnd'
 import { boardColumns, columnKeyOf, isColumnMove, ownColumnLabel } from './project-board-layout'
 import { boardItemKey } from './task-board-model'
+import { cardTimes, DEFAULT_CARD_FIELDS, useBoardCardFields } from './task-card-fields'
 import { boardDropIndex, projectBoardColumn, type BoardDragProjection, type PendingBoardMove } from './task-board-projection'
 
 import type { BoardMoveTarget, EmployeeBoardItem, EmployeeProjectBoard } from './task-board-model'
@@ -63,7 +65,19 @@ const DEFAULT_CARD_HEIGHT = 74
 const MoveMenuPending = defineComponent(() => () => h(Button, {
   variant: 'ghost', size: 'icon-sm', disabled: true, 'aria-label': t('employees.allProjects.moveToLabel'),
 }, () => h(UiIcon, { name: 'more', size: 16 })))
+const CardFieldsPending = defineComponent(() => () => h(Button, {
+  variant: 'ghost', size: 'icon', disabled: true, 'aria-label': t('employees.card.menu'),
+}, () => h(UiIcon, { name: 'list', size: 18 })))
+const BoardCardFieldsMenu = defineAsyncComponent({ loader: () => import('./BoardCardFieldsMenu.vue'), loadingComponent: CardFieldsPending, delay: 0 })
 const BoardMoveMenu = defineAsyncComponent({ loader: () => import('./BoardMoveMenu.vue'), loadingComponent: MoveMenuPending, delay: 0 })
+// What each card shows; a shared report has no one to choose, so it keeps the defaults.
+const cardFields = useBoardCardFields()
+const canChooseFields = computed(() => !props.readOnly || props.allowReadOnlyDetails)
+const shownFields = computed(() => (canChooseFields.value ? cardFields.fields.value : new Set(DEFAULT_CARD_FIELDS)))
+const showsField = (field: Parameters<typeof cardFields.toggle>[0]) => shownFields.value.has(field)
+const now = useNow({ interval: 60_000 })
+const timesOf = (item: EmployeeBoardItem) => cardTimes(item, shownFields.value, now.value)
+const urgentPriority = (item: EmployeeBoardItem) => showsField('priority') && (item.priority === 'critical' || item.priority === 'high')
 // Identity, not a name: two boards (or two apps) never accept each other's cards.
 const boardId = Symbol('employee-task-board')
 const query = ref('')
@@ -411,6 +425,8 @@ onBeforeUnmount(() => {
           <UiIcon name="search" :size="15" class="employee-all-projects-search-icon" />
           <input v-model="query" type="search" :placeholder="t('employees.allProjects.searchPlaceholder')" />
         </label>
+        <BoardCardFieldsMenu v-if="canChooseFields" :fields="cardFields.fields.value" :is-default="cardFields.isDefault.value"
+          @toggle="cardFields.toggle" @reset="cardFields.reset" />
         <slot name="actions" />
       </div>
     </header>
@@ -483,11 +499,15 @@ onBeforeUnmount(() => {
                 :aria-label="t('employees.allProjects.openTask', { project: projectName(slot.item.projectId), task: slot.item.title })"
                 @click="emit('select-task', slot.item)"
               >
-                <span class="employee-all-projects-project">{{ projectName(slot.item.projectId) }}<span v-if="ownLabel(slot.item)" class="employee-all-projects-own-column" data-own-column> · {{ ownLabel(slot.item) }}</span></span>
+                <span v-if="showsField('project')" class="employee-all-projects-project">{{ projectName(slot.item.projectId) }}<span v-if="ownLabel(slot.item)" class="employee-all-projects-own-column" data-own-column> · {{ ownLabel(slot.item) }}</span></span>
                 <strong>{{ slot.item.title }}</strong>
-                <span v-if="slot.item.summary && slot.item.summary !== slot.item.title" class="employee-all-projects-summary">{{ slot.item.summary }}</span>
-                <span v-if="slot.item.tags?.length" class="employee-all-projects-tags" aria-hidden="true">
+                <span v-if="showsField('summary') && slot.item.summary && slot.item.summary !== slot.item.title" class="employee-all-projects-summary">{{ slot.item.summary }}</span>
+                <span v-if="showsField('tags') && slot.item.tags?.length" class="employee-all-projects-tags" aria-hidden="true">
                   <span v-for="tag in slot.item.tags.slice(0, 3)" :key="tag">{{ tag }}</span>
+                </span>
+                <span v-if="urgentPriority(slot.item) || timesOf(slot.item).length" class="employee-all-projects-times" data-card-times>
+                  <span v-if="urgentPriority(slot.item)" class="employee-all-projects-priority" :data-tone="slot.item.priority" data-card-priority>{{ t(`employees.task.priorities.${slot.item.priority}`) }}</span>
+                  <span v-for="time in timesOf(slot.item)" :key="time.key" :title="time.title" :data-tone="time.tone" :data-card-time="time.key">{{ time.text }}</span>
                 </span>
               </button>
               <template v-if="canMoveTasks">
@@ -586,6 +606,10 @@ onBeforeUnmount(() => {
 .employee-all-projects-task strong { display: -webkit-box; overflow: hidden; font-size: 13px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .employee-all-projects-project { overflow: hidden; color: var(--color-ink); font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .employee-all-projects-summary { display: -webkit-box; overflow: hidden; color: var(--color-muted); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* The times: one quiet line at the foot of the card; a date needing attention takes its tone. */
+.employee-all-projects-times { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; color: var(--color-muted); font-size: var(--text-meta); line-height: 1.5; font-variant-numeric: tabular-nums; }
+.employee-all-projects-times [data-tone="overdue"], .employee-all-projects-priority[data-tone="critical"] { color: var(--color-danger); font-weight: var(--weight-medium); }
+.employee-all-projects-times [data-tone="soon"], .employee-all-projects-priority[data-tone="high"] { color: var(--color-gold); font-weight: var(--weight-medium); }
 .employee-all-projects-tags { display: flex; flex-wrap: wrap; gap: 5px; }
 .employee-all-projects-tags span { max-width: 100%; overflow: hidden; border-radius: 5px; background: var(--color-surface-subtle); color: var(--color-muted); font-size: 12px; line-height: 1.5; padding: 2px 6px; text-overflow: ellipsis; white-space: nowrap; }
 .employee-all-projects-own-column { color: var(--color-muted); font-weight: 500; }

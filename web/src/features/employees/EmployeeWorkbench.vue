@@ -427,7 +427,7 @@ async function projectsSaved() {
       @retry="loadWorkspace"
     >
       <template v-if="isJefa" #actions>
-        <UiIconButton :icon="fullscreen ? 'close' : 'expand'" size="sm" :label="t(fullscreen ? 'employees.fullscreenClose' : 'employees.fullscreen')" data-workbench-expand @click="fullscreen = !fullscreen" />
+        <UiIconButton :icon="fullscreen ? 'close' : 'expand'" size="md" :label="t(fullscreen ? 'employees.fullscreenClose' : 'employees.fullscreen')" data-workbench-expand @click="fullscreen = !fullscreen" />
         <Button variant="ghost" size="icon" class="employee-share-button" :aria-label="t('employees.share.title')" :title="t('employees.share.title')" @click="shareOpen = true">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7m0-7-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M7 16v-3m4 3v-1"/></svg>
         </Button>
@@ -452,17 +452,21 @@ async function projectsSaved() {
    Below them the tab itself scrolls, so a short window still shows the board. */
 .employee-workbench-canvas { flex: 1 0 auto; }
 .fills-height .employee-workbench-canvas { flex: 1 1 0; min-height: 0; }
+/* The board has a least height of its own, so its card grows to hold it and the tab scrolls. */
+.fills-height:has(.employee-all-projects) .employee-workbench-canvas { flex: 1 0 auto; }
 /* Over the whole app, below the window's own controls; the board keeps its controls. */
 .employee-workbench-view.is-fullscreen {
-  position: fixed; inset: 0; z-index: var(--z-dialog); overflow: auto; padding: calc(16px + var(--desktop-caption-top, 0px)) var(--page-inline, 24px) 16px;
+  position: fixed; inset: 0; z-index: var(--z-dialog); overflow: auto; padding: calc(16px + var(--desktop-caption-clear, 0px)) var(--page-inline, 24px) 16px;
   border: 0; border-radius: 0; background: var(--color-bg); box-shadow: none;
 }
-.is-fullscreen.is-native .employee-workbench-toolbar { top: calc(10px + var(--desktop-caption-top, 0px)); right: var(--page-inline, 24px); }
+.is-fullscreen.is-native .employee-workbench-toolbar { top: calc(10px + var(--desktop-caption-clear, 0px)); right: var(--page-inline, 24px); }
 .employee-workbench-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; }
 .employee-workbench-toolbar:has(.employee-workbench-actions:empty) { display: none; }
 /* A native panel's actions sit in the corner of the card, on the row of its own
    tabs: the card's padding and the tabs' height put them on the same centre line. */
 .is-native .employee-workbench-toolbar { position: absolute; top: 14px; right: 18px; z-index: 1; height: var(--control-height); }
+/* A panel with no tabs has a row of its own there: it stops short, so its arrow stays clear. */
+.is-native :deep(.unassigned-conversations-bar) { margin-right: 36px; }
 .employee-workbench-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
 /* Below the width where the Agent page stops scrolling (AgentProfilePage) there
    is no height to fill, so Tonborg's workbench takes one of its own. */

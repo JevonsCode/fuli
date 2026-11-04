@@ -12,7 +12,16 @@ export interface EmployeeBoardItem {
   boardColumn?: string
   priority?: 'critical' | 'high' | 'medium' | 'low'
   tags?: string[]
+  /** The calendar day it is due, YYYY-MM-DD. */
+  dueDate?: string
+  createdAt?: string
   updatedAt?: string
+  /** When the person accepted it as done. */
+  acceptedAt?: string
+  /** When it first went active; read from its history. */
+  startedAt?: string
+  /** When it reached the column it is in now; read from its history. */
+  columnSince?: string
 }
 
 export interface EmployeeProjectBoard {

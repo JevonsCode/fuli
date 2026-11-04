@@ -8,9 +8,7 @@ import { UiIcon, UiIconButton } from '@/ui'
 // its filters, scroll and focused card; otherwise it opens the parent. A plain
 // RouterLink would push as well as go Back (its handler runs first), so the
 // crumb owns the click.
-// `current` names this page only where nothing else on screen does: a page the
-// shell titles with its record's name (or that names itself) leaves it out, and
-// the trail ends on its separator so it still reads as "inside the parent".
+// `current` names this page, so the trail always says where you are (Jevons 11-04).
 export interface BreadcrumbParent {
   label: string
   to: string

@@ -184,7 +184,7 @@ export function useJefaBoardLoad(input: {
     const signal = read.controller.signal
     try {
       const result = await postJson<EmployeeProjectBoard>('/api/employee-templates/jefa/call', {
-        personalSpaceId: spaceId, personalProjectId: project.id, tool: 'read_board', arguments: { limit: BOARD_LIMIT, doneSince },
+        personalSpaceId: spaceId, personalProjectId: project.id, tool: 'read_board', arguments: { limit: BOARD_LIMIT, doneSince, times: true },
       }, { signal })
       if (!live()) return
       const board = { ...result, project, items: Array.isArray(result.items) ? result.items.filter(isEmployeeBoardItem).filter(i => i.projectId === project.id) : [] }
@@ -285,7 +285,7 @@ export function useJefaBoardLoad(input: {
     const shown = board.items.filter(item => item.status === 'done' && item.updatedAt).map(item => item.updatedAt!).sort()
     const result = await postJson<EmployeeProjectBoard>('/api/employee-templates/jefa/call', {
       personalSpaceId: spaceId, personalProjectId: board.project.id, tool: 'read_board',
-      arguments: { limit: OLDER_DONE_PAGE, statuses: ['done'], doneBefore: shown[0] && shown[0] < doneSince ? shown[0] : doneSince },
+      arguments: { limit: OLDER_DONE_PAGE, statuses: ['done'], doneBefore: shown[0] && shown[0] < doneSince ? shown[0] : doneSince, times: true },
     })
     const older = (Array.isArray(result.items) ? result.items : []).filter(isEmployeeBoardItem).filter(item => item.projectId === board.project.id)
     const current = input.boards.value.find(entry => entry.project.id === board.project.id) ?? board

@@ -14,16 +14,20 @@ defineOptions({
   inheritAttrs: false,
 })
 
-const props = defineProps<ContextMenuContentProps & { class?: HTMLAttributes["class"] }>()
+const props = defineProps<ContextMenuContentProps & {
+  class?: HTMLAttributes["class"]
+  /** Where the menu renders; inside an open <dialog>, or the dialog's top layer would cover it. */
+  portalTo?: HTMLElement
+}>()
 const emits = defineEmits<ContextMenuContentEmits>()
 
-const delegatedProps = reactiveOmit(props, "class")
+const delegatedProps = reactiveOmit(props, "class", "portalTo")
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>
-  <ContextMenuPortal>
+  <ContextMenuPortal :to="portalTo">
     <ContextMenuContent
       data-slot="context-menu-content"
       v-bind="{ ...$attrs, ...forwarded }"

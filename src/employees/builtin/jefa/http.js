@@ -7,7 +7,7 @@ import { refuseRemoteDecision } from '../../../http/request-policy.js';
 import { readJson, sendJson } from '../../../http/response.js';
 import { jsonSchemaToZod } from '../../../mcp/tool-schema.js';
 import { EmployeeError } from '../../manifest.js';
-import { TASK_STATUSES } from './project-board.js';
+import { DUE_DATE_SCHEMA, TASK_STATUSES } from './project-board.js';
 
 // Jefa's workspace routes under /employee-workspaces/jefa/<project>/. The host
 // has already authorized the project (context.project); a project named in a
@@ -23,7 +23,8 @@ const sharingBody = jsonSchemaToZod(objectSchema({ publicShareEnabled: { type: '
 const workItemBody = jsonSchemaToZod(objectSchema({
   projectId: boundedString(256), title: { ...boundedString(180), minLength: 2 }, summary: { type: 'string', maxLength: 2000 },
   priority: enumSchema(['critical', 'high', 'medium', 'low']), visibility: enumSchema(['private', 'public_summary']),
-  acceptanceCriteria: arraySchema(boundedString(500), { maxItems: 20 }), tags: arraySchema(boundedString(60), { maxItems: 12 })
+  acceptanceCriteria: arraySchema(boundedString(500), { maxItems: 20 }), tags: arraySchema(boundedString(60), { maxItems: 12 }),
+  dueDate: DUE_DATE_SCHEMA
 }, ['projectId', 'title']));
 
 export async function handleJefaHttp(store, manifest, request, response, context) {
@@ -38,7 +39,7 @@ export async function handleJefaHttp(store, manifest, request, response, context
   } else if (route('GET', /^\/\.well-known\/agent-card\.json$/)) {
     sendJson(response, 200, agentCard(manifest));
   } else if (route('GET', /^\/api\/snapshot$/)) {
-    sendJson(response, 200, { snapshot: { projects: [store.sharing(scope)], workItems: store.items(scope) } });
+    sendJson(response, 200, { snapshot: { projects: [store.sharing(scope)], workItems: store.withTimes(scope, store.items(scope)) } });
   } else if ((match = route('GET', /^\/api\/public\/([^/]+)$/))) {
     const items = store.publicItems(scope, segment(match[1]));
     if (!items) throw new EmployeeError('This report link is not shared', 404, 'report_not_shared');

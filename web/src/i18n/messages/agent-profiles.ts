@@ -57,7 +57,7 @@ export const agentProfileMessages = {
     working: "当前工作",
     idle: "空闲",
     partial: "部分工作记录暂时无法读取。",
-    projectHistory: "曾负责",
+    projectHistory: "工作时间线",
     detailLoading: "正在读取工作经历和组织关系",
     settingsLoading: "正在读取可用平台",
     hrSearchHint: "支持姓名片段、职责、技能、项目和近似拼写。",
@@ -174,7 +174,7 @@ export const agentProfileMessages = {
     working: "Current work",
     idle: "Idle",
     partial: "Some work records are temporarily unavailable.",
-    projectHistory: "Previously responsible for",
+    projectHistory: "Work timeline",
     detailLoading: "Loading work history and organization",
     settingsLoading: "Loading available platforms",
     hrSearchHint:
