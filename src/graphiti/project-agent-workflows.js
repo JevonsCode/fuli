@@ -2,7 +2,7 @@ import { ApplicationError, ApplicationErrorCode } from '../app/application-error
 import { loadProjectAgentContinuity } from './project-agent-task-entry.js';
 import { dismissalLessonHint } from './project-agent-dismissal.js';
 import { requireGroupedAgentTaskContext } from './project-team-hierarchy.js';
-import { resolveCoordinationScope, scopedTaskIdempotencyKey } from './temporary-project-scope.js';
+import { otherProjectTask, resolveCoordinationScope, scopedTaskIdempotencyKey } from './temporary-project-scope.js';
 import { enrichProjectAgentTaskActivity } from '../agents/token-usage-resolver.js';
 import { parseProjectBoard } from '../employees/builtin/jefa/project-board.js';
 import {
@@ -236,7 +236,7 @@ export async function coordinateProjectAgentTask(
     entryTask = await application.taskContextRegistry.context(input.taskContextToken, input.sourceApplication);
   }
   if (entryTask && entryTask.personalProjectId !== projectId) {
-    throw new TypeError('Coordination task context belongs to another project');
+    throw otherProjectTask();
   }
   const route = await submitProjectAgentTask(application, {
     personalSpaceId: application.config.personal.spaceId,
