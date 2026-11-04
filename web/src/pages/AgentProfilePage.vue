@@ -6,7 +6,7 @@ import ActivityOriginBadge from "@/features/agent-profile/ActivityOriginBadge.vu
 import AgentAvatarPicker from "@/features/agent-profile/AgentAvatarPicker.vue";
 import AgentNameEditor from "@/features/agent-profile/AgentNameEditor.vue";
 import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-color";
-import { computed, defineAsyncComponent, defineComponent, h, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, defineComponent, h, onMounted, ref, watch, type Component } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { getJson } from "@/api/client";
 import { useConsoleStore } from "@/stores/console";
@@ -17,18 +17,20 @@ import UiDisclosure from "@/components/UiDisclosure.vue";
 import AgentName from "@/features/agent-profile/AgentName.vue";
 import AgentProfileSettings from "@/features/agent-profile/AgentProfileSettings.vue";
 import AgentOccupationEditor from "@/features/agent-profile/AgentOccupationEditor.vue";
-import OccupationChip from "@/features/occupations/OccupationChip.vue";
 import { useOccupationCatalog } from "@/features/occupations/occupation-catalog";
 import AgentConversations from "@/features/project-agents/AgentConversations.vue";
+import EmployeeWorkHistory from "@/features/project-agents/EmployeeWorkHistory.vue";
 import WidgetSlot from "@/widgets/WidgetSlot.vue";
 import {
   agentDisplayName,
+  agentProfilePath,
   agentResponsibility,
   collaboratorsFor,
   mentionPartner,
   profileProjectIds,
 } from "@/features/agent-profile/profile-model";
 import AgentMentionCopy from "@/features/agent-profile/AgentMentionCopy.vue";
+import AgentHeaderTags from "@/features/agent-profile/AgentHeaderTags.vue";
 import AgentRenameHint from "@/features/agent-profile/AgentRenameHint.vue";
 import { mentionKind } from "@/features/agent-profile/fla-mention";
 import { isAgentTaskDataComplete, taskHasAgent } from "@/features/agent-profile/agent-work-summary";
@@ -39,7 +41,7 @@ import {
   normalizeTask,
   unknownRecord,
 } from "@/features/project-agents/task-evidence";
-import { employeeTemplates, refreshEmployeeCatalog } from "@/features/employees/catalog";
+import { employeeTemplateIdForAgent } from "@/features/employees/catalog";
 import type {
   ProjectAgentAssignmentRecord,
   ProjectAgentRecord,
@@ -49,16 +51,17 @@ import { personalProjectsPath } from "@/router/paths";
 import { readProjectTeam, type ProjectTeam } from "@/features/projects/project-team-api";
 import { usePageTitle } from "@/layouts/page-title";
 import { agentManagementPath } from "@/features/project-agents/orchestration-filters";
-import { isBoardTask } from "@/features/agent-workbench/agent-task-board";
 import { openWorkflows, readAgentWorkflows, type AgentWorkflow } from "@/features/agent-workbench/agent-workflows";
 import AgentWorkflowList from "@/features/agent-workbench/AgentWorkflowList.vue";
 
-// The workbench (board and workflows) loads only when its tab opens (rec#60 D-78).
-const AgentWorkbench = defineAsyncComponent({
-  loader: () => import("@/features/agent-workbench/AgentWorkbench.vue"),
-  loadingComponent: defineComponent(() => () => h(GrowthLoading, { variant: "compact", label: t("agentWorkbench.opening") })),
+// The workbench and 高级管理 load only when their tab opens (rec#60 D-78).
+const tabPanel = (loader: () => Promise<Component>, label: string) => defineAsyncComponent({
+  loader,
+  loadingComponent: defineComponent(() => () => h(GrowthLoading, { variant: "compact", label: t(label) })),
   delay: 0,
 });
+const EmployeeWorkbench = tabPanel(() => import("@/features/employees/EmployeeWorkbench.vue"), "agentWorkbench.opening");
+const AgentManagement = tabPanel(() => import("@/features/project-agents/AgentManagement.vue"), "agentProfiles.detailLoading");
 
 type ProfileTab =
   | "workbench"
@@ -108,12 +111,12 @@ const workKnown = ref(false);
 const partial = ref(false);
 const showSettings = ref(false);
 
-// A built-in role's workbench is its own page (the header's 工作台). Another
-// Agent's work has two sibling tabs (11-03): 工作台, its task board, only when
-// it has tasks, and 工作流, the routines it proposed or runs, only when it has
-// some. An Agent with neither opens on 概览; no FLA gets an empty board.
-const hasWorkbench = computed(() => !workbench.value && tasks.value.some(isBoardTask));
-const hasWorkflows = computed(() => !workbench.value && openWorkflows(workflows.value).length > 0);
+// One page per FLA (Jevons 11-04). 工作台 is a built-in role's own workbench:
+// the board is Jefa's, the others have theirs; no other FLA has one. 工作流, the
+// routines an FLA proposed or runs, shows only when it has some.
+const employeeId = computed(() => (agent.value ? employeeTemplateIdForAgent(agent.value) : null));
+const hasWorkbench = computed(() => Boolean(employeeId.value));
+const hasWorkflows = computed(() => !hasWorkbench.value && openWorkflows(workflows.value).length > 0);
 const defaultTab = computed<ProfileTab>(() => (hasWorkbench.value ? "workbench" : hasWorkflows.value ? "workflows" : "overview"));
 const profileTabs = computed(() => {
   const tabs: Array<{ id: ProfileTab; label: string }> = [
@@ -142,19 +145,34 @@ const activeTab = computed<ProfileTab>({
   },
   set: (tab) => {
     const { tab: _previous, ...query } = route.query;
-    void router.replace({ query: tab === defaultTab.value ? query : { ...query, tab } });
+    void router.replace({ query: tab === defaultTab.value ? query : { ...query, tab }, hash: route.hash });
   },
 });
+// A link that names a task opens 高级管理, where that task is shown. Afterwards
+// the tabs are the person's again, though ?task= stays in the URL.
+watch(() => route.query.task, (task) => {
+  if (typeof task === "string" && task && activeTab.value !== "management") activeTab.value = "management";
+}, { immediate: true });
 // Without ?tab the first tab depends on the tasks and workflows: wait for them
 // instead of opening 概览 and jumping.
-const tabsReady = computed(() => Boolean(route.query.tab) || workKnown.value);
+const tabsReady = computed(() => Boolean(route.query.tab) || hasWorkbench.value || workKnown.value);
 // The shell's one H1 is this Agent's real name; the route title is only the
 // fallback while it loads or when the Agent is unavailable.
 // The header shows the name, where the person can rename the Agent.
 usePageTitle(() => (agent.value ? agentDisplayName(agent.value) : ""), { inPage: true });
-// The 全部 Agent crumb goes Back when the directory opened this page, restoring its
-// filters, scroll and focused card.
+// A link may use an Agent's earlier id; the page settles on its current one.
+watch(agent, (person) => {
+  if (person && person.agentId !== routeAgentId.value)
+    void router.replace({ path: agentProfilePath(space.value, person.agentId), query: route.query, hash: route.hash });
+});
+// The crumb names the list that opened this page and goes Back to it, restoring
+// its filters, scroll and focused card.
+const openedFromOrchestration = /^\/project-agents\/manage(\?|$)/;
 const openedFromDirectory = /^\/project-agents(\?|$)/;
+const previousPage = (router.options.history.state as { back?: unknown } | null)?.back;
+const parentCrumb = typeof previousPage === "string" && openedFromOrchestration.test(previousPage)
+  ? { label: t("shell.sections.orchestrate"), to: "/project-agents/manage", from: openedFromOrchestration }
+  : { label: t("agentProfiles.back"), to: "/project-agents", from: openedFromDirectory };
 const collaborators = computed(() =>
   agent.value ? collaboratorsFor(agent.value.agentId, tasks.value) : [],
 );
@@ -196,10 +214,6 @@ const occupationKeys = computed(() => {
   return [...new Set([...(occupation.role ? [occupation.role] : []), ...occupation.tags])];
 });
 useOccupationCatalog(computed(() => agent.value?.personalSpaceId ?? ""));
-const workbench = computed(() =>
-  employeeTemplates.value.find((item) => item.agentId === agent.value?.agentId),
-);
-// Bole is the AR: its own profile has nobody else to ask.
 const date = (value?: string | null) =>
   value && !Number.isNaN(Date.parse(value))
     ? new Date(value).toLocaleDateString()
@@ -240,7 +254,6 @@ watch(
     detailsLoading.value = false;
     showSettings.value = false;
     if (!person) return;
-    void refreshEmployeeCatalog(person.personalSpaceId);
     detailsLoading.value = true;
     assignments.value = person.assignments;
     const params = new URLSearchParams({
@@ -348,7 +361,7 @@ onMounted(() => {
     :aria-label="agent ? agentDisplayName(agent) : t('agentProfiles.profile')"
   >
     <div class="@container grid w-full gap-4">
-      <Breadcrumb :parent="{ label: t('agentProfiles.back'), to: '/project-agents', from: openedFromDirectory }" />
+      <Breadcrumb :parent="parentCrumb" />
 
       <GrowthLoading
         v-if="(loading || store.runtimeStatus === 'loading') && !agent"
@@ -368,29 +381,20 @@ onMounted(() => {
         {{ t("agentProfiles.unavailable") }}
       </p>
       <div v-else class="agent-profile-layout">
-        <!-- Wide windows: who this FLA is stays put on the left while its work scrolls on the right. -->
-        <aside class="agent-profile-side">
+        <!-- Who this FLA is, in one row across the page; its work scrolls below. -->
+        <div class="agent-profile-side">
           <!-- The header carries the page's H1: the name, renamed where it stands,
                beside the portrait the person can change. -->
           <Card as="header" class="agent-resume-header">
             <span class="agent-portrait agent-identity" :style="agentIdentityStyle(agent.agentId)">
               <AgentAvatarPicker :agent-id="agent.agentId" :space-id="agent.personalSpaceId" :name="agentDisplayName(agent)" />
             </span>
-            <div class="agent-resume-intro grid min-w-0 flex-[1_1_360px] gap-2">
-              <AgentNameEditor :agent="agent" @saved="saved" />
-              <div class="agent-resume-name-row flex-wrap justify-start gap-2">
-                <span v-if="agent.employeeNumber" class="ui-badge fla-employee-number">FLA {{ agent.employeeNumber }}</span>
-                <span class="ui-badge agent-profile-membership" :class="`is-${agent.profile.status}`">
-                  {{ t(`projectAgents.status.${agent.profile.status}`) }}
-                </span>
+            <div class="agent-resume-intro grid min-w-0 gap-1">
+              <div class="agent-resume-title">
+                <AgentNameEditor :agent="agent" @saved="saved" />
+                <AgentHeaderTags :agent="agent" :occupation-keys="occupationKeys" />
               </div>
-              <p class="agent-resume-occupation" data-profile-occupation>
-                <template v-if="occupationKeys.length">
-                  <OccupationChip v-for="(key, index) in occupationKeys" :key="key" :occupation-key="key" :main="index === 0 && Boolean(agent.occupation?.role)" />
-                </template>
-                <span v-else class="ui-meta">{{ t("agentRedesign.occupation.notSet") }}</span>
-              </p>
-              <p class="agent-resume-summary">{{ agentResponsibility(agent) }}</p>
+              <p class="agent-resume-summary" :title="agentResponsibility(agent)">{{ agentResponsibility(agent) }}</p>
               <div class="agent-resume-meta">
                 <span>
                   {{ t(agent.recruitedAt ? "agentProfiles.joined" : "agentProfiles.created") }}
@@ -400,11 +404,6 @@ onMounted(() => {
             </div>
             <div class="agent-profile-actions">
               <AgentMentionCopy v-if="mentionKind(agent)" :kind="mentionKind(agent)" size="default" :name="agentDisplayName(agent)" :partner="partner" />
-              <Button v-if="workbench" as-child variant="outline">
-                <RouterLink :to="`/employees/${encodeURIComponent(workbench.id)}`">
-                  {{ t("agentProfiles.workbench") }}
-                </RouterLink>
-              </Button>
               <Button
                 variant="outline"
                 :aria-expanded="showSettings"
@@ -416,7 +415,7 @@ onMounted(() => {
           </Card>
 
           <AgentRenameHint :agent="agent" @saved="saved" />
-        </aside>
+        </div>
         <div class="agent-profile-main">
 
           <GrowthLoading
@@ -465,15 +464,7 @@ onMounted(() => {
 
             <TabsContent v-if="hasWorkbench" value="workbench" class="agent-profile-panel" data-profile-panel="workbench">
               <!-- Mounted only while open, so its board and drag handlers leave with the tab. -->
-              <AgentWorkbench
-                v-if="activeTab === 'workbench'"
-                :key="agent.agentId"
-                :personal-space-id="agent.personalSpaceId"
-                :agent-id="agent.agentId"
-                :tasks="tasks"
-                :project-name="projectName"
-                :incomplete="partial"
-              />
+              <EmployeeWorkbench v-if="activeTab === 'workbench' && employeeId" :key="employeeId" :template-id="employeeId" />
             </TabsContent>
 
             <TabsContent v-if="hasWorkflows" value="workflows" class="agent-profile-panel" data-profile-panel="workflows">
@@ -680,20 +671,12 @@ onMounted(() => {
                   :agent-id="agent.agentId"
                   :projects="conversationProjects"
                 />
+                <EmployeeWorkHistory :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjects" />
               </Card>
             </TabsContent>
 
             <TabsContent value="management" class="agent-profile-panel" data-profile-panel="management">
-              <Card as="section" class="agent-resume-section agent-management-card" :aria-label="t('agentProfiles.advanced')">
-                <p class="agent-muted">{{ t("agentProfiles.locked") }}</p>
-                <div class="agent-profile-management-links">
-                  <Button as-child variant="outline">
-                    <RouterLink data-open-management :to="agentManagementPath(agent.personalSpaceId, agent.agentId)">
-                      {{ t("agentProfiles.openManagement") }}
-                    </RouterLink>
-                  </Button>
-                </div>
-              </Card>
+              <AgentManagement v-if="activeTab === 'management'" :key="agent.agentId" :space-id="agent.personalSpaceId" :agent-id="agent.agentId" @saved="saved" />
             </TabsContent>
           </Tabs>
         </div>
@@ -715,21 +698,20 @@ onMounted(() => {
 }
 /* Panels stack in one column at every width (rec#38). */
 .agent-profile-history-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
-/* Like the workbench (rec#11, 11-02): on a wide window who this FLA is stays put
-   on the left and only its work on the right scrolls, so the page never scrolls
-   at the client's default 1280px window. Narrower windows keep one column and
-   the page scrolls as before. */
+/* One column at every width (Jevons 11-04): who this FLA is runs across the top
+   and only its work below scrolls, so the page never does at the client's
+   default 1280px window. Narrower windows let the page scroll as before. */
 .agent-profile-layout { display: grid; gap: var(--space-4, 16px); min-width: 0; }
 .agent-profile-side, .agent-profile-main { display: grid; align-content: start; gap: var(--space-4, 16px); min-width: 0; }
+/* The tabs fill the column, so a workbench can fill the tab. */
+.agent-profile-tabs [data-profile-panel="workbench"][data-state="active"] { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 
 @media (min-width: 1100px) {
   .agent-profile-page { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 20px !important; }
   .agent-profile-page > .grid { flex: 1; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
-  .agent-profile-layout { grid-template-columns: 320px minmax(0, 1fr); gap: 18px; min-height: 0; }
-  .agent-profile-side { max-height: 100%; overflow-y: auto; }
-  /* The right column clears the floating dock itself, since the page no longer scrolls. */
-  .agent-profile-main { min-height: 0; overflow-y: auto; padding-bottom: var(--dock-clearance); }
-  .agent-profile-side .agent-resume-header { grid-template-columns: auto minmax(0, 1fr); }
-  .agent-profile-side .agent-resume-header .agent-profile-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .agent-profile-layout { grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+  /* The column clears the floating dock itself, since the page no longer scrolls. */
+  .agent-profile-main { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding-bottom: var(--dock-clearance); }
+  .agent-profile-main > .agent-profile-tabs { flex: 1 0 auto; }
 }
 </style>

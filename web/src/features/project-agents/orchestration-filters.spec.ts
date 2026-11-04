@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectAgentRecord } from '@/types'
 import {
-  agentManagementPath,
+  agentManagementPath, formerManagementQuery,
   compareOrchestrationAgents,
   orchestrationFilterQuery,
   projectChipGroups,
@@ -45,6 +45,17 @@ describe('编排 collection order and labels', () => {
   })
 
   it('builds an Agent page path with both parts encoded', () => {
-    expect(agentManagementPath('space 1', 'employee/a')).toBe('/project-agents/manage/space%201/employee%2Fa')
+    expect(agentManagementPath('space 1', 'employee/a')).toBe('/agents/space%201/employee%2Fa')
+  })
+})
+
+// A link to the former 编排 page keeps working: its tabs are 高级管理's sections now.
+describe('formerManagementQuery', () => {
+  it('opens 高级管理 on the section the old tab named, keeping the task', () => {
+    expect(formerManagementQuery({ task: 't-1' })).toEqual({ task: 't-1', tab: 'management' })
+    expect(formerManagementQuery({ tab: 'execution' })).toEqual({ tab: 'management', section: 'execution' })
+  })
+  it('sends the old conversations tab to the page\'s own', () => {
+    expect(formerManagementQuery({ tab: 'conversations' })).toEqual({ tab: 'conversations' })
   })
 })

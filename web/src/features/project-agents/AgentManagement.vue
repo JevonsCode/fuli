@@ -1,26 +1,20 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import Breadcrumb from '@/components/Breadcrumb.vue'
 import { coversClient } from '@/lib/source-coverage'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
-import { agentDisplayName, agentProfilePath, agentResponsibility } from '@/features/agent-profile/profile-model'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
+import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { employeeTemplateIdForAgent, employeeTemplates } from '@/features/employees/catalog'
 import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
-import AgentConversations from '@/features/project-agents/AgentConversations.vue'
 import AgentHand from '@/features/project-agents/AgentHand.vue'
 import { activityWeeks } from '@/features/project-agents/activity-calendar'
 import { assignmentsFor, currentAssignmentsFor, dedupeById, unique } from '@/features/project-agents/agent-roster-records'
-import EmployeeWorkHistory from '@/features/project-agents/EmployeeWorkHistory.vue'
 import ExecutorRoutingDialog from '@/features/project-agents/ExecutorRoutingDialog.vue'
-import { agentManagementPath } from '@/features/project-agents/orchestration-filters'
 import ProjectAgentDetailState from '@/features/project-agents/ProjectAgentDetailState.vue'
 import ProjectAgentTaskCard from '@/features/project-agents/ProjectAgentTaskCard.vue'
 import TaskReason from '@/features/project-agents/TaskReason.vue'
@@ -29,7 +23,6 @@ import { useProjectAgentDetails, type DetailSource } from '@/features/project-ag
 import { useProjectAgentRoster } from '@/features/project-agents/useProjectAgentRoster'
 import ProjectAgentDialog from '@/features/projects/ProjectAgentDialog.vue'
 import { currentLocale, t } from '@/i18n'
-import { usePageTitle } from '@/layouts/page-title'
 import { formatDateTime } from '@/lib/date-time'
 import { useConsoleStore } from '@/stores/console'
 import type {
@@ -44,28 +37,24 @@ import type {
   ProjectAgentRoutingRule,
 } from '@/types'
 
-// One Agent's management workspace under 编排, as its own page: who it is on
-// top, then its work, projects, activity, recruitment, execution and profile
-// as in-page tabs (?tab=). Links that name a task (?task=, ?project=) open on
-// the work tab with that task revealed.
-type ManageTab = 'work' | 'projects' | 'activity' | 'conversations' | 'recruitment' | 'execution' | 'profile'
+// One Agent's 高级管理, a tab of its FLA page (Jevons 11-04: one page per FLA):
+// its work, projects, activity, recruitment, execution and record as sections
+// (?section=). Links that name a task (?task=, ?project=) open on the work
+// section with that task revealed.
+type ManageSection = 'work' | 'projects' | 'activity' | 'recruitment' | 'execution' | 'profile'
+
+const props = defineProps<{ spaceId: string; agentId: string }>()
+const emit = defineEmits<{ saved: [record: ProjectAgentRecord] }>()
 
 const store = useConsoleStore()
 const route = useRoute()
 const router = useRouter()
-const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
-// Another space's Agent is never read or shown here.
-const routeSpaceMatches = computed(() => route.params.spaceId === spaceId.value)
-const routeAgentId = computed(() => String(route.params.agentId ?? ''))
+const spaceId = computed(() => props.spaceId)
 const roster = useProjectAgentRoster(spaceId)
 const agents = roster.agents
-const agent = computed(() => (routeSpaceMatches.value && routeAgentId.value ? roster.find(routeAgentId.value) : null))
+const agent = computed(() => roster.find(props.agentId) ?? null)
 const linkedProject = computed(() => typeof route.query.project === 'string' ? route.query.project : '')
 const linkedTask = computed(() => typeof route.query.task === 'string' ? route.query.task : '')
-// The 编排 crumb goes Back when the collection opened this page, restoring its
-// filters, scroll and focused card.
-const collectionPath = '/project-agents/manage'
-const openedFromCollection = /^\/project-agents\/manage(\?|$)/
 const details = useProjectAgentDetails(roster, agent, spaceId, { project: linkedProject, task: linkedTask })
 
 const projects = computed(() => store.state?.personalProjects ?? [])
@@ -87,18 +76,7 @@ onMounted(() => {
   if (store.runtimeStatus === 'idle') void store.refresh()
 })
 
-// The shell's one H1 is the Agent's real name. Until it is known (loading,
-// an error, an unavailable Agent) the H1 is the id the link names, so the
-// title never jumps to a section name and back.
-const name = computed(() => (agent.value ? agentDisplayName(agent.value) : ''))
-const title = computed(() => name.value || routeAgentId.value)
-usePageTitle(title)
-
-// A link may use an Agent's earlier id; the page settles on its current one.
-watch(agent, (person) => {
-  if (person && person.agentId !== routeAgentId.value)
-    void router.replace({ path: agentManagementPath(spaceId.value, person.agentId), query: route.query, hash: route.hash })
-})
+const name = computed(() => (agent.value ? agentDisplayName(agent.value) : props.agentId))
 
 const employeeId = computed(() => agent.value ? employeeTemplateIdForAgent(agent.value) : null)
 const employee = computed(() => employeeTemplates.value.find((entry) => entry.id === employeeId.value))
@@ -110,17 +88,12 @@ const responsibleProjects = computed(() => {
 })
 const employeeProjects = computed(() => responsibleProjects.value
   .filter((project) => projectById.value.get(project.id)?.profile.lifecycle !== 'archived'))
-const conversationProjects = computed(() => agent.value ? currentAssignmentsFor(agent.value)
-  .map((assignment) => ({ id: assignment.personalProjectId, name: projectName(assignment.personalProjectId) })) : [])
 const recruitments = computed(() => agent.value?.recruitments ?? [])
 const awaitingRecruitments = computed(() => recruitments.value.filter((item) => item.status === 'awaiting_confirmation').length)
 const learning = computed(() => Object.entries(agent.value?.learningEvidence ?? {}))
-const statusTone = computed(() => agent.value
-  ? ({ active: 'success', inactive: 'warning', archived: 'secondary' } as const)[agent.value.profile.status]
-  : 'secondary')
 
 const tabs = computed(() => {
-  const list: Array<{ id: ManageTab; label: string }> = [
+  const list: Array<{ id: ManageSection; label: string }> = [
     { id: 'work', label: t('projectAgents.tabs.work') },
     { id: 'projects', label: t('projectAgents.tabs.projects') },
     { id: 'activity', label: t('projectAgents.tabs.activity') },
@@ -128,25 +101,23 @@ const tabs = computed(() => {
     { id: 'execution', label: t('projectAgents.tabs.execution') },
     { id: 'profile', label: t('projectAgents.tabs.profile') },
   ]
-  if (agent.value?.memoryScope === 'reviewed_agent')
-    list.splice(3, 0, { id: 'conversations', label: t('projectAgents.tabs.conversations') })
   return list
 })
-// The open tab is part of the URL; switching replaces the entry instead of
-// adding history.
-const activeTab = computed<ManageTab>({
+// The open section is part of the URL; switching replaces the entry instead
+// of adding history.
+const activeTab = computed<ManageSection>({
   get: () => {
-    const tab = route.query.tab
-    return tabs.value.find((item) => item.id === tab)?.id ?? 'work'
+    const section = route.query.section
+    return tabs.value.find((item) => item.id === section)?.id ?? 'work'
   },
-  set: (tab) => {
-    const { tab: _previous, ...query } = route.query
-    void router.replace({ query: tab === 'work' ? query : { ...query, tab }, hash: route.hash })
+  set: (section) => {
+    const { section: _previous, ...query } = route.query
+    void router.replace({ query: section === 'work' ? query : { ...query, section }, hash: route.hash })
   },
 })
 
-// A link that names a new task opens the work tab, where that task is shown.
-// Afterwards the tabs are the person's again, though ?task= stays in the URL.
+// A link that names a new task opens the work section, where that task is
+// shown. Afterwards the sections are the person's again, though ?task= stays.
 watch(linkedTask, (task) => {
   if (task && activeTab.value !== 'work') activeTab.value = 'work'
 }, { immediate: true })
@@ -242,6 +213,7 @@ const dialogDefaultProjectId = computed(() => linkedProject.value
 
 function recordSaved(record: ProjectAgentRecord) {
   roster.put(record)
+  emit('saved', record)
   store.notify(t('projectAgents.saved'))
 }
 function openAssignment(assignment: ProjectAgentAssignmentRecord | null = null, action: 'assign' | 'end' | 'replace' = 'assign') {
@@ -281,15 +253,13 @@ async function employeeScopeSaved() {
   void details.refresh()
 }
 async function cleanup(person: ProjectAgentRecord) {
-  if (await details.cleanupTestAgent(person)) void router.replace(collectionPath)
+  if (await details.cleanupTestAgent(person)) void router.replace('/project-agents/manage')
 }
 </script>
 
 <template>
-  <section ref="pageRoot" class="view project-agent-manage" :aria-label="title">
+  <section ref="pageRoot" class="project-agent-manage" :aria-label="t('agentProfiles.advanced')">
     <div class="@container grid w-full gap-4">
-      <Breadcrumb :parent="{ label: t('shell.sections.orchestrate'), to: collectionPath, from: openedFromCollection }" />
-
       <GrowthLoading v-if="pageLoading" :label="!store.state ? t('common.status.loadingConsole') : t('projectAgents.loading')" />
       <div v-else-if="pageError" class="ui-card project-agents-state is-error" role="alert">
         <p>{{ pageError }}</p>
@@ -297,34 +267,12 @@ async function cleanup(person: ProjectAgentRecord) {
       </div>
       <p v-else-if="!agent" class="ui-card project-agents-state" role="status">{{ t('agentProfiles.unavailable') }}</p>
       <template v-else>
-        <!-- The name is the page's H1 (in the top bar), so this card carries
-             only what the name does not say. -->
-        <Card as="header" class="agent-resume-header project-agent-summary">
-          <span
-            class="agent-portrait agent-card-identity"
-            :style="agentIdentityStyle(agent.agentId)"
-            aria-hidden="true"
-          >
-            <img :src="agentAvatarUrl(agent.agentId)" :data-agent-portrait="agent.agentId" alt="" />
-          </span>
-          <div class="grid min-w-0 gap-2">
-            <p class="project-agent-summary-meta" data-agent-identity>
-              <span>{{ t(`projectAgents.agentType.${agent.profile.agentType ?? 'durable'}`) }}</span>
-              <Badge :variant="statusTone">{{ t(`projectAgents.status.${agent.profile.status}`) }}</Badge>
-              <span v-if="agent.isTestRole">{{ t('projectAgents.source.testRole') }}<template v-if="agent.profile.testSource"> · {{ agent.profile.testSource }}</template></span>
-              <AgentHand :agent-id="agent.agentId" />
-            </p>
-            <p class="project-agent-summary-text is-responsibility" data-agent-responsibility>{{ agentResponsibility(agent) || t('projectAgents.notReported') }}</p>
-            <div v-if="agent.profile.capabilities.length" class="agent-inline-skills" :aria-label="t('agentProfiles.strengths')">
-              <span v-for="capability in agent.profile.capabilities" :key="capability">{{ capability }}</span>
-            </div>
-          </div>
-          <div class="project-agent-detail-actions">
-            <Button variant="outline" size="sm" data-detail-refresh :disabled="details.loading.value" @click="details.refresh()">{{ t('projectAgents.detail.refresh') }}</Button>
-            <Button variant="outline" size="sm" data-agent-edit @click="dialogOpen = true">{{ t('projectAgents.edit') }}</Button>
-            <Button v-if="agent.profile.cleanupEligible" variant="outline" size="sm" data-agent-cleanup :disabled="details.loading.value" :loading="details.cleanupBusy.value" :loading-label="t('projectAgents.source.cleanupLoading')" @click="cleanup(agent)">{{ t('projectAgents.source.cleanup') }}</Button>
-          </div>
-        </Card>
+        <div class="project-agent-detail-actions">
+          <AgentHand :agent-id="agent.agentId" />
+          <Button variant="outline" size="sm" data-detail-refresh :disabled="details.loading.value" @click="details.refresh()">{{ t('projectAgents.detail.refresh') }}</Button>
+          <Button variant="outline" size="sm" data-agent-edit @click="dialogOpen = true">{{ t('projectAgents.edit') }}</Button>
+          <Button v-if="agent.profile.cleanupEligible" variant="outline" size="sm" data-agent-cleanup :disabled="details.loading.value" :loading="details.cleanupBusy.value" :loading-label="t('projectAgents.source.cleanupLoading')" @click="cleanup(agent)">{{ t('projectAgents.source.cleanup') }}</Button>
+        </div>
         <p v-if="details.notice.value" class="project-agent-detail-notice" role="status">{{ details.notice.value }}</p>
 
         <Tabs v-model="activeTab" :unmount-on-hide="false" class="project-agent-detail">
@@ -355,7 +303,7 @@ async function cleanup(person: ProjectAgentRecord) {
                 <Button size="sm" data-employee-manage-projects @click="scopeDialogOpen = true">{{ t('employees.manageProjects') }}</Button>
               </div>
               <div v-if="employeeProjects.length" class="employee-assigned-projects">
-                <RouterLink v-for="project in employeeProjects" :key="project.id" :to="`/employees/${encodeURIComponent(employeeId)}?project=${encodeURIComponent(project.id)}`">
+                <RouterLink v-for="project in employeeProjects" :key="project.id" :to="{ query: { project: project.id } }">
                   <span>{{ project.name }}</span>
                   <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
                 </RouterLink>
@@ -415,13 +363,6 @@ async function cleanup(person: ProjectAgentRecord) {
                 </div>
                 <p v-else class="project-agent-muted">{{ t('projectAgents.activity.empty') }}</p>
               </ProjectAgentDetailState>
-            </Card>
-          </TabsContent>
-
-          <TabsContent v-if="agent.memoryScope === 'reviewed_agent'" value="conversations" class="project-agent-panel" data-manage-panel="conversations">
-            <Card as="section" class="project-agent-card-section">
-              <AgentConversations :key="agent.agentId" :personal-space-id="spaceId" :agent-id="agent.agentId" :projects="conversationProjects" />
-              <EmployeeWorkHistory :personal-space-id="spaceId" :agent-id="agent.agentId" :projects="conversationProjects" />
             </Card>
           </TabsContent>
 
@@ -521,14 +462,14 @@ async function cleanup(person: ProjectAgentRecord) {
 
           <TabsContent value="profile" class="project-agent-panel" data-manage-panel="profile">
             <Card as="section" class="project-agent-card-section" :aria-label="t('projectAgents.profileDetails')">
-              <dl class="project-agent-detail-meta">
+              <dl class="project-agent-detail-meta" data-agent-identity>
                 <div><dt>{{ t('projectAgents.fields.assignments') }}</dt><dd>{{ currentAssignmentsFor(agent).length }}</dd></div>
                 <div><dt>{{ t('projectAgents.fields.memoryScope') }}</dt><dd>{{ memoryScopeLabel(agent.memoryScope) }}</dd></div>
                 <div><dt>{{ t('projectAgents.fields.status') }}</dt><dd>{{ t(`projectAgents.status.${agent.profile.status}`) }}</dd></div>
                 <div><dt>{{ t('projectAgents.fields.recruitment') }}</dt><dd>{{ sourceLabel(agent.recruitmentSourceApplication) }}<small v-if="agent.recruitmentReason">{{ agent.recruitmentReason }}</small></dd></div>
                 <div><dt>{{ t('projectAgents.fields.updatedAt') }}</dt><dd>{{ formatDate(agent.updatedAt) }}</dd></div>
+                <div><dt>{{ t('projectAgents.fields.agentType') }}</dt><dd>{{ t(`projectAgents.agentType.${agent.profile.agentType ?? 'durable'}`) }}<small v-if="agent.isTestRole">{{ t('projectAgents.source.testRole') }}<template v-if="agent.profile.testSource"> · {{ agent.profile.testSource }}</template></small></dd></div>
               </dl>
-              <Button class="project-agent-profile-link" variant="outline" size="sm" as-child><RouterLink :to="agentProfilePath(agent.personalSpaceId, agent.agentId)" data-agent-profile-link>{{ t('projectAgents.openProfile') }}</RouterLink></Button>
             </Card>
           </TabsContent>
         </Tabs>
@@ -545,4 +486,4 @@ async function cleanup(person: ProjectAgentRecord) {
 </template>
 
 <style src="@/features/agent-profile/agent-profile.css" />
-<style scoped src="@/features/project-agents/ProjectAgentDetailPage.css"></style>
+<style scoped src="@/features/project-agents/AgentManagement.css"></style>

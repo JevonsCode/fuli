@@ -4,10 +4,7 @@
 .project-agents-state.is-error { color: var(--color-danger); }
 
 /* Summary: the H1 (in the top bar) is the name, so this says what the name does not. */
-.project-agent-summary { grid-template-columns: auto minmax(0, 1fr) auto; }
-.project-agent-summary-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0; color: var(--color-muted); font-size: 13px; }
-.project-agent-summary-text { max-width: 72ch; margin: 0; color: var(--color-ink); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
-.project-agent-detail-actions { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 8px; max-width: 360px; }
+.project-agent-detail-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .project-agent-detail-notice { margin: 0; padding: 8px 12px; border-radius: var(--radius-control); background: var(--color-surface-subtle); color: var(--color-muted); font-size: 13px; }
 
 /* Tabs and their panels: one column of cards at every width, execution's
@@ -59,7 +56,6 @@
 .project-agent-detail-meta div, .project-agent-compact-meta div { min-width: 0; }
 .project-agent-detail-meta dt, .project-agent-compact-meta dt { color: var(--color-muted); font-size: 12px; font-weight: 650; }
 .project-agent-detail-meta dd, .project-agent-compact-meta dd { margin: 4px 0 0; overflow-wrap: anywhere; color: var(--color-ink); font-size: 13px; }
-.project-agent-profile-link { justify-self: start; align-self: flex-start; width: fit-content; margin-top: 16px; }
 .project-agent-detail-meta dd small { display: block; margin-top: 3px; color: var(--color-muted); font-size: 12px; line-height: 1.4; }
 @container (max-width: 640px) { .project-agent-compact-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
@@ -107,8 +103,6 @@
 .project-agent-evidence-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--color-muted); font-size: 12px; }
 
 @media (max-width: 760px) {
-  .project-agent-summary { grid-template-columns: auto minmax(0, 1fr); }
-  .project-agent-detail-actions { grid-column: 1 / -1; justify-content: flex-start; max-width: none; }
   .project-agent-card-section { padding-inline: var(--space-4, 16px); }
   .project-agent-client-row, .project-agent-rule-row, .project-agent-executor-row { grid-template-columns: minmax(0, 1fr); align-items: start; }
   .project-agent-section-heading, .project-agent-assignment-card header { align-items: flex-start; }

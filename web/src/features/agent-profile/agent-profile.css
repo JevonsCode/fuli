@@ -120,9 +120,28 @@
 .agent-resume-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
+  align-items: center;
   gap: var(--space-5, 20px);
-  padding: var(--space-6, 24px);
+  padding: var(--space-4, 16px) var(--space-5, 20px);
+}
+
+.agent-resume-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+.agent-resume-title > [data-agent-name] {
+  flex: 0 1 auto;
+}
+
+.agent-resume-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .agent-resume-intro {
