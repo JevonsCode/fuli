@@ -7,10 +7,12 @@ import {
   projectRelationTierLabel,
   type FrequentProjectSummary,
 } from '@/features/knowledge/project-relation-weights'
-import { t } from '@/i18n'
+import { currentLocale, t } from '@/i18n'
+import { DATE_ONLY, formatDateTime } from '@/lib/date-time'
 import { personalProjectsPath } from '@/router/paths'
 import type { PersonalProject } from '@/types'
 import ProjectBoardSettings from './ProjectBoardSettings.vue'
+import ProjectChangeLog from './ProjectChangeLog.vue'
 import ProjectTeamSummary from './ProjectTeamSummary.vue'
 import ProfileAuthorChip from './ProfileAuthorChip.vue'
 import ProjectCaptureSwitch from '@/features/capture/ProjectCaptureSwitch.vue'
@@ -31,6 +33,9 @@ defineEmits<{ 'edit-profile': []; publish: [] }>()
 const visibleFrequentProjects = computed(() =>
   (props.frequentProjects ?? []).slice(0, 3),
 )
+const createdDate = computed(() =>
+  formatDateTime(props.project.created_at, currentLocale(), DATE_ONLY, { missing: '' }),
+)
 </script>
 
 <template>
@@ -38,6 +43,7 @@ const visibleFrequentProjects = computed(() =>
     <header class="project-overview-header">
       <div class="project-overview-title">
         <h2>{{ project.profile.name }}</h2>
+        <p v-if="createdDate" class="ui-meta" data-project-created>{{ t('projects.overview.createdAt', { date: createdDate }) }}</p>
         <p v-if="project.profile.purpose" class="project-overview-purpose">{{ project.profile.purpose }}</p>
         <ProfileAuthorChip v-if="project.profile.purpose" class="project-overview-author" :author="project.profile.authors?.purpose" />
         <p v-else class="ui-meta">{{ t('projects.overview.noPurpose') }}</p>
@@ -60,6 +66,8 @@ const visibleFrequentProjects = computed(() =>
       :project-id="project.project_id" :project-name="project.profile.name" :heading="t('judgment.project.heading')" />
     <ProjectTeamSummary :space-id="spaceId" :project-id="project.project_id" />
     <ProjectBoardSettings :key="`board-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id" :project-name="project.profile.name" />
+    <ProjectChangeLog :key="`changes-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id"
+      :project-name="project.profile.name" :updated-at="project.updated_at" />
     <section
       class="project-frequent-projects"
       data-frequent-projects

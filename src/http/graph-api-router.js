@@ -211,6 +211,16 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  const projectHistory = url.pathname.match(/^\/api\/personal-projects\/([^/]+)\/history$/);
+  if (projectHistory && request.method === 'GET') {
+    const limit = url.searchParams.get('limit');
+    sendJson(response, 200, await app.listPersonalProjectHistory({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      projectId: decodeURIComponent(projectHistory[1]),
+      limit: limit === null ? null : Number(limit)
+    }));
+    return true;
+  }
   if (url.pathname === '/api/projects/relation-weights' && request.method === 'GET') {
     sendJson(response, 200, await app.listProjectRelationWeights({
       personalSpaceId: url.searchParams.get('personalSpaceId')

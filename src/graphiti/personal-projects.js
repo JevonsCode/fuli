@@ -21,6 +21,8 @@ export async function upsertPersonalProject(application, input) {
     profile,
     ...(createOnly ? { create_only: true } : {})
   });
+  application.projectChangeLog?.record({ personalSpaceId: input.personalSpaceId, projectId: input.projectId,
+    writer: input.writer, previous, saved });
   return refused.length ? { ...saved, refused_fields: refused } : saved;
 }
 
@@ -44,6 +46,15 @@ export async function listPersonalProjects(application, input = {}) {
   }
   const projects = await application.personal.listPersonalProjects(personalSpaceId);
   return input.projectId === undefined ? projects : projects.filter(project => project.project_id === input.projectId);
+}
+
+// What changed in one project's profile, newest first; local, so it needs no Provider.
+export function listPersonalProjectHistory(application, input) {
+  const personalSpaceId = input.personalSpaceId ?? application.config.personal.spaceId;
+  if (personalSpaceId !== application.config.personal.spaceId) {
+    throw new TypeError('Project history must use the active personal space');
+  }
+  return application.projectChangeLog.list({ personalSpaceId, projectId: input.projectId, limit: input.limit });
 }
 
 export async function listProjectRelationWeights(application, input = {}) {
