@@ -1,51 +1,47 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { coversClient } from '@/lib/source-coverage'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { UiIconButton } from '@/ui'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { employeeTemplateIdForAgent, employeeTemplates } from '@/features/employees/catalog'
 import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
 import AgentAssignmentDialog from '@/features/project-agents/AgentAssignmentDialog.vue'
-import AgentHand from '@/features/project-agents/AgentHand.vue'
 import { activityWeeks } from '@/features/project-agents/activity-calendar'
-import { assignmentsFor, currentAssignmentsFor, dedupeById, unique } from '@/features/project-agents/agent-roster-records'
+import { assignmentsFor, currentAssignmentsFor, dedupeById, NON_TERMINAL_TASK_STATUSES } from '@/features/project-agents/agent-roster-records'
 import ExecutorRoutingDialog from '@/features/project-agents/ExecutorRoutingDialog.vue'
 import ProjectAgentDetailState from '@/features/project-agents/ProjectAgentDetailState.vue'
 import ProjectAgentTaskCard from '@/features/project-agents/ProjectAgentTaskCard.vue'
 import TaskReason from '@/features/project-agents/TaskReason.vue'
-import { formatDate, memoryScopeLabel, policyLabel, recruitmentPositionLabel, recruitmentStatusLabel, sourceLabel, strategyLabel, taskStatusLabel } from '@/features/project-agents/task-labels'
+import { formatDate, policyLabel, recruitmentPositionLabel, recruitmentStatusLabel, sourceLabel, strategyLabel, taskStatusLabel } from '@/features/project-agents/task-labels'
 import { useProjectAgentDetails, type DetailSource } from '@/features/project-agents/useProjectAgentDetails'
 import { useProjectAgentRoster } from '@/features/project-agents/useProjectAgentRoster'
-import ProjectAgentDialog from '@/features/projects/ProjectAgentDialog.vue'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import { useConsoleStore } from '@/stores/console'
 import type {
-  ConversationSourceApplication,
   ProjectAgentActivityDay,
   ProjectAgentActivityResult,
   ProjectAgentAssignmentRecord,
   ProjectAgentExecutorPolicy,
   ProjectAgentExecutorRef,
-  ProjectAgentLearningEvidence,
   ProjectAgentRecord,
   ProjectAgentRoutingRule,
 } from '@/types'
 
-// What an FLA page shows of one Agent's management (Jevons 11-04: one page per
-// FLA, no 高级管理): 工作经历 takes its activity and work, 设置 the rest. A link
-// that names a task (?task=, ?project=) reveals that task in the work section.
-export type ManageSection = 'work' | 'projects' | 'activity' | 'recruitment' | 'execution' | 'profile'
+// What an FLA page shows of one Agent's management (Jevons 11-04: one flat page,
+// nothing a person cannot read): 工作记录 takes its activity and finished work,
+// 设置 its projects, who runs its work, and a recruitment waiting on the person.
+// A link that names a task (?task=, ?project=) reveals that task, finished or not.
+export type ManageSection = 'work' | 'projects' | 'activity' | 'recruitment' | 'execution'
 
-const props = withDefaults(defineProps<{ spaceId: string; agentId: string; sections?: ManageSection[] }>(), {
-  sections: () => ['activity', 'work', 'projects', 'recruitment', 'execution', 'profile'],
+const props = withDefaults(defineProps<{ spaceId: string; agentId: string; sections?: ManageSection[]; finishedOnly?: boolean }>(), {
+  sections: () => ['activity', 'work', 'projects', 'recruitment', 'execution'],
 })
 const shows = (section: ManageSection) => props.sections.includes(section)
-const emit = defineEmits<{ saved: [record: ProjectAgentRecord] }>()
 
 const store = useConsoleStore()
 const route = useRoute()
@@ -89,8 +85,11 @@ const responsibleProjects = computed(() => {
 })
 const employeeProjects = computed(() => responsibleProjects.value
   .filter((project) => projectById.value.get(project.id)?.profile.lifecycle !== 'archived'))
-const recruitments = computed(() => agent.value?.recruitments ?? [])
-const learning = computed(() => Object.entries(agent.value?.learningEvidence ?? {}))
+// A finished recruitment is Bole's record; here only what waits on the person.
+const recruitments = computed(() => (agent.value?.recruitments ?? []).filter(({ status }) => status === 'awaiting_confirmation'))
+// Open work is on the page already, in the FLA's task sheets.
+const shownTasks = computed(() => (agent.value?.tasks ?? []).filter(task => !props.finishedOnly
+  || !NON_TERMINAL_TASK_STATUSES.has(task.status) || task.taskId === linkedTask.value))
 
 // Each new task link (a new ?task= or ?project= scope) is located once, as
 // soon as its task list is read and its card is on the page. A refresh or a
@@ -147,26 +146,8 @@ function policyAllowList(policy: ProjectAgentExecutorPolicy | null | undefined):
   const ids = policy.mode === 'locked' ? policy.lockedExecutorIds : policy.preferredExecutorIds
   return (ids ?? []).map((executorId) => ({ executorId }) satisfies ProjectAgentExecutorRef)
 }
-function clientNames(person: ProjectAgentRecord) {
-  return unique([
-    ...(person.profile.allowedClients ?? []),
-    ...(person.observedClients ?? []),
-    ...(person.clientEvidence ?? []).map(({ client }) => client),
-  ]) as ConversationSourceApplication[]
-}
-function clientEvidenceFor(person: ProjectAgentRecord, client: ConversationSourceApplication) {
-  return person.clientEvidence?.find((item) => item.client === client)
-}
-function clientUseCount(person: ProjectAgentRecord, client: ConversationSourceApplication) {
-  return clientEvidenceFor(person, client)?.actualUse?.count ?? 0
-}
-function learningIsNeutral(evidence: ProjectAgentLearningEvidence) { return evidence.neutral !== false || evidence.sampleCount <= 0 }
-function learningLabel(evidence: ProjectAgentLearningEvidence) { return learningIsNeutral(evidence) ? t('projectAgents.learning.neutral') : t('projectAgents.learning.recorded') }
-function learningRecent(evidence: ProjectAgentLearningEvidence) { return evidence.recentWeightedSamples ?? t('projectAgents.notReported') }
-
-// Dialogs: edit the Agent, change an assignment, register an executor or rule,
-// and (for employees) choose the projects they manage.
-const dialogOpen = ref(false)
+// Dialogs: change an assignment, register an executor or rule, and (for
+// employees) choose the projects they manage.
 const assignmentDialogOpen = ref(false)
 const assignmentAction = ref<'assign' | 'end' | 'replace'>('assign')
 const assignmentTarget = ref<ProjectAgentAssignmentRecord | null>(null)
@@ -181,11 +162,6 @@ const dialogDefaultProjectId = computed(() => linkedProject.value
   || projects.value[0]?.project_id
   || null)
 
-function recordSaved(record: ProjectAgentRecord) {
-  roster.put(record)
-  emit('saved', record)
-  store.notify(t('projectAgents.saved'))
-}
 function openAssignment(assignment: ProjectAgentAssignmentRecord | null = null, action: 'assign' | 'end' | 'replace' = 'assign') {
   if (action === 'assign' && employeeId.value) { scopeDialogOpen.value = true; return }
   assignmentTarget.value = assignment
@@ -237,12 +213,6 @@ async function cleanup(person: ProjectAgentRecord) {
       </div>
       <p v-else-if="!agent" class="ui-card project-agents-state" role="status">{{ t('agentProfiles.unavailable') }}</p>
       <template v-else>
-        <div v-if="shows('profile')" class="project-agent-detail-actions">
-          <AgentHand :agent-id="agent.agentId" />
-          <Button variant="outline" size="sm" data-detail-refresh :disabled="details.loading.value" @click="details.refresh()">{{ t('projectAgents.detail.refresh') }}</Button>
-          <Button variant="outline" size="sm" data-agent-edit @click="dialogOpen = true">{{ t('projectAgents.edit') }}</Button>
-          <Button v-if="agent.profile.cleanupEligible" variant="outline" size="sm" data-agent-cleanup :disabled="details.loading.value" :loading="details.cleanupBusy.value" :loading-label="t('projectAgents.source.cleanupLoading')" @click="cleanup(agent)">{{ t('projectAgents.source.cleanup') }}</Button>
-        </div>
         <p v-if="details.notice.value" class="project-agent-detail-notice" role="status">{{ details.notice.value }}</p>
 
         <div class="project-agent-detail">
@@ -250,9 +220,9 @@ async function cleanup(person: ProjectAgentRecord) {
             <Card as="section" class="project-agent-card-section" data-detail-section="tasks">
               <ProjectAgentDetailState v-bind="sourceState('tasks')" :label="loadingLabel('tasks')" @retry="details.refresh">
                 <p v-if="details.taskListPartial.value[agent.agentId]" class="project-agent-muted" data-task-partial>{{ t('agentProfiles.partial') }}</p>
-                <div class="project-agent-section-heading"><h2>{{ t('projectAgents.sections.tasks') }}</h2><span>{{ agent.tasks?.length ?? 0 }}</span></div>
-                <div v-if="agent.tasks?.length" class="project-agent-task-list">
-                  <ProjectAgentTaskCard v-for="task in agent.tasks" :key="task.taskId" :task="task" :project-name="projectName(task.personalProjectId)" :agents="agents" :personal-space-id="spaceId" :linked="task.taskId === linkedTask" @changed="details.refresh()" />
+                <div class="project-agent-section-heading"><h2>{{ t('agentProfiles.workRecord') }}</h2><div class="project-agent-section-tools"><span>{{ shownTasks.length }}</span><UiIconButton icon="refresh" size="sm" :label="t('projectAgents.detail.refresh')" data-detail-refresh :disabled="details.loading.value" @click="details.refresh()" /></div></div>
+                <div v-if="shownTasks.length" class="project-agent-task-list">
+                  <ProjectAgentTaskCard v-for="task in shownTasks" :key="task.taskId" :task="task" :project-name="projectName(task.personalProjectId)" :agents="agents" :personal-space-id="spaceId" :linked="task.taskId === linkedTask" @changed="details.refresh()" />
                 </div>
                 <p v-else-if="!details.taskListPartial.value[agent.agentId]" class="project-agent-muted">{{ t('projectAgents.detail.noTasks') }}</p>
               </ProjectAgentDetailState>
@@ -329,7 +299,7 @@ async function cleanup(person: ProjectAgentRecord) {
             </Card>
           </div>
 
-          <div v-if="shows('recruitment')" class="project-agent-panel" data-manage-panel="recruitment">
+          <div v-if="shows('recruitment') && recruitments.length" class="project-agent-panel" data-manage-panel="recruitment">
             <Card as="section" class="project-agent-card-section" data-detail-section="recruitment" aria-labelledby="project-agent-recruitment-heading">
               <ProjectAgentDetailState v-bind="sourceState('recruitments')" :label="loadingLabel('recruitments')" @retry="details.refresh">
                 <div class="project-agent-section-heading"><h2 id="project-agent-recruitment-heading">{{ t('projectAgents.sections.recruitment') }}</h2><span>{{ recruitments.length }}</span></div>
@@ -340,7 +310,6 @@ async function cleanup(person: ProjectAgentRecord) {
                     <small>{{ t('projectAgents.recruitment.testSource') }} · {{ recruitment.testSource || t('projectAgents.notReported') }}</small>
                   </article>
                 </div>
-                <p v-else class="project-agent-muted">{{ t('projectAgents.recruitment.empty') }}</p>
               </ProjectAgentDetailState>
             </Card>
           </div>
@@ -370,22 +339,6 @@ async function cleanup(person: ProjectAgentRecord) {
                   </div>
                 </ProjectAgentDetailState>
               </Card>
-              <Card as="section" class="project-agent-card-section" data-detail-section="clients">
-                <ProjectAgentDetailState v-bind="sourceState('executors')" :label="loadingLabel('executors')" @retry="details.refresh">
-                  <div class="project-agent-section-heading"><h2>{{ t('projectAgents.sections.clients') }}</h2><span>{{ clientNames(agent).length }}</span></div>
-                  <div v-if="clientNames(agent).length" class="project-agent-client-list">
-                    <div v-for="clientName in clientNames(agent)" :key="clientName" class="project-agent-client-row">
-                      <strong>{{ sourceLabel(clientName) }}</strong>
-                      <span>{{ clientEvidenceFor(agent, clientName)?.allowed || coversClient(agent.profile.allowedClients, clientName) ? t('projectAgents.clients.allowed') : t('projectAgents.clients.notAllowed') }}</span>
-                      <span v-if="clientUseCount(agent, clientName)">{{ t('projectAgents.clients.observed', { count: clientUseCount(agent, clientName) }) }}</span>
-                      <span v-else-if="agent.observedClients?.includes(clientName)">{{ t('projectAgents.clients.observedAny') }}</span>
-                      <span v-else>{{ t('projectAgents.clients.unreported') }}</span>
-                      <small>{{ clientEvidenceFor(agent, clientName)?.integrationStatus || t('projectAgents.clients.integrationUnreported') }}</small>
-                    </div>
-                  </div>
-                  <p v-else class="project-agent-muted">{{ t('projectAgents.clients.empty') }}</p>
-                </ProjectAgentDetailState>
-              </Card>
               <Card as="section" class="project-agent-card-section" data-detail-section="routing">
                 <ProjectAgentDetailState v-bind="sourceState('routingRules')" :label="loadingLabel('routingRules')" @retry="details.refresh">
                   <div class="project-agent-section-heading"><h2>{{ t('projectAgents.sections.routing') }}</h2><div class="project-agent-section-tools"><span>{{ agent.routingRules?.length ?? 0 }}</span><Button size="sm" variant="outline" data-rule-add @click="openRuleDialog()">{{ t('projectAgents.routing.addRule') }}</Button></div></div>
@@ -400,48 +353,15 @@ async function cleanup(person: ProjectAgentRecord) {
                   <small class="project-agent-note">{{ t('projectAgents.routing.priorityNote') }}</small>
                 </ProjectAgentDetailState>
               </Card>
-              <Card as="section" class="project-agent-card-section" data-detail-section="learning">
-                <ProjectAgentDetailState v-bind="sourceState('learning')" :label="loadingLabel('learning')" @retry="details.refresh">
-                  <div class="project-agent-section-heading"><h2>{{ t('projectAgents.sections.learning') }}</h2><span>{{ learning.length }}</span></div>
-                  <div v-if="learning.length" class="project-agent-learning-list">
-                    <article v-for="[key, evidence] in learning" :key="key" class="project-agent-learning-card">
-                      <header><strong>{{ key }}</strong><Badge variant="secondary">{{ learningLabel(evidence) }}</Badge></header>
-                      <small v-if="evidence.personalProjectId || evidence.workKind || evidence.executor || evidence.modelStrategy">{{ projectName(evidence.personalProjectId) }} · {{ evidence.workKind || t('projectAgents.notReported') }} · {{ evidence.executor || t('projectAgents.notReported') }} / {{ evidence.modelStrategy ? strategyLabel(evidence.modelStrategy) : t('projectAgents.notReported') }}</small>
-                      <p>{{ t('projectAgents.learning.samples', { count: evidence.sampleCount }) }} · {{ t('projectAgents.learning.recent', { count: learningRecent(evidence) }) }}</p>
-                      <small>{{ evidence.decayBasis || t('projectAgents.learning.decayUnreported') }} · {{ formatDate(evidence.updatedAt) }}</small>
-                      <div v-if="evidence.outcomes" class="project-agent-inline-list"><span v-for="(count, outcome) in evidence.outcomes" :key="outcome" v-show="count !== undefined">{{ outcome }} · {{ count ?? t('projectAgents.notReported') }}</span><span v-if="evidence.score !== null && evidence.score !== undefined">{{ t('projectAgents.learning.score', { score: evidence.score }) }}</span></div>
-                      <ul v-if="evidence.evidence?.length" class="project-agent-evidence-list">
-                        <li v-for="item in evidence.evidence" :key="`${item.evidenceId}:${item.kind}:${item.occurredAt}`"><span>{{ item.kind }} · {{ item.count ?? 0 }} · {{ item.summary || t('projectAgents.notReported') }}</span><Button v-if="item.evidenceId" size="sm" variant="ghost" data-learning-ignore :disabled="Boolean(details.learningBusy.value)" :loading="details.learningBusy.value === item.evidenceId && details.learningBusyAction.value === 'ignore'" :loading-label="t('projectAgents.learning.ignoring')" @click="details.updateLearning(evidence, 'ignore', item.evidenceId)">{{ t('projectAgents.learning.ignore') }}</Button></li>
-                      </ul>
-                      <div v-if="evidence.learningKey" class="project-agent-learning-actions"><Button size="sm" variant="ghost" data-learning-reset :disabled="Boolean(details.learningBusy.value) || !evidence.personalProjectId || !evidence.workKind || !evidence.executor" :loading="details.learningBusy.value === evidence.learningKey && details.learningBusyAction.value === 'reset'" :loading-label="t('projectAgents.learning.resetting')" @click="details.updateLearning(evidence, 'reset')">{{ t('projectAgents.learning.reset') }}</Button></div>
-                    </article>
-                  </div>
-                  <p v-else class="project-agent-muted">{{ t('projectAgents.learning.empty') }}</p>
-                  <small class="project-agent-note">{{ t('projectAgents.learning.note') }}</small>
-                </ProjectAgentDetailState>
-              </Card>
             </div>
           </div>
 
-          <div v-if="shows('profile')" class="project-agent-panel" data-manage-panel="profile">
-            <Card as="section" class="project-agent-card-section" :aria-label="t('projectAgents.profileDetails')">
-              <dl class="project-agent-detail-meta" data-agent-identity>
-                <div><dt>{{ t('projectAgents.fields.assignments') }}</dt><dd>{{ currentAssignmentsFor(agent).length }}</dd></div>
-                <div><dt>{{ t('projectAgents.fields.memoryScope') }}</dt><dd>{{ memoryScopeLabel(agent.memoryScope) }}</dd></div>
-                <div><dt>{{ t('projectAgents.fields.status') }}</dt><dd>{{ t(`projectAgents.status.${agent.profile.status}`) }}</dd></div>
-                <div><dt>{{ t('projectAgents.fields.recruitment') }}</dt><dd>{{ sourceLabel(agent.recruitmentSourceApplication) }}<small v-if="agent.recruitmentReason">{{ agent.recruitmentReason }}</small></dd></div>
-                <div><dt>{{ t('projectAgents.fields.updatedAt') }}</dt><dd>{{ formatDate(agent.updatedAt) }}</dd></div>
-                <div v-if="agent.profile.capabilities.length"><dt>{{ t('agentProfiles.strengths') }}</dt><dd class="agent-inline-skills"><span v-for="capability in agent.profile.capabilities" :key="capability">{{ capability }}</span></dd></div>
-                <div><dt>{{ t('projectAgents.fields.agentType') }}</dt><dd>{{ t(`projectAgents.agentType.${agent.profile.agentType ?? 'durable'}`) }}<small v-if="agent.isTestRole">{{ t('projectAgents.source.testRole') }}<template v-if="agent.profile.testSource"> · {{ agent.profile.testSource }}</template></small></dd></div>
-              </dl>
-            </Card>
-          </div>
+          <Button v-if="shows('execution') && agent.profile.cleanupEligible" variant="outline" size="sm" class="project-agent-cleanup" data-agent-cleanup :disabled="details.loading.value" :loading="details.cleanupBusy.value" :loading-label="t('projectAgents.source.cleanupLoading')" @click="cleanup(agent)">{{ t('projectAgents.source.cleanup') }}</Button>
         </div>
       </template>
     </div>
 
     <template v-if="agent">
-      <ProjectAgentDialog :open="dialogOpen" :agent="agent" :projects="projects" :default-project-id="dialogDefaultProjectId" :personal-space-id="spaceId" @close="dialogOpen = false" @saved="recordSaved" />
       <AgentAssignmentDialog :open="assignmentDialogOpen" :agent="agent" :assignment="assignmentTarget" :action="assignmentAction" :projects="projects" :available-agents="agents" :default-project-id="dialogDefaultProjectId" @close="closeAssignment" @saved="assignmentSaved" @changed="assignmentChanged" />
       <ExecutorRoutingDialog :open="executorDialogOpen" :mode="executorDialogMode" :personal-space-id="spaceId" :executor="editingExecutor" :rule="editingRule" :projects="projects" :available-executors="agent.executorDirectory ?? []" @close="closeExecutorDialog" @saved="executorDialogSaved" />
       <EmployeeScopeDialog v-if="employeeId" :open="scopeDialogOpen" :personal-space-id="spaceId" :projects="projects" :template-id="employeeId" @close="scopeDialogOpen = false" @saved="employeeScopeSaved" />

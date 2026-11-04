@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
+import { useEventListener } from '@vueuse/core'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { boardItemKey, isEmployeeBoardItem } from '@/features/employees/task-board-model'
 import { useJefaBoardLoad } from '@/features/employees/useJefaBoardLoad'
@@ -23,12 +24,17 @@ import JudgmentWorkbench from '@/features/judgment/JudgmentWorkbench.vue'
 import type { JudgmentView } from '@/features/judgment/judgment-types'
 import { useConsoleStore } from '@/stores/console'
 import { t } from '@/i18n'
+import { UiIconButton } from '@/ui'
 import { employeeName, employeeTemplates, employeeCatalogError, employeeCatalogLoading, employeeErrorMessage, refreshEmployeeCatalog, type EmployeeWorkspace } from '@/features/employees/catalog'
 
 // A built-in role's own workbench, the first tab of its FLA page: Jefa's board,
 // Bole's people, Tonborg's judgments, Astro's unclaimed conversations. The page
 // above says who this is, so this holds only the work.
 const props = defineProps<{ templateId: string }>()
+// 全屏: the whole app, closed like a floating layer. Teleport moves the same
+// element, so the board keeps what it read and where it was scrolled.
+const fullscreen = ref(false)
+useEventListener(window, 'keydown', (event: KeyboardEvent) => { if (event.key === 'Escape') fullscreen.value = false })
 const route = useRoute()
 const router = useRouter()
 const store = useConsoleStore()
@@ -365,11 +371,13 @@ async function projectsSaved() {
 </script>
 
 <template>
-  <section ref="pageRoot" class="employee-workbench-view" :class="{ 'fills-height': !isNativeWorkbench || isNativeJudgment, 'is-native': isNativeWorkbench }" :aria-label="template ? employeeName(template) : t('employees.workbench')">
+ <Teleport to="body" :disabled="!fullscreen">
+  <section ref="pageRoot" class="employee-workbench-view" :class="{ 'fills-height': !isNativeWorkbench || isNativeJudgment, 'is-native': isNativeWorkbench, 'is-fullscreen': fullscreen }" :data-workbench-fullscreen="fullscreen || undefined" :aria-label="template ? employeeName(template) : t('employees.workbench')">
    <!-- The board, the iframe and Tonborg's record list fill the tab and scroll inside; other native panels scroll with it. -->
    <div class="employee-workbench-canvas flex w-full flex-col gap-3">
     <header class="employee-workbench-toolbar">
       <div ref="toolbarActions" class="employee-workbench-actions">
+        <UiIconButton v-if="!isJefa" :icon="fullscreen ? 'close' : 'expand'" size="sm" :label="t(fullscreen ? 'employees.fullscreenClose' : 'employees.fullscreen')" data-workbench-expand @click="fullscreen = !fullscreen" />
         <Button v-if="template && !isNativeWorkbench && !isJefa" variant="ghost" class="employee-manage-projects" :disabled="!personalSpaceId" @click="manageProjectsOpen = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
           {{ t('employees.manageProjects') }}
@@ -419,6 +427,7 @@ async function projectsSaved() {
       @retry="loadWorkspace"
     >
       <template v-if="isJefa" #actions>
+        <UiIconButton :icon="fullscreen ? 'close' : 'expand'" size="sm" :label="t(fullscreen ? 'employees.fullscreenClose' : 'employees.fullscreen')" data-workbench-expand @click="fullscreen = !fullscreen" />
         <Button variant="ghost" size="icon" class="employee-share-button" :aria-label="t('employees.share.title')" :title="t('employees.share.title')" @click="shareOpen = true">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7m0-7-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M7 16v-3m4 3v-1"/></svg>
         </Button>
@@ -433,6 +442,7 @@ async function projectsSaved() {
     <iframe v-else-if="workspace" :key="workspace.workbenchUrl" :src="workspace.workbenchUrl" :title="`${workspace.name} · ${workspace.project.name}`" class="employee-workbench-frame" />
    </div>
   </section>
+ </Teleport>
 </template>
 
 <style scoped>
@@ -442,6 +452,12 @@ async function projectsSaved() {
    Below them the tab itself scrolls, so a short window still shows the board. */
 .employee-workbench-canvas { flex: 1 0 auto; }
 .fills-height .employee-workbench-canvas { flex: 1 1 0; min-height: 0; }
+/* Over the whole app, below the window's own controls; the board keeps its controls. */
+.employee-workbench-view.is-fullscreen {
+  position: fixed; inset: 0; z-index: var(--z-dialog); overflow: auto; padding: calc(16px + var(--desktop-caption-top, 0px)) var(--page-inline, 24px) 16px;
+  border: 0; border-radius: 0; background: var(--color-bg); box-shadow: none;
+}
+.is-fullscreen.is-native .employee-workbench-toolbar { top: calc(10px + var(--desktop-caption-top, 0px)); right: var(--page-inline, 24px); }
 .employee-workbench-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; }
 .employee-workbench-toolbar:has(.employee-workbench-actions:empty) { display: none; }
 /* A native panel's actions sit in the corner of the card, on the row of its own

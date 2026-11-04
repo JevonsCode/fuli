@@ -26,10 +26,10 @@ describe('readAgentWorkSurfaces', () => {
     expect(getJson).not.toHaveBeenCalled()
   })
 
-  it('gives any other Agent no workbench, whatever its tasks, and its workflow tab when it has open ones', async () => {
+  it('gives any other Agent no workbench, whatever its tasks, and its workflows on its page when it has open ones', async () => {
     serve([workflow('proposed')])
     const surfaces = await readAgentWorkSurfaces('space-a', agent('agent-a'))
-    expect(surfaces).toEqual({ workbench: null, workflow: { path: '/agents/space-a/agent-a', query: { tab: 'workflows' } } })
+    expect(surfaces).toEqual({ workbench: null, workflow: { path: '/agents/space-a/agent-a', hash: '#agent-workflows-heading' } })
   })
 
   it('offers nothing for an Agent with only a retired workflow', async () => {

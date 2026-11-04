@@ -12,8 +12,8 @@ import { ASSISTANT_AGENT_ID } from '../graphiti/assistant-identity.js';
 const globalOnly = manifest => employeeAgentId(manifest.id) === ASSISTANT_AGENT_ID;
 
 // Jefa's board opens with one read per project, and each asked the Provider for
-// every Agent and project: that, not the board, was the wait. Read-only calls in
-// a burst share one answer; anything that can write always reads fresh.
+// every Agent and project: that, not the board, was the wait. The console's
+// read-only calls in a burst share one answer; everything else reads fresh.
 const BURST_READ_MS = 2000;
 
 function sharedInBurst(read, now = Date.now) {

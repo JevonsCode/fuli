@@ -17,6 +17,7 @@ let originalPlatform = "";
 const platform = ref(""),
   expectations = ref("");
 const character = ref({ judgment: "", taste: "", personality: "" });
+const responsibility = ref("");
 const locked = computed(
   () => props.agent.profile.executorPolicy?.mode === "locked",
 );
@@ -64,6 +65,7 @@ watch(
   async () => {
     const agent = props.agent;
     const current = ++generation;
+    responsibility.value = agent.profile.responsibility ?? "";
     expectations.value = agent.profile.expectations ?? "";
     character.value = {
       judgment: "",
@@ -111,6 +113,7 @@ async function save() {
       agentId: agent.agentId,
       profile: {
         ...agent.profile,
+        responsibility: responsibility.value.trim() || agent.profile.responsibility,
         character: { ...character.value },
         expectations: expectations.value,
         executorPolicy:
@@ -166,6 +169,10 @@ async function save() {
         t(locked ? "agentProfiles.locked" : "agentProfiles.platformHint")
       }}</small>
     </div>
+    <label
+      >{{ t("agentProfiles.responsibility")
+      }}<textarea v-model="responsibility" rows="2" maxlength="4096" :disabled="saving" data-agent-responsibility />
+    </label>
     <label
       >{{ t("agentProfiles.expectations")
       }}<textarea
