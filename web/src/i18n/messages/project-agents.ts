@@ -198,14 +198,14 @@ export const projectAgentMessages = {
     recruitmentPosition: { durable: '长期岗位', temporary: '临时岗位' },
     memoryScopes: { reviewed_agent: '经审阅的 Agent 记忆', task_only: '仅限任务' },
     sections: {
-      assignments: '项目分配与历史',
-      strategy: '模型策略与执行器',
+      assignments: '负责的项目',
+      strategy: '谁来执行',
       tasks: '任务与协作',
       activity: '贡献活动',
       clients: '客户端',
-      routing: '路由规则',
+      routing: '分配规则',
       learning: '候选学习依据',
-      recruitment: '招聘事件',
+      recruitment: '待确认招聘',
     },
     detail: {
       noRun: '无运行记录',

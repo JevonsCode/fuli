@@ -248,7 +248,7 @@ async function save() {
             <textarea v-model="source.summary" maxlength="4096" rows="2" />
           </label>
           <OptionSelect v-model="source.sensitivity" field :label="t('projects.profileDialog.sensitivity')" :options="sensitivityOptions" />
-          <Button class="project-source-remove" variant="destructive" @click="removeSource(index)">{{ t('common.actions.remove') }}</Button>
+          <Button class="project-source-remove" variant="ghost" size="sm" data-source-remove @click="removeSource(index)">{{ t('projects.profileDialog.removeSource') }}</Button>
         </article>
       </div>
       <p v-else class="ui-meta">{{ t('projects.profileDialog.noSources') }}</p>
@@ -273,9 +273,11 @@ async function save() {
 .project-source-list { display: grid; gap: 10px; }
 .project-source-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 10px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
 .project-source-wide-field { grid-column: 1 / span 2; }
-.project-source-remove { justify-self: end; }
+/* In the row's empty corner, saying what goes: the whole material, not a field. */
+.project-source-remove { grid-column: 3; grid-row: 1; align-self: start; justify-self: end; color: var(--color-danger); }
 @media (max-width: 640px) {
   .project-profile-fields, .project-source-row { grid-template-columns: 1fr; }
   .project-source-wide-field { grid-column: auto; }
+  .project-source-remove { grid-column: auto; grid-row: auto; }
 }
 </style>

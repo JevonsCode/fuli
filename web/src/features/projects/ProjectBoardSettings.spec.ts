@@ -1,5 +1,5 @@
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi, onTestFinished } from 'vitest'
 
 const getJson = vi.hoisted(() => vi.fn())
 const postJson = vi.hoisted(() => vi.fn())
@@ -76,7 +76,15 @@ describe('project board settings', () => {
     expect(wrapper.text()).toContain('项目看板已保存。')
   })
 
+  // Jevons 11-04: Jefa runs one kind of board, so there is nothing to choose.
+  it('asks for a board type only when the project has its own manager', async () => {
+    const jefa = await setup()
+    expect(jefa.findComponent(RadioGroup).exists()).toBe(false)
+  })
+
   it('checks an external link before saving it', async () => {
+    Object.assign(untouched, { managerAgentId: 'synthetic-manager' })
+    onTestFinished(() => { Object.assign(untouched, { managerAgentId: null }) })
     const wrapper = await setup()
     wrapper.getComponent(RadioGroup).vm.$emit('update:modelValue', 'external')
     await flushPromises()

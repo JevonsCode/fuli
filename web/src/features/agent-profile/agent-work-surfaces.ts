@@ -12,11 +12,11 @@ export interface AgentWorkSurfaces {
 
 /**
  * A built-in role's workbench is the first tab of its page; no other FLA has
- * one (Jevons 11-04: the board is Jefa's own). Any FLA's workflows are a tab.
+ * one (Jevons 11-04: the board is Jefa's own). Any FLA's workflows are on its page.
  */
 export async function readAgentWorkSurfaces(spaceId: string, agent: ProjectAgentRecord): Promise<AgentWorkSurfaces> {
   const profile = agentProfilePath(spaceId, agent.agentId)
   if (employeeTemplateIdForAgent(agent)) return { workbench: { path: profile, query: { tab: 'workbench' } }, workflow: null }
   const workflows = openWorkflows(await readAgentWorkflows(spaceId, agent.agentId))
-  return { workbench: null, workflow: workflows.length ? { path: profile, query: { tab: 'workflows' } } : null }
+  return { workbench: null, workflow: workflows.length ? { path: profile, hash: '#agent-workflows-heading' } : null }
 }

@@ -126,6 +126,7 @@ export const projectMessages = {
       },
     },
     profileDialog: {
+      removeSource: '移除这条资料',
       materialTypes: {
         ProjectPurpose: '项目目标',
         ProjectScope: '项目范围',
@@ -422,6 +423,7 @@ export const projectMessages = {
       },
     },
     profileDialog: {
+      removeSource: 'Remove this material',
       materialTypes: {
         ProjectPurpose: 'Project purpose',
         ProjectScope: 'Project scope',

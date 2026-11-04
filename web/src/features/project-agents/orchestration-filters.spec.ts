@@ -49,11 +49,11 @@ describe('编排 collection order and labels', () => {
   })
 })
 
-// A link to the former 编排 page keeps working: its work is 工作经历, the rest 设置.
+// A link to the former 编排 page keeps working: its work is the work record, the rest 设置.
 describe('formerManagementQuery', () => {
-  it('opens 工作经历 for the work and activity tabs, keeping the task', () => {
-    expect(formerManagementQuery({ task: 't-1' })).toEqual({ task: 't-1', tab: 'history' })
-    expect(formerManagementQuery({ tab: 'activity' })).toEqual({ tab: 'history' })
+  it('opens the work record for the work and activity tabs, keeping the task', () => {
+    expect(formerManagementQuery({ task: 't-1' })).toEqual({ task: 't-1', tab: 'overview' })
+    expect(formerManagementQuery({ tab: 'activity' })).toEqual({ tab: 'overview' })
   })
   it('opens 设置 for the rest', () => {
     expect(formerManagementQuery({ tab: 'execution' })).toEqual({ tab: 'settings' })
