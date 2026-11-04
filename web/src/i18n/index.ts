@@ -31,6 +31,7 @@ import { teamWorkMessages } from './messages/team-work'
 import { flaPageMessages } from './messages/fla-page'
 import { agentWorkbenchMessages } from './messages/agent-workbench'
 import { dataFormatMessages } from './messages/data-format'
+import { debugTurnsMessages } from './messages/debug-turns'
 import { modelSettingsMessages } from './messages/model-settings'
 import { glossaryMessages } from './messages/glossary'
 import { roundtableMessages } from './messages/roundtable'
@@ -114,6 +115,7 @@ export const messages = {
     flaPage: flaPageMessages['zh-CN'],
     agentWorkbench: agentWorkbenchMessages['zh-CN'],
     dataFormat: dataFormatMessages['zh-CN'],
+    debugTurns: debugTurnsMessages['zh-CN'],
     modelSettings: modelSettingsMessages['zh-CN'],
     glossary: glossaryMessages['zh-CN'],
     roundtable: roundtableMessages['zh-CN'],
@@ -168,6 +170,7 @@ export const messages = {
     flaPage: flaPageMessages['en-US'],
     agentWorkbench: agentWorkbenchMessages['en-US'],
     dataFormat: dataFormatMessages['en-US'],
+    debugTurns: debugTurnsMessages['en-US'],
     modelSettings: modelSettingsMessages['en-US'],
     glossary: glossaryMessages['en-US'],
     roundtable: roundtableMessages['en-US'],

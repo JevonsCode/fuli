@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch, watchEffect } from 'vue'
 import { MotionConfig } from 'motion-v'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import GrowingBackdrop from '@/components/GrowingBackdrop.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
@@ -19,6 +19,7 @@ import { useRoundtableLive } from '@/features/roundtables/roundtable-live'
 import { t } from '@/i18n'
 import { fuliWordmarkUrl } from '@/lib/brand'
 import { vWindowDrag } from '@/lib/desktop-client'
+import { useHold } from '@/lib/use-hold'
 import { SPRING, motionConfigReduced } from '@/lib/motion'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { useConsoleStore } from '@/stores/console'
@@ -47,6 +48,9 @@ const destination = computed(() => activeDestination(destinations.value, route.p
 const section = computed(() => activeSection(destination.value, route.path))
 const dockDestinations = computed(() => destinations.value.filter(item => item.placement === 'dock'))
 const settingsActive = computed(() => destination.value?.key === 'settings')
+// Holding the settings button opens the #debug records (Jevons 11-04): nothing in Settings names them.
+const router = useRouter()
+const settingsHold = useHold(() => { void router.push('/debug') })
 // The dock stays open on the workbench and folds to the current destination
 // elsewhere. A page outside the dock (settings) has nothing to fold to, so the
 // dock stays open there instead of shrinking to an empty capsule.
@@ -158,7 +162,8 @@ watchEffect(() => {
             :data-attention="attention.total ? 'full' : 'empty'" data-shell-inbox data-term="section.askedYou">
             <UiIcon :name="attention.total ? 'trayFull' : 'tray'" :size="18" />
           </RouterLink>
-          <RouterLink to="/settings" class="app-round" :class="{ 'is-active': settingsActive }" :aria-current="settingsActive ? 'page' : undefined"
+          <RouterLink to="/settings" class="app-round" :class="{ 'is-active': settingsActive, 'is-shaking': settingsHold.shaking.value }" :aria-current="settingsActive ? 'page' : undefined"
+            draggable="false" v-bind="settingsHold.handlers"
             :aria-label="t('shell.destinations.settings')" :title="t('shell.destinations.settings')" data-destination="settings" data-term="destination.settings">
             <UiIcon name="settings" :size="18" />
           </RouterLink>
@@ -248,6 +253,8 @@ watchEffect(() => {
 .app-round.is-active { color: var(--color-on-accent); background: var(--color-accent); }
 /* A full tray reads in ink; its papers drop in when it fills (reduced motion zeroes this in primitives.css). */
 .app-round.is-full { color: var(--color-ink); }
+.app-round.is-shaking { animation: app-round-shake 120ms linear infinite; }
+@keyframes app-round-shake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-7deg); } 75% { transform: rotate(7deg); } }
 .app-round :deep(.tray-papers) { transform-box: fill-box; animation: tray-papers-in var(--motion-enter); }
 @keyframes tray-papers-in { from { opacity: 0; transform: translateY(-5px); } }
 /* A long record name takes at most two lines. */
@@ -265,6 +272,7 @@ watchEffect(() => {
   /* Brand, title and actions share the first row; the section tabs take their own. */
   .app-topbar-inner > .section-tabs { order: 3; flex-basis: 100%; }
 }
-@media (prefers-reduced-motion: reduce) { .app-round { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .app-round { transition: none; } .app-round.is-shaking { animation: none; } }
+:root[data-motion="reduced"] .app-round.is-shaking { animation: none; }
 :root[data-motion="reduced"] .app-round { transition: none; }
 </style>
