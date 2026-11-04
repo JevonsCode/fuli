@@ -30,7 +30,7 @@ const KEPT = Object.freeze({
   executionRequired: true, agentId: true, workKind: true, taskRevision: true, artifactRevision: true,
   evaluationId: true, requestFingerprint: true, evidenceFingerprint: true, policy: true, policyVersion: true,
   memoryRevision: true, client: true, model: true, sessionId: true, judgedBy: true, modelReceipt: true,
-  error: true, guidance: true, workPackage: true, hard_deleted: true,
+  error: true, failure: ['stage', 'category', 'status', 'retryable', 'recovery'], guidance: true, workPackage: true, hard_deleted: true,
   // State and counts; the preference keys stay out.
   preferenceDelivery: ['version', 'status', 'reason', 'scope', 'selected', 'truncated'],
   verification: ['attempt_id', 'artifact_revision', 'outcome', 'verifier_id', 'run_id'],

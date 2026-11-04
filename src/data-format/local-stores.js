@@ -51,6 +51,7 @@ import { ENTRY_PROMPT_FORMAT } from '../agent-delegation/entry-prompts.js';
 import { PERSON_PROFILE_FORMAT } from '../person-profile/port.js';
 import { AGENT_DELEGATION_FORMAT } from '../agent-delegation/operation-log.js';
 import { AGENT_DELEGATION_POLICY_FORMAT } from '../agent-delegation/policy-store.js';
+import { DEBUG_TURN_FORMAT, DEBUG_TURN_PENDING_FORMAT } from '../debug-turns/store.js';
 
 // Every FULI store kept in one data directory, by the path its owner opens
 // (rec#17 D-09). Labels are relative to the data directory, so a report names
@@ -139,7 +140,11 @@ const jsonDirectories = () => [
   // Which client each session ran in, as the session launcher classified it (rec#11 D-79).
   ['session-clients', SESSION_CLIENT_FORMAT],
   // The prompt of the session's current hook-entered task, until its checkpoint (rec#80 relay check).
-  ['entry-prompts', ENTRY_PROMPT_FORMAT]
+  ['entry-prompts', ENTRY_PROMPT_FORMAT],
+  // The #debug turn records the person reads in Settings › 系统, newest 20 within 50 MB; local only.
+  ['debug-turns', DEBUG_TURN_FORMAT],
+  // The turn a #debug prompt began, until its Stop records it.
+  ['debug-turns/pending', DEBUG_TURN_PENDING_FORMAT]
 ];
 // The worst state of a directory's records names the directory's state.
 const STATE_ORDER = ['unavailable', 'newer_format', 'half_applied', 'pending_confirmation', 'unsupported',

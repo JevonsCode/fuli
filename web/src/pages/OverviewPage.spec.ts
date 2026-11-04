@@ -129,6 +129,8 @@ describe('OverviewPage', () => {
     await wrapper.get('[data-workbench-pick]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-workbench-stage]').text()).toContain('任务 second')
+    // The stage marks the landing (Jevons 11-04: the row only vanishing read as a bug).
+    expect(wrapper.get('[data-workbench-stage]').classes()).toContain('is-arriving')
     expect(wrapper.get('[data-workbench-running]').text()).not.toContain('任务 second')
     expect(wrapper.get('[data-workbench-pick]').text()).toContain('任务 first')
     wrapper.unmount()
@@ -263,7 +265,9 @@ describe('OverviewPage', () => {
     ] } })
     expect(wrapper.text()).toContain('Actual objective')
     expect(wrapper.text()).toContain('未提供任务标题')
-    expect(wrapper.text()).toContain('负责人未提供')
+    expect(wrapper.text()).toContain('还没有负责人')
+    // Nobody leads it: a quiet sign in the face, not an empty circle.
+    expect(wrapper.find('[data-unassigned]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('raw-id')
     expect(wrapper.text()).not.toContain('raw-uuid')
     wrapper.unmount()

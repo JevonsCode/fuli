@@ -218,6 +218,24 @@ export const router = createRouter({
       },
     },
     {
+      path: '/debug',
+      name: 'debug-turns',
+      component: () => import('@/pages/DebugTurnsPage.vue'),
+      meta: {
+        title: 'debugTurns.title',
+        detail: true,
+      },
+    },
+    {
+      path: '/debug/:id',
+      name: 'debug-turn',
+      component: () => import('@/pages/DebugTurnPage.vue'),
+      meta: {
+        title: 'debugTurns.title',
+        detail: true,
+      },
+    },
+    {
       // An Agent's link to confirm a capture change it asked for (rec#5 C4-2, rec#11 D-16).
       path: '/capture-change/:previewId',
       name: 'capture-change',
