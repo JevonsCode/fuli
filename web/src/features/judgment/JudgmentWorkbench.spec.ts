@@ -226,7 +226,7 @@ describe('JudgmentWorkbench', () => {
     expect(wrapper.text()).not.toContain('判断工作台')
     expect(wrapper.find('[data-action="review"]').exists()).toBe(false)
     const review = target.querySelector<HTMLButtonElement>('[data-action="review"]')!
-    expect(review.textContent).toContain('运行一次判断')
+    expect(review.textContent).toContain('判断待处理事项')
     review.click()
     await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/judgment/review', expect.objectContaining({ personalSpaceId: 'space-a' }), expect.objectContaining({ schema: expect.anything() }))
@@ -234,7 +234,7 @@ describe('JudgmentWorkbench', () => {
     target.remove()
   })
 
-  it('offers 运行一次判断 as the one primary action of an empty workbench', async () => {
+  it('offers 判断待处理事项 as the one primary action of an empty workbench', async () => {
     getJson.mockReset().mockResolvedValue({ records: [] })
     const pending = deferred<{ records: unknown[]; remaining: number }>()
     postJson.mockReset().mockReturnValueOnce(pending.promise)

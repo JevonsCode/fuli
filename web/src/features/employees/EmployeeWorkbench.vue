@@ -443,16 +443,17 @@ async function projectsSaved() {
    Below them the tab itself scrolls, so a short window still shows the board. */
 .employee-workbench-canvas { flex: 1 0 auto; }
 .fills-height .employee-workbench-canvas { flex: 1 1 0; min-height: 0; }
+/* The board has a least height of its own, so its card grows to hold it and the tab scrolls. */
+.fills-height:has(.employee-all-projects) .employee-workbench-canvas { flex: 1 0 auto; }
 /* Over the whole app, below the window's own controls; the board keeps its controls. */
 .employee-workbench-view.is-fullscreen {
-  position: fixed; inset: 0; z-index: var(--z-dialog); overflow: auto; padding: calc(16px + var(--desktop-caption-top, 0px)) var(--page-inline, 24px) 16px;
+  position: fixed; inset: 0; z-index: var(--z-dialog); overflow: auto; padding: calc(16px + var(--desktop-caption-clear, 0px)) var(--page-inline, 24px) 16px;
   border: 0; border-radius: 0; background: var(--color-bg); box-shadow: none;
 }
-.is-fullscreen.is-native .employee-workbench-toolbar { top: calc(10px + var(--desktop-caption-top, 0px)); right: var(--page-inline, 24px); }
 .employee-workbench-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; }
 .employee-workbench-toolbar:has(.employee-workbench-actions:empty) { display: none; }
-/* A native panel's actions sit in the corner of the card, on the row of its own tabs. */
-.is-native .employee-workbench-toolbar { position: absolute; top: 10px; right: 14px; z-index: 1; }
+/* A native panel's actions keep a row of their own: floated over the panel they covered its rows. */
+.is-native .employee-workbench-toolbar { margin-bottom: 8px; }
 .employee-workbench-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .employee-workbench-view :deep(.employee-all-projects) { flex: 1 0 460px; padding: 0; background: transparent; }
 .employee-workbench-frame { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }

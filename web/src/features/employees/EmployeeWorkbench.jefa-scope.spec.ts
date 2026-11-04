@@ -44,7 +44,7 @@ describe('Jefa reads only the selected projects', () => {
     return calls
   }
   const boardReads = () => postJson.mock.calls.filter(([, body]) => body.tool === 'read_board').map(([, body]) => body.personalProjectId as string)
-  const status = (wrapper: Wrapper) => wrapper.get('.jefa-read-status').text()
+  const status = (wrapper: Wrapper) => wrapper.get('.jefa-read-chip, .jefa-read-status').text()
   const board = (wrapper: Wrapper) => wrapper.getComponent(EmployeeTaskBoard)
   async function selectProjects(wrapper: Wrapper, projectIds: string[]) {
     board(wrapper).vm.$emit('update:visible-project-ids', projectIds)
@@ -63,7 +63,7 @@ describe('Jefa reads only the selected projects', () => {
     expect(boardReads()).toEqual(selected)
     expect(wrapper.get('.employee-all-projects-filter').text()).toContain(`已选 3 / 共 ${CATALOG_SIZE} 个项目`)
     for (const id of selected) expect(wrapper.text()).toContain(`任务 ${id}`)
-    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+    expect(wrapper.find('.jefa-read-chip, .jefa-read-status').exists()).toBe(false)
   })
 
   it('reads a deep link with several projects four at a time, counting only that scope', async () => {
@@ -102,7 +102,7 @@ describe('Jefa reads only the selected projects', () => {
     const wrapper = await setup('/employees/jefa')
     expect(boardReads()).toEqual([])
     expect(wrapper.find('.growth-loading').exists()).toBe(false)
-    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+    expect(wrapper.find('.jefa-read-chip, .jefa-read-status').exists()).toBe(false)
     expect(wrapper.get('.employee-all-projects-filter').text()).toContain(`已选 0 / 共 ${CATALOG_SIZE} 个项目`)
     expect(wrapper.text()).toContain('没有显示任何项目')
     expect(wrapper.vm.$route.query.empty).toBe('1')
@@ -201,7 +201,7 @@ describe('Jefa reads only the selected projects', () => {
     await selectProjects(wrapper, [working])
     expect(boardReads()).toEqual([broken, working])
     expect(wrapper.text()).toContain(`任务 ${working}`)
-    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+    expect(wrapper.find('.jefa-read-chip, .jefa-read-status').exists()).toBe(false)
   })
 
   it('keeps a saved empty selection and its filter on screen while the catalog re-reads and after it fails', async () => {
@@ -333,7 +333,7 @@ describe('Jefa reads only the selected projects', () => {
     const wrapper = await setup(`/employees/jefa?item=space-a%2F${linked}%253At1`)
     expect(boardReads()).toEqual([selected, linked])
     // Waiting for the linked board shows nothing in the selection's status and keeps the board editable.
-    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+    expect(wrapper.find('.jefa-read-chip, .jefa-read-status').exists()).toBe(false)
     expect(board(wrapper).props('canMoveTasks')).toBe(true)
     expect(dialog(wrapper).props('canWrite')).toBe(false)
     holdLinked(boardOf(linked)); await flushPromises()
@@ -342,7 +342,7 @@ describe('Jefa reads only the selected projects', () => {
     linkedBoard = () => Promise.reject(new ApiError('unavailable', 503))
     await refresh(wrapper)
     expect(boardReads()).toEqual([selected, linked, selected, linked])
-    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+    expect(wrapper.find('.jefa-read-chip, .jefa-read-status').exists()).toBe(false)
     expect(board(wrapper).props('readOnly')).toBe(false)
     expect(dialog(wrapper).props('open')).toBe(true)
     expect(dialog(wrapper).props('canWrite')).toBe(false)
@@ -358,7 +358,7 @@ describe('Jefa reads only the selected projects', () => {
     expect(wrapper.text()).toContain(`任务 ${ok}`)
     await selectProjects(wrapper, [ok, other])
     expect(boardReads()).toEqual([ok, failing, other])
-    expect(wrapper.find('.jefa-read-status').exists()).toBe(false)
+    expect(wrapper.find('.jefa-read-chip, .jefa-read-status').exists()).toBe(false)
     expect(board(wrapper).props('incomplete')).toBe(false)
   })
 

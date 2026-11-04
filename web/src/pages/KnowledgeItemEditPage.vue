@@ -174,7 +174,7 @@ watch([spaceId, kind, itemId], () => {
 <template>
   <section class="view">
   <div ref="root" class="flex w-full flex-col gap-4" data-knowledge-item-edit>
-    <Breadcrumb :parent="{ label: t('knowledgeQuickEdit.back'), to: '/organize', from: /^\/(organize|knowledge|preferences)/ }" />
+    <Breadcrumb :parent="{ label: t('knowledgeQuickEdit.back'), to: '/organize', from: /^\/(organize|knowledge|preferences)/ }" :current="item?.title" />
     <GrowthLoading v-if="showLoading" :label="t('knowledgeQuickEdit.loading')" />
     <section v-else-if="sourceDeletion" class="grid gap-3" data-source-deleted-page>
       <KnowledgeHardDeletedNotice :state="sourceDeletion.state" :space-id="spaceId" :item-kind="sourceDeletion.target.item_kind" :item-id="sourceDeletion.target.item_id"

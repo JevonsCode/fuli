@@ -5,12 +5,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import AgentAvatarPicker from "@/features/agent-profile/AgentAvatarPicker.vue";
 import AgentNameEditor from "@/features/agent-profile/AgentNameEditor.vue";
 import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-color";
+import { headerFolds } from "@/features/agent-profile/header-fold";
 import { computed, defineAsyncComponent, defineComponent, h, onMounted, ref, watch, type Component } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { getJson } from "@/api/client";
 import { useConsoleStore } from "@/stores/console";
 import { t } from "@/i18n";
 import Breadcrumb from "@/components/Breadcrumb.vue";
+import PageOutline from "@/components/PageOutline.vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import UiDisclosure from "@/components/UiDisclosure.vue";
 import AgentProfileSettings from "@/features/agent-profile/AgentProfileSettings.vue";
@@ -122,8 +124,15 @@ const settingsOpen = computed(() => activeTab.value === "settings");
 function toggleSettings() { activeTab.value = settingsOpen.value ? defaultTab.value : "settings"; }
 // Scrolling the work down folds the header to one row; back at the top it opens.
 const compactHeader = ref(false);
+const headerSide = ref<HTMLElement>();
+const workColumn = ref<HTMLElement>();
 function onWorkScroll(event: Event) {
-  compactHeader.value = (event.target as HTMLElement).scrollTop > (compactHeader.value ? 4 : 32);
+  const work = event.target as HTMLElement;
+  compactHeader.value = headerFolds(compactHeader.value, {
+    scrollTop: work.scrollTop,
+    room: work.scrollHeight - work.clientHeight,
+    headerHeight: headerSide.value?.offsetHeight ?? 0,
+  });
 }
 watch(activeTab, () => { compactHeader.value = false; });
 // The shell's one H1 is this Agent's real name; the route title is only the
@@ -307,7 +316,7 @@ onMounted(() => {
     :aria-label="agent ? agentDisplayName(agent) : t('agentProfiles.profile')"
   >
     <div class="@container grid w-full gap-4">
-      <Breadcrumb :parent="parentCrumb" />
+      <Breadcrumb :parent="parentCrumb" :current="agent ? agentDisplayName(agent) : undefined" />
 
       <GrowthLoading
         v-if="(loading || store.runtimeStatus === 'loading') && !agent"
@@ -328,7 +337,7 @@ onMounted(() => {
       </p>
       <div v-else class="agent-profile-layout">
         <!-- Who this FLA is, in one row across the page; its work scrolls below. -->
-        <div class="agent-profile-side" :class="{ 'is-compact': compactHeader }">
+        <div ref="headerSide" class="agent-profile-side" :class="{ 'is-compact': compactHeader }">
           <!-- The header carries the page's H1: the name, renamed where it stands,
                beside the portrait the person can change. -->
           <Card as="header" class="agent-resume-header">
@@ -339,6 +348,8 @@ onMounted(() => {
               <div class="agent-resume-title">
                 <AgentNameEditor :agent="agent" @saved="saved" />
                 <AgentHeaderTags :agent="agent" :occupation-keys="occupationKeys" />
+                <!-- Folded, the description moves up beside the tags; it is read once, from the line below. -->
+                <p class="agent-resume-inline-summary" aria-hidden="true" :title="agentResponsibility(agent)" data-profile-inline-summary>{{ agentResponsibility(agent) }}</p>
               </div>
               <div class="agent-resume-more">
                 <div>
@@ -362,7 +373,8 @@ onMounted(() => {
 
           <AgentRenameHint :agent="agent" @saved="saved" />
         </div>
-        <div class="agent-profile-main" @scroll.passive="onWorkScroll">
+        <div ref="workColumn" class="agent-profile-main" @scroll.passive="onWorkScroll">
+          <PageOutline :content="workColumn" />
 
           <GrowthLoading
             v-if="loading || store.runtimeStatus === 'loading'"

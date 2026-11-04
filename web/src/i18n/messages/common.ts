@@ -5,6 +5,7 @@ export const commonMessages = {
     me: { name: '我', link: '我的主页' },
     back: '返回',
     breadcrumb: '页面位置',
+    outline: '本页目录',
     language: {
       label: '界面语言',
       chinese: '中文',
@@ -23,6 +24,7 @@ export const commonMessages = {
     errors: {
       loadFailed: '读取失败，请重试。',
       knowledgeRecoveryPending: '正在等待图谱确认删除记录，这部分内容暂时读不到。FULI 正在自动重新核对，请稍后再试。',
+      dataFormatPending: '有一步数据升级等你确认，确认后这里就恢复。去「设置 → 数据格式」确认。',
       serviceUnavailable: '服务暂时无法响应，请稍后重试。({status})',
       pageNotFound: '找不到这个页面',
       pageNotFoundCopy: '链接可能已失效。',
@@ -56,6 +58,7 @@ export const commonMessages = {
     me: { name: 'Me', link: 'My home' },
     back: 'Back',
     breadcrumb: 'Breadcrumb',
+    outline: 'On this page',
     language: {
       label: 'Interface language',
       chinese: '中文',
@@ -74,6 +77,7 @@ export const commonMessages = {
     errors: {
       knowledgeRecoveryPending: 'Waiting for the graph to confirm deletion records; this content cannot be read yet. FULI is checking again by itself; try again in a moment.',
       loadFailed: 'Could not load. Please retry.',
+      dataFormatPending: 'A data upgrade is waiting for you. Confirm it in Settings → Data format and this comes back.',
       serviceUnavailable: 'The service is temporarily unavailable. Try again shortly. ({status})',
       pageNotFound: 'Page not found',
       pageNotFoundCopy: 'This link may be outdated.',

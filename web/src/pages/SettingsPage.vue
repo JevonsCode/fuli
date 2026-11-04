@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
+import PageOutline from '@/components/PageOutline.vue'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -91,6 +92,7 @@ watch(activeTab, tab => {
 const loadingResources = ref(false)
 const loadError = ref('')
 const searchRoot = ref<HTMLElement | null>(null)
+const settingsRoot = ref<HTMLElement | null>(null)
 // A link from an Agent (?setting=ports) opens the page already filtered to that setting.
 const searchQuery = ref(settingSearchTerm(new URLSearchParams(window.location.search).get('setting'), t))
 const searchMatches = ref(0)
@@ -386,7 +388,8 @@ function checkFields(): ValidatedField[] {
 </script>
 
 <template>
-  <section class="view settings-view" :aria-label="t('settings.aria')">
+  <section ref="settingsRoot" class="view settings-view" :aria-label="t('settings.aria')">
+    <PageOutline :content="settingsRoot" />
     <div ref="searchRoot" class="settings-content grid w-full gap-4">
       <GrowthLoading v-if="loading && !form" :label="t('settings.loading')" />
       <Tabs v-if="form" v-model="activeTab" :unmount-on-hide="false" class="settings-tabs gap-4" :data-searching="searching || undefined">

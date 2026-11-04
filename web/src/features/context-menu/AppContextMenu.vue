@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { t } from '@/i18n'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -27,6 +27,7 @@ import { replaceFieldRange, selectAllInField } from './field-edit'
 type MenuAction = 'cut' | 'copy' | 'paste' | 'selectAll' | 'open' | 'copyLink'
 
 const router = useRouter()
+const route = useRoute()
 const store = useConsoleStore()
 const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
 const work = useAgentWorkSurfaces(spaceId)
@@ -65,6 +66,9 @@ function onPortraitClick(event: MouseEvent) {
 const open = ref(false)
 const point = ref({ x: 0, y: 0 })
 const target = ref<ContextTarget | null>(null)
+// A modal <dialog> sits in the top layer above everything else in the page, so
+// a menu opened from inside one renders inside it.
+const portalTo = ref<HTMLElement>()
 let returnFocus: HTMLElement | null = null
 let dismissedOutside = false
 
@@ -96,7 +100,9 @@ function menuPoint(event: MouseEvent) {
 }
 
 async function onContextMenu(event: MouseEvent) {
-  const found = readContextTarget(event.target, { selection: window.getSelection(), origin: window.location.origin, projects: projectsByName.value, canPaste: canPaste() })
+  const read = readContextTarget(event.target, { selection: window.getSelection(), origin: window.location.origin, projects: projectsByName.value, canPaste: canPaste() })
+  // On an FLA's own page its portrait has nowhere to go: the page is where the menu leads.
+  const found = read?.kind === 'agent' && route.params.agentId === read.agentId ? null : read
   // A component's own menu decides a tick later (reka-ui's trigger does); let it claim the event first.
   await nextTick()
   if (event.defaultPrevented) return
@@ -106,6 +112,7 @@ async function onContextMenu(event: MouseEvent) {
   if (!found) return
   await nextTick()
   target.value = found
+  portalTo.value = event.target instanceof Element ? event.target.closest<HTMLElement>('dialog[open]') ?? undefined : undefined
   if (found.kind === 'agent') void readAgent(found.agentId)
   point.value = menuPoint(event)
   returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -115,6 +122,15 @@ async function onContextMenu(event: MouseEvent) {
 
 function onInteractOutside() { dismissedOutside = true }
 function close() { open.value = false }
+// The desktop client's window loses focus for a moment when a click hands focus
+// to the page, which would close the menu under that very click: only a blur
+// that lasts closes it.
+const BLUR_GRACE = 300
+let blurTimer: ReturnType<typeof setTimeout> | undefined
+function onBlur() {
+  clearTimeout(blurTimer)
+  blurTimer = setTimeout(() => { if (!document.hasFocus()) close() }, BLUR_GRACE)
+}
 function onScroll(event: Event) { if (open.value && !insideMenu(event.target)) close() }
 
 // Focus goes back where it was (the field keeps typing), unless the menu closed because the person clicked elsewhere.
@@ -176,14 +192,15 @@ onMounted(() => {
   window.addEventListener('contextmenu', onContextMenu)
   window.addEventListener('click', onPortraitClick, true)
   window.addEventListener('scroll', onScroll, true)
-  window.addEventListener('blur', close)
+  window.addEventListener('blur', onBlur)
   window.addEventListener('resize', close)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('contextmenu', onContextMenu)
   window.removeEventListener('click', onPortraitClick, true)
   window.removeEventListener('scroll', onScroll, true)
-  window.removeEventListener('blur', close)
+  window.removeEventListener('blur', onBlur)
+  clearTimeout(blurTimer)
   window.removeEventListener('resize', close)
 })
 </script>
@@ -194,7 +211,7 @@ onBeforeUnmount(() => {
     <ContextMenuTrigger as-child>
       <span class="app-context-anchor" :style="{ left: `${point.x}px`, top: `${point.y}px` }" aria-hidden="true" />
     </ContextMenuTrigger>
-    <ContextMenuContent class="app-context-menu" :collision-padding="8" data-app-context-menu
+    <ContextMenuContent class="app-context-menu" :portal-to="portalTo" :collision-padding="8" data-app-context-menu
       @close-auto-focus="onCloseAutoFocus" @interact-outside="onInteractOutside">
       <template v-if="projectTarget">
         <ContextMenuLabel>{{ projectTarget.name }}</ContextMenuLabel>

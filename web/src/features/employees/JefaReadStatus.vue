@@ -22,8 +22,17 @@ const projectName = (projectId: string) => props.projects.find(project => projec
 </script>
 
 <template>
-  <div v-if="loading || timedOut || failure || failures.length || stale" class="jefa-read-status" :class="{ 'is-blocking': blocking }" :role="!loading && (timedOut || failure || failures.length) ? 'alert' : undefined">
-    <GrowthLoading v-if="loading" :variant="blocking ? 'page' : 'compact'" :label="t(hasContent && stale ? 'employees.read.updating' : `employees.read.${stage}`)" />
+  <!-- A read in progress floats: the board under it keeps its place while projects arrive. -->
+  <div v-if="loading && !blocking" class="jefa-read-chip" role="status" data-jefa-read-chip>
+    <GrowthLoading variant="inline" :label="t(hasContent && stale ? 'employees.read.updating' : `employees.read.${stage}`)" />
+    <template v-if="total">
+      <span class="jefa-read-chip-count" aria-hidden="true">{{ loaded }}/{{ total }}</span>
+      <span v-if="longWait" data-jefa-read-long>{{ t('employees.read.long') }}</span>
+      <span class="ui-sr-only">{{ t('employees.read.counts', { loaded, total, pending, failed: failures.filter(f => f.projectId).length }) }}</span>
+    </template>
+  </div>
+  <div v-else-if="loading || timedOut || failure || failures.length || stale" class="jefa-read-status" :class="{ 'is-blocking': blocking }" :role="!loading && (timedOut || failure || failures.length) ? 'alert' : undefined">
+    <GrowthLoading v-if="loading" variant="page" :label="t(hasContent && stale ? 'employees.read.updating' : `employees.read.${stage}`)" />
     <div v-if="!loading && (timedOut || failure || failures.length)" class="jefa-read-error">
       <h2>{{ t(hasContent ? 'employees.read.partialTitle' : timedOut ? 'employees.read.timeoutTitle' : 'employees.read.failedTitle') }}</h2>
       <p v-if="failure">{{ failure }}</p>
@@ -46,6 +55,23 @@ const projectName = (projectId: string) => props.projects.find(project => projec
 </template>
 
 <style scoped>
+/* Frosted like the dock, on its own layer; it scales in, since a fade would hold back the blur. */
+.jefa-read-chip {
+  position: fixed; bottom: 24px; left: 50%; z-index: var(--z-nav); isolation: isolate; display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+  border: 1px solid var(--edge-dock); border-radius: var(--radius-pill); box-shadow: var(--shadow-glass); color: var(--color-ink-soft); font-size: var(--text-control);
+  translate: -50% 0; animation: jefa-read-chip-in var(--motion-enter);
+}
+.jefa-read-chip::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit;
+  background: var(--glass-sheen), var(--surface-dock); -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .jefa-read-chip::before { background: var(--color-surface); }
+}
+.jefa-read-chip-count { font-variant-numeric: tabular-nums; }
+@keyframes jefa-read-chip-in { from { scale: .94; } }
+@media (prefers-reduced-motion: reduce) { .jefa-read-chip { animation: none; } }
+:root[data-motion="reduced"] .jefa-read-chip { animation: none; }
 .jefa-read-status { flex: 0 0 auto; display: grid; gap: 12px; padding: 16px 24px; color: var(--color-muted); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .jefa-read-status.is-blocking { flex: 1; place-content: center; justify-items: start; align-self: center; width: min(100%, 660px); overflow: auto; }
 .jefa-read-status p, .jefa-read-status h2 { margin: 0; }

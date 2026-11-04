@@ -16,7 +16,7 @@
 
 .project-agent-section-heading, .project-agent-section-tools, .project-agent-assignment-card header, .project-agent-learning-card header, .project-agent-recruitment-card header, .project-agent-day-detail header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .project-agent-section-heading { flex-wrap: wrap; margin-bottom: 4px; }
-.project-agent-section-heading h2, .employee-project-overview-heading h2 { margin: 0; color: var(--color-ink); font-size: 15px; font-weight: 650; }
+.project-agent-section-heading h2, .employee-project-overview-heading h2 { margin: 0; color: var(--color-ink); font-size: var(--text-section); font-weight: var(--weight-strong); }
 .project-agent-section-heading > span, .project-agent-section-tools > span { color: var(--color-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .project-agent-section-tools { margin-top: 8px; justify-content: flex-start; }
 .project-agent-section-heading .project-agent-section-tools { margin-top: 0; gap: 20px; }
@@ -66,7 +66,8 @@
 .project-agent-calendar {
   --heat-gap: 3px; --heat-labels: 32px;
   --heat-cell: clamp(10px, calc((100cqw - var(--heat-labels) - 8px - (var(--weeks) - 1) * var(--heat-gap)) / var(--weeks)), 28px);
-  container-type: inline-size; min-width: 0; max-width: 100%; margin-top: 12px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
+  /* The padding is room for a chosen cell's ring, which this scrolling box would otherwise cut. */
+  container-type: inline-size; min-width: 0; max-width: 100%; margin-top: 12px; padding: 3px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
   display: grid; grid-template-columns: var(--heat-labels) max-content; grid-template-rows: auto auto; column-gap: 8px; row-gap: 4px;
 }
 .project-agent-calendar-months { grid-column: 2; display: grid; grid-template-columns: repeat(var(--weeks), var(--heat-cell)); gap: var(--heat-gap); color: var(--color-muted); font-size: 11px; line-height: 1.4; }

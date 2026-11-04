@@ -403,7 +403,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
     <Teleport :to="toolbarActions" :disabled="!toolbarActions">
       <div class="judgment-workbench-actions">
         <Button size="sm" variant="ghost" :disabled="busy" @click="load">{{ judgmentText('workbench.refresh') }}</Button>
-        <Button v-if="!showEmpty" data-action="review" :disabled="busy || !props.personalSpaceId" :loading="reviewing" :loading-label="judgmentText('workbench.reviewing')" @click="review">
+        <Button v-if="!showEmpty" size="sm" data-action="review" :disabled="busy || !props.personalSpaceId" :loading="reviewing" :loading-label="judgmentText('workbench.reviewing')" @click="review">
           {{ judgmentText('workbench.review') }}
         </Button>
       </div>

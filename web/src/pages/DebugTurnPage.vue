@@ -31,9 +31,10 @@ const openedFromList = /^\/debug(?:[?#]|$)/
 
 const id = computed(() => String(route.params.id ?? ''))
 const share = computed(() => record.value ? fuliShare(record.value.totals) : null)
-usePageTitle(() => record.value
+const pageName = computed(() => record.value
   ? `${formatDateTime(record.value.createdAt, currentLocale(), DATE_TIME_MINUTE, { missing: '' })} · ${clientName(record.value.sourceApplication)}`
   : '')
+usePageTitle(pageName)
 
 async function load() {
   reading?.abort()
@@ -75,7 +76,7 @@ onBeforeUnmount(() => reading?.abort())
   <section class="view debug-turn-view" :aria-label="t('debugTurns.title')">
     <div class="debug-turn-content">
       <div class="debug-turn-bar">
-        <Breadcrumb :parent="{ label: t('debugTurns.title'), to: '/debug', from: openedFromList }" />
+        <Breadcrumb :parent="{ label: t('debugTurns.title'), to: '/debug', from: openedFromList }" :current="pageName || undefined" />
         <Button v-if="record" type="button" size="sm" variant="outline" data-debug-turn-remove @click="confirming = true">
           {{ t('debugTurns.remove') }}
         </Button>

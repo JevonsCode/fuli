@@ -38,6 +38,17 @@ describe('API client errors', () => {
     )
   })
 
+  it('says a data upgrade is waiting for the person, not that the service failed', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: 'data_format_read_only', error: 'The graph needs a step' }), { status: 503 }),
+    ))
+
+    await expect(getJson('/api/occupations')).rejects.toMatchObject({
+      message: '有一步数据升级等你确认，确认后这里就恢复。去「设置 → 数据格式」确认。',
+      status: 503,
+    })
+  })
+
   it('localizes service failures while preserving diagnostic detail', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       new Response('Provider unavailable', { status: 503 }),
