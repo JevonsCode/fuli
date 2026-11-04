@@ -6,13 +6,13 @@ import test from 'node:test';
 
 import { runClaudeLifecycleHook } from '../src/agents/claude-code/lifecycle-hook.js';
 import { runCodexLifecycleHook } from '../src/agents/codex/lifecycle-hook.js';
-import { isDebugPrompt } from '../src/debug-turns/trigger.js';
+import { DEBUG_MARK_NOTICE, isDebugPrompt, withDebugMarkNotice, withoutDebugMark } from '../src/debug-turns/trigger.js';
 import { buildDebugRecord, DEBUG_RECORD_MAX_BYTES } from '../src/debug-turns/record.js';
 import { recordDebugTurn } from '../src/debug-turns/recorder.js';
 import { debugTurnStore } from '../src/debug-turns/store.js';
 import { inspectLocalStores } from '../src/data-format/local-stores.js';
 
-// Jevons 11-04: a prompt starting with #debug keeps that turn's full context
+// Jevons 11-04: a prompt starting with #fulidebug keeps that turn's full context
 // for the person to read and changes nothing else. Synthetic sessions,
 // Provider doubles and fixture transcripts in temp directories only.
 
@@ -107,16 +107,16 @@ async function hookTurn(t, client, prompt) {
   return { directory, entry, stop, store: debugTurnStore(directory) };
 }
 
-test('#debug is recognised only at the start, in any case, before a space, a line break or the end', () => {
-  for (const prompt of ['#debug', '#debug x', '#DEBUG x', '#Debug\nx', '#debug\tx']) assert.equal(isDebugPrompt(prompt), true, prompt);
-  for (const prompt of ['#debugx', ' #debug x', 'x #debug', 'debug x', '#debu', '', null]) assert.equal(isDebugPrompt(prompt), false, String(prompt));
+test('#fulidebug is recognised only at the start, in any case, before a space, a line break or the end', () => {
+  for (const prompt of ['#fulidebug', '#fulidebug x', '#FULIDEBUG x', '#FuliDebug\nx', '#fulidebug\tx']) assert.equal(isDebugPrompt(prompt), true, prompt);
+  for (const prompt of ['#fulidebugx', ' #fulidebug x', 'x #fulidebug', 'debug x', '#fulidebu', '', null]) assert.equal(isDebugPrompt(prompt), false, String(prompt));
 });
 
 for (const client of Object.keys(CLIENTS)) {
-  test(`${client}: the hook output for "#debug x" equals the one for "x" apart from the prompt`, async (t) => {
+  test(`${client}: the hook output for "#fulidebug x" equals the one for "x" apart from the prompt and the ignore line`, async (t) => {
     const plain = await hookTurn(t, client, 'Synthetic ask.');
-    const debug = await hookTurn(t, client, '#debug Synthetic ask.');
-    const withoutPrompt = (output) => JSON.stringify(output).replaceAll('#debug Synthetic ask.', 'Synthetic ask.');
+    const debug = await hookTurn(t, client, '#fulidebug Synthetic ask.');
+    const withoutPrompt = (output) => JSON.stringify(output).replaceAll(`\\n${DEBUG_MARK_NOTICE}`, '').replaceAll('#fulidebug Synthetic ask.', 'Synthetic ask.');
     assert.equal(withoutPrompt(debug.entry), JSON.stringify(plain.entry));
     assert.equal(withoutPrompt(debug.stop), JSON.stringify(plain.stop));
     assert.deepEqual(plain.store.list(), [], 'an ordinary prompt records nothing');
@@ -124,11 +124,11 @@ for (const client of Object.keys(CLIENTS)) {
   });
 
   test(`${client}: the record keeps every part in order with who put it there`, async (t) => {
-    const { entry, stop, store } = await hookTurn(t, client, '#debug Synthetic ask.');
+    const { entry, stop, store } = await hookTurn(t, client, '#fulidebug Synthetic ask.');
     const [summary] = store.list();
     const record = store.read(summary.id);
     assert.equal(record.sourceApplication, client);
-    assert.equal(summary.promptLine, '#debug Synthetic ask.');
+    assert.equal(summary.promptLine, '#fulidebug Synthetic ask.');
     assert.equal(record.transcript, 'read');
     const shape = record.parts.map(({ source, kind, label }) => [source, kind, label]);
     assert.deepEqual(shape.filter(([, kind]) => !['mcp_tools'].includes(kind)), [
@@ -169,7 +169,7 @@ for (const client of Object.keys(CLIENTS)) {
 test('a host without a transcript gets a record that says so', async (t) => {
   const directory = await dataDir(t);
   const runtimeConfigPath = join(directory, 'graph-runtime.json');
-  const input = { session_id: 'synthetic-session', prompt: '#debug no transcript' };
+  const input = { session_id: 'synthetic-session', prompt: '#fulidebug no transcript' };
   const surface = async () => ({ instructions: 'Synthetic instructions.', tools: [] });
   await recordDebugTurn({ runtimeConfigPath, sourceApplication: 'cursor', event: 'UserPromptSubmit', input, output: { continue: true } }, { surface });
   await recordDebugTurn({ runtimeConfigPath, sourceApplication: 'cursor', event: 'Stop', input: { session_id: 'synthetic-session' }, output: {} }, { surface });
@@ -181,22 +181,31 @@ test('a host without a transcript gets a record that says so', async (t) => {
   assert.equal(store.pending.read('cursor', 'synthetic-session'), null, 'the Stop ends the pending turn');
 });
 
-test('an ordinary prompt after an unfinished #debug turn drops it', async (t) => {
+test('a message queued during a #fulidebug turn leaves it to be recorded at the Stop', async (t) => {
   const directory = await dataDir(t);
-  const runtimeConfigPath = join(directory, 'graph-runtime.json');
-  const at = (prompt) => ({ runtimeConfigPath, sourceApplication: 'codex', event: 'UserPromptSubmit',
+  const at = (prompt, event = 'UserPromptSubmit') => ({ runtimeConfigPath: join(directory, 'graph-runtime.json'), sourceApplication: 'codex', event,
     input: { session_id: 'synthetic-session', prompt }, output: {} });
-  await recordDebugTurn(at('#debug first'));
-  assert.ok(debugTurnStore(directory).pending.read('codex', 'synthetic-session'));
-  await recordDebugTurn(at('second'));
-  assert.equal(debugTurnStore(directory).pending.read('codex', 'synthetic-session'), null);
-  await recordDebugTurn({ ...at(''), event: 'Stop' });
-  assert.deepEqual(debugTurnStore(directory).list(), []);
+  await recordDebugTurn(at('#fulidebug first'));
+  await recordDebugTurn(at('a queued message'));
+  const store = debugTurnStore(directory);
+  assert.ok(store.pending.read('codex', 'synthetic-session'));
+  await recordDebugTurn(at('', 'Stop'), { surface: async () => null, log: () => {} });
+  assert.equal(store.pending.read('codex', 'synthetic-session'), null);
+  assert.equal(store.list().length, 1);
+});
+
+test('the mark stays out of what FULI hands on, and a marked turn tells the model to ignore it', () => {
+  assert.equal(withoutDebugMark('#fulidebug Synthetic ask.'), 'Synthetic ask.');
+  assert.equal(withoutDebugMark('Synthetic ask.'), 'Synthetic ask.');
+  const output = { hookSpecificOutput: { additionalContext: 'Entry.' } };
+  assert.equal(withDebugMarkNotice(output, '#fulidebug x').hookSpecificOutput.additionalContext, `Entry.\n${DEBUG_MARK_NOTICE}`);
+  assert.equal(withDebugMarkNotice(output, '#fulidebug x').systemMessage, undefined, 'the person is shown nothing');
+  assert.equal(withDebugMarkNotice(output, 'x'), output);
 });
 
 test('redaction masks the shared secret patterns and every task token form', () => {
   const record = buildDebugRecord({ sourceApplication: 'codex', sessionId: 's', surface: null,
-    prompt: `#debug password=hunter2-synthetic ${SECRET}`,
+    prompt: `#fulidebug password=hunter2-synthetic ${SECRET}`,
     frames: [{ event: 'UserPromptSubmit', text: JSON.stringify({ additionalContext: JSON.stringify({ taskContextToken: 'opaque-synthetic-token' }) }) }],
     transcript: { status: 'unavailable' },
     lastAssistantMessage: `Bearer abcdefghijklmnopqrstuvwxyz ${TOKEN}\n-----BEGIN PRIVATE KEY-----\nSYNTHETICKEYBODY\n-----END PRIVATE KEY-----` });
@@ -211,7 +220,7 @@ test('redaction masks the shared secret patterns and every task token form', () 
 test('a record over 2 MB cuts the oldest history first and says how much', () => {
   const history = Array.from({ length: 3000 }, (_, index) => ({ role: index % 2 ? 'assistant' : 'user', kind: 'message',
     content: `message ${index} ${'历史'.repeat(400)}` }));
-  const record = buildDebugRecord({ sourceApplication: 'claude_code', sessionId: 's', surface: null, prompt: '#debug big',
+  const record = buildDebugRecord({ sourceApplication: 'claude_code', sessionId: 's', surface: null, prompt: '#fulidebug big',
     frames: [{ event: 'UserPromptSubmit', text: '{}' }], lastAssistantMessage: 'Synthetic answer.',
     transcript: { status: 'read', history, historyComplete: true, events: [] } });
   assert.ok(Buffer.byteLength(JSON.stringify(record)) <= DEBUG_RECORD_MAX_BYTES);
@@ -225,7 +234,7 @@ test('a record over 2 MB cuts the oldest history first and says how much', () =>
   assert.equal(record.parts.find((item) => item.kind === 'assistant_message').text, 'Synthetic answer.');
 
   // A turn too big even without history shortens its largest part.
-  const huge = buildDebugRecord({ sourceApplication: 'codex', sessionId: 's', surface: null, prompt: '#debug huge',
+  const huge = buildDebugRecord({ sourceApplication: 'codex', sessionId: 's', surface: null, prompt: '#fulidebug huge',
     frames: [], lastAssistantMessage: '答'.repeat(1_000_000), transcript: { status: 'unavailable' } });
   assert.ok(Buffer.byteLength(JSON.stringify(huge)) <= DEBUG_RECORD_MAX_BYTES);
   assert.deepEqual(huge.cut.parts, [huge.parts.findIndex((item) => item.kind === 'assistant_message')]);
@@ -237,14 +246,14 @@ test('the store keeps the newest 20 records within 50 MB, and its directories ar
   const at = (index) => new Date(Date.UTC(2026, 10, 4, 0, index));
   const ids = [];
   for (let index = 0; index < 23; index += 1) {
-    const record = buildDebugRecord({ sourceApplication: 'codex', sessionId: 's', surface: null, prompt: `#debug ${index}`,
+    const record = buildDebugRecord({ sourceApplication: 'codex', sessionId: 's', surface: null, prompt: `#fulidebug ${index}`,
       frames: [], lastAssistantMessage: null, transcript: { status: 'unavailable' } }, { now: () => at(index) });
     ids.push(record.id);
     store.write(record);
   }
   assert.deepEqual(store.list().map(({ id }) => id), ids.slice(3).reverse());
   assert.equal((await readdir(join(directory, 'debug-turns'))).filter((name) => name.endsWith('.json')).length, 20);
-  const big = (index) => buildDebugRecord({ sourceApplication: 'codex', sessionId: 's', surface: null, prompt: `#debug big ${index}`,
+  const big = (index) => buildDebugRecord({ sourceApplication: 'codex', sessionId: 's', surface: null, prompt: `#fulidebug big ${index}`,
     frames: [], lastAssistantMessage: 'x'.repeat(1_900_000), transcript: { status: 'unavailable' } }, { now: () => at(100 + index) });
   for (let index = 0; index < 30; index += 1) store.write(big(index));
   const kept = store.list();
@@ -264,13 +273,13 @@ test('a record that cannot be written never changes or breaks the hook', async (
   await writeFile(join(directory, 'debug-turns'), 'not a directory');
   const lines = [];
   const recorded = await recordDebugTurn({ runtimeConfigPath: join(directory, 'graph-runtime.json'), sourceApplication: 'codex',
-    event: 'UserPromptSubmit', input: { session_id: 's', prompt: '#debug fails' }, output: {} }, { log: (line) => lines.push(line) });
+    event: 'UserPromptSubmit', input: { session_id: 's', prompt: '#fulidebug fails' }, output: {} }, { log: (line) => lines.push(line) });
   assert.equal(recorded, undefined);
   assert.equal(lines.length, 1);
-  assert.match(lines[0], /^FULI: this #debug turn was not recorded \(/);
+  assert.match(lines[0], /^FULI: this #fulidebug turn was not recorded \(/);
   assert.doesNotMatch(lines[0], /fails|debug-turns/);
 
-  // Through the installed hook, the answer is the one an ordinary prompt gets.
+  // Through the installed hook, the answer is an ordinary prompt's plus the ignore line.
   const transcript = join(directory, 'missing.jsonl');
   const run = (prompt) => runCodexLifecycleHook(['--event', 'UserPromptSubmit'], {
     readInput: async () => ({ session_id: 'synthetic-codex-session', cwd: '/synthetic/project', transcript_path: transcript, prompt }),
@@ -280,10 +289,25 @@ test('a record that cannot be written never changes or breaks the hook', async (
   const original = process.stderr.write;
   process.stderr.write = () => true;
   try {
-    const debug = await run('#debug Synthetic ask.');
+    const debug = await run('#fulidebug Synthetic ask.');
     const plain = await run('Synthetic ask.');
-    assert.equal(JSON.stringify(debug).replaceAll('#debug Synthetic ask.', 'Synthetic ask.'), JSON.stringify(plain));
+    assert.equal(JSON.stringify(debug).replaceAll(`\\n${DEBUG_MARK_NOTICE}`, '').replaceAll('#fulidebug Synthetic ask.', 'Synthetic ask.'), JSON.stringify(plain));
   } finally {
     process.stderr.write = original;
   }
+});
+
+// Jevons 11-04: the turns worth reading are the ones where FULI failed.
+test('a turn whose hook failed is still recorded, saying why', async (t) => {
+  const directory = await dataDir(t);
+  const hook = (event, input) => runCodexLifecycleHook(['--event', event], {
+    readInput: async () => ({ session_id: 'synthetic-session', cwd: '/synthetic/project', ...input }), write: () => {},
+    resolveRuntimeOptions: () => ({ runtimeConfigPath: join(directory, 'graph-runtime.json') }),
+    openApplication: () => ({ close: async () => {} }),
+    createLeases: () => ({ withGraphLease: async () => { throw Object.assign(new Error('synthetic'), { code: 'data_format_read_only' }); }, close: async () => {} }) });
+  await assert.rejects(hook('UserPromptSubmit', { prompt: '#fulidebug Synthetic ask.' }));
+  await assert.rejects(hook('Stop', {}));
+  const store = debugTurnStore(directory);
+  assert.equal(store.list().length, 1);
+  assert.match(JSON.stringify(store.read(store.list()[0].id)), /data_format_read_only/);
 });

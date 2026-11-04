@@ -26,6 +26,7 @@ import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { taskSceneInput } from '../../graphiti/task-scene.js';
 import { entryBudget, entryNotice, noteEntryNotice, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
 import { recordDebugTurn } from '../../debug-turns/recorder.js';
+import { withDebugMarkNotice, withoutDebugMark } from '../../debug-turns/trigger.js';
 
 // Task entry gets longer: a warm entry already takes 2–4 s on a Mac and a cold
 // first one ran past 5 s, which costs the model two fallback requests. Both
@@ -71,8 +72,8 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
   if (codexRefreshTurn(event, input)) return refreshCurrentTaskInPlace(event, input, invoke, CODEX_UNRESOLVED_TURNS,
     { delivery, currentTask, onCurrentTask });
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
-    turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
-    sourceApplication: 'codex', sourceSessionId: input.session_id, ...taskSceneInput(input.prompt) });
+    turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: withoutDebugMark(input.prompt).slice(0, 8192),
+    sourceApplication: 'codex', sourceSessionId: input.session_id, ...taskSceneInput(withoutDebugMark(input.prompt)) });
   const entry = compactTaskContext(context);
   const output = await preferenceHookOutput(entry, event, input, delivery, 'codex',
     'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);
@@ -154,11 +155,16 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
       if (entered) await endTurnsObservedAtEntry(ledger, held, input, CODEX_UNRESOLVED_TURNS);
       return lifecycle;
     }, { signal: dependencies.signal });
-    const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, notice()) : output;
+    const delivered = event === 'UserPromptSubmit'
+      ? withDebugMarkNotice(withOutdatedMcpNotice(output, notice()), input?.prompt) : output;
     write(`${JSON.stringify(delivered)}\n`);
-    // After the host has its answer; a #debug record never changes or delays it.
+    // After the host has its answer; a #fulidebug record never changes or delays it.
     await recordDebugTurn({ runtimeConfigPath, sourceApplication: 'codex', event, input, output: delivered, adapter: CODEX_TRANSCRIPT });
     return delivered;
+  } catch (error) {
+    await recordDebugTurn({ runtimeConfigPath, sourceApplication: 'codex', event, input,
+      output: { hookFailed: hookFailureCause(error) }, adapter: CODEX_TRANSCRIPT });
+    throw error;
   } finally {
     await cleanup();
   }

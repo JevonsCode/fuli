@@ -14,7 +14,7 @@ import { formatBytes } from '@/lib/format-bytes'
 import { useConsoleStore } from '@/stores/console'
 import { UiEmpty, UiNotice } from '@/ui'
 
-// 调试记录: every #debug turn record on this computer, newest first, reached by
+// 调试记录: every #fulidebug turn record on this computer, newest first, reached by
 // holding the settings button. Deleting asks once more in place: it cannot be undone.
 const store = useConsoleStore()
 const records = ref<DebugTurnSummary[] | null>(null)

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../lifecycle-message.js';
+import { hookFailureCause, PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../lifecycle-message.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
 import { transcriptCaptureScope } from '../../conversations/sync-transcript.js';
 import { captureDecision, withCaptureLookups } from '../../graphiti/capture-decision.js';
@@ -30,6 +30,7 @@ import { FULI_VERSION } from '../../package-metadata.js';
 import { taskSceneInput } from '../../graphiti/task-scene.js';
 import { entryBudget, entryNotice, noteEntryNotice, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
 import { recordDebugTurn } from '../../debug-turns/recorder.js';
+import { withDebugMarkNotice, withoutDebugMark } from '../../debug-turns/trigger.js';
 
 // Claude Code shows the model only a preview (about the first 10,000
 // characters) of a hook context longer than that and saves the rest as a file
@@ -65,7 +66,7 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
     if (basis) return withinInlineLimit(event, input,
       await claudeRefreshOutput(event, input, invoke, { delivery, currentTask, onCurrentTask }, basis));
     const context = await invoke('begin_task_context', {
-      sessionId, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source, ...taskSceneInput(input.prompt)
+      sessionId, projectPath: input.cwd, taskPrompt: withoutDebugMark(input.prompt).slice(0, 8192), ...source, ...taskSceneInput(withoutDebugMark(input.prompt))
     });
     const entry = compactTaskContext(context);
     return withinInlineLimit(event, input, await preferenceHookOutput(entry, event, input, delivery, 'claude_code',
@@ -202,10 +203,15 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
       if (entered) await endTurnsObservedAtEntry(ledger, held, input, CLAUDE_UNRESOLVED_TURNS);
       return lifecycle;
     }), request);
-    const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, notice()) : output;
+    const delivered = event === 'UserPromptSubmit'
+      ? withDebugMarkNotice(withOutdatedMcpNotice(output, notice()), input?.prompt) : output;
     await recordDebugTurn({ runtimeConfigPath, sourceApplication: 'claude_code', event, input,
       output: delivered, adapter: CLAUDE_TRANSCRIPT });
     return delivered;
+  } catch (error) {
+    await recordDebugTurn({ runtimeConfigPath, sourceApplication: 'claude_code', event, input,
+      output: { hookFailed: hookFailureCause(error) }, adapter: CLAUDE_TRANSCRIPT });
+    throw error;
   } finally {
     await Promise.allSettled([close(leases), close(app)]);
   }

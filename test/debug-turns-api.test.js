@@ -35,7 +35,7 @@ test('debug turn records are listed, read and deleted only from this computer', 
   t.after(() => rm(directory, { recursive: true, force: true }));
   const debugTurns = debugTurnStore(directory);
   const record = buildDebugRecord({ sourceApplication: 'claude_code', sessionId: 'synthetic-session', surface: null,
-    prompt: '#debug Synthetic ask.\nsecond line', frames: [{ event: 'UserPromptSubmit', text: '{}' }],
+    prompt: '#fulidebug Synthetic ask.\nsecond line', frames: [{ event: 'UserPromptSubmit', text: '{}' }],
     lastAssistantMessage: 'Synthetic answer.', transcript: { status: 'unavailable' } });
   debugTurns.write(record);
   const system = { debugTurns };
@@ -43,7 +43,7 @@ test('debug turn records are listed, read and deleted only from this computer', 
   const list = await api(system, '/api/debug-turns');
   assert.equal(list.status, 200);
   assert.deepEqual(list.body, { records: [{ id: record.id, createdAt: record.createdAt, sourceApplication: 'claude_code',
-    promptLine: '#debug Synthetic ask.', totals: record.totals }] });
+    promptLine: '#fulidebug Synthetic ask.', totals: record.totals }] });
   assert.deepEqual((await api(system, `/api/debug-turns/${record.id}`)).body, record);
 
   for (const [path, method] of [['/api/debug-turns', 'GET'], [`/api/debug-turns/${record.id}`, 'GET'], [`/api/debug-turns/${record.id}`, 'DELETE']]) {
