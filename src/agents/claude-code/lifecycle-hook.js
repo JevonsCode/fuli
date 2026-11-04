@@ -23,6 +23,7 @@ import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { isMainModule } from '../../system/main-module.js';
+import { recordHookFailure, runtimeConfigPathOf } from '../lifecycle-failure.js';
 import { readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
@@ -253,6 +254,7 @@ async function main() {
   const timeoutMs = Number.isSafeInteger(configured) && configured > 0 && configured <= 2_147_483_647
     ? configured : 28000;
   const controller = new AbortController();
+  const startedAt = Date.now();
   let input = null;
   let emitted = false;
   const emit = (output, callback) => {
@@ -275,8 +277,10 @@ async function main() {
       captureTimeoutMs: Math.max(1, Math.min(750, Math.floor(timeoutMs / 4))),
       readInput: async () => { input = await readHookInput(); return input; } }));
     emit(output);
-  } catch {
+  } catch (error) {
     emit(controller.signal.aborted ? claudeEntryDeadlineOutput(event, input, budget) : claudeLifecycleUnavailable(event, input));
+    recordHookFailure({ runtimeConfigPath: runtimeConfigPathOf(args), client: 'claude_code', event, error,
+      sessionId: input?.session_id, startedAt });
   } finally {
     clearTimeout(abort);
     clearTimeout(deadline);

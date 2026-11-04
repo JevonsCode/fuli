@@ -8,6 +8,7 @@ import { handleAgentAppPageRequest } from './http/agent-app-page-router.js';
 import { handleApiRequest } from './http/api-router.js';
 import { handleDelegatedRequest } from './http/agent-delegation-gate.js';
 import { mapHttpError } from './http/error-mapping.js';
+import { recordHttpFailure } from './diagnostics/failure-records.js';
 import { isCrossSiteNavigation, localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';
 import { sendJson } from './http/response.js';
 import { closeTaskEventStreams } from './http/task-events-api-router.js';
@@ -223,6 +224,7 @@ export async function createServer(options = {}) {
   let authority = null;
   let allowedLanAuthorities = [];
   const server = createHttpServer((request, response) => {
+    const startedAt = Date.now();
     handleRequest({
       request,
       response,
@@ -253,11 +255,13 @@ export async function createServer(options = {}) {
         // A post-response lease/storage failure cannot be converted into a second response.
         if (!response.writableEnded) response.destroy();
         console.error('Request failed after its response was committed or disconnected');
+        recordHttpFailure(application.diagnosticEvents, { request, error, status: 500, startedAt });
         return;
       }
       const mapped = mapHttpError(error);
       if (mapped.body.code === 'knowledge_recovery_pending') void knowledgeRecovery?.check();
       sendJson(response, mapped.status, mapped.body);
+      recordHttpFailure(application.diagnosticEvents, { request, error, status: mapped.status, startedAt });
     });
   });
 

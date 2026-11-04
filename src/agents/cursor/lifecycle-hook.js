@@ -4,6 +4,7 @@ import { callAgentTool } from '../../agent-tools.js';
 import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js';
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
 import { isMainModule } from '../../system/main-module.js';
+import { recordHookFailure, runtimeConfigPathOf } from '../lifecycle-failure.js';
 import { readHookInput } from '../lifecycle-input.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliSessionBegan } from '../../conversations/session-fuli-entry.js';
@@ -123,14 +124,16 @@ async function closeQuietly(resource) {
 async function main() {
   const args = process.argv.slice(2);
   const event = args[args.indexOf('--event') + 1];
+  const startedAt = Date.now();
   try {
     await runCursorLifecycleHook(args);
-  } catch {
+  } catch (error) {
     // Don't print prompts, transcripts, runtime config, paths or credentials.
     const warning = 'Fuli role context is unavailable; check the Provider connection. Memory recovery is not verified.';
     process.stdout.write(`${JSON.stringify(event === 'beforeSubmitPrompt'
       ? { continue: true, user_message: warning }
       : event === 'sessionStart' ? { additional_context: warning } : {})}\n`);
+    recordHookFailure({ runtimeConfigPath: runtimeConfigPathOf(args), client: 'cursor', event, error, startedAt });
   }
 }
 

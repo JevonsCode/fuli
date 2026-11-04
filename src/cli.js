@@ -10,6 +10,7 @@ import { runGraphDataCommand } from './cli/graph-data-command.js';
 import { runNativeRuntimeCommand } from './cli/native-runtime-command.js';
 import { runGraphMigrateCommand } from './cli/graph-migrate-command.js';
 import { runMigrateCommand } from './cli/migrate-command.js';
+import { runDiagnosticsCommand } from './cli/diagnostics-command.js';
 import { runEmployeeCommand } from './cli/employee-command.js';
 import { runAppCommand } from './cli/app-command.js';
 import { runModelsCommand } from './cli/models-command.js';
@@ -65,6 +66,10 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   if (command === 'migrate') {
     assertSupportedNodeVersion();
     return runMigrateCommand(commandArgs, { env });
+  }
+  if (command === 'diagnostics') {
+    assertSupportedNodeVersion();
+    return runDiagnosticsCommand(commandArgs, { env });
   }
   if (command === 'employee') {
     assertSupportedNodeVersion();

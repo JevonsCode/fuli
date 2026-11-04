@@ -41,6 +41,8 @@ import {
 import { nonEmptyText } from '../validation/values.js';
 import { openChildProcessLog } from '../local-runtime/child-process-log.js';
 import { isProcessAlive } from '../local-runtime/processes.js';
+import { diagnosticEventLog } from '../diagnostics/event-log.js';
+import { errorCode } from '../diagnostics/safe-event.js';
 import { parseProviderEnv } from '../setup/provider-env.js';
 import { nativeInstanceLogPaths } from '../setup/paths.js';
 import { providerServerArguments } from './provider-arguments.js';
@@ -81,7 +83,9 @@ export function createNativeGraphServices({
     : platform === 'darwin' ? assertMacNativePortFree : async () => {},
   fetchImpl = globalThis.fetch,
   wait = delay,
-  now = () => new Date()
+  now = () => new Date(),
+  // A start that failed, in the data directory's diagnostics log (rec#73).
+  recordFailure = paths.dataDir ? recordGraphServicesFailure(paths.dataDir) : () => {}
 }) {
   const descriptor = runtimeDescriptor ?? readJson(paths.nativeRuntimeManifestPath);
 
@@ -91,6 +95,7 @@ export function createNativeGraphServices({
   const stopDatabases = () => operation(() => stopDatabasesUnlocked());
 
   async function startUnlocked({ providers: startProviders = true } = {}) {
+    const startedAt = Date.now();
     if (platform === 'darwin') {
       const selected = readJson(paths.nativeRuntimeManifestPath);
       if (selected && (selected.status !== 'ready' || selected.neo4jHome !== descriptor?.neo4jHome)) throw new Error('Native Neo4j descriptor is stale or uninstalled. Recreate the service from the selected manifest.');
@@ -178,6 +183,7 @@ export function createNativeGraphServices({
         { ...(previousState.databases ?? {}), ...withoutStarted(databases, startedDatabases) },
         { ...(previousState.providers ?? {}), ...withoutStarted(providers, startedProviders) }
       );
+      recordFailure(error, Date.now() - startedAt);
       throw error;
     }
   }
@@ -797,17 +803,35 @@ function spawnNativeProvider(spec) {
   }
 }
 
+// The reason each start failure may give; another error's message may name a local path.
+const START_FAILURE_REASONS = Object.freeze({
+  provider_exited: 'the Graph Provider process exited during startup',
+  provider_not_ready: 'the Graph Provider did not become ready after starting',
+  provider_incompatible: 'the Graph Provider is incompatible with transcript capture'
+});
+
+function recordGraphServicesFailure(dataDir) {
+  const log = diagnosticEventLog(dataDir);
+  return (error, durationMs) => log.record({ component: 'provider', operation: 'native.start', outcome: 'failed',
+    code: errorCode(error), reason: START_FAILURE_REASONS[error?.code] ?? 'the native graph services did not start',
+    durationMs });
+}
+
 async function waitForProvider(url, fetchImpl, wait, entry) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
-    if (entry?.ownership && !isProcessAlive(entry.pid)) throw new Error('The owned native Graph Provider exited during startup');
+    if (entry?.ownership && !isProcessAlive(entry.pid)) {
+      throw Object.assign(new Error('The owned native Graph Provider exited during startup'), { code: 'provider_exited' });
+    }
     const readiness = await providerReadiness(url, fetchImpl);
     if (readiness === 'ready') return;
     if (readiness === 'incompatible') {
-      throw new Error('The native Graph Provider is incompatible with transcript capture. Upgrade the Provider and restart local services when existing sessions can release them.');
+      throw Object.assign(new Error('The native Graph Provider is incompatible with transcript capture. Upgrade the Provider and restart local services when existing sessions can release them.'),
+        { code: 'provider_incompatible' });
     }
     if (attempt < 119) await wait(1000);
   }
-  throw new Error('The native graph Provider did not become ready after starting.');
+  throw Object.assign(new Error('The native graph Provider did not become ready after starting.'),
+    { code: 'provider_not_ready' });
 }
 
 async function providerReady(url, fetchImpl) {

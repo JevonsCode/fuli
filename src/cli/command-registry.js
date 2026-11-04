@@ -47,6 +47,9 @@ Data formats:
   migrate restore --store LABEL [--backup REF] [--data-dir DIR]  (replaces a whole store with a backup, losing later changes; FULI stopped)
   migrate prune [--keep N] [--max-mb MB] [--dry-run] [--data-dir DIR]  (format backups by retention policy; never one an undo or the current version needs)
 
+Diagnostics:
+  diagnostics [--from ISO] [--to ISO] [--component hook|http|provider|mcp] [--level error|warning] [--code CODE] [--limit N] [--cursor CURSOR] [--json] [--data-dir DIR]  (FULI's recorded runtime failures, newest first; read only, works while FULI is stopped)
+
 Graph data portability:
   graph export --output DIR [--mode container|native] [--data-dir DIR]
   graph import --input DIR [--target-mode container|native] [--yes] [--data-dir DIR]

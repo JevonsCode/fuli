@@ -30,12 +30,15 @@ import { workSurfaceNames, workSurfaceSources } from '../work-surfaces/sources.j
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
 import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
+import { diagnosticEventLog } from '../diagnostics/event-log.js';
 
 // The local stores and runtimes an application opened from a runtime
 // directory owns. Adding one means opening it here and closing it below.
 export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImpl }) {
   const dataDir = dirname(runtimeConfigPath);
   const providerIdentity = app.config.personal.providerUrl;
+  // The runtime failures this process and the data directory's other FULI processes caught (rec#73).
+  app.diagnosticEvents = diagnosticEventLog(dataDir);
   app.preferenceDelivery = createSessionPreferenceDelivery({
     directory: join(dataDir, 'preference-delivery'),
     env
