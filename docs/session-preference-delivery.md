@@ -220,7 +220,9 @@ never confirm a delta (rec#76). No cursor ever reaches the model.
 - Local Codex stdio accepts the host's per-request `threadId`, `sessionId` and
   optional `windowId` outside model arguments. An explicit remote host binding
   or sealed worker keeps its own admission authority. Legacy process identity
-  remains a fallback, and a new MCP process establishes a full baseline.
+  remains a fallback. A new MCP process does not reset the session's record: a
+  resumed host replays the same transcript, and another execution or window
+  starts a new generation through `nativeGeneration` (rec#15).
   An ordinary MCP call without per-request window proof remains full; malformed
   host identity cannot fall back to an older process session.
 - Codex evidence requires paired native call/result IDs and complete JSON.
@@ -314,7 +316,7 @@ Provider currently has no delete marker for conversation events and never
 replaces one in place, so this path is defensive.
 
 Compaction, clear, resume (except Claude Code's, which replays the same
-transcript, see above), fork, a new MCP process, an execution/window change
+transcript, see above), fork, an execution/window change
 or a replaced transcript starts a new generation, which receives the window in
 full. So does a client without a readable transcript. A failed, truncated or
 unrecorded delivery is resent. A transcript is identified by its exact device
@@ -347,7 +349,9 @@ A hook frame also carries a skeleton that repeats from turn to turn of one
 task: `agent_receipt`, the rule references (`task_guidance`,
 `application_guidance`, `checkpoint_guidance`), `project_agent_context`,
 `project_management_context`, `judgment_context`, `context`,
-`task_knowledge_recall`, and the hook's own label above the JSON. Every hook
+`task_knowledge_recall`, two paths inside the conversation (`conversation.guidance`
+and `conversation.recovery.latest_checkpoint`, which repeats while no task
+records a new result), and the hook's own label above the JSON. Every hook
 frame that still shows one of these carries `skeleton_revision` (12 hex over
 those fields and its label). A later hook frame leaves out each part that a
 base shows byte for byte and names it in `skeleton_unchanged`. When the bases'

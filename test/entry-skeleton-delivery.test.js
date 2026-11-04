@@ -206,3 +206,21 @@ test('a revision names what its frame gave, including what that frame named itse
     assert.equal(got.task_knowledge_recall?.marker ?? null, recall);
   }
 }));
+
+// rec#15: the conversation's rule reference and its latest saved result repeat
+// while no task records a new one; the rest of the conversation is sent.
+test('the conversation rule reference and latest checkpoint are skeleton parts; its own state is not', () => fixture(async f => {
+  const withConversation = (token, revision) => {
+    const value = entry(f.sessionId, token);
+    value.conversation = { status: 'saved', conversation_id: 'conversation-1', revision,
+      recovery: { latest_checkpoint: { status: 'reported', summary: 'Synthetic closed task.' }, messages_omitted: revision,
+        omitted_reason: 'seen_in_session' }, guidance: { rules: 'fuli://rules/task-entry/conversation_guidance' } };
+    return value;
+  };
+  const first = await f.turn(withConversation('task-a', 1), 'Do the thing');
+  assert.deepEqual(first.frame.conversation.recovery.latest_checkpoint, { status: 'reported', summary: 'Synthetic closed task.' });
+  const next = await f.turn(withConversation('task-b', 2), 'Do the thing');
+  assert.equal(next.frame.skeleton_unchanged, first.frame.skeleton_revision);
+  assert.deepEqual(next.frame.conversation, { status: 'saved', conversation_id: 'conversation-1', revision: 2,
+    recovery: { messages_omitted: 2, omitted_reason: 'seen_in_session' } });
+}));
