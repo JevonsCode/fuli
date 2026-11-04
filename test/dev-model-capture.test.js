@@ -78,6 +78,7 @@ test('the proxy passes the request through unchanged and keeps credentials out o
 test('the request that opens a turn becomes a Debug record with everything in it', () => {
   assert.equal(opensTurn(body), true);
   assert.equal(opensTurn({ ...body, tools: [] }), false, 'a side request such as a title is left out');
+  assert.equal(opensTurn({ ...body, messages: [...body.messages, { role: 'system', content: 'A host note.' }] }), true, 'a host note after the prompt changes nothing');
   assert.equal(opensTurn({ ...body, messages: [{ role: 'user', content: [{ type: 'tool_result', content: 'x' }] }] }), false);
   const { prompt, parts } = requestParts(body, { input_tokens: 7 });
   assert.equal(prompt, 'Hello.');
@@ -86,6 +87,11 @@ test('the request that opens a turn becomes a Debug record with everything in it
   assert.deepEqual(kinds, ['host:model_system', 'host:model_client_tools', 'fuli:model_fuli_tools', 'fuli:model_context', 'person:prompt', 'host:model_usage']);
   assert.match(record.parts[0].text, /Synthetic system/);
   assert.ok(record.totals.fuli > 0);
+});
+
+test('a host\'s system message is never counted as the person\'s words', () => {
+  const { parts } = requestParts({ tools: [{ name: 'Read' }], messages: [{ role: 'user', content: 'Hello.' }, { role: 'system', content: 'A long host note.' }] });
+  assert.deepEqual(parts.filter(({ source }) => source === 'person').map(({ text }) => text), ['Hello.']);
 });
 
 test('with a data folder the proxy puts the turn on the Debug page', async (t) => {

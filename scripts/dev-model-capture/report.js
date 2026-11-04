@@ -35,10 +35,18 @@ const isReminder = (piece) => /^\s*(<system-reminder>|<EXTREMELY_IMPORTANT>|[A-Z
 
 /** True for the request that opens a turn: it ends on the person's words, not a tool's answer. */
 export function opensTurn(body) {
-  const last = body?.messages?.at(-1);
-  if (!Array.isArray(body?.tools) || !body.tools.length || last?.role !== 'user') return false;
-  return !(Array.isArray(last.content) && last.content.some(block => block?.type === 'tool_result'));
+  const messages = Array.isArray(body?.messages) ? body.messages : [];
+  const at = turnStart(messages);
+  if (!Array.isArray(body?.tools) || !body.tools.length || at < 0) return false;
+  const { content } = messages[at];
+  return !(Array.isArray(content) && content.some(block => block?.type === 'tool_result'));
 }
+
+// The person's latest message; a host may put its own system messages after it.
+const turnStart = (messages) => {
+  const at = messages.findLastIndex(message => message.role !== 'system');
+  return messages[at]?.role === 'user' ? at : -1;
+};
 
 /** The request as Debug record parts, in reading order, each with who put it there. */
 export function requestParts(body, usage) {
@@ -51,14 +59,18 @@ export function requestParts(body, usage) {
     { source: 'host', kind: 'model_client_tools', label: String(clientTools.length), text: JSON.stringify(clientTools, null, 2) },
     { source: 'fuli', kind: 'model_fuli_tools', label: String(fuliTools.length), text: JSON.stringify(fuliTools, null, 2) },
   ];
-  const earlier = messages.slice(0, -1);
+  const start = Math.max(turnStart(messages), 0);
+  const earlier = messages.slice(0, start);
   if (earlier.length) parts.push({ source: 'host', kind: 'history', label: String(earlier.length),
     text: earlier.map(message => `[${message.role}] ${contentText(message.content)}`).join('\n\n') });
   let prompt = '';
-  for (const piece of textBlocks(messages.at(-1)?.content).flatMap(pieces).filter(text => text.trim())) {
-    if (isFuliPiece(piece)) parts.push({ source: 'fuli', kind: 'model_context', text: piece });
-    else if (isReminder(piece)) parts.push({ source: 'host', kind: 'model_context', text: piece });
-    else { parts.push({ source: 'person', kind: 'prompt', text: piece }); prompt ||= piece.trim(); }
+  for (const message of messages.slice(start)) {
+    for (const piece of textBlocks(message.content).flatMap(pieces).filter(text => text.trim())) {
+      if (isFuliPiece(piece)) parts.push({ source: 'fuli', kind: 'model_context', text: piece });
+      // Only the person's own message holds their words; a host's system message never does.
+      else if (message.role !== 'user' || isReminder(piece)) parts.push({ source: 'host', kind: 'model_context', text: piece });
+      else { parts.push({ source: 'person', kind: 'prompt', text: piece }); prompt ||= piece.trim(); }
+    }
   }
   if (usage) parts.push({ source: 'host', kind: 'model_usage', text: JSON.stringify(usage, null, 2) });
   return { prompt: prompt || 'Model request', parts };
