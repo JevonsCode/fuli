@@ -25,6 +25,7 @@ import { readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { taskSceneInput } from '../../graphiti/task-scene.js';
 import { entryBudget, entryNotice, noteEntryNotice, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
+import { recordDebugTurn } from '../../debug-turns/recorder.js';
 
 // Task entry gets longer: a warm entry already takes 2–4 s on a Mac and a cold
 // first one ran past 5 s, which costs the model two fallback requests. Both
@@ -155,6 +156,8 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
     }, { signal: dependencies.signal });
     const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, notice()) : output;
     write(`${JSON.stringify(delivered)}\n`);
+    // After the host has its answer; a #debug record never changes or delays it.
+    await recordDebugTurn({ runtimeConfigPath, sourceApplication: 'codex', event, input, output: delivered, adapter: CODEX_TRANSCRIPT });
     return delivered;
   } finally {
     await cleanup();

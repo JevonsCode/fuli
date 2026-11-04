@@ -16,6 +16,7 @@ import ClientLinksSettings from '@/features/settings/ClientLinksSettings.vue'
 import AgentDelegationSettings from '@/features/settings/AgentDelegationSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
 import DiagnosticsSettings from '@/features/settings/DiagnosticsSettings.vue'
+import DebugTurnsSettings from '@/features/settings/DebugTurnsSettings.vue'
 import GraphMigrationRow from '@/features/settings/GraphMigrationRow.vue'
 import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
 import { offersUpdate, useChannelVersionStatus } from '@/features/update/version-status'
@@ -647,6 +648,7 @@ function checkFields(): ValidatedField[] {
                 </CardHeader>
               </Card>
               <DiagnosticsSettings />
+              <DebugTurnsSettings />
               <Card as="section" class="settings-card resource-card" data-span="wide" aria-labelledby="settings-resources-title">
                 <CardHeader>
                   <CardTitle id="settings-resources-title" as="h2">{{ t('settings.resources.title') }}</CardTitle>

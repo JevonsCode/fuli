@@ -64,6 +64,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('settings', 'DELETE /api/system/client-connection/custom-clients/:clientId', 'Describe it again with POST /api/system/client-connection/custom-clients.'),
   local('POST /api/system/graph-migration', 'Moving an older install\'s Docker graph into the built-in graph stops and restarts FULI; the person starts it from Settings. An Agent can read GET /api/system/doctor, and when the click cannot finish, follow the guide the doctor item links (data.guideUrl) with the person.'),
   delegable('settings', 'POST /api/system/doctor/repair', 'Not undone; it rewrites client configuration to what setup writes.'),
+  delegable('settings', 'DELETE /api/debug-turns/:id', 'Not undone; the next #debug turn records again.'),
   agent('POST /api/capture', 'capture_session_knowledge'),
   agent('POST /api/subscriptions', 'subscribe_public_project'),
   agent('DELETE /api/subscriptions/:projectId', 'unsubscribe_public_project'),

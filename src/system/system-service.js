@@ -30,6 +30,7 @@ import { customClientStore } from '../agent-kits/custom-clients.js';
 import { createCustomClients } from './custom-client-connection.js';
 import { CODEX_HOOK_TRUST_CLIENT, createCodexHookTrust } from '../agents/codex/hook-trust.js';
 import { readFormatOperations } from '../data-format/operations-log.js';
+import { debugTurnStore } from '../debug-turns/store.js';
 
 export function createSystemService({
   paths,
@@ -174,6 +175,8 @@ export function createSystemService({
     // The kept copies of FULI's logs and the person's 「清理旧日志」 (log-retention.js).
     logArchives: () => logRetention.archives(),
     clearLogArchives: () => logRetention.clearArchives(),
+    // The #debug turn records the person reads in Settings › 系统 (debug-turns/store.js).
+    debugTurns: debugTurnStore(paths.dataDir),
     repairDoctor: createDoctorRepair({ check: doctor.check, connectClient: clientInstaller, observeClients,
       recordClientsReconnected: (id) => update.recordClientsReconnected(id) }),
     runtimeStatus: () => runtimeBroker.status(),
