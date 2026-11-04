@@ -388,3 +388,14 @@ test('a search that found nothing says it was one quick search, not the whole st
     'Use the amount format we decided previously for Delta Ledger.');
   assert.equal(found.next, undefined);
 });
+
+test('trailing environment notes neither hide the prompt\'s own clauses nor take the focus slots (rec#63)', () => {
+  const task = 'Make `fetchRate` in `src/rates.js` retry failed requests following the retry policy we agreed for the rates client.';
+  const notes = 'Environment: you are running in WSL Ubuntu, where `node` is not installed; use the Windows Node 24 that is on PATH '
+    + 'as `node.exe` (for example `node.exe --test test/rates.test.js`). Do not commit, push, or create branches.';
+  const alone = planTaskKnowledgeRecall(task);
+  const withNotes = planTaskKnowledgeRecall(`${task}\n\n${notes}`);
+  assert.equal(withNotes.queries[0], alone.queries[0]);
+  assert.match(withNotes.queries[0], /retry/);
+  assert.ok(withNotes.queries.every((query) => !/WSL|Ubuntu|Windows/.test(query)), JSON.stringify(withNotes.queries));
+});

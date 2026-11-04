@@ -132,12 +132,17 @@ export function planTaskKnowledgeRecall(taskPrompt) {
   if (!matched.length) {
     return { status: 'not_needed', trigger_categories: [], queries: [] };
   }
-  const focus = distinctivePromptTerms(prompt).join(' ').slice(0, 180);
   // Named targets already focus every query; otherwise the prompt's own
   // clauses go first. File paths and code names are no target: a fact is
   // stored under its concept ("retry policy", "staging port"), so a query
-  // of paths and category words matched none of it (rec#63).
-  const ownWords = namedTarget(prompt) ? [] : clauseQueries(prompt.replace(CODE_SPAN, ' '));
+  // of paths and category words matched none of it (rec#63). Focus, targets and
+  // clauses read the lead paragraph (focus falls back to the whole prompt when
+  // it names nothing): a name in trailing notes ("WSL Ubuntu", "Windows
+  // Node" in pasted environment rules) is not what the task is about.
+  const statement = leadParagraph(taskPrompt);
+  const leadTerms = distinctivePromptTerms(statement);
+  const focus = (leadTerms.length ? leadTerms : distinctivePromptTerms(prompt)).join(' ').slice(0, 180);
+  const ownWords = namedTarget(statement) ? [] : clauseQueries(statement.replace(CODE_SPAN, ' '));
   const queries = unique([...ownWords, ...matched.flatMap(({ queries: values }) => values)
     .map((query) => focus ? `${focus} ${query}` : query)]);
   return {
@@ -516,6 +521,13 @@ function clauseQuery(clause) {
 const CODE_SPAN = /`[^`]*`/gu;
 const COMMON_ACRONYMS = new Set(['API', 'CI', 'CLI', 'CODEOWNERS', 'CSS', 'CSV', 'HTML', 'HTTP', 'HTTPS', 'ID', 'ISO', 'JS',
   'JSON', 'NPM', 'PR', 'README', 'SDK', 'SQL', 'TS', 'UI', 'URL', 'UTC', 'YAML']);
+
+// The text before the first blank line, as one line; the whole prompt when
+// it has no later paragraph.
+function leadParagraph(taskPrompt) {
+  const [lead] = taskPrompt.trim().split(/\r?\n[ \t]*\r?\n/u);
+  return singleLine(lead).slice(0, 8192);
+}
 
 function namedTarget(prompt) {
   const text = prompt.replace(CODE_SPAN, ' ');
