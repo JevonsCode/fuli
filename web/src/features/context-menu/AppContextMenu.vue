@@ -9,8 +9,9 @@ import { agentProfilePath } from '@/features/agent-profile/profile-model'
 import { useAgentWorkSurfaces } from '@/features/agent-profile/use-agent-work-surfaces'
 import { usePortraitShake } from '@/features/agent-profile/use-portrait-shake'
 import { debugRecordText, readDebugTurn } from '@/features/debug-turns/model'
+import { saveFile } from '@/lib/save-file'
 import { useConsoleStore } from '@/stores/console'
-import { getJson } from '@/api/client'
+import { apiErrorReason, getJson } from '@/api/client'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { projectAgentShape } from '@/features/agent-profile/agent-record-shape'
 import type { ProjectAgentRecord } from '@/types'
@@ -34,15 +35,20 @@ const { shake } = usePortraitShake()
 const agentTarget = computed(() => target.value?.kind === 'agent' ? target.value : null)
 const debugTarget = computed(() => target.value?.kind === 'debug-turn' ? target.value : null)
 async function copyDebugTurn(id: string) {
-  writeClipboard(debugRecordText(await readDebugTurn(id)))
-  store.notify(t('debugTurns.copiedAll'))
+  try {
+    writeClipboard(debugRecordText(await readDebugTurn(id)))
+    store.notify(t('debugTurns.copiedAll'))
+  } catch (cause) {
+    store.notify(t('debugTurns.readFailed', { reason: apiErrorReason(cause) }))
+  }
 }
 async function exportDebugTurn(id: string) {
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(new Blob([debugRecordText(await readDebugTurn(id))], { type: 'text/markdown' }))
-  link.download = `fuli-debug-${id.slice(0, 8)}.md`
-  link.click()
-  URL.revokeObjectURL(link.href)
+  try {
+    const path = await saveFile(`fuli-debug-${id.slice(0, 8)}.md`, debugRecordText(await readDebugTurn(id)), 'text/markdown;charset=utf-8')
+    store.notify(path ? t('debugTurns.exportedTo', { path }) : t('debugTurns.exported'))
+  } catch (cause) {
+    store.notify(t('debugTurns.exportFailed', { reason: apiErrorReason(cause) }))
+  }
 }
 // A portrait names only its FLA's id: the menu reads that FLA's record for its name and,
 // with it, where its workbench and workflows are. Records read once stay for the visit.

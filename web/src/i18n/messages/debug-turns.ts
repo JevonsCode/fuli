@@ -18,6 +18,10 @@ export const debugTurnsMessages = {
     copyAll: '复制全部信息',
     exportFile: '导出',
     copiedAll: '已复制全部信息',
+    exported: '已导出这条记录',
+    exportedTo: '已导出到 {path}',
+    exportFailed: '没有导出成功：{reason}',
+    readFailed: '没有读到这条记录：{reason}',
     kinds: {
       model_system: '系统提示词',
       model_client_tools: '客户端工具定义',
@@ -74,6 +78,10 @@ export const debugTurnsMessages = {
     copyAll: 'Copy all details',
     exportFile: 'Export',
     copiedAll: 'Copied all details',
+    exported: 'Exported this record',
+    exportedTo: 'Exported to {path}',
+    exportFailed: 'Could not export: {reason}',
+    readFailed: 'Could not read this record: {reason}',
     kinds: {
       model_system: 'System prompt',
       model_client_tools: 'Client tool definitions',
