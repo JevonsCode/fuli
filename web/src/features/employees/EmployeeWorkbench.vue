@@ -450,10 +450,13 @@ async function projectsSaved() {
   position: fixed; inset: 0; z-index: var(--z-dialog); overflow: auto; padding: calc(16px + var(--desktop-caption-clear, 0px)) var(--page-inline, 24px) 16px;
   border: 0; border-radius: 0; background: var(--color-bg); box-shadow: none;
 }
+.is-fullscreen.is-native .employee-workbench-toolbar { top: calc(10px + var(--desktop-caption-clear, 0px)); right: var(--page-inline, 24px); }
 .employee-workbench-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; }
 .employee-workbench-toolbar:has(.employee-workbench-actions:empty) { display: none; }
-/* A native panel's actions keep a row of their own: floated over the panel they covered its rows. */
-.is-native .employee-workbench-toolbar { margin-bottom: 8px; }
+/* A native panel's actions sit in the corner of the card, on the row of its own tabs. */
+.is-native .employee-workbench-toolbar { position: absolute; top: 10px; right: 14px; z-index: 1; }
+/* A panel with no tabs has a row of its own there: it stops short, so its arrow stays clear. */
+.is-native :deep(.unassigned-conversations-bar) { margin-right: 36px; }
 .employee-workbench-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .employee-workbench-view :deep(.employee-all-projects) { flex: 1 0 460px; padding: 0; background: transparent; }
 .employee-workbench-frame { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
