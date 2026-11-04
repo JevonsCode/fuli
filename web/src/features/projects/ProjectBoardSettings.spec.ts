@@ -92,7 +92,7 @@ describe('project board settings', () => {
     expect(configureCall().board).toEqual({ kind: 'external', external: { url: 'https://project.example.test/board', label: '飞书项目' } })
   })
 
-  it('recruits a new manager with the 管理 occupation and makes it the manager in its assignment', async () => {
+  it('recruits a new manager with the 项目经理 occupation and makes it the manager in its assignment', async () => {
     const wrapper = await setup()
     await wrapper.get('[data-action="open-recruit"]').trigger('click')
     expect((wrapper.get('[data-recruit-name]').element as HTMLInputElement).value).toBe('活动项目经理')
@@ -101,7 +101,7 @@ describe('project board settings', () => {
 
     const [url, agent] = putJson.mock.calls[0]!
     expect(url).toBe('/api/project-agents')
-    expect(agent).toMatchObject({ personalSpaceId: 'space-a', personalProjectId: null, occupation: { role: 'management', tags: [] },
+    expect(agent).toMatchObject({ personalSpaceId: 'space-a', personalProjectId: null, occupation: { role: 'project_manager', tags: [] },
       profile: { name: '活动项目经理', status: 'active' } })
     const assignment = postJson.mock.calls.find(([target]) => target === '/api/project-agent-assignments')![1]
     expect(assignment).toMatchObject({ personalProjectId: 'project-a', agentId: agent.agentId, projectManager: { board: { kind: 'builtin', columns: [] } } })

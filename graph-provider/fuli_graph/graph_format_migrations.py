@@ -152,6 +152,14 @@ GRAPH_MIGRATIONS = (
         "knowledge newer knowledge may replace, queued for a person (revision action 'possibly_outdated')",
         fields_only=True,
     ),
+    _records(
+        'graph/16-builtin-role-occupations', 16, 'rewrite',
+        "Jefa's built-in occupation becomes Project manager and Tonborg's Decision maker; "
+        'a role a person changed stays',
+        builtin_occupations.pending_role_occupations,
+        builtin_occupations.apply_role_occupations,
+        builtin_occupations.ROLE_OCCUPATION_JOURNAL,
+    ),
 )
 
 GRAPH_FORMAT_VERSION = GRAPH_MIGRATIONS[-1].to_version

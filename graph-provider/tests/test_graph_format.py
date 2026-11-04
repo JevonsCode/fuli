@@ -25,6 +25,12 @@ from fuli_graph.graph_format_backfills import (
     apply_group_id_separators,
     apply_learning_bucket_ids,
 )
+from fuli_graph.graph_format_builtin_occupations import (
+    ROLE_OCCUPATION_JOURNAL,
+    apply_role_occupations,
+    pending_role_occupations,
+)
+from fuli_graph.graph_format_journal import UNDO_LABEL
 from fuli_graph.graph_format_ledger import LEDGER_LABELS
 from fuli_graph.graph_format_migrations import GRAPH_FORMAT_VERSION, GRAPH_MIGRATIONS
 from fuli_graph.graph_format_schema import schema_fingerprint
@@ -153,6 +159,38 @@ async def test_group_id_step_rolls_back_a_space_when_one_update_fails():
         await apply_group_id_separators(driver, None)
 
     assert driver.committed == 0 and driver.rolled_back == 1
+
+
+class RoleOccupationDriver:
+    def __init__(self, keys):
+        self.keys = keys
+        self.calls = []
+
+    async def execute_query(self, query, **parameters):
+        self.calls.append((query, parameters))
+        return [{'key': key} for key in self.keys], None, None
+
+
+@pytest.mark.asyncio
+async def test_role_occupation_step_reaches_only_jefa_and_tonborg_on_the_shipped_role():
+    driver = RoleOccupationDriver(['node-b', 'node-a'])
+
+    assert await pending_role_occupations(driver, None) == ['node-a', 'node-b']
+    await apply_role_occupations(driver, None)
+
+    (pending, _), (applied, parameters) = driver.calls
+    for query in (pending, applied, ROLE_OCCUPATION_JOURNAL.touches[0].match):
+        assert "item.agent_id IN ['employee.jefa', 'employee.tonborg']" in query
+        assert "item.occupation_role = 'management'" in query
+    assert parameters['roles']['employee.jefa'] == 'project_manager'
+    assert parameters['roles']['employee.tonborg'] == 'decision_maker'
+    assert 'item.occupation_updated_at = $now' in applied
+
+
+def test_role_occupation_step_keeps_what_its_undo_restores():
+    (touch,) = ROLE_OCCUPATION_JOURNAL.touches
+    assert touch.properties == ('occupation_role', 'occupation_updated_at')
+    assert {f'b_{name}' for name in touch.properties} <= set(NODE_FIELDS[UNDO_LABEL])
 
 
 def learning_bucket(space_id, strategy_key):

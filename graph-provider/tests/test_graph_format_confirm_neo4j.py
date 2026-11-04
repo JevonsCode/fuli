@@ -444,7 +444,26 @@ BUILTIN_OCCUPATION_SEED = """
 """
 
 
-# graph/4–7 and 12 once each: a synthetic graph an earlier FULI left one step short,
+def _agent_on_management(node_id, agent_id, name):
+    return f"""
+    CREATE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(:FuliProjectAgent {{id: '{node_id}',
+             agent_id: '{agent_id}', name: '{name}', status: 'active', occupation_role: 'management',
+             occupation_tags: [], occupation_updated_at: datetime('2026-10-01T00:00:00Z'),
+             created_at: datetime('2026-10-01T00:00:00Z')}})
+"""
+
+
+# What FULI 15 stored for Jefa and Tonborg in a space, beside an Agent of the
+# person's that holds the same role.
+ROLE_OCCUPATION_SEED = (
+    "MATCH (space:FuliSpace {id: 'legacy-space'})"
+    + _agent_on_management('legacy-jefa', 'employee.jefa', 'Jefa')
+    + _agent_on_management('legacy-tonborg', 'employee.tonborg', 'Tonborg')
+    + _agent_on_management('own-manager', 'synthetic-manager', 'Synthetic manager')
+)
+
+
+# graph/4–7, 12 and 16 once each: a synthetic graph an earlier FULI left one step short,
 # apply it through the review channel, then undo it. Each case: the version
 # before the step, what to seed, and a read that differs after the step.
 RECORD_STEPS = {
@@ -483,6 +502,11 @@ RECORD_STEPS = {
         MATCH (bole:FuliProjectAgent {id: 'legacy-bole'}), (hr:FuliOccupation {id: 'legacy-hr'})
         RETURN bole.occupation_role AS role, bole.occupation_updated_at AS role_since,
                hr.name_zh AS name, hr.description_en AS duties, hr.revision AS revision
+    """),
+    'graph/16-builtin-role-occupations': (15, ROLE_OCCUPATION_SEED, """
+        MATCH (jefa:FuliProjectAgent {id: 'legacy-jefa'}), (tonborg:FuliProjectAgent {id: 'legacy-tonborg'})
+        RETURN jefa.occupation_role AS jefa, jefa.occupation_updated_at AS jefa_since,
+               tonborg.occupation_role AS tonborg, tonborg.occupation_updated_at AS tonborg_since
     """),
     'graph/7-space-visibility-owners': (6, """
         MATCH (p:FuliPrincipal {id: 'legacy-principal'})
@@ -572,6 +596,45 @@ async def test_builtin_occupations_change_only_what_fuli_shipped(graph):
                                'description_zh': '维护 Agent 的职责、招募安排和人员配置记录。', 'revision': 1}
     assert hr['edited-hr'] == {'id': 'edited-hr', 'name_zh': '人事', 'name_en': 'Agent resources',
                                'description_zh': '维护 Agent 的职责、招募安排和人员配置记录。', 'revision': 4}
+    assert await _version(driver) == GRAPH_FORMAT_VERSION
+
+
+@pytest.mark.asyncio
+async def test_role_occupations_change_only_the_shipped_jefa_and_tonborg(graph):
+    """Jefa and Tonborg leave management; a changed role and a person's Agent stay."""
+    settings, driver = graph
+    await _seed_legacy_principal(driver)
+    await driver.execute_query(ROLE_OCCUPATION_SEED)
+    # A second space whose Tonborg a person had moved to another role.
+    await driver.execute_query('''
+        MATCH (p:FuliPrincipal {id: 'legacy-principal'})
+        CREATE (p)-[:OWNS]->(space:FuliSpace {id: 'edited-space', kind: 'personal', name: 'Synthetic edited space',
+                                              visibility: 'private', group_id: 'edited-space',
+                                              created_at: datetime('2026-01-01T00:00:00Z')})
+        CREATE (space)-[:HAS_PROJECT_AGENT_IDENTITY]->(:FuliProjectAgent {id: 'edited-tonborg',
+                 agent_id: 'employee.tonborg', name: 'Tonborg', status: 'active', occupation_role: 'research',
+                 occupation_tags: [], occupation_updated_at: datetime('2026-10-02T00:00:00Z'),
+                 created_at: datetime('2026-10-01T00:00:00Z')})
+    ''')
+    await driver.execute_query("MERGE (f:FuliDataFormat {store: 'graph'}) SET f.version = 15")
+
+    async with provider_client(_reviewed(settings), ACCESS_TOKEN) as (client, _):
+        plan = (await client.post('/v1/data-format/preview')).json()['plan']
+        assert plan['step']['id'] == 'graph/16-builtin-role-occupations'
+        assert plan['step']['count'] == 2, plan
+        applied = await client.post('/v1/data-format/apply', headers=REVIEW,
+                                    json={'digest': plan['digest'], 'entrypoint': 'cli'})
+        assert applied.status_code == 200, applied.text
+
+    agents = {row['id']: row for row in await _rows(driver, '''
+        MATCH (a:FuliProjectAgent) RETURN a.id AS id, a.occupation_role AS role,
+               toString(a.occupation_updated_at) AS since''')}
+    assert agents['legacy-jefa']['role'] == 'project_manager'
+    assert agents['legacy-jefa']['since'] != '2026-10-01T00:00:00Z'
+    assert agents['legacy-tonborg']['role'] == 'decision_maker'
+    assert agents['legacy-tonborg']['since'] != '2026-10-01T00:00:00Z'
+    assert agents['own-manager'] == {'id': 'own-manager', 'role': 'management', 'since': '2026-10-01T00:00:00Z'}
+    assert agents['edited-tonborg'] == {'id': 'edited-tonborg', 'role': 'research', 'since': '2026-10-02T00:00:00Z'}
     assert await _version(driver) == GRAPH_FORMAT_VERSION
 
 
