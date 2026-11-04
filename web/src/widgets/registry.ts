@@ -24,6 +24,10 @@ export const WIDGETS = {
     component: defineAsyncComponent(() => import('@/features/fla-page/FlaTaskSheets.vue')),
     slots: ['fla.overview'],
   },
+  'fla-growth': {
+    component: defineAsyncComponent(() => import('@/features/fla-page/FlaGrowth.vue')),
+    slots: ['fla.overview'],
+  },
   'team-island': {
     component: defineAsyncComponent(() => import('@/features/team-work/TeamIsland.vue')),
     slots: ['shell.aboveDock'],
