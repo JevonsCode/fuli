@@ -8,7 +8,7 @@ const CATEGORY_OFF = '这一类已被你收回：在 设置 › AI 权限 打开
   + 'This category was taken back by you; turn it on in Settings › AI permissions.';
 const ACCESS_OFF = 'Agent 使用已关闭：在 设置 › 访问 打开。 / Agent access is off; turn it on in Settings › Access.';
 const WORDS_NOT_FOUND = '在你这个会话最近的消息里没有找到这句话：FLA 要先在对话里问你，再原样转达你的话。 / '
-  + 'These words are not in your recent messages of this session; the FLA asks you in chat first and passes your exact words.';
+  + 'These are not whole sentences from your recent messages of this session; the FLA asks you in chat first and passes your exact words.';
 const WORDS_REQUIRED = '这是你本人的决定：FLA 要先在对话里问你，再把你的原话作为 personWords 转达。 / '
   + 'This is your own decision; the FLA asks you in chat first and passes your exact words as personWords.';
 

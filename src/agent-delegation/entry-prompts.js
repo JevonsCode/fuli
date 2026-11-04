@@ -32,7 +32,7 @@ export function entryPromptRecords(dataDir, { now = () => new Date().toISOString
     // A task's entry: keeps the prompt of a hook's entry, and for any other
     // entry drops what the session's earlier task kept.
     enter(task, prompt) {
-      const text = typeof prompt === 'string' ? prompt.replace(/\s+/g, ' ').trim() : '';
+      const text = typeof prompt === 'string' ? prompt.trim() : '';
       if (activeAgentHostSession() !== undefined || !text) {
         rmSync(pathOf(task), { force: true });
         return;

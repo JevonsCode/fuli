@@ -348,3 +348,23 @@ test('the real console keeps a relayed batch confirmation as the person\'s, rela
   assert.deepEqual(port.read().operations.map(({ route, relayed }) => [route, relayed]),
     [['POST /api/knowledge/batch-confirmation', RELAYED]]);
 });
+
+test('rec#80: a fragment of what the person wrote is not their decision', async () => {
+  const { verifiedPersonWords } = await import('../src/agent-delegation/person-words.js');
+  const prompt = '先别通过，等我看完\nNot ok. Keep the new one, please!';
+  const app = { entryPrompts: { read: () => ({ prompt, keptAt: 'synthetic' }) }, recentSessionUserMessages: async () => [] };
+  for (const fragment of ['通过', '别通过', 'ok', 'keep the new', '，，']) {
+    await assert.rejects(verifiedPersonWords(app, {}, fragment), (error) => /person_words/.test(error.code), fragment);
+  }
+  for (const whole of ['先别通过', '先别通过，等我看完', 'keep the  NEW one', 'Keep the new one, please']) {
+    assert.equal((await verifiedPersonWords(app, {}, whole)).messageRef.source, 'current_turn', whole);
+  }
+});
+
+test('rec#80: only the newest messages are read for a relayed decision', async () => {
+  const { verifiedPersonWords } = await import('../src/agent-delegation/person-words.js');
+  let asked = 0;
+  const app = { recentSessionUserMessages: async (_, count) => { asked = count; return [{ text: '可以', ref: {} }]; } };
+  await verifiedPersonWords(app, {}, '可以');
+  assert.equal(asked, 5);
+});

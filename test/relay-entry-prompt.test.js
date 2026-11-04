@@ -55,9 +55,9 @@ test('the kept prompt goes at the task\'s checkpoint and when the next entry rep
   const second = await codexEntry(f, f.dirs.thesis, { prompt: 'Synthetic next message' });
   assert.equal(kept(), 1, 'one record per session');
   await assert.rejects(callAgentTool(f.app, 'run_delegated_action', { ...RELAY,
-    taskContextToken: first.context.taskContextToken, personWords: '这个任务验收通过' }));
+    taskContextToken: first.context.taskContextToken, personWords: '这个任务验收通过 synthetic-relay-words' }));
   await assert.rejects(callAgentTool(f.app, 'run_delegated_action', { ...RELAY,
-    taskContextToken: second.context.taskContextToken, personWords: '这个任务验收通过' }), { code: 'person_words_not_found' });
+    taskContextToken: second.context.taskContextToken, personWords: '这个任务验收通过 synthetic-relay-words' }), { code: 'person_words_not_found' });
   await finishTask(f, second.context);
   assert.equal(kept(), 0);
   await assert.rejects(callAgentTool(f.app, 'run_delegated_action', { ...RELAY,
@@ -74,5 +74,5 @@ test('an Agent\'s own task entry keeps no prompt, whatever taskPrompt it sends',
   agentHostRequestContext({}, 'synthetic-codex-session', 'codex'));
   assert.equal(kept(), 0, 'the Agent\'s entry dropped the earlier one and kept nothing of its own');
   await assert.rejects(callAgentTool(f.app, 'run_delegated_action', { ...RELAY,
-    taskContextToken: made.taskContextToken, personWords: '这个任务验收通过' }), { code: 'person_words_not_found' });
+    taskContextToken: made.taskContextToken, personWords: '这个任务验收通过 synthetic-relay-words' }), { code: 'person_words_not_found' });
 });
