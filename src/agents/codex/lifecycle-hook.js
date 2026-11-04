@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../lifecycle-message.js';
+import { hookFailureCause, PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../lifecycle-message.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
@@ -298,9 +298,9 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
     const running = runWithEntryBudget(budget, () => runCodexLifecycleHook(args, { ...dependencies, signal: controller.signal, write,
       captureTimeoutMs: Math.max(1, Math.min(750, Math.floor(timeoutMs / 4))),
       readInput: async () => { input = await readInput(); return input; },
-      onCleanup: close => { cleanup = close; } })).then(() => ({ timedOut: false }), () => {
+      onCleanup: close => { cleanup = close; } })).then(() => ({ timedOut: false }), (error) => {
       // Never print prompts, transcripts, paths or credentials.
-      write(unavailable('the hook failed'));
+      write(unavailable(hookFailureCause(error)));
       return { timedOut: false };
     });
     return await Promise.race([running, expired]);

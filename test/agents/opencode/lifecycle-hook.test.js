@@ -123,7 +123,7 @@ test('the hook process exits right after its answer, so a detached close never l
 });
 
 test('a broken hook answers the prompt with one line and the stop with nothing', async () => {
-  for (const [event, expected] of [['prompt', /^Fuli context is unavailable \(the hook failed\)/], ['stop', null]]) {
+  for (const [event, expected] of [['prompt', /^Fuli context is unavailable \(the hook failed: Error\)/], ['stop', null]]) {
     const lines = [];
     await runOpenCodeLifecycleCommand(['--event', event], {
       readInput: async () => ({ session_id: SESSION, cwd: '/synthetic', prompt: 'x' }),
