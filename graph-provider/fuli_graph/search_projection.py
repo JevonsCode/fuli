@@ -10,6 +10,7 @@ from .knowledge_weight import effective_confirmation_status, knowledge_weight
 from .provider_values import (
     json_object,
     native_datetime as _native_datetime,
+    preference_key,
     preference_qualifiers,
 )
 
@@ -132,12 +133,7 @@ def fact_result(
         preference_project_id=metadata.get('preference_project_id'),
         preference_agent_id=metadata.get('preference_agent_id'),
         key=metadata.get('key'),
-        preference_key=(
-            attributes.get('preferenceKey')
-            or attributes.get('preference_key')
-            or metadata.get('key')
-            or edge.uuid
-        ),
+        preference_key=preference_key(attributes, metadata.get('key'), edge.uuid),
         preference_qualifiers=preference_qualifiers(attributes),
         defined_project_id=metadata.get('defined_project_id'),
         project_agent_id=metadata.get('project_agent_id'),

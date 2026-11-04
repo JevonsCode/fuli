@@ -1,3 +1,5 @@
+import { errorCode } from '../diagnostics/safe-event.js';
+
 // Every listed rule fetch is a model round trip (Codex re-sends its whole
 // prompt each time), so ordinary tasks must not read the shared rules at all.
 // A call that carries its task token is decided by that session; without one
@@ -5,9 +7,8 @@
 // Why a lifecycle hook failed, as far as it is safe to say (rec#85): an error's
 // code or class, which are fixed identifiers. Never its message, which may carry
 // a prompt, path or credential.
-const SAFE_CODE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 export function hookFailureCause(error) {
-  const code = [error?.code, error?.name].find(value => typeof value === 'string' && SAFE_CODE.test(value));
+  const code = errorCode(error);
   return code ? `the hook failed: ${code}` : 'the hook failed';
 }
 

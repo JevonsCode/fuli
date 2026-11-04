@@ -16,8 +16,12 @@ export async function listAgentWorkbenches(application, { personalSpaceId, agent
 }
 
 // Every FLA's task sheets in one space (rec#11 D-85, the work-surfaces table).
-export function listSpaceWorkbenches(application, { personalSpaceId }) {
-  return visibleTaskSheets(application, { personalSpaceId, agentId: null });
+// A filter narrows the read itself: filtered after the limit, an FLA whose tasks
+// fell outside the first 200 would read as having none (rec#72).
+export async function listSpaceWorkbenches(application, { personalSpaceId, agentId = null, personalProjectId = null }) {
+  const tasks = await application.listProjectAgentTasks({ personalSpaceId, agentId, personalProjectId, limit: TASK_LIMIT });
+  return { partial: tasks.length >= TASK_LIMIT,
+    workbenches: tasks.filter(task => !HIDDEN_STATUSES.has(task.status)).map(task => taskSheet(task)) };
 }
 
 async function visibleTaskSheets(application, { personalSpaceId, agentId }) {

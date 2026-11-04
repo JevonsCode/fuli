@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 
+import { createAgentDelegation } from '../src/agent-delegation/port.js';
+import { createDelegatedConsoleClient } from '../src/agent-delegation/console-client.js';
 import { installEmployeePackage } from '../src/employees/install-package.js';
 import { createEmployeePackageRegistry, employeeDirectories } from '../src/employees/package-registry.js';
 import { createServer } from '../src/server.js';
@@ -233,4 +235,44 @@ test('the person\'s decisions are refused from another device', async (t) => {
     await app.employees.handleHttp(request, response, { templateId: 'jefa', personalProjectId: 'employee-qa', relativePath });
     assert.equal(status, 403, relativePath);
   }
+});
+
+test('rec#80: a move an FLA relays is the person\'s acceptance, kept with the FLA and the person\'s words', async (t) => {
+  const { app, call, defer } = await hiredJefa(t);
+  const delegation = createAgentDelegation(null);
+  defer(() => delegation.close());
+  const { server, url } = await createServer({ app, port: 0, agentDelegation: delegation });
+  defer(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
+  const { createdWorkItems: [task] } = await call('create_tasks', { messageId: 'relay-seed', tasks: [{ title: 'Synthetic relayed task' }] });
+  const client = createDelegatedConsoleClient({ consoleUrl: () => url });
+  const relayed = { words: '这个任务验收通过', messageRef: { source: 'current_turn', taskId: null, conversationId: null, at: null } };
+  const actor = { agentId: 'fla-synthetic', projectId: 'employee-qa', client: 'codex', sessionId: 'session-a' };
+  await client.send({ method: 'PATCH', path: `/employee-workspaces/jefa/employee-qa/api/work-items/${task.id}/status`,
+    body: { status: 'done' }, call: { actor, reason: 'The person accepted it in chat', bodyFields: ['status'], relayed } });
+  const [latest] = (await call('get_task', { workItemId: task.id })).item.history;
+  assert.deepEqual([latest.status, latest.actor, latest.decidedBy, latest.relayedBy, latest.personWords],
+    ['done', 'person', 'person', 'fla-synthetic', '这个任务验收通过']);
+  assert.deepEqual(delegation.read().operations.map(({ category, relayed: words }) => [category, words]), [['decisions', relayed]]);
+});
+
+test('a task keeps a calendar due date, and its times come from its revisions on request', async (t) => {
+  const { call } = await hiredJefa(t);
+  const { createdWorkItems: [task] } = await call('create_tasks', { messageId: 'due-1', tasks: [{ title: 'Synthetic due task', dueDate: '2026-11-20' }] });
+  assert.equal(task.dueDate, '2026-11-20');
+  await assert.rejects(call('create_tasks', { messageId: 'due-2', tasks: [{ title: 'Synthetic bad day', dueDate: '2026-02-30' }] }), /calendar day/);
+
+  // Agents' plain read stays as it was: no derived times.
+  const plain = (await call('read_board', {})).items[0];
+  assert.equal(plain.startedAt, undefined);
+  assert.equal(plain.columnSince, undefined);
+
+  const { updatedWorkItems: [active] } = await call('update_tasks', { requestId: 'due-3', updates: [{ id: task.id, expectedUpdatedAt: task.updatedAt, status: 'active' }] });
+  const { updatedWorkItems: [retitled] } = await call('update_tasks', { requestId: 'due-4', updates: [{ id: task.id, expectedUpdatedAt: active.updatedAt, title: 'Synthetic retitled' }] });
+  const { updatedWorkItems: [review] } = await call('update_tasks', { requestId: 'due-5', updates: [{ id: task.id, expectedUpdatedAt: retitled.updatedAt, status: 'review', dueDate: null }] });
+  assert.equal(review.dueDate, undefined);
+
+  const timed = (await call('read_board', { times: true })).items[0];
+  assert.equal(timed.startedAt, active.updatedAt);
+  assert.equal(timed.columnSince, review.updatedAt);
+  assert.equal(timed.createdAt, task.createdAt);
 });

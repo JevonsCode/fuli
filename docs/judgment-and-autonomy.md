@@ -4,13 +4,13 @@ Tonborg is the built-in judgment Agent, alongside Jefa and Bole. It has a persis
 
 ## Choose the amount of autonomy
 
-Settings offers three choices, saved immediately with Undo:
+The 判断标准 / Standards tab of Tonborg's workbench says in plain words what it reviews knowledge by, and offers three choices, saved immediately with Undo:
 
 - **I decide**: Tonborg analyzes and records suggestions.
 - **Shared decisions**: Tonborg applies routine knowledge reviews backed by existing confirmation and accepts verified FULI tasks.
 - **Autonomous**: Tonborg may also review ordinary pending knowledge. Conflicts, sensitive preferences, uncertain evidence, and actions outside existing authority remain for the user.
 
-Projects inherit the global policy unless the user sets an exception. Updating FULI does not silently expand existing authority.
+Projects inherit the global policy unless the user sets an exception, on the same tab or on the project page. Settings only links to this tab. Updating FULI does not silently expand existing authority.
 
 ## Who answers a judgment
 

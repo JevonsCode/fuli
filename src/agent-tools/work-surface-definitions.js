@@ -16,7 +16,7 @@ export const WORK_SURFACE_DEFINITIONS = [
   {
     name: 'list_work_surfaces',
     title: 'READ · All FLAs\' work surfaces',
-    description: 'One row each: kind, name, FLA, project, state, on, pausable, changedAt. Filters combine.',
+    description: 'One row each: kind, name, FLA, project, state, on, pausable, changedAt. Filters combine. partial/truncated: narrow by agentId or personalProjectId.',
     inputSchema: objectSchema(filter)
   },
   {

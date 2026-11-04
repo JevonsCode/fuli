@@ -39,6 +39,7 @@ describe('connectDesktopClient', () => {
     expect(root.dataset.desktopClient).toBe('windows')
     expect(root.style.getPropertyValue('--desktop-caption-start')).toBe('0px')
     expect(root.style.getPropertyValue('--desktop-caption-end')).toBe('146px')
+    expect(root.style.getPropertyValue('--desktop-caption-clear')).toBe('32px')
   })
 
   it('keeps a strip along the top for the traffic lights on macOS, so the brand sits below them', () => {
@@ -48,6 +49,7 @@ describe('connectDesktopClient', () => {
     expect(root.dataset.desktopClient).toBe('macos')
     expect(root.style.getPropertyValue('--desktop-caption-start')).toBe('0px')
     expect(root.style.getPropertyValue('--desktop-caption-top')).toBe('28px')
+    expect(root.style.getPropertyValue('--desktop-caption-clear')).toBe('28px')
   })
 
   it('changes nothing in a browser or for a malformed global', () => {

@@ -65,5 +65,12 @@ def preference_qualifiers(value) -> dict:
     }
 
 
+def preference_key(attributes, key, item_id):
+    """The key a preference is known by: its stated preferenceKey, else the
+    capture key it was written with, else its ID."""
+    attributes = json_object(attributes)
+    return attributes.get('preferenceKey') or attributes.get('preference_key') or key or item_id
+
+
 def normalized_text(value) -> str:
     return ' '.join(str(value or '').strip().casefold().split())

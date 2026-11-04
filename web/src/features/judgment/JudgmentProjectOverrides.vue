@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 
 import { Button } from '@/components/ui/button'
+import { Card, CardAction, CardHeader, CardTitle } from '@/components/ui/card'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { OptionCombobox } from '@/components/ui/combobox'
 import { t } from '@/i18n'
@@ -9,18 +10,18 @@ import { pickerOrder, projectDisplayName } from '@/features/projects/project-ori
 import type { PersonalProject } from '@/types'
 
 import ProjectJudgmentPolicy from './ProjectJudgmentPolicy.vue'
-import { judgmentText, policySummary } from './judgment-copy'
+import { judgmentText } from './judgment-copy'
 import { loadJudgmentPolicyOverrides, startProjectJudgmentPolicy } from './judgment-api'
 import { normalizeJudgmentPolicy, type JudgmentPolicy } from './judgment-types'
 
 // Tonborg's workbench: the projects that judge differently from Tonborg's
 // default. Adding one starts it from the default; removing one (恢复默认)
-// takes it off the list. The default itself is set in Settings.
+// takes it off the list. The default itself is the card beside this one.
 const props = withDefaults(defineProps<{ personalSpaceId: string; projects?: PersonalProject[] }>(), { projects: () => [] })
 
-const defaultPolicy = ref<JudgmentPolicy | null>(null)
 const overrides = ref<JudgmentPolicy[]>([])
 const loading = ref(false)
+const loaded = ref(false)
 const adding = ref(false)
 const error = ref('')
 const chosenProjectId = ref('')
@@ -44,15 +45,15 @@ watch(addable, projects => {
 async function load() {
   const current = ++generation
   error.value = ''
-  defaultPolicy.value = null
+  loaded.value = false
   overrides.value = []
   if (!props.personalSpaceId) return
   loading.value = true
   try {
     const value = await loadJudgmentPolicyOverrides(props.personalSpaceId)
     if (current !== generation) return
-    defaultPolicy.value = normalizeJudgmentPolicy(value.default)
     overrides.value = (value.overrides ?? []).map(policy => normalizeJudgmentPolicy(policy))
+    loaded.value = true
   } catch (cause) {
     if (current === generation) error.value = cause instanceof Error ? cause.message : judgmentText('overrides.loadError')
   } finally {
@@ -85,15 +86,14 @@ function changed(value: JudgmentPolicy) {
 </script>
 
 <template>
-  <details class="judgment-overrides" data-judgment-overrides>
-    <summary>
-      {{ judgmentText('overrides.title') }}
-      <span v-if="!loading && !error" class="judgment-overrides-count">{{ t('judgment.overrides.count', { count: overrides.length }) }}</span>
-    </summary>
+  <Card as="section" aria-labelledby="judgment-overrides-title" data-judgment-overrides>
+    <CardHeader>
+      <CardTitle id="judgment-overrides-title" as="h2">{{ judgmentText('overrides.title') }}</CardTitle>
+      <CardAction v-if="loaded" class="judgment-overrides-count">{{ t('judgment.overrides.count', { count: overrides.length }) }}</CardAction>
+    </CardHeader>
     <div class="judgment-overrides-body">
       <GrowthLoading v-if="loading" variant="compact" :label="judgmentText('overrides.loading')" />
-      <template v-else-if="defaultPolicy">
-        <p class="judgment-overrides-default" data-judgment-default>{{ t('judgment.overrides.default', { policy: policySummary(defaultPolicy) }) }}</p>
+      <template v-else-if="loaded">
         <ProjectJudgmentPolicy v-for="policy in overrides" :key="policy.personalProjectId ?? ''" class="judgment-override"
           :personal-space-id="personalSpaceId" :project-id="policy.personalProjectId ?? ''" :project-name="projectName(policy.personalProjectId ?? '')"
           :heading="projectName(policy.personalProjectId ?? '')" :policy="policy" @change="changed" />
@@ -110,17 +110,15 @@ function changed(value: JudgmentPolicy) {
         <Button size="sm" variant="ghost" :disabled="loading" @click="load">{{ judgmentText('settings.retry') }}</Button>
       </div>
     </div>
-  </details>
+  </Card>
 </template>
 
 <style scoped>
-.judgment-overrides { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); }
-.judgment-overrides summary { display: flex; align-items: center; gap: 10px; padding: 10px 14px; color: var(--color-ink); font-size: 13px; cursor: pointer; }
 .judgment-overrides-count { color: var(--color-muted); font-size: 12px; }
-.judgment-overrides-body { display: grid; gap: 14px; padding: 4px 14px 14px; }
-.judgment-overrides-default { margin: 0; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
-.judgment-override { padding-top: 12px; border-top: 1px solid var(--color-border); }
-.judgment-overrides-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid var(--color-border); }
+.judgment-overrides-body { display: grid; gap: 14px; padding: 0 var(--space-5, 20px); }
+.judgment-override + .judgment-override { padding-top: 12px; border-top: 1px solid var(--color-border); }
+.judgment-overrides-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.judgment-override + .judgment-overrides-add { padding-top: 12px; border-top: 1px solid var(--color-border); }
 .judgment-overrides-project { flex: 0 1 280px; }
 .judgment-overrides-error { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 12px; border-radius: var(--radius-control); color: var(--color-danger); background: var(--color-danger-soft); font-size: 13px; }
 </style>

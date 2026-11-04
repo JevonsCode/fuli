@@ -11,6 +11,7 @@ from .provider_values import (
     json_object,
     native_datetime as _native_datetime,
     normalized_text as _normalized,
+    preference_key,
     preference_qualifiers,
 )
 from .search_projection import (
@@ -25,6 +26,8 @@ from .knowledge_tag_ranking import TagRanking
 from .knowledge_visibility import AgentReader, fla_endpoints_visible_cypher, fla_visible, reader_parameter
 
 MIN_TERM_COVERAGE = 0.25
+# A preference key's separators, so `reply-language` is also the words "reply language".
+_KEY_SEPARATORS = re.compile(r'[-_.:/]+')
 LATIN_QUERY_FILLERS = {
     'a', 'an', 'and', 'are', 'can', 'could', 'do', 'does', 'find', 'for',
     'from', 'give', 'how', 'i', 'in', 'is', 'it', 'me', 'of', 'on', 'please',
@@ -721,12 +724,7 @@ def _entity_search_result(record, score: float, space_id: str) -> EntitySearchRe
     value = dict(record)
     value.update(knowledge_weight(record, evidence_ids=value.pop('evidence_ids', [])))
     attributes = json_object(value.get('attributes_json'))
-    value['preference_key'] = (
-        attributes.get('preferenceKey')
-        or attributes.get('preference_key')
-        or value.get('key')
-        or value.get('id')
-    )
+    value['preference_key'] = preference_key(attributes, value.get('key'), value.get('id'))
     value['preference_qualifiers'] = preference_qualifiers(attributes)
     basis = json_object(value.pop('confirmation_basis_json', None))
     source_references = value.pop('source_references', [])
@@ -876,11 +874,17 @@ def _retrieval_aliases(record) -> list[str]:
         values = [values]
     if not isinstance(values, list):
         return []
-    return [
+    aliases = [
         value.strip()
         for value in values[:32]
         if isinstance(value, str) and 0 < len(value.strip()) <= 256
     ]
+    # A preference is found by its key, as written and as words (rec#75).
+    if record.get('profile_aspect'):
+        key = preference_key(attributes, record.get('key'), None)
+        if isinstance(key, str) and 0 < len(key.strip()) <= 256:
+            aliases += [key.strip(), _KEY_SEPARATORS.sub(' ', key).strip()]
+    return aliases
 
 
 def _alias_relevance(query: str, aliases: list[str]) -> float:

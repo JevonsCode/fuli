@@ -1,4 +1,7 @@
-import { t } from '@/i18n'
+import { z } from 'zod'
+
+import { currentLocale, t } from '@/i18n'
+import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import type { KnowledgeItemSummary, ScopeProject } from '@/features/knowledge-quick-edit/model'
 import { projectLabel, type SessionProject, type SessionRecordsView } from '@/features/session-records/model'
 
@@ -36,9 +39,40 @@ export function migrationRefusal(detail: string): { code: string; items: Array<{
   }
 }
 
-export interface SessionMigrationResult {
-  target_project_id: string
-  moved: Array<{ item_kind: KnowledgeItemSummary['item_kind']; item_id: string }>
+/**
+ * rec#82: whether the chat whose items moved has been told. waiting: it is
+ * told when that chat next runs, nothing wakes it; delivered: its task entry
+ * carried the line; unreachable: nothing recorded the move for it, or FULI is
+ * stopped in that chat.
+ */
+export const migrationDeliverySchema = z.discriminatedUnion('state', [
+  z.looseObject({ state: z.literal('waiting') }),
+  z.looseObject({ state: z.literal('delivered'), delivered_at: z.string() }),
+  z.looseObject({ state: z.literal('unreachable'), reason: z.enum(['not_recorded', 'session_stopped']) }),
+])
+export type MigrationDelivery = z.infer<typeof migrationDeliverySchema>
+
+export const migrationDeliveryReadSchema = z.looseObject({ migration_id: z.string(), delivery: migrationDeliverySchema })
+
+export const sessionMigrationResultSchema = z.looseObject({
+  migration_id: z.string(),
+  target_project_id: z.string(),
+  moved: z.array(z.looseObject({ item_kind: z.enum(['entity', 'relationship']), item_id: z.string() })),
+  held_count: z.number().int().nullable(),
+  delivery: migrationDeliverySchema,
+})
+export type SessionMigrationResult = z.infer<typeof sessionMigrationResultSchema>
+
+/** The page's sentence for a delivery state, and whether it may still change. */
+export function migrationDeliveryNotice(delivery: MigrationDelivery) {
+  if (delivery.state === 'delivered') {
+    return { text: t('sessionMigration.delivered', { time: formatDateTime(delivery.delivered_at, currentLocale(),
+      DATE_TIME_MINUTE, { missing: '' }) }), settled: true }
+  }
+  if (delivery.state === 'waiting') return { text: t('sessionMigration.deliveryWaiting'), settled: false }
+  return delivery.reason === 'session_stopped'
+    ? { text: t('sessionMigration.deliveryStopped'), settled: false }
+    : { text: t('sessionMigration.deliveryNotRecorded'), settled: true }
 }
 
 export interface MigrationTarget { spaceId: string; sessionId: string; client: string; projectId: string }

@@ -15,6 +15,8 @@ interface DesktopClient { platform: 'windows' | 'macos', captionStart: number, c
 export const DESKTOP_WINDOW_HANDLER = 'fuliWindow'
 // Room between the window's controls and the top bar's own.
 const CAPTION_GAP = 8
+// Windows' caption buttons (desktop/flutter caption_controls.dart) stand this tall over the page.
+const WINDOWS_CAPTION_HEIGHT = 32
 // How far the pointer moves before a press on the bar becomes a window drag, so a click stays a click.
 const DRAG_SLOP = 4
 // What a press on the bar is for itself rather than for moving the window.
@@ -49,6 +51,9 @@ export function connectDesktopClient(root: HTMLElement = document.documentElemen
   root.style.setProperty('--desktop-caption-end', client.captionEnd ? `${client.captionEnd + CAPTION_GAP}px` : '0px')
   // macOS: the traffic lights take a strip along the top; the brand sits below them.
   root.style.setProperty('--desktop-caption-top', `${client.captionTop}px`)
+  // What a layer over the whole window keeps clear at its top, on either platform.
+  const clear = client.captionTop || (client.captionEnd ? WINDOWS_CAPTION_HEIGHT : 0)
+  root.style.setProperty('--desktop-caption-clear', `${clear}px`)
 }
 
 // Starting FULI when the person signs in to Windows: the client's own setting, shared with its tray menu

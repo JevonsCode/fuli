@@ -180,7 +180,7 @@ describe('permanent delete on the item page', () => {
     expect(notice.attributes('data-hard-deleted-state')).toBe('complete')
     expect(notice.text()).toContain('这条知识已被你彻底删除')
     expect(wrapper.get('[data-hard-deleted-count]').text()).toBe('已彻底删除 3 条知识、2 段原文。')
-    expect(wrapper.get('[data-hard-deleted-exceptions]').text()).toContain('工作流候选里记下的步骤名称')
+    expect(wrapper.get('[data-hard-deleted-exceptions]').text()).toContain('Workflow 候选里记下的步骤名称')
     expect(wrapper.get('[data-hard-deleted-disclosure]').text()).toContain('你之前做的格式备份里仍然有它，需要你自己删除')
     expect(wrapper.get('a[data-hard-deleted-backups]').attributes('href')).toBe('/settings/data-format')
     expect(wrapper.find('[data-hard-deleted-local-failed]').exists()).toBe(false)

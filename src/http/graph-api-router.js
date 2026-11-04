@@ -1,3 +1,4 @@
+import { relayedDecision } from '../agent-delegation/delegation-header.js';
 import { readJson, sendJson } from './response.js';
 import { testToolsEnabled } from '../app/test-tools.js';
 import { handleAgentAttentionRequest } from './agent-attention-api-router.js';
@@ -5,12 +6,16 @@ import { handleTaskEventsRequest } from './task-events-api-router.js';
 import { handleOccupationRequest } from './occupation-api-router.js';
 import { handleTopicProposalsRequest } from './topic-proposals-api-router.js';
 import { handleAgentScoreCardRequest } from './agent-score-card-api-router.js';
+import { handleAgentGrowthRequest } from './agent-growth-api-router.js';
 import { handleKnowledgeItemRequest } from './knowledge-item-api-router.js';
 import { handleSessionRecordsRequest } from './session-records-api-router.js';
 import { handleCaptureChangeRequest } from './capture-change-api-router.js';
 import { handleCaptureOnboardingRequest, handleFirstRunGuideRequest } from './capture-onboarding-api-router.js';
 import { parsePersonalDraftDecision } from '../graphiti/publication-draft-input.js';
 import { PERSON_WRITER } from '../graphiti/project-profile-authors.js';
+
+// The Provider keeps a confirmer's label of at most this many characters.
+const CONFIRMER_LABEL_LIMIT = 160;
 
 export async function handleGraphApiRequest({
   request,
@@ -26,6 +31,7 @@ export async function handleGraphApiRequest({
   if (await handleOccupationRequest({ request, response, url, app })) return true;
   if (await handleTopicProposalsRequest({ request, response, url, app })) return true;
   if (await handleAgentScoreCardRequest({ request, response, url, app })) return true;
+  if (await handleAgentGrowthRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleKnowledgeItemRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleSessionRecordsRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleCaptureChangeRequest({ request, response, url, app })) return true;
@@ -170,11 +176,15 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/knowledge/batch-confirmation' && request.method === 'POST') {
+    // A confirmation an FLA relays in the person's words (rec#80) is the
+    // person's, kept with the FLA that relayed it, whatever the body claims.
+    const relay = relayedDecision(request);
     sendJson(
       response,
       200,
       await app.confirmKnowledgeBatch({
         ...(await readJson(request)),
+        ...(relay ? { confirmer: { kind: 'user', label: relayedConfirmerLabel(relay) } } : {}),
         operationActor: 'human'
       })
     );
@@ -211,6 +221,16 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
+  const projectHistory = url.pathname.match(/^\/api\/personal-projects\/([^/]+)\/history$/);
+  if (projectHistory && request.method === 'GET') {
+    const limit = url.searchParams.get('limit');
+    sendJson(response, 200, await app.listPersonalProjectHistory({
+      personalSpaceId: url.searchParams.get('personalSpaceId'),
+      projectId: decodeURIComponent(projectHistory[1]),
+      limit: limit === null ? null : Number(limit)
+    }));
+    return true;
+  }
   if (url.pathname === '/api/projects/relation-weights' && request.method === 'GET') {
     sendJson(response, 200, await app.listProjectRelationWeights({
       personalSpaceId: url.searchParams.get('personalSpaceId')
@@ -244,7 +264,7 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/project-agents' && request.method === 'PUT') {
-    sendJson(response, 200, await app.upsertProjectAgent(await readJson(request)));
+    sendJson(response, 200, await app.upsertProjectAgent({ ...(await readJson(request)), writer: PERSON_WRITER }));
     return true;
   }
   if (url.pathname === '/api/project-agent-context' && request.method === 'POST') {
@@ -256,6 +276,16 @@ export async function handleGraphApiRequest({
   const agentMemoryExportPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/memory\/export$/);
   const agentOccupationPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/occupation$/);
   const agentNamePath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/name$/);
+  const agentDismissalPath = url.pathname.match(/^\/api\/project-agents\/([^/]+)\/dismissal$/);
+  if (agentDismissalPath && request.method === 'POST') {
+    // The person's own dismissal from Bole's workbench: only their words pass through.
+    const { personalSpaceId, reason, lessons } = await readJson(request);
+    sendJson(response, 200, await app.dismissProjectAgent({
+      personalSpaceId, reason, lessons,
+      agentId: decodeURIComponent(agentDismissalPath[1])
+    }));
+    return true;
+  }
   if (agentNamePath && request.method === 'PUT') {
     const body = await readJson(request);
     sendJson(response, 200, await app.renameProjectAgent({
@@ -715,4 +745,8 @@ function nonNegativeNumberParam(url, name, fallback) {
     throw new TypeError(`${name} must be a non-negative integer`);
   }
   return value;
+}
+
+function relayedConfirmerLabel(relay) {
+  return `由 ${relay.relayedBy ?? 'FLA'} 转达`.slice(0, CONFIRMER_LABEL_LIMIT);
 }

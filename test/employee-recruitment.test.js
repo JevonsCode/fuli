@@ -83,6 +83,24 @@ test('Tonborg creates its scoped memory assignment only after authorization and 
   assert.equal(writes.length, count);
 });
 
+// Jevons 11-04: opening Jefa's board read every Agent once per project.
+test('the console reading boards in a burst asks who the Agents are once; an Agent or a write reads fresh', async (t) => {
+  const { service, app, registry } = fixture();
+  t.after(() => service.close());
+  await service.recruit({ templateId: 'jefa', personalProjectId: 'project-a' });
+  const reads = { agents: 0 };
+  const listProjectAgents = app.listProjectAgents;
+  app.listProjectAgents = (input) => { reads.agents += 1; return listProjectAgents.call(app, input); };
+  await Promise.all([1, 2, 3].map(() => service.callTool({ templateId: 'jefa', personalProjectId: 'project-a', tool: 'read_board' })));
+  assert.equal(reads.agents, 1);
+  await service.callTool({ templateId: 'jefa', personalProjectId: 'project-a', tool: 'read_board', sourceApplication: 'codex' });
+  assert.equal(reads.agents, 2);
+  const runtime = registry.runtime;
+  registry.runtime = async () => ({ ...(await runtime()), describeTools: () => [{ name: 'update_tasks', permission: 'board.write' }] });
+  await service.callTool({ templateId: 'jefa', personalProjectId: 'project-a', tool: 'update_tasks', arguments: {} });
+  assert.equal(reads.agents, 3);
+});
+
 test('a successful employee tool call supplies truthful collaboration evidence', async (t) => {
   const { service } = fixture();
   t.after(() => service.close());

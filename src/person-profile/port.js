@@ -6,7 +6,8 @@ import { singleLine } from '../text/single-line.js';
 // The person's own home (「我」): what FULI and Agents call them and the
 // picture they show as 「我」. Kept on this computer only, in
 // person-profile.json under the data directory; only the person changes it,
-// in the console (local_user_only). Agents get the name as one short field of
+// in the console or through an FLA that relays their words (agent_relayed,
+// rec#80). Agents get the name as one short field of
 // the preferences they already read (context.address_as), never the picture.
 export const PERSON_PROFILE_FORMAT = jsonFormat({ store: 'person-profile', versions: [1] });
 const PERSON_NAME_MAX_CHARS = 32;

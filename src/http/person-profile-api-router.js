@@ -5,8 +5,9 @@ import { readJson, sendJson, sendPortrait } from './response.js';
 // The person's own home (「我」, person-profile/port.js): what FULI calls them
 // and their picture. Both are about the person at this computer, so only a
 // request from this computer, in the active personal space, reads or changes
-// them; no Agent tool reaches these routes (Agents read only the name, from
-// the preferences of their task entry).
+// them; no Agent tool reaches these routes, and an FLA changes them only by
+// relaying the person's words (agent_relayed, rec#80). Agents read only the
+// name, from the preferences of their task entry.
 
 const PROFILE_PATH = '/api/person-profile';
 const IMAGE_PATH = '/api/person-profile/image';

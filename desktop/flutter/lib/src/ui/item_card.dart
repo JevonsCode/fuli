@@ -14,6 +14,7 @@ const _knownKinds = {
   'update_left_work',
   'ports_moved',
   'graph_container',
+  'data_dir_shared',
 };
 
 /// One doctor item as a card: its plain sentence and the one button that

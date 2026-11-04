@@ -400,17 +400,25 @@ async def test_a_rejected_preference_keeps_its_block_through_an_agent_rewrite_bu
         assert own_id in await applied(client, space_id, 'alpha')
 
 
+async def no_older_preferences(*_args, **_kwargs):
+    return []
+
+
 @pytest.mark.asyncio
-async def test_a_conflict_merge_writes_the_merged_words_as_a_new_version_the_other_points_at():
+async def test_a_conflict_merge_writes_the_merged_words_as_a_new_version_the_other_points_at(monkeypatch):
     settings = fixture_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha')
         ids = []
-        for key, text in [('style-a', 'Reports start with a summary'), ('style-b', 'Reports start with the data')]:
-            item_id = (await commit(client, space_id, [preference(
-                key, text, attributes={'preferenceKey': 'report-opening'})]))['entity_ids'][0]
-            await confirm(client, space_id, item_id)
-            ids.append(item_id)
+        # Since rec#75 the later confirmation replaces the earlier one, so two current
+        # preferences of one key are data from before it: confirm these as it was then.
+        with monkeypatch.context() as earlier:
+            earlier.setattr('fuli_graph.knowledge_outdated.end_older_preferences', no_older_preferences)
+            for key, text in [('style-a', 'Reports start with a summary'), ('style-b', 'Reports start with the data')]:
+                item_id = (await commit(client, space_id, [preference(
+                    key, text, attributes={'preferenceKey': 'report-opening'})]))['entity_ids'][0]
+                await confirm(client, space_id, item_id)
+                ids.append(item_id)
         left, right = sorted(ids)
         context = ok(await client.get('/v1/collaboration-preferences', params={
             'personal_space_id': space_id, 'personal_project_id': 'alpha'}))

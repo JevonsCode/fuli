@@ -2,7 +2,7 @@ import { deferredTurnReceipt, MAX_LIST_EPISODES, readEpisodeReceipts, readTurnRe
   from '../agents/turn-receipt.js';
 import { withReceiptLines, withTurnReceipt } from '../agents/identity-receipt.js';
 import { taskKnowledgeReader } from './knowledge-reader.js';
-import { formalTask, sessionMigrationLine, sessionMigrationOffer } from './session-knowledge-migration.js';
+import { formalTask, sessionMigrationLine, sessionMigrationNotice, sessionMigrationOffer } from './session-knowledge-migration.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 
 // When a turn's receipt reaches a reply, exactly once (rec#20). The Provider
@@ -43,13 +43,15 @@ async function savedTurnReceipt(application, task, results, { memory, agentName 
 
 // A task entry's receipt: the identity line, then what earlier turns saved but
 // never showed, then the offer to migrate what the session's temporary project
-// holds once the session linked to a formal project (rec#20 part 2).
+// holds once the session linked to a formal project (rec#20 part 2), and
+// what a person confirmed moving for this session since its last entry (rec#82).
 export async function entryAgentReceipt(application, task, receipt) {
   const format = await receiptFormatNotices(application, { taskId: task.token, includePending: false });
   if (format.length) receipt = { ...receipt, markdown: [receipt.markdown, ...format].join(' · ') };
   const late = await unreadTurnReceipt(application, task);
+  const confirmed = sessionMigrationNotice(application, task);
   const migration = await sessionMigrationOffer(application, task);
-  return withReceiptLines(withTurnReceipt(receipt, late), migration ? [migration] : []);
+  return withReceiptLines(withTurnReceipt(receipt, late), [confirmed, migration].filter(Boolean));
 }
 
 // What earlier turns of this session saved but never showed. Each receipt is

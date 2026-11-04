@@ -67,6 +67,16 @@ export const JEFA_BOARD_FORMAT = sqliteFormat({
     // Absent on existing tasks: they show in the first column for their state.
     id: 'jefa-board/3-task-board-columns', to: 3, kind: 'add-columns', table: 'jefa_work_items',
     summary: 'the custom board column a task was moved to', columns: { board_column: 'TEXT' }
+  }, {
+    // A move the person decided and an FLA relayed in their words (rec#80);
+    // every other revision keeps both NULL.
+    id: 'jefa-board/4-relayed-moves', to: 4, kind: 'add-columns', table: 'jefa_work_item_revisions',
+    summary: 'which FLA relayed a task move the person decided, and the words of theirs it relayed',
+    columns: { relayed_by: 'TEXT', person_words: 'TEXT' }
+  }, {
+    // Absent on existing tasks: they have no due date until someone sets one.
+    id: 'jefa-board/5-task-due-dates', to: 5, kind: 'add-columns', table: 'jefa_work_items',
+    summary: 'the calendar day a task is due', columns: { due_date: 'TEXT' }
   }],
   pragmas: 'PRAGMA journal_mode = WAL;'
 });
@@ -95,15 +105,47 @@ export class JefaBoardStore {
     return this.#database;
   }
 
-  board(scope, { limit, statuses }) {
-    const filter = statuses?.length ? `AND status IN (${statuses.map(() => '?').join(', ')})` : '';
-    const parameters = [scope.spaceId, scope.projectId, ...(statuses ?? [])];
+  // times: also each task's times read from its revisions (withTimes).
+  // doneSince keeps finished tasks from that time on, and doneBefore those older
+  // than it, newest first; either way doneOlder counts the finished tasks left out.
+  board(scope, { limit, statuses, doneSince, doneBefore, times = false }) {
+    const filters = [];
+    const parameters = [scope.spaceId, scope.projectId];
+    if (statuses?.length) { filters.push(`AND status IN (${statuses.map(() => '?').join(', ')})`); parameters.push(...statuses); }
+    if (doneSince) { filters.push("AND (status != 'done' OR updated_at >= ?)"); parameters.push(doneSince); }
+    if (doneBefore) { filters.push("AND (status != 'done' OR updated_at < ?)"); parameters.push(doneBefore); }
+    const filter = filters.join(' ');
     const rows = this.database.prepare(`SELECT * FROM jefa_work_items WHERE space_id = ? AND project_id = ? ${filter}
-      ${BOARD_ORDER} LIMIT ?`).all(...parameters, limit + 1);
+      ${doneBefore ? 'ORDER BY updated_at DESC, id' : BOARD_ORDER} LIMIT ?`).all(...parameters, limit + 1);
     const { total } = this.database.prepare(`SELECT count(*) AS total FROM jefa_work_items
       WHERE space_id = ? AND project_id = ? ${filter}`).get(...parameters);
-    return { version: this.#projectRevision(scope), total, truncated: rows.length > limit,
-      items: rows.slice(0, limit).map(itemFromRow) };
+    const items = rows.slice(0, limit).map(itemFromRow);
+    const board = { version: this.#projectRevision(scope), total, truncated: rows.length > limit,
+      items: times ? this.withTimes(scope, items) : items };
+    if (doneBefore) return { ...board, doneOlder: total - items.length };
+    if (!doneSince) return board;
+    const { older } = this.database.prepare(`SELECT count(*) AS older FROM jefa_work_items
+      WHERE space_id = ? AND project_id = ? AND status = 'done' AND updated_at < ?`).get(scope.spaceId, scope.projectId, doneSince);
+    return { ...board, doneOlder: older };
+  }
+
+  // Each task with the times only its revisions know: startedAt, when it first
+  // went active, and columnSince, when it reached the column it is in now.
+  withTimes(scope, items) {
+    const revisions = this.database.prepare(`SELECT id, json_extract(record, '$.status') AS status,
+        json_extract(record, '$.boardColumn') AS board_column, recorded_at FROM jefa_work_item_revisions
+      WHERE space_id = ? AND project_id = ? ORDER BY id, revision`).all(scope.spaceId, scope.projectId);
+    const times = new Map();
+    for (const { id, status, board_column: column, recorded_at: at } of revisions) {
+      const task = times.get(id) ?? {};
+      if (status === 'active') task.startedAt ??= at;
+      if (task.status !== status || task.column !== column) Object.assign(task, { status, column, columnSince: at });
+      times.set(id, task);
+    }
+    return items.map((item) => {
+      const { startedAt, columnSince } = times.get(item.id) ?? {};
+      return { ...item, ...(startedAt ? { startedAt } : {}), ...(columnSince ? { columnSince } : {}) };
+    });
   }
 
   items(scope) {
@@ -113,10 +155,11 @@ export class JefaBoardStore {
 
   item(scope, id) {
     const item = itemFromRow(this.#row(scope, id));
-    const history = this.database.prepare(`SELECT revision, actor, record, recorded_at FROM jefa_work_item_revisions
+    const history = this.database.prepare(`SELECT revision, actor, record, recorded_at, relayed_by, person_words FROM jefa_work_item_revisions
       WHERE space_id = ? AND project_id = ? AND id = ? ORDER BY revision DESC LIMIT ?`)
       .all(scope.spaceId, scope.projectId, id, TASK_HISTORY_LIMIT)
-      .map((row) => ({ revision: row.revision, actor: row.actor, status: JSON.parse(row.record).status, recordedAt: row.recorded_at }));
+      .map((row) => ({ revision: row.revision, actor: row.actor, status: JSON.parse(row.record).status, recordedAt: row.recorded_at,
+        ...(row.person_words === null ? {} : { decidedBy: 'person', relayedBy: row.relayed_by, personWords: row.person_words }) }));
     return { ...item, history };
   }
 
@@ -128,7 +171,7 @@ export class JefaBoardStore {
       const item = { id: randomUUID(), projectId: scope.projectId, title: task.title, summary: task.summary ?? '',
         status: task.status ?? 'planned', priority: task.priority ?? 'medium', visibility: task.visibility ?? 'private',
         workType: task.workType, acceptanceCriteria: task.acceptanceCriteria ?? [], tags: task.tags ?? [],
-        createdAt: at, updatedAt: at };
+        dueDate: calendarDay(task.dueDate), createdAt: at, updatedAt: at };
       return this.#write(scope, this.#placed(scope, item, task, actor), 1, actor);
     }));
   }
@@ -141,6 +184,7 @@ export class JefaBoardStore {
         throw new EmployeeError('The task changed since it was read; read it again before updating', 409, 'version_conflict');
       }
       const current = itemFromRow(row);
+      calendarDay(change.dueDate);
       const item = this.#placed(scope, { ...current, ...change, updatedAt: this.#nextTime(current.updatedAt) }, change, actor, current);
       if (item.status !== current.status) item.acceptedAt = item.status === 'done' ? item.updatedAt : undefined;
       return this.#write(scope, item, row.revision + 1, actor);
@@ -148,7 +192,8 @@ export class JefaBoardStore {
   }
 
   // The person's own move, from the console: no version check, as the board shows it.
-  setStatus(scope, id, status, column) {
+  // relay: the FLA that relayed the person's move and their words (rec#80), or null.
+  setStatus(scope, id, status, column, relay = null) {
     return this.#transaction(() => {
       const row = this.#row(scope, id);
       const current = itemFromRow(row);
@@ -156,7 +201,7 @@ export class JefaBoardStore {
       const updatedAt = this.#nextTime(current.updatedAt);
       const item = this.#placed(scope, { ...current, status, updatedAt }, { status, boardColumn: column }, 'person', current);
       if (item.status !== current.status) item.acceptedAt = status === 'done' ? updatedAt : undefined;
-      return this.#write(scope, item, row.revision + 1, 'person');
+      return this.#write(scope, item, row.revision + 1, 'person', relay);
     });
   }
 
@@ -293,20 +338,22 @@ export class JefaBoardStore {
   }
 
   // Returns the task as stored.
-  #write(scope, item, revision, actor) {
+  #write(scope, item, revision, actor, relay = null) {
     this.database.prepare(`INSERT INTO jefa_work_items(space_id, project_id, id, revision, title, summary, status, priority,
-        visibility, work_type, acceptance_criteria, tags, accepted_at, created_at, updated_at, board_column)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        visibility, work_type, acceptance_criteria, tags, accepted_at, created_at, updated_at, board_column, due_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(space_id, project_id, id) DO UPDATE SET revision = excluded.revision, title = excluded.title,
         summary = excluded.summary, status = excluded.status, priority = excluded.priority, visibility = excluded.visibility,
         work_type = excluded.work_type, acceptance_criteria = excluded.acceptance_criteria, tags = excluded.tags,
-        accepted_at = excluded.accepted_at, updated_at = excluded.updated_at, board_column = excluded.board_column`)
+        accepted_at = excluded.accepted_at, updated_at = excluded.updated_at, board_column = excluded.board_column,
+        due_date = excluded.due_date`)
       .run(scope.spaceId, scope.projectId, item.id, revision, item.title, item.summary, item.status, item.priority,
         item.visibility, item.workType ?? null, JSON.stringify(item.acceptanceCriteria), JSON.stringify(item.tags),
-        item.acceptedAt ?? null, item.createdAt, item.updatedAt, item.boardColumn ?? null);
-    this.database.prepare(`INSERT INTO jefa_work_item_revisions(space_id, project_id, id, revision, actor, record, recorded_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(scope.spaceId, scope.projectId, item.id, revision, actor, JSON.stringify(item), item.updatedAt);
+        item.acceptedAt ?? null, item.createdAt, item.updatedAt, item.boardColumn ?? null, item.dueDate ?? null);
+    this.database.prepare(`INSERT INTO jefa_work_item_revisions(space_id, project_id, id, revision, actor, record, recorded_at,
+        relayed_by, person_words) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(scope.spaceId, scope.projectId, item.id, revision, actor, JSON.stringify(item), item.updatedAt,
+        relay?.relayedBy ?? null, relay?.personWords ?? null);
     this.#bumpProject(scope);
     return itemFromRow(this.#row(scope, item.id));
   }
@@ -357,8 +404,20 @@ function itemFromRow(row) {
     priority: row.priority, visibility: row.visibility, ...(row.work_type ? { workType: row.work_type } : {}),
     acceptanceCriteria: JSON.parse(row.acceptance_criteria), tags: JSON.parse(row.tags),
     ...(row.accepted_at ? { acceptedAt: row.accepted_at } : {}), ...(row.board_column ? { boardColumn: row.board_column } : {}),
+    ...(row.due_date ? { dueDate: row.due_date } : {}),
     createdAt: row.created_at, updatedAt: row.updated_at
   };
+}
+
+// A due date is a calendar day, the same day wherever it is read; the schema
+// checks its shape, this that the day exists. Null clears it.
+function calendarDay(value) {
+  if (value === undefined || value === null) return value;
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    throw new InvalidInputError('dueDate is not a calendar day; pass YYYY-MM-DD');
+  }
+  return value;
 }
 
 function shareState(projectId, slug) {

@@ -25,7 +25,10 @@ export async function finishTaskEntryPreferences(application, preferences, input
   if (!input.sessionId || typeof input.taskPrompt !== 'string') return { ...preferences,
     task_lifecycle: { status: 'not_started', reason: !input.sessionId ? 'native_session_required' : 'task_prompt_required',
       guidance: 'Preferences were loaded, but no task token was created. Supply the current host sessionId and taskPrompt to get_collaboration_preferences. Do not guess a session ID, use an MCP process ID or reuse an earlier task token.' } };
-  return withEntryHint(application, await beginTaskFromPreferences(application, preferences, input), input);
+  const entry = await beginTaskFromPreferences(application, preferences, input);
+  // An Agent's own entry keeps no prompt; it drops what the session's earlier task kept.
+  keepEntryPrompt(application, entry, input, null);
+  return withEntryHint(application, entry, input);
 }
 
 // begin_task_context and the lifecycle hooks: the same hints, once per session each.
@@ -35,6 +38,7 @@ export function beginTaskEntry(application, input) {
   return withSharedProjectList(async () => {
     if (input.projectPath !== undefined && input.projectPath !== null) application.listPersonalProjects().catch(() => {});
     const entry = await beginTaskContext(application, input);
+    keepEntryPrompt(application, entry, input, input.taskPrompt);
     // Its task and opening writes are done: a hook deadline from here on
     // delivers the token instead of nothing (entry-budget.js).
     noteEntryTask(entry);
@@ -44,6 +48,18 @@ export function beginTaskEntry(application, input) {
     const [hinted] = await Promise.all([withEntryHint(application, entry, input), clearReplyBlockers(application, input)]);
     return hinted;
   });
+}
+
+// The prompt the relay check reads in this same turn (entry-prompts.js);
+// kept only for a hook's entry, never failing the entry.
+function keepEntryPrompt(application, entry, input, prompt) {
+  if (!application.entryPrompts || typeof entry?.taskContextToken !== 'string' || !input.sessionId) return;
+  try {
+    application.entryPrompts.enter({ token: entry.taskContextToken, sessionId: input.sessionId,
+      sourceApplication: input.sourceApplication ?? 'other' }, prompt);
+  } catch {
+    // Ignore: without it a same-turn relay asks the person again.
+  }
 }
 
 // The person replied in this session; the clear is one of its writes, so it

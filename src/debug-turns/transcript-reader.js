@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { sha256Bytes } from '../security/digest.js';
 import { openWithoutFollowing } from '../system/open-without-following.js';
 
-// How much of a transcript a #debug Stop reads: its tail. A record keeps at
+// How much of a transcript a #fulidebug Stop reads: its tail. A record keeps at
 // most 2 MB, so a longer read would only be cut again.
 const TAIL_BYTES = 16 * 1024 * 1024;
 const HEADER_BYTES = 512 * 1024;

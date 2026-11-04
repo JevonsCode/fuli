@@ -9,7 +9,9 @@ import { FULI_VERSION } from '@/version'
 
 // compact: the icon rail shows only the mark; the mark only pops and the effect ends on a short timer.
 // An available update is the top bar's dot on the version (AppShell), never on the mark.
-const props = withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
+const props = withDefaults(defineProps<{ compact?: boolean; label?: string }>(), { compact: false, label: '' })
+// The top bar decides what a press on its mark means; the larger brand just plays.
+const emit = defineEmits<{ press: [] }>()
 const root = ref<HTMLElement | null>(null)
 const versionButton = ref<HTMLButtonElement | null>(null)
 const effectRun = ref(0)
@@ -39,6 +41,12 @@ function playEffect() {
   clearTimeout(finishTimer)
   if (props.compact) finishTimer = setTimeout(finishEffect, 700)
 }
+
+function press() {
+  if (props.compact) emit('press')
+  else playEffect()
+}
+defineExpose({ play: playEffect })
 
 function finishEffect() {
   isPlaying.value = false
@@ -104,8 +112,8 @@ onBeforeUnmount(() => {
     <button
       class="brand-effect-button"
       type="button"
-      :aria-label="t('console.brandEffect.aria')"
-      @click="playEffect"
+      :aria-label="label || t('console.brandEffect.aria')"
+      @click="press"
       @focus="handleFocus"
       @blur="handleBlur"
     >

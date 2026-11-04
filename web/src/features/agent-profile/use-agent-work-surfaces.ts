@@ -8,24 +8,30 @@ export type SurfaceState =
   | { status: 'error' }
 
 /**
- * Reads each FLA's work surfaces once, on the first menu open, and keeps the
- * result (or the failure) for as long as its owner lives. The dock's pins and
- * the app's portrait menu (AppContextMenu) each keep one.
+ * Reads an FLA's work surfaces each time its menu opens. A kept answer stays on
+ * screen while the fresh one is read, so new work shows without a wait and an
+ * old "nothing here" never sticks (rec#72); a failed first read says so and the
+ * next open tries again. The dock's pins and the app's portrait menu
+ * (AppContextMenu) each keep one.
  */
 export function useAgentWorkSurfaces(spaceId: Ref<string>) {
   const surfaces = ref<Record<string, SurfaceState>>({})
+  const reading = new Set<string>()
 
   async function open(agent: ProjectAgentRecord) {
-    const current = surfaces.value[agent.agentId]
-    if (current?.status === 'ready' || current?.status === 'loading') return
-    surfaces.value[agent.agentId] = { status: 'loading' }
+    if (reading.has(agent.agentId)) return
+    reading.add(agent.agentId)
+    const kept = surfaces.value[agent.agentId]?.status === 'ready'
+    if (!kept) surfaces.value[agent.agentId] = { status: 'loading' }
     try {
       surfaces.value[agent.agentId] = {
         status: 'ready',
         surfaces: await readAgentWorkSurfaces(spaceId.value, agent),
       }
     } catch {
-      surfaces.value[agent.agentId] = { status: 'error' }
+      if (!kept) surfaces.value[agent.agentId] = { status: 'error' }
+    } finally {
+      reading.delete(agent.agentId)
     }
   }
 

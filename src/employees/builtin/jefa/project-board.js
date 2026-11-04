@@ -11,6 +11,8 @@ import { displayName, identityKey } from '../../../text/name-identity.js';
 // progress in one place; or it uses an external board (飞书项目 and the like)
 // that FULI only links to. No columns means the built-in columns.
 export const TASK_STATUSES = Object.freeze(['planned', 'active', 'blocked', 'review', 'done']);
+// A task's due date: one calendar day, or null to clear it.
+export const DUE_DATE_SCHEMA = Object.freeze({ type: ['string', 'null'], pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' });
 const COLUMN_LIMIT = 12;
 const COLUMN_LABEL_MAX = 40;
 const EXTERNAL_LABEL_MAX = 80;

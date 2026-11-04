@@ -1,6 +1,9 @@
 import pytest
 from pydantic import ValidationError
-from fuli_graph.occupation_catalog import OccupationCreate, OccupationRevision, OccupationUpdate
+from fuli_graph.occupation_catalog import (
+    BUILTIN_AGENT_OCCUPATIONS, BUILTIN_OCCUPATIONS, BUILTIN_OCCUPATION_KEYS,
+    OccupationCreate, OccupationRevision, OccupationUpdate,
+)
 
 
 def test_catalog_accepts_either_language_and_preserves_user_text_as_fallback():
@@ -45,3 +48,17 @@ def test_existing_demand_query_accepts_new_catalog_keys_without_accepting_arbitr
     assert StaffingDemandQuery(personal_space_id='space', personal_project_id='project', occupations=keys).occupations == keys
     with pytest.raises(ValidationError):
         StaffingDemandQuery(personal_space_id='space', personal_project_id='project', occupations=['unknown'])
+
+
+def test_jefa_and_tonborg_ship_their_own_occupations_beside_management():
+    assert BUILTIN_AGENT_OCCUPATIONS['employee.jefa'] == 'project_manager'
+    assert BUILTIN_AGENT_OCCUPATIONS['employee.tonborg'] == 'decision_maker'
+    assert set(BUILTIN_AGENT_OCCUPATIONS.values()) <= set(BUILTIN_OCCUPATION_KEYS)
+    assert 'management' in BUILTIN_OCCUPATION_KEYS
+    assert len(BUILTIN_OCCUPATION_KEYS) == len(set(BUILTIN_OCCUPATION_KEYS))
+    shipped = {entry['key']: entry for entry in BUILTIN_OCCUPATIONS}
+    assert (shipped['project_manager']['name_zh'], shipped['project_manager']['name_en']) == ('项目经理', 'Project manager')
+    assert (shipped['decision_maker']['name_zh'], shipped['decision_maker']['name_en']) == ('决策员', 'Decision maker')
+    for key in ('project_manager', 'decision_maker'):
+        OccupationCreate(personal_space_id='space', **{field: shipped[key][field] for field in (
+            'name_zh', 'name_en', 'description_zh', 'description_en')})

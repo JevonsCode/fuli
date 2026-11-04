@@ -198,7 +198,8 @@ onBeforeUnmount(() => stopMonitor())
         </div>
       </div>
 
-      <div class="project-board-kind">
+      <!-- Jefa manages one kind of board; the type is a choice for a project's own manager. -->
+      <div v-if="managerId !== JEFA || draft.kind === 'external'" class="project-board-kind">
         <span id="project-board-kind-label" class="project-board-label">{{ t('employees.projectBoard.kind') }}</span>
         <RadioGroup :model-value="draft.kind" aria-labelledby="project-board-kind-label" class="project-board-kinds" :disabled="busy"
           @update:model-value="chooseKind">

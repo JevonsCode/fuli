@@ -30,6 +30,9 @@ const client = (id, status, extra = {}) => ({ id, label: id.toUpperCase(), detec
 
 const graph = (plan) => ({ preview: async () => ({ plan, undoable: [] }) });
 
+// A data directory only the person and SYSTEM can open: no real icacls runs on a temporary one.
+const OWNER_ONLY_ACL = { sharedWith: async () => [], restrictToOwner: async () => assert.fail('nothing to limit') };
+
 function doctor(t, sources = {}) {
   const root = dataDir(t);
   return createDoctor({
@@ -147,7 +150,7 @@ test('the console reads the moved ports from its runtime state', async (t) => {
     clientObserver: { observe: () => ({ clients: [] }) }, clientInstaller: async () => assert.fail('nothing to connect'),
     versionChecker: { peek: () => null, check: async () => assert.fail('the doctor never waits on the network') },
     update: { status: () => null, kind: () => 'npm' },
-    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }),
+    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }), dataDirAcl: OWNER_ONLY_ACL,
     previewDataFormats: async () => ({ digest: null, stores: [], blocked: [], undoable: [] }) });
   const answer = await service.doctor();
   assert.deepEqual(answer.unchecked, []);
@@ -345,6 +348,57 @@ test('only one repair runs at a time', async (t) => {
   assert.deepEqual((await first).results, [{ id: 'client_outdated:codex', outcome: 'fixed' }]);
 });
 
+test('a data directory others can open is a warning the repair limits; one that cannot be read is unchecked', async (t) => {
+  let shared = ['BA', 'S-1-15-3-1024-1065365936'];
+  const restricted = [];
+  const checkup = doctor(t, { dataDirShared: async () => shared });
+  const answer = await checkup.check();
+  assert.equal(answer.overall, 'needs_person');
+  assert.deepEqual(answer.items, [{ id: 'data_dir_shared', kind: 'data_dir_shared', severity: 'warning', fix: 'auto',
+    data: { principals: ['BA', 'S-1-15-3-1024-1065365936'] } }]);
+  const repair = createDoctorRepair({ check: checkup.check, observeClients: () => ({ clients: [] }),
+    connectClient: async () => assert.fail('no client to reconnect'), recordClientsReconnected: () => {},
+    restrictDataDir: async () => { restricted.push('limited'); shared = []; } });
+  const outcome = await repair();
+  assert.deepEqual(outcome.results, [{ id: 'data_dir_shared', outcome: 'fixed' }]);
+  assert.deepEqual(restricted, ['limited']);
+  assert.equal(outcome.doctor.overall, 'ok');
+
+  // icacls' own text is localized and names the path, so the repair says its own sentence.
+  shared = ['BU'];
+  const failing = createDoctorRepair({ check: checkup.check, observeClients: () => ({ clients: [] }),
+    connectClient: async () => assert.fail('no client to reconnect'), recordClientsReconnected: () => {},
+    restrictDataDir: async () => { throw new Error('C:\\Users\\someone\\AppData\\Local\\Fuli: Access is denied.'); } });
+  assert.deepEqual((await failing()).results, [{ id: 'data_dir_shared', outcome: 'failed',
+    error: 'Access to the data directory could not be limited to your account and SYSTEM.' }]);
+
+  const unreadable = await doctor(t, { dataDirShared: async () => { throw new Error('icacls did not save a DACL.'); } }).check();
+  assert.deepEqual(unreadable.items, []);
+  assert.deepEqual(unreadable.unchecked, ['data_dir']);
+  assert.equal(unreadable.overall, 'ok');
+});
+
+test('the system service asks about and limits its own data directory', async (t) => {
+  const root = dataDir(t);
+  const paths = { dataDir: root, graphRuntimeConfigPath: join(root, 'graph-runtime.json'),
+    graphRuntimeStatePath: join(root, 'graph-runtime-state.json') };
+  const asked = [];
+  let shared = ['BU'];
+  const system = createSystemService({ paths, packageRoot: '.', settingsApplier: {}, resourceMonitor: {}, runtimeBroker: {},
+    clientObserver: { observe: () => ({ clients: [] }) }, clientInstaller: async () => assert.fail('nothing to connect'),
+    versionChecker: { peek: () => null, check: async () => assert.fail('the doctor never waits on the network') },
+    update: { status: () => null, kind: () => 'npm' },
+    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }),
+    dataDirAcl: { sharedWith: async (directory) => { asked.push(['read', directory]); return shared; },
+      restrictToOwner: async (directory) => { asked.push(['limit', directory]); shared = []; } },
+    previewDataFormats: async () => ({ digest: null, stores: [], blocked: [], undoable: [] }) });
+  assert.deepEqual((await system.doctor()).items.map(({ id }) => id), ['data_dir_shared']);
+  const repaired = await system.repairDoctor();
+  assert.deepEqual(repaired.results, [{ id: 'data_dir_shared', outcome: 'fixed' }]);
+  assert.deepEqual(repaired.doctor.items, []);
+  assert.deepEqual(asked, [['read', root], ['read', root], ['limit', root], ['read', root]]);
+});
+
 function exchange(method, path, { remoteAddress = '127.0.0.1', body = '', headers = {} } = {}) {
   const sent = [];
   const response = { setHeader() {}, writeHead(status) { sent.push(status); return this; }, end(text) { sent.push(JSON.parse(text)); } };
@@ -415,7 +469,7 @@ test('the system service reads its own sources: this data directory\'s live serv
     },
     versionChecker: { peek: () => null, check: async () => assert.fail('the doctor never waits on the network') },
     update: { status: () => null, kind: () => 'npm' },
-    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }),
+    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }), dataDirAcl: OWNER_ONLY_ACL,
     previewDataFormats: async () => ({ digest: null, stores: [], blocked: [], undoable: [] }) });
 
   const answer = await system.doctor();

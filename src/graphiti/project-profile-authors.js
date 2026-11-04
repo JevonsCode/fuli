@@ -3,7 +3,7 @@
 // person edited from an Agent's draft is shared. The Provider stores the
 // records and defaults profiles saved before them
 // (graph-provider/fuli_graph/project_profile_authors.py).
-const AUTHORED_FIELDS = Object.freeze(['purpose', 'scope', 'technical_summary', 'boundaries']);
+export const AUTHORED_FIELDS = Object.freeze(['purpose', 'scope', 'technical_summary', 'boundaries']);
 
 // Mirrors the knowledge weights the console explains: a person 100%, an Agent's
 // draft below an Agent-confirmed fact.
@@ -24,20 +24,27 @@ const PERSON_FIELD_REFUSAL = '人写过的字段，请在控制台修改或请�
 // overwrites a field a person wrote; that field keeps its previous text and
 // is listed in `refused`.
 export function applyProfileAuthorship(previous, next, writer, now = new Date()) {
+  const { values, authors, refused } = applyFieldAuthorship(AUTHORED_FIELDS, previous, next, previous?.authors, writer, now);
+  return { profile: { ...values, authors }, refused };
+}
+
+// The same rule for any set of text fields: `values` is `next` with refused
+// fields kept as they were, `authors` the record of each field with text.
+export function applyFieldAuthorship(fields, previous, next, previousAuthors, writer, now = new Date()) {
   const updatedAt = now.toISOString();
   const authors = {};
   const refused = [];
-  const profile = { ...next };
-  for (const field of AUTHORED_FIELDS) {
+  const values = { ...next };
+  for (const field of fields) {
     const before = fieldText(previous?.[field]);
     const after = fieldText(next[field]);
-    const record = previous?.authors?.[field] ?? null;
+    const record = previousAuthors?.[field] ?? null;
     if (before === after) {
       if (record && after) authors[field] = record;
       continue;
     }
     if (writer.kind === 'agent' && (record?.kind === 'person' || record?.kind === 'both')) {
-      profile[field] = previous[field];
+      values[field] = previous[field];
       authors[field] = record;
       refused.push({ field, author: record.kind, reason: PERSON_FIELD_REFUSAL });
       continue;
@@ -47,7 +54,7 @@ export function applyProfileAuthorship(previous, next, writer, now = new Date())
       ? agentRecord('agent', writer, updatedAt)
       : personRecord(record, before, after, updatedAt);
   }
-  return { profile: { ...profile, authors }, refused };
+  return { values, authors, refused };
 }
 
 // One short tag per field for an Agent reading the brief; AI-only text reads as a draft.
@@ -69,7 +76,7 @@ function agentRecord(kind, { agentId, agentName }, updatedAt) {
     updated_at: updatedAt };
 }
 
-function fieldText(value) {
+export function fieldText(value) {
   const lines = Array.isArray(value) ? value : [value];
   return lines.filter(line => typeof line === 'string' && line.trim()).map(line => line.trim()).join('\n');
 }

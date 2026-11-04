@@ -20,12 +20,13 @@ import { createCaptureOnboarding } from './capture-onboarding.js';
 import { createFirstRunGuide, firstRunGuidePathForRuntime } from './first-run-guide.js';
 import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from './capture-session-pause.js';
 import { setSessionCapturePause } from './session-capture-pause-request.js';
-import { readOwnSessionRecords } from './session-records.js';
+import { readOwnSessionRecords, recentSessionUserMessages } from './session-records.js';
 import {
   AgentAccessPolicyStore,
   agentAccessPolicyPathForRuntime
 } from './agent-access-policy.js';
 import { RecallPolicyStore, recallPolicyPathForRuntime } from './recall-policy.js';
+import { sessionMigrationNoticesForRuntime } from './session-migration-notices.js';
 import {
   sourceConsoleUrl
 } from './source-marker.js';
@@ -83,6 +84,7 @@ import {
   searchCurrentProjectKnowledge,
   searchKnowledge
 } from './knowledge-graph-reads.js';
+import { getAgentGrowth } from './agent-growth.js';
 import {
   applyCommonKnowledgePromotion,
   applyKnowledgeProjectAction,
@@ -116,6 +118,7 @@ import {
 } from './public-project-relations.js';
 import {
   agentProfileWriter,
+  listPersonalProjectHistory,
   listPersonalProjects,
   listProjectRelationWeights,
   upsertPersonalProject
@@ -221,6 +224,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     this.firstRunGuide = firstRunGuide;
     this.sessionCapturePauseStore = sessionCapturePauseStore;
     this.runtimeConfigPath = runtimeConfigPath;
+    // A confirmed session migration waiting for that session's next task entry (rec#82).
+    this.sessionMigrationNotices = sessionMigrationNoticesForRuntime(runtimeConfigPath);
     this.agentAccessPolicyStore = agentAccessPolicyStore;
     this.recallPolicyStore = recallPolicyStore;
     this.consoleUrl = consoleUrl;
@@ -337,6 +342,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async getKnowledgeGraph(input, ownerReads) {
     return getKnowledgeGraph(this, input, ownerReads);
+  }
+
+  async getAgentGrowth(input, ownerReads) {
+    return getAgentGrowth(this, input, ownerReads);
   }
 
   async startKnowledgeReview(input) {
@@ -465,6 +474,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async agentProfileWriter(input) {
     return agentProfileWriter(this, input);
+  }
+
+  listPersonalProjectHistory(input) {
+    return listPersonalProjectHistory(this, input);
   }
 
   async listPersonalProjects(input) {
@@ -608,6 +621,11 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   // An Agent's "这次都记了我什么" for the session of its current task (rec#5 C6).
   readOwnSessionRecords(input) {
     return readOwnSessionRecords(this, input);
+  }
+
+  // The person's newest saved messages in a task's own session (rec#80).
+  recentSessionUserMessages(task, limit) {
+    return recentSessionUserMessages(this, task, limit);
   }
 
   getRecallPolicy() {

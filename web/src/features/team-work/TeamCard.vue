@@ -27,6 +27,8 @@ const open = ref(Boolean(props.defaultOpen))
 const bodyId = useId()
 
 const shares = computed(() => sharesFor(props.sheet, props.viewerAgentId ?? null))
+// Whose task page opens the task; a sheet with no lead and no shares has none.
+const ownerId = computed(() => props.sheet.leadAgentId ?? shares.value[0]?.agentId)
 const faces = computed(() => shares.value.map(share => ({
   agentId: share.agentId,
   lead: share.agentId === props.sheet.leadAgentId,
@@ -97,7 +99,7 @@ const total = computed(() => fill(props.sheet.progress))
           </li>
         </ol>
         <p v-if="sheet.unassignedSteps" class="team-note">{{ t('teamWork.card.unassigned', { count: sheet.unassignedSteps }) }}</p>
-        <RouterLink class="team-open" :to="{ path: agentManagementPath(spaceId, sheet.leadAgentId ?? shares[0]!.agentId), query: { task: sheet.taskId } }">
+        <RouterLink v-if="ownerId" class="team-open" :to="{ path: agentManagementPath(spaceId, ownerId), query: { task: sheet.taskId } }">
           {{ t('teamWork.card.open') }}<UiIcon name="chevron-right" :size="14" />
         </RouterLink>
       </div>

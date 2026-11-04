@@ -31,6 +31,13 @@ export function agentCollaborationPreference(item) {
   return preference;
 }
 
+// A delivered preference names its item, so a person's correction can revise
+// it (rec#75). Conflict alternatives stay without it.
+export function deliveredCollaborationPreference(item) {
+  return { ...(item.id ? { id: item.id, item_kind: item.item_kind ?? 'entity' } : {}),
+    ...agentCollaborationPreference(item) };
+}
+
 export function activePreferenceConflicts(result) {
   const items = [
     ...(result.global_preferences ?? []),

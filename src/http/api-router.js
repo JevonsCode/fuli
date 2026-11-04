@@ -7,7 +7,9 @@ import { handleAgentAppApiRequest } from './agent-app-api-router.js';
 import { handleDataFormatApiRequest } from './data-format-api-router.js';
 import { handleDoctorApiRequest } from './doctor-api-router.js';
 import { handleDiagnosticsApiRequest } from './diagnostics-api-router.js';
+import { handleOldDataRequest } from './old-data-api-router.js';
 import { handleDebugTurnsRequest } from './debug-turns-api-router.js';
+import { handleDiagnosticEventsRequest } from './diagnostic-events-api-router.js';
 import { handlePersonProfileRequest } from './person-profile-api-router.js';
 import { handleSessionLaunchRequest } from './session-launch-api-router.js';
 import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-router.js';
@@ -193,7 +195,9 @@ export async function handleApiRequest({
   // sleeping provider (its graph format plan then reads as unavailable).
   if (await handleDoctorApiRequest({ request, response, url, system })) return true;
   if (await handleDiagnosticsApiRequest({ request, response, url, app, system })) return true;
-  if (await handleDebugTurnsRequest({ request, response, url, debugTurns: system?.debugTurns ?? null })) return true;
+  if (await handleOldDataRequest({ request, response, url, shelf: app.oldData, restore: dataFormatMigrations?.restore ?? null })) return true;
+  if (await handleDebugTurnsRequest({ request, response, url, debugTurns: system?.debugTurns ?? null, modelCapture: system?.modelCapture ?? null })) return true;
+  if (await handleDiagnosticEventsRequest({ request, response, url, diagnosticEvents: app.diagnosticEvents ?? null })) return true;
   if (await handlePersonProfileRequest({ request, response, url, app })) return true;
   if (await handleSessionLaunchRequest({ request, response, url, system })) return true;
 
@@ -249,7 +253,7 @@ export async function handleApiRequest({
   const graphRequest = async () =>
     await handleDataFormatApiRequest({ request, response, url, migrations: dataFormatMigrations }) ||
     await handleKnowledgeHardDeleteRequest({ request, response, url, app, hardDelete: knowledgeHardDelete }) ||
-    await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: knowledgeScope }) ||
+    await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: knowledgeScope, ownerReads: knowledgeOwnerReads }) ||
     await handleProjectHierarchyRequest({ request, response, url, app, hierarchyConsole: projectHierarchy }) ||
     await handleTaskBlockerRequest({ request, response, url, app, blockerConsole: taskBlockers }) ||
     await handleKnowledgeTagsRequest({ request, response, url, app, tagsConsole: knowledgeTags }) ||

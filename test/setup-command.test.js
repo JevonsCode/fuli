@@ -67,6 +67,23 @@ test('setup says which port the start moved by itself before the address to open
   assert.match(output, /Another program uses port 2727, so the management UI now uses port 2728\. The new port is saved\.\nOpen: http:\/\/127\.0\.0\.1:2728/);
 });
 
+test('setup limits the data directory before anything is written into it, and says so when it could not', async () => {
+  const order = [];
+  const result = await applyLocalSetup({ ...samplePlan(), agents: [] }, OPTIONS, {
+    keepDataDirectoryPrivate: async (dataDir) => { order.push(['private', dataDir]); return false; },
+    beginFirstRun: () => order.push(['first run']),
+    ensureRuntime: async () => { order.push(['runtime']); return { status: 'running', url: null, pid: 1 }; }
+  });
+  assert.deepEqual(order, [['private', 'C:/Fuli'], ['first run'], ['runtime']]);
+  assert.equal(result.dataDirPrivate, false);
+  assert.match(formatSetupResult(result, samplePlan()), /Data directory: other accounts may still read it; the console's 体检 \(doctor\) can limit it to you and SYSTEM\./);
+
+  const limited = await applyLocalSetup({ ...samplePlan(), agents: [] }, OPTIONS, {
+    keepDataDirectoryPrivate: async () => true, ensureRuntime: async () => ({ status: 'running', url: null, pid: 1 }) });
+  assert.equal('dataDirPrivate' in limited, false);
+  assert.doesNotMatch(formatSetupResult(limited, samplePlan()), /Data directory:/);
+});
+
 test('partial setup returns a failure exit code for automated updates', async () => {
   const result = await runSetupCommand(['--yes'], {
     planSetup: () => samplePlan(),

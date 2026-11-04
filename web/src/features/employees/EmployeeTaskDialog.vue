@@ -7,7 +7,9 @@ import UiDialog from '@/ui/UiDialog.vue'
 import { t } from '@/i18n'
 import { employeeErrorMessage, taskReadFailure } from './catalog'
 import type { EmployeeBoardItem } from './EmployeeTaskBoard.vue'
+import DayField from '@/components/ui/DayField.vue'
 import { boardTaskPeekId, type BoardTaskRef } from './board-task-peek'
+import { cardTimes } from './task-card-fields'
 import { OptionSelect } from '@/components/ui/select'
 import { OptionCombobox } from '@/components/ui/combobox'
 
@@ -24,6 +26,9 @@ const summary = ref('')
 const priority = ref('medium')
 const criteria = ref('')
 const tags = ref('')
+const dueDate = ref('')
+// The task's dates beside its status; the due date has its own field below.
+const taskTimes = computed(() => (baseline.value ? cardTimes(baseline.value, new Set(['done', 'updated', 'started', 'created']), new Date()) : []))
 let version = 0
 let request = { signature: '', id: '' }
 const valid = computed(() => props.canWrite && !loading.value && !error.value && Boolean(project.value) && title.value.trim().length >= 2)
@@ -41,7 +46,7 @@ async function load() {
   if (!props.open) return
   error.value = ''; baseline.value = null; request = { signature: '', id: '' }
   project.value = props.item?.projectId ?? props.defaultProjectId ?? ''
-  title.value = ''; summary.value = ''; priority.value = 'medium'; criteria.value = ''; tags.value = ''
+  title.value = ''; summary.value = ''; priority.value = 'medium'; criteria.value = ''; tags.value = ''; dueDate.value = ''
   loading.value = Boolean(props.item)
   if (!props.item) return
   try {
@@ -51,6 +56,7 @@ async function load() {
     baseline.value = result.item
     title.value = result.item.title; summary.value = result.item.summary ?? ''; priority.value = result.item.priority ?? 'medium'
     criteria.value = result.item.acceptanceCriteria?.join('\n') ?? ''; tags.value = result.item.tags?.join(', ') ?? ''
+    dueDate.value = result.item.dueDate ?? ''
   } catch (cause) {
     if (current !== version) return
     const failure = taskReadFailure(cause)
@@ -66,7 +72,7 @@ async function save() {
   busy.value = true
   const task = { title: title.value.trim(), summary: summary.value.trim() || title.value.trim(), priority: priority.value,
     acceptanceCriteria: criteria.value.split('\n').map(value => value.trim()).filter(Boolean),
-    tags: tags.value.split(/[,，]/).map(value => value.trim()).filter(Boolean) }
+    tags: tags.value.split(/[,，]/).map(value => value.trim()).filter(Boolean), dueDate: dueDate.value || null }
   const signature = JSON.stringify([project.value, baseline.value?.updatedAt, task])
   if (request.signature !== signature) request = { signature, id: `board-edit-${crypto.randomUUID()}` }
   try {
@@ -89,9 +95,10 @@ function close() { if (!busy.value) emit('close') }
     <template v-if="!loading">
       <OptionCombobox v-model="project" field :label="t('employees.task.project')" :placeholder="t('employees.task.chooseProject')" :options="projectOptions" :disabled="Boolean(item) || busy || !canWrite" required />
       <label class="ui-field">{{ t('employees.task.title') }}<input v-model="title" autofocus minlength="2" maxlength="180" required :readonly="!canWrite" :disabled="busy" /></label>
-      <p v-if="baseline" class="ui-meta">{{ t(`employees.allProjects.status.${baseline.status}`) }}</p>
+      <p v-if="baseline" class="ui-meta" data-task-times>{{ [t(`employees.allProjects.status.${baseline.status}`), ...taskTimes.map(time => time.text)].join(' · ') }}</p>
       <label class="ui-field">{{ t('employees.task.summary') }}<textarea v-model="summary" rows="4" maxlength="2000" :readonly="!canWrite" :disabled="busy" /></label>
       <OptionSelect v-model="priority" field :label="t('employees.task.priority')" :options="priorityOptions" :disabled="!canWrite || busy" />
+      <DayField v-model="dueDate" :label="t('employees.task.dueDate')" :disabled="!canWrite || busy" />
       <label class="ui-field">{{ t('employees.task.criteria') }}<textarea v-model="criteria" rows="3" :readonly="!canWrite" :disabled="busy" /></label>
       <label class="ui-field">{{ t('employees.task.tags') }}<input v-model="tags" :readonly="!canWrite" :disabled="busy" /></label>
     </template>

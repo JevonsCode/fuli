@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { redactSensitiveContent } from '../security/sensitive-content.js';
 
-// One #debug turn as a person reads it (Jevons 11-04): ordered parts, each
+// One #fulidebug turn as a person reads it (Jevons 11-04): ordered parts, each
 // with who put it there. FULI's own additions (its hook frames, MCP surface
 // and tool calls) are `fuli`, so the console can show them apart.
 export const DEBUG_PART_SOURCES = Object.freeze(['person', 'fuli', 'ai', 'host', 'not_visible']);
@@ -63,6 +63,15 @@ export function buildDebugRecord(turn, { now = () => new Date(), id = randomUUID
     transcript: transcript.status, parts, totals: null, cut: null
   };
   return withTotals(withinCap(record, history));
+}
+
+// One model request from the dev capture proxy (model-capture.js): the
+// whole request, so nothing here is out of sight. `parts` come in reading order.
+export function buildModelRequestRecord({ sourceApplication, prompt, parts }, { now = () => new Date(), id = randomUUID() } = {}) {
+  const record = { version: DEBUG_RECORD_VERSION, id, createdAt: now().toISOString(), sourceApplication, sessionId: 'model-capture',
+    promptLine: promptLine(redactDebugText(prompt)), transcript: 'read',
+    parts: parts.map(item => part(item.source, item.kind, item.label ?? '', item.text)), totals: null, cut: null };
+  return withTotals(withinCap(record, null));
 }
 
 function part(source, kind, label, text) {

@@ -1,16 +1,14 @@
 <script setup lang="ts">
 import { RouterLink, useRouter } from 'vue-router'
 import { t } from '@/i18n'
-import UiIcon from '@/ui/UiIcon.vue'
+import { UiIcon, UiIconButton } from '@/ui'
 
 // The trail above a page that belongs to another: `设置 › 模型与用量`. When the
 // parent opened this page, its crumb goes Back, so the parent comes back with
 // its filters, scroll and focused card; otherwise it opens the parent. A plain
 // RouterLink would push as well as go Back (its handler runs first), so the
 // crumb owns the click.
-// `current` names this page only where nothing else on screen does: a page the
-// shell titles with its record's name (or that names itself) leaves it out, and
-// the trail ends on its separator so it still reads as "inside the parent".
+// `current` names this page, so the trail always says where you are (Jevons 11-04).
 export interface BreadcrumbParent {
   label: string
   to: string
@@ -27,6 +25,13 @@ function opensElsewhere(event: MouseEvent) {
   return event.button !== undefined && event.button !== 0
 }
 
+// Back to wherever this page was opened from; a page opened directly goes to its parent.
+function goBack() {
+  const back = (router.options.history.state as { back?: unknown } | null)?.back
+  if (typeof back === 'string') router.back()
+  else void router.push(props.parent.to)
+}
+
 function go(event: MouseEvent, navigate: (event?: MouseEvent) => unknown) {
   if (opensElsewhere(event)) return
   const back = (router.options.history.state as { back?: unknown } | null)?.back
@@ -41,6 +46,7 @@ function go(event: MouseEvent, navigate: (event?: MouseEvent) => unknown) {
 
 <template>
   <nav class="breadcrumb" :aria-label="t('common.breadcrumb')" data-breadcrumb>
+    <UiIconButton icon="chevron-left" size="sm" class="breadcrumb-back" :label="t('common.back')" data-breadcrumb-back @click="goBack" />
     <ol class="breadcrumb-trail">
       <li class="breadcrumb-item">
         <RouterLink v-slot="{ href, navigate }" :to="parent.to" custom>
@@ -54,7 +60,8 @@ function go(event: MouseEvent, navigate: (event?: MouseEvent) => unknown) {
 </template>
 
 <style scoped>
-.breadcrumb { min-width: 0; font-size: var(--text-meta); line-height: var(--leading-heading); }
+.breadcrumb { display: flex; align-items: center; gap: var(--space-2, 8px); min-width: 0; font-size: var(--text-meta); line-height: var(--leading-heading); }
+.breadcrumb-back { flex: 0 0 auto; margin-left: -6px; color: var(--color-muted); }
 .breadcrumb-trail { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1, 4px); margin: 0; padding: 0; list-style: none; }
 .breadcrumb-item { display: inline-flex; align-items: center; gap: var(--space-1, 4px); min-width: 0; color: var(--color-ink); }
 .breadcrumb-link { color: var(--color-muted); text-decoration: none; text-underline-offset: 3px; border-radius: 2px; transition: color var(--motion-fast); }

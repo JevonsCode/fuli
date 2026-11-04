@@ -1,12 +1,12 @@
 <script setup lang="ts">
+import { UiIcon } from '@/ui'
 import { motion } from 'motion-v'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import TaskBlockerClear from '@/features/project-agents/TaskBlockerClear.vue'
 import TaskBlockerNotice from '@/features/project-agents/TaskBlockerNotice.vue'
-import { taskStatusTone } from '@/features/project-agents/task-labels'
+import { statusTone, taskStatusTone } from '@/features/project-agents/task-labels'
 import { t } from '@/i18n'
 import { SPRING } from '@/lib/motion'
 import type { ProjectAgentTaskRecord } from '@/types'
@@ -62,8 +62,13 @@ const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
             <p v-if="!timeline.length && !flas.length" class="workbench-meta">{{ projectName(task.personalProjectId) }}</p>
             <motion.h2 :layout-id="`work-title-${taskKey(task)}`" class="workbench-stage-title" :transition="SPRING">{{ title(task) }}</motion.h2>
             <div class="workbench-stage-actions">
-              <Badge v-if="task.status !== 'running'" :variant="taskStatusTone(task.status)">{{ statusLabel(task.status) }}</Badge>
-              <Button v-if="next" as-child size="sm"><RouterLink :to="next.to" data-workbench-next>{{ next.label }}</RouterLink></Button>
+              <!-- Where the work stands and what to do about it are one control (Jevons 11-04). -->
+              <RouterLink v-if="next" :to="next.to" class="workbench-next" :data-tone="statusTone(task.status)" draggable="false" data-workbench-next>
+                <span v-if="task.status !== 'running'" class="workbench-next-status">{{ statusLabel(task.status) }}</span>
+                <span class="workbench-next-label">{{ next.label }}</span>
+                <UiIcon name="chevron-right" :size="14" class="workbench-next-arrow" />
+              </RouterLink>
+              <Badge v-else-if="task.status !== 'running'" :variant="taskStatusTone(task.status)">{{ statusLabel(task.status) }}</Badge>
             </div>
           </div>
           <FlaArc v-if="progress.total" :done="progress.done" :total="progress.total" />
@@ -106,6 +111,24 @@ const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
 .workbench-stage-body { display: flex; flex: 1; flex-direction: column; gap: 20px; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 .workbench-stage-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .workbench-stage-heading { display: grid; gap: 8px; min-width: 0; }
+.workbench-next {
+  display: inline-flex; align-items: center; gap: 8px; height: var(--control-height-sm); padding: 0 8px 0 3px; border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill); color: var(--color-ink); background: var(--color-surface); font-size: 12px; font-weight: var(--weight-medium);
+  text-decoration: none; white-space: nowrap; user-select: none; transition: border-color var(--motion-fast) var(--motion-ease);
+}
+.workbench-next:hover { border-color: var(--color-border-strong); }
+.workbench-next:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.workbench-next-status { display: inline-flex; align-items: center; height: calc(var(--control-height-sm) - 8px); padding: 0 9px; border-radius: var(--radius-pill); color: var(--color-ink-soft); background: var(--color-surface-subtle); }
+.workbench-next-label:first-child { margin-left: 9px; }
+.workbench-next[data-tone="danger"] .workbench-next-status { color: var(--color-danger); background: var(--color-danger-soft); }
+.workbench-next[data-tone="warning"] .workbench-next-status { color: var(--color-warning); background: var(--color-warning-soft); }
+.workbench-next[data-tone="success"] .workbench-next-status { color: var(--color-success); background: var(--color-success-soft); }
+.workbench-next[data-tone="active"] .workbench-next-status { color: var(--color-accent); background: var(--color-accent-soft); }
+.workbench-next-arrow { color: var(--color-muted); transition: transform var(--motion-fast) var(--motion-ease); }
+.workbench-next:hover .workbench-next-arrow { transform: translateX(2px); }
+@media (prefers-reduced-motion: reduce) { .workbench-next-arrow { transition: none; } .workbench-next:hover .workbench-next-arrow { transform: none; } }
+:root[data-motion="reduced"] .workbench-next-arrow { transition: none; }
+:root[data-motion="reduced"] .workbench-next:hover .workbench-next-arrow { transform: none; }
 .workbench-stage-title { margin: 0; font-size: 30px; font-weight: var(--weight-strong); line-height: 1.25; letter-spacing: -.02em; overflow-wrap: anywhere; }
 .workbench-stage-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .workbench-meta { margin: 0; color: var(--color-muted); font-size: var(--text-meta); }

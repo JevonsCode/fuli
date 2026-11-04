@@ -23,7 +23,7 @@ const REDACTORS = DETECTORS.map(([reason, pattern]) =>
   [reason, reason === 'private_key' ? PRIVATE_KEY_BLOCK : new RegExp(pattern.source, `${pattern.flags}g`)]);
 
 // The same patterns, each match replaced by its reason, for text that is kept
-// for a person to read (a #debug turn record) rather than refused.
+// for a person to read (a #fulidebug turn record) rather than refused.
 export function redactSensitiveContent(text) {
   return REDACTORS.reduce((value, [reason, pattern]) => value.replace(pattern, `[redacted:${reason}]`), text);
 }

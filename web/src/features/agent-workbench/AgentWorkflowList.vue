@@ -1,162 +1,76 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import { apiErrorCode, apiErrorReason } from '@/api/client'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { currentLocale, t } from '@/i18n'
-import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
-import UiNotice from '@/ui/UiNotice.vue'
-import { decideAgentWorkflow, openWorkflows, type AgentWorkflow, type AgentWorkflowDecision, type AgentWorkflowVersion } from './agent-workflows'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { t } from '@/i18n'
+import { UiIconButton } from '@/ui'
+import AgentWorkflowCard from './AgentWorkflowCard.vue'
+import { openWorkflows, type AgentWorkflow } from './agent-workflows'
+import { matchesWorkflow, WORKFLOW_SEARCH_FROM, workflowShown, workflowState } from './workflow-card'
 
-// The workflows an Agent proposed and the ones the person confirmed (rec#60
-// D-78). Only the person decides, here, on the version this list shows; the
-// page reads the list again afterwards (`changed`).
-// headingHidden: the list fills a tab that already names it.
-const props = defineProps<{ workflows: AgentWorkflow[]; headingHidden?: boolean }>()
+// An FLA's workflows (rec#60 D-78). One is shown whole; several are an index of
+// cards, with a search once there are many. Any of them opens over the whole
+// app, closed like a floating layer (Jevons 11-04).
+const props = defineProps<{ workflows: AgentWorkflow[] }>()
 const emit = defineEmits<{ changed: [] }>()
 
 const shown = computed(() => openWorkflows(props.workflows))
-const deciding = ref<{ workflowId: string; decision: AgentWorkflowDecision } | null>(null)
-const notice = ref<{ tone: 'warning' | 'error'; text: string } | null>(null)
-const PENDING_LABEL: Record<AgentWorkflowDecision, string> = {
-  confirm: 'agentWorkbench.workflows.confirming',
-  reject: 'agentWorkbench.workflows.rejecting',
-  retire: 'agentWorkbench.workflows.retiring',
-}
-
-function displayed(workflow: AgentWorkflow) {
-  return (workflow.pending ?? workflow.active)!
-}
-function stateLabel(workflow: AgentWorkflow) {
-  if (!workflow.pending) return t('agentWorkbench.workflows.active')
-  return t(workflow.active ? 'agentWorkbench.workflows.changeAwaiting' : 'agentWorkbench.workflows.awaiting')
-}
-function sourceLabel(version: AgentWorkflowVersion) {
-  if (version.source.startsWith('candidate:')) return t('agentWorkbench.workflows.fromCandidate')
-  return t(version.createdBy === 'person' ? 'agentWorkbench.workflows.fromPerson' : 'agentWorkbench.workflows.fromAgent')
-}
-function when(value: string) {
-  return formatDateTime(value, currentLocale(), DATE_TIME_MINUTE, { missing: '' })
-}
-function isDeciding(workflow: AgentWorkflow, decision: AgentWorkflowDecision) {
-  return deciding.value?.workflowId === workflow.workflowId && deciding.value.decision === decision
-}
-
-async function decide(workflow: AgentWorkflow, decision: AgentWorkflowDecision) {
-  const version = decision === 'retire' ? workflow.active?.version : workflow.pending?.version
-  if (!version || deciding.value) return
-  deciding.value = { workflowId: workflow.workflowId, decision }
-  notice.value = null
-  try {
-    await decideAgentWorkflow(workflow.workflowId, decision, version)
-  } catch (error) {
-    notice.value = apiErrorCode(error) === 'version_conflict'
-      ? { tone: 'warning', text: t('agentWorkbench.workflows.changed') }
-      : { tone: 'error', text: t('agentWorkbench.workflows.failed', { reason: apiErrorReason(error) }) }
-  } finally {
-    deciding.value = null
-    emit('changed')
-  }
-}
+const query = ref('')
+const listed = computed(() => shown.value.filter(workflow => matchesWorkflow(workflow, query.value)))
+const openId = ref('')
+const opened = computed(() => shown.value.find(workflow => workflow.workflowId === openId.value) ?? null)
 </script>
 
 <template>
   <section class="agent-workflows" aria-labelledby="agent-workflows-heading">
     <div class="agent-section-heading">
-      <!-- In its own tab the tab already names it: the heading stays for screen readers only. -->
-      <h2 id="agent-workflows-heading" :class="{ 'ui-sr-only': headingHidden }">{{ t('agentWorkbench.workflows.title') }}</h2>
-      <span v-if="shown.length">{{ shown.length }}</span>
+      <h2 id="agent-workflows-heading">{{ t('agentWorkbench.workflows.title') }}</h2>
+      <span v-if="shown.length > 1">{{ shown.length }}</span>
+      <UiIconButton v-if="shown.length === 1" icon="expand" size="sm" :label="t('employees.fullscreen')" data-workflow-expand @click="openId = shown[0]!.workflowId" />
     </div>
-    <UiNotice v-if="notice" :tone="notice.tone" data-workflow-notice>{{ notice.text }}</UiNotice>
     <p v-if="!shown.length" class="agent-muted">{{ t('agentWorkbench.workflows.none') }}</p>
-    <ul v-else class="agent-workflow-list">
-      <li v-for="workflow in shown" :key="workflow.workflowId" class="agent-workflow" :data-workflow="workflow.workflowId" :data-workflow-state="workflow.pending ? 'awaiting' : 'active'">
-        <header class="agent-workflow-header">
-          <h3>{{ displayed(workflow).name }}</h3>
-          <Badge :variant="workflow.pending ? 'warning' : 'success'">{{ stateLabel(workflow) }}</Badge>
-        </header>
-        <p class="agent-workflow-purpose">{{ displayed(workflow).purpose }}</p>
-
-        <template v-if="workflow.active">
-          <h4 v-if="workflow.pending">{{ t('agentWorkbench.workflows.current') }}</h4>
-          <ol class="agent-workflow-steps" data-workflow-steps="active">
-            <li v-for="(step, index) in workflow.active.steps" :key="index">
-              <strong>{{ step.title }}</strong>
-              <span v-if="step.detail">{{ step.detail }}</span>
-            </li>
-          </ol>
-        </template>
-        <template v-if="workflow.pending">
-          <h4 v-if="workflow.active">{{ t('agentWorkbench.workflows.proposedChange', { version: workflow.pending.version }) }}</h4>
-          <ol class="agent-workflow-steps" data-workflow-steps="pending">
-            <li v-for="(step, index) in workflow.pending.steps" :key="index">
-              <strong>{{ step.title }}</strong>
-              <span v-if="step.detail">{{ step.detail }}</span>
-            </li>
-          </ol>
-        </template>
-
-        <p class="agent-workflow-meta">
-          {{ t('agentWorkbench.workflows.version', { version: displayed(workflow).version, count: workflow.versionCount }) }}
-          · {{ sourceLabel(displayed(workflow)) }}
-        </p>
-
-        <div v-if="workflow.active" class="agent-workflow-runs">
-          <h4>{{ t('agentWorkbench.workflows.runs') }}</h4>
-          <ul v-if="workflow.recentRuns.length">
-            <li v-for="run in workflow.recentRuns" :key="run.runId">
-              <Badge :variant="run.outcome === 'done' ? 'success' : run.outcome === 'failed' ? 'destructive' : 'secondary'">
-                {{ t(`agentWorkbench.workflows.outcome.${run.outcome}`) }}
-              </Badge>
-              <time :datetime="run.recordedAt">{{ when(run.recordedAt) }}</time>
-              <span v-if="run.note" class="agent-workflow-run-note">{{ run.note }}</span>
-            </li>
-          </ul>
-          <p v-else class="agent-muted">{{ t('agentWorkbench.workflows.noRuns') }}</p>
-        </div>
-
-        <div class="agent-workflow-actions">
-          <template v-if="workflow.pending">
-            <Button size="sm" :loading="isDeciding(workflow, 'confirm')" :loading-label="t(PENDING_LABEL.confirm, { name: workflow.pending.name })"
-              :disabled="Boolean(deciding)" data-workflow-action="confirm" @click="decide(workflow, 'confirm')">
-              {{ t('agentWorkbench.workflows.confirm') }}
-            </Button>
-            <Button size="sm" variant="outline" :loading="isDeciding(workflow, 'reject')" :loading-label="t(PENDING_LABEL.reject, { name: workflow.pending.name })"
-              :disabled="Boolean(deciding)" data-workflow-action="reject" @click="decide(workflow, 'reject')">
-              {{ t('agentWorkbench.workflows.reject') }}
-            </Button>
-          </template>
-          <Button v-else size="sm" variant="ghost" :loading="isDeciding(workflow, 'retire')" :loading-label="t(PENDING_LABEL.retire, { name: displayed(workflow).name })"
-            :disabled="Boolean(deciding)" data-workflow-action="retire" @click="decide(workflow, 'retire')">
-            {{ t('agentWorkbench.workflows.retire') }}
-          </Button>
-        </div>
-      </li>
-    </ul>
+    <AgentWorkflowCard v-else-if="shown.length === 1" :workflow="shown[0]!" @changed="emit('changed')" />
+    <template v-else>
+      <Input v-if="shown.length >= WORKFLOW_SEARCH_FROM" v-model="query" type="search" :aria-label="t('agentWorkbench.workflows.search')" :placeholder="t('agentWorkbench.workflows.search')" data-workflow-search />
+      <ul class="agent-workflow-index">
+        <li v-for="workflow in listed" :key="workflow.workflowId">
+          <a href="#" class="agent-workflow-tile" :data-workflow-tile="workflow.workflowId" @click.prevent="openId = workflow.workflowId">
+            <span class="agent-workflow-tile-head">
+              <strong>{{ workflowShown(workflow).name }}</strong>
+              <Badge :variant="workflow.pending ? 'warning' : 'success'">{{ workflowState(workflow) }}</Badge>
+            </span>
+            <span class="agent-workflow-tile-purpose">{{ workflowShown(workflow).purpose }}</span>
+          </a>
+        </li>
+      </ul>
+    </template>
+    <Dialog :open="Boolean(opened)" @update:open="(open) => { if (!open) openId = '' }">
+      <DialogContent class="agent-workflow-full" data-workflow-full>
+        <DialogHeader><DialogTitle>{{ opened ? workflowShown(opened).name : '' }}</DialogTitle></DialogHeader>
+        <AgentWorkflowCard v-if="opened" :workflow="opened" @changed="emit('changed')" />
+      </DialogContent>
+    </Dialog>
   </section>
 </template>
 
 <style scoped>
 .agent-workflows { display: grid; gap: var(--space-3, 12px); min-width: 0; }
 .agent-workflows .agent-section-heading { margin-bottom: 0; }
-.agent-workflow-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: var(--space-4, 16px); margin: 0; padding: 0; list-style: none; }
-/* Each workflow is its own lifted card; one waiting for the person carries a warning badge, never a side bar. */
-.agent-workflow { display: grid; align-content: start; gap: var(--space-2, 8px); min-width: 0; padding: var(--space-4, 16px); border-radius: var(--radius-card, 12px); background: var(--color-surface); box-shadow: var(--shadow-sm); }
-.agent-workflow-header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2, 8px); min-width: 0; }
-.agent-workflow-header h3 { margin: 0; font-size: var(--text-card-title, 15px); font-weight: 600; overflow-wrap: anywhere; }
-.agent-workflow-purpose { margin: 0; color: var(--color-muted); font-size: var(--text-body, 14px); overflow-wrap: anywhere; }
-.agent-workflow h4 { margin: var(--space-2, 8px) 0 0; color: var(--color-muted); font-size: var(--text-meta, 12px); font-weight: 500; }
-.agent-workflow-steps { display: grid; gap: 6px; margin: 0; padding-left: 1.4em; font-size: var(--text-body, 14px); list-style: decimal; }
-.agent-workflow-steps li { gap: 2px; overflow-wrap: anywhere; }
-.agent-workflow-steps li::marker { color: var(--color-muted); font-size: var(--text-meta, 12px); }
-.agent-workflow-steps span { display: block; }
-.agent-workflow-steps strong { font-weight: 500; }
-.agent-workflow-steps span { color: var(--color-muted); font-size: var(--text-meta, 12px); }
-.agent-workflow-meta { margin: 0; color: var(--color-muted); font-size: var(--text-meta, 12px); }
-.agent-workflow-runs ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--text-meta, 12px); }
-.agent-workflow-runs li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
-.agent-workflow-runs time { color: var(--color-muted); }
-.agent-workflow-run-note { min-width: 0; overflow-wrap: anywhere; }
-.agent-workflow-actions { display: flex; flex-wrap: wrap; gap: var(--space-2, 8px); margin-top: var(--space-2, 8px); }
+.agent-workflow-index { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: var(--space-3, 12px); margin: 0; padding: 0; list-style: none; }
+.agent-workflow-tile { display: grid; gap: 6px; height: 100%; padding: var(--space-3, 12px) var(--space-4, 16px); border: 1px solid var(--color-border); border-radius: var(--radius-card); color: var(--color-ink); background: var(--color-surface); text-decoration: none; user-select: none; }
+.agent-workflow-tile:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-sm); }
+.agent-workflow-tile:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.agent-workflow-tile-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.agent-workflow-tile-head strong { min-width: 0; overflow: hidden; font-size: var(--text-body, 14px); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.agent-workflow-tile-purpose { display: -webkit-box; overflow: hidden; color: var(--color-muted); font-size: 13px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+</style>
+
+<style>
+/* The dialog renders outside this component: over the whole app, below the window's controls. */
+[data-slot="dialog-content"].agent-workflow-full {
+  top: 0; left: 0; display: flex; flex-direction: column; width: 100vw; max-width: none; height: 100dvh; max-height: none; overflow: auto;
+  padding: calc(16px + var(--desktop-caption-clear, 0px)) var(--page-inline, 24px) 24px; border: 0; border-radius: 0; background: var(--color-bg); transform: none;
+}
 </style>

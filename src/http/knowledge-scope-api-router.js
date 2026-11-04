@@ -11,7 +11,8 @@ const MIGRATION_PATH = '/api/knowledge/session-migration';
 // computer, and sent on the human-review channel (src/knowledge-scope), so an
 // Agent can link to the page but never post the change, not even straight to
 // the Provider with its own token. No Agent tool reaches these routes.
-export async function handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole }) {
+// ownerReads: the console's read port, for what a migrated session still holds.
+export async function handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole, ownerReads = null }) {
   const item = url.pathname.match(SCOPE_PATH);
   if (request.method !== 'POST' || (!item && url.pathname !== MIGRATION_PATH)) return false;
   response.setHeader('Cache-Control', 'no-store');
@@ -23,6 +24,6 @@ export async function handleKnowledgeScopeRequest({ request, response, url, app,
   const body = await readJson(request);
   sendJson(response, 200, item
     ? await changeKnowledgeScope(app, scopeConsole, { ...body, itemKind: item[1], itemId: decodeURIComponent(item[2]) })
-    : await applySessionMigration(app, scopeConsole, body));
+    : await applySessionMigration(app, scopeConsole, body, { ownerReads }));
   return true;
 }

@@ -15,7 +15,7 @@ import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import { formatBytes } from '@/lib/format-bytes'
 import { UiDialog, UiEmpty, UiNotice } from '@/ui'
 
-// One #debug turn record: its parts in order, each coloured by its source,
+// One #fulidebug turn record: its parts in order, each coloured by its source,
 // and how much of the turn FULI added.
 const route = useRoute()
 const router = useRouter()
@@ -31,9 +31,10 @@ const openedFromList = /^\/debug(?:[?#]|$)/
 
 const id = computed(() => String(route.params.id ?? ''))
 const share = computed(() => record.value ? fuliShare(record.value.totals) : null)
-usePageTitle(() => record.value
+const pageName = computed(() => record.value
   ? `${formatDateTime(record.value.createdAt, currentLocale(), DATE_TIME_MINUTE, { missing: '' })} · ${clientName(record.value.sourceApplication)}`
   : '')
+usePageTitle(pageName)
 
 async function load() {
   reading?.abort()
@@ -72,10 +73,10 @@ onBeforeUnmount(() => reading?.abort())
 </script>
 
 <template>
-  <section class="view debug-turn-view" :aria-label="t('debugTurns.title')">
+  <section class="view debug-turn-view" :aria-label="t('debugTurns.title')" :data-debug-turn-id="record?.id">
     <div class="debug-turn-content">
       <div class="debug-turn-bar">
-        <Breadcrumb :parent="{ label: t('debugTurns.title'), to: '/debug', from: openedFromList }" />
+        <Breadcrumb :parent="{ label: t('debugTurns.title'), to: '/debug', from: openedFromList }" :current="pageName || undefined" />
         <Button v-if="record" type="button" size="sm" variant="outline" data-debug-turn-remove @click="confirming = true">
           {{ t('debugTurns.remove') }}
         </Button>

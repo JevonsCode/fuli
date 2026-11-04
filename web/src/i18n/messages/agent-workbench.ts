@@ -1,10 +1,11 @@
 export const agentWorkbenchMessages = {
   'zh-CN': {
-    opening: '正在打开工作台',
+    opening: '正在打开 Workbench',
     readingBoard: '正在读取这个项目的看板列',
     workflows: {
-      title: '工作流',
-      none: '还没有工作流。Agent 发现自己反复做的事后，会在这里提议，由你确认。',
+      title: 'Workflow',
+      search: '搜索 Workflow',
+      none: '还没有 Workflow。Agent 发现自己反复做的事后，会在这里提议，由你确认。',
       awaiting: '待你确认',
       changeAwaiting: '有修改待确认',
       active: '已启用',
@@ -20,10 +21,10 @@ export const agentWorkbenchMessages = {
       confirm: '确认',
       reject: '不采用',
       retire: '停用',
-      confirming: '正在确认工作流「{name}」',
+      confirming: '正在确认 Workflow「{name}」',
       rejecting: '正在记录不采用「{name}」',
-      retiring: '正在停用工作流「{name}」',
-      changed: '这个工作流刚有新版本，已显示最新内容，请再看一遍。',
+      retiring: '正在停用 Workflow「{name}」',
+      changed: '这个 Workflow 刚有新版本，已显示最新内容，请再看一遍。',
       failed: '没有保存：{reason}',
     },
   },
@@ -31,7 +32,8 @@ export const agentWorkbenchMessages = {
     opening: 'Opening the workbench',
     readingBoard: 'Reading this project\'s board columns',
     workflows: {
-      title: 'Workflows',
+      title: 'Workflow',
+      search: 'Search Workflows',
       none: 'No workflows yet. When the Agent notices work it keeps repeating, it proposes one here for you to confirm.',
       awaiting: 'Awaiting you',
       changeAwaiting: 'Change awaiting you',

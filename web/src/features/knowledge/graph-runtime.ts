@@ -244,7 +244,7 @@ export function renderKnowledgeGraph(
     .attr('role', 'button')
     .attr(
       'aria-label',
-      (node) => `${localizeRelationTokens(node.name)}，ID ${graphNodeIdentity(node)}`,
+      (node) => `${nodeName(node)}，ID ${graphNodeIdentity(node)}`,
     )
 
   nodeGroups.filter((node) => !isProjectNode(node)).append('circle')
@@ -268,7 +268,7 @@ export function renderKnowledgeGraph(
   nodeGroups.append('text')
     .attr('class', 'graph-node-label')
     .attr('y', labelBaseline)
-    .text((node) => fitLabel(localizeRelationTokens(node.name), NODE_LABEL_FONT_SIZE))
+    .text((node) => fitLabel(nodeName(node), NODE_LABEL_FONT_SIZE))
   nodeGroups.append('text')
     .attr('class', 'graph-node-id')
     .attr('y', idBaseline)
@@ -287,7 +287,7 @@ export function renderKnowledgeGraph(
     .text(t('knowledge.domain.graph.hit'))
   nodeGroups.append('title')
     .text((node) => [
-      localizeRelationTokens(node.name),
+      nodeName(node),
       node.type,
       `ID: ${node.id}`,
       isProjectNode(node) ? t('knowledge.domain.graph.projectMarked') : null,
@@ -742,6 +742,11 @@ function coordinate(endpoint: string | GraphNodeDatum, axis: 'x' | 'y') {
 
 function colorFor(type: string) {
   return COLORS[Math.floor(seeded(type) * COLORS.length) % COLORS.length]
+}
+
+// The root of a personal graph is the person: 我, whatever the space was named at setup.
+function nodeName(node: { name: string; type?: string }) {
+  return node.type === 'PersonalSpace' ? t('common.me.name') : localizeRelationTokens(node.name)
 }
 
 export function isProjectNode(node: KnowledgeNode | null | undefined) {

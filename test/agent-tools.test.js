@@ -41,6 +41,7 @@ const NAMES = [
   'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
   'list_work_surfaces', 'pause_work_surfaces', 'resume_work_surfaces',
   'run_delegated_action',
+  'read_diagnostic_events', 'read_old_data',
   'read_task_preferences',
   'begin_task_context',
   'checkpoint_task_knowledge',
@@ -353,6 +354,9 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     agentWorkflows: Object.fromEntries(['propose', 'index', 'read', 'recordRun']
       .map(name => [name, async (owner, input) => calls.push([`workflow-${name}`, input])])),
     delegatedConsole: { send: async (input) => { calls.push(['delegated-send', input]); return { result: {}, operationId: 'op-1' }; } },
+    diagnosticEvents: { read: () => { calls.push(['diagnostics-read']);
+      return { events: [], sourcesUnavailable: [], skippedLines: 0, stored: false, mayHaveDropped: false }; } },
+    oldData: { list: async () => calls.push(['old-data-list']), read: async (input) => calls.push(['old-data-read', input]) },
     controlProjectAgentTaskRun: async input => calls.push(['task-run-control', input]),
     queryAgentConversations: async input => calls.push(['conversations-' + input.mode, input]),
     resumeAgentConversation: async input => calls.push(['conversation-resume', input]),
@@ -559,6 +563,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'workflow-propose', 'workflow-index', 'workflow-read', 'workflow-recordRun',
     'surfaces-list', 'surfaces-pause', 'surfaces-resume',
     'delegated-send',
+    'diagnostics-read', 'old-data-list',
     'read-task-preferences',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',

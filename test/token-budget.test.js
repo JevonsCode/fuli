@@ -17,9 +17,10 @@ import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
 import { readTurnReceipt } from '../src/agents/turn-receipt.js';
 import { dataFormatReceiptNotice } from '../src/data-format/format-notices.js';
-import { sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
+import { applySessionMigration, sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
+import { entryAgentReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { OMITTED_PREFERENCES_LABEL } from '../src/conversations/entry-inline-budget.js';
-import { claudeEntrySession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences }
+import { claudeEntrySession, syntheticLargeEntry, syntheticNoMatchEntry, syntheticPreferences, syntheticTokenlessEntry }
   from '../test-support/synthetic-large-entry.js';
 import { claudeLifecycleOutput } from '../src/agents/claude-code/lifecycle-hook.js';
 
@@ -175,7 +176,15 @@ const BASELINE = Object.freeze({
   // rec#11 D-81 run_delegated_action: one full-profile tool for all 52 console changes the person
   // lets FLAs make for them (instead of a tool each): 199,999 -> 200,801 B (+802 B), measured;
   // chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 200801,
+  // rec#73 read_diagnostic_events: one full-profile read of the local diagnostics log (time, component,
+  // level and code filters, cursor paging): 200,801 -> 201,591 B (+790 B), measured; chat reaches it
+  // through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
+  // rec#80 group B read_old_data and the relayed personWords field, on top: 201,591 -> 202,313 B (+722 B),
+  // measured with both in; full profile only, chat reaches them through fuli_call.
+  fullToolSchemaBytes: 202313,
+  // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
+  // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
+  // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real
@@ -239,6 +248,13 @@ const BASELINE = Object.freeze({
   knowledgeIndexNoneChars: 0,
   knowledgeIndexOneChars: 226,
   knowledgeIndexFiveChars: 529,
+  // rec#46: get_collaboration_preferences without a native session (OpenCode code mode) begins no
+  // task, and its entry is re-read on every later model step. A working lead's synthetic entry
+  // (two preferences, both memory layers, team, Jefa, Tonborg) shows its memory, team and
+  // managers as the calls that read them, and Tonborg as its one sentence: 11,154 -> 6,645 B,
+  // measured on the compact view the MCP result carries (with the shared rules_version).
+  // rec#75: a delivered preference names its id, so a correction can revise it: 6645 -> 6,683 B, measured.
+  tokenlessEntryBytes: 6683,
   // rec#5 C3b: a turn of a session FULI is off for gets this one line instead of the project
   // entry (its longest reason, measured): no memory, preferences, recall or receipt. Every
   // other number above is unchanged; the switch adds no tool, schema or instruction text.
@@ -297,7 +313,12 @@ const BASELINE = Object.freeze({
   // undecided: one line after its receipt (149 chars). No tool, schema or instruction text.
   sessionMigrationNoneChars: 0,
   sessionMigrationOfferChars: 152,
-  sessionMigrationTurnChars: 149
+  sessionMigrationTurnChars: 149,
+  // rec#82: a migration the person confirmed for this session, told at its next task entry: one
+  // plain line with its separator (what moved and what still waits; no link, no instruction),
+  // once per confirm. A session with none reads no file and adds nothing.
+  sessionMigrationConfirmedNoneChars: 0,
+  sessionMigrationConfirmedChars: 35
 });
 
 const schemaBytes = tools => Buffer.byteLength(JSON.stringify(tools.map(({ name, title, description, inputSchema }) =>
@@ -405,12 +426,37 @@ async function measure() {
     instructionsBytes: Buffer.byteLength(MCP_INSTRUCTIONS, 'utf8'),
     chatInstructionsBytes: Buffer.byteLength(MCP_CHAT_INSTRUCTIONS, 'utf8'),
     ...await projectEntryChars(), ...await noMatchEntryChars(), ...await knowledgeIndexChars(), ...await claudeBoundedEntryChars(),
+    tokenlessEntryBytes: Buffer.byteLength(JSON.stringify(compactTaskContext(
+      await syntheticTokenlessEntry({ items: syntheticPreferences(2) })))),
     omittedPreferencesLabelChars: 1 + OMITTED_PREFERENCES_LABEL.length,
     sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'session_start_unsaved', 'policy_unavailable']
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,
     codexReviewGuidanceBytes: codexReviewGuidanceBytes(), ...await turnReceiptChars(), ...await migrationReceiptChars(),
-    ...await sessionMigrationChars() };
+    ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars() };
+}
+
+// rec#82: the entry receipt's growth for a session with and without a confirmed migration,
+// recorded through the real apply in a synthetic data directory.
+async function sessionMigrationConfirmedChars() {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-migration-notice-budget-'));
+  try {
+    const app = new FederatedGraphApplication({ version: 1, workspaces: [], personal: { providerUrl: 'http://127.0.0.1:8787',
+      accessToken: 'synthetic-test-token', principalId: 'synthetic-user', spaceId: 'space' } },
+    { runtimeConfigPath: join(root, 'graph-runtime.json'), fetchImpl: async () => { throw new Error('Unexpected Provider request'); } });
+    app.personal.previewSessionMigration = async () => ({ held_count: 0, linked_task_count: 2 });
+    const task = { sessionId: '0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b84', sourceApplication: 'claude_code',
+      personalProjectId: 'sample', token: 'fuli-task-synthetic-budget', unreadTurnReceipts: [] };
+    const receipt = { required: true, markdown: 'FULI Agent：负责人 Synthetic lead' };
+    const added = async () => (await entryAgentReceipt(app, task, receipt)).markdown.length - receipt.markdown.length;
+    const none = await added();
+    await applySessionMigration(app, { applySessionMigration: async () => ({ target_project_id: 'sample',
+      moved: Array.from({ length: 12 }, (_, index) => ({ item_kind: 'entity', item_id: `item-${index}` })) }) },
+    { personalSpaceId: 'space', sourceApplication: 'claude_code', sessionId: task.sessionId, projectId: 'sample',
+      reason: 'Synthetic', migrationId: 'budget-move', items: [{ itemKind: 'entity', itemId: 'item-0', expectedVersion: 0 }] },
+    { ownerReads: { sessionMigration: async () => ({ held_count: 3 }) } });
+    return { sessionMigrationConfirmedNoneChars: none, sessionMigrationConfirmedChars: await added() };
+  } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
 // rec#20 part 2: the migration link line with its separator, measured with a UUID session

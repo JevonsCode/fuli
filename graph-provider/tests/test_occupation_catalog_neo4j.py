@@ -20,9 +20,10 @@ async def test_catalog_crud_cas_scope_and_assignment_lifecycle():
         listing = await client.get('/v1/occupations', params={'personal_space_id': space})
         assert listing.status_code == 200, listing.text
         entries = listing.json()
-        assert len(entries) == 25
+        assert len(entries) == 27
         assert {'lead', 'assistant', 'product', 'engineering', 'design', 'operations', 'testing',
-                'research', 'data', 'writing', 'management'} <= {entry['key'] for entry in entries}
+                'research', 'data', 'writing', 'management', 'project_manager',
+                'decision_maker'} <= {entry['key'] for entry in entries}
         assert all(entry['builtin'] and entry['name_zh'] and entry['name_en']
                    and entry['description_zh'] and entry['description_en'] for entry in entries)
         assert all(entry['agent_count'] == 0 for entry in entries)
@@ -221,5 +222,36 @@ async def test_builtin_agents_count_toward_their_shipped_occupations():
         # Bole is AR: Agent resources, not management.
         assert (entries['hr']['name_zh'], entries['hr']['name_en']) == ('Agent 资源', 'Agent resources')
         assert entries['hr']['agent_count'] == 1
-        assert entries['management']['agent_count'] == 2
+        # Jefa and Tonborg hold what they are called (graph/16).
+        for agent_id, key, name_zh in (('employee.jefa', 'project_manager', '项目经理'),
+                                       ('employee.tonborg', 'decision_maker', '决策员')):
+            agent = (await client.get(f'/v1/project-agents/{agent_id}', params=params)).json()
+            assert agent['occupation']['role'] == key
+            assert (entries[key]['name_zh'], entries[key]['agent_count']) == (name_zh, 1)
+        assert entries['management']['agent_count'] == 0
         assert entries['assistant']['agent_count'] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_builtin_added_later_reaches_an_existing_space_on_its_next_read():
+    from neo4j import AsyncGraphDatabase
+    settings = fixture_settings()
+    async with provider_client(settings, raise_app_exceptions=False) as (client, _):
+        space = await create_space(client)
+        params = {'personal_space_id': space}
+        assert (await client.post('/v1/project-agents/system-hr', params=params)).status_code == 200
+        assert (await client.get('/v1/occupations', params=params)).status_code == 200
+        # A catalog an earlier FULI seeded: it stops before the two new rows.
+        async with AsyncGraphDatabase.driver(settings.neo4j_uri, auth=(settings.neo4j_user, settings.neo4j_password)) as driver:
+            await driver.execute_query('''MATCH (:FuliSpace {id: $space})-[:HAS_OCCUPATION]->(occupation:FuliOccupation)
+                WHERE occupation.key IN ['project_manager', 'decision_maker'] DETACH DELETE occupation''', space=space)
+        # Until then the key is already a valid built-in.
+        recruited = await client.put('/v1/project-agents', json={**params, 'agent_id': 'synthetic-manager',
+            'profile': {'name': 'Synthetic manager', 'responsibility': 'Keep the synthetic board.'},
+            'occupation': {'role': 'project_manager', 'tags': []}})
+        assert recruited.status_code == 200, recruited.text
+        entries = {entry['key']: entry for entry in
+                   (await client.get('/v1/occupations', params=params)).json()}
+        assert (entries['project_manager']['builtin'], entries['project_manager']['status']) == (True, 'active')
+        assert entries['project_manager']['agent_count'] == 2
+        assert entries['decision_maker']['agent_count'] == 1

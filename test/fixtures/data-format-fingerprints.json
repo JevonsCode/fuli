@@ -17,12 +17,12 @@
       "fingerprint": "ac51af848f3e7277f38e13ba68567a10d187ee6558249c3230eec4493c53bf9b"
     },
     "jefa-board": {
-      "version": 3,
-      "fingerprint": "4361b94c01a458b680a0191279fb7ad49f0a4e7a18fadd1b5bc0438865243218"
+      "version": 5,
+      "fingerprint": "922d0d9f9f0e72f94c8db3f24590112505251bb0a22d9e402da129807acadbf5"
     },
     "judgment": {
-      "version": 1,
-      "fingerprint": "e621120361096b31c77958988cc3fc7cd0f19345732268b0fb28c6508da24b8e"
+      "version": 2,
+      "fingerprint": "3363315931dfa00d42d32bb1ea465b93f7d64489af3edef87b22078fe3541ff8"
     },
     "model-settings-history": {
       "version": 1,
@@ -72,13 +72,17 @@
       "version": 1,
       "fingerprint": "463ba8cfed4245a307a29a59ddd0544138845cc0b2da11c171aa65e0105fef35"
     },
+    "project-change-log": {
+      "version": 1,
+      "fingerprint": "87be5b11bb8720e1d163cd0726bfc857d66f07df15b5ffdebf217d8739f4f926"
+    },
     "work-surfaces": {
       "version": 1,
       "fingerprint": "4972c8b13efb1c57a3f5f2388d408687ba8ced3629921b0dadd46e2b65531189"
     },
     "agent-delegation": {
-      "version": 1,
-      "fingerprint": "450e1b997fc2280031c3b815210d2bc1ed5b0f0c56e7f16e66b9a79efb056e7e"
+      "version": 2,
+      "fingerprint": "e2cf344349f0a3f6f23614f42f2fef04c43516dfb9ef23ed999becff2ea549bc"
     }
   }
 }

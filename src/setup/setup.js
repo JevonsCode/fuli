@@ -8,6 +8,7 @@ import { resolveSetupPaths } from './paths.js';
 import { ensureGraphRuntime } from './graph-runtime.js';
 import { beginFirstRunCapture } from './first-run-capture.js';
 import { reconcileLocalKnowledge } from '../knowledge-hard-delete/reconcile-local.js';
+import { keepDataDirectoryPrivate } from '../system/windows-data-acl.js';
 import {
   DEFAULT_RUNTIME_SETTINGS,
   readRuntimeSettings,
@@ -91,10 +92,15 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
   const ensureRuntime = dependencies.ensureRuntime ?? ensureGraphRuntime;
   // Stubbed runtimes in tests never touch the data directory they name.
   const beginFirstRun = dependencies.beginFirstRun ?? (ensureRuntime === ensureGraphRuntime ? beginFirstRunCapture : () => {});
+  const keepPrivate = dependencies.keepDataDirectoryPrivate
+    ?? (ensureRuntime === ensureGraphRuntime ? keepDataDirectoryPrivate : async () => true);
   const runtimeSettings = plan.runtimeSettings ?? runtimeSettingsWithOverrides(
     DEFAULT_RUNTIME_SETTINGS,
     { consolePort: options.port }
   );
+  // Before anything is written into it, so the human-review token and the
+  // stores are created under an ACL only the person and SYSTEM can open (rec#53).
+  const dataDirPrivate = await keepPrivate(plan.paths.dataDir);
   beginFirstRun(plan.paths);
   const runtime = await ensureRuntime({
     paths: plan.paths,
@@ -130,6 +136,7 @@ export async function applyLocalSetup(plan, options, dependencies = {}) {
     status: agentsReady && !plan.clientDetection && knowledgeRecovery?.status !== 'pending' ? 'ready' : 'partial',
     ...(knowledgeRecovery ? { knowledgeRecovery } : {}),
     ...(plan.clientDetection ? { clientDetection: plan.clientDetection } : {}),
+    ...(dataDirPrivate ? {} : { dataDirPrivate: false }),
     runtime,
     agents
   };

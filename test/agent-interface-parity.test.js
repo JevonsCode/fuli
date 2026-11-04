@@ -77,6 +77,7 @@ const REQUIRED_AGENT_MUTATIONS = new Map([
   ['PATCH /api/external-knowledge/conflict-policy', 'update_external_knowledge_conflict_policy'],
   ['PATCH /api/external-knowledge/conflict-policy/default', 'update_external_knowledge_conflict_policy'],
   ['DELETE /api/projects/:projectId', 'delete_public_project'],
+  ['POST /api/project-agents/:agentId/dismissal', 'dismiss_project_agent'],
 ]);
 
 // rec#11 D-81: never delegable, whatever the person's AI permissions say.
@@ -96,13 +97,25 @@ const REQUIRED_LOCAL_USER_BOUNDARIES = new Set([
   'POST /api/agent-apps/:appId/delete-data',
   'POST /api/roundtable/threads',
   'POST /api/roundtable/threads/:threadId/messages',
-  'POST /api/agent-attention/respond',
+  'PUT /api/judgment/policy',
+  'POST /api/agent-apps/:appId/confirm',
+  'POST /api/system/graph-migration',
+]);
+
+// rec#80: the person's own decisions, which an FLA relays only in their words.
+const RELAYED_DECISIONS = new Set([
   'POST /api/judgment/feedback',
-  'POST /api/data-format/dismiss-notices',
-  'POST /api/knowledge/batch-confirmation',
-  'POST /api/knowledge/:itemKind/:itemId/preference-scope',
+  'POST /api/judgment/undo',
+  'POST /api/agent-attention/respond',
   'POST /api/preference-conflicts/:conflictId/complete',
+  'POST /api/knowledge/:itemKind/:itemId/preference-scope',
+  'POST /api/knowledge/batch-confirmation',
   'PATCH /employee-workspaces/:templateId/:projectId/api/work-items/:itemId/status',
+  'PUT /api/person-profile',
+  'POST /api/first-run-guide',
+  'POST /api/capture-onboarding',
+  'POST /api/data-format/dismiss-notices',
+  'POST /api/agent-apps/:appId/reveal-export',
 ]);
 
 test('Agent interface catalog covers UI mutations with a tool or an explicit local-user boundary', () => {
@@ -136,7 +149,7 @@ test('Agent interface catalog covers UI mutations with a tool or an explicit loc
   assert.equal(catalog.coverage.total, catalog.uiMutationParity.length);
   assert.equal(
     catalog.coverage.agentControlled + catalog.coverage.agentDelegable + catalog.coverage.agentDelegableOff
-      + catalog.coverage.localUserOnly,
+      + catalog.coverage.agentRelayed + catalog.coverage.localUserOnly,
     catalog.coverage.total,
   );
 });
@@ -145,7 +158,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
   const catalog = agentInterfaceCatalog();
   const defaults = new Map(catalog.delegationCategories.map(({ id, defaultEnabled }) => [id, defaultEnabled]));
   assert.deepEqual([...defaults], [['settings', true], ['organisation', true], ['projects', true],
-    ['services_apps', true], ['roundtable', true], ['lan_roundtable', false], ['model_settings', false],
+    ['services_apps', true], ['roundtable', true], ['decisions', true], ['lan_roundtable', false], ['model_settings', false],
     ['public_projects', false]]);
   const delegable = catalog.uiMutationParity.filter(({ access }) => access.startsWith('agent_delegable'));
   for (const entry of delegable) {
@@ -153,8 +166,15 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.ok(entry.undo?.length > 0, entry.route);
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
-  assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.localUserOnly],
-    [44, 10, 31]);
+  assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
+    catalog.coverage.localUserOnly], [45, 10, 12, 21]);
+  const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
+  assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
+  for (const entry of relayed) {
+    assert.equal(entry.category, 'decisions', entry.route);
+    assert.ok(entry.undo?.length > 0, entry.route);
+    assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
+  }
   const byRoute = new Map(catalog.uiMutationParity.map((entry) => [entry.route, entry]));
   for (const [route, category] of [['PUT /api/system/settings', 'settings'], ['POST /api/system/update', 'settings'],
     ['POST /api/occupations', 'organisation'], ['POST /api/topic-proposals/accept', 'projects'],

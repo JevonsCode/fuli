@@ -1,10 +1,10 @@
 import { z } from 'zod'
-import { deleteJson, getJson, postJson } from '@/api/client'
+import { deleteJson, getJson, postJson, putJson } from '@/api/client'
 import { shapeOf } from '@/api/response-shape'
 import { t } from '@/i18n'
 import { tableLabel } from '@/i18n/label-table'
 
-// The #debug turn records (src/debug-turns/): one turn of a session with all
+// The #fulidebug turn records (src/debug-turns/): one turn of a session with all
 // the context FULI saw, as ordered parts, each from one source.
 export const DEBUG_SOURCES = ['person', 'fuli', 'ai', 'host', 'not_visible'] as const
 export type DebugSource = typeof DEBUG_SOURCES[number]
@@ -33,6 +33,16 @@ export const readDebugTurn = (id: string, signal?: AbortSignal) => getJson(recor
 export const deleteDebugTurn = (id: string) => deleteJson(recordPath(id), undefined, deletedShape)
 export const deleteDebugTurns = (ids: string[]) => postJson('/api/debug-turns/delete', { ids }, shapeOf(z.looseObject({ deleted: z.array(z.string()) })))
 
+const captureShape = shapeOf(z.looseObject({ on: z.boolean(), port: z.number() }))
+export const readModelCapture = (signal?: AbortSignal) => getJson('/api/debug-turns/capture', captureShape, { signal })
+export const setModelCapture = (on: boolean) => putJson('/api/debug-turns/capture', { on }, captureShape)
+
+/** A record as one text: for the clipboard, a file, or another person's AI to read. */
+export function debugRecordText(record: DebugTurnRecord) {
+  const head = `# ${record.promptLine ?? record.id}\n${record.createdAt} · ${clientName(record.sourceApplication)}`
+  return [head, ...record.parts.map(item => `## ${partTitle(item)} (${t(`debugTurns.sources.${item.source}`)})\n\n${item.text}`)].join('\n\n')
+}
+
 /** The bytes FULI added to the turn and their share of all it saw, as a whole percent (0 when empty). */
 export function fuliShare(sums: DebugTotals): { bytes: number; total: number; percent: number } {
   const total = DEBUG_SOURCES.reduce((sum, source) => sum + sums[source], 0)
@@ -46,7 +56,7 @@ export const partIsLong = (item: DebugPart) => item.bytes > LONG_PART_BYTES || i
 
 // The record's labels: a count for the tool list and the history, the event or
 // tool name otherwise. An unknown kind keeps its code.
-const COUNTED: Record<string, string> = { mcp_tools: 'debugTurns.toolCount', history: 'debugTurns.messageCount' }
+const COUNTED: Record<string, string> = { mcp_tools: 'debugTurns.toolCount', model_client_tools: 'debugTurns.toolCount', model_fuli_tools: 'debugTurns.toolCount', history: 'debugTurns.messageCount' }
 
 /** The design token that colours a source, for its parts and its legend entry. */
 export const sourceColour = (source: DebugSource) => `var(--color-source-${source.replace('_', '-')})`

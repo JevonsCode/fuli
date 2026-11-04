@@ -21,6 +21,7 @@ from .knowledge_versions import (
     end_keyed_values, invalid_property, keyed_value, lock_knowledge, record_version_revision,
 )
 from .models import KnowledgeRevisionRecord
+from .preference_versions import end_older_preferences
 from .provider_values import normalized_text, stable_uuid
 
 MARK_OUTDATED_TOOL = 'mark_outdated'
@@ -37,11 +38,18 @@ POSSIBLY_OUTDATED_REASON = 'Newer knowledge may replace this; it stays current u
 async def settle_older_knowledge(scoped, actor, space, items, *, created_at) -> dict[str, list[dict]]:
     """What newly written or confirmed knowledge does to older knowledge,
     inside the caller's transaction. A confirmed value of a keyed relation
-    ends the other values of its subject and relation; any other new item
+    ends the other values of its subject and relation, and a confirmed
+    preference the other preferences of its key and scope; any other new item
     queues the older items it may silently replace for a person (flagged, not
     ended). Nothing is deleted."""
     superseded, flagged = [], []
     for item_kind, item_id in items:
+        # A confirmed preference ends the older one of its key and scope.
+        ended = await end_older_preferences(scoped, actor, space, item_kind, item_id, changed_by='user',
+                                            created_at=created_at)
+        if ended:
+            superseded += ended
+            continue
         keyed = await keyed_value(scoped, space, item_id) if item_kind == 'relationship' else None
         if keyed and keyed['confirmation_status'] == 'confirmed':
             ended = await end_keyed_values(scoped, actor, space, keyed, changed_by='user', created_at=created_at)

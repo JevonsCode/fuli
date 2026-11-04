@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { formatBytes as formatByteCount } from '@/lib/format-bytes'
 import { Button } from '@/components/ui/button'
+import PageOutline from '@/components/PageOutline.vue'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -9,13 +11,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { apiErrorReason, getJson, putJson } from '@/api/client'
 import { Switch } from '@/components/ui/switch'
 import { normalizedConfiguration, setConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
-import JudgmentPolicySettings from '@/features/judgment/JudgmentPolicySettings.vue'
 import PageColumns from '@/components/PageColumns.vue'
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
 import ClientLinksSettings from '@/features/settings/ClientLinksSettings.vue'
 import AgentDelegationSettings from '@/features/settings/AgentDelegationSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
 import DiagnosticsSettings from '@/features/settings/DiagnosticsSettings.vue'
+import StorageSettings from '@/features/settings/StorageSettings.vue'
 import GraphMigrationRow from '@/features/settings/GraphMigrationRow.vue'
 import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
 import { offersUpdate, useChannelVersionStatus } from '@/features/update/version-status'
@@ -91,6 +93,7 @@ watch(activeTab, tab => {
 const loadingResources = ref(false)
 const loadError = ref('')
 const searchRoot = ref<HTMLElement | null>(null)
+const settingsRoot = ref<HTMLElement | null>(null)
 // A link from an Agent (?setting=ports) opens the page already filtered to that setting.
 const searchQuery = ref(settingSearchTerm(new URLSearchParams(window.location.search).get('setting'), t))
 const searchMatches = ref(0)
@@ -348,18 +351,9 @@ function componentLabel(component: ResourceComponent) {
   return i18n.global.te(key) ? t(key) : component.label
 }
 
+// One unit system with 存储 (lib/format-bytes): the two cards' sizes read alike.
 function formatBytes(bytes: number | null | undefined) {
-  if (!Number.isFinite(bytes)) return '—'
-  const value = Number(bytes)
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
-  let amount = value
-  let index = 0
-  while (amount >= 1024 && index < units.length - 1) {
-    amount /= 1024
-    index += 1
-  }
-  const digits = index === 0 ? 0 : amount >= 100 ? 0 : amount >= 10 ? 1 : 2
-  return `${amount.toFixed(digits)} ${units[index]}`
+  return Number.isFinite(bytes) ? formatByteCount(Number(bytes)) : '—'
 }
 
 function barWidth(bytes: number, maximum: number) {
@@ -386,7 +380,8 @@ function checkFields(): ValidatedField[] {
 </script>
 
 <template>
-  <section class="view settings-view" :aria-label="t('settings.aria')">
+  <section ref="settingsRoot" class="view settings-view" :aria-label="t('settings.aria')">
+    <PageOutline :content="settingsRoot" />
     <div ref="searchRoot" class="settings-content grid w-full gap-4">
       <GrowthLoading v-if="loading && !form" :label="t('settings.loading')" />
       <Tabs v-if="form" v-model="activeTab" :unmount-on-hide="false" class="settings-tabs gap-4" :data-searching="searching || undefined">
@@ -460,9 +455,16 @@ function checkFields(): ValidatedField[] {
                   </label>
                 </div>
               </Card>
-              <section class="settings-card judgment-settings-card">
-                <JudgmentPolicySettings />
-              </section>
+              <Card as="section" class="settings-card" aria-labelledby="settings-judgment-title">
+                <CardHeader>
+                  <CardTitle id="settings-judgment-title" as="h2">{{ t('judgment.settings.link') }}</CardTitle>
+                  <CardAction>
+                    <Button as-child size="sm" variant="outline">
+                      <RouterLink to="/employees/tonborg?view=standards" data-open-judgment-standards>{{ t('judgment.settings.open') }}</RouterLink>
+                    </Button>
+                  </CardAction>
+                </CardHeader>
+              </Card>
               <Card as="section" class="settings-card" aria-labelledby="settings-models-title">
                 <CardHeader>
                   <CardTitle id="settings-models-title" as="h2">{{ t('modelSettings.title') }}</CardTitle>
@@ -646,6 +648,7 @@ function checkFields(): ValidatedField[] {
                   </CardAction>
                 </CardHeader>
               </Card>
+              <StorageSettings />
               <DiagnosticsSettings />
               <Card as="section" class="settings-card resource-card" data-span="wide" aria-labelledby="settings-resources-title">
                 <CardHeader>
@@ -766,7 +769,6 @@ function checkFields(): ValidatedField[] {
 .settings-card { min-width: 0; container-type: inline-size; }
 .settings-card :deep([data-slot="card-header"]) { padding-inline: 24px; }
 .setting-list, .resource-details { padding-inline: 24px; }
-.judgment-settings-card { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); padding: 24px; }
 /* A card a link opened (#conversation-launchers, ?setting=…) is marked until the person moves on. */
 .settings-content :deep(.settings-card[data-settings-linked]) { box-shadow: 0 0 0 2px var(--ring); }
 

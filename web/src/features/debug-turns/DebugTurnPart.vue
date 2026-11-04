@@ -9,7 +9,7 @@ import { formatBytes } from '@/lib/format-bytes'
 import { UiIcon } from '@/ui'
 import { partIsLong, partTitle, sourceColour, type DebugPart } from './model'
 
-// One part of a #debug turn record, tinted by its source. It shows two lines at
+// One part of a #fulidebug turn record, tinted by its source. It shows two lines at
 // most, never wider than the page; 「查看详情」 opens the whole text in a large
 // dialog that scrolls (Jevons 11-04).
 const props = defineProps<{ part: DebugPart }>()

@@ -3,7 +3,7 @@ import type { Mock } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import type { ConsoleState } from '@/types'
-import EmployeeWorkbenchPage from '@/pages/EmployeeWorkbenchPage.vue'
+import EmployeeWorkbench from '@/features/employees/EmployeeWorkbench.vue'
 import { useConsoleStore } from '@/stores/console'
 import { refreshEmployeeCatalog } from '@/features/employees/catalog'
 
@@ -49,9 +49,10 @@ const mounted: Array<{ unmount: () => void }> = []
 export function unmountEmployeeWorkbenches() { for (const wrapper of mounted.splice(0)) wrapper.unmount() }
 
 export async function mountEmployeeWorkbench(path: string) {
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/employees/:templateId', component: EmployeeWorkbenchPage }, { path: '/project-agents', component: { template: '<p>Agents</p>' } }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/employees/:templateId', component: { template: '<div />' } }, { path: '/project-agents', component: { template: '<p>Agents</p>' } }] })
   await router.push(path)
-  const wrapper = mount(EmployeeWorkbenchPage, { global: { plugins: [router] } })
+  const templateId = String(router.currentRoute.value.params.templateId)
+  const wrapper = mount(EmployeeWorkbench, { props: { templateId }, global: { plugins: [router] } })
   mounted.push(wrapper)
   await flushPromises()
   return wrapper
