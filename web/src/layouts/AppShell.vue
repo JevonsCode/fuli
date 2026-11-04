@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, provide, watch, watchEffect } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch, watchEffect } from 'vue'
 import { MotionConfig } from 'motion-v'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
@@ -14,6 +14,7 @@ import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
+import { offersUpdate, readVersionStatus } from '@/features/update/version-status'
 import { useRoundtableLive } from '@/features/roundtables/roundtable-live'
 import { t } from '@/i18n'
 import { fuliWordmarkUrl } from '@/lib/brand'
@@ -90,13 +91,22 @@ function refreshConsole() {
   void store.refresh()
   if (!attention.loading) void attention.refresh()
 }
+// A newer release is a dot at the version's top-right (Jevons 11-04: not on the mark);
+// the version opens 设置 › 版本, where it installs.
+const latestVersion = ref<string | null>(null)
+const versionRequest = new AbortController()
 onMounted(() => {
   measureScrollbarSize()
+  void readVersionStatus(versionRequest.signal)
+    .then((status) => { latestVersion.value = offersUpdate(status) ? status.latestVersion : null })
+    // Version checks are advisory and never interrupt the console.
+    .catch(() => {})
   if (store.runtimeStatus === 'idle') void store.refresh()
   attentionTimer = setInterval(refreshAttention, 30000)
   document.addEventListener('visibilitychange', refreshAttention)
 })
 onBeforeUnmount(() => {
+  versionRequest.abort()
   clearInterval(attentionTimer)
   document.removeEventListener('visibilitychange', refreshAttention)
   attention.setSpace('')
@@ -129,8 +139,10 @@ watchEffect(() => {
               <span class="app-runtime-text" :class="{ 'is-visible': !runtimeReady }">{{ t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline') }}</span>
             </span>
             <!-- The version beside the dot opens 设置 › 版本 (update channel and updates). -->
-            <RouterLink class="app-version" to="/settings?tab=version" :aria-label="t('shell.versionLink', { version: FULI_VERSION })"
-              draggable="false" data-app-version>v{{ FULI_VERSION }}</RouterLink>
+            <RouterLink class="app-version" to="/settings?tab=version" draggable="false" data-app-version
+              :aria-label="latestVersion ? t('shell.versionUpdate', { version: FULI_VERSION, latest: latestVersion })
+                : t('shell.versionLink', { version: FULI_VERSION })">v{{ FULI_VERSION }}<span
+                v-if="latestVersion" class="app-version-dot" aria-hidden="true" data-update-dot /></RouterLink>
           </span>
         </div>
         <!-- Only a record's own name is shown; a destination is already named by the dock
@@ -212,10 +224,15 @@ watchEffect(() => {
 .app-runtime { display: inline-flex; align-items: center; gap: 6px; --runtime: var(--status-error); }
 .app-runtime.is-ready { --runtime: var(--color-success); }
 .app-version {
-  color: var(--color-muted); font-size: var(--text-meta); font-variant-numeric: tabular-nums; text-decoration: none;
+  position: relative; color: var(--color-muted); font-size: var(--text-meta); font-variant-numeric: tabular-nums; text-decoration: none;
   user-select: none; border-radius: var(--radius-control, 6px);
 }
 .app-version:hover, .app-version:focus-visible { color: var(--color-ink); }
+/* Over the corner, not beside the text: the version never moves when it appears. */
+.app-version-dot {
+  position: absolute; top: -2px; right: -6px; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-danger); box-shadow: 0 1px 4px color-mix(in srgb, var(--color-danger) 28%, transparent);
+}
 .app-runtime-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--runtime); }
 .app-runtime-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .app-runtime-text.is-visible { position: static; width: auto; height: auto; overflow: visible; clip-path: none; color: var(--runtime); font-size: var(--text-meta); font-weight: var(--weight-medium); }
