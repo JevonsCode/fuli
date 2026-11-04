@@ -97,7 +97,7 @@ async function decide(item: GrowthItem, keep: boolean) {
 .growth { display: grid; gap: 12px; }
 .growth-label { display: flex; align-items: baseline; gap: 8px; margin: 0; padding-inline: 4px; color: var(--color-ink-soft); font-size: var(--text-control); font-weight: var(--weight-strong); }
 .growth-label .ui-num { color: var(--color-faint); font-weight: var(--weight-medium); }
-.growth-card { gap: 8px; }
+.growth-card { gap: 8px; padding: 12px 24px; }
 .growth-hint { margin: 0; color: var(--color-muted); font-size: var(--text-meta); }
 .growth-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .growth-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--control-height); }
