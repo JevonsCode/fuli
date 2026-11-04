@@ -839,6 +839,13 @@ function editActiveProjectProfile() {
   managingMaterialType.value = 'PersonalProject'
   managingProject.value = activePersonalProject.value
 }
+// 修改项目信息 on any project name (the right-click menu) lands here with ?edit=profile.
+watch([() => route.query.edit, activePersonalProject], ([edit, project]) => {
+  if (edit !== 'profile' || !project) return
+  editActiveProjectProfile()
+  const { edit: _edit, ...query } = route.query
+  void router.replace({ query })
+}, { immediate: true })
 
 async function openItemInMode(item: KnowledgeItem, nextMode: KnowledgeMode) {
   const path = workspacePath(nextMode, item)
