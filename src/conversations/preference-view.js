@@ -1,8 +1,12 @@
 // Shared mandatory instruction projection for compact entry and full-reader
-// fingerprints. Source IDs/search metadata are not instruction revisions.
+// fingerprints. Search metadata is dropped. The item's ID is kept for
+// revise_personal_knowledge (rec#75; item_kind only when not an entity), but
+// the fingerprint leaves it out (preference-snapshot.js).
 export function preferenceInstructionView(item) {
   return {
     instruction: item.instruction, preference_key: item.preference_key,
+    ...(item.id ? { id: item.id } : {}),
+    ...(item.item_kind && item.item_kind !== 'entity' ? { item_kind: item.item_kind } : {}),
     preference_scope: item.preference_scope, confirmation_status: item.confirmation_status,
     ...(item.profile_aspect ? { profile_aspect: item.profile_aspect } : {}),
     ...Object.fromEntries(['preference_project_id', 'preference_agent_id',

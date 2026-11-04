@@ -37,6 +37,8 @@ export function fitUncached(fit, value, render) {
 // An entry that fits is unchanged. Otherwise, in this order:
 // 1. the automatic recall becomes a pointer to its search, then the recent
 //    conversation drops its oldest messages, as the Provider's own window does;
+//    where that is not enough, the preferences lose their IDs first and step
+//    1 is tried again;
 // 2. then preferences go, lowest ranked first, except hard rules
 //    (preferenceAlwaysInline). The rest rank by kind and task scene: a
 //    boundary a scene switch never revokes first, then an item whose own scene
@@ -63,12 +65,19 @@ export function fitUncached(fit, value, render) {
 // the blocked frame (inline_budget) that keeps the token, closing fields and
 // identity and recovers through read_task_preferences.
 export function inlineEntryFit(limit, length) {
-  return (value, { deliver, complete }) => {
+  return (whole, { deliver, complete }) => {
     // A frame the renderer blocked as over its own delivery budget is short,
     // but delivers nothing: it does not fit. Size only grows with the entry,
     // so both conditions stay monotonic for the search below. Any other
     // blocked reason is kept as it is.
     const fits = attempt => !blockedByDeliveryBudget(attempt.result.structuredContent) && length(attempt.result) <= limit;
+    for (const level of contextLevels(whole)) {
+      const attempt = deliver(level);
+      if (fits(attempt)) return attempt;
+    }
+    // Preference IDs go before any preference does (rec#75): search finds
+    // one by its preference_key.
+    const value = withoutPreferenceIds(whole);
     const levels = contextLevels(value);
     for (const level of levels) {
       const attempt = deliver(level);
@@ -140,6 +149,12 @@ function inlineRanking(preferences, workKind) {
 function withoutCompleteClaims(value) {
   const { preferences_complete: _complete, same_task_recovery_available: _recovery, preference_delivery: delivery, ...rest } = value;
   return { ...rest, ...(delivery && delivery.status !== 'complete' ? { preference_delivery: delivery } : {}) };
+}
+
+function withoutPreferenceIds(value) {
+  if (!Array.isArray(value.effective_preferences) || !value.effective_preferences.some(item => item.id)) return value;
+  return copyPreferenceScope(value, { ...value,
+    effective_preferences: value.effective_preferences.map(({ id: _id, item_kind: _kind, ...item }) => item) });
 }
 
 function withPreferences(level, selected, total) {

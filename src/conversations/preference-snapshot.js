@@ -193,7 +193,10 @@ function sceneName(scene) {
   return [scene.work_kind, scene.workflow].filter(Boolean).join('/') || null;
 }
 
-function unit(item) {
+// The source ID is delivered but is no instruction revision: a frame bounded
+// without IDs proves the same set. A new version under a new ID (rec#75) that
+// says the same thing needs no redelivery.
+function unit({ id: _id, item_kind: _kind, ...item }) {
   return { hash: contentHash(JSON.parse(canonicalJson(item, { omitUndefined: true }))), identity: identity(item),
     scene: preferenceSceneReplaceable(item) };
 }

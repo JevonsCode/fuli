@@ -14,7 +14,7 @@ from .models import (
 from .personal_project_access import authorize_personal_project
 from .project_agent_access import authorize_project_agent
 from .preference_conflicts import read_active_preference_conflicts
-from .provider_values import json_object, native_datetime as _native_datetime, preference_qualifiers
+from .provider_values import json_object, native_datetime as _native_datetime, preference_key, preference_qualifiers
 from .preference_task_scope import (
     APPLIES, SCOPE_UNKNOWN, item_qualifiers, preference_task_applicability,
 )
@@ -453,11 +453,7 @@ def _preference_item(
         return None
     attributes = json_object(record.get('attributes_json'))
     key = str(record.get('key') or record.get('id'))
-    preference_key = str(
-        attributes.get('preferenceKey')
-        or attributes.get('preference_key')
-        or key
-    )
+    stated_key = str(preference_key(attributes, key, None))
     project_id = record.get('preference_project_id')
     agent_id = record.get('preference_agent_id')
     scope = project_scopes.get(project_id, {
@@ -498,7 +494,7 @@ def _preference_item(
         id=str(record['id']),
         item_kind=item_kind,
         key=key,
-        preference_key=preference_key,
+        preference_key=stated_key,
         title=str(title),
         instruction=str(instruction),
         profile_aspect=record['profile_aspect'],
