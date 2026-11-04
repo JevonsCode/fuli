@@ -253,7 +253,8 @@ const BASELINE = Object.freeze({
   // (two preferences, both memory layers, team, Jefa, Tonborg) shows its memory, team and
   // managers as the calls that read them, and Tonborg as its one sentence: 11,154 -> 6,645 B,
   // measured on the compact view the MCP result carries (with the shared rules_version).
-  tokenlessEntryBytes: 6645,
+  // rec#75: a delivered preference names its id, so a correction can revise it: 6645 -> 6,683 B, measured.
+  tokenlessEntryBytes: 6683,
   // rec#5 C3b: a turn of a session FULI is off for gets this one line instead of the project
   // entry (its longest reason, measured): no memory, preferences, recall or receipt. Every
   // other number above is unchanged; the switch adds no tool, schema or instruction text.
