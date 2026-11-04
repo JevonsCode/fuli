@@ -411,6 +411,11 @@ async def test_a_conflict_merge_writes_the_merged_words_as_a_new_version_the_oth
                 key, text, attributes={'preferenceKey': 'report-opening'})]))['entity_ids'][0]
             await confirm(client, space_id, item_id)
             ids.append(item_id)
+        # Since rec#75 the later confirmation replaces the earlier one, so two current
+        # preferences of one key are data from before it: put the earlier one back.
+        await query(settings, 'MATCH (item:Entity {uuid: $item}) SET item.fuli_invalid_at = NULL, '
+                    'item.expired_at = NULL, item.fuli_replaced_by_item_id = NULL, '
+                    'item.fuli_replaced_by_item_kind = NULL RETURN item.uuid AS id', item=ids[0])
         left, right = sorted(ids)
         context = ok(await client.get('/v1/collaboration-preferences', params={
             'personal_space_id': space_id, 'personal_project_id': 'alpha'}))
