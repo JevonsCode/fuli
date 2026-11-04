@@ -193,7 +193,7 @@ export async function handleApiRequest({
   // sleeping provider (its graph format plan then reads as unavailable).
   if (await handleDoctorApiRequest({ request, response, url, system })) return true;
   if (await handleDiagnosticsApiRequest({ request, response, url, app, system })) return true;
-  if (await handleDebugTurnsRequest({ request, response, url, debugTurns: system?.debugTurns ?? null })) return true;
+  if (await handleDebugTurnsRequest({ request, response, url, debugTurns: system?.debugTurns ?? null, modelCapture: system?.modelCapture ?? null })) return true;
   if (await handlePersonProfileRequest({ request, response, url, app })) return true;
   if (await handleSessionLaunchRequest({ request, response, url, system })) return true;
 

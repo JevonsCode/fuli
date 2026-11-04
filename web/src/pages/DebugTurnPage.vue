@@ -72,7 +72,7 @@ onBeforeUnmount(() => reading?.abort())
 </script>
 
 <template>
-  <section class="view debug-turn-view" :aria-label="t('debugTurns.title')">
+  <section class="view debug-turn-view" :aria-label="t('debugTurns.title')" :data-debug-turn-id="record?.id">
     <div class="debug-turn-content">
       <div class="debug-turn-bar">
         <Breadcrumb :parent="{ label: t('debugTurns.title'), to: '/debug', from: openedFromList }" />

@@ -1,6 +1,5 @@
-// What one model request is made of, by source (dev only). Sizes are exact
-// bytes. Tokens come from the response's own usage and are shared out by bytes,
-// so a section's tokens are an estimate; the total is what the provider counted.
+// What one model request is made of, by source. Sizes are exact bytes; tokens
+// come from the answer's own usage, so only their total is what was counted.
 
 const size = (value) => Buffer.byteLength(typeof value === 'string' ? value : JSON.stringify(value ?? ''), 'utf8');
 const textBlocks = (content) => (typeof content === 'string' ? [content]
@@ -95,18 +94,4 @@ export function usageFrom(text) {
     try { Object.assign(usage, JSON.parse(match[1])); } catch { /* A partial event carries nothing to count. */ }
   }
   return Object.keys(usage).length ? usage : null;
-}
-
-export function reportLine(record) {
-  const sections = record.body ? requestSections(record.body) : record.sections;
-  const bytes = Object.values(sections).reduce((sum, value) => sum + value, 0);
-  const usage = record.usage ?? {};
-  const input = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
-  const shares = Object.fromEntries(Object.entries(sections).map(([name, value]) => [name, {
-    bytes: value,
-    share: bytes ? Math.round((value / bytes) * 1000) / 10 : 0,
-    tokens: bytes ? Math.round((value / bytes) * input) : 0,
-  }]));
-  return { at: record.at, model: record.model, inputTokens: input, cachedTokens: usage.cache_read_input_tokens ?? 0,
-    outputTokens: usage.output_tokens ?? 0, sections: shares };
 }

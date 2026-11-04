@@ -154,7 +154,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.localUserOnly],
-    [44, 10, 31]);
+    [44, 10, 32]);
   const byRoute = new Map(catalog.uiMutationParity.map((entry) => [entry.route, entry]));
   for (const [route, category] of [['PUT /api/system/settings', 'settings'], ['POST /api/system/update', 'settings'],
     ['POST /api/occupations', 'organisation'], ['POST /api/topic-proposals/accept', 'projects'],

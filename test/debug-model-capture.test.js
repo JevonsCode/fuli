@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { startProxy } from '../scripts/dev-model-capture/proxy.js';
-import { opensTurn, reportLine, requestParts, requestSections, usageFrom } from '../scripts/dev-model-capture/report.js';
+import { request as httpRequest } from 'node:http';
+import { createModelCapture } from '../src/debug-turns/model-capture.js';
+import { opensTurn, requestParts, requestSections, usageFrom } from '../src/debug-turns/model-request.js';
 import { buildModelRequestRecord } from '../src/debug-turns/record.js';
 import { debugTurnStore } from '../src/debug-turns/store.js';
 
@@ -35,44 +36,10 @@ test('one hook\'s context is told from another\'s in the same block', () => {
   assert.equal(sections.fuliContext, Buffer.byteLength(fuli));
 });
 
-test('tokens come from the answer, across streamed events, and are shared out by bytes', () => {
+test('tokens come from the answer, across streamed events', () => {
   const usage = usageFrom('data: {"message":{"usage":{"input_tokens":10,"cache_read_input_tokens":90}}}\n\ndata: {"usage":{"output_tokens":5}}\n');
   assert.deepEqual(usage, { input_tokens: 10, cache_read_input_tokens: 90, output_tokens: 5 });
-  const line = reportLine({ at: 'now', model: 'm', usage, sections: { system: 300, fuliTools: 100 } });
-  assert.equal(line.inputTokens, 100);
-  assert.equal(line.sections.fuliTools.tokens, 25);
-  assert.equal(line.sections.fuliTools.share, 25);
   assert.equal(usageFrom('no usage here'), null);
-});
-
-test('the proxy passes the request through unchanged and keeps credentials out of its files', async (t) => {
-  const directory = await mkdtemp(join(tmpdir(), 'fuli-model-capture-'));
-  const seen = [];
-  const upstream = createServer((request, response) => {
-    const chunks = [];
-    request.on('data', chunk => chunks.push(chunk));
-    request.on('end', () => {
-      seen.push({ key: request.headers['x-api-key'], body: Buffer.concat(chunks).toString('utf8') });
-      response.writeHead(200, { 'content-type': 'application/json' });
-      response.end('{"usage":{"input_tokens":7,"output_tokens":1}}');
-    });
-  }).listen(0, '127.0.0.1');
-  await new Promise(done => upstream.once('listening', done));
-  const proxy = await startProxy({ port: 0, upstream: `http://127.0.0.1:${upstream.address().port}`, directory, log: () => {} });
-  t.after(async () => { proxy.close(); upstream.close(); await rm(directory, { recursive: true, force: true }); });
-
-  const answer = await fetch(`http://127.0.0.1:${proxy.address().port}/v1/messages`, { method: 'POST',
-    headers: { 'x-api-key': 'synthetic-secret-key', 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  assert.equal(answer.status, 200);
-  assert.equal((await answer.json()).usage.input_tokens, 7);
-  assert.equal(seen[0].key, 'synthetic-secret-key');
-  assert.deepEqual(JSON.parse(seen[0].body), body);
-
-  await new Promise(done => setTimeout(done, 50));
-  const [file] = await readdir(directory);
-  const stored = await readFile(join(directory, file), 'utf8');
-  assert.doesNotMatch(stored, /synthetic-secret-key/);
-  assert.equal(JSON.parse(stored).usage.input_tokens, 7);
 });
 
 test('the request that opens a turn becomes a Debug record with everything in it', () => {
@@ -94,17 +61,41 @@ test('a host\'s system message is never counted as the person\'s words', () => {
   assert.deepEqual(parts.filter(({ source }) => source === 'person').map(({ text }) => text), ['Hello.']);
 });
 
-test('with a data folder the proxy puts the turn on the Debug page', async (t) => {
+test('the capture forwards unchanged, keeps the turn, and keeps credentials out', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'fuli-model-capture-'));
+  const seen = [];
   const upstream = createServer((request, response) => {
-    request.resume();
-    request.on('end', () => { response.writeHead(200); response.end('{"usage":{"input_tokens":7}}'); });
+    const chunks = [];
+    request.on('data', chunk => chunks.push(chunk));
+    request.on('end', () => {
+      seen.push({ key: request.headers['x-api-key'], body: Buffer.concat(chunks).toString('utf8') });
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end('{"usage":{"input_tokens":7,"output_tokens":1}}');
+    });
   }).listen(0, '127.0.0.1');
   await new Promise(done => upstream.once('listening', done));
-  const proxy = await startProxy({ port: 0, upstream: `http://127.0.0.1:${upstream.address().port}`, directory: join(directory, 'raw'), dataDir: directory, log: () => {} });
-  t.after(async () => { proxy.close(); upstream.close(); await rm(directory, { recursive: true, force: true }); });
-  await (await fetch(`http://127.0.0.1:${proxy.address().port}/v1/messages`, { method: 'POST', body: JSON.stringify(body) })).text();
+  const store = debugTurnStore(directory);
+  const capture = createModelCapture({ store, upstream: `http://127.0.0.1:${upstream.address().port}`, port: 0, send: httpRequest });
+  t.after(async () => { await capture.close(); upstream.close(); await rm(directory, { recursive: true, force: true }); });
+  assert.equal(capture.status().on, false, 'off until the person turns it on');
+  const { port } = await capture.set(true);
+
+  const answer = await fetch(`http://127.0.0.1:${port}/v1/messages`, { method: 'POST',
+    headers: { 'x-api-key': 'synthetic-secret-key', 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  assert.equal((await answer.json()).usage.input_tokens, 7);
+  assert.equal(seen[0].key, 'synthetic-secret-key');
+  assert.deepEqual(JSON.parse(seen[0].body), body);
+
+  const fromPage = await fetch(`http://127.0.0.1:${port}/v1/messages`, { method: 'POST', headers: { origin: 'http://example.test' }, body: '{}' });
+  assert.equal(fromPage.status, 403);
+  assert.equal(seen.length, 1, 'a web page never reaches the model through the capture');
+
   await new Promise(done => setTimeout(done, 50));
-  const [listed] = debugTurnStore(directory).list();
+  const [listed] = store.list();
   assert.equal(listed.promptLine, 'Hello.');
+  const files = await readdir(join(directory, 'debug-turns'));
+  const stored = await readFile(join(directory, 'debug-turns', files.find(name => name.endsWith('.json'))), 'utf8');
+  assert.doesNotMatch(stored, /synthetic-secret-key/);
+  await capture.set(false);
+  assert.equal(capture.status().on, false);
 });

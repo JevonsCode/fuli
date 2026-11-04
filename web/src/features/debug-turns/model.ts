@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { deleteJson, getJson, postJson } from '@/api/client'
+import { deleteJson, getJson, postJson, putJson } from '@/api/client'
 import { shapeOf } from '@/api/response-shape'
 import { t } from '@/i18n'
 import { tableLabel } from '@/i18n/label-table'
@@ -32,6 +32,16 @@ export const listDebugTurns = async (signal?: AbortSignal) => (await getJson('/a
 export const readDebugTurn = (id: string, signal?: AbortSignal) => getJson(recordPath(id), recordShape, { signal })
 export const deleteDebugTurn = (id: string) => deleteJson(recordPath(id), undefined, deletedShape)
 export const deleteDebugTurns = (ids: string[]) => postJson('/api/debug-turns/delete', { ids }, shapeOf(z.looseObject({ deleted: z.array(z.string()) })))
+
+const captureShape = shapeOf(z.looseObject({ on: z.boolean(), port: z.number() }))
+export const readModelCapture = (signal?: AbortSignal) => getJson('/api/debug-turns/capture', captureShape, { signal })
+export const setModelCapture = (on: boolean) => putJson('/api/debug-turns/capture', { on }, captureShape)
+
+/** A record as one text: for the clipboard, a file, or another person's AI to read. */
+export function debugRecordText(record: DebugTurnRecord) {
+  const head = `# ${record.promptLine ?? record.id}\n${record.createdAt} · ${clientName(record.sourceApplication)}`
+  return [head, ...record.parts.map(item => `## ${partTitle(item)} (${t(`debugTurns.sources.${item.source}`)})\n\n${item.text}`)].join('\n\n')
+}
 
 /** The bytes FULI added to the turn and their share of all it saw, as a whole percent (0 when empty). */
 export function fuliShare(sums: DebugTotals): { bytes: number; total: number; percent: number } {

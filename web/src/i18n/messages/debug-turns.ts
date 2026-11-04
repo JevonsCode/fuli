@@ -14,6 +14,10 @@ export const debugTurnsMessages = {
     fuliAdded: 'FULI 加了 {size}，占这一轮 {total} 的 {percent}%。',
     legend: '来源',
     sources: { person: '你', fuli: 'FULI', ai: 'AI', host: '客户端', not_visible: 'FULI 看不到' },
+    capture: { title: '抓取完整请求', hint: '开启后用下面的命令启动客户端，模型收到的全部内容会出现在这里。重启后自动关闭。', copyCommand: '复制命令', portBusy: '端口 {port} 被占用了。', failed: '没有切换成功：{reason}' },
+    copyAll: '复制全部信息',
+    exportFile: '导出',
+    copiedAll: '已复制全部信息',
     kinds: {
       model_system: '系统提示词',
       model_client_tools: '客户端工具定义',
@@ -66,6 +70,10 @@ export const debugTurnsMessages = {
     fuliAdded: 'FULI added {size}, {percent}% of this turn’s {total}.',
     legend: 'Sources',
     sources: { person: 'You', fuli: 'FULI', ai: 'AI', host: 'Client', not_visible: 'Not visible to FULI' },
+    capture: { title: 'Capture full requests', hint: 'Start your client with the command below and everything the model receives appears here. Off again after a restart.', copyCommand: 'Copy command', portBusy: 'Port {port} is in use.', failed: 'Could not switch: {reason}' },
+    copyAll: 'Copy all details',
+    exportFile: 'Export',
+    copiedAll: 'Copied all details',
     kinds: {
       model_system: 'System prompt',
       model_client_tools: 'Client tool definitions',

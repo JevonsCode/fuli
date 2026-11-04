@@ -8,6 +8,7 @@ import { agentPinsText } from '@/features/agent-profile/agent-pins'
 import { agentProfilePath } from '@/features/agent-profile/profile-model'
 import { useAgentWorkSurfaces } from '@/features/agent-profile/use-agent-work-surfaces'
 import { usePortraitShake } from '@/features/agent-profile/use-portrait-shake'
+import { debugRecordText, readDebugTurn } from '@/features/debug-turns/model'
 import { useConsoleStore } from '@/stores/console'
 import { getJson } from '@/api/client'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
@@ -31,6 +32,18 @@ const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
 const work = useAgentWorkSurfaces(spaceId)
 const { shake } = usePortraitShake()
 const agentTarget = computed(() => target.value?.kind === 'agent' ? target.value : null)
+const debugTarget = computed(() => target.value?.kind === 'debug-turn' ? target.value : null)
+async function copyDebugTurn(id: string) {
+  writeClipboard(debugRecordText(await readDebugTurn(id)))
+  store.notify(t('debugTurns.copiedAll'))
+}
+async function exportDebugTurn(id: string) {
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(new Blob([debugRecordText(await readDebugTurn(id))], { type: 'text/markdown' }))
+  link.download = `fuli-debug-${id.slice(0, 8)}.md`
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
 // A portrait names only its FLA's id: the menu reads that FLA's record for its name and,
 // with it, where its workbench and workflows are. Records read once stay for the visit.
 const agents = ref<Record<string, ProjectAgentRecord | 'missing'>>({})
@@ -148,7 +161,7 @@ async function cut(current: FieldTarget) {
 function run(action: MenuAction) {
   const current = target.value
   // A portrait's menu runs its own items (goAgent), never these.
-  if (!current || current.kind === 'agent') return
+  if (!current || current.kind === 'agent' || current.kind === 'debug-turn') return
   if (current.kind === 'link') {
     if (action === 'copyLink') return writeClipboard(current.url.href)
     // An outside link opens the way the app opens every outside link: a new window, which the desktop client hands to the browser.
@@ -188,7 +201,11 @@ onBeforeUnmount(() => {
     </ContextMenuTrigger>
     <ContextMenuContent class="app-context-menu" :collision-padding="8" data-app-context-menu
       @close-auto-focus="onCloseAutoFocus" @interact-outside="onInteractOutside">
-      <template v-if="agentTarget">
+      <template v-if="debugTarget">
+        <ContextMenuItem data-debug-action="copy" @select="copyDebugTurn(debugTarget.id)">{{ t('debugTurns.copyAll') }}</ContextMenuItem>
+        <ContextMenuItem data-debug-action="export" @select="exportDebugTurn(debugTarget.id)">{{ t('debugTurns.exportFile') }}</ContextMenuItem>
+      </template>
+      <template v-else-if="agentTarget">
         <ContextMenuLabel>{{ agentName(agentTarget.agentId) }}</ContextMenuLabel>
         <ContextMenuItem data-portrait-action="home" @select="goAgent({ path: agentProfilePath(spaceId, agentTarget.agentId), query: { tab: 'overview' } })">
           {{ agentPinsText('menu.home', 'Open profile') }}
