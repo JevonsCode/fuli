@@ -5,15 +5,18 @@ import { canonicalJson, contentHash } from '../../packages/roundtable/src/canoni
 // context generation showed exactly so, and names that frame by its
 // skeleton_revision, so the model never has to guess which earlier frame is
 // meant. The token, checkpoint requirement, preferences, conflicts and the
-// recovered conversation are never part of it: they have their own deltas.
+// recovered messages are never part of it: they have their own deltas.
 // `context` and `task_knowledge_recall` repeat byte for byte only when the
-// same prompt does.
-export const SKELETON_FIELDS = Object.freeze(['agent_receipt', 'task_guidance', 'application_guidance', 'checkpoint_guidance',
-  'project_agent_context', 'project_management_context', 'judgment_context', 'context', 'task_knowledge_recall']);
+// same prompt does. A dotted part is a path inside the frame: the
+// conversation's rule reference and the latest saved result of its
+// conversation, which repeats while no task records a new one (rec#15).
+export const SKELETON_PARTS = Object.freeze(['agent_receipt', 'task_guidance', 'application_guidance', 'checkpoint_guidance',
+  'project_agent_context', 'project_management_context', 'judgment_context', 'context', 'task_knowledge_recall',
+  'conversation.guidance', 'conversation.recovery.latest_checkpoint']);
 // The hook's own instructions above the frame, as the host recorded them.
 export const SKELETON_LABEL = 'label';
-export const SKELETON_UNCHANGED_LABEL = 'skeleton_unchanged: parts left out, as earlier FULI frames gave them (what they named included), by skeleton_revision: '
-  + 'revision(s) whose parts apply, later over earlier, under this frame\'s own, or a map revision → parts (label: the text above the JSON).';
+export const SKELETON_UNCHANGED_LABEL = 'skeleton_unchanged: parts not repeated here, as earlier FULI frames gave them, by skeleton_revision '
+  + '(later wins, this frame\'s own first; a map lists parts; label = text above the JSON).';
 const HASH = /^[a-f0-9]{64}$/;
 export const MAX_SKELETON_PROMPTS = 16;
 const NO_BASES = Object.freeze({ bases: Object.freeze([]) });
@@ -92,7 +95,7 @@ export function projectSkeleton(value, evidence, label) {
   const own = delivered(skeletonOf(value));
   if (!evidence || !Object.keys(own).length || value.preferences_complete === false) return value;
   const parts = { ...own, [SKELETON_LABEL]: label(value) };
-  const names = [SKELETON_LABEL, ...SKELETON_FIELDS].filter(name => Object.hasOwn(parts, name));
+  const names = [SKELETON_LABEL, ...SKELETON_PARTS].filter(name => Object.hasOwn(parts, name));
   const from = {};
   for (const part of names) {
     const base = evidence.bases.findLast(item => Object.hasOwn(item.parts, part)
@@ -110,7 +113,7 @@ export function projectSkeleton(value, evidence, label) {
     && Object.entries(resolved).every(([part, item]) => Object.hasOwn(parts, part)
       && (!left.has(part) || canonicalJson(item) === canonicalJson(parts[part])));
   const named = !exact ? from : chain.length === 1 ? chain[0][0] : chain.map(([revision]) => revision);
-  const trimmed = withRevision({ ...Object.fromEntries(Object.entries(value).filter(([key]) => !left.has(key))),
+  const trimmed = withRevision({ ...withoutParts(value, [...left].filter(part => part !== SKELETON_LABEL)),
     skeleton_unchanged: named }, label);
   return frameBytes(trimmed, label) < frameBytes(complete, label) ? trimmed : complete;
 }
@@ -163,7 +166,22 @@ function skeletonRevision(frame, label) {
 }
 
 function skeletonOf(value) {
-  return Object.fromEntries(SKELETON_FIELDS.filter(field => value?.[field] !== undefined).map(field => [field, value[field]]));
+  return Object.fromEntries(SKELETON_PARTS.map(part => [part, partOf(value, part)]).filter(([, item]) => item !== undefined));
+}
+
+function partOf(value, part) {
+  return part.split('.').reduce((item, key) => item?.[key], value);
+}
+
+// The value without these parts, copying only the objects on their paths.
+function withoutParts(value, parts) {
+  const result = { ...value };
+  for (const part of parts) {
+    const [key, ...rest] = part.split('.');
+    if (rest.length) result[key] = withoutParts(result[key], [rest.join('.')]);
+    else delete result[key];
+  }
+  return result;
 }
 
 // The fields as the frame delivers them: JSON drops undefined.

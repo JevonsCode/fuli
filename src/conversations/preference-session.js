@@ -203,8 +203,11 @@ async function missing(path) {
 // generation starts at its end. A reset record (compaction) of the same file
 // starts a generation after that record, where the evidence reader begins.
 function generationState(state, proof, nativeGeneration) {
-  if (state.untrusted || state.floor === null
-      || (nativeGeneration && state.nativeGeneration && nativeGeneration !== state.nativeGeneration)) {
+  // A delivery that names its host execution and window starts a new
+  // generation unless the record holds that same one: a hook reset or a
+  // fresh record holds none, and a window change after it leaves no other
+  // trace (review of #654).
+  if (state.untrusted || state.floor === null || (nativeGeneration && nativeGeneration !== state.nativeGeneration)) {
     return { pending: [], recent: [], prompts: [], floor: boundary(proof, false) };
   }
   if (!proof.known) return state;

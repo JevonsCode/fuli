@@ -151,7 +151,6 @@ export function createMcpServer(
   const environmentThread = nativeSessionFromEnv(authoritativeSourceApplication, env);
   const nativeThreadId = hostSessionId === null || hostSessionId === environmentThread ? environmentThread : null;
   const effectiveHostSessionId = hostSessionId ?? environmentThread ?? mcpHostSessionId({});
-  const preferenceState = { resets: new Map() };
   const projectActionPreviews = createProjectActionPreviewTokens();
   const tools = createToolMap(
     app,
@@ -165,7 +164,6 @@ export function createMcpServer(
     prepareToolInput,
     env,
     workerTaskContext,
-    preferenceState,
     onSession
   );
   // Only the named chat profile expands on demand. Restricted custom/remote
@@ -176,7 +174,7 @@ export function createMcpServer(
   if (registerResources && !workerTaskContext) registerFuliContextResources(server, app, { withRuntimeLease });
   const onDemandTools = isChatProfile ? createToolMap(app,
     projectActionPreviews, nativeThreadId, effectiveHostSessionId,
-    clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env, null, preferenceState, onSession) : null;
+    clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env, null, onSession) : null;
   if (onDemandTools) registerDispatchTool(server);
   registerCallHandler(server, tools, onDemandTools,
     !workerTaskContext && hostSessionId === null ? nativeRequestContext : null);
@@ -216,7 +214,6 @@ function createToolMap(
   prepareToolInput,
   env = process.env,
   workerTaskContext = null,
-  preferenceState,
   onSession
 ) {
   const commonKnowledgePreviews = createCommonKnowledgePreviewTokens();
@@ -242,7 +239,6 @@ function createToolMap(
     definition,
     worker: Boolean(workerTaskContext),
     preferenceDelivery: workerTaskContext ? null : app.preferenceDelivery,
-    preferenceState,
     preferenceOrigin: { sourceApplication, nativeSessionId: nativeThreadId === hostSessionId ? nativeThreadId : null },
     catalogDefinitions: definition.name === 'list_agent_interfaces' ? definitions.filter(item =>
       includeTestTools || !isTestOnlyToolName(item.name)) : null,
@@ -363,15 +359,16 @@ async function invokeTool(tool, input, requestContext = null) {
           limitBytes, itemLimit: 1000
         }) : successToolResult(projected, { limitBytes, itemLimit: 1000, preferenceContext: true });
       if (!tool.preferenceDelivery) return format(withoutDeliveryProofs(view));
-      // A new MCP process may be a resume/restart. It always establishes a new
-      // full baseline, even when an older process left valid cache metadata.
+      // A result without per-request window proof stays full. What the
+      // generation shows is read from the session's own transcript; a host
+      // execution or window change starts a new generation there.
       const native = requestContext?.[NATIVE_CONTEXT];
-      const origin = await deliveryOrigin(tool, native);
+      const origin = deliveryOrigin(tool, native);
       return await tool.preferenceDelivery.deliver(view,
         { ...origin, forceFull: name === 'read_task_preferences' || !native?.contextWindowId }, format);
     }
     if (['resume_agent_conversation', 'read_agent_conversation'].includes(tool.definition.name) && tool.preferenceDelivery) {
-      return await tool.preferenceDelivery.recordConversation(value, await deliveryOrigin(tool, requestContext?.[NATIVE_CONTEXT]),
+      return await tool.preferenceDelivery.recordConversation(value, deliveryOrigin(tool, requestContext?.[NATIVE_CONTEXT]),
         view => successToolResult(view, { limitBytes }));
     }
     if (tool.definition.name === 'list_agent_interfaces') {
@@ -394,18 +391,14 @@ async function invokeTool(tool, input, requestContext = null) {
   }
 }
 
-async function deliveryOrigin(tool, native) {
-  const origin = { ...tool.preferenceOrigin, ...(native ? { nativeSessionId: native.nativeSessionId,
+// A new MCP process does not reset the session's delivery record: a resumed
+// host replays the same transcript, and a compaction, a replaced transcript
+// or another execution or window (nativeGeneration) already starts a new
+// generation there (rec#15). Resetting here made the next hook frame whole
+// whenever the model first called a FULI tool in a process.
+function deliveryOrigin(tool, native) {
+  return { ...tool.preferenceOrigin, ...(native ? { nativeSessionId: native.nativeSessionId,
     nativeGeneration: { execution: native.nativeExecutionId, window: native.contextWindowId } } : {}) };
-  if (origin.nativeSessionId) {
-    const key = JSON.stringify([origin.nativeSessionId, origin.nativeGeneration]);
-    if (!tool.preferenceState.resets.has(key)) {
-      tool.preferenceState.resets.set(key, tool.preferenceDelivery.reset(origin));
-      if (tool.preferenceState.resets.size > 16) tool.preferenceState.resets.delete(tool.preferenceState.resets.keys().next().value);
-    }
-    await tool.preferenceState.resets.get(key);
-  }
-  return origin;
 }
 
 async function invokeAgentTool(
