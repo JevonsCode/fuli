@@ -38,6 +38,6 @@ describe('a page app inside FULI', () => {
     getJson.mockResolvedValue(app({ run: { status: 'run_refused', reason: 'confirmation_required' } }))
     const wrapper = await mountViewer()
     expect(wrapper.find('[data-app-frame]').exists()).toBe(false)
-    expect(wrapper.get('[data-app-viewer-blocked]').text()).toContain('先在应用详情里确认它')
+    expect(wrapper.get('[data-app-viewer-blocked]').text()).toContain('先在 Agent App 详情里确认它')
   })
 })

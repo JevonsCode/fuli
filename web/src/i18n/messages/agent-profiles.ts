@@ -64,7 +64,7 @@ export const agentProfileMessages = {
     saving: "正在保存 Agent 设置",
     saveError: "设置保存失败，请重试。",
     advanced: "高级管理",
-    workbench: "工作台",
+    workbench: "Workbench",
     working: "当前工作",
     idle: "空闲",
     partial: "部分工作记录暂时无法读取。",

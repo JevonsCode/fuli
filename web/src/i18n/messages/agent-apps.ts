@@ -1,18 +1,18 @@
-// 应用: the apps FLAs build, approved and removed by the person (docs/agent-apps.md).
+// Agent App: the apps FLAs build, approved and removed by the person (docs/agent-apps.md).
 export const agentAppsMessages = {
   'zh-CN': {
-    title: '应用',
-    loading: '正在读取应用',
-    refreshing: '正在刷新应用',
-    loadFailed: '应用没有读到。',
-    unavailable: '这台电脑上的 FULI 还不能管理应用。',
+    title: 'Agent App',
+    loading: '正在读取 Agent App',
+    refreshing: '正在刷新 Agent App',
+    loadFailed: 'Agent App 没有读到。',
+    unavailable: '这台电脑上的 FULI 还不能管理 Agent App。',
     retry: '重试',
-    empty: '还没有应用。FLA 为反复要做的事做好应用后，会出现在这里。',
-    count: '{count} 个应用',
+    empty: '还没有 Agent App。FLA 为反复要做的事做好 Agent App 后，会出现在这里。',
+    count: '{count} 个 Agent App',
     groups: { attention: '等你处理', running: '正在运行', ready: '其他', removed: '已删除' },
     by: '{name} 做的',
     unknownAgent: '未知 FLA',
-    types: { page: '页面', tool: '工具', service: '常驻服务', unknown: '应用' },
+    types: { page: '页面', tool: '工具', service: '常驻服务', unknown: 'Agent App' },
     status: {
       running: '运行中',
       ready: '可以运行',
@@ -62,7 +62,7 @@ export const agentAppsMessages = {
       tamper_detected: '发现安装包被改动',
     },
     sheet: {
-      details: '应用详情',
+      details: 'Agent App 详情',
       loading: '正在读取 {name} 的详情',
       loadFailed: '{name} 的详情没有读到。',
       version: '版本',
@@ -99,10 +99,10 @@ export const agentAppsMessages = {
     confirm: {
       approveTitle: '新版本 {version} 确认后就能运行',
       againTitle: '版本 {version} 再确认一次就能运行',
-      trust: '应用会用你的账户权限在本机运行，FULI 不会隔离它。只确认你信任的应用。',
+      trust: 'Agent App 会用你的账户权限在本机运行，FULI 不会隔离它。只确认你信任的 Agent App。',
       open: '确认',
       openAgain: '再打开确认窗口',
-      opened: '确认窗口已经打开：在里面输入应用名「{name}」就完成了。',
+      opened: '确认窗口已经打开：在里面输入 Agent App 名「{name}」就完成了。',
       done: '已完成，刷新',
     },
     export: {
@@ -112,18 +112,18 @@ export const agentAppsMessages = {
     removeData: {
       confirm: '删除「{name}」的数据？',
       body: '{files} 个文件，共 {size}。删除后不能恢复，需要的话先导出。',
-      typeId: '输入应用 ID「{id}」确认',
+      typeId: '输入 Agent App ID「{id}」确认',
       expires: '这一步 {time} 前有效。',
     },
     viewer: {
-      back: '全部应用',
-      loading: '正在打开应用',
-      failed: '应用没有打开。',
-      notReady: '这个应用现在不能打开：先在应用详情里确认它。',
+      back: '全部 Agent App',
+      loading: '正在打开 Agent App',
+      failed: 'Agent App 没有打开。',
+      notReady: '这个 Agent App 现在不能打开：先在 Agent App 详情里确认它。',
     },
     removeCode: {
       confirm: '删除「{name}」的代码？',
-      body: '数据会留下。FLA 以后提交新版本、你批准后，应用接着用这些数据。',
+      body: '数据会留下。FLA 以后提交新版本、你批准后，Agent App 接着用这些数据。',
     },
   },
   'en-US': {

@@ -73,7 +73,7 @@ describe('FLAs page', () => {
       ['team', ['Cedar', 'Dahlia']],
       ['global', ['Birch', 'Aster']],
     ])
-    expect(wrapper.get('[data-flas-group="team"] h2').text()).toContain('一起干活的')
+    expect(wrapper.get('[data-flas-group="team"] h2').text()).toContain('在项目里的')
     expect(wrapper.get('[data-flas-group="global"] h2').text()).toContain('全局的')
     expect(wrapper.get('.flas-list').attributes('data-layout')).toBe('cards')
     expect(wrapper.get('[data-fla="agent-3"]').attributes('data-layout')).toBe('cards')
@@ -113,7 +113,7 @@ describe('FLAs page', () => {
     ])
     expect(wrapper.get('[data-flas-group="attention"] .fla-work').text()).toContain('阻塞')
     // A free row says what the FLA is for; its heading already says free.
-    expect(wrapper.get('[data-flas-group="idle"] .fla-work').text()).toBe('Aster looks after synthetic work')
+    expect(wrapper.get('[data-flas-group="idle"] .fla-work').text()).toBe('空闲 · Aster looks after synthetic work')
   })
 
   it('opens an FLA by its whole row and marks pinned ones', async () => {

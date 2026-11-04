@@ -180,6 +180,18 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
+  // Jevons 11-04.
+  it('plays the brand on 工作台 and goes home from any other page', async () => {
+    const { wrapper, router } = await setup('/project-agents')
+    await wrapper.get('[data-brand-home]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/')
+    expect(wrapper.get('.brand-block').classes()).not.toContain('is-sparkling')
+    await wrapper.get('[data-brand-home]').trigger('click')
+    expect(wrapper.get('.brand-block').classes()).toContain('is-sparkling')
+    expect(router.currentRoute.value.path).toBe('/')
+  })
+
   it('draws the brand with the FULI wordmark in every language, the service dot on its middle', async () => {
     const { wrapper } = await setup('/')
     const wordmark = wrapper.get('[data-wordmark]')
@@ -309,7 +321,7 @@ describe('AppShell', () => {
   it('names section tabs by state words, never repeating the page title', async () => {
     const { wrapper } = await setup('/project-agents')
     expect(wrapper.get('h1').text()).toBe('FLAs')
-    expect(wrapper.findAll('[data-section]').map(tab => tab.text())).toEqual(['全部', '编排', '职业', '服务', '应用'])
+    expect(wrapper.findAll('[data-section]').map(tab => tab.text())).toEqual(['全部', '编排', '职业', '服务', 'Agent App'])
     wrapper.unmount()
   })
 

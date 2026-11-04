@@ -5,7 +5,6 @@ import Breadcrumb from '@/components/Breadcrumb.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { currentLocale, t } from '@/i18n'
-import { UiIcon } from '@/ui'
 import RoundtableRoom from './RoundtableRoom.vue'
 import RoundtableThreadChat from './RoundtableThreadChat.vue'
 import type { Roundtable } from './useRoundtable'
@@ -44,7 +43,6 @@ function time(value: string) {
       </div>
     </template>
     <div v-else class="rt-detail-none" data-roundtable-none>
-      <UiIcon name="roundtable" :size="40" />
       <p class="ui-sr-only">{{ t('roundtable.list.none') }}</p>
     </div>
   </div>

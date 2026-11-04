@@ -1,8 +1,8 @@
 export const employeeMessages = {
   'zh-CN': {
-    workbench: 'Agent 工作台', unassigned: '暂不分配', permissions: '项目权限',
+    workbench: 'Agent Workbench', unassigned: '暂不分配', permissions: '项目权限',
     boardRead: '读取所选项目的看板', boardWrite: '创建、修改任务与状态',
-    installRequired: '这个 Agent 的工作台没有安装，目前只能作为 Agent 身份使用。',
+    installRequired: '这个 Agent 的 Workbench 没有安装，目前只能作为 Agent 身份使用。',
     assign: '保存负责范围', recruiting: '正在保存负责范围…',
     // The built-in employees' roles, by template id; another template shows its manifest's role.
     roles: { jefa: '项目经理', bole: 'Agent 资源', tonborg: '决策员', assistant: '全局助手' },
@@ -15,7 +15,7 @@ export const employeeMessages = {
       unchanged: '本次未能读完任务看板，已有任务未被修改。', previous: '更新失败，当前为上次读取结果。',
       readOnly: '先重新读取，再修改任务。', lastRead: '上次完整读取：{time}', reload: '重新读取', reloadHint: '重新读取当前看板，保留筛选和搜索。', details: '错误详情', clearFilter: '清除筛选',
     },
-    open: '打开工作台', close: '关闭', cancel: '取消', retry: '重试', loading: '正在读取 Agent 目录…',
+    open: '打开 Workbench', close: '关闭', cancel: '取消', retry: '重试', loading: '正在读取 Agent 目录…',
     manageProjects: '管理负责项目', manageProjectsTitle: '管理 {name} 的项目', loadingScope: '正在读取项目负责范围…',
     loadingBoard: '正在读取任务看板…', loadingTask: '正在读取任务详情…', loadingShare: '正在读取项目分享状态…', loadingReport: '正在读取公开报告…',
     invalidScope: '所选项目不在 @:{\'roleNames.jefa\'} 的负责范围内，请检查项目链接。',
@@ -111,7 +111,7 @@ export const employeeMessages = {
       },
     },
     errors: {
-      runtime_unavailable: '工作台未安装或无法加载，请检查 Agent 包后重试。',
+      runtime_unavailable: 'Workbench 未安装或无法加载，请检查 Agent 包后重试。',
       assignment_required: '这位 Agent 尚未获准管理此项目，请检查负责范围。',
       project_not_found: '项目不可用，请选择有效项目。',
       identity_conflict: '标识已被其他 Agent 使用，原有 Agent 未修改。',

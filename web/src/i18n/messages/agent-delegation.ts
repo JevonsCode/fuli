@@ -20,9 +20,9 @@ export const agentDelegationMessages = {
     failed: '未成功',
     categories: {
       settings: { label: '设置', summary: '运行设置、回答策略、会话链接、一键更新、接入客户端、体检修复、确认采集变更' },
-      organisation: { label: '组织', summary: '职业目录、FLA 职业和形象、工作流确认、长期分工、标记阻塞已解除' },
+      organisation: { label: '组织', summary: '职业目录、FLA 职业和形象、Workflow 确认、长期分工、标记阻塞已解除' },
       projects: { label: '项目', summary: "项目层级、@:{'roleNames.astro'} 的项目建议、会话归属、临时项目搬迁、知识范围、标签治理" },
-      services_apps: { label: '服务与应用', summary: '停止 Agent 服务、删除记录和日志；Agent 应用启停、批准、回滚、停用、导出' },
+      services_apps: { label: '服务与 Agent App', summary: '停止 Agent 服务、删除记录和日志；Agent App 启停、批准、回滚、停用、导出' },
       roundtable: { label: '圆桌', summary: '切换圆桌的看板模式和即时对话模式' },
       lan_roundtable: { label: '局域网圆桌', summary: '开启监听、配对设备、共享项目、撤销设备、退出局域网' },
       model_settings: { label: '内置 Agent 模型', summary: '角色模型、数据外发、预算和「只给建议」开关（不含密钥）' },

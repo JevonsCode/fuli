@@ -380,7 +380,7 @@ describe('employee workbench', () => {
       await flushPromises()
     }
     expect(wrapper.find('iframe').exists()).toBe(false)
-    expect(wrapper.get('.employee-workbench-state').text()).toBe('这个 Agent 的工作台没有安装，目前只能作为 Agent 身份使用。')
+    expect(wrapper.get('.employee-workbench-state').text()).toBe('这个 Agent 的 Workbench 没有安装，目前只能作为 Agent 身份使用。')
   })
   it('never sends the person to a terminal from an employee page, in either language', () => {
     for (const messages of Object.values(employeeMessages)) {

@@ -3,7 +3,7 @@ export const shellMessages = {
     aria: '主导航', sectionsAria: '本页分区', runtimeReady: '本机服务运行中', runtimeOffline: '本机服务未就绪', versionLink: '版本 v{version}，打开版本设置', versionUpdate: '版本 v{version}，有新版本 v{latest}，打开版本设置', attentionWaiting: '待决策：{count} 件事在等你', brand: '复利',
     destinations: { constellation: '工作台', agents: 'FLAs', chat: '圆桌', projects: '项目', memory: '沉淀', settings: '设置' },
     sections: {
-      agentDirectory: '全部', orchestrate: '编排', occupations: '职业', services: '服务', apps: '应用',
+      agentDirectory: '全部', orchestrate: '编排', occupations: '职业', services: '服务', apps: 'Agent App',
       roundtables: '讨论', askedYou: '待决策', myProjects: '我的', publicProjects: '公开',
       knowledge: '知识', preferences: '偏好',organize: '知识整理', tags: '标签',
       settings: '常规', connections: '连接', about: '关于', howto: '常用操作',

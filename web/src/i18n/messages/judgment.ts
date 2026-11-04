@@ -52,7 +52,7 @@ export const judgmentMessages = {
       loadError: '暂时无法读取各项目的判断方式。',
     },
     workbench: {
-      aria: '@:{\'roleNames.tonborg\'} 决策工作台',
+      aria: '@:{\'roleNames.tonborg\'} 决策 Workbench',
       filter: '显示哪些判断',
       all: '全部',
       human: '需要人工',

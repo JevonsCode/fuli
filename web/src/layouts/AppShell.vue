@@ -50,6 +50,15 @@ const dockDestinations = computed(() => destinations.value.filter(item => item.p
 const settingsActive = computed(() => destination.value?.key === 'settings')
 // Holding the settings button opens the #debug records (Jevons 11-04): nothing in Settings names them.
 const router = useRouter()
+// The mark and the wordmark: on 工作台 they play the mark's effect; on any other
+// page they go back to it (Jevons 11-04).
+const brand = ref<InstanceType<typeof BrandEasterEgg> | null>(null)
+const onHome = computed(() => route.path === '/')
+const brandLabel = computed(() => onHome.value ? t('console.brandEffect.aria') : t('shell.destinations.constellation'))
+function pressBrand() {
+  if (onHome.value) brand.value?.play()
+  else void router.push('/')
+}
 const settingsHold = useHold(() => { void router.push('/debug') })
 // The dock stays open on the workbench and folds to the current destination
 // elsewhere. A page outside the dock (settings) has nothing to fold to, so the
@@ -130,12 +139,14 @@ watchEffect(() => {
     <header v-window-drag class="app-topbar">
       <div class="app-topbar-inner">
         <div class="app-brand">
-          <BrandEasterEgg compact />
+          <BrandEasterEgg ref="brand" compact :label="brandLabel" @press="pressBrand" />
           <!-- The official FULI wordmark in every language (Jevons 11-03: the title bar always says FULI,
                never 复利, and switching languages leaves it alone), centred on the mark as in the
                brand lockup; the service dot sits on its middle. -->
           <span class="app-brand-word">
-            <img class="app-wordmark" :src="fuliWordmarkUrl('en-US')" alt="FULI" draggable="false" data-wordmark />
+            <button type="button" class="app-wordmark-button" :aria-label="brandLabel" data-brand-home @click="pressBrand">
+              <img class="app-wordmark" :src="fuliWordmarkUrl('en-US')" alt="FULI" draggable="false" data-wordmark />
+            </button>
             <!-- The service dot says ready on its own; its words show only when the service is not ready. -->
             <span class="app-runtime" :class="{ 'is-ready': runtimeReady }" role="status"
               :title="t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')" data-runtime>
@@ -219,6 +230,8 @@ watchEffect(() => {
 }
 .app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-height: 44px; }
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.app-wordmark-button { display: inline-flex; padding: 0; border: 0; background: none; cursor: pointer; user-select: none; }
+.app-wordmark-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 /* The brand lockup's proportions (brand/svg/lockup): the wordmark's glyphs stand at about 0.54 of the
    mark's art (21px for the 38px mark; the files keep 16 of 232 units of clear space around the glyphs)
    and start about a quarter of the art to its right. The status dot and its words sit on the wordmark's
