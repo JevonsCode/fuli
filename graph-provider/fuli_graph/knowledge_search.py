@@ -831,7 +831,7 @@ def _edge_relevance(query: str, edge, names: dict[str, str], position: int, tota
 
 def _terms(value: str) -> set[str]:
     latin = {
-        term for term in re.findall(r'[a-z0-9_]+', value)
+        _word_stem(term) for term in re.findall(r'[a-z0-9_]+', value)
         if term not in LATIN_QUERY_FILLERS
     }
     chinese_segments = re.findall(r'[\u4e00-\u9fff]+', value)
@@ -844,6 +844,23 @@ def _terms(value: str) -> set[str]:
             for index in range(max(0, len(chinese) - 1))
         )
     return latin | grams
+
+
+def _word_stem(term: str) -> str:
+    """One English word form for its inflections, applied to both sides of a
+    match: "owns", "owned" and "owner" meet, as do "codes" and "code"; a
+    question names a concept in whatever form it happens to use (rec#63)."""
+    if not term.isalpha() or len(term) < 4:
+        return term
+    if term.endswith('ies') and len(term) > 4:
+        term = term[:-3] + 'y'
+    elif term.endswith('s') and not term.endswith(('ss', 'us', 'is')):
+        term = term[:-1]
+    for suffix in ('ing', 'ed', 'er'):
+        if term.endswith(suffix) and len(term) - len(suffix) >= 3:
+            term = term[:-len(suffix)]
+            break
+    return term[:-1] if term.endswith('e') and len(term) > 3 else term
 
 
 def _retrieval_aliases(record) -> list[str]:

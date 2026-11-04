@@ -44,6 +44,14 @@ const RECALL_INTENTS = Object.freeze([
     queries: ['方法 方式 流程 步骤 runbook workflow procedure']
   },
   {
+    // rec#63: "our error code convention", "the team that owns the ledger
+    // code", "the way we release beta builds" name a stored project fact
+    // without saying "previously".
+    category: 'project_convention',
+    pattern: /(?:约定|规范|惯例|规则|负责人|谁负责|谁来审|我们的|我们(?:一般|通常|都)|convention|policy|\bour\s+[a-z]|\bowns?\b|\bowner\b|who (?:owns|reviews|approves)|the way we|we (?:always|usually|use|agreed|decided))/iu,
+    queries: ['约定 规范 规则 负责人 convention policy rule owner']
+  },
+  {
     category: 'prior_context',
     pattern: /(?:之前|以前|上次|已经存|保存过|记得|照旧|同样|还是用|不用再|先前|约定|定好的|previous|earlier|\bprior\b|last time|remember|same as|again|we (?:decided|agreed|settled|chose))/iu,
     queries: ['先前 方法 规则 决策 runbook previous method decision']
@@ -88,6 +96,9 @@ const INDEX_TITLE_BYTES = 40;
 // search leaves the recall not_needed.
 const INDEX_MIN_REMAINING_MS = 2000;
 const INDEX_READ = 'Titles of one bounded search: read one with search_current_project_knowledge before relying on it.';
+// rec#63: after "searched, no match" models stopped looking and copied a
+// stale value from the repository; one quick search is not the whole store.
+const MISS_NEXT = 'One quick search only. Before taking a project value or rule (port, command, owner, convention) from repo files, search_current_project_knowledge for it.';
 
 export const TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE = Object.freeze({
   before_reasking:
@@ -122,8 +133,12 @@ export function planTaskKnowledgeRecall(taskPrompt) {
     return { status: 'not_needed', trigger_categories: [], queries: [] };
   }
   const focus = distinctivePromptTerms(prompt).join(' ').slice(0, 180);
-  // Named targets already focus every query; a plain question uses its own clauses.
-  const queries = unique([...(focus ? [] : clauseQueries(prompt)), ...matched.flatMap(({ queries: values }) => values)
+  // Named targets already focus every query; otherwise the prompt's own
+  // clauses go first. File paths and code names are no target: a fact is
+  // stored under its concept ("retry policy", "staging port"), so a query
+  // of paths and category words matched none of it (rec#63).
+  const ownWords = namedTarget(prompt) ? [] : clauseQueries(prompt.replace(CODE_SPAN, ' '));
+  const queries = unique([...ownWords, ...matched.flatMap(({ queries: values }) => values)
     .map((query) => focus ? `${focus} ${query}` : query)]);
   return {
     status: 'planned',
@@ -235,6 +250,7 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
       })
     } : {}),
     ...(pendingSlots.length ? { pending_fallback: { slots: pendingSlots, note: PENDING_NOTE } } : {}),
+    ...(searched && !facts.length && !entities.length ? { next: MISS_NEXT } : {}),
     ...(answersFromConfirmed(application) && confirmedByPeople([...facts, ...entities])
       ? { confirmed_use: CONFIRMED_USE } : {}),
     facts,
@@ -460,18 +476,53 @@ function distinctivePromptTerms(prompt) {
 // words appear in it, so one long query of every word matches nothing.
 const MAX_CLAUSE_QUERIES = 3;
 const CLAUSE_WORD_LIMIT = 5;
-const CLAUSE_STOP_WORDS = new Set(('about after also answer because been before bullet bullets could does from have here into '
-  + 'just know like list make more most much need only please reply repo short should show some tell than that their them '
-  + 'then there these they this those three what when where which while will with would your').split(' '));
+const CLAUSE_HAN_LIMIT = 16;
+// Asking and doing words: they say what to do with a fact, never which one.
+const CLAUSE_STOP_WORDS = new Set(('about add adding after also answer because been before bullet bullets could create '
+  + 'does entry existing exporting file folder following from full have here into just keep know like line list make more '
+  + 'most much need new now one only please reply repo return returns saying short should show some sure tell than that '
+  + 'their them then there these they this those three throw update use using what when where which while will with '
+  + 'would write your').split(' '));
+const CLAUSE_HAN_FILLERS = /请|帮我|帮忙|麻烦|一下|我们|你们|这个|那个|一个|然后|还有|的|了|吗|呢|吧/gu;
+// A clause naming a kept fact ("the retry policy we agreed", "who owns it")
+// queries first, so a long change request does not spend the slots on its
+// other clauses.
+const KNOWN_FACT_CUE = /(?:agreed|decided|convention|policy|rule|owns?\b|owner|\breview|the way we|\bour\b|port\b|command|channel|region|约定|规范|规则|负责|端口|地址|命令|渠道|策略|惯例|决定)/iu;
 
+// When some clauses name a kept fact, only they query: the rest of a change
+// request ("so tests do not wait") would bring back unrelated items.
 function clauseQueries(prompt) {
-  return prompt.split(/[,;:，；：。!?！？]|\.(?:\s|$)|\b(?:and|or|then)\b/iu)
-    .map((clause) => unique((clause.toLocaleLowerCase('en-US').match(/[a-z][a-z0-9-]{2,}/gu) ?? [])
-      .filter((word) => !CLAUSE_STOP_WORDS.has(word) && !['the', 'who', 'how', 'for', 'are', 'was'].includes(word)))
-      .slice(0, CLAUSE_WORD_LIMIT))
-    .filter((words) => words.length >= 2)
-    .slice(0, MAX_CLAUSE_QUERIES)
-    .map((words) => words.join(' '));
+  const clauses = prompt.split(/[,;:，；：。!?！？]|\.(?:\s|$)|\b(?:and|or|then)\b/iu);
+  const cued = clauses.filter((clause) => KNOWN_FACT_CUE.test(clause));
+  return (cued.length ? cued : clauses)
+    .map(clauseQuery)
+    .filter(Boolean)
+    .slice(0, MAX_CLAUSE_QUERIES);
+}
+
+function clauseQuery(clause) {
+  const words = unique((clause.toLocaleLowerCase('en-US').match(/[a-z][a-z0-9-]{2,}/gu) ?? [])
+    .filter((word) => !CLAUSE_STOP_WORDS.has(word) && !['the', 'who', 'how', 'for', 'are', 'was'].includes(word)))
+    .slice(0, CLAUSE_WORD_LIMIT);
+  // The Provider matches Chinese by character pairs, so the clause's own
+  // characters, without filler, are the query.
+  const han = (clause.match(/[\p{Script=Han}]+/gu) ?? []).join('').replace(CLAUSE_HAN_FILLERS, '').slice(0, CLAUSE_HAN_LIMIT);
+  const query = [han.length >= 4 ? han : '', words.length >= 2 || han.length >= 4 ? words.join(' ') : ''].filter(Boolean).join(' ');
+  return query || null;
+}
+
+// A name the person gave (a quoted phrase, a product, a URL, a version, an
+// uncommon acronym), not a file path or code identifier.
+const CODE_SPAN = /`[^`]*`/gu;
+const COMMON_ACRONYMS = new Set(['API', 'CI', 'CLI', 'CODEOWNERS', 'CSS', 'CSV', 'HTML', 'HTTP', 'HTTPS', 'ID', 'ISO', 'JS',
+  'JSON', 'NPM', 'PR', 'README', 'SDK', 'SQL', 'TS', 'UI', 'URL', 'UTC', 'YAML']);
+
+function namedTarget(prompt) {
+  const text = prompt.replace(CODE_SPAN, ' ');
+  const identifiers = new Set(text.match(/\b[A-Za-z][A-Za-z0-9]{0,63}[_./-][A-Za-z0-9_.\/-]{1,127}\b/gu) ?? []);
+  // A quoted heading or snippet ("## Release") is markup, not a name.
+  return distinctivePromptTerms(text).some((term) => !identifiers.has(term) && !COMMON_ACRONYMS.has(term)
+    && /^[\p{L}\p{N}]/u.test(term));
 }
 
 // On unless the person asked for every answer to be checked against the files.
