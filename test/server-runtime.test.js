@@ -88,7 +88,7 @@ test('Web server exposes the Graphiti facade and graph console', async () => {
     });
     assert.deepEqual(
       calls.find(([name]) => name === 'project-agent-upsert')[1],
-      agentInput
+      { ...agentInput, writer: { kind: 'person' } }
     );
 
     const tasks = await getJson(

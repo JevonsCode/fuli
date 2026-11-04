@@ -1,4 +1,5 @@
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { applyFieldAuthorship, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
 import { loadProjectAgentContinuity } from './project-agent-task-entry.js';
 import { dismissalLessonHint } from './project-agent-dismissal.js';
 import { requireGroupedAgentTaskContext } from './project-team-hierarchy.js';
@@ -39,19 +40,36 @@ import {
 } from './project-agent-mapping.js';
 import { coversClient } from '../agents/source-applications.js';
 
+const CHARACTER_FIELDS = Object.freeze(['judgment', 'taste', 'personality']);
+
 export async function upsertProjectAgent(application, input) {
   if (input.profile?.status === 'archived') {
     throw new ApplicationError(ApplicationErrorCode.VALIDATION,
       'An Agent leaves only through dismiss_project_agent with the user\'s reason; an upsert cannot archive it.');
   }
+  const profile = providerProjectAgentProfile(input.profile);
+  const { authored, refused } = await authorCharacter(application, input, profile);
   const value = await application.personal.upsertProjectAgent({
     personal_space_id: input.personalSpaceId,
     personal_project_id: input.personalProjectId ?? null,
     agent_id: input.agentId,
-    profile: providerProjectAgentProfile(input.profile),
+    profile: authored,
     ...(input.occupation ? { occupation: input.occupation } : {})
   });
-  return projectAgentRecord(value);
+  const record = projectAgentRecord(value);
+  return refused.length ? { ...record, refusedFields: refused } : record;
+}
+
+// Who wrote an FLA's preferences, as for a project's profile: `writer` is set by
+// the entry, never read from a payload. A person's text stays theirs; any entry
+// without a writer (recruitment, a role's own setup) writes as AI.
+async function authorCharacter(application, input, profile) {
+  if (!profile.character) return { authored: profile, refused: [] };
+  const previous = await application.personal.getProjectAgent(input.personalSpaceId, input.personalProjectId ?? null, input.agentId)
+    .then(value => value?.profile ?? null).catch(() => null);
+  const { values, authors, refused } = applyFieldAuthorship(CHARACTER_FIELDS, previous?.character, profile.character,
+    previous?.character_authors, input.writer ?? UNNAMED_AGENT_WRITER);
+  return { authored: { ...profile, character: values, character_authors: authors }, refused };
 }
 
 export async function listProjectAgents(application, input) {

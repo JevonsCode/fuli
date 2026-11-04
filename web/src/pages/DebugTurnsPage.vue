@@ -119,12 +119,13 @@ onBeforeUnmount(() => reading?.abort())
 .debug-turns-view { padding-bottom: 96px; color: var(--color-ink); }
 .debug-turns-content { width: 100%; display: grid; gap: 16px; }
 .debug-turns-lede { max-width: var(--measure); margin: 0; color: var(--color-muted); font-size: var(--text-body); line-height: 1.6; }
-.debug-turns-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.debug-turns-list { display: grid; gap: 2px; margin: 0; padding: 0 8px 8px; list-style: none; }
 .debug-turns-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; padding: 0 24px; }
 .debug-turns-all { display: flex; align-items: center; gap: 12px; color: var(--color-muted); font-size: var(--text-meta); cursor: pointer; user-select: none; }
-.debug-turns-item { display: flex; align-items: center; gap: 12px; padding-left: 24px; border-top: 1px solid var(--color-border); }
-.debug-turns-row { display: grid; flex: 1; min-width: 0; gap: 2px; padding: 10px 24px 10px 0; color: inherit; text-decoration: none; user-select: none; }
-.debug-turns-row:hover { background: var(--color-surface-hover); }
+/* The whole row lifts, checkbox included, inside the card's edges. */
+.debug-turns-item { display: flex; align-items: center; gap: 12px; padding-left: 16px; border-radius: var(--radius-control); transition: background-color var(--motion-fast) var(--motion-ease); }
+.debug-turns-item:hover { background: var(--color-surface-hover); }
+.debug-turns-row { display: grid; flex: 1; min-width: 0; gap: 2px; padding: 10px 16px 10px 0; color: inherit; text-decoration: none; user-select: none; }
 .debug-turns-prompt { overflow: hidden; font-size: var(--text-body); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
 .debug-turns-meta { color: var(--color-muted); font-size: var(--text-meta); }
 </style>
