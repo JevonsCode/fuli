@@ -25,6 +25,9 @@ const props = defineProps<{
   actionError?: string
   canMoveTasks: boolean
   readOnly?: boolean
+  /** Finished tasks not shown yet; the done column offers to read them. */
+  olderDone?: number
+  olderDoneLoading?: boolean
   incomplete?: boolean
   allowReadOnlyDetails?: boolean
   resettableFilter?: boolean
@@ -34,6 +37,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  'load-older-done': []
   'select-task': [item: EmployeeBoardItem]
   'create-task': []
   'update:visible-project-ids': [projectIds: string[]]
@@ -141,6 +145,9 @@ function savingLabel(key: string) {
   const move = pendingMove(key)
   return move ? t('employees.allProjects.movingTo', { status: columnLabel(move.column) }) : t('employees.allProjects.saving')
 }
+
+// The first column that stands for finished work holds the 查看更多.
+const olderDoneColumn = computed(() => columns.value.find(column => column.status === 'done')?.key)
 
 function liftCard(key: string, mode: DragState['mode'], height: number) {
   const item = itemsByKey.value.get(key)
@@ -404,6 +411,7 @@ onBeforeUnmount(() => {
           <UiIcon name="search" :size="15" class="employee-all-projects-search-icon" />
           <input v-model="query" type="search" :placeholder="t('employees.allProjects.searchPlaceholder')" />
         </label>
+        <slot name="actions" />
       </div>
     </header>
 
@@ -513,6 +521,10 @@ onBeforeUnmount(() => {
           </template>
           <p v-if="!column.slots.length" :key="`${column.key}-empty`" class="employee-all-projects-column-empty"><UiIcon name="board" :size="18" />{{ t('employees.allProjects.columnEmpty') }}</p>
         </TransitionGroup>
+        <Button v-if="olderDone && column.key === olderDoneColumn" variant="ghost" size="sm" class="employee-board-older" data-board-older-done
+          :loading="olderDoneLoading" :loading-label="t('employees.allProjects.doneOlderLoading')" @click="emit('load-older-done')">
+          {{ t('employees.allProjects.doneOlder', { count: olderDone }) }}
+        </Button>
         </section>
       </div>
     </div>
@@ -524,7 +536,8 @@ onBeforeUnmount(() => {
 .employee-all-projects { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; gap: 14px; padding: 14px 24px 24px; overflow: hidden; background: var(--color-surface); color: var(--color-ink); }
 .employee-all-projects-header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 24px; }
 .employee-all-projects-heading { min-width: 0; }
-.employee-all-projects-heading h2 { margin: 0; font-size: var(--text-title); font-weight: var(--weight-strong); }
+.employee-board-older { flex: 0 0 auto; margin: 6px 8px 8px; }
+.employee-all-projects-heading h2 { white-space: nowrap; margin: 0; font-size: var(--text-title); font-weight: var(--weight-strong); }
 .employee-all-projects-heading p { margin: 0; color: var(--color-muted); font-size: 13px; line-height: 1.5; }
 .employee-all-projects-controls { display: flex; flex: 0 1 660px; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
 .employee-all-projects-filter { flex: 0 1 270px; min-width: 240px; }

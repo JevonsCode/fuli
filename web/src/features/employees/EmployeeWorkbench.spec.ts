@@ -410,7 +410,7 @@ describe('employee workbench', () => {
     expect(wrapper.findComponent(EmployeeTaskBoard).exists()).toBe(true)
     expect(wrapper.find('iframe').exists()).toBe(false)
     const boardCallsBefore = postJson.mock.calls.filter(([, body]) => body.tool === 'read_board').length
-    await wrapper.get('.employee-workbench-actions button.employee-manage-projects').trigger('click')
+    await wrapper.get('button.employee-manage-projects').trigger('click')
     await flushPromises()
     const dialog = wrapper.getComponent(EmployeeScopeDialog)
     expect(dialog.props('templateId')).toBe('jefa')
@@ -633,19 +633,6 @@ describe('Jefa bounded progressive reads', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
     resolveCatalog({ templates: [] }); await flushPromises()
     expect(wrapper.get('[role="alert"]').text()).toContain('任务看板读取超时')
-  })
-  it('keeps truncated content when a complete snapshot hangs, using the original read deadline', async () => {
-    vi.useFakeTimers()
-    postJson.mockResolvedValue({ items: [{ id: 'a1', projectId: 'project-a', title: '截断任务', status: 'planned' }], total: 200, truncated: true })
-    const original = getJson.getMockImplementation()!
-    getJson.mockImplementation((url: string) => url.endsWith('/api/snapshot') ? new Promise(() => {}) : original(url))
-    const wrapper = await setup('/employees/jefa')
-    expect(wrapper.text()).toContain('截断任务')
-    expect(wrapper.text()).toContain('正在读取完整任务列表')
-    await vi.advanceTimersByTimeAsync(30000)
-    expect(wrapper.text()).toContain('截断任务')
-    expect(wrapper.findComponent(EmployeeTaskBoard).props('boards')[0].truncated).toBe(true)
-    expect(wrapper.find('.growth-loading').exists()).toBe(false)
   })
   it('does not call incomplete or failed reads an empty successful board', async () => {
     twoProjects()

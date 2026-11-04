@@ -136,6 +136,38 @@
   flex: 0 1 auto;
 }
 
+/* Who this FLA is folds to one row once the work below is scrolled. */
+.agent-resume-more {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--motion-fast) var(--motion-ease);
+}
+
+.agent-resume-more > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.is-compact .agent-resume-more {
+  grid-template-rows: 0fr;
+}
+
+.is-compact .agent-resume-header {
+  padding-block: var(--space-2, 8px);
+}
+
+.is-compact .agent-portrait {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+  border-radius: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-resume-more { transition: none; }
+}
+:root[data-motion="reduced"] .agent-resume-more { transition: none; }
+
 .agent-resume-summary {
   display: -webkit-box;
   overflow: hidden;

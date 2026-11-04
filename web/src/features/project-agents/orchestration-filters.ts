@@ -72,13 +72,13 @@ export function projectChipGroups(projects: Array<{ name: string }>) {
   return [...groups].map(([name, count]) => ({ name, count }))
 }
 
-/** An Agent's one page; with ?task= it opens 高级管理 on that task. */
+/** An Agent's one page; with ?task= it opens 工作经历 on that task. */
 export function agentManagementPath(spaceId: string, agentId: string) {
   return `/agents/${encodeURIComponent(spaceId)}/${encodeURIComponent(agentId)}`
 }
 
-/** Where a link to the former management page lands: its tab is now a section of 高级管理. */
+/** Where a link to the former management page lands: its work is 工作经历, the rest 设置. */
 export function formerManagementQuery({ tab, ...query }: LocationQuery): LocationQuery {
-  if (tab === 'conversations') return { ...query, tab }
-  return { ...query, tab: 'management', ...(tab ? { section: tab } : {}) }
+  const work = !tab || tab === 'work' || tab === 'activity'
+  return { ...query, tab: work ? 'history' : 'settings' }
 }

@@ -176,8 +176,8 @@ async function save() {
         :placeholder="t('agentProfiles.expectationsPlaceholder')"
       />
     </label>
-    <details>
-      <summary>{{ t("agentProfiles.editCharacter") }}</summary>
+    <section class="agent-preferences" data-agent-preferences>
+      <h4>{{ t("agentProfiles.preferences") }}</h4>
       <label
         v-for="key in ['judgment', 'taste', 'personality'] as const"
         :key="key"
@@ -189,7 +189,7 @@ async function save() {
           :disabled="saving"
         />
       </label>
-    </details>
+    </section>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="saved" role="status">{{ t("agentProfiles.saved") }}</p>
     <Button size="sm" :disabled="loading" :loading="saving" :loading-label="t('agentProfiles.saving')" type="submit">

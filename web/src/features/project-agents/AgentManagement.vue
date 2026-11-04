@@ -6,7 +6,6 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { employeeTemplateIdForAgent, employeeTemplates } from '@/features/employees/catalog'
 import EmployeeScopeDialog from '@/features/employees/EmployeeScopeDialog.vue'
@@ -37,13 +36,15 @@ import type {
   ProjectAgentRoutingRule,
 } from '@/types'
 
-// One Agent's 高级管理, a tab of its FLA page (Jevons 11-04: one page per FLA):
-// its work, projects, activity, recruitment, execution and record as sections
-// (?section=). Links that name a task (?task=, ?project=) open on the work
-// section with that task revealed.
-type ManageSection = 'work' | 'projects' | 'activity' | 'recruitment' | 'execution' | 'profile'
+// What an FLA page shows of one Agent's management (Jevons 11-04: one page per
+// FLA, no 高级管理): 工作经历 takes its activity and work, 设置 the rest. A link
+// that names a task (?task=, ?project=) reveals that task in the work section.
+export type ManageSection = 'work' | 'projects' | 'activity' | 'recruitment' | 'execution' | 'profile'
 
-const props = defineProps<{ spaceId: string; agentId: string }>()
+const props = withDefaults(defineProps<{ spaceId: string; agentId: string; sections?: ManageSection[] }>(), {
+  sections: () => ['activity', 'work', 'projects', 'recruitment', 'execution', 'profile'],
+})
+const shows = (section: ManageSection) => props.sections.includes(section)
 const emit = defineEmits<{ saved: [record: ProjectAgentRecord] }>()
 
 const store = useConsoleStore()
@@ -89,38 +90,7 @@ const responsibleProjects = computed(() => {
 const employeeProjects = computed(() => responsibleProjects.value
   .filter((project) => projectById.value.get(project.id)?.profile.lifecycle !== 'archived'))
 const recruitments = computed(() => agent.value?.recruitments ?? [])
-const awaitingRecruitments = computed(() => recruitments.value.filter((item) => item.status === 'awaiting_confirmation').length)
 const learning = computed(() => Object.entries(agent.value?.learningEvidence ?? {}))
-
-const tabs = computed(() => {
-  const list: Array<{ id: ManageSection; label: string }> = [
-    { id: 'work', label: t('projectAgents.tabs.work') },
-    { id: 'projects', label: t('projectAgents.tabs.projects') },
-    { id: 'activity', label: t('projectAgents.tabs.activity') },
-    { id: 'recruitment', label: t('projectAgents.tabs.recruitment') },
-    { id: 'execution', label: t('projectAgents.tabs.execution') },
-    { id: 'profile', label: t('projectAgents.tabs.profile') },
-  ]
-  return list
-})
-// The open section is part of the URL; switching replaces the entry instead
-// of adding history.
-const activeTab = computed<ManageSection>({
-  get: () => {
-    const section = route.query.section
-    return tabs.value.find((item) => item.id === section)?.id ?? 'work'
-  },
-  set: (section) => {
-    const { section: _previous, ...query } = route.query
-    void router.replace({ query: section === 'work' ? query : { ...query, section }, hash: route.hash })
-  },
-})
-
-// A link that names a new task opens the work section, where that task is
-// shown. Afterwards the sections are the person's again, though ?task= stays.
-watch(linkedTask, (task) => {
-  if (task && activeTab.value !== 'work') activeTab.value = 'work'
-}, { immediate: true })
 
 // Each new task link (a new ?task= or ?project= scope) is located once, as
 // soon as its task list is read and its card is on the page. A refresh or a
@@ -258,7 +228,7 @@ async function cleanup(person: ProjectAgentRecord) {
 </script>
 
 <template>
-  <section ref="pageRoot" class="project-agent-manage" :aria-label="t('agentProfiles.advanced')">
+  <section ref="pageRoot" class="project-agent-manage" :aria-label="name">
     <div class="@container grid w-full gap-4">
       <GrowthLoading v-if="pageLoading" :label="!store.state ? t('common.status.loadingConsole') : t('projectAgents.loading')" />
       <div v-else-if="pageError" class="ui-card project-agents-state is-error" role="alert">
@@ -267,7 +237,7 @@ async function cleanup(person: ProjectAgentRecord) {
       </div>
       <p v-else-if="!agent" class="ui-card project-agents-state" role="status">{{ t('agentProfiles.unavailable') }}</p>
       <template v-else>
-        <div class="project-agent-detail-actions">
+        <div v-if="shows('profile')" class="project-agent-detail-actions">
           <AgentHand :agent-id="agent.agentId" />
           <Button variant="outline" size="sm" data-detail-refresh :disabled="details.loading.value" @click="details.refresh()">{{ t('projectAgents.detail.refresh') }}</Button>
           <Button variant="outline" size="sm" data-agent-edit @click="dialogOpen = true">{{ t('projectAgents.edit') }}</Button>
@@ -275,15 +245,8 @@ async function cleanup(person: ProjectAgentRecord) {
         </div>
         <p v-if="details.notice.value" class="project-agent-detail-notice" role="status">{{ details.notice.value }}</p>
 
-        <Tabs v-model="activeTab" :unmount-on-hide="false" class="project-agent-detail">
-          <TabsList :aria-label="name">
-            <TabsTrigger v-for="tab in tabs" :key="tab.id" :value="tab.id" :data-manage-tab="tab.id">
-              {{ tab.label }}
-              <Badge v-if="tab.id === 'recruitment' && awaitingRecruitments" variant="warning" :title="t('projectAgents.recruitment.awaiting', { count: awaitingRecruitments })">{{ awaitingRecruitments }}</Badge>
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="work" class="project-agent-panel" data-manage-panel="work">
+        <div class="project-agent-detail">
+          <div v-if="shows('work')" class="project-agent-panel" data-manage-panel="work">
             <Card as="section" class="project-agent-card-section" data-detail-section="tasks">
               <ProjectAgentDetailState v-bind="sourceState('tasks')" :label="loadingLabel('tasks')" @retry="details.refresh">
                 <p v-if="details.taskListPartial.value[agent.agentId]" class="project-agent-muted" data-task-partial>{{ t('agentProfiles.partial') }}</p>
@@ -294,9 +257,9 @@ async function cleanup(person: ProjectAgentRecord) {
                 <p v-else-if="!details.taskListPartial.value[agent.agentId]" class="project-agent-muted">{{ t('projectAgents.detail.noTasks') }}</p>
               </ProjectAgentDetailState>
             </Card>
-          </TabsContent>
+          </div>
 
-          <TabsContent value="projects" class="project-agent-panel" data-manage-panel="projects">
+          <div v-if="shows('projects')" class="project-agent-panel" data-manage-panel="projects">
             <Card v-if="employeeId" as="section" class="project-agent-card-section employee-project-overview" aria-labelledby="employee-project-overview-title">
               <div class="employee-project-overview-heading">
                 <div><h2 id="employee-project-overview-title">{{ employee?.management?.mode === 'all' ? t('employees.scope.continuousAll') : t('employees.scope.label') }}</h2><p>{{ t('employees.assignedCount', { count: employeeProjects.length }) }}</p></div>
@@ -328,9 +291,9 @@ async function cleanup(person: ProjectAgentRecord) {
                 <p v-else class="project-agent-muted">{{ t('projectAgents.detail.noAssignments') }}</p>
               </ProjectAgentDetailState>
             </Card>
-          </TabsContent>
+          </div>
 
-          <TabsContent value="activity" class="project-agent-panel" data-manage-panel="activity">
+          <div v-if="shows('activity')" class="project-agent-panel" data-manage-panel="activity">
             <Card as="section" class="project-agent-card-section" data-detail-section="activity">
               <ProjectAgentDetailState v-bind="sourceState('activity')" :label="loadingLabel('activity')" @retry="details.refresh">
                 <div class="project-agent-section-heading"><h2>{{ t('projectAgents.sections.activity') }}</h2><span v-if="activity?.days.length" data-activity-total>{{ t('projectAgents.activity.total', { count: activityTotal }) }}</span></div>
@@ -364,9 +327,9 @@ async function cleanup(person: ProjectAgentRecord) {
                 <p v-else class="project-agent-muted">{{ t('projectAgents.activity.empty') }}</p>
               </ProjectAgentDetailState>
             </Card>
-          </TabsContent>
+          </div>
 
-          <TabsContent value="recruitment" class="project-agent-panel" data-manage-panel="recruitment">
+          <div v-if="shows('recruitment')" class="project-agent-panel" data-manage-panel="recruitment">
             <Card as="section" class="project-agent-card-section" data-detail-section="recruitment" aria-labelledby="project-agent-recruitment-heading">
               <ProjectAgentDetailState v-bind="sourceState('recruitments')" :label="loadingLabel('recruitments')" @retry="details.refresh">
                 <div class="project-agent-section-heading"><h2 id="project-agent-recruitment-heading">{{ t('projectAgents.sections.recruitment') }}</h2><span>{{ recruitments.length }}</span></div>
@@ -380,9 +343,9 @@ async function cleanup(person: ProjectAgentRecord) {
                 <p v-else class="project-agent-muted">{{ t('projectAgents.recruitment.empty') }}</p>
               </ProjectAgentDetailState>
             </Card>
-          </TabsContent>
+          </div>
 
-          <TabsContent value="execution" class="project-agent-panel" data-manage-panel="execution">
+          <div v-if="shows('execution')" class="project-agent-panel" data-manage-panel="execution">
             <div class="project-agent-execution-grid">
               <Card as="section" class="project-agent-card-section" data-detail-section="executors">
                 <ProjectAgentDetailState v-bind="sourceState('executors')" :label="loadingLabel('executors')" @retry="details.refresh">
@@ -458,9 +421,9 @@ async function cleanup(person: ProjectAgentRecord) {
                 </ProjectAgentDetailState>
               </Card>
             </div>
-          </TabsContent>
+          </div>
 
-          <TabsContent value="profile" class="project-agent-panel" data-manage-panel="profile">
+          <div v-if="shows('profile')" class="project-agent-panel" data-manage-panel="profile">
             <Card as="section" class="project-agent-card-section" :aria-label="t('projectAgents.profileDetails')">
               <dl class="project-agent-detail-meta" data-agent-identity>
                 <div><dt>{{ t('projectAgents.fields.assignments') }}</dt><dd>{{ currentAssignmentsFor(agent).length }}</dd></div>
@@ -468,11 +431,12 @@ async function cleanup(person: ProjectAgentRecord) {
                 <div><dt>{{ t('projectAgents.fields.status') }}</dt><dd>{{ t(`projectAgents.status.${agent.profile.status}`) }}</dd></div>
                 <div><dt>{{ t('projectAgents.fields.recruitment') }}</dt><dd>{{ sourceLabel(agent.recruitmentSourceApplication) }}<small v-if="agent.recruitmentReason">{{ agent.recruitmentReason }}</small></dd></div>
                 <div><dt>{{ t('projectAgents.fields.updatedAt') }}</dt><dd>{{ formatDate(agent.updatedAt) }}</dd></div>
+                <div v-if="agent.profile.capabilities.length"><dt>{{ t('agentProfiles.strengths') }}</dt><dd class="agent-inline-skills"><span v-for="capability in agent.profile.capabilities" :key="capability">{{ capability }}</span></dd></div>
                 <div><dt>{{ t('projectAgents.fields.agentType') }}</dt><dd>{{ t(`projectAgents.agentType.${agent.profile.agentType ?? 'durable'}`) }}<small v-if="agent.isTestRole">{{ t('projectAgents.source.testRole') }}<template v-if="agent.profile.testSource"> · {{ agent.profile.testSource }}</template></small></dd></div>
               </dl>
             </Card>
-          </TabsContent>
-        </Tabs>
+          </div>
+        </div>
       </template>
     </div>
 

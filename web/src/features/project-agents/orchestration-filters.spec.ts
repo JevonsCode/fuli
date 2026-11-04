@@ -49,13 +49,14 @@ describe('编排 collection order and labels', () => {
   })
 })
 
-// A link to the former 编排 page keeps working: its tabs are 高级管理's sections now.
+// A link to the former 编排 page keeps working: its work is 工作经历, the rest 设置.
 describe('formerManagementQuery', () => {
-  it('opens 高级管理 on the section the old tab named, keeping the task', () => {
-    expect(formerManagementQuery({ task: 't-1' })).toEqual({ task: 't-1', tab: 'management' })
-    expect(formerManagementQuery({ tab: 'execution' })).toEqual({ tab: 'management', section: 'execution' })
+  it('opens 工作经历 for the work and activity tabs, keeping the task', () => {
+    expect(formerManagementQuery({ task: 't-1' })).toEqual({ task: 't-1', tab: 'history' })
+    expect(formerManagementQuery({ tab: 'activity' })).toEqual({ tab: 'history' })
   })
-  it('sends the old conversations tab to the page\'s own', () => {
-    expect(formerManagementQuery({ tab: 'conversations' })).toEqual({ tab: 'conversations' })
+  it('opens 设置 for the rest', () => {
+    expect(formerManagementQuery({ tab: 'execution' })).toEqual({ tab: 'settings' })
+    expect(formerManagementQuery({ tab: 'conversations' })).toEqual({ tab: 'settings' })
   })
 })

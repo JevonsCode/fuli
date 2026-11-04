@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import { boardItemKey, recentBoardItems, type EmployeeBoardItem, type EmployeeProjectBoard } from './task-board-model'
@@ -18,7 +17,7 @@ const time = (value?: string) => formatDateTime(value, currentLocale(), { month:
 </script>
 
 <template>
-  <Card v-if="items.length" as="section" class="board-activity" aria-labelledby="board-activity-title" data-board-activity>
+  <section v-if="items.length" class="board-activity" aria-labelledby="board-activity-title" data-board-activity>
     <h2 id="board-activity-title">{{ t('employees.allProjects.recent') }}</h2>
     <ul>
       <li v-for="item in rows" :key="boardItemKey(item)">
@@ -33,11 +32,11 @@ const time = (value?: string) => formatDateTime(value, currentLocale(), { month:
     <Button v-if="items.length > SHOWN" variant="ghost" size="sm" class="board-activity-more" data-board-activity-all @click="all = !all">
       {{ t(all ? 'employees.allProjects.recentLess' : 'employees.allProjects.recentAll') }}
     </Button>
-  </Card>
+  </section>
 </template>
 
 <style scoped>
-.board-activity { display: grid; flex: 0 0 auto; gap: 8px; padding: 14px 18px; }
+.board-activity { display: grid; flex: 0 0 auto; gap: 8px; margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--color-border); }
 .board-activity h2 { margin: 0; font-size: var(--text-title); font-weight: var(--weight-strong); }
 .board-activity ul { display: grid; margin: 0; padding: 0; list-style: none; }
 .board-activity-row {

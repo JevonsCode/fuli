@@ -7,10 +7,10 @@ import board from '../employees/EmployeeTaskBoard.vue?raw'
 // below scrolls, and on a wide window the page itself never does.
 describe('FLA page layout', () => {
   it('puts the identity card above the tabs, across the page', () => {
-    const side = page.slice(page.indexOf('<div class="agent-profile-side">'), page.indexOf('<div class="agent-profile-main">'))
+    const side = page.slice(page.indexOf('<div class="agent-profile-side"'), page.indexOf('<div class="agent-profile-main"'))
     expect(side).toContain('class="agent-resume-header"')
     expect(side).toContain('<AgentRenameHint')
-    const main = page.slice(page.indexOf('<div class="agent-profile-main">'))
+    const main = page.slice(page.indexOf('<div class="agent-profile-main"'))
     expect(main).toContain('class="agent-profile-tabs')
   })
 

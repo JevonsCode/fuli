@@ -20,6 +20,8 @@ export interface EmployeeProjectBoard {
   items: EmployeeBoardItem[]
   total: number
   truncated: boolean
+  /** Finished tasks older than this read shows; the board reads them on request. */
+  doneOlder?: number
   /** How the project's own board is set up (read_board); absent on a public report. */
   projectBoard?: ProjectBoardRecord
 }

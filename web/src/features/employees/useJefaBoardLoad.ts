@@ -8,11 +8,16 @@ const LONG_WAIT_MS = 8_000
 // A load ends when no project board has answered for this long (rec#56): a large,
 // steadily progressing selection finishes, a stuck one still stops.
 const IDLE_BUDGET_MS = 30_000
-// One project's board, with its complete list when truncated.
+// One project's board.
 const READ_TIMEOUT_MS = 30_000
+// A board shows open work and what finished this week; older work waits for 查看更多
+// (Jevons 11-04: a long history made it crawl).
+const RECENT_DONE_MS = 7 * 24 * 60 * 60 * 1000
+const BOARD_LIMIT = 200
+const OLDER_DONE_PAGE = 50
 // Boards read at once; the rest of the selection waits its turn (rec#56).
 const BOARD_CONCURRENCY = 4
-export type JefaReadStage = 'console' | 'catalog' | 'board' | 'snapshot'
+export type JefaReadStage = 'console' | 'catalog' | 'board'
 export interface JefaReadFailure { projectId: string; stage: JefaReadStage; category: string; at: string }
 type ManagedProject = { id: string; name: string }
 type BoardRead = { controller: AbortController; timer?: ReturnType<typeof setTimeout> }
@@ -64,7 +69,8 @@ export function useJefaBoardLoad(input: {
   let currentSpace = ''
   let queue: string[] = []
   const inFlight = new Map<string, BoardRead>()
-  const snapshotIds = new Set<string>()
+  let doneSince = ''
+  const olderDoneLoading = ref(false)
   const inScope = computed(() => new Set(scopeIds.value))
   const failures = computed(() => readFailures.value.filter(f => !f.projectId || inScope.value.has(f.projectId)))
   const loadedIds = computed(() => readIds.value.filter(id => inScope.value.has(id)))
@@ -88,7 +94,6 @@ export function useJefaBoardLoad(input: {
     read?.controller.abort()
     clearTimeout(read?.timer)
     inFlight.delete(projectId)
-    snapshotIds.delete(projectId)
   }
   function dropReads() {
     for (const projectId of [...inFlight.keys()]) dropRead(projectId)
@@ -135,7 +140,7 @@ export function useJefaBoardLoad(input: {
     idleTimer = setTimeout(() => {
       if (!current(version)) return
       timedOut.value = true
-      for (const id of inProgressIds.value) addFailure(id, snapshotIds.has(id) ? 'snapshot' : 'board', timeoutError())
+      for (const id of inProgressIds.value) addFailure(id, 'board', timeoutError())
       if (!inProgressIds.value.length) addFailure('', stage.value, timeoutError())
       dropReads()
       finish()
@@ -155,6 +160,7 @@ export function useJefaBoardLoad(input: {
   }
   function begin(preserve: boolean) {
     const version = start()
+    doneSince = new Date(Date.now() - RECENT_DONE_MS).toISOString()
     failure.value = ''; readFailures.value = []; readIds.value = []; readScopeIds = []; scopeReadable.value = false
     if (!preserve) { input.boards.value = []; template.value = null; projects.value = []; scopeIds.value = []; updatedAt.value = ''; catalogRead.value = false }
     staleIds.value = input.boards.value.map(b => b.project.id)
@@ -169,32 +175,24 @@ export function useJefaBoardLoad(input: {
   function release(projectId: string, version: number, spaceId: string) {
     dropRead(projectId)
     syncPending()
-    stage.value = snapshotIds.size ? 'snapshot' : 'board'
+    stage.value = 'board'
     if (!inProgressIds.value.length) finish()
     else pump(version, spaceId)
   }
   async function readProject(project: ManagedProject, read: BoardRead, version: number, spaceId: string) {
     const live = () => current(version) && inFlight.get(project.id) === read
     const signal = read.controller.signal
-    let atStage: JefaReadStage = 'board'
     try {
       const result = await postJson<EmployeeProjectBoard>('/api/employee-templates/jefa/call', {
-        personalSpaceId: spaceId, personalProjectId: project.id, tool: 'read_board', arguments: { limit: 100 },
+        personalSpaceId: spaceId, personalProjectId: project.id, tool: 'read_board', arguments: { limit: BOARD_LIMIT, doneSince },
       }, { signal })
       if (!live()) return
       const board = { ...result, project, items: Array.isArray(result.items) ? result.items.filter(isEmployeeBoardItem).filter(i => i.projectId === project.id) : [] }
-      publish(board) // A truncated board is still useful while its complete list loads in the same slot.
-      if (result.truncated) {
-        atStage = 'snapshot'; snapshotIds.add(project.id); stage.value = 'snapshot'
-        const result = await getJson<{ snapshot: { workItems: unknown[] } }>(`/employee-workspaces/jefa/${encodeURIComponent(project.id)}/api/snapshot`, { signal })
-        if (!live()) return
-        if (!Array.isArray(result.snapshot?.workItems)) throw new Error('Invalid board snapshot')
-        publish({ ...board, items: result.snapshot.workItems.filter(isEmployeeBoardItem).filter(i => i.projectId === project.id), truncated: false })
-      }
+      publish(board)
       readIds.value = [...readIds.value, project.id]
     } catch (cause) {
       if (!live()) return
-      addFailure(project.id, atStage, cause)
+      addFailure(project.id, 'board', cause)
       if (cause instanceof ApiError && DENIED_STATUSES.includes(cause.status)) {
         input.boards.value = input.boards.value.filter(b => b.project.id !== project.id)
         staleIds.value = staleIds.value.filter(id => id !== project.id)
@@ -214,7 +212,7 @@ export function useJefaBoardLoad(input: {
       read.timer = setTimeout(() => {
         if (!current(version) || inFlight.get(project.id) !== read) return
         timedOut.value = true
-        addFailure(project.id, snapshotIds.has(project.id) ? 'snapshot' : 'board', timeoutError())
+        addFailure(project.id, 'board', timeoutError())
         release(project.id, version, spaceId)
       }, READ_TIMEOUT_MS)
       inFlight.set(project.id, read)
@@ -243,7 +241,7 @@ export function useJefaBoardLoad(input: {
     readFailures.value = readFailures.value.filter(f => !added.includes(f.projectId))
     queue.push(...added)
     syncPending()
-    stage.value = snapshotIds.size ? 'snapshot' : 'board'
+    stage.value = 'board'
     if (!inProgressIds.value.length) finish()
     else pump(version, spaceId)
     return added.length
@@ -282,6 +280,26 @@ export function useJefaBoardLoad(input: {
       readScope(version, spaceId, new Set())
     } catch (cause) { if (current(version)) fail(cause) }
   }
+  // One more page of each selected project's older finished tasks, newest first.
+  async function readOlderDone(board: EmployeeProjectBoard, spaceId: string) {
+    const shown = board.items.filter(item => item.status === 'done' && item.updatedAt).map(item => item.updatedAt!).sort()
+    const result = await postJson<EmployeeProjectBoard>('/api/employee-templates/jefa/call', {
+      personalSpaceId: spaceId, personalProjectId: board.project.id, tool: 'read_board',
+      arguments: { limit: OLDER_DONE_PAGE, statuses: ['done'], doneBefore: shown[0] && shown[0] < doneSince ? shown[0] : doneSince },
+    })
+    const older = (Array.isArray(result.items) ? result.items : []).filter(isEmployeeBoardItem).filter(item => item.projectId === board.project.id)
+    const current = input.boards.value.find(entry => entry.project.id === board.project.id) ?? board
+    publish({ ...current, items: [...current.items, ...older], doneOlder: result.doneOlder ?? 0 })
+  }
+  async function loadOlderDone() {
+    if (olderDoneLoading.value) return
+    olderDoneLoading.value = true
+    const spaceId = input.spaceId.value
+    const boards = input.boards.value.filter(board => inScope.value.has(board.project.id) && (board.doneOlder ?? 0) > 0)
+    const results = await Promise.allSettled(boards.map(board => readOlderDone(board, spaceId)))
+    results.forEach((result, index) => { if (result.status === 'rejected') addFailure(boards[index]!.project.id, 'board', result.reason) })
+    olderDoneLoading.value = false
+  }
   function reload() { if (!running.value) begin(true) }
   function scopeChanged(catalog?: EmployeeTemplate | null) {
     // An already successful authority read wins even if the next network read fails.
@@ -316,7 +334,7 @@ export function useJefaBoardLoad(input: {
   onBeforeUnmount(cancel)
   return {
     template, catalogRead, loading, longWait, stage, failure, failures, projects, scopeIds, pendingIds, loadedIds, stale, readOnly,
-    updatedAt, timedOut, hasContent, catalogFailed,
+    updatedAt, timedOut, hasContent, catalogFailed, olderDoneLoading, loadOlderDone,
     // A linked task's access is decided by every refusal of this load, including its own project's.
     accessFailures: readFailures, taskReadOnly, reload, scopeChanged, selectionChanged,
   }

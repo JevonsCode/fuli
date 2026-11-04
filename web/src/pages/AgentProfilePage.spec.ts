@@ -84,6 +84,10 @@ async function openTab(wrapper: Awaited<ReturnType<typeof setup>>['wrapper'], ta
   await wrapper.get(`[data-profile-tab="${tab}"]`).trigger('mousedown')
   await flushPromises()
 }
+async function openSettings(wrapper: Awaited<ReturnType<typeof setup>>['wrapper']) {
+  await wrapper.get('[data-profile-settings]').trigger('click')
+  await flushPromises()
+}
 describe('Agent profile integration', () => {
   it('shows an unset occupation and saves an explicit role with tags apart from the profile', async () => {
     putJson.mockImplementation(async (url: string, payload: { role: string | null; tags: string[] }) => {
@@ -92,8 +96,7 @@ describe('Agent profile integration', () => {
     })
     const { wrapper } = await setup()
     expect(wrapper.get('[data-profile-occupation]').text()).toContain('还没有设置职业')
-    const settings = wrapper.findAll('button').find(button => button.attributes('aria-expanded') !== undefined && button.text().includes('设置'))!
-    await settings.trigger('click')
+    await openSettings(wrapper)
     const editor = wrapper.get('[data-occupation-editor]')
     await editor.get('[data-occupation-tag="testing"]').trigger('click')
     await editor.get('[data-occupation-tag="design"]').trigger('click')
@@ -114,7 +117,6 @@ describe('Agent profile integration', () => {
     const departure = wrapper.get('[data-profile-departure]')
     expect(departure.text()).toContain('为什么离开')
     expect(departure.text()).toContain('Reported work as done without running the tests.')
-    expect(wrapper.text()).toContain('Completed evidence')
   })
 
   it('shows each task as the shared team card: the FLA’s own share first, bars only from a recorded plan', async () => {
@@ -160,14 +162,33 @@ describe('Agent profile integration', () => {
     await vi.waitFor(() => expect(getJson).toHaveBeenCalledWith('/api/employee-templates?personalSpaceId=space-a', expect.objectContaining({ schema: expect.anything() })))
   })
 
-  // Jevons 11-04: one page per FLA. What 编排's page held is 高级管理 here.
-  it('opens 高级管理 in place and never links out to a second page', async () => {
+  // Jevons 11-04: one page per FLA, three tabs. What 编排's page held is split between 工作经历 and 设置.
+  it('keeps only what a person reads as tabs, and links out to no second page', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => isAgentRead(url)
+      ? agentRead(url, [{ ...person('alpha'), memoryScope: 'reviewed_agent' }]) : normal(url))
     const { wrapper } = await setup()
-    await openTab(wrapper, 'management')
+    expect(wrapper.findAll('[role="tab"]').map(tab => tab.attributes('data-profile-tab'))).toEqual(['overview', 'history'])
+    await openTab(wrapper, 'history')
     await vi.dynamicImportSettled(); await flushPromises()
-    await vi.waitFor(() => expect(wrapper.find('[data-profile-panel="management"] .project-agent-manage').exists()).toBe(true))
+    await vi.waitFor(() => expect(wrapper.find('[data-profile-panel="history"] .project-agent-manage').exists()).toBe(true))
     expect(wrapper.find('a[href^="/project-agents/manage/"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('问 AR')
+  })
+
+  it('puts preferences, memory and the management sections in 设置', async () => {
+    const normal = getJson.getMockImplementation()!
+    getJson.mockImplementation((url: string) => isAgentRead(url)
+      ? agentRead(url, [{ ...person('alpha'), memoryScope: 'reviewed_agent' }]) : normal(url))
+    const { router, wrapper } = await setup()
+    await openSettings(wrapper)
+    await vi.dynamicImportSettled(); await flushPromises()
+    expect(router.currentRoute.value.query.tab).toBe('settings')
+    expect(wrapper.get('[data-agent-preferences]').text()).toContain('偏好')
+    expect(wrapper.get('#agent-memory-settings-heading').text()).toBe('记忆设置')
+    await vi.waitFor(() => expect(wrapper.find('[data-profile-panel="settings"] .project-agent-manage').exists()).toBe(true))
+    await openSettings(wrapper)
+    expect(router.currentRoute.value.query.tab).toBeUndefined()
   })
 
   it('settles a link that uses an Agent\'s earlier id on its current one', async () => {
@@ -178,26 +199,22 @@ describe('Agent profile integration', () => {
     expect(router.currentRoute.value.fullPath).toBe('/agents/space-a/alpha?tab=history')
   })
 
-  it('opens 高级管理 on a link that names a task', async () => {
+  it('opens 工作经历 on a link that names a task', async () => {
     const { router, wrapper } = await setup('/agents/space-a/alpha?task=done')
     await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ task: 'done', tab: 'management' })
-    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')).toBe('management')
+    expect(router.currentRoute.value.query).toEqual({ task: 'done', tab: 'history' })
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')).toBe('history')
   })
 
-  it('exposes conversation retention under an accessible secondary tab', async () => {
+  it('keeps conversation retention under 记忆设置', async () => {
     const normal = getJson.getMockImplementation()!
     getJson.mockImplementation((url: string) => {
       if (isAgentRead(url)) return agentRead(url, [{ ...person('alpha'), memoryScope: 'reviewed_agent' }, person('beta'), person('gamma')])
       return normal(url)
     })
     const { wrapper } = await setup()
-    const tab = wrapper.get('[data-profile-tab="conversations"]')
-    expect(tab.attributes('role')).toBe('tab')
-    expect(tab.attributes('aria-selected')).toBe('false')
-    await openTab(wrapper, 'conversations')
-    expect(tab.attributes('aria-selected')).toBe('true')
-    expect(wrapper.get('[data-profile-panel="conversations"]').attributes('hidden')).toBeUndefined()
+    await openSettings(wrapper)
+    expect(wrapper.get('[data-profile-panel="settings"]').attributes('hidden')).toBeUndefined()
     expect(wrapper.find('.agent-conversations').exists()).toBe(true)
     const details = wrapper.get('.agent-conversations')
     ;(details.element as HTMLDetailsElement).open = true
@@ -221,7 +238,7 @@ describe('Agent profile integration', () => {
         : { conversations: [] }
     })
     const { wrapper } = await setup()
-    await openTab(wrapper, 'conversations')
+    await openSettings(wrapper)
     const details = wrapper.get('.agent-conversations')
     ;(details.element as HTMLDetailsElement).open = true
     await details.trigger('toggle')
@@ -250,7 +267,7 @@ describe('Agent profile integration', () => {
       return normal(url)
     })
     const { wrapper } = await setup()
-    await openTab(wrapper, 'conversations')
+    await openSettings(wrapper)
     const details = wrapper.get('.agent-conversations')
     ;(details.element as HTMLDetailsElement).open = true
     await details.trigger('toggle')
@@ -278,7 +295,7 @@ describe('Agent profile integration', () => {
     const tabs = () => wrapper.findAll('[role="tab"]')
     // One tab stop: Tab reaches the list, which hands focus to the open tab; arrows move between tabs.
     expect(wrapper.get('[role="tablist"]').attributes('tabindex')).toBe('0')
-    expect(tabs().map((tab) => tab.attributes('tabindex'))).toEqual(['-1', '-1', '-1', '-1', '-1', '-1'])
+    expect(tabs().map((tab) => tab.attributes('tabindex'))).toEqual(['-1', '-1'])
     const selected = () => wrapper.get('[role="tab"][aria-selected="true"]').attributes('data-profile-tab')
     expect(selected()).toBe('overview')
 
@@ -291,12 +308,7 @@ describe('Agent profile integration', () => {
     // The open tab is part of the URL, so a refresh or a shared link lands on it.
     expect(router.currentRoute.value.query.tab).toBe('history')
 
-    await wrapper.get('[data-profile-tab="history"]').trigger('keydown', { key: 'End' })
-    await flushPromises()
-    expect(selected()).toBe('management')
-    expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="management"]').element)
-
-    await wrapper.get('[data-profile-tab="management"]').trigger('keydown', { key: 'Home' })
+    await wrapper.get('[data-profile-tab="history"]').trigger('keydown', { key: 'Home' })
     await flushPromises()
     expect(selected()).toBe('overview')
     expect(document.activeElement).toBe(wrapper.get('[data-profile-tab="overview"]').element)
@@ -337,7 +349,7 @@ describe('Agent profile integration', () => {
     expect(overview.findAll('.agent-project-responsibility')).toHaveLength(0)
   })
 
-  it('uses recorded assignments, team policy and actual shared work for its resume', async () => {
+  it('reads its own work for its resume, and no team once per project', async () => {
     const { wrapper } = await setup()
     // The header carries the page's one H1, the Agent's real name, where it can be renamed;
     // the shell keeps only the tab title (rec#11 D-89).
@@ -349,14 +361,7 @@ describe('Agent profile integration', () => {
     expect(wrapper.get('.agent-portrait').attributes('style')).toMatch(/--agent-identity: var\(--identity-[0-7]\)/)
     expect(wrapper.text()).toContain('Synthetic active project')
     expect(wrapper.text()).toContain('Synthetic previous project')
-    expect(wrapper.get('.agent-org-lead a').text()).toBe('Birch')
-    expect(wrapper.get('.agent-org-lead').text()).toContain('项目总负责人')
-    expect(wrapper.get('.agent-org-reporting').text()).toContain('成员 → 项目总负责人 → 你')
-    expect(wrapper.get('.agent-org-lead a').attributes('href')).toBe('/agents/space-a/beta')
-    expect(wrapper.findAll('.agent-org-members a').map(link => link.text())).toEqual(['Aster', 'Cedar'])
-    expect(wrapper.findAll('.agent-collaborators a').map(link => link.text())).toEqual(['Birch'])
-    expect(wrapper.get('.agent-collaborators').text()).toContain('1')
-    expect(wrapper.get('.agent-work-timeline').text()).toContain('Completed evidence')
+    expect(getJson.mock.calls.some(([url]) => String(url).startsWith('/api/project-team'))).toBe(false)
     const params = getJson.mock.calls.filter(([url]) => url.startsWith('/api/project-agent-tasks?')).map(([url]) => new URL(url, 'http://fixture').searchParams)
     expect(params).toHaveLength(1)
     expect(params[0]!.get('personalSpaceId')).toBe('space-a')
@@ -430,36 +435,6 @@ describe('Agent profile integration', () => {
     late.resolve([task('late', 'alpha', 'Stale Aster result')]); await flushPromises()
     expect(pageTitle.value.text).toBe('Birch')
     expect(wrapper.text()).not.toContain('Stale Aster result')
-    expect(wrapper.get('.agent-work-timeline').text()).toContain('Completed evidence')
-  })
-
-  it('says the configured lead is unavailable instead of claiming no team is set', async () => {
-    const normal = getJson.getMockImplementation()!
-    getJson.mockImplementation((url: string) => url.startsWith('/api/project-team?')
-      ? Promise.resolve({ ...teamView('beta', 'Birch', [['alpha', 'Aster']]), status: 'lead_unavailable', lead: null,
-          unavailableLead: { agentId: 'former', name: 'Former Lead' } })
-      : normal(url))
-    const { wrapper } = await setup()
-    const organization = wrapper.get('.agent-organization')
-    expect(organization.get('.agent-org-lead-unavailable').text()).toContain('Former Lead')
-    expect(organization.text()).not.toContain('待配置项目总负责人')
-    expect(organization.findAll('.agent-org-members a').map(link => link.text())).toEqual(['Aster'])
-  })
-
-  it('does not restore an old team when its policy arrives after navigation', async () => {
-    const late = deferred<unknown>()
-    const normal = getJson.getMockImplementation()!
-    let policyCalls = 0
-    getJson.mockImplementation((url: string) => {
-      if (url.startsWith('/api/project-team?') && ++policyCalls === 1) return late.promise
-      return normal(url)
-    })
-    const { router, wrapper } = await setup()
-    await router.push('/agents/space-a/beta'); await flushPromises()
-    late.resolve(teamView('stale-team-lead', 'stale-team-lead', [])); await flushPromises()
-    expect(pageTitle.value.text).toBe('Birch')
-    expect(wrapper.get('.agent-org-lead a').text()).toBe('Birch')
-    expect(wrapper.text()).not.toContain('stale-team-lead')
   })
 
   it('retains legacy project membership when assignment details are unavailable', async () => {
@@ -481,11 +456,11 @@ describe('Agent profile integration', () => {
     expect(putJson).toHaveBeenCalledTimes(1)
     expect(wrapper.find('.agent-simple-settings').exists()).toBe(true)
     expect(wrapper.get('.agent-profile-actions button[aria-expanded]').attributes('aria-expanded')).toBe('true')
-    expect(wrapper.get('.agent-expectation').text()).toContain('Explain verification evidence.')
+    expect((wrapper.get('.agent-simple-settings textarea').element as HTMLTextAreaElement).value).toBe('Explain verification evidence.')
   })
 })
 
-// rec#60 D-78 / 11-03: an Agent's 工作台 (its tasks) and 工作流 (its workflows) are sibling tabs.
+// Jevons 11-04: only a built-in role has a Workbench; any FLA's workflows are a tab.
 const workflowVersion = (version: number, name: string) => ({ workflowId: 'wf-1', version, name, purpose: 'Synthetic repeated check',
   steps: [{ title: 'Read the synthetic issue' }, { title: 'Run the focused tests' }], source: 'candidate:c-1', createdBy: 'agent', createdAt: '2026-10-30T00:00:00Z' })
 const proposed = { workflowId: 'wf-1', status: 'proposed', personalProjectId: 'project-a', versionCount: 1, active: null,

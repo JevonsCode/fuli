@@ -118,6 +118,7 @@ const visibleProjectBoards = computed(() => {
   const visible = new Set(visibleProjectIds.value)
   return projectBoards.value.filter((board) => visible.has(board.project.id))
 })
+const olderDone = computed(() => visibleProjectBoards.value.reduce((sum, board) => sum + (board.doneOlder ?? 0), 0))
 const visibleFailedProjects = computed(() => {
   const visible = new Set(visibleProjectIds.value)
   return failedProjectIds.value.filter((projectId) => visible.has(projectId)).length
@@ -243,17 +244,8 @@ async function loadWorkspace() {
             tool: 'read_board',
             arguments: { limit: 100 },
           })
-          let items = Array.isArray(board.items) ? board.items.filter(isEmployeeBoardItem).filter(item => item.projectId === project.value) : []
-          let truncated = board.truncated
-          if (requestedTemplate === 'jefa' && truncated) {
-            try {
-              const snapshot = await getJson<{ snapshot: { workItems: unknown[] } }>(`/employee-workspaces/jefa/${encodeURIComponent(project.value)}/api/snapshot`)
-              if (!Array.isArray(snapshot.snapshot.workItems)) throw new Error('Invalid board snapshot')
-              items = snapshot.snapshot.workItems.filter(isEmployeeBoardItem).filter(item => item.projectId === project.value)
-              truncated = false
-            } catch { /* Keep the explicitly marked partial board if the full snapshot is unavailable. */ }
-          }
-          return { ok: true as const, board: { ...board, truncated, project: { id: project.value, name: project.label }, items } }
+          const items = Array.isArray(board.items) ? board.items.filter(isEmployeeBoardItem).filter(item => item.projectId === project.value) : []
+          return { ok: true as const, board: { ...board, project: { id: project.value, name: project.label }, items } }
         } catch (cause) {
           return { ok: false as const, cause, projectId: project.value }
         }
@@ -364,15 +356,12 @@ async function projectsSaved() {
 </script>
 
 <template>
-  <section ref="pageRoot" class="employee-workbench-view" :class="{ 'fills-height': !isNativeWorkbench || isNativeJudgment }" :aria-label="template ? employeeName(template) : t('employees.workbench')">
+  <section ref="pageRoot" class="employee-workbench-view" :class="{ 'fills-height': !isNativeWorkbench || isNativeJudgment, 'is-native': isNativeWorkbench }" :aria-label="template ? employeeName(template) : t('employees.workbench')">
    <!-- The board, the iframe and Tonborg's record list fill the tab and scroll inside; other native panels scroll with it. -->
    <div class="employee-workbench-canvas flex w-full flex-col gap-3">
     <header class="employee-workbench-toolbar">
       <div ref="toolbarActions" class="employee-workbench-actions">
-        <Button v-if="isJefa && supportsAllProjects" variant="ghost" size="icon" class="employee-share-button" :aria-label="t('employees.share.title')" :title="t('employees.share.title')" @click="shareOpen = true">
-          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7m0-7-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M7 16v-3m4 3v-1"/></svg>
-        </Button>
-        <Button v-if="template && !isNativeWorkbench" variant="ghost" class="employee-manage-projects" :disabled="!personalSpaceId" @click="manageProjectsOpen = true">
+        <Button v-if="template && !isNativeWorkbench && !isJefa" variant="ghost" class="employee-manage-projects" :disabled="!personalSpaceId" @click="manageProjectsOpen = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
           {{ t('employees.manageProjects') }}
         </Button>
@@ -409,6 +398,9 @@ async function projectsSaved() {
       :moving-item-keys="movingItemKeys"
       :selected-task="openTaskRef"
       :action-error="boardActionError"
+      :older-done="isJefa ? olderDone : 0"
+      :older-done-loading="jefaRead.olderDoneLoading"
+      @load-older-done="jefaRead.loadOlderDone"
       :resettable-filter="isJefa"
       :filter-storage-unavailable="projectFilter.storageUnavailable.value"
       @reset-project-filter="projectFilter.reset"
@@ -416,7 +408,17 @@ async function projectsSaved() {
       @select-task="openTask"
       @create-task="openTask()"
       @retry="loadWorkspace"
-    />
+    >
+      <template v-if="isJefa" #actions>
+        <Button variant="ghost" size="icon" class="employee-share-button" :aria-label="t('employees.share.title')" :title="t('employees.share.title')" @click="shareOpen = true">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7m0-7-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M7 16v-3m4 3v-1"/></svg>
+        </Button>
+        <Button variant="ghost" class="employee-manage-projects" :disabled="!personalSpaceId" @click="manageProjectsOpen = true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9" /><circle cx="15" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
+          {{ t('employees.manageProjects') }}
+        </Button>
+      </template>
+    </EmployeeTaskBoard>
     <BoardRecentActivity v-if="isJefa && projectId === ALL_PROJECTS && supportsAllProjects" :boards="visibleProjectBoards" @select="openTask" />
     <div v-if="workspace && workspace.runtimeStatus !== 'ready'" class="employee-workbench-state"><p>{{ t('employees.installRequired') }}</p></div>
     <iframe v-else-if="workspace" :key="workspace.workbenchUrl" :src="workspace.workbenchUrl" :title="`${workspace.name} · ${workspace.project.name}`" class="employee-workbench-frame" />
@@ -425,16 +427,18 @@ async function projectsSaved() {
 </template>
 
 <style scoped>
-.employee-workbench-view { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+/* The workbench is one card of its own, set apart from who this FLA is above it. */
+.employee-workbench-view { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; padding: 14px 18px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); box-shadow: var(--shadow-sm); }
 /* The board and the workbench iframe take the tab's room and scroll inside it.
    Below them the tab itself scrolls, so a short window still shows the board. */
 .employee-workbench-canvas { flex: 1 0 auto; }
 .fills-height .employee-workbench-canvas { flex: 1 1 0; min-height: 0; }
 .employee-workbench-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; }
 .employee-workbench-toolbar:has(.employee-workbench-actions:empty) { display: none; }
+/* A native panel's actions sit in the corner of the card, on the row of its own tabs. */
+.is-native .employee-workbench-toolbar { position: absolute; top: 10px; right: 14px; z-index: 1; }
 .employee-workbench-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
-/* The board is one card, its controls in its own heading row. */
-.employee-workbench-view :deep(.employee-all-projects) { flex: 1 0 460px; padding: 14px 18px 18px; border: 1px solid var(--color-border); border-radius: var(--radius-card); }
+.employee-workbench-view :deep(.employee-all-projects) { flex: 1 0 460px; padding: 0; background: transparent; }
 .employee-workbench-frame { flex: 1; width: 100%; min-height: 0; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); }
 .employee-workbench-state { display: grid; flex: 1; gap: 14px; place-content: center; justify-items: center; padding: 30px; color: var(--color-muted); font-size: 14px; text-align: center; }
 .employee-workbench-state h2 { font-size: 20px; font-weight: 600; color: var(--color-ink); }

@@ -2,7 +2,6 @@
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import ActivityOriginBadge from "@/features/agent-profile/ActivityOriginBadge.vue";
 import AgentAvatarPicker from "@/features/agent-profile/AgentAvatarPicker.vue";
 import AgentNameEditor from "@/features/agent-profile/AgentNameEditor.vue";
 import { agentIdentityStyle } from "@/features/agent-profile/agent-identity-color";
@@ -14,7 +13,6 @@ import { t } from "@/i18n";
 import Breadcrumb from "@/components/Breadcrumb.vue";
 import GrowthLoading from "@/components/GrowthLoading.vue";
 import UiDisclosure from "@/components/UiDisclosure.vue";
-import AgentName from "@/features/agent-profile/AgentName.vue";
 import AgentProfileSettings from "@/features/agent-profile/AgentProfileSettings.vue";
 import AgentOccupationEditor from "@/features/agent-profile/AgentOccupationEditor.vue";
 import { useOccupationCatalog } from "@/features/occupations/occupation-catalog";
@@ -48,13 +46,11 @@ import type {
   ProjectAgentTaskRecord,
 } from "@/types";
 import { personalProjectsPath } from "@/router/paths";
-import { readProjectTeam, type ProjectTeam } from "@/features/projects/project-team-api";
 import { usePageTitle } from "@/layouts/page-title";
-import { agentManagementPath } from "@/features/project-agents/orchestration-filters";
 import { openWorkflows, readAgentWorkflows, type AgentWorkflow } from "@/features/agent-workbench/agent-workflows";
 import AgentWorkflowList from "@/features/agent-workbench/AgentWorkflowList.vue";
 
-// The workbench and 高级管理 load only when their tab opens (rec#60 D-78).
+// The Workbench and the management sections load only when their tab opens (rec#60 D-78).
 const tabPanel = (loader: () => Promise<Component>, label: string) => defineAsyncComponent({
   loader,
   loadingComponent: defineComponent(() => () => h(GrowthLoading, { variant: "compact", label: t(label) })),
@@ -63,15 +59,7 @@ const tabPanel = (loader: () => Promise<Component>, label: string) => defineAsyn
 const EmployeeWorkbench = tabPanel(() => import("@/features/employees/EmployeeWorkbench.vue"), "agentWorkbench.opening");
 const AgentManagement = tabPanel(() => import("@/features/project-agents/AgentManagement.vue"), "agentProfiles.detailLoading");
 
-type ProfileTab =
-  | "workbench"
-  | "workflows"
-  | "overview"
-  | "history"
-  | "style"
-  | "collaborators"
-  | "conversations"
-  | "management";
+type ProfileTab = "workbench" | "workflows" | "overview" | "history" | "settings";
 
 const route = useRoute();
 const router = useRouter();
@@ -97,19 +85,11 @@ const projectName = (id: string) =>
 
 const tasks = ref<ProjectAgentTaskRecord[]>([]);
 const assignments = ref<ProjectAgentAssignmentRecord[] | undefined>(undefined);
-const teams = ref<
-  Array<{
-    projectId: string;
-    view: ProjectTeam | null;
-    error: boolean;
-  }>
->([]);
 const workflows = ref<AgentWorkflow[]>([]);
 const detailsLoading = ref(false);
 // The tasks and workflows were read, so whether this Agent has a workbench is known.
 const workKnown = ref(false);
 const partial = ref(false);
-const showSettings = ref(false);
 
 // One page per FLA (Jevons 11-04). 工作台 is a built-in role's own workbench:
 // the board is Jefa's, the others have theirs; no other FLA has one. 工作流, the
@@ -124,16 +104,7 @@ const profileTabs = computed(() => {
     ...(hasWorkflows.value ? [{ id: "workflows" as const, label: t("agentWorkbench.workflows.title") }] : []),
     { id: "overview", label: t("agentProfiles.overviewTab") },
     { id: "history", label: t("agentProfiles.experience") },
-    { id: "style", label: t("agentProfiles.about") },
-    { id: "collaborators", label: t("agentProfiles.collaborators") },
-    { id: "management", label: t("agentProfiles.advanced") },
   ];
-  if (agent.value?.memoryScope === "reviewed_agent") {
-    tabs.splice(tabs.length - 1, 0, {
-      id: "conversations",
-      label: t("projectAgents.conversations.title"),
-    });
-  }
   return tabs;
 });
 // The open tab is part of the URL (?tab=), so a refresh or a shared link
@@ -141,6 +112,8 @@ const profileTabs = computed(() => {
 const activeTab = computed<ProfileTab>({
   get: () => {
     const tab = route.query.tab;
+    // 设置 is the header's button, not one of the tabs.
+    if (tab === "settings") return "settings";
     return profileTabs.value.find((item) => item.id === tab)?.id ?? defaultTab.value;
   },
   set: (tab) => {
@@ -148,11 +121,19 @@ const activeTab = computed<ProfileTab>({
     void router.replace({ query: tab === defaultTab.value ? query : { ...query, tab }, hash: route.hash });
   },
 });
-// A link that names a task opens 高级管理, where that task is shown. Afterwards
+// A link that names a task opens 工作经历, where that task is shown. Afterwards
 // the tabs are the person's again, though ?task= stays in the URL.
 watch(() => route.query.task, (task) => {
-  if (typeof task === "string" && task && activeTab.value !== "management") activeTab.value = "management";
+  if (typeof task === "string" && task && activeTab.value !== "history") activeTab.value = "history";
 }, { immediate: true });
+const settingsOpen = computed(() => activeTab.value === "settings");
+function toggleSettings() { activeTab.value = settingsOpen.value ? defaultTab.value : "settings"; }
+// Scrolling the work down folds the header to one row; back at the top it opens.
+const compactHeader = ref(false);
+function onWorkScroll(event: Event) {
+  compactHeader.value = (event.target as HTMLElement).scrollTop > (compactHeader.value ? 4 : 32);
+}
+watch(activeTab, () => { compactHeader.value = false; });
 // Without ?tab the first tab depends on the tasks and workflows: wait for them
 // instead of opening 概览 and jumping.
 const tabsReady = computed(() => Boolean(route.query.tab) || hasWorkbench.value || workKnown.value);
@@ -176,19 +157,15 @@ const parentCrumb = typeof previousPage === "string" && openedFromOrchestration.
 const collaborators = computed(() =>
   agent.value ? collaboratorsFor(agent.value.agentId, tasks.value) : [],
 );
-// Collaborator names are read for the people shown; an unread name falls back to the id.
+// The closest collaborator's name, for the pair phrasing below.
 const collaboratorRecords = useAgentRecords(
   space,
-  computed(() => collaborators.value.map((person) => person.agentId)),
+  computed(() => collaborators.value.slice(0, 1).map((person) => person.agentId)),
 );
 // The pair phrasing names an FLA this one has worked with, when one is known.
 const partner = computed(() => agent.value
   ? mentionPartner(agent.value, collaborators.value.flatMap((person) => collaboratorRecords.records.value[person.agentId] ?? []))
   : null);
-const personName = (id: string) => {
-  const person = collaboratorRecords.records.value[id];
-  return person ? agentDisplayName(person) : id;
-};
 const currentProjects = computed(() =>
   agent.value
     ? profileProjectIds({
@@ -249,10 +226,8 @@ watch(
     workflows.value = [];
     workKnown.value = false;
     assignments.value = undefined;
-    teams.value = [];
     partial.value = false;
     detailsLoading.value = false;
-    showSettings.value = false;
     if (!person) return;
     detailsLoading.value = true;
     assignments.value = person.assignments;
@@ -267,8 +242,10 @@ watch(
     const assignmentRead = Promise.allSettled([
       getJson<unknown>(`/api/project-agent-assignments?${assignmentParams}`),
     ]);
+    // A built-in role opens on its Workbench, which reads its own work: nothing here waits or competes with it.
+    const builtIn = Boolean(employeeTemplateIdForAgent(person));
     // Which tab opens first waits for the tasks and workflows only.
-    const [taskResult, workflowResult] = await Promise.allSettled([
+    const [taskResult, workflowResult] = await Promise.allSettled(builtIn ? [Promise.resolve([]), Promise.resolve([])] : [
       getJson<unknown>(`/api/project-agent-tasks?${params}&limit=200`),
       readAgentWorkflows(person.personalSpaceId, person.agentId),
     ]);
@@ -315,24 +292,7 @@ watch(
           ),
         );
     } else partial.value = true;
-    const ids = profileProjectIds({
-      ...person,
-      assignments: assignments.value ?? person.assignments,
-    });
-    const organization = await Promise.all(
-      ids.map(async (projectId) => {
-        try {
-          const view = await readProjectTeam(person.personalSpaceId, projectId);
-          return { projectId, view, error: false };
-        } catch {
-          return { projectId, view: null, error: true };
-        }
-      }),
-    );
-    if (current === generation) {
-      teams.value = organization;
-      detailsLoading.value = false;
-    }
+    detailsLoading.value = false;
   },
   { immediate: true },
 );
@@ -382,7 +342,7 @@ onMounted(() => {
       </p>
       <div v-else class="agent-profile-layout">
         <!-- Who this FLA is, in one row across the page; its work scrolls below. -->
-        <div class="agent-profile-side">
+        <div class="agent-profile-side" :class="{ 'is-compact': compactHeader }">
           <!-- The header carries the page's H1: the name, renamed where it stands,
                beside the portrait the person can change. -->
           <Card as="header" class="agent-resume-header">
@@ -394,21 +354,21 @@ onMounted(() => {
                 <AgentNameEditor :agent="agent" @saved="saved" />
                 <AgentHeaderTags :agent="agent" :occupation-keys="occupationKeys" />
               </div>
-              <p class="agent-resume-summary" :title="agentResponsibility(agent)">{{ agentResponsibility(agent) }}</p>
-              <div class="agent-resume-meta">
-                <span>
-                  {{ t(agent.recruitedAt ? "agentProfiles.joined" : "agentProfiles.created") }}
-                  · {{ date(agent.recruitedAt || agent.createdAt) }}
-                </span>
+              <div class="agent-resume-more">
+                <div>
+                  <p class="agent-resume-summary" :title="agentResponsibility(agent)">{{ agentResponsibility(agent) }}</p>
+                  <div class="agent-resume-meta">
+                    <span>
+                      {{ t(agent.recruitedAt ? "agentProfiles.joined" : "agentProfiles.created") }}
+                      · {{ date(agent.recruitedAt || agent.createdAt) }}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="agent-profile-actions">
               <AgentMentionCopy v-if="mentionKind(agent)" :kind="mentionKind(agent)" size="default" :name="agentDisplayName(agent)" :partner="partner" />
-              <Button
-                variant="outline"
-                :aria-expanded="showSettings"
-                @click="showSettings = !showSettings"
-              >
+              <Button variant="outline" :aria-expanded="settingsOpen" data-profile-settings @click="toggleSettings">
                 {{ t("agentProfiles.settings") }}
               </Button>
             </div>
@@ -416,7 +376,7 @@ onMounted(() => {
 
           <AgentRenameHint :agent="agent" @saved="saved" />
         </div>
-        <div class="agent-profile-main">
+        <div class="agent-profile-main" @scroll.passive="onWorkScroll">
 
           <GrowthLoading
             v-if="loading || store.runtimeStatus === 'loading'"
@@ -426,19 +386,6 @@ onMounted(() => {
           <p v-if="error" class="agent-profile-refresh-status" role="status">
             {{ error }}
           </p>
-
-          <AgentProfileSettings
-            v-if="showSettings"
-            :key="agent.agentId"
-            :agent="agent"
-            @saved="saved"
-          />
-          <AgentOccupationEditor
-            v-if="showSettings && agent.profile.status !== 'archived'"
-            :key="`occupation-${agent.agentId}`"
-            :agent="agent"
-            @saved="saved"
-          />
 
           <GrowthLoading
             v-if="!tabsReady"
@@ -523,44 +470,23 @@ onMounted(() => {
 
             <TabsContent value="history" class="agent-profile-panel" data-profile-panel="history">
               <div class="agent-profile-history-grid">
-                <Card as="section" class="agent-resume-section" aria-labelledby="agent-history-projects-heading">
-                  <h2 id="agent-history-projects-heading">{{ t("agentProfiles.projects") }}</h2>
-                  <details v-if="previousProjects.length" class="ui-disclosure" open>
-                    <summary>{{ t("agentProfiles.projectHistory") }}</summary>
-                    <ul class="agent-resume-list">
-                      <li v-for="item in previousProjects" :key="item.assignmentId">
-                        <h3>
-                          <RouterLink class="agent-project-link" :to="personalProjectsPath(space, 'overview', item.personalProjectId)">
-                            {{ projectName(item.personalProjectId) }}
-                          </RouterLink>
-                        </h3>
-                        <p>{{ item.responsibility }}</p>
-                        <small>{{ date(item.assignedAt) }} – {{ date(item.endedAt) }}</small>
-                      </li>
-                    </ul>
-                  </details>
-                  <p v-else-if="!detailsLoading" class="agent-muted">
-                    {{ t("agentProfiles.noProject") }}
-                  </p>
-                </Card>
-                <Card as="section" class="agent-resume-section" aria-labelledby="agent-history-recent-heading">
-                  <h2 id="agent-history-recent-heading">{{ t("agentProfiles.recent") }}</h2>
+                <AgentManagement v-if="activeTab === 'history'" :key="`work-${agent.agentId}`" :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :sections="['activity', 'work']" />
+                <Card v-if="previousProjects.length || agent.archiveReason || agent.recruitedAt || agent.recruitmentReason" as="section" class="agent-resume-section" aria-labelledby="agent-history-record-heading">
+                  <h2 id="agent-history-record-heading">{{ t("agentProfiles.projectHistory") }}</h2>
                   <ol class="agent-work-timeline">
                     <li v-if="agent.archiveReason" data-profile-departure>
                       <h3>{{ t("agentProfiles.departure") }}</h3>
                       <p>{{ agent.archiveReason }}</p>
                       <small>{{ date(agent.archivedAt) }}</small>
                     </li>
-                    <li v-for="task in tasks.slice(0, 12)" :key="task.taskId">
-                      <div class="agent-section-heading">
-                        <RouterLink :to="{ path: agentManagementPath(agent.personalSpaceId, agent.agentId), query: { task: task.taskId } }">
-                          {{ task.title }}
+                    <li v-for="item in previousProjects" :key="item.assignmentId">
+                      <h3>
+                        <RouterLink class="agent-project-link" :to="personalProjectsPath(space, 'overview', item.personalProjectId)">
+                          {{ projectName(item.personalProjectId) }}
                         </RouterLink>
-                        <span>{{ t(`projectAgents.taskStatus.${task.status}`) }}</span>
-                        <ActivityOriginBadge :origin="task.activityOrigin" />
-                      </div>
-                      <p v-if="task.resultSummary">{{ task.resultSummary }}</p>
-                      <small>{{ date(task.completedAt || task.updatedAt || task.createdAt) }}</small>
+                      </h3>
+                      <p>{{ item.responsibility }}</p>
+                      <small>{{ date(item.assignedAt) }} – {{ date(item.endedAt) }}</small>
                     </li>
                     <li v-if="agent.recruitedAt || agent.recruitmentReason">
                       <h3>{{ t("agentProfiles.recruitment") }}</h3>
@@ -568,115 +494,21 @@ onMounted(() => {
                       <small>{{ date(agent.recruitedAt) }}</small>
                     </li>
                   </ol>
-                  <p
-                    v-if="!detailsLoading && !tasks.length && !agent.archiveReason && !agent.recruitmentReason && !agent.recruitedAt"
-                    class="agent-muted"
-                  >
-                    {{ t("agentProfiles.noExperience") }}
-                  </p>
                 </Card>
               </div>
             </TabsContent>
 
-            <TabsContent value="style" class="agent-profile-panel" data-profile-panel="style">
-              <Card as="section" class="agent-resume-section" :aria-label="t('agentProfiles.about')">
-                <div class="agent-character">
-                  <div v-for="key in ['judgment', 'taste', 'personality'] as const" :key="key">
-                    <h3>{{ t(`agentProfiles.${key}`) }}</h3>
-                    <p :class="{ 'agent-muted': !agent.profile.character?.[key] }">
-                      {{ agent.profile.character?.[key] || t("agentProfiles.characterEmpty") }}
-                    </p>
-                  </div>
-                </div>
-                <p v-if="agent.profile.expectations" class="agent-expectation">
-                  <strong>{{ t("agentProfiles.expectations") }}</strong>
-                  {{ agent.profile.expectations }}
-                </p>
-                <div class="agent-strengths">
-                  <h3>{{ t("agentProfiles.strengths") }}</h3>
-                  <div class="agent-inline-skills">
-                    <span v-for="skill in agent.profile.capabilities" :key="skill">{{ skill }}</span>
-                    <span v-if="!agent.profile.capabilities.length">{{ t("agentProfiles.noSkills") }}</span>
-                  </div>
-                </div>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="collaborators" class="agent-profile-panel" data-profile-panel="collaborators">
-              <div class="agent-profile-history-grid">
-                <Card as="section" class="agent-resume-section" aria-labelledby="agent-organization-heading">
-                  <div class="agent-section-heading">
-                    <h2 id="agent-organization-heading">{{ t("agentProfiles.organization") }}</h2>
-                  </div>
-                  <div v-for="team in teams" :key="team.projectId" class="agent-organization">
-                    <h3>{{ projectName(team.projectId) }}</h3>
-                    <p v-if="team.error" role="status">
-                      {{ t("agentProfiles.teamUnavailable") }}
-                    </p>
-                    <template v-else-if="team.view && (team.view.lead || team.view.unavailableLead || team.view.members.length)">
-                      <p v-if="team.view.unavailableLead" class="agent-org-lead-unavailable" role="status">
-                        {{
-                          team.view.unavailableLead.name
-                            ? t("agentProfiles.leadUnavailable", { name: team.view.unavailableLead.name })
-                            : t("agentProfiles.leadUnavailableUnnamed")
-                        }}
-                      </p>
-                      <div v-if="team.view.lead" class="agent-org-lead">
-                        <span>{{ t("agentProfiles.lead") }}</span>
-                        <AgentName :space-id="space" :agent-id="team.view.lead.agentId" :name="team.view.lead.name" />
-                      </div>
-                      <p v-if="team.view.lead" class="agent-org-reporting">
-                        {{ t("agentProfiles.reporting") }}
-                      </p>
-                      <div v-if="team.view.members.length" class="agent-org-members">
-                        <span>{{ t("agentProfiles.teammates") }}</span>
-                        <ul>
-                          <li v-for="member in team.view.members" :key="member.agentId">
-                            <AgentName :space-id="space" :agent-id="member.agentId" :name="member.name" />
-                          </li>
-                        </ul>
-                      </div>
-                    </template>
-                    <p v-else class="agent-muted">{{ t("agentProfiles.teamUnset") }}</p>
-                  </div>
-                  <p v-if="!detailsLoading && !teams.length" class="agent-muted">
-                    {{ t("agentProfiles.noProject") }}
-                  </p>
+            <TabsContent value="settings" class="agent-profile-panel" data-profile-panel="settings">
+              <div v-if="settingsOpen" class="agent-profile-history-grid">
+                <AgentProfileSettings :key="agent.agentId" :agent="agent" @saved="saved" />
+                <AgentOccupationEditor v-if="agent.profile.status !== 'archived'" :key="`occupation-${agent.agentId}`" :agent="agent" @saved="saved" />
+                <Card v-if="agent.memoryScope === 'reviewed_agent'" as="section" class="agent-resume-section" aria-labelledby="agent-memory-settings-heading">
+                  <h2 id="agent-memory-settings-heading">{{ t("agentProfiles.memorySettings") }}</h2>
+                  <AgentConversations :key="agent.agentId" :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjects" />
+                  <EmployeeWorkHistory :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjects" />
                 </Card>
-                <Card as="section" class="agent-resume-section" aria-labelledby="agent-worked-with-heading">
-                  <h2 id="agent-worked-with-heading">{{ t("agentProfiles.workedWith") }}</h2>
-                  <ul class="agent-collaborators">
-                    <li v-for="person in collaborators" :key="person.agentId">
-                      <AgentName :space-id="space" :agent-id="person.agentId" :name="personName(person.agentId)" />
-                      <span>{{ t("agentProfiles.sharedTasks", { count: person.count }) }}</span>
-                    </li>
-                  </ul>
-                  <p v-if="!detailsLoading && !collaborators.length" class="agent-muted">
-                    {{ t("agentProfiles.noCollaborators") }}
-                  </p>
-                </Card>
+                <AgentManagement :key="`manage-${agent.agentId}`" :space-id="agent.personalSpaceId" :agent-id="agent.agentId" :sections="['projects', 'recruitment', 'execution', 'profile']" @saved="saved" />
               </div>
-            </TabsContent>
-
-            <TabsContent
-              v-if="agent.memoryScope === 'reviewed_agent'"
-              value="conversations"
-              class="agent-profile-panel"
-              data-profile-panel="conversations"
-            >
-              <Card as="section" class="agent-resume-section">
-                <AgentConversations
-                  :key="agent.agentId"
-                  :personal-space-id="space"
-                  :agent-id="agent.agentId"
-                  :projects="conversationProjects"
-                />
-                <EmployeeWorkHistory :personal-space-id="space" :agent-id="agent.agentId" :projects="conversationProjects" />
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="management" class="agent-profile-panel" data-profile-panel="management">
-              <AgentManagement v-if="activeTab === 'management'" :key="agent.agentId" :space-id="agent.personalSpaceId" :agent-id="agent.agentId" @saved="saved" />
             </TabsContent>
           </Tabs>
         </div>

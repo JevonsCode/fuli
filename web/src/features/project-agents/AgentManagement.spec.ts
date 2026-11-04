@@ -96,26 +96,6 @@ describe('AgentManagement', () => {
     expect(wrapper.find('.project-agent-execution-summary-table').exists()).toBe(false)
   })
 
-  it('opens on the work tab and keeps the other sections one tab away, the tab in the URL', async () => {
-    const { wrapper, router } = await mountPage()
-    await flushPromises()
-    expect(wrapper.findAll('[data-manage-tab]').map((tab) => tab.text())).toEqual(['工作', '项目', '活动', '招聘', '执行与路由', '资料'])
-    expect(wrapper.get('[data-manage-tab="work"]').attributes('data-state')).toBe('active')
-    expect(wrapper.get('[data-manage-panel="work"]').find('[data-detail-section="tasks"]').exists()).toBe(true)
-    const execution = wrapper.get('[data-manage-panel="execution"]')
-    expect(execution.attributes('hidden')).toBeDefined()
-    for (const section of ['executors', 'clients', 'routing', 'learning'])
-      expect(execution.find(`[data-detail-section="${section}"]`).exists()).toBe(true)
-    // reka-ui Tabs select on mouse down.
-    await wrapper.get('[data-manage-tab="execution"]').trigger('mousedown', { button: 0 })
-    await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ section: 'execution' })
-    expect(wrapper.get('[data-manage-panel="execution"]').attributes('hidden')).toBeUndefined()
-    await wrapper.get('[data-manage-tab="work"]').trigger('mousedown', { button: 0 })
-    await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({})
-  })
-
   it('opens the linked task diagnostics so a task deep link reveals its target', async () => {
     getJson.mockImplementation((url: string) => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
@@ -168,9 +148,7 @@ describe('AgentManagement', () => {
     expect(otherReads()).toBe(assignmentsRead)
 
     const reads = scopedReads()
-    await wrapper.get('[data-manage-tab="execution"]').trigger('mousedown', { button: 0 })
-    await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ project: 'project-c', task: 'task-c', section: 'execution' })
+    expect(router.currentRoute.value.query).toEqual({ project: 'project-c', task: 'task-c' })
     expect(scopedReads()).toBe(reads)
     expect(otherReads()).toBe(assignmentsRead)
   })
@@ -197,41 +175,18 @@ describe('AgentManagement', () => {
       expect(scrolled.map(element => element.id)).toEqual(['task-task-a'])
 
       scrolled.length = 0
-      await router.push(`${AGENT_PAGE}?project=project-b&task=target&section=execution`)
+      await router.push(`${AGENT_PAGE}?project=project-b&task=target`)
       await flushPromises()
       const cards = wrapper.findAll('.project-agent-task-list > *')
       expect(cards).toHaveLength(13)
       expect(cards[12]!.attributes('id')).toBe('task-target')
       expect(scrolled).toEqual([cards[12]!.element])
-      expect(wrapper.get('[data-manage-panel="work"]').attributes('hidden')).toBeUndefined()
-
-      await wrapper.get('[data-manage-tab="execution"]').trigger('mousedown', { button: 0 })
-      await flushPromises()
-      await wrapper.get('[data-manage-tab="work"]').trigger('mousedown', { button: 0 })
-      await flushPromises()
       await wrapper.get('[data-detail-refresh]').trigger('click')
       await flushPromises()
       expect(scrolled).toHaveLength(1)
     } finally {
       Element.prototype.scrollIntoView = original
     }
-  })
-
-  it('lands a new task link on the work tab, then leaves the tabs to the person', async () => {
-    const { wrapper, router } = await mountPage(false, `${AGENT_PAGE}?task=task-target&section=execution`)
-    await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ task: 'task-target' })
-    expect(wrapper.get('[data-manage-panel="work"]').attributes('hidden')).toBeUndefined()
-
-    await wrapper.get('[data-manage-tab="execution"]').trigger('mousedown', { button: 0 })
-    await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ task: 'task-target', section: 'execution' })
-    expect(wrapper.get('[data-manage-panel="execution"]').attributes('hidden')).toBeUndefined()
-
-    await router.push(`${AGENT_PAGE}?task=task-next&section=execution`)
-    await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ task: 'task-next' })
-    expect(wrapper.get('[data-manage-panel="work"]').attributes('hidden')).toBeUndefined()
   })
 
   it('shows reported enums through their labels', async () => {
@@ -812,7 +767,6 @@ describe('AgentManagement', () => {
 
     expect(wrapper.find('.project-agent-policy-control').exists()).toBe(false)
     // A decision waiting on the person shows on its tab.
-    expect(wrapper.get('[data-manage-tab="recruitment"]').text()).toBe('招聘 1')
     expect(patchJson).not.toHaveBeenCalledWith('/api/project-agent-recruitment-policy', expect.anything())
     await wrapper.get('[data-recruitment-approve]').trigger('click')
     await flushPromises()
