@@ -41,9 +41,10 @@ const copyLabel = computed(() => failed.value ? t('debugTurns.copyFailed') : cop
 </template>
 
 <style scoped>
-.debug-part { display: grid; gap: 6px; padding: 8px 12px; border: 1px solid var(--color-border);
-  border-left: 4px solid var(--source); border-radius: var(--radius-control); background: var(--color-surface); }
-.debug-part[data-source="not_visible"] { border-style: dashed; border-left-style: solid; }
+/* The source shows as a tint and the dot in the heading, never a side bar. */
+.debug-part { display: grid; gap: 6px; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--source) 28%, var(--color-border));
+  border-radius: var(--radius-control); background: color-mix(in srgb, var(--source) 7%, var(--color-surface)); }
+.debug-part[data-source="not_visible"] { border-style: dashed; }
 .debug-part-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .debug-part-swatch { flex: none; width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--source); }
 .debug-part-title { min-width: 0; overflow: hidden; font-size: var(--text-body); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
