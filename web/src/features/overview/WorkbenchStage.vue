@@ -102,6 +102,7 @@ const LIVE = new Set(['running', 'queued', 'awaiting_recruitment'])
 .workbench-stage.is-arriving::after { animation: workbench-arrive 900ms var(--motion-ease-spring, ease-out); }
 @keyframes workbench-arrive { 0% { opacity: 0; } 25% { opacity: .55; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .workbench-stage.is-arriving::after { animation: none; } }
+:root[data-motion="reduced"] .workbench-stage.is-arriving::after { animation: none; }
 .workbench-stage-body { display: flex; flex: 1; flex-direction: column; gap: 20px; min-width: 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
 .workbench-stage-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .workbench-stage-heading { display: grid; gap: 8px; min-width: 0; }
