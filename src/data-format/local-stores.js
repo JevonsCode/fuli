@@ -51,6 +51,7 @@ import { PERSON_PROFILE_FORMAT } from '../person-profile/port.js';
 import { AGENT_DELEGATION_FORMAT } from '../agent-delegation/operation-log.js';
 import { AGENT_DELEGATION_POLICY_FORMAT } from '../agent-delegation/policy-store.js';
 import { DEBUG_TURN_FORMAT, DEBUG_TURN_PENDING_FORMAT } from '../debug-turns/store.js';
+import { DIAGNOSTICS_DIRECTORY, inspectDiagnosticEvents } from '../diagnostics/event-log.js';
 
 // Every FULI store kept in one data directory, by the path its owner opens
 // (rec#17 D-09). Labels are relative to the data directory, so a report names
@@ -143,6 +144,12 @@ const jsonDirectories = () => [
   // The turn a #debug prompt began, until its Stop records it.
   ['debug-turns/pending', DEBUG_TURN_PENDING_FORMAT]
 ];
+// Append-only logs whose every line carries its own version: inspected, never
+// migrated or restored (a line this FULI does not read is skipped and counted).
+const logStores = () => [
+  // FULI's runtime failures (rec#73), at most four rotated files of about 1 MB.
+  [DIAGNOSTICS_DIRECTORY, inspectDiagnosticEvents]
+];
 // The worst state of a directory's records names the directory's state.
 const STATE_ORDER = ['unavailable', 'newer_format', 'half_applied', 'pending_confirmation', 'unsupported',
   'unreadable', 'upgrade_on_open', 'unversioned', 'current', 'empty', 'absent'];
@@ -161,7 +168,8 @@ export function inspectLocalStores(dataDir) {
   return [
     ...sqliteStores().map(([label, format]) => ({ label, ...inspectSqliteStore(join(dataDir, label), format) })),
     ...jsonStores().map(([label, format]) => ({ label, ...inspectJsonStore(join(dataDir, label), format) })),
-    ...jsonDirectories().map(([label, format]) => ({ label, ...inspectJsonDirectory(join(dataDir, label), format) }))
+    ...jsonDirectories().map(([label, format]) => ({ label, ...inspectJsonDirectory(join(dataDir, label), format) })),
+    ...logStores().map(([label, inspect]) => ({ label, ...inspect(dataDir) }))
   ];
 }
 

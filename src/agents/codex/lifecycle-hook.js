@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
 import { hookFailureCause, PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../lifecycle-message.js';
+import { recordHookFailure } from '../lifecycle-failure.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
@@ -277,7 +278,15 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
     (dependencies.write ?? (value => process.stdout.write(value)))(value);
   };
   let input = null;
+  let runtimeConfigPath = null;
+  const startedAt = Date.now();
   const readInput = dependencies.readInput ?? readHookInput;
+  // The hook's own resolution, kept so a failure is recorded where its data lives.
+  const resolveRuntimeOptions = (...resolveArgs) => {
+    const options = (dependencies.resolveRuntimeOptions ?? resolveGraphRuntimeOptions)(...resolveArgs);
+    runtimeConfigPath = options?.runtimeConfigPath ?? null;
+    return options;
+  };
   const unavailable = cause => `${JSON.stringify(codexLifecycleUnavailable(event, input, cause))}\n`;
   const budget = entryBudget(timeoutMs);
   let cleanup = async () => {};
@@ -296,11 +305,13 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
   });
   try {
     const running = runWithEntryBudget(budget, () => runCodexLifecycleHook(args, { ...dependencies, signal: controller.signal, write,
+      resolveRuntimeOptions,
       captureTimeoutMs: Math.max(1, Math.min(750, Math.floor(timeoutMs / 4))),
       readInput: async () => { input = await readInput(); return input; },
       onCleanup: close => { cleanup = close; } })).then(() => ({ timedOut: false }), (error) => {
       // Never print prompts, transcripts, paths or credentials.
       write(unavailable(hookFailureCause(error)));
+      recordHookFailure({ runtimeConfigPath, client: 'codex', event, error, sessionId: input?.session_id, startedAt });
       return { timedOut: false };
     });
     return await Promise.race([running, expired]);

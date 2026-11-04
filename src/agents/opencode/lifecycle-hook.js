@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { hookFailureCause, PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../lifecycle-message.js';
+import { recordHookFailure } from '../lifecycle-failure.js';
 import { compactTaskContext } from '../../conversations/task-context-view.js';
 import { preferenceHookOutput } from '../../conversations/preference-lifecycle.js';
 import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliOffContext } from '../../conversations/session-fuli-entry.js';
@@ -125,6 +126,10 @@ export async function runOpenCodeLifecycleCommand(args, dependencies = {}) {
     (dependencies.write ?? (value => process.stdout.write(value)))(`${JSON.stringify(output)}\n`);
   };
   const budget = entryBudget(timeoutMs);
+  const startedAt = Date.now();
+  let runtimeConfigPath = null;
+  let sessionId = null;
+  const readInput = dependencies.readInput ?? readHookInput;
   let cleanup = async () => {};
   let deadline;
   const expired = new Promise(resolve => {
@@ -139,9 +144,20 @@ export async function runOpenCodeLifecycleCommand(args, dependencies = {}) {
   });
   try {
     const running = runWithEntryBudget(budget, () => runOpenCodeLifecycleHook(args, { ...dependencies,
+      readInput: async () => { const input = await readInput(); sessionId = input?.session_id ?? null; return input; },
+      // The hook's own resolution, kept so a failure is recorded where its data lives.
+      resolveRuntimeOptions: (...resolveArgs) => {
+        const options = (dependencies.resolveRuntimeOptions ?? resolveGraphRuntimeOptions)(...resolveArgs);
+        runtimeConfigPath = options?.runtimeConfigPath ?? null;
+        return options;
+      },
       signal: controller.signal, onCleanup: close => { cleanup = close; } }))
       .then(output => { write(output); return { timedOut: false }; },
-        (error) => { write(event === 'prompt' ? { context: openCodeUnavailableContext(hookFailureCause(error)) } : {}); return { timedOut: false }; });
+        (error) => {
+          write(event === 'prompt' ? { context: openCodeUnavailableContext(hookFailureCause(error)) } : {});
+          recordHookFailure({ runtimeConfigPath, client: 'opencode', event, error, sessionId, startedAt });
+          return { timedOut: false };
+        });
     return await Promise.race([running, expired]);
   } finally {
     clearTimeout(deadline);

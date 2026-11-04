@@ -19,6 +19,7 @@ import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from './instructions.js';
 import { createProjectActionPreviewTokens } from './project-action-preview-tokens.js';
 import { createCommonKnowledgePreviewTokens } from './common-knowledge-preview-tokens.js';
 import { auditLifecycleTool } from './lifecycle-audit.js';
+import { recordToolFailure } from '../diagnostics/failure-records.js';
 import { registerFuliContextResources } from './context-resources.js';
 import { annotationsFor } from './tool-annotations.js';
 import { isTestOnlyToolName, testToolsEnabled } from '../app/test-tools.js';
@@ -43,6 +44,8 @@ import {
 
 const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   agent_chat: 512 * 1024,
+  // A full page of diagnostic events (at most 100 of under 1 KB) with its counts.
+  read_diagnostic_events: 160 * 1024,
   message_agent: 128 * 1024,
   get_agent_message_status: 128 * 1024,
   read_agent_messages: 1024 * 1024,
@@ -117,7 +120,9 @@ const COMPLETE_RESULT_TOOLS = new Set(['export_project_agent_memory', 'get_agent
 const WHOLE_MESSAGE_TOOLS = new Set(['message_agent', 'get_agent_message_status', 'read_agent_messages', 'read_agent_thread',
   // A claimed work package without its schema and lease cannot be submitted, and a
   // plan with cut nextSteps cannot be run (rec#81): whole, or an error saying so.
-  'role_work', 'plan_agent_collaboration']);
+  'role_work', 'plan_agent_collaboration',
+  // A cut page would hide events and its truncated field; it pages with cursor instead.
+  'read_diagnostic_events']);
 const NATIVE_CONTEXT = Symbol('fuli.nativeMcpRequestContext');
 
 export function createMcpServer(
@@ -243,6 +248,7 @@ function createToolMap(
     .map((definition) => [definition.name, {
     definition,
     worker: Boolean(workerTaskContext),
+    diagnosticEvents: app?.diagnosticEvents ?? null,
     preferenceDelivery: workerTaskContext ? null : app.preferenceDelivery,
     preferenceOrigin: { sourceApplication, nativeSessionId: nativeThreadId === hostSessionId ? nativeThreadId : null },
     catalogDefinitions: definition.name === 'list_agent_interfaces' ? definitions.filter(item =>
@@ -350,6 +356,7 @@ function registerCallHandler(server, tools, onDemandTools, resolveNativeContext 
 }
 
 async function invokeTool(tool, input, requestContext = null) {
+  const startedAt = Date.now();
   try {
     const value = await tool.invoke(input, requestContext);
     auditLifecycleTool(tool.definition.name);
@@ -399,8 +406,12 @@ async function invokeTool(tool, input, requestContext = null) {
     }
     return result;
   } catch (error) {
-    return errorToolResult(tool.worker && requestContext?.signal?.aborted
-      ? new ApplicationError('request_cancelled', 'Worker call was cancelled.') : error);
+    const reported = tool.worker && requestContext?.signal?.aborted
+      ? new ApplicationError('request_cancelled', 'Worker call was cancelled.') : error;
+    const result = errorToolResult(reported);
+    recordToolFailure(tool.diagnosticEvents, { toolName: tool.definition.name, error: reported, startedAt,
+      sessionId: requestContext?.[NATIVE_CONTEXT]?.nativeSessionId ?? tool.preferenceOrigin.nativeSessionId });
+    return result;
   }
 }
 
