@@ -175,7 +175,10 @@ const BASELINE = Object.freeze({
   // rec#11 D-81 run_delegated_action: one full-profile tool for all 52 console changes the person
   // lets FLAs make for them (instead of a tool each): 199,999 -> 200,801 B (+802 B), measured;
   // chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 200801,
+  // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
+  // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
+  // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 201280,
   // T-P00-2: the chat profile is what an ordinary task uses (entry fallback,
   // recall, checkpoint) plus list_agent_interfaces and the fuli_call
   // dispatcher; checkpoint lists capture compactly. Measured from the real

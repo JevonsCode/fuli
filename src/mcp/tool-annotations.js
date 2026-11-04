@@ -9,6 +9,7 @@ const READ_TOOLS = new Set([
   'list_project_agent_tasks',
   'list_agent_workflows', 'read_agent_workflow',
   'list_work_surfaces',
+  'read_old_data',
   'list_preference_conflicts',
   'list_agent_interfaces',
   'get_capture_policy',

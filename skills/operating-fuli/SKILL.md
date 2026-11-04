@@ -38,10 +38,18 @@ If an expected capability is absent from `list_agent_interfaces`, report an Agen
 
 Console changes without their own tool are `agent_delegable` (on by default) or `agent_delegable_off` (off until the person turns the category on) in `list_agent_interfaces`. Make one only when the person asks or the task needs it: call `run_delegated_action` with the current `taskContextToken`, the exact catalog `route`, its `params`, the JSON `body` the console page sends and a short `reason`. The console checks the person's switch, runs the change and records who (FLA, task), what and the entry's `undo`; put the returned `delegation_receipt.markdown` in your reply.
 
-- On by default: settings (runtime settings, recall, session links, one-click update, client connections, doctor repair, confirming capture changes), organisation (occupations, an FLA's occupation and look, workflow decisions, standing assignments, marking a block cleared), projects (hierarchy, Astro's project proposals, conversation owners, temporary-project moves, one item's scope, tag governance), services and apps (stop services, delete records, clear logs; start, stop, restart, approve, roll back, disable, export apps), roundtable board/chat mode.
+- On by default: settings (runtime settings, recall, session links, one-click update, client connections, doctor repair, confirming capture changes, restoring old data), organisation (occupations, an FLA's occupation and look, workflow decisions, standing assignments, marking a block cleared), projects (hierarchy, Astro's project proposals, conversation owners, temporary-project moves, one item's scope, tag governance), services and apps (stop services, delete records, clear logs; start, stop, restart, approve, roll back, disable, export apps), roundtable board/chat mode.
 - Off until the person turns it on: LAN roundtable (listen, pair, share, revoke, leave), built-in Agent model settings (model, egress, budget, 「只给建议」), public project visibility.
-- Never delegable: permanent knowledge deletion and its preview/export, data-format migration apply/rollback/prune/restore, deleting an Agent app's code or data, the Agent-access switch, AI permissions themselves, model API keys.
+- Never delegable: permanent knowledge deletion and its preview/export, deleting old data now, data-format migration apply/rollback/prune/restore on the data format page, deleting an Agent app's code or data, the Agent-access switch, AI permissions themselves, model API keys.
 - The person's own words stay theirs: their roundtable messages, replies to your attention requests, Tonborg votes and reasons, preference-conflict rulings, batch confirmation, Jefa acceptance. Where your own tool does the same thing, it is recorded as agent-confirmed, never as the person.
+
+## Old data (backups FULI kept)
+
+Before FULI changes data it keeps a copy: a store's format backup, a graph export (before a Neo4j upgrade, a Docker move or an import), the runtime settings before a port change, a client's configuration before FULI connected it, a log's rotated copies. `read_old_data` lists them (what left each, `createdAt`, `bytes`, `restorable`) with how much live and old data take; with an `id` it lists that item's files, with an `id` and a `path` it returns one text file (first 32 KB, binaries refused). Answer from a backup by reading it there; never copy it elsewhere or edit it.
+
+- A `restorable` item goes back when the person asks: `run_delegated_action` with `POST /api/old-data/:id/restore` (settings permission). FULI first keeps the store as it is now as a new old-data item, then stops and starts again; say so, and undo it by restoring that newer item.
+- A graph export (`restoreCommand`) is restored by the person at a terminal while FULI is stopped; the other kinds have no restore.
+- Deleting old data now cannot be undone and is the person's, in 设置 › 系统 › 存储 (Settings › System › Storage); never delete backup files yourself.
 
 ## Selecting tools
 

@@ -10,6 +10,7 @@ import { reportAgentService } from '../agent-services/agent-report.js';
 import { AGENT_WORKFLOW_HANDLERS } from '../agent-workflows/agent-tools.js';
 import { WORK_SURFACE_HANDLERS } from '../work-surfaces/agent-tools.js';
 import { DELEGATION_HANDLERS } from '../agent-delegation/agent-tool.js';
+import { OLD_DATA_HANDLERS } from '../old-data/agent-tools.js';
 import { agentNamingStyleAnswer } from '../agent-naming/naming-style.js';
 
 // These tools read or change the two local stores that can retain deleted
@@ -30,6 +31,7 @@ const HANDLERS = Object.freeze({
   ...AGENT_WORKFLOW_HANDLERS,
   ...WORK_SURFACE_HANDLERS,
   ...DELEGATION_HANDLERS,
+  ...OLD_DATA_HANDLERS,
   control_project_agent_task_run: (app, input) => app.controlProjectAgentTaskRun({ ...input, agentInvocation: true }),
   // An Agent reads Tonborg's records without their words (rec#50, judgment/agent-view.js).
   list_judgments: (app, input) => app.judgment.agent.records(input),
