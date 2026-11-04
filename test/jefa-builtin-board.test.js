@@ -245,7 +245,7 @@ test('rec#80: a move an FLA relays is the person\'s acceptance, kept with the FL
   defer(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
   const { createdWorkItems: [task] } = await call('create_tasks', { messageId: 'relay-seed', tasks: [{ title: 'Synthetic relayed task' }] });
   const client = createDelegatedConsoleClient({ consoleUrl: () => url });
-  const relayed = { words: '这个任务验收通过', messageRef: { taskId: 'task-a', conversationId: null, at: null } };
+  const relayed = { words: '这个任务验收通过', messageRef: { source: 'current_turn', taskId: null, conversationId: null, at: null } };
   const actor = { agentId: 'fla-synthetic', projectId: 'employee-qa', client: 'codex', sessionId: 'session-a' };
   await client.send({ method: 'PATCH', path: `/employee-workspaces/jefa/employee-qa/api/work-items/${task.id}/status`,
     body: { status: 'done' }, call: { actor, reason: 'The person accepted it in chat', bodyFields: ['status'], relayed } });

@@ -14,7 +14,7 @@ const TEXT_LIMIT = 256;
 const REASON_LIMIT = 500;
 const FIELD_LIMIT = 64;
 const ACTOR_FIELDS = ['agentId', 'projectId', 'client', 'sessionId'];
-const MESSAGE_FIELDS = ['taskId', 'conversationId', 'at'];
+const MESSAGE_FIELDS = ['source', 'taskId', 'conversationId', 'at'];
 
 export function encodeDelegation({ actor, reason, bodyFields, relayed = null }) {
   return encodeURIComponent(JSON.stringify({ actor, reason, bodyFields, ...(relayed ? { relayed } : {}) }));

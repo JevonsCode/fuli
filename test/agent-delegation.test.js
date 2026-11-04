@@ -244,7 +244,7 @@ test('the console client carries the call in its header and turns a refusal into
 });
 
 // rec#80: the person decides in chat, an FLA relays their exact words.
-const RELAYED = { words: '这个冲突保留新的那条', messageRef: { taskId: 'task-2', conversationId: 'conversation-a',
+const RELAYED = { words: '这个冲突保留新的那条', messageRef: { source: 'session_record', taskId: 'task-2', conversationId: 'conversation-a',
   at: '2026-11-04T09:00:00.000Z' } };
 
 function relayApp(send, messages) {
@@ -277,7 +277,7 @@ test('a relayed decision runs only with the person\'s exact words from their rec
   // Spacing and letter case do not matter; the words are kept as the Agent passed them.
   const result = await call({ personWords: '这个冲突 保留新的那条' });
   assert.deepEqual(sent.map(({ call: delegated }) => delegated.relayed), [{ words: '这个冲突 保留新的那条',
-    messageRef: { taskId: 'task-2', conversationId: 'conversation-a', at: '2026-11-04T00:01:00.000Z' } }]);
+    messageRef: { source: 'session_record', taskId: 'task-2', conversationId: 'conversation-a', at: '2026-11-04T00:01:00.000Z' } }]);
   assert.equal(result.category, 'decisions');
   assert.match(result.delegation_receipt.markdown, /你的决定：「这个冲突 保留新的那条」.*由我转达.*op-relay/);
   // Read as the calling task's own session and FLA, never a session the Agent names.

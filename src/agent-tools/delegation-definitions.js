@@ -9,7 +9,7 @@ export const DELEGATION_DEFINITIONS = [
   {
     name: 'run_delegated_action',
     title: 'WRITE · Make a console change for the person',
-    description: 'One agent_delegable(_off) or agent_relayed route from list_agent_interfaces, for the person when they ask or the task needs it: exact route, its :params, the console page JSON body, why. agent_relayed: ask them in chat, pass their exact words as personWords. Refused for local_user_only, while its category is off (they turn it on in Settings › AI permissions) or with person_words_not_found. Put delegation_receipt.markdown in your reply.',
+    description: 'One agent_delegable(_off)/agent_relayed route from list_agent_interfaces, when the person asks or the task needs it. Route, :params, the console page JSON body, why. agent_relayed: ask in chat, pass their exact words in personWords. Refused for local_user_only, a category turned off (Settings › AI permissions) or person_words_not_found. Reply with delegation_receipt.markdown.',
     inputSchema: objectSchema({
       taskContextToken: boundedString(256),
       route: boundedString(300),

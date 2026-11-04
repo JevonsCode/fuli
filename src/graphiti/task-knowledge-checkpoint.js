@@ -91,6 +91,8 @@ export async function checkpointTaskKnowledge(application, {
     );
   }
   const finish = async (result, checkpointTask = task, memory = null) => {
+    // The turn is finished: the prompt kept for the relay check goes (rec#80).
+    try { application.entryPrompts?.checkpointed(task); } catch { /* the next entry replaces it */ }
     const team = await taskTeam(application, checkpointTask, collaborators);
     const effectiveLog = workLog ?? { status: 'reported', summary: reason };
     const conversation = captureCheck.allowed ? await checkpointConversation(application, task, effectiveLog, team)
