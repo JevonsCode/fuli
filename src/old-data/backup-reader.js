@@ -1,5 +1,7 @@
 import { closeSync, lstatSync, openSync, readdirSync, readSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { redactSensitiveContent } from '../security/sensitive-content.js';
+import { unreadable } from './guarded-stores.js';
 
 import { ApplicationError } from '../app/application-error.js';
 
@@ -27,13 +29,17 @@ export function readBackupFile(item, path) {
     throw new ApplicationError('old_data_file_not_found', `${item.id} holds no file ${path}; list its files first`,
       { status: 404 });
   }
+  if (unreadable(item)) {
+    throw new ApplicationError('old_data_secret', `${item.id} may hold credentials, so its files are listed and not shown`,
+      { status: 403 });
+  }
   if (BINARY_EXTENSIONS.test(path)) throw binary(item, path);
   const buffer = readPrefix(file.absolute, Math.min(file.bytes, MAX_READ_BYTES));
   if (buffer.includes(0)) throw binary(item, path);
   const truncated = file.bytes > buffer.length;
   // A streaming decode holds back a character the cut split instead of showing half of it.
   return { id: item.id, path, bytes: file.bytes, truncated,
-    content: new TextDecoder().decode(buffer, { stream: truncated }) };
+    content: redactSensitiveContent(new TextDecoder().decode(buffer, { stream: truncated })) };
 }
 
 function binary(item, path) {

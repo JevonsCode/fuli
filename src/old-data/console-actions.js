@@ -1,4 +1,5 @@
 import { rmSync } from 'node:fs';
+import { personOnlyRestore } from './guarded-stores.js';
 
 import { ApplicationError } from '../app/application-error.js';
 import { formatBackupNeeded } from '../data-format/backup-retention.js';
@@ -18,8 +19,11 @@ import { removeChildLogArchives } from '../local-runtime/child-process-log.js';
 export function createOldDataConsole({ shelf, restore = null, now = () => new Date(),
   remove = (path) => rmSync(path, { recursive: true, force: true }) }) {
   return {
-    async restore(id) {
+    async restore(id, { delegated = false } = {}) {
       const item = await shelf.find(id);
+      if (delegated && personOnlyRestore(item)) {
+        throw new ApplicationError('old_data_restore_person_only', `${id} goes back only by the person's own click in Settings`, { status: 403 });
+      }
       if (!item.restorable || !restore) {
         throw new ApplicationError('old_data_not_restorable', `${id} has no restore in the console`
           + (item.restoreCommand ? `; restore it at a terminal: ${item.restoreCommand}` : ''), { status: 409 });

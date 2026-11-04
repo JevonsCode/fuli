@@ -153,5 +153,5 @@ const busy = (item: OldDataItem, action: 'restore' | 'delete') => pending.value?
 .old-data-row small { color: var(--color-muted); font-size: var(--text-meta); }
 .old-data-actions { display: flex; flex-shrink: 0; gap: 8px; }
 /* 立即删除 turns into 确认删除 in place; its width is kept so 恢复 beside it stays put. */
-.old-data-delete { min-width: 92px; }
+.old-data-delete { min-width: 124px; }
 </style>

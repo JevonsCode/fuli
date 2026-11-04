@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { AGENT_DELEGATION_FORMAT } from '../src/agent-delegation/operation-log.js';
+import { AGENT_DELEGATION_POLICY_FORMAT } from '../src/agent-delegation/policy-store.js';
+import { AGENT_ACCESS_POLICY_FORMAT } from '../src/graphiti/agent-access-policy.js';
+import { MODEL_SECRETS_FORMAT } from '../src/model-backends/secret-store.js';
 
 import { callAgentTool } from '../src/agent-tools.js';
 import { interfaceForRequest, interfaceForRoute } from '../src/agent-tools/interface-catalog.js';
@@ -154,13 +158,35 @@ test('the person\'s AI reads a backup\'s listed text files only, bounded', async
   // A text file with a NUL byte is binary; a long one is cut at 32 KB without half a character.
   write(dataDir, 'backups/agents/codex/legacy-hooks/config.toml-2026-10-02', 'a\u0000b');
   await assert.rejects(read({ id: 'client_config_backup:backups/agents/codex', path: 'legacy-hooks/config.toml-2026-10-02' }),
-    (error) => error.code === 'old_data_binary');
-  write(dataDir, 'backups/agents/codex/settings.json-2026-10-03', `x${'记'.repeat(20_000)}`);
-  const long = await read({ id: 'client_config_backup:backups/agents/codex', path: 'settings.json-2026-10-03' });
+    (error) => error.code === 'old_data_secret', 'a client config copy may hold MCP tokens');
+  write(dataDir, 'logs/runtime.log.2', 'a\u0000b');
+  await assert.rejects(read({ id: 'log_archive:logs/runtime.log', path: 'runtime.log.2' }), (error) => error.code === 'old_data_binary');
+  write(dataDir, 'logs/runtime.log.1', `x${'记'.repeat(20_000)}`);
+  const long = await read({ id: 'log_archive:logs/runtime.log', path: 'runtime.log.1' });
   assert.equal(long.truncated, true);
   assert.ok(Buffer.byteLength(long.content) <= 32 * 1024);
   assert.equal(long.content.includes('�'), false);
   assert.equal(long.bytes, 1 + 3 * 20_000);
+});
+
+test('rec#80: secrets stay unread, and what limits an Agent goes back only by the person\'s click', async () => {
+  const { unreadable, personOnlyRestore } = await import('../src/old-data/guarded-stores.js');
+  const { createOldDataConsole } = await import('../src/old-data/console-actions.js');
+  const backup = (store) => ({ id: `format_backup:${store}`, kind: 'format_backup', store, restorable: true, label: store, ref: 'r' });
+  assert.equal(unreadable(backup(MODEL_SECRETS_FORMAT.store)), true);
+  assert.equal(unreadable({ kind: 'client_config_backup' }), true);
+  assert.equal(unreadable(backup('jefa-board')), false);
+
+  const started = [];
+  const restore = { describe: () => ({ currentDigest: 'd' }), start: (input) => { started.push(input.label); return { status: 'started' }; } };
+  const console = (item) => createOldDataConsole({ shelf: { find: async () => item, forgetMeasurement() {} }, restore });
+  for (const store of [AGENT_DELEGATION_FORMAT.store, AGENT_DELEGATION_POLICY_FORMAT.store, AGENT_ACCESS_POLICY_FORMAT.store, MODEL_SECRETS_FORMAT.store]) {
+    assert.equal(personOnlyRestore(backup(store)), true, store);
+    await assert.rejects(console(backup(store)).restore('id', { delegated: true }), (error) => error.code === 'old_data_restore_person_only', store);
+  }
+  await console(backup(AGENT_ACCESS_POLICY_FORMAT.store)).restore('id');
+  await console(backup('jefa-board')).restore('id', { delegated: true });
+  assert.deepEqual(started, [AGENT_ACCESS_POLICY_FORMAT.store, 'jefa-board']);
 });
 
 test('恢复 runs the console\'s whole-store restore for a format backup and nothing else', async (t) => {

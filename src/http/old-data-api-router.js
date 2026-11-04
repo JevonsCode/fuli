@@ -1,3 +1,4 @@
+import { DELEGATION_HEADER } from '../agent-delegation/delegation-header.js';
 import { InvalidInputError } from '../app/application-error.js';
 import { createOldDataConsole } from '../old-data/console-actions.js';
 import { refuseRemoteDecision } from './request-policy.js';
@@ -32,7 +33,8 @@ export async function handleOldDataRequest({ request, response, url, shelf, rest
   }
   const actions = createOldDataConsole({ shelf, restore });
   const id = oldDataId(action[1]);
-  sendJson(response, 200, action[2] === 'restore' ? await actions.restore(id) : await actions.delete(id));
+  sendJson(response, 200, action[2] === 'restore'
+    ? await actions.restore(id, { delegated: request.headers[DELEGATION_HEADER] !== undefined }) : await actions.delete(id));
   return true;
 }
 
