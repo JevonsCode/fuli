@@ -72,13 +72,14 @@ export function workSurfaceSources(app) {
       }
     },
     workbench: {
-      async list(personalSpaceId) {
-        const { workbenches } = await listSpaceWorkbenches(app, { personalSpaceId });
-        return workbenches.flatMap((sheet) => sheet.shares.map((share) => ({ kind: 'workbench',
+      async list(personalSpaceId, { agentId, personalProjectId } = {}) {
+        const { workbenches, partial } = await listSpaceWorkbenches(app, { personalSpaceId, agentId, personalProjectId });
+        const rows = workbenches.flatMap((sheet) => sheet.shares.map((share) => ({ kind: 'workbench',
           id: `${sheet.taskId}${WORKBENCH_SEPARATOR}${share.agentId}`, name: shortName(sheet.title),
           agentId: share.agentId, personalProjectId: sheet.personalProjectId, state: share.status, on: null,
           pausable: false, changedAt: sheet.updatedAt,
           detail: { taskId: sheet.taskId, role: share.role, taskStatus: sheet.status, progress: share.progress } })));
+        return { rows, truncated: partial };
       }
     }
   };
