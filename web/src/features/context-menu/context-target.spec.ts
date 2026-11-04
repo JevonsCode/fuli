@@ -29,6 +29,19 @@ const actionsOf = (target: ReturnType<typeof readContextTarget>) => (target?.kin
 
 afterEach(() => window.getSelection()?.removeAllRanges())
 
+describe('a debug record', () => {
+  it('offers the whole record from anywhere on its row', () => {
+    const inner = place('<a href="/debug/r1" data-debug-turn-id="r1"><span>Hello</span></a>').querySelector('span')!
+    expect(readContextTarget(inner, options())).toEqual({ kind: 'debug-turn', id: 'r1' })
+  })
+
+  it('leaves selected words to the ordinary copy', () => {
+    const inner = place('<div data-debug-turn-id="r1"><span>Hello</span></div>').querySelector('span')!
+    selectContents(inner)
+    expect(readContextTarget(inner, options())).toEqual({ kind: 'text', text: 'Hello' })
+  })
+})
+
 describe('readContextTarget', () => {
   it('offers cut, copy, paste and select all in a text field with a selection', () => {
     const input = field('<input value="hello world">', [0, 5])

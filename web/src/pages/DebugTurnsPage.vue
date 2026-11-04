@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import ModelCaptureSwitch from '@/features/debug-turns/ModelCaptureSwitch.vue'
 import { RouterLink } from 'vue-router'
 import { apiErrorReason } from '@/api/client'
 import Breadcrumb from '@/components/Breadcrumb.vue'
@@ -86,6 +87,7 @@ onBeforeUnmount(() => reading?.abort())
     <div class="debug-turns-content">
       <Breadcrumb :parent="{ label: t('debugTurns.back'), to: '/settings', from: openedFromSettings }" />
       <p class="debug-turns-lede">{{ t('debugTurns.lede') }}</p>
+      <ModelCaptureSwitch />
       <GrowthLoading v-if="loading && !records" :label="t('debugTurns.loading')" />
       <UiNotice v-else-if="error" tone="error">
         {{ error }}
@@ -103,7 +105,7 @@ onBeforeUnmount(() => reading?.abort())
         <ul class="debug-turns-list">
           <li v-for="record in records" :key="record.id" class="debug-turns-item">
             <Checkbox :model-value="selected.has(record.id)" :aria-label="t('debugTurns.selectOne')" data-debug-turn-select @update:model-value="toggle(record.id)" />
-            <RouterLink :to="`/debug/${encodeURIComponent(record.id)}`" class="debug-turns-row"
+            <RouterLink :to="`/debug/${encodeURIComponent(record.id)}`" class="debug-turns-row" :data-debug-turn-id="record.id"
               :data-return-focus="record.id" data-debug-turn-row>
               <span class="debug-turns-prompt">{{ record.promptLine }}</span>
               <span class="debug-turns-meta">{{ when(record.createdAt) }} · {{ clientName(record.sourceApplication) }} · {{ added(record) }}</span>

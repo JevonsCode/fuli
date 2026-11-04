@@ -30,6 +30,7 @@ import { customClientStore } from '../agent-kits/custom-clients.js';
 import { createCustomClients } from './custom-client-connection.js';
 import { CODEX_HOOK_TRUST_CLIENT, createCodexHookTrust } from '../agents/codex/hook-trust.js';
 import { readFormatOperations } from '../data-format/operations-log.js';
+import { createModelCapture } from '../debug-turns/model-capture.js';
 import { debugTurnStore } from '../debug-turns/store.js';
 
 export function createSystemService({
@@ -142,6 +143,8 @@ export function createSystemService({
     settings: () => ({ configured: configuredSettings(), active: activeSettings() }) });
   const logRetention = createLogRetention({ paths });
 
+  const turnRecords = debugTurnStore(paths.dataDir);
+  const modelCapture = createModelCapture({ store: turnRecords });
   return {
     getSettings,
     updateSettings,
@@ -176,7 +179,8 @@ export function createSystemService({
     logArchives: () => logRetention.archives(),
     clearLogArchives: () => logRetention.clearArchives(),
     // The #fulidebug turn records the person reads in Settings › 系统 (debug-turns/store.js).
-    debugTurns: debugTurnStore(paths.dataDir),
+    debugTurns: turnRecords,
+    modelCapture,
     repairDoctor: createDoctorRepair({ check: doctor.check, connectClient: clientInstaller, observeClients,
       recordClientsReconnected: (id) => update.recordClientsReconnected(id) }),
     runtimeStatus: () => runtimeBroker.status(),
@@ -193,6 +197,7 @@ export function createSystemService({
     ),
     close: () => {
       logRetention.close();
+      void modelCapture.close();
       return runtimeBroker.close();
     }
   };

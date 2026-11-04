@@ -11,6 +11,8 @@ export type ContextTarget =
   | { kind: 'field'; field: EditableField; range: FieldRange; selected: string; actions: FieldAction[] }
   | { kind: 'text'; text: string }
   | { kind: 'link'; url: URL; internal: boolean }
+  /** A debug record's row: copy or export all of it. */
+  | { kind: 'debug-turn'; id: string }
   /** An FLA portrait (`data-agent-portrait` = its agentId): the dock pins' menu without 取消置顶. */
   | { kind: 'agent'; agentId: string }
   /** Anything that reads as exactly one project's name. */
@@ -101,6 +103,8 @@ export function readContextTarget(target: EventTarget | null, { selection, origi
   const portrait = element.closest<HTMLElement>('[data-agent-portrait]')
   const agentId = portrait?.dataset.agentPortrait
   if (agentId) return { kind: 'agent', agentId }
+  const debugTurnId = element.closest<HTMLElement>('[data-debug-turn-id]')?.dataset.debugTurnId
+  if (debugTurnId) return { kind: 'debug-turn', id: debugTurnId }
   const project = projectAt(element, projects)
   if (project) return { kind: 'project', ...project }
   const link = linkAt(element, origin)

@@ -65,6 +65,15 @@ export function buildDebugRecord(turn, { now = () => new Date(), id = randomUUID
   return withTotals(withinCap(record, history));
 }
 
+// One model request from the dev capture proxy (model-capture.js): the
+// whole request, so nothing here is out of sight. `parts` come in reading order.
+export function buildModelRequestRecord({ sourceApplication, prompt, parts }, { now = () => new Date(), id = randomUUID() } = {}) {
+  const record = { version: DEBUG_RECORD_VERSION, id, createdAt: now().toISOString(), sourceApplication, sessionId: 'model-capture',
+    promptLine: promptLine(redactDebugText(prompt)), transcript: 'read',
+    parts: parts.map(item => part(item.source, item.kind, item.label ?? '', item.text)), totals: null, cut: null };
+  return withTotals(withinCap(record, null));
+}
+
 function part(source, kind, label, text) {
   const stored = redactDebugText(String(text ?? ''));
   return { source, kind, label, text: stored, bytes: Buffer.byteLength(stored) };

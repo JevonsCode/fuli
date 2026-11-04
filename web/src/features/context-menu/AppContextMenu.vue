@@ -8,9 +8,11 @@ import { agentPinsText } from '@/features/agent-profile/agent-pins'
 import { agentProfilePath } from '@/features/agent-profile/profile-model'
 import { useAgentWorkSurfaces } from '@/features/agent-profile/use-agent-work-surfaces'
 import { usePortraitShake } from '@/features/agent-profile/use-portrait-shake'
+import { debugRecordText, readDebugTurn } from '@/features/debug-turns/model'
+import { saveFile } from '@/lib/save-file'
 import { personalProjectsPath } from '@/router/paths'
 import { useConsoleStore } from '@/stores/console'
-import { getJson } from '@/api/client'
+import { apiErrorReason, getJson } from '@/api/client'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { projectAgentShape } from '@/features/agent-profile/agent-record-shape'
 import type { ProjectAgentRecord } from '@/types'
@@ -38,6 +40,23 @@ const projectsByName = computed(() => new Map((store.state?.personalProjects ?? 
   .map(project => [project.profile.name, project.project_id])))
 function editProject(projectId: string) {
   void router.push({ path: personalProjectsPath(spaceId.value, 'overview', projectId), query: { edit: 'profile' } })
+}
+const debugTarget = computed(() => target.value?.kind === 'debug-turn' ? target.value : null)
+async function copyDebugTurn(id: string) {
+  try {
+    writeClipboard(debugRecordText(await readDebugTurn(id)))
+    store.notify(t('debugTurns.copiedAll'))
+  } catch (cause) {
+    store.notify(t('debugTurns.readFailed', { reason: apiErrorReason(cause) }))
+  }
+}
+async function exportDebugTurn(id: string) {
+  try {
+    const path = await saveFile(`fuli-debug-${id.slice(0, 8)}.md`, debugRecordText(await readDebugTurn(id)), 'text/markdown;charset=utf-8')
+    store.notify(path ? t('debugTurns.exportedTo', { path }) : t('debugTurns.exported'))
+  } catch (cause) {
+    store.notify(t('debugTurns.exportFailed', { reason: apiErrorReason(cause) }))
+  }
 }
 // A portrait names only its FLA's id: the menu reads that FLA's record for its name and,
 // with it, where its workbench and workflows are. Records read once stay for the visit.
@@ -156,7 +175,7 @@ async function cut(current: FieldTarget) {
 function run(action: MenuAction) {
   const current = target.value
   // A portrait's menu runs its own items (goAgent), never these.
-  if (!current || current.kind === 'agent' || current.kind === 'project') return
+  if (!current || current.kind === 'agent' || current.kind === 'project' || current.kind === 'debug-turn') return
   if (current.kind === 'link') {
     if (action === 'copyLink') return writeClipboard(current.url.href)
     // An outside link opens the way the app opens every outside link: a new window, which the desktop client hands to the browser.
@@ -196,7 +215,11 @@ onBeforeUnmount(() => {
     </ContextMenuTrigger>
     <ContextMenuContent class="app-context-menu" :collision-padding="8" data-app-context-menu
       @close-auto-focus="onCloseAutoFocus" @interact-outside="onInteractOutside">
-      <template v-if="projectTarget">
+      <template v-if="debugTarget">
+        <ContextMenuItem data-debug-action="copy" @select="copyDebugTurn(debugTarget.id)">{{ t('debugTurns.copyAll') }}</ContextMenuItem>
+        <ContextMenuItem data-debug-action="export" @select="exportDebugTurn(debugTarget.id)">{{ t('debugTurns.exportFile') }}</ContextMenuItem>
+      </template>
+      <template v-else-if="projectTarget">
         <ContextMenuLabel>{{ projectTarget.name }}</ContextMenuLabel>
         <ContextMenuItem data-project-action="copy-name" @select="writeClipboard(projectTarget.name)">{{ t('contextMenu.copyProjectName') }}</ContextMenuItem>
         <ContextMenuItem data-project-action="edit" @select="editProject(projectTarget.projectId)">{{ t('contextMenu.editProject') }}</ContextMenuItem>
