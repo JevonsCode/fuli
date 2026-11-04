@@ -28,7 +28,14 @@ export const JUDGMENT_FORMAT = sqliteFormat({
     CREATE TABLE IF NOT EXISTS judgment_records(id TEXT PRIMARY KEY, space TEXT NOT NULL, project TEXT NOT NULL, request_key TEXT NOT NULL, created_at TEXT NOT NULL, body TEXT NOT NULL, UNIQUE(space,request_key));
     CREATE TABLE IF NOT EXISTS judgment_feedback(id INTEGER PRIMARY KEY, decision TEXT NOT NULL, revision INTEGER NOT NULL, vote TEXT, reason TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(decision,revision));
     CREATE TABLE IF NOT EXISTS judgment_execution(id INTEGER PRIMARY KEY, decision TEXT NOT NULL, status TEXT NOT NULL, receipt TEXT NOT NULL, created_at TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS judgment_leases(space TEXT, project TEXT, token TEXT, expires INTEGER, PRIMARY KEY(space,project));`
+    CREATE TABLE IF NOT EXISTS judgment_leases(space TEXT, project TEXT, token TEXT, expires INTEGER, PRIMARY KEY(space,project));`,
+  migrations: [{
+    // The person's vote an FLA relayed in their words (rec#80); a vote the
+    // person cast in the console, and every earlier one, keeps both NULL.
+    id: 'judgment/2-relayed-feedback', to: 2, kind: 'add-columns', table: 'judgment_feedback',
+    summary: 'which FLA relayed a vote of the person and the words of theirs it relayed',
+    columns: { relayed_by: 'TEXT', person_words: 'TEXT' }
+  }]
 });
 
 // Local, shared by independent MCP/console processes. Judgments are immutable;
@@ -111,8 +118,9 @@ export class JudgmentStore {
     const row = this.db.prepare('SELECT * FROM judgment_records WHERE space=? AND id=?').get(space, id);
     if (!row) throw new EmployeeError('Judgment not found', 404, 'not_found');
     const body = this.#clean(space, JSON.parse(row.body));
-    const feedbackHistory = this.db.prepare('SELECT revision,vote,reason,created_at AS createdAt FROM judgment_feedback WHERE decision=? ORDER BY revision').all(id)
-      .map(value => body.hard_deleted ? { ...value, reason: '' } : value);
+    const feedbackHistory = this.db.prepare('SELECT revision,vote,reason,created_at AS createdAt,relayed_by AS relayedBy,person_words AS personWords FROM judgment_feedback WHERE decision=? ORDER BY revision').all(id)
+      .map(({ relayedBy, personWords, ...value }) => ({ ...(body.hard_deleted ? { ...value, reason: '' } : value),
+        ...(personWords !== null ? { decidedBy: 'person', relayedBy, personWords: body.hard_deleted ? '' : personWords } : {}) }));
     const executionHistory = this.db.prepare('SELECT status,receipt,created_at AS createdAt FROM judgment_execution WHERE decision=? ORDER BY id').all(id)
       .map(value => ({ ...value, receipt: this.#clean(space, JSON.parse(value.receipt)) }));
     return { ...body, id, createdAt: row.created_at, feedbackHistory, executionHistory,
@@ -170,13 +178,15 @@ export class JudgmentStore {
     return this.db.prepare(`SELECT 1 AS enabled FROM judgment_settings WHERE space=? AND key LIKE 'policy:%'
       AND json_extract(value,'$.mode') IN ('shared','autonomous') LIMIT 1`).get(space)?.enabled === 1;
   }
-  feedback(space, id, vote, reason, expectedRevision) {
+  // relay: the FLA that relayed the person's vote and their words (rec#80), or null.
+  feedback(space, id, vote, reason, expectedRevision, relay = null) {
     return this.transaction(() => {
       const decision = this.get(space, id);
       if (decision.feedback.revision !== expectedRevision) throw conflict();
       // A reason about a judgment of deleted knowledge is not kept either.
-      this.db.prepare('INSERT INTO judgment_feedback(decision,revision,vote,reason,created_at) VALUES(?,?,?,?,?)')
-        .run(id, expectedRevision + 1, vote, decision.hard_deleted ? '' : reason, new Date().toISOString());
+      this.db.prepare('INSERT INTO judgment_feedback(decision,revision,vote,reason,created_at,relayed_by,person_words) VALUES(?,?,?,?,?,?,?)')
+        .run(id, expectedRevision + 1, vote, decision.hard_deleted ? '' : reason, new Date().toISOString(),
+          relay?.relayedBy ?? null, relay ? (decision.hard_deleted ? '' : relay.personWords) : null);
       return this.get(space, id);
     });
   }
@@ -216,7 +226,7 @@ export class JudgmentStore {
         changed++;
       }
       for (const decision of forgotten) {
-        changed += Number(this.db.prepare("UPDATE judgment_feedback SET reason='' WHERE decision=? AND reason <> ''")
+        changed += Number(this.db.prepare("UPDATE judgment_feedback SET reason='', person_words=CASE WHEN person_words IS NULL THEN NULL ELSE '' END WHERE decision=? AND (reason <> '' OR person_words <> '')")
           .run(decision).changes);
       }
       return changed;

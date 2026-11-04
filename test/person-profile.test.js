@@ -133,10 +133,9 @@ test('only this computer, in the active space, reads or changes the name and pic
   assert.equal((await api({ config: app.config }, 'GET', '/api/person-profile?personalSpaceId=space-a')).status, 503);
 });
 
-test('the change is a local_user_only route and no Agent tool reaches it', () => {
+test('the change is the person\'s own: no Agent tool reaches it, and an FLA only relays their words', () => {
   const entry = agentInterfaceCatalog().uiMutationParity.find(({ route }) => route === 'PUT /api/person-profile');
-  assert.equal(entry.access, 'local_user_only');
-  assert.match(entry.reason, /address_as/);
+  assert.deepEqual([entry.access, entry.category, entry.toolName], ['agent_relayed', 'decisions', undefined]);
 });
 
 test('an Agent reads the name as one short context field, only once the person said it', async (t) => {

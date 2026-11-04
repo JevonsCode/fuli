@@ -11,6 +11,7 @@ import { createAgentDelegation } from '../src/agent-delegation/port.js';
 import { createDelegatedConsoleClient } from '../src/agent-delegation/console-client.js';
 import { handleDelegatedRequest } from '../src/http/agent-delegation-gate.js';
 import { handleAgentDelegationRequest } from '../src/http/agent-delegation-api-router.js';
+import { recentSessionUserMessages } from '../src/graphiti/session-records.js';
 import { createServer } from '../src/server.js';
 
 // rec#11 D-81, synthetic data only.
@@ -74,7 +75,7 @@ test('each category starts at its catalog default and the person\'s switch is ke
   const port = delegation(t, directory);
   const enabled = (policy) => Object.fromEntries(policy.categories.map(({ id, enabled: on }) => [id, on]));
   assert.deepEqual(enabled(port.read()), { settings: true, organisation: true, projects: true, services_apps: true,
-    roundtable: true, lan_roundtable: false, model_settings: false, public_projects: false });
+    roundtable: true, decisions: true, lan_roundtable: false, model_settings: false, public_projects: false });
   assert.equal(enabled(port.setCategory('lan_roundtable', true)).lan_roundtable, true);
   assert.equal(enabled(port.setCategory('settings', false)).settings, false);
   const reopened = delegation(t, directory);
@@ -94,7 +95,7 @@ test('a delegated change runs while its category is on, and is recorded with who
   assert.deepEqual({ ...operation, id: undefined }, { id: undefined, at: '2026-11-03T08:00:00.000Z',
     route: 'PATCH /api/recall-policy', path: '/api/recall-policy', category: 'settings', actor: CALL.actor,
     reason: CALL.reason, bodyFields: ['answerFromConfirmed'], status: 200, outcome: 'succeeded',
-    undo: 'Set answerFromConfirmed back.' });
+    undo: 'Set answerFromConfirmed back.', relayed: null });
   // A refused change is recorded as failed; the person reads both.
   await gate(port, 'PUT', '/api/occupations/writer', { status: 409 });
   assert.deepEqual(port.read().operations.map(({ route, outcome }) => [route, outcome]),
@@ -125,7 +126,7 @@ test('local-user-only changes stay refused even when the policy file is tampered
   for (const [method, url] of [['POST', '/api/knowledge/entity/item-a/hard-delete'], ['POST', '/api/data-format/apply'],
     ['PATCH', '/api/agent-access-policy'], ['PUT', '/api/agent-delegation/categories/model_settings'],
     ['PUT', '/api/model-backends/keys/synthetic'], ['POST', '/api/agent-apps/app-a/delete-data'],
-    ['POST', '/api/roundtable/threads'], ['POST', '/api/agent-attention/respond'], ['POST', '/api/judgment/feedback'],
+    ['POST', '/api/roundtable/threads'], ['PUT', '/api/judgment/policy'], ['POST', '/api/agent-apps/app-a/confirm'],
     ['POST', '/api/not-a-console-route']]) {
     const { ran, sent } = await gate(port, method, url);
     assert.deepEqual([ran, sent.statusCode, sent.body.code], [false, 403, 'local_user_only'], url);
@@ -158,7 +159,7 @@ test('Settings › AI permissions reads every category and switches one only fro
       response: sent, url: new URL(path, 'http://127.0.0.1'), delegation: port });
     return { handled, sent };
   };
-  assert.equal((await route('GET', '/api/agent-delegation')).sent.body.categories.length, 8);
+  assert.equal((await route('GET', '/api/agent-delegation')).sent.body.categories.length, 9);
   const changed = await route('PUT', '/api/agent-delegation/categories/model_settings', { enabled: true });
   assert.equal(changed.sent.body.categories.find(({ id }) => id === 'model_settings').enabled, true);
   const remote = await route('PUT', '/api/agent-delegation/categories/settings', { enabled: false }, '192.168.1.20');
@@ -240,4 +241,110 @@ test('the console client carries the call in its header and turns a refusal into
     fetchImpl: async () => { throw new TypeError('fetch failed'); } });
   await assert.rejects(unreachable.send({ method: 'POST', path: '/api/peer/join', body: {}, call: CALL }),
     { code: 'console_unreachable' });
+});
+
+// rec#80: the person decides in chat, an FLA relays their exact words.
+const RELAYED = { words: '这个冲突保留新的那条', messageRef: { taskId: 'task-2', conversationId: 'conversation-a',
+  at: '2026-11-04T09:00:00.000Z' } };
+
+function relayApp(send, messages) {
+  const reads = [];
+  const at = (index, second = 0) => new Date(Date.UTC(2026, 10, 4, 0, index, second)).toISOString();
+  const app = { ...toolApp(send), personal: { readSessionRecords: async (input) => {
+    reads.push(input);
+    return { turns: messages.map((text, index) => ({ task_id: `task-${index + 1}`, conversation_id: 'conversation-a',
+      personal_project_id: 'project-a', project_agent_id: 'fla-synthetic', created_at: at(index), capture_off: null,
+      not_recorded: [], messages: [{ role: 'user', text, created_at: at(index) },
+        { role: 'assistant', text: '好的', created_at: at(index, 1) }] })), items: [] };
+  } } };
+  app.recentSessionUserMessages = (task, limit) => recentSessionUserMessages(app, task, limit);
+  return { app, reads };
+}
+
+test('a relayed decision runs only with the person\'s exact words from their recent messages of this session', async () => {
+  const sent = [];
+  const { app, reads } = relayApp(async (input) => { sent.push(input); return { result: { ok: true }, operationId: 'op-relay' }; },
+    ['先看一下冲突', '这个冲突  保留新的那条，旧的不要了']);
+  const call = (input) => callAgentTool(app, 'run_delegated_action', { taskContextToken: 'fuli-task-synthetic',
+    route: 'POST /api/preference-conflicts/:conflictId/complete', params: { conflictId: 'conflict-a' },
+    body: { personalSpaceId: 'space-a', resolution: 'keep_right', reason: 'The person chose the newer one' },
+    reason: 'The person ruled in chat', ...input });
+  await assert.rejects(call({}), { code: 'person_words_required' });
+  await assert.rejects(call({ personWords: '好' }), { code: 'person_words_required' });
+  await assert.rejects(call({ personWords: '保留旧的那条' }), (error) => error.code === 'person_words_not_found'
+    && /问你/.test(error.message) && /exact words/.test(error.message));
+  assert.deepEqual(sent, []);
+  // Spacing and letter case do not matter; the words are kept as the Agent passed them.
+  const result = await call({ personWords: '这个冲突 保留新的那条' });
+  assert.deepEqual(sent.map(({ call: delegated }) => delegated.relayed), [{ words: '这个冲突 保留新的那条',
+    messageRef: { taskId: 'task-2', conversationId: 'conversation-a', at: '2026-11-04T00:01:00.000Z' } }]);
+  assert.equal(result.category, 'decisions');
+  assert.match(result.delegation_receipt.markdown, /你的决定：「这个冲突 保留新的那条」.*由我转达.*op-relay/);
+  // Read as the calling task's own session and FLA, never a session the Agent names.
+  assert.deepEqual(reads[0], { personal_space_id: 'space-a', source_application: 'codex', session_id: 'session-a',
+    reader_project_id: 'project-a', reader_agent_id: 'fla-synthetic' });
+});
+
+test('words older than the person\'s last 20 messages of the session are not found', async () => {
+  const messages = ['Keep The Newer One', ...Array.from({ length: 20 }, (_, index) => `message ${index}`)];
+  const { app } = relayApp(async () => assert.fail('nothing is sent'), messages);
+  await assert.rejects(callAgentTool(app, 'run_delegated_action', { taskContextToken: 'fuli-task-synthetic',
+    route: 'POST /api/judgment/feedback', body: {}, reason: 'Relayed', personWords: 'keep the newer one' }),
+  { code: 'person_words_not_found' });
+  const recent = relayApp(async () => ({ result: {}, operationId: 'op-case' }), messages.slice(1).concat('Keep The Newer One'));
+  const result = await callAgentTool(recent.app, 'run_delegated_action', { taskContextToken: 'fuli-task-synthetic',
+    route: 'POST /api/judgment/feedback', body: {}, reason: 'Relayed', personWords: 'keep the newer one' });
+  assert.equal(result.relayed.words, 'keep the newer one');
+});
+
+test('a delegable change ignores personWords and reads no messages', async () => {
+  const sent = [];
+  const { app, reads } = relayApp(async (input) => { sent.push(input); return { result: {}, operationId: 'op-plain' }; }, []);
+  const result = await callAgentTool(app, 'run_delegated_action', { taskContextToken: 'fuli-task-synthetic',
+    route: 'PATCH /api/recall-policy', body: { answerFromConfirmed: false }, reason: 'Asked', personWords: '没说过的话' });
+  assert.deepEqual([reads.length, 'relayed' in sent[0].call, 'relayed' in result], [0, false, false]);
+  assert.match(result.delegation_receipt.markdown, /已代你操作 PATCH \/api\/recall-policy/);
+});
+
+test('the gate runs a relayed decision only with the words in its header and records them', async (t) => {
+  const port = delegation(t);
+  const bare = await gate(port, 'POST', '/api/agent-attention/respond');
+  assert.deepEqual([bare.ran, bare.sent.statusCode, bare.sent.body.code], [false, 400, 'person_words_required']);
+  const relayed = await gate(port, 'POST', '/api/agent-attention/respond',
+    { header: encodeDelegation({ ...CALL, relayed: RELAYED }) });
+  assert.equal(relayed.ran, true);
+  const [operation] = port.read().operations;
+  assert.deepEqual([operation.route, operation.category, operation.relayed],
+    ['POST /api/agent-attention/respond', 'decisions', RELAYED]);
+  // A local-user-only change stays refused whatever words come with it.
+  const local = await gate(port, 'POST', '/api/knowledge/entity/item-a/hard-delete',
+    { header: encodeDelegation({ ...CALL, relayed: RELAYED }) });
+  assert.deepEqual([local.ran, local.sent.body.code], [false, 'local_user_only']);
+  port.setCategory('decisions', false);
+  const off = await gate(port, 'POST', '/api/judgment/feedback', { header: encodeDelegation({ ...CALL, relayed: RELAYED }) });
+  assert.deepEqual([off.ran, off.sent.body.code], [false, 'delegation_category_off']);
+});
+
+test('the real console keeps a relayed batch confirmation as the person\'s, relayed by the FLA', async (t) => {
+  const port = delegation(t);
+  const confirmed = [];
+  const app = { graphiti: true, getAgentAccessPolicy: () => ({ enabled: true }),
+    confirmKnowledgeBatch: (input) => { confirmed.push(input); return { confirmed: input.items.length }; },
+    async state() { throw new Error('not queried'); }, close() {} };
+  const runtime = await createServer({ port: 0, dataFormatNotices: () => [], agentDelegation: port, app });
+  t.after(() => new Promise((done) => runtime.server.close(done)));
+  const client = createDelegatedConsoleClient({ consoleUrl: () => runtime.url });
+  const body = { personalSpaceId: 'space-a', groupKind: 'topic', groupValue: 'citations', reason: 'Confirmed in chat',
+    confirmer: { kind: 'authoritative_source', label: 'Claimed by the body' }, items: [] };
+  await client.send({ method: 'POST', path: '/api/knowledge/batch-confirmation', body,
+    call: { ...CALL, bodyFields: Object.keys(body), relayed: RELAYED } });
+  assert.deepEqual([confirmed[0].confirmer, confirmed[0].operationActor],
+    [{ kind: 'user', label: '由 fla-synthetic 转达' }, 'human']);
+  // The person's own confirmation in the console keeps what they chose.
+  const own = await fetch(new URL('/api/knowledge/batch-confirmation', runtime.url), { method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  assert.equal(own.status, 200);
+  assert.deepEqual(confirmed[1].confirmer, body.confirmer);
+  assert.deepEqual(port.read().operations.map(({ route, relayed }) => [route, relayed]),
+    [['POST /api/knowledge/batch-confirmation', RELAYED]]);
 });

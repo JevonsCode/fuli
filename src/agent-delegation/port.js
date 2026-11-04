@@ -4,7 +4,7 @@ import { DELEGATION_CATEGORIES, interfaceForRequest } from '../agent-tools/inter
 import { InvalidInputError } from '../app/application-error.js';
 import { DelegatedOperationLog } from './operation-log.js';
 import { createDelegationPolicyStore } from './policy-store.js';
-import { agentAccessOffRefusal, categoryOffRefusal, delegableEntry } from './refusals.js';
+import { agentAccessOffRefusal, categoryOffRefusal, delegableEntry, personWordsRequiredRefusal } from './refusals.js';
 
 // What the person lets their FLAs do for them in the console (AI
 // permissions, rec#11 D-81) and the record of each change an FLA made. The
@@ -34,20 +34,22 @@ export function createAgentDelegation(dataDir, { now = () => new Date().toISOStr
 
     // The catalog entry an FLA's request may run, or the refusal that says
     // why not. The catalog decides first: no policy value opens a
-    // local-user-only change.
-    authorize(method, pathname, { agentAccessEnabled }) {
+    // local-user-only change, and the person's own decision runs only with
+    // the words run_delegated_action found in their messages (rec#80).
+    authorize(method, pathname, { agentAccessEnabled, call }) {
       if (!agentAccessEnabled) throw agentAccessOffRefusal();
       const entry = delegableEntry(interfaceForRequest(method, pathname));
       if (!policy.read().categories.find((category) => category.id === entry.category)?.enabled) {
         throw categoryOffRefusal();
       }
+      if (entry.access === 'agent_relayed' && !call.relayed) throw personWordsRequiredRefusal();
       return entry;
     },
 
     record({ id, entry, path, call, status }) {
       log.record({ id, at: now(), route: entry.route, path, category: entry.category, actor: call.actor,
         reason: call.reason, bodyFields: call.bodyFields, status, outcome: status < 400 ? 'succeeded' : 'failed',
-        undo: entry.undo });
+        undo: entry.undo, relayed: entry.access === 'agent_relayed' ? call.relayed : null });
     },
 
     close: () => log.close()

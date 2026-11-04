@@ -17,12 +17,12 @@
       "fingerprint": "ac51af848f3e7277f38e13ba68567a10d187ee6558249c3230eec4493c53bf9b"
     },
     "jefa-board": {
-      "version": 3,
-      "fingerprint": "4361b94c01a458b680a0191279fb7ad49f0a4e7a18fadd1b5bc0438865243218"
+      "version": 4,
+      "fingerprint": "3a0775d1c23dee9e4366237ffc97f2b77bca7a600a400a705ff5014c0eb82574"
     },
     "judgment": {
-      "version": 1,
-      "fingerprint": "e621120361096b31c77958988cc3fc7cd0f19345732268b0fb28c6508da24b8e"
+      "version": 2,
+      "fingerprint": "3363315931dfa00d42d32bb1ea465b93f7d64489af3edef87b22078fe3541ff8"
     },
     "model-settings-history": {
       "version": 1,
@@ -77,8 +77,8 @@
       "fingerprint": "4972c8b13efb1c57a3f5f2388d408687ba8ced3629921b0dadd46e2b65531189"
     },
     "agent-delegation": {
-      "version": 1,
-      "fingerprint": "450e1b997fc2280031c3b815210d2bc1ed5b0f0c56e7f16e66b9a79efb056e7e"
+      "version": 2,
+      "fingerprint": "e2cf344349f0a3f6f23614f42f2fef04c43516dfb9ef23ed999becff2ea549bc"
     }
   }
 }

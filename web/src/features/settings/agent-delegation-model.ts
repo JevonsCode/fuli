@@ -12,6 +12,8 @@ const operation = z.looseObject({
   reason: z.string(),
   outcome: z.enum(['succeeded', 'failed']),
   undo: z.string(),
+  // The person's words an FLA relayed as their decision (rec#80); null otherwise.
+  relayed: z.looseObject({ words: z.string() }).nullable().optional(),
 })
 
 const agentDelegationSchema = z.looseObject({

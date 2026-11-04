@@ -4,8 +4,9 @@ import { readJson, sendJson } from './response.js';
 // Whether it is open also comes with /api/state; GET reads it with the
 // settings as saved now, so a console that lost an answer's response can
 // show what actually happened. Like every long-term capture setting the
-// answer is the person's own console action; no Agent tool (MCP or
-// fuli_call) reaches this route (rec#11 D-16).
+// answer is the person's own; no Agent tool (MCP or fuli_call) reaches this
+// route (rec#11 D-16), and an FLA only relays the person's answer in their
+// words (agent_relayed, rec#80).
 export async function handleCaptureOnboardingRequest({ request, response, url, app }) {
   if (url.pathname !== '/api/capture-onboarding') return false;
   if (request.method === 'GET') {

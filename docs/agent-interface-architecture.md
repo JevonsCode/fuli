@@ -125,11 +125,19 @@ The following operations intentionally remain local-user-only:
 
 - enabling or disabling Agent access;
 - device-level runtime settings;
-- completing a preference conflict as a human decision;
-- confirming preference visibility scope;
-- batch confirmation of knowledge.
-- Jefa task completion that records explicit human acceptance (other task updates remain available through the employee tools).
 - confirming, rejecting or retiring an Agent's workflow (`POST /api/agent-workflows/:workflowId/decision`).
+
+The person's own decisions are `agent_relayed` (rec#80, category `decisions`): completing a
+preference conflict, confirming preference visibility, batch confirmation, Jefa acceptance,
+attention replies, Tonborg votes and review undo, the 「我」 profile, the first-run guide and
+capture onboarding, dismissing finished-migration reminders and showing an app export folder.
+The person decides in chat; an FLA passes their exact words as `personWords` to
+`run_delegated_action`, which runs the change only when the words are in one of the person's
+last 20 saved messages of the calling session (session records, the task's own reader). The
+delegation record keeps the words and the message they were found in; judgment feedback and
+Jefa revisions also keep `relayedBy` and `personWords`, and a relayed batch confirmation's
+confirmer is the person (`user`, labelled with the relaying FLA). Other task updates remain
+available through the employee tools.
 
 ## Agent workflows and the Agent home (rec#60 D-78)
 

@@ -32,8 +32,7 @@ const LOCAL_ROUTES = [
   'POST /api/agent-apps/:appId/delete-code',
   'POST /api/agent-apps/:appId/data-deletion',
   'POST /api/agent-apps/:appId/delete-data',
-  'POST /api/agent-apps/:appId/confirm',
-  'POST /api/agent-apps/:appId/reveal-export'
+  'POST /api/agent-apps/:appId/confirm'
 ];
 // rec#11 D-81: an FLA runs these for the person with run_delegated_action
 // while the services_apps permission is on; no Agent tool of their own.
@@ -101,6 +100,8 @@ test('the Agent tool submits and lists app versions but can never approve or cha
     assert.deepEqual([byRoute.get(route)?.access, byRoute.get(route)?.category, byRoute.get(route)?.toolName],
       ['agent_delegable', 'services_apps', undefined], route);
   }
+  // rec#80: showing an export folder is the person's ask, relayed in their words.
+  assert.equal(byRoute.get('POST /api/agent-apps/:appId/reveal-export')?.access, 'agent_relayed');
 });
 
 test('an Agent on the chat profile submits through fuli_call and cannot reach an approval', async (t) => {

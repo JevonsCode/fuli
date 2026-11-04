@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 
+import { createAgentDelegation } from '../src/agent-delegation/port.js';
+import { createDelegatedConsoleClient } from '../src/agent-delegation/console-client.js';
 import { installEmployeePackage } from '../src/employees/install-package.js';
 import { createEmployeePackageRegistry, employeeDirectories } from '../src/employees/package-registry.js';
 import { createServer } from '../src/server.js';
@@ -233,4 +235,22 @@ test('the person\'s decisions are refused from another device', async (t) => {
     await app.employees.handleHttp(request, response, { templateId: 'jefa', personalProjectId: 'employee-qa', relativePath });
     assert.equal(status, 403, relativePath);
   }
+});
+
+test('rec#80: a move an FLA relays is the person\'s acceptance, kept with the FLA and the person\'s words', async (t) => {
+  const { app, call, defer } = await hiredJefa(t);
+  const delegation = createAgentDelegation(null);
+  defer(() => delegation.close());
+  const { server, url } = await createServer({ app, port: 0, agentDelegation: delegation });
+  defer(() => new Promise((resolve) => { server.close(resolve); server.closeAllConnections(); }));
+  const { createdWorkItems: [task] } = await call('create_tasks', { messageId: 'relay-seed', tasks: [{ title: 'Synthetic relayed task' }] });
+  const client = createDelegatedConsoleClient({ consoleUrl: () => url });
+  const relayed = { words: '这个任务验收通过', messageRef: { taskId: 'task-a', conversationId: null, at: null } };
+  const actor = { agentId: 'fla-synthetic', projectId: 'employee-qa', client: 'codex', sessionId: 'session-a' };
+  await client.send({ method: 'PATCH', path: `/employee-workspaces/jefa/employee-qa/api/work-items/${task.id}/status`,
+    body: { status: 'done' }, call: { actor, reason: 'The person accepted it in chat', bodyFields: ['status'], relayed } });
+  const [latest] = (await call('get_task', { workItemId: task.id })).item.history;
+  assert.deepEqual([latest.status, latest.actor, latest.decidedBy, latest.relayedBy, latest.personWords],
+    ['done', 'person', 'person', 'fla-synthetic', '这个任务验收通过']);
+  assert.deepEqual(delegation.read().operations.map(({ category, relayed: words }) => [category, words]), [['decisions', relayed]]);
 });

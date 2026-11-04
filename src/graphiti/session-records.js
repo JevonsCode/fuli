@@ -44,14 +44,32 @@ export async function readSessionRecords(application, ownerReads, { personalSpac
 export async function readOwnSessionRecords(application, { taskContextToken, sourceApplication }) {
   const task = await application.taskContextRegistry.context(requiredString(taskContextToken, 'taskContextToken', 160),
     requiredBinding(sourceApplication, 'sourceApplication', MAX_CLIENT));
+  const { session, read } = await ownSessionRead(application, task);
+  const view = sessionRecordsView(application, session, read);
+  // The numbered lines carry every entry once; the same entries again as
+  // data would only double what the answer costs.
+  return { total: view.total, truncated: view.truncated, url: view.session.url, markdown: sessionRecordsMarkdown(view) };
+}
+
+// The person's newest saved messages in a task's own session, as that task's
+// Agent reads the session (the same turns as above), oldest first, each with
+// the turn that holds it: what words an FLA relays as the person's decision
+// are checked against (rec#80). A message is saved when its turn's transcript is.
+export async function recentSessionUserMessages(application, task, limit) {
+  const { read } = await ownSessionRead(application, task);
+  return read.turns.filter(turn => !turn.hidden).flatMap(turn => turn.messages
+    .filter(message => message.role === 'user')
+    .map(message => ({ text: message.text, ref: { taskId: turn.task_id ?? null,
+      conversationId: turn.conversation_id ?? null, at: message.created_at ?? null } })))
+    .sort((left, right) => time(left.ref.at) - time(right.ref.at)).slice(-limit);
+}
+
+async function ownSessionRead(application, task) {
   const session = { sourceApplication: task.sourceApplication, sessionId: task.sessionId };
   const reader = providerReaderFields(taskKnowledgeReader(task));
   const read = await providerRead(application, session,
     body => application.personal.readSessionRecords({ ...body, ...reader }));
-  const view = sessionRecordsView(application, session, withinReader(read, task));
-  // The numbered lines carry every entry once; the same entries again as
-  // data would only double what the answer costs.
-  return { total: view.total, truncated: view.truncated, url: view.session.url, markdown: sessionRecordsMarkdown(view) };
+  return { session, read: withinReader(read, task) };
 }
 
 async function providerRead(application, session, readRecords) {

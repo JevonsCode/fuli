@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { relayedDecision } from '../../../agent-delegation/delegation-header.js';
 import { InvalidInputError } from '../../../app/application-error.js';
 import { arraySchema, boundedString, enumSchema, objectSchema } from '../../../agent-tools/schema.js';
 import { refuseRemoteDecision } from '../../../http/request-policy.js';
@@ -12,7 +13,8 @@ import { TASK_STATUSES } from './project-board.js';
 // has already authorized the project (context.project); a project named in a
 // path must be that same one. Marking a task done, creating a public task and
 // sharing a project are the person's own decisions on this computer
-// (interface-catalog.js, local_user_only); the public projection shows only
+// (interface-catalog.js); a move an FLA relays in the person's words (rec#80)
+// is kept as the person's with those words; the public projection shows only
 // tasks marked public_summary, and only their title, status and priority.
 // A move to one of the project's own columns names it in boardColumn too.
 const statusBody = jsonSchemaToZod(objectSchema({ status: enumSchema(TASK_STATUSES), boardColumn: boundedString(48) }, ['status']));
@@ -56,7 +58,7 @@ export async function handleJefaHttp(store, manifest, request, response, context
   } else if ((match = route('PATCH', /^\/api\/work-items\/([^/]+)\/status$/))) {
     if (refuseRemoteDecision(request, response, 'A task is accepted as done only on this computer')) return;
     const { status, boardColumn } = parse(statusBody, await readJson(request), 'status');
-    sendJson(response, 200, { workItem: store.setStatus(scope, segment(match[1]), status, boardColumn) });
+    sendJson(response, 200, { workItem: store.setStatus(scope, segment(match[1]), status, boardColumn, relayedDecision(request)) });
   } else {
     sendJson(response, 404, { error: 'Not found', code: 'not_found' });
   }
