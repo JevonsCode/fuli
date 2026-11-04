@@ -120,12 +120,12 @@ onBeforeUnmount(() => reading?.abort())
 
 <style scoped>
 .debug-turn-view { padding-bottom: 96px; color: var(--color-ink); }
-.debug-turn-content { width: 100%; display: grid; gap: 16px; }
+.debug-turn-content { width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .debug-turn-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .debug-turn-share { margin: 0; font-size: var(--text-body); font-weight: var(--weight-medium); }
 .debug-turn-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; list-style: none; font-size: var(--text-meta); }
 .debug-turn-legend li { display: inline-flex; align-items: center; gap: 6px; }
 .debug-turn-legend small { color: var(--color-muted); font-size: var(--text-meta); }
 .debug-turn-swatch { width: 10px; height: 10px; border-radius: var(--radius-pill); }
-.debug-turn-parts { display: grid; gap: 8px; }
+.debug-turn-parts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 </style>

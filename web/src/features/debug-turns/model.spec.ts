@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fuliShare, partTitle, sourceColour, startsFolded, type DebugPart } from './model'
+import { fuliShare, partIsLong, partTitle, sourceColour, type DebugPart } from './model'
 import semantic from '@/styles/theme/semantic.css?raw'
 
 // Synthetic parts only.
@@ -29,9 +29,9 @@ describe('debug turn record model', () => {
     expect(new Set(['person', 'fuli', 'ai', 'host', 'not_visible'].map(s => sourceColour(s as DebugPart['source']))).size).toBe(5)
   })
 
-  it('folds a long part and leaves a short one open', () => {
-    expect(startsFolded(part({ text: 'x', bytes: 1 }))).toBe(false)
-    expect(startsFolded(part({ text: 'x'.repeat(700), bytes: 700 }))).toBe(true)
-    expect(startsFolded(part({ text: 'a\n'.repeat(20), bytes: 40 }))).toBe(true)
+  it('calls a part long past its two lines, whatever the width', () => {
+    expect(partIsLong(part({ text: 'x', bytes: 1 }))).toBe(false)
+    expect(partIsLong(part({ text: 'x'.repeat(700), bytes: 700 }))).toBe(true)
+    expect(partIsLong(part({ text: 'a\n'.repeat(20), bytes: 40 }))).toBe(true)
   })
 })

@@ -40,9 +40,9 @@ export function fuliShare(sums: DebugTotals): { bytes: number; total: number; pe
   return { bytes, total, percent: total ? Math.round((bytes / total) * 100) : 0 }
 }
 
-// A part longer than this starts folded; shorter ones show whole.
-export const FOLDED_PART_BYTES = 600
-export const startsFolded = (item: DebugPart) => item.bytes > FOLDED_PART_BYTES || item.text.split('\n').length > 12
+// Past this a part certainly runs over its two lines, whatever the page's width.
+const LONG_PART_BYTES = 400
+export const partIsLong = (item: DebugPart) => item.bytes > LONG_PART_BYTES || item.text.split('\n').length > 2
 
 // The record's labels: a count for the tool list and the history, the event or
 // tool name otherwise. An unknown kind keeps its code.

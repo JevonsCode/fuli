@@ -48,7 +48,7 @@ it('stacks the parts in order, coloured by source, under how much FULI added', a
   expect(parts.map(part => part.attributes('style'))).toEqual([
     '--source: var(--color-source-not-visible);', '--source: var(--color-source-fuli);', '--source: var(--color-source-person);',
     '--source: var(--color-source-ai);', '--source: var(--color-source-host);'])
-  expect(parts.map(part => part.find('[data-debug-part-folded]').exists())).toEqual([false, true, false, false, false])
+  expect(parts.map(part => part.find('[data-debug-part-more]').exists())).toEqual([false, true, false, false, false])
 
   await parts[1]!.get('[data-debug-part-copy]').trigger('click')
   await flushPromises()
@@ -80,5 +80,17 @@ it('reads a record that nothing was cut from', async () => {
   const { wrapper } = await mountPage(() => Response.json({ ...RECORD, cut: null }))
   expect(wrapper.find('[data-debug-part]').exists() || wrapper.text().includes('#debug')).toBe(true)
   expect(wrapper.text()).not.toContain('没有读取成功')
+  wrapper.unmount()
+})
+
+// Jevons 11-04: two lines on the page, the rest in a large dialog that scrolls.
+it('opens a long part in a dialog with its whole text', async () => {
+  const text = 'long line\n'.repeat(80)
+  const { wrapper } = await mountPage(() => Response.json({ ...RECORD, cut: null,
+    parts: [{ source: 'fuli', kind: 'mcp_tools', label: '6', text, bytes: text.length }] }))
+  expect(wrapper.get('[data-debug-part-preview]').text()).toContain('long line')
+  await wrapper.get('[data-debug-part-more]').trigger('click')
+  await flushPromises()
+  expect(document.querySelector('[data-debug-part-dialog] pre')?.textContent).toBe(text)
   wrapper.unmount()
 })
