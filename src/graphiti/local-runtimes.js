@@ -27,6 +27,7 @@ import { createProjectChangeLog } from '../project-change-log/port.js';
 import { createPersonProfile } from '../person-profile/port.js';
 import { entryPromptRecords } from '../agent-delegation/entry-prompts.js';
 import { createWorkSurfaces } from '../work-surfaces/port.js';
+import { createOldDataShelf } from '../old-data/port.js';
 import { workSurfaceNames, workSurfaceSources } from '../work-surfaces/sources.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
@@ -95,6 +96,8 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   // Every FLA's work surfaces in one table, with 全部暂停 and 恢复 (rec#11 D-85); the file is created by the first pause.
   app.workSurfaces = createWorkSurfaces({ path: join(dataDir, 'work-surfaces.sqlite'), sources: workSurfaceSources(app),
     names: (personalSpaceId) => workSurfaceNames(app, personalSpaceId) });
+  // The copies FULI keeps before it changes something (旧数据, rec#80 group B); reads only.
+  app.oldData = createOldDataShelf({ paths });
   app.roundtableHost = createFuliRoundtableHost(app);
   app.peer = createPeerPort({ dataDir, host: app.roundtableHost });
   app.roundtable = createAgentRoundtable({

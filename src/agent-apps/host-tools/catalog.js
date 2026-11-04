@@ -128,6 +128,8 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   record_agent_workflow_run: UNSCOPED,
   list_work_surfaces: UNSCOPED,
   read_diagnostic_events: UNSCOPED,
+  // Reads files under the data directory, outside any app's space.
+  read_old_data: UNSCOPED,
   explain_settings: UNSCOPED,
   get_agent_naming_style: UNSCOPED,
   update_capture_policy: UNSCOPED,

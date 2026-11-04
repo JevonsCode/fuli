@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatBytes as formatByteCount } from '@/lib/format-bytes'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -15,6 +16,7 @@ import ClientLinksSettings from '@/features/settings/ClientLinksSettings.vue'
 import AgentDelegationSettings from '@/features/settings/AgentDelegationSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
 import DiagnosticsSettings from '@/features/settings/DiagnosticsSettings.vue'
+import StorageSettings from '@/features/settings/StorageSettings.vue'
 import GraphMigrationRow from '@/features/settings/GraphMigrationRow.vue'
 import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
 import { offersUpdate, useChannelVersionStatus } from '@/features/update/version-status'
@@ -347,18 +349,9 @@ function componentLabel(component: ResourceComponent) {
   return i18n.global.te(key) ? t(key) : component.label
 }
 
+// One unit system with 存储 (lib/format-bytes): the two cards' sizes read alike.
 function formatBytes(bytes: number | null | undefined) {
-  if (!Number.isFinite(bytes)) return '—'
-  const value = Number(bytes)
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
-  let amount = value
-  let index = 0
-  while (amount >= 1024 && index < units.length - 1) {
-    amount /= 1024
-    index += 1
-  }
-  const digits = index === 0 ? 0 : amount >= 100 ? 0 : amount >= 10 ? 1 : 2
-  return `${amount.toFixed(digits)} ${units[index]}`
+  return Number.isFinite(bytes) ? formatByteCount(Number(bytes)) : '—'
 }
 
 function barWidth(bytes: number, maximum: number) {
@@ -652,6 +645,7 @@ function checkFields(): ValidatedField[] {
                   </CardAction>
                 </CardHeader>
               </Card>
+              <StorageSettings />
               <DiagnosticsSettings />
               <Card as="section" class="settings-card resource-card" data-span="wide" aria-labelledby="settings-resources-title">
                 <CardHeader>

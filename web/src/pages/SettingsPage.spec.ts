@@ -377,7 +377,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('资源占用')
-    expect(wrapper.text()).toContain('1.00 GiB')
+    expect(wrapper.text()).toContain('1 GB')
     expect(wrapper.text()).toContain('个人 Neo4j')
     expect(wrapper.text()).toContain('Synthetic extension')
     expect(warnings).not.toHaveBeenCalled()

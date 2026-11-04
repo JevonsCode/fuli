@@ -95,6 +95,14 @@ export function pruneFormatBackups(dataDir, { policy = backupRetentionPolicy(), 
   return { pruned: events, kept: candidates.length - pruned.length, plannedBytesKept: total, sharedPruned, policy };
 }
 
+// Whether an undo, the store's latest ledger entry or its current version
+// still needs this backup, as pruning decides; the person's 「立即删除」 of old
+// data (src/old-data/console-actions.js) refuses such a backup.
+export function formatBackupNeeded(dataDir, label, ref) {
+  const store = localStoreFiles(dataDir).find((candidate) => candidate.label === label);
+  return Boolean(store) && neededBackups(store, formatBackupsOf(store.path)).has(ref);
+}
+
 function neededBackups(store, backups) {
   const everything = new Set(backups.map((backup) => backup.ref));
   const needed = new Set();
