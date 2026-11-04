@@ -397,6 +397,36 @@ def test_relevance_uses_explicit_search_terms_for_long_conversational_requests()
     assert unrelated == 0
 
 
+PREFERENCE = {
+    'name': 'Answer in Chinese',
+    'type': 'PersonalPreference',
+    'summary': 'Use Simplified Chinese unless the user writes otherwise.',
+    'reasoning_summary': None,
+    'profile_aspect': 'taste',
+    'key': 'pref-1',
+    'attributes_json': '{"preferenceKey":"reply-language"}',
+}
+
+
+@pytest.mark.parametrize('query', ['reply-language', 'reply language', 'Which reply language?'])
+def test_a_preference_is_found_by_its_key_as_written_and_as_words(query):
+    # rec#75: none of these words is in its name or summary.
+    assert _relevance(query, PREFERENCE) > 0
+
+
+def test_a_preference_without_a_stated_key_is_found_by_its_capture_key():
+    record = {**PREFERENCE, 'key': 'reply_language', 'attributes_json': '{}'}
+
+    assert _relevance('reply_language', record) > 0
+    assert _relevance('reply language', record) > 0
+
+
+def test_only_a_preference_is_found_by_its_key():
+    fact = {**PREFERENCE, 'profile_aspect': None, 'type': 'ProjectFact'}
+
+    assert _relevance('reply-language', fact) == 0
+
+
 def test_relevance_keeps_spaced_chinese_query_terms_separate():
     score = _relevance(
         '推送 提交 push commit GitHub Connector runbook',

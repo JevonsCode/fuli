@@ -22,6 +22,7 @@ from .models import (
     StructuredEpisode,
 )
 from .personal_project_access import authorize_personal_project
+from .preference_versions import restated_preferences
 from .project_agent_access import authorize_project_agent
 from .knowledge_versions import link_reasserted, lock_knowledge, reasserted_entities, restated_relationships
 from .provider_values import now_utc, stable_uuid
@@ -194,6 +195,12 @@ class StoreKnowledge:
                 reasserted[entity_id]['item_id'] if entity_id in reasserted else entity_id
                 for entity_id in entity_ids
             ]
+            # A confirmed preference stated again with other words is a new
+            # version; the stored one keeps its words and ends below (rec#75).
+            landed_ids = list(entity_ids)
+            restated_preference_ids = await restated_preferences(
+                self, space, episode.entities, landed_ids, episode_id)
+            entity_ids = [restated_preference_ids.get(entity_id, entity_id) for entity_id in entity_ids]
             entity_id_by_key = {
                 entity.key: entity_id
                 for entity, entity_id in zip(
@@ -301,7 +308,9 @@ class StoreKnowledge:
                     raise HTTPException(status_code=409, detail={
                         'code': 'versions_changed',
                         'message': 'something this capture names ended meanwhile; retry the capture'})
-                if reasserted != await reasserted_entities(scoped, space, captured_ids, episode_id):
+                if reasserted != await reasserted_entities(scoped, space, captured_ids, episode_id) or (
+                        restated_preference_ids != await restated_preferences(
+                            scoped, space, episode.entities, landed_ids, episode_id)):
                     raise HTTPException(status_code=409, detail={
                         'code': 'versions_changed',
                         'message': 'a version this capture names changed meanwhile; retry the capture'})

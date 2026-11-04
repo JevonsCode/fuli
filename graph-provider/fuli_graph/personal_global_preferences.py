@@ -23,6 +23,7 @@ from .provider_values import (
     json_object,
     native_datetime,
     now_utc,
+    preference_key,
     preference_qualifiers,
     sha256_text,
     stable_uuid,
@@ -529,12 +530,7 @@ async def _candidate_source_snapshots(
     for record in records:
         value = dict(record)
         attributes = json_object(value.get('attributes_json'))
-        preference_key = (
-            attributes.get('preferenceKey')
-            or attributes.get('preference_key')
-            or value.get('key')
-            or value.get('item_id')
-        )
+        stated_key = preference_key(attributes, value.get('key'), value.get('item_id'))
         basis = json_object(value.get('confirmation_basis_json'))
         try:
             snapshot = PersonalGlobalPreferenceSourceSnapshot(
@@ -542,7 +538,7 @@ async def _candidate_source_snapshots(
                 item_kind=value['item_kind'],
                 project_id=value['project_id'],
                 key=value.get('key') or value['item_id'],
-                preference_key=preference_key,
+                preference_key=stated_key,
                 preference_qualifiers=preference_qualifiers(attributes),
                 title=value.get('title') or value['item_id'],
                 instruction=value.get('instruction') or '',

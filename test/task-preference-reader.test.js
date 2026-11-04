@@ -7,7 +7,7 @@ import { projectAgentRecord } from '../src/graphiti/project-agent-mapping.js';
 import { applyAgentAssignment } from '../src/graphiti/task-agent-assignment.js';
 import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { entryRules } from '../src/conversations/entry-rules.js';
-import { agentCollaborationPreference } from '../src/graphiti/collaboration-preference-projection.js';
+import { deliveredCollaborationPreference } from '../src/graphiti/collaboration-preference-projection.js';
 
 const SESSION = '019fc6ed-02a5-7832-8821-68e3b03e7cef';
 function fixture(count = 1) {
@@ -78,7 +78,7 @@ test('owned reader delivers all long instructions and mandatory guidance in both
   assert.deepEqual(pages.map(page => page.preference_delivery.page_index), pages.map((_, i) => i));
   const value = { ...Object.assign({}, ...pages), effective_preferences: pages.flatMap(page => page.effective_preferences) };
   assert.equal(value.effective_preferences.length, 100);
-  assert.deepEqual(value.effective_preferences, f.preferences.effective_preferences.map(agentCollaborationPreference));
+  assert.deepEqual(value.effective_preferences, f.preferences.effective_preferences.map(deliveredCollaborationPreference));
   for (let i = 0; i < 100; i++) assert.equal(value.effective_preferences[i].instruction, f.preferences.effective_preferences[i].instruction);
   assert.equal(value.task_context_token, f.task.token);
   assert.equal(value.agent_receipt.owner.agent_id, 'agent-a');

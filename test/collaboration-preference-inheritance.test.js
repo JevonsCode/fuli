@@ -75,6 +75,8 @@ test('agent collaboration preferences preserve inherited scope and rationale met
   });
 
   assert.deepEqual(result.effective_preferences, [{
+    id: 'parent-a-preference',
+    item_kind: 'entity',
     instruction: '提出实现建议前先解释功能边界。',
     preference_key: 'alignment.network.parent-a.explain-boundary',
     title: '先解释功能边界',
