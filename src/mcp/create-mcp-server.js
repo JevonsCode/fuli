@@ -104,7 +104,9 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   get_agent_score_card: 32 * 1024,
   list_knowledge_review_candidates: 32 * 1024,
   list_workflow_candidates: 32 * 1024,
-  recommend_next_workflow_steps: 32 * 1024
+  recommend_next_workflow_steps: 32 * 1024,
+  role_work: 256 * 1024,
+  plan_agent_collaboration: 64 * 1024
 });
 const NATIVE_CHOICE_TOOLS = new Set(['checkpoint_task_knowledge', 'review_with_tonborg',
   'list_judgments', 'request_agent_attention', 'list_agent_attention']);
@@ -112,7 +114,10 @@ const NATIVE_CHOICE_TOOLS = new Set(['checkpoint_task_knowledge', 'review_with_t
 const COMPLETE_RESULT_TOOLS = new Set(['export_project_agent_memory', 'get_agent_handoff']);
 // Roundtable message bodies are delivered whole or not at all (rec#77): a cut
 // reply reads as complete. read_agent_thread pages with after/limit instead.
-const WHOLE_MESSAGE_TOOLS = new Set(['message_agent', 'get_agent_message_status', 'read_agent_messages', 'read_agent_thread']);
+const WHOLE_MESSAGE_TOOLS = new Set(['message_agent', 'get_agent_message_status', 'read_agent_messages', 'read_agent_thread',
+  // A claimed work package without its schema and lease cannot be submitted, and a
+  // plan with cut nextSteps cannot be run (rec#81): whole, or an error saying so.
+  'role_work', 'plan_agent_collaboration']);
 const NATIVE_CONTEXT = Symbol('fuli.nativeMcpRequestContext');
 
 export function createMcpServer(

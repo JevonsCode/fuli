@@ -66,6 +66,36 @@ export function failureProvenance(error) {
   return error.modelReceipt ? { modelReceipt: compactReceipt(error.modelReceipt) } : {};
 }
 
+// Why a judgment failed, for the Agent that asked (rec#83): the step, a fixed
+// category and what to do next. Only fixed words and the HTTP status, never
+// the error's own message, which may carry Provider or model text.
+const UNREACHABLE = new Set(['provider_unavailable', 'provider_timeout', 'provider_http_5xx']);
+const FAILURE_RECOVERY = Object.freeze({
+  provider_unreachable: 'The graph service did not answer; try again once it is back.',
+  not_found: 'The Agent, task or project named was not found; check the IDs and ask again.',
+  not_allowed: 'This Agent may not read what the judgment needs; ask from the project of the task.',
+  provider_refused: 'The graph service refused the read; check the input and ask again.',
+  model: 'The Tonborg model failed; see modelReceipt, then try again or check the model settings.',
+  invalid_answer: 'The answer did not match the eligible executors or conversations; ask again.',
+  unknown: 'Try again; if it repeats, report the error code and step.'
+});
+export const FAILED_JUDGMENT_GUIDANCE = 'The judgment failed: nothing was selected or run, and this is no execution receipt. '
+  + 'What the person already chose stands; continue on their word, or ask them.';
+
+function failureCategory(error) {
+  if (error.modelReceipt) return 'model';
+  if (error instanceof TypeError || error.name === 'ZodError') return 'invalid_answer';
+  if (UNREACHABLE.has(error.code)) return 'provider_unreachable';
+  if (error.code !== 'provider_error') return 'unknown';
+  return error.status === 404 ? 'not_found' : error.status === 403 ? 'not_allowed' : 'provider_refused';
+}
+
+export function judgmentFailure(error, stage) {
+  const category = failureCategory(error);
+  return { stage, category, ...(Number.isInteger(error.status) && error.status > 0 ? { status: error.status } : {}),
+    retryable: ['provider_unreachable', 'model', 'unknown'].includes(category), recovery: FAILURE_RECOVERY[category] };
+}
+
 // Each top-level part of the judgment data is one evidence item, so the
 // port's egress check sees every part with its project.
 function judgmentRequest(call) {
