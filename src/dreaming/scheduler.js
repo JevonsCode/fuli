@@ -41,7 +41,7 @@ async function lastRuns(app) {
   const last = new Map();
   for (const row of await dreamingRuns(app)) {
     const at = Date.parse(row.at);
-    const project = row.subject?.personalProjectId ?? row.project;
+    const project = row.personalProjectId;
     if (project && at > (last.get(project) ?? 0)) last.set(project, at);
   }
   return last;

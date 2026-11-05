@@ -22,7 +22,6 @@ const error = ref('')
 const choices = computed(() => props.projects.filter(project => project.scope_type !== 'temporary')
   .map(project => ({ value: project.project_id, label: project.profile.name })))
 const projectName = (id?: string | null) => choices.value.find(choice => choice.value === id)?.label ?? id ?? ''
-const proposedOf = (row: DreamingRun) => row.result?.proposed ?? row.proposed ?? []
 
 watch(choices, (next) => { if (!projectId.value && next[0]) projectId.value = next[0].value }, { immediate: true })
 watch(projectId, () => void load(), { immediate: true })
@@ -71,8 +70,8 @@ async function run() {
     <p v-if="error" role="alert" class="dreaming-error">{{ error }}</p>
     <ul v-if="runs.length" class="dreaming-runs">
       <li v-for="row in runs.slice(0, 5)" :key="row.at">
-        <strong>{{ projectName(row.project) }}</strong>
-        <span>{{ t('modelSettings.dreaming.found', { sessions: row.result?.sessions ?? row.sessions ?? 0, count: proposedOf(row).length }) }}</span>
+        <strong>{{ projectName(row.personalProjectId) }}</strong>
+        <span>{{ t('modelSettings.dreaming.found', { sessions: row.sessions ?? 0, count: row.proposed?.length ?? 0 }) }}</span>
       </li>
     </ul>
   </Card>

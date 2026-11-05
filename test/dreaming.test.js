@@ -65,6 +65,7 @@ test('rec#89: a pattern across sessions lands pending in the queue, and only thi
   assert.doesNotMatch(sent, /Words of another project/);
   assert.ok(calls.requests[0].evidence.every(item => item.personalProjectId === PROJECT));
   assert.equal(calls.rows.length, 1);
+  assert.doesNotMatch(JSON.stringify(calls.rows[0].result), /Synthetic rule/, 'the log keeps no words a permanent delete could miss');
 });
 
 test('rec#89: too few sessions, invented sessions and unknown items are dropped', async () => {

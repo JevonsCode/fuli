@@ -149,8 +149,8 @@ function qualifiedProposals(proposals, sessions, known) {
 // Both land in the person's queue; neither changes confirmed knowledge.
 async function apply(application, { personalSpaceId, personalProjectId, proposal, now }) {
   const reason = `Dreaming: seen in ${proposal.sessions.length} session(s).`;
-  const shown = { action: proposal.action, title: proposal.title, text: proposal.text, seenIn: proposal.sessions.length,
-    itemId: proposal.action === 'retire' ? proposal.itemId : null };
+  // Counts and IDs only: the words live on the queued item, where a permanent delete reaches them.
+  const shown = { action: proposal.action, seenIn: proposal.sessions.length, itemId: proposal.action === 'retire' ? proposal.itemId : null };
   try {
     if (proposal.action === 'retire') {
       await application.reviseKnowledgeItem({ personalSpaceId, itemKind: proposal.itemKind, itemId: proposal.itemId,

@@ -21,8 +21,8 @@ describe('DreamingCard', () => {
 
   it('runs the chosen project and shows what it found', async () => {
     vi.mocked(readDreaming).mockResolvedValueOnce({ readiness: 'ready', runs: [] })
-      .mockResolvedValue({ readiness: 'ready', runs: [{ at: '2026-11-05T00:00:00Z', project: 'alpha', result: { status: 'dreamed', sessions: 4,
-        proposed: [{ action: 'add', title: 'Synthetic', seenIn: 3, status: 'queued' }] } }] })
+      .mockResolvedValue({ readiness: 'ready', runs: [{ at: '2026-11-05T00:00:00Z', personalProjectId: 'alpha', status: 'dreamed', sessions: 4,
+        proposed: [{ action: 'add', seenIn: 3, status: 'queued' }] }] })
     vi.mocked(startDreaming).mockResolvedValue({ status: 'dreamed' })
     const wrapper = mount(DreamingCard, { props: { projects: [project] } })
     await flushPromises()
