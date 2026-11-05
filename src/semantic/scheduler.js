@@ -25,13 +25,17 @@ export function startSemanticIndexer({ app, withLease = (_owner, run) => run(), 
       state.running = false;
     }
   };
-  const run = () => { if (!stopped && !state.running) active = pass(); return active; };
+  // The pass in flight, or null: stopping with none in flight closes nothing late.
+  const run = () => {
+    if (!stopped && !active) active = pass().finally(() => { active = null; });
+    return active;
+  };
   const timer = setInterval(run, intervalMs);
   timer.unref?.();
   return {
     state,
     runNow: run,
-    async stop() { stopped = true; clearInterval(timer); await active; }
+    stop() { stopped = true; clearInterval(timer); return active ?? undefined; }
   };
 }
 
