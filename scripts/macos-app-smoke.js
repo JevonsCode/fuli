@@ -20,6 +20,7 @@ import { DEFAULT_RUNTIME_SETTINGS, PORT_KEYS, writeRuntimeSettings } from '../sr
 // stop, swap FULI.app, start the new one), stop it, and launch the client.
 
 const CONTROLLER_TIMEOUT_MS = 15 * 60_000;
+const CLIENT_START_MS = 180_000;
 const CLIENT_SETTLE_MS = 15_000;
 const SYSTEM_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
 
@@ -99,8 +100,10 @@ async function smokeMacosDmg(dmg) {
     started = false;
     step('Stop confirmed: ' + stop.status);
 
-    await launchClient(app, { ...env, FULI_DATA_DIR: dataDir });
-    step('The desktop client launches and keeps running');
+    // Opening the client starts a stopped FULI; the finally below stops it again.
+    started = true;
+    await launchClient(app, { ...env, FULI_DATA_DIR: dataDir }, async () => reply(await controller('status')).status === 'running');
+    step('The desktop client launches, keeps running and starts FULI');
   } catch (error) {
     await printLogs(dataDir);
     throw error;
@@ -110,13 +113,18 @@ async function smokeMacosDmg(dmg) {
   }
 }
 
-async function launchClient(app, env) {
+async function launchClient(app, env, fuliRuns) {
   const child = spawn(join(app, 'Contents', 'MacOS', 'FULI'), [], { env, stdio: 'ignore' });
   let exit = null;
   child.once('exit', (code, signal) => { exit = { code, signal }; });
   await delay(CLIENT_SETTLE_MS);
   try {
     assert.equal(exit, null, 'The desktop client exited: ' + JSON.stringify(exit));
+    const deadline = Date.now() + CLIENT_START_MS;
+    while (!await fuliRuns()) {
+      assert.ok(Date.now() < deadline, 'The desktop client did not start FULI');
+      await delay(2_000);
+    }
   } finally {
     child.kill();
   }
