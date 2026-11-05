@@ -4,9 +4,9 @@ import { computed } from 'vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { t } from '@/i18n'
+import { currentLocale, t } from '@/i18n'
 import ModelRoleCheck from './ModelRoleCheck.vue'
-import { SEMANTIC_ROLE, type ModelRoleView } from './model'
+import { modelGuideUrl, SEMANTIC_ROLE, type ModelRoleView } from './model'
 
 // 语义搜索 (rec#88): the person's own model that lets FULI find knowledge by
 // meaning. Without it FULI matches words only. Its settings open in the same
@@ -22,7 +22,9 @@ const tone = computed(() => (state.value === 'enabled' ? 'success' : state.value
   <Card as="section" class="semantic-card" aria-labelledby="semantic-search-title" data-semantic-search>
     <CardHeader>
       <CardTitle id="semantic-search-title" as="h2">{{ t('modelSettings.semantic.title') }}</CardTitle>
-      <CardDescription class="semantic-summary">{{ t('modelSettings.semantic.summary') }}</CardDescription>
+      <CardDescription class="semantic-summary">{{ t('modelSettings.semantic.summary') }}
+        <a :href="modelGuideUrl(currentLocale())" target="_blank" rel="noopener noreferrer" data-model-guide>{{ t('modelSettings.guide') }}</a>
+      </CardDescription>
     </CardHeader>
     <div class="semantic-body">
       <p class="semantic-line" data-semantic-connection>

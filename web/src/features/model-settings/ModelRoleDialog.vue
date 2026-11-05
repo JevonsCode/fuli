@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { OptionSelect } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { t } from '@/i18n'
+import { t, currentLocale } from '@/i18n'
 import { UiDialog, UiSegmented } from '@/ui'
 import type { PersonalProject } from '@/types'
 import ModelKeyEntry from './ModelKeyEntry.vue'
@@ -19,8 +19,7 @@ import ModelSecretRefField from './ModelSecretRefField.vue'
 import {
   MODEL_PROTOCOLS, REASONING_EFFORTS, SEMANTIC_PRESETS, SEMANTIC_ROLE, configConflict, knownKeyReferences, projectKey, roleDraft, roleName,
   rolesSharing, saveModelRole, semanticPreset, validKeyReference, withConnection, withProject, withSemanticPreset,
-  type ConfigConflict, type ModelRoleId, type ModelRolesPayload, type RoleDraft, type SemanticPreset,
-} from './model'
+  type ConfigConflict, type ModelRoleId, type ModelRolesPayload, type RoleDraft, type SemanticPreset, modelGuideUrl } from './model'
 
 // One role's model settings as a centred form. Saving sends the whole role
 // with the revision it was read at; the server validates and refuses a file
@@ -123,7 +122,9 @@ async function save() {
         <Switch id="model-role-enabled" v-model="draft.enabled" :disabled="frozen" />
         <FieldLabel for="model-role-enabled">{{ t('modelSettings.enabled') }}</FieldLabel>
       </Field>
-      <p class="model-role-muted" data-model-enabled-hint>{{ enabledHint }}</p>
+      <p class="model-role-muted" data-model-enabled-hint>{{ enabledHint }}
+        <a :href="modelGuideUrl(currentLocale())" target="_blank" rel="noopener noreferrer" data-model-guide>{{ t('modelSettings.guide') }}</a>
+      </p>
 
       <div class="model-role-grid">
         <!-- The three choices name themselves; the group keeps its accessible name. -->
