@@ -274,9 +274,11 @@ function candidate({ personalSpaceId, personalProjectId, proposal, reason, now }
 }
 
 // One row per run in the built-in Agents' suggestion log: what the page shows.
-// The log may be closed while a delete is checked; the run's result still stands.
-function note(application, personalProjectId, result) {
+// A run outlasts the recovery proof, so the gate is checked again here. The log
+// may be closed while a delete is checked; the run's result still stands.
+async function note(application, personalProjectId, result) {
   try {
+    await application.knowledgeRecoveryGate?.refresh(application.config.personal.spaceId);
     application.roleSuggestions?.record({ role: ROLE, operation: DREAMING_OPERATION, personalSpaceId: application.config.personal.spaceId,
       personalProjectId, subject: { personalProjectId }, result });
     return result;

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { DREAMING_OPERATION, dreamingReadiness, dreamProject } from '../src/dreaming/run.js';
-import { dreamingRuns } from '../src/dreaming/scheduler.js';
+import { dreamingRuns, startDreamingScheduler } from '../src/dreaming/scheduler.js';
 
 const SPACE = 'space-synthetic';
 const PROJECT = 'project-synthetic';
@@ -221,5 +221,27 @@ test('rec#89: more candidates than one call holds still merge, and a merge that 
   assert.equal(result.candidates, 80);
   assert.equal(result.proposed.length, 80);
   assert.ok(result.unread >= 1, 'a failed merge reads again next time');
+});
+
+test('rec#89: a run outlasts the recovery proof, so it is checked again before the row is written', async () => {
+  const { app, ownerReads, calls } = fixture({ proposals: [add(['session_1', 'session_2', 'session_3'])] });
+  let open = false;
+  app.knowledgeRecoveryGate = { refresh: async () => { open = true; } };
+  const record = app.roleSuggestions.record;
+  app.roleSuggestions.record = (row) => { if (!open) throw new Error('recovery gate closed'); record(row); };
+  const result = await dreamProject(app, ownerReads, { personalProjectId: PROJECT });
+  assert.equal(result.recorded, undefined);
+  assert.equal(calls.rows.length, 1);
+});
+
+test('rec#89: a run whose row could not be written is not run again on the next tick', async () => {
+  const { app, ownerReads, calls } = fixture({ proposals: [add(['session_1', 'session_2', 'session_3'])] });
+  app.roleSuggestions.record = () => { throw new Error('recovery gate closed'); };
+  app.readRoleSuggestions = async () => [];
+  app.listPersonalProjects = async () => [{ project_id: PROJECT, scope_type: 'project' }];
+  const stop = startDreamingScheduler({ app, ownerReads, intervalMs: 5 });
+  await new Promise(resolve => { setTimeout(resolve, 80); });
+  await stop();
+  assert.equal(calls.requests.length, 1);
 });
 

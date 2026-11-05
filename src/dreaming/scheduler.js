@@ -8,6 +8,8 @@ const DAY_MS = 86_400_000;
 export function startDreamingScheduler({ app, ownerReads, withLease = (_owner, run) => run(), intervalMs = 1_800_000, now = () => new Date() }) {
   if (!app.modelBackends || !ownerReads) return () => {};
   let running = false, active = null, stopped = false;
+  // A run whose row could not be written is still a run: it is not paid for again.
+  const tried = new Map();
   const tick = async () => {
     if (stopped || running || app.getAgentAccessPolicy?.().enabled === false) return;
     if (!app.modelBackends.operationSettings('assistant', DREAMING_OPERATION)) return;
@@ -21,7 +23,8 @@ export function startDreamingScheduler({ app, ownerReads, withLease = (_owner, r
       for (const project of projects) {
         const id = project.project_id;
         if (stopped || project.scope_type === 'temporary' || dreamingReadiness(app, id) !== 'ready') continue;
-        if (now().getTime() - (last.get(id) ?? 0) < DAY_MS) continue;
+        if (now().getTime() - Math.max(last.get(id) ?? 0, tried.get(id) ?? 0) < DAY_MS) continue;
+        tried.set(id, now().getTime());
         const since = read.has(id) ? new Date(read.get(id)).toISOString() : null;
         await withLease('dreaming', () => dreamProject(app, ownerReads, { personalProjectId: id, since, now: now() }));
       }
