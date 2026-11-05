@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { currentLocale, t } from '@/i18n'
 import ModelRoleCheck from './ModelRoleCheck.vue'
+import SemanticIndexProgress from './SemanticIndexProgress.vue'
 import { modelGuideUrl, SEMANTIC_ROLE, type ModelRoleView } from './model'
 
 // 语义搜索 (rec#88): the person's own model that lets FULI find knowledge by
@@ -34,6 +35,7 @@ const tone = computed(() => (state.value === 'enabled' ? 'success' : state.value
           <span>{{ view.connection.endpointHost }}</span>
         </template>
       </p>
+      <SemanticIndexProgress :model="view?.state === 'enabled' ? view.connection?.model ?? null : null" />
       <footer class="semantic-actions">
         <ModelRoleCheck v-if="view?.connection" :role="SEMANTIC_ROLE" :model="view.connection.model" />
         <Button variant="outline" size="sm" :disabled="locked" data-semantic-edit
