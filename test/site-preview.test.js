@@ -10,7 +10,7 @@ const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 // The preview page is built only while the package version is a prerelease, so these
 // tests build a synthetic one; the stable package version gets the no-preview page.
 const version = '0.23.0-beta.1';
-const pages = siteVersion => createSitePages({ home: read('../site/index.html'), preview: read('../site/next/index.html'), version: siteVersion });
+const pages = siteVersion => createSitePages({ home: read('../site/index.html'), preview: read('../site/next/index.html'), models: read('../site/models/index.html'), version: siteVersion });
 const files = pages(version);
 const base = 'https://xn--8ovp9s.xn--m8txu.com/fuli/';
 const home = parseHTML(read('../site/index.html')).document;
