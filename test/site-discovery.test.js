@@ -6,7 +6,7 @@ import { createSitePages } from '../scripts/build-site.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const template = read('../site/index.html');
-const pages = () => createSitePages({ home: template, preview: read('../site/next/index.html'), models: read('../site/models/index.html'), tech: read('../site/tech/index.html'), version: '0.0.0-beta.0' });
+const pages = () => createSitePages({ home: template, preview: read('../site/next/index.html'), models: read('../site/models/index.html'), tech: read('../site/tech/index.html'), guide: read('../site/guide/index.html'), version: '0.0.0-beta.0' });
 const base = 'https://xn--8ovp9s.xn--m8txu.com/fuli/';
 
 test('each language is complete without JavaScript and has reciprocal discovery links', () => {
@@ -50,7 +50,7 @@ test('sitemap and machine-readable summaries describe the same public product', 
   const files = pages();
   assert.deepEqual(files, pages(), 'Generation is deterministic');
   const sitemap = files.get('sitemap.xml');
-  for (const path of ['', 'zh/', 'en/', 'next/', 'next/zh/', 'next/en/', 'models/', 'models/zh/', 'models/en/', 'tech/', 'tech/zh/', 'tech/en/']) assert.ok(sitemap.includes(`<loc>${base}${path}</loc>`));
+  for (const path of ['', 'zh/', 'en/', 'next/', 'next/zh/', 'next/en/', 'models/', 'models/zh/', 'models/en/', 'tech/', 'tech/zh/', 'tech/en/', 'guide/', 'guide/zh/', 'guide/en/']) assert.ok(sitemap.includes(`<loc>${base}${path}</loc>`));
   assert.doesNotMatch(sitemap, /127\.0\.0\.1|localhost|v0/);
   assert.match(files.get('llms.txt'), /AI agent/);
   assert.ok(files.get('llms.txt').includes(base + 'en/index.md'));
@@ -61,7 +61,7 @@ test('sitemap and machine-readable summaries describe the same public product', 
   assert.doesNotMatch(markdown, /<script|<style/);
 });
 
-// A guide page (/models/, /tech/) in each language: complete without JavaScript, with its
+// A guide page (/models/, /tech/, /guide/) in each language: complete without JavaScript, with its
 // own canonical and alternates, one H1, one H2 per section, no repeated titles and no
 // Chinese on the English page. `check` adds the page's own assertions.
 function assertGuidePages(name, check) {
@@ -116,11 +116,25 @@ test('the technology page covers the architecture, every shipped Skill, the data
   });
 });
 
+test('the quick start walks through install, connect, use, an optional model and help, with exact console labels', () => {
+  assertGuidePages('guide', (document, locale) => {
+    assert.deepEqual([...document.querySelectorAll('main > section[id]')].map(node => node.id), ['install', 'connect', 'use', 'model', 'help']);
+    assert.deepEqual([...document.querySelectorAll('.step-index')].map(node => node.textContent), ['1', '2', '3', '4', '5']);
+    assert.equal(document.querySelector('.guide-hero .button').href, 'https://github.com/JevonsCode/fuli/releases/latest');
+    assert.match(document.querySelector('#install').textContent, /FULI-Setup-<.+>.exe/);
+    assert.match(document.querySelector('#install').textContent, /fuli-macos-arm64-<.+>.dmg/);
+    assert.ok(document.querySelector('#model').textContent.includes('qwen3-embedding:0.6b'));
+    const models = document.querySelector('#model [data-i18n="guide.model.guide"]').href;
+    assert.equal(models, base + 'models/' + (locale === 'en' ? 'en/' : ''));
+  });
+});
+
 test('the home and preview pages link the guide pages in their own language', () => {
   const files = pages();
   for (const [path, suffix] of [['index.html', ''], ['en/index.html', 'en/'], ['next/index.html', ''], ['next/en/index.html', 'en/']]) {
     const { document } = parseHTML(files.get(path));
     assert.equal(document.querySelector('.footer [data-i18n="footer.models"]').href, base + 'models/' + suffix, path);
     assert.equal(document.querySelector('.footer [data-i18n="footer.tech"]').href, base + 'tech/' + suffix, path);
+    assert.equal(document.querySelector('.footer [data-i18n="footer.guide"]').href, base + 'guide/' + suffix, path);
   }
 });

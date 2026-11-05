@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import PageColumns from '@/components/PageColumns.vue'
+import { Button } from '@/components/ui/button'
 import AboutSectionHeading from '@/features/about/AboutSectionHeading.vue'
 import HowtoCaseCard from '@/features/howto/HowtoCaseCard.vue'
 import HowtoMoveCard from '@/features/howto/HowtoMoveCard.vue'
 import { howtoContent } from '@/features/howto/howto-content'
 import { currentLocale, t } from '@/i18n'
+import { websitePageUrl } from '@/lib/website'
 
 // 常用操作: what a new person says to their AI to use FULI, then real cases.
+// 快速上手 opens the website's quick start (install, connect, models, help).
 const content = computed(() => howtoContent(currentLocale()))
 </script>
 
@@ -15,7 +18,14 @@ const content = computed(() => howtoContent(currentLocale()))
   <section class="view howto-view" :aria-label="t('howto.aria')">
     <div class="howto-content">
       <section class="howto-section" aria-labelledby="howto-moves-title">
-        <AboutSectionHeading title-id="howto-moves-title" :title="t('howto.moves.title')" :description="t('howto.moves.description')" />
+        <AboutSectionHeading title-id="howto-moves-title" :title="t('howto.moves.title')" :description="t('howto.moves.description')">
+          <template #action>
+            <Button as-child variant="outline" size="sm">
+              <a :href="websitePageUrl('guide', currentLocale())" target="_blank" rel="noopener noreferrer" draggable="false"
+                data-howto-guide>{{ t('howto.guide') }}</a>
+            </Button>
+          </template>
+        </AboutSectionHeading>
         <PageColumns>
           <HowtoMoveCard v-for="move in content.moves" :key="move.id" :move="move" />
         </PageColumns>

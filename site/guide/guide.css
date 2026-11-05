@@ -1,0 +1,28 @@
+/* The quick-start guide (/guide/): its own pieces over guide-page.css and the :root tokens in style.css. */
+.guide-hero .guide-links { margin-top: 30px; }
+
+/* Each step: its number sits in a jade disc before the step's name. */
+.guide-step h2 { display: flex; align-items: center; gap: 16px; }
+.step-index { display: inline-grid; flex: none; width: 1.4em; height: 1.4em; place-items: center; border-radius: 50%;
+  background: var(--jade-soft); color: var(--jade); font-size: .7em; font-weight: 650; letter-spacing: 0; }
+
+.platform-grid, .model-grid { display: grid; gap: clamp(14px, 2vw, 22px); align-items: start; }
+.platform-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 960px; }
+.model-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
+.guide-section > p + .model-grid { margin-top: clamp(20px, 3vh, 28px); }
+
+/* Steps inside a card: numbered, plain, no boxes of their own. */
+.step-list { display: grid; gap: 8px; margin: 12px 0 0; padding-left: 1.3em; color: var(--ink-soft); }
+.step-list li::marker { color: var(--jade); font-weight: 600; }
+ol.guide-list li { color: var(--ink-soft); }
+.card-note { margin-top: 12px; color: var(--muted); font-size: 14px; }
+.step-note { max-width: 640px; margin-top: clamp(18px, 3vh, 24px); color: var(--ink-soft); }
+.guide-page code { overflow-wrap: anywhere; }
+
+@media (max-width: 880px) {
+  .platform-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The headline reads as two lines: the setup, then the point. */
+#guide-title em { display: block; }
+#guide-title { text-wrap: balance; }
