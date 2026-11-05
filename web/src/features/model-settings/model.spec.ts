@@ -119,3 +119,10 @@ describe('model usage', () => {
     expect(usageWindowStart('30d', now)).toBe(new Date(now.getTime() - 30 * 86_400_000).toISOString())
   })
 })
+
+describe('a new role and Dreaming', () => {
+  it('starts without it, so the person turns it on', () => {
+    const payload = { state: 'ok', revision: 'r', roles: [], connections: {}, operations: { assistant: ['project_candidate', 'dreaming'] } } as unknown as ModelRolesPayload
+    expect(roleDraft(payload, 'assistant').operations).toBe('project_candidate')
+  })
+})

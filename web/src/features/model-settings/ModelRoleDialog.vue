@@ -64,6 +64,16 @@ const shownProjects = computed(() => {
   return query ? projectChoices.value.filter(choice => choice.label.toLowerCase().includes(query)) : projectChoices.value
 })
 const savedKeys = ref<string[]>([])
+// Dreaming is one of Astro's task types; the switch is that entry in the list.
+const dreamingOn = computed({
+  get: () => operationList(draft.value?.operations).includes('dreaming'),
+  set(on: boolean) {
+    if (!draft.value) return
+    const others = operationList(draft.value.operations).filter(operation => operation !== 'dreaming')
+    draft.value = { ...draft.value, operations: (on ? [...others, 'dreaming'] : others).join(', ') }
+  },
+})
+function operationList(text = '') { return text.split(',').map(item => item.trim()).filter(Boolean) }
 const knownKeys = computed(() => knownKeyReferences(props.payload, savedKeys.value))
 const badKeyName = computed(() => {
   const name = draft.value?.secretRef.trim()
@@ -127,6 +137,11 @@ async function save() {
         <ModelSecretRefField v-model="draft.secretRef" class="model-role-wide" :known="knownKeys" :disabled="frozen" />
         <ModelKeyEntry class="model-role-wide" :reference="draft.secretRef" :disabled="frozen" @keys="keys => savedKeys = keys" />
       </div>
+
+      <Field v-if="role === 'assistant'" orientation="horizontal">
+        <Switch id="model-role-dreaming" v-model="dreamingOn" :disabled="frozen" data-model-dreaming />
+        <FieldLabel for="model-role-dreaming">{{ t('modelSettings.dreaming.enable') }}</FieldLabel>
+      </Field>
 
       <fieldset class="model-role-fieldset">
         <legend>{{ t('modelSettings.egressProjectsLabel') }}</legend>

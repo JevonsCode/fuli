@@ -59,7 +59,8 @@ beforeEach(() => {
   api.putJson.mockReset()
   api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/model-backends/usage') ? usage()
     : url.startsWith('/api/model-backends/suggestions') || url.startsWith('/api/judgment/suggestions') ? { suggestions: [] }
-      : url.startsWith('/api/model-backends/history') ? { entries: [] } : rolesPayload))
+      : url.startsWith('/api/model-backends/history') ? { entries: [] }
+        : url.startsWith('/api/dreaming') ? { readiness: 'needs_model', runs: [] } : rolesPayload))
 })
 
 const mountPage = async () => {

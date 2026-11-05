@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import DreamingCard from '@/features/model-settings/DreamingCard.vue'
 
 import { apiErrorReason } from '@/api/client'
 import Breadcrumb from '@/components/Breadcrumb.vue'
@@ -231,6 +232,8 @@ onBeforeUnmount(() => {
             </AccordionItem>
           </Accordion>
         </section>
+
+        <DreamingCard :projects="projects" />
 
         <RoleSuggestions :entries="suggestionEntries" :loading="suggestionsLoading" :error="suggestionsError"
           :reviews="reviews" :reviews-loading="reviewsLoading" :reviews-error="reviewsError" @retry="suggestions.load" @recovery-pending="suggestions.blockForRecovery" />
