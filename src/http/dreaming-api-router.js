@@ -1,6 +1,6 @@
 import { InvalidInputError } from '../app/application-error.js';
 import { dreamingReadiness, dreamProject } from '../dreaming/run.js';
-import { dreamingRuns } from '../dreaming/scheduler.js';
+import { dreamingRuns, dreamingSince } from '../dreaming/scheduler.js';
 import { requiredString } from '../validation/values.js';
 import { refuseRemoteDecision } from './request-policy.js';
 import { readJson, sendJson } from './response.js';
@@ -26,6 +26,7 @@ export async function handleDreamingRequest({ request, response, url, app, owner
   const body = await readJson(request);
   if (!body || typeof body !== 'object') throw new InvalidInputError('A project is required');
   const personalProjectId = requiredString(body.personalProjectId, 'personalProjectId', 128);
-  sendJson(response, 200, await dreamProject(app, ownerReads, { personalProjectId }));
+  const since = dreamingSince(await dreamingRuns(app), personalProjectId);
+  sendJson(response, 200, await dreamProject(app, ownerReads, { personalProjectId, since }));
   return true;
 }
