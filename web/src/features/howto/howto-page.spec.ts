@@ -97,6 +97,23 @@ describe('HowtoPage', () => {
     wrapper.unmount()
   })
 
+  it('links the website quick start once, beside the first headline, in the console language', () => {
+    const wrapper = mount(HowtoPage)
+    const links = wrapper.findAll('[data-howto-guide]')
+    expect(links).toHaveLength(1)
+    const link = links[0]!
+    expect(link.text()).toBe('快速上手')
+    expect(link.attributes()).toMatchObject({ href: 'https://xn--8ovp9s.xn--m8txu.com/fuli/guide/zh/', target: '_blank', rel: 'noopener noreferrer' })
+    expect(wrapper.get('.howto-section').find('.about-section-heading [data-howto-guide]').exists()).toBe(true)
+    wrapper.unmount()
+
+    setLocale('en-US', { persist: false })
+    const english = mount(HowtoPage)
+    expect(english.get('[data-howto-guide]').text()).toBe('Quick start')
+    expect(english.get('[data-howto-guide]').attributes('href')).toBe('https://xn--8ovp9s.xn--m8txu.com/fuli/guide/en/')
+    english.unmount()
+  })
+
   it('tells the person when the clipboard is unavailable', async () => {
     vi.stubGlobal('navigator', { ...navigator, clipboard: undefined })
     const wrapper = mount(HowtoPage)

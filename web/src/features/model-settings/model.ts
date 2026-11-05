@@ -3,6 +3,7 @@ import { t } from '@/i18n'
 import { roleName as builtInRoleName } from '@/features/agent-profile/role-names'
 import { shortDigest } from '@/features/data-format/model'
 import { formatDateTime } from '@/lib/date-time'
+import { websitePageUrl } from '@/lib/website'
 
 // The console's model settings page (rec#8): each built-in Agent's model,
 // budget and egress, edited through the loopback route, and its usage from
@@ -450,6 +451,5 @@ export const formatCount = (value: number, locale: string) => new Intl.NumberFor
 
 // The website's model guide (site/models): what each model does, what is enough
 // and what it cost when we measured, in the console's language.
-const MODEL_GUIDE = 'https://xn--8ovp9s.xn--m8txu.com/fuli/models/'
-export const modelGuideUrl = (locale: string) => MODEL_GUIDE + (locale.startsWith('zh') ? 'zh/' : 'en/')
+export const modelGuideUrl = (locale: string) => websitePageUrl('models', locale)
 

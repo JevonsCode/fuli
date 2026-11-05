@@ -1,4 +1,4 @@
-/* The guide pages (/models/, /tech/): shared layout over the :root tokens in style.css.
+/* The guide pages (/models/, /tech/, /guide/): shared layout over the :root tokens in style.css.
    Each page adds only its own pieces in its own stylesheet. */
 .guide-page main { padding-bottom: clamp(48px, 8vh, 96px); }
 .guide-page .nav a, .guide-page .footer a, .guide-links a { user-select: none; }

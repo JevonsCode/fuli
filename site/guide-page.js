@@ -1,4 +1,4 @@
-// A guide page (/models/, /tech/): language and nav only; the page is complete without it.
+// A guide page (/models/, /tech/, /guide/): language and nav only; the page is complete without it.
 import { createLanguageController } from './i18n.js'
 
 export function startGuidePage(catalog) {

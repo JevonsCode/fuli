@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6f5f1">
+    <title data-i18n="meta.title">FULI 复利 · 快速上手：安装、接入客户端、开始用</title>
+    <meta data-i18n-content="meta.description" name="description" content="">
+    <meta data-i18n-content="meta.title" property="og:title" content="">
+    <meta data-i18n-content="meta.social" property="og:description" content="">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://xn--8ovp9s.xn--m8txu.com/fuli/guide/">
+    <meta property="og:image" content="https://xn--8ovp9s.xn--m8txu.com/fuli/assets/brand/fuli-mark-color-512.png">
+    <meta data-i18n-content="meta.locale" property="og:locale" content="zh_CN">
+    <meta name="twitter:card" content="summary">
+    <link rel="canonical" href="https://xn--8ovp9s.xn--m8txu.com/fuli/guide/">
+    <link rel="icon" href="../assets/brand/favicon.ico" sizes="any">
+    <link rel="preload" href="../assets/unbounded-latin.woff2" as="font" type="font/woff2" crossorigin="">
+    <script>document.documentElement.classList.add('js')</script>
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../guide-page.css">
+    <link rel="stylesheet" href="./guide.css">
+    <script type="module" src="../guide.js"></script>
+  </head>
+  <body class="guide-page">
+    <a data-i18n="nav.skip" class="skip" href="#main">跳到正文</a>
+    <header class="nav">
+      <a data-i18n-aria-label="guide.home" data-i18n-href="guide.homeUrl" class="brand" href="https://xn--8ovp9s.xn--m8txu.com/fuli/" aria-label="Fuli 复利 首页"><img class="brand-mark" src="../assets/brand/fuli-mark-color.svg" alt="" width="28" height="28"><span>复利</span><b>FULI</b></a>
+      <nav data-i18n-aria-label="nav.label" aria-label="页面导航">
+        <a data-i18n="guide.nav.install" href="#install">安装</a>
+        <a data-i18n="guide.nav.connect" href="#connect">接入</a>
+        <a data-i18n="guide.nav.use" href="#use">使用</a>
+        <a data-i18n="guide.nav.model" href="#model">模型</a>
+        <a data-i18n="guide.nav.help" href="#help">排错</a>
+        <a class="nav-github" href="https://github.com/JevonsCode/fuli">GitHub</a>
+        <div data-i18n-aria-label="nav.language" aria-label="语言" role="group" class="language-switch">
+          <a href="./zh/" lang="zh-CN" hreflang="zh-Hans" data-locale="zh-CN" aria-current="true">中文</a>
+          <a href="./en/" lang="en" hreflang="en" data-locale="en" aria-label="English">EN</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="guide-hero" aria-labelledby="guide-title">
+        <p data-i18n="guide.eyebrow" class="eyebrow">快速上手</p>
+        <h1 data-i18n-html="guide.title" id="guide-title">装好，接上，<em>照常干活。</em></h1>
+        <p data-i18n="guide.lead" class="lede">写给不用终端的人。按钮都写的是控制台里的原名，照着点就行。</p>
+        <p class="guide-links"><a data-i18n="guide.download" class="button" href="https://github.com/JevonsCode/fuli/releases/latest">下载最新版本</a></p>
+      </section>
+
+      <section class="guide-section guide-step" id="install" aria-labelledby="install-title">
+        <h2 id="install-title"><span class="step-index" aria-hidden="true">1</span><span data-i18n="guide.install">安装</span></h2>
+        <div class="platform-grid">
+          <article class="guide-card">
+            <h3>Windows</h3>
+            <ol class="step-list">
+              <li data-i18n-html="guide.windows.download">下载 <code>FULI-Setup-&lt;版本&gt;.exe</code>，双击，点「安装」。</li>
+              <li data-i18n="guide.windows.warning">提示「Windows 已保护你的电脑」时，点「更多信息」，再点「仍要运行」。</li>
+              <li data-i18n="guide.windows.bundled">不要管理员权限，也不用另装 Node.js、Java 或数据库。</li>
+            </ol>
+          </article>
+          <article class="guide-card">
+            <h3 data-i18n="guide.mac">macOS（Apple 芯片）</h3>
+            <ol class="step-list">
+              <li data-i18n-html="guide.mac.download">下载 <code>fuli-macos-arm64-&lt;版本&gt;.dmg</code>，把 FULI.app 拖进「应用程序」。</li>
+              <li data-i18n="guide.mac.open">从「应用程序」打开 FULI，不要在磁盘映像里打开。</li>
+              <li data-i18n="guide.mac.warning">第一次被拦下时，到「系统设置 › 隐私与安全性」点「仍要打开」。</li>
+            </ol>
+            <p data-i18n="guide.mac.requirement" class="card-note">需要 macOS 13.5 以上。Intel 芯片的 Mac 请用终端安装。</p>
+          </article>
+        </div>
+        <p data-i18n="guide.start" class="step-note">打开 FULI，它会自己启动，控制台在窗口里打开。没启动时，点「启动 FULI」。</p>
+      </section>
+
+      <section class="guide-section guide-step" id="connect" aria-labelledby="connect-title">
+        <h2 id="connect-title"><span class="step-index" aria-hidden="true">2</span><span data-i18n="guide.connect">接入你的 AI 客户端</span></h2>
+        <ol class="guide-list">
+          <li data-i18n="guide.connect.first">第一次打开控制台会出现「开始使用 FULI」：勾选找到的客户端，点「一键接入」。</li>
+          <li data-i18n="guide.connect.scope">最后回答「FULI 要在哪些项目里记录？」，点「开始使用」。选好之前什么都不记。</li>
+          <li data-i18n="guide.connect.later">以后在 设置 › 客户端 里接：点「接入」或「一键接入」；FULI 更新后点「更新接入」。</li>
+          <li data-i18n="guide.connect.other">没列出的客户端：点「复制 MCP 配置」，粘贴进它的 MCP 设置。</li>
+          <li data-i18n="guide.connect.restart">接好后重启客户端。已经打开的会话要重开，才会用上新的 FULI。</li>
+          <li data-i18n-html="guide.connect.codex">用 Codex 的话：在 Codex 里输入 <code>/hooks</code>，信任 FULI 的 hooks。</li>
+        </ol>
+        <p data-i18n="guide.connect.boundary" class="step-note">「已接入」只说明配置在，不代表客户端已经连上。</p>
+      </section>
+
+      <section class="guide-section guide-step" id="use" aria-labelledby="use-title">
+        <h2 id="use-title"><span class="step-index" aria-hidden="true">3</span><span data-i18n="guide.use">照常干活</span></h2>
+        <ol class="guide-list">
+          <li data-i18n="guide.use.ask">在项目文件夹里，像平常一样给 AI 提任务，不用特意叫 FULI。</li>
+          <li data-i18n="guide.use.recall">每次提问，FULI 都会把相关的偏好和知识交给 AI。</li>
+          <li data-i18n="guide.use.save">值得留下的结论会存下来。回复末尾列出这一轮存了什么，点链接能改。</li>
+          <li data-i18n="guide.use.review">存下的知识在「沉淀 › 知识」，要你确认的在「沉淀 › 知识整理」。</li>
+          <li data-i18n="guide.use.decisions">AI 等你拍板的事，在顶栏的「待决策」里。</li>
+          <li data-i18n="guide.use.howto">不知道怎么跟 AI 说？设置 › 常用操作 里有能直接复制的说法。</li>
+        </ol>
+      </section>
+
+      <section class="guide-section guide-step" id="model" aria-labelledby="model-title">
+        <h2 id="model-title"><span class="step-index" aria-hidden="true">4</span><span data-i18n="guide.model">可选：接一个模型</span></h2>
+        <p data-i18n="guide.model.lead">不接也能用：AI 用当前会话回答，FULI 按字面找知识。</p>
+        <div class="model-grid">
+          <article class="guide-card">
+            <h3 data-i18n="guide.model.button">模型按钮</h3>
+            <ol class="step-list">
+              <li data-i18n="guide.model.buttonWhere">在顶栏「设置」旁边。没接时是灰色虚线圈，接上后闪电变金色、轻轻发光。</li>
+              <li data-i18n="guide.model.buttonFill">给老知识补算时，外圈会慢慢填满。</li>
+              <li data-i18n="guide.model.page">点它打开「模型与用量」：「用途」里每张卡写着要多强的模型，点「接入」。</li>
+            </ol>
+          </article>
+          <article class="guide-card">
+            <h3 data-i18n="guide.model.semantic">按意思找：语义搜索</h3>
+            <ol class="step-list">
+              <li data-i18n-html="guide.model.ollama">在「语义搜索」点「接入」，模型来源选「本机 Ollama」，模型填 <code>qwen3-embedding:0.6b</code>。</li>
+              <li data-i18n="guide.model.online">也可以选「千问」或「自定义」，用在线向量接口。</li>
+              <li data-i18n="guide.model.check">打开「使用下面配置的模型」，保存。在「查看详情」里能点「测试连接」。</li>
+            </ol>
+            <p data-i18n="guide.model.ollamaNote" class="card-note">用 Ollama 要先在本机装好它，并下载这个模型。</p>
+          </article>
+          <article class="guide-card">
+            <h3 data-i18n="guide.model.terms">老知识：补检索词</h3>
+            <ol class="step-list">
+              <li data-i18n="guide.model.termsAstro">先给 Astro 接上模型，在它的设置里打开「允许补老知识的检索词」。</li>
+              <li data-i18n="guide.model.termsEstimate">选一个项目，先看免费估算：多少条缺检索词、大约多少 tokens。</li>
+              <li data-i18n="guide.model.termsTest">点「先试 20 条」，看补前补后能找回几条，再决定「补剩下 N 条」或「不补」。</li>
+            </ol>
+            <p data-i18n="guide.model.termsStop" class="card-note">补的时候随时可以点「停止」。</p>
+          </article>
+        </div>
+        <p class="guide-links"><a data-i18n="guide.model.guide" data-i18n-href="guide.model.guideUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/models/">模型指南：每种用途要什么模型、实测花多少 token</a></p>
+      </section>
+
+      <section class="guide-section guide-step" id="help" aria-labelledby="help-title">
+        <h2 id="help-title"><span class="step-index" aria-hidden="true">5</span><span data-i18n="guide.help">遇到问题</span></h2>
+        <ol class="guide-list">
+          <li data-i18n="guide.help.doctor">FULI 会自己体检。顶栏出现「有 N 件事需要你」时点「查看」，能修的点「自动修复」。</li>
+          <li data-i18n="guide.help.port">Windows 上没启动成功、提示端口被保留时，在托盘菜单选「换一个端口」。</li>
+          <li data-i18n="guide.help.update">顶栏版本号旁出现小圆点就是有新版本：点版本号打开 设置 › 版本，点「更新到 v…」。</li>
+          <li data-i18n="guide.help.after">更新不删知识。更新后，已经打开的 AI 会话要重开。</li>
+          <li data-i18n="guide.help.diagnostics">要找开发者：设置 › 系统 › 诊断包，点「生成诊断包」再「导出」。里面没有知识和对话。</li>
+        </ol>
+        <p class="guide-links">
+          <a data-i18n="guide.help.issue" href="https://github.com/JevonsCode/fuli/issues/new/choose">反馈问题</a>
+          <a data-i18n="guide.help.docs" data-i18n-href="guide.help.docsUrl" href="https://github.com/JevonsCode/fuli/blob/main/README.zh-CN.md">完整文档</a>
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span data-i18n="footer.copyright">© Fuli 复利 · Apache-2.0</span>
+      <span><a href="https://github.com/JevonsCode/fuli">GitHub</a><a data-i18n="guide.backHome" data-i18n-href="guide.homeUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到首页</a></span>
+    </footer>
+  </body>
+</html>

@@ -1,6 +1,7 @@
 export const howtoMessages = {
   'zh-CN': {
     aria: '常用操作',
+    guide: '快速上手',
     moves: {
       title: '这样跟 AI 说',
       description: '连上客户端后，在聊天里照着说就行。‹ › 里换成你自己的内容。',
@@ -17,6 +18,7 @@ export const howtoMessages = {
   },
   'en-US': {
     aria: 'How-to',
+    guide: 'Quick start',
     moves: {
       title: 'Say it to your AI',
       description: 'Once a client is connected, say these in the chat. Replace what is inside ‹ › with your own.',
