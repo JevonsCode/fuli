@@ -54,7 +54,9 @@ const embeddingSchema = z.object({
   operation: z.literal(KNOWLEDGE_EMBEDDING_OPERATION),
   requestId: id,
   scope: scopeSchema,
-  texts: z.array(z.string().trim().min(1).max(MAX_EMBEDDING_TEXT_CHARS)).min(1).max(MAX_EMBEDDING_TEXTS)
+  texts: z.array(z.string().trim().min(1).max(MAX_EMBEDDING_TEXT_CHARS)).min(1).max(MAX_EMBEDDING_TEXTS),
+  // A search waits only so long for its query's vector, then goes on by words.
+  budget: z.object({ timeoutMs: z.number().int().positive() }).strict().optional()
 }).strict();
 
 const usageQuerySchema = z.object({

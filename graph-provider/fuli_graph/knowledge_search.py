@@ -54,6 +54,10 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
         group_ids=group_ids,
         num_results=min(max(request.limit * 8, 40), 100),
     )
+    # Relationships found only by their retrieval terms join the lexical ones (rec#92).
+    edge_terms, term_edges = await _term_edge_candidates(store, personal_space, request)
+    found = {edge.uuid for edge in edges}
+    edges = [*edges, *(edge for edge in term_edges if edge.uuid not in found)]
     lexical_ids = {edge.uuid for edge in edges}
     # Relationships found by meaning pass the very same filters below.
     meaning_vectors, meaning_edges = await _semantic_edge_candidates(store, personal_space, request)
@@ -104,6 +108,7 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
                         names,
                         position,
                         len(edges),
+                        edge_terms.get(edge.uuid),
                     ),
                     epistemic.get(edge.uuid, {}),
                 ),
@@ -494,6 +499,8 @@ async def _scoped_entity_records(store, space, request: SearchRequest, project_s
                  AS requires_attention,
                node.fuli_last_feedback_kind AS last_feedback_kind,
                node.fuli_last_feedback_at AS last_feedback_at,
+               node.fuli_retrieval_terms AS retrieval_terms,
+               node.fuli_retrieval_context AS retrieval_context,
                CASE WHEN $semantic_model IS NOT NULL THEN node.fuli_semantic_vector END
                  AS semantic_vector,
                CASE WHEN $semantic_model IS NOT NULL THEN node.fuli_semantic_hash END
@@ -574,7 +581,8 @@ async def _semantic_edge_candidates(store, space, request: SearchRequest) -> tup
                edge.group_id AS group_id, edge.name AS name, edge.fact AS fact,
                coalesce(edge.episodes, []) AS episodes, edge.created_at AS created_at,
                edge.valid_at AS valid_at, edge.invalid_at AS invalid_at, edge.expired_at AS expired_at,
-               edge.fuli_semantic_vector AS semantic_vector, edge.fuli_semantic_hash AS semantic_hash
+               edge.fuli_semantic_vector AS semantic_vector, edge.fuli_semantic_hash AS semantic_hash,
+               edge.fuli_retrieval_terms AS retrieval_terms, edge.fuli_retrieval_context AS retrieval_context
         ORDER BY edge.uuid
         LIMIT $candidate_limit
         ''',
@@ -590,14 +598,48 @@ async def _semantic_edge_candidates(store, space, request: SearchRequest) -> tup
         if vector is None:
             continue
         vectors[record['uuid']] = vector
-        edges.append(EntityEdge(
-            uuid=record['uuid'], source_node_uuid=record['source_node_uuid'],
-            target_node_uuid=record['target_node_uuid'], group_id=record['group_id'],
-            name=record['name'] or '', fact=record['fact'] or '', episodes=list(record['episodes']),
-            created_at=_native_datetime(record['created_at']), valid_at=_native_datetime(record['valid_at']),
-            invalid_at=_native_datetime(record['invalid_at']), expired_at=_native_datetime(record['expired_at']),
-        ))
+        edges.append(_edge_from_record(record))
     return vectors, edges
+
+
+async def _term_edge_candidates(store, space, request: SearchRequest) -> tuple[dict, list[EntityEdge]]:
+    """The retrieval terms of the personal space's relationships, by id, and
+    the relationships the query finds through them, as candidates for the
+    search's own filters (rec#92). Word search over facts alone never sees
+    terms stored beside them."""
+    if space is None:
+        return {}, []
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (source:Entity)-[edge:RELATES_TO {group_id: $group_id}]->(target:Entity)
+        WHERE edge.fuli_retrieval_terms IS NOT NULL
+        RETURN edge.uuid AS uuid, source.uuid AS source_node_uuid, target.uuid AS target_node_uuid,
+               edge.group_id AS group_id, edge.name AS name, edge.fact AS fact,
+               coalesce(edge.episodes, []) AS episodes, edge.created_at AS created_at,
+               edge.valid_at AS valid_at, edge.invalid_at AS invalid_at, edge.expired_at AS expired_at,
+               edge.fuli_retrieval_terms AS retrieval_terms, edge.fuli_retrieval_context AS retrieval_context
+        ORDER BY edge.uuid
+        LIMIT $candidate_limit
+        ''',
+        group_id=space['group_id'],
+        candidate_limit=SEMANTIC_CANDIDATE_LIMIT,
+        routing_='r',
+    )
+    terms = {record['uuid']: {'retrieval_terms': record['retrieval_terms'],
+                              'retrieval_context': record['retrieval_context']} for record in records}
+    found = [_edge_from_record(record) for record in records
+             if _relevance(request.query, {'summary': record['fact'], **terms[record['uuid']]}) > 0]
+    return terms, found
+
+
+def _edge_from_record(record) -> EntityEdge:
+    return EntityEdge(
+        uuid=record['uuid'], source_node_uuid=record['source_node_uuid'],
+        target_node_uuid=record['target_node_uuid'], group_id=record['group_id'],
+        name=record['name'] or '', fact=record['fact'] or '', episodes=list(record['episodes']),
+        created_at=_native_datetime(record['created_at']), valid_at=_native_datetime(record['valid_at']),
+        invalid_at=_native_datetime(record['invalid_at']), expired_at=_native_datetime(record['expired_at']),
+    )
 
 
 def _meaning_order(request: SearchRequest, vectors: dict) -> list[str]:
@@ -862,6 +904,8 @@ def _entity_search_result(record, score: float, space_id: str, matched_by: str =
         'inherited',
         'semantic_vector',
         'semantic_hash',
+        'retrieval_terms',
+        'retrieval_context',
     ):
         value.pop(field, None)
     return EntitySearchResult(
@@ -903,7 +947,7 @@ def _relevance(query: str, record) -> float:
     needle = _normalized(query)
     haystack = _normalized(' '.join(filter(None, [
         record.get('name'), record.get('type'), record.get('summary'),
-        record.get('reasoning_summary'), record.get('profile_aspect'),
+        record.get('reasoning_summary'), record.get('profile_aspect'), record.get('retrieval_context'),
     ])))
     if not needle:
         return 0.0
@@ -920,8 +964,10 @@ def _relevance(query: str, record) -> float:
     return round(score, 4)
 
 
-def _edge_relevance(query: str, edge, names: dict[str, str], position: int, total: int) -> float:
+def _edge_relevance(query: str, edge, names: dict[str, str], position: int, total: int,
+                    retrieval: dict | None = None) -> float:
     lexical = _relevance(query, {
+        **(retrieval or {}),
         'name': edge.name,
         'type': 'Relationship',
         'summary': ' '.join(filter(None, [
@@ -985,9 +1031,12 @@ def _retrieval_aliases(record) -> list[str]:
         values = [values]
     if not isinstance(values, list):
         return []
+    # Terms stored beside the item later count like those it was saved with (rec#92).
+    stored = record.get('retrieval_terms')
+    values = [*values, *(stored if isinstance(stored, list) else [])]
     aliases = [
         value.strip()
-        for value in values[:32]
+        for value in values[:64]
         if isinstance(value, str) and 0 < len(value.strip()) <= 256
     ]
     # A preference is found by its key, as written and as words (rec#75).

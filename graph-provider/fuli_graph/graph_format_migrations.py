@@ -165,6 +165,11 @@ GRAPH_MIGRATIONS = (
         'an optional meaning vector on entities and relationships, with its model and text hash',
         fields_only=True,
     ),
+    GraphMigration(
+        'graph/18-retrieval-terms', 18, 'schema',
+        'optional retrieval terms and context on entities and relationships, with the hash of the words they came from',
+        fields_only=True,
+    ),
 )
 
 GRAPH_FORMAT_VERSION = GRAPH_MIGRATIONS[-1].to_version

@@ -227,7 +227,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     const { adapter, secret } = prepared;
     const { target, roleConfig, attempts, startedAt } = call;
     call.mode = adapter.outputMode;
-    const limits = callLimits(roleConfig.budget);
+    const limits = callLimits(roleConfig.budget, request.budget);
     const deadline = startedAt + limits.timeoutMs;
     const inputTokens = estimateTokens(request.texts);
     if (inputTokens > limits.maxInputTokens) return stop('budget_exhausted', 'per_call_input');

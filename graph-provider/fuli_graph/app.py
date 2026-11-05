@@ -152,6 +152,7 @@ from .knowledge_item_routes import register_knowledge_item_routes
 from .knowledge_hard_delete_routes import register_knowledge_hard_delete_routes
 from .knowledge_deletion_watermark import register_knowledge_deletion_watermark_route
 from .knowledge_semantic_index import register_knowledge_semantic_routes
+from .knowledge_retrieval_terms import register_knowledge_retrieval_routes
 from .knowledge_tag_routes import register_knowledge_tag_routes
 from .preference_conflicts import (
     complete_preference_conflict,
@@ -376,6 +377,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_knowledge_hard_delete_routes(application, store, HumanReviewer)
     register_knowledge_deletion_watermark_route(application, store, Actor)
     register_knowledge_semantic_routes(application, store, Actor)
+    register_knowledge_retrieval_routes(application, store, Actor)
 
     @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord)
     async def create_publication_draft(

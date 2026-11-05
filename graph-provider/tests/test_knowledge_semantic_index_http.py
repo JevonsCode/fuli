@@ -133,7 +133,7 @@ async def test_pending_lists_unindexed_and_changed_items_with_their_text_and_has
 
 
 def test_the_index_reads_only_what_default_search_could_return():
-    from fuli_graph.knowledge_semantic_index import _scan_query
+    from fuli_graph.knowledge_index_scan import scan_query as _scan_query
     for item_kind, invalid in (('entity', 'item.fuli_invalid_at IS NULL'), ('relationship', 'item.invalid_at IS NULL')):
         query = _scan_query(item_kind)
         assert '{group_id: $group_id}' in query and invalid in query

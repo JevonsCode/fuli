@@ -39,7 +39,7 @@ describe('ModelPowerButton', () => {
   })
 
   it('lights up and counts the roles a model powers', async () => {
-    answer(roles(['enabled', 'not_configured', 'enabled']), { total: 10, done: 10 })
+    answer(roles(['enabled', 'not_configured', 'enabled']), { total: 10, done: 4, running: false })
     const wrapper = await mountButton()
     expect(wrapper.get('[data-model-power]').attributes('data-model-power')).toBe('on')
     expect(wrapper.get('[data-model-power]').attributes('aria-label')).toContain('2')
@@ -47,7 +47,7 @@ describe('ModelPowerButton', () => {
   })
 
   it('shows a filling ring while old knowledge is being indexed', async () => {
-    answer(roles(['enabled']), { total: 40, done: 10 })
+    answer(roles(['enabled']), { total: 40, done: 10, running: true })
     const wrapper = await mountButton()
     const link = wrapper.get('[data-model-power]')
     expect(link.attributes('data-model-power')).toBe('filling')
