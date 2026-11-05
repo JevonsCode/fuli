@@ -69,6 +69,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   local('POST /api/system/graph-migration', 'Moving an older install\'s Docker graph into the built-in graph stops and restarts FULI; the person starts it from Settings. An Agent can read GET /api/system/doctor, and when the click cannot finish, follow the guide the doctor item links (data.guideUrl) with the person.'),
   delegable('settings', 'POST /api/system/doctor/repair', 'Not undone; it rewrites client configuration to what setup writes.'),
   local('PUT /api/debug-turns/capture', 'The local person turns on the hidden model request capture, which routes their own client through this computer.'),
+  local('POST /api/dreaming/run', 'The local person starts a Dreaming run, which sends a project\'s sessions to their own model.'),
   delegable('settings', 'DELETE /api/debug-turns/:id', 'Not undone; the next #fulidebug turn records again.'),
   delegable('settings', 'POST /api/debug-turns/delete', 'Not undone; the next #fulidebug turn records again.'),
   agent('POST /api/capture', 'capture_session_knowledge'),
