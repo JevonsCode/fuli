@@ -18,7 +18,7 @@ export async function handleDreamingRequest({ request, response, url, app, owner
   if (url.pathname === PATH) {
     if (request.method !== 'GET') { sendJson(response, 405, { error: 'Method not allowed' }); return true; }
     const project = url.searchParams.get('projectId');
-    sendJson(response, 200, { readiness: dreamingReadiness(app, project), runs: dreamingRuns(app).slice(0, 20) });
+    sendJson(response, 200, { readiness: dreamingReadiness(app, project), runs: (await dreamingRuns(app)).slice(0, 20) });
     return true;
   }
   if (request.method !== 'POST') { sendJson(response, 405, { error: 'Method not allowed' }); return true; }

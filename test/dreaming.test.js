@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { DREAMING_OPERATION, dreamingReadiness, dreamProject } from '../src/dreaming/run.js';
+import { dreamingRuns } from '../src/dreaming/scheduler.js';
 
 const SPACE = 'space-synthetic';
 const PROJECT = 'project-synthetic';
@@ -104,4 +105,16 @@ test('rec#89: no words to read and a failed model say so and change nothing', as
   const failed = fixture({ envelope: null });
   assert.equal((await dreamProject(failed.app, failed.ownerReads, { personalProjectId: PROJECT })).status, 'model_failed');
   assert.deepEqual(failed.calls.captured, []);
+});
+
+test('rec#89: runs are read through the refreshing read, and a closed log never loses the run', async () => {
+  const { app, ownerReads, calls } = fixture({ proposals: [add(['session_1', 'session_2', 'session_3'])] });
+  app.readRoleSuggestions = async () => [{ operation: DREAMING_OPERATION, at: '2026-11-05T00:00:00Z' }, { operation: 'project_candidate', at: '2026-11-05T00:00:00Z' }];
+  assert.deepEqual((await dreamingRuns(app)).map(row => row.operation), [DREAMING_OPERATION]);
+
+  app.roleSuggestions.record = () => { throw new Error('recovery gate closed'); };
+  const result = await dreamProject(app, ownerReads, { personalProjectId: PROJECT });
+  assert.equal(result.status, 'dreamed');
+  assert.equal(result.recorded, false);
+  assert.equal(calls.captured.length, 1);
 });

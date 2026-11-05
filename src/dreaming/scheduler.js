@@ -13,7 +13,7 @@ export function startDreamingScheduler({ app, ownerReads, withLease = (_owner, r
     if (!app.modelBackends.operationSettings('assistant', DREAMING_OPERATION)) return;
     running = true;
     try {
-      const last = lastRuns(app);
+      const last = await lastRuns(app);
       const projects = await app.listPersonalProjects({ personalSpaceId: app.config.personal.spaceId });
       for (const project of projects) {
         const id = project.project_id;
@@ -31,14 +31,15 @@ export function startDreamingScheduler({ app, ownerReads, withLease = (_owner, r
   return async () => { stopped = true; clearInterval(timer); await active; };
 }
 
-export function dreamingRuns(app) {
-  return (app.roleSuggestions?.list({ personalSpaceId: app.config.personal.spaceId, limit: 300 }) ?? [])
-    .filter(row => row.operation === DREAMING_OPERATION);
+// Through the read that refreshes the recovery gate, as the model page reads the log.
+export async function dreamingRuns(app) {
+  const rows = app.roleSuggestions ? await app.readRoleSuggestions({ limit: 300 }) : [];
+  return rows.filter(row => row.operation === DREAMING_OPERATION);
 }
 
-function lastRuns(app) {
+async function lastRuns(app) {
   const last = new Map();
-  for (const row of dreamingRuns(app)) {
+  for (const row of await dreamingRuns(app)) {
     const at = Date.parse(row.at);
     const project = row.subject?.personalProjectId ?? row.project;
     if (project && at > (last.get(project) ?? 0)) last.set(project, at);

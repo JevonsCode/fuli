@@ -178,8 +178,13 @@ function candidate({ personalSpaceId, personalProjectId, proposal, reason, now }
 }
 
 // One row per run in the built-in Agents' suggestion log: what the page shows.
+// The log may be closed while a delete is checked; the run's result still stands.
 function note(application, personalProjectId, result) {
-  application.roleSuggestions?.record({ role: ROLE, operation: DREAMING_OPERATION, personalSpaceId: application.config.personal.spaceId,
-    personalProjectId, subject: { personalProjectId }, result });
-  return result;
+  try {
+    application.roleSuggestions?.record({ role: ROLE, operation: DREAMING_OPERATION, personalSpaceId: application.config.personal.spaceId,
+      personalProjectId, subject: { personalProjectId }, result });
+    return result;
+  } catch {
+    return { ...result, recorded: false };
+  }
 }
