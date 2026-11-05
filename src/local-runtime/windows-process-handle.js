@@ -27,11 +27,17 @@ export function execute(command, args, options = {}) {
 }
 
 export async function powershell(script, env = process.env, options = {}) {
-  const prefix = '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $ErrorActionPreference="Stop"; ';
-  const result = await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
-    Buffer.from(prefix + script, 'utf16le').toString('base64')], { env, ...options });
-  return JSON.parse(result.stdout.replace(/^﻿/, '').trim() || 'null');
+  const result = await execute('powershell.exe', powershellArguments(script), { env, ...options });
+  return parsePowershellJson(result.stdout);
 }
+
+// What powershell() passes and reads, for a caller that runs it through its own runner.
+export function powershellArguments(script) {
+  const prefix = '[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $ErrorActionPreference="Stop"; ';
+  return ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(prefix + script, 'utf16le').toString('base64')];
+}
+
+export const parsePowershellJson = stdout => JSON.parse(stdout.replace(/^﻿/, '').trim() || 'null');
 
 // Stop keeps the native runtime's check (image path, creation time to the
 // microsecond). Created and Probe compare the raw 100 ns FILETIME exactly and
