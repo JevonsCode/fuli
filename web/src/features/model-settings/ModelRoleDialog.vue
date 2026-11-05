@@ -34,6 +34,8 @@ const saving = ref(false)
 // and nothing here can be saved until it is repaired.
 const locked = computed(() => props.payload.state === 'invalid')
 const frozen = computed(() => saving.value || locked.value)
+// Off means the current chat's model does the work: nothing below applies.
+const inactive = computed(() => frozen.value || !draft.value?.enabled)
 const shownError = computed(() => (locked.value
   ? t('modelSettings.invalidWhileEditing', { error: props.payload.error ?? '' }) : error.value))
 const error = ref('')
@@ -109,37 +111,38 @@ async function save() {
         <Switch id="model-role-enabled" v-model="draft.enabled" :disabled="frozen" />
         <FieldLabel for="model-role-enabled">{{ t('modelSettings.enabled') }}</FieldLabel>
       </Field>
+      <p class="model-role-muted" data-model-enabled-hint>{{ t(draft.enabled ? 'modelSettings.enabledOnHint' : 'modelSettings.enabledOffHint', { name }) }}</p>
 
       <div class="model-role-grid">
         <Field>
           <FieldLabel for="model-role-connection">{{ t('modelSettings.connection') }}</FieldLabel>
           <OptionSelect control-id="model-role-connection" :model-value="draft.connectionId" :label="t('modelSettings.connection')" :options="connectionOptions"
-            :disabled="frozen" data-model-connection @update:model-value="chooseConnection" />
+            :disabled="inactive" data-model-connection @update:model-value="chooseConnection" />
           <FieldDescription v-if="sharing">{{ t('modelSettings.sharedWith', { names: sharing }) }}</FieldDescription>
         </Field>
         <Field>
           <FieldLabel for="model-role-protocol">{{ t('modelSettings.protocol') }}</FieldLabel>
-          <OptionSelect control-id="model-role-protocol" v-model="draft.protocol" :label="t('modelSettings.protocol')" :options="protocolOptions" :disabled="frozen" />
+          <OptionSelect control-id="model-role-protocol" v-model="draft.protocol" :label="t('modelSettings.protocol')" :options="protocolOptions" :disabled="inactive" />
         </Field>
         <Field class="model-role-wide">
           <FieldLabel for="model-role-endpoint">{{ t('modelSettings.endpoint') }}</FieldLabel>
           <Input id="model-role-endpoint" v-model="draft.endpoint" type="url" inputmode="url" autocomplete="off"
-            placeholder="https://" :disabled="frozen" data-model-endpoint />
+            placeholder="https://" :disabled="inactive" data-model-endpoint />
         </Field>
         <Field>
           <FieldLabel for="model-role-model">{{ t('modelSettings.model') }}</FieldLabel>
-          <Input id="model-role-model" v-model="draft.model" autocomplete="off" :disabled="frozen" data-model-name />
+          <Input id="model-role-model" v-model="draft.model" autocomplete="off" :disabled="inactive" data-model-name />
         </Field>
         <Field v-if="draft.protocol === 'openai_chat'">
           <FieldLabel for="model-role-effort">{{ t('modelSettings.reasoningEffort') }}</FieldLabel>
-          <OptionSelect control-id="model-role-effort" v-model="draft.reasoningEffort" :label="t('modelSettings.reasoningEffort')" :options="effortOptions" :disabled="frozen" />
+          <OptionSelect control-id="model-role-effort" v-model="draft.reasoningEffort" :label="t('modelSettings.reasoningEffort')" :options="effortOptions" :disabled="inactive" />
         </Field>
-        <ModelSecretRefField v-model="draft.secretRef" class="model-role-wide" :known="knownKeys" :disabled="frozen" />
-        <ModelKeyEntry class="model-role-wide" :reference="draft.secretRef" :disabled="frozen" @keys="keys => savedKeys = keys" />
+        <ModelSecretRefField v-model="draft.secretRef" class="model-role-wide" :known="knownKeys" :disabled="inactive" />
+        <ModelKeyEntry class="model-role-wide" :reference="draft.secretRef" :disabled="inactive" @keys="keys => savedKeys = keys" />
       </div>
 
       <Field v-if="role === 'assistant'" orientation="horizontal">
-        <Switch id="model-role-dreaming" v-model="dreamingOn" :disabled="frozen" data-model-dreaming />
+        <Switch id="model-role-dreaming" v-model="dreamingOn" :disabled="inactive" data-model-dreaming />
         <FieldLabel for="model-role-dreaming">{{ t('modelSettings.dreaming.enable') }}</FieldLabel>
       </Field>
 
@@ -151,7 +154,7 @@ async function save() {
             data-model-project-search @keydown.enter.prevent />
           <div class="model-role-projects" data-model-projects>
             <div v-for="choice in shownProjects" :key="choice.key" class="model-role-check">
-              <Checkbox :id="`model-role-project-${choice.key}`" :model-value="approved.has(choice.key)" :disabled="frozen"
+              <Checkbox :id="`model-role-project-${choice.key}`" :model-value="approved.has(choice.key)" :disabled="inactive"
                 data-model-egress-project @update:model-value="value => draft = withProject(draft!, choice.project, value === true)" />
               <Label :for="`model-role-project-${choice.key}`" :title="choice.label">{{ choice.label }}</Label>
             </div>
@@ -159,7 +162,7 @@ async function save() {
           <p v-if="!shownProjects.length" class="model-role-muted">{{ t('modelSettings.projectNoMatch') }}</p>
         </template>
         <div class="model-role-check">
-          <Checkbox id="model-role-unassigned" v-model="draft.allowUnassigned" :disabled="frozen" />
+          <Checkbox id="model-role-unassigned" v-model="draft.allowUnassigned" :disabled="inactive" />
           <Label for="model-role-unassigned">{{ t('modelSettings.allowUnassigned') }}</Label>
         </div>
       </fieldset>
@@ -169,27 +172,27 @@ async function save() {
           <AccordionTrigger class="model-role-advanced-trigger">{{ t('modelSettings.advanced') }}</AccordionTrigger>
           <AccordionContent class="model-role-advanced-body">
             <Field orientation="horizontal">
-              <Checkbox id="model-role-priced" v-model="draft.priced" :disabled="frozen" />
+              <Checkbox id="model-role-priced" v-model="draft.priced" :disabled="inactive" />
               <FieldLabel for="model-role-priced">{{ t('modelSettings.priced') }}</FieldLabel>
             </Field>
             <div v-if="draft.priced" class="model-role-grid">
               <Field>
                 <FieldLabel for="model-role-currency">{{ t('modelSettings.currency') }}</FieldLabel>
-                <Input id="model-role-currency" v-model="draft.currency" maxlength="3" autocomplete="off" :disabled="frozen" />
+                <Input id="model-role-currency" v-model="draft.currency" maxlength="3" autocomplete="off" :disabled="inactive" />
               </Field>
               <Field>
                 <FieldLabel for="model-role-input-price">{{ t('modelSettings.inputPrice') }}</FieldLabel>
-                <Input id="model-role-input-price" v-model="draft.inputPrice" type="number" min="0" step="any" :disabled="frozen" />
+                <Input id="model-role-input-price" v-model="draft.inputPrice" type="number" min="0" step="any" :disabled="inactive" />
               </Field>
               <Field>
                 <FieldLabel for="model-role-output-price">{{ t('modelSettings.outputPrice') }}</FieldLabel>
-                <Input id="model-role-output-price" v-model="draft.outputPrice" type="number" min="0" step="any" :disabled="frozen" />
+                <Input id="model-role-output-price" v-model="draft.outputPrice" type="number" min="0" step="any" :disabled="inactive" />
               </Field>
             </div>
 
             <Field>
               <FieldLabel for="model-role-operations">{{ t('modelSettings.operations') }}</FieldLabel>
-              <Input id="model-role-operations" v-model="draft.operations" autocomplete="off" spellcheck="false" :disabled="frozen"
+              <Input id="model-role-operations" v-model="draft.operations" autocomplete="off" spellcheck="false" :disabled="inactive"
                 data-model-operations />
               <FieldDescription>
                 {{ t('modelSettings.operationsHint') }}
@@ -200,19 +203,19 @@ async function save() {
             <div class="model-role-grid">
               <Field v-for="field in BUDGET_FIELDS" :key="field">
                 <FieldLabel :for="`model-role-${field}`">{{ t(`modelSettings.${field}`) }}</FieldLabel>
-                <Input :id="`model-role-${field}`" v-model="draft[field]" type="number" min="1" step="1" :disabled="frozen"
+                <Input :id="`model-role-${field}`" v-model="draft[field]" type="number" min="1" step="1" :disabled="inactive"
                   :data-model-budget="field" />
               </Field>
               <Field>
                 <FieldLabel for="model-role-cost-cap">{{ t('modelSettings.maxCostPerWindow') }}</FieldLabel>
                 <Input id="model-role-cost-cap" v-model="draft.maxCostPerWindow" type="number" min="0" step="any"
-                  :disabled="frozen || !draft.priced" />
+                  :disabled="inactive || !draft.priced" />
                 <FieldDescription v-if="!draft.priced">{{ t('modelSettings.costNeedsPrice') }}</FieldDescription>
               </Field>
             </div>
 
             <Field orientation="horizontal">
-              <Switch id="model-role-fallback" v-model="draft.fallbackToSession" :disabled="frozen" />
+              <Switch id="model-role-fallback" v-model="draft.fallbackToSession" :disabled="inactive" />
               <FieldLabel for="model-role-fallback">{{ t('modelSettings.fallback') }}</FieldLabel>
             </Field>
           </AccordionContent>

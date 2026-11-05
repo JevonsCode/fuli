@@ -233,6 +233,20 @@ describe('ModelSettingsPage', () => {
     expect(dialog.get('[data-model-save]').attributes('disabled')).toBeUndefined()
   })
 
+  it('greys out the model settings while the role uses the chat client\'s model', async () => {
+    const wrapper = await mountPage()
+    await wrapper.get('[data-model-role="tonborg"] [data-model-role-edit]').trigger('click')
+    const dialog = wrapper.get('[data-model-role-dialog]')
+    expect(dialog.get('[data-model-endpoint]').attributes('disabled')).toBeUndefined()
+    expect(dialog.get('[data-model-enabled-hint]').text()).toContain('不用聊天客户端里的模型')
+
+    await dialog.get('#model-role-enabled').trigger('click')
+    expect(dialog.get('[data-model-endpoint]').attributes('disabled')).toBeDefined()
+    expect(dialog.get('[data-model-secret-ref]').attributes('disabled')).toBeDefined()
+    expect(dialog.get('[data-model-enabled-hint]').text()).toContain('现在用你聊天客户端里的模型')
+    expect(dialog.get('[data-model-save]').attributes('disabled')).toBeUndefined()
+  })
+
   it('finds a project by name and says when none matches', async () => {
     const wrapper = await mountPage()
     await wrapper.get('[data-model-role="tonborg"] [data-model-role-edit]').trigger('click')
