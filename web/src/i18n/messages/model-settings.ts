@@ -85,6 +85,11 @@ export const modelSettingsMessages = {
     protocols: { openai_chat: 'OpenAI 兼容', anthropic_messages: 'Anthropic Messages', typesafe_systemone: 'Jev（TypeSafe）' },
     endpoint: '接口地址',
     secretRefHint: '给密钥起的名字，例如 deepseek。几个连接可以共用一个密钥。',
+    secretRefInvalid: '只能用字母、数字、点、冒号、横线和下划线，不能有空格，开头要是字母或数字。',
+    savedKeys: '已有密钥',
+    projectSearch: '搜索项目',
+    projectNoMatch: '没有匹配的项目。',
+    advanced: '高级配置',
     key: {
       label: 'API 密钥',
       needsReference: '先填密钥引用（字母、数字、点、横线或下划线），再保存密钥。',
@@ -298,6 +303,11 @@ export const modelSettingsMessages = {
     protocols: { openai_chat: 'OpenAI-compatible', anthropic_messages: 'Anthropic Messages', typesafe_systemone: 'Jev (TypeSafe)' },
     endpoint: 'Endpoint',
     secretRefHint: 'A name for the key, such as deepseek. Several connections can share one key.',
+    secretRefInvalid: 'Use only letters, digits, dots, colons, dashes and underscores, with no spaces, and start with a letter or digit.',
+    savedKeys: 'Saved keys',
+    projectSearch: 'Search projects',
+    projectNoMatch: 'No matching projects.',
+    advanced: 'Advanced settings',
     key: {
       label: 'API key',
       needsReference: 'Fill in the key reference (letters, digits, dots, dashes or underscores) before saving a key.',

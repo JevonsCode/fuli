@@ -9,6 +9,7 @@ import {
   useForwardPropsEmits,
 } from "reka-ui"
 import { cn } from "@/lib/class-names"
+import { usePopupTarget } from "../popup-host"
 
 defineOptions({
   inheritAttrs: false,
@@ -25,10 +26,11 @@ const emits = defineEmits<DropdownMenuContentEmits>()
 const delegatedProps = reactiveOmit(props, "class")
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
+const popupTarget = usePopupTarget()
 </script>
 
 <template>
-  <DropdownMenuPortal>
+  <DropdownMenuPortal :to="popupTarget">
     <DropdownMenuContent
       data-slot="dropdown-menu-content"
       v-bind="{ ...$attrs, ...forwarded }"

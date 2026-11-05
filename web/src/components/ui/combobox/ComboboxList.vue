@@ -5,6 +5,7 @@ import type { HTMLAttributes } from "vue"
 import { reactiveOmit } from "@vueuse/core"
 import { ComboboxContent, ComboboxPortal, useForwardPropsEmits } from "reka-ui"
 import { cn } from "@/lib/class-names"
+import { usePopupTarget } from "../popup-host"
 
 defineOptions({
   inheritAttrs: false,
@@ -19,10 +20,11 @@ const emits = defineEmits<ComboboxContentEmits>()
 
 const delegatedProps = reactiveOmit(props, "class")
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
+const popupTarget = usePopupTarget()
 </script>
 
 <template>
-  <ComboboxPortal>
+  <ComboboxPortal :to="popupTarget">
     <ComboboxContent
       data-slot="combobox-list"
       v-bind="{ ...$attrs, ...forwarded }"

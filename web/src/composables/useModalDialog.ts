@@ -1,4 +1,6 @@
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+
+import { POPUP_HOST } from '@/components/ui/popup-host'
 
 const focusableSelector = [
   'button:not([disabled])',
@@ -10,11 +12,21 @@ const focusableSelector = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
+const POPUP_SELECTOR = '[data-reka-popper-content-wrapper]'
+
 export function useModalDialog(open: () => boolean, requestClose: () => void) {
   const dialogRef = ref<HTMLDialogElement | null>(null)
+  provide(POPUP_HOST, dialogRef)
   const initialFocusRef = ref<HTMLElement | null>(null)
   let returnFocus: HTMLElement | null = null
   let transition = 0
+  // Esc with a popup open closes the popup alone. The popup's own handler removes
+  // it before the dialog hears the request, so this looks first, at the window.
+  let popupTakesEscape = false
+  function notePopupEscape(event: KeyboardEvent) {
+    if (event.key === 'Escape') popupTakesEscape = Boolean(dialogRef.value?.querySelector(POPUP_SELECTOR))
+  }
+  onMounted(() => window.addEventListener('keydown', notePopupEscape, true))
 
   watch(open, (isOpen) => {
     const currentTransition = ++transition
@@ -44,6 +56,7 @@ export function useModalDialog(open: () => boolean, requestClose: () => void) {
   }, { immediate: true })
 
   onBeforeUnmount(() => {
+    window.removeEventListener('keydown', notePopupEscape, true)
     transition += 1
     const dialog = dialogRef.value
     if (dialog?.open) dialog.close()
@@ -63,7 +76,8 @@ export function useModalDialog(open: () => boolean, requestClose: () => void) {
 
   function onCancel(event: Event) {
     event.preventDefault()
-    requestClose()
+    if (popupTakesEscape) popupTakesEscape = false
+    else requestClose()
   }
 
   function onKeydown(event: KeyboardEvent) {

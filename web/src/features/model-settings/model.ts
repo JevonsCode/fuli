@@ -314,6 +314,12 @@ export function validKeyReference(reference: string): boolean {
   return KEY_REFERENCE.test(reference.trim())
 }
 
+/** Every key name this computer already knows: saved keys and those connections name. */
+export function knownKeyReferences(payload: ModelRolesPayload, saved: readonly string[]) {
+  const named = Object.values(payload.connections).flatMap(connection => connection.secretRef ?? [])
+  return [...new Set([...saved, ...named])].sort((left, right) => left.localeCompare(right))
+}
+
 export const readSavedKeys = () => getJson<{ saved: string[] }>('/api/model-backends/keys')
 export const saveModelKey = (reference: string, key: string) =>
   putJson<{ reference: string; saved: true }>(`/api/model-backends/keys/${encodeURIComponent(reference.trim())}`, { key })
