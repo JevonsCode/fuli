@@ -47,7 +47,8 @@ defineProps<{
 .model-use-model, .model-use-advice { min-width: 0; margin: 0; font-size: var(--text-control); line-height: 20px; }
 .model-use-model { overflow: hidden; color: var(--color-muted); text-overflow: ellipsis; white-space: nowrap; }
 .model-use-model :deep(code) { margin-inline-end: 8px; color: var(--color-ink); font-family: var(--font-mono); font-size: var(--text-control); }
-.model-use-advice { display: -webkit-box; min-height: 40px; overflow: hidden; color: var(--color-ink-soft); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+/* The whole recommendation always shows; two lines are kept so the actions stay level. */
+.model-use-advice { min-height: 40px; color: var(--color-ink-soft); }
 .model-use-label { margin-inline-end: 8px; color: var(--color-muted); font-size: var(--text-meta); }
 /* The quick action sits at the card's foot, on the right, at the same place in every card of a row. */
 .model-use-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); margin-top: auto; min-width: 0; }
