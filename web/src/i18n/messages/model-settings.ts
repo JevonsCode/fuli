@@ -105,6 +105,8 @@ export const modelSettingsMessages = {
     projectNoMatch: '没有匹配的项目。',
     advanced: '高级配置',
     semantic: {
+      indexing: '正在按意思整理知识：{done}/{total}',
+      indexDone: '{total} 条知识都能按意思找到了。',
       title: '语义搜索',
       summary: '让 FULI 按意思找知识。不配也能用，只是只按字面找。',
       preset: '模型来源',
@@ -358,6 +360,8 @@ export const modelSettingsMessages = {
     projectNoMatch: 'No matching projects.',
     advanced: 'Advanced settings',
     semantic: {
+      indexing: 'Indexing knowledge by meaning: {done}/{total}',
+      indexDone: 'All {total} items can be found by meaning.',
       title: 'Semantic search',
       summary: 'Lets FULI find knowledge by meaning. Without it FULI still works, matching words only.',
       preset: 'Model source',

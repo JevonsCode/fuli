@@ -28,6 +28,7 @@ import { listenFetchableServer } from './server/listen.js';
 import { resolveSetupPaths } from './setup/paths.js';
 import { createSystemService } from './system/system-service.js';
 import { startDreamingScheduler } from './dreaming/scheduler.js';
+import { startSemanticIndexer } from './semantic/scheduler.js';
 import { startJudgmentScheduler } from './judgment/scheduler.js';
 import { dataFormatNoticeLine, dataFormatNotices, latestNotices } from './data-format/format-notices.js';
 import { personalGraphFormat } from './data-format/graph-format-client.js';
@@ -158,13 +159,14 @@ export async function createServer(options = {}) {
   let resourcesClosing = null;
   let stopJudgment = () => {};
   let stopDreaming = () => {};
+  let semanticIndexer = null;
   let stopClientLinkUpdates = () => {};
   let peer = null;
   let workerRuntime = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopClientLinkUpdates(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
+      for (const close of [() => stopJudgment(), () => stopDreaming(), () => semanticIndexer?.stop(), () => stopClientLinkUpdates(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
         () => releaseDataDirectory()]) {
         try {
           const pending = close();
@@ -285,6 +287,10 @@ export async function createServer(options = {}) {
     ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
   stopDreaming = startDreamingScheduler({ app: application, ownerReads: knowledgeOwnerReads,
     ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
+  semanticIndexer = startSemanticIndexer({ app: application,
+    ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
+  application.semanticIndexer = semanticIndexer;
+  void semanticIndexer.runNow();
   stopClientLinkUpdates = clientLinks?.startAutoUpdate({
     onError: (error) => console.warn(`Client links were not updated: ${error?.message ?? error}`)
   }) ?? (() => {});
