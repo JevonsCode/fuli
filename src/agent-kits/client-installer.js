@@ -1,6 +1,6 @@
 import { createInstaller, defaultExtensionsDirectory } from './vendor/agent-installer/index.mjs';
 import { noteClientChanged } from '../mcp/process-registry.js';
-import { clientSourceApplication } from './client-source.js';
+import { clientSourceApplication } from './client-detection.js';
 import { prepareInstallerManifest } from './installer-manifest.js';
 
 const COMPONENT = 'agent-installer';

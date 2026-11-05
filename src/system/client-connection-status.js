@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-import { detectClients } from '../agent-kits/client-detection.js';
-import { clientSourceApplication } from '../agent-kits/client-source.js';
+import { clientSourceApplication, detectClients } from '../agent-kits/client-detection.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 
 // Kept per client so a long-lived console cannot grow this file without bound.
