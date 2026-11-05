@@ -222,7 +222,7 @@ async function save() {
 .model-role-check { display: flex; align-items: center; gap: 10px; min-width: 0; overflow-wrap: anywhere; }
 .model-role-projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 8px 16px; max-height: 208px; padding: 2px; overflow-y: auto; }
 .model-role-projects label { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.model-role-advanced-trigger { padding-block: 8px; font-size: 14px; font-weight: 500; }
-.model-role-advanced-body { display: grid; gap: 16px; padding-top: 8px; }
+.model-role-advanced :deep(.model-role-advanced-trigger) { padding-block: 8px; font-size: var(--text-body); font-weight: var(--weight-medium); }
+.model-role-advanced :deep(.model-role-advanced-body) { display: grid; gap: 16px; padding-top: 8px; }
 .model-role-muted { margin: 0; color: var(--color-muted); font-size: 13px; }
 </style>
