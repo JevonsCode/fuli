@@ -72,7 +72,8 @@ It is the tray app of the Windows package (`docs/windows-first-install.md`, 「D
   shared `-open` event carries no payload, so older versions and updates keep the same names, and
   coalesced signals lose no link. A starting client takes links left while none ran (an update held
   the lock); links older than five minutes are dropped.
-- Opening the client starts FULI if it is stopped, at login too. Stopping it from the tray holds until the client opens again.
+- Opening the client starts FULI if it is stopped, at login too. Stopping it from the tray or with `fuli stop` holds until the client opens again.
+- A FULI that went away without a stop is started again, up to three times in ten minutes; after that the button waits for the person.
 - Launch at login is on for an installed FULI until 「开机时启动」 in the tray menu turns it off
   (`windows_login_launch.dart`); the console's first-run guide reads and sets the same choice
   (`fuliLaunchAtLogin` in `console_webview.dart`). The tray menu also has 「换一个端口」.
