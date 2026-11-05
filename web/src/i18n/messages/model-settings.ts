@@ -1,6 +1,7 @@
 export const modelSettingsMessages = {
   'zh-CN': {
     title: '模型与用量',
+    guide: '查看详情：用什么模型、花多少 Token',
     power: {
       off: '还没有接模型。接一个，FULI 就能按意思找和整理。',
       on: '模型加持中：{count} 项在用',
@@ -256,6 +257,7 @@ export const modelSettingsMessages = {
   },
   'en-US': {
     title: 'Models and usage',
+    guide: 'Details: which model, how many tokens',
     power: {
       off: 'No model connected yet. Connect one and FULI finds and sorts by meaning.',
       on: 'Model on: powers {count} uses',

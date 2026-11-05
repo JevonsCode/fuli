@@ -459,3 +459,9 @@ export function usageParts(value: UsageValue, locale: string, currency?: string)
 }
 
 export const formatCount = (value: number, locale: string) => new Intl.NumberFormat(locale).format(value)
+
+// The website's model guide (site/models): what each model does, what is enough
+// and what it cost when we measured, in the console's language.
+const MODEL_GUIDE = 'https://xn--8ovp9s.xn--m8txu.com/fuli/models/'
+export const modelGuideUrl = (locale: string) => MODEL_GUIDE + (locale.startsWith('zh') ? 'zh/' : 'en/')
+

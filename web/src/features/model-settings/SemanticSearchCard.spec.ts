@@ -104,6 +104,15 @@ describe('SemanticSearchCard on the model page', () => {
     expect(card.find('[data-model-check]').exists()).toBe(false)
   })
 
+  it('links the website model guide in the language of the console, from the card and the dialog', async () => {
+    const wrapper = await mountPage(payload())
+    const link = wrapper.get('[data-semantic-search] [data-model-guide]')
+    expect(link.attributes('href')).toBe('https://xn--8ovp9s.xn--m8txu.com/fuli/models/zh/')
+    expect(link.attributes('target')).toBe('_blank')
+    await wrapper.get('[data-semantic-edit]').trigger('click')
+    expect(wrapper.get('[data-model-role-dialog] [data-model-guide]').text()).toContain('查看详情')
+  })
+
   it('opens the shared dialog with the presets, the address, the model, the key and the projects, and saves the role', async () => {
     api.putJson.mockResolvedValue(configured())
     const wrapper = await mountPage(payload())
