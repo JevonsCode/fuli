@@ -72,6 +72,7 @@ class FuliController extends ChangeNotifier {
   bool _polling = false;
   // The person stopped FULI: being stopped is not news to them.
   bool _stoppedByPerson = false;
+  bool _startOnOpen = false;
   int _failures = 0;
   // The port `fuli status` reported when it differs from the settings file.
   int? _runtimePort;
@@ -100,9 +101,12 @@ class FuliController extends ChangeNotifier {
   /// differs, else `ports.console` from the settings file.
   Future<int> consolePort() async => _runtimePort ?? await runtime.consolePort();
 
-  /// Checks now and keeps checking on the poll schedule.
-  void startPolling() {
+  /// Checks now and keeps checking on the poll schedule. [startFuli]: opening
+  /// the client, at login too, means wanting FULI, so a first check that finds
+  /// it stopped starts it. A start that fails stays on the page with its button.
+  void startPolling({bool startFuli = false}) {
     _polling = true;
+    _startOnOpen = startFuli;
     unawaited(refresh());
   }
 
@@ -125,6 +129,10 @@ class FuliController extends ChangeNotifier {
     _show(snapshot);
     if (snapshot.reached && snapshot.running) await _announceAttention(apiFor(snapshot.port));
     _schedule();
+    if (_startOnOpen) {
+      _startOnOpen = false;
+      if (snapshot.condition == FuliCondition.notRunning) unawaited(start());
+    }
   }
 
   // Each new request an Agent leaves for the person is one notification; a
@@ -149,7 +157,7 @@ class FuliController extends ChangeNotifier {
     // schedule: backing off would leave the page stale for minutes (11-03).
     _failures = snapshot.reached || snapshot.running ? 0 : _failures + 1;
     if (snapshot.condition != FuliCondition.notRunning) _stoppedByPerson = false;
-    if (_gate.observe(snapshot.condition, quiet: _stoppedByPerson || _pending != null)) {
+    if (_gate.observe(snapshot.condition, quiet: _stoppedByPerson || _startOnOpen || _pending != null)) {
       unawaited(notifier.notify('FULI', snapshot.sentence(strings)));
     }
     notifyListeners();
