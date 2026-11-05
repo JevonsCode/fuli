@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6f5f1">
+    <title data-i18n="meta.title">FULI 复利 · 技术：架构、Skills、数据设计与理念</title>
+    <meta data-i18n-content="meta.description" name="description" content="">
+    <meta data-i18n-content="meta.title" property="og:title" content="">
+    <meta data-i18n-content="meta.social" property="og:description" content="">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://xn--8ovp9s.xn--m8txu.com/fuli/tech/">
+    <meta property="og:image" content="https://xn--8ovp9s.xn--m8txu.com/fuli/assets/brand/fuli-mark-color-512.png">
+    <meta data-i18n-content="meta.locale" property="og:locale" content="zh_CN">
+    <meta name="twitter:card" content="summary">
+    <link rel="canonical" href="https://xn--8ovp9s.xn--m8txu.com/fuli/tech/">
+    <link rel="icon" href="../assets/brand/favicon.ico" sizes="any">
+    <link rel="preload" href="../assets/unbounded-latin.woff2" as="font" type="font/woff2" crossorigin="">
+    <script>document.documentElement.classList.add('js')</script>
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../guide-page.css">
+    <link rel="stylesheet" href="./tech.css">
+    <script type="module" src="../tech.js"></script>
+  </head>
+  <body class="guide-page">
+    <a data-i18n="nav.skip" class="skip" href="#main">跳到正文</a>
+    <header class="nav">
+      <a data-i18n-aria-label="tech.home" data-i18n-href="tech.homeUrl" class="brand" href="https://xn--8ovp9s.xn--m8txu.com/fuli/" aria-label="Fuli 复利 首页"><img class="brand-mark" src="../assets/brand/fuli-mark-color.svg" alt="" width="28" height="28"><span>复利</span><b>FULI</b></a>
+      <nav data-i18n-aria-label="nav.label" aria-label="页面导航">
+        <a data-i18n="tech.nav.architecture" href="#architecture">架构</a>
+        <a data-i18n="tech.nav.skills" href="#skills">Skills</a>
+        <a data-i18n="tech.nav.data" href="#data">数据</a>
+        <a data-i18n="tech.nav.principles" href="#principles">理念</a>
+        <a class="nav-github" href="https://github.com/JevonsCode/fuli">GitHub</a>
+        <div data-i18n-aria-label="nav.language" aria-label="语言" role="group" class="language-switch">
+          <a href="./zh/" lang="zh-CN" hreflang="zh-Hans" data-locale="zh-CN" aria-current="true">中文</a>
+          <a href="./en/" lang="en" hreflang="en" data-locale="en" aria-label="English">EN</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="guide-hero" aria-labelledby="tech-title">
+        <p data-i18n="tech.eyebrow" class="eyebrow">技术</p>
+        <h1 data-i18n-html="tech.title" id="tech-title">跑在你的电脑上，<em>由你说了算。</em></h1>
+        <p data-i18n="tech.lead" class="lede">写给正在评估 FULI 的开发者：怎么搭起来、带了哪些 Skill、数据怎么存、为什么这样设计。</p>
+      </section>
+
+      <section class="guide-section" id="architecture" aria-labelledby="architecture-title">
+        <h2 data-i18n="tech.architecture" id="architecture-title">本机四层</h2>
+        <ol class="layer-grid">
+          <li class="guide-card">
+            <span data-i18n="tech.layer.clients" class="layer-label">接入</span>
+            <h3 data-i18n="tech.clients">MCP、CLI 与 HTTP</h3>
+            <p data-i18n="tech.clientsBody">兼容 MCP 的客户端都能接入，fuli connect 生成通用配置。Codex、Claude Code、Cursor、OpenCode 另有适配器；自动采集对话、唤醒会话取决于适配器。</p>
+          </li>
+          <li class="guide-card">
+            <span data-i18n="tech.layer.orchestration" class="layer-label">编排</span>
+            <h3 data-i18n="tech.console">Node 控制台</h3>
+            <p data-i18n="tech.consoleBody">CLI、本机管理界面和 MCP 服务。界面和 Agent 工具调用同一套应用服务，业务规则只有一份。</p>
+          </li>
+          <li class="guide-card">
+            <span data-i18n="tech.layer.governance" class="layer-label">治理</span>
+            <h3 data-i18n="tech.provider">Python Provider</h3>
+            <p data-i18n="tech.providerBody">graph-provider/ 是事实源，守住空间与项目范围、来源和确认。</p>
+          </li>
+          <li class="guide-card">
+            <span data-i18n="tech.layer.storage" class="layer-label">存储</span>
+            <h3 data-i18n="tech.neo4j">本机 Neo4j</h3>
+            <p data-i18n="tech.neo4jBody">图数据库存知识、关系和历史。Provider 和 Neo4j 只监听本机回环地址，开了局域网模式也一样。</p>
+          </li>
+        </ol>
+        <p data-i18n="tech.parity" class="section-note">界面上每个改数据的操作，要么有对应的 Agent 工具，要么写明只能由本人在本机操作。</p>
+      </section>
+
+      <section class="guide-section" id="skills" aria-labelledby="skills-title">
+        <h2 data-i18n="tech.skills" id="skills-title">随 FULI 安装的 Skills</h2>
+        <p data-i18n="tech.skillsLead">Skill 是给 Agent 的说明书，不是付费版本。</p>
+        <ul class="skill-grid">
+          <li class="guide-card">
+            <h3><code>capturing-session-knowledge</code></h3>
+            <p data-i18n="tech.skill.capturing">召回当前项目的知识，应用协作偏好；任务结束时，把值得复用的结果连同来源存下来。</p>
+          </li>
+          <li class="guide-card">
+            <h3><code>operating-fuli</code></h3>
+            <p data-i18n="tech.skill.operating">通过结构化工具查看和修改项目、知识、Agent 与审核，不靠操作浏览器。</p>
+          </li>
+          <li class="guide-card">
+            <h3><code>grilling-project</code></h3>
+            <p data-i18n="tech.skill.grilling">先读仓库，再一次问一个问题，建立或补全项目档案；公开前先预览公开边界。</p>
+          </li>
+          <li class="guide-card">
+            <h3><code>flreview</code></h3>
+            <p data-i18n="tech.skill.flreview">你输入 /flreview 时，按 FULI 排好的候选，生成一页这次用的知识回顾。</p>
+          </li>
+          <li class="guide-card">
+            <h3><code>fuli</code></h3>
+            <p data-i18n="tech.skill.fuli">/fuli start、stop、restart、status：开关当前会话里的 FULI，由 Hook 直接应答。</p>
+          </li>
+        </ul>
+      </section>
+
+      <section class="guide-section" id="data" aria-labelledby="data-title">
+        <h2 data-i18n="tech.data" id="data-title">数据设计</h2>
+        <ul class="point-grid">
+          <li class="guide-card">
+            <h3 data-i18n="tech.data.spaces">个人空间与项目</h3>
+            <p data-i18n="tech.data.spacesBody">数据按个人空间隔离，空间里分项目。搜索限定在空间和项目范围内，不混查所有项目。</p>
+          </li>
+          <li class="guide-card">
+            <h3 data-i18n="tech.data.graph">实体与关系</h3>
+            <p data-i18n="tech.data.graphBody">知识是图里的实体（Entity）和关系（RELATES_TO），带着来源会话、范围和确认状态。</p>
+          </li>
+          <li class="guide-card">
+            <h3 data-i18n="tech.data.versions">改动写新版本</h3>
+            <p data-i18n="tech.data.versionsBody">修改不覆盖原话：新版本取代旧版本，旧版本保留原文、来源和确认，有效期到新版本开始为止。当前回答只读仍有效的版本。</p>
+          </li>
+          <li class="guide-card">
+            <h3 data-i18n="tech.data.confirmation">人来确认</h3>
+            <p data-i18n="tech.data.confirmationBody">确认状态分三档：人确认、Agent 确认、待确认。Agent 的使用证据最多升到 Agent 确认。</p>
+          </li>
+          <li class="guide-card">
+            <h3 data-i18n="tech.data.migrations">格式迁移</h3>
+            <p data-i18n="tech.data.migrationsBody">图谱格式有版本号。只加索引和约束的步骤自动运行；会改记录的步骤要你确认，并记下撤销所需的内容。旧版 FULI 打不开新格式。</p>
+          </li>
+          <li class="guide-card">
+            <h3 data-i18n="tech.data.indexes">派生索引</h3>
+            <p data-i18n="tech.data.indexesBody">按意思搜索的向量、补全的别名和上下文都是索引：不改原文，不产生版本，可以丢掉重算。</p>
+          </li>
+          <li class="guide-card">
+            <h3 data-i18n="tech.data.deletion">删除</h3>
+            <p data-i18n="tech.data.deletionBody">删除会同时清理本机副本；从旧备份恢复，也不会把删掉的文字带回来。</p>
+          </li>
+        </ul>
+      </section>
+
+      <section class="guide-section" id="principles" aria-labelledby="principles-title">
+        <h2 data-i18n="tech.principles" id="principles-title">理念</h2>
+        <ul class="point-grid">
+          <li class="guide-card">
+            <h3 data-i18n="tech.principle.local">本地优先</h3>
+            <p data-i18n="tech.principle.localBody">个人图谱默认留在你的电脑上。凭据、临时日志和原始命令输出不进图谱。</p>
+          </li>
+          <li class="guide-card">
+            <h3 data-i18n="tech.principle.human">人说了算</h3>
+            <p data-i18n="tech.principle.humanBody">AI 检索、总结、提醒、执行；最终决定在人。重复和相似不等于你的确认。</p>
+          </li>
+          <li class="guide-card">
+            <h3 data-i18n="tech.principle.query">按需查询</h3>
+            <p data-i18n="tech.principle.queryBody">会话开始不塞入全部历史：入口只带偏好和一小段召回，其余由 Agent 用到时再查。</p>
+          </li>
+          <li class="guide-card">
+            <h3 data-i18n="tech.principle.history">历史与当前分开</h3>
+            <p data-i18n="tech.principle.historyBody">旧做法当时可能是对的。FULI 保留来源、时间和取代关系；负面反馈只降权或触发复查，不悄悄抹掉。</p>
+          </li>
+          <li class="guide-card">
+            <h3 data-i18n="tech.principle.reuse">看复用，不看数量</h3>
+            <p data-i18n="tech.principle.reuseBody">节点数和对话数不是目标。目标是确认过的知识在对的项目里被再次用上，少讲一遍、少返工一次。</p>
+          </li>
+        </ul>
+      </section>
+
+      <section class="guide-section" id="related" aria-labelledby="related-title">
+        <h2 data-i18n="tech.related" id="related-title">相关</h2>
+        <p class="guide-links">
+          <a data-i18n="tech.related.models" data-i18n-href="tech.related.modelsUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/models/">模型指南</a>
+          <a data-i18n="tech.related.interface" href="https://github.com/JevonsCode/fuli/blob/main/docs/agent-interface-architecture.md">Agent 接口架构</a>
+          <a data-i18n="tech.related.skills" href="https://github.com/JevonsCode/fuli/blob/main/docs/skills-and-prompts.md">Skills 与提示</a>
+          <a data-i18n="tech.related.retrieval" href="https://github.com/JevonsCode/fuli/blob/main/docs/retrieval-design.md">检索设计</a>
+          <a data-i18n="tech.related.docs" data-i18n-href="tech.related.docsUrl" href="https://github.com/JevonsCode/fuli/blob/main/README.zh-CN.md">完整文档</a>
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span data-i18n="footer.copyright">© Fuli 复利 · Apache-2.0</span>
+      <span><a href="https://github.com/JevonsCode/fuli">GitHub</a><a data-i18n="tech.backHome" data-i18n-href="tech.homeUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到首页</a></span>
+    </footer>
+  </body>
+</html>

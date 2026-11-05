@@ -5,6 +5,7 @@ import { parseHTML } from 'linkedom';
 import { createLanguageController, resolveLanguage } from '../site/i18n.js';
 import { messages, sceneMessages } from '../site/translations.js';
 import * as modelsCatalog from '../site/models/translations.js';
+import * as techCatalog from '../site/tech/translations.js';
 
 const html = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');
 const page = () => parseHTML(html).document;
@@ -87,11 +88,11 @@ test('both languages cover the complete page, accessibility text, metadata and s
   assert.doesNotMatch(document.documentElement.textContent, /不按天数遗忘/);
 });
 
-test('the model guide covers both languages with the same keys and no Chinese in English', () => {
-  const { messages: copy, sceneMessages: scenes } = modelsCatalog;
+for (const [name, catalog] of [['models', modelsCatalog], ['tech', techCatalog]]) test(`the ${name} guide page covers both languages with the same keys and no Chinese in English`, () => {
+  const { messages: copy, sceneMessages: scenes } = catalog;
   assert.deepEqual(Object.keys(copy.en).sort(), Object.keys(copy['zh-CN']).sort());
   assert.deepEqual(scenes, { 'zh-CN': {}, en: {} });
-  const document = parseHTML(readFileSync(new URL('../site/models/index.html', import.meta.url), 'utf8')).document;
+  const document = parseHTML(readFileSync(new URL(`../site/${name}/index.html`, import.meta.url), 'utf8')).document;
   const used = new Set();
   for (const element of document.querySelectorAll('*')) {
     for (const attribute of element.attributes) {
@@ -101,9 +102,9 @@ test('the model guide covers both languages with the same keys and no Chinese in
     }
   }
   assert.deepEqual([...used].sort(), Object.keys(copy.en).sort(), 'every key is used on the page');
-  createLanguageController({ document, languages: ['en-US'], catalog: modelsCatalog });
+  createLanguageController({ document, languages: ['en-US'], catalog });
   assert.equal(document.title, copy.en['meta.title']);
   for (const element of document.querySelectorAll('.brand, .language-switch')) element.remove();
   assert.doesNotMatch(document.documentElement.textContent, /[\u3400-\u9fff]/);
-  assert.equal(document.querySelector('[data-i18n="models.backHome"]').href, 'https://xn--8ovp9s.xn--m8txu.com/fuli/en/');
+  assert.equal(document.querySelector(`[data-i18n="${name}.backHome"]`).href, 'https://xn--8ovp9s.xn--m8txu.com/fuli/en/');
 });
