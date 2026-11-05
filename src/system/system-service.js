@@ -29,6 +29,7 @@ import { createSessionOffers } from '../agent-kits/session-offers.js';
 import { customClientStore } from '../agent-kits/custom-clients.js';
 import { createCustomClients } from './custom-client-connection.js';
 import { CODEX_HOOK_TRUST_CLIENT, createCodexHookTrust } from '../agents/codex/hook-trust.js';
+import { createTranscriptFormatProbe } from '../agents/transcript-format-registry.js';
 import { readFormatOperations } from '../data-format/operations-log.js';
 import { createModelCapture } from '../debug-turns/model-capture.js';
 import { windowsDataAcl } from './windows-data-acl.js';
@@ -60,6 +61,8 @@ export function createSystemService({
   previewDataFormats = null,
   // Reads Codex's hook trust from its app-server (src/agents/codex/hook-trust.js).
   codexHookTrust = createCodexHookTrust(),
+  // How much of each client's newest transcript FULI still reads (src/agents/transcript-format-registry.js).
+  transcriptFormat = createTranscriptFormatProbe(),
   // Who can open the data directory on Windows (windows-data-acl.js).
   dataDirAcl = windowsDataAcl(),
   runtimeBroker = createAdaptiveRuntimeBroker({
@@ -130,7 +133,7 @@ export function createSystemService({
   const observeClients = () => clientObserver.observe();
   const doctor = createDoctor({ observeClients, previewDataFormats,
     formatOperations: () => readFormatOperations(paths.dataDir), graphStage: () => runtimeBroker.status().stage,
-    hookTrust: async () => ({ [CODEX_HOOK_TRUST_CLIENT]: await codexHookTrust() }),
+    hookTrust: async () => ({ [CODEX_HOOK_TRUST_CLIENT]: await codexHookTrust() }), transcriptFormat,
     liveProcesses: () => liveMcpProcesses(runtimeConfigPath), awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
     lastUpdate: () => update.status(),
     dataDirShared: () => dataDirAcl.sharedWith(paths.dataDir),

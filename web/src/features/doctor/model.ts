@@ -143,6 +143,10 @@ function itemView(item: DoctorItem): Omit<DoctorItemView, 'since'> {
     case 'hook_trust_untrusted':
       return { title, subject: text(data.label), to: null,
         hint: t('doctor.hints.hookTrustUntrusted', { client: text(data.label) }) }
+    // FULI's parser read under half of a client's newest transcript (src/agents/transcript-format-registry.js).
+    case 'client_format_changed':
+      return { title, subject: text(data.label), to: null,
+        hint: t('doctor.hints.clientFormatChanged', { recognized: Number(data.recognized) || 0, total: Number(data.total) || 0 }) }
     default:
       return { title, subject: '', hint: '', to: null }
   }

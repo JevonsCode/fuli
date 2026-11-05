@@ -24,6 +24,9 @@ const SEVERITY_ORDER = Object.freeze({ blocking: 0, warning: 1, info: 2 });
 const GRAPH_SLEEPING = new Set(['provider-sleeping', 'sleeping']);
 // The sessions one outdated item names: what the console's offers request takes at once.
 const MAX_OUTDATED_SESSIONS = 20;
+// Too few transcript lines say nothing about a format; under half read means it changed.
+const MIN_FORMAT_LINES = 5;
+const MIN_RECOGNIZED_SHARE = 0.5;
 
 // The clients a repair may reconnect: once connected, FULI's integration still
 // present, and installable without the person (detected, not manual-only).
@@ -47,6 +50,12 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 //   async function returning { [clientId]: { readable: true, untrusted: [eventName...] }
 //   | { readable: false, reason } }. A readable client with untrusted hooks is a
 //   warning; an unreadable one stays in unchecked, never guessed healthy.
+// transcriptFormat: how much of each client's newest private transcript FULI's
+//   parser still reads, by that client's own probe
+//   (src/agents/transcript-format-registry.js): an async function returning
+//   { [clientId]: { readable: true, recognized, total } | { readable: false, reason } }.
+//   A connected client whose parser reads under half of at least five lines
+//   changed its format; an unreadable one stays in unchecked.
 // portMoves: the ports the running console's start moved by itself
 // ({ movedAt, moves }, blocked-port-recovery.js), or null.
 // graphRuntime: { mode, migration } — the active graph runtime mode and the
@@ -55,6 +64,7 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 // directory's ACL lets in (windows-data-acl.js); none outside Windows.
 export function createDoctor({ observeClients, previewDataFormats = null, formatOperations = () => [],
   graphStage = () => null, liveProcesses, awaitingRestart = () => [], latestVersion, lastUpdate, hookTrust = async () => ({}),
+  transcriptFormat = async () => ({}),
   portMoves = () => null, graphRuntime = () => null, dataDirShared = async () => [], version = FULI_VERSION,
   now = () => new Date() }) {
   // The personal graph's last answer while its provider answered: the step it
@@ -95,6 +105,17 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
         untrustedHooks.push(hookTrustUntrustedItem(client, result.untrusted));
       }
     }
+    const formatsRead = await read('transcript_format', transcriptFormat) ?? {};
+    const changedFormats = [];
+    for (const client of (clients?.clients ?? []).filter((candidate) => candidate.status === 'connected')) {
+      const result = formatsRead[client.id];
+      if (!result) continue;
+      if (result.readable !== true) notChecked(`transcript_format:${client.id}`, result.reason);
+      else if (result.total >= MIN_FORMAT_LINES && result.recognized / result.total < MIN_RECOGNIZED_SHARE) {
+        changedFormats.push(item(`client_format_changed:${client.id}`, 'client_format_changed', 'warning', 'person',
+          { clientId: client.id, label: client.label, recognized: result.recognized, total: result.total }));
+      }
+    }
     const processes = await read('sessions', liveProcesses);
     const waiting = await read('sessions', awaitingRestart);
     const latest = await read('update', latestVersion);
@@ -106,6 +127,7 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
       ...graphRuntimeItems(runtime),
       ...clientItems(clients?.clients ?? []),
       ...untrustedHooks,
+      ...changedFormats,
       ...dataFormatItems(formats),
       ...rememberedGraph,
       ...sessionItems(processes ?? [], version),
