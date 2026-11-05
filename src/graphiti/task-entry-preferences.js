@@ -19,13 +19,20 @@ import { withSharedProjectList } from './shared-project-list.js';
 import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 import { standingOwnerEntry } from './task-entry-standing-owner.js';
 import { roundtableAskEntry } from './task-entry-roundtable-ask.js';
+import { isReadOnlyRefusal, readOnlyLifecycle, readOnlyTaskEntry } from './task-entry-read-only.js';
 
 export async function finishTaskEntryPreferences(application, preferences, input) {
   if (!input.agentInvocation || input.agentToolName !== 'get_collaboration_preferences') return preferences;
   if (!input.sessionId || typeof input.taskPrompt !== 'string') return { ...preferences,
     task_lifecycle: { status: 'not_started', reason: !input.sessionId ? 'native_session_required' : 'task_prompt_required',
       guidance: 'Preferences were loaded, but no task token was created. Supply the current host sessionId and taskPrompt to get_collaboration_preferences. Do not guess a session ID, use an MCP process ID or reuse an earlier task token.' } };
-  const entry = await beginTaskFromPreferences(application, preferences, input);
+  let entry;
+  try {
+    entry = await beginTaskFromPreferences(application, preferences, input);
+  } catch (error) {
+    if (!isReadOnlyRefusal(error)) throw error;
+    return { ...preferences, checkpoint_required: false, task_lifecycle: readOnlyLifecycle() };
+  }
   // An Agent's own entry keeps no prompt; it drops what the session's earlier task kept.
   keepEntryPrompt(application, entry, input, null);
   return withEntryHint(application, entry, input);
@@ -37,7 +44,13 @@ export async function finishTaskEntryPreferences(application, preferences, input
 export function beginTaskEntry(application, input) {
   return withSharedProjectList(async () => {
     if (input.projectPath !== undefined && input.projectPath !== null) application.listPersonalProjects().catch(() => {});
-    const entry = await beginTaskContext(application, input);
+    let entry;
+    try {
+      entry = await beginTaskContext(application, input);
+    } catch (error) {
+      if (!isReadOnlyRefusal(error)) throw error;
+      return readOnlyTaskEntry(application, input);
+    }
     keepEntryPrompt(application, entry, input, input.taskPrompt);
     // Its task and opening writes are done: a hook deadline from here on
     // delivers the token instead of nothing (entry-budget.js).
