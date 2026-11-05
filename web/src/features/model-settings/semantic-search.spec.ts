@@ -62,7 +62,7 @@ describe('semantic search presets', () => {
   it('keep their copy plain and short, without the technical word', () => {
     for (const locale of ['zh-CN', 'en-US'] as const) {
       const copy = messages[locale].modelSettings.semantic
-      for (const text of [copy.title, copy.summary, copy.preset, copy.enabledOffHint, copy.enabledOnHint, copy.passed, ...Object.values(copy.presets)]) {
+      for (const text of [copy.title, copy.preset, copy.enabledOffHint, copy.enabledOnHint, copy.passed, ...Object.values(copy.presets)]) {
         expect(text.length).toBeLessThanOrEqual(100)
         expect(text).not.toMatch(/embed|向量|嵌入/i)
       }
@@ -70,7 +70,7 @@ describe('semantic search presets', () => {
   })
 })
 
-describe('SemanticSearchCard on the model page', () => {
+describe('语义搜索 on the model page', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     const store = useConsoleStore()
@@ -94,29 +94,35 @@ describe('SemanticSearchCard on the model page', () => {
     return wrapper
   }
 
-  it('is its own card, not an Agent row, with one headline and its summary', async () => {
+  it('is the first, wide use card: what it does without a model, what is enough, and 接入', async () => {
     const wrapper = await mountPage(payload())
-    expect(wrapper.find('[data-model-role="semantic"]').exists()).toBe(false)
     const card = wrapper.get('[data-semantic-search]')
-    expect(card.findAll('h2').map(heading => heading.text())).toEqual(['语义搜索'])
-    expect(card.text()).toContain('让 FULI 按意思找知识。不配也能用，只是只按字面找。')
-    expect(card.get('[data-semantic-state]').text()).toBe('未配置')
+    expect(wrapper.get('.model-use-grid > *').attributes('data-model-role')).toBe('semantic')
+    expect(card.findAll('h3').map(heading => heading.text())).toEqual(['语义搜索'])
+    expect(card.get('[data-model-use-model]').text()).toBe('没接模型，只按字面找')
+    expect(card.get('[data-model-use-advice]').text()).toContain('qwen3-embedding:0.6b')
+    expect(card.get('[data-model-use-state]').text()).toBe('未接')
+    expect(card.get('[data-model-role-edit]').text()).toBe('接入')
     expect(card.find('[data-model-check]').exists()).toBe(false)
   })
 
   it('links the website model guide in the language of the console, from the card and the dialog', async () => {
     const wrapper = await mountPage(payload())
-    const link = wrapper.get('[data-semantic-search] [data-model-guide]')
+    const link = wrapper.get('.model-uses [data-model-guide]')
     expect(link.attributes('href')).toBe('https://xn--8ovp9s.xn--m8txu.com/fuli/models/zh/')
     expect(link.attributes('target')).toBe('_blank')
-    await wrapper.get('[data-semantic-edit]').trigger('click')
+    await wrapper.get('[data-semantic-search] [data-model-role-details]').trigger('click')
+    expect(wrapper.get('[data-model-use-details] [data-model-guide]').attributes('href'))
+      .toBe('https://xn--8ovp9s.xn--m8txu.com/fuli/models/zh/#semantic-search')
+    await wrapper.get('[data-model-details-edit]').trigger('click')
+    expect(wrapper.find('[data-model-use-details]').exists()).toBe(false)
     expect(wrapper.get('[data-model-role-dialog] [data-model-guide]').text()).toContain('查看详情')
   })
 
   it('opens the shared dialog with the presets, the address, the model, the key and the projects, and saves the role', async () => {
     api.putJson.mockResolvedValue(configured())
     const wrapper = await mountPage(payload())
-    await wrapper.get('[data-semantic-edit]').trigger('click')
+    await wrapper.get('[data-semantic-search] [data-model-role-edit]').trigger('click')
     const dialog = wrapper.get('[data-model-role-dialog]')
     expect(dialog.find('[data-model-advanced]').exists()).toBe(false)
     expect(dialog.find('#model-role-protocol').exists()).toBe(false)
@@ -144,11 +150,16 @@ describe('SemanticSearchCard on the model page', () => {
     api.postJson.mockResolvedValue({ ok: true, receipt: { status: 'completed', actualModel: 'synthetic-embed' }, dimensions: 768 })
     const wrapper = await mountPage(configured())
     const card = wrapper.get('[data-semantic-search]')
-    expect(card.get('[data-semantic-state]').text()).toBe('已启用')
-    expect(card.get('[data-semantic-connection]').text()).toContain('synthetic-embed')
-    await card.get('[data-model-check]').trigger('click')
+    expect(card.get('[data-model-use-state]').text()).toBe('已接上')
+    expect(card.get('[data-model-use-model]').text()).toContain('synthetic-embed')
+    expect(card.get('[data-model-role-edit]').text()).toBe('编辑')
+    await card.get('[data-model-role-details]').trigger('click')
+    const details = wrapper.get('[data-model-use-details]')
+    // 语义搜索 lists only what its form edits: no task types, budget or fallback.
+    expect(details.findAll('[data-model-fact]').map(fact => fact.attributes('data-model-fact'))).toEqual(['provider', 'model', 'secretRef', 'egress'])
+    await details.get('[data-model-check]').trigger('click')
     await flushPromises()
     expect(api.postJson).toHaveBeenCalledWith('/api/model-backends/roles/semantic/check', {})
-    expect(card.get('[data-model-check-result]').text()).toBe('连接正常，synthetic-embed 回答了，每段文字 768 维。')
+    expect(details.get('[data-model-check-result]').text()).toBe('连接正常，synthetic-embed 回答了，每段文字 768 维。')
   })
 })
