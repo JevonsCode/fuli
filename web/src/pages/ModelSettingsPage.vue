@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import DreamingCard from '@/features/model-settings/DreamingCard.vue'
+import RetrievalTermsCard from '@/features/model-settings/RetrievalTermsCard.vue'
 import ModelRoleCheck from '@/features/model-settings/ModelRoleCheck.vue'
 import SemanticSearchCard from '@/features/model-settings/SemanticSearchCard.vue'
 
@@ -243,6 +244,8 @@ onBeforeUnmount(() => {
         <SemanticSearchCard :view="semanticView" :locked="payload.state === 'invalid'" @edit="edit(SEMANTIC_ROLE)" />
 
         <DreamingCard :projects="projects" />
+
+        <RetrievalTermsCard :projects="projects" @edit="edit('assistant')" />
 
         <RoleSuggestions :entries="suggestionEntries" :loading="suggestionsLoading" :error="suggestionsError"
           :reviews="reviews" :reviews-loading="reviewsLoading" :reviews-error="reviewsError" @retry="suggestions.load" @recovery-pending="suggestions.blockForRecovery" />

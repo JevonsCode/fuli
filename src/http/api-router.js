@@ -35,6 +35,8 @@ import { ASTRO_OPERATION } from '../graphiti/assistant-project-candidate.js';
 import { DREAMING_OPERATION } from '../dreaming/run.js';
 import { handleDreamingRequest } from './dreaming-api-router.js';
 import { handleSemanticRequest } from './semantic-api-router.js';
+import { handleRetrievalTermsRequest } from './retrieval-terms-api-router.js';
+import { RETRIEVAL_TERMS_OPERATION } from '../retrieval-terms/terms-model.js';
 import { JEFA_OPERATION } from '../graphiti/jefa-board-match.js';
 import { FULI_VERSION } from '../package-metadata.js';
 
@@ -72,7 +74,7 @@ export async function handleApiRequest({
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
   const modelBackendRequest = () => handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,
     readRoleSuggestions: app.roleSuggestions ? input => app.readRoleSuggestions(input) : null,
-    roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION, DREAMING_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS),
+    roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION, DREAMING_OPERATION, RETRIEVAL_TERMS_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS),
       semantic: [KNOWLEDGE_EMBEDDING_OPERATION] },
     automaticOperations: { tonborg: TONBORG_OPERATIONS.review }, modelTrust: app.modelTrust ?? null,
     settingsHistory: app.modelSettingsHistory ?? null, readEvaluation: readModelEvaluation,
@@ -203,6 +205,7 @@ export async function handleApiRequest({
   if (await handleOldDataRequest({ request, response, url, shelf: app.oldData, restore: dataFormatMigrations?.restore ?? null })) return true;
   if (await handleDreamingRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads })) return true;
   if (await handleSemanticRequest({ request, response, url, app, indexer: app.semanticIndexer ?? null })) return true;
+  if (await handleRetrievalTermsRequest({ request, response, url, app, runner: app.retrievalTerms ?? null })) return true;
   if (await handleDebugTurnsRequest({ request, response, url, debugTurns: system?.debugTurns ?? null, modelCapture: system?.modelCapture ?? null })) return true;
   if (await handleDiagnosticEventsRequest({ request, response, url, diagnosticEvents: app.diagnosticEvents ?? null })) return true;
   if (await handlePersonProfileRequest({ request, response, url, app })) return true;
