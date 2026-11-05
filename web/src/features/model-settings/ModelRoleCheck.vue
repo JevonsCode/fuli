@@ -12,6 +12,13 @@ const props = defineProps<{ role: ModelRoleId; model: string }>()
 const checking = ref(false)
 const result = ref<{ ok: boolean; text: string } | null>(null)
 
+// A reason FULI knows reads as words; any other stays as the provider gave it.
+function readableReason(reason: string) {
+  const key = `modelSettings.check.reasons.${reason}`
+  const text = t(key)
+  return text === key ? reason : text
+}
+
 async function check() {
   checking.value = true
   result.value = null
@@ -19,7 +26,7 @@ async function check() {
     const { ok, receipt } = await checkModelRole(props.role)
     result.value = ok
       ? { ok, text: t('modelSettings.check.passed', { model: receipt.actualModel ?? props.model }) }
-      : { ok, text: t('modelSettings.check.failed', { reason: receipt.reason ?? receipt.status }) }
+      : { ok, text: t('modelSettings.check.failed', { reason: readableReason(receipt.reason ?? receipt.status) }) }
   } catch (cause) {
     result.value = { ok: false, text: t('modelSettings.check.failed', { reason: apiErrorReason(cause) }) }
   } finally {

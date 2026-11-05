@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { modelFetch } from './model-fetch.js';
 
 import { MODEL_ADAPTERS } from './adapters/registry.js';
 import { budgetBlock, callLimits, ceilingCost, estimateCost, estimateTokens, roundCost, windowStart } from './budget.js';
@@ -36,7 +37,7 @@ const USAGE_NOTES = 'One record per actual model API attempt; requests count dis
   + 'cachedInput, cacheWriteInput and reasoning are subsets of input or output as each provider defines them and are never added to totals. '
   + 'Costs are estimates from configured unit prices only; without prices the cost is unknown.';
 
-export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl = globalThis.fetch, wait = delay,
+export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl = modelFetch, wait = delay,
   now = () => new Date(), timeoutSignal = ms => AbortSignal.timeout(ms) }) {
   // Endpoints that rejected json_schema output, for this process.
   const promptOnly = new Set();
