@@ -77,15 +77,17 @@ const shownProjects = computed(() => {
   return query ? projectChoices.value.filter(choice => choice.label.toLowerCase().includes(query)) : projectChoices.value
 })
 const savedKeys = ref<string[]>([])
-// Dreaming is one of Astro's task types; the switch is that entry in the list.
-const dreamingOn = computed({
-  get: () => operationList(draft.value?.operations).includes('dreaming'),
+// Dreaming and retrieval terms are two of Astro's task types; each switch is that entry in the list.
+const operationSwitch = (name: string) => computed({
+  get: () => operationList(draft.value?.operations).includes(name),
   set(on: boolean) {
     if (!draft.value) return
-    const others = operationList(draft.value.operations).filter(operation => operation !== 'dreaming')
-    draft.value = { ...draft.value, operations: (on ? [...others, 'dreaming'] : others).join(', ') }
+    const others = operationList(draft.value.operations).filter(operation => operation !== name)
+    draft.value = { ...draft.value, operations: (on ? [...others, name] : others).join(', ') }
   },
 })
+const dreamingOn = operationSwitch('dreaming')
+const termsOn = operationSwitch('retrieval_terms')
 function operationList(text = '') { return text.split(',').map(item => item.trim()).filter(Boolean) }
 const knownKeys = computed(() => knownKeyReferences(props.payload, savedKeys.value))
 const badKeyName = computed(() => {
@@ -162,6 +164,10 @@ async function save() {
       <Field v-if="role === 'assistant'" orientation="horizontal">
         <Switch id="model-role-dreaming" v-model="dreamingOn" :disabled="inactive" data-model-dreaming />
         <FieldLabel for="model-role-dreaming">{{ t('modelSettings.dreaming.enable') }}</FieldLabel>
+      </Field>
+      <Field v-if="role === 'assistant'" orientation="horizontal">
+        <Switch id="model-role-terms" v-model="termsOn" :disabled="inactive" data-model-terms />
+        <FieldLabel for="model-role-terms">{{ t('modelSettings.retrievalTerms.enable') }}</FieldLabel>
       </Field>
 
       <fieldset class="model-role-fieldset">
