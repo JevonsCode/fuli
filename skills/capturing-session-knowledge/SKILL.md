@@ -51,7 +51,7 @@ receipt; the next entry in the same native session auto-closes an eligible fallb
 `retain_nothing` / `reported`. Capture candidates, experiences, memory changes, explicit knowledge
 usage, collaborators, failures/blockers and meaningful work summaries still need an explicit
 checkpoint. Automatic closure never claims completed work or saved memory. An existing pending
-task is not proof that its Hook context reached this turn. If `task_lifecycle.status=not_started`,
+task is not proof that its Hook context reached this turn. If `task_lifecycle.reason=data_format_read_only`, FULI waits for the person to confirm a data format update: use the preferences, keep reading and searching, skip the checkpoint, and tell the person once where to confirm. Otherwise, if `task_lifecycle.status=not_started`,
 preferences are available but checkpoint ownership is not established; report the missing
 host identity or prompt rather than reusing an earlier token. Such an entry lists working
 memory, team and managers only as their `read` calls (`get_project_agent_memory`,
@@ -89,10 +89,14 @@ Capture confirmed, stable information:
 - Personal: the user's enduring preferences, boundaries, habits, and working methods. Project-specific personal rules must explicitly link to that project instead of becoming global defaults.
 - Project: PRD facts, requirements, terminology, decisions, constraints, architecture, routes, APIs, metrics, and document-derived knowledge.
 
-For a runbook, decision, route, or other item likely to be recalled from shorthand, add a bounded
-`attributes.searchTerms` string array containing only neutral retrieval phrases supported by the
-item and observed task vocabulary. Search terms are retrieval metadata, not new factual claims;
-do not add speculative synonyms, credentials, or unrelated product names.
+FULI search matches words, so you supply the meaning. For a runbook, decision, route, or other item
+likely to be recalled later, add a bounded `attributes.searchTerms` string array with the other ways
+someone would ask for it: synonyms, the task it serves, and the same idea in Chinese and English.
+Search terms are retrieval metadata, not new factual claims; add no credentials and no unrelated
+product names.
+
+When a search finds nothing, try other words, then read `knowledge_index`: the project's titles, for
+you to judge by meaning.
 
 Do not capture credentials, tokens, cookies, private keys, raw transcripts, temporary logs, command output, speculative conclusions, or disposable implementation details. Treat a correction as a replacement, not an additional conflicting fact.
 

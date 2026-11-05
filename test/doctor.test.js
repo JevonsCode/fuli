@@ -127,6 +127,57 @@ test('an outdated item names at most 20 sessions', async (t) => {
   assert.deepEqual(outdated.data.sessions[0], { sourceApplication: 'codex', sessionId: '1-thread-0' });
 });
 
+test('running servers without a record are one old-FULI item; a relay above a recorded server is not', async (t) => {
+  const processes = [{ pid: 12, version: VERSION, sourceApplication: 'codex', startedAt: '2026-10-28T06:00:00.000Z', sessionIds: [] }];
+  const running = [
+    // A relay (pid 11) and the recorded server it runs.
+    { pid: 11, parentPid: 1, startedAt: '2026-10-28T05:59:00.000Z' },
+    { pid: 12, parentPid: 11, startedAt: '2026-10-28T06:00:00.000Z' },
+    // Two servers of a FULI older than the process records.
+    { pid: 21, parentPid: 1, startedAt: '2026-09-01T09:00:00.000Z' },
+    { pid: 22, parentPid: 1, startedAt: '2026-08-01T09:00:00.000Z' }
+  ];
+  const answer = await doctor(t, { liveProcesses: () => processes, runningServers: async () => running }).check();
+  assert.equal(answer.overall, 'needs_person');
+  assert.deepEqual(answer.items, [{ id: 'sessions_outdated:other:unknown', kind: 'sessions_outdated', severity: 'warning',
+    fix: 'person', data: { client: 'other', count: 2, runningVersion: null, since: '2026-08-01T09:00:00.000Z', sessions: [] } }]);
+  assert.deepEqual(answer.unchecked, []);
+
+  const recordedOnly = await doctor(t, { liveProcesses: () => processes, runningServers: async () => running.slice(0, 2) }).check();
+  assert.deepEqual(recordedOnly.items, []);
+});
+
+test('a process list that could not be read says nothing and is reported unchecked', async (t) => {
+  const answer = await doctor(t, { runningServers: async () => null }).check();
+  assert.deepEqual(answer.items, []);
+  assert.deepEqual(answer.unchecked, ['sessions']);
+  assert.deepEqual(answer.uncheckedReasons, { sessions: 'process_list_unavailable' });
+});
+
+test('the system service reads the process list at most once every 5 minutes', async (t) => {
+  const root = dataDir(t);
+  const paths = { dataDir: root, graphRuntimeConfigPath: join(root, 'graph-runtime.json'),
+    graphRuntimeStatePath: join(root, 'graph-runtime-state.json') };
+  const scans = [];
+  let clock = Date.parse('2026-10-28T08:00:00.000Z');
+  const system = createSystemService({ paths, packageRoot: '.', settingsApplier: {}, resourceMonitor: {}, runtimeBroker: {},
+    clientObserver: { observe: () => ({ clients: [] }) }, clientInstaller: async () => assert.fail('nothing to connect'),
+    versionChecker: { peek: () => null, check: async () => assert.fail('the doctor never waits on the network') },
+    update: { status: () => null, kind: () => 'npm' },
+    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }), dataDirAcl: OWNER_ONLY_ACL,
+    scanMcpServers: async (runtimeConfigPath) => { scans.push(runtimeConfigPath); return [{ pid: 31, parentPid: 1, startedAt: null }]; },
+    now: () => clock,
+    previewDataFormats: async () => ({ digest: null, stores: [], blocked: [], undoable: [] }) });
+  const ids = async () => (await system.doctor()).items.map(({ id }) => id);
+  assert.deepEqual(await ids(), ['sessions_outdated:other:unknown']);
+  clock += 4 * 60_000;
+  await ids();
+  assert.deepEqual(scans, [paths.graphRuntimeConfigPath]);
+  clock += 60_000;
+  await ids();
+  assert.equal(scans.length, 2);
+});
+
 test('ports the running console moved by itself are one info item named after that start', async (t) => {
   const moves = [{ key: 'console', from: 2727, to: 2734, reason: 'reserved' }];
   const moved = await doctor(t, { portMoves: () => ({ movedAt: '2026-10-27T08:00:00.000Z', moves }) }).check();
@@ -150,7 +201,7 @@ test('the console reads the moved ports from its runtime state', async (t) => {
     clientObserver: { observe: () => ({ clients: [] }) }, clientInstaller: async () => assert.fail('nothing to connect'),
     versionChecker: { peek: () => null, check: async () => assert.fail('the doctor never waits on the network') },
     update: { status: () => null, kind: () => 'npm' },
-    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }), dataDirAcl: OWNER_ONLY_ACL,
+    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }), transcriptFormat: async () => ({}), dataDirAcl: OWNER_ONLY_ACL, scanMcpServers: async () => [],
     previewDataFormats: async () => ({ digest: null, stores: [], blocked: [], undoable: [] }) });
   const answer = await service.doctor();
   assert.deepEqual(answer.unchecked, []);
@@ -282,6 +333,38 @@ test('a client whose host does not trust FULI\'s hooks is one warning; a trusted
   assert.deepEqual(healthy.unchecked, []);
 });
 
+test('a connected client whose transcript FULI reads under half of is one warning per client', async (t) => {
+  const checkup = doctor(t, {
+    transcriptFormat: async () => ({
+      'claude-code': { readable: true, recognized: 2, total: 9 },
+      // At half or more, or with too few lines to tell, the format is fine.
+      codex: { readable: true, recognized: 3, total: 6 },
+      cursor: { readable: true, recognized: 0, total: 4 },
+      // A client not connected to FULI is not captured, so its format is no finding.
+      gemini: { readable: true, recognized: 0, total: 20 }
+    }),
+    observeClients: () => ({ clients: [client('claude-code', 'connected'), client('codex', 'connected'),
+      client('cursor', 'connected'), client('gemini', 'not_connected')] })
+  });
+  const answer = await checkup.check();
+  assert.equal(answer.overall, 'needs_person');
+  assert.deepEqual(answer.items, [{ id: 'client_format_changed:claude-code', kind: 'client_format_changed', severity: 'warning',
+    fix: 'person', data: { clientId: 'claude-code', label: 'CLAUDE-CODE', recognized: 2, total: 9 } }]);
+  assert.deepEqual(answer.unchecked, []);
+});
+
+test('a connected client without a recent transcript stays unchecked, never guessed', async (t) => {
+  const checkup = doctor(t, {
+    transcriptFormat: async () => ({ codex: { readable: false, reason: 'no_transcript' } }),
+    observeClients: () => ({ clients: [client('codex', 'connected')] })
+  });
+  const answer = await checkup.check();
+  assert.equal(answer.overall, 'ok');
+  assert.deepEqual(answer.items, []);
+  assert.deepEqual(answer.unchecked, ['transcript_format:codex']);
+  assert.deepEqual(answer.uncheckedReasons, { 'transcript_format:codex': 'no_transcript' });
+});
+
 // A client installer and update journal in memory: what each repair did.
 function repairFixture(t, { clients, update = null, install = async ({ clientId }) => ({ id: clientId, status: 'connected' }) }) {
   const state = { clients, update, connects: [] };
@@ -388,7 +471,8 @@ test('the system service asks about and limits its own data directory', async (t
     clientObserver: { observe: () => ({ clients: [] }) }, clientInstaller: async () => assert.fail('nothing to connect'),
     versionChecker: { peek: () => null, check: async () => assert.fail('the doctor never waits on the network') },
     update: { status: () => null, kind: () => 'npm' },
-    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }),
+    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }), transcriptFormat: async () => ({}),
+    scanMcpServers: async () => [],
     dataDirAcl: { sharedWith: async (directory) => { asked.push(['read', directory]); return shared; },
       restrictToOwner: async (directory) => { asked.push(['limit', directory]); shared = []; } },
     previewDataFormats: async () => ({ digest: null, stores: [], blocked: [], undoable: [] }) });
@@ -469,7 +553,7 @@ test('the system service reads its own sources: this data directory\'s live serv
     },
     versionChecker: { peek: () => null, check: async () => assert.fail('the doctor never waits on the network') },
     update: { status: () => null, kind: () => 'npm' },
-    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }), dataDirAcl: OWNER_ONLY_ACL,
+    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }), transcriptFormat: async () => ({}), dataDirAcl: OWNER_ONLY_ACL, scanMcpServers: async () => [],
     previewDataFormats: async () => ({ digest: null, stores: [], blocked: [], undoable: [] }) });
 
   const answer = await system.doctor();

@@ -129,7 +129,10 @@ function itemView(item: DoctorItem): Omit<DoctorItemView, 'since'> {
         hint: t((data.migration as { status?: string } | null)?.status === 'failed' ? 'doctor.hints.graphMigrationFailed' : 'doctor.hints.graphContainer') }
     case 'sessions_outdated':
       return { title, subject: sourceApplicationName(text(data.client) as ConversationSourceApplication) ?? t('doctor.otherClient'),
-        hint: t('doctor.hints.sessions', { count: Number(data.count) || 0, version: text(data.runningVersion) }), to: null }
+        // runningVersion is null for servers older than FULI's process records: their version is unknown.
+        hint: text(data.runningVersion)
+          ? t('doctor.hints.sessions', { count: Number(data.count) || 0, version: text(data.runningVersion) })
+          : t('doctor.hints.sessionsOld', { count: Number(data.count) || 0 }), to: null }
     case 'client_restart':
       return { title, subject: sourceApplicationName(text(data.client) as ConversationSourceApplication) ?? t('doctor.otherClient'),
         hint: t('doctor.hints.restart', { count: Number(data.count) || 0 }), to: null }
@@ -143,6 +146,10 @@ function itemView(item: DoctorItem): Omit<DoctorItemView, 'since'> {
     case 'hook_trust_untrusted':
       return { title, subject: text(data.label), to: null,
         hint: t('doctor.hints.hookTrustUntrusted', { client: text(data.label) }) }
+    // FULI's parser read under half of a client's newest transcript (src/agents/transcript-format-registry.js).
+    case 'client_format_changed':
+      return { title, subject: text(data.label), to: null,
+        hint: t('doctor.hints.clientFormatChanged', { recognized: Number(data.recognized) || 0, total: Number(data.total) || 0 }) }
     default:
       return { title, subject: '', hint: '', to: null }
   }

@@ -176,6 +176,62 @@ void main() {
     expect(ports, [4100, 4200]);
   });
 
+  test('opening the client starts a stopped FULI once, without announcing it stopped', () async {
+    final api = DemoFuliApi()..reachable = false;
+    final controller = controllerFor(api, DemoRuntime(api));
+    addTearDown(controller.dispose);
+
+    controller.startPolling(startFuli: true);
+    await pumpEventQueue();
+    expect(controller.snapshot!.condition, FuliCondition.ok);
+    expect(notifier.bodies, isEmpty);
+
+    api.reachable = false;
+    await controller.refresh();
+    expect(controller.snapshot!.condition, FuliCondition.notRunning, reason: 'only the check on opening starts it');
+  });
+
+  test('a FULI that went away by itself is started again, but not without end', () async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, crashed: true));
+    final controller = controllerFor(api, runtime);
+    addTearDown(controller.dispose);
+    for (var check = 0; check < 8; check++) {
+      await controller.refresh();
+      await pumpEventQueue();
+    }
+    expect(runtime.calls.where((call) => call == 'start'), hasLength(maxRestarts));
+  });
+
+  test('a stop the person asked for is not undone', () async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped));
+    final controller = controllerFor(api, runtime);
+    addTearDown(controller.dispose);
+    await controller.refresh();
+    await pumpEventQueue();
+    expect(runtime.calls, isNot(contains('start')));
+  });
+
+  test('opening the client leaves a running FULI alone, and a failed start stays on the page', () async {
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.running));
+    final running = controllerFor(DemoFuliApi(), runtime);
+    addTearDown(running.dispose);
+    running.startPolling(startFuli: true);
+    await pumpEventQueue();
+    expect(runtime.calls, isNot(contains('start')));
+
+    final api = DemoFuliApi()..reachable = false;
+    final failing = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'no start'));
+    final stopped = controllerFor(api, failing);
+    addTearDown(stopped.dispose);
+    stopped.startPolling(startFuli: true);
+    await pumpEventQueue();
+    expect(failing.calls.where((call) => call == 'start'), hasLength(1));
+    expect(stopped.notice!.error, isTrue);
+    expect(stopped.snapshot!.condition, FuliCondition.notRunning);
+  });
+
   test('notifies once when FULI stops by itself, not when the person stopped it', () async {
     final api = DemoFuliApi();
     final runtime = DemoRuntime(api);

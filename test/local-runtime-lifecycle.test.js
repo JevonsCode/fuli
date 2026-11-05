@@ -376,3 +376,14 @@ function input(overrides = {}) {
     ...overrides
   };
 }
+
+test('status tells a console that died from one that was stopped', async () => {
+  const dependencies = (state) => ({ readConfig: () => null, readState: () => state, isProcessAlive: () => false, consoleHealth: async () => false,
+    providerHealth: async url => ({ url, status: 'unavailable' }), readAdaptiveSettings: () => ({ enabled: false }), readAdaptiveState: () => null });
+  const state = { pid: 4242, url: 'http://127.0.0.1:4100', version: 4 };
+  const died = await inspectLocalRuntime(input(), dependencies(state));
+  assert.equal(died.console.crashed, true);
+  const stopped = await inspectLocalRuntime(input(), dependencies(null));
+  assert.equal(stopped.console.crashed, undefined);
+});
+
