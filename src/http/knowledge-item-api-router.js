@@ -32,6 +32,13 @@ export async function handleKnowledgeItemRequest({ request, response, url, app, 
       offset: url.searchParams.get('offset') }));
     return true;
   }
+  // rec#88: how often shown knowledge was used, so "does learning get any input" can be read. Counts only.
+  if (url.pathname === '/api/knowledge/recall-usage') {
+    response.setHeader('Cache-Control', 'no-store');
+    sendJson(response, 200, app.recallImpressions?.summary({ personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('projectId') }) ?? { tasks: 0, shown: 0, used: 0, byRank: [] });
+    return true;
+  }
   // rec#82: whether the session a confirmed migration moved items for has been told; counts only.
   if (url.pathname === '/api/knowledge/session-migration/delivery') {
     response.setHeader('Cache-Control', 'no-store');

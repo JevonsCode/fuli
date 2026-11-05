@@ -124,6 +124,8 @@ promote only to `agent_confirmed`; it never substitutes for human confirmation o
 eligible for public publication. Use the current user task's caller-stable identifier as
 `taskId` and reuse it on retries; never generate another ID to recount the same task.
 
+A task the Stop hook closes needs no report: a FULI source link in your final reply is recorded as `cited` for that item, so keep `sourceMarker` links exact. Only cite what supported the answer.
+
 This is also how an FLA grows: a reusable experience it reported counts only when a later task
 records applying it. Experiences used across several tasks appear on the FLA's page (「学会了」),
 where the person keeps or drops each; never confirm or drop your own experiences instead. When the
