@@ -196,6 +196,9 @@ describe('ModelSettingsPage', () => {
     const dialog = wrapper.get('[data-model-role-dialog]')
     expect(dialog.get('[data-model-secret-ref]').attributes('id')).toBe('model-role-secret-ref')
     expect(dialog.find('label[for="model-role-secret-ref"]').text()).toBe('密钥引用')
+    expect(dialog.find('[data-model-budget="maxOutputTokens"]').exists()).toBe(false)
+    await dialog.get('[data-model-advanced] button').trigger('click')
+    await flushPromises()
     expect(dialog.text()).toContain('已接入：knowledge_review')
     await dialog.get('[data-model-name]').setValue('qwen-next')
     await dialog.get('[data-model-budget="maxOutputTokens"]').setValue('800')
@@ -210,6 +213,36 @@ describe('ModelSettingsPage', () => {
     expect(body.settings.egress.approvedProjects).toEqual([{ personalSpaceId: 'space-1', personalProjectId: 'alpha' }])
     expect(wrapper.find('[data-model-role-dialog]').exists()).toBe(false)
     expect(wrapper.text()).toContain('已保存 Tonborg 的模型设置。')
+  })
+
+  it('says why a key name is refused, keeps it from saving, and offers the names already known', async () => {
+    const wrapper = await mountPage()
+    await wrapper.get('[data-model-role="tonborg"] [data-model-role-edit]').trigger('click')
+    const dialog = wrapper.get('[data-model-role-dialog]')
+    await dialog.get('[data-model-secret-ref]').setValue('my key')
+    expect(dialog.get('[data-model-secret-ref-error]').text()).toContain('不能有空格')
+    expect(dialog.get('[data-model-save]').attributes('disabled')).toBeDefined()
+    await dialog.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.putJson).not.toHaveBeenCalled()
+
+    await dialog.get('[data-model-secret-choice="local-ref"]').trigger('click')
+    expect((dialog.get('[data-model-secret-ref]').element as HTMLInputElement).value).toBe('local-ref')
+    expect(dialog.find('[data-model-secret-ref-error]').exists()).toBe(false)
+    expect(dialog.get('[data-model-save]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('finds a project by name and says when none matches', async () => {
+    const wrapper = await mountPage()
+    await wrapper.get('[data-model-role="tonborg"] [data-model-role-edit]').trigger('click')
+    const dialog = wrapper.get('[data-model-role-dialog]')
+    const shown = dialog.findAll('[data-model-egress-project]').length
+    expect(shown).toBeGreaterThan(0)
+    await dialog.get('[data-model-project-search]').setValue('no-such-synthetic-project')
+    expect(dialog.findAll('[data-model-egress-project]')).toHaveLength(0)
+    expect(dialog.text()).toContain('没有匹配的项目。')
+    await dialog.get('[data-model-project-search]').setValue('')
+    expect(dialog.findAll('[data-model-egress-project]')).toHaveLength(shown)
   })
 
   it('reads the settings again when they changed meanwhile, and shows a refusal in the form', async () => {

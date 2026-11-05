@@ -1,4 +1,6 @@
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, provide, ref, watch } from 'vue'
+
+import { POPUP_HOST } from '@/components/ui/popup-host'
 
 const focusableSelector = [
   'button:not([disabled])',
@@ -12,6 +14,7 @@ const focusableSelector = [
 
 export function useModalDialog(open: () => boolean, requestClose: () => void) {
   const dialogRef = ref<HTMLDialogElement | null>(null)
+  provide(POPUP_HOST, dialogRef)
   const initialFocusRef = ref<HTMLElement | null>(null)
   let returnFocus: HTMLElement | null = null
   let transition = 0

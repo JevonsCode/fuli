@@ -9,6 +9,7 @@ import {
   useForwardProps,
 } from "reka-ui"
 import { cn } from "@/lib/class-names"
+import { usePopupTarget } from "../popup-host"
 
 defineOptions({
   inheritAttrs: false,
@@ -24,10 +25,11 @@ const props = withDefaults(
 const delegatedProps = reactiveOmit(props, "class")
 
 const forwardedProps = useForwardProps(delegatedProps)
+const popupTarget = usePopupTarget()
 </script>
 
 <template>
-  <HoverCardPortal>
+  <HoverCardPortal :to="popupTarget">
     <HoverCardContent
       data-slot="hover-card-content"
       v-bind="{ ...$attrs, ...forwardedProps }"
