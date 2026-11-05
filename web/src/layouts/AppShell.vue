@@ -10,6 +10,7 @@ import { loadPersonProfile } from '@/features/person-home/person-profile'
 import { loadRoleNames } from '@/features/agent-profile/role-names'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
 import CaptureOnboardingDialog from '@/features/capture/CaptureOnboardingDialog.vue'
+import ModelPowerButton from '@/features/model-settings/ModelPowerButton.vue'
 import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
@@ -173,6 +174,7 @@ watchEffect(() => {
             :data-attention="attention.total ? 'full' : 'empty'" data-shell-inbox data-term="section.askedYou">
             <UiIcon :name="attention.total ? 'trayFull' : 'tray'" :size="18" />
           </RouterLink>
+          <ModelPowerButton />
           <RouterLink to="/settings" class="app-round" :class="{ 'is-active': settingsActive, 'is-shaking': settingsHold.shaking.value }" :aria-current="settingsActive ? 'page' : undefined"
             draggable="false" v-bind="settingsHold.handlers"
             :aria-label="t('shell.destinations.settings')" :title="t('shell.destinations.settings')" data-destination="settings" data-term="destination.settings">

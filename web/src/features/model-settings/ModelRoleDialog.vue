@@ -12,14 +12,14 @@ import { OptionSelect } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { t } from '@/i18n'
-import { UiDialog } from '@/ui'
+import { UiDialog, UiSegmented } from '@/ui'
 import type { PersonalProject } from '@/types'
 import ModelKeyEntry from './ModelKeyEntry.vue'
 import ModelSecretRefField from './ModelSecretRefField.vue'
 import {
-  MODEL_PROTOCOLS, REASONING_EFFORTS, configConflict, knownKeyReferences, projectKey, roleDraft, roleName, rolesSharing, saveModelRole, validKeyReference,
-  withConnection, withProject,
-  type ConfigConflict, type ModelRoleId, type ModelRolesPayload, type RoleDraft,
+  MODEL_PROTOCOLS, REASONING_EFFORTS, SEMANTIC_PRESETS, SEMANTIC_ROLE, configConflict, knownKeyReferences, projectKey, roleDraft, roleName,
+  rolesSharing, saveModelRole, semanticPreset, validKeyReference, withConnection, withProject, withSemanticPreset,
+  type ConfigConflict, type ModelRoleId, type ModelRolesPayload, type RoleDraft, type SemanticPreset,
 } from './model'
 
 // One role's model settings as a centred form. Saving sends the whole role
@@ -46,6 +46,17 @@ watch(() => props.role, (role) => {
 }, { immediate: true })
 
 const name = computed(() => (props.role ? roleName(props.role) : ''))
+// 语义搜索 shows only its address, model, key and projects: its protocol is
+// fixed, and it has no task types, budget or session to fall back to.
+const semantic = computed(() => props.role === SEMANTIC_ROLE)
+const presetOptions = computed(() => SEMANTIC_PRESETS.map(value => ({ value, label: t(`modelSettings.semantic.presets.${value}`) })))
+const preset = computed({
+  get: () => semanticPreset(draft.value?.endpoint ?? ''),
+  set(next: SemanticPreset) { if (draft.value) draft.value = withSemanticPreset(draft.value, next) },
+})
+const enabledHint = computed(() => (semantic.value
+  ? t(draft.value?.enabled ? 'modelSettings.semantic.enabledOnHint' : 'modelSettings.semantic.enabledOffHint')
+  : t(draft.value?.enabled ? 'modelSettings.enabledOnHint' : 'modelSettings.enabledOffHint', { name: name.value })))
 const connectionOptions = computed(() => {
   const own = props.role && !props.payload.connections[props.role]
     ? [{ value: props.role, label: t('modelSettings.connectionNew', { id: props.role }) }] : []
@@ -112,16 +123,19 @@ async function save() {
         <Switch id="model-role-enabled" v-model="draft.enabled" :disabled="frozen" />
         <FieldLabel for="model-role-enabled">{{ t('modelSettings.enabled') }}</FieldLabel>
       </Field>
-      <p class="model-role-muted" data-model-enabled-hint>{{ t(draft.enabled ? 'modelSettings.enabledOnHint' : 'modelSettings.enabledOffHint', { name }) }}</p>
+      <p class="model-role-muted" data-model-enabled-hint>{{ enabledHint }}</p>
 
       <div class="model-role-grid">
-        <Field>
+        <!-- The three choices name themselves; the group keeps its accessible name. -->
+        <UiSegmented v-if="semantic" v-model="preset" class="model-role-wide" :class="{ 'model-role-inactive': inactive }"
+          :options="presetOptions" :label="t('modelSettings.semantic.preset')" :inert="inactive || undefined" data-semantic-presets />
+        <Field v-if="!semantic">
           <FieldLabel for="model-role-connection">{{ t('modelSettings.connection') }}</FieldLabel>
           <OptionSelect control-id="model-role-connection" :model-value="draft.connectionId" :label="t('modelSettings.connection')" :options="connectionOptions"
             :disabled="inactive" data-model-connection @update:model-value="chooseConnection" />
           <FieldDescription v-if="sharing">{{ t('modelSettings.sharedWith', { names: sharing }) }}</FieldDescription>
         </Field>
-        <Field>
+        <Field v-if="!semantic">
           <FieldLabel for="model-role-protocol">{{ t('modelSettings.protocol') }}</FieldLabel>
           <OptionSelect control-id="model-role-protocol" v-model="draft.protocol" :label="t('modelSettings.protocol')" :options="protocolOptions" :disabled="inactive" />
         </Field>
@@ -138,8 +152,10 @@ async function save() {
           <FieldLabel for="model-role-effort">{{ t('modelSettings.reasoningEffort') }}</FieldLabel>
           <OptionSelect control-id="model-role-effort" v-model="draft.reasoningEffort" :label="t('modelSettings.reasoningEffort')" :options="effortOptions" :disabled="inactive" />
         </Field>
-        <ModelSecretRefField v-model="draft.secretRef" class="model-role-wide" :known="knownKeys" :disabled="inactive" />
-        <ModelKeyEntry class="model-role-wide" :reference="draft.secretRef" :disabled="inactive" @keys="keys => savedKeys = keys" />
+        <template v-if="!semantic || preset !== 'ollama'">
+          <ModelSecretRefField v-model="draft.secretRef" class="model-role-wide" :known="knownKeys" :disabled="inactive" />
+          <ModelKeyEntry class="model-role-wide" :reference="draft.secretRef" :disabled="inactive" @keys="keys => savedKeys = keys" />
+        </template>
       </div>
 
       <Field v-if="role === 'assistant'" orientation="horizontal">
@@ -168,7 +184,7 @@ async function save() {
         </div>
       </fieldset>
 
-      <Accordion type="single" collapsible class="model-role-advanced">
+      <Accordion v-if="!semantic" type="single" collapsible class="model-role-advanced">
         <AccordionItem value="advanced" data-model-advanced>
           <AccordionTrigger class="model-role-advanced-trigger">{{ t('modelSettings.advanced') }}</AccordionTrigger>
           <AccordionContent class="model-role-advanced-body">
@@ -251,4 +267,5 @@ async function save() {
 .model-role-advanced :deep(.model-role-advanced-trigger) { padding-block: 8px; font-size: var(--text-body); font-weight: var(--weight-medium); }
 .model-role-advanced :deep(.model-role-advanced-body) { display: grid; gap: 16px; padding-top: 8px; }
 .model-role-muted { margin: 0; color: var(--color-muted); font-size: 13px; }
+.model-role-inactive { opacity: .5; }
 </style>

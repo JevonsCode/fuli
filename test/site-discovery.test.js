@@ -6,7 +6,7 @@ import { createSitePages } from '../scripts/build-site.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const template = read('../site/index.html');
-const pages = () => createSitePages({ home: template, preview: read('../site/next/index.html'), version: '0.0.0-beta.0' });
+const pages = () => createSitePages({ home: template, preview: read('../site/next/index.html'), models: read('../site/models/index.html'), version: '0.0.0-beta.0' });
 const base = 'https://xn--8ovp9s.xn--m8txu.com/fuli/';
 
 test('each language is complete without JavaScript and has reciprocal discovery links', () => {
@@ -50,7 +50,7 @@ test('sitemap and machine-readable summaries describe the same public product', 
   const files = pages();
   assert.deepEqual(files, pages(), 'Generation is deterministic');
   const sitemap = files.get('sitemap.xml');
-  for (const path of ['', 'zh/', 'en/', 'next/', 'next/zh/', 'next/en/']) assert.ok(sitemap.includes(`<loc>${base}${path}</loc>`));
+  for (const path of ['', 'zh/', 'en/', 'next/', 'next/zh/', 'next/en/', 'models/', 'models/zh/', 'models/en/']) assert.ok(sitemap.includes(`<loc>${base}${path}</loc>`));
   assert.doesNotMatch(sitemap, /127\.0\.0\.1|localhost|v0/);
   assert.match(files.get('llms.txt'), /AI agent/);
   assert.ok(files.get('llms.txt').includes(base + 'en/index.md'));
@@ -59,4 +59,45 @@ test('sitemap and machine-readable summaries describe the same public product', 
   assert.match(markdown, /npm install --global fuli-context/);
   assert.match(markdown, /Neo4j/);
   assert.doesNotMatch(markdown, /<script|<style/);
+});
+
+test('the model guide is complete without JavaScript in each language, with its own canonical and alternates', () => {
+  const files = pages();
+  for (const [route, locale, prefix] of [['', 'zh-CN', '../'], ['zh/', 'zh-CN', '../../'], ['en/', 'en', '../../']]) {
+    const { document } = parseHTML(files.get(`models/${route}index.html`));
+    assert.equal(document.documentElement.lang, locale);
+    assert.equal(document.querySelector('link[rel="canonical"]').href, `${base}models/${route}`);
+    assert.equal(document.querySelector('meta[property="og:url"]').content, `${base}models/${route}`);
+    assert.equal(document.querySelector('meta[name="robots"]').content.includes('noindex'), false);
+    const alternates = [...document.querySelectorAll('link[hreflang]')].map(node => [node.hreflang, node.href]);
+    assert.deepEqual(alternates, [['zh-Hans', base + 'models/zh/'], ['en', base + 'models/en/'], ['x-default', base + 'models/']]);
+    assert.deepEqual([...document.querySelectorAll('link[rel="stylesheet"]')].map(node => node.href), [prefix + 'style.css', (route ? '../' : './') + 'models.css']);
+    assert.equal(document.querySelector('script[type="module"]').src, prefix + 'models.js');
+    if (route) assert.equal(document.documentElement.dataset.pageLocale, locale);
+    assert.equal(document.querySelectorAll('h1').length, 1);
+    assert.equal(document.querySelectorAll('.use-card').length, 6);
+    assert.equal(document.querySelectorAll('.use-card .bolt').length, 6);
+    assert.ok(document.querySelector('#semantic-search').textContent.includes('qwen3-embedding:0.6b'));
+    assert.ok(document.querySelector('#dreaming').textContent.includes('143,292'));
+    assert.ok(document.querySelector('#tonborg').textContent.includes('60.4%'));
+    const headings = [...document.querySelectorAll('h2, h3')].map(node => node.textContent.trim());
+    for (const section of document.querySelectorAll('main > section')) assert.equal(section.querySelectorAll('h1, h2').length, 1);
+    assert.equal(new Set(headings).size, headings.length, 'no repeated titles');
+    for (const element of document.querySelectorAll('[data-i18n]')) assert.notEqual(element.textContent.trim(), '', element.getAttribute('data-i18n'));
+    if (locale === 'en') {
+      for (const element of document.querySelectorAll('.brand, .language-switch')) element.remove();
+      assert.doesNotMatch(document.body.textContent, /[\u3400-\u9fff]/);
+      for (const element of document.querySelectorAll('[aria-label], meta[content]')) {
+        assert.doesNotMatch(element.getAttribute('aria-label') ?? element.getAttribute('content'), /[\u3400-\u9fff]/);
+      }
+    }
+  }
+});
+
+test('the home and preview pages link the model guide in their own language', () => {
+  const files = pages();
+  for (const [path, url] of [['index.html', base + 'models/'], ['en/index.html', base + 'models/en/'], ['next/index.html', base + 'models/'], ['next/en/index.html', base + 'models/en/']]) {
+    const { document } = parseHTML(files.get(path));
+    assert.equal(document.querySelector('.footer [data-i18n="footer.models"]').href, url, path);
+  }
 });

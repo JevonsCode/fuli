@@ -166,6 +166,20 @@ describe('DoctorBanner', () => {
     expect(wrapper.find('[data-doctor-repair]').exists()).toBe(false)
   })
 
+  it('names a client whose record format changed and how much FULI still read', async () => {
+    const changed = item('client_format_changed:codex', 'client_format_changed', 'warning', 'person',
+      { clientId: 'codex', label: 'Codex', recognized: 2, total: 9 })
+    api.getJson.mockResolvedValue(report('needs_person', [changed]))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    const text = wrapper.get('[data-doctor-items]').text()
+    expect(text).toContain('客户端的记录格式变了，FULI 可能记不全：Codex')
+    expect(text).toContain('这个客户端更新后，FULI 只读懂了 2/9 行记录。更新 FULI 通常能解决。')
+    expect(text).not.toMatch(/client_format_changed/)
+    expect(wrapper.find('[data-doctor-repair]').exists()).toBe(false)
+  })
+
   it('reads a kind it does not know yet as something to look at', async () => {
     api.getJson.mockResolvedValue(report('needs_person', [item('graph_offline', 'graph_offline', 'warning', 'person')]))
     const { wrapper } = mountBanner()
