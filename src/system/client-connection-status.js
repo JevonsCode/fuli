@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-import { detectClients } from '../agent-kits/client-detection.js';
+import { clientSourceApplication, detectClients } from '../agent-kits/client-detection.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 
 // Kept per client so a long-lived console cannot grow this file without bound.
@@ -22,9 +22,10 @@ const MANUAL_URLS = Object.freeze({ opencode: 'https://opencode.ai/docs/config/'
  * that its MCP session is reachable, and it never reinstalls.
  *
  * installer: the client installer port. customClients: the custom client
- * store (custom-clients.js).
+ * store (custom-clients.js). awaitingRestart: the open sessions that started
+ * before their client's last change (process-registry.js).
  */
-export function createClientConnectionObserver({ installer, customClients, historyPath, now = () => new Date() }) {
+export function createClientConnectionObserver({ installer, customClients, historyPath, now = () => new Date(), awaitingRestart = () => [] }) {
   // History that could not be written stays reliable for this observer.
   let retained = null;
 
@@ -35,10 +36,11 @@ export function createClientConnectionObserver({ installer, customClients, histo
       return { scope: 'configuration', observedAt, available: false, historySaved: true, clients: [], customClients: [] };
     }
     const builtin = answer.clients.filter((client) => client.builtin);
+    const waiting = new Map(awaitingRestart().map(entry => [entry.sourceApplication, entry.count]));
     const history = sanitizeHistory(retained ?? readHistory(historyPath), builtin.map(({ id }) => id));
     let dirty = retained !== null;
     const clients = builtin.map((client) => {
-      const extra = { manualOnly: client.manual,
+      const extra = { manualOnly: client.manual, restartSessions: waiting.get(clientSourceApplication(client.id)) ?? 0,
         ...(client.manual && MANUAL_URLS[client.id] ? { manualUrl: MANUAL_URLS[client.id] } : {}) };
       const record = history.clients[client.id] ?? { status: null, previouslyConnected: false, since: null, changes: [] };
       // A FULI entry FULI cannot read or call its own is never reported as a removal.

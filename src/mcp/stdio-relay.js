@@ -13,6 +13,9 @@ import { createInterface } from 'node:readline';
 // The relay's own code stays the version the client started, so it must stay
 // small: a later version only has to honour MCP_RELAYED_ENV.
 export const MCP_RELAYED_ENV = 'FULI_MCP_RELAYED';
+// When the client's session began: the relay's start, which outlives any swap.
+export const MCP_SESSION_STARTED_ENV = 'FULI_MCP_SESSION_STARTED';
+const sessionStartedAt = new Date().toISOString();
 
 const CHECK_EVERY_MS = 30_000;
 const READY_WITHIN_MS = 30_000;
@@ -138,7 +141,7 @@ export function runStdioRelay({
 function startServer({ command, args }) {
   return spawn(command, args, {
     stdio: ['pipe', 'pipe', 'inherit'],
-    env: { ...process.env, [MCP_RELAYED_ENV]: '1' },
+    env: { ...process.env, [MCP_RELAYED_ENV]: '1', [MCP_SESSION_STARTED_ENV]: sessionStartedAt },
     windowsHide: true
   });
 }

@@ -38,6 +38,8 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 // formatOperations: the data directory's format operations log (operations-log.js).
 // graphStage: the adaptive runtime's stage (runtime-broker.js), or null.
 // liveProcesses: live MCP server records (process-registry.js).
+// awaitingRestart: the open sessions that started before their client's last
+// change (process-registry.js).
 // latestVersion: the version checker's last answer without waiting, or null.
 // lastUpdate: the console update journal's status (console-update.js), or null.
 // hookTrust: whether each client's host trusts FULI's lifecycle hooks, read by
@@ -52,7 +54,7 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 // dataDirShared: the principals besides the person and SYSTEM that the data
 // directory's ACL lets in (windows-data-acl.js); none outside Windows.
 export function createDoctor({ observeClients, previewDataFormats = null, formatOperations = () => [],
-  graphStage = () => null, liveProcesses, latestVersion, lastUpdate, hookTrust = async () => ({}),
+  graphStage = () => null, liveProcesses, awaitingRestart = () => [], latestVersion, lastUpdate, hookTrust = async () => ({}),
   portMoves = () => null, graphRuntime = () => null, dataDirShared = async () => [], version = FULI_VERSION,
   now = () => new Date() }) {
   // The personal graph's last answer while its provider answered: the step it
@@ -94,6 +96,7 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
       }
     }
     const processes = await read('sessions', liveProcesses);
+    const waiting = await read('sessions', awaitingRestart);
     const latest = await read('update', latestVersion);
     const update = await read('update', lastUpdate);
     const moved = await read('runtime', portMoves);
@@ -106,6 +109,7 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
       ...dataFormatItems(formats),
       ...rememberedGraph,
       ...sessionItems(processes ?? [], version),
+      ...restartItems(waiting ?? []),
       ...updateItems(latest, update, version),
       ...portItems(moved),
       ...dataDirItems(shared)
@@ -215,6 +219,14 @@ function sessionItems(processes, version) {
   }
   return [...groups].map(([key, { sessions, since, ...group }]) => item(`sessions_outdated:${key}`, 'sessions_outdated', 'warning', 'person',
     { ...group, ...(since ? { since } : {}), sessions: [...sessions.values()].slice(0, MAX_OUTDATED_SESSIONS) }));
+}
+
+// Open sessions that started before FULI changed their client's Skills or hooks:
+// only a restart loads them, and starting one clears this by itself.
+function restartItems(waiting) {
+  return waiting.map(({ sourceApplication, count, changedAt, sessions }) => item(`client_restart:${sourceApplication}`, 'client_restart', 'warning', 'person',
+    { client: sourceApplication, count, since: changedAt,
+      sessions: sessions.slice(0, MAX_OUTDATED_SESSIONS).map(sessionId => ({ sourceApplication, sessionId })) }));
 }
 
 // Ports this console's start moved because Windows reserved them or another

@@ -21,6 +21,8 @@ const WAITING = item('data_format_waiting:graph (personal)', 'data_format_waitin
   { store: 'graph', label: 'graph (personal)', steps: ['graph-0007'] })
 const SESSIONS = item('sessions_outdated:claude_code:0.21.0', 'sessions_outdated', 'warning', 'person',
   { client: 'claude_code', count: 2, runningVersion: '0.21.0' })
+const RESTART = item('client_restart:claude_code', 'client_restart', 'warning', 'person',
+  { client: 'claude_code', count: 2, since: '2026-10-28T01:00:00.000Z', sessions: [] })
 const UPDATE = item('update_available', 'update_available', 'info', 'person', { latest: '0.23.0' })
 
 function mountBanner() {
@@ -44,6 +46,17 @@ describe('DoctorBanner', () => {
     await flushPromises()
     expect(api.getJson).toHaveBeenCalledWith('/api/system/doctor')
     expect(wrapper.find('[data-doctor-banner]').exists()).toBe(false)
+  })
+
+  it('says which client needs a restart to load an update', async () => {
+    api.getJson.mockResolvedValue(report('degraded', [RESTART]))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    const list = wrapper.get('[data-doctor-items]')
+    expect(list.text()).toContain('客户端要重启才用上更新：Claude Code')
+    expect(list.text()).toContain('2 个会话是更新前开的')
+    expect(list.text()).not.toContain('client_restart')
   })
 
   it('counts what needs the person and lists it in plain words, with where to handle it', async () => {

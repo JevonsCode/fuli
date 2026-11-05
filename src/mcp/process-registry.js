@@ -30,10 +30,11 @@ const MAX_SESSION_ID = 512;
 // session of a call; the file is rewritten only when the list changes, and a
 // failed write never fails the call.
 export function registerMcpProcess(runtimeConfigPath, { sourceApplication, version, pid = process.pid,
-  entryContract = TASK_ENTRY_CONTRACT }) {
+  entryContract = TASK_ENTRY_CONTRACT, sessionStartedAt = null }) {
   const path = join(directory(runtimeConfigPath), `${pid}.json`);
+  const startedAt = new Date().toISOString();
   const record = { pid, version, entryContract, sourceApplication: sourceApplication ?? null,
-    startedAt: new Date().toISOString(), sessionIds: [] };
+    startedAt, sessionStartedAt: sessionStartedAt ?? startedAt, sessionIds: [] };
   try { writeJsonFileAtomic(path, record); } catch { return { recordSession: () => {}, unregister: () => {} }; }
   return {
     recordSession(sessionId) {
@@ -64,6 +65,31 @@ export function liveMcpProcesses(runtimeConfigPath, { isAlive = alive } = {}) {
   return live;
 }
 
+// A client reads its Skills and hooks when a session starts, so what was written
+// into it stays unread by the sessions already open. The MCP server moves to an
+// update by itself; these don't. A write leaves this note, and a session started
+// later is not waiting: restarting clears the prompt with no one to tell.
+export function noteClientChanged(runtimeConfigPath, sourceApplication, changedAt = new Date()) {
+  writeJsonFileAtomic(join(directory(runtimeConfigPath), `client-changed-${sourceApplication}.json`),
+    { sourceApplication, changedAt: changedAt.toISOString() });
+}
+
+// Per client, the open sessions that started before its last change:
+// { sourceApplication, count, changedAt, sessions }.
+export function sessionsAwaitingRestart(runtimeConfigPath, { isAlive = alive } = {}) {
+  let names;
+  try { names = readdirSync(directory(runtimeConfigPath)); } catch { return []; }
+  const live = liveMcpProcesses(runtimeConfigPath, { isAlive });
+  return names.filter(name => /^client-changed-.+\.json$/.test(name)).sort().flatMap((name) => {
+    let change;
+    try { change = JSON.parse(readFileSync(join(directory(runtimeConfigPath), name), 'utf8')); } catch { return []; }
+    const waiting = live.filter(record => record.sourceApplication === change.sourceApplication
+      && (record.sessionStartedAt ?? record.startedAt) < change.changedAt);
+    return waiting.length ? [{ sourceApplication: change.sourceApplication, count: waiting.length, changedAt: change.changedAt,
+      sessions: [...new Set(waiting.flatMap(record => record.sessionIds ?? []))] }] : [];
+  });
+}
+
 // Live servers of this client that run a different version.
 export function outdatedMcpProcesses(runtimeConfigPath, { sourceApplication, version, isAlive = alive }) {
   return liveMcpProcesses(runtimeConfigPath, { isAlive })
@@ -78,7 +104,8 @@ export function outdatedMcpProcesses(runtimeConfigPath, { sourceApplication, ver
 export function outdatedMcpNotice(runtimeConfigPath, { sourceApplication, version, sessionId, isAlive = alive,
   clock = () => new Date() }) {
   const outdated = outdatedMcpProcesses(runtimeConfigPath, { sourceApplication, version, isAlive });
-  if (!outdated.length || typeof sessionId !== 'string') return null;
+  if (typeof sessionId !== 'string') return null;
+  if (!outdated.length) return clientChangedNotice(runtimeConfigPath, { sourceApplication, sessionId, isAlive, clock });
   const versions = [...new Set(outdated.map(record => record.version))].sort();
   const incompatible = outdated.filter(record => record.entryContract !== TASK_ENTRY_CONTRACT);
   const own = incompatible.filter(record => Array.isArray(record.sessionIds) && record.sessionIds.includes(sessionId));
@@ -93,6 +120,21 @@ export function outdatedMcpNotice(runtimeConfigPath, { sourceApplication, versio
   const older = own.length ? own : incompatible;
   return tokenNotice(version, [...new Set(older.map(record => record.version))].sort(), own.length ? null : older.length,
     sourceApplication);
+}
+
+// Once per session and change, and only to a session that is itself waiting.
+function clientChangedNotice(runtimeConfigPath, { sourceApplication, sessionId, isAlive, clock }) {
+  const waiting = sessionsAwaitingRestart(runtimeConfigPath, { isAlive })
+    .find(entry => entry.sourceApplication === sourceApplication && entry.sessions.includes(sessionId));
+  if (!waiting) return null;
+  const marker = join(directory(runtimeConfigPath), `noticed-${createHash('sha256')
+    .update(JSON.stringify([sourceApplication, sessionId, waiting.changedAt])).digest('hex').slice(0, 24)}`);
+  try {
+    writeFileSync(marker, JSON.stringify({ sourceApplication, sessionId, changedAt: waiting.changedAt, kind: 'client_changed',
+      noticedAt: clock().toISOString() }), { flag: 'wx' });
+  } catch { return null; }
+  return 'FULI updated its Skills or hooks in this client after this session started. Tell the person to restart this session to load them. / '
+    + 'FULI 更新了这个客户端里的 Skills 或 Hooks，本会话是更新前开的，请告诉用户重启本会话才会用上。';
 }
 
 const restartNotice = (version, count, sourceApplication, versions) =>

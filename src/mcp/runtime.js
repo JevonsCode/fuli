@@ -11,6 +11,7 @@ import { createMcpServer } from './create-mcp-server.js';
 import { nativeMcpRequestContextResolver } from '../agents/native-mcp-context.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { registerMcpProcess } from './process-registry.js';
+import { MCP_SESSION_STARTED_ENV } from './stdio-relay.js';
 
 export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames = null, toolProfile = 'full', worker = null }) {
   const app = openFederatedGraphApplication({ runtimeConfigPath });
@@ -32,7 +33,7 @@ export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames
   const signalHandlers = new Map();
   // Lets a later hook see that this client still runs this version after an
   // update, and the doctor offer to open the sessions this server answered.
-  const registration = worker === null ? registerMcpProcess(runtimeConfigPath, { sourceApplication, version: FULI_VERSION }) : null;
+  const registration = worker === null ? registerMcpProcess(runtimeConfigPath, { sourceApplication, version: FULI_VERSION, sessionStartedAt: process.env[MCP_SESSION_STARTED_ENV] }) : null;
   const close = createCloseOnce({
     closeServer: () => server.close(),
     closeApplication: async () => {

@@ -22,7 +22,7 @@ import { createDoctorRepair } from './doctor-repair.js';
 import { createDiagnosticsBundle } from './diagnostics-bundle.js';
 import { readGraphMigration, startGraphMigration } from './graph-migration.js';
 import { createLogRetention } from './log-retention.js';
-import { liveMcpProcesses } from '../mcp/process-registry.js';
+import { liveMcpProcesses, sessionsAwaitingRestart } from '../mcp/process-registry.js';
 import { agentKitPorts } from '../agent-kits/ports.js';
 import { sessionClientRecords } from '../agent-kits/session-clients.js';
 import { createSessionOffers } from '../agent-kits/session-offers.js';
@@ -49,7 +49,8 @@ export function createSystemService({
   clientObserver = createClientConnectionObserver({
     installer: agentKits.clientInstaller,
     customClients,
-    historyPath: join(paths.dataDir, 'client-connection-observations.json')
+    historyPath: join(paths.dataDir, 'client-connection-observations.json'),
+    awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath)
   }),
   clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller }),
   executorAdapters = new Map(),
@@ -130,7 +131,7 @@ export function createSystemService({
   const doctor = createDoctor({ observeClients, previewDataFormats,
     formatOperations: () => readFormatOperations(paths.dataDir), graphStage: () => runtimeBroker.status().stage,
     hookTrust: async () => ({ [CODEX_HOOK_TRUST_CLIENT]: await codexHookTrust() }),
-    liveProcesses: () => liveMcpProcesses(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
+    liveProcesses: () => liveMcpProcesses(runtimeConfigPath), awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
     lastUpdate: () => update.status(),
     dataDirShared: () => dataDirAcl.sharedWith(paths.dataDir),
     // Only a graph that was set up has a mode; a fresh data directory has nothing to move.

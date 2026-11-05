@@ -2,6 +2,7 @@ export type Format = 'standard' | 'vscode' | 'server'
 export type ClientStatus = 'connected' | 'changed' | 'skills_left' | 'removed' | 'not_connected' | 'not_detected' | 'unknown'
 export type ClientChange = { from: ClientStatus, to: ClientStatus, detectedAt: string }
 export type ClientObservation = { id: string, label: string, status: ClientStatus, detected: boolean, manualOnly?: boolean, manualUrl?: string, previouslyConnected: boolean,
+  restartSessions?: number,
   changes: ClientChange[], lastKnownStatus?: ClientStatus | null }
 // A client the person described by hand (an agent-clients extension file).
 export type CustomClient = { id: string, label: string, detected: boolean, status: ClientStatus, mcpPaths: string[], removable: boolean }
