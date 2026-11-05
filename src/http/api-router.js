@@ -27,6 +27,7 @@ import { handleAgentDelegationRequest } from './agent-delegation-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
+import { KNOWLEDGE_EMBEDDING_OPERATION } from '../model-backends/config.js';
 import { handleModelBackendApiRequest } from '../model-backends/http.js';
 import { handleModelKeyRequest } from '../model-backends/keys-http.js';
 import { TONBORG_OPERATIONS } from '../judgment/backend.js';
@@ -70,7 +71,8 @@ export async function handleApiRequest({
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
   const modelBackendRequest = () => handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,
     readRoleSuggestions: app.roleSuggestions ? input => app.readRoleSuggestions(input) : null,
-    roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION, DREAMING_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS) },
+    roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION, DREAMING_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS),
+      semantic: [KNOWLEDGE_EMBEDDING_OPERATION] },
     automaticOperations: { tonborg: TONBORG_OPERATIONS.review }, modelTrust: app.modelTrust ?? null,
     settingsHistory: app.modelSettingsHistory ?? null, readEvaluation: readModelEvaluation,
     ownerReads: knowledgeOwnerReads, personalSpaceId: app.config?.personal?.spaceId ?? null });

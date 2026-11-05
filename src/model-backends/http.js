@@ -4,7 +4,7 @@ import { refuseRemoteDecision } from '../http/request-policy.js';
 import { readJson, sendJson } from '../http/response.js';
 import { confirmConsoleOwner } from '../knowledge-owner-reads/owner-proof.js';
 import { positiveInteger } from '../validation/values.js';
-import { MODEL_BACKEND_ROLES } from './config.js';
+import { MODEL_BACKEND_ROLES, SEMANTIC_ROLE } from './config.js';
 import { compactReceipt } from './receipt.js';
 import { MAX_HISTORY_LIMIT } from './settings-history.js';
 import { RETENTION } from './suggestion-log.js';
@@ -57,8 +57,10 @@ async function handleConnectionCheck({ request, response, modelBackends, role })
   if (refuseRemoteDecision(request, response, 'A model is tested only on this computer')) return true;
   if (!modelBackends) { sendJson(response, 503, { error: 'Model backends need a local FULI installation' }); return true; }
   if (!MODEL_BACKEND_ROLES.includes(role)) throw new TypeError(`Unknown role: ${role}`);
-  const { modelReceipt } = await modelBackends.checkConnection(role);
-  sendJson(response, 200, { ok: modelReceipt.status === 'completed', receipt: compactReceipt(modelReceipt) });
+  const { modelReceipt, dimensions } = await modelBackends.checkConnection(role);
+  // The semantic role's check also says how long its vectors are; never the vector itself.
+  sendJson(response, 200, { ok: modelReceipt.status === 'completed', receipt: compactReceipt(modelReceipt),
+    ...(role === SEMANTIC_ROLE ? { dimensions: dimensions ?? null } : {}) });
   return true;
 }
 

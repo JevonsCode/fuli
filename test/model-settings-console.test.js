@@ -184,7 +184,7 @@ test('the real console refuses a save from outside the local process boundary an
   assert.notEqual(page.bytes(), null);
   // The same stack reads the trust store for the roles: only Tonborg has an operation that runs by itself.
   const listed = await (await fetch(`${runtime.url}/api/model-backends/roles`)).json();
-  assert.deepEqual(listed.roles.map(role => role.trust?.reason ?? null), [null, null, null, 'session_answer']);
+  assert.deepEqual(listed.roles.map(role => role.trust?.reason ?? null), [null, null, null, 'session_answer', null]);
 });
 
 // rec#11 D-81: an FLA saves it for the person only after they turn model_settings on.
@@ -258,7 +258,8 @@ test('each role lists the local build observed at its latest answer on its confi
     tonborg: { status: 'observed', digest: observed, completedAt: '2026-10-23T10:00:00.100Z' },
     assistant: { status: 'not_observed', digest: null, completedAt: '2026-10-23T10:00:00.100Z' },
     bole: { status: 'no_record', digest: null, completedAt: null },
-    jefa: { status: 'not_applicable', digest: null, completedAt: null }
+    jefa: { status: 'not_applicable', digest: null, completedAt: null },
+    semantic: { status: 'not_applicable', digest: null, completedAt: null }
   });
 });
 
