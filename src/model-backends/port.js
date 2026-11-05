@@ -156,6 +156,12 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         return { envelope: decisionEnvelope(request, verdict.value), modelReceipt: receipt('completed') };
       }
       if (verdict.issues) {
+        // A reply outside the schema means the endpoint took the schema and ignored
+        // it, as some gateways do: from here on it is written into the prompt.
+        if (mode === 'json_schema') {
+          promptOnly.add(formatKey);
+          mode = 'prompt';
+        }
         if (!adapter.repairable || repairs >= REPAIR_LIMIT) return stop('configuration', 'invalid_output');
         repairs += 1;
         purpose = 'repair';
