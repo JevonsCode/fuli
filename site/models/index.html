@@ -18,10 +18,11 @@
     <link rel="preload" href="../assets/unbounded-latin.woff2" as="font" type="font/woff2" crossorigin="">
     <script>document.documentElement.classList.add('js')</script>
     <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../guide-page.css">
     <link rel="stylesheet" href="./models.css">
     <script type="module" src="../models.js"></script>
   </head>
-  <body class="models-page">
+  <body class="guide-page">
     <a data-i18n="nav.skip" class="skip" href="#main">跳到正文</a>
     <header class="nav">
       <a data-i18n-aria-label="models.home" data-i18n-href="models.homeUrl" class="brand" href="https://xn--8ovp9s.xn--m8txu.com/fuli/" aria-label="Fuli 复利 首页"><img class="brand-mark" src="../assets/brand/fuli-mark-color.svg" alt="" width="28" height="28"><span>复利</span><b>FULI</b></a>
@@ -39,22 +40,22 @@
     </header>
 
     <main id="main">
-      <section class="models-hero" aria-labelledby="models-title">
+      <section class="guide-hero" aria-labelledby="models-title">
         <p data-i18n="models.eyebrow" class="eyebrow">模型指南</p>
         <h1 data-i18n-html="models.title" id="models-title">接一个模型，<em>FULI 多一种能力。</em></h1>
         <p data-i18n="models.lead" class="lede">FULI 不接模型也能用。模型是可选的：接上后，FULI 能按意思查找、给项目归类、整理记忆。</p>
         <p data-i18n="models.choice" class="lede">可以用 Ollama 在本机跑模型，也可以用在线模型；它能看哪些项目，由你批准。</p>
       </section>
 
-      <section class="models-section" id="modes" aria-labelledby="modes-title">
+      <section class="guide-section" id="modes" aria-labelledby="modes-title">
         <h2 data-i18n="models.modes" id="modes-title">两种用法</h2>
         <div class="mode-grid">
-          <article class="model-card">
+          <article class="guide-card">
             <h3 data-i18n="models.mode.none">不用模型（默认）</h3>
             <p data-i18n="models.mode.noneBody">关键词排序，加上你正在对话的 AI。</p>
             <p data-i18n="models.mode.noneCost" class="card-note">免费，不用装任何东西。</p>
           </article>
-          <article class="model-card">
+          <article class="guide-card">
             <h3 data-i18n="models.mode.small">配小模型</h3>
             <p data-i18n="models.mode.smallBody">多了按意思搜索，内置 Agent 也能自己判断。</p>
             <p data-i18n="models.mode.smallCost" class="card-note">多数用途，小模型就够。</p>
@@ -62,10 +63,10 @@
         </div>
       </section>
 
-      <section class="models-section" id="uses" aria-labelledby="uses-title">
+      <section class="guide-section" id="uses" aria-labelledby="uses-title">
         <h2 data-i18n="models.uses" id="uses-title">每个模型做什么</h2>
         <div class="use-grid">
-          <article class="model-card use-card" id="semantic-search">
+          <article class="guide-card use-card" id="semantic-search">
             <svg class="bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" /></svg>
             <h3 data-i18n="models.search">语义搜索</h3>
             <p data-i18n="models.searchBody">把每条知识和每个问题变成向量，按意思找。</p>
@@ -87,7 +88,7 @@
             </dl>
           </article>
 
-          <article class="model-card use-card" id="astro">
+          <article class="guide-card use-card" id="astro">
             <svg class="bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" /></svg>
             <h3 data-i18n="models.astro">Astro 项目归类</h3>
             <p data-i18n="models.astroBody">建议一段对话属于哪个项目。</p>
@@ -97,7 +98,7 @@
             </dl>
           </article>
 
-          <article class="model-card use-card" id="dreaming">
+          <article class="guide-card use-card" id="dreaming">
             <svg class="bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" /></svg>
             <h3 data-i18n="models.dreaming">Dreaming 记忆整理</h3>
             <p data-i18n="models.dreamingBody">读一个项目最近的会话，提议该记住或退役什么；由人确认。</p>
@@ -107,7 +108,7 @@
             </dl>
           </article>
 
-          <article class="model-card use-card" id="tonborg">
+          <article class="guide-card use-card" id="tonborg">
             <svg class="bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" /></svg>
             <h3 data-i18n="models.tonborg">Tonborg 判断</h3>
             <p data-i18n="models.tonborgBody">知识留下之前，先审一遍。</p>
@@ -117,7 +118,7 @@
             </dl>
           </article>
 
-          <article class="model-card use-card" id="jefa">
+          <article class="guide-card use-card" id="jefa">
             <svg class="bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" /></svg>
             <h3 data-i18n="models.jefa">Jefa 看板</h3>
             <p data-i18n="models.jefaBody">把工作对上看板上的条目。</p>
@@ -127,7 +128,7 @@
             </dl>
           </article>
 
-          <article class="model-card use-card" id="bole">
+          <article class="guide-card use-card" id="bole">
             <svg class="bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" /></svg>
             <h3 data-i18n="models.bole">Bole 绩效</h3>
             <p data-i18n="models.boleBody">根据 Agent 的成绩卡，建议下一步做的一件事。</p>
@@ -139,19 +140,19 @@
         </div>
       </section>
 
-      <section class="models-section" id="privacy" aria-labelledby="privacy-title">
+      <section class="guide-section" id="privacy" aria-labelledby="privacy-title">
         <h2 data-i18n="models.privacy" id="privacy-title">模型能看到什么</h2>
-        <ul class="privacy-list">
+        <ul class="guide-list">
           <li data-i18n="models.privacyProjects">模型只看到你批准的项目。</li>
           <li data-i18n="models.privacyLocal">用本机的 Ollama 模型，所有内容都留在你的电脑上。</li>
           <li data-i18n="models.privacyKeys">密钥只保存在这台电脑上。</li>
         </ul>
       </section>
 
-      <section class="models-section" id="method" aria-labelledby="method-title">
+      <section class="guide-section" id="method" aria-labelledby="method-title">
         <h2 data-i18n="models.method" id="method-title">我们怎么测</h2>
         <p data-i18n="models.methodBody">只用合成数据，只测一个项目，题目也不多。数字是参考，不是承诺。</p>
-        <p class="method-links">
+        <p class="guide-links">
           <a data-i18n="models.methodRetrieval" href="https://github.com/JevonsCode/fuli/blob/main/docs/retrieval-design.md">检索设计与测试</a>
           <a data-i18n="models.methodBenchmark" href="https://github.com/JevonsCode/fuli/blob/main/FULI_ALIGNMENT_BENCHMARK.md#8-%E5%8D%8F%E4%BD%9C%E6%88%90%E6%9C%AC-ab">对齐基准第 8 节</a>
         </p>
