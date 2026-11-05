@@ -207,10 +207,11 @@ async function save() {
               </FieldDescription>
             </Field>
 
+            <p class="model-role-muted" data-model-limits-hint>{{ t('modelSettings.limitsHint') }}</p>
             <div class="model-role-grid">
               <Field v-for="field in BUDGET_FIELDS" :key="field">
                 <FieldLabel :for="`model-role-${field}`">{{ t(`modelSettings.${field}`) }}</FieldLabel>
-                <Input :id="`model-role-${field}`" v-model="draft[field]" type="number" min="1" step="1" :disabled="inactive"
+                <Input :id="`model-role-${field}`" v-model="draft[field]" type="number" min="1" step="1" :placeholder="t('modelSettings.noLimit')" :disabled="inactive"
                   :data-model-budget="field" />
               </Field>
               <Field>

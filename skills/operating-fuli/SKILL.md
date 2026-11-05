@@ -95,7 +95,7 @@ For cross-client continuation, copy the supplied continuation prompt into the sa
 
 ## Dreaming
 
-Dreaming reads a project's recent sessions with Astro's model, outside any task, and proposes changes. It runs only with a connected model, for projects approved for that model, once a day or when the person presses 「现在整理」 on the model page. New knowledge lands pending and stale items are reported, both in the person's review queue. Items named `Dreaming · …` came from it. Treat them like any pending item: nothing is confirmed until the person says so.
+Dreaming reads what a project's sessions said since its last run with Astro's model, outside any task, and proposes changes. It runs only with a connected model, for projects approved for that model, once a day or when the person presses 「现在整理」 on the model page. New knowledge lands pending and stale items are reported, both in the person's review queue. Items named `Dreaming · …` came from it. Treat them like any pending item: nothing is confirmed until the person says so.
 
 ## Debug turn records (#fulidebug)
 

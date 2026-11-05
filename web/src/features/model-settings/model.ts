@@ -38,11 +38,11 @@ export interface ModelConnection {
 }
 
 export interface ModelBudget {
-  maxInputTokens: number
-  maxOutputTokens: number
-  timeoutMs: number
-  windowHours: number
-  maxTokensPerWindow: number
+  maxInputTokens: number | null
+  maxOutputTokens: number | null
+  timeoutMs: number | null
+  windowHours: number | null
+  maxTokensPerWindow: number | null
   maxCostPerWindow: number | null
 }
 
@@ -187,10 +187,10 @@ export interface RoleDraft {
   fallbackToSession: boolean
 }
 
-// A new role starts from the example in fuli PR 236: modest per-call limits,
-// a 24-hour window and no project approved for the model API's egress.
+// A new role has no limit until the person sets one, and no project approved
+// for the model API's egress.
 const NEW_ROLE_BUDGET: ModelBudget = {
-  maxInputTokens: 8000, maxOutputTokens: 600, timeoutMs: 60_000, windowHours: 24, maxTokensPerWindow: 200_000, maxCostPerWindow: null,
+  maxInputTokens: null, maxOutputTokens: null, timeoutMs: null, windowHours: null, maxTokensPerWindow: null, maxCostPerWindow: null,
 }
 const NEW_CONNECTION: ModelConnection = {
   protocol: 'openai_chat', endpoint: '', model: '', secretRef: null, reasoningEffort: null, pricing: null,
@@ -213,7 +213,7 @@ export function roleDraft(payload: ModelRolesPayload, role: ModelRoleId): RoleDr
     allowUnassigned: view?.egress?.allowUnassigned ?? false,
     maxInputTokens: text(budget.maxInputTokens),
     maxOutputTokens: text(budget.maxOutputTokens),
-    timeoutSeconds: text(budget.timeoutMs / 1000),
+    timeoutSeconds: text(budget.timeoutMs === null ? null : budget.timeoutMs / 1000),
     windowHours: text(budget.windowHours),
     maxTokensPerWindow: text(budget.maxTokensPerWindow),
     maxCostPerWindow: text(budget.maxCostPerWindow),
