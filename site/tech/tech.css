@@ -14,3 +14,7 @@
 @media (max-width: 640px) {
   .layer-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* The headline reads as two lines: where it runs, then who decides. */
+#tech-title em { display: block; }
+#tech-title { text-wrap: balance; }
