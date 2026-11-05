@@ -1,4 +1,4 @@
-import { ApiError, apiErrorCode, getJson, putJson } from '@/api/client'
+import { ApiError, apiErrorCode, getJson, postJson, putJson } from '@/api/client'
 import { t } from '@/i18n'
 import { roleName as builtInRoleName } from '@/features/agent-profile/role-names'
 import { shortDigest } from '@/features/data-format/model'
@@ -149,6 +149,9 @@ export interface ModelRolesPayload {
   // After a save or trust change: whether the change was written to the change history (rec#11 D-42).
   history?: 'recorded' | 'unchanged' | 'not_recorded'
 }
+
+export interface ModelRoleCheckResult { ok: boolean; receipt: { status: string; reason?: string | null; actualModel?: string | null } }
+export const checkModelRole = (role: ModelRoleId) => postJson<ModelRoleCheckResult>(`/api/model-backends/roles/${role}/check`, {})
 
 export const readModelRoles = (signal?: AbortSignal) =>
   getJson<ModelRolesPayload>('/api/model-backends/roles', { signal })

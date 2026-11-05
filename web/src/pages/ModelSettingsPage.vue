@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import DreamingCard from '@/features/model-settings/DreamingCard.vue'
+import ModelRoleCheck from '@/features/model-settings/ModelRoleCheck.vue'
 
 import { apiErrorReason } from '@/api/client'
 import Breadcrumb from '@/components/Breadcrumb.vue'
@@ -223,6 +224,7 @@ onBeforeUnmount(() => {
                   :model="view.connection?.model ?? null" @saved="trustSaved" @changed="settingsChanged()" />
                 <ModelRoleHistory :role="view.role" :version="historyVersion" />
                 <footer class="model-role-actions">
+                  <ModelRoleCheck v-if="view.connection" :role="view.role" :model="view.connection.model" />
                   <Button variant="outline" size="sm" :disabled="payload.state === 'invalid'" data-model-role-edit
                     :aria-label="`${t('modelSettings.edit')} ${roleName(view.role)}`" @click="edit(view.role)">
                     {{ t('modelSettings.edit') }}
@@ -273,7 +275,7 @@ onBeforeUnmount(() => {
 .model-role-facts div { display: contents; }
 .model-role-facts dt { color: var(--color-muted); }
 .model-role-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
-.model-role-actions { display: flex; justify-content: flex-end; }
+.model-role-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 @media (max-width: 520px) {
   .model-role-facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   .model-role-facts div + div dt { margin-top: 10px; }
