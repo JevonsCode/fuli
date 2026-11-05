@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import DreamingCard from '@/features/model-settings/DreamingCard.vue'
 import ModelRoleCheck from '@/features/model-settings/ModelRoleCheck.vue'
+import SemanticSearchCard from '@/features/model-settings/SemanticSearchCard.vue'
 
 import { apiErrorReason } from '@/api/client'
 import Breadcrumb from '@/components/Breadcrumb.vue'
@@ -17,7 +18,7 @@ import ModelUsage from '@/features/model-settings/ModelUsage.vue'
 import RoleSuggestions from '@/features/model-settings/RoleSuggestions.vue'
 import { useRoleSuggestions } from '@/features/model-settings/useRoleSuggestions'
 import {
-  formatCount, localBuildText, readModelRoles, roleName, roleSummary, trustStatusText,
+  SEMANTIC_ROLE, formatCount, isAgentRole, localBuildText, readModelRoles, roleName, roleSummary, trustStatusText,
   type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
 } from '@/features/model-settings/model'
 import { currentLocale, t } from '@/i18n'
@@ -45,6 +46,9 @@ const { entries: suggestionEntries, loading: suggestionsLoading, error: suggesti
 const openedFromSettings = /^\/settings(?:[?#]|$)/
 
 const projects = computed(() => store.state?.personalProjects ?? [])
+// The built-in Agents are rows; 语义搜索 is no Agent and has its own card.
+const agentRoles = computed(() => (payload.value?.roles ?? []).filter(view => isAgentRole(view.role)))
+const semanticView = computed(() => payload.value?.roles.find(view => view.role === SEMANTIC_ROLE))
 const locale = computed(() => currentLocale())
 
 // Whether the settings were read.
@@ -199,7 +203,7 @@ onBeforeUnmount(() => {
           <UiNotice v-if="notice" tone="success">{{ notice }}</UiNotice>
 
           <Accordion v-model="openRoles" type="multiple" :unmount-on-hide="false" class="model-role-list">
-            <AccordionItem v-for="view in payload.roles" :key="view.role" :value="view.role"
+            <AccordionItem v-for="view in agentRoles" :key="view.role" :value="view.role"
               class="model-role-row" :class="{ 'model-role-row--editing shadow-md': editing === view.role }"
               :data-model-role="view.role">
               <AccordionTrigger class="model-role-summary">
@@ -235,6 +239,8 @@ onBeforeUnmount(() => {
             </AccordionItem>
           </Accordion>
         </section>
+
+        <SemanticSearchCard :view="semanticView" :locked="payload.state === 'invalid'" @edit="edit(SEMANTIC_ROLE)" />
 
         <DreamingCard :projects="projects" />
 

@@ -98,6 +98,15 @@ export const modelSettingsMessages = {
     projectSearch: '搜索项目',
     projectNoMatch: '没有匹配的项目。',
     advanced: '高级配置',
+    semantic: {
+      title: '语义搜索',
+      summary: '让 FULI 按意思找知识。不配也能用，只是只按字面找。',
+      preset: '模型来源',
+      presets: { ollama: '本机 Ollama', qwen: '千问', custom: '自定义' },
+      enabledOffHint: '现在只按字面找知识。打开后，FULI 用下面的模型按意思找。',
+      enabledOnHint: 'FULI 用下面的模型按意思找知识。',
+      passed: '连接正常，{model} 回答了，每段文字 {dimensions} 维。',
+    },
     dreaming: {
       summary: "让 @:{'roleNames.astro'} 的模型回看项目最近的会话，提出记忆该怎么改，你来决定。",
       enable: '打开 Dreaming（每个授权项目每天整理一次）',
@@ -336,6 +345,15 @@ export const modelSettingsMessages = {
     projectSearch: 'Search projects',
     projectNoMatch: 'No matching projects.',
     advanced: 'Advanced settings',
+    semantic: {
+      title: 'Semantic search',
+      summary: 'Lets FULI find knowledge by meaning. Without it FULI still works, matching words only.',
+      preset: 'Model source',
+      presets: { ollama: 'Local Ollama', qwen: 'Qwen', custom: 'Custom' },
+      enabledOffHint: 'FULI matches words only now. Turn this on to find knowledge by meaning with the model below.',
+      enabledOnHint: 'FULI finds knowledge by meaning with the model below.',
+      passed: 'Connected: {model} answered with {dimensions} dimensions per text.',
+    },
     dreaming: {
       summary: "@:{'roleNames.astro'}'s model reads a project's recent sessions and proposes what memory should change. You decide.",
       enable: 'Turn on Dreaming (once a day for each approved project)',

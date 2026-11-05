@@ -11,14 +11,41 @@ import { formatDateTime } from '@/lib/date-time'
 // key by secretRef; the page can save a key under that name, but no key is
 // ever sent back to it.
 
-export const MODEL_ROLES = ['assistant', 'bole', 'jefa', 'tonborg'] as const
+// semantic is no Agent: the person's own model for 语义搜索 (rec#88), which
+// only takes the embeddings protocol; the Agents take every other one.
+export const SEMANTIC_ROLE = 'semantic'
+export const MODEL_ROLES = ['assistant', 'bole', 'jefa', 'tonborg', SEMANTIC_ROLE] as const
 export type ModelRoleId = typeof MODEL_ROLES[number]
+type AgentRoleId = Exclude<ModelRoleId, typeof SEMANTIC_ROLE>
+const EMBEDDING_PROTOCOL = 'openai_embeddings'
 export const MODEL_PROTOCOLS = ['openai_chat', 'anthropic_messages', 'typesafe_systemone'] as const
-export type ModelProtocol = typeof MODEL_PROTOCOLS[number]
+export type ModelProtocol = typeof MODEL_PROTOCOLS[number] | typeof EMBEDDING_PROTOCOL
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high'] as const
 
+export const isAgentRole = (role: ModelRoleId): role is AgentRoleId => role !== SEMANTIC_ROLE
+
 // A role by the name it goes by now; Astro's stable id is assistant.
-export const roleName = (role: ModelRoleId) => builtInRoleName(role === 'assistant' ? 'astro' : role)
+export const roleName = (role: ModelRoleId) => (role === SEMANTIC_ROLE ? t('modelSettings.semantic.title')
+  : builtInRoleName(role === 'assistant' ? 'astro' : role))
+
+// 语义搜索's three presets: each fills the address and leaves the model to the person.
+export const SEMANTIC_PRESETS = ['ollama', 'qwen', 'custom'] as const
+export type SemanticPreset = typeof SEMANTIC_PRESETS[number]
+const PRESET_ENDPOINTS: Record<Exclude<SemanticPreset, 'custom'>, string> = {
+  ollama: 'http://127.0.0.1:11434/v1',
+  qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+}
+
+export function semanticPreset(endpoint: string): SemanticPreset {
+  const address = endpoint.trim().replace(/\/+$/, '')
+  return (['ollama', 'qwen'] as const).find(preset => PRESET_ENDPOINTS[preset] === address) ?? 'custom'
+}
+
+// A local Ollama needs no key; 自定义 empties an address a preset filled, so the person types their own.
+export function withSemanticPreset(draft: RoleDraft, preset: SemanticPreset): RoleDraft {
+  if (preset === 'custom') return semanticPreset(draft.endpoint) === 'custom' ? draft : { ...draft, endpoint: '' }
+  return { ...draft, endpoint: PRESET_ENDPOINTS[preset], ...(preset === 'ollama' ? { secretRef: '' } : {}) }
+}
 
 export interface ModelPricing {
   currency: string
@@ -151,7 +178,8 @@ export interface ModelRolesPayload {
   history?: 'recorded' | 'unchanged' | 'not_recorded'
 }
 
-export interface ModelRoleCheckResult { ok: boolean; receipt: { status: string; reason?: string | null; actualModel?: string | null } }
+// dimensions: the length of 语义搜索's vectors, on its check only.
+export interface ModelRoleCheckResult { ok: boolean; receipt: { status: string; reason?: string | null; actualModel?: string | null }; dimensions?: number | null }
 export const checkModelRole = (role: ModelRoleId) => postJson<ModelRoleCheckResult>(`/api/model-backends/roles/${role}/check`, {})
 
 export const readModelRoles = (signal?: AbortSignal) =>
@@ -203,8 +231,9 @@ export function roleDraft(payload: ModelRolesPayload, role: ModelRoleId): RoleDr
   const view = payload.roles.find(entry => entry.role === role)
   const connectionId = view?.connection?.id ?? role
   const budget = view?.budget ?? NEW_ROLE_BUDGET
+  const semantic = role === SEMANTIC_ROLE
   return {
-    ...connectionFields(payload.connections[connectionId] ?? NEW_CONNECTION),
+    ...connectionFields(payload.connections[connectionId] ?? (semantic ? { ...NEW_CONNECTION, protocol: EMBEDDING_PROTOCOL } : NEW_CONNECTION)),
     enabled: view?.state === 'enabled',
     connectionId,
     // Dreaming sends sessions to the model, so a new role starts without it: the person turns it on.
@@ -217,7 +246,8 @@ export function roleDraft(payload: ModelRolesPayload, role: ModelRoleId): RoleDr
     windowHours: text(budget.windowHours),
     maxTokensPerWindow: text(budget.maxTokensPerWindow),
     maxCostPerWindow: text(budget.maxCostPerWindow),
-    fallbackToSession: view?.fallbackToSession ?? true,
+    // A session cannot turn text into vectors, so 语义搜索 never falls back to one.
+    fallbackToSession: !semantic && (view?.fallbackToSession ?? true),
   }
 }
 
