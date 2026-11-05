@@ -160,6 +160,11 @@ GRAPH_MIGRATIONS = (
         builtin_occupations.apply_role_occupations,
         builtin_occupations.ROLE_OCCUPATION_JOURNAL,
     ),
+    GraphMigration(
+        'graph/17-semantic-vectors', 17, 'schema',
+        'an optional meaning vector on entities and relationships, with its model and text hash',
+        fields_only=True,
+    ),
 )
 
 GRAPH_FORMAT_VERSION = GRAPH_MIGRATIONS[-1].to_version

@@ -33,6 +33,7 @@ from .knowledge_audit_models import (
     PreferenceScopeChange,
 )
 from .model_base import StrictModel
+from .knowledge_semantic_query import SearchMatch, SemanticQuery
 from .knowledge_weight_models import KnowledgeWeightView
 from .provider_values import json_object
 from .project_profile_authors import AuthoredField, ProjectFieldAuthor, default_field_authors
@@ -818,6 +819,7 @@ class SearchRequest(StrictModel):
     project_agent_id: str | None = Field(default=None, min_length=1, max_length=128)
     inherit_project_knowledge: bool = True
     include_personal_global: bool = False
+    semantic: SemanticQuery | None = None
 
     @field_validator('personal_project_ids')
     @classmethod
@@ -890,6 +892,7 @@ class EntitySearchResult(KnowledgeWeightView):
     scope_path: list[str] = Field(default_factory=list, max_length=9)
     source_uris: list[str] = Field(default_factory=list, max_length=20)
     score: float | None = None
+    matched_by: SearchMatch = 'lexical'
 
 
 class FactResult(KnowledgeWeightView):
@@ -941,6 +944,7 @@ class FactResult(KnowledgeWeightView):
     scope_path: list[str] = Field(default_factory=list, max_length=9)
     source_uris: list[str] = Field(default_factory=list, max_length=20)
     score: float | None = None
+    matched_by: SearchMatch = 'lexical'
 
 
 class SearchResult(StrictModel):
