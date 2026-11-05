@@ -129,7 +129,10 @@ function itemView(item: DoctorItem): Omit<DoctorItemView, 'since'> {
         hint: t((data.migration as { status?: string } | null)?.status === 'failed' ? 'doctor.hints.graphMigrationFailed' : 'doctor.hints.graphContainer') }
     case 'sessions_outdated':
       return { title, subject: sourceApplicationName(text(data.client) as ConversationSourceApplication) ?? t('doctor.otherClient'),
-        hint: t('doctor.hints.sessions', { count: Number(data.count) || 0, version: text(data.runningVersion) }), to: null }
+        // runningVersion is null for servers older than FULI's process records: their version is unknown.
+        hint: text(data.runningVersion)
+          ? t('doctor.hints.sessions', { count: Number(data.count) || 0, version: text(data.runningVersion) })
+          : t('doctor.hints.sessionsOld', { count: Number(data.count) || 0 }), to: null }
     case 'client_restart':
       return { title, subject: sourceApplicationName(text(data.client) as ConversationSourceApplication) ?? t('doctor.otherClient'),
         hint: t('doctor.hints.restart', { count: Number(data.count) || 0 }), to: null }

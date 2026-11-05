@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { DREAMING_OPERATION, dreamingReadiness, dreamProject } from '../src/dreaming/run.js';
-import { dreamingRuns, startDreamingScheduler } from '../src/dreaming/scheduler.js';
+import { dreamingRuns, dreamingSince, startDreamingScheduler } from '../src/dreaming/scheduler.js';
 
 const SPACE = 'space-synthetic';
 const PROJECT = 'project-synthetic';
@@ -242,6 +242,44 @@ test('rec#89: a run whose row could not be written is not run again on the next 
   const stop = startDreamingScheduler({ app, ownerReads, intervalMs: 5 });
   await new Promise(resolve => { setTimeout(resolve, 80); });
   await stop();
+  assert.equal(calls.requests.length, 1);
+});
+
+test('rec#89: a run reads on from the last one that read everything', () => {
+  const runs = [
+    { status: 'dreamed', unread: 2, personalProjectId: PROJECT, at: '2026-11-05T00:00:00.000Z' },
+    { status: 'dreamed', unread: 0, personalProjectId: PROJECT, at: '2026-11-04T00:00:00.000Z' },
+    { status: 'model_failed', personalProjectId: PROJECT, at: '2026-11-06T00:00:00.000Z' },
+    { status: 'dreamed', unread: 0, personalProjectId: 'another-project', at: '2026-11-06T00:00:00.000Z' }
+  ];
+  assert.equal(dreamingSince(runs, PROJECT), '2026-11-04T00:00:00.000Z');
+  assert.equal(dreamingSince(runs, 'new-project'), null);
+});
+
+test('rec#89: what earlier runs queued goes to the merge, even after a single read', async () => {
+  const { app, ownerReads, calls } = fixture();
+  ownerReads.graph = async ({ offset }) => (offset === null
+    ? { nodes: [{ name: 'Dreaming · Old rule', summary: 'Old rule text' }, { name: 'Unrelated', summary: 'x' }], next_offset: 2 }
+    : { nodes: [{ name: 'Dreaming · Second rule', summary: 'Second text' }], next_offset: null });
+  app.modelBackends.decide = async (request) => {
+    calls.requests.push(request);
+    const merging = request.evidence[0].id.startsWith('proposals_');
+    return { envelope: { decision: merging ? 'no_change' : 'propose', payload: { proposals: merging ? [] : [add(['session_1', 'session_2', 'session_3'])] } },
+      modelReceipt: { status: 'completed', usage: { totalTokens: 5 } } };
+  };
+  const result = await dreamProject(app, ownerReads, { personalProjectId: PROJECT });
+  const merge = calls.requests.at(-1);
+  assert.equal(merge.evidence.at(-1).id, 'already_queued');
+  assert.match(merge.evidence.at(-1).text, /Old rule: Old rule text\nSecond rule: Second text/);
+  assert.doesNotMatch(merge.evidence.at(-1).text, /Unrelated/);
+  assert.deepEqual(result.proposed, [], 'the merge dropped what was queued');
+});
+
+test('rec#89: a graph that cannot be read costs only the check for duplicates', async () => {
+  const { app, ownerReads, calls } = fixture({ proposals: [add(['session_1', 'session_2', 'session_3'])] });
+  ownerReads.graph = async () => { throw new Error('graph asleep'); };
+  const result = await dreamProject(app, ownerReads, { personalProjectId: PROJECT });
+  assert.equal(result.proposed.length, 1);
   assert.equal(calls.requests.length, 1);
 });
 

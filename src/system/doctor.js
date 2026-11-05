@@ -62,11 +62,14 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 // last one-click migration (graph-migration.js), or null.
 // dataDirShared: the principals besides the person and SYSTEM that the data
 // directory's ACL lets in (windows-data-acl.js); none outside Windows.
+// runningServers: this installation's MCP servers the OS shows running
+// ([{ pid, parentPid, startedAt }], mcp-process-scan.js), or null when the
+// list could not be read.
 export function createDoctor({ observeClients, previewDataFormats = null, formatOperations = () => [],
   graphStage = () => null, liveProcesses, awaitingRestart = () => [], latestVersion, lastUpdate, hookTrust = async () => ({}),
   transcriptFormat = async () => ({}),
-  portMoves = () => null, graphRuntime = () => null, dataDirShared = async () => [], version = FULI_VERSION,
-  now = () => new Date() }) {
+  portMoves = () => null, graphRuntime = () => null, dataDirShared = async () => [], runningServers = () => [],
+  version = FULI_VERSION, now = () => new Date() }) {
   // The personal graph's last answer while its provider answered: the step it
   // waited on, or null, and when that was seen.
   let lastGraph = null;
@@ -117,6 +120,9 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
       }
     }
     const processes = await read('sessions', liveProcesses);
+    const running = await read('sessions', runningServers);
+    // A list that could not be read says nothing about unrecorded servers.
+    if (running === null) notChecked('sessions', 'process_list_unavailable');
     const waiting = await read('sessions', awaitingRestart);
     const latest = await read('update', latestVersion);
     const update = await read('update', lastUpdate);
@@ -131,6 +137,7 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
       ...dataFormatItems(formats),
       ...rememberedGraph,
       ...sessionItems(processes ?? [], version),
+      ...unrecordedItems(processes && running ? unrecordedServers(running, processes) : []),
       ...restartItems(waiting ?? []),
       ...updateItems(latest, update, version),
       ...portItems(moved),
@@ -241,6 +248,24 @@ function sessionItems(processes, version) {
   }
   return [...groups].map(([key, { sessions, since, ...group }]) => item(`sessions_outdated:${key}`, 'sessions_outdated', 'warning', 'person',
     { ...group, ...(since ? { since } : {}), sessions: [...sessions.values()].slice(0, MAX_OUTDATED_SESSIONS) }));
+}
+
+// Running servers a FULI older than process-registry.js started: they write no
+// record, so neither their client nor their version is known. A process that
+// is the parent of another listed one is not a session's server of its own:
+// a relay (stdio-relay.js) or FuliNode.exe runs the same command line as the
+// server under it, and that server is recorded or counted itself.
+function unrecordedServers(running, records) {
+  const recorded = new Set(records.map(({ pid }) => pid));
+  const parents = new Set(running.map(({ parentPid }) => parentPid));
+  return running.filter(({ pid }) => !recorded.has(pid) && !parents.has(pid));
+}
+
+function unrecordedItems(servers) {
+  if (!servers.length) return [];
+  const since = servers.map(({ startedAt }) => startedAt).filter((startedAt) => typeof startedAt === 'string').sort()[0];
+  return [item('sessions_outdated:other:unknown', 'sessions_outdated', 'warning', 'person',
+    { client: 'other', count: servers.length, runningVersion: null, ...(since ? { since } : {}), sessions: [] })];
 }
 
 // Open sessions that started before FULI changed their client's Skills or hooks:

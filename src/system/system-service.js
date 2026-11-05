@@ -34,6 +34,9 @@ import { readFormatOperations } from '../data-format/operations-log.js';
 import { createModelCapture } from '../debug-turns/model-capture.js';
 import { windowsDataAcl } from './windows-data-acl.js';
 import { debugTurnStore } from '../debug-turns/store.js';
+import { runningMcpServers } from './mcp-process-scan.js';
+
+const MCP_SCAN_CACHE_MS = 5 * 60_000;
 
 export function createSystemService({
   paths,
@@ -65,6 +68,9 @@ export function createSystemService({
   transcriptFormat = createTranscriptFormatProbe(),
   // Who can open the data directory on Windows (windows-data-acl.js).
   dataDirAcl = windowsDataAcl(),
+  // This installation's MCP servers the OS shows running (mcp-process-scan.js).
+  scanMcpServers = runningMcpServers,
+  now = Date.now,
   runtimeBroker = createAdaptiveRuntimeBroker({
     paths,
     settings: readAdaptiveRuntimeSettings(paths.adaptiveRuntimeSettingsPath),
@@ -131,7 +137,15 @@ export function createSystemService({
   }
 
   const observeClients = () => clientObserver.observe();
-  const doctor = createDoctor({ observeClients, previewDataFormats,
+  // The client polls the doctor; the OS process list is read at most once per window.
+  let serverScan = null;
+  const runningServers = () => {
+    if (!serverScan || now() - serverScan.at >= MCP_SCAN_CACHE_MS) {
+      serverScan = { at: now(), answer: scanMcpServers(runtimeConfigPath) };
+    }
+    return serverScan.answer;
+  };
+  const doctor = createDoctor({ observeClients, previewDataFormats, runningServers,
     formatOperations: () => readFormatOperations(paths.dataDir), graphStage: () => runtimeBroker.status().stage,
     hookTrust: async () => ({ [CODEX_HOOK_TRUST_CLIENT]: await codexHookTrust() }), transcriptFormat,
     liveProcesses: () => liveMcpProcesses(runtimeConfigPath), awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath), latestVersion: () => versionChecker.peek(),

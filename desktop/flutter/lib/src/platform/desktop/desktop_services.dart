@@ -125,7 +125,7 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
       if (link != null) unawaited(follow(link));
     });
   }
-  controller.startPolling();
+  controller.startPolling(startFuli: true);
   return AppServices(
       controller: controller, strings: strings, opener: opener, consoleView: console?.build, caption: caption);
 }
