@@ -119,7 +119,7 @@ Claude Code 安装态必须同时满足：
 
 `Stop` Hook 必须调用 `verify_task_checkpoint`。
 
-若任务已成功开始但尚未检查知识价值，Stop 必须阻止结束，直到 Agent 二选一：
+若任务已成功开始但尚未检查知识价值，Stop 不阻止结束：拦下来会多烧一轮 token，还可能进死循环。Hook 进入的任务和例行任务由 Stop 自动记为 `retain_nothing`（状态 `reported`，不写 `completed`），其余任务只给提醒。Agent 主动收尾时二选一：
 
 - `capture_candidates`：保存一个小而有依据的候选批次；
 - `retain_nothing`：说明本轮没有值得沉淀的内容。
@@ -531,7 +531,7 @@ append_decision_validation(
 - 安装后的 `alwaysLoad`、入口 Hook 和 Stop Hook；
 - 全新非持久化 session 能复用上一 session 沉淀的知识；
 - 当前项目搜索无需模型手抄 personal space/project ID；
-- Stop Hook 能阻止未完成知识检查的任务；
+- Stop Hook 自动收尾未检查知识的任务，并记下回复引用的知识；
 - `retain_nothing` 不产生知识写入；
 - `capture_candidates` 只产生小批次候选。
 
