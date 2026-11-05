@@ -202,7 +202,8 @@ export function roleDraft(payload: ModelRolesPayload, role: ModelRoleId): RoleDr
     ...connectionFields(payload.connections[connectionId] ?? NEW_CONNECTION),
     enabled: view?.state === 'enabled',
     connectionId,
-    operations: (view?.allowedOperations ?? payload.operations[role] ?? []).join(', '),
+    // Dreaming sends sessions to the model, so a new role starts without it: the person turns it on.
+    operations: (view?.allowedOperations ?? (payload.operations[role] ?? []).filter(operation => operation !== 'dreaming')).join(', '),
     approvedProjects: [...(view?.egress?.approvedProjects ?? [])],
     allowUnassigned: view?.egress?.allowUnassigned ?? false,
     maxInputTokens: text(budget.maxInputTokens),
