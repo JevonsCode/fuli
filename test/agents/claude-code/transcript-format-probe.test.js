@@ -57,7 +57,7 @@ test('a changed Claude Code turn reads as a line the parser no longer understand
   const root = await claudeHome(t);
   const changed = (text) => ({ type: 'user', sessionId: SESSION, message: { role: 'user', body: text } });
   await transcript(root, [user('synthetic old line'), ...Array.from({ length: 6 }, (_, index) => changed(`synthetic ${index}`)), 'not json at all']);
-  assert.deepEqual(await probe(root)(), { 'claude-code': { readable: true, recognized: 1, total: 7 } });
+  assert.deepEqual(await probe(root)(), { 'claude-code': { readable: true, recognized: 1, total: 8 } });
 });
 
 test('a record type Claude Code added says nothing about the format', async (t) => {

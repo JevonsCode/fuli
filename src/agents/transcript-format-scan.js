@@ -66,7 +66,6 @@ export async function countTranscriptTail(path, recognize) {
 }
 
 function recognizeLine(line, recognize) {
-  let record;
-  try { record = JSON.parse(line); } catch { return false; }
-  return recognize(record);
+  // A parser that throws on a record cannot read it: that is the finding.
+  try { return recognize(JSON.parse(line)); } catch { return false; }
 }
