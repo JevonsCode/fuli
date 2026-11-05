@@ -195,6 +195,8 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
     .then(index => index ?? recallWithoutSearch('not_needed', { trigger_categories: [], queries: [] }));
   if (plan.status === 'not_needed') return await unasked();
   if (plan.status !== 'planned') return recallWithoutSearch(plan.status, plan);
+  // Without a project, a prompt no cue asked about reads as before.
+  if (!resolution.personalProjectId && TOPIC_ONLY(plan)) return await unasked();
   if (!resolution.personalProjectId) {
     return {
       status: 'project_unresolved',
@@ -243,9 +245,13 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
     entities,
     projectScopePriority: 'strict'
   });
-  // A search by the prompt's own words that found nothing costs the entry nothing:
-  // it reads as before, when no cue asked for one.
-  if (TOPIC_ONLY(plan) && !facts.length && !entities.length && failedQueryCount < settlements.length) return await unasked();
+  // A search by the prompt's own words that found nothing, or failed, costs the
+  // entry nothing: it reads as before, when no cue asked for one.
+  if (TOPIC_ONLY(plan) && !facts.length && !entities.length) {
+    // A search that failed (a stopped hook, a Provider down) asks for no index either.
+    return failedQueryCount === settlements.length ? recallWithoutSearch('not_needed', { trigger_categories: [], queries: [] })
+      : await unasked();
+  }
   const searched = results.length > 0;
   const result = {
     status: facts.length || entities.length
