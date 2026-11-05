@@ -150,3 +150,44 @@ test('rec#89: a later run reads only what was said since the last one', async ()
   assert.doesNotMatch(sent, /Synthetic old words/);
 });
 
+function longProject(fixed) {
+  fixed.ownerReads.sessionRecords = async ({ session_id: id }) => ({ items: [],
+    turns: [{ personal_project_id: PROJECT, messages: Array.from({ length: 30 }, (_, n) => ({ role: 'user', text: `${id}-${n} ${'x'.repeat(5000)}` })) }] });
+  return fixed;
+}
+
+test('rec#89: a reply that won\'t validate costs its own part, and the run goes on', async () => {
+  const { app, ownerReads, calls } = longProject(fixture());
+  let first = true;
+  app.modelBackends.decide = async (request) => {
+    calls.requests.push(request);
+    if (first) {
+      first = false;
+      return { envelope: null, modelReceipt: { status: 'failed', reason: 'invalid_output', usage: { totalTokens: 5 } } };
+    }
+    const merging = request.evidence[0].id.startsWith('proposal_');
+    return { envelope: { decision: merging ? 'no_change' : 'propose', payload: { proposals: merging ? [] : [add(['session_1', 'session_2', 'session_3'])] } },
+      modelReceipt: { status: 'completed', usage: { totalTokens: 5 } } };
+  };
+  const result = await dreamProject(app, ownerReads, { personalProjectId: PROJECT });
+  assert.equal(result.status, 'dreamed');
+  assert.equal(result.unread, 0, 'the failed part was read again in halves');
+  const firstBatch = calls.requests[0].evidence.map(item => item.id);
+  assert.deepEqual(calls.requests[1].evidence.map(item => item.id), firstBatch.slice(0, Math.ceil(firstBatch.length / 2)));
+});
+
+test('rec#89: a part that can\'t be read is counted, and the others still count', async () => {
+  const { app, ownerReads, calls } = longProject(fixture());
+  let n = 0;
+  app.modelBackends.decide = async (request) => {
+    calls.requests.push(request);
+    n += 1;
+    if (n === 1) return { envelope: null, modelReceipt: { status: 'failed', reason: 'network', usage: {} } };
+    return { envelope: { decision: 'propose', payload: { proposals: request.evidence[0].id.startsWith('proposal_') ? [] : [add(['session_1', 'session_2', 'session_3'])] } },
+      modelReceipt: { status: 'completed', usage: { totalTokens: 5 } } };
+  };
+  const result = await dreamProject(app, ownerReads, { personalProjectId: PROJECT });
+  assert.equal(result.status, 'dreamed');
+  assert.ok(result.unread > 0);
+});
+

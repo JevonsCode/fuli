@@ -13,13 +13,16 @@ export function startDreamingScheduler({ app, ownerReads, withLease = (_owner, r
     if (!app.modelBackends.operationSettings('assistant', DREAMING_OPERATION)) return;
     running = true;
     try {
-      const last = await lastRuns(app);
+      const runs = await dreamingRuns(app);
+      const last = lastRuns(runs);
+      // A later run reads on from the last one that read everything.
+      const read = lastRuns(runs.filter(row => row.status === 'dreamed' && !row.unread));
       const projects = await app.listPersonalProjects({ personalSpaceId: app.config.personal.spaceId });
       for (const project of projects) {
         const id = project.project_id;
         if (stopped || project.scope_type === 'temporary' || dreamingReadiness(app, id) !== 'ready') continue;
         if (now().getTime() - (last.get(id) ?? 0) < DAY_MS) continue;
-        const since = last.has(id) ? new Date(last.get(id)).toISOString() : null;
+        const since = read.has(id) ? new Date(read.get(id)).toISOString() : null;
         await withLease('dreaming', () => dreamProject(app, ownerReads, { personalProjectId: id, since, now: now() }));
       }
     } catch { /* The next tick tries again; a failed run is not the person's to handle. */ }
@@ -38,9 +41,9 @@ export async function dreamingRuns(app) {
   return rows.filter(row => row.operation === DREAMING_OPERATION);
 }
 
-async function lastRuns(app) {
+function lastRuns(runs) {
   const last = new Map();
-  for (const row of await dreamingRuns(app)) {
+  for (const row of runs) {
     const at = Date.parse(row.at);
     const project = row.personalProjectId;
     if (project && at > (last.get(project) ?? 0)) last.set(project, at);
