@@ -201,7 +201,7 @@ test('the console reads the moved ports from its runtime state', async (t) => {
     clientObserver: { observe: () => ({ clients: [] }) }, clientInstaller: async () => assert.fail('nothing to connect'),
     versionChecker: { peek: () => null, check: async () => assert.fail('the doctor never waits on the network') },
     update: { status: () => null, kind: () => 'npm' },
-    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }), dataDirAcl: OWNER_ONLY_ACL, scanMcpServers: async () => [],
+    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }), transcriptFormat: async () => ({}), dataDirAcl: OWNER_ONLY_ACL, scanMcpServers: async () => [],
     previewDataFormats: async () => ({ digest: null, stores: [], blocked: [], undoable: [] }) });
   const answer = await service.doctor();
   assert.deepEqual(answer.unchecked, []);
@@ -333,6 +333,38 @@ test('a client whose host does not trust FULI\'s hooks is one warning; a trusted
   assert.deepEqual(healthy.unchecked, []);
 });
 
+test('a connected client whose transcript FULI reads under half of is one warning per client', async (t) => {
+  const checkup = doctor(t, {
+    transcriptFormat: async () => ({
+      'claude-code': { readable: true, recognized: 2, total: 9 },
+      // At half or more, or with too few lines to tell, the format is fine.
+      codex: { readable: true, recognized: 3, total: 6 },
+      cursor: { readable: true, recognized: 0, total: 4 },
+      // A client not connected to FULI is not captured, so its format is no finding.
+      gemini: { readable: true, recognized: 0, total: 20 }
+    }),
+    observeClients: () => ({ clients: [client('claude-code', 'connected'), client('codex', 'connected'),
+      client('cursor', 'connected'), client('gemini', 'not_connected')] })
+  });
+  const answer = await checkup.check();
+  assert.equal(answer.overall, 'needs_person');
+  assert.deepEqual(answer.items, [{ id: 'client_format_changed:claude-code', kind: 'client_format_changed', severity: 'warning',
+    fix: 'person', data: { clientId: 'claude-code', label: 'CLAUDE-CODE', recognized: 2, total: 9 } }]);
+  assert.deepEqual(answer.unchecked, []);
+});
+
+test('a connected client without a recent transcript stays unchecked, never guessed', async (t) => {
+  const checkup = doctor(t, {
+    transcriptFormat: async () => ({ codex: { readable: false, reason: 'no_transcript' } }),
+    observeClients: () => ({ clients: [client('codex', 'connected')] })
+  });
+  const answer = await checkup.check();
+  assert.equal(answer.overall, 'ok');
+  assert.deepEqual(answer.items, []);
+  assert.deepEqual(answer.unchecked, ['transcript_format:codex']);
+  assert.deepEqual(answer.uncheckedReasons, { 'transcript_format:codex': 'no_transcript' });
+});
+
 // A client installer and update journal in memory: what each repair did.
 function repairFixture(t, { clients, update = null, install = async ({ clientId }) => ({ id: clientId, status: 'connected' }) }) {
   const state = { clients, update, connects: [] };
@@ -439,7 +471,7 @@ test('the system service asks about and limits its own data directory', async (t
     clientObserver: { observe: () => ({ clients: [] }) }, clientInstaller: async () => assert.fail('nothing to connect'),
     versionChecker: { peek: () => null, check: async () => assert.fail('the doctor never waits on the network') },
     update: { status: () => null, kind: () => 'npm' },
-    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }),
+    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }), transcriptFormat: async () => ({}),
     scanMcpServers: async () => [],
     dataDirAcl: { sharedWith: async (directory) => { asked.push(['read', directory]); return shared; },
       restrictToOwner: async (directory) => { asked.push(['limit', directory]); shared = []; } },
@@ -521,7 +553,7 @@ test('the system service reads its own sources: this data directory\'s live serv
     },
     versionChecker: { peek: () => null, check: async () => assert.fail('the doctor never waits on the network') },
     update: { status: () => null, kind: () => 'npm' },
-    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }), dataDirAcl: OWNER_ONLY_ACL, scanMcpServers: async () => [],
+    codexHookTrust: async () => ({ readable: false, reason: 'codex_missing' }), transcriptFormat: async () => ({}), dataDirAcl: OWNER_ONLY_ACL, scanMcpServers: async () => [],
     previewDataFormats: async () => ({ digest: null, stores: [], blocked: [], undoable: [] }) });
 
   const answer = await system.doctor();
