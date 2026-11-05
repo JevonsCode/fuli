@@ -43,7 +43,8 @@ export function decisionContract({ output, decisions, evidence }) {
         return { ok: false, issues: ['the reply is not a single JSON object'] };
       }
       const checked = checkedValue(reply, value);
-      if (checked.ok && new Set(checked.value.evidenceIds).size !== checked.value.evidenceIds.length) {
+      if (!checked.ok) return { ...checked, offSchema: true };
+      if (new Set(checked.value.evidenceIds).size !== checked.value.evidenceIds.length) {
         return { ok: false, issues: ['evidenceIds: each ID may appear once'] };
       }
       return checked;
