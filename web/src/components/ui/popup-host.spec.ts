@@ -22,4 +22,24 @@ describe('usePopupTarget', () => {
     expect(wrapper.get('[data-target]').attributes('data-target')).toBe('DIALOG')
     wrapper.unmount()
   })
+
+  it('lets Esc close an open popup alone, and the dialog after that', async () => {
+    const wrapper = mount(UiDialog, { props: { open: true, title: 'Synthetic' }, attachTo: document.body })
+    await flushPromises()
+    const dialog = wrapper.get('dialog').element
+    const popup = document.createElement('div')
+    popup.setAttribute('data-reka-popper-content-wrapper', '')
+    dialog.append(popup)
+    const escape = () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      popup.remove()
+      dialog.dispatchEvent(new Event('cancel', { cancelable: true }))
+    }
+
+    escape()
+    expect(wrapper.emitted('close')).toBeUndefined()
+    escape()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
 })
