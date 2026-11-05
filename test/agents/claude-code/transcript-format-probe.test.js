@@ -53,12 +53,23 @@ test('a Claude Code transcript the parser reads is counted, with no text, path o
   assert.doesNotMatch(JSON.stringify(answer), /synthetic|0000-4000|projects/);
 });
 
-test('a changed Claude Code format reads as lines the parser no longer understands', async (t) => {
+test('a changed Claude Code turn reads as a line the parser no longer understands', async (t) => {
   const root = await claudeHome(t);
-  const changed = (text) => ({ kind: 'turn', session_id: SESSION, speaker: 'user', body: text });
-  await transcript(root, [user('synthetic old line'), ...Array.from({ length: 6 }, (_, index) => changed(`synthetic ${index}`)),
-    'not json at all']);
-  assert.deepEqual(await probe(root)(), { 'claude-code': { readable: true, recognized: 1, total: 8 } });
+  const changed = (text) => ({ type: 'user', sessionId: SESSION, message: { role: 'user', body: text } });
+  await transcript(root, [user('synthetic old line'), ...Array.from({ length: 6 }, (_, index) => changed(`synthetic ${index}`)), 'not json at all']);
+  assert.deepEqual(await probe(root)(), { 'claude-code': { readable: true, recognized: 1, total: 7 } });
+});
+
+test('a record type Claude Code added says nothing about the format', async (t) => {
+  const root = await claudeHome(t);
+  await transcript(root, [user('synthetic line'), ...Array.from({ length: 9 }, () => ({ type: 'brand-new-metadata' }))]);
+  assert.deepEqual(await probe(root)(), { 'claude-code': { readable: true, recognized: 1, total: 1 } });
+});
+
+test('a long transcript with no turn at all means the turns were renamed', async (t) => {
+  const root = await claudeHome(t);
+  await transcript(root, Array.from({ length: 25 }, (_, index) => ({ kind: 'turn', speaker: 'user', body: `synthetic ${index}` })));
+  assert.deepEqual(await probe(root)(), { 'claude-code': { readable: true, recognized: 0, total: 25 } });
 });
 
 test('without a transcript changed this week Claude Code answers no_transcript', async (t) => {

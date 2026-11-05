@@ -10,6 +10,8 @@ import { openWithoutFollowing } from '../system/open-without-following.js';
 // reads. Only counts leave this module: no text, path or session ID.
 const TAIL_BYTES = 256 * 1024;
 const MAX_SCAN_ENTRIES = 10_000;
+// This many lines with no turn at all: the turns themselves were renamed.
+const NO_TURNS_LINES = 20;
 
 // The newest .jsonl file under root, at most depth directories down, changed
 // at or after since (ms); null when there is none. Symbolic links are not followed.
@@ -50,13 +52,14 @@ export async function countTranscriptTail(path, recognize) {
     if (start > 0) lines.shift();
     let recognized = 0;
     let total = 0;
-    for (const line of lines.filter((candidate) => candidate.trim())) {
+    const records = lines.filter((candidate) => candidate.trim());
+    for (const line of records) {
       const verdict = recognizeLine(line, recognize);
       if (verdict === null) continue;
       total += 1;
       if (verdict) recognized += 1;
     }
-    return { readable: true, recognized, total };
+    return { readable: true, recognized, total: total || (records.length >= NO_TURNS_LINES ? records.length : 0) };
   } finally {
     await file.close();
   }

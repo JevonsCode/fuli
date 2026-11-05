@@ -52,12 +52,18 @@ test('a Codex rollout the parser reads is counted, with no text, path or session
   assert.doesNotMatch(JSON.stringify(answer), /synthetic|sessions|rollout/);
 });
 
-test('a changed Codex format reads as lines the parser no longer understands', async (t) => {
+test('a changed Codex message reads as a line the parser no longer understands', async (t) => {
   const root = await codexHome(t);
-  const changed = (text) => ({ type: 'response_entry', entry: { kind: 'chat', author: 'user', parts: [text] } });
+  const changed = (text) => item({ type: 'message', role: 'user', content: text });
   await rollout(root, [{ type: 'session_meta', payload: { id: SESSION } }, message('user', 'synthetic old'),
     ...Array.from({ length: 5 }, (_, index) => changed(`synthetic ${index}`))]);
   assert.deepEqual(await probe(root)(), { codex: { readable: true, recognized: 1, total: 6 } });
+});
+
+test('a long rollout with no message at all means the messages were renamed', async (t) => {
+  const root = await codexHome(t);
+  await rollout(root, Array.from({ length: 25 }, (_, index) => ({ type: 'response_entry', entry: { author: 'user', parts: [`synthetic ${index}`] } })));
+  assert.deepEqual(await probe(root)(), { codex: { readable: true, recognized: 0, total: 25 } });
 });
 
 test('without a rollout Codex answers no_transcript', async (t) => {
