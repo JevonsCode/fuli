@@ -16,13 +16,10 @@ import { formatDateTime } from '@/lib/date-time'
 export const SEMANTIC_ROLE = 'semantic'
 export const MODEL_ROLES = ['assistant', 'bole', 'jefa', 'tonborg', SEMANTIC_ROLE] as const
 export type ModelRoleId = typeof MODEL_ROLES[number]
-type AgentRoleId = Exclude<ModelRoleId, typeof SEMANTIC_ROLE>
 const EMBEDDING_PROTOCOL = 'openai_embeddings'
 export const MODEL_PROTOCOLS = ['openai_chat', 'anthropic_messages', 'typesafe_systemone'] as const
 export type ModelProtocol = typeof MODEL_PROTOCOLS[number] | typeof EMBEDDING_PROTOCOL
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high'] as const
-
-export const isAgentRole = (role: ModelRoleId): role is AgentRoleId => role !== SEMANTIC_ROLE
 
 // A role by the name it goes by now; Astro's stable id is assistant.
 export const roleName = (role: ModelRoleId) => (role === SEMANTIC_ROLE ? t('modelSettings.semantic.title')
@@ -143,15 +140,6 @@ export function trustStatusText(trust: RoleTrust, model: string | null): string 
   if (trust.status === 'automatic') return t('modelSettings.trust.automatic', { model: model ?? '' })
   const reason = TRUST_REASONS.find(known => known === trust.reason) ?? 'other'
   return t(`modelSettings.trust.reasons.${reason}`)
-}
-
-// A role row's one summary line: who answers, through which service, and how
-// its automatic operation runs. The model itself is shown beside it.
-export function roleSummary(view: ModelRoleView): string {
-  const answer = view.answeredBy ? t(`modelSettings.answer.${view.answeredBy}`) : t('modelSettings.none')
-  const service = view.connection ? `${t(`modelSettings.protocols.${view.connection.protocol}`)} · ${view.connection.endpointHost}` : ''
-  const trust = view.trust ? trustStatusText(view.trust, view.connection?.model ?? null) : ''
-  return [answer, service, trust].filter(Boolean).join(' · ')
 }
 
 // The one evaluation line, naming its set, day and model; it is not a general accuracy.

@@ -15,8 +15,16 @@ describe('DreamingCard', () => {
     vi.mocked(readDreaming).mockResolvedValue({ readiness: 'needs_model', runs: [] })
     const wrapper = mount(DreamingCard, { props: { projects: [project] } })
     await flushPromises()
-    expect(wrapper.find('[data-dreaming-needs-model]').exists()).toBe(true)
+    // Astro has no model: the model line says so once, and the action opens Astro's settings.
+    expect(wrapper.get('[data-model-use-model]').text()).toBe('Astro 还没接模型')
+    expect(wrapper.find('[data-dreaming-needs-model]').exists()).toBe(false)
     expect(wrapper.find('[data-dreaming-run]').exists()).toBe(false)
+    await wrapper.get('[data-dreaming-open]').trigger('click')
+    expect(wrapper.emitted('edit')).toHaveLength(1)
+    // Astro has a model but Dreaming is off: the note says where to turn it on.
+    await wrapper.setProps({ model: 'synthetic-chat', status: 'disabled' })
+    expect(wrapper.get('[data-dreaming-needs-model]').text()).toContain('打开 Dreaming')
+    expect(wrapper.get('[data-model-use-state]').text()).toBe('未打开')
   })
 
   it('runs the chosen project and shows what it found', async () => {
