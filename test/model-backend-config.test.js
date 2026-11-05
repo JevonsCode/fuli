@@ -57,7 +57,7 @@ test('invalid configurations are rejected with the field that needs repair', () 
   assert.match(invalid(raw => { raw.roles.astro = raw.roles.bole; }), /astro/);
   assert.match(invalid(raw => { raw.roles.bole.connection = 'missing'; }), /missing/);
   assert.match(invalid(raw => { raw.connections.local.protocol = 'grpc'; }), /protocol/);
-  assert.match(invalid(raw => { raw.connections.local.endpoint = 'http://models.example.com/v1'; }), /HTTPS or loopback/);
+  assert.match(invalid(raw => { raw.connections.local.endpoint = 'ftp://models.example.com/v1'; }), /HTTP or HTTPS/);
   assert.match(invalid(raw => { raw.connections.local.endpoint = 'https://user:pass@example.com/v1'; }), /credentials/);
   assert.match(invalid(raw => { raw.connections.shared.secretRef = 'has spaces'; }), /secretRef/);
   assert.match(invalid(raw => { raw.connections.shared.secretRef = null; }), /secretRef/);
@@ -81,4 +81,12 @@ test('a gateway header is kept, and one that carries a key or that the request s
   assert.match(invalid(next => { next.connections.local.headers = { 'x-api-key': 'synthetic' }; }), /secretRef/);
   assert.match(invalid(next => { next.connections.local.headers = { 'X-Session-Id': 'a\nb' }; }), /one short line/);
   assert.match(invalid(next => { next.connections.local.headers = { 'bad name': 'x' }; }), /invalid name/);
+});
+
+test('a model server on the local network may use plain HTTP', () => {
+  const raw = valid();
+  raw.connections.local.endpoint = 'http://192.0.2.10:6666/v1';
+  const result = read(raw);
+  assert.equal(result.state, 'ok');
+  assert.equal(result.config.connections.local.endpoint, 'http://192.0.2.10:6666/v1');
 });

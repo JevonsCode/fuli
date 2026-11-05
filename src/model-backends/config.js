@@ -147,9 +147,8 @@ function endpointUrl(value, label) {
   }
   if (url.username || url.password) throw new TypeError(`${label} must not contain credentials; use secretRef`);
   if (url.search || url.hash) throw new TypeError(`${label} must not contain a query or fragment`);
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname))) {
-    throw new TypeError(`${label} must use HTTPS or loopback HTTP`);
-  }
+  // Plain HTTP on a LAN is the person's call: a model server at home often has no certificate.
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new TypeError(`${label} must use HTTP or HTTPS`);
   return url.href.replace(/\/+$/, '');
 }
 
