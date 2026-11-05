@@ -1,10 +1,14 @@
 import { personalContextProjectIds, personalProjectSearchBatches, scopedSearchItems } from './personal-context.js';
+import { queryVector } from '../semantic/semantic-index.js';
 import { createFuliSourceMarker } from './source-marker.js';
 import { relatedProjectGuidance } from './related-project-suggestions.js';
 import { groupSubscriptions, loadSearchRelatedProjectSuggestions, rankedSearchItems,
   retrievalGuidanceForScope } from './federated-search-support.js';
 import { recordReadExtensionUsage } from './project-memory-usage.js';
 import { budgetKnowledgeSearch } from './knowledge-result-budget.js';
+
+// A search waits this long for its query's vector, then goes on by words.
+const QUERY_VECTOR_TIMEOUT_MS = 1500;
 
 export async function searchFederatedKnowledge(application, {
   personalSpaceId,
@@ -53,6 +57,8 @@ export async function searchFederatedKnowledge(application, {
         .map(({ project_id: projectId }) => projectId)
     )
     : personalContextProjectIds(personalProjectId, contextPersonalProjectIds);
+  // rec#88: the query's vector when a person connected a model for it; words alone otherwise.
+  const semantic = await queryVector(application, { personalProjectId, query, timeoutMs: QUERY_VECTOR_TIMEOUT_MS });
   const personalSearches = personalProjectSearchBatches(selectedPersonalProjectIds)
     .map((personalProjectIds, index) => {
       const activePersonalProjectId = (
@@ -70,7 +76,8 @@ export async function searchFederatedKnowledge(application, {
       active_personal_project_id: activePersonalProjectId,
       project_agent_id: activePersonalProjectId ? projectAgentId : null,
       inherit_project_knowledge: personalProjectScope === 'bounded',
-      include_personal_global: index === 0
+      include_personal_global: index === 0,
+      ...(semantic ? { semantic } : {})
       });
     });
   const grouped = groupSubscriptions(selectedSubscriptions);

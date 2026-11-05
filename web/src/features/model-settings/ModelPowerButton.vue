@@ -11,7 +11,7 @@ import type { ModelRolesPayload } from './model'
 // core; powered the bolt lights and breathes; while old knowledge is being
 // indexed a ring fills around it; a configuration that cannot be read shows a
 // dot. It only reads, every minute and when the page comes back into view.
-type SemanticStatus = { total: number, done: number }
+type SemanticStatus = { total: number, done: number, running: boolean }
 type Power = 'off' | 'on' | 'filling' | 'problem'
 
 const REFRESH_MS = 60_000
@@ -23,7 +23,7 @@ let request: AbortController | null = null
 const enabled = computed(() => roles.value?.roles.filter(role => role.state === 'enabled').length ?? 0)
 const filling = computed(() => {
   const status = semantic.value
-  return status && status.total > 0 && status.done < status.total ? status : null
+  return status && status.running && status.total > 0 && status.done < status.total ? status : null
 })
 const power = computed<Power>(() => {
   if (roles.value?.state === 'invalid') return 'problem'

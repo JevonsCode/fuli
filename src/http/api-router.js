@@ -34,6 +34,7 @@ import { TONBORG_OPERATIONS } from '../judgment/backend.js';
 import { ASTRO_OPERATION } from '../graphiti/assistant-project-candidate.js';
 import { DREAMING_OPERATION } from '../dreaming/run.js';
 import { handleDreamingRequest } from './dreaming-api-router.js';
+import { handleSemanticRequest } from './semantic-api-router.js';
 import { JEFA_OPERATION } from '../graphiti/jefa-board-match.js';
 import { FULI_VERSION } from '../package-metadata.js';
 
@@ -201,6 +202,7 @@ export async function handleApiRequest({
   if (await handleDiagnosticsApiRequest({ request, response, url, app, system })) return true;
   if (await handleOldDataRequest({ request, response, url, shelf: app.oldData, restore: dataFormatMigrations?.restore ?? null })) return true;
   if (await handleDreamingRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads })) return true;
+  if (await handleSemanticRequest({ request, response, url, app, indexer: app.semanticIndexer ?? null })) return true;
   if (await handleDebugTurnsRequest({ request, response, url, debugTurns: system?.debugTurns ?? null, modelCapture: system?.modelCapture ?? null })) return true;
   if (await handleDiagnosticEventsRequest({ request, response, url, diagnosticEvents: app.diagnosticEvents ?? null })) return true;
   if (await handlePersonProfileRequest({ request, response, url, app })) return true;
