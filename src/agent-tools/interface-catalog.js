@@ -70,6 +70,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('settings', 'POST /api/system/doctor/repair', 'Not undone; it rewrites client configuration to what setup writes.'),
   local('PUT /api/debug-turns/capture', 'The local person turns on the hidden model request capture, which routes their own client through this computer.'),
   local('POST /api/dreaming/run', 'The local person starts a Dreaming run, which sends a project\'s sessions to their own model.'),
+  local('POST /api/model-backends/roles/:role/check', 'The local person sends one fixed test request to a role\'s model.'),
   delegable('settings', 'DELETE /api/debug-turns/:id', 'Not undone; the next #fulidebug turn records again.'),
   delegable('settings', 'POST /api/debug-turns/delete', 'Not undone; the next #fulidebug turn records again.'),
   agent('POST /api/capture', 'capture_session_knowledge'),

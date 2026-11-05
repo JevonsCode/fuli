@@ -27,6 +27,10 @@ const REASONING_EFFORTS = Object.freeze(['none', 'minimal', 'low', 'medium', 'hi
 export const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const MAX_OPERATIONS = 32;
 const MAX_APPROVED_PROJECTS = 256;
+const MAX_HEADERS = 16;
+const MAX_HEADER_VALUE = 512;
+const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$/;
+const RESERVED_HEADERS = new Set(['authorization', 'x-api-key', 'content-type', 'accept', 'host', 'content-length', 'anthropic-version']);
 const MIN_TIMEOUT_MS = 1000;
 const BUDGET_LIMITS = Object.freeze({
   maxInputTokens: 2_000_000, maxOutputTokens: 200_000, timeoutMs: 600_000,
@@ -95,7 +99,7 @@ function normalizeConnections(value) {
 }
 
 function normalizeConnection(value, label) {
-  object(value, label, ['protocol', 'endpoint', 'model', 'secretRef', 'reasoningEffort', 'pricing']);
+  object(value, label, ['protocol', 'endpoint', 'model', 'secretRef', 'reasoningEffort', 'headers', 'pricing']);
   if (!MODEL_BACKEND_PROTOCOLS.includes(value.protocol)) {
     throw new TypeError(`${label}.protocol must be one of ${MODEL_BACKEND_PROTOCOLS.join(', ')}`);
   }
@@ -114,8 +118,23 @@ function normalizeConnection(value, label) {
     model: plainText(value.model, `${label}.model`, 200),
     secretRef,
     reasoningEffort,
+    ...(value.headers == null ? {} : { headers: normalizeHeaders(value.headers, `${label}.headers`) }),
     pricing: value.pricing == null ? null : normalizePricing(value.pricing, `${label}.pricing`)
   };
+}
+
+// What a gateway asks of every request, such as a session header. Keys stay in
+// the secret store, so a header that carries one, or that the request sets itself, is refused.
+function normalizeHeaders(value, label) {
+  assertJsonObject(value, label);
+  const entries = Object.entries(value);
+  if (entries.length > MAX_HEADERS) throw new TypeError(`${label} may hold at most ${MAX_HEADERS} headers`);
+  for (const [name, text] of entries) {
+    if (!HEADER_NAME.test(name)) throw new TypeError(`${label} has an invalid name: ${name}`);
+    if (RESERVED_HEADERS.has(name.toLowerCase())) throw new TypeError(`${label}.${name} is set by FULI; a key goes in secretRef`);
+    if (typeof text !== 'string' || text.length > MAX_HEADER_VALUE || /[\r\n]/.test(text)) throw new TypeError(`${label}.${name} must be one short line`);
+  }
+  return Object.fromEntries(entries);
 }
 
 function endpointUrl(value, label) {
