@@ -55,7 +55,7 @@ export async function codexStopLifecycleOutput(input, invoke) {
   });
   // Never force another model turn. A hook-delivered task with no checkpoint
   // is closed as honestly reported retain_nothing; others get the reminder.
-  return stopHookOutcome(check, invoke, { sourceApplication: 'codex', sourceSessionId: sessionId });
+  return stopHookOutcome(check, invoke, { sourceApplication: 'codex', sourceSessionId: sessionId }, { reply: input?.last_assistant_message });
 }
 
 export async function codexLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, onCurrentTask } = {}) {
