@@ -922,6 +922,23 @@ export class GraphitiProviderClient {
     );
   }
   search(input) { return this.#request('/v1/search', { method: 'POST', body: input }); }
+  // rec#88: the meaning index. Node embeds the pending texts with the model a
+  // person connected and hands the vectors back; ordinary access token.
+  semanticPending({ personalSpaceId, model, limit, after }) {
+    return this.#request('/v1/semantic/pending', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, model, limit, after }
+    });
+  }
+  writeSemanticVectors({ personalSpaceId, model, items }) {
+    return this.#request('/v1/semantic/vectors', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, model, items }
+    });
+  }
+  semanticStatus({ personalSpaceId, model }) {
+    return this.#request('/v1/semantic/status', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, model }
+    });
+  }
   collaborationPreferences(
     personalSpaceId,
     personalProjectId = null,
