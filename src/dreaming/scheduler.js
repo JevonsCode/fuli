@@ -19,7 +19,8 @@ export function startDreamingScheduler({ app, ownerReads, withLease = (_owner, r
         const id = project.project_id;
         if (stopped || project.scope_type === 'temporary' || dreamingReadiness(app, id) !== 'ready') continue;
         if (now().getTime() - (last.get(id) ?? 0) < DAY_MS) continue;
-        await withLease('dreaming', () => dreamProject(app, ownerReads, { personalProjectId: id, now: now() }));
+        const since = last.has(id) ? new Date(last.get(id)).toISOString() : null;
+        await withLease('dreaming', () => dreamProject(app, ownerReads, { personalProjectId: id, since, now: now() }));
       }
     } catch { /* The next tick tries again; a failed run is not the person's to handle. */ }
     finally { running = false; }

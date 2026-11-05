@@ -80,3 +80,20 @@ test('a model server on the local network may use plain HTTP', () => {
   assert.equal(result.state, 'ok');
   assert.equal(result.config.connections.local.endpoint, 'http://192.0.2.10:6666/v1');
 });
+
+test('a role has no limit unless the person set one', async () => {
+  const { budgetBlock, callLimits, windowStart } = await import('../src/model-backends/budget.js');
+  const raw = valid();
+  raw.roles.tonborg.budget = {};
+  const { budget } = read(raw).config.roles.tonborg;
+  assert.deepEqual(Object.values(budget), [null, null, null, null, null, null]);
+  const limits = callLimits(budget);
+  assert.equal(limits.maxInputTokens, Infinity);
+  assert.ok(limits.maxOutputTokens > 0 && limits.timeoutMs > 0, 'a request still names an output size and an end');
+  assert.equal(budgetBlock({ budget, pricing: null, window: { reportedTokens: 1e12, reservedTokens: 0 }, estimatedInputTokens: 1e9, maxOutputTokens: 1 }), null);
+  assert.ok(windowStart(budget, new Date('2026-11-05T00:00:00Z')));
+  raw.roles.tonborg.budget = { maxTokensPerWindow: 10 };
+  const { budget: set } = read(raw).config.roles.tonborg;
+  assert.equal(budgetBlock({ budget: set, pricing: null, window: { reportedTokens: 9, reservedTokens: 0 }, estimatedInputTokens: 5, maxOutputTokens: 1 }), 'window_tokens');
+});
+

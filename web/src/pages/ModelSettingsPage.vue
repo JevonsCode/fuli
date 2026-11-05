@@ -98,7 +98,7 @@ async function conflict(code: ConfigConflict) {
   await settingsChanged()
 }
 
-const count = (value: number) => formatCount(value, locale.value)
+const count = (value: number | null) => (value === null ? t('modelSettings.noLimit') : formatCount(value, locale.value))
 
 type Fact = { key: string; label: string; value: string; code?: boolean; title?: string }
 
@@ -107,7 +107,8 @@ function facts(view: ModelRoleView): Fact[] {
   if (!view.connection) return [{ key: 'answeredBy', label: t('modelSettings.answeredBy'), value: answer }, ...trustFact(view)]
   const budget = view.budget
   const egress = view.egress
-  const window = budget ? t('modelSettings.windowBudgetValue', { hours: count(budget.windowHours), tokens: count(budget.maxTokensPerWindow) })
+  const window = budget ? (budget.maxTokensPerWindow === null ? t('modelSettings.noLimit')
+    : t('modelSettings.windowBudgetValue', { hours: count(budget.windowHours), tokens: count(budget.maxTokensPerWindow) }))
     + (budget.maxCostPerWindow === null ? '' : ` · ${t('modelSettings.costCap', {
       amount: budget.maxCostPerWindow, currency: payload.value?.connections[view.connection.id]?.pricing?.currency ?? '' })}`) : t('modelSettings.none')
   return [
@@ -120,8 +121,8 @@ function facts(view: ModelRoleView): Fact[] {
     { key: 'egress', label: t('modelSettings.egress'), value: egress
       ? [t('modelSettings.egressProjects', { count: egress.approvedProjects.length }), egress.allowUnassigned ? t('modelSettings.egressUnassigned') : ''].filter(Boolean).join(' · ')
       : t('modelSettings.none') },
-    { key: 'callBudget', label: t('modelSettings.callBudget'), value: budget ? t('modelSettings.callBudgetValue', {
-      input: count(budget.maxInputTokens), output: count(budget.maxOutputTokens), seconds: count(budget.timeoutMs / 1000) }) : t('modelSettings.none') },
+    { key: 'callBudget', label: t('modelSettings.callBudget'), value: !budget ? t('modelSettings.none') : budget.maxInputTokens === null && budget.maxOutputTokens === null ? t('modelSettings.noLimit') : t('modelSettings.callBudgetValue', {
+      input: count(budget.maxInputTokens), output: count(budget.maxOutputTokens), seconds: count(budget.timeoutMs === null ? null : budget.timeoutMs / 1000) }) },
     { key: 'windowBudget', label: t('modelSettings.windowBudget'), value: window },
     { key: 'fallback', label: t('modelSettings.fallback'), value: view.fallbackToSession ? t('modelSettings.allowed') : t('modelSettings.notAllowed') },
     ...trustFact(view),

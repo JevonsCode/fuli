@@ -119,3 +119,34 @@ test('rec#89: runs are read through the refreshing read, and a closed log never 
   assert.equal(result.recorded, false);
   assert.equal(calls.captured.length, 1);
 });
+
+test('rec#89: every word is read, across several calls, and the merge can\'t invent a session', async () => {
+  const { app, ownerReads, calls } = fixture();
+  ownerReads.sessionRecords = async ({ session_id: id }) => ({ items: [],
+    turns: [{ personal_project_id: PROJECT, messages: Array.from({ length: 30 }, (_, n) => ({ role: 'user', text: `${id}-${n} ${'x'.repeat(5000)}` })) }] });
+  app.modelBackends.decide = async (request) => {
+    calls.requests.push(request);
+    const merging = request.evidence[0].id.startsWith('proposal_');
+    const proposals = merging ? [add(['proposal_1', 'proposal_2', 'proposal_3'])]
+      : calls.requests.length <= 3 ? [add([request.evidence[0].id])] : [];
+    return { envelope: { decision: 'propose', payload: { proposals } }, modelReceipt: { status: 'completed', usage: { totalTokens: 10 } } };
+  };
+  const result = await dreamProject(app, ownerReads, { personalProjectId: PROJECT });
+  const sent = calls.requests.flatMap(request => request.evidence).map(item => item.text).join('');
+  for (const id of ['s1', 's2', 's3']) for (const n of [0, 29]) assert.match(sent, new RegExp(`${id}-${n} `));
+  assert.ok(calls.requests.length > 2, 'more than one call');
+  assert.ok(calls.requests.every(request => request.evidence.every(item => item.text.length <= 20_000)));
+  assert.equal(result.usage.calls, calls.requests.length);
+  assert.equal(result.status, 'dreamed');
+});
+
+test('rec#89: a later run reads only what was said since the last one', async () => {
+  const { app, ownerReads, calls } = fixture();
+  ownerReads.sessionRecords = async () => ({ items: [], turns: [{ personal_project_id: PROJECT, messages: [
+    { role: 'user', text: 'Synthetic old words', created_at: '2026-11-01T00:00:00Z' }, { role: 'user', text: 'Synthetic new words', created_at: '2026-11-03T00:00:00Z' }] }] });
+  await dreamProject(app, ownerReads, { personalProjectId: PROJECT, since: '2026-11-02T00:00:00Z' });
+  const sent = JSON.stringify(calls.requests[0].evidence);
+  assert.match(sent, /Synthetic new words/);
+  assert.doesNotMatch(sent, /Synthetic old words/);
+});
+

@@ -47,10 +47,10 @@ describe('model settings drafts', () => {
     expect(JSON.stringify(body)).not.toMatch(/apiKey|"key"/)
   })
 
-  it('starts an unconfigured role on its own new connection with bounded defaults and its wired task types', () => {
+  it('starts an unconfigured role on its own new connection with no limits and its wired task types', () => {
     const draft = roleDraft(payload(), 'jefa')
     expect(draft).toMatchObject({ enabled: false, connectionId: 'jefa', endpoint: '', operations: '', approvedProjects: [],
-      maxInputTokens: '8000', timeoutSeconds: '60', fallbackToSession: true })
+      maxInputTokens: '', timeoutSeconds: '', maxTokensPerWindow: '', fallbackToSession: true })
     expect(roleDraft(payload(), 'tonborg').operations).toBe('knowledge_review')
     const edit = roleEdit({ ...draft, secretRef: '  ', maxCostPerWindow: '3' }, null)
     expect(edit.connection.secretRef).toBeNull()

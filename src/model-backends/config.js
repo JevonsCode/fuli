@@ -195,15 +195,17 @@ function normalizeEgress(value, label) {
 }
 
 function normalizeBudget(value, label, connection) {
-  object(value, label, [...Object.keys(BUDGET_LIMITS), 'maxCostPerWindow']);
+  object(value ?? {}, label, [...Object.keys(BUDGET_LIMITS), 'maxCostPerWindow']);
+  const given = value ?? {};
+  // No limit unless the person set one: an empty field is null.
   const budget = Object.fromEntries(Object.entries(BUDGET_LIMITS).map(([key, maximum]) =>
-    [key, positiveInteger(value[key], `${label}.${key}`, maximum)]));
-  if (budget.timeoutMs < MIN_TIMEOUT_MS) throw new TypeError(`${label}.timeoutMs must be at least ${MIN_TIMEOUT_MS}`);
-  if (value.maxCostPerWindow == null) return { ...budget, maxCostPerWindow: null };
+    [key, given[key] == null ? null : positiveInteger(given[key], `${label}.${key}`, maximum)]));
+  if (budget.timeoutMs !== null && budget.timeoutMs < MIN_TIMEOUT_MS) throw new TypeError(`${label}.timeoutMs must be at least ${MIN_TIMEOUT_MS}`);
+  if (given.maxCostPerWindow == null) return { ...budget, maxCostPerWindow: null };
   if (!connection.pricing) {
     throw new TypeError(`${label}.maxCostPerWindow needs unit prices on the connection; without them the cost is unknown (费用未知)`);
   }
-  const maxCostPerWindow = price(value.maxCostPerWindow, `${label}.maxCostPerWindow`);
+  const maxCostPerWindow = price(given.maxCostPerWindow, `${label}.maxCostPerWindow`);
   if (maxCostPerWindow === 0) throw new TypeError(`${label}.maxCostPerWindow must be greater than 0`);
   return { ...budget, maxCostPerWindow };
 }
