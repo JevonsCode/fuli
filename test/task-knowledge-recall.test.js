@@ -26,20 +26,18 @@ test('short follow-up push request still recalls the release runbook', () => {
   assert.ok(plan.queries.some((query) => /push.*commit/i.test(query)));
 });
 
-test('self-contained tasks without durable-context signals skip automatic recall', () => {
+test('rec#88: a task with no cue is searched by its own words, and a bare continue is not searched', () => {
   const plan = planTaskKnowledgeRecall('把数组按数字从小到大排序');
-
-  assert.deepEqual(plan, {
-    status: 'not_needed',
-    trigger_categories: [],
-    queries: []
-  });
+  assert.equal(plan.status, 'planned');
+  assert.deepEqual(plan.trigger_categories, ['topic']);
+  assert.ok(plan.queries.length >= 1);
+  for (const bare of ['继续', 'ok']) assert.equal(planTaskKnowledgeRecall(bare).status, 'not_needed', bare);
 });
 
 test('model token usage does not recall authentication methods', () => {
   for (const prompt of ['检查 Token 消耗成本，减少工具 Schema tokens',
     'Measure input token usage and cache token cost', '优化 Token P0']) {
-    assert.deepEqual(planTaskKnowledgeRecall(prompt).trigger_categories, [], prompt);
+    assert.deepEqual(planTaskKnowledgeRecall(prompt).trigger_categories.filter(category => category !== 'topic'), [], prompt);
   }
   assert.ok(planTaskKnowledgeRecall('How do I configure an access token for login?')
     .trigger_categories.includes('access_authentication'));
@@ -64,7 +62,7 @@ test('negated delivery instructions do not recall a release runbook', () => {
 test('comma-separated negated actions and relative where do not trigger recall', () => {
   for (const prompt of ['Do not commit, push, or create branches', 'Do not commit, push or deploy',
     'WSL Ubuntu, where `node` is installed']) {
-    assert.deepEqual(planTaskKnowledgeRecall(prompt).trigger_categories, [], prompt);
+    assert.deepEqual(planTaskKnowledgeRecall(prompt).trigger_categories.filter(category => category !== 'topic'), [], prompt);
   }
   for (const prompt of ['Where is the deploy runbook?', 'Can you find where config.json is loaded?',
     'Find where config.json is loaded', 'Show me where the API handler is defined.',
@@ -84,11 +82,7 @@ test('self-contained workflow optimization does not trigger generic runbook reca
   const prompt = '分析并优化 Analytics Dashboard Builder 的搭建、局部修改与询问速度和流程，测试 model-k3 可行性；禁止提交代码。';
   const plan = planTaskKnowledgeRecall(prompt);
 
-  assert.deepEqual(plan, {
-    status: 'not_needed',
-    trigger_categories: [],
-    queries: []
-  });
+  assert.deepEqual(plan.trigger_categories, ['topic'], 'no runbook intent; only its own words');
 });
 
 test('explicit workflow questions keep the named target in every recall query', () => {
@@ -124,9 +118,10 @@ test('a recall that ran no search carries no marker, and only a searched miss sa
     consoleUrl: 'http://127.0.0.1:2727',
     async searchKnowledge() { calls += 1; return { facts: [], entities: [] }; }
   };
+  // A search by the prompt's own words that found nothing reads as no search (rec#88).
   const notSearched = await recallTaskKnowledge(application, { personalProjectId: 'fuli' }, 'Rename the parser variable.');
   assert.equal(notSearched.status, 'not_needed');
-  assert.equal(calls, 0);
+  calls = 0;
   assert.equal('sourceMarker' in notSearched, false);
   assert.equal('noMatchSourceMarker' in notSearched, false);
   assert.match(notSearched.guidance.candidate_selection, /without markers ran no search: show no marker/);
