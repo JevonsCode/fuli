@@ -5,7 +5,7 @@
 enum RuntimeState { running, stopped, degraded, notConfigured, unknown, notFound }
 
 class RuntimeReport {
-  const RuntimeReport(this.state, {this.consolePort, this.error, this.notice, this.portBlocked = false});
+  const RuntimeReport(this.state, {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false});
 
   final RuntimeState state;
   // The console port the runtime reported, when it did.
@@ -15,6 +15,8 @@ class RuntimeReport {
   final String? notice;
   // A start failed on a console port Windows reserves; changing the port fixes it.
   final bool portBlocked;
+  // The console went away without anyone stopping it.
+  final bool crashed;
 
   bool get running => state == RuntimeState.running || state == RuntimeState.degraded;
 }

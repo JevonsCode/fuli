@@ -40,6 +40,9 @@ typedef ApiFactory = FuliApi Function(int port);
 /// The one state the window and the tray show: the latest check of FULI, the
 /// operation running now (with a label from what it is really doing) and the
 /// outcome of the last one.
+const maxRestarts = 3;
+const restartWindow = Duration(minutes: 10);
+
 class FuliController extends ChangeNotifier {
   FuliController({
     required this.apiFor,
@@ -73,6 +76,7 @@ class FuliController extends ChangeNotifier {
   // The person stopped FULI: being stopped is not news to them.
   bool _stoppedByPerson = false;
   bool _startOnOpen = false;
+  final _restarts = <DateTime>[];
   int _failures = 0;
   // The port `fuli status` reported when it differs from the settings file.
   int? _runtimePort;
@@ -129,10 +133,23 @@ class FuliController extends ChangeNotifier {
     _show(snapshot);
     if (snapshot.reached && snapshot.running) await _announceAttention(apiFor(snapshot.port));
     _schedule();
-    if (_startOnOpen) {
-      _startOnOpen = false;
-      if (snapshot.condition == FuliCondition.notRunning) unawaited(start());
+    _startIfWanted(snapshot);
+  }
+
+  // Opening the client means wanting FULI; so does a stop nobody asked for,
+  // though a FULI that keeps falling over is left to the person's button.
+  void _startIfWanted(FuliSnapshot snapshot) {
+    final opened = _startOnOpen;
+    _startOnOpen = false;
+    if (snapshot.condition != FuliCondition.notRunning || _pending != null) return;
+    if (!opened) {
+      if (!snapshot.crashed || _stoppedByPerson) return;
+      final now = _now();
+      _restarts.removeWhere((at) => now.difference(at) > restartWindow);
+      if (_restarts.length >= maxRestarts) return;
+      _restarts.add(now);
     }
+    unawaited(start());
   }
 
   // Each new request an Agent leaves for the person is one notification; a
@@ -218,6 +235,7 @@ class FuliController extends ChangeNotifier {
         running: report.running,
         problem: report.running ? strings.noAnswer : null,
         reached: false,
+        crashed: report.crashed,
       );
     }
   }

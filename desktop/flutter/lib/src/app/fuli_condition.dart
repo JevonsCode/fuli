@@ -24,6 +24,7 @@ class FuliSnapshot {
     this.doctorUnsupported = false,
     this.problem,
     this.reached = true,
+    this.crashed = false,
   });
 
   final FuliCondition condition;
@@ -31,6 +32,8 @@ class FuliSnapshot {
   // A FULI installation this client can start and stop was found.
   final bool installed;
   final bool running;
+  // FULI went away without anyone stopping it.
+  final bool crashed;
   final List<DoctorItem> items;
   final String? version;
   // The console answered, but this FULI version has no doctor.

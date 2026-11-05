@@ -191,6 +191,28 @@ void main() {
     expect(controller.snapshot!.condition, FuliCondition.notRunning, reason: 'only the check on opening starts it');
   });
 
+  test('a FULI that went away by itself is started again, but not without end', () async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, crashed: true));
+    final controller = controllerFor(api, runtime);
+    addTearDown(controller.dispose);
+    for (var check = 0; check < 8; check++) {
+      await controller.refresh();
+      await pumpEventQueue();
+    }
+    expect(runtime.calls.where((call) => call == 'start'), hasLength(maxRestarts));
+  });
+
+  test('a stop the person asked for is not undone', () async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped));
+    final controller = controllerFor(api, runtime);
+    addTearDown(controller.dispose);
+    await controller.refresh();
+    await pumpEventQueue();
+    expect(runtime.calls, isNot(contains('start')));
+  });
+
   test('opening the client leaves a running FULI alone, and a failed start stays on the page', () async {
     final runtime = FixedRuntime(const RuntimeReport(RuntimeState.running));
     final running = controllerFor(DemoFuliApi(), runtime);
