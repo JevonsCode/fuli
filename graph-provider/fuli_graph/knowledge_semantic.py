@@ -21,11 +21,18 @@ MIN_IN_SCOPE_ITEMS = 12
 FLOOR_STANDARD_DEVIATIONS = 3
 
 
-def semantic_text(item_kind: str, record: dict) -> str:
-    """The text embedded: an entity's name and summary, a relationship's fact."""
+def item_text(item_kind: str, record: dict) -> str:
+    """The item's own words: an entity's name and summary, a relationship's fact."""
     if item_kind == 'entity':
         return '\n'.join(part for part in (record.get('name'), record.get('summary')) if part)
     return record.get('fact') or ''
+
+
+def semantic_text(item_kind: str, record: dict) -> str:
+    """The text embedded: the item's own words, then the retrieval context and
+    terms stored beside it, when there are any (rec#92)."""
+    terms = ' · '.join(record.get('retrieval_terms') or [])
+    return '\n'.join(part for part in (item_text(item_kind, record), record.get('retrieval_context'), terms) if part)
 
 
 def semantic_hash(text: str) -> str:
