@@ -286,26 +286,32 @@ onBeforeUnmount(() => reading?.abort())
           </div>
         </Card>
 
-        <Card v-if="undoable.length" as="section" class="data-format-card" aria-labelledby="data-format-undo">
+        <Card v-if="undoable.length" as="section" class="data-format-card" aria-labelledby="data-format-completed">
           <CardHeader>
-            <CardTitle id="data-format-undo" as="h2">{{ t('dataFormat.undoTitle') }}</CardTitle>
-            <CardDescription>{{ t('dataFormat.undoLede') }}</CardDescription>
+            <CardTitle id="data-format-completed" as="h2">{{ t('dataFormat.completedTitle') }}</CardTitle>
           </CardHeader>
           <div class="data-format-body">
           <p class="data-format-external" data-external-writers>{{ t('dataFormat.externalWriters') }}</p>
           <ul class="data-format-undo">
-            <li v-for="entry in undoable" :key="`${entry.label}:${entry.migrationId}`">
-              <span><strong>{{ entry.label }}</strong> <code>{{ entry.migrationId }}</code>
-                {{ entry.toVersion }} → {{ entry.fromVersion }}</span>
+            <li v-for="entry in undoable" :key="`${entry.label}:${entry.migrationId}`" data-completed-migration>
+              <span class="data-format-store">
+                <Badge variant="secondary">{{ t('dataFormat.migrated') }}</Badge>
+                <strong>{{ entry.label }}</strong> <code>{{ entry.migrationId }}</code>
+                {{ entry.fromVersion }} → {{ entry.toVersion }}
+              </span>
               <span v-if="entry.reversible === false">{{ t('dataFormat.undoRestoreOnly') }}</span>
               <span v-else-if="undoTarget === entry" class="data-format-actions">
                 <Button variant="destructive" data-confirm-undo :loading="undoing === entry"
                   :loading-label="t('dataFormat.undoing', { id: entry.migrationId })" @click="confirmUndo(entry)">
                   {{ t('dataFormat.undoConfirm') }}
                 </Button>
-                <Button variant="ghost" :disabled="undoing === entry" @click="undoTarget = null">{{ t('dataFormat.undoCancel') }}</Button>
+                <Button variant="ghost" data-cancel-undo :disabled="undoing === entry" @click="undoTarget = null">{{ t('dataFormat.undoCancel') }}</Button>
               </span>
               <Button v-else variant="outline" data-undo @click="undoTarget = entry">{{ t('dataFormat.undo') }}</Button>
+              <div v-if="undoTarget === entry" class="data-format-undo-details" data-undo-details>
+                <p>{{ t('dataFormat.undoVersions', { from: entry.toVersion, to: entry.fromVersion }) }}</p>
+                <p>{{ t('dataFormat.undoLede') }}</p>
+              </div>
             </li>
           </ul>
           <p v-if="undoMessage" role="status">{{ undoMessage }}</p>
@@ -409,6 +415,15 @@ code {
 }
 
 .data-format-undo { padding-inline: 0; }
+
+.data-format-undo-details {
+  flex-basis: 100%;
+  color: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.data-format-undo-details p { margin: 0; }
 
 .data-format-blocked li,
 .data-format-undo li {
