@@ -25,7 +25,7 @@ export const openAiChatAdapter = Object.freeze({
   async call({ connection, secret, prompt, mode, maxOutputTokens, signal, fetchImpl }) {
     const state = { text: '', refusal: '', finish: null, actualModel: null, usage: reportedUsage({ definition: DEFINITION }) };
     const sent = await postJson({ fetchImpl, signal, url: `${connection.endpoint}/chat/completions`,
-      headers: secret ? { authorization: `Bearer ${secret}` } : {},
+      headers: { ...connection.headers, ...(secret ? { authorization: `Bearer ${secret}` } : {}) },
       body: {
         model: connection.model,
         messages: [{ role: 'system', content: prompt.system }, ...prompt.turns.map(turn => ({ role: turn.role, content: turn.text }))],

@@ -72,3 +72,13 @@ test('invalid configurations are rejected with the field that needs repair', () 
     raw.roles.jefa = { enabled: true, connection: 'local', allowedOperations: ['plan'], budget: { ...budget, maxCostPerWindow: 1 } };
   }), /unit prices/);
 });
+
+test('a gateway header is kept, and one that carries a key or that the request sets is refused', () => {
+  const raw = valid();
+  raw.connections.local.headers = { 'X-Session-Id': 'synthetic-session' };
+  assert.deepEqual(read(raw).config.connections.local.headers, { 'X-Session-Id': 'synthetic-session' });
+  assert.match(invalid(next => { next.connections.local.headers = { Authorization: 'Bearer synthetic' }; }), /secretRef/);
+  assert.match(invalid(next => { next.connections.local.headers = { 'x-api-key': 'synthetic' }; }), /secretRef/);
+  assert.match(invalid(next => { next.connections.local.headers = { 'X-Session-Id': 'a\nb' }; }), /one short line/);
+  assert.match(invalid(next => { next.connections.local.headers = { 'bad name': 'x' }; }), /invalid name/);
+});

@@ -38,14 +38,17 @@ test('a model server on a port fetch refuses still gets the request and answers'
 });
 
 test('that way round still refuses a redirect and honours an abort', async (t) => {
+  let reached;
+  const arrived = new Promise((resolve) => { reached = resolve; });
   const url = await server(t, (request, response) => {
-    if (request.url.endsWith('/slow')) return;
+    if (request.url.endsWith('/slow')) { reached(); return; }
     response.writeHead(307, { location: 'http://example.test/' });
     response.end();
   });
   await assert.rejects(fetchWithoutRedirect(modelFetch, url, { method: 'POST', body: '{}' }), RedirectRefusedError);
   const controller = new AbortController();
   const pending = modelFetch(`${url}/slow`, { method: 'POST', body: '{}', signal: controller.signal });
+  await arrived;
   controller.abort();
   await assert.rejects(pending, error => error.name === 'AbortError');
 });

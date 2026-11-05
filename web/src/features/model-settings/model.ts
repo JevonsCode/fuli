@@ -33,6 +33,7 @@ export interface ModelConnection {
   model: string
   secretRef: string | null
   reasoningEffort: string | null
+  headers?: Record<string, string>
   pricing: ModelPricing | null
 }
 
@@ -168,6 +169,7 @@ export interface RoleDraft {
   model: string
   secretRef: string
   reasoningEffort: string
+  headers: string
   priced: boolean
   currency: string
   inputPrice: NumberText
@@ -233,6 +235,7 @@ function connectionFields(connection: ModelConnection) {
     model: connection.model,
     secretRef: connection.secretRef ?? '',
     reasoningEffort: connection.reasoningEffort ?? '',
+    headers: Object.entries(connection.headers ?? {}).map(([name, value]) => `${name}: ${value}`).join('\n'),
     priced: Boolean(connection.pricing),
     currency: connection.pricing?.currency ?? 'USD',
     inputPrice: text(connection.pricing?.inputPerMillionTokens),
@@ -268,6 +271,7 @@ export function roleEdit(draft: RoleDraft, revision: string | null) {
       model: draft.model.trim(),
       secretRef: secretRef || null,
       reasoningEffort: draft.protocol === 'openai_chat' && draft.reasoningEffort ? draft.reasoningEffort : null,
+      ...headerFields(draft.headers),
       pricing: draft.priced ? {
         currency: draft.currency.trim().toUpperCase(),
         inputPerMillionTokens: number(draft.inputPrice),
@@ -302,6 +306,15 @@ export function configConflict(cause: unknown): ConfigConflict | null {
   if (!(cause instanceof ApiError) || cause.status !== 409) return null
   const code = apiErrorCode(cause)
   return code === 'model_config_changed' || code === 'model_config_invalid' ? code : null
+}
+
+// One `Name: value` per line, as the field shows them.
+function headerFields(text: string) {
+  const headers = Object.fromEntries(text.split('\n').flatMap((line) => {
+    const colon = line.indexOf(':')
+    return colon > 0 ? [[line.slice(0, colon).trim(), line.slice(colon + 1).trim()]] : []
+  }))
+  return Object.keys(headers).length ? { headers } : {}
 }
 
 export const saveModelRole = (role: ModelRoleId, draft: RoleDraft, revision: string | null) =>

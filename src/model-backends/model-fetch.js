@@ -21,7 +21,8 @@ export async function modelFetch(url, init = {}) {
 function sendOverNodeHttp(url, { method = 'GET', headers = {}, body, signal }) {
   const send = new URL(url).protocol === 'https:' ? httpsRequest : httpRequest;
   return new Promise((resolve, reject) => {
-    const outgoing = send(url, { method, headers, signal }, (incoming) => {
+    // No pooled socket: a server that closed one between calls would read as a network fault.
+    const outgoing = send(url, { method, headers, signal, agent: false }, (incoming) => {
       const received = new Headers();
       for (const [name, value] of Object.entries(incoming.headers)) {
         for (const item of [value].flat()) received.append(name, item);

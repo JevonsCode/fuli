@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { OptionSelect } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { t } from '@/i18n'
 import { UiDialog } from '@/ui'
 import type { PersonalProject } from '@/types'
@@ -186,6 +187,12 @@ async function save() {
                 <Input id="model-role-output-price" v-model="draft.outputPrice" type="number" min="0" step="any" :disabled="frozen" />
               </Field>
             </div>
+
+            <Field>
+              <FieldLabel for="model-role-headers">{{ t('modelSettings.headers') }}</FieldLabel>
+              <Textarea id="model-role-headers" v-model="draft.headers" rows="2" spellcheck="false" autocomplete="off" :disabled="frozen" data-model-headers />
+              <FieldDescription>{{ t('modelSettings.headersHint') }}</FieldDescription>
+            </Field>
 
             <Field>
               <FieldLabel for="model-role-operations">{{ t('modelSettings.operations') }}</FieldLabel>
