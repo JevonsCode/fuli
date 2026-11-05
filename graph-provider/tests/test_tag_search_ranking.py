@@ -222,6 +222,8 @@ class RelationshipFixture(SearchFixture):
     async def execute_query(self, query, **parameters):
         if 'MATCH (node:Entity {group_id:' in query:
             return [], None, None
+        if 'fuli_retrieval_terms IS NOT NULL' in query:
+            return [], None, None
         if 'edge:RELATES_TO' in query:
             return self.rows, None, None
         if 'RETURN n.uuid AS uuid' in query:
