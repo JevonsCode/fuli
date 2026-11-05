@@ -1,6 +1,12 @@
 export const modelSettingsMessages = {
   'zh-CN': {
     title: '模型与用量',
+    power: {
+      off: '还没有接模型。接一个，FULI 就能按意思找和整理。',
+      on: '模型加持中：{count} 项在用',
+      filling: '正在给老知识补算：{done}/{total}',
+      problem: '模型配置读不了，点开修一下',
+    },
     settingsEntry: '@:{\'roleNames.astro\'}、@:{\'roleNames.bole\'}、@:{\'roleNames.jefa\'} 和 @:{\'roleNames.tonborg\'} 各自的模型、预算、数据外发和用量。',
     open: '查看模型',
     back: '设置',
@@ -248,6 +254,12 @@ export const modelSettingsMessages = {
   },
   'en-US': {
     title: 'Models and usage',
+    power: {
+      off: 'No model connected yet. Connect one and FULI finds and sorts by meaning.',
+      on: 'Model on: powers {count} uses',
+      filling: 'Indexing old knowledge: {done}/{total}',
+      problem: 'The model settings cannot be read. Open to fix.',
+    },
     settingsEntry: 'The models, budgets, data egress and usage of @:{\'roleNames.astro\'}, @:{\'roleNames.bole\'}, @:{\'roleNames.jefa\'} and @:{\'roleNames.tonborg\'}.',
     open: 'View models',
     back: 'Settings',
