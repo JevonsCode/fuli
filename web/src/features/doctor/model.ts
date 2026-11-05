@@ -87,7 +87,7 @@ export interface OutdatedSession { sourceApplication: ConversationSourceApplicat
 const SESSION_SUFFIX = 6
 
 export function outdatedSessions(item: DoctorItem): OutdatedSession[] {
-  if (item.kind !== 'sessions_outdated' || !Array.isArray(item.data.sessions)) return []
+  if (!['sessions_outdated', 'client_restart'].includes(item.kind) || !Array.isArray(item.data.sessions)) return []
   return (item.data.sessions as Partial<OutdatedSession>[]).filter((session): session is OutdatedSession =>
     Boolean(text(session?.sourceApplication) && text(session?.sessionId)))
 }
@@ -130,6 +130,9 @@ function itemView(item: DoctorItem): Omit<DoctorItemView, 'since'> {
     case 'sessions_outdated':
       return { title, subject: sourceApplicationName(text(data.client) as ConversationSourceApplication) ?? t('doctor.otherClient'),
         hint: t('doctor.hints.sessions', { count: Number(data.count) || 0, version: text(data.runningVersion) }), to: null }
+    case 'client_restart':
+      return { title, subject: sourceApplicationName(text(data.client) as ConversationSourceApplication) ?? t('doctor.otherClient'),
+        hint: t('doctor.hints.restart', { count: Number(data.count) || 0 }), to: null }
     case 'update_left_work':
       return { title, subject: '', to: null, hint: data.status === 'failed'
         ? t('doctor.hints.updateFailed', { reason: text(data.error) })

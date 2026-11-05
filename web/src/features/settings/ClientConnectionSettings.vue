@@ -239,6 +239,7 @@ async function copy() {
                 <span class="client-row__label">{{ t(`settings.connection.clients.status.${client.status}`) }}</span>
               </div>
               <p>{{ explanation(client) }}</p>
+              <p v-if="client.restartSessions" role="status" data-client-restart>{{ t('settings.connection.clients.restartSessions', { count: client.restartSessions }) }}</p>
               <p v-if="connectionFeedback[client.id]" :role="connectionFeedback[client.id] === 'restart' ? 'status' : 'alert'">
                 {{ t(`settings.connection.clients.${connectionFeedback[client.id]}`) }}
               </p>

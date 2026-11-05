@@ -1,4 +1,6 @@
 import { createInstaller, defaultExtensionsDirectory } from './vendor/agent-installer/index.mjs';
+import { noteClientChanged } from '../mcp/process-registry.js';
+import { clientSourceApplication } from './client-source.js';
 import { prepareInstallerManifest } from './installer-manifest.js';
 
 const COMPONENT = 'agent-installer';
@@ -61,6 +63,7 @@ export function createClientInstallerPort({ executables, manifestPath, context, 
       if (error?.code === 'unavailable') return unavailable(error.message);
       throw error;
     }
+    if (action === 'apply') noteChanged(answer.clients.map(toFuli), context.runtimeConfigPath);
     const nextSteps = bound.gate.nextStep && action !== 'remove' ? [bound.gate.nextStep] : [];
     return { status: 'available', partial: answer.partial, extensionErrors: answer.extensionErrors,
       problems: answer.problems.map(({ client, message }) => ({ client: FULI_ID[client] ?? client, message })),
@@ -86,3 +89,13 @@ export function createClientInstallerPort({ executables, manifestPath, context, 
 }
 
 const unavailable = (reason) => ({ status: 'unavailable', reason });
+
+// Open sessions don't reread what this write changed; the MCP entry alone they
+// don't need to, since the relay follows the installed version.
+export function noteChanged(clients, runtimeConfigPath) {
+  for (const client of clients) {
+    const source = clientSourceApplication(client.id);
+    if (!source || !client.changes?.some(change => change.components?.some(component => component !== 'mcp'))) continue;
+    try { noteClientChanged(runtimeConfigPath, source); } catch { /* only the prompt is missing */ }
+  }
+}

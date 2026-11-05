@@ -483,3 +483,12 @@ test('the system service reads its own sources: this data directory\'s live serv
   assert.deepEqual(connects, ['codex']);
   assert.deepEqual(repaired.doctor.items.map(({ id }) => id), ['sessions_outdated:codex:0.0.1']);
 });
+
+test('open sessions waiting for a restart are named with their links, and nothing is said when none wait', async (t) => {
+  const waiting = doctor(t, { observeClients: () => ({ clients: [] }), liveProcesses: () => [], latestVersion: () => null, lastUpdate: () => null,
+    awaitingRestart: () => [{ sourceApplication: 'codex', count: 2, changedAt: '2026-10-28T01:00:00.000Z', sessions: ['thread-a'] }] });
+  assert.deepEqual((await waiting.check()).items, [{ id: 'client_restart:codex', kind: 'client_restart', severity: 'warning', fix: 'person',
+    data: { client: 'codex', count: 2, since: '2026-10-28T01:00:00.000Z', sessions: [{ sourceApplication: 'codex', sessionId: 'thread-a' }] } }]);
+  const none = doctor(t, { observeClients: () => ({ clients: [] }), liveProcesses: () => [], latestVersion: () => null, lastUpdate: () => null });
+  assert.deepEqual((await none.check()).items, []);
+});

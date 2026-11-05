@@ -12,7 +12,7 @@ afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(
 
 type Client = { id: string, label: string, detected: boolean, status: string, previouslyConnected: boolean,
   since: string | null, changes: { from: string, to: string, detectedAt: string }[], lastKnownStatus?: string | null,
-  manualOnly?: boolean, manualUrl?: string }
+  manualOnly?: boolean, manualUrl?: string, restartSessions?: number }
 type Custom = { id: string, label: string, detected: boolean, status: string, mcpPaths: string[], removable: boolean }
 function statusOf(clients: Partial<Client>[] = [], observedAt = '2026-10-13T08:00:00.000Z', customClients: Custom[] = []) {
   return { scope: 'configuration', observedAt, historySaved: true, available: true, customClients,
@@ -66,6 +66,16 @@ it('can retry a failed configuration request', async () => {
   await wrapper.get('[data-retry-connection]').trigger('click')
   await flushPromises()
   expect(wrapper.find('[data-copy-connection]').exists()).toBe(true)
+  wrapper.unmount()
+})
+
+it('tells on the client row that open sessions need a restart, and says nothing when none do', async () => {
+  routed(() => Response.json(statusOf([{ id: 'codex', restartSessions: 2 }, { id: 'cursor', label: 'Cursor', restartSessions: 0 }])))
+  const wrapper = mount(ClientConnectionSettings)
+  await flushPromises()
+  const rows = wrapper.findAll('[data-client-restart]')
+  expect(rows).toHaveLength(1)
+  expect(rows[0].text()).toContain('2 个打开的会话要重启')
   wrapper.unmount()
 })
 

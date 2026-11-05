@@ -49,7 +49,7 @@ clients are on this computer, and whether FULI is in each, is
 [agent-installer](https://github.com/JevonsCode/agent-installer)'s `status` for FULI's product manifest
 (see [Shared client components](#shared-client-components)); FULI no longer probes clients itself. The
 list shows each detected client and whether its Fuli integration configuration is still in place: **Connected** (`connected`, current Fuli entry in
-config), **Configuration changed** (`changed`, Fuli entry present but differs from this version),
+config), **Update needed** (`changed`, Fuli entry present but differs from this version),
 **Skills only** (`skills_left`, Fuli MCP entry gone and only skill files remain), **Removed**
 (`removed` after an earlier connection), **Not connected** (`not_connected`), **Not found**
 (`not_detected`), or **Cannot confirm** (`unknown`) when FULI's MCP entry cannot be read, parsed,
@@ -247,7 +247,8 @@ in `test/fixtures/installer-manifest-snapshot.json` (`test/agent-kits/installer-
 | Port busy or setup stops early | Resolve the reported port or runtime conflict; setup stops before modifying Agent configs |
 | Settings shows **Connected** (`connected`), but tools are missing or a call fails | Reload and trust the MCP server in the client; quit and reopen apps that read config only at launch; open a new task |
 | Codex Hooks not running or exit with untrusted notice | Review and trust the Hooks in Codex with `/hooks` (setup never bypasses host trust) |
-| Settings shows **Configuration changed** (`changed`) or **Connected** (`connected`) after an upgrade | Run `fuli setup --yes --connected-only` to refresh clients that still have a Fuli MCP entry in their config |
+| Settings shows **Update needed** (`changed`) or **Connected** (`connected`) after an upgrade | Run `fuli setup --yes --connected-only` to refresh clients that still have a Fuli MCP entry in their config |
+| A client row says open sessions need a restart | FULI changed that client's Skills or hooks after those sessions started. Restart them; the prompt clears by itself. **Connected** only means the files are current, and a Skill's receipt keeps the version that last changed it, so Skills of one client can show different versions while all are current |
 | Settings shows **Skills only** (`skills_left`), **Removed** (`removed`), **Not connected** (`not_connected`), or client is newly installed | Run a full `fuli setup`. `--connected-only` skips clients without a Fuli MCP entry and leaves existing Skills unchanged |
 | Unsure whether local UI / graph services are running | Run `fuli status` (and `fuli start` or `fuli restart` if stopped) |
 

@@ -144,3 +144,13 @@ test('without agent-installer nothing is claimed about any client', async (t) =>
     historySaved: true, clients: [], customClients: [] });
   assert.equal(existsSync(historyPath), false, 'no history is written from nothing');
 });
+
+test('a connected client says how many open sessions wait for a restart', async (t) => {
+  const { make, answer } = fixture(t);
+  answer([installerClient('claude-code', { state: 'connected', components: [state('mcp', 'current'), state('skills', 'current')] }),
+    installerClient('codex', { state: 'connected', components: [state('mcp', 'current')] })]);
+  const result = await make({ awaitingRestart: () => [{ sourceApplication: 'claude_code', count: 2 }] }).observe();
+  assert.equal(byId(result, 'claude-code').status, 'connected');
+  assert.equal(byId(result, 'claude-code').restartSessions, 2);
+  assert.equal(byId(result, 'codex').restartSessions, 0);
+});

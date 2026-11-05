@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { liveMcpProcesses, outdatedMcpNotice, outdatedMcpProcesses, registerMcpProcess, TASK_ENTRY_CONTRACT, withOutdatedMcpNotice }
+import { liveMcpProcesses, noteClientChanged, sessionsAwaitingRestart, outdatedMcpNotice, outdatedMcpProcesses, registerMcpProcess, TASK_ENTRY_CONTRACT, withOutdatedMcpNotice }
   from '../src/mcp/process-registry.js';
 
 const fixture = () => {
@@ -128,4 +128,36 @@ test('the notice is appended to the hook output without touching the rest', () =
   assert.equal(merged.systemMessage, 'restart');
   assert.equal(merged.hookSpecificOutput.additionalContext, 'ctx\nrestart');
   assert.equal(merged.hookSpecificOutput.hookEventName, 'UserPromptSubmit');
+});
+
+test('a session opened before its client changed waits for a restart; one opened after does not, and it is told once', () => {
+  const { dir, config } = fixture();
+  try {
+    const isAlive = () => true;
+    const old = registerMcpProcess(config, { sourceApplication: 'codex', version: '1.0.0', pid: 201, sessionStartedAt: '2026-11-01T00:00:00.000Z' });
+    old.recordSession('thread-old');
+    registerMcpProcess(config, { sourceApplication: 'codex', version: '1.0.0', pid: 202, sessionStartedAt: '2026-11-03T00:00:00.000Z' }).recordSession('thread-new');
+    registerMcpProcess(config, { sourceApplication: 'cursor', version: '1.0.0', pid: 203, sessionStartedAt: '2026-11-01T00:00:00.000Z' });
+    noteClientChanged(config, 'codex', new Date('2026-11-02T00:00:00.000Z'));
+
+    assert.deepEqual(sessionsAwaitingRestart(config, { isAlive }),
+      [{ sourceApplication: 'codex', count: 1, changedAt: '2026-11-02T00:00:00.000Z', sessions: ['thread-old'] }]);
+    const notice = input => outdatedMcpNotice(config, { sourceApplication: 'codex', version: '1.0.0', isAlive, ...input });
+    assert.match(notice({ sessionId: 'thread-old' }), /restart this session/);
+    assert.equal(notice({ sessionId: 'thread-old' }), null, 'once');
+    assert.equal(notice({ sessionId: 'thread-new' }), null);
+
+    old.unregister();
+    assert.deepEqual(sessionsAwaitingRestart(config, { isAlive }), [], 'closing the session clears it');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('the relay keeps the session start across a swap, so a moved server still counts as the old session', () => {
+  const { dir, config } = fixture();
+  try {
+    registerMcpProcess(config, { sourceApplication: 'codex', version: '1.0.0', pid: 301, sessionStartedAt: '2026-11-01T00:00:00.000Z' });
+    const [record] = liveMcpProcesses(config, { isAlive: () => true });
+    assert.equal(record.sessionStartedAt, '2026-11-01T00:00:00.000Z');
+    assert.notEqual(record.startedAt, record.sessionStartedAt);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
