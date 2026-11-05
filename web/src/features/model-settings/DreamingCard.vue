@@ -31,7 +31,7 @@ async function load() {
   const state = await readDreaming(projectId.value).catch(() => null)
   readiness.value = state?.readiness ?? 'unavailable'
   if (!state) return
-  runs.value = state.runs
+  runs.value = state.runs ?? []
 }
 
 async function run() {
