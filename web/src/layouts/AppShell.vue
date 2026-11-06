@@ -4,6 +4,7 @@ import { MotionConfig } from 'motion-v'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import GrowingBackdrop from '@/components/GrowingBackdrop.vue'
+import HeaderPeek from '@/components/HeaderPeek.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
 import { loadAgentLooks } from '@/features/agent-profile/agent-looks'
 import { loadPersonProfile } from '@/features/person-home/person-profile'
@@ -27,6 +28,7 @@ import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { useConsoleStore } from '@/stores/console'
 import { UiIcon, UiIconButton } from '@/ui'
 import FeedbackToast from './FeedbackToast.vue'
+import InboxPeek from './InboxPeek.vue'
 import { FULI_VERSION } from '@/version'
 import AppDock from './AppDock.vue'
 import WidgetSlot from '@/widgets/WidgetSlot.vue'
@@ -184,10 +186,16 @@ watchEffect(() => {
           <GlossaryToggle />
           <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" data-shell-refresh @click="refreshConsole" />
           <!-- 待决策 is a tray: empty when nothing waits, heaped with rice when something does. -->
-          <RouterLink to="/inbox" class="app-round" :class="{ 'is-full': waiting, 'is-active': inboxActive }" :aria-current="inboxActive ? 'page' : undefined" :aria-label="inboxLabel" :title="inboxLabel"
-            :data-attention="waiting ? 'full' : 'empty'" data-shell-inbox data-term="section.askedYou">
-            <UiIcon :name="waiting ? 'trayFull' : 'tray'" :size="18" />
-          </RouterLink>
+          <!-- Hover shows what waits (InboxPeek), not a native tooltip. -->
+          <HeaderPeek>
+            <template #trigger>
+              <RouterLink to="/inbox" class="app-round" :class="{ 'is-full': waiting, 'is-active': inboxActive }" :aria-current="inboxActive ? 'page' : undefined" :aria-label="inboxLabel"
+                :data-attention="waiting ? 'full' : 'empty'" data-shell-inbox data-term="section.askedYou">
+                <UiIcon :name="waiting ? 'trayFull' : 'tray'" :size="18" />
+              </RouterLink>
+            </template>
+            <InboxPeek />
+          </HeaderPeek>
           <ModelPowerButton />
           <RouterLink to="/settings" class="app-round" :class="{ 'is-active': settingsActive, 'is-shaking': settingsHold.shaking.value }" :aria-current="settingsActive ? 'page' : undefined"
             draggable="false" v-bind="settingsHold.handlers"
