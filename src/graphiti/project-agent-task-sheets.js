@@ -71,7 +71,7 @@ export function taskSheet(task, agentId = null) {
 
 // The plan in force is the newest event that carries one; an empty plan
 // withdraws it (record_project_agent_task_activity).
-function latestPlan(events = []) {
+export function latestPlan(events = []) {
   const planned = events.filter(event => Array.isArray(event.executionPlan?.steps))
     .sort((left, right) => String(right.createdAt ?? '').localeCompare(String(left.createdAt ?? '')))[0];
   return planned?.executionPlan.steps.length ? planned.executionPlan : null;

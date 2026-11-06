@@ -7,6 +7,7 @@ export const overviewMessages = {
         topic_promoted: '话题「{project}」聊得多，升级成了项目',
         dreaming_found: "@:{'roleNames.astro'} 读了「{project}」{sessions} 个会话，整理出 {proposed} 条等你确认",
         dreaming_stopped: "@:{'roleNames.astro'} 整理「{project}」没跑完",
+        retrospective_ready: "「{task}」做完了，@:{'roleNames.astro'} 写了复盘，{lessons} 条经验等你确认",
         tonborg_confirmed: "@:{'roleNames.tonborg'} 替你确认了 {count} 条知识",
         fla_joined: '{name} 加入了「{project}」',
         fla_left: '{name} 离开了「{project}」',
@@ -15,7 +16,7 @@ export const overviewMessages = {
         update_available: '有新版本 v{version}',
       },
       actions: {
-        topic_promoted: '改名或撤销', dreaming_found: '去确认', dreaming_stopped: '看看模型', tonborg_confirmed: '查看',
+        topic_promoted: '改名或撤销', dreaming_found: '去确认', dreaming_stopped: '看看模型', retrospective_ready: '去确认', tonborg_confirmed: '查看',
         fla_joined: '查看', fla_left: '查看', delegated_change: '查看', model_failing: '去看看', update_available: '去更新',
       },
     },
@@ -84,6 +85,7 @@ export const overviewMessages = {
         topic_promoted: 'The topic “{project}” came up often and became a project',
         dreaming_found: "@:{'roleNames.astro'} read {sessions} sessions of “{project}” and found {proposed} to confirm",
         dreaming_stopped: "@:{'roleNames.astro'} did not finish organising “{project}”",
+        retrospective_ready: "“{task}” is done: @:{'roleNames.astro'} wrote a retrospective with {lessons} lessons to confirm",
         tonborg_confirmed: "@:{'roleNames.tonborg'} confirmed {count} items for you",
         fla_joined: '{name} joined “{project}”',
         fla_left: '{name} left “{project}”',
@@ -92,7 +94,7 @@ export const overviewMessages = {
         update_available: 'Version v{version} is out',
       },
       actions: {
-        topic_promoted: 'Rename or undo', dreaming_found: 'Confirm', dreaming_stopped: 'Check models', tonborg_confirmed: 'View',
+        topic_promoted: 'Rename or undo', dreaming_found: 'Confirm', dreaming_stopped: 'Check models', retrospective_ready: 'Confirm', tonborg_confirmed: 'View',
         fla_joined: 'View', fla_left: 'View', delegated_change: 'View', model_failing: 'Check', update_available: 'Update',
       },
     },

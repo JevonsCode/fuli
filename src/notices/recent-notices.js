@@ -1,6 +1,7 @@
 import { dreamingRuns } from '../dreaming/scheduler.js';
 import { PROMOTED_PURPOSE } from '../graphiti/topic-proposals.js';
 import { delegatedReviewList } from '../judgment/review-delegation.js';
+import { retrospectiveRuns } from '../retrospectives/runs.js';
 
 // The workbench's 「最近你可能需要知道的事」 (Jevons 11-06): what changed lately
 // that the person may want to know, each with the one place to act on it. It is
@@ -19,6 +20,7 @@ export async function recentNotices({ app, delegation = null, system = null, now
   const lists = await Promise.all([
     promotedTopics(projects),
     read(() => dreamingResults(context), []),
+    read(() => retrospectiveResults(context), []),
     read(() => tonborgConfirmations(context), []),
     read(() => teamChanges(context), []),
     read(() => delegatedChanges(context), []),
@@ -54,6 +56,18 @@ async function dreamingResults({ app, projectName }) {
     }
     if (row.status === 'nothing_to_read') return [];
     return [notice('dreaming_stopped', row.id, row.at, { project, status: row.status }, '/models')];
+  });
+}
+
+// A finished task's retrospective whose lessons wait for the person. One whose
+// words a permanent delete took says nothing; the task's view still has it.
+async function retrospectiveResults({ app, projectName }) {
+  const rows = await retrospectiveRuns(app);
+  return rows.flatMap(row => {
+    const lessons = (row.lessons ?? []).filter(lesson => lesson.status === 'queued').length;
+    if (row.status !== 'written' || row.hard_deleted || !lessons) return [];
+    return [notice('retrospective_ready', row.subject?.taskId ?? row.id, row.at,
+      { task: row.taskTitle ?? '', project: projectName(row.personalProjectId), lessons }, '/inbox')];
   });
 }
 
