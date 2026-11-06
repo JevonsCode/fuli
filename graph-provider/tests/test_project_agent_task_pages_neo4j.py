@@ -43,6 +43,11 @@ async def walk(store, space_id, **filters):
 async def test_pages_filter_sort_and_walk_without_skips_or_repeats(monkeypatch):
     # Rows stand for their task ids here, so the page holds them as they are.
     monkeypatch.setattr(store_project_agent_task_pages, 'ProjectAgentTaskPage', SimpleNamespace)
+
+    # Project access is the store's own concern, tested with it; every project here is readable.
+    async def readable(*_args):
+        return None
+    monkeypatch.setattr(store_project_agent_task_pages, 'authorize_personal_project', readable)
     settings = fixture_settings()
     space_id = f'task-pages-{uuid4()}'
     async with AsyncGraphDatabase.driver(
