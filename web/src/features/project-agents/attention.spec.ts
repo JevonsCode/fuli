@@ -267,7 +267,8 @@ describe('Agent attention', () => {
     expect(postJson.mock.calls[0]![1]).toMatchObject({ choice: '我已完成', note: null })
     const outcome = document.querySelector('.attention-outcome[role=status]')!
     expect(outcome.textContent).toBe('已送达 Milo，它下次进入任务时会看到「选择方案」的回复。')
-    expect(document.body.textContent).toContain('暂时没有需要你处理的事情')
+    // 待决策 says nothing about an empty group (rec#96): the requests' card is gone.
+    expect(document.querySelector('[data-review-group=attention]')).toBeNull()
     // The answered request left the queue, so its quick look asks to close.
     expect(wrapper.emitted('close')).toHaveLength(1)
     store.lastReply = { requestId: 'request-a', title: '选择方案', status: 'woken', agentId: 'agent-a' }; await flushPromises()

@@ -39,21 +39,9 @@ export function useKnowledgeConfirm(options: {
       return
     }
     const personalSpaceId = options.personalSpaceId()
-    const basis = itemConfirmationBasis(item)
     const subject = t(item.profileAspect ? 'knowledge.dialogs.confirm.preferenceSubject' : 'knowledge.dialogs.confirm.knowledgeSubject')
     let saved = false
-    await run(() => patchJson(`/api/knowledge/${item.itemKind}/${encodeURIComponent(item.id)}`, {
-      personalSpaceId,
-      personalProjectId: options.personalProjectId(item),
-      action: 'confirm',
-      reason: t('knowledge.dialogs.confirm.confirmationReason'),
-      confirmationStatus: 'confirmed',
-      confirmationBasis: {
-        ...basis,
-        confirmedBy: { kind: 'user', label: t('knowledge.domain.actors.currentUser') },
-        confirmedAt: new Date().toISOString(),
-      },
-    }), () => { saved = true })
+    await run(() => confirmKnowledgeItem(personalSpaceId, options.personalProjectId(item), item), () => { saved = true })
     // Names what was confirmed and opens it, where it can be corrected or confirmed again.
     if (saved) store.notify(t('knowledge.dialogs.confirm.confirmed', { subject, title: excerpt(item.title || item.body) }),
       { to: itemEditPath(personalSpaceId, { item_kind: item.itemKind, item_id: item.id }) })
@@ -63,6 +51,25 @@ export function useKnowledgeConfirm(options: {
   }
 
   return { confirm, confirming: busy }
+}
+
+/**
+ * The person's own confirmation of one item, sent from their click in the
+ * local console: the item's stored or source basis, confirmed by them now.
+ */
+export function confirmKnowledgeItem(personalSpaceId: string, personalProjectId: string | null, item: KnowledgeItem) {
+  return patchJson(`/api/knowledge/${item.itemKind}/${encodeURIComponent(item.id)}`, {
+    personalSpaceId,
+    personalProjectId,
+    action: 'confirm',
+    reason: t('knowledge.dialogs.confirm.confirmationReason'),
+    confirmationStatus: 'confirmed',
+    confirmationBasis: {
+      ...itemConfirmationBasis(item),
+      confirmedBy: { kind: 'user', label: t('knowledge.domain.actors.currentUser') },
+      confirmedAt: new Date().toISOString(),
+    },
+  })
 }
 
 const EXCERPT = 24

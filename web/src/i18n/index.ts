@@ -20,6 +20,7 @@ import { routeMessages } from './messages/routes'
 import { settingsMessages } from './messages/settings'
 import { employeeMessages } from './messages/employees'
 import { attentionMessages } from './messages/attention'
+import { reviewListMessages } from './messages/review-list'
 import { shellMessages } from './messages/shell'
 import { occupationsMessages } from './messages/occupations'
 import { agentServicesMessages } from './messages/agent-services'
@@ -104,6 +105,7 @@ export const messages = {
     agentRedesign: agentRedesignMessages['zh-CN'],
     agentProfiles: agentProfileMessages['zh-CN'],
     attention: attentionMessages['zh-CN'],
+    reviewList: reviewListMessages['zh-CN'],
     shell: shellMessages['zh-CN'],
     occupations: occupationsMessages['zh-CN'],
     agentServices: agentServicesMessages['zh-CN'],
@@ -158,6 +160,7 @@ export const messages = {
     agentRedesign: agentRedesignMessages['en-US'],
     agentProfiles: agentProfileMessages['en-US'],
     attention: attentionMessages['en-US'],
+    reviewList: reviewListMessages['en-US'],
     shell: shellMessages['en-US'],
     occupations: occupationsMessages['en-US'],
     agentServices: agentServicesMessages['en-US'],

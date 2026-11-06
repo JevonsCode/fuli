@@ -15,6 +15,7 @@ import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
+import { useReviewList } from '@/features/review-list/review-store'
 import { offersUpdate, readVersionStatus } from '@/features/update/version-status'
 import { useRoundtableLive } from '@/features/roundtables/roundtable-live'
 import { t } from '@/i18n'
@@ -94,16 +95,24 @@ watch(activeSpaceId, id => void loadPersonProfile(id), { immediate: true })
 watch(activeSpaceId, id => void loadRoleNames(id), { immediate: true })
 
 // The waiting-requests tray in the top bar stays fresh while the page is visible.
+// Its count is everything 待决策 lists (rec#96): the Agents' requests, the
+// knowledge waiting for confirmation and Tonborg's questions.
 const attention = useAgentAttention()
-const inboxLabel = computed(() => attention.total ? t('shell.attentionWaiting', { count: attention.total }) : t('shell.sections.askedYou'))
-watch(activeSpaceId, id => attention.setSpace(id), { immediate: true })
+const review = useReviewList()
+const waiting = computed(() => attention.total + review.total)
+const inboxLabel = computed(() => waiting.value ? t('shell.attentionWaiting', { count: waiting.value }) : t('shell.sections.askedYou'))
+watch(activeSpaceId, (id) => { attention.setSpace(id); review.setSpace(id) }, { immediate: true })
 let attentionTimer: ReturnType<typeof setInterval> | undefined
+let reviewTimer: ReturnType<typeof setInterval> | undefined
 function refreshAttention() { if (document.visibilityState === 'visible' && !attention.loading && !attention.open) void attention.refresh() }
+// The knowledge read is larger, so it refreshes less often; the 待决策 page refreshes it on open.
+function refreshReview() { if (document.visibilityState === 'visible' && !review.loading) void review.refresh() }
 // The top bar's one refresh reads the console again and the waiting requests with it:
 // the whole queue while the inbox is open, so that page needs no refresh of its own.
 function refreshConsole() {
   void store.refresh()
   if (!attention.loading) void attention.refresh()
+  if (!review.loading) void review.refresh()
 }
 // A newer release is a dot at the version's top-right (Jevons 11-04: not on the mark);
 // the version opens 设置 › 版本, where it installs.
@@ -117,13 +126,16 @@ onMounted(() => {
     .catch(() => {})
   if (store.runtimeStatus === 'idle') void store.refresh()
   attentionTimer = setInterval(refreshAttention, 30000)
+  reviewTimer = setInterval(refreshReview, 300000)
   document.addEventListener('visibilitychange', refreshAttention)
 })
 onBeforeUnmount(() => {
   versionRequest.abort()
   clearInterval(attentionTimer)
+  clearInterval(reviewTimer)
   document.removeEventListener('visibilitychange', refreshAttention)
   attention.setSpace('')
+  review.setSpace('')
 })
 // Every navigation, a query change too, retitles the tab: the router's own
 // afterEach writes the route title, so a record page names itself again.
@@ -170,9 +182,9 @@ watchEffect(() => {
           <GlossaryToggle />
           <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" data-shell-refresh @click="refreshConsole" />
           <!-- 待决策 is a tray: empty when nothing waits, with papers in it when something does. -->
-          <RouterLink to="/inbox" class="app-round" :class="{ 'is-full': attention.total }" :aria-label="inboxLabel" :title="inboxLabel"
-            :data-attention="attention.total ? 'full' : 'empty'" data-shell-inbox data-term="section.askedYou">
-            <UiIcon :name="attention.total ? 'trayFull' : 'tray'" :size="18" />
+          <RouterLink to="/inbox" class="app-round" :class="{ 'is-full': waiting }" :aria-label="inboxLabel" :title="inboxLabel"
+            :data-attention="waiting ? 'full' : 'empty'" data-shell-inbox data-term="section.askedYou">
+            <UiIcon :name="waiting ? 'trayFull' : 'tray'" :size="18" />
           </RouterLink>
           <ModelPowerButton />
           <RouterLink to="/settings" class="app-round" :class="{ 'is-active': settingsActive, 'is-shaking': settingsHold.shaking.value }" :aria-current="settingsActive ? 'page' : undefined"

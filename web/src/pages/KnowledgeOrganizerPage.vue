@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -14,6 +15,7 @@ import { useKnowledgeConfirm } from '@/features/knowledge/useKnowledgeConfirm'
 import KnowledgeEditDialog from '@/features/knowledge/KnowledgeEditDialog.vue'
 import KnowledgePeek from '@/features/knowledge/KnowledgePeek.vue'
 import { useKnowledgeItemPeek } from '@/features/knowledge/useKnowledgeItemPeek'
+import { waitsForPerson } from '@/features/review-list/review-list'
 import {
   appendKnowledgeGraphPage,
   batchConfirmationGroups,
@@ -124,6 +126,7 @@ const linkPending = peek.pending
 // Set while a replacement opens: its filters change under the open quick look on purpose.
 let replacing = false
 const confirmationGroups = computed(() => batchConfirmationGroups(items.value))
+const waitingCount = computed(() => items.value.filter(waitsForPerson).length)
 const quadrantCounts = computed(() =>
   Object.fromEntries(
     [...quadrantChoices.value.map(({ value }) => value), 'unclassified']
@@ -300,6 +303,11 @@ async function openReplacement(item: KnowledgeItem) {
 <template>
   <section ref="pageElement" class="view knowledge-organizer">
     <div class="organizer-canvas">
+    <!-- The one place to confirm them is 待决策 (rec#96). -->
+    <p v-if="waitingCount" class="organizer-review-entry" data-organizer-review-entry>
+      <span>{{ t('knowledge.workspace.organizer.waitingForYou', { count: waitingCount }) }}</span>
+      <Button as-child size="sm"><RouterLink to="/inbox">{{ t('knowledge.workspace.organizer.goConfirm') }}</RouterLink></Button>
+    </p>
     <UiStatRow :items="reviewStats" :label="t('knowledge.workspace.organizer.reviewFilterAria')"
       @select="key => selectReviewState(key as 'all' | KnowledgeReviewState)" />
     <UiToolbar class="organizer-toolbar">
@@ -426,6 +434,7 @@ async function openReplacement(item: KnowledgeItem) {
 </template>
 
 <style scoped>
+.organizer-review-entry { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; min-height: 36px; color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); }
 /* The page is the one scroll container: the table grows with its rows and
    its header sticks to the top of the page (no scroll box inside the page). */
 .knowledge-organizer {

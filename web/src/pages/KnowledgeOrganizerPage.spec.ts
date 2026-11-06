@@ -1,4 +1,4 @@
-import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -49,6 +49,7 @@ describe('KnowledgeOrganizerPage', () => {
       global: {
         plugins: [pinia],
         stubs: {
+          RouterLink: RouterLinkStub,
           KnowledgeBatchConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeInspector: true,
@@ -126,6 +127,7 @@ describe('KnowledgeOrganizerPage', () => {
       global: {
         plugins: [pinia],
         stubs: {
+          RouterLink: RouterLinkStub,
           KnowledgeBatchConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeInspector: true,
@@ -213,6 +215,7 @@ describe('KnowledgeOrganizerPage', () => {
       global: {
         plugins: [pinia],
         stubs: {
+          RouterLink: RouterLinkStub,
           KnowledgeBatchConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeInspector: true,
@@ -242,7 +245,7 @@ describe('KnowledgeOrganizerPage', () => {
       mode: 'personal_only', activePersonalSpaceId: 'personal-space',
       personalSpaces: [{ id: 'personal-space', name: '我' }], personalProjects: [], projects: [], subscriptions: [],
     }
-    const wrapper = mount(KnowledgeOrganizerPage, { global: { plugins: [pinia], stubs: { KnowledgeBatchConfirmDialog: true } } })
+    const wrapper = mount(KnowledgeOrganizerPage, { global: { plugins: [pinia], stubs: { RouterLink: RouterLinkStub, KnowledgeBatchConfirmDialog: true } } })
     await flushPromises()
     const peek = () => new DOMWrapper(document.body).find('[data-knowledge-peek]')
 
@@ -277,6 +280,7 @@ describe('KnowledgeOrganizerPage', () => {
       global: {
         plugins: [pinia],
         stubs: {
+          RouterLink: RouterLinkStub,
           KnowledgeBatchConfirmDialog: true,
           KnowledgeEditDialog: true,
           KnowledgeInspector: true,

@@ -143,6 +143,7 @@ export const knowledgeWorkspaceMessages = {
       },
     },
     organizer: {
+      waitingForYou: '{count} 条知识等你确认', goConfirm: '去确认',
       quadrants: {
         known_unknown: {
           short: '明确问题',
@@ -437,6 +438,7 @@ export const knowledgeWorkspaceMessages = {
       },
     },
     organizer: {
+      waitingForYou: '{count} knowledge items wait for your confirmation', goConfirm: 'Confirm them',
       quadrants: {
         known_unknown: {
           short: 'Explicit question',
