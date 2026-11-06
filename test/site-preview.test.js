@@ -30,7 +30,7 @@ test('the preview page is built at /next/ in Chinese by default and in English, 
     assert.equal(document.querySelector('link[rel="canonical"]').href, `${base}next/${route}`);
     const alternates = [...document.querySelectorAll('link[hreflang]')].map(node => [node.hreflang, node.href]);
     assert.deepEqual(alternates, [['zh-Hans', base + 'next/zh/'], ['en', base + 'next/en/'], ['x-default', base + 'next/']]);
-    assert.deepEqual([...document.querySelectorAll('link[rel="stylesheet"]')].map(node => node.href), [prefix + 'style.css', prefix + 'scene.css']);
+    assert.deepEqual([...document.querySelectorAll('link[rel="stylesheet"]')].map(node => node.href), [prefix + 'style.css', prefix + 'scene.css', prefix + 'growth.css']);
     assert.equal(document.querySelector('script[type="module"]').src, prefix + 'next.js');
     assert.equal(document.querySelector('.terminal').dataset.copy, 'npm install --global fuli-context@beta && fuli setup');
     assert.equal(document.querySelector('[data-i18n="next.stable"]').href, messages[locale]['next.stableUrl']);
@@ -47,7 +47,7 @@ test('the preview page is built at /next/ in Chinese by default and in English, 
 // can replace the home page when the release goes stable.
 test('the preview page has every part of the home page and its scroll story', () => {
   const { document } = parseHTML(files.get('next/index.html'));
-  const ids = page => [...page.querySelectorAll('.chapter, [data-overlay], .chapter-nav a, .principles:not(.preview-changes) > div, #fragment-rig')].map(node => node.dataset.scene ?? node.dataset.overlay ?? node.getAttribute('href') ?? node.id ?? '');
+  const ids = page => [...page.querySelectorAll('.chapter, [data-overlay], .chapter-nav a, #fragment-rig')].map(node => node.dataset.scene ?? node.dataset.overlay ?? node.getAttribute('href') ?? node.id ?? '');
   assert.deepEqual(ids(document), ids(home));
   for (const link of document.querySelectorAll('.nav nav > a[href^="#"], .chapter-nav a')) assert.ok(document.querySelector(link.getAttribute('href')), link.getAttribute('href'));
   assert.equal(document.querySelector('.brand').getAttribute('href'), '#top');
@@ -127,4 +127,23 @@ test('the client downloads on both pages are the Windows setup and macOS image o
     assert.equal(document.querySelector('[data-download-windows]').href, release + `FULI-Setup-${version}.exe`, path);
     assert.equal(document.querySelector('[data-download-macos]').href, release + `fuli-macos-arm64-${version}.dmg`, path);
   }
+});
+
+test('every header shows the brand wordmark and the version the client shows: released on the stable pages, the preview on /next/', () => {
+  const pagesWithHeader = ['', 'en/', 'models/', 'tech/', 'guide/', 'report/', 'report/en/'];
+  const stable = pages('0.23.0');
+  for (const path of pagesWithHeader) {
+    const { document } = parseHTML(stable.get(path + 'index.html'));
+    // Both wordmarks come from brand/ copies; CSS shows the one for the page's language.
+    assert.deepEqual([...document.querySelectorAll('.brand .wordmark:not(.wordmark--dark)')].map(node => node.getAttribute('src').replace(/^(\.\.\/)+|^\.\//, '')),
+      ['assets/brand/fuli-wordmark-zh.svg', 'assets/brand/fuli-wordmark-en.svg'], path);
+    const versionLink = document.querySelector('.brand-row .brand-version');
+    assert.equal(versionLink.textContent, 'v0.23.0', path);
+    assert.equal(versionLink.href, 'https://github.com/JevonsCode/fuli/releases/tag/v0.23.0', path);
+  }
+  // During a prerelease cycle the stable pages name no version; the preview page names its own.
+  for (const path of pagesWithHeader) assert.equal(parseHTML(files.get(path + 'index.html')).document.querySelector('.brand-version'), null, path);
+  const preview = parseHTML(files.get('next/index.html')).document.querySelector('.brand-version');
+  assert.equal(preview.textContent, 'v' + version);
+  assert.equal(preview.href, `https://github.com/JevonsCode/fuli/releases/tag/v${version}`);
 });

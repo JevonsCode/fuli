@@ -1,5 +1,5 @@
 // Scroll-driven 3D story: twelve fragments scatter, assemble into one Agent,
-// then regroup to explain each idea. Positions are in the rig's own space.
+// then regroup to walk through the product. Positions are in the rig's own space.
 const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 const mix = (a, b, t) => a + (b - a) * t;
 const smooth = (t) => t * t * (3 - 2 * t);
@@ -11,18 +11,20 @@ const icons = [
   "M4 4h16v12H9l-5 4zM8 8h8M8 12h5",
   "m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3z",
 ];
-const sceneNames = ["scatter", "owner", "handoff", "roundtable", "taste", "team", "memory", "database"];
+// The order the page tells it: what FULI is, your FLA, tokens and recall, how an FLA grows,
+// what it grows (Workbench, Workflow, Agent App), the built-in roles, the round table, this computer.
+const sceneNames = ["scatter", "owner", "memory", "growth", "workbench", "team", "roundtable", "database"];
 // Night scenes; the database scene also shifts the object left to make room for its layer notes.
 const darkScenes = new Set(["roundtable", "database"]);
 // Rig orientation per scene: rotateX, rotateY, rotateZ, scale.
 const views = [
   [48, -10, -25, 0.9],
   [52, -8, -26, 1.12],
-  [30, -8, -6, 1.02],
-  [62, 0, 0, 0.92],
-  [56, -14, -30, 1],
-  [14, -4, 0, 1.06],
   [36, -12, -10, 1.04],
+  [58, -6, -30, 1],
+  [38, 0, -8, 1],
+  [14, -4, 0, 1.06],
+  [62, 0, 0, 0.92],
   [57, 0, -24, 0.85],
 ];
 
@@ -43,56 +45,49 @@ function createFragment([title, detail], index) {
 }
 
 // Each pose: x, y, z, rotateX, rotateY, rotateZ, scale, opacity.
-function pose(scene, i) {
-  if (scene === 0) {
-    return [...[
-      [-185, -112, 135, -12, 8, -9], [73, -125, 60, 8, -13, 7], [-212, 38, 18, 8, -12, -9],
-      [89, 28, 118, -7, 8, 6], [-96, -2, -68, -8, 11, -5], [205, -24, -42, 11, 8, 12],
-      [-220, 185, -42, 5, 17, 4], [105, 197, 8, -6, -7, -7], [-18, 151, 160, -12, 5, 5],
-      [215, 143, -105, 12, 6, 7], [-54, -181, -100, 7, -15, -8], [220, -173, 94, -5, 10, 10],
-    ][i], 0.88, 1];
-  }
-  if (scene === 1) {
-    // One Agent: the pieces lock into a single layered block.
+const poses = {
+  scatter: (i) => [...[
+    [-185, -112, 135, -12, 8, -9], [73, -125, 60, 8, -13, 7], [-212, 38, 18, 8, -12, -9],
+    [89, 28, 118, -7, 8, 6], [-96, -2, -68, -8, 11, -5], [205, -24, -42, 11, 8, 12],
+    [-220, 185, -42, 5, 17, 4], [105, 197, 8, -6, -7, -7], [-18, 151, 160, -12, 5, 5],
+    [215, 143, -105, 12, 6, 7], [-54, -181, -100, 7, -15, -8], [220, -173, 94, -5, 10, 10],
+  ][i], 0.88, 1],
+  // One Agent: the pieces lock into a single layered block.
+  owner: (i) => {
     const column = i % 2, row = Math.floor(i / 2) % 2, layer = Math.floor(i / 4);
     return [(column - 0.5) * 184, (row - 0.5) * 120, (layer - 1) * 25, 0, 0, 0, 1, 1];
-  }
-  if (scene === 2) {
-    // Two clients around one identity: the centre stack stays, the sides swap.
-    const group = Math.floor(i / 4), j = i % 4;
-    const center = [[-205, 0], [0, 0], [205, 0]][group];
-    if (group === 1) return [0, 0, 18 + j * 22, 0, 0, 0, 0.78, 1];
-    return [center[0] + ((j % 2) - 0.5) * 76, center[1] + (Math.floor(j / 2) - 0.5) * 62, j * 6, 0, 0, group ? 6 : -6, 0.42, 0.9];
-  }
-  if (scene === 3) {
-    // The round table: every piece is a seat facing the centre.
+  },
+  // Titles first, bodies when needed: four open pieces beside one folded index stack.
+  memory: (i) => {
+    if (i < 4) return [-150 + ((i % 2) - 0.5) * 106, -14 + (Math.floor(i / 2) - 0.5) * 76, (3 - i) * 10, 0, -8, -4, 0.56, 1];
+    return [158 + (i - 4) * 2, 18 + (i - 4) * 4, -(i - 4) * 20, 0, 0, 0, 0.64, mix(1, 0.35, (i - 4) / 7)];
+  },
+  // Growth is drawn, not built from pieces (growth.css): they gather behind it and fade.
+  growth: () => [0, 20, -60, 0, 0, 0, 0.3, 0],
+  // What it grows: three columns, Workbench cards, a Workflow chain, Agent Apps.
+  workbench: (i) => {
+    const column = Math.floor(i / 4), row = i % 4;
+    const chain = column === 1 ? (row % 2 ? 22 : -22) : 0;
+    return [(column - 1) * 210 + chain, (row - 1.5) * 76, column === 2 ? row * 14 : 0, 0, 0, column === 1 ? (row % 2 ? 3 : -3) : 0, 0.54, 1];
+  },
+  // Four built-in roles support the project lead; project members report to the lead.
+  team: (i) => {
+    if (i < 8) {
+      const role = Math.floor(i / 2) - 1.5, j = i % 2;
+      return [role * 168 + j * 7, -150 + j * 8, -j * 18, 0, 0, role * 2, 0.52, j ? 0.78 : 1];
+    }
+    if (i === 8) return [0, 18, 24, 0, 0, 0, 0.64, 1];
+    return [(i - 10) * 150, 196, 0, 0, 0, (i - 10) * 3, 0.48, 1];
+  },
+  // The round table: every piece is a seat facing the centre.
+  roundtable: (i) => {
     const angle = (i / 12) * Math.PI * 2 - Math.PI / 2;
     return [Math.cos(angle) * 238, Math.sin(angle) * 238, 0, 0, 0, (angle * 180) / Math.PI + 90, 0.56, 1];
-  }
-  if (scene === 4) {
-    // Two layers: personal-global underneath, the project layer floating above.
-    if (i < 8) return [((i % 4) - 1.5) * 128, (Math.floor(i / 4) - 0.5) * 86, -36, 0, 0, 0, 0.66, 0.92];
-    const j = i - 8;
-    return [70 + ((j % 2) - 0.5) * 128, -30 + (Math.floor(j / 2) - 0.5) * 86, 120, 0, 0, 0, 0.66, 1];
-  }
-  if (scene === 5) {
-    // Three peer specialists support the project lead; project members report to the lead.
-    if (i < 9) {
-      const column = Math.floor(i / 3) - 1, j = i % 3;
-      return [column * 192 + j * 7, -150 + j * 8, -j * 18, 0, 0, column * 3, 0.56, j ? 0.8 - j * 0.12 : 1];
-    }
-    if (i === 9) return [0, 18, 24, 0, 0, 0, 0.64, 1];
-    const side = i === 10 ? -1 : 1;
-    return [side * 116, 196, 0, 0, 0, side * 3, 0.48, 1];
-  }
-  if (scene === 7) {
-    // Architecture: four horizontal layers, clients on top, Neo4j at the bottom.
-    return [((i % 3) - 1) * 134, 0, (Math.floor(i / 3) - 1.5) * 112, 0, 0, 0, 0.72, 1];
-  }
-  // Memory: recent messages stay open, older ones fold into one digest stack.
-  if (i < 4) return [-150 + ((i % 2) - 0.5) * 106, -14 + (Math.floor(i / 2) - 0.5) * 76, (3 - i) * 10, 0, -8, -4, 0.56, 1];
-  return [158 + (i - 4) * 2, 18 + (i - 4) * 4, -(i - 4) * 20, 0, 0, 0, 0.64, mix(1, 0.35, (i - 4) / 7)];
-}
+  },
+  // This computer: four horizontal layers, clients on top, Neo4j at the bottom.
+  database: (i) => [((i % 3) - 1) * 134, 0, (Math.floor(i / 3) - 1.5) * 112, 0, 0, 0, 0.72, 1],
+};
+const pose = (scene, i) => poses[sceneNames[scene]](i);
 
 function blendColor(a, b, t) {
   return `rgb(${a.map((value, i) => Math.round(mix(value, b[i], t))).join(" ")})`;
@@ -106,7 +101,21 @@ export function createScrollScene({ labels }) {
   const nav = document.querySelector(".chapter-nav");
   const dots = [...nav.querySelectorAll("a")];
   const overlays = [...document.querySelectorAll("[data-overlay]")];
+  // The growth chapter's figure plays inside the stage: a copy of the chapter's own figure,
+  // which stays as the reduced-motion end state.
+  const growthIndex = sceneNames.indexOf("growth");
+  const growthOverlay = document.querySelector('[data-overlay="growth"]');
+  const growthFigure = document.querySelector("#growth .growth-anim");
+  if (growthOverlay && growthFigure && !growthOverlay.firstElementChild) {
+    const copy = growthFigure.cloneNode(true);
+    copy.classList.remove("static-figure");
+    copy.removeAttribute("aria-label");
+    copy.removeAttribute("data-i18n-aria-label");
+    growthOverlay.append(copy);
+  }
+  const growthArt = growthOverlay?.querySelector(".ga-stage");
   const header = document.querySelector(".nav");
+  const progress = document.querySelector(".story-progress");
   const pieces = labels('default').map(createFragment);
   pieces.forEach((piece) => rig.append(piece));
 
@@ -129,14 +138,19 @@ export function createScrollScene({ labels }) {
     const local = clamp((y - positions[index]) / length);
     const next = Math.min(index + 1, sceneNames.length - 1);
     const t = smooth(clamp((local - 0.43) / 0.48));
+    // The drawing plays while its chapter dwells, before the morph to the next scene.
+    const growth = index === growthIndex ? clamp(local / 0.42) : index > growthIndex ? 1 : 0;
+    growthArt?.style.setProperty("--growth-progress", growth.toFixed(3));
     const darkness = (scene) => (darkScenes.has(sceneNames[scene]) ? 1 : 0);
     const dark = mix(darkness(index), darkness(next), t);
     const database = mix(sceneNames[index] === "database" ? 1 : 0, sceneNames[next] === "database" ? 1 : 0, t);
     const narrow = window.innerWidth <= 700;
     const stacked = window.innerWidth <= 1050;
     const storyLeft = narrow ? 50 : index === 0 ? mix(72, 68, t) : 68;
+    // On a phone the hero's copy and downloads take more height, so its pieces start lower.
+    const storyTop = narrow ? (index === 0 ? mix(76, 69, t) : 69) : 52;
     stage.style.setProperty("--rig-left", `${mix(storyLeft, narrow ? 25 : stacked ? 32 : 58, database)}%`);
-    stage.style.setProperty("--rig-top", `${mix(narrow ? 69 : 52, narrow ? 70 : stacked ? 68 : 52, database)}%`);
+    stage.style.setProperty("--rig-top", `${mix(storyTop, narrow ? 70 : stacked ? 68 : 52, database)}%`);
     stage.style.setProperty("--scene-background", blendColor([246, 245, 241], [17, 23, 24], dark));
     stage.style.setProperty("--scene-label", blendColor([45, 73, 60], [210, 231, 219], dark));
     stage.style.setProperty("--atmosphere-opacity", String(1 - dark * 0.8));
@@ -187,7 +201,11 @@ export function createScrollScene({ labels }) {
         else dot.removeAttribute("aria-current");
       });
     }
-    nav.hidden = y > journey.offsetTop + journey.offsetHeight - window.innerHeight * 0.6;
+    const end = journey.offsetTop + journey.offsetHeight - window.innerHeight;
+    nav.hidden = y > end + window.innerHeight * 0.4;
+    // How far through the story: one thin line under the header, scaled on the compositor.
+    progress.hidden = nav.hidden;
+    progress.style.setProperty("--story-progress", String(clamp((y - journey.offsetTop) / Math.max(1, end - journey.offsetTop))));
   }
 
   // Labels and connector lines follow the projected cards, so they stay aligned at any size.
@@ -239,6 +257,7 @@ export function createScrollScene({ labels }) {
       enabled = value;
       document.body.classList.toggle("enhanced", value);
       nav.hidden = !value;
+      progress.hidden = !value;
       if (value) measure();
       else {
         header?.classList.remove("is-dark");

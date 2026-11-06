@@ -19,20 +19,21 @@
     <script>document.documentElement.classList.add('js')</script>
     <link rel="stylesheet" href="../style.css">
     <link rel="stylesheet" href="../scene.css">
+    <link rel="stylesheet" href="../growth.css">
     <script type="module" src="../next.js"></script>
   </head>
   <body>
     <a data-i18n="nav.skip" class="skip" href="#main">跳到正文</a>
     <header class="nav">
-      <a data-i18n-aria-label="next.home" class="brand" href="#top" aria-label="Fuli 复利 预览版首页"><img class="brand-mark" src="../assets/brand/fuli-mark-color.svg" alt="" width="28" height="28"><img class="brand-mark brand-mark--dark" src="../assets/brand/fuli-mark-dark.svg" alt="" width="28" height="28"><span>复利</span><b>FULI</b></a>
+      <div class="brand-row"><a data-i18n-aria-label="next.home" class="brand" href="#top" aria-label="Fuli 复利 预览版首页"><img class="brand-mark" src="../assets/brand/fuli-mark-color.svg" alt="" width="28" height="28"><img class="brand-mark brand-mark--dark" src="../assets/brand/fuli-mark-dark.svg" alt="" width="28" height="28"><span class="brand-word"><img class="wordmark wordmark-zh" src="../assets/brand/fuli-wordmark-zh.svg" alt="" height="16"><img class="wordmark wordmark-en" src="../assets/brand/fuli-wordmark-en.svg" alt="" height="16"><img class="wordmark wordmark-zh wordmark--dark" src="../assets/brand/fuli-wordmark-zh-dark.svg" alt="" height="16"><img class="wordmark wordmark-en wordmark--dark" src="../assets/brand/fuli-wordmark-en-dark.svg" alt="" height="16"></span></a><a class="brand-version" data-release-version href="https://github.com/JevonsCode/fuli/releases">v0.0.0</a></div>
       <nav data-i18n-aria-label="nav.label" aria-label="页面导航">
         <a data-i18n="nav.agents" href="#agents">Agent</a>
-        <a data-i18n="nav.roundtable" href="#roundtable">圆桌</a>
-        <a data-i18n="nav.preferences" href="#taste">偏好</a>
-        <a data-i18n="nav.database" href="#database">数据库</a>
-        <a data-i18n="nav.changes" href="#changes">全部变化</a>
+        <a data-i18n="nav.tokens" href="#memory">Token</a>
         <a data-i18n="nav.growth" href="#growth">成长</a>
-        <a data-i18n="nav.install" href="#start">安装</a>
+        <a href="#workbench">Workbench</a>
+        <a data-i18n="nav.roles" href="#team">角色</a>
+        <a data-i18n="nav.changes" href="#changes">全部变化</a>
+        <a data-i18n="nav.install" href="#start">下载</a>
         <a class="nav-github" href="https://github.com/JevonsCode/fuli">GitHub</a>
       <div data-i18n-aria-label="nav.language" aria-label="语言" role="group" class="language-switch">
           <a href="./zh/" lang="zh-CN" hreflang="zh-Hans" data-locale="zh-CN" aria-current="true">中文</a>
@@ -52,33 +53,20 @@
           <div class="diagram-overlay" data-overlay="owner">
             <div data-i18n-html="diagram.receipt" class="receipt-plate">FULI Agent：负责人 <b>Milo Reed</b> · 协作 <b>Jefa</b>、<b>Nova</b></div>
           </div>
-          <div class="diagram-overlay handoff-overlay" data-overlay="handoff">
-            <span class="overlay-label client-left"><span data-i18n="diagram.clientA">AI 客户端 A</span><small data-i18n="diagram.yesterday">昨天做到一半</small></span>
-            <span class="overlay-label agent-center"><small data-i18n="diagram.sameAgent">同一位 Agent</small><strong>Milo</strong></span>
-            <span class="overlay-label client-right"><span data-i18n="diagram.clientB">AI 客户端 B</span><small data-i18n="diagram.today">今天接着做</small></span>
-            <i class="handoff-arrow"></i>
+          <div class="diagram-overlay growth-overlay" data-overlay="growth"></div>
+          <div class="diagram-overlay team-overlay" data-overlay="team">
+            <svg class="links" aria-hidden="true"><path data-from="0" data-to="8" /><path data-from="2" data-to="8" /><path data-from="4" data-to="8" /><path data-from="6" data-to="8" /><path data-from="8" data-to="9" /><path data-from="8" data-to="11" /></svg>
+            <span data-i18n="diagram.astro" class="tag tag-fixed" data-anchor="0">Astro · 接待与复盘</span>
+            <span data-i18n="diagram.pm" class="tag tag-fixed" data-anchor="2">Jefa · 项目经理</span>
+            <span data-i18n="diagram.hr" class="tag tag-fixed" data-anchor="4">Bole · Agent 资源</span>
+            <span data-i18n="diagram.judge" class="tag tag-fixed" data-anchor="6">Tonborg · 判断</span>
+            <span data-i18n-html="diagram.lead" class="tag tag-lead" data-anchor="8" data-place="right">项目小组<small>负责人带队</small></span>
+            <span data-i18n="diagram.members" class="tag" data-anchor="10" data-place="below">成员按专长协作 · 各自保留记忆</span>
           </div>
           <div class="diagram-overlay roundtable-overlay" data-overlay="roundtable">
             <span class="overlay-label table-center"><small data-i18n="diagram.betweenAgents">Agent 之间</small><strong data-i18n="nav.roundtable">圆桌</strong></span>
             <p data-i18n-html="diagram.question" class="whisper whisper-a"><b>Milo → Nova</b>接口评审过了吗？</p>
             <p data-i18n-html="diagram.answer" class="whisper whisper-b"><b>Nova → Milo</b>过了，只有一处要改。</p>
-          </div>
-          <div class="diagram-overlay taste-overlay" data-overlay="taste">
-            <span data-i18n-html="diagram.global" class="overlay-label layer-global">个人全局<small>每个项目都生效</small></span>
-            <span data-i18n-html="diagram.project" class="overlay-label layer-project">项目<small>只管这个项目</small></span>
-          </div>
-          <div class="diagram-overlay memory-overlay" data-overlay="memory">
-            <span data-i18n-html="diagram.recent" class="overlay-label mem-recent">最近原文<small>原样保留</small></span>
-            <span data-i18n-html="diagram.digest" class="overlay-label mem-digest">摘要<small>攒够一定量才折叠</small></span>
-            <span data-i18n="diagram.memory" class="overlay-label mem-note">工作要点与原始记录，一起保留</span>
-          </div>
-          <div class="diagram-overlay team-overlay" data-overlay="team">
-            <svg class="links" aria-hidden="true"><path data-from="0" data-to="9" /><path data-from="3" data-to="9" /><path data-from="6" data-to="9" /><path data-from="9" data-to="10" /><path data-from="9" data-to="11" /></svg>
-            <span data-i18n="diagram.pm" class="tag tag-fixed" data-anchor="0">Jefa · 项目经理</span>
-            <span data-i18n="diagram.hr" class="tag tag-fixed" data-anchor="3">Bole · Agent 资源</span>
-            <span data-i18n="diagram.judge" class="tag tag-fixed" data-anchor="6">Tonborg · 判断</span>
-            <span data-i18n-html="diagram.lead" class="tag tag-lead" data-anchor="9" data-place="right">项目小组<small>负责人带队</small></span>
-            <span data-i18n="diagram.members" class="tag" data-anchor="10" data-place="below">成员按专长协作 · 各自保留记忆</span>
           </div>
           <div class="diagram-overlay database-overlay" data-overlay="database">
             <svg class="links" aria-hidden="true"><path data-from="11" data-to-note=".db-note-a" /><path data-from="8" data-to-note=".db-note-b" /><path data-from="5" data-to-note=".db-note-c" /><path data-from="2" data-to-note=".db-note-d" /></svg>
@@ -113,9 +101,9 @@
 
           <section class="chapter" id="agents" data-scene="owner" aria-labelledby="agents-title">
             <div class="chapter-copy">
-              <p data-i18n="agents.eyebrow" class="eyebrow">你的 Agent</p>
+              <p data-i18n="agents.eyebrow" class="eyebrow">你的 FLA</p>
               <h2 data-i18n-html="agents.title" id="agents-title">在哪个目录，<br><em>都能叫到你的 Agent。</em></h2>
-              <p data-i18n="agents.description">在任何目录里用 @名字 或 #FLA，让你的某位 Agent 接着做；Agent 卡片上可以「复制 #FLA」，还给出几句可以直接用的说法。每个新 Agent 都有不重复的人名和固定的角色头像，岗位写在职业和职责里。说一次「以后这类工作交给某个项目」，确认后，命中关键词的任务都交给它的组长。</p>
+              <p data-i18n="agents.description">用 @名字 叫来你的长期 Agent（FLA）。换一个 AI 客户端，还是同一位搭档：职责、工作记忆和对话都在 FULI。</p>
             </div>
             <figure data-i18n-aria-label="agents.example" class="window static-figure" aria-label="示例：接入 Fuli 的 AI 客户端中一次任务的结尾">
               <div class="window-bar"><i></i><i></i><i></i><span data-i18n="agents.client">AI 客户端 · 示例</span></div>
@@ -128,33 +116,94 @@
             </figure>
           </section>
 
-          <section class="chapter" id="handoff" data-scene="handoff" aria-labelledby="handoff-title">
+          <section class="chapter" id="memory" data-scene="memory" aria-labelledby="memory-title">
             <div class="chapter-copy">
-              <p data-i18n="handoff.eyebrow" class="eyebrow">跨工具接续</p>
-              <h2 data-i18n-html="handoff.title" id="handoff-title">换 AI 工具，<br><em>不用换搭档。</em></h2>
-              <p data-i18n="handoff.description">同一位 Agent 的职责、工作记忆和对话都留在 FULI。OpenCode 2.x 通过插件进入任务入口和收尾，有自己的来源（它的对话还不会自动采集）。WSL 里的客户端路径会正确转换，可以连到 Windows 上的 FULI；控制台里每个客户端旁边有「更新接入」和「重新接入」。</p>
+              <p data-i18n="memory.eyebrow" class="eyebrow">Token 与准确率</p>
+              <h2 data-i18n-html="memory.title" id="memory-title">先给标题，<br><em>需要时再读正文。</em></h2>
+              <p data-i18n="memory.description">入口在同一会话里只发变了的部分，任务要用的知识按需取回。真实客户端上测的：</p>
+              <dl class="chapter-stats">
+                <div><dt data-i18n="memory.statEntry">6 轮入口</dt><dd>48.2 → <b>24.3 KB</b></dd></div>
+                <div><dt data-i18n="memory.statFact">送到对的知识</dt><dd>0/6 → <b>4/6</b></dd></div>
+                <div><dt data-i18n="memory.statDone">需要项目知识的任务做成</dt><dd>3/18 → <b>18/18</b></dd></div>
+              </dl>
+              <a data-i18n="memory.report" data-i18n-href="memory.reportUrl" class="chapter-link" href="https://xn--8ovp9s.xn--m8txu.com/fuli/report/">看完整实测：开着 FULI 输入仍是 1.53 倍</a>
             </div>
-            <figure data-i18n-aria-label="handoff.example" class="handoff static-figure" aria-label="示例：在两个已接入的 MCP 客户端之间继续工作">
-              <div class="window small">
-                <div class="window-bar"><i></i><i></i><i></i><span data-i18n="diagram.clientA">AI 客户端 A</span></div>
-                <div class="window-body"><p data-i18n="handoff.previous" class="msg agent">登录重构完成一半：接口已拆好，前端还没接。</p></div>
-              </div>
-              <span class="arrow" aria-hidden="true">→</span>
-              <div class="window small">
-                <div class="window-bar"><i></i><i></i><i></i><span data-i18n="diagram.clientB">AI 客户端 B</span></div>
-                <div class="window-body">
-                  <p data-i18n="handoff.request" class="msg user">@Milo Reed 继续昨天的登录重构</p>
-                  <p data-i18n="handoff.reply" class="msg agent">接着做：接口已拆好，剩前端接入和回归测试。</p>
-                </div>
+            <figure data-i18n-aria-label="memory.example" class="memory static-figure" aria-label="对话记忆：较早的消息折叠成摘要，最近的保留原文">
+              <div class="memory-digest"><b data-i18n="memory.summary">摘要</b><span data-i18n="memory.taskOne">10/08 完成 · 接口拆分</span><span data-i18n="memory.taskTwo">10/09 完成 · 补测试</span><span data-i18n="memory.earlier">更早的请求 · 6 条</span></div>
+              <div class="memory-recent"><b data-i18n="memory.recent">最近原文</b><span></span><span></span><span></span><span></span></div>
+            </figure>
+          </section>
+
+          <section class="chapter" id="growth" data-scene="growth" aria-labelledby="growth-title">
+            <div class="chapter-copy">
+              <p data-i18n="growth.eyebrow" class="eyebrow">FLA 自成长</p>
+              <h2 data-i18n-html="growth.title" id="growth-title">FLA 会自己成长，<br><em>留不留由你定。</em></h2>
+              <p data-i18n="growth.description">边干边记经验，真用上的排在前面，你点保留或不要。几位 FLA 一起或分多步做完的任务，Astro 写一份复盘。</p>
+            </div>
+            <figure data-i18n-aria-label="growth.anim.label" class="growth-anim static-figure" aria-label="FLA 做任务时记下经验；真用上的经你确认留下，变成验收清单；重复的步骤做成 Agent App；它的 Workbench 和 Workflow 长了出来">
+              <div class="ga-stage">
+                <div class="ga-workflow"><b>Workflow</b><i class="ga-flow-line"></i><i class="ga-node"></i><i class="ga-node"></i><i class="ga-node"></i></div>
+                <span data-i18n="growth.anim.tasks" class="ga-label ga-label-tasks">做任务</span>
+                <i class="ga-task" style="--i: 0"></i><i class="ga-task" style="--i: 1"></i><i class="ga-task" style="--i: 2"></i>
+                <div class="ga-avatar"><span>M</span><small>FLA</small></div>
+                <span data-i18n="growth.anim.lessons" class="ga-label ga-label-lessons">经验</span>
+                <span data-i18n="growth.anim.kept" class="ga-label ga-label-kept">用上的，你 ✓ 才留下</span>
+                <div class="ga-checks"><b data-i18n="growth.anim.checks">验收清单</b><em data-i18n="growth.soon">即将</em><i class="ga-row" style="--i: 0"></i><i class="ga-row" style="--i: 1"></i><i class="ga-row" style="--i: 2"></i></div>
+                <i class="ga-lesson is-kept" style="--i: 0; --x1: 15em; --y1: 9.6em; --x2: 34.4em; --y2: 11.2em"><i class="ga-tick">✓</i></i>
+                <i class="ga-lesson" style="--i: 1; --x1: 17.6em; --y1: 14em"></i>
+                <i class="ga-lesson is-kept" style="--i: 2; --x1: 15em; --y1: 18.4em; --x2: 34.4em; --y2: 14.4em"><i class="ga-tick">✓</i></i>
+                <i class="ga-lesson is-kept" style="--i: 3; --x1: 17.6em; --y1: 22.8em; --x2: 34.4em; --y2: 17.6em"><i class="ga-tick">✓</i></i>
+                <i class="ga-lesson" style="--i: 4; --x1: 15em; --y1: 27.2em"></i>
+                <i class="ga-step" style="--i: 0"></i><i class="ga-step" style="--i: 1"></i><i class="ga-step" style="--i: 2"></i>
+                <div class="ga-app"><i></i><b>Agent App</b></div>
+                <div class="ga-workbench"><b>Workbench</b><span><i></i><i></i></span><span><i></i><i></i><i></i></span><span><i></i></span></div>
               </div>
             </figure>
+          </section>
+
+          <section class="chapter" id="workbench" data-scene="workbench" aria-labelledby="workbench-title">
+            <div class="chapter-copy">
+              <p data-i18n="workbench.eyebrow" class="eyebrow">和你配合</p>
+              <h2 data-i18n-html="workbench.title" id="workbench-title">长出自己的<br><em>Workbench 和 Workflow。</em></h2>
+              <p data-i18n="workbench.description">每个 FLA 有自己的 Workbench 看板。重复的做法变成 Workflow，你确认才生效；反复要做的事，它能做成 Agent App，你批准才运行。</p>
+            </div>
+            <div class="workbench-figure static-figure">
+              <ul class="growth-cards">
+                <li><b>Workbench</b><p data-i18n="growth.workbenchBody">每个 FLA 有自己的 Workbench，看板上是派给它的任务。几位 FLA 一起做的任务，团队卡片写明谁负责哪部分、做到哪一步。</p></li>
+                <li><b>Workflow</b><p data-i18n="growth.workflowBody">FLA 从反复出现的做法里提出 Workflow，你在它的页面确认后才生效。Workflow 不会自己运行，用到时才读。</p></li>
+                <li><b>Agent App</b><p data-i18n="growth.appBody">反复要做的事，FLA 可以做一个小工具或页面。你批准这个版本之后，它才会运行。</p></li>
+              </ul>
+              <div class="growth-next">
+                <span data-i18n="growth.soon" class="growth-badge">即将</span>
+                <ul>
+                  <li data-i18n="growth.soonPlugins">职业插件：按职业准备的起步套件，从开源技能包里挑选。</li>
+                  <li data-i18n="growth.soonV2">自成长 v2：按任务结果给经验标上验证状态，经验变成检查，重复的步骤变成工具。</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
+          <section class="chapter" id="team" data-scene="team" aria-labelledby="team-title">
+            <div class="chapter-copy">
+              <p data-i18n="team.eyebrow" class="eyebrow">内置角色</p>
+              <h2 data-i18n-html="team.title" id="team-title">每个空间，<br><em>自带四位专职。</em></h2>
+              <p data-i18n="team.description">Astro 接住还没归属的对话、写复盘；Jefa 管项目和看板；Bole 管 Agent 的招聘和绩效；Tonborg 按你的偏好判断，每次说明原因。</p>
+            </div>
+            <div class="team static-figure">
+              <div class="member"><span>✦</span><b>Astro</b><small data-i18n="team.astro">接待与复盘</small></div>
+              <div class="member"><span>🧭</span><b>Jefa</b><small data-i18n="team.pm">项目经理</small></div>
+              <div class="member"><span>🔎</span><b>Bole</b><small data-i18n="team.ar">Agent 资源</small></div>
+              <div class="member"><span>T</span><b>Tonborg</b><small data-i18n="team.judge">决策员</small></div>
+              <div class="member lead"><span>M</span><b>Milo Reed</b><small data-i18n="team.owner">项目负责人 · 示例</small></div>
+              <div class="member"><span>N</span><b>Nova Lane</b><small data-i18n="team.review">评审 · 示例</small></div>
+            </div>
           </section>
 
           <section class="chapter roundtable-chapter" id="roundtable" data-scene="roundtable" aria-labelledby="roundtable-title">
             <div class="chapter-copy">
               <p data-i18n="nav.roundtable" class="eyebrow">圆桌</p>
               <h2 data-i18n-html="roundtable.title" id="roundtable-title">圆桌，<br><em>像聊天一样。</em></h2>
-              <p data-i18n="roundtable.description">对话变成聊天界面：你的消息在右边，每位 Agent 的在左边。「留言板」等它下次工作时回复，「即时对话」马上唤醒它回答。每条消息写明每位收件人的实际状态，唤醒不了时说明原因。用 @FLG 一次请 2–4 位 Agent，在圆桌里各自只读作答。</p>
+              <p data-i18n="roundtable.description">Agent 之间直接对话：「即时对话」马上唤醒对方回答，「留言板」等它下次工作时回。每条消息写明对方的实际状态。</p>
             </div>
             <figure data-i18n-aria-label="roundtable.example" class="thread static-figure" aria-label="示例：两个 Agent 之间的对话记录">
               <div class="thread-msg">
@@ -169,60 +218,11 @@
             </figure>
           </section>
 
-          <section class="chapter" id="taste" data-scene="taste" aria-labelledby="taste-title">
-            <div class="chapter-copy">
-              <p data-i18n="nav.preferences" class="eyebrow">偏好</p>
-              <h2 data-i18n-html="taste.title" id="taste-title">Tonborg，<br><em>每次判断都说明原因。</em></h2>
-              <p data-i18n="taste.description">默认判断方式可以按项目单独设置。每张等你处理的卡片都写明为什么要你确认，判断记录可以搜索全部历史。命中已知注入格式时，批准会被拦下交给你；这只是很窄的补充检查，不算注入防护。内置 Agent 的模型密钥直接在页面里填，只写不显示，每次改动都有记录。</p>
-            </div>
-            <figure data-i18n-aria-label="taste.example" class="layers static-figure" aria-label="偏好分为个人全局和项目两层">
-              <div class="layer">
-                <h3 data-i18n="taste.personal">个人全局</h3>
-                <p data-i18n-html="taste.design"><span class="chip taste">品味</span>界面少用渐变，不要卡片套卡片</p>
-                <p data-i18n-html="taste.judgment"><span class="chip judgment">判断</span>方向性歧义先讨论再动手</p>
-                <p data-i18n-html="taste.style"><span class="chip personality">个性</span>习惯直接沟通，希望 Agent 主动推进</p>
-              </div>
-              <div class="layer project">
-                <h3 data-i18n="taste.project">项目：shop-web</h3>
-                <p data-i18n-html="taste.rule"><span class="chip judgment">判断</span>默认判断方式：这个项目先问我</p>
-                <p data-i18n-html="taste.copy"><span class="chip taste">品味</span>文案短句，不用感叹号</p>
-              </div>
-            </figure>
-          </section>
-
-          <section class="chapter" id="team" data-scene="team" aria-labelledby="team-title">
-            <div class="chapter-copy">
-              <p data-i18n="team.eyebrow" class="eyebrow">项目管理</p>
-              <h2 data-i18n-html="team.title" id="team-title">每个项目，<br><em>自带经理和看板。</em></h2>
-              <p data-i18n="team.description">每个空间自带三位专职：Jefa 管项目，Bole 负责 Agent 资源，Tonborg 负责判断。项目可以配自己的项目经理和看板：自定义列对应内置状态，或者链接外部看板；Jefa 的看板随 FULI 安装。阻塞的任务写明在等什么、从什么时候、在哪个会话，能直接打开那个会话，在原会话继续后自动解除。「服务」页列出 Agent 启动的服务，只有你能停止。</p>
-            </div>
-            <div class="team static-figure">
-              <div class="member"><span>🧭</span><b>Jefa</b><small data-i18n="team.pm">项目经理</small></div>
-              <div class="member"><span>🔎</span><b>Bole</b><small data-i18n="team.ar">Agent 资源</small></div>
-              <div class="member"><span>T</span><b>Tonborg</b><small data-i18n="team.judge">决策员</small></div>
-              <div class="member lead"><span>M</span><b>Milo Reed</b><small data-i18n="team.owner">项目负责人 · 示例</small></div>
-              <div class="member"><span>N</span><b>Nova Lane</b><small data-i18n="team.review">评审 · 示例</small></div>
-              <div class="member"><span>A</span><b>Ada</b><small data-i18n="team.testing">测试 · 示例</small></div>
-            </div>
-          </section>
-
-          <section class="chapter" id="memory" data-scene="memory" aria-labelledby="memory-title">
-            <div class="chapter-copy">
-              <p data-i18n="memory.eyebrow" class="eyebrow">按需取回</p>
-              <h2 data-i18n-html="memory.title" id="memory-title">先给标题，<br><em>需要时再读正文。</em></h2>
-              <p data-i18n="memory.description">修改类的请求附上命中知识的标题索引，Agent 需要时再读正文。开始一次会话只要一次 Provider 请求；Claude Code 的任务入口按预览上限裁剪可选内容，硬规则和收尾字段始终保留。对话记忆里，较早的消息折叠成要点，最近的保留原文。</p>
-            </div>
-            <figure data-i18n-aria-label="memory.example" class="memory static-figure" aria-label="对话记忆：较早的消息折叠成摘要，最近的保留原文">
-              <div class="memory-digest"><b data-i18n="memory.summary">摘要</b><span data-i18n="memory.taskOne">10/08 完成 · 接口拆分</span><span data-i18n="memory.taskTwo">10/09 完成 · 补测试</span><span data-i18n="memory.earlier">更早的请求 · 6 条</span></div>
-              <div class="memory-recent"><b data-i18n="memory.recent">最近原文</b><span></span><span></span><span></span><span></span></div>
-            </figure>
-          </section>
-
           <section class="chapter database-chapter" id="database" data-scene="database" aria-labelledby="database-title">
             <div class="chapter-copy">
-              <p data-i18n="nav.database" class="eyebrow">数据库</p>
-              <h2 data-i18n-html="database.title" id="database-title">升级之前，<br><em>先知道会变什么。</em></h2>
-              <p data-i18n="database.description">从 0.22.1 升级时，图谱有一步迁移要你在「设置 → 数据格式迁移」确认（内置的 Jefa、Tonborg 改为项目经理和决策员），确认之前图谱只读，任务照常进行；其余格式变化会自动完成。升级后的数据旧版本打不开，退回需要升级前的备份。数据全部在你本机的 Neo4j 图数据库里，每次变化都留有历史。</p>
+              <p data-i18n="database.eyebrow" class="eyebrow">装在你的电脑上</p>
+              <h2 data-i18n-html="database.title" id="database-title">下载客户端，<br><em>数据都在本机。</em></h2>
+              <p data-i18n="database.description">双击安装，Node.js 和图数据库都已内置。知识、关系和历史存在你电脑上的 Neo4j；格式要变时先问你。</p>
             </div>
             <figure data-i18n-aria-label="database.example" class="stack static-figure" aria-label="Fuli 的四层结构">
               <div><span data-i18n="architecture.clients">接入</span><b data-i18n="architecture.compatibleClients">兼容 MCP 的客户端</b></div>
@@ -234,56 +234,12 @@
         </div>
 
         <nav data-i18n-aria-label="chapters.label" class="chapter-nav" aria-label="故事章节" hidden>
-          <a data-i18n-aria-label="chapters.start" href="#top" aria-label="开始"><i></i></a><a data-i18n-aria-label="chapters.owner" href="#agents" aria-label="你的 Agent"><i></i></a><a data-i18n-aria-label="chapters.handoff" href="#handoff" aria-label="接续"><i></i></a><a data-i18n-aria-label="chapters.roundtable" href="#roundtable" aria-label="圆桌"><i></i></a><a data-i18n-aria-label="chapters.preferences" href="#taste" aria-label="偏好"><i></i></a><a data-i18n-aria-label="chapters.team" href="#team" aria-label="项目管理"><i></i></a><a data-i18n-aria-label="chapters.memory" href="#memory" aria-label="按需取回"><i></i></a><a data-i18n-aria-label="chapters.database" href="#database" aria-label="升级"><i></i></a>
+          <a data-i18n-aria-label="chapters.start" href="#top" aria-label="开始"><i></i></a><a data-i18n-aria-label="chapters.owner" href="#agents" aria-label="你的 FLA"><i></i></a><a data-i18n-aria-label="chapters.memory" href="#memory" aria-label="Token 与准确率"><i></i></a><a data-i18n-aria-label="chapters.growth" href="#growth" aria-label="自成长"><i></i></a><a data-i18n-aria-label="chapters.workbench" href="#workbench" aria-label="Workbench"><i></i></a><a data-i18n-aria-label="chapters.team" href="#team" aria-label="内置角色"><i></i></a><a data-i18n-aria-label="chapters.roundtable" href="#roundtable" aria-label="圆桌"><i></i></a><a data-i18n-aria-label="chapters.database" href="#database" aria-label="本机"><i></i></a>
         </nav>
+        <div class="story-progress" aria-hidden="true"><i></i></div>
       </div>
 
-      <section class="growth" id="growth" aria-labelledby="growth-title">
-        <div class="growth-intro">
-          <p data-i18n="growth.eyebrow" class="eyebrow">FLA 自成长</p>
-          <h2 data-i18n-html="growth.title" id="growth-title">FLA 会自己成长，<br><em>留不留由你定。</em></h2>
-          <p data-i18n="growth.lead">FLA 边干边记经验，也会长出和你配合的工作方式。学到了什么都摆在它的页面上，用出来的经验才留下。</p>
-        </div>
-        <div class="growth-group">
-          <h3 data-i18n="growth.how">怎么成长</h3>
-          <ol class="growth-cards growth-steps">
-            <li><b data-i18n="growth.record">边干边记</b><p data-i18n="growth.recordBody">任务结束时，FLA 记下可复用的经验，先放进待确认。</p></li>
-            <li><b data-i18n="growth.used">用上才算</b><p data-i18n="growth.usedBody">FLA 页的「学会了」列出它学到的经验，真用过的排前面，写明用过几次、在几个任务里。你点保留或不要。</p></li>
-            <li><b data-i18n="growth.review">回头看</b><p data-i18n="growth.reviewBody">几位 FLA 一起或分多步做完的任务，Astro 写一份复盘；Dreaming 读最近的会话，提出该记住的知识。都等你确认。</p></li>
-          </ol>
-        </div>
-        <div class="growth-group">
-          <h3 data-i18n="growth.grows">为了和你配合，长出这些</h3>
-          <ul class="growth-cards">
-            <li><b>Workbench</b><p data-i18n="growth.workbenchBody">每个 FLA 有自己的 Workbench，看板上是派给它的任务。几位 FLA 一起做的任务，团队卡片写明谁负责哪部分、做到哪一步。</p></li>
-            <li><b>Workflow</b><p data-i18n="growth.workflowBody">FLA 从反复出现的做法里提出 Workflow，你在它的页面确认后才生效。Workflow 不会自己运行，用到时才读。</p></li>
-            <li><b>Agent App</b><p data-i18n="growth.appBody">反复要做的事，FLA 可以做一个小工具或页面。你批准这个版本之后，它才会运行。</p></li>
-          </ul>
-        </div>
-        <div class="growth-next">
-          <span data-i18n="growth.soon" class="growth-badge">即将</span>
-          <ul>
-            <li data-i18n="growth.soonPlugins">职业插件：按职业准备的起步套件，从开源技能包里挑选。</li>
-            <li data-i18n="growth.soonV2">自成长 v2：按任务结果给经验标上验证状态，经验变成检查，重复的步骤变成工具。</li>
-          </ul>
-        </div>
-        <details class="growth-more">
-          <summary data-i18n="growth.bounds">边界</summary>
-          <ul>
-            <li data-i18n="growth.boundWorkflow">Workflow 每改一次都是新版本，旧版本保留；你可以拒绝或停用。</li>
-            <li data-i18n="growth.boundApp">批准后的 Agent App 用你的账户权限在本机运行，FULI 不隔离它。只批准你信任的应用。</li>
-            <li data-i18n="growth.boundReview">复盘只读任务自己的记录，不读会话原文；它和 Dreaming 用同一个开关。</li>
-          </ul>
-        </details>
-      </section>
-
-      <section data-i18n-aria-label="principles.label" class="principles" aria-label="原则">
-        <div><h3 data-i18n="principles.local">本地优先</h3><p data-i18n="principles.localBody">知识图谱和对话记录都在你的电脑上，个人偏好不会进入任何共享层。</p></div>
-        <div><h3 data-i18n="principles.control">人说了算</h3><p data-i18n="principles.controlBody">你设定自主程度，Tonborg 在授权内协助判断；超出权限或有冲突时，再交给你。</p></div>
-        <div><h3 data-i18n="principles.context">按需取回</h3><p data-i18n="principles.contextBody">不会把全部历史塞给模型，只取与当前任务有关、仍然有效的内容。</p><a data-i18n="principles.report" data-i18n-href="principles.reportUrl" class="principle-link" href="https://xn--8ovp9s.xn--m8txu.com/fuli/report/">实测：多花多少 token，记得准不准</a></div>
-      </section>
-
-      <section class="principles preview-changes" data-preview-baseline="0.23.0" aria-labelledby="changes-title" id="changes">
+      <section class="preview-changes" data-preview-baseline="0.23.0" aria-labelledby="changes-title" id="changes">
         <div class="changes-intro"><h2 data-i18n="next.changes" id="changes-title">相对稳定版 0.23.0 的全部变化</h2><p data-i18n="next.description">这里列出这个预览版相对当前稳定版 0.23.0 的全部新功能和变化，不只是比上一个 beta 多了什么。发布前会跑完整的自动测试，但还没有经过稳定版那样的长期使用；遇到问题，请在 GitHub 提 issue。</p></div>
         <div><h3 data-i18n="next.c.features">新功能</h3><ul>
           <li data-i18n="next.c.features.1">下一个预览版的新功能会列在这里。</li>

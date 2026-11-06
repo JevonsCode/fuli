@@ -14,7 +14,7 @@ The files keep the design delivery's names and folders, so an updated delivery c
 | --- | --- | --- |
 | `svg/mark/fuli-mark-color.svg`, `fuli-mark-dark.svg` | The master mark for light and dark surfaces | console and site images; the mark data |
 | `svg/mark/fuli-mark-micro-color.svg`, `fuli-mark-micro-dark.svg` | The micro cut: a larger ring and wider channels for 16-24 px | tray icons, the console's inline loading; the mark data |
-| `svg/wordmark/fuli-wordmark-{en,zh}{,-dark}.svg` | The FULI and 复利 wordmarks | console and desktop client top bars (the dark ones wait for a dark theme) |
+| `svg/wordmark/fuli-wordmark-{en,zh}{,-dark}.svg` | The FULI and 复利 wordmarks | console and desktop client top bars; the site header (the dark ones over its night scenes) |
 | `svg/lockup/fuli-lockup-bilingual-horizontal{,-dark}.svg` | Mark with 复利 FULI | the repository READMEs |
 | `png/mark/favicon.ico` | The favicon, micro cut at 16 and 24 px | console and site |
 | `png/mark/fuli-mark-color-512.png` | The mark as a raster | the site's link previews |
@@ -52,8 +52,8 @@ do not use them.
 - **Console** (`web/`, read only through `web/src/lib/brand.ts`):
   `web/assets/brand/fuli-mark-color.svg`, `fuli-wordmark-{en,zh}.svg`, `fuli-motion.css`, `fuli-mark.json`;
   `web/public/favicon.ico` (also served at `/favicon.ico`).
-- **Site** (`site/`): `site/assets/brand/fuli-mark-color.svg`, `fuli-mark-dark.svg`, `favicon.ico`,
-  `fuli-mark-color-512.png`.
+- **Site** (`site/`): `site/assets/brand/fuli-mark-color.svg`, `fuli-mark-dark.svg`,
+  `fuli-wordmark-{en,zh}{,-dark}.svg`, `favicon.ico`, `fuli-mark-color-512.png`.
 - **Mark data**, read from `svg/mark/`, for clients that draw the mark themselves:
   - `desktop/flutter/assets/brand/fuli-mark.json`, the desktop client's contract: `master` and `micro`,
     each with `orbitGold`, `orbitUpper`, `wave` and `bars[3]` as SVG path data on the 512 view box;

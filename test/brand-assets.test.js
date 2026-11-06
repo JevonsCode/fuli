@@ -63,6 +63,8 @@ function syntheticBrand(overrides = {}) {
     'brand/svg/mark/fuli-mark-micro-dark.svg': syntheticMark({ fill: '#FFFFFF', stops: dark, barTop: 90 }),
     'brand/svg/wordmark/fuli-wordmark-en.svg': syntheticWordmark({ width: 400 }),
     'brand/svg/wordmark/fuli-wordmark-zh.svg': syntheticWordmark(),
+    'brand/svg/wordmark/fuli-wordmark-en-dark.svg': syntheticWordmark({ width: 400, fill: '#FFFFFF' }),
+    'brand/svg/wordmark/fuli-wordmark-zh-dark.svg': syntheticWordmark({ fill: '#FFFFFF' }),
     'brand/motion/fuli-motion.css': '.fuli-brand-svg {}',
     'brand/png/mark/favicon.ico': encodeIco([{ size: 16, bytes: solidPng(16, [17, 17, 17, 255]) }]),
     'brand/png/mark/fuli-mark-color-512.png': solidPng(8, [17, 17, 17, 255]),

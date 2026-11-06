@@ -35,7 +35,7 @@ function markdown(document) {
   for (const chapter of document.querySelectorAll('.chapter:not(.hero-chapter)')) {
     const heading = chapter.querySelector('h2').cloneNode(true);
     for (const br of heading.querySelectorAll('br')) br.replaceWith(' ');
-    lines.push('## ' + plain(heading), '', plain(chapter.querySelector('.chapter-copy > p:last-child')), '');
+    lines.push('## ' + plain(heading), '', plain(chapter.querySelector('.chapter-copy > h2 + p')), '');
   }
   lines.push('## ' + plain(document.querySelector('#start-title')), '', plain(document.querySelector('.start > p:first-of-type')), '', '```sh');
   for (const code of document.querySelectorAll('.start li code')) lines.push(plain(code));
@@ -77,6 +77,16 @@ function renderPage(template, base, route, locale, catalog) {
 
 // The client downloads are the Windows setup and the macOS disk image of the version this
 // build packages (package.json), as .github/workflows/release.yml attaches them.
+// The version beside the brand, as the desktop client shows it, linked to its release notes.
+// The stable pages name only a released version: during a prerelease cycle they show none.
+function stampVersion(document, version, { preview = false } = {}) {
+  for (const link of document.querySelectorAll('[data-release-version]')) {
+    if (!preview && version.includes('-')) { link.remove(); continue; }
+    link.textContent = 'v' + version;
+    link.href = `https://github.com/JevonsCode/fuli/releases/tag/v${version}`;
+  }
+}
+
 function linkDownloads(document, version) {
   const release = `https://github.com/JevonsCode/fuli/releases/download/v${version}/`;
   for (const link of document.querySelectorAll('[data-download-windows]')) link.href = release + `FULI-Setup-${version}.exe`;
@@ -90,6 +100,7 @@ function homePages(template, version, files) {
     add(document, 'link', { rel: 'describedby', type: 'text/plain', href: SITE_URL + 'llms.txt' });
     add(document, 'link', { rel: 'sitemap', type: 'application/xml', href: SITE_URL + 'sitemap.xml' });
     linkDownloads(document, version);
+    stampVersion(document, version);
     add(document, 'script', { id: 'site-schema', type: 'application/ld+json' }, JSON.stringify(structuredData(locale, pageUrl)).replace(/</g, '\\u003c'));
     files.set(route + 'index.html', document.toString());
     files.set(route + 'index.md', markdown(document));
@@ -104,15 +115,17 @@ function previewPages(template, version, files) {
     for (const element of document.querySelectorAll('[data-preview-version]')) element.textContent = version;
     for (const link of document.querySelectorAll('[data-preview-release]')) link.href = `https://github.com/JevonsCode/fuli/releases/tag/v${version}`;
     linkDownloads(document, version);
+    stampVersion(document, version, { preview: true });
     files.set(PREVIEW_BASE + route + 'index.html', document.toString());
   }
 }
 
 // A guide page (the model guide, the technology page, the quick start, the report) in each language, at its own route.
-function guidePages(template, base, catalog, files) {
+function guidePages(template, base, catalog, files, version) {
   for (const [route, locale] of languageRoutes) {
     const { document } = renderPage(template, base, route, locale, catalog);
     add(document, 'link', { rel: 'sitemap', type: 'application/xml', href: SITE_URL + 'sitemap.xml' });
+    stampVersion(document, version);
     files.set(base + route + 'index.html', document.toString());
   }
 }
@@ -158,10 +171,10 @@ export function createSitePages({ home, preview, models, tech, guide, report, ve
   homePages(home, version, files);
   if (hasPreview) previewPages(preview, version, files);
   else noPreviewPages(version, files);
-  guidePages(models, MODELS_BASE, modelsCatalog, files);
-  guidePages(tech, TECH_BASE, techCatalog, files);
-  guidePages(guide, GUIDE_BASE, guideCatalog, files);
-  guidePages(report, REPORT_BASE, reportCatalog, files);
+  guidePages(models, MODELS_BASE, modelsCatalog, files, version);
+  guidePages(tech, TECH_BASE, techCatalog, files, version);
+  guidePages(guide, GUIDE_BASE, guideCatalog, files, version);
+  guidePages(report, REPORT_BASE, reportCatalog, files, version);
 
   const urls = (hasPreview ? ['', PREVIEW_BASE, GUIDE_BASE, MODELS_BASE, TECH_BASE, REPORT_BASE] : ['', GUIDE_BASE, MODELS_BASE, TECH_BASE, REPORT_BASE]).flatMap(base => languageRoutes.map(([route]) => `  <url>\n    <loc>${SITE_URL}${base}${route}</loc>\n${alternateRoutes.map(([locale, alternate]) => `    <xhtml:link rel="alternate" hreflang="${locale}" href="${SITE_URL}${base}${alternate}" />`).join('\n')}\n  </url>`));
   files.set('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls.join('\n')}\n</urlset>\n`);

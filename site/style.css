@@ -39,8 +39,16 @@ code { font-family: var(--mono); font-size: .92em; }
 /* Navigation */
 .nav { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px var(--gutter); background: rgb(246 245 241 / 88%); backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid transparent; transition: border-color .2s; }
 .nav.scrolled { border-bottom-color: var(--line); }
-.brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-weight: 650; }
-.brand b { font: 600 12px/1 "Unbounded", var(--sans); letter-spacing: .12em; color: var(--muted); }
+/* The brand as the desktop client shows it: the mark, the wordmark for the page's language
+   (brand/svg/wordmark, about 0.55 of the mark's height with its clear space), then the version.
+   One row at the mark's 28px; the wordmark and the version sit on its middle. */
+.brand-row { display: flex; flex: 0 0 auto; align-items: center; gap: 12px; height: 28px; }
+.brand { display: flex; align-items: center; gap: 8px; height: 28px; color: var(--ink); text-decoration: none; }
+.brand-word { display: flex; align-items: center; height: 16px; margin-left: -2px; }
+.wordmark { display: none; width: auto; height: 16px; user-select: none; -webkit-user-drag: none; }
+html:lang(zh) .wordmark-zh:not(.wordmark--dark), html:lang(en) .wordmark-en:not(.wordmark--dark) { display: block; }
+.brand-version { color: var(--muted); font-size: 13px; line-height: 1; font-variant-numeric: tabular-nums; text-decoration: none; user-select: none; }
+.brand-version:hover { color: var(--jade); }
 .nav nav { display: flex; align-items: center; gap: clamp(14px, 2.4vw, 30px); }
 .nav nav a { color: var(--ink-soft); text-decoration: none; font-size: 14px; }
 .nav nav a:hover { color: var(--jade); }
@@ -69,7 +77,24 @@ h1 em, h2 em { font-style: normal; color: var(--jade); }
 h2 { margin-top: 12px; font-size: clamp(30px, 3.6vw, 52px); font-weight: 680; line-height: 1.18; letter-spacing: -.03em; color: var(--chapter-ink, var(--ink)); }
 .chapter-copy > p:not(.eyebrow) { margin-top: 22px; color: var(--chapter-soft, var(--ink-soft)); font-size: clamp(16px, 1.3vw, 18px); }
 .chapter-copy > p.lede { max-width: 620px; font-size: clamp(17px, 1.6vw, 20px); line-height: 1.8; }
-.hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin-top: 40px; }
+.hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; margin-top: 36px; }
+.hero-actions .button-quiet { border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.hero-actions .button-quiet:hover { border-color: var(--jade-line); background: var(--jade-soft); }
+.hero-server { color: var(--muted); font-size: 14px; user-select: none; }
+.hero-server:hover { color: var(--jade); }
+/* Measured numbers inside a chapter: label, then before → after with the current value strong. */
+.chapter-stats { display: grid; gap: 6px; max-width: 420px; margin: 18px 0 0; }
+.chapter-stats div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.chapter-stats dt { color: var(--chapter-soft, var(--ink-soft)); font-size: 14px; }
+.chapter-stats dd { margin: 0; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chapter-stats b { color: var(--chapter-ink, var(--ink)); font: 600 16px/1 "Unbounded", var(--sans); }
+.chapter-link { display: inline-block; margin-top: 14px; font-size: 14px; font-weight: 550; text-decoration: none; user-select: none; }
+.chapter-link::after { content: " →"; }
+.chapter-link:hover { text-decoration: underline; }
+/* How far through the story: one thin line under the header, scaled on the compositor. */
+.story-progress { display: none; }
+.enhanced .story-progress:not([hidden]) { position: fixed; top: 0; left: 0; z-index: 6; display: block; width: 100%; height: 2px; pointer-events: none; }
+.story-progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--jade), #c99a3b); transform: scaleX(var(--story-progress, 0)); transform-origin: left; will-change: transform; }
 .terminal { position: relative; display: grid; gap: 2px; padding: 16px 92px 16px 20px; border-radius: 14px; background: var(--night); color: #e9f1ee; box-shadow: 0 20px 50px rgb(17 23 24 / 18%); }
 .terminal code { white-space: nowrap; }
 .terminal code span { color: #8bc1a8; margin-right: 10px; user-select: none; }
@@ -101,7 +126,7 @@ figcaption { margin-top: 10px; color: var(--faint); font-size: 12px; }
 .scroll-cue svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; animation: cue 2.4s ease-in-out infinite; }
 @keyframes cue { 0%, 100% { opacity: .35; transform: translateY(-3px); } 50% { opacity: 1; transform: translateY(3px); } }
 .enhanced .roundtable-chapter .eyebrow, .enhanced .roundtable-chapter h2 em { color: #8bc1a8; }
-.footer button { margin-left: 18px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; }
+.footer button { padding: 0; border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer; }
 .footer button:hover { color: var(--jade); }
 .footer button:disabled { cursor: default; opacity: .7; }
 
@@ -122,7 +147,10 @@ figcaption { margin-top: 10px; color: var(--faint); font-size: 12px; }
   .enhanced .hero-chapter h1 { font-size: 40px; }
   .enhanced .database-chapter .chapter-copy { top: max(90px, 10svh); max-width: 380px; }
   .enhanced .database-chapter .chapter-copy > p:not(.eyebrow) { font-size: 14px; line-height: 1.65; }
-  .enhanced .hero-actions { display: none; }
+  .enhanced .hero-actions { margin-top: 22px; }
+  .enhanced .hero-actions .button { padding: 10px 16px; font-size: 14px; }
+  .enhanced .chapter-stats { margin-top: 12px; }
+  .enhanced .chapter-stats div { padding: 5px 0; }
   .enhanced .scroll-cue { top: calc(100svh - 64px); }
   .chapter-nav { right: 4px; top: auto; bottom: 18px; transform: none; gap: 0; }
   .chapter-nav a { width: 22px; height: 21px; }
@@ -141,12 +169,6 @@ figure.window figcaption { padding: 0 20px; }
 .receipt { padding: 10px 14px; border-top: 1px dashed var(--line); color: var(--muted); font-size: 14px; }
 .receipt a { color: var(--jade); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 
-.handoff { display: grid; gap: 6px; }
-.handoff .window:first-child { width: 78%; }
-.handoff .window:last-child { width: 82%; justify-self: end; }
-.window.small .window-body { padding: 16px; font-size: 14px; }
-.arrow { justify-self: center; color: var(--jade); font-size: 26px; rotate: 90deg; line-height: 1; }
-
 .thread { display: grid; gap: 20px; padding: 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
 .thread-msg { display: grid; grid-template-columns: 34px 1fr; gap: 12px; }
 .thread-msg.reply { margin-left: 40px; }
@@ -156,16 +178,6 @@ figure.window figcaption { padding: 0 20px; }
 .by b { color: var(--ink); margin-right: 8px; }
 .by em { margin-right: 8px; padding: 1px 8px; border-radius: 999px; background: var(--sunk); font-style: normal; font-size: 12px; }
 .bubble { margin-top: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 4px 12px 12px 12px; background: var(--paper); font-size: 15px; }
-
-.layers { display: grid; gap: 14px; }
-.layer { padding: 22px 24px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); }
-.layer.project { margin-left: clamp(16px, 6vw, 72px); border-color: var(--jade-line); background: var(--jade-soft); }
-.layer h3 { margin-bottom: 12px; font-size: 14px; color: var(--muted); font-weight: 600; }
-.layer p { display: flex; align-items: baseline; gap: 10px; margin-top: 8px; font-size: 15px; }
-.chip { flex: 0 0 auto; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
-.chip.taste { background: var(--amber-soft); color: var(--amber); }
-.chip.judgment { background: var(--surface); color: var(--ink-soft); border: 1px solid var(--line); }
-.chip.personality { background: var(--jade-soft); color: var(--jade); }
 
 .team { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .member { display: grid; gap: 2px; padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
@@ -183,12 +195,7 @@ figure.window figcaption { padding: 0 20px; }
 .memory b { font-size: 13px; color: var(--muted); }
 
 /* FLA self-growth: how an FLA learns, then what it grows to work with you, then what is coming. */
-.growth { display: grid; gap: clamp(32px, 5vh, 52px); padding: clamp(72px, 11vh, 128px) var(--gutter); border-top: 1px solid var(--line); }
-.growth-intro { max-width: 720px; }
-.growth-intro h2 { margin: 0; }
-.growth-intro > p:not(.eyebrow) { margin-top: 18px; color: var(--ink-soft); font-size: clamp(16px, 1.3vw, 18px); }
-.growth-group h3 { margin-bottom: 14px; color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: .08em; }
-.growth-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(14px, 2vw, 22px); margin: 0; padding: 0; list-style: none; }
+.growth-cards { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
 .growth-cards li { min-width: 0; padding: 24px 26px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
 .growth-cards b { display: block; font-size: 18px; font-weight: 600; line-height: 1.4; }
 .growth-cards p { margin-top: 8px; color: var(--ink-soft); font-size: 15px; }
@@ -196,25 +203,14 @@ figure.window figcaption { padding: 0 20px; }
 .growth-steps { counter-reset: growth; }
 .growth-steps li { counter-increment: growth; }
 .growth-steps b::before { content: "0" counter(growth); margin-right: 10px; color: var(--jade); font: 500 14px/1 "Unbounded", var(--sans); }
+.workbench-figure { display: grid; gap: 14px; }
 .growth-next { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 18px; padding: 18px 24px; border: 1px dashed var(--jade-line); border-radius: 16px; }
 .growth-badge { flex: 0 0 auto; padding: 2px 10px; border-radius: 999px; background: var(--amber-soft); color: var(--amber); font-size: 13px; font-weight: 600; user-select: none; }
 .growth-next ul { display: grid; flex: 1 1 320px; gap: 6px; margin: 0; padding: 0; list-style: none; color: var(--ink-soft); font-size: 15px; }
-.growth-more { color: var(--ink-soft); font-size: 15px; }
-.growth-more summary { width: fit-content; color: var(--muted); cursor: pointer; user-select: none; }
-.growth-more summary:hover { color: var(--jade); }
-.growth-more ul { display: grid; gap: 6px; max-width: 760px; margin: 10px 0 0; padding-left: 1.1em; }
-@media (max-width: 880px) {
-  .growth-cards { grid-template-columns: minmax(0, 1fr); }
-}
 
-.principles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(20px, 4vw, 56px); padding: clamp(64px, 10vh, 112px) var(--gutter); border-top: 1px solid var(--line); }
-.principles h3 { font-size: 18px; font-weight: 650; }
-.principles p { margin-top: 10px; color: var(--ink-soft); }
-/* The context principle links to where its claim is measured (/report/). */
-.principle-link { display: inline-block; margin-top: 12px; font-size: 15px; font-weight: 550; text-decoration: none; user-select: none; }
-.principle-link::after { content: " →"; }
-.principle-link:hover { text-decoration: underline; }
-.preview-changes { row-gap: clamp(36px, 6vh, 64px); }
+/* The preview page's change list (site/next/). */
+.preview-changes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(36px, 6vh, 64px) clamp(20px, 4vw, 56px); padding: clamp(64px, 10vh, 112px) var(--gutter); border-top: 1px solid var(--line); }
+.preview-changes h3 { font-size: 18px; font-weight: 650; }
 .changes-intro { grid-column: 1 / -1; max-width: 720px; }
 .changes-intro h2 { margin: 0; }
 .changes-intro p { margin-top: 14px; }
@@ -241,7 +237,10 @@ figure.window figcaption { padding: 0 20px; }
 .no-preview h1 { margin: 0; color: #fff; font-size: clamp(30px, 3.6vw, 52px); }
 
 .footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding: 28px var(--gutter); color: var(--muted); font-size: 14px; }
-.footer a { margin-left: 18px; color: var(--muted); }
+/* The links wrap as whole links: adjacent anchors have no space between them, so inline
+   English link text would run together into one unbreakable line wider than a phone. */
+.footer > span:last-child { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; }
+.footer a { color: var(--muted); }
 
 /* Reveal on scroll only when scripting is available; content is visible otherwise. */
 .js .reveal { opacity: 0; transform: translateY(16px); transition: opacity .7s ease, transform .7s cubic-bezier(.2, .8, .2, 1); }
@@ -249,8 +248,7 @@ figure.window figcaption { padding: 0 20px; }
 
 @media (max-width: 880px) {
   .chapter { grid-template-columns: minmax(0, 1fr); }
-  .handoff .window:first-child, .handoff .window:last-child { width: 100%; }
-  .principles { grid-template-columns: minmax(0, 1fr); }
+  .preview-changes { grid-template-columns: minmax(0, 1fr); }
   .memory { grid-template-columns: minmax(0, 1fr); }
   .nav nav > a:not(.nav-github) { display: none; }
   .terminal { width: 100%; padding-right: 20px; padding-bottom: 52px; }
@@ -263,7 +261,6 @@ figure.window figcaption { padding: 0 20px; }
 }
 
 @media (max-width: 380px) {
-  .brand b { display: none; }
   .nav .language-switch a { min-height: 38px; }
 }
 
@@ -294,7 +291,9 @@ html[lang="en"] .enhanced h2 { font-size: clamp(30px, 3.1vw, 46px); }
 .nav { transition: border-color .2s, background-color .35s; }
 .nav.is-dark { background: rgb(17 23 24 / 82%); border-bottom-color: #1f2b28; }
 .nav.is-dark .brand, .nav.is-dark nav a { color: #e1ece5; }
-.nav.is-dark .brand b { color: #8fa39b; }
+.nav.is-dark .brand-version { color: #8fa39b; }
+html .nav.is-dark .wordmark { display: none; }
+html:lang(zh) .nav.is-dark .wordmark-zh.wordmark--dark, html:lang(en) .nav.is-dark .wordmark-en.wordmark--dark { display: block; }
 .nav.is-dark .nav-github { border-color: #2c3a36; background: #16201d; }
 /* Over the dark scene the nav swaps to the brand's dark mark (brand/svg/mark). */
 .brand-mark--dark, .nav.is-dark .brand-mark { display: none; }

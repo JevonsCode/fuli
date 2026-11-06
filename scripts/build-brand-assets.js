@@ -32,8 +32,11 @@ const APP_ICON_PNGS = ['brand/png/app-icon/fuli-app-icon-light-512.png', 'brand/
 const COPIES = {
   'brand/svg/mark/fuli-mark-color.svg': ['web/assets/brand/fuli-mark-color.svg', 'site/assets/brand/fuli-mark-color.svg'],
   'brand/svg/mark/fuli-mark-dark.svg': ['site/assets/brand/fuli-mark-dark.svg'],
-  'brand/svg/wordmark/fuli-wordmark-en.svg': ['web/assets/brand/fuli-wordmark-en.svg'],
-  'brand/svg/wordmark/fuli-wordmark-zh.svg': ['web/assets/brand/fuli-wordmark-zh.svg'],
+  'brand/svg/wordmark/fuli-wordmark-en.svg': ['web/assets/brand/fuli-wordmark-en.svg', 'site/assets/brand/fuli-wordmark-en.svg'],
+  'brand/svg/wordmark/fuli-wordmark-zh.svg': ['web/assets/brand/fuli-wordmark-zh.svg', 'site/assets/brand/fuli-wordmark-zh.svg'],
+  // The site's header over its night scenes.
+  'brand/svg/wordmark/fuli-wordmark-en-dark.svg': ['site/assets/brand/fuli-wordmark-en-dark.svg'],
+  'brand/svg/wordmark/fuli-wordmark-zh-dark.svg': ['site/assets/brand/fuli-wordmark-zh-dark.svg'],
   'brand/motion/fuli-motion.css': ['web/assets/brand/fuli-motion.css'],
   'brand/png/mark/favicon.ico': ['web/public/favicon.ico', 'site/assets/brand/favicon.ico'],
   // The site's link preview image.
