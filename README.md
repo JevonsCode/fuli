@@ -64,7 +64,7 @@ Download from the [latest release](https://github.com/JevonsCode/fuli/releases/l
 
 | System | File | How |
 | --- | --- | --- |
-| Windows | `FULI-Setup-<version>.exe` | Double-click to install. No terminal and no administrator rights; Node.js, Java and the graph database are bundled. The installer is not code-signed yet, so if Windows says it protected your PC, choose “More info → Run anyway”. Running it over an existing install updates it and keeps your data |
+| Windows | `FULI-Setup-<version>.exe` | Double-click to install; you can pick the folder the first time. No terminal and no administrator rights; Node.js, Java and the graph database are bundled. The installer is not code-signed yet, so if Windows says it protected your PC, choose “More info → Run anyway”. Running it over an existing install updates it and keeps your data |
 | Windows offline update | `fuli-windows-tray-<version>.zip` | For an existing install. Check the matching `.sha256`, unzip, and run `Update-Fuli.cmd`. Normally you just click 「Update to vX」 in the console |
 | macOS (Apple silicon) | `fuli-macos-arm64-<version>.dmg` | Drag FULI.app onto Applications as the window's arrow shows; FULI ejects the installer when you open it. Needs macOS 13.5 or later. The app is not signed yet, so the first time it is blocked, open System Settings › Privacy & Security and click “Open Anyway”. See [macOS app](docs/macos-app.md) |
 

@@ -35,7 +35,7 @@ export const SETUP_SCALES = [
 ];
 // The page pictures FULI-Setup's [Code] places, with their size in points at
 // 100 % (fuli-setup.iss #define PictureSize and MarkSize).
-export const SETUP_PICTURES = { icon: 120, done: 120, mark: 80 };
+export const SETUP_PICTURES = { icon: 120, done: 120, folder: 120, mark: 80 };
 // The .dmg window in points (scripts/package-macos-dmg.js lays the icons out on it).
 const DMG_WINDOW = [DMG.width, DMG.height];
 
