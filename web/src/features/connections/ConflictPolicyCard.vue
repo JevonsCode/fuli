@@ -18,7 +18,7 @@ import {
   saveDefaultConflictMode, saveProjectConflictMode, withProjectChoice,
   type ConflictMode, type ConflictPolicyOverview,
 } from './conflict-policy'
-import { readmeHelpUrl } from './readme-help'
+import { docsHelpUrl } from './docs-help'
 
 const store = useConsoleStore()
 const overview = ref<ConflictPolicyOverview | null>(null)
@@ -31,7 +31,7 @@ const addProjectId = ref('')
 const addMode = ref<ConflictMode>('agent_decide')
 let controller: AbortController | null = null
 
-const helpUrl = computed(() => readmeHelpUrl('external-knowledge-conflict-policy'))
+const helpUrl = computed(() => docsHelpUrl('external-knowledge', 'external-knowledge-conflict-policy'))
 const projects = computed(() => store.state?.personalProjects ?? [])
 const exceptions = computed(() => overview.value ? projectExceptions(overview.value, projects.value) : [])
 const addableOptions = computed<SelectOption[]>(() => overview.value

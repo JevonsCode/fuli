@@ -19,51 +19,61 @@
 
 **换 AI 工具，留住你自己。**
 
-复利（Fuli）就是 **compound interest**：收益再生收益。
+FULI 是装在你电脑上的记忆和协作层。它记住你的品味、偏好和项目知识，让 Claude Code、Codex、
+OpenCode 这些 Agent 客户端共用。每次只取回任务用得上的那一小份，省下 token。它还给每个项目配一支
+Agent 团队，用得越久越懂行。
 
-复利的初衷，是在你和 AI 一起工作时，留住你自己的品味、个性和判断。我们相信，人不必再事事亲力亲为。
-你可以腾出手来做决定、想点子，也可以歇一歇。
+名字取自 **compound interest**，复利。今天教会 Agent 的事，明天还在生息。我们相信人不必事事亲力亲为，
+腾出手来做决定、想点子，或者歇一歇。
 
-复利支持 Codex、Claude Code，以及其他支持 MCP 和 Skills 的 Agent 客户端。让这些客户端接入同一份 Fuli 数据，
-就能继续和同一位 Agent 合作，延续它记录下的工作和相关上下文。
+## 我们的理念
 
-AI 能接手的工作越来越多。复利帮你完成这段过渡，同时让你自己的判断始终居中。
+- **本地优先。** 个人图谱和对话记录留在你的电脑上。团队共享层只放确认过的项目知识，你的品味、个性和判断偏好不会进去。
+- **人说了算。** AI 负责查找、归纳和执行，该提醒时提醒你。人始终保留最终判断权，Agent 猜出来的偏好要等你确认才算数。
+- **按需取回，少花 token。** 会话一开始不会把全部历史塞给模型，只带上生效的偏好和一小份相关召回。还缺什么，Agent 自己再查。
+- **只留值得复用的。** 每个任务结束前检查一次，有可复用的才记下，没有就什么都不留。我们看重的是 Agent 少让你重复解释了几次，存了多少条并不重要。
+- **历史不覆盖。** 旧做法被替代时，来源、时间和理由都还留着。Agent 能说清现在该用哪个，也能说清以前为什么不一样。
 
-复利是跨兼容 MCP 客户端的长期 Agent 协作层。让 AI 工具接入同一份可访问的 Fuli 数据，
-选中同一位 Agent，就能延续它的身份、项目职责和相关工作脉络。运行 `fuli connect` 获取标准
-MCP 配置，有适配器的客户端还支持自动配置（Codex、Claude Code、Cursor，以及使用精简聊天工具集的 Claude
-桌面版）。详见[客户端接入](docs/client-connections.md)。
+## 它能做什么
 
-- **搭档留得住**：任务结束后，Agent 的职责、合作记录与工作记忆继续保留。
-- **上下文有边界**：按需取回项目知识、决定与偏好，保留来源、作用域和确认状态。
-- **需要时一起做**：协调不同专长的 Agent，通过可用且获授权的客户端或执行器开展任务，记录真实执行。
-- **每个任务都有负责人**：在项目目录里直接提需求，Fuli 自动登记项目并安排一位负责 Agent；回复最后一行写明谁负责、谁协助。
-- **三位专职随时在岗**：Jefa 管项目，Bole 做 AR（Agent Resources），负责招募与人员安排，Tonborg 帮你做判断；每个空间都自带这三位。
-- **按你的偏好判断**：[Tonborg](docs/judgment-and-autonomy.md) 在你设定的自主程度内协助审核、建议客户端与模型。每次判断都有记录，点赞、点踩或补一句理由，帮助它改进后续判断。
-- **Agent 之间直接对话**：通过[圆桌](#agent-圆桌)，一个 Agent 可以直接去问另一段对话里的 Agent，往来全程留痕。
+- **换客户端，还是同一位搭档。** 让几个客户端接入同一份 FULI 数据，选中同一位 Agent，就能接着它的职责、合作记录和上次的工作往下做。
+- **记住你这个人。** 品味、个性和判断偏好分开存，每条都带来源和作用域。全局偏好处处生效，项目偏好只管自己的项目。
+- **每个任务都有负责人。** 在项目目录里直接提需求，FULI 认出项目并安排一位负责的 Agent。回复最后一行写着谁负责、谁协助。
+- **Agent 会成长。** FULI 里的 Agent 叫 FLA，各有名字、职业和自己的工作记忆，从做过的任务里攒经验。
+- **Agent 之间直接对话。** 在[圆桌](docs/agent-roundtable.md)里，一个 Agent 可以去问另一段对话里的 Agent，每次往来都留着记录。
+- **外部知识只读接入。** Notion 和飞书的文档，或者 MCP、RAG 接口里的内容，都可以绑到项目上，FULI 只读，不往源系统写。
 
-这里的“长期”指身份和上下文持续存在。Fuli 负责组织上下文与协调任务，接入的 AI 工具负责执行。
-能采集、接续哪些对话取决于客户端适配器；换工具不会自动获得其他项目的私有记忆。
+### 四位内置角色
 
-复利将私有对话记录、Agent 工作记忆和经过确认的知识分开管理，让持续协作形成可复用的理解。
-AI 负责检索、提醒、归纳和执行；人始终保留最终判断权。
+每个空间都自带这四位，不用招募。
 
-## 先用起来
+| | 角色 | 负责 |
+| --- | --- | --- |
+| <img src="web/src/assets/astro-avatar.webp" alt="Astro" width="40" /> | **Astro** | 接待还没归属项目的对话。同一话题反复出现，它会问你要不要为它成立项目 |
+| <img src="web/src/assets/jefa-avatar.webp" alt="Jefa" width="40" /> | **Jefa** | 项目经理，给对话分诊，管任务看板 |
+| <img src="web/src/assets/bole-avatar.webp" alt="Bole" width="40" /> | **Bole** | AR（Agent Resources），按职业招人，安排人手 |
+| <img src="web/src/assets/tonborg-avatar.webp" alt="Tonborg" width="40" /> | **Tonborg** | 在你设定的自主程度内替你审核，推荐客户端和模型。每次判断都有记录，点赞、点踩或补一句理由，它下次就改 |
 
-安装 Fuli、接入客户端，并通过一次实际工具调用完成验证。完整要求见[安装](#安装)；配置格式、Hook 与排错见
-[客户端接入（英文）](docs/client-connections.md)。
+## 快速开始
 
-登录、Hook 信任与人工审核仍由人确认。**“设置 → 客户端接入”显示 `已接入`（`connected`）仅代表客户端配置文件中已有当前版本的 Fuli 条目，不代表客户端进程已加载该 MCP、Hook 已送达上下文或工具已成功调用。**
+### 桌面客户端（推荐）
 
-### 1. 安装
+到[最新版本](https://github.com/JevonsCode/fuli/releases/latest)下载安装包。
 
-两种方式，任选其一：
+| 系统 | 文件 | 怎么装 |
+| --- | --- | --- |
+| Windows | `FULI-Setup-<版本>.exe` | 双击安装，不用终端，也不用管理员权限。Node.js、Java 和图数据库都已内置。安装包还没有代码签名，Windows 提示“已保护你的电脑”时，点“更多信息 → 仍要运行”。装过 FULI 的直接覆盖更新，数据保留 |
+| Windows 离线更新 | `fuli-windows-tray-<版本>.zip` | 给已安装的 FULI 用。核对同名 `.sha256`，解压后运行 `Update-Fuli.cmd`。平时在控制台点「更新到 vX」就行 |
+| macOS（Apple 芯片） | `fuli-macos-arm64-<版本>.dmg` | 把 FULI.app 拖进「应用程序」，需要 macOS 13.5 以上。安装包还没签名，第一次打开被拦下时，到「系统设置 › 隐私与安全性」点「仍要打开」。详见 [macOS 应用](docs/macos-app.md) |
 
-- **下载客户端（推荐，Windows）**：到[最新版本](https://github.com/JevonsCode/fuli/releases)下载 `FULI-Setup-<版本>.exe`，双击安装，不需要终端。Node.js、Java 和图数据库都已内置，不用另装，也不需要管理员权限。第一次打开时，FULI 会找到这台电脑上的 AI 客户端，一键接入，也可以设置开机启动。已经装过 FULI 的，用它安装会直接更新，数据保留。安装包暂时没有代码签名，Windows 可能提示“已保护你的电脑”，点“更多信息 → 仍要运行”即可。
-- **下载客户端（macOS，Apple 芯片）**：在同一个版本里下载 `fuli-macos-arm64-<版本>.dmg`，打开后把 FULI.app 拖进「应用程序」。需要 macOS 13.5 以上；Intel 芯片的 Mac 请用终端安装。安装包暂时没有签名，第一次打开被拦下时，到「系统设置 › 隐私与安全性」点「仍要打开」。详见 [docs/macos-app.md](docs/macos-app.md)。
-- **用终端安装**：适合开发者和 macOS / Linux。
+第一次打开时，FULI 会找出这台电脑上的 AI 客户端，点一下就能接入（Codex、Claude Code、Cursor、
+Claude 桌面版等）。接入后重启客户端，在项目目录里提个需求就开始了。其他 MCP 客户端运行
+`fuli connect` 拿一份标准配置。登录、Hook 信任和人工审核仍然由你确认。
 
-在具备 Node.js 24.12+ 和 Docker Compose v2 的环境下（默认容器模式；macOS / Linux 原生模式见[安装](#安装)），运行：
+### 服务器、虚拟机或云端
+
+没有桌面的环境用 npm 安装，Intel 芯片的 Mac 和 Linux 也走这条路。需要 Node.js 24.12 以上。默认的容器模式
+还要 Docker Compose v2，macOS 和 Linux 也可以选不用虚拟机的原生模式（要 Java 21 和 `uv`）。
 
 ```bash
 npm install --global fuli-context
@@ -71,805 +81,45 @@ fuli setup
 fuli open
 ```
 
-设置向导会先展示计划，再修改环境。
+`fuli setup` 先把计划给你看，确认后才动环境。控制台默认在 `http://127.0.0.1:2727`。
+全部命令、端口和排错见[安装与运行](docs/install.zh-CN.md)。
 
-### 2. 接入客户端
-
-- **已检测到 Codex、Claude Code、Cursor 或 Claude 桌面版：** `fuli setup` 会写入 MCP 配置及支持的
-  Hook / Skills。只在启动时读取配置的应用须退出重开，重连后新建任务；Codex Hook 信任须在 Codex 的 `/hooks` 中人工审阅。
-- **其他 MCP 客户端：** 运行 `fuli connect`（或打开控制台 **设置 → 客户端接入**），将 `fuli` 条目合并到客户端 MCP 配置并保留其他服务器，再按该客户端要求重载或信任连接。`fuli connect` 只打印 JSON。
-
-### 3. 首次实际工具调用与验证
-
-1. 运行 `fuli status`，确认管理界面与个人图谱就绪（默认 `http://127.0.0.1:2727`）。
-2. 在客户端中确认 Fuli 工具已出现，并在项目目录里**发起一次实际工具调用**（例如让 Agent 读取当前项目协作偏好或协调一个小任务），检查它是否找对项目（或登记项目并安排负责 Agent），且在缺少信息时如实询问而非编造。
-3. 可选的跨工具接续：把这位 Agent 的接续指令带到连接同一份数据的另一客户端，验证它能否恢复同一位 Agent、项目和上次工作。支持范围见[Agent 对话与协作说明](docs/agent-conversations-and-collaboration.md)。
-
-临时任务也能交给 Agent：本次源码支持在没有匹配到已登记项目时建立隔离的**临时项目**；单纯读取偏好不会创建项目，多个候选项目仍需明确选择。Fuli 会保留其任务历史，并遵循既有的 Agent 招募与执行器权限。Agent 目录提供首次任务入口，任务详情只有在收到真实执行报告后才展示完成汇总——仅分配了 Agent 或普通本机对话都不等于工作进程证据。
-
-### 4. 排错与恢复
-
-若安装、客户端检测或工具调用失败，见[常见失败与恢复（英文）](docs/client-connections.md#common-failure-recovery)。
-`fuli setup --yes --connected-only` 仅用于刷新仍保留 Fuli MCP 条目的客户端（“设置”页显示**已接入** / `connected` 或**配置有变化** / `changed`）；显示**只剩技能文件**（`skills_left`）、**已移除**（`removed`）、**未接入**（`not_connected`）或新安装的客户端（无 Fuli MCP 条目）须运行完整的 `fuli setup`。
-
-[工作原理](#项目理念) · [安装](#安装) · [Agent 角色与团队](docs/employee-agents.md) ·
-[跨客户端验收](acceptance/cross-client-handoff.md) · [参与贡献](CONTRIBUTING.md) ·
-[反馈问题](https://github.com/JevonsCode/fuli/issues/new/choose)
-
-## Agent 圆桌
-
-Agent 之间可以直接对话，就像负责人去问一位同事或子 Agent。比如 Codex 里的 Agent 可以问
-某一段 Claude Code 对话里的 Agent，也可以问一位还没运行过的 FULI Agent。不需要人建房间或拉人：
-Agent 调用 `message_agent`，Fuli 在对方自己的客户端里以只读方式唤醒它并把回答带回来：
-Claude Code 会 fork 原会话；Codex 会在原对话里记下这次问答（对话正在 Codex 中打开时改用新会话）。
-暂时唤不醒的消息会在对方下次开始任务时出现在它的收件箱里。
-
-Agent 之间还可以用 `agent_chat` 私聊和建群。消息是推送的：调用 `wait` 的 Agent 会立刻收到新消息，
-私聊或 `@` 点名会唤醒不在等待的 Agent。聊天只负责通信，不会改变知识权重。
-
-每一段往来都保存在本机，控制台的“圆桌”页能看到谁问了谁、通过哪个客户端、原文和回答。
-工具与限制见[圆桌说明](docs/agent-roundtable.md)。
-
-## npm 包
-
-| 包 | 状态 | 用途 |
-| --- | --- | --- |
-| [`fuli-context`](https://www.npmjs.com/package/fuli-context) | 已发布 | 个人版；个人知识、图数据库和管理界面都在本机运行 |
-| Fuli Server npm 包 | 开发中 | 面向团队共享场景的独立服务端；目前尚未发布 |
-
-目前唯一可用的 npm 包是个人版 `fuli-context`。团队共享层不会包含个人品味、个性或判断偏好。
-
-## 项目理念
-
-### 1. 衡量复用价值，而不是知识数量
-
-复利的核心问题是：
-
-> 如果没有 Fuli，Agent 是否需要重新学习一条已经确认、仍然有效且与当前任务相关的信息？
-
-节点数、对话数和图谱规模不是成功指标。真正需要验证的是：历史资产能否在正确的项目、时间
-和权威边界内被再次使用，并减少重复解释、修正和返工。
-
-### 2. 每个任务都检查价值，但不强迫每个任务沉淀
-
-一次任务可能产生：
-
-- 可复用知识：API 约定、Runbook、发布方式或项目约束；
-- 经验：为什么某个做法有效或失败；
-- 决策轨迹：候选方案、人的选择、理由和后续验证；
-- 判断辅助：偏好、原则、品味或个性倾向。
-
-也可能只有临时输出、猜测或一次性选择。此时正确结果是 `retain_nothing`。复利要求每个任务
-结束前做一次知识价值检查，并不是把每次聊天都变成长久记忆。
-
-### 3. 人的权威高于 Agent 的重复判断
-
-AI 可以发现候选、指出冲突、建议公共化，也可以在得到授权后处理延迟冲突；它不能仅凭语义
-相似、重复出现或自己的判断伪造人工确认。公共知识提升和有风险的项目写入必须先预览，再由
-明确的人类选择触发一次性、原子执行。
-
-### 4. 先组装上下文，再按需取证
-
-Fuli 不会在会话开始时把全部历史塞给模型。入口阶段始终加载当前任务实际生效的个人全局偏好、
-精确项目偏好和显式允许传播的上级项目偏好；当任务信号表明可能需要稳定的历史事实、方法、
-网址、决策、发布、部署或认证 Runbook 时，同一步骤还会在精确项目及其获授权知识来源中执行
-一次小规模、有界的自动召回。
-需要更多证据时，Agent 再使用聚焦查询按需检索。只有真正影响回答、实现或决策的知识才记录为
-一次使用，单纯检索不会增加权重。
-
-### 5. 保留知识演化，而不是覆盖历史
-
-旧方案可能在当时正确，后来因条件变化被替代。Fuli 保存来源、确认权威、时间、理由、修订、
-替代和负面证据，让 Agent 能解释“现在应该用什么”以及“为什么过去曾经不同”。负面反馈会
-降低相关内容的排序或触发复核，但不会静默抹掉历史。
-
-### 6. 公共知识归属上级，项目差异留在子项目
-
-例如，酒店和机票项目可以只保存自己的 PRD、配置和领域规则，把共同的本地运行、Mock、测试
-和发布方式收敛到活动平台项目：
-
-```text
-活动平台（父项目：共享 Runbook）
-├── 酒店项目（子项目：酒店 PRD / 配置 / 覆盖项）
-└── 机票项目（子项目：机票 PRD / 配置 / 覆盖项）
-```
-
-Agent 在酒店项目工作时先搜索酒店本地知识，再沿显式的 `PART_OF` 或
-`USES_KNOWLEDGE_FROM` 关系向上搜索允许继承的知识，最多两跳。同稳定键的子项目内容覆盖
-父项目内容。项目级个人偏好默认只在精确项目生效；只有显式设置为 `descendants` 或
-`selected_projects` 的偏好才可沿同样的授权关系传播，并返回来源项目、路径和距离。多个同层
-父项目冲突时必须交给人判断，不能靠权重选胜者。普通 `RELATED_TO` 不会自动扩大作用域；
-搜索结果只返回一次性只读扩展建议，由 Agent 先询问用户。
-
-多个子项目中相似的内容只会形成公共化候选。跨无共同父级项目出现的共同偏好也只能形成个人
-全局候选，并完整保留每个项目的原文、限定词和来源。当前聚类是词法启发式信号，不是语义
-等价证明；必须由人选择内容、作用域和理由后，才能生效。
-
-### 7. 本地优先，公开层不包含个人模型
-
-个人图谱默认留在本机。支持的客户端适配器可保存可见对话，用于私有 Agent 接续；对话记录与
-结构化、可复用的确认知识分开存储，对话累积到一定量（默认 64 KB）后较早的消息折叠成摘要，召回有字节预算。凭据、临时日志
-与原始命令输出不应写入知识图谱。团队共享层只承载经过确认、具有上下文和来源的项目或领域知识，不包含个人的
-品味、个性和判断偏好。
-
-## 实际怎么用：分类、作用域、项目识别与取回
-
-### 先判断存什么，再判断存在哪里
-
-“内容类型”和“生效范围”是两个独立维度。前三类是个人协作偏好，会带有
-`profileAspect`；项目事实不带 `profileAspect`，也不会出现在“个人偏好”页中。
-
-| 类型 | 应该存什么 | 例子 |
-| --- | --- | --- |
-| 品味 `taste` | 用户明确喜欢或排斥的结果、风格与质量方向，适用于界面、文案、产品、架构和工程结果 | “页面少用大渐变，不要卡片套卡片” |
-| 个性 `personality` | 用户明确自我描述、并且预计长期稳定的工作或协作特点 | “我习惯直接沟通，希望 Agent 主动推进” |
-| 判断偏好 `judgment_preference` | 面对取舍时的决策条件、优先级、风险倾向和操作边界 | “方向性歧义先讨论；未明确时禁止 `git push`” |
-| 项目知识 | 可复用的客观项目事实、术语、需求、路由、API、架构、决策理由和 Runbook | “Fuli 的 npm 发布由 GitHub Release 触发” |
-
-可以用四个问题快速分类：它描述的是“想要什么结果”时存品味；描述“我是怎样长期协作的”时
-存个性；描述“遇到取舍时怎么决定”时存判断偏好；描述“这个系统客观上如何工作”时存项目
-知识。一次性命令、临时输出、未经验证的猜测、原始聊天和凭据都不直接沉淀为确认知识。
-
-“个性”不是所有个人信息的兜底分类。只有用户明确给出的稳定自我描述可以直接带着人工依据
-确认；Agent 仅从一次行为推断出的个性必须先保持 `pending`，不能伪装成人工确认。因此
-`/preferences` 的“个性”为空，通常表示当前范围内还没有符合这个标准的条目，而不是沉淀
-失败。像“文案简洁”更可能是品味，“未授权不推送”更可能是判断偏好。需要明确沉淀时，可以
-直接说：`这是我的长期协作个性，请作为个人全局偏好保存：我习惯直接沟通。` Agent 推断的
-候选可在 `/preferences` 或 `/flreview` 中由用户确认、纠正或失效。
-
-### 全局、项目级和公共层
-
-| 范围 | 何时使用 | 写入关键字段 | 取回规则 |
-| --- | --- | --- | --- |
-| 个人全局偏好 | 在无关项目中也应该保持不变 | `targetKind: "personal"`，不传 `personalProjectId`，设置 `profileAspect` | 每个任务都加载 |
-| 项目级个人偏好 | 协作方式属于一个项目或项目族 | 同上，同时传精确的 `personalProjectId`；默认 `local_only`，不向子项目继承；需传播时显式使用 `descendants` 或 `selected_projects` | 精确项目优先；仅按显式继承模式沿获授权关系传播，冲突不按分数自动裁决 |
-| 项目知识 | 事实只属于一个项目，或应由某个上级项目统一维护 | `targetKind: "personal"`，传 `personalProjectId`，不设置 `profileAspect` | 先查当前项目，再沿获授权的 `PART_OF` / `USES_KNOWLEDGE_FROM` 最多向上两跳 |
-| 团队公共知识 | 经人工确认、确实需要共享的项目或领域知识 | `targetKind: "project"`，并经过预览/审核 | 只有明确订阅或选择的公共项目可见；个人偏好永不进入这一层 |
-
-判断作用域时问一句：**换到完全无关的项目，这条协作偏好还应该改变 Agent 的行为吗？**
-“是”就存个人全局；“否，只在 Fuli 项目或项目族”就存项目级偏好，并明确是否允许向子项目
-传播。客观项目事实不要因为多个项目都可能用到就改存个人全局；应放在明确的上级或知识源
-项目，再建立有方向的授权关系。全局和项目级存在同一 `attributes.preferenceKey` 时，
-确认权威必须先裁决；权威相同时才由精确项目版本覆盖全局版本。
-
-### Fuli 怎么识别当前项目
-
-Fuli 只匹配已经登记在“个人项目”中的稳定 `project_id`，不根据目录内容做模糊猜测。通常让
-`project_id` 与仓库目录名一致，例如仓库 `/workspace/fuli` 对应项目 `fuli`。标准调用只传
-当前工作目录，解析顺序如下：
-
-1. 向上找到最近的 Git 仓库根，从 `.git/config`（worktree 读其公共目录）读取 `origin`
-   远程地址，与某一个已登记项目记录的仓库来源 URL 完全相同时命中；同一仓库的 ssh 与 https
-   写法视为相同。因此任何目录名的克隆或 worktree 都解析到原项目（`git_remote`）。
-2. 否则按仓库目录名与已登记 `project_id` 完全相同时命中；Codex worktree 用 `.git` 指向的
-   原始仓库名。记录了另一个仓库地址的项目不会因为同名被命中（`repository_remote_conflict`）。
-3. 当前目录名与已登记项目 ID 完全相同时命中。
-4. 如果当前目录是工作区根，并且正好只有一个已登记的直接子目录带 `.git`、`package.json`、
-   `pyproject.toml`、`Cargo.toml` 或 `go.mod`，命中这个唯一子项目。
-5. 多个候选返回 `ambiguous`，没有候选返回 `unmatched`（同一远程地址被多个项目记录也算多个候选）；
-   两种情况都不会应用项目级偏好，也不会猜一个项目。
-
-第一次进入尚未登记、但身份明确的仓库时，已安装的沉淀 Skill 可以在首次项目级写入前通过
-`upsert_personal_project` 创建最小的本机私有项目；它不会自动创建或订阅公共项目。若工作区
-有多个候选，应进入精确项目目录运行 Agent，或先在“个人项目”中明确选择和登记。
-
-### Agent 什么时候调用什么
-
-正常使用时，不需要手工调用 MCP 工具：在项目目录中向 Agent 提任务即可。Fuli 已有 Claude
-Code、Codex 和 Cursor 生命周期适配器。已加载、获信任的入口 Hook 提供 `begin_task_context`
-上下文时，直接使用，不重复 fallback。Cursor 的 Hook 建立持久任务，但偏好与角色上下文
-仍由 Agent 取回。没有收到 Hook 上下文时，在每个任务开始调用一次：
-
-```json
-{
-  "tool": "get_collaboration_preferences",
-  "arguments": {
-    "projectPath": "/workspace/fuli",
-    "taskPrompt": "修复 npm 发布流程，并沿用这个项目已有的发布约定"
-  }
-}
-```
-
-命中后，返回值中的关键部分类似：
-
-```json
-{
-  "context": {
-    "personal_project_id": "fuli",
-    "project_resolution": {
-      "status": "matched",
-      "basis": "repository_root",
-      "personal_project_id": "fuli"
-    }
-  },
-  "effective_preferences": ["个人全局偏好 + fuli 的精确项目偏好"]
-}
-```
-
-入口返回的 `task_knowledge_recall` 没有回答稳定项目事实时，再用 1 至 4 条面向动作、产物、目标
-系统或标识符的短查询检索；不要把整段用户请求原样当成唯一查询：
-
-```json
-{
-  "tool": "search_current_project_knowledge",
-  "arguments": {
-    "projectPath": "/workspace/fuli",
-    "queries": ["npm 发布 Runbook", "GitHub Release 触发条件"],
-    "includePending": false
-  }
-}
-```
-
-任务结束时，Hook 模式调用 `checkpoint_task_knowledge`：只有少量、可复用且有证据的内容才用
-`capture_candidates`；否则使用 `retain_nothing`。Prompt fallback Agent 遵守相同判断标准，并
-通过 `capture_session_knowledge` 写入。写个人偏好时设置正确的 `profileAspect` 和稳定的
-`attributes.preferenceKey`；写项目事实时不设置 `profileAspect`。如果“设置”中的自动沉淀已
-关闭，自动写入会返回 `capture_disabled`，不会产生任何类别的条目：会话原文、checkpoint、知识和
-偏好候选、知识使用记录、查看记录，以及经由 Agent 上报的反馈或纠正都会停止。记录设置读取失败时
-自动写入同样停止（`reason: policy_unavailable`）。你在 FULI 控制台里明确提交的修改和显式的
-`新项目：` 仍会保存，查询已有知识不受影响。关闭期间写下的会话轮次只留一条不含内容的跳过标记，重新打开后
-也不会补记。
-
-记录范围还可以按项目选择。`projectMode` 为 `all`（默认）、`all_except`（配合
-`excludedProjectIds`）或 `selected`（配合 `selectedProjectIds`）；`unregisteredDirectories`
-决定没有登记为 FULI 项目的目录记不记（`selected` 下默认 `skip`，其余默认 `capture`）。目录按
-任务入口相同的规则解析为项目，所以同一仓库的 worktree 就是同一个项目。未开启的项目返回
-`reason: project_off`，未登记目录返回 `project_unregistered`，每轮任务回执末尾都会写明原因以及
-明确提交的修改仍会保存，例如「此项目未开启记忆；你明确提交的修改仍会保存」。关闭某个项目不会隐藏或删除它已有的记录，`projectsOffSince` 记下它从何时
-停止记录。Agent 用 `get_capture_policy` 读取（传 `projectPath` 可得知当前项目是否记录），用
-`update_capture_policy` 修改前必须先复述改动并得到用户确认；设置页使用 `PATCH /api/capture-policy`。
-在会话里说「这次别记」只暂停这一个会话、立即生效、无需确认：Agent 只带 `sessionPaused: true` 和当前
-`taskContextToken` 调用 `update_capture_policy`，此后本会话每轮回执都写「本会话已暂停记录（自 HH:mm 起）」
-（`reason: session_paused`）。之前的记录保留，该会话派出的 worker 一并暂停；说「继续记」（`sessionPaused: false`）
-从此恢复，暂停期间的内容不会补记。暂停状态存在本地运行目录，会话结束即失效。
-
-要让某个会话整体停用 FULI，由用户自己输入 `/fuli stop`（Claude Code 和 Cursor，setup 会安装 `fuli` 命令 Skill）
-或 `fuli stop`（所有客户端；Codex 不支持自定义斜杠命令）。这一行由提示词 Hook 直接答复，模型看不到：此后该会话不再注入
-记忆、偏好和召回，其 Agent 自己发起的 FULI 读取（搜索、Agent 记忆、对话）也被拒绝，不再自动记录，也不再自动发起协作（worker、借调、其他 Agent、角色任务）；其他会话、本地服务和已有记忆不变。
-`fuli start` 在现有设置内重新启用（暂停或更严格的全局、客户端、项目设置照样生效），`fuli restart` 还会让下一轮重新拿到完整
-上下文，`fuli status` 显示本会话和默认设置；停用期间的对话不会补录。已发给模型的上下文无法撤回，需要完全隔离请新开会话。
-只有任务令牌能说明一次工具调用属于哪个会话（Claude Code 的工具连接跨 /clear 保留，Codex、Cursor 的连接不带会话），所以某个客户端有任一会话停用期间，它不带任务令牌的工具调用一律拒绝，不把记忆提供给可能正是已停用的那个会话。Agent 传入手上已有的 `taskContextToken`（入口、搜索和团队类读取都接受），其他窗口照常工作。
-在客户端启动的 shell 里也可以运行同一开关（`!fuli session stop`），因此能运行 shell 的 Agent 也能改它（与能读写本地文件同等信任）；控制台和 `fuli mcp --call` 仍可为你读取；`fuli session default off` 让新会话默认不启用、
-需显式启用，已打开的会话保持原状。
-
-本地可先运行下面两个契约测试，验证 README 说明和项目路径解析仍与实现一致：
-
-```bash
-npm run test:node -- test/acceptance-docs.test.js test/project-path-context.test.js
-```
-
-## Agent 交互时序
-
-下面是日常任务的简化时序。更完整的项目继承、使用计数、写入预览和来源标记流程见
-[智能体调用时序图](acceptance/智能体调用时序图.md)。
+## 怎么工作
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor U as 用户
-    participant A as Agent
-    participant L as 生命周期接入
-    participant F as Fuli MCP
-    participant G as 本地图谱
-
-    U->>A: 在当前项目提交任务
-    alt Claude Code / Codex（已提供 Hook 上下文）
-        L->>F: begin_task_context(projectPath, taskPrompt)
-        F-->>A: 生效偏好、精确项目、有界召回和任务令牌
-    else 未提供上下文（Prompt fallback，含 Cursor）
-        A->>F: get_collaboration_preferences(projectPath, taskPrompt)
-        F-->>A: 生效偏好、精确项目和有界召回
-    end
-
-    A->>A: 检查 task_knowledge_recall
-    opt 仍需历史上下文且自动召回未回答
-        A->>F: 使用聚焦查询调用 search_current_project_knowledge
-        F->>G: 先查子项目，再查获授权的上级
-        G-->>A: 有界正文、状态、来源和历史
-        opt 知识实际影响结果
-            A->>F: record_knowledge_usage
-        end
-    end
-
-    A->>A: 完成实现、验证或回答
-    opt 产生决策、反证或失效证据
-        A->>F: 记录理由或知识反馈
-    end
-    opt 有值得保留的内容（候选、决策、有意义的工作记录）
-        A->>F: checkpoint_task_knowledge
-        F->>G: capture_candidates
-    end
-
-    alt 已加载并获信任的 Claude Code / Codex Stop Hook
-        L->>F: verify_task_checkpoint
-        F-->>L: 日常任务如实收尾为 retain_nothing / reported，其余给出提醒
-    else Cursor 或没有 Stop Hook 的 Agent
-        Note over A,F: 遵循同一契约。日常兜底任务在下一次任务入口时收尾
-    end
-    A-->>U: 返回结果与实际使用的 Fuli 来源
+flowchart LR
+    U[你] -->|在项目里提需求| A[Agent 客户端]
+    A -->|任务开始| F[FULI 本机服务]
+    F -->|生效偏好和一小份召回| A
+    A -->|还缺什么再查| F
+    A -->|值得留的才写回| F
+    F --- G[(本机图谱)]
 ```
 
-## 外部知识库只读接入
+1. 你在项目目录里给 Agent 提需求。客户端的 Hook（没有 Hook 时由 Agent 自己）先问 FULI 这是哪个项目、这次该守哪些偏好。
+2. FULI 只回一小份内容，包括生效的偏好和几条跟任务有关的项目知识。Agent 觉得不够，再按需去查。
+3. 做完以后，Agent 只把能复用的东西写回去，比如一条约定，或者一个决定和它的理由。临时输出和猜测不会留下。
+4. 私有对话记录、Agent 的工作记忆和确认过的知识分开存。对话长了，较早的部分会折叠成摘要。
+5. FULI 组织上下文、协调任务，真正干活的是接入的 AI 工具。能接续哪些对话取决于客户端适配器。换了工具，也拿不到别的项目的私有记忆。
 
-一个第三方知识库连接可以同时绑定到一个或多个已经存在的个人项目，不需要授予 Fuli 对源系统
-的写权限。每个目标项目独立保存检索模式、同步游标和错误状态；连接页支持多选绑定、连通性
-检查、手动同步、解绑，以及按项目设置冲突处理开关。
+## 深入了解
 
-| 连接器 | 读取路径 | 当前边界 |
-| --- | --- | --- |
-| MCP | Resources `list/read`；可配置 `search` / `fetch` 工具 | 默认方式；HTTPS、回环 HTTP 或 stdio |
-| Notion | 页面 Markdown 与 Data Source 查询 | 当前 `2026-03-11` API；必须明确页面或数据源 ID |
-| 飞书 / Lark | Wiki 节点、搜索与 Docx 纯文本 | 当前只提取 Docx；搜索可能需要 user access token |
-| RAG Retrieval API | Dify 外部知识库兼容检索协议 | 仅实时；适合 Dify 兼容端点或适配后的 RAGFlow 等系统 |
-| 可信自定义代码 | 本地 ESM `sync` / `retrieve` 契约 | 用户显式安装的可信代码，不是沙箱 |
-
-<a id="connect-external-knowledge"></a>
-
-### 给项目连接一个或多个知识库
-
-同一个个人项目可以拥有多个独立知识库绑定，同一个知识库连接也可以绑定多个个人项目。每次
-提交表单都会新增一个连接，不会覆盖已有连接；连接来源只保存一次，项目目标分别保存检索模式、
-同步状态和错误。已有连接可用“绑定项目”继续增删目标。
-
-1. 先在“个人项目”中创建或确认目标项目。
-2. 如果来源需要令牌，在启动 Fuli 的环境中设置令牌，再启动或重启服务。连接配置只填写
-   环境变量名，例如先执行 `export PROJECT_KB_TOKEN='...'`，再执行 `fl restart`。
-3. 打开 `http://127.0.0.1:2727/connections`，在“外部知识库”中填写连接名称、连接器、
-   绑定项目（可多选）和检索模式。
-4. MCP HTTP 填写最终端点 URL（不跟随跨源重定向）和可选的令牌环境变量名；MCP stdio 填写命令与参数；Notion
-   填写令牌环境变量名以及 Page IDs 或 Data Source IDs；飞书 / Lark 填写令牌环境变量名、
-   区域和明确的 Space ID、根节点 Token 或 Node Tokens；RAG Retrieval API 填写 Dify 兼容
-   端点、知识库 ID 和可选令牌环境变量名；自定义连接器填写受信任本地 ESM 模块与来源 JSON。
-5. 点击“添加连接”，再点击“检查”。`mirror` 或 `hybrid` 绑定检查成功后可点击“同步”；
-   `live` 绑定直接在 Agent 查询时读取来源。
-6. 连接建立后可点击“绑定项目”，多选增删项目并为每个项目设置检索模式。
-
-绑定后，项目图谱会显示一个“外部知识源”节点以及“使用外部知识”关系。这个节点是连接配置的
-只读投影；实时正文仍只在 Agent 调用 `search_connected_knowledge` 时按当前项目检索，不会因
-显示在图谱里而被复制到本地。
-
-三种检索模式的差异：
-
-- `live`（仅实时）：查询时直接读取第三方，不在 Fuli 中保存正文镜像；依赖来源在线。
-- `mirror`（仅同步）：手动把只读正文镜像到绑定的个人项目，Agent 查询本地图谱。
-- `hybrid`（同步 + 实时）：同时使用本地镜像和来源实时结果；连接器同时具备两种能力时推荐。
-
-绑定支持 `live`、`mirror` 和 `hybrid`。镜像正文只写入绑定的个人项目，并统一标记为
-`observed`、`pending`、`restricted`、`local_only`。配置只保存环境变量名称，不保存明文凭据；
-连接器契约中不存在第三方源写入。疑似包含凭据的单个文档会被跳过并返回数量，不进入图谱或
-Agent 上下文。
-
-<a id="external-knowledge-conflict-policy"></a>
-
-### 冲突策略
-
-冲突策略有一个对所有个人项目生效的默认值；个别项目可以单独设置为例外（连接 → 冲突策略）。
-它对该项目的个人图谱、全部外部绑定和明确选择的公共项目统一生效：
-
-- “在 Agent 对话中询问”是内置默认值。Agent 并列展示相互冲突的正文、来源和作用域，由用户选择。
-- “允许 AI 本次判断”允许 Agent 为当前回答选择更可信或更新的来源，但必须说明判断依据；它
-  不会确认、失效、覆盖或写回任何知识。
-
-在项目目录中可以直接要求 Agent：`结合当前项目和已连接知识库查找支付回调规范；如果来源冲突，分别列出并让我决定。`
-
-`search_connected_knowledge` 分开返回个人图谱、每个外部绑定和调用方明确选择的公共项目，
-不会先压成无来源正文。公共项目聚合目前是 **Beta**。Agent 发现实质冲突时，默认在对话中
-展示并询问用户；可选的“Agent 判断”只对本次回答生效，不能确认、失效或改写任何来源。
-外部知识直接绑定到公共空间或经审核提升到公共空间、后台定时同步、Webhook 和完整删除对账仍是 **TODO**。
-
-完整边界见[外部知识库只读接入架构](docs/external-knowledge-architecture.md)，公共空间与个人图谱的联动见[公共空间与个人图谱联动架构](docs/public-personal-architecture.md)。
-
-## 当前能力与证据边界
-
-已经由实现和自动化测试覆盖的核心机制包括：
-
-- 本地个人空间、精确项目作用域和选择性上级继承；
-- 偏好确认、延迟冲突处理、修订历史和来源标记；
-- 有界的任务提示自动召回、聚焦的按需检索和实际使用审计；
-- 任务入口、任务末尾知识检查，以及 Claude Code、Codex、Cursor 的客户端适配（Hook 覆盖范围见下文）；
-- 决策选项、决策理由和首次记录时附带的验证结果；
-- 知识使用事件、负面反馈和内容代际隔离；
-- 支持暂停、恢复和水位线的持久化分范围知识复核；
-- 公共知识候选发现，以及预览令牌保护的原子提升；
-- MCP、Notion、飞书 / Lark、Dify 兼容 RAG Retrieval API 和可信自定义代码的只读多项目绑定与聚合检索。
-
-0.20 新增（公开预览版 `0.20.0-beta`，详见[发布说明](docs/releases/0.20.0.md)）：
-
-- **项目与人员**：没有归属的会话先交给 Astro，Jefa 负责分诊，同一话题反复出现（累计 3 个会话、跨至少 2 天）时，Astro 会问你要不要为它成立项目、招人维护。项目都有简介，Agent 都有职业，Bole 按职业招聘。
-- **任务**：可以只指派不开工（backlog）；在任务详情里可以停止、重试、回看任何一次运行。临时故障只在确定没发出指令时才自动重试。
-- **待决策**：Agent 需要你时，先在当前会话里问你。需要等你稍后处理的请求进「待决策」页，你的回复会送回发起请求的 Agent。
-- **圆桌**：除了问答（`message_agent`），Agent 之间还能私聊和群聊（`agent_chat`），支持推送和 `wait` 等待；控制台实时显示。
-- **项目间记忆**：用权重（有关系 / 常往来 / 密切）表示一个项目能从另一个项目取多少记忆。权重不授予权限。
-- **更省 Token**：任务入口更小，共享规则按需读取，长偏好分页读完，Stop Hook 直接收尾日常任务，省掉一次模型往返。
-- **控制台**：六个入口（工作台、Agents、对话、项目、记忆、设置），适配手机；按住 Alt / Option 点任意状态或名词就能看到解释。
-- **Windows**：从发布页下载 `FULI-Setup-<版本>.exe` 双击即可为当前用户安装（不用终端、不要管理员；暂未签名，SmartScreen 会提示一次）。安装版自带 Update-Fuli、Rollback-Fuli、Uninstall-Fuli，数据都会保留；管理页的「更新到 vX」会下载并校验发布的 Windows 安装包，一键完成同样的更新。
-
-仍需与“已经证明”区分的内容：
-
-- `FULI_ALIGNMENT_BENCHMARK.md` 中 A/B 阈值是验收约定；只有完成足量、同条件的真实配对任务
-  后，才能声称 Fuli 已降低重复解释或返工；
-- Benchmark 的测试项目和对话是明确标注的 **MOCK / 合成数据**，不是用户或生产数据；目前实测的
-  token 用量和召回准确率（合成项目、小样本，只能看趋势）见[实测报告](https://xn--8ovp9s.xn--m8txu.com/fuli/report/)；
-- 当前决策工具可在首次记录时附带验证，但还没有面向既有 `Decision` 单独追加不可变验证结果
-  的专用入口；
-- 安装文件不等于宿主已加载、信任或执行。Claude Code 和 Codex 适配器会生成入口/Stop Hook
-  配置，Codex 信任审阅仍由用户完成；Cursor 使用任务入口 Hook 和有限 Stop 提醒，不能表述为
-  同等的无条件 Stop Gate。三个真实客户端的普通输入触发仍需实际验收；
-- 聚合检索中的选定公共项目仍是 Beta；外部知识提升到公共空间和后台增量同步尚未实现。
-
-## 安装
-
-准备：
-
-- Node.js 24.12 或更高版本；
-- 默认容器模式需要 Docker Compose v2，Docker Desktop 或 Rancher Desktop 均可；
-- macOS / Linux 可选择不使用虚拟机的原生模式；它需要 Java 21 和 `uv`（Python 3.12）；
-- 内存紧张的 Mac 推荐
-  `fuli setup --runtime-mode native --memory-profile low --adaptive-memory`。默认仍是兼容性更高的容器模式，不会自动强制切换。
-
-全局安装并初始化：
-
-```bash
-npm install --global fuli-context
-fuli setup
-```
-
-也可以一行安装，会先检查 Node.js 版本：
-
-```bash
-curl -fsSL https://xn--8ovp9s.xn--m8txu.com/fuli/install.sh | sh
-```
-
-Windows PowerShell：`irm https://xn--8ovp9s.xn--m8txu.com/fuli/install.ps1 | iex`。
-
-`fuli setup` 会先展示操作计划并请求确认，然后检查容器运行时、初始化本机
-Graphiti / Neo4j、创建个人空间、安装配套 Agent Skills，并为检测到的 Agent 注册 `fuli`
-MCP。默认只连接个人 Provider，不会模拟团队共享服务。
-
-初始化完成后：
-
-```bash
-fuli open
-```
-
-管理界面默认位于 `http://127.0.0.1:2727`。Windows 上 Hyper-V、WSL 和 winnat 会保留一些端口段，且每次开机可能不同
-（`netsh interface ipv4 show excludedportrange protocol=tcp` 可查看）。首次设置会避开这些端口段；之后每次 `fuli start`、
-`restart` 和 `setup` 都会再查一遍：Fuli 的端口如果被保留了，或者管理界面的端口被 Windows 拒绝、被别的程序占用，就自动换到最近的
-可用端口，先备份 `runtime-settings.json` 再保存新端口，照常启动，并只提示一次（命令输出、桌面客户端和管理界面里）。如果那个端口上
-是另一个正在运行的 Fuli，它不会换走，也不会再启动一个。Windows 托盘的「换一个端口」仍可按需改用默认端口附近的可用端口。
-已打开的 Agent 会话要重开后，Fuli 链接才会指向新地址。
-
-“设置”页集中管理 Fuli 使用的 7 个本机端口、图数据库运行方式、局域网访问、自动沉淀、
-Agent 使用、界面语言和资源刷新频率。端口、运行方式或局域网设置保存后执行 `fuli restart`
-生效；资源刷新频率立即生效。
-同页按设定间隔采集管理服务、Provider、Neo4j、应用文件和本机数据的真实内存/磁盘占用；
-内存每次重采，磁盘最多每分钟重采一次，并分别显示采样时间。
-无法取得运行进程数据时会明确显示为不完整，不使用模拟值。原生模式会计入 Provider 和
-Neo4j 进程；容器模式不把共享容器虚拟机开销计入 Fuli 合计。两种模式都不含浏览器标签页。
-
-## CLI
-
-全局安装提供两个等价命令：`fuli` 和短别名 `fl`。
-CLI 的帮助、交互提示、状态和错误信息固定使用英文，不跟随网页或系统语言；路径、空间名等
-用户数据会按原值显示。
-
-| 命令 | 用途 |
+| 想知道 | 去读 |
 | --- | --- |
-| `fuli --help` / `fuli -h` | 显示所有公开命令及其可用参数 |
-| `fuli --version` / `fuli -v` | 显示当前安装的 Fuli CLI 版本 |
-| `fuli setup [选项]` | 初始化 Provider、管理界面、Agent 接入和 Skills；可重复执行 |
-| `fuli start [选项]` | 检查 Agent 接入后启动 Provider 和管理界面；可选择启动后打开浏览器、重建容器或启用 LAN 访问 |
-| `fuli stop [--data-dir DIR]` | 停止服务并保留数据 |
-| `fuli restart [选项]` | 使用与 `start` 相同的运行参数重启本机服务 |
-| `fuli status [--json] [--data-dir DIR] [--port PORT]` | 查看管理界面、个人图谱和公共服务状态；`--json` 输出机器可读结果 |
-| `fuli open [--data-dir DIR]` | 在默认浏览器中打开当前管理界面 |
-| `fuli graph export --output DIR [--mode container\|native]` | 把当前图数据导出为可校验、可复制的离线备份包 |
-| `fuli graph import --input DIR [--target-mode container\|native] [--yes]` | 校验备份并替换目标图数据；导入前自动保留回滚包 |
-| `fuli graph migrate --to native [--yes]` | 把容器图谱迁移到原生模式；节点和关系数量完全一致才算成功 |
-| `fuli update [setup 选项]` | 更新 npm 包并刷新本机接入 |
-| `fuli uninstall [--yes] [--data-dir DIR]` | 清理 Agent 接入和服务，保留知识数据和 Neo4j 数据卷 |
-
-常用示例：
-
-```bash
-fuli --version
-fuli status
-fuli restart --rebuild
-fuli start --lan
-fuli graph export --output "$HOME/Backups/fuli-graph"
-fuli stop
-```
-
-连接已部署的 `fuli-workspace` 服务：
-
-```bash
-fuli connect-workspace \
-  --url http://127.0.0.1:8789 \
-  --token-file /path/to/private-token
-fuli restart
-```
-
-连接命令会先验证服务发现、协议版本和令牌作用域，再以 `0600` 权限原子更新本机运行配置；
-它不会在输出中显示令牌、令牌文件路径或远端 principal ID。非本机服务必须使用 HTTPS。
-当前 `fuli-workspace-v1` 适配器开放发现、显式订阅和查询；发布、投稿、审核只会在相应协议映射
-真正实现后才显示为可用。
-
-`start` 和 `restart` 支持 `--data-dir DIR`、`--personal-space NAME`、`--port PORT`、
-`--open`、`--rebuild`、`--lan` 和 `--no-lan`。未显式传入端口或局域网参数时会使用“设置”
-页保存的值。其中 `--lan` 会让管理界面监听
-私有 IPv4 局域网地址，并在终端输出可访问地址、用户名 `fuli` 和本次启动生成的临时访问
-口令。默认启动仍只监听 `127.0.0.1`；内部 Provider、Neo4j Browser 和 Bolt 不会随
-`--lan` 开放。局域网模式使用 HTTP Basic Auth，只适合可信家庭或办公 Wi-Fi，不等同于
-HTTPS 公网部署。
-`fuli start` 启动前会只读检查已检测到的 Agent 的 MCP、Skill、Codex bootstrap 和 Claude
-生命周期接入。如果有缺失或过期，它仍会启动本机服务，但会提示执行 `fuli setup`；不会在
-后台隐式修改接入配置。
-
-`setup` 和 `update` 支持：
-
-| 选项 | 用途 |
-| --- | --- |
-| `--yes` | 跳过确认，适合无人值守执行 |
-| `--codex-only` | 只接入 Codex |
-| `--data-dir DIR` | 使用指定的数据与配置目录 |
-| `--personal-space NAME` | 设置个人空间名称；默认是 `Personal` |
-| `--port PORT` | 设置管理界面端口；默认是 `2727` |
-| `--runtime-mode container\|native` | 选择容器或原生进程；默认 `container`，原生模式当前支持 macOS / Linux |
-| `--memory-profile low\|balanced` | 选择 Neo4j 内存档位；首次安装默认使用 `balanced` |
-| `--adaptive-memory` | 启用按需唤醒和分阶段休眠；保存后由管理服务协调 |
-| `--no-adaptive-memory` | 关闭按需休眠，让图服务保持运行 |
-| `--skip-agents` | 不修改 Agent 配置或 Skills |
-| `--connected-only` | 仅刷新已有 Fuli MCP 配置的客户端；update 自动使用此选项 |
-| `--no-start` | 初始化 Provider，但不启动管理界面 |
-| `--allow-provider-downgrade` | 接受更低版本的原生 Provider，例如从本机 `rc` 版换到公开的 `beta` 版；先备份数据目录 |
-| `--personal-only` | 只使用个人 Provider；默认模式 |
-| `--with-dev-public` | 同时启动开发用公共 Provider，仅用于开发或联调 |
-
-`low` 档使用 128 MiB 初始堆、256 MiB 最大堆和 64 MiB 页缓存；`balanced` 档分别使用
-256 MiB、512 MiB 和 256 MiB。低内存档不会设置容器硬内存上限，会在降低常驻内存的同时
-为 Neo4j 原生内存留出余量。批量写入、大范围图遍历或高并发时，垃圾回收和磁盘读取可能
-增多，但事务语义、存储格式和数据卷不变。如果这些负载变慢或因堆不足而失败，可执行
-`fuli setup --memory-profile balanced --yes` 回退。选择的档位会被保存，后续 setup、update、
-start 和 restart 会继续沿用。
-
-自适应内存模式是独立于 Neo4j 内存档位的生命周期策略。启用后，管理服务保持轻量常驻：
-实际 MCP 工具、MCP 资源或管理界面的图谱请求会先取得运行租约并按需唤醒服务；最后一个
-租约释放后，个人 Provider 默认空闲 60 秒停止，Neo4j 默认空闲 180 秒停止。数据卷不会被
-删除，下一次请求会自动恢复同一份数据。运行中的调用会持续续租，不会被空闲计时器中断；
-客户端异常退出后，租约最多 180 秒自动过期，避免服务永久被占住。这些秒数是当前产品默认值，
-不是硬件实测阈值。
-
-这种模式把空闲内存换成首次请求的冷启动等待和更多磁盘读取。管理界面的健康、运行状态和资源
-采样不会唤醒图服务；`fuli status` 会把主动休眠报告为正常状态。管理服务必须保持运行才能自动
-唤醒，所以 `--no-start` 只会保存策略，不会在本次运行中提供按需唤醒。容器模式下，该策略只
-停止 Fuli 的 Provider / Neo4j 容器，不会自行关闭 Rancher Desktop、Docker Desktop、
-Kubernetes 或整台容器虚拟机；原生模式会直接停止对应 Provider 和 Neo4j 进程，因此空闲时
-不再保留共享虚拟机开销。
-
-Jefa（项目经理）、Bole（AR，Agent Resources）和 Tonborg（决策员）是每个空间自带的角色，
-不需要招募。Bole 的工作台可查看人员安排、当前工作与招募历史；Tonborg 的工作台可查看判断与反馈。
-Jefa 的任务看板随 FULI 内置，无需安装；在角色卡片或工作台的“管理负责项目”里设置它负责哪些项目。
-控制台不再有聘请步骤：自定义员工包通过 Agent 工具 `recruit_employee` 招募，招募复用持久身份，
-按项目单独任职；安装员工包后，侧栏工作台与 API 共用 FULI 端口，已有 FULI MCP 可发现和调用员工工具。
-招募不等于启动模型，也不改写已有客户端配置。详见[员工包安装与扩展协议](docs/employee-agents.md)。
-Agent 还可以自己做小的 [Agent 应用](docs/agent-apps.md)；本版本没有沙箱，经你在终端用 `fl app approve` 确认后，应用以你的账户权限运行。
-
-Project Agent 身份仍是控制面记录，不会每个身份常驻一个进程。角色工作记忆按项目私有、
-版本化地保存在同一个 Neo4j Provider 中；任务入口恢复唯一负责人，结束检查跨 MCP 进程持久化。
-详见[角色记忆、宿主 hooks 与验收边界](docs/project-agent-memory.md)。受支持的 Codex 和
-Claude Code Hook 还会保存可见对话，累积到一定量后折叠成摘要，按预算恢复。跨项目借调与
-产物验证沿用同一个 Provider；客户端覆盖及模型能力配置见
-[对话与协作](docs/agent-conversations-and-collaboration.md)。实际执行器按 ID 共用租约：
-只有显式注入受管生命周期适配器的执行器才由 Fuli 启停；Codex 等宿主自己拥有的外部执行器
-不会被 Fuli 擅自启动或终止。当前可用的最小内存组合是：
-
-```bash
-fuli setup --yes --runtime-mode native --memory-profile low --adaptive-memory
-```
-
-两种模式使用彼此独立的数据目录，切换不会删除原模式的数据，也不会在后台自动合并两边的
-新增内容。需要迁移时，先在来源模式仍处于启用状态时导出，再安装或切换目标模式并导入：
-
-```bash
-# Rancher / Docker -> 原生
-fuli graph export --mode container --output "$HOME/Backups/fuli-container"
-fuli setup --yes --runtime-mode native --memory-profile low --adaptive-memory
-fuli graph import --target-mode native --input "$HOME/Backups/fuli-container" --yes
-```
-
-也可以用一条命令完成同样的步骤（需要带原生运行时的安装包；Windows 上是已安装的 Fuli 桌面版）：
-
-```bash
-fuli graph migrate --to native
-```
-
-它会停止正在运行的控制台，统计并导出容器图谱，切到原生模式后导入；只有每种标签和关系类型的数量都一致，
-才接受迁移结果。任何一步失败都会切回容器模式。容器卷只会被读取，之后保持停止，不会被删除；
-客户端接入不受影响。
-
-反向迁移只需交换 `container` 和 `native`。导出会短暂停止来源数据库，完成后只恢复导出前
-确实在运行的服务；导入会先校验清单和每个 dump 的 SHA-256，再停止目标数据库。替换前的
-目标数据会自动保存在数据目录下的 `backups/graph`，导入失败时会立即尝试回滚。执行前应让
-正在写图数据的 Agent 请求结束。
-
-导入完成后会使用目标安装自己的 bootstrap token 重新签发本机 Provider 访问令牌，并原子
-更新运行配置；明文访问令牌不会写入迁移包。同一台机器迁移时，非受管的外部 Workspace
-连接配置会继续保留；换到另一台机器后，外部服务凭据需要单独重新连接。
-
-备份是一个含 `manifest.json`、`personal.dump` 和可选 `workspace.dump` 的目录，可以复制到
-其他磁盘或机器。容器模式通过 Docker API 复制文件，不要求 Rancher 共享备份所在目录。
-dump 使用项目固定的 Neo4j 5.26 格式，适合在 Fuli 两种运行模式或兼容的 Neo4j 5.26 环境间
-迁移；它不是面向任意数据库的 CSV / JSON 通用交换格式。
-
-更新：
-
-```bash
-fuli update
-```
-
-更新会显示当前 CLI、Node、PATH 中的启动入口和 npm 安装目标。已是最新版时直接结束，
-不会重复安装或重启服务。需要升级时先确认不会降级，再停止旧服务、安装最新版本，
-仅刷新已有 Fuli MCP 配置的客户端。
-既有知识、配置备份和 Neo4j 数据卷会保留。使用过自定义 setup 选项时，更新时应继续传入
-相同选项。
-
-已打开的客户端需要重新连接 Fuli MCP，或重启客户端后新建任务，才能加载新进程。
-只需修复仍保留 Fuli MCP 条目的已有接入时，运行 `fuli setup --yes --connected-only`；仅剩 Skills（`skills-only`）、已移除（`removed`）或新接入的客户端（无 Fuli MCP 条目）须运行完整的 `fuli setup`。
-
-卸载：
-
-```bash
-fuli uninstall
-npm uninstall --global fuli-context
-```
-
-自动卸载不会永久删除个人图谱，避免误删。重新安装后可以继续使用原数据。
-
-## Agent 接入与主要工具
-
-Fuli 为支持的 Agent 安装 `capturing-session-knowledge`、`grilling-project`、`operating-fuli` 和 `flreview`
-Skills。输入 `/flreview` 后可选择全部、个人偏好或个人项目（Codex 在 Hook 运行前就拒绝自定义斜杠命令，
-请单独一行输入 `fuli review` 或 `flreview`：Codex 提示词 Hook 会把这一行连同已安装 Skill 的名称交给模型；本会话停用 FULI 时由 Hook 直接答复，不开始复核）；若用户表示完全没耐心，流程会
-跳过心情、时间和 token 询问，只处理少量最高优先级问题。Fuli setup 为 Claude Code 生成
-`UserPromptSubmit`/`Stop` MCP Hook，为 Codex 生成 `UserPromptSubmit` MCP Hook 和本地 `Stop`
-命令，为 Cursor 生成 `sessionStart`/`beforeSubmitPrompt`/`stop` Hook。Codex bootstrap 和 Cursor
-指令只在未收到生命周期上下文时使用 fallback，不重复已提供的偏好。Codex 的 Stop 命令首次
-阻止未完成检查；若一次继续后仍未完成，只对同一 token 写入 `retain_nothing` 防止无限循环，
-不生成知识或角色记忆。安装配置不会代替用户批准宿主信任。偏好正文始终以本机 Fuli 为唯一
-来源，不复制到 Agent 配置中。`operating-fuli` 要求 Agent 在写数据前先检查结构化接口覆盖目录，
-写后用对应读取工具验证；浏览器自动化只用于可选的视觉检查，不作为数据写入手段。详见
-[Agent 接口架构](docs/agent-interface-architecture.md)。
-
-FULI MCP 还提供只读的 `fuli://` resources：每个本地个人项目和“全局品味”各有一个可选条目。
-支持 MCP mention 的 Agent 可以在 `@` 选择器里选中它们；项目条目只代表一个精确项目，
-不会因为选择而自动扩大到其他项目或 `RELATED_TO` 项目。
-
-### Claude 网页版 / Cowork 的远程上游
-
-`fuli remote-mcp` 提供绑定单一个人项目、最小权限的 Streamable HTTP MCP 上游。它把来源
-独立记录为 `claude`，要求仅 owner 可读的 bearer token 文件，拒绝跨站 Origin，并且只监听
-loopback：
-
-```bash
-umask 077
-openssl rand -hex 32 > ./fuli-remote.token
-fuli remote-mcp --personal-project-id YOUR_PROJECT_ID \
-  --bearer-token-file ./fuli-remote.token --port 2728
-```
-
-在 POSIX 系统上，CLI 会以 nonblocking + no-follow 方式打开 token，并要求权限为 `0600`。
-Windows 无法通过 Node.js 获得同等的 `O_NOFOLLOW` 与 POSIX 权限保证，因此 token 必须放在
-受 Windows ACL 保护的目录中，必须是普通文件且不能使用链接。
-
-启动前会校验该项目确实属于当前个人空间；默认最多同时保留 8 个会话，并清理空闲超过
-15 分钟的会话；需要时可用 `--max-sessions` 和 `--session-idle-ttl-seconds` 调整。“空闲”按
-已完成的 MCP 应用请求计算，静默的独立 SSE 通知流不会永久占用会话槽；到达 TTL 后连接
-可能被关闭，客户端须重新连接并初始化新会话。关闭服务时，正在处理的有界请求与会话清理
-共享同一个宽限截止时间，超时后才强制关闭剩余 HTTP 连接。若反向代理
-会转发浏览器 `Origin` 或保留公网 Host，用
-`--allowed-origin https://connector.example --allowed-host connector.example` 显式配置；否则让
-代理把 Host 重写为 loopback 上游地址。任意未允许的 Origin 和 Host 都会被拒绝。每个 MCP
-会话只能读取任务入口为它选中的 Agent 私有上下文与记忆。checkpoint token 还同时绑定上游
-配置的项目和创建它的 MCP 会话，其他项目进程或同项目的其他会话都不能复用。
-
-这只是内部上游，不是公网部署。Claude 自定义连接器从 Anthropic 云端发起请求，因此仍须在
-监听器前配置公开 HTTPS 与 OAuth 2.1 代理；代理必须校验用户身份、token audience 和最小
-scope，再把外部 token 换成内部 bearer，绝不能开放 Fuli Provider 或 Neo4j 端口。
-claude.ai 不运行本机生命周期 hooks；MCP 初始化指令会要求每项任务先恢复角色、结束前
-checkpoint，但只有真实连接后的 Claude 会话才能证明该行为。
-
-当任务需要品味或判断建议时，`get_user_taste_skill` 会根据当前生效的个人档案和历史任务
-数据生成一份有界、只读的 `user-taste` Skill 结论。它会标注证据状态与作用域，返回与当前
-任务匹配的推荐，并在偏好新增或修订后重新生成；不会覆盖用户自己编写的 taste Skill，持久
-图谱仍是唯一来源。
-
-| 工具 | 用途 |
-| --- | --- |
-| `begin_task_context` | Hook 入口：解析任务、在命中信号时执行有界召回并创建任务令牌 |
-| `get_collaboration_preferences` | Fallback 入口：读取生效偏好和有界任务召回 |
-| `get_user_taste_skill` | 生成当前带证据状态的 taste Skill 结论和任务推荐 |
-| `search_current_project_knowledge` | 子项目优先、按授权关系向上检索 |
-| `search_knowledge_graph` | 在明确的有界范围内执行更通用的查询 |
-| `search_connected_knowledge` | 分开检索图谱、项目绑定的只读来源和选定公共项目，保留来源边界 |
-| `record_knowledge_usage` | 记录真正影响结果的引用或应用 |
-| `record_knowledge_feedback` | 保存拒绝、验证失败、冲突或过时证据 |
-| `record_decision_trace` | 保存选择、被拒方案、理由和可选初始验证 |
-| `capture_session_knowledge` | 批量写入少量、结构化的候选知识 |
-| `checkpoint_task_knowledge` | 以 `capture_candidates` 或 `retain_nothing` 结束知识检查 |
-| `discover_common_knowledge_candidates` | 只读发现可能属于上级项目的公共候选 |
-| `preview_common_knowledge_promotion` | 预览人类确认的公共知识提升 |
-| `apply_common_knowledge_promotion` | 使用一次性令牌原子执行提升 |
-| `resolve_deferred_preference_conflict` | 在实际需要时处理已授权给 AI 的冲突 |
-| `start_knowledge_review` | 启动或恢复精确范围的个人知识回顾 |
-| `list_knowledge_review_candidates` | 按时间、冲突、权重和跨会话重复顺序列出候选 |
-| `record_knowledge_review_progress` | 保存确认、修改、失效、跳过或稍后处理结果 |
-| `finish_knowledge_review` | 暂停回顾，或完成并推进下次回顾水位线 |
-
-## 隐私与安全边界
-
-- 个人知识写入本机 Provider；
-- Agent 归纳结构化知识，与私有、由适配器可见的对话日志分开管理；
-- Token、Cookie、私钥、凭据、私人联系信息、临时日志和原始命令输出不得进入图谱；
-- Graphiti 远程 LLM 路径被禁用，当前嵌入在本机计算；
-- 搜索按个人空间和项目范围限定，不默认混入所有项目；
-- 外部连接器从不写入第三方源，绑定配置拒绝保存明文凭据；
-- 公共提升需要可审计的人工确认，Agent 自己的使用证据最多晋级为
-  `agent_confirmed`；
-- Fuli 不是实时监控或 Git 服务，实时状态应从对应系统重新读取。
-
-## 本机服务
-
-| 服务 | 默认回环地址 | 启用条件 |
-| --- | --- | --- |
-| Fuli 管理界面 | `127.0.0.1:2727` | 始终启用 |
-| 个人 Provider | `127.0.0.1:8787` | 始终启用 |
-| 个人 Neo4j Browser / Bolt | `127.0.0.1:8060` / `127.0.0.1:7687` | 始终启用 |
-| 开发公共 Provider | `127.0.0.1:8788` | 仅 `--with-dev-public` |
-| 开发公共 Neo4j Browser / Bolt | `127.0.0.1:7475` / `127.0.0.1:7688` | 仅 `--with-dev-public` |
-
-以上共 7 个端口均可在“设置”页修改。即使管理界面以 LAN 模式启动，Provider 和 Neo4j 仍只
-绑定回环地址。
-
-需要同一 Wi-Fi 下的其他设备访问时，执行 `fuli start --lan`。若当前已经以本机模式运行，
-命令会安全重启管理界面并保持 Provider 与图谱数据不变。退出局域网模式可在设置页关闭后
-执行 `fuli restart`，或直接执行 `fuli restart --no-lan`；再次进入局域网模式会更换临时访问
-口令。
-
-如果端口被占用、Docker Compose 不可用或容器引擎未启动，setup 会在修改 Agent 配置前停止
-并报告原因。
-
-## 验收与源码开发
-
-- [Alignment Benchmark](FULI_ALIGNMENT_BENCHMARK.md)
-- [Token 与准确率实测报告](https://xn--8ovp9s.xn--m8txu.com/fuli/report/)：多花多少 token、召回准不准，写明方法、模型、客户端、日期和还没测的部分
-- [中文验收索引](acceptance/README.md)
-- [知识检索与确认流程图](acceptance/知识检索与确认流程图.md)
-- [外部知识库只读接入架构](docs/external-knowledge-architecture.md)
-
-```bash
-npm install
-npm test
-npm run test:package
-npm run test:external-knowledge:live
-```
-
-外部知识联网测试会临时下载两个公开官方文档仓库，验证只读同步和检索后删除整个临时目录。
-该测试依赖网络，不属于默认测试套件。
-
-Provider 验证：
-
-```bash
-python3.12 -m venv .venv
-. .venv/bin/activate
-python -m pip install "./graph-provider[dev]"
-python -m compileall -q graph-provider/fuli_graph
-python -m pytest -q graph-provider/tests
-docker compose -f compose.graphiti.yml config --quiet
-```
-
-`npm run test:package` 会构建前端、生成真实 npm tarball、安装到隔离的全局前缀，并验证
-`fuli` / `fl`、版本号、帮助信息和 Web UI。测试源码、QA 截图和内部设计文档不会进入 npm
-包。
+| 安装细节、CLI 命令和本机端口 | [安装与运行](docs/install.zh-CN.md) |
+| 完整理念，什么存在哪里，怎么认出项目 | [FULI 怎么工作](docs/how-it-works.zh-CN.md) |
+| 各客户端怎么接，出了问题怎么恢复 | [客户端接入（英文）](docs/client-connections.md) |
+| Agent 拿到哪些 Skills、Hook 和 MCP 工具 | [Agent 接入与 MCP 工具](docs/agent-tools.zh-CN.md) |
+| 绑定 Notion、飞书等外部知识库 | [外部知识库只读接入](docs/external-knowledge.zh-CN.md) |
+| 内置角色和员工包 | [专职 Agent（英文）](docs/employee-agents.md) |
+| Agent 自己做的小应用 | [Agent 应用（英文）](docs/agent-apps.md) |
+| Tonborg 怎么判断 | [Tonborg 与自主程度（英文）](docs/judgment-and-autonomy.md) |
+| 圆桌和跨客户端接续 | [圆桌](docs/agent-roundtable.md) · [对话与协作](docs/agent-conversations-and-collaboration.md) |
+| 已经证明了什么，隐私边界在哪 | [能力与边界](docs/capabilities-and-limits.zh-CN.md) |
+| 省了多少 token，召回准不准 | [实测报告](https://有点.意思.com/fuli/report/) |
+| 架构细节 | [外部知识架构](docs/external-knowledge-architecture.md) · [检索设计](docs/retrieval-design.md) · [Agent 接口架构（英文）](docs/agent-interface-architecture.md) |
+| 跑源码和测试 | [开发与验收](docs/development.zh-CN.md) · [参与贡献](CONTRIBUTING.md) |
+| 每个版本改了什么 | [发布说明](https://github.com/JevonsCode/fuli/releases) |
 
 ## 品牌
 

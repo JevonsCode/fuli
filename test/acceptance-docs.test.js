@@ -13,7 +13,10 @@ function 读取仓库文件(文件名) {
   return readFileSync(new URL(文件名, 仓库目录), 'utf8');
 }
 
-test('中英文 README 应完整表达项目理念、证据边界和 Agent 生命周期', () => {
+// The READMEs stay short; the detail they link to lives in these docs pages.
+const 文档页 = ['install', 'how-it-works', 'external-knowledge', 'agent-tools', 'capabilities-and-limits', 'development'];
+
+test('中英文 README 先讲理念和能力，并链接每个文档页', () => {
   const 中文 = 读取仓库文件('README.zh-CN.md');
   const 英文 = 读取仓库文件('README.md');
 
@@ -21,6 +24,24 @@ test('中英文 README 应完整表达项目理念、证据边界和 Agent 生�
   assert.match(英文, /href="README\.zh-CN\.md">简体中文/);
   assert.match(中文, /width="72"/);
   assert.match(英文, /img\.shields\.io\/npm\/v\/fuli-context/);
+  assert.equal((中文.match(/^```mermaid$/gm) ?? []).length, 1);
+  assert.equal((英文.match(/^```mermaid$/gm) ?? []).length, 1);
+  assert.match(中文, /人始终保留最终判断权/);
+  assert.match(英文, /humans retain final\s+authority/);
+  assert.ok(中文.indexOf('## 我们的理念') < 中文.indexOf('## 它能做什么'));
+  assert.ok(中文.indexOf('## 它能做什么') < 中文.indexOf('## 快速开始'));
+  assert.ok(英文.indexOf('## What we believe') < 英文.indexOf('## What it does'));
+  assert.ok(英文.indexOf('## What it does') < 英文.indexOf('## Quick start'));
+  for (const 页 of 文档页) {
+    assert.ok(中文.includes(`(docs/${页}.zh-CN.md)`), 页);
+    assert.ok(英文.includes(`(docs/${页}.md)`), 页);
+  }
+});
+
+test('中英文文档应完整表达项目理念、证据边界和 Agent 生命周期', () => {
+  const 中文 = 文档页.map(页 => 读取仓库文件(`docs/${页}.zh-CN.md`)).join('\n');
+  const 英文 = 文档页.map(页 => 读取仓库文件(`docs/${页}.md`)).join('\n');
+
   assert.match(中文, /Fuli Server npm 包 \| 开发中/);
   assert.match(英文, /Fuli Server npm package \| In development/);
   assert.equal((中文.match(/^```mermaid$/gm) ?? []).length, 1);
@@ -28,7 +49,6 @@ test('中英文 README 应完整表达项目理念、证据边界和 Agent 生�
 
   assert.match(中文, /衡量复用价值，而不是知识数量/);
   assert.match(中文, /每个任务都检查价值，但不强迫每个任务沉淀/);
-  assert.match(中文, /人始终保留最终判断权/);
   assert.match(中文, /先搜索酒店本地知识，再沿显式的 `PART_OF`/);
   assert.match(中文, /实际怎么用：分类、作用域、项目识别与取回/);
   assert.match(中文, /品味 `taste`/);
@@ -62,7 +82,6 @@ test('中英文 README 应完整表达项目理念、证据边界和 Agent 生�
 
   assert.match(英文, /Measure reuse value, not knowledge volume/);
   assert.match(英文, /not every task must become stored knowledge/);
-  assert.match(英文, /humans retain final\s+authority/);
   assert.match(英文, /searches hotel-local knowledge first/);
   assert.match(英文, /Practical use: classification, scope, project resolution, and retrieval/);
   assert.match(英文, /Taste \(`taste`\)/);

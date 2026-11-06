@@ -40,7 +40,7 @@ python -m pytest -q graph-provider/tests
 ```
 
 For package contents or setup changes, also run `npm run test:package`.
-See [development requirements](README.md#acceptance-and-development) and
+See [development requirements](docs/development.md) and
 [live acceptance](acceptance/README.md) for container/runtime prerequisites.
 Live acceptance may start services, write isolated test data, or invoke paid clients; read the
 specific runbook before running it. A unit test pass does not prove a client loaded its Hook.

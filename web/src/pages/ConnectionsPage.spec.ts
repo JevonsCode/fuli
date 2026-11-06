@@ -197,7 +197,7 @@ describe('ConnectionsPage', () => {
     expect(wrapper.get('.external-create-action').attributes('data-variant')).toBe('default')
     expect(wrapper.get('.external-create-action-icon').attributes('aria-hidden')).toBe('true')
     expect(wrapper.get('[data-testid="external-knowledge-help"]').attributes()).toMatchObject({
-      href: 'https://github.com/JevonsCode/fuli/blob/main/README.zh-CN.md#connect-external-knowledge',
+      href: 'https://github.com/JevonsCode/fuli/blob/main/docs/external-knowledge.zh-CN.md#connect-external-knowledge',
       target: '_blank',
       rel: 'noreferrer',
     })
@@ -267,7 +267,7 @@ describe('ConnectionsPage', () => {
     setLocale('en-US', { persist: false })
     await flushPromises()
     expect(wrapper.get('[data-testid="external-knowledge-help"]').attributes('href')).toBe(
-      'https://github.com/JevonsCode/fuli/blob/main/README.md#connect-external-knowledge',
+      'https://github.com/JevonsCode/fuli/blob/main/docs/external-knowledge.md#connect-external-knowledge',
     )
     wrapper.unmount()
   })

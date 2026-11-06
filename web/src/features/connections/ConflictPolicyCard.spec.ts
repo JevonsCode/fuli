@@ -35,12 +35,12 @@ describe('ConflictPolicyCard', () => {
     expect(pressed(wrapper, '[data-project-id="project-b"]')).toBe('agent_decide')
     expect(wrapper.get('[data-project-id="project-b"]').text()).toContain('Project B')
     expect(wrapper.get('[data-testid="conflict-policy-help"]').attributes('href')).toBe(
-      'https://github.com/JevonsCode/fuli/blob/main/README.zh-CN.md#external-knowledge-conflict-policy',
+      'https://github.com/JevonsCode/fuli/blob/main/docs/external-knowledge.zh-CN.md#external-knowledge-conflict-policy',
     )
     setLocale('en-US', { persist: false })
     await flushPromises()
     expect(wrapper.get('[data-testid="conflict-policy-help"]').attributes('href')).toBe(
-      'https://github.com/JevonsCode/fuli/blob/main/README.md#external-knowledge-conflict-policy',
+      'https://github.com/JevonsCode/fuli/blob/main/docs/external-knowledge.md#external-knowledge-conflict-policy',
     )
     wrapper.unmount()
   })
