@@ -84,6 +84,11 @@ const active = computed(() => route?.path === '/models')
       </defs>
     </svg>
     <UiIcon :name="power === 'off' ? 'modelCore' : 'modelCoreOn'" :size="18" />
+    <!-- Two copies of the powered icon itself, which tear away from it now and then. -->
+    <template v-if="power === 'on'">
+      <span class="model-power-split model-power-split--cyan" aria-hidden="true"><UiIcon name="modelCoreOn" :size="18" /></span>
+      <span class="model-power-split model-power-split--magenta" aria-hidden="true"><UiIcon name="modelCoreOn" :size="18" /></span>
+    </template>
     <span v-if="power === 'problem'" class="model-power-dot" aria-hidden="true" />
   </RouterLink>
 </template>
@@ -97,51 +102,57 @@ const active = computed(() => route?.path === '/models')
 .model-power:hover { color: var(--color-ink); background: var(--color-surface-hover); }
 .model-power:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 /* Powered (Jevons 11-06): the icon is drawn in a violet gradient and a violet glow breathes
-   behind it. About every nine seconds the icon glitches for a third of a second: it slips
-   sideways in slices with a cyan/magenta split, and a scan line flashes across the button.
-   It all stays inside the 36px button; reduced motion keeps only the still glow. */
+   behind it. About every nine seconds the icon itself splits for a third of a second: a cyan
+   and a magenta copy of it tear away sideways in slices while the icon jolts, then they snap
+   back into one. It all stays inside the 36px button; reduced motion keeps only the still glow. */
 .model-power-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .model-power--on, .model-power--filling { color: var(--color-power-mid); }
 .model-power--on:hover, .model-power--filling:hover { color: var(--color-power-mid); }
 .model-power :deep(.core-bolt) { fill: currentColor; }
-.model-power--on :deep(svg), .model-power--filling :deep(svg) { stroke: url(#model-power-gradient); }
-.model-power--on :deep(.core-bolt), .model-power--filling :deep(.core-bolt) { fill: url(#model-power-gradient); }
+.model-power--on > :deep(svg), .model-power--filling > :deep(svg) { stroke: url(#model-power-gradient); }
+.model-power--on > :deep(svg .core-bolt), .model-power--filling > :deep(svg .core-bolt) { fill: url(#model-power-gradient); }
 .model-power--on::before {
   content: ''; position: absolute; inset: 4px; z-index: -1; border-radius: 50%;
   background: radial-gradient(circle, var(--color-glow-power), transparent 70%);
   animation: model-power-breathe 3.2s ease-in-out infinite;
 }
 @keyframes model-power-breathe { 0%, 100% { opacity: 0.35; transform: scale(0.86); } 50% { opacity: 1; transform: scale(1.08); } }
-.model-power--on :deep(svg) { animation: model-power-glitch 9s infinite; }
-@keyframes model-power-glitch {
-  0%, 3.6%, 100% { transform: none; clip-path: none; filter: none; }
-  0.6% { transform: translateX(-1.5px); clip-path: inset(18% 0 52% 0);
-    filter: drop-shadow(1.5px 0 var(--color-glitch-cyan)) drop-shadow(-1.5px 0 var(--color-glitch-magenta)); }
-  1.2% { transform: translateX(1.5px) skewX(-8deg); clip-path: inset(58% 0 8% 0);
-    filter: drop-shadow(-1.5px 0 var(--color-glitch-cyan)) drop-shadow(1.5px 0 var(--color-glitch-magenta)); }
-  1.8% { transform: translateX(-0.5px); clip-path: inset(0 0 0 0);
-    filter: drop-shadow(1px 0 var(--color-glitch-cyan)) drop-shadow(-1px 0 var(--color-glitch-magenta)); }
-  2.4% { transform: translateX(1px) scale(1.06); clip-path: inset(30% 0 30% 0); filter: hue-rotate(60deg); }
-  3% { transform: scale(0.97); clip-path: none; filter: none; }
+.model-power--on > :deep(svg) { animation: model-power-jolt 9s infinite; }
+@keyframes model-power-jolt {
+  0%, 3.4%, 100% { transform: none; clip-path: none; }
+  0.6% { transform: translateX(0.8px); clip-path: inset(0 0 46% 0); }
+  1.2% { transform: translateX(-1px) skewX(-6deg); clip-path: inset(40% 0 0 0); }
+  1.8% { transform: translateX(0.6px); clip-path: inset(22% 0 30% 0); }
+  2.6% { transform: scale(1.05); clip-path: none; }
 }
-.model-power--on::after {
-  content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; overflow: hidden; opacity: 0;
-  background: linear-gradient(transparent 46%, color-mix(in srgb, var(--color-glitch-cyan) 70%, transparent) 50%, transparent 54%);
-  animation: model-power-scan 9s infinite;
+.model-power-split {
+  position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; opacity: 0;
+  mix-blend-mode: multiply;
 }
-@keyframes model-power-scan {
-  0%, 0.4%, 3.4%, 100% { opacity: 0; transform: translateY(-45%); }
-  0.6% { opacity: 0.9; transform: translateY(-30%); }
-  1.6% { opacity: 0.7; transform: translateY(10%); }
-  2.8% { opacity: 0.5; transform: translateY(40%); }
+.model-power-split--cyan { color: var(--color-glitch-cyan); animation: model-power-split-cyan 9s infinite; }
+.model-power-split--magenta { color: var(--color-glitch-magenta); animation: model-power-split-magenta 9s infinite; }
+@keyframes model-power-split-cyan {
+  0%, 3.2%, 100% { opacity: 0; transform: none; clip-path: none; }
+  0.4% { opacity: 0.9; transform: translateX(-2.5px); clip-path: inset(0 0 55% 0); }
+  1% { opacity: 0.9; transform: translate(-3px, 1px); clip-path: inset(48% 0 8% 0); }
+  1.6% { opacity: 0.8; transform: translateX(-1.5px); clip-path: inset(20% 0 40% 0); }
+  2.4% { opacity: 0.5; transform: translateX(-0.5px); clip-path: none; }
+}
+@keyframes model-power-split-magenta {
+  0%, 3.2%, 100% { opacity: 0; transform: none; clip-path: none; }
+  0.4% { opacity: 0.9; transform: translateX(2.5px); clip-path: inset(50% 0 0 0); }
+  1% { opacity: 0.9; transform: translate(3px, -1px); clip-path: inset(6% 0 52% 0); }
+  1.6% { opacity: 0.8; transform: translateX(1.5px); clip-path: inset(44% 0 18% 0); }
+  2.4% { opacity: 0.5; transform: translateX(0.5px); clip-path: none; }
 }
 /* On the model page the button is lit like 设置 on its own: a violet gradient disc, white icon. */
 .model-power.is-active, .model-power.is-active:hover {
   color: var(--color-on-accent);
   background: linear-gradient(135deg, var(--color-power-from), var(--color-power-mid) 55%, var(--color-power-to));
 }
-.model-power.is-active :deep(svg) { stroke: currentColor; }
-.model-power.is-active :deep(.core-bolt) { fill: currentColor; }
+.model-power.is-active > :deep(svg) { stroke: currentColor; }
+.model-power.is-active > :deep(svg .core-bolt) { fill: currentColor; }
+.model-power.is-active .model-power-split { mix-blend-mode: screen; }
 /* Indexing: a ring fills with the share of knowledge done. */
 .model-power--filling::after {
   content: ''; position: absolute; inset: 3px; border-radius: 50%; pointer-events: none;
@@ -155,8 +166,10 @@ const active = computed(() => route?.path === '/models')
 }
 @media (prefers-reduced-motion: reduce) {
   .model-power--on::before { animation: none; opacity: 0.7; }
-  .model-power--on :deep(svg), .model-power--on::after { animation: none; }
+  .model-power--on > :deep(svg) { animation: none; }
+  .model-power-split { display: none; }
 }
 :root[data-motion="reduced"] .model-power--on::before { animation: none; opacity: 0.7; }
-:root[data-motion="reduced"] .model-power--on :deep(svg), :root[data-motion="reduced"] .model-power--on::after { animation: none; }
+:root[data-motion="reduced"] .model-power--on > :deep(svg) { animation: none; }
+:root[data-motion="reduced"] .model-power-split { display: none; }
 </style>
