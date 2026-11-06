@@ -65,14 +65,15 @@ async function setup(path: string) {
 
 describe('a workbench list on its own page', () => {
   it('reads the filters from the URL, shows the matching tasks and how many there are', async () => {
-    const { wrapper } = await setup('/workbench/running?q=needle&kind=blocked&project=project-a&fla=agent-1&range=30d&sort=oldest')
+    const { wrapper } = await setup('/workbench/running?q=needle&status=blocked&project=project-a&fla=agent-1&quiet=1d&range=30d&sort=oldest')
     const [first] = pageCalls('/api/project-agent-task-pages')
     expect(first.searchParams.getAll('status')).toEqual(['blocked'])
     expect(first.searchParams.get('q')).toBe('needle')
     expect(first.searchParams.getAll('project')).toEqual(['project-a'])
     expect(first.searchParams.getAll('agent')).toEqual(['agent-1'])
     expect(first.searchParams.get('sort')).toBe('oldest')
-    expect(first.searchParams.has('since')).toBe(true)
+    expect(first.searchParams.has('startedSince')).toBe(true)
+    expect(first.searchParams.has('changedBefore')).toBe(true)
     expect(first.searchParams.get('limit')).toBe('50')
     expect(wrapper.get('[data-list-search]').element).toHaveProperty('value', 'needle')
     expect(wrapper.get('[data-workbench-list]').attributes('data-workbench-list')).toBe('running')
@@ -80,17 +81,33 @@ describe('a workbench list on its own page', () => {
     expect(wrapper.find('[data-task-row]').text()).toContain('Synthetic task 0')
     expect(wrapper.find('[data-task-row]').text()).toContain('Aster · Synthetic project')
     expect(wrapper.text()).toContain('51 条')
-    // On a phone the filters fold behind one button that counts those in use.
-    expect(wrapper.get('[data-list-filters]').text()).toBe('筛选 5')
+    // The list's own filters fold behind one button that counts those in use.
+    expect(wrapper.get('[data-list-filters]').text()).toBe('筛选 4')
+    expect(wrapper.find('[data-list-extras]').exists()).toBe(false)
+    expect(wrapper.get('[data-list-sort]').text()).toContain('最久没动静')
+  })
+
+  it('unfolds the filters each list declares', async () => {
+    const running = await setup('/workbench/running')
+    await running.wrapper.get('[data-list-filters]').trigger('click')
+    expect(running.wrapper.findAll('[data-list-filter]').map(field => field.attributes('data-list-filter'))).toEqual(['status', 'fla', 'project', 'quiet'])
+    const done = await setup('/workbench/done')
+    await done.wrapper.get('[data-list-filters]').trigger('click')
+    expect(done.wrapper.findAll('[data-list-filter]').map(field => field.attributes('data-list-filter'))).toEqual(['status', 'fla', 'project', 'result', 'took'])
+    const notices = await setup('/workbench/notices')
+    await notices.wrapper.get('[data-list-filters]').trigger('click')
+    expect(notices.wrapper.findAll('[data-list-filter]').map(field => field.attributes('data-list-filter'))).toEqual(['need', 'kind', 'project'])
   })
 
   it('puts a changed filter and the search in the URL and reads the first page again', async () => {
     const { router, wrapper } = await setup('/workbench/done')
     expect(pageCalls('/api/project-agent-task-pages')[0].searchParams.getAll('status')).toEqual(['completed'])
-    const kind = wrapper.get('[data-list-kind]')
-    await openCombobox(kind)
-    await toggleOption(kind, '已取消')
-    expect(router.currentRoute.value.query.kind).toEqual(['completed', 'cancelled'])
+    await wrapper.get('[data-list-filters]').trigger('click')
+    const status = wrapper.get('[data-list-filter="status"]')
+    await openCombobox(status)
+    await toggleOption(status, '已取消')
+    expect(router.currentRoute.value.query.status).toEqual(['completed', 'cancelled'])
+    expect(wrapper.get('[data-list-filters]').text()).toBe('筛选 1')
     await wrapper.get('[data-list-search]').setValue('needle')
     await new Promise(resolve => setTimeout(resolve, 350))
     await flushPromises()

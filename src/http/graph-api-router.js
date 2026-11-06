@@ -399,6 +399,8 @@ export async function handleGraphApiRequest({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       statuses: list('status'), projectIds: list('project'), agentIds: list('agent'),
       text: url.searchParams.get('q'), since: url.searchParams.get('since'), until: url.searchParams.get('until'),
+      startedSince: url.searchParams.get('startedSince'), changedBefore: url.searchParams.get('changedBefore'),
+      hasResult: url.searchParams.get('hasResult'), tookAtLeast: url.searchParams.get('tookAtLeast'), tookAtMost: url.searchParams.get('tookAtMost'),
       order: url.searchParams.get('order'), sort: url.searchParams.get('sort'),
       limit: numberParam(url, 'limit', null), cursor: url.searchParams.get('cursor')
     }));

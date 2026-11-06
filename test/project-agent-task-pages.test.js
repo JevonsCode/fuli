@@ -25,12 +25,15 @@ test('the console reads one filtered task page and passes every filter through',
     return Response.json({ items: [task('task-1'), task('task-2')], next_cursor: 'opaque-next', total: 41 });
   } });
   const { status, body } = await get(app, `/api/project-agent-task-pages?personalSpaceId=${SPACE}&status=running&status=blocked`
-    + '&project=project-a&agent=ada&q=needle&since=2026-11-01T00%3A00%3A00.000Z&order=completed&sort=oldest&limit=2&cursor=opaque-prev');
+    + '&project=project-a&agent=ada&q=needle&since=2026-11-01T00%3A00%3A00.000Z&startedSince=2026-10-01T00%3A00%3A00.000Z'
+    + '&changedBefore=2026-11-05T00%3A00%3A00.000Z&hasResult=true&tookAtLeast=60&tookAtMost=3600&order=completed&sort=oldest&limit=2&cursor=opaque-prev');
   assert.equal(status, 200);
   assert.equal(urls[0].pathname, '/v1/project-agent-task-pages');
   assert.deepEqual([...urls[0].searchParams], [
     ['personal_space_id', SPACE], ['status', 'running'], ['status', 'blocked'], ['project', 'project-a'], ['agent', 'ada'],
-    ['text', 'needle'], ['since', '2026-11-01T00:00:00.000Z'], ['order', 'completed'], ['sort', 'oldest'], ['limit', '2'], ['cursor', 'opaque-prev'],
+    ['text', 'needle'], ['since', '2026-11-01T00:00:00.000Z'], ['started_since', '2026-10-01T00:00:00.000Z'],
+    ['changed_before', '2026-11-05T00:00:00.000Z'], ['has_result', 'true'], ['took_at_least', '60'], ['took_at_most', '3600'],
+    ['order', 'completed'], ['sort', 'oldest'], ['limit', '2'], ['cursor', 'opaque-prev'],
   ]);
   assert.deepEqual(body.items.map((item) => item.taskId), ['task-1', 'task-2']);
   assert.equal(body.nextCursor, 'opaque-next');

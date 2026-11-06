@@ -77,6 +77,13 @@ def _page_query(order: TaskPageOrder, sort: TaskPageSort) -> tuple[str, str]:
                OR toLower(coalesce(task.title, '')) CONTAINS $text
                OR toLower(coalesce(task.objective, '')) CONTAINS $text
                OR toLower(coalesce(task.result_summary, '')) CONTAINS $text)
+          AND ($started_since IS NULL OR task.created_at >= datetime($started_since))
+          AND ($changed_before IS NULL OR task.updated_at < datetime($changed_before))
+          AND ($has_result IS NULL OR (trim(coalesce(task.result_summary, '')) <> '') = $has_result)
+          AND ($took_at_least IS NULL AND $took_at_most IS NULL OR (
+               duration.inSeconds(task.created_at, coalesce(task.completed_at, task.updated_at)).seconds >= coalesce($took_at_least, 0)
+               AND ($took_at_most IS NULL
+                    OR duration.inSeconds(task.created_at, coalesce(task.completed_at, task.updated_at)).seconds < $took_at_most)))
         WITH task, {at} AS at
         WHERE ($since IS NULL OR at >= datetime($since))
           AND ($until IS NULL OR at < datetime($until))
@@ -120,12 +127,23 @@ class StoreProjectAgentTaskPages:
         text: str | None = None,
         since: datetime | None = None,
         until: datetime | None = None,
+        started_since: datetime | None = None,
+        changed_before: datetime | None = None,
+        has_result: bool | None = None,
+        took_at_least: int | None = None,
+        took_at_most: int | None = None,
         order: TaskPageOrder = 'updated',
         sort: TaskPageSort = 'newest',
         limit: int = 50,
         cursor: str | None = None,
     ) -> ProjectAgentTaskPage:
-        """One page of the space's tasks that match, in the asked order."""
+        """One page of the space's tasks that match, in the asked order.
+
+        Each list adds its own narrowing: work started since a time, work
+        quiet since a time (no change before `changed_before`), finished work
+        with or without a result summary, and how long it took in seconds
+        from creation to completion (`took_at_least` <= took < `took_at_most`).
+        """
 
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'reader')
@@ -142,6 +160,11 @@ class StoreProjectAgentTaskPages:
             'text': text.strip().lower() if text and text.strip() else None,
             'since': since.isoformat() if since else None,
             'until': until.isoformat() if until else None,
+            'started_since': started_since.isoformat() if started_since else None,
+            'changed_before': changed_before.isoformat() if changed_before else None,
+            'has_result': has_result,
+            'took_at_least': took_at_least,
+            'took_at_most': took_at_most,
         }
         # One more row than the page says whether another page follows.
         records, _, _ = await self.runtime.driver.execute_query(

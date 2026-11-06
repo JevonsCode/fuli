@@ -445,6 +445,8 @@ export class GraphitiProviderClient {
       for (const value of values ?? []) query.append(key, value);
     }
     for (const [key, value] of [['text', options.text], ['since', options.since], ['until', options.until],
+      ['started_since', options.startedSince], ['changed_before', options.changedBefore], ['has_result', options.hasResult],
+      ['took_at_least', options.tookAtLeast], ['took_at_most', options.tookAtMost],
       ['order', options.order], ['sort', options.sort], ['limit', options.limit], ['cursor', options.cursor]]) {
       if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
     }

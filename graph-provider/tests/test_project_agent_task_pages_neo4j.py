@@ -59,7 +59,9 @@ async def test_pages_filter_sort_and_walk_without_skips_or_repeats():
                 title: CASE WHEN n = 7 THEN 'Synthetic Needle report' ELSE 'Synthetic task ' + toString(n) END,
                 objective: 'Synthetic objective',
                 status: CASE WHEN n % 3 = 0 THEN 'completed' ELSE 'running' END,
+                created_at: datetime({epochSeconds: 1700000000 - n * 600}),
                 updated_at: datetime({epochSeconds: 1700000000 + (n / 2) * 60}),
+                result_summary: CASE WHEN n IN [0, 3] THEN 'Synthetic result' WHEN n = 6 THEN '  ' END,
                 completed_at: CASE WHEN n % 3 = 0 THEN datetime({epochSeconds: 1700100000 - n * 60}) END,
                 lead_agent_id: CASE WHEN n < 5 THEN 'ada' ELSE 'other' END
             })
@@ -101,6 +103,24 @@ async def test_pages_filter_sort_and_walk_without_skips_or_repeats():
             until=datetime.fromtimestamp(1700000000 + 12 * 60, timezone.utc),
         )
         assert sorted(window) == ['task-20', 'task-21', 'task-22', 'task-23']
+
+        # 进行中's own narrowing: started lately, or quiet for a while.
+        started, _ = await walk(store, space_id, statuses=['running'],
+                                started_since=datetime.fromtimestamp(1700000000 - 5 * 600, timezone.utc))
+        assert sorted(started) == ['task-01', 'task-02', 'task-04', 'task-05']
+        quiet, _ = await walk(store, space_id, statuses=['running'],
+                              changed_before=datetime.fromtimestamp(1700000000 + 2 * 60, timezone.utc))
+        assert sorted(quiet) == ['task-01', 'task-02']
+
+        # 最近完成's own: with a written result (blank does not count), and how long it took.
+        with_result, _ = await walk(store, space_id, statuses=['completed'], order='completed', has_result=True)
+        assert with_result == ['task-00', 'task-03']
+        without, _ = await walk(store, space_id, statuses=['completed'], order='completed', has_result=False)
+        assert len(without) == 18 and 'task-06' in without
+        quick, _ = await walk(store, space_id, statuses=['completed'], order='completed', took_at_most=101000)
+        assert quick == ['task-00']
+        slow, _ = await walk(store, space_id, statuses=['completed'], order='completed', took_at_least=101000)
+        assert len(slow) == 19 and 'task-00' not in slow
 
         with pytest.raises(HTTPException) as refused:
             await store.list_project_agent_task_page({}, space_id, statuses=['running'], cursor='not-a-cursor')

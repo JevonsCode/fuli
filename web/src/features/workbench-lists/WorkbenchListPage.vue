@@ -26,15 +26,16 @@ import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentRecord, ProjectAgentTaskRecord } from '@/types'
 import UiNotice from '@/ui/UiNotice.vue'
 import TaskListRow from './TaskListRow.vue'
-import { activeFilterCount, isFiltered, isWorkbenchList, LIST_KINDS, LIST_RANGES, LIST_SORTS, noticePageParams, readListQuery, taskPageParams,
-  writeListQuery, type ListQuery, type WorkbenchList } from './list-query'
+import { activeFilterCount, isFiltered, isWorkbenchList, LIST_FILTERS, LIST_RANGES, LIST_SORTS, listPageRequest, readListQuery,
+  writeListQuery, type ListFilter, type ListQuery, type WorkbenchList } from './list-query'
 import { useListPages, type ListSource } from './useListPages'
 import '@/features/overview/workbench-card.css'
 
 // One workbench list on its own page (Jevons 11-06): 进行中, 最近完成 or
-// 最近你可能需要知道的事, searched, filtered and sorted with everything in the
-// URL, read a page at a time and drawn only near the viewport. The workbench
-// card grows into this page (styles/motion.css, data-list-morph).
+// 最近你可能需要知道的事. Every list shares the shell (search, time range and
+// sort in one row, a virtual list read a page at a time, the URL as its state);
+// each declares its own filters (list-query.ts), folded under 「筛选」. The
+// workbench card grows into this page (styles/motion.css, data-list-morph).
 const PAGE_SIZE = 50
 const SEARCH_DELAY_MS = 300
 // Fixed row heights the virtual list lays out by: a task is one title line and
@@ -65,6 +66,10 @@ watch(() => query.value.text, text => { if (text !== searchInput.value.trim()) s
 function update(change: Partial<ListQuery>) {
   void router.replace({ query: writeListQuery(list.value, { ...query.value, ...change }) })
 }
+function choose(filter: ListFilter, value: string | string[]) {
+  const values = Array.isArray(value) ? value : value ? [value] : []
+  update({ filters: { ...query.value.filters, [filter.key]: values } })
+}
 const searchSoon = createDebouncedAction(() => update({ text: searchInput.value.trim() }), SEARCH_DELAY_MS)
 watch(searchInput, () => searchSoon.schedule())
 onBeforeUnmount(() => searchSoon.cancel())
@@ -89,32 +94,23 @@ const taskPageShape = shapeOf(z.looseObject({ items: z.array(z.unknown()), nextC
 const source = computed<ListSource<Row> | null>(() => {
   const space = spaceId.value
   if (!space) return null
-  const state = query.value
   const which = list.value
-  if (which === 'notices') {
-    const params = noticePageParams(state)
-    params.set('limit', String(PAGE_SIZE))
-    return {
-      key: `${space}\n${which}\n${params}`,
-      read: async (cursor, signal) => {
-        const page = await getJson(`/api/notices?${withCursor(params, cursor)}`, noticePageShape, { signal })
-        return { items: page.items.filter(knownNotice).map(notice => ({ key: notice.id, notice })), nextCursor: page.nextCursor ?? null, total: page.total }
-      },
-    }
-  }
   // The time window starts from when this query was first read, so later pages keep the same window.
-  const params = taskPageParams(which, state, space, Date.now())
+  const { path, params } = listPageRequest(which, query.value, space, Date.now())
   params.set('limit', String(PAGE_SIZE))
-  return {
-    key: `${space}\n${which}\n${writeListKey(state)}`,
-    read: async (cursor, signal) => {
-      const page = await getJson(`/api/project-agent-task-pages?${withCursor(params, cursor)}`, taskPageShape, { signal })
-      const items = normalizeOverviewTasks({ items: page.items }, space).map(task => ({ key: `${task.personalProjectId ?? ''}:${task.taskId}`, task }))
-      return { items, nextCursor: page.nextCursor, total: page.total }
-    },
+  const key = `${space}\n${which}\n${JSON.stringify(writeListQuery(which, query.value))}`
+  if (which === 'notices') {
+    return { key, read: async (cursor, signal) => {
+      const page = await getJson(`${path}?${withCursor(params, cursor)}`, noticePageShape, { signal })
+      return { items: page.items.filter(knownNotice).map(notice => ({ key: notice.id, notice })), nextCursor: page.nextCursor ?? null, total: page.total }
+    } }
   }
+  return { key, read: async (cursor, signal) => {
+    const page = await getJson(`${path}?${withCursor(params, cursor)}`, taskPageShape, { signal })
+    const items = normalizeOverviewTasks({ items: page.items }, space).map(task => ({ key: `${task.personalProjectId ?? ''}:${task.taskId}`, task }))
+    return { items, nextCursor: page.nextCursor, total: page.total }
+  } }
 })
-const writeListKey = (state: ListQuery) => JSON.stringify(writeListQuery(list.value, state))
 function withCursor(params: URLSearchParams, cursor: string | null) {
   const page = new URLSearchParams(params)
   if (cursor) page.set('cursor', cursor)
@@ -124,20 +120,33 @@ const pages = useListPages(source)
 const rows = computed(() => pages.items.value)
 const firstRead = computed(() => pages.loading.value && !rows.value.length)
 const filtered = computed(() => isFiltered(list.value, query.value))
-// Phones fold the filters behind one button that counts the ones in use.
+// The list's own filters stay folded under 「筛选」, which counts those in use.
 const filtersOpen = ref(false)
 const activeFilters = computed(() => activeFilterCount(list.value, query.value))
 
-// Filter choices.
-const rangeOptions = computed(() => LIST_RANGES[list.value].map(value => ({ value, label: t(`overview.lists.range.${value}`) })))
-const sortOptions = computed(() => LIST_SORTS.map(value => ({ value, label: t(`overview.lists.sort.${value}`) })))
+// The shell's choices, worded for each list.
+const rangeOptions = computed(() => LIST_RANGES[list.value].map(value => ({ value,
+  label: value === 'all' ? t(`overview.lists.range.${list.value}.all`) : t(`overview.lists.range.${list.value}.days`, { days: Number.parseInt(value, 10) }) })))
+const sortOptions = computed(() => LIST_SORTS.map(value => ({ value, label: t(`overview.lists.sort.${list.value}.${value}`) })))
+const searchLabel = computed(() => t(`overview.lists.search.${list.value}`))
+
+// Each declared filter's choices.
 const projectOptions = computed(() => projects.value.map(project => ({ value: project.project_id, label: projectDisplayName(project) })))
 const flaOptions = computed(() => roster.value.map(record => ({ value: record.agentId, label: agentDisplayName(record) })))
-const kindOptions = computed(() => LIST_KINDS[list.value].map(value => ({
-  value, label: isNotices.value ? t(`overview.lists.kinds.${value}`) : taskStatusLabel(value),
-})))
-const kindLabel = computed(() => t(isNotices.value ? 'overview.lists.kind.label' : 'overview.lists.status.label'))
-const kindAll = computed(() => t(isNotices.value ? 'overview.lists.kind.all' : 'overview.lists.status.all'))
+function optionLabel(filter: ListFilter, value: string) {
+  if (filter.key === 'status') return taskStatusLabel(value)
+  if (filter.key === 'kind') return t(`overview.lists.kinds.${value}`)
+  return t(`overview.lists.filters.${filter.key}.${value}`)
+}
+const filterFields = computed(() => LIST_FILTERS[list.value].map(filter => {
+  const options = filter.options === 'projects' ? projectOptions.value
+    : filter.options === 'flas' ? flaOptions.value
+      : filter.options.map(value => ({ value, label: optionLabel(filter, value) }))
+  const chosen = query.value.filters[filter.key] ?? []
+  return { filter, options, chosen, label: t(`overview.lists.filters.${filter.key}.label`), all: t(`overview.lists.filters.${filter.key}.all`),
+    // A single choice offers 「不限」 as its first option, so it can be undone.
+    single: [{ value: '', label: t(`overview.lists.filters.${filter.key}.all`) }, ...options] }
+}))
 
 // Row words.
 function formatTime(value?: string | null) {
@@ -158,30 +167,33 @@ const statusLabel = (status: string) => taskStatusLabel(status, { unrecognized: 
   <section class="view workbench-list-view" :data-workbench-list="list">
     <Breadcrumb :parent="{ label: t('routes.overview.title'), to: '/', from: /^\/(?:[?#]|$)/ }" />
     <div class="workbench-card workbench-list-card" :data-list-morph="list">
-      <div class="workbench-list-bar" :class="{ 'is-folded': !filtersOpen }" role="search">
+      <div class="workbench-list-bar" role="search">
         <Input v-model="searchInput" type="search" class="workbench-list-search" maxlength="200" data-list-search
-          :aria-label="t(isNotices ? 'overview.lists.search.notices' : 'overview.lists.search.tasks')"
-          :placeholder="t(isNotices ? 'overview.lists.search.notices' : 'overview.lists.search.tasks')" @keydown.enter.prevent="searchSoon.flush()" />
-        <Button variant="outline" class="workbench-list-toggle" :aria-expanded="filtersOpen" data-list-filters @click="filtersOpen = !filtersOpen">
-          {{ activeFilters ? t('overview.lists.filtersCount', { count: activeFilters }) : t('overview.lists.filters') }}
-        </Button>
-        <OptionSelect class="workbench-list-filter" :model-value="query.range" :options="rangeOptions" :label="t('overview.lists.range.label')"
+          :aria-label="searchLabel" :placeholder="searchLabel" @keydown.enter.prevent="searchSoon.flush()" />
+        <OptionSelect class="workbench-list-shell" :model-value="query.range" :options="rangeOptions" :label="t(`overview.lists.range.${list}.label`)"
           data-list-range @update:model-value="update({ range: $event as ListQuery['range'] })" />
-        <OptionCombobox class="workbench-list-filter" multiple :model-value="query.projects" :options="projectOptions"
-          :label="t('overview.lists.project.label')" :placeholder="t('overview.lists.project.all')" :max-chips="1" data-list-project
-          @update:model-value="update({ projects: $event })" />
-        <OptionCombobox class="workbench-list-filter" multiple :model-value="query.flas" :options="flaOptions"
-          :label="t('overview.lists.fla.label')" :placeholder="t('overview.lists.fla.all')" :max-chips="1" data-list-fla
-          @update:model-value="update({ flas: $event })" />
-        <OptionCombobox class="workbench-list-filter" multiple :searchable="false" :model-value="query.kinds" :options="kindOptions"
-          :label="kindLabel" :placeholder="kindAll" :max-chips="1" data-list-kind @update:model-value="update({ kinds: $event })" />
-        <OptionSelect class="workbench-list-filter" :model-value="query.sort" :options="sortOptions" :label="t('overview.lists.sort.label')"
+        <OptionSelect class="workbench-list-shell" :model-value="query.sort" :options="sortOptions" :label="t('overview.lists.sort.label')"
           data-list-sort @update:model-value="update({ sort: $event as ListQuery['sort'] })" />
+        <Button variant="outline" class="workbench-list-toggle" :aria-expanded="filtersOpen" aria-controls="workbench-list-filters" data-list-filters
+          @click="filtersOpen = !filtersOpen">
+          {{ activeFilters ? t('overview.lists.filterButtonCount', { count: activeFilters }) : t('overview.lists.filterButton') }}
+        </Button>
         <span class="workbench-list-count" role="status">
           <GrowthLoading v-if="pages.loading.value && rows.length" variant="inline" :label="t('overview.lists.refreshing', { list: listTitle })" />
           <template v-else-if="pages.total.value !== null && rows.length">{{ t('overview.lists.count', { count: pages.total.value }) }}</template>
         </span>
       </div>
+      <Transition name="ui-list">
+        <div v-if="filtersOpen" id="workbench-list-filters" class="workbench-list-filters" data-list-extras>
+          <template v-for="field in filterFields" :key="field.filter.key">
+            <OptionCombobox v-if="field.filter.multiple" class="workbench-list-filter" multiple :searchable="typeof field.filter.options === 'string'"
+              :model-value="field.chosen" :options="field.options" :label="field.label" :placeholder="field.all" :max-chips="1"
+              :data-list-filter="field.filter.key" @update:model-value="choose(field.filter, $event)" />
+            <OptionSelect v-else class="workbench-list-filter" :model-value="field.chosen[0] ?? ''" :options="field.single" :label="field.label"
+              :data-list-filter="field.filter.key" @update:model-value="choose(field.filter, $event)" />
+          </template>
+        </div>
+      </Transition>
 
       <UiNotice v-if="pages.error.value" tone="error" data-list-error>
         {{ t('overview.lists.failed', { list: listTitle }) }}
@@ -214,24 +226,25 @@ const statusLabel = (status: string) => taskStatusLabel(status, { unrecognized: 
    ends above the floating dock, as the workbench stage does. */
 .workbench-list-view { display: flex; flex-direction: column; gap: 12px; overflow: hidden; padding-bottom: 96px !important; }
 .workbench-list-card { display: flex; flex: 1; flex-direction: column; gap: 10px; min-height: 0; padding-bottom: 6px; }
+/* One row: search, time, sort, 筛选 and the count. */
 .workbench-list-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
-.workbench-list-search { flex: 1 1 200px; min-width: 180px; max-width: 320px; }
-.workbench-list-filter { width: 148px; }
-.workbench-list-toggle { display: none; }
+.workbench-list-search { flex: 1 1 200px; min-width: 180px; max-width: 360px; }
+.workbench-list-shell { width: 156px; }
 .workbench-list-count { margin-left: auto; color: var(--color-muted); font-size: var(--text-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.workbench-list-filters { display: flex; flex-wrap: wrap; gap: 8px 10px; }
+.workbench-list-filter { width: 168px; }
 .workbench-list-rows { flex: 1; min-height: 0; margin: 0 -10px; }
 /* Rows keep their right edge clear of the list's position capsule. */
 .workbench-list-rows :deep(.virtual-directory-list__content) { padding-right: 28px; border-bottom: 1px solid var(--color-border); }
 .workbench-list-notice { height: 100%; padding: 0 10px; }
 .workbench-list-more { padding: 10px; }
 .workbench-list-none { display: flex; align-items: center; gap: 8px; margin: 4px 0; color: var(--color-muted); font-size: var(--text-body); }
-/* Phones: the search shares its line with 筛选, which unfolds the filters in two columns. */
+/* Phones: the search shares its line with 筛选; time and sort sit under it, the filters in two columns. */
 @media (max-width: 860px) {
   .workbench-list-view { padding-bottom: calc(112px + env(safe-area-inset-bottom)) !important; }
-  .workbench-list-search { flex: 1 1 calc(100% - 120px); max-width: none; min-width: 0; }
-  .workbench-list-toggle { display: inline-flex; }
-  .workbench-list-filter { width: calc(50% - 5px); }
-  .is-folded .workbench-list-filter { display: none; }
-  .workbench-list-count { flex-basis: 100%; margin-left: 0; }
+  .workbench-list-search { flex: 1 1 calc(100% - 120px); order: 0; max-width: none; min-width: 0; }
+  .workbench-list-toggle { order: 1; }
+  .workbench-list-shell, .workbench-list-filter { order: 2; width: calc(50% - 5px); }
+  .workbench-list-count { order: 3; flex-basis: 100%; margin-left: 0; }
 }
 </style>

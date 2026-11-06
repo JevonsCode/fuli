@@ -4,44 +4,84 @@ import { CURRENT_WORK_STATUSES } from '@/features/overview/overview-data'
 import type { ProjectAgentTaskStatus } from '@/types'
 
 // The workbench's three lists, each with its own page (/workbench/<list>).
-// Everything the person chose lives in the URL query, so a filtered list can
-// be reloaded, shared and returned to; a default value stays out of the URL.
+// They share a shell: search, a time range and a sort, inline. Each list then
+// declares its own filters, folded under 「筛选」. Everything the person chose
+// lives in the URL query, so a filtered list can be reloaded, shared and
+// returned to; a default value stays out of the URL.
 const WORKBENCH_LISTS = ['running', 'done', 'notices'] as const
 export type WorkbenchList = typeof WORKBENCH_LISTS[number]
 
-/** What each list holds: the task statuses, or the notice kinds. */
-export const LIST_KINDS: Record<WorkbenchList, readonly string[]> = {
-  running: [...CURRENT_WORK_STATUSES],
-  done: ['completed', 'cancelled'] satisfies ProjectAgentTaskStatus[],
-  notices: NOTICE_KINDS,
+/**
+ * One filter a list declares. `key` names it in the URL and in the state.
+ * `options` are its fixed values, or the projects or FLAs the page fills in.
+ * `fallback` is what the list opens with; empty means it does not narrow.
+ */
+export interface ListFilter {
+  key: string
+  multiple: boolean
+  options: readonly string[] | 'projects' | 'flas'
+  fallback: readonly string[]
 }
-// 最近完成 opens on what was finished; a cancelled task is one filter away.
-const DEFAULT_KINDS: Record<WorkbenchList, readonly string[]> = { running: [], done: ['completed'], notices: [] }
+
+const DONE_STATUSES = ['completed', 'cancelled'] satisfies ProjectAgentTaskStatus[]
+// 最近你可能需要知道的事 splits into what asks the person to act and what only lets them know.
+const NOTICE_NEEDS: Record<string, readonly string[]> = {
+  act: ['topic_promoted', 'dreaming_found', 'dreaming_stopped', 'retrospective_ready', 'model_failing', 'update_available'],
+  info: ['tonborg_confirmed', 'fla_joined', 'fla_left', 'delegated_change'],
+}
+const QUIET_DAYS: Record<string, number> = { '1d': 1, '3d': 3, '7d': 7 }
+const HOUR_S = 60 * 60
+const DAY_S = 24 * HOUR_S
+// How long a finished task took, from creation to completion, in seconds: [at least, under].
+const TOOK: Record<string, [number | null, number | null]> = { '1h': [null, HOUR_S], '1d': [HOUR_S, DAY_S], longer: [DAY_S, null] }
+
+const PEOPLE: readonly ListFilter[] = [
+  { key: 'fla', multiple: true, options: 'flas', fallback: [] },
+  { key: 'project', multiple: true, options: 'projects', fallback: [] },
+]
+export const LIST_FILTERS: Record<WorkbenchList, readonly ListFilter[]> = {
+  running: [
+    { key: 'status', multiple: true, options: [...CURRENT_WORK_STATUSES], fallback: [] },
+    ...PEOPLE,
+    { key: 'quiet', multiple: false, options: Object.keys(QUIET_DAYS), fallback: [] },
+  ],
+  done: [
+    // 最近完成 opens on what was finished; a cancelled task is one filter away.
+    { key: 'status', multiple: true, options: DONE_STATUSES, fallback: ['completed'] },
+    ...PEOPLE,
+    { key: 'result', multiple: false, options: ['with', 'without'], fallback: [] },
+    { key: 'took', multiple: false, options: Object.keys(TOOK), fallback: [] },
+  ],
+  notices: [
+    { key: 'need', multiple: false, options: Object.keys(NOTICE_NEEDS), fallback: [] },
+    { key: 'kind', multiple: true, options: NOTICE_KINDS, fallback: [] },
+    { key: 'project', multiple: true, options: 'projects', fallback: [] },
+  ],
+}
 
 // Notices are kept for 90 days at most (src/notices/recent-notices.js).
+type ListRange = 'all' | '7d' | '14d' | '30d' | '90d'
 export const LIST_RANGES: Record<WorkbenchList, readonly ListRange[]> = {
   running: ['all', '7d', '30d', '90d'],
   done: ['all', '7d', '30d', '90d'],
   notices: ['14d', '7d', '30d', '90d'],
 }
-type ListRange = 'all' | '7d' | '14d' | '30d' | '90d'
 export const LIST_SORTS = ['newest', 'oldest'] as const
 type ListSort = typeof LIST_SORTS[number]
 
 export interface ListQuery {
   text: string
   range: ListRange
-  projects: string[]
-  flas: string[]
-  /** Task statuses or notice kinds; empty means all the list holds. */
-  kinds: string[]
   sort: ListSort
+  /** Each declared filter's values; a single-choice filter has at most one. */
+  filters: Record<string, string[]>
 }
 
 export const isWorkbenchList = (value: unknown): value is WorkbenchList => WORKBENCH_LISTS.includes(value as WorkbenchList)
 
 export function defaultListQuery(list: WorkbenchList): ListQuery {
-  return { text: '', range: LIST_RANGES[list][0], projects: [], flas: [], kinds: [...DEFAULT_KINDS[list]], sort: 'newest' }
+  return { text: '', range: LIST_RANGES[list][0], sort: 'newest',
+    filters: Object.fromEntries(LIST_FILTERS[list].map(filter => [filter.key, [...filter.fallback]])) }
 }
 
 const values = (value: LocationQuery[string] | undefined) => (Array.isArray(value) ? value : [value])
@@ -53,15 +93,18 @@ export function readListQuery(list: WorkbenchList, query: LocationQuery): ListQu
   const fallback = defaultListQuery(list)
   const range = one(query.range) as ListRange
   const sort = one(query.sort) as ListSort
-  const known = LIST_KINDS[list]
-  const kinds = values(query.kind).filter(kind => known.includes(kind))
+  const filters: Record<string, string[]> = {}
+  for (const filter of LIST_FILTERS[list]) {
+    if (query[filter.key] === undefined) { filters[filter.key] = [...filter.fallback]; continue }
+    const known = [...new Set(values(query[filter.key]))]
+      .filter(value => typeof filter.options === 'string' || filter.options.includes(value))
+    filters[filter.key] = filter.multiple ? known : known.slice(0, 1)
+  }
   return {
     text: one(query.q).trim(),
     range: LIST_RANGES[list].includes(range) ? range : fallback.range,
-    projects: [...new Set(values(query.project))],
-    flas: [...new Set(values(query.fla))],
-    kinds: query.kind === undefined ? fallback.kinds : [...new Set(kinds)],
     sort: LIST_SORTS.includes(sort) ? sort : fallback.sort,
+    filters,
   }
 }
 
@@ -71,52 +114,76 @@ export function writeListQuery(list: WorkbenchList, state: ListQuery): LocationQ
   const query: LocationQueryRaw = {}
   if (state.text.trim()) query.q = state.text.trim()
   if (state.range !== fallback.range) query.range = state.range
-  if (state.projects.length) query.project = [...state.projects]
-  if (state.flas.length) query.fla = [...state.flas]
-  // An emptied filter differs from 最近完成's default, so it is written as one empty value.
-  if (!sameSet(state.kinds, fallback.kinds)) query.kind = state.kinds.length ? [...state.kinds] : ''
+  for (const filter of LIST_FILTERS[list]) {
+    const chosen = state.filters[filter.key] ?? []
+    // An emptied filter differs from a default that narrows (最近完成's status), so it is written as one empty value.
+    if (!sameSet(chosen, filter.fallback)) query[filter.key] = chosen.length ? [...chosen] : ''
+  }
   if (state.sort !== fallback.sort) query.sort = state.sort
   return query
 }
 
-/** How many filters (not the search) differ from what the list opens with. */
+/** How many of the list's own filters differ from what it opens with: the count on 「筛选」. */
 export function activeFilterCount(list: WorkbenchList, state: ListQuery) {
-  const fallback = defaultListQuery(list)
-  return [state.range !== fallback.range, state.projects.length > 0, state.flas.length > 0,
-    !sameSet(state.kinds, fallback.kinds), state.sort !== fallback.sort].filter(Boolean).length
+  return LIST_FILTERS[list].filter(filter => !sameSet(state.filters[filter.key] ?? [], filter.fallback)).length
 }
 
 /** Whether the person narrowed the list beyond what it opens with; a changed order does not narrow it. */
 export function isFiltered(list: WorkbenchList, state: ListQuery) {
-  const reordered = state.sort !== defaultListQuery(list).sort ? 1 : 0
-  return Boolean(state.text) || activeFilterCount(list, state) > reordered
+  return Boolean(state.text) || state.range !== LIST_RANGES[list][0] || activeFilterCount(list, state) > 0
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000
+const MS = 1000
 const rangeDays = (range: ListRange) => (range === 'all' ? null : Number.parseInt(range, 10))
+const daysAgo = (days: number, now: number) => new Date(now - days * DAY_S * MS).toISOString()
 
-/** The task page request: `/api/project-agent-task-pages`. */
-export function taskPageParams(list: Exclude<WorkbenchList, 'notices'>, state: ListQuery, spaceId: string, now: number) {
-  const params = new URLSearchParams({ personalSpaceId: spaceId })
-  for (const status of state.kinds.length ? state.kinds : LIST_KINDS[list]) params.append('status', status)
-  for (const project of state.projects) params.append('project', project)
-  for (const fla of state.flas) params.append('agent', fla)
-  if (state.text) params.set('q', state.text)
+/** The request for one page of the list: its path and its query, without the cursor. */
+export function listPageRequest(list: WorkbenchList, state: ListQuery, spaceId: string, now: number) {
+  const chosen = (key: string) => state.filters[key] ?? []
+  const params = new URLSearchParams()
   const days = rangeDays(state.range)
-  if (days) params.set('since', new Date(now - days * DAY_MS).toISOString())
-  params.set('order', list === 'done' ? 'completed' : 'updated')
+  if (list === 'notices') {
+    params.set('days', String(days ?? 90))
+    params.set('sort', state.sort)
+    for (const kind of noticeKinds(chosen('kind'), chosen('need')[0])) params.append('kind', kind)
+    for (const project of chosen('project')) params.append('project', project)
+    if (state.text) params.set('q', state.text)
+    return { path: '/api/notices', params }
+  }
+  params.set('personalSpaceId', spaceId)
+  const statuses = chosen('status').length ? chosen('status') : list === 'running' ? [...CURRENT_WORK_STATUSES] : DONE_STATUSES
+  for (const status of statuses) params.append('status', status)
+  for (const project of chosen('project')) params.append('project', project)
+  for (const fla of chosen('fla')) params.append('agent', fla)
+  if (state.text) params.set('q', state.text)
+  if (list === 'running') {
+    // 进行中: the range is when the work started; quiet is how long nothing has changed.
+    if (days) params.set('startedSince', daysAgo(days, now))
+    const quiet = QUIET_DAYS[chosen('quiet')[0] ?? '']
+    if (quiet) params.set('changedBefore', daysAgo(quiet, now))
+    params.set('order', 'updated')
+  } else {
+    // 最近完成: the range is when it finished.
+    if (days) params.set('since', daysAgo(days, now))
+    const result = chosen('result')[0]
+    if (result) params.set('hasResult', String(result === 'with'))
+    const [least, most] = TOOK[chosen('took')[0] ?? ''] ?? [null, null]
+    if (least) params.set('tookAtLeast', String(least))
+    if (most) params.set('tookAtMost', String(most))
+    params.set('order', 'completed')
+  }
   params.set('sort', state.sort)
-  return params
+  return { path: '/api/project-agent-task-pages', params }
 }
 
-/** The notice page request: `/api/notices`. */
-export function noticePageParams(state: ListQuery) {
-  const params = new URLSearchParams({ days: String(rangeDays(state.range) ?? 90), sort: state.sort })
-  for (const kind of state.kinds) params.append('kind', kind)
-  for (const project of state.projects) params.append('project', project)
-  for (const fla of state.flas) params.append('agent', fla)
-  if (state.text) params.set('q', state.text)
-  return params
+// The kinds asked for, within the 要你动手 / 只是知会 group when one is chosen.
+// Nothing in both asks for a kind no notice has, so the list says nothing matches.
+const NO_KIND = 'none'
+function noticeKinds(kinds: readonly string[], need: string | undefined) {
+  const group = need ? NOTICE_NEEDS[need] : null
+  if (!group) return kinds
+  const within = (kinds.length ? kinds : group).filter(kind => group.includes(kind))
+  return within.length ? within : [NO_KIND]
 }
 
 function sameSet(left: readonly string[], right: readonly string[]) {
