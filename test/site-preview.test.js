@@ -128,3 +128,22 @@ test('the client downloads on both pages are the Windows setup and macOS image o
     assert.equal(document.querySelector('[data-download-macos]').href, release + `fuli-macos-arm64-${version}.dmg`, path);
   }
 });
+
+test('every header shows the brand wordmark and the version the client shows: released on the stable pages, the preview on /next/', () => {
+  const pagesWithHeader = ['', 'en/', 'models/', 'tech/', 'guide/', 'report/', 'report/en/'];
+  const stable = pages('0.23.0');
+  for (const path of pagesWithHeader) {
+    const { document } = parseHTML(stable.get(path + 'index.html'));
+    // Both wordmarks come from brand/ copies; CSS shows the one for the page's language.
+    assert.deepEqual([...document.querySelectorAll('.brand .wordmark:not(.wordmark--dark)')].map(node => node.getAttribute('src').replace(/^(\.\.\/)+|^\.\//, '')),
+      ['assets/brand/fuli-wordmark-zh.svg', 'assets/brand/fuli-wordmark-en.svg'], path);
+    const versionLink = document.querySelector('.brand-row .brand-version');
+    assert.equal(versionLink.textContent, 'v0.23.0', path);
+    assert.equal(versionLink.href, 'https://github.com/JevonsCode/fuli/releases/tag/v0.23.0', path);
+  }
+  // During a prerelease cycle the stable pages name no version; the preview page names its own.
+  for (const path of pagesWithHeader) assert.equal(parseHTML(files.get(path + 'index.html')).document.querySelector('.brand-version'), null, path);
+  const preview = parseHTML(files.get('next/index.html')).document.querySelector('.brand-version');
+  assert.equal(preview.textContent, 'v' + version);
+  assert.equal(preview.href, `https://github.com/JevonsCode/fuli/releases/tag/v${version}`);
+});

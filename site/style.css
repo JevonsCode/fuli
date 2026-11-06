@@ -39,8 +39,16 @@ code { font-family: var(--mono); font-size: .92em; }
 /* Navigation */
 .nav { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 14px var(--gutter); background: rgb(246 245 241 / 88%); backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid transparent; transition: border-color .2s; }
 .nav.scrolled { border-bottom-color: var(--line); }
-.brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-weight: 650; }
-.brand b { font: 600 12px/1 "Unbounded", var(--sans); letter-spacing: .12em; color: var(--muted); }
+/* The brand as the desktop client shows it: the mark, the wordmark for the page's language
+   (brand/svg/wordmark, about 0.55 of the mark's height with its clear space), then the version.
+   One row at the mark's 28px; the wordmark and the version sit on its middle. */
+.brand-row { display: flex; flex: 0 0 auto; align-items: center; gap: 12px; height: 28px; }
+.brand { display: flex; align-items: center; gap: 8px; height: 28px; color: var(--ink); text-decoration: none; }
+.brand-word { display: flex; align-items: center; height: 16px; margin-left: -2px; }
+.wordmark { display: none; width: auto; height: 16px; user-select: none; -webkit-user-drag: none; }
+html:lang(zh) .wordmark-zh:not(.wordmark--dark), html:lang(en) .wordmark-en:not(.wordmark--dark) { display: block; }
+.brand-version { color: var(--muted); font-size: 13px; line-height: 1; font-variant-numeric: tabular-nums; text-decoration: none; user-select: none; }
+.brand-version:hover { color: var(--jade); }
 .nav nav { display: flex; align-items: center; gap: clamp(14px, 2.4vw, 30px); }
 .nav nav a { color: var(--ink-soft); text-decoration: none; font-size: 14px; }
 .nav nav a:hover { color: var(--jade); }
@@ -253,7 +261,6 @@ figure.window figcaption { padding: 0 20px; }
 }
 
 @media (max-width: 380px) {
-  .brand b { display: none; }
   .nav .language-switch a { min-height: 38px; }
 }
 
@@ -284,7 +291,9 @@ html[lang="en"] .enhanced h2 { font-size: clamp(30px, 3.1vw, 46px); }
 .nav { transition: border-color .2s, background-color .35s; }
 .nav.is-dark { background: rgb(17 23 24 / 82%); border-bottom-color: #1f2b28; }
 .nav.is-dark .brand, .nav.is-dark nav a { color: #e1ece5; }
-.nav.is-dark .brand b { color: #8fa39b; }
+.nav.is-dark .brand-version { color: #8fa39b; }
+html .nav.is-dark .wordmark { display: none; }
+html:lang(zh) .nav.is-dark .wordmark-zh.wordmark--dark, html:lang(en) .nav.is-dark .wordmark-en.wordmark--dark { display: block; }
 .nav.is-dark .nav-github { border-color: #2c3a36; background: #16201d; }
 /* Over the dark scene the nav swaps to the brand's dark mark (brand/svg/mark). */
 .brand-mark--dark, .nav.is-dark .brand-mark { display: none; }
