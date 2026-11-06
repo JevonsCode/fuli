@@ -9,6 +9,9 @@ import { NEUTRAL, usagePriorLookup } from '../knowledge-impressions/ranking-prio
 import { promptSentenceKeys, taskStatement, withoutProhibitions } from './task-prompt-statement.js';
 
 const MAX_QUERIES = 4;
+// The verification intent's query rides beyond MAX_QUERIES: it is the only one
+// that finds the kept checks, and a change request already spends the four.
+const VERIFY_QUERY = 'project checks run test command script 检查 测试 命令';
 const MAX_ITEMS_PER_KIND = 3;
 const TOPIC_ONLY = plan => plan.trigger_categories.length === 1 && plan.trigger_categories[0] === 'topic';
 const MAX_ITEM_TEXT = 1000;
@@ -59,6 +62,14 @@ const RECALL_INTENTS = Object.freeze([
     category: 'prior_context',
     pattern: /(?:之前|以前|上次|已经存|保存过|记得|照旧|同样|还是用|不用再|先前|约定|定好的|previous|earlier|\bprior\b|last time|remember|same as|again|we (?:decided|agreed|settled|chose))/iu,
     queries: ['先前 方法 规则 决策 runbook previous method decision']
+  },
+  {
+    // rec#88: "make sure the whole suite passes", "every project check passes":
+    // the project's checks and the step a test run needs first are kept by the
+    // Stop hook (turn-findings.js), and only a query about checks finds them.
+    category: 'verification',
+    pattern: /(?:\b(?:tests?|suite|specs?|checks?)\b[^.?!\n]{0,20}\b(?:pass|passes|passing|green)\b|\bmake sure\b[^.?!\n]{0,60}\bpass(?:es)?\b|\brun (?:the )?(?:tests|suite|checks)\b|跑通|测试(?:都)?通过|检查(?:都)?通过)/iu,
+    queries: [VERIFY_QUERY]
   }
 ]);
 
@@ -165,10 +176,12 @@ export function planTaskKnowledgeRecall(taskPrompt, { earlierSentences } = {}) {
   const queries = targeted
     ? unique([...categoryQueries, ...ownClauseQueries(statementText, { cuedOnly: true }).map((query) => `${focus} ${query}`)])
     : unique([...ownClauseQueries(statementText), ...categoryQueries]);
+  // The checks query goes out bare: a target's name would only dilute it.
+  const verify = matched.some(({ category }) => category === 'verification');
   return {
     status: 'planned',
     trigger_categories: matched.map(({ category }) => category),
-    queries: queries.slice(0, MAX_QUERIES)
+    queries: [...queries.filter(query => !query.endsWith(VERIFY_QUERY)).slice(0, MAX_QUERIES), ...(verify ? [VERIFY_QUERY] : [])]
   };
 }
 
@@ -273,7 +286,7 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
     entities: rankedUnique(entityCandidates, 'entity', compare).slice(0, MAX_ITEMS_PER_KIND).map(compactEntity)
   };
   // rec#88: a pending item the task names only in passing waits as a title.
-  const { facts, entities, weak } = relevantPending(ranked, ownText);
+  const { facts, entities, weak } = relevantPending(ranked, ownText, { verifying: plan.trigger_categories.includes('verification') });
   if (!facts.length && !entities.length && weak.length) return weakPendingIndex(plan, weak);
   const pendingSlots = Object.entries({ facts, entities })
     .filter(([, items]) => items.some((item) => !isConfirmed(item))).map(([slot]) => slot);
@@ -332,10 +345,16 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
 // with the task's own words; otherwise only its title is listed, to read on
 // demand. Confirmed items are never held back here.
 const MIN_HEAD_OVERLAP = 2;
-function relevantPending({ facts, entities }, ownText) {
+// A task that asks for its checks to pass is about the project's checks: a
+// pending item whose head names a test, check, script or command is its topic.
+const VERIFY_TERMS = new Set(['test', 'suite', 'spec', 'check', 'script', 'command', 'fixture', '测试', '检查', '命令']);
+function relevantPending({ facts, entities }, ownText, { verifying = false } = {}) {
   if ([...facts, ...entities].some(isConfirmed)) return { facts, entities, weak: [] };
   const own = contentTerms(ownText);
-  const strong = item => [...contentTerms(statementHead(item))].filter(term => own.has(term)).length >= MIN_HEAD_OVERLAP;
+  const strong = item => {
+    const head = [...contentTerms(statementHead(item))];
+    return head.filter(term => own.has(term)).length >= MIN_HEAD_OVERLAP || (verifying && head.some(term => VERIFY_TERMS.has(term)));
+  };
   const weak = [...facts.filter(item => !strong(item)).map(item => ({ item, kind: 'relationship' })),
     ...entities.filter(item => !strong(item)).map(item => ({ item, kind: 'entity' }))];
   return { facts: facts.filter(strong), entities: entities.filter(strong), weak };

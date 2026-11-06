@@ -18,6 +18,9 @@ const MAX_RULE_CHARS = 600;
 export const STATED_RULE_PATTERNS = [
   // "Our retry policy for every outbound channel: …", "our deploy command is …"
   /\bour\s+(?:[\w./-]+\s+){0,6}?(?:policy|policies|convention|conventions|rule|rules|standard|port|ports|command|commands|process|workflow|naming)\b[^.?!]*?(?::|\b(?:is|are)\b)/iu,
+  // "our push provider's sandbox base URL is https://…", "our alert titles are `[x] …`": a thing of ours and
+  // its concrete value (a URL, a code literal or a number) — environment facts the code never holds (rec#88).
+  /\bour\s+(?:[\w'’./-]+\s+){0,6}?(?:is|are)\b[^.?!]*?(?:https?:\/\/|`|\b\d{2,}\b)/iu,
   // "We always run the migrations first", "we never retry a 4xx"
   /\bwe\s+(?:always|never|only)\s+\w+/iu,
   // "the staging port is 4611", "admin port = 7310"

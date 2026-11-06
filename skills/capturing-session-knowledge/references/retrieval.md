@@ -39,7 +39,7 @@ for it yourself. A `no_match` recall is one quick search, and says so in
 files, which may be out of date, call `search_current_project_knowledge` for it yourself. When the project
 has stored nothing yet, `next` says so instead and no further FULI search is needed. Otherwise do the same
 whenever its candidates are irrelevant while durable context may still matter. A coding task without such a trigger, or a task whose only matches are pending items it
-names only in passing, may instead get `status: indexed` with a
+names only in passing, may instead get `status: indexed` with a (a task that asks for its tests or checks to pass also looks up the kept project checks, and gets them whole)
 `knowledge_index`: up to five `[id, title]` pairs of matching items in the exact current project and
 `matched_in_search`, how many items that one bounded search kept, never their bodies. It is not the
 project's total: more may match a search of your own. A title is only a pointer: read the item with

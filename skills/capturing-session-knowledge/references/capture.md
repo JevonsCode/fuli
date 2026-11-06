@@ -171,7 +171,7 @@ session, and hook-delivered tasks by Stop. Capture candidates, experiences, memo
 explicit knowledge usage, collaborators and meaningful work logs (including failures/blockers)
 still require `checkpoint_task_knowledge` with `capture_candidates` or `retain_nothing`.
 A hook-delivered task that Stop closes keeps, at entry, the prompt's own sentences that state a
-project rule (a policy or convention of ours, a port, a command, why something fails) as pending
+project rule (a policy or convention of ours, a port, a command, why something fails, a thing of ours and its concrete value such as a URL) as pending
 project facts in the person's words; review still decides them. Do not checkpoint only to repeat
 such a sentence. When Stop closes such a task it also keeps, as pending experiences, what the turn
 itself showed: a project script that failed until another ran first (with its first error line), the
