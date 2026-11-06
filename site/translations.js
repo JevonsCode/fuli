@@ -167,6 +167,10 @@ export const messages = {
     "projects.modelOn": "Astro 用自己的模型判断，不占当前会话。",
     "projects.window": "项目概览和项目团队，界面是合成的示例数据",
     "team.modelOn": "Jefa、Bole、Tonborg 用自己的模型判断，不占当前会话。",
+    "growth.crowd.line1": "接口评审过了吗？",
+    "growth.crowd.line2": "过了，改一处就行。",
+    "growth.crowd.line3": "端口改成 7413 了。",
+    "growth.crowd.line4": "这条经验我记下了。",
   },
   "en": {
     "meta.title": "FULI · AI Agent Memory & Cross-Client Collaboration",
@@ -335,6 +339,10 @@ export const messages = {
     "projects.modelOn": "Astro decides with its own model, not the current session.",
     "projects.window": "A project overview and its team, showing synthetic demo data",
     "team.modelOn": "Jefa, Bole and Tonborg judge with their own models, not the current session.",
+    "growth.crowd.line1": "Reviewed the API yet?",
+    "growth.crowd.line2": "Yes, one change left.",
+    "growth.crowd.line3": "The port is 7413 now.",
+    "growth.crowd.line4": "Noted for next time.",
   },
 };
 

@@ -58,6 +58,7 @@
           <div class="diagram-overlay screen-overlay" data-overlay="knowledge" data-copy="#knowledge .screen-figure"></div>
           <div class="diagram-overlay screen-overlay" data-overlay="projects" data-copy="#projects .screen-figure"></div>
           <div class="diagram-overlay growth-overlay" data-overlay="growth" data-copy="#growth .growth-anim"></div>
+          <div class="diagram-overlay crowd-overlay" data-overlay="growth" data-copy="#growth .ga-crowd"></div>
           <div class="diagram-overlay team-overlay" data-overlay="team">
             <svg class="links" aria-hidden="true"><path data-from="0" data-to="8" /><path data-from="2" data-to="8" /><path data-from="4" data-to="8" /><path data-from="6" data-to="8" /><path data-from="8" data-to="9" /><path data-from="8" data-to="11" /></svg>
             <span data-i18n="diagram.astro" class="tag tag-fixed" data-anchor="0">Astro · 接待与复盘</span>
@@ -188,15 +189,15 @@
             <figure data-i18n-aria-label="growth.anim.label" class="growth-anim static-figure" aria-label="FLA 做任务时记下经验；真用上的经你确认留下，变成验收清单；重复的步骤做成 Agent App；它的 Workbench 和 Workflow 长了出来">
               <div class="ga-stage">
                 <div class="ga-head">
-                  <span class="ga-avatar">M</span><b>FLA</b>
+                  <span class="ga-avatar"><img src="../assets/avatars/fla-1.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-2.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-3.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-4.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></span><b>FLA</b>
                   <span class="ga-tasks"><i style="--i: 0"></i><i style="--i: 1"></i><i style="--i: 2"></i></span>
                 </div>
                 <div class="ga-lessons">
                   <b data-i18n="growth.anim.lessons">经验</b>
-                  <i class="ga-lesson is-kept" style="--i: 0"><i class="ga-tick">✓</i></i>
+                  <i class="ga-lesson is-kept" style="--i: 0"><i class="ga-tick"></i></i>
                   <i class="ga-lesson" style="--i: 1"></i>
-                  <i class="ga-lesson is-kept" style="--i: 2"><i class="ga-tick">✓</i></i>
-                  <i class="ga-lesson is-kept" style="--i: 3"><i class="ga-tick">✓</i></i>
+                  <i class="ga-lesson is-kept" style="--i: 2"><i class="ga-tick"></i></i>
+                  <i class="ga-lesson is-kept" style="--i: 3"><i class="ga-tick"></i></i>
                   <i class="ga-lesson" style="--i: 4"></i>
                 </div>
                 <div class="ga-checks">
@@ -211,6 +212,16 @@
                 <div class="ga-workbench"><b>Workbench</b><span><i></i><i></i></span><span><i></i><i></i><i></i></span><span><i></i></span></div>
               </div>
             </figure>
+            <div class="ga-crowd static-figure" aria-hidden="true">
+            <div class="ga-group is-talking" style="--x: 8%; --y: 22%; --i: 0; --px: 30%; --py: 36%"><img src="../assets/avatars/fla-5.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-6.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n="growth.crowd.line1" class="ga-bubble"></span></div>
+            <div class="ga-group is-working" style="--x: 30%; --y: 14%; --i: 1; --px: 70%; --py: 30%"><i class="ga-output"><i></i><i></i><i></i></i><img src="../assets/avatars/fla-7.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-8.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-9.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking" style="--x: 54%; --y: 24%; --i: 2; --px: 30%; --py: 60%"><img src="../assets/avatars/fla-10.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-11.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n="growth.crowd.line2" class="ga-bubble"></span></div>
+            <div class="ga-group is-working" style="--x: 78%; --y: 16%; --i: 3; --px: 70%; --py: 56%"><i class="ga-output"><i></i><i></i><i></i></i><img src="../assets/avatars/fla-12.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-13.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-14.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-working" style="--x: 12%; --y: 84%; --i: 4; --px: 50%; --py: 84%"><i class="ga-output"><i></i><i></i><i></i></i><img src="../assets/avatars/fla-15.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-16.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-17.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking" style="--x: 40%; --y: 70%; --i: 5"><img src="../assets/avatars/fla-18.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-19.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n="growth.crowd.line3" class="ga-bubble"></span></div>
+            <div class="ga-group is-working" style="--x: 66%; --y: 60%; --i: 6"><i class="ga-output"><i></i><i></i><i></i></i><img src="../assets/avatars/fla-20.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-21.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-22.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking" style="--x: 86%; --y: 72%; --i: 7"><img src="../assets/avatars/fla-23.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-24.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n="growth.crowd.line4" class="ga-bubble"></span></div>
+            </div>
           </section>
 
           <section class="chapter" id="workbench" data-scene="workbench" aria-labelledby="workbench-title">

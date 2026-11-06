@@ -120,6 +120,7 @@ export function createScrollScene({ labels }) {
   }
   const growthIndex = sceneNames.indexOf("growth");
   const growthArt = document.querySelector('[data-overlay="growth"] .ga-stage');
+  const growthOverlays = [...document.querySelectorAll('[data-overlay="growth"]')];
   // A shown chapter with several screens moves to the next one partway through its dwell.
   const screens = overlays.filter((overlay) => overlay.querySelector(".app-frame"))
     .map((overlay) => ({ scene: sceneNames.indexOf(overlay.dataset.overlay), frames: [...overlay.querySelectorAll(".app-frame")] }));
@@ -151,8 +152,11 @@ export function createScrollScene({ labels }) {
     // The drawing plays while its chapter dwells, before the morph to the next scene.
     // The scroll arrow fades out over the first third of the first screen.
     if (cue) cue.style.opacity = String(1 - clamp(y / (window.innerHeight / 3)));
-    const growth = index === growthIndex ? clamp(local / 0.42) : index > growthIndex ? 1 : 0;
+    // The card plays over the first quarter of the chapter; then FLAs fill the stage.
+    const growth = index === growthIndex ? clamp(local / 0.26) : index > growthIndex ? 1 : 0;
+    const finale = index === growthIndex ? clamp((local - 0.28) / 0.13) : index > growthIndex ? 1 : 0;
     growthArt?.style.setProperty("--growth-progress", growth.toFixed(3));
+    for (const overlay of growthOverlays) overlay.style.setProperty("--growth-finale", finale.toFixed(3));
     for (const { scene, frames } of screens) {
       const shown = scene === index ? Math.min(frames.length - 1, Math.floor(clamp(local / 0.42) * frames.length)) : scene < index ? frames.length - 1 : 0;
       frames.forEach((frame, i) => frame.classList.toggle("is-current", i === shown));
