@@ -1,6 +1,7 @@
 // The scroll story shared by the stable home page and the preview page, which
 // differ only in their copy. Progressive enhancement: each page is complete without it.
 import { createScrollScene } from './scene.js'
+import { createInstallStory } from './install-story.js'
 import { createLanguageController } from './i18n.js'
 
 export function startStory(catalog) {
@@ -22,6 +23,7 @@ export function startStory(catalog) {
 
   // The 3D story runs only with room for it and when motion is welcome.
   const scene = createScrollScene({ labels: language.labels })
+  const install = createInstallStory()
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
   const shortViewport = window.matchMedia('(max-height: 560px), (max-width: 700px) and (max-height: 740px)')
   const motionToggle = document.querySelector('#motion-toggle')
@@ -29,6 +31,7 @@ export function startStory(catalog) {
   function applyMotion() {
     const reduced = reducedMotion.matches || userReduced
     scene.setEnabled(!reduced && !shortViewport.matches)
+    install.setEnabled(!reduced && !shortViewport.matches)
     motionToggle.setAttribute('aria-pressed', String(reduced))
     motionToggle.dataset.i18n = reducedMotion.matches ? 'motion.system' : reduced ? 'motion.enable' : 'motion.reduce'
     motionToggle.textContent = language.t(motionToggle.dataset.i18n)

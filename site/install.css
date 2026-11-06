@@ -1,0 +1,62 @@
+/* The install chapter (#start): the four steps beside the client's real window. While it plays
+   (install-story.js) the band pins and each stretch of scrolling shows the next screen; otherwise
+   the steps and one screenshot read as a plain section. Screens are synthetic demo data captured
+   by scripts/site-screenshots.js. Motion is opacity and transform only. */
+.start > h2 + p { max-width: 640px; margin-top: 16px; color: #b9c8c2; }
+
+.install-story { position: relative; margin-top: clamp(32px, 5vh, 56px); }
+.install-pin { display: grid; grid-template-columns: minmax(0, .78fr) minmax(0, 1.4fr); align-items: center; gap: clamp(28px, 4vw, 72px); }
+.install-story.is-playing { height: calc(7 * 52svh + 100svh); }
+.install-story.is-playing .install-pin { position: sticky; top: 72px; height: calc(100svh - 72px); }
+
+.install-steps { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+.install-steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 2px 12px; padding: 12px 14px; border-radius: 14px; counter-increment: step; transition: opacity .35s ease, background-color .35s ease; }
+.install-steps li::before { content: counter(step); grid-row: span 2; display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid #2c3a36; border-radius: 50%; color: #8bc1a8; font: 600 12px/1 "Unbounded", var(--sans); }
+.install-steps b { color: #fff; font-size: 17px; font-weight: 600; }
+.install-steps span { color: #a9bab4; font-size: 14px; line-height: 1.6; }
+.install-story.is-playing .install-steps li { opacity: .5; }
+.install-story.is-playing .install-steps li.is-current { opacity: 1; background: #16201d; }
+.install-story.is-playing .install-steps li.is-current::before { border-color: #8bc1a8; background: #8bc1a8; color: var(--night); }
+.install-progress { display: none; }
+.install-story.is-playing .install-progress { display: block; height: 2px; margin: 14px 14px 0; overflow: hidden; border-radius: 1px; background: #26332f; }
+.install-progress i { display: block; height: 100%; background: linear-gradient(90deg, #8bc1a8, #c99a3b); transform: scaleX(var(--install-progress, 0)); transform-origin: left; }
+.install-downloads { margin-top: 24px; }
+.install-downloads .button-quiet { border: 1px solid #3a4a45; background: transparent; color: #e9f1ee; }
+.install-downloads .button-quiet:hover { background: #16201d; }
+.install-note { margin-top: 12px; color: #7f918a; font-size: 13px; line-height: 1.6; }
+
+/* The window (screens.css) on the night band: darker edges, a deeper shadow. Without the sequence
+   (reduced motion, no script) it shows the workbench. */
+.install-window .app-chrome, .install-window .app-screen { border-color: #2c3a36; }
+.install-window .app-screen { box-shadow: 0 40px 90px rgb(0 0 0 / 45%); }
+.install-story:not(.is-playing) .install-static { opacity: 1; transform: none; }
+.install-window figcaption { color: #7f918a; }
+
+/* The first screen is the download itself, drawn: the app icon and a bar that fills. */
+.install-download { display: grid; place-content: center; justify-items: center; gap: 14px; background: radial-gradient(circle at 50% 40%, #fffefb, #eeece6); }
+.install-app { display: grid; width: 96px; height: 96px; place-items: center; border-radius: 22.5%; background: #fff; box-shadow: 0 18px 40px rgb(27 31 29 / 16%); }
+.install-download b { color: var(--ink); font: 600 18px/1 "Unbounded", var(--sans); letter-spacing: .12em; }
+.install-file { display: flex; gap: 14px; color: var(--muted); font: 12px var(--mono); }
+.install-bar { width: 240px; height: 6px; overflow: hidden; border-radius: 3px; background: #e2dfd7; }
+.install-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--jade), #2f8a6c); transform: scaleX(.08); transform-origin: left; transition: transform 1.6s cubic-bezier(.3, .7, .2, 1) .2s; }
+.install-download.is-current .install-bar i, .install-story:not(.is-playing) .install-bar i { transform: scaleX(1); }
+
+/* The server path stays one quiet fold. */
+.install-server { max-width: 760px; margin-top: clamp(32px, 5vh, 48px); }
+.install-server summary { width: fit-content; color: #cfe3da; font-weight: 600; cursor: pointer; user-select: none; }
+.install-server summary:hover { color: #8bc1a8; }
+.install-server > p { margin-top: 14px; color: #b9c8c2; }
+
+@media (max-width: 860px) {
+  .install-pin { grid-template-columns: minmax(0, 1fr); align-content: center; gap: 18px; }
+  .install-story.is-playing .install-pin { top: 64px; height: calc(100svh - 64px); }
+  .install-story.is-playing .install-steps li:not(.is-current) span { display: none; }
+  .install-steps li { padding: 8px 10px; }
+  .install-steps b { font-size: 15px; }
+  .install-story.is-playing .install-note { display: none; }
+  .install-downloads { margin-top: 14px; }
+  .install-downloads .button { padding: 10px 16px; font-size: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .install-steps li, .install-bar i { transition: none; }
+}

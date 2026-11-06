@@ -61,6 +61,13 @@ function renderPage(template, base, route, locale, catalog) {
         else if (value?.startsWith('../')) element.setAttribute(attribute, '../' + value);
       }
     }
+    // srcset lists several URLs, each with its width.
+    for (const element of document.querySelectorAll('[srcset]')) {
+      element.setAttribute('srcset', element.getAttribute('srcset').split(',').map((entry) => {
+        const value = entry.trim();
+        return value.startsWith('./') ? '../' + value.slice(2) : value.startsWith('../') ? '../' + value : value;
+      }).join(', '));
+    }
   }
   document.querySelector('link[rel="canonical"]').href = pageUrl;
   document.querySelector('meta[property="og:url"]').content = pageUrl;

@@ -32,7 +32,9 @@ test('every local asset reference in the built site carries the hash of the file
     for (const path of await files(root)) {
       const pattern = REFERENCES[extname(path)];
       if (!pattern) continue;
-      for (const [, reference] of (await readFile(path, 'utf8')).matchAll(pattern)) {
+      const text = await readFile(path, 'utf8');
+      const srcsets = extname(path) === '.html' ? [...text.matchAll(/\bsrcset="([^"]+)"/g)].flatMap(([, list]) => list.split(',').map(entry => [null, entry.trim().split(/\s+/)[0]])) : [];
+      for (const [, reference] of [...text.matchAll(pattern), ...srcsets]) {
         if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(reference)) continue;
         const [file, query] = reference.split('?');
         const target = await localAsset(path, file);
