@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const api = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn() }))
 vi.mock('@/api/client', async (importOriginal) => ({
@@ -65,9 +65,13 @@ beforeEach(() => {
         : url.startsWith('/api/dreaming') ? dreamingOff : rolesPayload))
 })
 
+// Every page a test mounts leaves with it, so only the current test's page answers the top bar's refresh.
+const mounted: ReturnType<typeof mount>[] = []
+afterEach(() => { mounted.splice(0).forEach(wrapper => { if (!wrapper.vm.$.isUnmounted) wrapper.unmount() }) })
 const mountPage = async () => {
   const wrapper = mount(ModelSettingsPage, { attachTo: document.body,
     global: { stubs: { RouterLink: true, OptionSelect: optionSelectStubs.OptionSelect } } })
+  mounted.push(wrapper)
   await flushPromises()
   return wrapper
 }
