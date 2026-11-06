@@ -117,7 +117,9 @@ export async function handleModelBackendApiRequest({
     sendJson(response, 200, { ...settings, roles: settings.roles.map(role => ({ ...role,
       trust: trustView(role, settings.connections, { automaticOperations, modelTrust, readEvaluation }),
       localBuild: modelBackends.localBuild(role.role, role.connection?.id ?? null,
-        role.connection ? settings.connections[role.connection.id] : null) })),
+        role.connection ? settings.connections[role.connection.id] : null),
+      health: modelBackends.health?.(role.role, role.connection?.id ?? null,
+        role.connection ? settings.connections[role.connection.id] : null) ?? null })),
       operations, workPackages: roleWork?.summary().packages ?? [], ...(saved ? { history: saved.history } : {}) });
     return true;
   }

@@ -62,8 +62,32 @@ describe('ModelPowerButton', () => {
     answer(roles(['enabled'], 'invalid'), null)
     const wrapper = await mountButton()
     expect(wrapper.get('[data-model-power]').attributes('data-model-power')).toBe('problem')
-    expect(wrapper.find('.model-power-dot').exists()).toBe(true)
+    expect(wrapper.find('.model-power-split').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('turns red, without the signal effect, when a connected model failed its latest call', async () => {
+    const payload = roles(['enabled', 'enabled']) as { roles: Array<Record<string, unknown>> }
+    payload.roles[0] = { ...payload.roles[0], role: 'tonborg', health: { status: 'failing', at: '2026-11-06T00:00:00Z', reason: 'network' } }
+    payload.roles[1] = { ...payload.roles[1], health: { status: 'ok', at: '2026-11-06T00:00:00Z', reason: null } }
+    answer(payload, null)
+    const wrapper = await mountButton()
+    const link = wrapper.get('[data-model-power]')
+    expect(link.attributes('data-model-power')).toBe('problem')
+    expect(link.attributes('aria-label')).toContain('Tonborg')
+    expect(wrapper.find('.model-power-split').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows the signal effect only while a model powers FULI', async () => {
+    answer(roles(['enabled']), { total: 0, done: 0, running: false })
+    const on = await mountButton()
+    expect(on.findAll('.model-power-split')).toHaveLength(2)
+    on.unmount()
+    answer(roles(['not_configured']), null)
+    const off = await mountButton()
+    expect(off.find('.model-power-split').exists()).toBe(false)
+    off.unmount()
   })
 
   it('is lit on the model page, which is its own page beside 设置', async () => {

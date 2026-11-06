@@ -191,6 +191,19 @@ export class ModelUsageLedger {
       completedAt: new Date(Date.parse(row.started_at) + row.duration_ms).toISOString() } : null;
   }
 
+  // The latest attempt of a role on the model API from one connection and
+  // model, whatever its outcome: { outcome, failureClass, failureReason, at },
+  // or null when there is none (rec#92: the top bar turns red while the
+  // configured model fails).
+  lastAttempt({ role, connectionId, protocol, endpoint, requestedModel }) {
+    const row = this.db.prepare(`SELECT outcome, failure_class, failure_reason, started_at, duration_ms FROM model_attempts
+      WHERE role = ? AND channel = 'model_api' AND connection_id = ? AND protocol = ? AND endpoint = ? AND requested_model = ?
+      ORDER BY julianday(started_at) * 86400000 + duration_ms DESC, rowid DESC LIMIT 1`)
+      .get(role, connectionId, protocol, endpoint, requestedModel);
+    return row ? { outcome: row.outcome, failureClass: row.failure_class, failureReason: row.failure_reason,
+      at: new Date(Date.parse(row.started_at) + row.duration_ms).toISOString() } : null;
+  }
+
   // Nested calls join the open transaction.
   #transaction(work) {
     if (this.db.isTransaction) return work();

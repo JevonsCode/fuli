@@ -5,13 +5,15 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getJson } from '@/api/client'
 import { t } from '@/i18n'
 import { UiIcon } from '@/ui'
-import type { ModelRolesPayload } from './model'
+import { roleName, type ModelRolesPayload } from './model'
 
 // The model entry in the top bar, beside 设置 (Jevons 11-06): one look at the
-// bar says whether FULI has a model behind it. Unpowered it is a quiet dashed
-// core; powered the bolt lights and breathes; while old knowledge is being
-// indexed a ring fills around it; a configuration that cannot be read shows a
-// dot. It only reads, every minute and when the page comes back into view.
+// bar says whether FULI has a model behind it. With none it is a plain icon in
+// the bar's own colour and does not move; powered it turns violet, breathes
+// and now and then breaks up like a weak signal; while old knowledge is being
+// indexed a ring fills around it; when a connected model's latest call failed,
+// or the settings cannot be read, it is red and still. It only reads, every
+// minute and when the page comes back into view.
 type SemanticStatus = { total: number, done: number, running: boolean }
 type Power = 'off' | 'on' | 'filling' | 'problem'
 
@@ -26,14 +28,19 @@ const filling = computed(() => {
   const status = semantic.value
   return status && status.running && status.total > 0 && status.done < status.total ? status : null
 })
+// The connected models whose latest call failed: the button turns red.
+const failing = computed(() => (roles.value?.roles ?? []).filter(role => role.state === 'enabled' && role.health?.status === 'failing'))
 const power = computed<Power>(() => {
-  if (roles.value?.state === 'invalid') return 'problem'
+  if (roles.value?.state === 'invalid' || failing.value.length) return 'problem'
   if (filling.value) return 'filling'
   return enabled.value ? 'on' : 'off'
 })
 const progress = computed(() => (filling.value ? Math.round((filling.value.done / filling.value.total) * 100) : 0))
 const label = computed(() => {
-  if (power.value === 'problem') return t('modelSettings.power.problem')
+  if (power.value === 'problem') {
+    return failing.value.length ? t('modelSettings.power.failing', { roles: failing.value.map(role => roleName(role.role)).join('、') })
+      : t('modelSettings.power.problem')
+  }
   if (power.value === 'filling') return t('modelSettings.power.filling', { done: filling.value!.done, total: filling.value!.total })
   return power.value === 'on' ? t('modelSettings.power.on', { count: enabled.value }) : t('modelSettings.power.off')
 })
@@ -83,13 +90,12 @@ const active = computed(() => route?.path === '/models')
         </linearGradient>
       </defs>
     </svg>
-    <UiIcon :name="power === 'off' ? 'modelCore' : 'modelCoreOn'" :size="18" />
+    <UiIcon name="modelCoreOn" :size="18" />
     <!-- Two copies of the powered icon itself, which tear away from it now and then. -->
     <template v-if="power === 'on'">
       <span class="model-power-split model-power-split--cyan" aria-hidden="true"><UiIcon name="modelCoreOn" :size="18" /></span>
       <span class="model-power-split model-power-split--magenta" aria-hidden="true"><UiIcon name="modelCoreOn" :size="18" /></span>
     </template>
-    <span v-if="power === 'problem'" class="model-power-dot" aria-hidden="true" />
   </RouterLink>
 </template>
 
@@ -102,9 +108,8 @@ const active = computed(() => route?.path === '/models')
 .model-power:hover { color: var(--color-ink); background: var(--color-surface-hover); }
 .model-power:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 /* Powered (Jevons 11-06): the icon is drawn in a violet gradient and a violet glow breathes
-   behind it. About every nine seconds the icon itself splits for a third of a second: a cyan
-   and a magenta copy of it tear away sideways in slices while the icon jolts, then they snap
-   back into one. It all stays inside the 36px button; reduced motion keeps only the still glow. */
+   behind it, and now and then the signal breaks up (below). It all stays inside the 36px
+   button; reduced motion keeps only the still glow. */
 .model-power-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 .model-power--on, .model-power--filling { color: var(--color-power-mid); }
 .model-power--on:hover, .model-power--filling:hover { color: var(--color-power-mid); }
@@ -117,33 +122,55 @@ const active = computed(() => route?.path === '/models')
   animation: model-power-breathe 3.2s ease-in-out infinite;
 }
 @keyframes model-power-breathe { 0%, 100% { opacity: 0.35; transform: scale(0.86); } 50% { opacity: 1; transform: scale(1.08); } }
-.model-power--on > :deep(svg) { animation: model-power-jolt 9s infinite; }
-@keyframes model-power-jolt {
-  0%, 3.4%, 100% { transform: none; clip-path: none; }
-  0.6% { transform: translateX(0.8px); clip-path: inset(0 0 46% 0); }
-  1.2% { transform: translateX(-1px) skewX(-6deg); clip-path: inset(40% 0 0 0); }
-  1.8% { transform: translateX(0.6px); clip-path: inset(22% 0 30% 0); }
-  2.6% { transform: scale(1.05); clip-path: none; }
+/* A bad signal (Jevons 11-06): clean most of the time; about every six seconds, for half a
+   second, the icon stutters like a weak broadcast. It blinks out and back, tears into shifted
+   slices and splits into cyan and magenta copies of itself, each step a hard digital jump
+   (steps), then it is clean again. */
+.model-power--on > :deep(svg) { animation: model-power-static 6s steps(1, end) infinite; }
+@keyframes model-power-static {
+  0%, 9%, 100% { transform: none; clip-path: none; opacity: 1; }
+  0.8% { transform: translateX(1.5px); clip-path: inset(0 0 58% 0); opacity: 1; }
+  1.6% { transform: none; clip-path: none; opacity: 0.25; }
+  2.4% { transform: translateX(-2px) skewX(-10deg); clip-path: inset(36% 0 22% 0); opacity: 1; }
+  3.2% { transform: translateX(1px); clip-path: inset(62% 0 0 0); opacity: 0.8; }
+  4% { transform: none; clip-path: none; opacity: 0; }
+  4.8% { transform: translateX(-1px); clip-path: inset(10% 0 48% 0); opacity: 1; }
+  5.6% { transform: none; clip-path: none; opacity: 0.6; }
+  6.4% { transform: translateX(2px); clip-path: inset(48% 0 14% 0); opacity: 1; }
+  7.2% { transform: scale(1.06); clip-path: none; opacity: 1; }
+  8% { transform: none; clip-path: none; opacity: 0.4; }
 }
 .model-power-split {
   position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; opacity: 0;
   mix-blend-mode: multiply;
 }
-.model-power-split--cyan { color: var(--color-glitch-cyan); animation: model-power-split-cyan 9s infinite; }
-.model-power-split--magenta { color: var(--color-glitch-magenta); animation: model-power-split-magenta 9s infinite; }
-@keyframes model-power-split-cyan {
-  0%, 3.2%, 100% { opacity: 0; transform: none; clip-path: none; }
-  0.4% { opacity: 0.9; transform: translateX(-2.5px); clip-path: inset(0 0 55% 0); }
-  1% { opacity: 0.9; transform: translate(-3px, 1px); clip-path: inset(48% 0 8% 0); }
-  1.6% { opacity: 0.8; transform: translateX(-1.5px); clip-path: inset(20% 0 40% 0); }
-  2.4% { opacity: 0.5; transform: translateX(-0.5px); clip-path: none; }
+.model-power-split--cyan { color: var(--color-glitch-cyan); animation: model-power-static-cyan 6s steps(1, end) infinite; }
+.model-power-split--magenta { color: var(--color-glitch-magenta); animation: model-power-static-magenta 6s steps(1, end) infinite; }
+@keyframes model-power-static-cyan {
+  0%, 8.8%, 100% { opacity: 0; transform: none; clip-path: none; }
+  0.8% { opacity: 0.9; transform: translateX(-3px); clip-path: inset(40% 0 0 0); }
+  1.6% { opacity: 0; }
+  2.4% { opacity: 0.9; transform: translate(-2px, 1px); clip-path: inset(0 0 60% 0); }
+  3.2% { opacity: 0.7; transform: translateX(-4px); clip-path: inset(55% 0 10% 0); }
+  4% { opacity: 0.9; transform: translateX(-1px); clip-path: none; }
+  4.8% { opacity: 0; }
+  5.6% { opacity: 0.8; transform: translateX(-3px); clip-path: inset(20% 0 45% 0); }
+  6.4% { opacity: 0.5; transform: translateX(-1.5px); clip-path: inset(70% 0 0 0); }
+  7.2% { opacity: 0; }
+  8% { opacity: 0.6; transform: translateX(-1px); clip-path: none; }
 }
-@keyframes model-power-split-magenta {
-  0%, 3.2%, 100% { opacity: 0; transform: none; clip-path: none; }
-  0.4% { opacity: 0.9; transform: translateX(2.5px); clip-path: inset(50% 0 0 0); }
-  1% { opacity: 0.9; transform: translate(3px, -1px); clip-path: inset(6% 0 52% 0); }
-  1.6% { opacity: 0.8; transform: translateX(1.5px); clip-path: inset(44% 0 18% 0); }
-  2.4% { opacity: 0.5; transform: translateX(0.5px); clip-path: none; }
+@keyframes model-power-static-magenta {
+  0%, 8.8%, 100% { opacity: 0; transform: none; clip-path: none; }
+  0.8% { opacity: 0.9; transform: translateX(3px); clip-path: inset(0 0 45% 0); }
+  1.6% { opacity: 0.7; transform: translateX(1px); clip-path: none; }
+  2.4% { opacity: 0.9; transform: translate(2px, -1px); clip-path: inset(50% 0 5% 0); }
+  3.2% { opacity: 0; }
+  4% { opacity: 0.9; transform: translateX(1px); clip-path: none; }
+  4.8% { opacity: 0.8; transform: translateX(4px); clip-path: inset(30% 0 35% 0); }
+  5.6% { opacity: 0; }
+  6.4% { opacity: 0.7; transform: translateX(2px); clip-path: inset(0 0 70% 0); }
+  7.2% { opacity: 0.5; transform: translateX(1px); clip-path: none; }
+  8% { opacity: 0; }
 }
 /* On the model page the button is lit like 设置 on its own: a violet gradient disc, white icon. */
 .model-power.is-active, .model-power.is-active:hover {
@@ -160,10 +187,8 @@ const active = computed(() => route?.path === '/models')
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), black calc(100% - 2px));
   mask: radial-gradient(farthest-side, transparent calc(100% - 2px), black calc(100% - 2px));
 }
-.model-power-dot {
-  position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--color-danger); box-shadow: 0 1px 4px color-mix(in srgb, var(--color-danger) 28%, transparent);
-}
+/* A connected model that does not answer, or settings that cannot be read: a still red icon. */
+.model-power--problem, .model-power--problem:hover { color: var(--color-danger); }
 @media (prefers-reduced-motion: reduce) {
   .model-power--on::before { animation: none; opacity: 0.7; }
   .model-power--on > :deep(svg) { animation: none; }

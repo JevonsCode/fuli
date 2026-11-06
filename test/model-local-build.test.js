@@ -206,3 +206,20 @@ test('before any answer on the configured connection there is no record', async 
   const ollama = await fakeOllama(t);
   assert.deepEqual(portFor(ollama.endpoint).localBuild(), { status: 'no_record', digest: null, completedAt: null });
 });
+
+// rec#92: the top bar's model button turns red while the configured model fails.
+test('health says unknown before any call, ok after an answer, failing after a failed call', async (t) => {
+  const ollama = await fakeOllama(t);
+  const { port } = portFor(ollama.endpoint);
+  const health = () => port.health('tonborg', 'local', { protocol: 'openai_chat', endpoint: ollama.endpoint, model: MODEL });
+  assert.deepEqual(health(), { status: 'unknown', at: null, reason: null });
+  await port.decide(request());
+  assert.equal(health().status, 'ok');
+  assert.equal(port.health('tonborg', 'local', null), null);
+
+  const { port: down } = portFor('http://127.0.0.1:9/v1');
+  await down.decide(request());
+  const failing = down.health('tonborg', 'local', { protocol: 'openai_chat', endpoint: 'http://127.0.0.1:9/v1', model: MODEL });
+  assert.equal(failing.status, 'failing');
+  assert.ok(failing.reason);
+});
