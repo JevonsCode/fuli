@@ -17,7 +17,7 @@ export const problemMessages = {
     },
     failed: {
       title: '这部分暂时读不到',
-      detail: '重新读取一次；还不行的话，把问题复制给 AI 看看。',
+      detail: '重新读取一次。还不行的话，把问题复制给 AI 看看。',
     },
     notJson: '本机服务没有返回数据（收到的是网页）。FULI 可能正在启动或更新。',
     prompt: {
