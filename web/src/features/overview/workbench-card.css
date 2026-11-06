@@ -1,0 +1,15 @@
+/* The workbench right column's cards and rows (WorkbenchFeed and the widgets in its slot share them). */
+.workbench-card {
+  display: grid; gap: 6px; padding: 14px 18px; border-radius: var(--radius-panel);
+  background: var(--surface-panel-glass); -webkit-backdrop-filter: var(--filter-panel); backdrop-filter: var(--filter-panel); box-shadow: 0 0 0 1px var(--color-border);
+}
+.workbench-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
+.workbench-card-head h2 { margin: 0; font-size: var(--text-section); }
+.workbench-rows { margin: 0; padding: 0; list-style: none; }
+.workbench-rows > li + li { border-top: 1px solid var(--color-border); }
+.workbench-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; padding: 10px 0; }
+.workbench-row-text { display: grid; gap: 2px; min-width: 0; }
+.workbench-row-title { margin: 0; overflow: hidden; font-size: var(--text-body); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.workbench-meta { margin: 0; color: var(--color-muted); font-size: var(--text-meta); }
+.workbench-clamp { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.workbench-empty { margin: 4px 0 8px; color: var(--color-muted); font-size: var(--text-body); }

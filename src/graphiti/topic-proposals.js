@@ -17,7 +17,7 @@ export const PROPOSAL_MIN_DAYS = 2;
 export const PROPOSAL_ASK_AGAIN_AFTER = 3;
 const PROPOSAL_LIMIT = 20;
 // Starts the purpose of a project Astro formed by itself; an undo archives only those.
-const PROMOTED_PURPOSE = 'Astro 自动升级';
+export const PROMOTED_PURPOSE = 'Astro 自动升级';
 
 export function isProposable(stats) {
   if (!stats || stats.count < PROPOSAL_MIN_CONVERSATIONS || (stats.days ?? 0) < PROPOSAL_MIN_DAYS) return false;

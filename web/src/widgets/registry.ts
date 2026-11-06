@@ -28,6 +28,10 @@ export const WIDGETS = {
     component: defineAsyncComponent(() => import('@/features/fla-page/FlaGrowth.vue')),
     slots: ['fla.overview'],
   },
+  'recent-notices': {
+    component: defineAsyncComponent(() => import('@/features/overview/RecentNotices.vue')),
+    slots: ['workbench.feed'],
+  },
   'team-island': {
     component: defineAsyncComponent(() => import('@/features/team-work/TeamIsland.vue')),
     slots: ['shell.aboveDock'],
