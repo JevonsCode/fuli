@@ -78,6 +78,8 @@ export async function projectExperiences(application, spaceId, personalProjectId
         solution: node.attributes?.solution ?? node.summary ?? '', boundary: node.attributes?.boundary ?? null,
         // An acceptance check the experience is written as (rec#78 11-06 ②), when it has one.
         check: node.attributes?.check ?? null, proposedBy: node.confirmation_basis?.proposed_by?.label ?? null,
+        // Its search terms: what a Skill draft's topic is (agent-workflows/agent-tools.js).
+        terms: node.attributes?.searchTerms ?? [],
         status: node.confirmation_status ?? 'pending', uses: node.qualified_use_count ?? 0,
         tasks: node.distinct_task_count ?? 0, proven: (node.distinct_task_count ?? 0) >= PROVEN_TASKS, lastUsedAt: node.last_used_at ?? null, createdAt: node.created_at ?? null,
         // What a person's 保留 confirms on: the reasons the FLA recorded with it.

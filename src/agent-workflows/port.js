@@ -19,6 +19,14 @@ import { AgentWorkflowStore } from './store.js';
 //   did is recorded against the active version.
 const LIMITS = Object.freeze({ id: 200, name: 80, purpose: 300, title: 120, detail: 600, note: 500 });
 const MAX_STEPS = 20;
+// A drafted Skill's work map (rec#78, 11-06 addition 5): what it needs and
+// gives, what it depends on, where it branches, how it is accepted, and at
+// most three questions for the person.
+const WORK_MAP_LISTS = Object.freeze(['inputs', 'outputs', 'dependencies', 'branches', 'acceptance']);
+const WORK_MAP_REQUIRED = Object.freeze(['inputs', 'outputs', 'acceptance']);
+const WORK_MAP_ITEMS = 10;
+const MAX_QUESTIONS = 3;
+export const EXPERIENCE_SOURCE = 'experiences:';
 // Proposed and active workflows one Agent keeps; retired ones do not count.
 const MAX_OPEN_WORKFLOWS = 50;
 const RECENT_RUNS = 5;
@@ -42,8 +50,9 @@ export function createAgentWorkflows({ path = ':memory:', now = () => new Date()
   function propose(owner, input) {
     const proposal = proposalFields(input);
     return store.transaction(() => {
-      // One workflow per learned candidate: proposing it again proposes a change of that one.
-      const existing = input.workflowId ? owned(owner, input.workflowId) : proposal.source.startsWith('candidate:')
+      // One workflow per learned candidate or set of kept experiences: proposing it again proposes a change of that one.
+      const existing = input.workflowId ? owned(owner, input.workflowId)
+        : proposal.source.startsWith('candidate:') || proposal.source.startsWith(EXPERIENCE_SOURCE)
         ? store.fromSource(owner.personalSpaceId, owner.agentId, proposal.source) : null;
       const time = at();
       if (existing) {
@@ -165,15 +174,34 @@ function proposalFields(input) {
   if (!Array.isArray(steps) || !steps.length || steps.length > MAX_STEPS) {
     throw new InvalidInputError(`steps must list 1 to ${MAX_STEPS} steps`);
   }
+  const workMap = input.workMap == null ? null : workMapFields(input.workMap);
+  if (source.startsWith(EXPERIENCE_SOURCE) && !workMap) {
+    throw new InvalidInputError('A Skill drafted from kept experiences starts with its workMap');
+  }
   return { name: requiredString(input.name, 'name', LIMITS.name), purpose: requiredString(input.purpose, 'purpose', LIMITS.purpose),
-    source, steps: steps.map((step, index) => {
+    source, ...(workMap ? { workMap } : {}), steps: steps.map((step, index) => {
       const detail = optionalText(step?.detail, `steps[${index}].detail`, LIMITS.detail);
       return { title: requiredString(step?.title, `steps[${index}].title`, LIMITS.title), ...(detail ? { detail } : {}) };
     }) };
 }
 
+function workMapFields(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new InvalidInputError('workMap must be an object');
+  const list = (name, maximum) => {
+    const items = value[name] ?? [];
+    if (!Array.isArray(items) || items.length > maximum) throw new InvalidInputError(`workMap.${name} lists at most ${maximum} items`);
+    return items.map((item, index) => requiredString(item, `workMap.${name}[${index}]`, LIMITS.detail));
+  };
+  const map = Object.fromEntries(WORK_MAP_LISTS.map(name => [name, list(name, WORK_MAP_ITEMS)]));
+  for (const name of WORK_MAP_REQUIRED) {
+    if (!map[name].length) throw new InvalidInputError(`workMap.${name} needs at least one item`);
+  }
+  return { ...map, questions: list('questions', MAX_QUESTIONS) };
+}
+
+// The goal is the purpose; a version with a work map is read with it.
 function readable(version) {
-  return { name: version.name, purpose: version.purpose, steps: version.steps };
+  return { name: version.name, purpose: version.purpose, ...(version.workMap ? { workMap: version.workMap } : {}), steps: version.steps };
 }
 
 function sameContent(version, proposal) {

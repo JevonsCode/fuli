@@ -129,6 +129,13 @@ When you are a task's FLA and notice work you keep doing the same way (a repeate
 own workflow with `propose_agent_workflow` instead of capturing the steps as knowledge. It waits for
 the person to confirm on your home page; until then it is not active.
 
+When `list_agent_workflows` names a `draftable` topic (three or more experiences the person kept), you
+may draft a project Skill from it: `propose_agent_workflow` with those `experienceIds` and a
+`workMap` written before the steps: `purpose` is the goal, then `inputs`, `outputs`,
+`dependencies`, `branches` (the key decision points) and `acceptance` (how a run is judged done).
+Ask at most three `questions`, only what the project's documents, FULI knowledge and history do not
+already answer; they reach the person in 待决策 and the reply comes back to you.
+
 ## More Detail, Only When Needed
 
 Open these files next to this skill only when the task reaches that step; ordinary tasks need none of them.
