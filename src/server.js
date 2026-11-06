@@ -29,6 +29,7 @@ import { resolveSetupPaths } from './setup/paths.js';
 import { createSystemService } from './system/system-service.js';
 import { startDreamingScheduler } from './dreaming/scheduler.js';
 import { startRetrospectiveScheduler } from './retrospectives/scheduler.js';
+import { startToolSuggestionScheduler } from './fla-growth/tool-suggestions.js';
 import { startSemanticIndexer } from './semantic/scheduler.js';
 import { createTermsRunner } from './retrieval-terms/runner.js';
 import { startJudgmentScheduler } from './judgment/scheduler.js';
@@ -162,6 +163,7 @@ export async function createServer(options = {}) {
   let stopJudgment = () => {};
   let stopDreaming = () => {};
   let stopRetrospectives = () => {};
+  let stopToolSuggestions = () => {};
   let semanticIndexer = null;
   let retrievalTerms = null;
   let stopClientLinkUpdates = () => {};
@@ -171,7 +173,7 @@ export async function createServer(options = {}) {
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
+      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => stopToolSuggestions(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
         () => releaseDataDirectory()]) {
         try {
           const pending = close();
@@ -293,6 +295,8 @@ export async function createServer(options = {}) {
   stopDreaming = startDreamingScheduler({ app: application, ownerReads: knowledgeOwnerReads,
     ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
   stopRetrospectives = startRetrospectiveScheduler({ app: application,
+    ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
+  stopToolSuggestions = startToolSuggestionScheduler({ app: application,
     ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
   semanticIndexer = startSemanticIndexer({ app: application,
     ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
