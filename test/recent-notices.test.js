@@ -33,7 +33,7 @@ function syntheticApp(overrides = {}) {
     },
     listProjectAgents: async ({ status }) => (status === 'archived'
       ? [{ agentId: 'gone', personalProjectId: 'garden', archivedAt: ago(2), profile: { name: 'Synthetic Gone' } }]
-      : [{ agentId: 'new', personalProjectId: 'garden', recruitedAt: ago(3), profile: { name: 'Synthetic New' } },
+      : [{ agentId: 'new', personalProjectId: null, assignments: [{ personalProjectId: 'garden' }], recruitedAt: ago(3), profile: { name: 'garden 负责人', displayName: 'Synthetic New' } },
         { agentId: 'veteran', personalProjectId: 'garden', recruitedAt: ago(40), profile: { name: 'Synthetic Veteran' } }]),
     modelBackends: {
       roles: () => ({ connections: { c: {} }, roles: [
