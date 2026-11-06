@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 
 import '../../api/http_fuli_api.dart';
@@ -15,6 +17,8 @@ import '../../runtime/fuli_runtime.dart';
 import '../../runtime/macos_app_runtime.dart';
 import '../../runtime/shell_cli_runtime.dart';
 import '../../runtime/windows_tray_runtime.dart';
+import '../../ui/brand.dart';
+import '../../ui/move_to_applications_page.dart';
 import '../fuli_link.dart';
 import '../url_opener.dart';
 import 'console_webview.dart';
@@ -24,6 +28,7 @@ import 'download_saver.dart';
 import 'file_check_log.dart';
 import 'installed_package.dart';
 import 'link_inbox.dart';
+import 'macos_install_place.dart';
 import 'os_notifier.dart';
 import 'system_tray.dart';
 import 'windows_instance.dart';
@@ -47,6 +52,8 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
   final window = DesktopWindow();
   await window.open(title: strings.appName, show: !quiet);
   final caption = await DesktopCaption.create();
+  // Before anything could start FULI from a read-only disk image.
+  if (Platform.isMacOS && kReleaseMode) await _settleInstallPlace(window, caption, strings);
   const opener = BrowserUrlOpener();
   final packageRoot = await _registeringPackage(exeDir);
   if (packageRoot != null) await _registry(WindowsNotificationIdentity(packageRoot: packageRoot).apply());
@@ -138,6 +145,32 @@ FuliRuntime _runtime(String exeDir) {
   return bundled != null
       ? MacosAppRuntime(root: bundled, env: Platform.environment)
       : ShellCliRuntime(os: Platform.operatingSystem, env: Platform.environment);
+}
+
+// macOS: opened from its disk image (or a translocated copy) the app first
+// offers to move itself to Applications; moved, the copy opens and this one
+// quits. Opened from its place, it ejects a FULI installer still mounted,
+// without waiting.
+Future<void> _settleInstallPlace(DesktopWindow window, DesktopCaption caption, Strings strings) async {
+  final install = MacosInstallPlace.running();
+  if (await install.place() == InstallPlace.inPlace) {
+    unawaited(install.ejectInstallers());
+    return;
+  }
+  final notNow = Completer<void>();
+  await window.show();
+  // The client's own runApp (main.dart) replaces this one afterwards.
+  runApp(MoveToApplicationsApp(
+    strings: strings,
+    brand: await FuliBrand.load(rootBundle),
+    caption: caption,
+    onMove: () async {
+      if (await install.moveToApplications()) exit(0);
+      return false;
+    },
+    onNotNow: notNow.complete,
+  ));
+  await notNow.future;
 }
 
 // One client per installation's data directory. A launch leaves its link in

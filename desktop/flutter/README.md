@@ -85,6 +85,11 @@ It ships as FULI.app in a .dmg with FULI, Node, Java 21, Neo4j and the Provider'
 (`docs/macos-app.md`, built by `scripts/build-macos-app.js`): drag it to Applications and open it.
 The first 「启动 FULI」 sets FULI up in native mode; data stays in `~/Library/Application Support/Fuli`.
 
+Opened straight from the disk image (or from a copy macOS translocated), a release build first offers to
+move itself to Applications (`~/Applications` when `/Applications` is not writable), opens the copy and
+quits; 「这次不移」 goes on from where it is. Opened from its place, it ejects a FULI installer image still
+mounted under `/Volumes`, never the downloaded .dmg file (`macos_install_place.dart`, `move_to_applications_page.dart`).
+
 `fuli` is declared in `macos/Runner/Info.plist` (`CFBundleURLTypes`); macOS registers it when the
 app is installed and hands links to the running app, received through `app_links`.
 

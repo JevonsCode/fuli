@@ -74,3 +74,9 @@ do not use them.
   - `assets/app/fuli.png`: the app icon's 256 px entry, for Windows notifications;
   - `macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_*.png`: the smallest ready app icon at
     least that size, inside the transparent margin macOS expects.
+
+The installers' pictures are drawn separately, from these marks and the app icon, by
+`node scripts/build-installer-art.js` (headless Chrome over `desktop/installer-art/`): the .dmg window
+background (`desktop/macos-dmg/`), FULI-Setup's side panel and page pictures at every DPI
+(`desktop/windows-setup/art/`), and the install docs' first-open pictures (`docs/images/install/`).
+Run it after changing the brand and commit the pictures with it.
