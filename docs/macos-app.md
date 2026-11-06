@@ -63,6 +63,12 @@ The client finds the bundled FULI next to its executable
 which share their logic with the Windows tray (`src/desktop/desktop-controller.js`).
 A client built without the bundle keeps using the `fuli` CLI from the login shell.
 
+With the window quit, open Agent sessions keep FULI running: their FULI MCP process
+starts the app's own FULI (`Resources/fuli/src/cli.js start --automatic`) when it
+is not running, and again within about 15 seconds after it exits, unless the person
+stopped it, 3 automatic starts in 10 minutes did not keep it up, or a data format
+step waits for the person (docs/client-connections.md, "FULI starts with your sessions").
+
 An npm installation and the app share the data directory; use one of them at a
 time. Existing data set up in container (Docker) mode is not switched: start
 refuses and names the migration command, as on Windows.

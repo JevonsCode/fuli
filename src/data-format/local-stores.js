@@ -46,6 +46,7 @@ import { MODEL_SECRETS_FORMAT } from '../model-backends/secret-store.js';
 import { STANDING_ASSIGNMENTS_FORMAT } from '../standing-assignments/store.js';
 import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-status.js';
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
+import { CONSOLE_AUTOSTART_FILE, CONSOLE_AUTOSTART_FORMAT } from '../local-runtime/console-autostart-record.js';
 import { CLIENT_LINKS_STATE_FORMAT } from '../client-links/registry.js';
 import { SESSION_CLIENT_FORMAT } from '../agent-kits/session-clients.js';
 import { ENTRY_PROMPT_FORMAT } from '../agent-delegation/entry-prompts.js';
@@ -129,7 +130,9 @@ const jsonStores = () => [
   // The applied client link manifest, its auto-update switch and what each update changed.
   ['client-links.json', CLIENT_LINKS_STATE_FORMAT],
   // The person's own name and picture (「我」), changed only in the console on this computer.
-  ['person-profile.json', PERSON_PROFILE_FORMAT]
+  ['person-profile.json', PERSON_PROFILE_FORMAT],
+  // Whether the person stopped FULI on purpose and when client sessions started it (rec#94).
+  [CONSOLE_AUTOSTART_FILE, CONSOLE_AUTOSTART_FORMAT]
 ];
 // One small record per session.
 const jsonDirectories = () => [

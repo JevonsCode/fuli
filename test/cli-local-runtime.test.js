@@ -14,9 +14,13 @@ test('local runtime options leave persisted port and LAN defaults unresolved', (
     rebuild: false,
     lan: null,
     json: false,
-    allowProviderDowngrade: false
+    allowProviderDowngrade: false,
+    automatic: false
   });
   assert.throws(() => parseLocalRuntimeOptions('stop', ['--open']), /Unknown stop option/);
+  // Only a client session's MCP process starts FULI automatically (rec#94).
+  assert.equal(parseLocalRuntimeOptions('start', ['--automatic']).automatic, true);
+  assert.throws(() => parseLocalRuntimeOptions('restart', ['--automatic']), /Unknown restart option/);
   assert.equal(parseLocalRuntimeOptions('start', ['--allow-provider-downgrade']).allowProviderDowngrade, true);
   assert.throws(() => parseLocalRuntimeOptions('stop', ['--allow-provider-downgrade']), /Unknown stop option/);
   assert.equal(parseLocalRuntimeOptions('start', ['--lan']).lan, true);

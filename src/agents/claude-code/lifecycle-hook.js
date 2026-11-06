@@ -23,7 +23,7 @@ import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { isMainModule } from '../../system/main-module.js';
-import { recordHookFailure, runtimeConfigPathOf } from '../lifecycle-failure.js';
+import { consoleRecoveryNotice, recordHookFailure, runtimeConfigPathOf } from '../lifecycle-failure.js';
 import { readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
@@ -109,9 +109,9 @@ const UNCONFIRMED_TURN = Object.freeze({
     + 'FULI: this turn is a host system delivery, but its task ownership is not confirmed; no task was created or switched.'
 });
 
-export function claudeLifecycleUnavailable(event, input = null, reason = null, incomplete = '') {
+export function claudeLifecycleUnavailable(event, input = null, reason = null, incomplete = '', recovery = '') {
   const warning = reason ?? 'Fuli context is unavailable; memory recovery and task checkpoint are not verified. '
-    + 'Continue with the user request and use Fuli MCP when it becomes available.';
+    + 'Continue with the user request and use Fuli MCP when it becomes available.' + recovery;
   const sessionId = input?.session_id;
   const fallback = event === 'UserPromptSubmit' && inPlaceRefreshBasis(input) ? ` ${START_NEW_WORK}`
     : typeof sessionId === 'string' && sessionId.trim() && sessionId.length <= 256
@@ -124,11 +124,11 @@ export function claudeLifecycleUnavailable(event, input = null, reason = null, i
 
 // At the deadline an entry that already wrote its task delivers its token and
 // what is missing (entry-budget.js); otherwise the fallback says what to fetch.
-export function claudeEntryDeadlineOutput(event, input, budget) {
+export function claudeEntryDeadlineOutput(event, input, budget, recovery = '') {
   const partial = event === 'UserPromptSubmit' ? partialEntryText(budget) : null;
   const output = partial ? { systemMessage: 'Fuli task context is partial: the hook deadline came before it was complete.',
     hookSpecificOutput: { hookEventName: event, additionalContext: partial } }
-    : claudeLifecycleUnavailable(event, input, null, NO_TASK_AT_DEADLINE);
+    : claudeLifecycleUnavailable(event, input, null, NO_TASK_AT_DEADLINE, recovery);
   return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, entryNotice(budget)) : output;
 }
 
@@ -267,9 +267,10 @@ async function main() {
   // The entry's own time ends where its requests are cancelled.
   const abortAfterMs = Math.max(1, timeoutMs - 1500);
   const budget = entryBudget(abortAfterMs);
+  const recovery = () => consoleRecoveryNotice(runtimeConfigPathOf(args));
   const deadline = setTimeout(() => {
     controller.abort();
-    emit(claudeEntryDeadlineOutput(event, input, budget), () => process.exit(0));
+    emit(claudeEntryDeadlineOutput(event, input, budget, recovery()), () => process.exit(0));
   }, timeoutMs);
   const abort = setTimeout(() => controller.abort(), abortAfterMs);
   try {
@@ -278,7 +279,8 @@ async function main() {
       readInput: async () => { input = await readHookInput(); return input; } }));
     emit(output);
   } catch (error) {
-    emit(controller.signal.aborted ? claudeEntryDeadlineOutput(event, input, budget) : claudeLifecycleUnavailable(event, input));
+    emit(controller.signal.aborted ? claudeEntryDeadlineOutput(event, input, budget, recovery())
+      : claudeLifecycleUnavailable(event, input, null, '', recovery()));
     recordHookFailure({ runtimeConfigPath: runtimeConfigPathOf(args), client: 'claude_code', event, error,
       sessionId: input?.session_id, startedAt });
   } finally {

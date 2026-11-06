@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
 import { hookFailureCause, PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../lifecycle-message.js';
-import { recordHookFailure } from '../lifecycle-failure.js';
+import { consoleRecoveryNotice, recordHookFailure, runtimeConfigPathOf } from '../lifecycle-failure.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
@@ -242,12 +242,12 @@ async function closeQuietly(resource) {
 
 // The cause says whether the hook ran out of time or failed, so a report can
 // tell a slow first start from a broken install without exposing details.
-function codexLifecycleUnavailable(event, input, cause, incomplete = '') {
+function codexLifecycleUnavailable(event, input, cause, incomplete = '', recovery = '') {
   // The person's review line never reaches the model unverified (rec#22).
   if (event === 'UserPromptSubmit' && isCodexReviewCommand(input?.prompt)) {
     return { decision: 'block', reason: CODEX_REVIEW_UNVERIFIED_REASON };
   }
-  const warning = `Fuli context is unavailable (${cause}). Continue with the user request; saved context and checkpoint were not verified.`;
+  const warning = `Fuli context is unavailable (${cause}). Continue with the user request; saved context and checkpoint were not verified.${recovery}`;
   // A refresh turn is never told to begin a task for "the current user request".
   if (codexRefreshTurn(event, input)) return { systemMessage: warning, hookSpecificOutput: {
     hookEventName: event, additionalContext: `${warning} ${START_NEW_WORK}` } };
@@ -265,11 +265,11 @@ function codexLifecycleUnavailable(event, input, cause, incomplete = '') {
 
 // At the deadline an entry that already wrote its task delivers its token and
 // what is missing (entry-budget.js); otherwise the fallback says what to fetch.
-function codexEntryDeadlineOutput(event, input, budget, cause) {
+function codexEntryDeadlineOutput(event, input, budget, cause, recovery = '') {
   const partial = event === 'UserPromptSubmit' && !isCodexReviewCommand(input?.prompt) ? partialEntryText(budget) : null;
   const output = partial ? { systemMessage: `Fuli task context is partial (${cause}).`,
     hookSpecificOutput: { hookEventName: event, additionalContext: partial } }
-    : codexLifecycleUnavailable(event, input, cause, NO_TASK_AT_DEADLINE);
+    : codexLifecycleUnavailable(event, input, cause, NO_TASK_AT_DEADLINE, recovery);
   return event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, entryNotice(budget)) : output;
 }
 
@@ -293,14 +293,15 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
     runtimeConfigPath = options?.runtimeConfigPath ?? null;
     return options;
   };
-  const unavailable = cause => `${JSON.stringify(codexLifecycleUnavailable(event, input, cause))}\n`;
+  const recovery = () => consoleRecoveryNotice(runtimeConfigPath ?? runtimeConfigPathOf(args));
+  const unavailable = cause => `${JSON.stringify(codexLifecycleUnavailable(event, input, cause, '', recovery()))}\n`;
   const budget = entryBudget(timeoutMs);
   let cleanup = async () => {};
   let deadline;
   const expired = new Promise(resolve => {
     deadline = setTimeout(async () => {
       controller.abort();
-      write(`${JSON.stringify(codexEntryDeadlineOutput(event, input, budget, `no answer within ${timeoutMs} ms`))}\n`);
+      write(`${JSON.stringify(codexEntryDeadlineOutput(event, input, budget, `no answer within ${timeoutMs} ms`, recovery()))}\n`);
       // A broken dependency must not hold the host open. Give opened leases
       // and connections a bounded chance to close before the process exits.
       let grace;
