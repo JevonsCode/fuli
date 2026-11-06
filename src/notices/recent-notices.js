@@ -77,7 +77,9 @@ async function teamChanges({ app, space, projectName }) {
     read(() => app.listProjectAgents({ personalSpaceId: space, status: 'archived' }), [])
   ]);
   const href = agent => `/agents/${encodeURIComponent(space)}/${encodeURIComponent(agent.agentId)}`;
-  const params = agent => ({ name: agent.profile?.name ?? agent.agentId, project: projectName(agent.personalProjectId) });
+  // An FLA goes by its display name; its project is where it is assigned when the record names none itself.
+  const params = agent => ({ name: agent.profile?.displayName ?? agent.profile?.name ?? agent.agentId,
+    project: projectName(agent.personalProjectId ?? agent.assignments?.[0]?.personalProjectId) });
   return [
     ...active.filter(agent => agent.recruitedAt).map(agent => notice('fla_joined', agent.agentId, agent.recruitedAt, params(agent), href(agent))),
     ...archived.filter(agent => agent.archivedAt).map(agent => notice('fla_left', agent.agentId, agent.archivedAt, params(agent), href(agent)))
