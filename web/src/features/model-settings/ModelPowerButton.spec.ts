@@ -98,6 +98,16 @@ describe('ModelPowerButton', () => {
     expect(link.classes()).toContain('is-active')
     expect(link.attributes('aria-current')).toBe('page')
     expect(wrapper.findComponent(RouterLinkStub).props('to')).toBe('/models')
+    expect(wrapper.find('[data-model-power-reticle]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('draws the targeting frame only on the model page', async () => {
+    answer(roles(['enabled']), { model: null, total: 0, done: 0, running: false })
+    routeState.path = '/settings'
+    const wrapper = await mountButton()
+    expect(wrapper.find('[data-model-power]').classes()).not.toContain('is-active')
+    expect(wrapper.find('[data-model-power-reticle]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

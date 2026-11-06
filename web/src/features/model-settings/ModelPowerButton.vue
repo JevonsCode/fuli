@@ -90,6 +90,7 @@ const active = computed(() => route?.path === '/models')
         </linearGradient>
       </defs>
     </svg>
+    <span v-if="active" class="model-power-reticle" aria-hidden="true" data-model-power-reticle />
     <UiIcon name="modelCoreOn" :size="18" />
     <!-- Two copies of the powered icon itself, which tear away from it now and then. -->
     <template v-if="power === 'on'">
@@ -172,14 +173,44 @@ const active = computed(() => route?.path === '/models')
   7.2% { opacity: 0.5; transform: translateX(1px); clip-path: none; }
   8% { opacity: 0; }
 }
-/* On the model page the button is lit like 设置 on its own: a violet gradient disc, white icon. */
-.model-power.is-active, .model-power.is-active:hover {
-  color: var(--color-on-accent);
-  background: linear-gradient(135deg, var(--color-power-from), var(--color-power-mid) 55%, var(--color-power-to));
+/* On the model page (Jevons 11-06: smaller than a disc, not flat violet): a targeting frame
+   locks onto the icon. Four thin cyan-to-violet corner brackets, 26px across, snap in from
+   wider; a faint scan line sweeps down through them every few seconds. Transform and opacity
+   only; reduced motion keeps the still frame. */
+.model-power.is-active, .model-power.is-active:hover { background: transparent; }
+.model-power-reticle {
+  position: absolute; inset: 5px; z-index: -1; pointer-events: none; overflow: hidden;
+  animation: model-power-lock 320ms cubic-bezier(.2, .9, .3, 1.2) both;
 }
-.model-power.is-active > :deep(svg) { stroke: currentColor; }
-.model-power.is-active > :deep(svg .core-bolt) { fill: currentColor; }
-.model-power.is-active .model-power-split { mix-blend-mode: screen; }
+.model-power-reticle::before {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(135deg, var(--color-reticle-from), var(--color-reticle-to));
+  --corner: linear-gradient(#000 0 0);
+  -webkit-mask:
+    var(--corner) top left / 7px 1.5px, var(--corner) top left / 1.5px 7px,
+    var(--corner) top right / 7px 1.5px, var(--corner) top right / 1.5px 7px,
+    var(--corner) bottom left / 7px 1.5px, var(--corner) bottom left / 1.5px 7px,
+    var(--corner) bottom right / 7px 1.5px, var(--corner) bottom right / 1.5px 7px;
+  -webkit-mask-repeat: no-repeat;
+  mask:
+    var(--corner) top left / 7px 1.5px, var(--corner) top left / 1.5px 7px,
+    var(--corner) top right / 7px 1.5px, var(--corner) top right / 1.5px 7px,
+    var(--corner) bottom left / 7px 1.5px, var(--corner) bottom left / 1.5px 7px,
+    var(--corner) bottom right / 7px 1.5px, var(--corner) bottom right / 1.5px 7px;
+  mask-repeat: no-repeat;
+}
+.model-power-reticle::after {
+  content: ''; position: absolute; inset: 0 2px auto; height: 1px; opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--color-reticle-from), transparent);
+  animation: model-power-scan 4s ease-in-out 600ms infinite;
+}
+@keyframes model-power-lock { from { opacity: 0; transform: scale(1.45) rotate(45deg); } }
+@keyframes model-power-scan {
+  0% { opacity: 0; transform: translateY(0); }
+  4% { opacity: 0.9; }
+  22% { opacity: 0.9; transform: translateY(25px); }
+  26%, 100% { opacity: 0; transform: translateY(25px); }
+}
 /* Indexing: a ring fills with the share of knowledge done. */
 .model-power--filling::after {
   content: ''; position: absolute; inset: 3px; border-radius: 50%; pointer-events: none;
@@ -193,7 +224,9 @@ const active = computed(() => route?.path === '/models')
   .model-power--on::before { animation: none; opacity: 0.7; }
   .model-power--on > :deep(svg) { animation: none; }
   .model-power-split { display: none; }
+  .model-power-reticle, .model-power-reticle::after { animation: none; }
 }
+:root[data-motion="reduced"] .model-power-reticle, :root[data-motion="reduced"] .model-power-reticle::after { animation: none; }
 :root[data-motion="reduced"] .model-power--on::before { animation: none; opacity: 0.7; }
 :root[data-motion="reduced"] .model-power--on > :deep(svg) { animation: none; }
 :root[data-motion="reduced"] .model-power-split { display: none; }
