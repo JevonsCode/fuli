@@ -1,3 +1,4 @@
+import { projectStoresNothing } from './project-knowledge-presence.js';
 import { createFuliSourceMarker, knowledgeItemTitle, sourceConsoleUrl } from './source-marker.js';
 import { knowledgeItemRole } from './knowledge-item-role.js';
 import { detectSensitiveContent } from '../security/sensitive-content.js';
@@ -102,6 +103,9 @@ const INDEX_READ = 'Titles of one bounded search: read one with search_current_p
 // rec#63: after "searched, no match" models stopped looking and copied a
 // stale value from the repository; one quick search is not the whole store.
 const MISS_NEXT = 'One quick search only. Before taking a project value or rule (port, command, owner, convention) from repo files, search_current_project_knowledge for it.';
+// rec#88: in a project that has stored nothing yet, that search can only miss
+// (7 of 12 compounding-eval sessions spent a tool round trip on it).
+const EMPTY_NEXT = 'This project has no stored knowledge yet; no further FULI search is needed.';
 
 export const TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE = Object.freeze({
   before_reasking:
@@ -298,7 +302,8 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
       })
     } : {}),
     ...(pendingSlots.length ? { pending_fallback: { slots: pendingSlots, note: PENDING_NOTE } } : {}),
-    ...(searched && !facts.length && !entities.length ? { next: MISS_NEXT } : {}),
+    ...(searched && !facts.length && !entities.length
+      ? { next: await projectStoresNothing(application, resolution.personalProjectId) ? EMPTY_NEXT : MISS_NEXT } : {}),
     ...(answersFromConfirmed(application) && confirmedByPeople([...facts, ...entities])
       ? { confirmed_use: CONFIRMED_USE } : {}),
     facts,

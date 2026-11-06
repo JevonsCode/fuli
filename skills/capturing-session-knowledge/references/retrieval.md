@@ -36,7 +36,8 @@ every returned candidate supports the task. It plans from the task's own words: 
 session already carried never choose its topics, so when the task depends on one of those, search
 for it yourself. A `no_match` recall is one quick search, and says so in
 `next`: before taking a project value or rule (port, command, owner, convention) from repository
-files, which may be out of date, call `search_current_project_knowledge` for it yourself. Do the same
+files, which may be out of date, call `search_current_project_knowledge` for it yourself. When the project
+has stored nothing yet, `next` says so instead and no further FULI search is needed. Otherwise do the same
 whenever its candidates are irrelevant while durable context may still matter. A coding task without such a trigger may instead get `status: indexed` with a
 `knowledge_index`: up to five `[id, title]` pairs of matching items in the exact current project and
 `matched_in_search`, how many items that one bounded search kept, never their bodies. It is not the
