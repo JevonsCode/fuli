@@ -54,17 +54,20 @@ export function compactTaskContext(value) {
       guidance: text(value.agent_receipt.continuation.guidance, 'continuation_guidance') } };
   if (Array.isArray(value.effective_preferences)) result.effective_preferences = value.effective_preferences.map(preferenceInstructionView);
   if (value.project_management_context?.managers) result.project_management_context = managementContextView(
-    value.project_management_context, guidance => text(guidance, 'manager_guidance'));
+    value.project_management_context, guidance => text(guidance, 'manager_guidance'), { lean: share });
   const continuity = value.project_agent_context;
   const management = value.project_management_context;
   const omitTeam = !value.worker_run && Object.hasOwn(value, 'project_management_context')
     && (management?.status === 'degraded' || !management?.managers?.length);
   if (omitTeam) delete result.judgment_context;
-  else if (value.judgment_context?.guidance) result.judgment_context = { ...value.judgment_context,
-    guidance: text(value.judgment_context.guidance, 'judgment_guidance') };
+  else if (value.judgment_context?.guidance) result.judgment_context = share
+    // Tonborg reads the saved policy itself (assess_agent_action); the entry names the Agent and its rule.
+    ? { agentId: value.judgment_context.agentId, guidance: text(value.judgment_context.guidance, 'judgment_guidance') }
+    : { ...value.judgment_context, guidance: text(value.judgment_context.guidance, 'judgment_guidance') };
   const teamRules = !omitTeam && (continuity?.team?.guidance ?? continuity?.team_guidance);
   const teamGuidance = teamRules ? text(teamRules, 'team_guidance') : undefined;
   if (continuity) result.project_agent_context = { ...continuity, ...selectionView(continuity, share),
+    ...(share && continuity.project_brief?.authors ? { project_brief: { ...continuity.project_brief, authors: undefined } } : {}),
     ...(share && continuity.directorySnapshot ? { directorySnapshot: snapshotView(continuity.directorySnapshot) } : {}),
     team: omitTeam ? undefined : compactTeamRoster(continuity.team, teamGuidance),
     team_guidance: undefined,
@@ -140,12 +143,18 @@ function withRulesVersion(entry) {
 // `guidance` gives those rules as this entry delivers them (a task entry
 // references them). The receipt of the entry's own board read names no work
 // the Agent did, so the view leaves it out.
-export function managementContextView(management, guidance) {
+// `lean` (a task entry): a manager whose board is empty has no item to match
+// or title the session by, so it shows only who it is, its routing rules and
+// the call that lists its tools (rec#88: every request re-read the rest).
+export function managementContextView(management, guidance, { lean = false } = {}) {
   return { ...management,
-    managers: management.managers.map(({ collaboration_receipt: _receipt, ...manager }) => ({ ...manager,
-      ...(manager.guidance ? { guidance: guidance(manager.guidance) } : {}),
-      board: manager.board && { version: manager.board.version, total: manager.board.total, view: 'on_demand' }
-    }))
+    managers: management.managers.map(({ collaboration_receipt: _receipt, ...manager }) => (lean && manager.board?.total === 0
+      && !manager.suggested_match ? withoutDefaults({ template_id: manager.template_id, agent_id: manager.agent_id,
+        name: manager.name, board: { total: 0 }, guidance: manager.guidance && guidance(manager.guidance), read: managerRead(manager) })
+      : { ...manager,
+        ...(manager.guidance ? { guidance: guidance(manager.guidance) } : {}),
+        board: manager.board && { version: manager.board.version, total: manager.board.total, view: 'on_demand' }
+      }))
   };
 }
 
@@ -201,20 +210,26 @@ function recallView(recall) {
 // When the selected lead also executes, the execution pair repeats the
 // selection and match_basis only explains it; any other execution decision
 // keeps both, since its match_basis then says how to staff the work.
+// A team gap (nobody else fits, so the lead works itself) keeps its reason
+// code; how to staff it is read on demand (details_guidance, get_project_team).
+const TEAM_GAPS = new Set(['project_team_gap', 'project_sub_team_gap']);
 function selectionView(continuity, share) {
   const selfExecuting = share && typeof continuity.execution_reason === 'string'
     && continuity.execution_agent_id === continuity.project_agent_id
     && continuity.execution_reason === continuity.selection_reason;
-  return selfExecuting ? { match_basis: undefined, execution_reason: undefined, execution_agent_id: undefined } : {};
+  if (selfExecuting) return { match_basis: undefined, execution_reason: undefined, execution_agent_id: undefined };
+  const gap = share && TEAM_GAPS.has(continuity.execution_reason) && !continuity.execution_agent_id;
+  return gap ? { match_basis: undefined } : {};
 }
 
-// A snapshot whose files are all as the Agent's folder already holds them
-// says only where the folder is and how many files it holds.
+// A snapshot whose files share one state (all just written, or all as the
+// Agent's folder already holds them) says where the folder is and how many.
 function snapshotView(snapshot) {
-  if (!Array.isArray(snapshot.files) || !snapshot.files.length
-    || snapshot.files.some(file => file.state !== 'unchanged')) return snapshot;
+  const state = snapshot.files?.[0]?.state;
+  if (!Array.isArray(snapshot.files) || !snapshot.files.length || !['unchanged', 'written'].includes(state)
+    || snapshot.files.some(file => file.state !== state)) return snapshot;
   const { files, ...rest } = snapshot;
-  return { ...rest, files_unchanged: files.length };
+  return { ...rest, [`files_${state}`]: files.length };
 }
 
 function ruleOrReference(section, share) {

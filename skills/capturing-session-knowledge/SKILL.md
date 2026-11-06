@@ -58,7 +58,10 @@ task is not proof that its Hook context reached this turn. If `task_lifecycle.re
 preferences are available but checkpoint ownership is not established; report the missing
 host identity or prompt rather than reusing an earlier token. Such an entry lists working
 memory, team and managers only as their `read` calls (`get_project_agent_memory`,
-`get_project_team`, `list_employee_tools`); call one only when the task needs it. A blocked transcript handoff
+`get_project_team`, `list_employee_tools`); call one only when the task needs it. A task entry does the
+same for a manager whose board is empty (its `read` instead of tools and title fields), shows a team gap
+by `execution_reason` alone (staff it through `get_project_team`), and names Tonborg without its policy
+(`assess_agent_action` reads it). A blocked transcript handoff
 remains unverified even if the preference fallback and task-summary checkpoint succeed.
 
 ## Mandatory reply identity

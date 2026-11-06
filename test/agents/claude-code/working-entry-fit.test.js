@@ -55,7 +55,8 @@ test('a working lead\'s entry with 31 preferences fits, keeps its hard rules, an
 
 test('working-memory previews give way to hard rules, global layer first, and keep their revision', () =>
   claudeEntrySession(async session => {
-    const items = syntheticPreferences(31);
+    // Enough hard rules to need the project layer's room too (the lean entry of rec#88 left room for 31).
+    const items = syntheticPreferences(38);
     const { frame, text } = await session.turn(await syntheticWorkingEntry({ items, sessionId: session.sessionId }));
     assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);
     const { memory, global_memory: global } = frame.project_agent_context;
