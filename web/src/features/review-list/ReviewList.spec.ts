@@ -113,7 +113,7 @@ describe('交给 Tonborg 确认', () => {
     await flushPromises()
     expect(wrapper.get('[data-slot=switch]').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('需要先给 Tonborg 接一个模型')
-    expect(wrapper.getComponent(RouterLinkStub).props('to')).toBe('/settings/models')
+    expect(wrapper.getComponent(RouterLinkStub).props('to')).toBe('/models')
   })
 
   it('turns on with the revision it read and reports the change', async () => {

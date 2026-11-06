@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useRoute } from 'vue-router'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { getJson } from '@/api/client'
@@ -64,11 +65,24 @@ onBeforeUnmount(() => {
   request?.abort()
   document.removeEventListener('visibilitychange', onVisible)
 })
+// Lit like 设置 is on its own page: the model page is this button's page.
+const route = useRoute()
+const active = computed(() => route?.path === '/models')
 </script>
 
 <template>
-  <RouterLink to="/settings/models" class="model-power" :class="`model-power--${power}`" :style="{ '--power-progress': `${progress}%` }"
+  <RouterLink to="/models" class="model-power" :class="[`model-power--${power}`, { 'is-active': active }]" :aria-current="active ? 'page' : undefined" :style="{ '--power-progress': `${progress}%` }"
     draggable="false" :aria-label="label" :title="label" :data-model-power="power">
+    <!-- The violet gradient the powered icon is drawn with (referenced from CSS). -->
+    <svg class="model-power-defs" width="0" height="0" aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id="model-power-gradient" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" style="stop-color: var(--color-power-from)" />
+          <stop offset="55%" style="stop-color: var(--color-power-mid)" />
+          <stop offset="100%" style="stop-color: var(--color-power-to)" />
+        </linearGradient>
+      </defs>
+    </svg>
     <UiIcon :name="power === 'off' ? 'modelCore' : 'modelCoreOn'" :size="18" />
     <span v-if="power === 'problem'" class="model-power-dot" aria-hidden="true" />
   </RouterLink>
@@ -82,22 +96,56 @@ onBeforeUnmount(() => {
 }
 .model-power:hover { color: var(--color-ink); background: var(--color-surface-hover); }
 .model-power:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-/* Powered: the bolt turns gold and a warm glow breathes behind it. The UI gold
-   tokens, not the logo's colours. Only opacity and transform move, so it stays
-   on the compositor. */
-.model-power--on, .model-power--filling { color: var(--color-gold); }
-.model-power--on:hover, .model-power--filling:hover { color: var(--color-gold); }
+/* Powered (Jevons 11-06): the icon is drawn in a violet gradient and a violet glow breathes
+   behind it. About every nine seconds the icon glitches for a third of a second: it slips
+   sideways in slices with a cyan/magenta split, and a scan line flashes across the button.
+   It all stays inside the 36px button; reduced motion keeps only the still glow. */
+.model-power-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.model-power--on, .model-power--filling { color: var(--color-power-mid); }
+.model-power--on:hover, .model-power--filling:hover { color: var(--color-power-mid); }
 .model-power :deep(.core-bolt) { fill: currentColor; }
+.model-power--on :deep(svg), .model-power--filling :deep(svg) { stroke: url(#model-power-gradient); }
+.model-power--on :deep(.core-bolt), .model-power--filling :deep(.core-bolt) { fill: url(#model-power-gradient); }
 .model-power--on::before {
   content: ''; position: absolute; inset: 4px; z-index: -1; border-radius: 50%;
-  background: radial-gradient(circle, var(--color-glow-gold), transparent 70%);
+  background: radial-gradient(circle, var(--color-glow-power), transparent 70%);
   animation: model-power-breathe 3.2s ease-in-out infinite;
 }
 @keyframes model-power-breathe { 0%, 100% { opacity: 0.35; transform: scale(0.86); } 50% { opacity: 1; transform: scale(1.08); } }
+.model-power--on :deep(svg) { animation: model-power-glitch 9s infinite; }
+@keyframes model-power-glitch {
+  0%, 3.6%, 100% { transform: none; clip-path: none; filter: none; }
+  0.6% { transform: translateX(-1.5px); clip-path: inset(18% 0 52% 0);
+    filter: drop-shadow(1.5px 0 var(--color-glitch-cyan)) drop-shadow(-1.5px 0 var(--color-glitch-magenta)); }
+  1.2% { transform: translateX(1.5px) skewX(-8deg); clip-path: inset(58% 0 8% 0);
+    filter: drop-shadow(-1.5px 0 var(--color-glitch-cyan)) drop-shadow(1.5px 0 var(--color-glitch-magenta)); }
+  1.8% { transform: translateX(-0.5px); clip-path: inset(0 0 0 0);
+    filter: drop-shadow(1px 0 var(--color-glitch-cyan)) drop-shadow(-1px 0 var(--color-glitch-magenta)); }
+  2.4% { transform: translateX(1px) scale(1.06); clip-path: inset(30% 0 30% 0); filter: hue-rotate(60deg); }
+  3% { transform: scale(0.97); clip-path: none; filter: none; }
+}
+.model-power--on::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none; overflow: hidden; opacity: 0;
+  background: linear-gradient(transparent 46%, color-mix(in srgb, var(--color-glitch-cyan) 70%, transparent) 50%, transparent 54%);
+  animation: model-power-scan 9s infinite;
+}
+@keyframes model-power-scan {
+  0%, 0.4%, 3.4%, 100% { opacity: 0; transform: translateY(-45%); }
+  0.6% { opacity: 0.9; transform: translateY(-30%); }
+  1.6% { opacity: 0.7; transform: translateY(10%); }
+  2.8% { opacity: 0.5; transform: translateY(40%); }
+}
+/* On the model page the button is lit like 设置 on its own: a violet gradient disc, white icon. */
+.model-power.is-active, .model-power.is-active:hover {
+  color: var(--color-on-accent);
+  background: linear-gradient(135deg, var(--color-power-from), var(--color-power-mid) 55%, var(--color-power-to));
+}
+.model-power.is-active :deep(svg) { stroke: currentColor; }
+.model-power.is-active :deep(.core-bolt) { fill: currentColor; }
 /* Indexing: a ring fills with the share of knowledge done. */
 .model-power--filling::after {
   content: ''; position: absolute; inset: 3px; border-radius: 50%; pointer-events: none;
-  background: conic-gradient(var(--color-gold) var(--power-progress), color-mix(in srgb, var(--color-gold) 18%, transparent) 0);
+  background: conic-gradient(var(--color-power-mid) var(--power-progress), color-mix(in srgb, var(--color-power-mid) 18%, transparent) 0);
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), black calc(100% - 2px));
   mask: radial-gradient(farthest-side, transparent calc(100% - 2px), black calc(100% - 2px));
 }
@@ -105,6 +153,10 @@ onBeforeUnmount(() => {
   position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%;
   background: var(--color-danger); box-shadow: 0 1px 4px color-mix(in srgb, var(--color-danger) 28%, transparent);
 }
-@media (prefers-reduced-motion: reduce) { .model-power--on::before { animation: none; opacity: 0.7; } }
+@media (prefers-reduced-motion: reduce) {
+  .model-power--on::before { animation: none; opacity: 0.7; }
+  .model-power--on :deep(svg), .model-power--on::after { animation: none; }
+}
 :root[data-motion="reduced"] .model-power--on::before { animation: none; opacity: 0.7; }
+:root[data-motion="reduced"] .model-power--on :deep(svg), :root[data-motion="reduced"] .model-power--on::after { animation: none; }
 </style>

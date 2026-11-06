@@ -447,7 +447,7 @@ function hasDetails(record: JudgmentDecisionRecord) {
         <p v-if="escalationReason(record)" class="judgment-escalation-reason" data-escalation-reason>{{ escalationReason(record) }}</p>
         <p v-if="awaitsTrustWarning(record)" class="judgment-trust-warning" data-trust-warning>
           {{ t('modelSettings.trust.warning') }} {{ judgmentText('workbench.trustWarningPending') }}
-          <RouterLink to="/settings/models">{{ judgmentText('workbench.trustWarningOpen') }}</RouterLink>
+          <RouterLink to="/models">{{ judgmentText('workbench.trustWarningOpen') }}</RouterLink>
         </p>
         <dl class="judgment-record-meta">
           <div v-if="record.aiReview"><dt>{{ judgmentText('workbench.modelConclusion') }}</dt><dd>{{ outcomeLabel(record.aiReview.modelOutcome) }}</dd></div>

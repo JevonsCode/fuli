@@ -471,7 +471,7 @@ function checkFields(): ValidatedField[] {
                   <CardDescription>{{ t('modelSettings.settingsEntry') }}</CardDescription>
                   <CardAction>
                     <Button as-child size="sm" variant="outline">
-                      <RouterLink to="/settings/models" data-open-model-settings>{{ t('modelSettings.open') }}</RouterLink>
+                      <RouterLink to="/models" data-open-model-settings>{{ t('modelSettings.open') }}</RouterLink>
                     </Button>
                   </CardAction>
                 </CardHeader>

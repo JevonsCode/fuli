@@ -278,8 +278,17 @@ watchEffect(() => {
 }
 .app-round:hover { color: var(--color-ink); background: var(--color-surface-hover); }
 .app-round.is-active { color: var(--color-on-accent); background: var(--color-accent); }
-/* A full tray reads in ink; its papers drop in when it fills (reduced motion zeroes this in primitives.css). */
-.app-round.is-full { color: var(--color-ink); }
+/* A full tray reads in ink on a filled disc (Jevons 11-06), and every twelve seconds it gives a
+   short wiggle so waiting decisions are noticed; its papers drop in when it fills (reduced
+   motion zeroes this in primitives.css). */
+.app-round.is-full { color: var(--color-ink); background: var(--color-accent-soft); animation: app-round-nudge 12s ease-in-out 3s infinite; }
+.app-round.is-full:hover { background: var(--color-surface-hover); }
+.app-round.is-full :deep(.tray-papers) { fill: var(--color-surface); }
+@keyframes app-round-nudge {
+  0%, 6%, 100% { transform: rotate(0); }
+  1% { transform: rotate(-12deg); } 2% { transform: rotate(10deg); } 3% { transform: rotate(-7deg); }
+  4% { transform: rotate(4deg); } 5% { transform: rotate(-2deg); }
+}
 .app-round.is-shaking { animation: app-round-shake 120ms linear infinite; }
 @keyframes app-round-shake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-7deg); } 75% { transform: rotate(7deg); } }
 .app-round :deep(.tray-papers) { transform-box: fill-box; animation: tray-papers-in var(--motion-enter); }
@@ -299,7 +308,7 @@ watchEffect(() => {
   /* Brand, title and actions share the first row; the section tabs take their own. */
   .app-topbar-inner > .section-tabs { order: 3; flex-basis: 100%; }
 }
-@media (prefers-reduced-motion: reduce) { .app-round { transition: none; } .app-round.is-shaking { animation: none; } }
-:root[data-motion="reduced"] .app-round.is-shaking { animation: none; }
+@media (prefers-reduced-motion: reduce) { .app-round { transition: none; } .app-round.is-shaking, .app-round.is-full { animation: none; } }
+:root[data-motion="reduced"] .app-round.is-shaking, :root[data-motion="reduced"] .app-round.is-full { animation: none; }
 :root[data-motion="reduced"] .app-round { transition: none; }
 </style>

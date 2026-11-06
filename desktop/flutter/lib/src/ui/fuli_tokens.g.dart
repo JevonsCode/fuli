@@ -29,6 +29,12 @@ abstract final class FuliColors {
   static const successSoft = Color(0xFFE8F2EC);
   static const glowGold = Color(0xFFF3D68C);
   static const glowSuccess = Color(0xFFB2E6CC);
+  static const powerFrom = Color(0xFFA78BFA);
+  static const powerMid = Color(0xFF7C3AED);
+  static const powerTo = Color(0xFFC026D3);
+  static const glowPower = Color(0xFFC4B5FD);
+  static const glitchCyan = Color(0xFF22D3EE);
+  static const glitchMagenta = Color(0xFFF472B6);
   static const warning = Color(0xFF8A5A12);
   static const warningSoft = Color(0xFFF8F0E0);
   static const danger = Color(0xFFA8392E);
