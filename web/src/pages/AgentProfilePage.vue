@@ -51,6 +51,7 @@ import { personalProjectsPath } from "@/router/paths";
 import { usePageTitle } from "@/layouts/page-title";
 import { openWorkflows, readAgentWorkflows, type AgentWorkflow } from "@/features/agent-workbench/agent-workflows";
 import AgentWorkflowList from "@/features/agent-workbench/AgentWorkflowList.vue";
+import { usePageRefresh } from "@/layouts/page-refresh";
 
 // The Workbench and the management sections load only when their tab opens (rec#60 D-78).
 const tabPanel = (loader: () => Promise<Component>, label: string) => defineAsyncComponent({
@@ -308,6 +309,8 @@ function saved(person: ProjectAgentRecord) {
 onMounted(() => {
   if (store.runtimeStatus === "idle") void store.refresh();
 });
+// The top bar's 刷新 reads this Agent and its workflows again.
+usePageRefresh(() => Promise.all([load(), reloadWorkflows()]));
 </script>
 
 <template>

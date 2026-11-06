@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -20,6 +20,7 @@ import {
 import { taskState, useRole, type ModelUseId } from '@/features/model-settings/model-uses'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
+import { usePageRefresh } from '@/layouts/page-refresh'
 import { UiNotice } from '@/ui'
 
 // 模型与用量 as one flat model center (rec#8, rec#38, 11-06): first
@@ -115,8 +116,8 @@ onMounted(() => {
   void load()
   void suggestions.load()
 })
-// The top bar's refresh reads the console again; the suggestions with it.
-watch(() => store.runtimeStatus, (status) => { if (status === 'loading' && !suggestionsLoading.value) void suggestions.load() })
+// The top bar's 刷新 reads the roles and the suggestions again; the roles stay while it reads.
+usePageRefresh(() => Promise.all([load(), suggestionsLoading.value ? undefined : suggestions.load()]))
 onBeforeUnmount(() => {
   reading?.abort()
   suggestions.stop()

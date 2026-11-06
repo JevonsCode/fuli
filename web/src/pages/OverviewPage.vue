@@ -15,6 +15,7 @@ import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentTaskRecord } from '@/types'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 // 工作台 (client redesign, 2026-11-01): a fixed left stage with the one piece
 // of work you are looking at, and one scrolling right column with what waits
@@ -91,6 +92,8 @@ const next = computed(() => {
   if (request) return { to: inboxLocation(request.agentId, request.requestId), label: t('overview.actions.request') }
   return { to: overviewTaskHref(task), label: t(`overview.actions.${['blocked', 'failed', 'awaiting_review'].includes(task.status) ? task.status : 'task'}`) }
 })
+// The top bar's 刷新 reads the work, the requests and the names again in place.
+usePageRefresh(() => Promise.all([data.loadTasks(), data.loadRequests(), data.loadNames()]))
 </script>
 
 <template>

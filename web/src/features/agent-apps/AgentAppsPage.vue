@@ -14,6 +14,7 @@ import type { IconName } from '@/ui/icons'
 import AppSheet from './AppSheet.vue'
 import { listApps, type AgentAppRow } from './agent-apps'
 import { appGroup, appStatus, appTypeLabel, type AppGroup } from './app-labels'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 // 应用: every app the space's FLAs built, grouped by what it needs from the
 // person. A row opens the app's details, where it is confirmed, disabled or removed.
@@ -60,6 +61,8 @@ const groups = computed(() => ORDER
 
 const opened = ref<AgentAppRow | null>(null)
 function changed() { void load() }
+// The top bar's 刷新 reads the apps again; the list stays while it reads.
+usePageRefresh(load)
 </script>
 
 <template>

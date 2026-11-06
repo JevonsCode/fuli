@@ -21,6 +21,7 @@ import {
 import TagCard from './TagCard.vue'
 import TagDetailDialog from './TagDetailDialog.vue'
 import { readVocabulary, VOCABULARY_PAGE } from './tags-api'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 // The tag vocabulary (rec#11 D-07 part 2): every namespace the owner has, by
 // status, with the review queue of what Agents proposed. A tag opens in a
@@ -109,7 +110,8 @@ const debounced = createDebouncedAction(() => void load(), SEARCH_DELAY_MS)
 watch(query, () => debounced.schedule())
 watch([tab, namespace, status, spaceId], () => { vocabulary.value = null; void load() }, { immediate: true })
 onBeforeUnmount(() => debounced.cancel())
-
+// The top bar's 刷新 reads the tags again.
+usePageRefresh(load)
 </script>
 
 <template>

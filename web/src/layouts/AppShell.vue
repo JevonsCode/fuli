@@ -35,6 +35,7 @@ import WidgetSlot from '@/widgets/WidgetSlot.vue'
 import SectionTabs from './SectionTabs.vue'
 import { activeDestination, activeSection, navDestinations } from './nav-destinations'
 import { pageTitle } from './page-title'
+import { reloadPage } from './page-refresh'
 import { measureScrollbarSize } from './scrollbar-size'
 
 // The console frame (client redesign, 2026-11-01): a top bar with the brand,
@@ -111,12 +112,21 @@ let reviewTimer: ReturnType<typeof setInterval> | undefined
 function refreshAttention() { if (document.visibilityState === 'visible' && !attention.loading && !attention.open) void attention.refresh() }
 // The knowledge read is larger, so it refreshes less often; the 待决策 page refreshes it on open.
 function refreshReview() { if (document.visibilityState === 'visible' && !review.loading) void review.refresh() }
-// The top bar's one refresh reads the console again and the waiting requests with it:
-// the whole queue while the inbox is open, so that page needs no refresh of its own.
-function refreshConsole() {
-  void store.refresh()
-  if (!attention.loading) void attention.refresh()
-  if (!review.loading) void review.refresh()
+// The top bar's one refresh reads the console again, the waiting requests (the whole
+// queue while the inbox is open, so that page needs no refresh of its own) and the page in
+// view (page-refresh.ts). The button shows its progress until every read has settled.
+const refreshing = ref(false)
+async function refreshConsole() {
+  if (refreshing.value) return
+  refreshing.value = true
+  try {
+    await Promise.allSettled([
+      store.refresh(),
+      attention.loading ? undefined : attention.refresh(),
+      review.loading ? undefined : review.refresh(),
+      reloadPage(),
+    ])
+  } finally { refreshing.value = false }
 }
 // A newer release is a dot at the version's top-right (Jevons 11-04: not on the mark);
 // the version opens 设置 › 版本, where it installs.
@@ -184,7 +194,8 @@ watchEffect(() => {
         <div class="app-actions">
           <DoctorBanner />
           <GlossaryToggle />
-          <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" data-shell-refresh @click="refreshConsole" />
+          <UiIconButton icon="refresh" :label="t('shell.refreshPage')" :loading="refreshing" :loading-label="t('shell.refreshingPage')"
+            :disabled="!refreshing && store.runtimeStatus === 'loading'" data-shell-refresh @click="refreshConsole" />
           <!-- 待决策 is a tray: empty when nothing waits, heaped with rice when something does. -->
           <!-- Hover shows what waits (InboxPeek), not a native tooltip. -->
           <HeaderPeek>

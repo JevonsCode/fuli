@@ -23,6 +23,7 @@ import { readSessionRecords } from '@/features/session-records/session-records-a
 import { sessionMigrationOffers } from '@/features/session-migration/model'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 // 本会话记了什么 (rec#5 C6): everything one host session recorded, in the
 // three groups the host numbered, on one canvas. A record opens in a quick
@@ -116,6 +117,8 @@ watch([spaceId, requestedClient, sessionId], () => {
   view.value = null
   if (spaceId.value) void load()
 }, { immediate: true })
+// The top bar's 刷新 reads the session records again.
+usePageRefresh(load)
 </script>
 
 <template>

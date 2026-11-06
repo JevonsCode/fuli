@@ -15,6 +15,7 @@ import {
 import StoreRestore from '@/features/data-format/StoreRestore.vue'
 import { t } from '@/i18n'
 import { UiEmpty, UiNotice } from '@/ui'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 // 数据格式迁移 (rec#17 D-09 part 2): one confirm screen. Each store waiting for
 // a person is a card with its step, versions, record count and sample IDs;
@@ -156,6 +157,8 @@ async function checkPrune() {
 
 onMounted(load)
 onBeforeUnmount(() => reading?.abort())
+// The top bar's 刷新 reads the data format plan again.
+usePageRefresh(load)
 </script>
 
 <template>
