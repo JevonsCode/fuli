@@ -78,3 +78,11 @@ test('without another Agent\'s verification Tonborg did not judge, so there is n
     assert.deepEqual(await service.reviewVerdicts({ personalSpaceId: 's', agentId: 'lead' }), []);
   }
 });
+test('an acceptance keys its task context by hash, never by the token, for the verification states', async t => {
+  const { service } = fixture(t);
+  const record = await service.accept(input);
+  assert.match(record.taskKey, /^[0-9a-f]{64}$/);
+  assert.doesNotMatch(JSON.stringify(record), /current-host-token/);
+  const [outcome] = await service.acceptanceOutcomes({ personalSpaceId: 's', taskKeys: [record.taskKey] });
+  assert.deepEqual([outcome.taskId, outcome.result, outcome.verification.evidence_refs], ['t', 'passed', ['test-report']]);
+});

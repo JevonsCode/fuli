@@ -4,7 +4,7 @@ import { JudgmentStore } from './store.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { judgmentHumanInteraction } from './conversation.js';
 import { agentJudgmentView } from './agent-view.js';
-import { acceptanceReviewVerdicts } from './review-verdicts.js';
+import { acceptanceReviewVerdicts, judgedAcceptances } from './review-verdicts.js';
 import { taskKnowledgeReader } from '../graphiti/knowledge-reader.js';
 
 const id = z.string().trim().min(1).max(256);
@@ -25,7 +25,9 @@ const recordPageSchema = scopeSchema.extend({ limit: z.number().int().min(1).max
 const pinSchema = z.object({ personalSpaceId: id, agentId: id, pinned: z.boolean(), expectedRevision: revision }).strict();
 const policyWriteSchema = scopeSchema.extend({ policy: policySchema.nullable(), expectedRevision: revision }).strict();
 const reviewVerdictSchema = z.object({ personalSpaceId: id, agentId: id, personalProjectId: id.nullable().optional() }).strict();
-const feedbackSchema = z.object({ personalSpaceId: id, decisionId: id, vote: z.enum(['up', 'down']).nullable(),
+const acceptanceOutcomeSchema = z.object({ personalSpaceId: id, taskId: id.nullable().default(null),
+  taskKeys: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(500).default([]) }).strict();
+const feedbackSchema =z.object({ personalSpaceId: id, decisionId: id, vote: z.enum(['up', 'down']).nullable(),
   reason: z.string().trim().max(1000).default(''), expectedRevision: revision }).strict();
 
 export function createJudgmentService({ app, openStore = () => new JudgmentStore(), prepareStore = async () => {}, engine } = {}) {
@@ -111,6 +113,13 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       const parsed = parse(reviewVerdictSchema, input); space(parsed);
       await prepareStore(parsed.personalSpaceId);
       return acceptanceReviewVerdicts(store().acceptances(parsed.personalSpaceId, parsed.agentId, parsed.personalProjectId ?? null));
+    },
+    // Judged acceptances of one task or of hashed task contexts, for the
+    // verification states (src/fla-growth/). Reads the local ledger only.
+    async acceptanceOutcomes(input) {
+      const parsed = parse(acceptanceOutcomeSchema, input); space(parsed);
+      await prepareStore(parsed.personalSpaceId);
+      return judgedAcceptances(store().acceptancesFor(parsed.personalSpaceId, parsed));
     },
     // relay: the person's vote an FLA relayed in their words (rec#80), or null.
     async feedback(input, relay = null) { const parsed = parse(feedbackSchema, input); space(parsed);

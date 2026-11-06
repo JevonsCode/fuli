@@ -131,7 +131,13 @@ A task the Stop hook closes needs no report: a FULI source link in your final re
 
 This is also how an FLA grows: a reusable experience it reported counts only when a later task
 records applying it. Experiences used across several tasks appear on the FLA's page (「学会了」),
-where the person keeps or drops each; never confirm or drop your own experiences instead. When the
+where the person keeps or drops each; never confirm or drop your own experiences instead. Each
+experience there, and each finished task's acceptance, shows one of four verification states that
+FULI derives from records only: 人确认 (the person kept it or completed the task), 自动验证通过 (a
+verifier's passed `record_agent_verification` with evidence refs), AI 评估通过 (Tonborg's
+independent acceptance), or 尚未验证. An experience reaches the middle two only when a task whose
+recall showed it reported it `applied` in `knowledgeUsage` and that task passed acceptance, so
+report applied use honestly and never describe anything as verified yourself. When the
 person corrects your approach, report the corrected approach as an experience with its `boundary`.
 
 ## Use the Generated Taste Skill

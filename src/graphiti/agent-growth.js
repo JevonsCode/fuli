@@ -1,4 +1,5 @@
 import { getKnowledgeGraph } from './knowledge-graph-reads.js';
+import { acceptanceEvidence, verificationOf } from '../fla-growth/verification.js';
 
 // What an FLA learned by doing (rec#78, slice 1): the reusable experiences it
 // reported at checkpoints, with how often later tasks applied them. The
@@ -37,10 +38,30 @@ export async function getAgentGrowth(application, { personalSpaceId, agentId, pe
   }
   items.sort((a, b) => rank(a) - rank(b) || b.tasks - a.tasks || b.uses - a.uses
     || String(b.lastUsedAt ?? '').localeCompare(String(a.lastUsedAt ?? '')));
+  const shown = items.slice(0, ITEM_LIMIT);
+  const verified = await verifications(application, personalSpaceId, shown);
   return { agentId, personalProjectIds: projectIds, partial,
     counts: { total: items.length, proven: items.filter(item => item.proven).length,
       kept: items.filter(item => item.status === 'confirmed').length },
-    items: items.slice(0, ITEM_LIMIT) };
+    items: shown.map(item => ({ ...item, verification: verified.get(item.itemId) })) };
+}
+
+// Each experience's verification state (src/fla-growth/verification.js): the
+// person kept it, or a task that reported applying it passed a verifier's
+// tests and Tonborg's acceptance. Only tasks whose recall showed it and whose
+// acceptance recorded its task context join; the rest stay 尚未验证.
+async function verifications(application, personalSpaceId, items) {
+  const applied = application.recallImpressions?.appliedTaskKeys({ personalSpaceId, itemIds: items.map(item => item.itemId) }) ?? new Map();
+  const taskKeys = [...new Set([...applied.values()].flat())];
+  const outcomes = taskKeys.length && application.judgment
+    ? await application.judgment.acceptanceOutcomes({ personalSpaceId, taskKeys }) : [];
+  return new Map(items.map(item => {
+    const keys = new Set(applied.get(item.itemId) ?? []);
+    return [item.itemId, verificationOf([
+      ...(item.status === 'confirmed' ? [{ state: 'person_confirmed', source: 'person', ref: item.itemId,
+        at: item.basis?.confirmed_at ?? null }] : []),
+      ...outcomes.filter(outcome => keys.has(outcome.taskKey)).flatMap(acceptanceEvidence)])];
+  }));
 }
 
 // The current reusable experiences of one project that accept(node) keeps.

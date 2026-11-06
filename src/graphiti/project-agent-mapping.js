@@ -482,6 +482,8 @@ export function projectAgentTaskRecord(value = {}) {
     activityOrigin: taskActivityOrigin(value.activity_origin),
     resultSummary: value.result_summary ?? null,
     failureReason: value.failure_reason ?? null,
+    qualityGate: value.quality_gate ?? null,
+    verifiedArtifactRevision: value.verified_artifact_revision ?? null,
     runId: value.actual_run_id ?? value.run_id ?? null,
     actualExecutor: value.actual_executor_id ?? value.actual_executor ?? null,
     selectedExecutorId: value.selected_executor_id ?? null,

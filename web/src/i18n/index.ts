@@ -29,6 +29,7 @@ import { agentAppsMessages } from './messages/agent-apps'
 import { roleNameMessages } from './messages/role-names'
 import { teamWorkMessages } from './messages/team-work'
 import { flaPageMessages } from './messages/fla-page'
+import { verificationMessages } from './messages/verification'
 import { agentWorkbenchMessages } from './messages/agent-workbench'
 import { dataFormatMessages } from './messages/data-format'
 import { debugTurnsMessages } from './messages/debug-turns'
@@ -114,6 +115,7 @@ export const messages = {
     roleNames: roleNameMessages['zh-CN'],
     teamWork: teamWorkMessages['zh-CN'],
     flaPage: flaPageMessages['zh-CN'],
+    verification: verificationMessages['zh-CN'],
     agentWorkbench: agentWorkbenchMessages['zh-CN'],
     dataFormat: dataFormatMessages['zh-CN'],
     debugTurns: debugTurnsMessages['zh-CN'],
@@ -169,6 +171,7 @@ export const messages = {
     roleNames: roleNameMessages['en-US'],
     teamWork: teamWorkMessages['en-US'],
     flaPage: flaPageMessages['en-US'],
+    verification: verificationMessages['en-US'],
     agentWorkbench: agentWorkbenchMessages['en-US'],
     dataFormat: dataFormatMessages['en-US'],
     debugTurns: debugTurnsMessages['en-US'],

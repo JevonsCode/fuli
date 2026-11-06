@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { itemEditPath } from '@/features/knowledge-quick-edit/model'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
+import { evidenceLine, stateLabel } from '@/features/verification/verification'
 import { dropExperience, keepExperience, readAgentGrowth, type AgentGrowth, type GrowthItem } from './agent-growth'
 
 // Widget 'fla-growth' (rec#78): what this FLA learned by doing, the ones later
@@ -43,8 +44,11 @@ const visible = computed(() => expanded.value ? items.value : items.value.slice(
 const waiting = computed(() => items.value.filter(item => item.proven && item.status !== 'confirmed').length)
 // An FLA in several projects says which one each experience belongs to.
 const severalProjects = computed(() => new Set(items.value.map(item => item.personalProjectId)).size > 1)
+// A kept one reads 人确认 on the right; the others say their state here.
 const meta = (item: GrowthItem) => [item.uses ? t('flaPage.growth.used', { uses: item.uses, tasks: item.tasks }) : t('flaPage.growth.unused'),
+  ...(item.verification && item.status !== 'confirmed' ? [stateLabel(item.verification)] : []),
   ...(severalProjects.value ? [props.projectName(item.personalProjectId)] : [])].join(' · ')
+const evidence = (item: GrowthItem) => (item.verification ? evidenceLine(item.verification) : '')
 const link = (item: GrowthItem) => itemEditPath(props.spaceId, { item_kind: 'entity', item_id: item.itemId })
 
 async function decide(item: GrowthItem, keep: boolean) {
@@ -74,10 +78,10 @@ async function decide(item: GrowthItem, keep: boolean) {
         <li v-for="item in visible" :key="item.itemId" class="growth-row" :data-status="item.status">
           <div class="growth-main">
             <RouterLink class="growth-title" :to="link(item)" :title="item.solution">{{ item.title }}</RouterLink>
-            <span class="growth-meta">{{ meta(item) }}</span>
+            <span class="growth-meta" :title="evidence(item) || undefined" :data-verification="item.verification?.state">{{ meta(item) }}</span>
           </div>
           <div class="growth-actions">
-            <span v-if="item.status === 'confirmed'" class="growth-kept">{{ t('flaPage.growth.keptLabel') }}</span>
+            <span v-if="item.status === 'confirmed'" class="growth-kept">{{ t('verification.states.person_confirmed') }}</span>
             <template v-else>
               <Button size="sm" variant="outline" :loading="busy === `${item.itemId}:keep`" :disabled="Boolean(busy)" @click="decide(item, true)">{{ t('flaPage.growth.keep') }}</Button>
               <Button size="sm" variant="ghost" :loading="busy === `${item.itemId}:drop`" :disabled="Boolean(busy)" @click="decide(item, false)">{{ t('flaPage.growth.drop') }}</Button>
