@@ -1,56 +1,92 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
-import { OptionCombobox } from '@/components/ui/combobox'
-import { t } from '@/i18n'
-import type { PersonalProject } from '@/types'
+import { currentLocale, t } from '@/i18n'
+import { formatRelativeTime } from '@/lib/relative-time'
+import UiNotice from '@/ui/UiNotice.vue'
 import ModelUseCard from './ModelUseCard.vue'
-import { readDreaming, startDreaming, type DreamingRun } from './dreaming'
+import { readDreaming, startDreaming, type DreamingProject, type DreamingResult } from './dreaming'
 import type { ModelRoleView } from './model'
 import { stateTone, useAdvice } from './model-uses'
 
-// Dreaming, one of Astro's tasks, as a use card: it runs on Astro's model, so
-// without one its action opens Astro's settings. Its proposals wait in the
-// review queue; here is whether it ran and what it found.
-const props = withDefaults(defineProps<{ projects: readonly PersonalProject[]; status?: ModelRoleView['state']; model?: string | null }>(),
+// Dreaming, one of Astro's tasks, as a use card (11-06). Projects with new
+// sessions come first, each with 「整理」; the rest wait in a short quiet list
+// whose 「整理一次」 reads every session again. A project that just ran keeps
+// its place and says what it found, with a link to the review queue. Without
+// Astro's model the action opens Astro's settings.
+const QUIET_SHOWN = 3
+const props = withDefaults(defineProps<{ status?: ModelRoleView['state']; model?: string | null }>(),
   { status: 'not_configured', model: null })
 const emit = defineEmits<{ edit: [] }>()
 
-const projectId = ref('')
+type Group = 'fresh' | 'quiet'
 const readiness = ref<string | null>(null)
-const runs = ref<DreamingRun[]>([])
-const running = ref(false)
+const projects = ref<DreamingProject[]>([])
+const running = ref<{ id: string; fromStart: boolean } | null>(null)
+const results = ref<Record<string, DreamingResult>>({})
+// Where a run started, so its row does not jump lists when its count drops to 0.
+const placed = ref<Record<string, Group>>({})
+const showAll = ref(false)
 const error = ref('')
-const choices = computed(() => props.projects.filter(project => project.scope_type !== 'temporary')
-  .map(project => ({ value: project.project_id, label: project.profile.name })))
-const projectName = (id?: string | null) => choices.value.find(choice => choice.value === id)?.label ?? id ?? ''
 
-watch(choices, (next) => { if (!projectId.value && next[0]) projectId.value = next[0].value }, { immediate: true })
-watch(projectId, () => void load(), { immediate: true })
+const ready = computed(() => projects.value.filter(project => project.readiness === 'ready'))
+const groupOf = (project: DreamingProject): Group => placed.value[project.personalProjectId] ?? ((project.newSessions ?? 0) > 0 ? 'fresh' : 'quiet')
+const fresh = computed(() => ready.value.filter(project => groupOf(project) === 'fresh'))
+const quiet = computed(() => ready.value.filter(project => groupOf(project) === 'quiet'))
+const quietShown = computed(() => (showAll.value ? quiet.value : quiet.value.slice(0, QUIET_SHOWN)))
+const unapproved = computed(() => projects.value.filter(project => project.readiness === 'project_not_approved'))
+
+onMounted(() => void load())
 
 async function load() {
-  if (!projectId.value) return
-  const state = await readDreaming(projectId.value).catch(() => null)
+  const state = await readDreaming().catch(() => null)
   readiness.value = state?.readiness ?? 'unavailable'
-  if (!state) return
-  runs.value = state.runs ?? []
+  if (state) projects.value = state.projects
 }
 
-async function run() {
-  running.value = true
+async function run(project: DreamingProject, fromStart: boolean) {
+  const id = project.personalProjectId
+  placed.value = { ...placed.value, [id]: groupOf(project) }
+  running.value = { id, fromStart }
   error.value = ''
   try {
-    await startDreaming(projectId.value)
+    results.value = { ...results.value, [id]: await startDreaming(id, fromStart) }
     await load()
   } catch (cause) {
     error.value = apiErrorReason(cause)
   } finally {
-    running.value = false
+    running.value = null
   }
 }
+
+const lastRun = (project: DreamingProject) => {
+  const when = project.lastRun && formatRelativeTime(project.lastRun.at, currentLocale())
+  return when ? t('modelSettings.dreaming.lastRun', { when }) : t('modelSettings.dreaming.neverRun')
+}
+const queued = (result?: DreamingResult) => result?.proposed?.filter(proposal => proposal.status === 'queued').length ?? 0
+
+function resultLine(result: DreamingResult) {
+  if (result.status === 'dreamed') return t('modelSettings.dreaming.found', { sessions: result.sessions ?? 0, count: queued(result) })
+  if (result.status === 'nothing_to_read') return t('modelSettings.dreaming.nothingNew')
+  return t('modelSettings.dreaming.notFinished')
+}
+
+function meta(project: DreamingProject) {
+  const result = results.value[project.personalProjectId]
+  if (result) return resultLine(result)
+  if ((project.newSessions ?? 0) > 0) return t('modelSettings.dreaming.newSessions', { count: project.newSessions ?? 0, last: lastRun(project) })
+  if (!project.lastRun) return t('modelSettings.dreaming.noSessions')
+  return t('modelSettings.dreaming.noNewSessions', { last: lastRun(project) })
+}
+
+// A full re-read is offered once the project has something it could read again.
+const canRun = (project: DreamingProject, group: Group) => group === 'fresh' || project.lastRun !== null
+const runLabel = (project: DreamingProject) => t(running.value?.fromStart ? 'modelSettings.dreaming.rereading' : 'modelSettings.dreaming.running',
+  { name: project.name })
 </script>
 
 <template>
@@ -59,37 +95,56 @@ async function run() {
       <template v-if="model"><code>{{ model }}</code><span>{{ t('modelSettings.uses.astroModel') }}</span></template>
       <span v-else>{{ t('modelSettings.uses.astroNoModel') }}</span>
     </template>
-    <GrowthLoading v-if="readiness === null && projectId" variant="compact" :label="t('modelSettings.dreaming.loading')" />
+    <GrowthLoading v-if="readiness === null" variant="compact" :label="t('modelSettings.dreaming.loading')" />
     <!-- Without Astro's model the model line already says so. -->
-    <p v-else-if="readiness === 'needs_model' && model" class="dreaming-note" data-dreaming-needs-model>{{ t('modelSettings.dreaming.needsModel') }}</p>
-    <p v-else-if="readiness === 'project_not_approved'" class="dreaming-note">{{ t('modelSettings.dreaming.notApproved') }}</p>
+    <p v-else-if="readiness === 'needs_model'" v-show="model" class="dreaming-note" data-dreaming-needs-model>{{ t('modelSettings.dreaming.needsModel') }}</p>
     <p v-else-if="readiness === 'unavailable'" class="dreaming-note">{{ t('modelSettings.dreaming.unavailable') }}</p>
-    <p v-if="error" role="alert" class="dreaming-error">{{ error }}</p>
-    <ul v-if="runs.length" class="dreaming-runs">
-      <li v-for="row in runs.slice(0, 3)" :key="row.at">
-        <strong>{{ projectName(row.personalProjectId) }}</strong>
-        <span>{{ t('modelSettings.dreaming.found', { sessions: row.sessions ?? 0, count: row.proposed?.length ?? 0 }) }}</span>
-      </li>
-    </ul>
-    <template #actions>
-      <Button v-if="readiness === 'needs_model'" size="sm" variant="outline" data-dreaming-open @click="emit('edit')">{{ t('modelSettings.uses.openAstro') }}</Button>
-      <template v-else>
-        <OptionCombobox v-model="projectId" class="dreaming-project" size="sm" :options="choices" :label="t('modelSettings.dreaming.project')" data-dreaming-project />
-        <Button size="sm" :disabled="readiness !== 'ready'" :loading="running"
-          :loading-label="t('modelSettings.dreaming.running', { name: projectName(projectId) })" data-dreaming-run @click="run">
-          {{ t('modelSettings.dreaming.run') }}
-        </Button>
+    <template v-else>
+      <p v-if="ready.length" class="dreaming-note" data-dreaming-daily>{{ t('modelSettings.dreaming.daily') }}</p>
+      <template v-for="[group, rows] in ([['fresh', fresh], ['quiet', quietShown]] as const)" :key="group">
+        <ul v-if="rows.length" class="dreaming-list" :class="`dreaming-list--${group}`" :data-dreaming-list="group">
+          <li v-for="project in rows" :key="project.personalProjectId" class="dreaming-row" :data-dreaming-row="project.personalProjectId">
+            <span class="dreaming-name" :title="project.name">{{ project.name }}</span>
+            <span class="dreaming-meta" data-dreaming-meta>{{ meta(project) }}</span>
+            <RouterLink v-if="queued(results[project.personalProjectId]) > 0" to="/inbox" class="dreaming-confirm" data-dreaming-confirm>
+              {{ t('modelSettings.dreaming.confirm') }}
+            </RouterLink>
+            <Button v-if="canRun(project, group)" size="sm" :variant="group === 'fresh' ? 'outline' : 'ghost'"
+              :title="group === 'quiet' ? t('modelSettings.dreaming.runAgainHint') : undefined"
+              :disabled="running !== null && running.id !== project.personalProjectId" :loading="running?.id === project.personalProjectId"
+              :loading-label="runLabel(project)" data-dreaming-run @click="run(project, group === 'quiet')">
+              {{ t(group === 'fresh' ? 'modelSettings.dreaming.run' : 'modelSettings.dreaming.runAgain') }}
+            </Button>
+          </li>
+        </ul>
       </template>
+      <Button v-if="quiet.length > QUIET_SHOWN" class="dreaming-more" size="sm" variant="link" data-dreaming-more @click="showAll = !showAll">
+        {{ showAll ? t('modelSettings.dreaming.showLess') : t('modelSettings.dreaming.showAll', { count: quiet.length }) }}
+      </Button>
+      <p v-if="unapproved.length" class="dreaming-note" :title="unapproved.map(project => project.name).join('、')" data-dreaming-unapproved>
+        {{ t('modelSettings.dreaming.notApproved', { count: unapproved.length }) }}
+      </p>
+    </template>
+    <UiNotice v-if="error" tone="error">{{ error }}</UiNotice>
+    <template #actions>
+      <Button v-if="readiness === 'needs_model' || unapproved.length" size="sm" variant="outline" data-dreaming-open @click="emit('edit')">
+        {{ t('modelSettings.uses.openAstro') }}
+      </Button>
     </template>
   </ModelUseCard>
 </template>
 
 <style scoped>
 .dreaming-note { margin: 0; color: var(--color-muted); font-size: var(--text-control); }
-.dreaming-error { margin: 0; color: var(--color-danger); font-size: var(--text-control); }
-.dreaming-runs { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--text-control); }
-.dreaming-runs li { display: flex; justify-content: space-between; gap: 12px; min-width: 0; }
-.dreaming-runs strong { min-width: 0; overflow: hidden; font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
-.dreaming-runs span { flex: none; color: var(--color-muted); }
-.dreaming-project { flex: 1; min-width: 0; }
+.dreaming-list { display: grid; margin: 0; padding: 0; list-style: none; font-size: var(--text-control); }
+.dreaming-list--quiet { color: var(--color-muted); }
+/* Every row is one control high, so rows with and without a button line up. */
+.dreaming-row { display: flex; align-items: center; gap: var(--space-3); min-width: 0; min-height: var(--control-height-sm); }
+.dreaming-name { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--color-ink); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.dreaming-list--quiet .dreaming-name { font-weight: var(--weight-regular); }
+.dreaming-meta { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--color-muted); text-overflow: ellipsis; white-space: nowrap; }
+.dreaming-confirm { flex: none; color: var(--color-link); font-weight: var(--weight-medium); text-decoration: none; user-select: none; }
+.dreaming-confirm:hover { text-decoration: underline; }
+.dreaming-row :deep(button) { flex: none; margin-inline-start: auto; user-select: none; }
+.dreaming-more { justify-self: start; padding-inline: 0; user-select: none; }
 </style>

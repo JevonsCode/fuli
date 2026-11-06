@@ -89,7 +89,7 @@ describe('语义搜索 on the model page', () => {
       : url.startsWith('/api/model-backends/suggestions') || url.startsWith('/api/judgment/suggestions') ? { suggestions: [] }
         : url.startsWith('/api/model-backends/history') ? { entries: [] }
           : url.startsWith('/api/model-backends/keys') ? { saved: [] }
-            : url.startsWith('/api/dreaming') ? { readiness: 'needs_model', runs: [] } : roles))
+            : url.startsWith('/api/dreaming') ? { readiness: 'needs_model', projects: [] } : roles))
     // The address and model fields are real comboboxes that take typing; other single choices are native selects.
     const wrapper = mount(ModelSettingsPage, { attachTo: document.body, global: { stubs: { RouterLink: true, OptionSelect: optionSelectStubs.OptionSelect } } })
     await flushPromises()
