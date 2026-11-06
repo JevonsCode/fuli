@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { getJson } from '@/api/client'
 import { t } from '@/i18n'
+import HeaderPeek from '@/components/HeaderPeek.vue'
 import { UiIcon } from '@/ui'
 import { roleName, type ModelRolesPayload } from './model'
 
@@ -23,7 +24,8 @@ const semantic = ref<SemanticStatus | null>(null)
 let timer: ReturnType<typeof setInterval> | undefined
 let request: AbortController | null = null
 
-const enabled = computed(() => roles.value?.roles.filter(role => role.state === 'enabled').length ?? 0)
+const enabledRoles = computed(() => roles.value?.roles.filter(role => role.state === 'enabled') ?? [])
+const enabled = computed(() => enabledRoles.value.length)
 const filling = computed(() => {
   const status = semantic.value
   return status && status.running && status.total > 0 && status.done < status.total ? status : null
@@ -72,32 +74,57 @@ onBeforeUnmount(() => {
   request?.abort()
   document.removeEventListener('visibilitychange', onVisible)
 })
+// The hover panel's one-line status, beside its title.
+const peekStatus = computed(() => {
+  if (power.value === 'problem') return failing.value.length ? t('modelSettings.power.peek.failingCount', { count: failing.value.length }) : t('modelSettings.power.peek.unreadable')
+  if (power.value === 'filling') return t('modelSettings.power.filling', { done: filling.value!.done, total: filling.value!.total })
+  return power.value === 'on' ? t('modelSettings.power.peek.on', { count: enabled.value }) : t('modelSettings.power.peek.off')
+})
 // Lit like 设置 is on its own page: the model page is this button's page.
 const route = useRoute()
 const active = computed(() => route?.path === '/models')
 </script>
 
 <template>
-  <RouterLink to="/models" class="model-power" :class="[`model-power--${power}`, { 'is-active': active }]" :aria-current="active ? 'page' : undefined" :style="{ '--power-progress': `${progress}%` }"
-    draggable="false" :aria-label="label" :title="label" :data-model-power="power">
-    <!-- The violet gradient the powered icon is drawn with (referenced from CSS). -->
-    <svg class="model-power-defs" width="0" height="0" aria-hidden="true" focusable="false">
-      <defs>
-        <linearGradient id="model-power-gradient" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" style="stop-color: var(--color-power-from)" />
-          <stop offset="55%" style="stop-color: var(--color-power-mid)" />
-          <stop offset="100%" style="stop-color: var(--color-power-to)" />
-        </linearGradient>
-      </defs>
-    </svg>
-    <span v-if="active" class="model-power-reticle" aria-hidden="true" data-model-power-reticle />
-    <UiIcon name="modelCoreOn" :size="18" />
-    <!-- Two copies of the powered icon itself, which tear away from it now and then. -->
-    <template v-if="power === 'on'">
-      <span class="model-power-split model-power-split--cyan" aria-hidden="true"><UiIcon name="modelCoreOn" :size="18" /></span>
-      <span class="model-power-split model-power-split--magenta" aria-hidden="true"><UiIcon name="modelCoreOn" :size="18" /></span>
+  <!-- Hover shows which uses run on which model (Jevons 11-06), not a native tooltip. -->
+  <HeaderPeek>
+    <template #trigger>
+      <RouterLink to="/models" class="model-power" :class="[`model-power--${power}`, { 'is-active': active }]" :aria-current="active ? 'page' : undefined" :style="{ '--power-progress': `${progress}%` }"
+        draggable="false" :aria-label="label" :data-model-power="power">
+        <!-- The violet gradient the powered icon is drawn with (referenced from CSS). -->
+        <svg class="model-power-defs" width="0" height="0" aria-hidden="true" focusable="false">
+          <defs>
+            <linearGradient id="model-power-gradient" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" style="stop-color: var(--color-power-from)" />
+              <stop offset="55%" style="stop-color: var(--color-power-mid)" />
+              <stop offset="100%" style="stop-color: var(--color-power-to)" />
+            </linearGradient>
+          </defs>
+        </svg>
+        <span v-if="active" class="model-power-reticle" aria-hidden="true" data-model-power-reticle />
+        <UiIcon name="modelCoreOn" :size="18" />
+        <!-- Two copies of the powered icon itself, which tear away from it now and then. -->
+        <template v-if="power === 'on'">
+          <span class="model-power-split model-power-split--cyan" aria-hidden="true"><UiIcon name="modelCoreOn" :size="18" /></span>
+          <span class="model-power-split model-power-split--magenta" aria-hidden="true"><UiIcon name="modelCoreOn" :size="18" /></span>
+        </template>
+      </RouterLink>
     </template>
-  </RouterLink>
+    <div class="header-peek-head">
+      <span class="header-peek-title">{{ t('modelSettings.power.peek.title') }}</span>
+      <span class="header-peek-meta" :class="{ 'is-problem': power === 'problem' }" data-model-peek-status>{{ peekStatus }}</span>
+    </div>
+    <ul v-if="enabledRoles.length" class="header-peek-list">
+      <li v-for="role in enabledRoles" :key="role.role" class="header-peek-row" data-model-peek-role>
+        <span class="header-peek-text">{{ roleName(role.role) }}</span>
+        <span class="header-peek-tag" :class="{ 'is-problem': role.health?.status === 'failing' }">
+          {{ role.health?.status === 'failing' ? t('modelSettings.power.peek.failing') : role.connection?.model }}
+        </span>
+      </li>
+    </ul>
+    <p v-else class="header-peek-empty">{{ t('modelSettings.power.off') }}</p>
+    <RouterLink to="/models" class="header-peek-go" data-model-peek-go>{{ t('modelSettings.power.peek.go') }}</RouterLink>
+  </HeaderPeek>
 </template>
 
 <style scoped>

@@ -110,4 +110,22 @@ describe('ModelPowerButton', () => {
     expect(wrapper.find('[data-model-power-reticle]').exists()).toBe(false)
     wrapper.unmount()
   })
+
+  it('hovering shows each use with its model, and a failing one in plain words, with no native tooltip', async () => {
+    const connection = (model: string) => ({ id: model, protocol: 'anthropic_messages', endpointHost: '192.0.2.1:6666', model, secretRef: 'synthetic' })
+    answer({ state: 'valid', roles: [
+      { role: 'assistant', state: 'enabled', answeredBy: 'model_api', connection: connection('synthetic-chat'), health: { status: 'ok' } },
+      { role: 'tonborg', state: 'enabled', answeredBy: 'model_api', connection: connection('synthetic-judge'), health: { status: 'failing' } },
+      { role: 'bole', state: 'not_configured', answeredBy: 'current_session' },
+    ] }, null)
+    setLocale('zh-CN')
+    const wrapper = mount(ModelPowerButton, { global: { stubs: { RouterLink: RouterLinkStub,
+      HeaderPeek: { template: '<div><slot name="trigger" /><div data-peek-body><slot /></div></div>' } } } })
+    await flushPromises()
+    expect(wrapper.get('[data-model-power]').attributes('title')).toBeUndefined()
+    const rows = wrapper.findAll('[data-model-peek-role]').map(row => row.findAll('span').map(span => span.text()))
+    expect(rows).toEqual([[expect.any(String), 'synthetic-chat'], [expect.any(String), '没回应']])
+    expect(wrapper.get('[data-model-peek-status]').text()).toBe('1 项没回应')
+    wrapper.unmount()
+  })
 })
