@@ -13,7 +13,7 @@ import { deliveredConversationFrame, deliveredRecentFrame, MAX_RECENT_FRAMES, ow
 import { preferenceDeliveryReason } from '../mcp/preference-delivery.js';
 import { locatePreferenceTranscript } from '../agents/preference-evidence.js';
 import { fitUncached, WHOLE_ENTRY } from './entry-inline-budget.js';
-import { projectSkeleton, rememberSkeletonPrompt, skeletonEvidence, validSkeletonPrompts } from './entry-skeleton.js';
+import { projectSkeleton, rememberSkeletonTask, skeletonEvidence, skeletonTasks } from './entry-skeleton.js';
 
 const SESSION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_PENDING = 16;
@@ -27,9 +27,11 @@ const MAX_PENDING = 16;
 // full. An older FULI ignores it and still binds the frame to its own scope hash.
 // Version 3 adds `prompts`: [token, prompt, project and Agent] hashes of the
 // tasks a hook delivered here (entry-skeleton.js, rec#76). A version 2 record
-// has none, so its next hook frame carries the whole skeleton.
-const RECORD_VERSION = 3;
-export const PREFERENCE_SESSION_FORMAT = jsonFormat({ store: 'preference-session', versions: [1, 2, RECORD_VERSION] });
+// has none, so its next hook frame carries the whole skeleton. Version 4
+// replaces them with `tasks`: [token, project and Agent] hashes, since any task
+// of the same owner may be a base (rec#88); a version 3 list is read as tasks.
+const RECORD_VERSION = 4;
+export const PREFERENCE_SESSION_FORMAT = jsonFormat({ store: 'preference-session', versions: [1, 2, 3, RECORD_VERSION] });
 
 // This private cache contains only hashes/cursors. It never stores instruction
 // bodies or grants authority. Native evidence is re-read on every use.
@@ -115,7 +117,7 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           // it from there.
           const skeleton = origin.taskPrompt === undefined || !(proof.known || proof.absent) || floor === null ? null
             : skeletonEvidence(origin.forceFull ? { known: false } : proof, value,
-              { floor, prompts: state.prompts, prompt: origin.taskPrompt });
+              { floor, tasks: state.tasks, prompt: origin.taskPrompt });
           const project = candidate => {
             const preferences = origin.forceFull ? completePreferenceFrame(candidate, shown)
               : projectPreferenceDelta(candidate, baseline, shown);
@@ -154,8 +156,8 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           }
           const frame = deliveredRecentFrame(recent.frame, projected, result);
           if (frame) next.recent = [...state.recent.filter(item => item.frameHash !== frame.frameHash), frame].slice(-MAX_RECENT_FRAMES);
-          if (skeleton && !result.isError) next.prompts = rememberSkeletonPrompt(state.prompts, value, origin.taskPrompt);
-          if (state.floor !== null && (next.pending !== state.pending || next.recent !== state.recent || next.prompts !== state.prompts)) {
+          if (skeleton && !result.isError) next.tasks = rememberSkeletonTask(state.tasks, value, origin.taskPrompt);
+          if (state.floor !== null && (next.pending !== state.pending || next.recent !== state.recent || next.tasks !== state.tasks)) {
             await save({ ...next, ...(nativeGeneration ? { nativeGeneration } : {}),
               ...(proof.known ? { fileId: proof.fileId, generation: proof.generation } : {}) });
           }
@@ -175,7 +177,7 @@ export function createSessionPreferenceDelivery({ directory, locate = locatePref
           // unknown until a delivery can read the file, never the file's start.
           // A session the host says has just started has none yet: it starts
           // at its start.
-          await save({ pending: [], recent: [], prompts: [], floor: boundary(proof, origin.sessionStarted === true),
+          await save({ pending: [], recent: [], tasks: [], floor: boundary(proof, origin.sessionStarted === true),
             ...(origin.nativeGeneration ? { nativeGeneration: contentHash(origin.nativeGeneration) } : {}),
             ...(proof.known ? { fileId: proof.fileId, generation: proof.generation } : {}) });
         });
@@ -208,13 +210,13 @@ function generationState(state, proof, nativeGeneration) {
   // fresh record holds none, and a window change after it leaves no other
   // trace (review of #654).
   if (state.untrusted || state.floor === null || (nativeGeneration && nativeGeneration !== state.nativeGeneration)) {
-    return { pending: [], recent: [], prompts: [], floor: boundary(proof, false) };
+    return { pending: [], recent: [], tasks: [], floor: boundary(proof, false) };
   }
   if (!proof.known) return state;
   const replaced = (state.fileId && state.fileId !== proof.fileId) || (state.floor ?? 0) > proof.size
     || (state.generation && state.generation !== proof.generation && !proof.since);
-  if (replaced) return { pending: [], recent: [], prompts: [], floor: proof.size };
-  if (state.generation && state.generation !== proof.generation) return { pending: [], recent: [], prompts: [], floor: 0 };
+  if (replaced) return { pending: [], recent: [], tasks: [], floor: proof.size };
+  if (state.generation && state.generation !== proof.generation) return { pending: [], recent: [], tasks: [], floor: 0 };
   return state;
 }
 
@@ -261,7 +263,7 @@ function verifiedFrame(value, frame, expected, revision, shown) {
 // A session with no record yet starts fresh at the file's beginning. Any other
 // record this FULI cannot read as its own is untrusted, not fresh: it may hold
 // the boundary of a reset that is not visible in the native file.
-const FRESH = Object.freeze({ pending: Object.freeze([]), recent: Object.freeze([]), prompts: Object.freeze([]) });
+const FRESH = Object.freeze({ pending: Object.freeze([]), recent: Object.freeze([]), tasks: Object.freeze([]) });
 const UNTRUSTED = Object.freeze({ ...FRESH, untrusted: true });
 
 async function readState(path) {
@@ -281,8 +283,9 @@ async function readState(path) {
         || value.pending.some(item => ![item.scopeHash, item.snapshotHash, item.frameHash]
           .every(hash => /^[a-f0-9]{64}$/.test(hash)) || !(item.scene === undefined || validScene(item.scene)))) return UNTRUSTED;
     const recent = value.recent ?? [];
-    const prompts = value.prompts ?? [];
-    return validRecentFrames(recent) && validSkeletonPrompts(prompts) ? { ...value, recent, prompts } : UNTRUSTED;
+    const { prompts, ...kept } = value;
+    const tasks = skeletonTasks(value.tasks ?? prompts ?? []);
+    return validRecentFrames(recent) && tasks ? { ...kept, recent, tasks } : UNTRUSTED;
   } catch { return UNTRUSTED; }
   finally { await file.close(); }
 }

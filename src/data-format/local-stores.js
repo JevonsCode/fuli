@@ -18,6 +18,7 @@ import { WORK_SURFACES_FORMAT } from '../work-surfaces/store.js';
 import { EMPLOYEE_MANAGEMENT_FORMAT } from '../employees/management-policy.js';
 import { JEFA_BOARD_FORMAT } from '../employees/builtin/jefa/board-store.js';
 import { PREFERENCE_SESSION_FORMAT } from '../conversations/preference-session.js';
+import { SESSION_PROMPT_SENTENCES_FILE, SESSION_PROMPT_SENTENCES_FORMAT } from '../graphiti/session-prompt-sentences.js';
 import { TRANSCRIPT_CAPTURE_FORMAT, TRANSCRIPT_TURN_HOLD_FORMAT } from '../conversations/transcript-capture-gap.js';
 import { CONFLICT_POLICY_FORMAT } from '../external-knowledge/conflict-policy.js';
 import { EXTERNAL_KNOWLEDGE_FORMAT } from '../external-knowledge/registry.js';
@@ -132,7 +133,9 @@ const jsonStores = () => [
   // The person's own name and picture (「我」), changed only in the console on this computer.
   ['person-profile.json', PERSON_PROFILE_FORMAT],
   // Whether the person stopped FULI on purpose and when client sessions started it (rec#94).
-  [CONSOLE_AUTOSTART_FILE, CONSOLE_AUTOSTART_FORMAT]
+  [CONSOLE_AUTOSTART_FILE, CONSOLE_AUTOSTART_FORMAT],
+  // Sentence hashes of recent sessions' prompts, for the entry recall (rec#88).
+  [SESSION_PROMPT_SENTENCES_FILE, SESSION_PROMPT_SENTENCES_FORMAT]
 ];
 // One small record per session.
 const jsonDirectories = () => [

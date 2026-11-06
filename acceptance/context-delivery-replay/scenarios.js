@@ -256,8 +256,8 @@ export const SCENARIOS = {
     world.check('every repeat names the skeleton it already showed', turns.every(turn => turn.skeleton_delivery === 'unchanged'));
   },
 
-  // rec#76: what must still get the whole skeleton in one session: a new
-  // task, another project, another FLA and the first turn after compaction.
+  // rec#76: what must still get the whole skeleton in one session:
+  // another project, another FLA and the first turn after compaction.
   async skeleton_boundaries(world) {
     world.recall = true;
     const { general } = world.fixture;
@@ -265,7 +265,8 @@ export const SCENARIOS = {
     const h = await world.open('claude_code', 'H');
     await h.turn(WORK, { note: 'first' });
     const full = turn => turn.skeleton_delivery === 'full' && turn.skeleton_revision_field_bytes > 0;
-    world.check('a new task gets the whole skeleton', full(await h.turn(FRONTEND, { note: 'new task' })));
+    // rec#88: a new prompt of the same owner names what the session already shows.
+    world.check('a new task of the same owner names the skeleton', (await h.turn(FRONTEND, { note: 'new task' })).skeleton_delivery === 'unchanged');
     world.check('a notification of that task names it', (await h.turn(ciEvent(1), { note: 'notification' })).skeleton_delivery === 'unchanged');
     world.check('another project gets the whole skeleton', full(await h.turn(FRONTEND, { note: 'project switch', project: 'other' })));
     world.check('another FLA gets the whole skeleton', full(await h.turn(`#FLA reviewer ${FRONTEND}`, { note: 'FLA switch' })));

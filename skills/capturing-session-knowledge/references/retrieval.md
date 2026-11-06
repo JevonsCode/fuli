@@ -31,7 +31,10 @@ external state.
 First inspect `task_knowledge_recall` returned by the lifecycle or preference tool. Its automatic
 query plan is deliberately bounded: trigger categories (including a named convention, owner or
 "the way we" do something) plus short queries from the prompt's own clauses, not on a claim that
-every returned candidate supports the task. A `no_match` recall is one quick search, and says so in
+every returned candidate supports the task. It plans from the task's own words: a note line
+("Environment: …"), a negated instruction ("do not commit…") and a sentence earlier prompts of the
+session already carried never choose its topics, so when the task depends on one of those, search
+for it yourself. A `no_match` recall is one quick search, and says so in
 `next`: before taking a project value or rule (port, command, owner, convention) from repository
 files, which may be out of date, call `search_current_project_knowledge` for it yourself. Do the same
 whenever its candidates are irrelevant while durable context may still matter. A coding task without such a trigger may instead get `status: indexed` with a
