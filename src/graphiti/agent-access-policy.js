@@ -10,7 +10,7 @@ const DEFAULT_POLICY = Object.freeze({
   updatedAt: null
 });
 
-export class AgentAccessPolicyConfigurationError extends TypeError {}
+class AgentAccessPolicyConfigurationError extends TypeError {}
 
 export class AgentAccessPolicyStore {
   constructor(path = null, { now = () => new Date().toISOString() } = {}) {

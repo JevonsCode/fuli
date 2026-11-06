@@ -8,7 +8,7 @@ import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format
 const DEFAULT_POLICY = Object.freeze({ answerFromConfirmed: true, updatedAt: null });
 export const RECALL_POLICY_FORMAT = jsonFormat({ store: 'recall-policy', versions: [1] });
 
-export class RecallPolicyConfigurationError extends TypeError {}
+class RecallPolicyConfigurationError extends TypeError {}
 
 export class RecallPolicyStore {
   constructor(path = null, { now = () => new Date().toISOString() } = {}) {

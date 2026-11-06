@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 // rec#63 direction A: which knowledge items the automatic task-entry recall
 // showed an Agent, and which of them the Agent later reported using. Step 2
@@ -49,9 +49,7 @@ export class RecallImpressionsStore {
   }
 
   transaction(work) {
-    this.db.exec('BEGIN IMMEDIATE');
-    try { const result = work(); this.db.exec('COMMIT'); return result; }
-    catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    return immediateTransaction(this.db, work);
   }
 
   // facts are relationships, entities are entities; rank is the 1-based

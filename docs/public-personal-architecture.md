@@ -70,4 +70,4 @@ flowchart LR
 - 本地缓存可以离线查询，但离线缓存不改变公共服务的审核状态。
 - 个人原始事实和公共投影分开保留；公共修订不会覆盖个人历史。
 
-相关实现：`src/graphiti/workspace-provider-client.js`、`src/graphiti/federated-application.js`、`src/workspace-protocol/` 以及公共 Workspace 服务的治理/同步接口。
+相关实现：`src/graphiti/workspace-provider-client.js`、`src/graphiti/federated-application.js` 以及公共 Workspace 服务的治理/同步接口。

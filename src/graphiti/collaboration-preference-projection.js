@@ -1,4 +1,4 @@
-export function agentCollaborationPreference(item) {
+function agentCollaborationPreference(item) {
   const preference = {
     instruction: item.instruction ?? '',
     preference_key: item.preference_key ?? item.key ?? item.id,

@@ -21,7 +21,7 @@ const nullableTokenCount = {
   ...integerSchema({ minimum: 0 }),
   type: ['integer', 'null']
 };
-export const projectAgentTokenUsage = objectSchema({
+const projectAgentTokenUsage = objectSchema({
   source: enumSchema(['executor', 'host', 'dingdong']),
   totalTokens: integerSchema({ minimum: 0 }),
   inputTokens: nullableTokenCount,
@@ -30,7 +30,7 @@ export const projectAgentTokenUsage = objectSchema({
   cacheWriteInputTokens: nullableTokenCount,
   reasoningOutputTokens: nullableTokenCount
 }, ['source', 'totalTokens']);
-export const projectAgentWorkerRuntime = objectSchema({
+const projectAgentWorkerRuntime = objectSchema({
   application: enumSchema([...SOURCE_APPLICATIONS]),
   sessionId: { ...nullableStringSchema(), minLength: 1, maxLength: 256 },
   sessionUrl: { ...nullableStringSchema(), maxLength: 2048 }
@@ -154,11 +154,8 @@ export const projectAgentOccupation = objectSchema({
   tags: arraySchema(boundedString(128), { maxItems: 5 })
 }, ['role']);
 
-export const projectAgentTaskSubmitInput = objectSchema({
-  taskContextToken: id,
-  personalSpaceId: id,
-  personalProjectId: id,
-  idempotencyKey,
+// What submitting a task and coordinating one both ask for, in this order.
+const taskRequestFields = {
   title: boundedString(160),
   objective: boundedString(4096),
   workKind: boundedString(128),
@@ -173,12 +170,23 @@ export const projectAgentTaskSubmitInput = objectSchema({
   parallelPlan: projectAgentParallelPlan,
   modelStrategyOverride: { ...projectAgentProfile.properties.defaultModelStrategy, type: ['object', 'null'] },
   executorPolicyOverride: { ...projectAgentExecutorPolicy, type: ['object', 'null'] },
-  sourceApplication,
-  sourceSessionId: nullableStringSchema(),
+};
+const taskStaffingFields = {
   routingReason: shortText,
   recruitmentOccupation: { ...projectAgentOccupation, type: ['object', 'null'] },
   recruitmentProfile: { ...projectAgentProfile, type: ['object', 'null'] },
   start: booleanSchema()
+};
+
+export const projectAgentTaskSubmitInput = objectSchema({
+  taskContextToken: id,
+  personalSpaceId: id,
+  personalProjectId: id,
+  idempotencyKey,
+  ...taskRequestFields,
+  sourceApplication,
+  sourceSessionId: nullableStringSchema(),
+  ...taskStaffingFields
 }, [
   'personalSpaceId', 'personalProjectId', 'idempotencyKey', 'title', 'objective',
   'workKind', 'routingReason'
@@ -191,24 +199,8 @@ export const projectAgentTaskCoordinateInput = objectSchema({
     description: 'Explicit existing project ID when the directory has no exact match. A conflicting exact path match is rejected.'
   },
   idempotencyKey,
-  title: boundedString(160),
-  objective: boundedString(4096),
-  workKind: boundedString(128),
-  requiredCapabilities: arraySchema(boundedString(512), { maxItems: 16 }),
-  executorCapabilityHints: arraySchema(boundedString(512), { maxItems: 16 }),
-  duration: projectAgentTaskDuration,
-  staffingIntent: projectAgentStaffingIntent,
-  leadAgentId: nullableStringSchema(),
-  collaboratorAgentIds: arraySchema(id, { maxItems: 16 }),
-  coordinatorAgentId: nullableStringSchema(),
-  complexityHint: { ...projectAgentTaskComplexity, type: ['string', 'null'] },
-  parallelPlan: projectAgentParallelPlan,
-  modelStrategyOverride: { ...projectAgentProfile.properties.defaultModelStrategy, type: ['object', 'null'] },
-  executorPolicyOverride: { ...projectAgentExecutorPolicy, type: ['object', 'null'] },
-  routingReason: shortText,
-  recruitmentOccupation: { ...projectAgentOccupation, type: ['object', 'null'] },
-  recruitmentProfile: { ...projectAgentProfile, type: ['object', 'null'] },
-  start: booleanSchema(),
+  ...taskRequestFields,
+  ...taskStaffingFields,
   contextQueries: arraySchema(shortText, { minItems: 1, maxItems: 10 }),
   contextLimitPerQuery: integerSchema({ minimum: 1, maximum: 20 }),
   includePendingContext: booleanSchema()
@@ -272,14 +264,10 @@ export const projectAgentTaskActivityInput = objectSchema({
   'personalSpaceId', 'personalProjectId', 'taskId', 'idempotencyKey', 'status', 'summary'
 ]);
 export const recruitmentConfirmationMode = enumSchema(['automatic', 'require_confirmation']);
-const recruitmentPositionKind = enumSchema(['durable', 'temporary']);
 export const recruitmentStatus = enumSchema([
   'awaiting_confirmation', 'requested', 'fulfilled', 'cancelled', 'blocked', 'no_hr'
 ]);
 export const recruitmentDecision = enumSchema(['approve', 'cancel']);
-const executorRegistrationStatus = enumSchema(['registered', 'disabled', 'revoked']);
-const executorPermissionStatus = enumSchema(['pending', 'authorized', 'denied', 'revoked']);
-const executorPreflightStatus = enumSchema(['not_run', 'passed', 'failed', 'expired']);
 export const executorHealthStatus = enumSchema(['unknown', 'healthy', 'degraded', 'unhealthy']);
 export const executorAuthorizationStatus = enumSchema(['pending', 'authorized', 'denied', 'revoked']);
 const executorActualModelStrategySource = enumSchema([
@@ -379,15 +367,6 @@ export const projectAgentTaskOutcomeInput = objectSchema({
   'idempotencyKey', 'evidenceKind', 'source', 'occurredAt'
 ]);
 
-// Keep the complete state vocabulary in one place even when a state schema is
-// currently represented only in Provider responses rather than tool inputs.
-export const projectAgentResponseStateSchemas = {
-  recruitmentPositionKind,
-  executorRegistrationStatus,
-  executorPermissionStatus,
-  executorPreflightStatus,
-  executorHealthStatus
-};
 
 function boundedString(maxLength) {
   return { ...stringSchema(), minLength: 1, maxLength };

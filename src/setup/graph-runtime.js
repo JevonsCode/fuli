@@ -387,7 +387,7 @@ async function bootstrapGraph({ urls, personalSpaceName, secrets, personalOnly, 
   return config;
 }
 
-export function synchronizeManagedProviderUrls(config, urls, {
+function synchronizeManagedProviderUrls(config, urls, {
   personalOnly = true,
   workflowObservationToken = null
 } = {}) {
@@ -528,7 +528,7 @@ function consoleStartFailure(outcome, { url, providerUrls, logPath, portProblem 
     'Run the same command again to retry, or run `fuli stop` to stop the graph services.';
 }
 
-export function startGraphProviders(paths, envPath, options = {}) {
+function startGraphProviders(paths, envPath, options = {}) {
   const args = [
     'compose',
     '--env-file', envPath,
@@ -650,7 +650,7 @@ async function notifyAdaptiveRuntime(url, fetchImpl) {
   }
 }
 
-export async function readLocalConsoleVersion(url) {
+async function readLocalConsoleVersion(url) {
   try {
     const response = await fetch(`${url}/api/health`, { signal: AbortSignal.timeout(2500) });
     return response.ok ? (await response.json())?.version ?? null : null;

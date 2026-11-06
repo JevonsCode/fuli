@@ -1,4 +1,4 @@
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 import { DECISION_ENTRYPOINTS, PRESENCE_LEVELS } from './decision-source.js';
 import { appNotFound } from './errors.js';
@@ -31,15 +31,7 @@ export class AgentAppStore {
   }
 
   transaction(operation) {
-    this.database.exec('BEGIN IMMEDIATE');
-    try {
-      const result = operation();
-      this.database.exec('COMMIT');
-      return result;
-    } catch (error) {
-      this.database.exec('ROLLBACK');
-      throw error;
-    }
+    return immediateTransaction(this.database, operation);
   }
 
   app(appId) {

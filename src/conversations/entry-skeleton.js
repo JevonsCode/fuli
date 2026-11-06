@@ -9,7 +9,7 @@ import { canonicalJson, contentHash } from '../../packages/roundtable/src/canoni
 // A dotted part is a path inside the frame: the conversation's rule reference
 // and the latest saved result of its conversation, which repeats while no task
 // records a new one (rec#15).
-export const SKELETON_PARTS = Object.freeze(['agent_receipt', 'task_guidance', 'application_guidance', 'checkpoint_guidance',
+const SKELETON_PARTS = Object.freeze(['agent_receipt', 'task_guidance', 'application_guidance', 'checkpoint_guidance',
   'project_agent_context', 'project_management_context', 'judgment_context', 'context', 'task_knowledge_recall',
   'conversation.guidance', 'conversation.recovery.latest_checkpoint']);
 // Parts compared field by field (rec#88): a new prompt changes a few of their
@@ -21,7 +21,7 @@ export const SKELETON_LABEL = 'label';
 export const SKELETON_UNCHANGED_LABEL = 'skeleton_unchanged: parts not repeated here, as earlier FULI frames gave them, by skeleton_revision '
   + '(later wins, this frame\'s own first; a map lists parts; null = no longer present; label = text above the JSON).';
 const HASH = /^[a-f0-9]{64}$/;
-export const MAX_SKELETON_TASKS = 16;
+const MAX_SKELETON_TASKS = 16;
 const NO_BASES = Object.freeze({ bases: Object.freeze([]) });
 
 // The instructions shown above a frame: the hook's label, or only the

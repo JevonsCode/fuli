@@ -33,7 +33,7 @@ import { jsonFormat, readJsonRecord, writeVersionedJsonFileAtomic } from '../sto
 // change since, by the person or anything else, closes it, and the answer is
 // saved by compare-and-set against that same version, once.
 export const CAPTURE_ONBOARDING_FORMAT = jsonFormat({ store: 'capture-onboarding', versions: [1] });
-export const CAPTURE_SCOPE_CHOICES = Object.freeze(['all', 'selected', 'off']);
+const CAPTURE_SCOPE_CHOICES = Object.freeze(['all', 'selected', 'off']);
 const SURFACES = Object.freeze(['console', 'terminal']);
 const LOCK_FILE = 'capture-onboarding.lock';
 const LOCK_WAIT_MS = 5000;

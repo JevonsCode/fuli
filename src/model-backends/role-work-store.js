@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { deletedKnowledgeBeside } from '../knowledge-hard-delete/delete-ledger.js';
 import { forgetDurably } from '../knowledge-hard-delete/forget-references.js';
 import { forgetRoleWorkReferences } from '../knowledge-hard-delete/role-work-references.js';
@@ -276,18 +276,8 @@ export class RoleWorkStore {
       .run(packageId, name, this.#json(space, detail), at.toISOString());
   }
 
-  // Nested calls join the open transaction.
   #transaction(work) {
-    if (this.db.isTransaction) return work();
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
-      const result = work();
-      this.db.exec('COMMIT');
-      return result;
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
+    return immediateTransaction(this.db, work);
   }
 
   close() {

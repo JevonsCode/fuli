@@ -11,7 +11,7 @@ const CHAT_TOOLS = Object.freeze([
   'checkpoint_task_knowledge',
 ]);
 
-export const MCP_TOOL_PROFILES = Object.freeze({ full: null, chat: CHAT_TOOLS });
+const MCP_TOOL_PROFILES = Object.freeze({ full: null, chat: CHAT_TOOLS });
 
 // Returns the allow-listed tool names, or null for every tool.
 export function toolNamesForProfile(profile = 'full') {

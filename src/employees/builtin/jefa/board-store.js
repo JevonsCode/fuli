@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 
 import { contentHash } from '../../../../packages/roundtable/src/canonical-json.js';
-import { openFormattedDatabase, sqliteFormat } from '../../../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../../../packages/roundtable/src/storage/database-format.js';
 import { InvalidInputError } from '../../../app/application-error.js';
 import { EmployeeError } from '../../manifest.js';
 import { boardColumn, DEFAULT_PROJECT_BOARD } from './project-board.js';
@@ -386,15 +386,7 @@ export class JefaBoardStore {
   }
 
   #transaction(apply) {
-    this.database.exec('BEGIN IMMEDIATE');
-    try {
-      const result = apply();
-      this.database.exec('COMMIT');
-      return result;
-    } catch (error) {
-      this.database.exec('ROLLBACK');
-      throw error;
-    }
+    return immediateTransaction(this.database, apply);
   }
 }
 

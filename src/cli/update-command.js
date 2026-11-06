@@ -170,7 +170,7 @@ export async function runUpdateCommand(args = [], dependencies = {}) {
   return result;
 }
 
-export function formatUpdatePreview(options) {
+function formatUpdatePreview(options) {
   return [
     'Ready to update Fuli',
     `npm package: ${FULI_PACKAGE_NAME}@${options.beta ? "beta channel (latest or beta, whichever is newer)" : "latest"}`,
@@ -190,7 +190,7 @@ export function formatUpdatePreview(options) {
   ].join('\n');
 }
 
-export function formatUpdateResult(result) {
+function formatUpdateResult(result) {
   if (result.status === 'ahead') {
     return [
       `The current CLI version ${result.version} is newer than npm latest ${result.latestVersion}. `,

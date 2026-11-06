@@ -1,4 +1,4 @@
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 import { roundCost } from './budget.js';
 
@@ -204,18 +204,8 @@ export class ModelUsageLedger {
       at: new Date(Date.parse(row.started_at) + row.duration_ms).toISOString() } : null;
   }
 
-  // Nested calls join the open transaction.
   #transaction(work) {
-    if (this.db.isTransaction) return work();
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
-      const result = work();
-      this.db.exec('COMMIT');
-      return result;
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
+    return immediateTransaction(this.db, work);
   }
 
   close() {

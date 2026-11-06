@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { hardDeleteLedger } from '../knowledge-hard-delete/delete-ledger.js';
 import { forgetDurably } from '../knowledge-hard-delete/forget-references.js';
 import { assertKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.js';
@@ -188,18 +188,8 @@ export class RoleSuggestionLog {
     if (this.path !== ':memory:') assertKnowledgeRecovery(this.recoveryGate, space, 'role-suggestions');
   }
 
-  // Nested calls join the open transaction.
   #transaction(work) {
-    if (this.db.isTransaction) return work();
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
-      const result = work();
-      this.db.exec('COMMIT');
-      return result;
-    } catch (error) {
-      this.db.exec('ROLLBACK');
-      throw error;
-    }
+    return immediateTransaction(this.db, work);
   }
 
   close() {

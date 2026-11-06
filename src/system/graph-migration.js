@@ -20,7 +20,7 @@ export const LEGACY_MIGRATION_GUIDE_URL =
 const CLI_PATH = fileURLToPath(new URL('../cli.js', import.meta.url));
 
 const statePath = (paths) => join(paths.dataDir, 'graph-migration.json');
-export const graphMigrationLogPath = (paths) => join(paths.dataDir, 'logs', 'graph-migration.log');
+const graphMigrationLogPath = (paths) => join(paths.dataDir, 'logs', 'graph-migration.log');
 
 /** The last one-click migration of this data directory, or null. A run whose process is gone reads as failed. */
 export function readGraphMigration(paths, { alive = processAlive } = {}) {

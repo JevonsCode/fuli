@@ -73,7 +73,7 @@ export async function runLocalRuntimeCommand(command, args, dependencies = {}) {
   };
 }
 
-export function formatLocalRuntimeResult(command, result, copy = String) {
+function formatLocalRuntimeResult(command, result, copy = String) {
   if (command === 'start') {
     const title = result.status === 'running'
       ? 'Fuli local services are already running.'

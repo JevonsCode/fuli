@@ -15,7 +15,7 @@ export function createServerApplication({
   };
 }
 
-export function closeOnce(close) {
+function closeOnce(close) {
   let closed = false;
   return () => {
     if (closed) return;

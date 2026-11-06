@@ -9,7 +9,7 @@ const PROJECT_CANDIDATES = 12;
 const TOPIC_CANDIDATES = 8;
 const KINDS = new Set(['project', 'topic', 'one_off']);
 
-export function isUnclaimedTask(task) {
+function isUnclaimedTask(task) {
   return task?.projectAgentId === ASSISTANT_AGENT_ID && !task.personalProjectId;
 }
 

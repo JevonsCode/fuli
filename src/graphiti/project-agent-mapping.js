@@ -157,7 +157,7 @@ export function providerModelStrategy(value) {
   return strategy;
 }
 
-export function projectAgentModelStrategy(value) {
+function projectAgentModelStrategy(value) {
   if (value === undefined || value === null) return value ?? null;
   return {
     mode: value.mode ?? 'adaptive',
@@ -166,7 +166,7 @@ export function projectAgentModelStrategy(value) {
   };
 }
 
-export function providerExecutorPolicy(value) {
+function providerExecutorPolicy(value) {
   if (value === undefined || value === null) return value ?? null;
   return {
     mode: value.mode ?? 'flexible',
@@ -175,7 +175,7 @@ export function providerExecutorPolicy(value) {
   };
 }
 
-export function projectAgentExecutorPolicy(value) {
+function projectAgentExecutorPolicy(value) {
   if (value === undefined || value === null) return value ?? null;
   return {
     mode: value.mode ?? 'flexible',
@@ -308,7 +308,7 @@ export function providerProjectAgentTaskSubmit(input) {
   return result;
 }
 
-export function providerParallelPlan(value) {
+function providerParallelPlan(value) {
   if (value === undefined || value === null) {
     return { enabled: false, independent_verification: false, conflict_free_scopes: false,
       reason: null, workstream_boundaries: [] };
@@ -322,7 +322,7 @@ export function providerParallelPlan(value) {
   };
 }
 
-export function projectAgentParallelPlan(value = {}) {
+function projectAgentParallelPlan(value = {}) {
   return {
     enabled: value.enabled ?? false,
     independentVerification: value.independent_verification ?? value.independentVerification ?? false,
@@ -332,7 +332,7 @@ export function projectAgentParallelPlan(value = {}) {
   };
 }
 
-export function providerProjectAgentTokenUsage(value) {
+function providerProjectAgentTokenUsage(value) {
   if (value === undefined || value === null) return value ?? null;
   return {
     source: value.source,
@@ -347,7 +347,7 @@ export function providerProjectAgentTokenUsage(value) {
   };
 }
 
-export function projectAgentTokenUsage(value) {
+function projectAgentTokenUsage(value) {
   if (value === undefined || value === null) return value ?? null;
   return {
     source: value.source,
@@ -615,7 +615,7 @@ export function projectAgentTaskEventRecord(value = {}) {
   return result;
 }
 
-export function projectAgentRoutingDecisionRecord(value = {}) {
+function projectAgentRoutingDecisionRecord(value = {}) {
   return {
     decisionId: value.decision_id,
     taskId: value.task_id,
@@ -783,7 +783,7 @@ export function projectAgentExecutionSummary(value) {
   });
 }
 
-export function projectAgentWorkerRuntime(value) {
+function projectAgentWorkerRuntime(value) {
   if (!value || typeof value !== 'object') return null;
   return withoutUndefined({
     application: value.application,

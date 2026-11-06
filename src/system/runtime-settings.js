@@ -10,15 +10,15 @@ import { UPDATE_CHANNELS } from './package-version-checker.js';
 import { normalizeNeedsPersonUrl } from '../notifications/needs-person.js';
 import { normalizeAgentNamingStyle } from '../agent-naming/naming-style.js';
 
-export const RUNTIME_SETTINGS_VERSION = 1;
+const RUNTIME_SETTINGS_VERSION = 1;
 export const RUNTIME_SETTINGS_FORMAT = jsonFormat({ store: 'runtime-settings', versions: [RUNTIME_SETTINGS_VERSION] });
 // rec#11 D-86: a recurring topic becomes a project by itself, or is only proposed.
-export const TOPIC_PROMOTION_MODES = Object.freeze(['auto', 'ask']);
+const TOPIC_PROMOTION_MODES = Object.freeze(['auto', 'ask']);
 // Which releases the console offers (package-version-checker.js). A beta
 // installation follows beta until the person turns it off.
 const DEFAULT_UPDATE_CHANNEL = parseSemanticVersion(FULI_VERSION).prerelease.length ? 'beta' : 'stable';
-export const RESOURCE_REFRESH_OPTIONS = Object.freeze([5, 10, 30, 60]);
-export const GRAPH_RUNTIME_MODES = Object.freeze(['container', 'native']);
+const RESOURCE_REFRESH_OPTIONS = Object.freeze([5, 10, 30, 60]);
+const GRAPH_RUNTIME_MODES = Object.freeze(['container', 'native']);
 export const CONVERSATION_LAUNCHER_APPLICATIONS = Object.freeze([
   'codex',
   'claude',
@@ -28,7 +28,7 @@ export const CONVERSATION_LAUNCHER_APPLICATIONS = Object.freeze([
   'kiro',
   'other'
 ]);
-export const CONVERSATION_ID_FORMATS = Object.freeze(['any', 'uuid']);
+const CONVERSATION_ID_FORMATS = Object.freeze(['any', 'uuid']);
 export const PORT_KEYS = Object.freeze([
   'console',
   'personalProvider',

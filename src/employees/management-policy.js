@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { EmployeeError, FIXED_EMPLOYEE_AGENT_TYPES } from './manifest.js';
 
 const projectId = z.string().min(1).max(256);
-export const employeeManagementSchema = z.object({
+const employeeManagementSchema = z.object({
   mode: z.enum(['selected', 'all']),
   projectIds: z.array(projectId).max(500).default([]),
   excludedProjectIds: z.array(projectId).max(500).default([]),

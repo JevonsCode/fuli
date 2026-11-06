@@ -4,7 +4,7 @@ import { readJsonFile } from '../storage/json-file.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { deepFreeze } from '../validation/values.js';
 
-export const ADAPTIVE_RUNTIME_SETTINGS_VERSION = 1;
+const ADAPTIVE_RUNTIME_SETTINGS_VERSION = 1;
 export const ADAPTIVE_RUNTIME_SETTINGS_FORMAT = jsonFormat({ store: 'adaptive-runtime-settings',
   versions: [ADAPTIVE_RUNTIME_SETTINGS_VERSION] });
 

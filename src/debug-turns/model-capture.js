@@ -10,7 +10,7 @@ import { opensTurn, requestParts, usageFrom } from './model-request.js';
 // It listens on this computer only and forwards everything unchanged; it writes
 // no log and no file of its own. The request that opens a turn becomes a Debug
 // record, secrets masked. Request headers are never kept.
-export const MODEL_CAPTURE_PORT = 8788;
+const MODEL_CAPTURE_PORT = 8788;
 const UPSTREAM = 'https://api.anthropic.com';
 const HOP_HEADERS = new Set(['host', 'connection', 'content-length', 'accept-encoding', 'transfer-encoding']);
 

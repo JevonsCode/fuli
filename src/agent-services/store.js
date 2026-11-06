@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 // The services FULI Agents started (服务管理): an Agent app's workbench FULI
 // runs itself, or a server an Agent started from its client session and
@@ -50,9 +50,7 @@ export class AgentServiceStore {
   }
 
   transaction(work) {
-    this.db.exec('BEGIN IMMEDIATE');
-    try { const result = work(); this.db.exec('COMMIT'); return result; }
-    catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    return immediateTransaction(this.db, work);
   }
 
   get(serviceId) {

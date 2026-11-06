@@ -90,7 +90,7 @@ export function externalDocumentEpisode({ binding, document, now }) {
   };
 }
 
-export function chunkText(content, maximum = MAX_CHUNK_LENGTH) {
+function chunkText(content, maximum = MAX_CHUNK_LENGTH) {
   if (content.length <= maximum) return [content];
   const chunks = [];
   let offset = 0;

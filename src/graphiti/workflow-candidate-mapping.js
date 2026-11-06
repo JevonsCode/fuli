@@ -14,7 +14,7 @@ export function workflowCandidatePage(value) {
   };
 }
 
-export function workflowCandidate(value) {
+function workflowCandidate(value) {
   return {
     candidateId: value.candidate_id,
     candidateVersion: value.candidate_version,

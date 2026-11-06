@@ -1,5 +1,5 @@
 // Keep local API request buffering at or below a fixed 64 KiB budget.
-export const MAX_JSON_BODY_BYTES = 64 * 1024;
+const MAX_JSON_BODY_BYTES = 64 * 1024;
 
 export class JsonBodyTooLargeError extends Error {
   constructor() {

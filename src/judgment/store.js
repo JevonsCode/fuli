@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { deletedKnowledgeBeside } from '../knowledge-hard-delete/delete-ledger.js';
 import { forgetDurably, forgetReferences } from '../knowledge-hard-delete/forget-references.js';
 import { assertKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.js';
 
-export const DEFAULT_PINS = Object.freeze(['employee.bole', 'employee.jefa', 'employee.tonborg']);
-export const DEFAULT_POLICY = Object.freeze({ mode: 'manual', quality: 'quality', client: 'codex' });
+const DEFAULT_PINS = Object.freeze(['employee.bole', 'employee.jefa', 'employee.tonborg']);
+const DEFAULT_POLICY = Object.freeze({ mode: 'manual', quality: 'quality', client: 'codex' });
 // A record's latest execution status and receipt, as get() reports them.
 const LATEST_EXECUTION = 'FROM judgment_execution e WHERE e.decision = r.id ORDER BY e.id DESC LIMIT 1';
 const LATEST_STATUS = `COALESCE((SELECT e.status ${LATEST_EXECUTION}), 'not_applied')`;
@@ -57,9 +57,7 @@ export class JudgmentStore {
     if (this.path !== ':memory:') assertKnowledgeRecovery(this.recoveryGate, space, 'judgment');
   }
   transaction(fn) {
-    this.db.exec('BEGIN IMMEDIATE');
-    try { const result = fn(); this.db.exec('COMMIT'); return result; }
-    catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    return immediateTransaction(this.db, fn);
   }
   setting(space, key) {
     this.#assertRecovery(space);

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ApplicationError } from '../app/application-error.js';
 
-export const temporaryProjectScope = Object.freeze({
+const temporaryProjectScope = Object.freeze({
   type: 'temporary', lifetime: 'task', persisted: true
 });
 

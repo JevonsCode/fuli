@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { ApplicationError } from '../app/application-error.js';
 import { MODEL_BACKEND_ROLES } from './config.js';
 
@@ -91,7 +91,7 @@ export function createRoleTrust({ path = ':memory:', modelBackends, history = nu
   // keeps the revision. Returns whether the history recorded it.
   function change(role, expectedRevision, columns, kind, describe) {
     if (!MODEL_BACKEND_ROLES.includes(role)) throw new TypeError(`Unknown role: ${role}`);
-    const committed = locked(open(), () => {
+    const committed = immediateTransaction(open(), () => {
       const current = state(role);
       if (current.revision !== expectedRevision) {
         throw new ApplicationError('model_trust_changed',
@@ -135,7 +135,7 @@ export function createRoleTrust({ path = ':memory:', modelBackends, history = nu
       const refuse = gate => Object.assign(new ApplicationError(gate.reason, `Not executed automatically: ${gate.reason}`,
         { status: 409 }), { gate });
       if (!readable()) throw refuse(verdict(key, DEFAULT_STATE));
-      return locked(open(), () => {
+      return immediateTransaction(open(), () => {
         const gate = verdict(key, state(key.role));
         if (gate.status !== 'passed') throw refuse(gate);
         return write(gate);
@@ -177,16 +177,4 @@ function egressRequest({ role, operation, scope }) {
   const personalProjectId = scope.personalProjectId ?? null;
   return { role, operation, scope: { personalSpaceId: scope.personalSpaceId, personalProjectId },
     evidence: [{ personalProjectId }] };
-}
-
-function locked(db, work) {
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const result = work();
-    db.exec('COMMIT');
-    return result;
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
-  }
 }

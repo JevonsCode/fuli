@@ -1,6 +1,6 @@
 export const DEFAULT_NEO4J_MEMORY_PROFILE = 'balanced';
 
-export const NEO4J_MEMORY_PROFILES = Object.freeze({
+const NEO4J_MEMORY_PROFILES = Object.freeze({
   balanced: Object.freeze({
     heapInitial: '256m',
     heapMax: '512m',

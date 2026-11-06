@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 // Standing assignments (rec#29 D-41.1): "from now on, <this work> goes to
 // <that Agent>", said once in any conversation and kept on this computer.
@@ -66,9 +66,7 @@ export class StandingAssignmentStore {
   }
 
   transaction(work) {
-    this.db.exec('BEGIN IMMEDIATE');
-    try { const result = work(); this.db.exec('COMMIT'); return result; }
-    catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    return immediateTransaction(this.db, work);
   }
 
   get(assignmentId) {
