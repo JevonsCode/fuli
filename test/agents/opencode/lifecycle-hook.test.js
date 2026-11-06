@@ -48,7 +48,7 @@ test('a prompt begins the task as `opencode` with the OpenCode session and retur
 test('the entry label tells the model the stop closes a hook task and to pass its token', async () => {
   const output = await openCodeLifecycleOutput('prompt', { session_id: SESSION, cwd: '/synthetic/novel', prompt: 'Outline.' },
     async () => ({ taskContextToken: 'fuli-task-synthetic', checkpoint_required: false, checkpoint_guidance: 'reported' }));
-  assert.match(output.context, /^Fuli task context \(OpenCode plugin\)\. Apply effective_preferences\. The Stop hook closes this task\./);
+  assert.match(output.context, /^Fuli task context \(OpenCode plugin\)\. Apply effective_preferences\. The Stop hook closes this task;/);
   assert.match(output.context, /Pass taskContextToken to every FULI call\./);
 });
 

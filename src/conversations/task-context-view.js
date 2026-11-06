@@ -46,7 +46,7 @@ export function compactTaskContext(value) {
     ...(templated ? { scope_rules: entryRulesReference('scope_guidance').rules } : {}) };
   }
   if (share && value.checkpoint_guidance) result.checkpoint_guidance = ruleTextView(value.checkpoint_guidance, 'checkpoint_guidance');
-  if (share && value.context) result.context = withoutDefaults(value.context, { counts: true, flags: true });
+  if (share && value.context) result.context = withoutDefaults(contextView(value.context), { counts: true, flags: true });
   if (value.conversation) result.conversation = conversationView(value.conversation, share);
   if (share && value.agent_receipt) result.agent_receipt = receiptView(value.agent_receipt);
   else if (value.agent_receipt?.continuation) result.agent_receipt = { ...value.agent_receipt,
@@ -71,7 +71,9 @@ export function compactTaskContext(value) {
   const teamGuidance = teamRules ? text(teamRules, 'team_guidance') : undefined;
   if (continuity) result.project_agent_context = { ...continuity, ...selectionView(continuity, share),
     ...(share && continuity.project_brief?.authors ? { project_brief: { ...continuity.project_brief, authors: undefined } } : {}),
-    ...(share && continuity.directorySnapshot ? { directorySnapshot: snapshotView(continuity.directorySnapshot) } : {}),
+    ...(share && continuity.directorySnapshot ? { directorySnapshot: snapshotView(continuity.directorySnapshot, { task: Boolean(value.taskContextToken) }) } : {}),
+    // rec#88: an FLA's starting preferences are its profile's; the entry names the role.
+    ...(share && value.taskContextToken && continuity.role?.initial_preferences ? { role: { ...continuity.role, initial_preferences: undefined } } : {}),
     team: omitTeam ? undefined : compactTeamRoster(continuity.team, teamGuidance),
     team_guidance: undefined,
     recent_tasks: undefined,
@@ -266,10 +268,13 @@ function selectionView(continuity, share) {
 
 // A snapshot whose files share one state (all just written, or all as the
 // Agent's folder already holds them) says where the folder is and how many.
-function snapshotView(snapshot) {
+// A task entry leaves out a settled snapshot altogether (rec#88): its folder
+// path is relative to the data directory, so there is nothing to act on.
+function snapshotView(snapshot, { task = false } = {}) {
   const state = snapshot.files?.[0]?.state;
   if (!Array.isArray(snapshot.files) || !snapshot.files.length || !['unchanged', 'written'].includes(state)
     || snapshot.files.some(file => file.state !== state)) return snapshot;
+  if (task && snapshot.status === 'current') return undefined;
   const { files, ...rest } = snapshot;
   return { ...rest, [`files_${state}`]: files.length };
 }
@@ -330,4 +335,11 @@ function compactTeamRoster(team, deliveredGuidance) {
   }
   return view(count);
 
+}
+
+// The resolution names the project the context already names; it keeps how it was matched.
+function contextView(context) {
+  const resolution = context.project_resolution;
+  return resolution?.personal_project_id && resolution.personal_project_id === context.personal_project_id
+    ? { ...context, project_resolution: { ...resolution, personal_project_id: undefined } } : context;
 }

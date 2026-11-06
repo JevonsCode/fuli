@@ -128,12 +128,13 @@ test('a never-written memory layer is revision 0 and its rules; a written one ke
   assert.equal(written.current.memory.summary, 'SYNTHETIC summary');
 });
 
-test('an unchanged directory snapshot counts its files; a written file keeps the list', () => {
+test('a settled directory snapshot is left out of a task entry; a mixed one keeps the list', () => {
   const snapshot = state => ({ status: 'current', path: '/synthetic/agents/a', files: [
     { file: 'AGENTS.md', scope: 'identity', state: 'unchanged' }, { file: 'MEMORY.md', scope: 'global', revision: 0, state }] });
   const view = state => compactTaskContext(entry({ project_agent_context: { directorySnapshot: snapshot(state) } }))
     .project_agent_context.directorySnapshot;
-  assert.deepEqual(view('unchanged'), { status: 'current', path: '/synthetic/agents/a', files_unchanged: 2 });
+  // rec#88: its path is relative to the data directory, so a task entry has nothing to act on.
+  assert.equal(view('unchanged'), undefined);
   assert.deepEqual(view('written'), snapshot('written'));
 });
 
@@ -199,7 +200,7 @@ test('a fresh project\'s task entry keeps who and how to read, not empty details
   assert.equal(continuity.match_basis, undefined);
   assert.equal(continuity.execution_reason, 'project_team_gap');
   assert.deepEqual(continuity.project_brief, { name: 'Tidewater', summary: 'Synthetic relay.' });
-  assert.deepEqual(continuity.directorySnapshot, { status: 'current', path: 'agents/a/b/c', files_written: 2 });
+  assert.equal(continuity.directorySnapshot, undefined);
   assert.deepEqual(view.project_management_context.managers, [{ template_id: 'jefa', agent_id: 'employee.jefa', name: 'Jefa',
     board: { total: 0 }, guidance: { summary: 'Route actionable project work through this manager.', rules: `${ENTRY_RULES_URI}/manager_guidance` },
     read: { tool: 'list_employee_tools', arguments: { templateId: 'jefa', personalProjectId: 'p' } } }]);
@@ -246,4 +247,16 @@ test('a recalled item says each thing once: no repeated scope, hash key, empty f
   assert.deepEqual([kept.entities[0].key, kept.entities[0].defined_project_id, kept.entities[0].inherited_from_project_id,
     kept.entities[0].scope_distance, kept.entities[0].name], ['willow:admin-port', 'parent', 'parent', 1, 'Admin console port']);
   assert.equal(kept.retrieval_budget.truncated, true);
+});
+
+test('a task entry names the role without its starting preferences and the resolution without the project again (rec#88)', () => {
+  const view = compactTaskContext(entry({
+    context: { personal_space_id: 's', personal_project_id: 'p', project_agent_id: 'lead',
+      project_resolution: { status: 'matched', basis: 'repository_root', personal_project_id: 'p' } },
+    project_agent_context: { role: { name: 'Lead', responsibility: 'Own delivery.', initial_preferences: ['Verify first.'] } } }));
+  assert.deepEqual(view.project_agent_context.role, { name: 'Lead', responsibility: 'Own delivery.' });
+  assert.deepEqual(view.context.project_resolution, { status: 'matched', basis: 'repository_root' });
+  const tokenless = compactTaskContext({ ...entry({ project_agent_context: { role: { name: 'Lead', initial_preferences: ['Verify first.'] } } }),
+    taskContextToken: undefined, task_lifecycle: { status: 'not_started' } });
+  assert.deepEqual(tokenless.project_agent_context.role.initial_preferences, ['Verify first.']);
 });
