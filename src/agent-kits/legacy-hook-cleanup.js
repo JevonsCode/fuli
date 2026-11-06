@@ -10,8 +10,9 @@ import { writeTextFileAtomic } from '../storage/json-file.js';
 // by their command text only (0.3.1 has no marker for an `mcp_tool` handler),
 // so it would leave these beside the new ones. This removes exactly those
 // handlers, after copying the file into the backups directory, and touches
-// nothing when none is there. It can go once no supported FULI upgrade path
-// starts from a version that wrote them.
+// nothing when none is there. FULI wrote them up to 0.22.1. It goes once
+// agent-installer can retire them from the manifest
+// (JevonsCode/agent-installer#7) and the pin moves to that release.
 const LEGACY_TOOLS = new Set(['begin_task_context', 'verify_task_checkpoint']);
 const isLegacyHandler = (hook) => hook?.type === 'mcp_tool' && hook.server === 'fuli' && LEGACY_TOOLS.has(hook.tool);
 
