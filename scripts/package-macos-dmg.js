@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
+import { macosDmgName } from '../src/desktop/macos-app-update.js';
 import { readMacosNativeBundle } from '../src/native-runtime/macos-assets.js';
 import { isMainModule } from '../src/system/main-module.js';
 import { progress, run } from './bundle-build.js';
@@ -9,7 +10,6 @@ import { progress, run } from './bundle-build.js';
 // The disk image people download: FULI.app beside a link to /Applications, to
 // drag it across. Built from a signed FULI.app (scripts/sign-macos-app.js); a
 // Developer ID build signs and notarizes the image afterwards.
-const macosDmgName = (version, arch) => `fuli-macos-${arch}-${version}.dmg`;
 
 export async function packageMacosDmg({ app, output } = {}) {
   if (process.platform !== 'darwin') throw new Error('Package the macOS app on macOS.');
