@@ -341,6 +341,19 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     // receipt, review record or gate. Only a connection on the read path
     // (openai_chat on loopback HTTP /v1) applies. connectionId and
     // connection: the role's configured connection, or null.
+    // Whether a role's configured model answered on its latest call (rec#92):
+    // ok, failing (the latest call to this connection and model failed), or
+    // unknown (never called yet). An answer that would not validate still
+    // came from a working model, so only a failed call counts as failing.
+    health(role, connectionId, connection) {
+      if (!connection) return null;
+      const last = ledger.lastAttempt({ role, connectionId, protocol: connection.protocol, endpoint: connection.endpoint,
+        requestedModel: connection.model });
+      if (!last) return { status: 'unknown', at: null, reason: null };
+      return last.outcome === 'failed'
+        ? { status: 'failing', at: last.at, reason: last.failureReason ?? last.failureClass ?? null }
+        : { status: 'ok', at: last.at, reason: null };
+    },
     localBuild(role, connectionId, connection) {
       const none = status => ({ status, digest: null, completedAt: null });
       if (!connection || !MODEL_ADAPTERS[connection.protocol].observesLocalBuild?.(connection)) return none('not_applicable');

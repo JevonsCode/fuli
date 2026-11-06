@@ -86,7 +86,11 @@ export interface ModelRoleView {
   trust?: RoleTrust | null
   // rec#10 D-32: the build a local Ollama listed after the latest answer.
   localBuild?: LocalBuild
+  // rec#92: whether the configured model answered on its latest call; null without a connection.
+  health?: ModelRoleHealth | null
 }
+
+export interface ModelRoleHealth { status: 'ok' | 'failing' | 'unknown'; at: string | null; reason: string | null }
 
 // An observation of the local catalog, never proof of what served an answer.
 export interface LocalBuild {
