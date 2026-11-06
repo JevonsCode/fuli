@@ -158,5 +158,5 @@ const active = computed(() => route?.path === '/models')
   .model-power--on :deep(svg), .model-power--on::after { animation: none; }
 }
 :root[data-motion="reduced"] .model-power--on::before { animation: none; opacity: 0.7; }
-:root[data-motion="reduced"] :is(.model-power--on :deep(svg), .model-power--on::after) { animation: none; }
+:root[data-motion="reduced"] .model-power--on :deep(svg), :root[data-motion="reduced"] .model-power--on::after { animation: none; }
 </style>

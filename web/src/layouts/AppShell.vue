@@ -309,6 +309,6 @@ watchEffect(() => {
   .app-topbar-inner > .section-tabs { order: 3; flex-basis: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .app-round { transition: none; } .app-round.is-shaking, .app-round.is-full { animation: none; } }
-:root[data-motion="reduced"] :is(.app-round.is-shaking, .app-round.is-full) { animation: none; }
+:root[data-motion="reduced"] .app-round.is-shaking, :root[data-motion="reduced"] .app-round.is-full { animation: none; }
 :root[data-motion="reduced"] .app-round { transition: none; }
 </style>
