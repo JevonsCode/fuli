@@ -10,7 +10,7 @@
 // options stays (a model name the list does not have); the options are suggestions.
 import type { HTMLAttributes } from "vue"
 import { ComboboxInput } from "reka-ui"
-import { computed, useId } from "vue"
+import { computed, ref, useId, watch } from "vue"
 import GrowthLoading from "@/components/GrowthLoading.vue"
 import { t } from "@/i18n"
 import { cn } from "@/lib/class-names"
@@ -87,6 +87,15 @@ function labelOf(itemValue: unknown) {
   return optionByItem.value.get(itemValue)?.label ?? (props.options.length || props.freeText ? fromItemValue(itemValue) : "")
 }
 
+// The single field's text. reka-ui writes the chosen label only when the choice
+// changes, so a choice made before its options arrived (the project picker on a
+// fresh load) would stay blank; once they arrive the label shows, unless the
+// list is open and the person is typing.
+const fieldText = ref("")
+const open = ref(false)
+const chosenLabel = computed(() => props.multiple ? "" : labelOf(itemModel.value))
+watch(chosenLabel, (label) => { if (!open.value) fieldText.value = label })
+
 // Free text: the typed text, or the option whose label it is (picking one shows its label).
 function typed(text: string) {
   if (!props.freeText || props.multiple) return
@@ -124,6 +133,7 @@ const inputClass = "h-full min-h-0 min-w-8 flex-1 border-0 bg-transparent px-1 p
       :required="required"
       open-on-click
       :reset-search-term-on-blur="!freeText"
+      @update:open="open = $event"
       @update:model-value="choose"
     >
       <ComboboxAnchor :as-child="multiple" :class="multiple ? undefined : fieldClass" :data-size="multiple ? undefined : size" :data-disabled="disabled ? '' : undefined">
@@ -151,6 +161,7 @@ const inputClass = "h-full min-h-0 min-w-8 flex-1 border-0 bg-transparent px-1 p
         </TagsInput>
         <template v-else>
           <ComboboxInput
+            v-model="fieldText"
             :id="inputId"
             :class="inputClass"
             :display-value="labelOf"

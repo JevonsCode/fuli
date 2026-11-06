@@ -235,6 +235,21 @@ describe('OptionCombobox before its options arrive', () => {
   })
 })
 
+describe('OptionCombobox when its options arrive after the choice', () => {
+  it('shows the chosen label in the same field once they arrive', async () => {
+    const list = ref<SelectOption[]>([])
+    const Harness = defineComponent(() => () => h(OptionCombobox<string>, {
+      modelValue: 'beta', options: list.value, label: '项目',
+    }))
+    mounted.push(mount(Harness, { attachTo: document.body }))
+    await flushPromises()
+    expect(input().value).toBe('')
+    list.value = projects
+    await flushPromises()
+    expect(input().value).toBe('Beta 项目')
+  })
+})
+
 describe('OptionCombobox with free text', () => {
   const models: SelectOption[] = [{ value: 'synthetic-chat:4b', label: 'synthetic-chat:4b' }, { value: 'synthetic-embed', label: 'synthetic-embed' }]
 
