@@ -124,7 +124,7 @@ function escape() {
 .app-dock-link[data-tip]::after {
   content: attr(data-tip); position: absolute; bottom: calc(100% + 10px); left: 50%; padding: 4px 10px; transform: translateX(-50%);
   border: 1px solid var(--edge-glass); border-radius: var(--radius-pill); color: var(--color-ink); background: var(--surface-glass-strong);
-  -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); box-shadow: var(--shadow-md);
+  -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%); box-shadow: var(--shadow-glass-tip);
   font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; opacity: 0; pointer-events: none;
   transition: opacity var(--motion-fast), translate var(--motion-spring) var(--motion-ease-spring); translate: 0 4px;
 }
@@ -148,7 +148,7 @@ function escape() {
 .app-dock-pins-label {
   padding: 4px 10px; border: 1px solid var(--edge-glass); border-radius: var(--radius-pill); color: var(--color-ink);
   background: var(--surface-glass-strong); -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
-  box-shadow: var(--shadow-md); font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; user-select: none;
+  box-shadow: var(--shadow-glass-tip); font-size: var(--text-meta); font-weight: var(--weight-medium); white-space: nowrap; user-select: none;
 }
 .app-dock-item.has-pins:hover .app-dock-pins {
   transform: translate(-50%, 0); opacity: 1; visibility: visible; pointer-events: auto; transition-delay: var(--motion-intent);

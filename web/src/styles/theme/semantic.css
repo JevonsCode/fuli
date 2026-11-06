@@ -37,6 +37,9 @@
   --surface-glass: rgb(255 255 255 / 58%);
   --surface-glass-strong: rgb(255 255 255 / 82%);
   --edge-glass: rgb(255 255 255 / 80%);
+  /* A small glass label over the page (the dock names): a thin contact shadow plus a slightly
+     deeper float, so its edge separates from the white cards under it (Jevons 11-06). */
+  --shadow-glass-tip: 0 1px 3px rgb(var(--shadow-rgb) / 12%), 0 6px 18px rgb(var(--shadow-rgb) / 11%);
   /* The dock's frosted glass (Jevons, 11-01): a light tint over a strong blur, so what lies
      beneath turns into soft colour and text cannot be read, and the panel still reads as glass,
      not a white plate; a solid surface where backdrop-filter is missing. */
