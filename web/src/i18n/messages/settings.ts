@@ -40,7 +40,7 @@ export const settingsMessages = {
         restartSessions: '{count} 个打开的会话要重启才用上更新。',
         historyUnsaved: '本次变化未能保存，重启后可能看不到。',
         lastChange: '最近变化：{from} → {to}（{time}）',
-        unknownWithLast: '配置文件读不了，先不判断。上次看到的是“{status}”。',
+        unknownWithLast: '配置文件无法读取，先不判断。上次看到的是“{status}”。',
         status: { connected: '已接入', changed: '需要更新', skills_left: '只剩技能文件', removed: '已移除',
           not_connected: '未接入', not_detected: '未发现', unknown: '无法确认' },
         explain: {
