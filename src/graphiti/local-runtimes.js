@@ -32,6 +32,7 @@ import { workSurfaceNames, workSurfaceSources } from '../work-surfaces/sources.j
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
 import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
+import { createSessionPromptSentences } from './session-prompt-sentences.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 
 // The local stores and runtimes an application opened from a runtime
@@ -45,6 +46,8 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
     directory: join(dataDir, 'preference-delivery'),
     env
   });
+  // The sentence keys of each session's earlier prompts, for the entry recall (rec#88).
+  app.sessionPromptSentences = createSessionPromptSentences({ directory: join(dataDir, 'session-prompts') });
   attachExternalKnowledgeRuntime(app, { paths, env, fetchImpl });
   app.agentSnapshots = createAgentDirectorySnapshots({
     root: paths.agentDirectoryRoot,

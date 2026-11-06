@@ -5,6 +5,7 @@ import { budgetAutomaticRecall } from './knowledge-result-budget.js';
 import { entryTimeBelow } from '../conversations/entry-time.js';
 import { utf8Preview } from '../text/utf8-preview.js';
 import { NEUTRAL, usagePriorLookup } from '../knowledge-impressions/ranking-prior.js';
+import { promptSentenceKeys, taskStatement, withoutProhibitions } from './task-prompt-statement.js';
 
 const MAX_QUERIES = 4;
 const MAX_ITEMS_PER_KIND = 3;
@@ -18,7 +19,8 @@ const PENDING_NOTE = 'Pending items are agent-proposed and not confirmed by a pe
 const RECALL_INTENTS = Object.freeze([
   {
     category: 'release_delivery',
-    pattern: /(?:发布|发版|上线|部署|推送|再推|release|publish|push|deploy|ship|rollout|commit|github|\bgit\b)/iu,
+    // "Git Bash" and "Git for Windows" name a shell, not a delivery (rec#88).
+    pattern: /(?:发布|发版|上线|部署|推送|再推|release|publish|push|deploy|ship|rollout|commit|github|\bgit\b(?!\s+(?:bash|for\s+windows)\b))/iu,
     queries: [
       '发布 发版 版本 release publish runbook',
       '推送 提交 push commit GitHub Connector runbook'
@@ -112,29 +114,31 @@ export const TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE = Object.freeze({
     'Treat automatic matches as candidates. Cite only items that materially support the task; if all are irrelevant, use noMatchSourceMarker. A recall without markers ran no search: show no marker.'
 });
 
-export function planTaskKnowledgeRecall(taskPrompt) {
+// `earlierSentences`: the sentence keys of the session's earlier prompts
+// (session-prompt-sentences.js); the plan reads only the task's own text
+// (task-prompt-statement.js), so repeated instructions, notes and
+// prohibitions never choose its topics or queries (rec#88).
+export function planTaskKnowledgeRecall(taskPrompt, { earlierSentences } = {}) {
   if (typeof taskPrompt !== 'string' || !taskPrompt.trim()) {
     return { status: 'not_requested', trigger_categories: [], queries: [] };
   }
-  const prompt = singleLine(taskPrompt).slice(0, 8192);
-  if (detectSensitiveContent(prompt).restricted) {
+  if (detectSensitiveContent(singleLine(taskPrompt).slice(0, 8192)).restricted) {
     return {
       status: 'suppressed_sensitive',
       trigger_categories: [],
       queries: []
     };
   }
-  const intentPrompt = {
-    release_delivery: positiveDeliveryClauses(prompt),
-    artifact_location: withoutRelativeWhere(prompt)
-  };
+  const statementText = ownTaskText(taskPrompt, earlierSentences);
+  const prompt = singleLine(statementText).slice(0, 8192);
+  const intentPrompt = { artifact_location: withoutRelativeWhere(prompt) };
   const matched = RECALL_INTENTS.filter(({ category, pattern }) =>
     pattern.test(intentPrompt[category] ?? prompt));
   // rec#88: 16 of 20 held-out misses were never searched because the prompt
   // had no cue word. A prompt with words of its own is searched by them; one
   // with none ("继续") has nothing to search for.
   if (!matched.length) {
-    const own = clauseQueries(leadParagraph(taskPrompt).replace(CODE_SPAN, ' '));
+    const own = ownClauseQueries(statementText);
     return own.length ? { status: 'planned', trigger_categories: ['topic'], queries: own.slice(0, MAX_QUERIES) }
       : { status: 'not_needed', trigger_categories: [], queries: [] };
   }
@@ -145,10 +149,10 @@ export function planTaskKnowledgeRecall(taskPrompt) {
   // clauses read the lead paragraph (focus falls back to the whole prompt when
   // it names nothing): a name in trailing notes ("WSL Ubuntu", "Windows
   // Node" in pasted environment rules) is not what the task is about.
-  const statement = leadParagraph(taskPrompt);
+  const statement = leadParagraph(statementText);
   const leadTerms = distinctivePromptTerms(statement);
   const focus = (leadTerms.length ? leadTerms : distinctivePromptTerms(prompt)).join(' ').slice(0, 180);
-  const ownWords = namedTarget(statement) ? [] : clauseQueries(statement.replace(CODE_SPAN, ' '));
+  const ownWords = namedTarget(statement) ? [] : ownClauseQueries(statementText);
   const queries = unique([...ownWords, ...matched.flatMap(({ queries: values }) => values)
     .map((query) => focus ? `${focus} ${query}` : query)]);
   return {
@@ -156,6 +160,22 @@ export function planTaskKnowledgeRecall(taskPrompt) {
     trigger_categories: matched.map(({ category }) => category),
     queries: queries.slice(0, MAX_QUERIES)
   };
+}
+
+// The keys of the session's earlier prompts, recording this prompt's for the
+// next one. A sensitive prompt is never recorded, not even by hash.
+function sessionSentences(application, taskPrompt, { sourceApplication, sessionId }) {
+  const store = application.sessionPromptSentences;
+  if (!store || typeof taskPrompt !== 'string' || detectSensitiveContent(singleLine(taskPrompt).slice(0, 8192)).restricted) {
+    return new Set();
+  }
+  return store.exchange(sourceApplication, sessionId, promptSentenceKeys(taskPrompt.slice(0, 16384)));
+}
+
+// The text the plan reads: the task's own statement, without its negated
+// delivery actions and other prohibitions.
+function ownTaskText(taskPrompt, earlierSentences) {
+  return withoutProhibitions(positiveDeliveryClauses(taskStatement(taskPrompt.slice(0, 16384), earlierSentences)));
 }
 
 // Negation is local to a clause. Positive later clauses remain candidates;
@@ -190,8 +210,11 @@ function withoutRelativeWhere(prompt) {
 }
 
 export async function recallTaskKnowledge(application, resolution, taskPrompt, { sourceApplication = null, sessionId = null } = {}) {
-  const plan = planTaskKnowledgeRecall(taskPrompt);
-  const unasked = () => knowledgeIndexRecall(application, resolution, taskPrompt, { sourceApplication, sessionId })
+  const earlierSentences = sessionSentences(application, taskPrompt, { sourceApplication, sessionId });
+  const plan = planTaskKnowledgeRecall(taskPrompt, { earlierSentences });
+  // The index and the focus filter read the same own text as the plan.
+  const ownText = plan.status === 'suppressed_sensitive' ? taskPrompt : ownTaskText(taskPrompt, earlierSentences);
+  const unasked = () => knowledgeIndexRecall(application, resolution, ownText, { sourceApplication, sessionId })
     .then(index => index ?? recallWithoutSearch('not_needed', { trigger_categories: [], queries: [] }));
   if (plan.status === 'not_needed') return await unasked();
   if (plan.status !== 'planned') return recallWithoutSearch(plan.status, plan);
@@ -227,7 +250,7 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
     .filter(({ status }) => status === 'fulfilled')
     .map(({ value }) => ({ facts: withoutPreferences(value.facts), entities: withoutPreferences(value.entities) }));
   const failedQueryCount = settlements.length - results.length;
-  const focusTerms = distinctivePromptTerms(singleLine(taskPrompt).slice(0, 8192));
+  const focusTerms = distinctivePromptTerms(singleLine(ownText).slice(0, 8192));
   const factCandidates = confirmedFirst(filterRecallCandidates(results.flatMap(({ facts = [] }) => facts), focusTerms));
   const entityCandidates = confirmedFirst(filterRecallCandidates(results.flatMap(({ entities = [] }) => entities), focusTerms));
   // rec#63: how often Agents used each candidate once shown reorders, within
@@ -507,6 +530,17 @@ const CLAUSE_HAN_FILLERS = /请|帮我|帮忙|麻烦|一下|我们|你们|这个
 // queries first, so a long change request does not spend the slots on its
 // other clauses.
 const KNOWN_FACT_CUE = /(?:agreed|decided|convention|policy|rule|owns?\b|owner|\breview|the way we|\bour\b|port\b|command|channel|region|约定|规范|规则|负责|端口|地址|命令|渠道|策略|惯例|决定)/iu;
+
+// The task's own words weigh most where it states the task: the clauses of
+// its lead paragraph's first line, or of the whole paragraph when that line
+// yields none (a heading such as "Fix these:"). A trailing line a script
+// appends ("Work only from this checkout") spends no query (rec#88).
+function ownClauseQueries(text) {
+  const [lead = ''] = text.trim().split(/\r?\n[ \t]*\r?\n/u);
+  const lines = lead.split(/\r?\n/u).map(line => line.replace(CODE_SPAN, ' ')).filter(line => line.trim());
+  const first = clauseQueries(singleLine(lines[0] ?? ''));
+  return first.length ? first : clauseQueries(singleLine(lines.join(' ')));
+}
 
 // When some clauses name a kept fact, only they query: the rest of a change
 // request ("so tests do not wait") would bring back unrelated items.

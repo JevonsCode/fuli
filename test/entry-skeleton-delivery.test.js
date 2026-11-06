@@ -66,15 +66,21 @@ test('a recorded complete frame lets the same task name its skeleton; an unrecor
   assert.equal(third.text.split('\n')[0], SKELETON_UNCHANGED_LABEL);
 }));
 
-test('a new task with another prompt, another project or a changed part gets that part whole', () => fixture(async f => {
+// rec#88: every prompt of a session is a new task; its skeleton is the one
+// the session already shows, so only another project or Agent starts whole.
+test('a new task of the same owner names the skeleton; another project or a changed part gets that part whole', () => fixture(async f => {
   const first = await f.turn(entry(f.sessionId, 'task-a'), 'Do the thing');
   const repeat = await f.turn(entry(f.sessionId, 'task-b'), 'Do the thing');
   assert.equal(repeat.frame.skeleton_unchanged, first.frame.skeleton_revision, 'a repeated prompt names the first frame');
   const other = await f.turn(entry(f.sessionId, 'task-c'), 'Do something else');
-  assert.equal(other.frame.skeleton_unchanged, undefined, 'a new task');
-  assert.equal(other.text.split('\n')[0], LABEL);
+  // A frame that names every part shows none of its own and has no revision.
+  assert.equal(repeat.frame.skeleton_revision, undefined);
+  assert.equal(other.frame.skeleton_unchanged, first.frame.skeleton_revision, 'a new prompt names the frame that showed it');
+  assert.equal(other.frame.taskContextToken, 'task-c');
+  assert.equal(other.text.split('\n')[0], SKELETON_UNCHANGED_LABEL);
   const moved = await f.turn(entry(f.sessionId, 'task-d', { project: 'project-b' }), 'Do the thing');
   assert.equal(moved.frame.skeleton_unchanged, undefined, 'another project');
+  assert.equal(moved.text.split('\n')[0], LABEL);
   const changed = await f.turn(entry(f.sessionId, 'task-a', { receipt: 'Synthetic new owner' }), 'notification');
   // The base's parts apply under the frame's own new receipt.
   assert.equal(changed.frame.agent_receipt.markdown, 'Synthetic new owner');
@@ -83,6 +89,76 @@ test('a new task with another prompt, another project or a changed part gets tha
     assert.equal(Object.hasOwn(changed.frame, field), false, field);
   }
   assert.match(changed.frame.skeleton_revision, /^[0-9a-f]{12}$/, 'what is still sent can be named later');
+}));
+
+// rec#88: six prompts of one session, each a new task. The recall's
+// categories and the Agent's match basis change with the prompt; the role,
+// brief, memory and recalled items do not. Only what changed is sent again.
+test('a session of new prompts sends the skeleton once and then only the fields that changed', () => fixture(async f => {
+  const item = (key, summary) => ({ id: `entity-${key}`, key, name: key, summary, confirmation_status: 'confirmed' });
+  const sixTurns = [['release_delivery'], ['project_convention'], ['topic'], ['project_convention', 'prior_context'],
+    ['topic'], ['artifact_location']];
+  const realistic = (token, categories, index) => {
+    const value = entry(f.sessionId, token);
+    value.project_agent_context = { status: 'ready', project_agent_id: 'lead', selection_reason: 'project_team_lead',
+      match_basis: [`no member fits work kind ${index % 2 ? 'implementation' : 'test_validation'}`],
+      role: { name: 'Synthetic Lead', responsibility: 'r'.repeat(300) }, project_brief: { name: 'Synthetic', summary: 's'.repeat(300) },
+      memory: { scope: 'private_agent_project', revision: 5, current: { summary: 'm'.repeat(600) } }, team: { roster: [{ name: 'Lead' }] } };
+    value.task_knowledge_recall = { status: 'matched', trigger_categories: categories, query_count: categories.length,
+      sourceMarker: { required: true, status: 'matched', leadMarkdown: 'Synthetic lead marker' },
+      entities: index < 3 ? [item('synthetic:a', 'a'.repeat(200)), item('synthetic:b', 'b'.repeat(200))]
+        : [item('synthetic:c', 'c'.repeat(200))],
+      ...(index === 0 ? { next: 'Synthetic next step.' } : {}) };
+    return value;
+  };
+  const sent = [];
+  for (const [index, categories] of sixTurns.entries()) {
+    sent.push(await f.turn(realistic(`task-${index}`, categories, index), `Synthetic prompt ${index}`));
+  }
+  const bytes = sent.map(turn => Buffer.byteLength(turn.text));
+  assert.equal(sent[0].frame.skeleton_unchanged, undefined, 'the first prompt carries the whole skeleton');
+  for (const [index, turn] of sent.entries()) {
+    if (!index) continue;
+    assert.equal(turn.text.split('\n')[0], SKELETON_UNCHANGED_LABEL, `turn ${index + 1} names the label`);
+    assert.equal(typeof turn.frame.skeleton_unchanged, 'string', `turn ${index + 1} names its bases by revision`);
+    assert.equal(turn.frame.taskContextToken, `task-${index}`);
+    assert.ok(bytes[index] < bytes[0] * 0.4, `turn ${index + 1}: ${bytes[index]} B against ${bytes[0]} B`);
+    for (const field of ['agent_receipt', 'judgment_context', 'context', 'task_guidance']) {
+      assert.equal(Object.hasOwn(turn.frame, field), false, `turn ${index + 1} ${field}`);
+    }
+    assert.equal(turn.frame.project_agent_context?.role, undefined, 'the role is not repeated');
+    assert.equal(turn.frame.project_agent_context?.memory, undefined, 'the memory is not repeated');
+  }
+  // What changed is sent: the categories, the match basis, new recall items.
+  assert.deepEqual(sent[1].frame.task_knowledge_recall.trigger_categories, ['project_convention']);
+  assert.equal(sent[1].frame.task_knowledge_recall.entities, undefined, 'the same items are named, not repeated');
+  assert.deepEqual(sent[1].frame.project_agent_context.match_basis, ['no member fits work kind implementation']);
+  assert.deepEqual(sent[3].frame.task_knowledge_recall.entities.map(value => value.key), ['synthetic:c']);
+  // A field the first frame gave and this one no longer has reads null.
+  assert.equal(sent[1].frame.task_knowledge_recall.next, null);
+  assert.equal(Object.hasOwn(sent[2].frame.task_knowledge_recall ?? {}, 'next'), false, 'a null already shown is not repeated');
+  // After a compaction the next prompt is whole again.
+  await f.host.compact();
+  const after = await f.turn(realistic('task-6', ['topic'], 6), 'Synthetic prompt 6');
+  assert.equal(after.frame.skeleton_unchanged, undefined);
+  assert.equal(after.frame.agent_receipt.markdown, 'Synthetic owner');
+  assert.equal(after.frame.project_agent_context.role.name, 'Synthetic Lead');
+}));
+
+// A record written before rec#88 kept [token, prompt, owner]; its owner still lets a new task name the frame.
+test('a version 3 record of prompts is read as tasks and rewritten as version 4', () => fixture(async f => {
+  const first = await f.turn(entry(f.sessionId, 'task-a'), 'Do the thing');
+  const [name] = (await readdir(f.options.directory)).filter(file => file.endsWith('.json'));
+  const path = join(f.options.directory, name);
+  const record = JSON.parse(await readFile(path, 'utf8'));
+  const { tasks, ...rest } = record;
+  await writeFile(path, JSON.stringify({ ...rest, version: 3, prompts: tasks.map(([token, owner]) => [token, 'f'.repeat(64), owner]) }));
+  const next = await f.turn(entry(f.sessionId, 'task-b'), 'Do another thing');
+  assert.equal(next.frame.skeleton_unchanged, first.frame.skeleton_revision);
+  const rewritten = JSON.parse(await readFile(path, 'utf8'));
+  assert.equal(rewritten.version, 4);
+  assert.equal(rewritten.prompts, undefined);
+  assert.equal(rewritten.tasks.length, 2);
 }));
 
 test('a compaction, a tampered frame or an unreadable record gives no base', () => fixture(async f => {
@@ -182,6 +258,12 @@ test('a revision names what its frame gave, including what that frame named itse
     if (recall) value.task_knowledge_recall = { status: 'no_match', marker: recall };
     return value;
   };
+  // A frame's parts by name: the field parts by field, as dotted names.
+  const fieldParts = ['task_knowledge_recall', 'project_agent_context'];
+  const ownParts = frame => Object.fromEntries(['agent_receipt', 'judgment_context', 'task_knowledge_recall', 'context',
+    'task_guidance', 'project_agent_context'].filter(field => Object.hasOwn(frame, field)).flatMap(field =>
+    fieldParts.includes(field) && frame[field] && typeof frame[field] === 'object'
+      ? Object.entries(frame[field]).map(([key, item]) => [`${field}.${key}`, item]) : [[field, frame[field]]]));
   const resolve = (frames, frame) => {
     const at = revision => frames.find(item => item.frame.skeleton_revision === revision);
     const named = frame.skeleton_unchanged;
@@ -191,9 +273,7 @@ test('a revision names what its frame gave, including what that frame named itse
         const whole = resolve(frames, at(revision).frame);
         return parts.map(part => [part, whole[part]]);
       }));
-    const own = Object.fromEntries(['agent_receipt', 'judgment_context', 'task_knowledge_recall', 'context', 'task_guidance',
-      'project_agent_context'].filter(field => Object.hasOwn(frame, field)).map(field => [field, frame[field]]));
-    return { ...base, ...own };
+    return { ...base, ...ownParts(frame) };
   };
   const frames = [];
   for (const [receipt, judgment, recall] of [['r', 'g1', 'P'], ['r', 'g2', 'P'], ['R', 'g1', 'P'], ['R', 'g2', null]]) {
@@ -202,8 +282,10 @@ test('a revision names what its frame gave, including what that frame named itse
     frames.push(sent);
     const got = resolve(frames, sent.frame);
     assert.equal(got.agent_receipt.markdown, receipt);
-    assert.equal(got.judgment_context.policy.mode, judgment);
-    assert.equal(got.task_knowledge_recall?.marker ?? null, recall);
+    assert.equal(got['judgment_context'].policy.mode, judgment);
+    // A recall field the bases gave and this frame no longer has reads null.
+    assert.equal(got['task_knowledge_recall.marker'] ?? null, recall);
+    assert.equal(got['task_knowledge_recall.status'] ?? null, recall ? 'no_match' : null);
   }
 }));
 

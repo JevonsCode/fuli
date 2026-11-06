@@ -24,7 +24,7 @@ import { createMcpServer } from '../../src/mcp/create-mcp-server.js';
 import { projectAgentCollaborationPreferences } from '../../src/graphiti/collaboration-preference-workflow.js';
 import { PROVIDER_RECOVERY_WINDOW, replayPreferences, syntheticHost, syntheticJournal } from '../../test-support/synthetic-context-session.js';
 import { entryRules } from '../../src/conversations/entry-rules.js';
-import { SKELETON_LABEL, SKELETON_PARTS, SKELETON_UNCHANGED_LABEL } from '../../src/conversations/entry-skeleton.js';
+import { SKELETON_LABEL, SKELETON_UNCHANGED_LABEL, skeletonParts } from '../../src/conversations/entry-skeleton.js';
 import { canonicalJson } from '../../packages/roundtable/src/canonical-json.js';
 
 const SPACE = 'synthetic-space';
@@ -338,7 +338,7 @@ function applyFrame(view, frame, text) {
 // with that skeleton_revision. A base the view never held, or one without
 // that part, cannot be located.
 function applySkeleton(view, frame, text) {
-  const own = Object.fromEntries(SKELETON_PARTS.filter(part => partOf(frame, part) !== undefined).map(part => [part, partOf(frame, part)]));
+  const own = skeletonParts(frame);
   const label = ownLabel(labelOf(text));
   if (label !== null) own[SKELETON_LABEL] = label;
   view.skeleton = { ...own };
@@ -363,8 +363,6 @@ function applySkeleton(view, frame, text) {
   if (frame.skeleton_revision) view.skeletons.set(frame.skeleton_revision, { ...view.skeleton });
 }
 
-// A skeleton part of a frame; a dotted one is a path inside it.
-const partOf = (frame, part) => part.split('.').reduce((item, key) => item?.[key], frame);
 
 // The instructions above a hook frame, and the hook's own part of them.
 const labelOf = text => {
@@ -451,9 +449,12 @@ function correctness(view, expected, withdrawn, label) {
     ...(withdrawn.preferences ?? []).filter(key => view.preferences.has(key)).map(key => `preference:${key}`),
     ...(withdrawn.messages ?? []).filter(content => [...view.messages.values()].includes(content)).map(content => `message:${content.slice(0, 32)}`)
   ];
-  // Every skeleton field of the uncached entry, exactly, and no other.
-  const skeleton = SKELETON_PARTS.filter(part => (partOf(expected, part) !== undefined) !== Object.hasOwn(view.skeleton, part)
-    || (partOf(expected, part) !== undefined && canonicalJson(partOf(expected, part)) !== canonicalJson(view.skeleton[part])));
+  // Every skeleton field of the uncached entry, exactly, and no other. A part
+  // the view holds as null is no longer present.
+  const wantedParts = skeletonParts(expected);
+  const held = Object.fromEntries(Object.entries(view.skeleton).filter(([part, item]) => part !== SKELETON_LABEL && item !== null));
+  const skeleton = [...new Set([...Object.keys(wantedParts), ...Object.keys(held)])]
+    .filter(part => canonicalJson(wantedParts[part] ?? null) !== canonicalJson(held[part] ?? null));
   if (view.skeleton[SKELETON_LABEL] !== label) skeleton.push(SKELETON_LABEL);
   const ok = !view.unlocated && !view.skeletonUnlocated && !missingMessages.length && !missingPreferences.length
     && !extraPreferences.length && !withdrawnPresent.length && !skeleton.length;
