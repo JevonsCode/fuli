@@ -1,0 +1,8 @@
+# Error codes
+
+| Code | Meaning |
+| --- | --- |
+| TW-EMAIL-001 | Email recipient is not an address. |
+| TW-EMAIL-002 | Email provider rejected the message. |
+| TW-SMS-001 | SMS recipient is not an E.164 number. |
+| TW-SMS-002 | SMS provider rejected the message. |
