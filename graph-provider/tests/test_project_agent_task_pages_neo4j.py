@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from neo4j import AsyncGraphDatabase
 
 from fuli_graph.store_project_agent_tasks import StoreProjectAgentTasks
+from fuli_graph import store_project_agent_task_pages
 from fuli_graph.store_project_agent_task_pages import StoreProjectAgentTaskPages
 from test_project_agent_memory_neo4j import fixture_settings
 
@@ -39,7 +40,9 @@ async def walk(store, space_id, **filters):
 
 
 @pytest.mark.asyncio
-async def test_pages_filter_sort_and_walk_without_skips_or_repeats():
+async def test_pages_filter_sort_and_walk_without_skips_or_repeats(monkeypatch):
+    # Rows stand for their task ids here, so the page holds them as they are.
+    monkeypatch.setattr(store_project_agent_task_pages, 'ProjectAgentTaskPage', SimpleNamespace)
     settings = fixture_settings()
     space_id = f'task-pages-{uuid4()}'
     async with AsyncGraphDatabase.driver(
