@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { planTaskKnowledgeRecall, recallTaskKnowledge } from '../src/graphiti/task-knowledge-recall.js';
 import { promptSentenceKeys, taskStatement } from '../src/graphiti/task-prompt-statement.js';
-import { createSessionPromptSentences } from '../src/graphiti/session-prompt-sentences.js';
+import { createSessionPromptSentences, SESSION_PROMPT_SENTENCES_FILE } from '../src/graphiti/session-prompt-sentences.js';
 
 const FOOTER = 'Environment: this directory is a small Node project on Windows. The shell is Git Bash and `node` is on PATH. '
   + 'Do not commit, push, or create branches; leave your changes in the working tree.\n'
@@ -65,17 +65,17 @@ test('the session store keeps sentence hashes only, per session, bounded', async
   const directory = await mkdtemp(join(tmpdir(), 'fuli-prompt-sentences-'));
   try {
     let clock = 0;
-    const store = createSessionPromptSentences({ directory, now: () => ++clock });
+    const store = createSessionPromptSentences({ dataDir: directory, now: () => ++clock });
     const first = `${TASKS[0]}\n${FOOTER}`;
     assert.equal(store.exchange('claude_code', 'session-a', promptSentenceKeys(first)).size, 0);
     const earlier = store.exchange('claude_code', 'session-a', promptSentenceKeys(`${TASKS[1]}\n${FOOTER}`));
     assert.deepEqual([...earlier].sort(), promptSentenceKeys(first).sort());
     assert.equal(store.exchange('claude_code', 'session-b', []).size, 0, 'another session has its own');
     assert.equal(store.exchange('codex', 'session-a', []).size, 0, 'another client has its own');
-    const text = await readFile(join(directory, 'session-prompt-sentences.json'), 'utf8');
+    const text = await readFile(join(directory, SESSION_PROMPT_SENTENCES_FILE), 'utf8');
     assert.doesNotMatch(text, /Negative|fetchRate|Git Bash|session-a|claude_code/);
     for (let index = 0; index < 40; index++) store.exchange('claude_code', `session-${index}`, promptSentenceKeys(`Synthetic task ${index}.`));
-    assert.ok(Object.keys(JSON.parse(await readFile(join(directory, 'session-prompt-sentences.json'), 'utf8')).sessions).length <= 32);
+    assert.ok(Object.keys(JSON.parse(await readFile(join(directory, SESSION_PROMPT_SENTENCES_FILE), 'utf8')).sessions).length <= 32);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
@@ -86,7 +86,7 @@ test('the entry recall searches each prompt by its own words across a session', 
     const application = {
       config: { personal: { spaceId: 'personal-space' } },
       consoleUrl: 'http://127.0.0.1:2727',
-      sessionPromptSentences: createSessionPromptSentences({ directory }),
+      sessionPromptSentences: createSessionPromptSentences({ dataDir: directory }),
       async searchKnowledge(input) { calls.push(input.query); return { facts: [], entities: [] }; }
     };
     const recalls = [];

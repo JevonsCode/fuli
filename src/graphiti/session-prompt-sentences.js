@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { jsonFormat, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 
@@ -7,13 +7,15 @@ import { jsonFormat, updateVersionedJsonFileAtomic } from '../storage/json-forma
 // recall can tell the instructions a client repeats on every prompt from the
 // task's own words (task-prompt-statement.js). Hashes only: no prompt text,
 // no session ID. Bounded: the latest sessions, the latest keys of each.
-const FORMAT = jsonFormat({ store: 'session-prompt-sentences', versions: [1] });
+export const SESSION_PROMPT_SENTENCES_FORMAT = jsonFormat({ store: 'session-prompt-sentences', versions: [1] });
+// Its place in a data directory, as the local store list names it.
+export const SESSION_PROMPT_SENTENCES_FILE = 'session-prompts/session-prompt-sentences.json';
 const MAX_SESSIONS = 32;
 const MAX_KEYS = 64;
 const KEY = /^[a-f0-9]{32}$/;
 
-export function createSessionPromptSentences({ directory, now = Date.now }) {
-  const path = join(directory, 'session-prompt-sentences.json');
+export function createSessionPromptSentences({ dataDir, now = Date.now }) {
+  const path = join(dataDir, SESSION_PROMPT_SENTENCES_FILE);
   return {
     // The keys earlier prompts of this session had; this prompt's keys are
     // added for the next one. Any failure reads as a session with none.
@@ -22,8 +24,8 @@ export function createSessionPromptSentences({ directory, now = Date.now }) {
       const session = contentHash({ purpose: 'session-prompt-sentences-v1', sourceApplication, sessionId }).slice(0, 32);
       let earlier = new Set();
       try {
-        mkdirSync(directory, { recursive: true, mode: 0o700 });
-        updateVersionedJsonFileAtomic(path, FORMAT, current => {
+        mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+        updateVersionedJsonFileAtomic(path, SESSION_PROMPT_SENTENCES_FORMAT, current => {
           const sessions = validSessions(current?.sessions);
           earlier = new Set(sessions[session]?.keys ?? []);
           const merged = [...[...earlier].filter(key => !keys.includes(key)), ...keys.filter(key => KEY.test(key))].slice(-MAX_KEYS);

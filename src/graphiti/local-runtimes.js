@@ -47,7 +47,7 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
     env
   });
   // The sentence keys of each session's earlier prompts, for the entry recall (rec#88).
-  app.sessionPromptSentences = createSessionPromptSentences({ directory: join(dataDir, 'session-prompts') });
+  app.sessionPromptSentences = createSessionPromptSentences({ dataDir });
   attachExternalKnowledgeRuntime(app, { paths, env, fetchImpl });
   app.agentSnapshots = createAgentDirectorySnapshots({
     root: paths.agentDirectoryRoot,
