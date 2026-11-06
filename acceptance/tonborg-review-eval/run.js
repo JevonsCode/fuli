@@ -5,8 +5,14 @@
 // It reads blind inputs only; labels are joined later by score.js.
 //
 //   node acceptance/tonborg-review-eval/run.js --cases <dir> --out <dir> \
-//     [--model qwen3.5:4b] [--runs 3] [--seed 20261022] [--sets dev,holdout]
+//     [--model qwen3.5:4b] [--runs 3] [--seed 20261022] [--sets dev,holdout] [--gateway <endpoint>]
+//
+// With --gateway the same path runs through the anthropic_messages adapter
+// against that one Anthropic-compatible gateway instead: temperature 0 and no
+// seed (the Messages API has none), a fresh X-Claude-Code-Session-Id per run
+// and a placeholder key, which the gateway does not check.
 import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +20,7 @@ import { parseArgs } from 'node:util';
 
 import { contentHash } from '../../packages/roundtable/src/canonical-json.js';
 import { isMainModule } from '../../src/system/main-module.js';
+import { gatewayOnlyFetch } from './anthropic-gateway-transport.js';
 import { OLLAMA_ORIGIN, localOnlyFetch } from './local-ollama-transport.js';
 import { createReviewPath } from './review-path.js';
 import { SCORING_CONTRACT, preGateHostOutcome, validRuns } from './scoring.js';
@@ -34,23 +41,30 @@ export function compactRow({ blindId, set, run }, review) {
 
 async function main() {
   const { values } = parseArgs({ options: { cases: { type: 'string' }, out: { type: 'string' }, model: { type: 'string', default: 'qwen3.5:4b' },
-    runs: { type: 'string', default: '3' }, seed: { type: 'string', default: '20261022' }, sets: { type: 'string', default: 'dev,holdout' } } });
+    runs: { type: 'string', default: '3' }, seed: { type: 'string', default: '20261022' }, sets: { type: 'string', default: 'dev,holdout' },
+    gateway: { type: 'string' } } });
   if (!values.cases || !values.out) throw new TypeError('--cases and --out are required');
-  const runs = validRuns(Number(values.runs)), sampling = { temperature: 0, seed: Number(values.seed) };
+  const runs = validRuns(Number(values.runs));
+  const gateway = values.gateway ? { endpoint: values.gateway, headers: { 'X-Claude-Code-Session-Id': randomUUID() } } : null;
+  const sampling = gateway ? { temperature: 0 } : { temperature: 0, seed: Number(values.seed) };
   const sets = values.sets.split(',');
   // Nothing in this process may reach another host, whichever module asks,
   // directly or by redirect.
-  globalThis.fetch = localOnlyFetch(globalThis.fetch);
+  globalThis.fetch = gateway ? gatewayOnlyFetch(gateway.endpoint, globalThis.fetch) : localOnlyFetch(globalThis.fetch);
 
   const startedAt = new Date().toISOString();
-  const model = await modelIdentity(values.model);
+  // A gateway reports no digest; which model answered is in each raw response's message_start.
+  const model = gateway ? { name: values.model, protocol: 'anthropic_messages', endpoint: gateway.endpoint, digest: null }
+    : await modelIdentity(values.model);
   const cases = Object.fromEntries(sets.map(set => [set, JSON.parse(readFileSync(join(values.cases, `${set}.json`), 'utf8'))]));
   mkdirSync(values.out, { recursive: true });
   const harness = { commit: git(['rev-parse', 'HEAD']), uncommittedChanges: git(['status', '--porcelain']) !== '' };
-  writeJson(join(values.out, 'model.json'), { model, sampling, samplingNote: 'temperature and seed are added to each chat request; '
-    + 'every other generation setting is the model default listed in parameters', runs, harness });
+  writeJson(join(values.out, 'model.json'), { model, sampling, samplingNote: gateway
+    ? 'temperature is added to each messages request; every other setting is the gateway default'
+    : 'temperature and seed are added to each chat request; every other generation setting is the model default listed in parameters',
+  runs, harness });
 
-  const path = createReviewPath({ model: values.model, sampling });
+  const path = createReviewPath({ model: values.model, sampling, gateway });
   const rows = Object.fromEntries(sets.map(set => [set, []]));
   try {
     // Run after run over every case, so a case's repeats are not back to back.
@@ -72,10 +86,11 @@ async function main() {
     path.close();
   }
   for (const set of sets) writeJson(join(values.out, `results-${set}.json`), { scoringContract: SCORING_CONTRACT, rows: rows[set] });
-  const loaded = await ollama('/api/ps');
+  const loaded = gateway ? null : await ollama('/api/ps');
   writeJson(join(values.out, 'run-meta.json'), { startedAt, finishedAt: new Date().toISOString(), node: process.version,
-    ollamaLoaded: loaded.models?.filter(entry => entry.name === values.model).map(({ name, digest, context_length, size_vram }) =>
-      ({ name, digest, context_length, size_vram })) ?? [], sets: Object.fromEntries(sets.map(set => [set, cases[set].length])) });
+    ...(loaded ? { ollamaLoaded: loaded.models?.filter(entry => entry.name === values.model).map(({ name, digest, context_length, size_vram }) =>
+      ({ name, digest, context_length, size_vram })) ?? [] } : {}),
+    sets: Object.fromEntries(sets.map(set => [set, cases[set].length])) });
 }
 
 async function modelIdentity(name) {
