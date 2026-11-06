@@ -121,9 +121,11 @@ body { margin: 0; min-width: 320px; }
 }
 .knowledge-mode-tabs { flex: 1 1 auto; min-width: 0; }
 .knowledge-view-heading { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* 6px above and below its controls however many lines they wrap to: one 36px
+   line is the same 48px row as before. */
 .graph-toolbar {
-  min-height: 48px; display: flex; flex-wrap: wrap; gap: 8px 10px;
-  align-items: center; padding: 4px 0;
+  display: flex; flex-wrap: wrap; gap: 8px 10px;
+  align-items: center; padding: 6px 0;
 }
 
 
@@ -205,10 +207,12 @@ body { margin: 0; min-width: 320px; }
 #knowledge-quadrant-filter { max-width: 130px; }
 #knowledge-profile-filter { max-width: 135px; }
 /* The directory's one compact filter row: search beside the four filters,
-   controls lined up on the shared --control-height, never spread apart. */
+   controls lined up on the shared --control-height, never spread apart. The
+   toolbar above ends 6px under its controls, so the filter row sits the same
+   12px from the toolbar's controls as from the list card below, at any width. */
 .knowledge-filter-bar {
   flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-  min-height: var(--control-height); padding: 4px 0;
+  min-height: var(--control-height); padding: 6px 0 12px;
 }
 .knowledge-filter-bar .search-form { flex: 1 1 240px; min-width: 200px; }
 /* Spacing, not separator lines, sets the toolbar, filters and table apart. */
@@ -314,7 +318,9 @@ body { margin: 0; min-width: 320px; }
 .graph-view.is-directory { overflow-y: auto; padding-top: 0; }
 /* The page's top space scrolls away with the content, so nothing shows above the stuck header. */
 .graph-view.is-directory .knowledge-canvas { flex: 1 0 auto; padding-top: 12px; }
-.graph-view.is-directory :is(.knowledge-layout, .knowledge-directory-panel) { flex: 0 0 auto; overflow: clip; }
+/* The card takes at least the rest of the page, so a short list never leaves
+   it shrunk under its last row; a long one grows it and the page scrolls. */
+.graph-view.is-directory :is(.knowledge-layout, .knowledge-directory-panel) { flex: 1 0 auto; overflow: clip; }
 .graph-view.is-directory .directory-kind-tabs { position: static; }
 .graph-canvas-active .knowledge-layout {
   min-height: 0; flex: 1; align-items: stretch; overflow: hidden;
@@ -339,8 +345,10 @@ body { margin: 0; min-width: 320px; }
 .knowledge-row > span { min-width: 0; }
 .knowledge-row:hover { background: var(--color-surface); }
 .knowledge-row-content { min-width: 0; display: grid; gap: 4px; }
-.knowledge-row-title {
-  min-width: 0; display: flex; align-items: center; gap: 7px;
+/* The line under the title: the human-change badge, then the kind and summary,
+   all one 17px line so the row keeps its fixed height. */
+.knowledge-row-meta {
+  min-width: 0; display: flex; align-items: center; gap: 6px;
 }
 .knowledge-row-content strong {
   min-width: 0;
@@ -348,13 +356,13 @@ body { margin: 0; min-width: 320px; }
   text-overflow: ellipsis; white-space: nowrap;
 }
 .human-change-badge {
-  flex: 0 0 auto; border-radius: 999px; padding: 2px 6px;
-  color: var(--color-warning); background: var(--color-warning-soft); font-size: 12px; font-style: normal;
-  font-weight: 700; white-space: nowrap;
+  flex: 0 0 auto; border-radius: 999px; padding: 0 6px;
+  color: var(--color-warning); background: var(--color-warning-soft); font-size: 11px; font-style: normal;
+  font-weight: 650; line-height: 17px; white-space: nowrap;
 }
 .human-change-badge.state-viewed { color: var(--color-muted); background: var(--color-surface-subtle); }
 .knowledge-row-content small {
-  color: var(--color-muted); font-size: 12px; line-height: 1.4; overflow: hidden;
+  min-width: 0; color: var(--color-muted); font-size: 12px; line-height: 1.4; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
 }
 .knowledge-row-type, .knowledge-row-source, .knowledge-row-time {
