@@ -127,6 +127,19 @@ test('chat validates bounded input, immutable direct members, current identity a
   await assert.rejects(chat('alpha', 'list'), /active/i);
 });
 
+test('a bare Agent ID addresses the same local member, and an unknown one says the address form (rec#97)', async t => {
+  const { chat } = fixture(t);
+  const bare = await chat('alpha', 'create', { requestId: 'bare', kind: 'direct', members: ['beta'] });
+  assert.deepEqual(bare.members.map(m => m.address).sort(), ['local:alpha', 'local:beta']);
+  assert.equal((await chat('alpha', 'create', { requestId: 'prefixed', kind: 'direct', members: ['local:beta'] })).chatId, bare.chatId);
+  const group = await chat('alpha', 'create', { requestId: 'group', kind: 'group', members: ['beta'] });
+  const added = await chat('alpha', 'members', { chatId: group.chatId, expectedRevision: group.revision, add: ['gamma'] });
+  assert.ok(added.members.some(m => m.address === 'local:gamma'));
+  await assert.rejects(chat('alpha', 'create', { requestId: 'absent', kind: 'direct', members: ['absent.agent'] }),
+    error => error.code === 'chat_member_unavailable'
+      && /No active Agent at local:absent\.agent\. Members are local:<agentId> on this computer \(find_agents lists agentId\)/.test(error.message));
+});
+
 test('an ordinary recruited lead can chat after adopting its reviewed Agent memory', async t => {
   const { chat } = fixture(t);
   const room = await chat('adopted', 'create', { requestId: 'adopted-chat', kind: 'direct', members: ['local:beta'] });

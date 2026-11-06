@@ -158,19 +158,22 @@ export function createRoundtableStore(path = ':memory:') {
         if (chatWakeChatId && chat.waiting(spaceId, `local:${agentId}`, chatWakeChatId)) return { claimed: false, reason: 'chat_waiting' };
         const state = this.executionState(spaceId, agentId, askId);
         if (state.held) return { claimed: false, reason: 'cleanup_unconfirmed' };
-        if (state.busy) return { claimed: false, reason: 'execution_claimed' };
+        if (state.busy) return { claimed: false, reason: 'execution_claimed', blockedBy: state.claim };
         const claimed = database.prepare(`UPDATE messages SET execution_claim = 'active', execution_claimed_at = ?
           WHERE id = ? AND execution_claim IS NULL`).run(now(), askId).changes === 1;
         return claimed ? { claimed: true } : { claimed: false, reason: 'execution_claimed' };
       });
     },
     executionState(spaceId, agentId, exceptAskId = '') {
-      const blocking = database.prepare(`SELECT m.cleanup_status,m.cleanup_released_at,m.execution_claim
+      const blocking = database.prepare(`SELECT m.id,m.execution_claimed_at,m.cleanup_status,m.cleanup_released_at,m.execution_claim
         FROM messages m JOIN threads t ON t.id=m.thread_id
         WHERE t.space_id=? AND m.to_agent=? AND m.kind='ask' AND m.id!=? AND
-          (m.execution_claim='active' OR (m.cleanup_status='unconfirmed' AND m.cleanup_released_at IS NULL))`)
+          (m.execution_claim='active' OR (m.cleanup_status='unconfirmed' AND m.cleanup_released_at IS NULL))
+        ORDER BY m.execution_claimed_at`)
         .all(spaceId, agentId, exceptAskId);
-      return { busy: blocking.some(row => row.execution_claim === 'active'),
+      const active = blocking.find(row => row.execution_claim === 'active');
+      // The earlier ask that holds the Agent, so a refused sender can name what it waits on.
+      return { busy: Boolean(active), claim: active ? { messageId: active.id, since: active.execution_claimed_at } : null,
         held: blocking.some(row => row.cleanup_status === 'unconfirmed' && row.cleanup_released_at === null) };
     },
     // Only after the owned process was observed to end, or never started. An

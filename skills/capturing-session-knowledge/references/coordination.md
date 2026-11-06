@@ -90,7 +90,9 @@ when the prompt says so; otherwise address it as `project:<projectId>` or `proje
 Call `message_agent` with that address, the question plus what you already know, `wait: true`
 and the current `taskContextToken`. The target lead looks it up read-only inside its own project
 and may ask its own specialists. Answer from the reply and name `recipient.name` as the source. A
-`queued` result is still waiting: say so and check later with `get_agent_message_status`. Never
+`queued` result is still waiting: its `delivery` says whether any client received it
+(`not_delivered`: nobody has it until the recipient's next task starts) and `guidance` says why; report
+that, never "sent to" a running chat, and check later with `get_agent_message_status`. Never
 read the other project's repository, sessions or files yourself instead, and never call an answer
 found that way a roundtable reply.
 

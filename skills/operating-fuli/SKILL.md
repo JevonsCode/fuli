@@ -69,7 +69,7 @@ When the user addresses AR or Bole to ask about organization or find someone, re
 
 ## Asking another project
 
-"去看看 X 项目" / "问问 X 项目" means asking X's lead on the roundtable, not reading X yourself: `message_agent(to: "project:<id or exact name>", wait: true)` with the current `taskContextToken` (task entry's `roundtable_ask` gives the address). Answer from the reply, naming who answered; a `queued` reply is checked later with `get_agent_message_status`. Only the current project's lead asks across projects.
+"去看看 X 项目" / "问问 X 项目" means asking X's lead on the roundtable, not reading X yourself: `message_agent(to: "project:<id or exact name>", wait: true)` with the current `taskContextToken` (task entry's `roundtable_ask` gives the address). Answer from the reply, naming who answered; a `queued` reply is checked later with `get_agent_message_status`; report its `delivery` and `guidance` as given (`not_delivered` means no client has it yet; FULI cannot push into a client chat that is already running). Only the current project's lead asks across projects.
 
 ## Before starting collaborators
 

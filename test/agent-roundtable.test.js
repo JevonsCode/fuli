@@ -12,7 +12,8 @@ const agent = (agentId, name, allowedClients = ['claude_code', 'codex']) => ({ a
   employeeNumber: agentId === 'lead-1' ? '000001' : '000002',
   profile: { name, displayName: name, status: 'active', responsibility: `${name} 的职责`, capabilities: [], allowedClients } });
 
-function fixture({ wake, sessions = {}, redeemed = true, env = {}, openStore = () => createRoundtableStore(), idFactory = null, peer = undefined } = {}) {
+function fixture({ wake, sessions = {}, redeemed = true, env = {}, openStore = () => createRoundtableStore(), idFactory = null, peer = undefined,
+  clientAvailable = () => true } = {}) {
   const agents = [agent('lead-1', 'Milo Reed'), agent('reviewer-1', 'Nova Lane', ['codex'])];
   const tasks = {
     'token-milo': { token: 'token-milo', projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: 'cc-1', sourceApplication: 'claude_code' },
@@ -40,7 +41,7 @@ function fixture({ wake, sessions = {}, redeemed = true, env = {}, openStore = (
   let id = 0;
   if (peer) app.peer = peer;
   const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, env, openStore, idFactory: idFactory ?? (() => `id-${++id}`),
-    locateCwd: (client, sessionId) => `/work/${client}/${sessionId}`, clientAvailable: () => true,
+    locateCwd: (client, sessionId) => `/work/${client}/${sessionId}`, clientAvailable,
     wake: async (input) => { woken.push(input); return wake ? wake(input) : { body: 'Nova 的回答', sessionId: 'fork-1' }; } });
   return { app, roundtable, woken, grants, revoked, verified };
 }
@@ -161,6 +162,44 @@ test('a message that cannot be delivered waits in the inbox until the Agent repl
   await assert.rejects(roundtable.replyMessage({ taskContextToken: 'token-milo', sourceApplication: 'claude_code',
     messageId: sent.messageId, body: 'not mine' }), /No such message/);
   assert.equal(roundtable.thread({ threadId: sent.threadId }).messages[1].body, '已看，可以合并');
+});
+
+test('an ask refused by an earlier wake says no client has it and which ask holds the Agent (rec#97)', async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const { roundtable, woken } = fixture({ wake: async () => { await gate; return { body: 'done', sessionId: 'fork-1' }; } });
+  const first = roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'first' });
+  while (!woken.length) await new Promise((resolve) => setImmediate(resolve));
+  const second = await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'second' });
+  assert.deepEqual([second.status, second.reason, second.delivery], ['queued', 'execution_claimed', 'not_delivered']);
+  assert.match(second.guidance, /^No client has received this message\. FULI started no session: an earlier message to Nova Lane \(id-2, since /);
+  assert.match(second.guidance, /cannot push a message into a client chat that is already running/);
+  assert.equal(woken.length, 1, 'the refused ask started nothing');
+  // The status and the thread say the same while the earlier wake still runs.
+  const status = await roundtable.messageStatus({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', messageId: second.messageId });
+  assert.deepEqual([status.reason, status.delivery], ['execution_claimed', 'not_delivered']);
+  assert.match(status.guidance, /\(id-2, since /);
+  assert.equal(roundtable.thread({ threadId: second.threadId }).messages[0].error, 'execution_claimed');
+  release();
+  assert.equal((await first).status, 'answered');
+});
+
+test('an Agent with no client this computer can start is named plainly (rec#97)', async () => {
+  const { roundtable, woken } = fixture({ clientAvailable: () => false });
+  const sent = await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'hello' });
+  assert.deepEqual([sent.status, sent.reason, sent.delivery, woken.length], ['queued', 'no_client', 'not_delivered', 0]);
+  assert.match(sent.guidance, /none of Nova Lane's clients \(Codex\) can be started on this computer/);
+  const status = await roundtable.messageStatus({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', messageId: sent.messageId });
+  assert.deepEqual([status.reason, status.delivery], ['no_client', 'not_delivered']);
+});
+
+test('a message sent without waiting says no session was started (rec#97)', async () => {
+  const { roundtable } = fixture();
+  const sent = await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'later', wait: false });
+  assert.deepEqual([sent.reason, sent.delivery], ['not_waiting', 'not_delivered']);
+  const status = await roundtable.messageStatus({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', messageId: sent.messageId });
+  assert.equal(status.delivery, 'not_delivered');
+  assert.match(status.guidance, /FULI has not started a session for it\. Nova Lane sees it in its inbox when its next task starts/);
 });
 
 test('status and cancel work from each client’s own task and reject another project’s task', async () => {
@@ -410,7 +449,7 @@ test('a definite remote queue rejection releases the source execution claim', as
     send:async()=>{throw Object.assign(new Error('queue full'),{status:429,code:'queue_full'});}};
   const {roundtable}=fixture({openStore:()=>store,peer});t.after(()=>roundtable.close());
   await assert.rejects(roundtable.messageAgent({taskContextToken:'token-milo',sourceApplication:'claude_code',to,body:'snapshot',chatWake:{}}),/queue full/);
-  assert.deepEqual(store.executionState('space',to),{busy:false,held:false});
+  assert.deepEqual(store.executionState('space',to),{busy:false,claim:null,held:false});
 });
 
 test('an unknown thread is reported as the thread, never as a missing Agent (rec#68)', async () => {
