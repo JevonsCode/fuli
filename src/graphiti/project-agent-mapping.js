@@ -527,8 +527,19 @@ export function projectAgentTaskBlocker(value) {
     application: value.source_application ?? null,
     sessionId,
     sessionUrl: sessionId ? value.source_session_url ?? null : null,
-    observed: Boolean(sessionId)
+    observed: Boolean(sessionId),
+    probablyResolved: blockerHint(value.probably_resolved)
   };
+}
+
+// One of the task's Agents went on with the project in another session after
+// the block was reported: evidence the person confirms, never a status.
+function blockerHint(value) {
+  if (!value || typeof value !== 'object') return null;
+  const sessionId = value.source_session_id && !isFuliProcessSession(value.source_session_id)
+    ? value.source_session_id : null;
+  return { agentId: value.agent_id ?? null, application: value.source_application ?? null, sessionId,
+    at: value.at ?? null };
 }
 
 export function projectAgentTaskParticipantRecord(value = {}) {

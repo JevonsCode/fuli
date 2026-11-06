@@ -170,6 +170,12 @@ GRAPH_MIGRATIONS = (
         'optional retrieval terms and context on entities and relationships, with the hash of the words they came from',
         fields_only=True,
     ),
+    GraphMigration(
+        'graph/19-blocker-resolution-evidence', 19, 'schema',
+        "a block an Agent resolved ('agent') or the person confirmed ('person_confirmed'), "
+        "and the task's probably-resolved evidence (blocker_hint_*)",
+        fields_only=True,
+    ),
 )
 
 GRAPH_FORMAT_VERSION = GRAPH_MIGRATIONS[-1].to_version

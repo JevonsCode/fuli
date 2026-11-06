@@ -30,6 +30,19 @@ describe('the task timeline', () => {
     expect(entries.find(entry => entry.id === 'c')!.reason).toEqual({ text: 'Shipped the synthetic thing', unknownCode: null, raw: null })
   })
 
+  it('says who ended a block and why, in the person\'s language, keeping the stored summary as raw', () => {
+    const [byAgent, confirmed] = taskTimeline(task([
+      event('a', '2026-11-01T09:00:00Z', { blockerClearedBy: 'agent', summary: 'Set the staging region.', blockerClearNote: 'Set the staging region.' }),
+      event('b', '2026-11-01T08:00:00Z', { actorKind: 'human', blockerClearedBy: 'person_confirmed', summary: 'Confirmed as unblocked by the person.' }),
+    ]))
+    expect(byAgent.tone).toBe('unblocked')
+    expect(byAgent.reason).toEqual({ text: '阻塞已解除：Agent 说已经解决（Set the staging region.）', unknownCode: null, raw: 'Set the staging region.' })
+    expect(confirmed.reason.text).toBe('阻塞已解除：你确认已经解决')
+    setLocale('en-US', { persist: false })
+    expect(taskTimeline(task([event('b', '2026-11-01T08:00:00Z', { blockerClearedBy: 'person_confirmed' })]))[0].reason.text)
+      .toBe('Unblocked: you confirmed it is solved')
+  })
+
   it('stands beside each event the other FLAs at work at that moment', () => {
     const entries = taskTimeline(task([
       event('early', '2026-11-01T08:30:00Z'),

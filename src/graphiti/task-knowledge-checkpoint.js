@@ -18,7 +18,7 @@ import { namedFlaReceiptNotices } from './task-entry-named-fla.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
 import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
-import { clearSessionTaskBlockers } from './task-blocker-progress.js';
+import { clearSessionTaskBlockers, noteBlockerProgress } from './task-blocker-progress.js';
 import { storedUnassignment } from './task-agent-assignment.js';
 
 export async function checkpointTaskKnowledge(application, {
@@ -101,6 +101,9 @@ export async function checkpointTaskKnowledge(application, {
     // This session went on, so a block it reported has ended and leaves the person's queue.
     await clearSessionTaskBlockers(application, { sourceApplication: task.sourceApplication,
       sessionIds: [task.sessionId], cause: 'session_activity', captureAllowed: captureCheck.allowed });
+    // Its Agent's blocks reported in other sessions may be solved here too: probably resolved.
+    await noteBlockerProgress(application, { sourceApplication: task.sourceApplication, sessionId: task.sessionId,
+      personalProjectId: task.personalProjectId, agentId: task.projectAgentId, captureAllowed: captureCheck.allowed });
     const interaction = activeSealedWorkerRequest() ? {} : await checkpointHumanInteraction(application, task);
     // A task without an owner says why, as its entry did.
     const unassigned = task.projectAgentId ? null : storedUnassignment(task);

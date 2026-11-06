@@ -347,12 +347,20 @@ export interface ProjectAgentTaskEvent {
   workerStatus?: ProjectAgentTaskStatus | string | null
   /** Set on the event that ended a block without the task's own report, naming why. */
   blockerClearedBy?: BlockerClearCause | null
-  /** The person's note when they marked the block cleared themselves ('person'). */
+  /** The person's note, or the reason an Agent gave, for the clear. */
   blockerClearNote?: string | null
   createdAt: string
 }
 
-export type BlockerClearCause = 'session_activity' | 'session_reply' | 'attention_answer' | 'person'
+export type BlockerClearCause = 'session_activity' | 'session_reply' | 'attention_answer' | 'person' | 'agent' | 'person_confirmed'
+
+/** One of the task's Agents went on with its project in another session after the block was reported. */
+export interface ProjectAgentTaskBlockerHint {
+  agentId: string | null
+  application: ConversationSourceApplication | null
+  sessionId: string | null
+  at: string | null
+}
 
 /** What a blocked task waits for, since when, and the client session that reported it. */
 export interface ProjectAgentTaskBlocker {
@@ -367,6 +375,8 @@ export interface ProjectAgentTaskBlocker {
   sessionUrl: string | null
   /** FULI sees that session's progress and ends the block when it goes on. */
   observed: boolean
+  /** Evidence the block may be solved, for the person to confirm; never a status. */
+  probablyResolved?: ProjectAgentTaskBlockerHint | null
 }
 
 export interface ProjectAgentRoutingDecision {

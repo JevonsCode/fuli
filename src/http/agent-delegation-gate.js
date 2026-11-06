@@ -13,6 +13,14 @@ import { sendJson } from './response.js';
 // who made it, why, the relayed words and how to undo it. A request without the
 // header is the person's and passes unchanged. handle() runs the API routes
 // and answers whether one handled the request.
+const CALLS = new WeakMap();
+
+// The delegated call this gate accepted for a request; null for the person's own.
+// A route that records who made a change reads it here, never from the header.
+export function delegatedCall(request) {
+  return CALLS.get(request) ?? null;
+}
+
 export async function handleDelegatedRequest({ request, response, delegation, agentAccessEnabled, handle }) {
   const header = request.headers[DELEGATION_HEADER];
   if (header === undefined) return handle();
@@ -37,6 +45,7 @@ export async function handleDelegatedRequest({ request, response, delegation, ag
   }
   const id = randomUUID();
   response.setHeader(DELEGATION_OPERATION_HEADER, id);
+  CALLS.set(request, call);
   let status;
   try {
     if (!await handle()) sendJson(response, 404, { error: 'No console route answers this request', code: 'not_found' });

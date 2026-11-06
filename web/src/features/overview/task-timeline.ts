@@ -1,4 +1,5 @@
 import { currentLocale, t } from '@/i18n'
+import { blockerClearSentence } from '@/features/project-agents/task-blocker'
 import { taskReason, type TaskReason } from '@/features/project-agents/task-reason'
 import type { ProjectAgentTaskEvent, ProjectAgentTaskParticipant, ProjectAgentTaskRecord } from '@/types'
 import { taskLog } from './workbench-model'
@@ -43,6 +44,13 @@ function workWindow(participant: ProjectAgentTaskParticipant): [number, number] 
   return start === null || end === null ? null : [start, end]
 }
 
+// The end of a block reads as who or what ended it, in the person's language;
+// the stored English summary stays under 原始信息.
+function clearReason(event: ProjectAgentTaskEvent): TaskReason | null {
+  const text = blockerClearSentence(event)
+  return text ? { text, unknownCode: null, raw: event.summary } : null
+}
+
 /** Every recorded event of the task, newest first. */
 export function taskTimeline(task: ProjectAgentTaskRecord): TimelineEntry[] {
   // An FLA reassigned to the task has several windows; it stands once.
@@ -62,7 +70,7 @@ export function taskTimeline(task: ProjectAgentTaskRecord): TimelineEntry[] {
     agentId: event.agentId ?? null,
     actorKind: event.actorKind ?? null,
     tone: tone(event),
-    reason: taskReason(event.summary) ?? { text: event.summary, unknownCode: null, raw: null },
+    reason: clearReason(event) ?? taskReason(event.summary) ?? { text: event.summary, unknownCode: null, raw: null },
     crew: crewAt(event),
   }))
 }

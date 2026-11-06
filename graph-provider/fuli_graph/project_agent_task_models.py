@@ -96,8 +96,12 @@ ProjectAgentTokenUsageSource = Literal['executor', 'host', 'dingdong']
 # Why a blocked task left blocked without its own status report: the session
 # it was blocked in recorded more work or the person replied there, the
 # person answered its blocking request in FULI, or the person marked it
-# unblocked in the console (graph 14).
-BlockerClearCause = Literal['session_activity', 'session_reply', 'attention_answer', 'person']
+# unblocked in the console (graph 14). Graph 19: an Agent said it resolved the
+# block from another session ('agent'), or the person confirmed a block FULI
+# saw as probably resolved ('person_confirmed').
+BlockerClearCause = Literal[
+    'session_activity', 'session_reply', 'attention_answer', 'person', 'agent', 'person_confirmed',
+]
 
 _WORKER_EVIDENCE_ALIASES = {
     'worker_id': 'workerId',
@@ -428,7 +432,7 @@ class ProjectAgentTaskEventRecord(StrictModel):
     token_usage: ProjectAgentTokenUsage | None = None
     worker_runtime: ProjectAgentWorkerRuntime | None = None
     blocker_cleared_by: BlockerClearCause | None = None
-    # The person's note when they marked the block cleared (task_blocker.py).
+    # The person's note, or the Agent's reason, for the clear (task_blocker.py).
     blocker_clear_note: str | None = None
     created_at: datetime
 
@@ -451,12 +455,23 @@ class ProjectAgentTaskEventRecord(StrictModel):
         return unique_text_list(value, 'tools used') if value is not None else None
 
 
+class ProjectAgentTaskBlockerHint(StrictModel):
+    """Why FULI thinks a block is probably resolved: one of the task's Agents
+    went on with the project in another session after the block was reported."""
+
+    agent_id: str
+    source_application: SourceApplication | None = None
+    source_session_id: str | None = None
+    at: datetime
+
+
 class ProjectAgentTaskBlocker(StrictModel):
     """What a blocked task waits for, since when, and the session that reported it.
 
     since is None when no recorded event moved the task into blocked (a task
     blocked before its history was kept); the reason is then the task's stored
-    summary, and no session is claimed.
+    summary, and no session is claimed. probably_resolved is evidence for the
+    person to confirm, never a status.
     """
 
     reason: str | None = None
@@ -465,6 +480,7 @@ class ProjectAgentTaskBlocker(StrictModel):
     source_application: SourceApplication | None = None
     source_session_id: str | None = None
     source_session_url: str | None = None
+    probably_resolved: ProjectAgentTaskBlockerHint | None = None
 
 
 class ProjectAgentTaskBlockerClear(StrictModel):
@@ -477,11 +493,49 @@ class ProjectAgentTaskBlockerClear(StrictModel):
 
 
 class ProjectAgentTaskBlockerPersonClear(StrictModel):
-    """The person's 「标记为已解除」 from the console, with an optional short note."""
+    """The person's 「标记为已解除」 from the console, with an optional short note.
+
+    confirm_hint: the person confirms the block FULI saw as probably resolved.
+    cleared_by 'agent' (with the FLA, its client and session when known): an
+    FLA made the clear for the person through run_delegated_action; note is
+    then its reason.
+    """
 
     personal_space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str = Field(min_length=1, max_length=128)
     note: str | None = Field(default=None, min_length=1, max_length=500)
+    confirm_hint: bool = False
+    cleared_by: Literal['person', 'agent'] = 'person'
+    agent_id: str | None = Field(default=None, min_length=1, max_length=128)
+    source_application: SourceApplication | None = None
+    source_session_id: str | None = Field(default=None, min_length=1, max_length=256)
+
+    @model_validator(mode='after')
+    def validate_clearer(self):
+        if self.cleared_by == 'agent' and self.confirm_hint:
+            raise ValueError('an Agent clears a block with its reason; only the person confirms a hint')
+        if self.cleared_by == 'agent' and not self.note:
+            raise ValueError('an Agent clearing a block says why in note')
+        if self.cleared_by == 'person' and (self.agent_id or self.source_application or self.source_session_id):
+            raise ValueError('an Agent and its session are named only when an Agent clears a block')
+        return self
+
+
+class ProjectAgentTaskBlockerProgress(StrictModel):
+    """An Agent's recorded work in a project, from one client session.
+
+    Blocks of that Agent's tasks reported elsewhere become probably resolved.
+    """
+
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    personal_project_id: str = Field(min_length=1, max_length=128)
+    agent_id: str = Field(min_length=1, max_length=128)
+    source_application: SourceApplication
+    source_session_id: str = Field(min_length=1, max_length=256)
+
+
+class ProjectAgentTaskBlockerProgressResult(StrictModel):
+    hinted_task_ids: list[str] = Field(default_factory=list)
 
 
 class ProjectAgentTaskBlockerClearResult(StrictModel):

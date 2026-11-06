@@ -1,7 +1,8 @@
 import { postJson } from '@/api/client'
 import { currentLocale, t } from '@/i18n'
 import { formatElapsed } from '@/lib/elapsed-time'
-import type { BlockerClearCause, ProjectAgentTaskBlocker, ProjectAgentTaskRecord } from '@/types'
+import type { BlockerClearCause, ProjectAgentTaskBlocker, ProjectAgentTaskEvent, ProjectAgentTaskRecord } from '@/types'
+import { formatDate } from './task-labels'
 import { taskReason } from './task-reason'
 import type { TaskScope } from './task-runs'
 
@@ -42,8 +43,32 @@ export function lastBlockerClear(task: ProjectAgentTaskRecord): { cause: Blocker
     : null
 }
 
+// Causes FULI ended by itself, read as 自动解除; the others name who ended the block.
+const AUTOMATIC: ReadonlySet<BlockerClearCause> = new Set(['session_activity', 'session_reply', 'attention_answer'])
+
+/** The card's line for a block that ended: when, and who or what ended it. */
+export function blockerClearLine(clear: { cause: BlockerClearCause; at: string }) {
+  const time = formatDate(clear.at)
+  if (clear.cause === 'person') return t('taskBlocker.clearedByYou', { time })
+  const cause = t(`taskBlocker.causes.${clear.cause}`)
+  return t(AUTOMATIC.has(clear.cause) ? 'taskBlocker.cleared' : 'taskBlocker.clearedBy', { time, cause })
+}
+
+/** The timeline's sentence for the event that ended a block, with the clearer's note or reason. */
+export function blockerClearSentence(event: Pick<ProjectAgentTaskEvent, 'blockerClearedBy' | 'blockerClearNote'>) {
+  if (!event.blockerClearedBy) return null
+  const sentence = t('taskBlocker.unblocked', { cause: t(`taskBlocker.causes.${event.blockerClearedBy}`) })
+  return event.blockerClearNote ? t('taskBlocker.unblockedWithNote', { sentence, note: event.blockerClearNote }) : sentence
+}
+
 /** The person's 「标记为已解除」; the console accepts it only from this computer. */
 export function markTaskUnblocked(scope: TaskScope, note: string): Promise<ProjectAgentTaskRecord> {
   return postJson<ProjectAgentTaskRecord>(`/api/project-agent-tasks/${encodeURIComponent(scope.taskId)}/blocker/clear`,
     { personalSpaceId: scope.personalSpaceId, personalProjectId: scope.personalProjectId, note: note.trim() || null })
+}
+
+/** The person's one-click 「确认已解除」 of a block FULI sees as probably resolved. */
+export function confirmTaskUnblocked(scope: TaskScope): Promise<ProjectAgentTaskRecord> {
+  return postJson<ProjectAgentTaskRecord>(`/api/project-agent-tasks/${encodeURIComponent(scope.taskId)}/blocker/clear`,
+    { personalSpaceId: scope.personalSpaceId, personalProjectId: scope.personalProjectId, confirmHint: true })
 }

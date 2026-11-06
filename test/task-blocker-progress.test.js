@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { attentionRecord } from '../src/graphiti/agent-attention.js';
 import { projectAgentTaskBlocker, projectAgentTaskRecord } from '../src/graphiti/project-agent-mapping.js';
-import { clearSessionTaskBlockers } from '../src/graphiti/task-blocker-progress.js';
+import { clearSessionTaskBlockers, noteBlockerProgress } from '../src/graphiti/task-blocker-progress.js';
 
 const SESSION = '3b241101-e2bb-4255-8caf-4136c566a962';
 const PROCESS_SESSION = 'fuli-host-0d1f2e3c-4b5a-4697-8a9b-0c1d2e3f4a5b';
@@ -13,7 +13,7 @@ const blocker = (session) => ({ reason: 'Need the staging database name.', since
 test('a block names the client session the person can return to, and only such a session', () => {
   assert.deepEqual(projectAgentTaskBlocker(blocker(SESSION)), { reason: 'Need the staging database name.',
     since: '2026-10-27T08:05:00Z', agentId: 'synthetic-engineer', application: 'codex', sessionId: SESSION,
-    sessionUrl: null, observed: true });
+    sessionUrl: null, observed: true, probablyResolved: null });
   // An identity FULI gave its own MCP process is no conversation: not shown, progress not observable.
   const process = projectAgentTaskBlocker(blocker(PROCESS_SESSION));
   assert.equal(process.sessionId, null);
@@ -54,4 +54,38 @@ test('progress in a client session asks the Provider to end the blocks that sess
   assert.deepEqual(calls, []);
   assert.deepEqual(await clearSessionTaskBlockers({ personal: {} }, { sourceApplication: 'codex', sessionIds: [SESSION],
     cause: 'session_activity', captureAllowed: true }), []);
+});
+
+test('a block probably resolved elsewhere names the Agent, client and session, never a FULI process', () => {
+  const hinted = projectAgentTaskBlocker({ ...blocker(SESSION), probably_resolved: { agent_id: 'synthetic-engineer',
+    source_application: 'claude_code', source_session_id: 'session-b', at: '2026-10-28T09:00:00Z' } });
+  assert.deepEqual(hinted.probablyResolved, { agentId: 'synthetic-engineer', application: 'claude_code',
+    sessionId: 'session-b', at: '2026-10-28T09:00:00Z' });
+  const fromProcess = projectAgentTaskBlocker({ ...blocker(SESSION), probably_resolved: { agent_id: 'synthetic-engineer',
+    source_application: 'codex', source_session_id: PROCESS_SESSION, at: '2026-10-28T09:00:00Z' } });
+  assert.equal(fromProcess.probablyResolved.sessionId, null);
+});
+
+test('an Agent\'s work in another session marks its blocks probably resolved, best effort', async () => {
+  const calls = [];
+  const application = { config: { personal: { spaceId: 'synthetic-space' } }, personal: {
+    async noteBlockerProgress(input) {
+      calls.push(input);
+      if (input.agent_id === 'failing-agent') throw new Error('Provider unavailable');
+      return { hinted_task_ids: ['task-a'] };
+    }
+  } };
+  const work = { sourceApplication: 'claude_code', sessionId: SESSION, personalProjectId: 'project-a',
+    agentId: 'synthetic-engineer', captureAllowed: true };
+  assert.deepEqual(await noteBlockerProgress(application, work), ['task-a']);
+  assert.deepEqual(calls, [{ personal_space_id: 'synthetic-space', personal_project_id: 'project-a',
+    agent_id: 'synthetic-engineer', source_application: 'claude_code', source_session_id: SESSION }]);
+  assert.deepEqual(await noteBlockerProgress(application, { ...work, agentId: 'failing-agent' }), []);
+  calls.length = 0;
+  // Recording off, no named session, no project or Agent: nothing is written.
+  for (const changes of [{ captureAllowed: false }, { sessionId: PROCESS_SESSION }, { sessionId: null },
+    { personalProjectId: null }, { agentId: null }]) {
+    assert.deepEqual(await noteBlockerProgress(application, { ...work, ...changes }), [], JSON.stringify(changes));
+  }
+  assert.deepEqual(calls, []);
 });

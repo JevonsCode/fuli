@@ -1,4 +1,5 @@
 import { readJson, sendJson } from './response.js';
+import { delegatedCall } from './agent-delegation-gate.js';
 import { refuseRemoteDecision } from './request-policy.js';
 import { validationError } from '../app/application-error.js';
 import { requiredString } from '../validation/values.js';
@@ -8,10 +9,13 @@ const MAX_ID = 128;
 const MAX_NOTE = 500;
 
 // The person marks a blocked task as no longer blocked (「标记为已解除」), with
-// an optional short note. Accepted only on this computer and sent on the
-// human-review channel (src/task-blockers), so an Agent can never post it,
-// not even straight to the Provider with its own token. No Agent tool
-// reaches this route.
+// an optional short note, or confirms a block FULI saw as probably resolved
+// (confirmHint). Accepted only on this computer and sent on the human-review
+// channel (src/task-blockers), so no Agent posts it straight to the Provider
+// with its own token. An FLA that solved the block makes the same change for
+// the person only through run_delegated_action (rec#11 D-81), which the
+// delegation gate admits while the person keeps that permission on; the clear
+// then names the FLA and its reason instead of the person.
 export async function handleTaskBlockerRequest({ request, response, url, app, blockerConsole }) {
   const match = url.pathname.match(CLEAR_PATH);
   if (!match || request.method !== 'POST') return false;
@@ -29,7 +33,15 @@ export async function handleTaskBlockerRequest({ request, response, url, app, bl
   const personalProjectId = requiredString(body.personalProjectId, 'personalProjectId', MAX_ID);
   const blank = body.note == null || (typeof body.note === 'string' && !body.note.trim());
   const note = blank ? null : requiredString(body.note, 'note', MAX_NOTE);
+  if (body.confirmHint != null && typeof body.confirmHint !== 'boolean') {
+    throw validationError('confirmHint must be true or false');
+  }
+  const call = delegatedCall(request);
+  const clearer = call
+    ? { agent: { agentId: call.actor.agentId, client: call.actor.client, sessionId: call.actor.sessionId },
+      note: note ?? call.reason }
+    : { confirmHint: body.confirmHint === true, note };
   sendJson(response, 200, await blockerConsole.markUnblocked(taskId,
-    { personalSpaceId: body.personalSpaceId, personalProjectId, note }));
+    { personalSpaceId: body.personalSpaceId, personalProjectId, ...clearer }));
   return true;
 }
