@@ -407,3 +407,26 @@ test('a named target leaves room for the clause that names a kept fact (compound
   assert.equal(workflow.length, 1);
   assert.match(workflow[0], /方法 方式 流程 步骤 runbook workflow procedure$/);
 });
+
+test('a project that has stored nothing yet is not sent on a follow-up search; any doubt keeps the nudge (rec#88)', async () => {
+  const profile = [{ type: 'PersonalProject' }, { type: 'ProjectPurpose' }, { type: 'ProjectScope' },
+    { type: 'TechnicalSummary' }, { type: 'ProjectBoundary' }];
+  const withGraph = graph => ({ ...recallApplication([]), personal: { async graph(space, limit, project) {
+    assert.deepEqual([space, project], ['personal-space', 'delta']);
+    assert.ok(limit <= 50);
+    if (graph instanceof Error) throw graph;
+    return graph;
+  } } });
+  const prompt = 'Use the retry policy we agreed for the rates client.';
+  const next = async graph => (await recallTaskKnowledge(withGraph(graph), { personalProjectId: 'delta' }, prompt)).next;
+  assert.match(await next({ nodes: profile, edges: [], truncated: false }), /no stored knowledge yet; no further FULI search/);
+  for (const graph of [
+    { nodes: [...profile, { type: 'ProjectFact' }], edges: [] },
+    { nodes: profile, edges: [], truncated: true },
+    { nodes: profile, edges: [{ type: 'PART_OF' }] },
+    new Error('provider down')
+  ]) assert.match(await next(graph), /One quick search only/);
+  // A historical version alone is nothing a default search returns.
+  assert.match(await next({ nodes: [...profile, { type: 'ProjectFact', invalid_at: '2026-01-01T00:00:00Z' }], edges: [] }),
+    /no stored knowledge yet/);
+});
