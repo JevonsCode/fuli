@@ -160,6 +160,9 @@ test('the home story walks through the product in order, with measured numbers a
     assert.deepEqual([...document.querySelectorAll('#memory .chapter-stats b')].map(node => node.textContent), ['24.3 KB', '4/6', '18/18'], path);
     assert.match(document.querySelector('#memory .chapter-link').textContent, /1.53/, path);
     // Growth is drawn: lessons out of the work, the kept ones ticked, checks marked as coming, then the app and its surfaces.
+    // The chapter says only that FLAs grow; the drawing says how.
+    assert.deepEqual([...document.querySelectorAll('#growth .chapter-copy > :not(.eyebrow)')].map(node => node.tagName), ['H2'], path);
+    assert.match(document.querySelector('#growth h2').textContent, /^(FLA 会自己成长。|FLAs grow on their own.)$/, path);
     const growth = document.querySelector('#growth .growth-anim');
     assert.equal(growth.querySelectorAll('.ga-lesson').length, 5, path);
     assert.equal(growth.querySelectorAll('.ga-lesson.is-kept .ga-tick').length, 3, path);

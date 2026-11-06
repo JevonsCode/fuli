@@ -116,6 +116,7 @@ export function createScrollScene({ labels }) {
   const growthArt = growthOverlay?.querySelector(".ga-stage");
   const header = document.querySelector(".nav");
   const progress = document.querySelector(".story-progress");
+  const cue = document.querySelector(".scroll-cue");
   const pieces = labels('default').map(createFragment);
   pieces.forEach((piece) => rig.append(piece));
 
@@ -139,6 +140,8 @@ export function createScrollScene({ labels }) {
     const next = Math.min(index + 1, sceneNames.length - 1);
     const t = smooth(clamp((local - 0.43) / 0.48));
     // The drawing plays while its chapter dwells, before the morph to the next scene.
+    // The scroll arrow fades out over the first third of the first screen.
+    if (cue) cue.style.opacity = String(1 - clamp(y / (window.innerHeight / 3)));
     const growth = index === growthIndex ? clamp(local / 0.42) : index > growthIndex ? 1 : 0;
     growthArt?.style.setProperty("--growth-progress", growth.toFixed(3));
     const darkness = (scene) => (darkScenes.has(sceneNames[scene]) ? 1 : 0);
