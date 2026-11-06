@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { InvalidInputError } from '../app/application-error.js';
+import { checkRelayedChoice } from './question-options.js';
 import { JudgmentStore } from './store.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { judgmentHumanInteraction } from './conversation.js';
@@ -115,6 +116,8 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
     // relay: the person's vote an FLA relayed in their words (rec#80), or null.
     async feedback(input, relay = null) { const parsed = parse(feedbackSchema, input); space(parsed);
       await prepareStore(parsed.personalSpaceId);
+      // A picked option is recorded as its own action, whatever the relaying Agent sent (rec#99).
+      if (relay) checkRelayedChoice(store().get(parsed.personalSpaceId, parsed.decisionId), parsed, relay.personWords);
       return store().feedback(parsed.personalSpaceId, parsed.decisionId, parsed.vote, parsed.reason, parsed.expectedRevision, relay); },
     async review(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.review(service, input); },
     async reviewAutomatic(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.reviewAutomatic(service, input); },
