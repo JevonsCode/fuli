@@ -170,6 +170,11 @@ fallback tasks are closed as `retain_nothing` / `reported` at the next entry in 
 session, and hook-delivered tasks by Stop. Capture candidates, experiences, memory changes,
 explicit knowledge usage, collaborators and meaningful work logs (including failures/blockers)
 still require `checkpoint_task_knowledge` with `capture_candidates` or `retain_nothing`.
+A hook-delivered task that Stop closes keeps, at entry, the prompt's own sentences that state a
+project rule (a policy or convention of ours, a port, a command, why something fails) as pending
+project facts in the person's words; review still decides them. Do not checkpoint only to repeat
+such a sentence; what you found out yourself (a failure and its fix, a command you discovered) still
+needs your checkpoint.
 Assigned employees include a truthful workLog, even
 with `retain_nothing`; never claim automatic closure completed work or saved memory. A coordinated
 worker returns its result instead of checkpointing an inherited token. Do not finish a reusable
