@@ -34,6 +34,7 @@ import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js
 import { createSessionPreferenceDelivery } from '../conversations/preference-session.js';
 import { createSessionPromptSentences } from './session-prompt-sentences.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
+import { nativeChoiceAnswers } from '../agents/choice-answers.js';
 
 // The local stores and runtimes an application opened from a runtime
 // directory owns. Adding one means opening it here and closing it below.
@@ -96,6 +97,8 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   app.personProfile = createPersonProfile({ path: join(dataDir, 'person-profile.json') });
   // The prompt of each session's current hook-entered task, kept only for the relay check (rec#80).
   app.entryPrompts = entryPromptRecords(dataDir);
+  // What the person answered in the client's own question card, for the same check.
+  app.nativeChoiceAnswers = task => nativeChoiceAnswers(task);
   // Every FLA's work surfaces in one table, with 全部暂停 and 恢复 (rec#11 D-85); the file is created by the first pause.
   app.workSurfaces = createWorkSurfaces({ path: join(dataDir, 'work-surfaces.sqlite'), sources: workSurfaceSources(app),
     names: (personalSpaceId) => workSurfaceNames(app, personalSpaceId) });

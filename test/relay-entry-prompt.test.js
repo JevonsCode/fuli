@@ -76,3 +76,17 @@ test('an Agent\'s own task entry keeps no prompt, whatever taskPrompt it sends',
   await assert.rejects(callAgentTool(f.app, 'run_delegated_action', { ...RELAY,
     taskContextToken: made.taskContextToken, personWords: '这个任务验收通过 synthetic-relay-words' }), { code: 'person_words_not_found' });
 });
+
+test('a choice the person picked in the client\'s own question card is relayed, only one given since this task began', async (t) => {
+  const { f, sent } = await relayFixture(t);
+  const entry = await codexEntry(f, f.dirs.thesis, { prompt: 'Synthetic question turn' });
+  const later = new Date(Date.now() + 60_000).toISOString();
+  const earlier = new Date(Date.now() - 60 * 60_000).toISOString();
+  f.app.nativeChoiceAnswers = async () => [{ text: '先别验收 synthetic-old-choice', at: earlier }, { text: '验收通过 synthetic-card-choice', at: later }];
+  const result = await callAgentTool(f.app, 'run_delegated_action', { ...RELAY,
+    taskContextToken: entry.context.taskContextToken, personWords: '验收通过 synthetic-card-choice' });
+  assert.equal(result.relayed.messageRef.source, 'native_choice');
+  assert.equal(sent[0].call.relayed.messageRef.at, later);
+  await assert.rejects(callAgentTool(f.app, 'run_delegated_action', { ...RELAY,
+    taskContextToken: entry.context.taskContextToken, personWords: '先别验收 synthetic-old-choice' }), { code: 'person_words_not_found' });
+});
