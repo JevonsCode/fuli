@@ -54,12 +54,14 @@ process.stderr.write(secret.repeat(6000));
 const input=readline.createInterface({input:process.stdin});
 input.on('line',async line=>{
   const value=JSON.parse(line);
+  // A hanging initialize records its child in the same write as the method, so
+  // a test that sees initialize also knows every process it must wait for.
+  if(value.method==='initialize'&&mode==='hang'){
+    observed.childPid=spawn(process.env.CODEX_PATH,['-e','setInterval(()=>{},1000)','app-server'],{stdio:'ignore'}).pid;
+  }
   if(value.method){observed.methods.push(value.method);save();}
   if(value.method==='initialize'){
-    if(mode==='hang'){
-      const child=spawn(process.env.CODEX_PATH,['-e','setInterval(()=>{},1000)','app-server'],{stdio:'ignore'});
-      observed.childPid=child.pid; save(); setInterval(()=>{},1000); return;
-    }
+    if(mode==='hang'){ setInterval(()=>{},1000); return; }
     if(mode==='eof'){process.exit(0);}
     if(mode==='invalid'){send({secret});return;}
     if(mode==='unknown-response'){send({jsonrpc:'2.0',id:secret,result:{}});return;}
