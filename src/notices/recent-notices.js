@@ -118,7 +118,7 @@ function notice(kind, key, at, params, href) {
 
 function nameLookup(projects) {
   const names = new Map(projects.map(project => [project.project_id, project.profile?.name ?? project.project_id]));
-  return id => (id ? names.get(id) ?? id : null);
+  return id => (id ? names.get(id) ?? id : '');
 }
 
 async function read(load, fallback) {

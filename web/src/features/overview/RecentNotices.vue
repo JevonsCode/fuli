@@ -16,7 +16,7 @@ import './workbench-card.css'
 // what Dreaming found, what Tonborg confirmed, who joined or left, a model that
 // stopped answering, a new version), each with its one quick way in. Seven show;
 // 更多 opens the rest. With nothing to say, the card stays away.
-type Notice = { id: string; kind: string; at: string; params: Record<string, string | number | null>; href: string }
+type Notice = { id: string; kind: string; at: string; params: Record<string, string | number>; href: string }
 const FEED_ROWS = 7
 const ICONS: Record<string, IconName> = {
   topic_promoted: 'project', dreaming_found: 'memory', dreaming_stopped: 'warning', tonborg_confirmed: 'check',
