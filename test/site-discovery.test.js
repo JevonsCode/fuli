@@ -229,6 +229,14 @@ test('the install chapter leads with the client: four steps beside real screens,
   const files = pages();
   for (const [path, lang] of [['index.html', 'zh'], ['en/index.html', 'en']]) {
     const { document } = parseHTML(files.get(path));
+    // 不会配？: a 「?」 card's prompt goes to the person's own AI client, which sets the model up.
+    // What has shipped is said plainly; the 「?」 prompt and WebMCP sit under the 即将 / Coming badge.
+    const aiSetup = document.querySelector('#start .ai-setup');
+    assert.equal(aiSetup.querySelector('.ai-help-prompt q').textContent, aiSetup.querySelector('.ai-setup-chat .msg.user').textContent, path);
+    assert.ok(aiSetup.querySelector('.ai-help-head [data-i18n="aiSetup.soon"]'), path);
+    assert.match(aiSetup.querySelector('.ai-setup-soon').textContent, /WebMCP/, path);
+    assert.equal([...aiSetup.querySelectorAll('p, b, q')].filter(node => /WebMCP/.test(node.textContent) && !node.closest('.ai-setup-soon')).length, 0, path);
+    assert.match(aiSetup.querySelector('.ai-setup-control').textContent, lang === 'zh' ? /AI 权限.*密钥/ : /AI permissions.*keys/, path);
     const story = document.querySelector('#start .install-story');
     assert.equal(story.querySelectorAll('.install-steps > li').length, 4, path);
     // The download drawn first, then six console screens, each in both languages.

@@ -23,6 +23,7 @@
     <link rel="stylesheet" href="./screens.css">
     <link rel="stylesheet" href="./preferences.css">
     <link rel="stylesheet" href="./project-graph.css">
+    <link rel="stylesheet" href="./ai-setup.css">
     <link rel="stylesheet" href="./install.css">
     <script type="module" src="./site.js"></script>
   </head>
@@ -350,6 +351,27 @@
               <figcaption data-i18n="start.windowCaption">界面截图，数据为合成示例</figcaption>
             </figure>
           </div>
+        </div>
+        <div class="ai-setup">
+          <h3 data-i18n="aiSetup.title">不会配？让你自己的 AI 来</h3>
+          <p data-i18n="aiSetup.body"></p>
+          <div class="ai-setup-flow">
+            <figure data-i18n-aria-label="aiSetup.cardLabel" class="ai-help-card" aria-label="控制台里的「?」说明卡">
+              <div class="ai-help-head"><span class="ai-help-q" aria-hidden="true">?</span><b data-i18n="aiSetup.cardTitle"></b><span data-i18n="aiSetup.soon" class="growth-badge"></span></div>
+              <p data-i18n="aiSetup.cardGloss"></p>
+              <div class="ai-help-prompt"><span data-i18n="aiSetup.promptLabel"></span><q data-i18n="aiSetup.prompt"></q><span data-i18n="aiSetup.copied" class="ai-help-copied"></span></div>
+            </figure>
+            <span class="ai-setup-arrow" aria-hidden="true"></span>
+            <figure data-i18n-aria-label="aiSetup.chatLabel" class="window ai-setup-chat" aria-label="示例：AI 客户端按提示词设置模型">
+              <div class="window-bar"><i></i><i></i><i></i><span data-i18n="agents.client">AI 客户端 · 示例</span></div>
+              <div class="window-body">
+                <p data-i18n="aiSetup.prompt" class="msg user"></p>
+                <p data-i18n="aiSetup.reply" class="msg agent"></p>
+              </div>
+            </figure>
+          </div>
+          <p data-i18n="aiSetup.control" class="ai-setup-control"></p>
+          <p class="ai-setup-soon"><span data-i18n="aiSetup.soon" class="growth-badge"></span><span data-i18n="aiSetup.webmcp"></span></p>
         </div>
         <details class="install-server">
           <summary data-i18n="start.terminalTitle">服务器和虚拟机：用终端安装</summary>

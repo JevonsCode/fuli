@@ -30,7 +30,7 @@ test('the preview page is built at /next/ in Chinese by default and in English, 
     assert.equal(document.querySelector('link[rel="canonical"]').href, `${base}next/${route}`);
     const alternates = [...document.querySelectorAll('link[hreflang]')].map(node => [node.hreflang, node.href]);
     assert.deepEqual(alternates, [['zh-Hans', base + 'next/zh/'], ['en', base + 'next/en/'], ['x-default', base + 'next/']]);
-    assert.deepEqual([...document.querySelectorAll('link[rel="stylesheet"]')].map(node => node.href), [prefix + 'style.css', prefix + 'scene.css', prefix + 'growth.css', prefix + 'screens.css', prefix + 'preferences.css', prefix + 'project-graph.css']);
+    assert.deepEqual([...document.querySelectorAll('link[rel="stylesheet"]')].map(node => node.href), [prefix + 'style.css', prefix + 'scene.css', prefix + 'growth.css', prefix + 'screens.css', prefix + 'preferences.css', prefix + 'project-graph.css', prefix + 'ai-setup.css']);
     assert.equal(document.querySelector('script[type="module"]').src, prefix + 'next.js');
     assert.equal(document.querySelector('.terminal').dataset.copy, 'npm install --global fuli-context@beta && fuli setup');
     assert.equal(document.querySelector('[data-i18n="next.stable"]').href, messages[locale]['next.stableUrl']);

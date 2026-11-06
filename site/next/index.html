@@ -23,6 +23,7 @@
     <link rel="stylesheet" href="../screens.css">
     <link rel="stylesheet" href="../preferences.css">
     <link rel="stylesheet" href="../project-graph.css">
+    <link rel="stylesheet" href="../ai-setup.css">
     <script type="module" src="../next.js"></script>
   </head>
   <body>
@@ -336,6 +337,27 @@
           <h3 data-i18n="next.clientTitle">下载客户端（推荐）</h3>
           <p data-i18n="next.clientDescription">双击安装，不用终端。Node.js、图数据库都已内置。已经装过 FULI 的，安装包会直接更新，数据保留。</p>
           <p class="start-links"><a data-i18n="next.clientWindows" data-download-windows class="button" href="https://github.com/JevonsCode/fuli/releases">下载 Windows 版</a><a data-i18n="next.clientMacDownload" data-download-macos class="button" href="https://github.com/JevonsCode/fuli/releases">下载 macOS 版</a><span data-i18n="next.clientMac">macOS 版需要 Apple 芯片和 macOS 13.5 以上，暂未签名：第一次打开被拦下时，到「系统设置 › 隐私与安全性」点「仍要打开」。</span></p>
+        </div>
+        <div class="ai-setup">
+          <h3 data-i18n="aiSetup.title">不会配？让你自己的 AI 来</h3>
+          <p data-i18n="aiSetup.body"></p>
+          <div class="ai-setup-flow">
+            <figure data-i18n-aria-label="aiSetup.cardLabel" class="ai-help-card" aria-label="控制台里的「?」说明卡">
+              <div class="ai-help-head"><span class="ai-help-q" aria-hidden="true">?</span><b data-i18n="aiSetup.cardTitle"></b><span data-i18n="aiSetup.soon" class="growth-badge"></span></div>
+              <p data-i18n="aiSetup.cardGloss"></p>
+              <div class="ai-help-prompt"><span data-i18n="aiSetup.promptLabel"></span><q data-i18n="aiSetup.prompt"></q><span data-i18n="aiSetup.copied" class="ai-help-copied"></span></div>
+            </figure>
+            <span class="ai-setup-arrow" aria-hidden="true"></span>
+            <figure data-i18n-aria-label="aiSetup.chatLabel" class="window ai-setup-chat" aria-label="示例：AI 客户端按提示词设置模型">
+              <div class="window-bar"><i></i><i></i><i></i><span data-i18n="agents.client">AI 客户端 · 示例</span></div>
+              <div class="window-body">
+                <p data-i18n="aiSetup.prompt" class="msg user"></p>
+                <p data-i18n="aiSetup.reply" class="msg agent"></p>
+              </div>
+            </figure>
+          </div>
+          <p data-i18n="aiSetup.control" class="ai-setup-control"></p>
+          <p class="ai-setup-soon"><span data-i18n="aiSetup.soon" class="growth-badge"></span><span data-i18n="aiSetup.webmcp"></span></p>
         </div>
         <h3 data-i18n="next.terminalTitle">用终端安装</h3>
         <p data-i18n="next.installDescription">已经装了 FULI 的话，先运行 fuli stop，并备份数据目录。下面的命令用原来的安装脚本，只是把安装的包换成 fuli-context@beta，装完会接着运行 fuli setup。</p>
