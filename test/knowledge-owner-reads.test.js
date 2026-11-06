@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,8 @@ import { callAgentTool } from '../src/agent-tools.js';
 import { readTurnReceipt } from '../src/agents/turn-receipt.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { taskKnowledgeReader } from '../src/graphiti/knowledge-reader.js';
+import { personalHumanReviewChannel } from '../src/graphiti/human-review-channel.js';
+import { mapHttpError } from '../src/http/error-mapping.js';
 import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
 import { knowledgeOwnerReads } from '../src/knowledge-owner-reads/console-port.js';
 import { reachableModules } from '../test-support/module-graph.js';
@@ -248,4 +250,25 @@ test('the console\'s settlement of an uncertain submission goes through its port
     ['GET', '/v1/publication-drafts', true], ['POST', '/v1/publication-drafts/draft-1/decision', true]]);
   assert.equal(sent[1].body.decision, 'reconcile_submit_public');
   assert.deepEqual(calls, []);
+});
+
+test('a console graph read while the provider is down is provider_unavailable, not the caller\'s bad input', async () => {
+  const { app } = application();
+  const files = { 'graph-runtime.json': JSON.stringify(CONFIG), 'graph-provider.env': 'FULI_PERSONAL_HUMAN_REVIEW_TOKEN=synthetic-review\n' };
+  const channel = (failure) => personalHumanReviewChannel('synthetic-data-dir', {
+    readText: (path) => files[basename(path)],
+    fetchImpl: async () => { throw failure; }
+  });
+  const read = async (failure) => {
+    const response = { setHeader() {}, writeHead() {}, end() {} };
+    const error = await handleGraphApiRequest({ request: Object.assign(Readable.from([]), { method: 'GET', headers: {} }),
+      response, url: new URL(`http://127.0.0.1/api/graph?spaceId=${SPACE}`), app,
+      ownerReads: knowledgeOwnerReads('synthetic-data-dir', { send: channel(failure) }) }).then(() => null, cause => cause);
+    return mapHttpError(error);
+  };
+  // Node's fetch rejects an unreachable host with TypeError('fetch failed').
+  assert.deepEqual(await read(new TypeError('fetch failed')), { status: 502,
+    body: { error: 'Graphiti provider is unavailable.', code: 'provider_unavailable' } });
+  assert.deepEqual(await read(new DOMException('The operation was aborted due to timeout', 'TimeoutError')), { status: 504,
+    body: { error: 'Graphiti provider request timed out.', code: 'provider_timeout' } });
 });

@@ -45,11 +45,25 @@ export function personalHumanReviewChannel(dataDir, {
     const headers = { authorization: `Bearer ${accessToken}`,
       ...(method === 'GET' ? {} : { 'content-type': 'application/json' }),
       ...(review ? { 'x-fuli-human-review-token': reviewToken() } : {}) };
-    const response = await fetchImpl(`${providerUrl}${path}`, { method, headers,
-      ...(method === 'GET' ? {} : { body: JSON.stringify(body ?? {}) }), signal: AbortSignal.timeout(timeoutMs) });
+    let response;
+    try {
+      response = await fetchImpl(`${providerUrl}${path}`, { method, headers,
+        ...(method === 'GET' ? {} : { body: JSON.stringify(body ?? {}) }), signal: AbortSignal.timeout(timeoutMs) });
+    } catch (error) {
+      throw unreachableProvider(error);
+    }
     const payload = await response.json().catch(() => ({}));
     return { ok: response.ok, status: response.status, payload };
   };
+}
+
+// A provider that is not running, is restarting or did not answer in time, with
+// the codes the provider client reports for the same failure. fetch rejects with
+// a plain TypeError ("fetch failed"), which HTTP would answer as bad input.
+function unreachableProvider(error) {
+  const timedOut = error?.name === 'TimeoutError';
+  return new ProviderRequestError(timedOut ? 'Graphiti provider request timed out.' : 'Graphiti provider is unavailable.',
+    { status: timedOut ? 504 : 0, code: timedOut ? 'provider_timeout' : 'provider_unavailable' });
 }
 
 // The provider's refusal on this channel as the console reports it: its code
