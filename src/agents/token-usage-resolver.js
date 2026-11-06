@@ -10,7 +10,7 @@ const DEFAULT_RESOLVER = createAgentTokenUsageResolver();
  * replaced with the reporting host session. A reporting host session is used
  * only when no worker runtime was supplied, which covers direct host activity.
  */
-export function resolveAgentSession(input = {}) {
+function resolveAgentSession(input = {}) {
   const workerRuntime = input.workerRuntime ?? input.worker_runtime;
   if (workerRuntime !== undefined && workerRuntime !== null) {
     if (!workerRuntime || typeof workerRuntime !== 'object' || Array.isArray(workerRuntime)) {

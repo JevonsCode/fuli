@@ -98,7 +98,7 @@ export async function runWorkspaceConnectionCommand(args, dependencies = {}) {
   return { status: 'configured', providerUrl, restartRequired: true };
 }
 
-export function parseWorkspaceConnectionOptions(args) {
+function parseWorkspaceConnectionOptions(args) {
   if (!Array.isArray(args)) throw new WorkspaceConnectionError('Command arguments are invalid.');
   if (args.some((argument) => HELP_FLAGS.has(argument))) {
     if (args.length !== 1) {
@@ -137,7 +137,7 @@ export function parseWorkspaceConnectionOptions(args) {
   };
 }
 
-export function workspaceConnectionHelp() {
+function workspaceConnectionHelp() {
   return [
     'Usage: fuli connect-workspace --url URL --token-file FILE [--data-dir DIR]',
     '',

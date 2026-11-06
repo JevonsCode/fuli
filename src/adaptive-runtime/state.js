@@ -1,10 +1,10 @@
 import { readJsonFile } from '../storage/json-file.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 
-export const ADAPTIVE_RUNTIME_STATE_VERSION = 1;
+const ADAPTIVE_RUNTIME_STATE_VERSION = 1;
 export const ADAPTIVE_RUNTIME_STATE_FORMAT = jsonFormat({ store: 'adaptive-runtime-state',
   versions: [ADAPTIVE_RUNTIME_STATE_VERSION] });
-export const ADAPTIVE_RUNTIME_STAGES = Object.freeze([
+const ADAPTIVE_RUNTIME_STAGES = Object.freeze([
   'always-on',
   'awake',
   'provider-sleeping',
@@ -44,7 +44,7 @@ export function initialAdaptiveRuntimeState({ enabled, now = new Date() }) {
   };
 }
 
-export function normalizeAdaptiveRuntimeState(input, { required = false } = {}) {
+function normalizeAdaptiveRuntimeState(input, { required = false } = {}) {
   if (input == null && !required) return null;
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new TypeError('Adaptive runtime state must be an object');

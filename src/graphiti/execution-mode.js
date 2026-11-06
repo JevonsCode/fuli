@@ -1,7 +1,7 @@
 // How the lead runs delegated workstreams. Separate sessions isolate context
 // best, subagents next; phases in one session only separate memory, so they
 // come last. The host says what it can run; nothing here starts a worker.
-export const EXECUTION_MODE_ORDER = ['new_session', 'sub_agent', 'phased'];
+const EXECUTION_MODE_ORDER = ['new_session', 'sub_agent', 'phased'];
 
 const DELEGATED = new Set(['delegate', 'request_loan', 'recruit']);
 

@@ -25,7 +25,7 @@ export const CONSOLE_AUTOSTART_LIMITS = Object.freeze({
   checkEveryMs: 15_000,
   firstCheckMs: 1_000
 });
-export const CONSOLE_AUTOSTART_ENV = 'FULI_CONSOLE_AUTOSTART';
+const CONSOLE_AUTOSTART_ENV = 'FULI_CONSOLE_AUTOSTART';
 // The local store states a person has to act on (format-notices.js).
 const WAITING_STORE_STATES = new Set(['pending_confirmation', 'half_applied', 'newer_format', 'unsupported']);
 

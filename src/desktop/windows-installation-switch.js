@@ -142,7 +142,7 @@ async function switchInstallation(plan, staged, packageRoot, runCli, lock, write
 export function assertInstallationUnchanged(path, bytes) {
   if (bytes === null ? existsSync(path) : !existsSync(path) || !readFileSync(path).equals(bytes)) throw new Error('Installation file or shortcut changed; left unchanged: ' + path);
 }
-export function requireShortcut(link, target) {
+function requireShortcut(link, target) {
   if (String(link?.targetPath ?? '').toLowerCase() !== target.toLowerCase() || link.arguments
       || String(link?.workingDirectory ?? '').toLowerCase() !== dirname(target).toLowerCase()) throw new Error('A shortcut no longer launches the selected Fuli; it was left unchanged.');
 }

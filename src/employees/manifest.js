@@ -12,7 +12,7 @@ export const packageFile = z.string().min(1).max(160).refine(
 );
 const toolIdentifier = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/);
 
-export const employeeManifestSchema = z.object({
+const employeeManifestSchema = z.object({
   schemaVersion: z.literal(1),
   id: packageIdentifier,
   version: packageVersion,

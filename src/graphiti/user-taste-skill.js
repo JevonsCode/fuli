@@ -107,7 +107,7 @@ export function recommendUserTaste(
     .slice(0, boundedLimit(limit, DEFAULT_RECOMMENDATION_LIMIT));
 }
 
-export function renderUserTasteSkill({
+function renderUserTasteSkill({
   preferences,
   recommendations = [],
   skillVersion,

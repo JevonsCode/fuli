@@ -4,8 +4,8 @@ import { createFuliSourceMarker } from './source-marker.js';
 import { utf8Preview } from '../text/utf8-preview.js';
 import { approxTokens } from '../text/token-estimate.js';
 
-export const AUTOMATIC_RECALL_BYTES = 4 * 1024;
-export const SEARCH_PAGE_BYTES = 8 * 1024;
+const AUTOMATIC_RECALL_BYTES = 4 * 1024;
+const SEARCH_PAGE_BYTES = 8 * 1024;
 const QUERY_PREVIEW_BYTES = 160;
 const PROJECT_ID_LIST_BYTES = 512;
 const PROJECT_ID_LISTS = ['searchedPersonalProjectIds', 'requestedProjectIds', 'searchedProjectIds', 'failedProjectIds'];

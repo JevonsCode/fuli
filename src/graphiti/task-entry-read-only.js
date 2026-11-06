@@ -6,7 +6,7 @@ import { resolvePreferenceProject } from './preference-project-resolution.js';
 // write in the old format is what the wait protects against. What an Agent needs
 // from the entry is all reads, though, so it keeps the person's preferences and
 // recall, records nothing, and says why instead of failing.
-export const READ_ONLY_REASON = 'data_format_read_only';
+const READ_ONLY_REASON = 'data_format_read_only';
 const GUIDANCE = 'FULI is waiting for the person to confirm a data format update, so this task is not recorded. '
   + 'Reads and searches work; saving knowledge is refused until then. There is no task token, so make no checkpoint. '
   + 'Tell the person once to confirm it in the FULI console under Settings, Data format. / '

@@ -118,6 +118,23 @@ function scriptStatements(sql) {
   return String(sql).split(';').map((statement) => statement.trim()).filter(Boolean);
 }
 
+// One write transaction on a store's connection: BEGIN IMMEDIATE takes the
+// write lock before the first read, and a call made inside an open
+// transaction joins it. Every store runs its multi-statement writes through
+// this instead of its own BEGIN/COMMIT/ROLLBACK.
+export function immediateTransaction(database, work) {
+  if (database.isTransaction) return work();
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    const result = work();
+    database.exec('COMMIT');
+    return result;
+  } catch (error) {
+    if (database.isTransaction) database.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 function versionGuarded(database, format, { afterVersionCheck = () => {} } = {}) {
   if (database.location?.() === null) return database;
   const check = () => {
@@ -129,22 +146,10 @@ function versionGuarded(database, format, { afterVersionCheck = () => {} } = {})
     }
     afterVersionCheck();
   };
-  const write = (operation) => {
-    if (database.isTransaction) {
-      check();
-      return operation();
-    }
-    database.exec('BEGIN IMMEDIATE');
-    try {
-      check();
-      const result = operation();
-      database.exec('COMMIT');
-      return result;
-    } catch (error) {
-      if (database.isTransaction) database.exec('ROLLBACK');
-      throw error;
-    }
-  };
+  const write = (operation) => immediateTransaction(database, () => {
+    check();
+    return operation();
+  });
   return new Proxy(database, {
     get(target, key) {
       if (key === 'exec') {

@@ -1,4 +1,4 @@
-import { openFormattedDatabase, sqliteFormat } from '../storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../storage/database-format.js';
 
 export const NODE_FORMAT = sqliteFormat({
   store: 'peer-node',
@@ -37,11 +37,7 @@ export const NODE_FORMAT = sqliteFormat({
 export function createNodeStore(path = ':memory:') {
   const database = openFormattedDatabase(path, NODE_FORMAT);
   const now = () => new Date().toISOString();
-  const transaction = (work) => {
-    database.exec('BEGIN IMMEDIATE');
-    try { const result = work(); database.exec('COMMIT'); return result; }
-    catch (error) { database.exec('ROLLBACK'); throw error; }
-  };
+  const transaction = (work) => immediateTransaction(database, work);
   const shareKey = (share) => [share.spaceId, share.projectId, share.agentId].join('\u0000');
   const shareView = (row) => row && ({ bindingId: row.binding_id, spaceId: row.space_id, projectId: row.project_id, agentId: row.agent_id,
     clients: JSON.parse(row.clients_json), workingDirectory: row.working_directory ?? null, createdAt: row.created_at, revokedAt: row.revoked_at,

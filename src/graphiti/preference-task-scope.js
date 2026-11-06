@@ -3,7 +3,7 @@ import { chatScene, EVERY_SCENE, generalItemReplaceable, tasteDomainScenes } fro
 // Legacy read compatibility recognizes only an anchored restrictive session
 // clause. Provenance, keywords and unknown prose remain visible. No stored
 // record is rewritten; canonical qualifiers take precedence.
-export function legacyPreferenceSession(instruction) {
+function legacyPreferenceSession(instruction) {
   return typeof instruction === 'string'
     ? /^仅(?:在|适用于)\s*(?:Codex|Claude Code|Cursor)\s*会话\s+([a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12})\s*(?:中|的|后续|[，,：:])/.exec(instruction)?.[1]
     : undefined;

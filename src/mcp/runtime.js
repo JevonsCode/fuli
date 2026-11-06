@@ -67,7 +67,7 @@ export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames
   }
 }
 
-export function createServerOrClose(app, factory = createMcpServer, options) {
+function createServerOrClose(app, factory = createMcpServer, options) {
   try {
     return factory(app, options);
   } catch (error) {
@@ -96,7 +96,7 @@ export function createCloseOnce({ closeServer, closeApplication, afterClose = ()
   };
 }
 
-export function createQuietCloser(close, onFailure = () => {}) {
+function createQuietCloser(close, onFailure = () => {}) {
   return () => {
     close().catch(onFailure);
   };

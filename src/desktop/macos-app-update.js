@@ -29,7 +29,7 @@ const PS = '/bin/ps';
 const CONTROLLER_TIMEOUT_MS = 10 * 60_000;
 const CLIENT_EXIT_TIMEOUT_MS = 15_000;
 
-export const macosDmgName = (version, arch) => `fuli-macos-${arch}-${version}.dmg`;
+const macosDmgName = (version, arch) => `fuli-macos-${arch}-${version}.dmg`;
 
 // packageRoot: FULI.app/Contents/Resources/fuli of the running app.
 // Returns { status: 'updated', version, clients: 'reconnected' | 'not_reconnected' }.

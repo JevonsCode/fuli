@@ -11,7 +11,7 @@ const id = z.string().trim().min(1).max(256);
 // client: the client Tonborg is enabled for and the CLI an opted-in legacy
 // backend runs. Without backend legacy_cli, Tonborg's model or the current
 // session answers (D-04 §6); policies saved before this field never run a CLI.
-export const policySchema = z.object({ mode: z.enum(['manual', 'shared', 'autonomous']),
+const policySchema = z.object({ mode: z.enum(['manual', 'shared', 'autonomous']),
   quality: z.enum(['quality', 'balanced', 'economy']), client: z.enum(['codex', 'claude_code']),
   backend: z.enum(['model_or_session', 'legacy_cli']).optional() }).strict();
 const spaceSchema = z.object({ personalSpaceId: id }).strict();

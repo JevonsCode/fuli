@@ -3,7 +3,7 @@ import { extname, isAbsolute, join, normalize, relative, resolve, sep } from 'no
 import { fileURLToPath } from 'node:url';
 
 const PROJECT_ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
-export const WEB_ROOT = join(PROJECT_ROOT, 'dist', 'web');
+const WEB_ROOT = join(PROJECT_ROOT, 'dist', 'web');
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',

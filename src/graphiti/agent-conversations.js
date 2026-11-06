@@ -9,12 +9,12 @@ import { utf8Preview } from '../text/utf8-preview.js';
 const POINTER_TITLE_BYTES = 96;
 const POINTER_BYTES = 320;
 
-export function conversationScope(application, input) {
+function conversationScope(application, input) {
   return { personal_space_id: application.config.personal.spaceId,
     personal_project_id: input.personalProjectId ?? null, agent_id: input.agentId ?? input.projectAgentId,
     source_application: input.ownerInspection ? null : input.sourceApplication ?? 'other' };
 }
-export function conversationTask(application, task) {
+function conversationTask(application, task) {
   return { ...conversationScope(application, task), session_id: task.sessionId, task_context_token: task.token };
 }
 export function safeConversationContent(value) {

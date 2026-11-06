@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 // An Agent's own workflows (rec#60 D-78): the repeated work it does, as named
 // ordered steps. agent_workflows holds each workflow's current state: which
@@ -64,9 +64,7 @@ export class AgentWorkflowStore {
   }
 
   transaction(work) {
-    this.db.exec('BEGIN IMMEDIATE');
-    try { const result = work(); this.db.exec('COMMIT'); return result; }
-    catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    return immediateTransaction(this.db, work);
   }
 
   get(workflowId) {

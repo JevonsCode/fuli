@@ -5,7 +5,7 @@ import { redactSensitiveContent } from '../security/sensitive-content.js';
 // One #fulidebug turn as a person reads it (Jevons 11-04): ordered parts, each
 // with who put it there. FULI's own additions (its hook frames, MCP surface
 // and tool calls) are `fuli`, so the console can show them apart.
-export const DEBUG_PART_SOURCES = Object.freeze(['person', 'fuli', 'ai', 'host', 'not_visible']);
+const DEBUG_PART_SOURCES = Object.freeze(['person', 'fuli', 'ai', 'host', 'not_visible']);
 export const DEBUG_RECORD_VERSION = 1;
 export const DEBUG_RECORD_MAX_BYTES = 2 * 1024 * 1024;
 

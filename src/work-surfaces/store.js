@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 
-import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
+import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
 // 全部暂停 / 恢复 over every FLA's work surfaces (rec#11 D-85). A pause first
 // records which items it covered and whether each was on (work_surface_pause_items),
@@ -53,9 +53,7 @@ export class WorkSurfaceStore {
   }
 
   transaction(work) {
-    this.db.exec('BEGIN IMMEDIATE');
-    try { const result = work(); this.db.exec('COMMIT'); return result; }
-    catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    return immediateTransaction(this.db, work);
   }
 
   addPause({ pauseId, personalSpaceId, filter, createdAt, items }) {

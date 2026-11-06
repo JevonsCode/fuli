@@ -6,7 +6,7 @@ import { askQuestions, askTerms, termsReadiness } from './terms-model.js';
 // found and what one item costs; then a fill writes terms for the rest. The
 // self-test writes the sample's terms too, so nothing it paid for is lost.
 
-export const SAMPLE_SIZE = 20;
+const SAMPLE_SIZE = 20;
 const BATCH = 16;
 const TOP = 5;
 // The self-test's advice: when items are already found this often, terms are

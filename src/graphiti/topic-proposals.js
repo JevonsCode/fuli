@@ -13,8 +13,8 @@ import { ApplicationError, ApplicationErrorCode } from '../app/application-error
 // sessions held in their temporary projects into it, and an undo moves back
 // what nobody changed since (the Provider's topic_knowledge_migration).
 export const PROPOSAL_MIN_CONVERSATIONS = 3;
-export const PROPOSAL_MIN_DAYS = 2;
-export const PROPOSAL_ASK_AGAIN_AFTER = 3;
+const PROPOSAL_MIN_DAYS = 2;
+const PROPOSAL_ASK_AGAIN_AFTER = 3;
 const PROPOSAL_LIMIT = 20;
 // Starts the purpose of a project Astro formed by itself; an undo archives only those.
 export const PROMOTED_PURPOSE = 'Astro 自动升级';
@@ -51,7 +51,7 @@ export async function topicOutcome(application, topic, { sourceApplication = 'ot
 
 // rec#11 D-86: the topic is formed without asking. A project of that name is
 // reused; two of that name fall back to asking, since only the person can pick.
-export async function promoteTopic(application, topic, { sourceApplication = 'other' } = {}) {
+async function promoteTopic(application, topic, { sourceApplication = 'other' } = {}) {
   const [stats] = await topics(application, { topic, limit: 1 });
   if (!isProposable(stats)) return null;
   const existing = await projectByName(application, stats.topic);
