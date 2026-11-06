@@ -107,11 +107,13 @@ test('a no-match recall shows only noMatchSourceMarker; a match keeps both marke
   const marker = status => ({ required: true, label: 'FULI 来源', status, count: 0, leadMarkdown: `**[◇ FULI · ${status}](http://127.0.0.1:2727/)**`, markdown: '' });
   const recall = extra => ({ status: 'no_match', partial: false, failed_query_count: 0, trigger_categories: [], query_count: 3,
     sourceMarker: marker('no_match'), noMatchSourceMarker: marker('no_match'), facts: [], entities: [], ...extra });
+  // rec#88: a marker keeps what the reply copies and its status; label and count are the rules'.
+  const shown = status => { const { label: _label, count: _count, ...rest } = marker(status); return rest; };
   const none = compactTaskContext(entry({ task_knowledge_recall: recall() })).task_knowledge_recall;
-  assert.deepEqual(none, { status: 'no_match', query_count: 3, noMatchSourceMarker: marker('no_match'), facts: [], entities: [] });
+  assert.deepEqual(none, { status: 'no_match', query_count: 3, noMatchSourceMarker: shown('no_match'), facts: [], entities: [] });
   const matched = compactTaskContext(entry({ task_knowledge_recall: recall({ status: 'matched', partial: true,
     failed_query_count: 1, trigger_categories: ['release_delivery'], sourceMarker: marker('matched') }) })).task_knowledge_recall;
-  assert.deepEqual(matched.sourceMarker, marker('matched'));
+  assert.deepEqual(matched.sourceMarker, shown('matched'));
   assert.deepEqual([matched.partial, matched.failed_query_count, matched.trigger_categories], [true, 1, ['release_delivery']]);
 });
 
@@ -222,4 +224,26 @@ test('a team of one carries no team rules, and the Agent and project IDs are sta
   const pair = compactTaskContext(entry({ project_agent_context: { guidance: sections.continuity_guidance,
     team: { guidance: sections.team_guidance, roster: [{ agent_id: 'lead', name: 'Lead' }, { agent_id: 'm', name: 'Member' }] } } }));
   assert.equal(pair.project_agent_context.team_guidance.rules, `${ENTRY_RULES_URI}/team_guidance`);
+});
+
+test('a recalled item says each thing once: no repeated scope, hash key, empty fields, score or title prefix (rec#88)', () => {
+  const policy = 'Our retry policy for every outbound channel: at most 3 attempts in total.';
+  const item = { id: 'e-1', space_id: 's', scope: 'personal', key: 'remember-c3512b1fb1dd2f4f91e17c16', defined_project_id: 'p',
+    inherited_from_project_id: null, scope_distance: 0, confirmation_status: 'pending', source_uris: [], score: 0.208,
+    name: policy.slice(0, 40), type: 'ProjectFact', summary: policy };
+  const view = compactTaskContext(entry({ context: { personal_space_id: 's', personal_project_id: 'p' }, task_knowledge_recall: {
+    status: 'matched', query_count: 2, entities: [item], facts: [],
+    pending_fallback: { slots: ['entities'], note: 'Pending items are agent-proposed and not confirmed by a person; judge them before use.' },
+    retrieval_budget: { limit_bytes: 4096, returned_items: 1, omitted_items: 0, truncated: false } } })).task_knowledge_recall;
+  assert.deepEqual(view.entities, [{ id: 'e-1', confirmation_status: 'pending', type: 'ProjectFact', summary: policy }]);
+  assert.deepEqual(view.pending_fallback, { slots: ['entities'] });
+  assert.equal(view.retrieval_budget, undefined);
+  // A curated key, another project's item and a title of its own stay.
+  const kept = compactTaskContext(entry({ context: { personal_space_id: 's', personal_project_id: 'p' }, task_knowledge_recall: {
+    status: 'matched', query_count: 1, facts: [], entities: [{ ...item, key: 'willow:admin-port', defined_project_id: 'parent',
+      inherited_from_project_id: 'parent', scope_distance: 1, name: 'Admin console port' }],
+    retrieval_budget: { limit_bytes: 4096, returned_items: 3, omitted_items: 2, truncated: true } } })).task_knowledge_recall;
+  assert.deepEqual([kept.entities[0].key, kept.entities[0].defined_project_id, kept.entities[0].inherited_from_project_id,
+    kept.entities[0].scope_distance, kept.entities[0].name], ['willow:admin-port', 'parent', 'parent', 1, 'Admin console port']);
+  assert.equal(kept.retrieval_budget.truncated, true);
 });

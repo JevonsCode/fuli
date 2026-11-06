@@ -26,7 +26,7 @@ export function compactTaskContext(value) {
       guidance_ref: sharedApplication ? entryRulesReference('application_guidance').rules
         : 'application_guidance.knowledge_retrieval' };
   }
-  if (share && result.task_knowledge_recall) result.task_knowledge_recall = recallView(result.task_knowledge_recall);
+  if (share && result.task_knowledge_recall) result.task_knowledge_recall = recallView(result.task_knowledge_recall, value.context);
   // Off-flags of a fresh task: a resumed or orphaned checkpoint says so.
   if (share && value.resumed_checkpoint === false) delete result.resumed_checkpoint;
   if (share && value.previous_checkpoint_missing === false) delete result.previous_checkpoint_missing;
@@ -211,11 +211,42 @@ function conversationView(conversation, share) {
 // A recall that matched nothing has one marker to show, so a sourceMarker that
 // repeats noMatchSourceMarker byte for byte is left out; so are a complete
 // search's zero failures and an unmatched prompt's empty categories.
-function recallView(recall) {
+// rec#88: a recalled item and its markers say each thing once. The item keeps
+// its id, content, confirmation and any scope that differs from the entry's
+// context; a marker keeps what is copied into the reply and its status; the
+// pending note and an untouched retrieval budget are the shared rules'.
+function recallView(recall, context = {}) {
   const repeated = recall.sourceMarker && isDeepStrictEqual(recall.sourceMarker, recall.noMatchSourceMarker);
-  return Object.fromEntries(Object.entries(recall).filter(([key, item]) => !(key === 'sourceMarker' && repeated)
+  const view = Object.fromEntries(Object.entries(recall).filter(([key, item]) => !(key === 'sourceMarker' && repeated)
     && !(key === 'partial' && item === false) && !(key === 'failed_query_count' && item === 0)
-    && !(key === 'trigger_categories' && Array.isArray(item) && !item.length)));
+    && !(key === 'trigger_categories' && Array.isArray(item) && !item.length)
+    && !(key === 'retrieval_budget' && item && !item.truncated && !item.omitted_items)));
+  for (const kind of ['facts', 'entities']) if (Array.isArray(view[kind])) view[kind] = view[kind].map(item => recallItemView(item, context));
+  for (const marker of ['sourceMarker', 'noMatchSourceMarker']) if (view[marker]) view[marker] = markerView(view[marker]);
+  if (view.pending_fallback?.note) view.pending_fallback = { slots: view.pending_fallback.slots };
+  return view;
+}
+
+// A content-hash key (remember-…, experience-…) names nothing a reader can use.
+const HASH_KEY = /^[a-z]+-[0-9a-f]{16,}$/u;
+function recallItemView(item, context) {
+  const same = (field, value) => value !== undefined && value !== null && item[field] === value;
+  const skip = new Set([
+    ...(same('space_id', context?.personal_space_id) ? ['space_id'] : []),
+    ...(item.scope === 'personal' ? ['scope'] : []),
+    ...(typeof item.key === 'string' && HASH_KEY.test(item.key) ? ['key'] : []),
+    ...(same('defined_project_id', context?.personal_project_id) ? ['defined_project_id'] : []),
+    ...(item.inherited_from_project_id == null ? ['inherited_from_project_id'] : []),
+    ...(item.scope_distance === 0 ? ['scope_distance'] : []),
+    ...(Array.isArray(item.source_uris) && !item.source_uris.length ? ['source_uris'] : []),
+    'score',
+    ...(typeof item.name === 'string' && typeof item.summary === 'string' && item.summary.startsWith(item.name) ? ['name'] : [])
+  ]);
+  return Object.fromEntries(Object.entries(item).filter(([key]) => !skip.has(key)));
+}
+
+function markerView({ label: _label, count: _count, ...marker }) {
+  return marker;
 }
 
 // When the selected lead also executes, the execution pair repeats the
