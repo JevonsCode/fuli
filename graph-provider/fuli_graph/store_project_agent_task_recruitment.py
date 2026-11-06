@@ -1208,13 +1208,6 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
         )
         return dict(records[0]['recruitment']) if records else None
 
-    async def _task_recruitment(self, personal_space_id, task_id):
-        recruitments = await self._task_recruitments(
-            personal_space_id,
-            task_id,
-        )
-        return recruitments[0] if recruitments else None
-
     async def _task_recruitments(self, personal_space_id, task_id):
         records, _, _ = await self.runtime.driver.execute_query(
             '''
