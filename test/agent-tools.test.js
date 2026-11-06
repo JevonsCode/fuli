@@ -41,7 +41,7 @@ const NAMES = [
   'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
   'list_work_surfaces', 'pause_work_surfaces', 'resume_work_surfaces',
   'run_delegated_action',
-  'read_diagnostic_events', 'read_old_data',
+  'read_diagnostic_events', 'read_old_data', 'read_occupation_kit',
   'read_task_preferences',
   'begin_task_context',
   'checkpoint_task_knowledge',
@@ -357,6 +357,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     diagnosticEvents: { read: () => { calls.push(['diagnostics-read']);
       return { events: [], sourcesUnavailable: [], skippedLines: 0, stored: false, mayHaveDropped: false }; } },
     oldData: { list: async () => calls.push(['old-data-list']), read: async (input) => calls.push(['old-data-read', input]) },
+    occupationPlugins: { kit: (input) => { calls.push(['occupation-kit', input]); return { occupation: input.occupation, plugin: null }; } },
     controlProjectAgentTaskRun: async input => calls.push(['task-run-control', input]),
     queryAgentConversations: async input => calls.push(['conversations-' + input.mode, input]),
     resumeAgentConversation: async input => calls.push(['conversation-resume', input]),
@@ -546,6 +547,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       const probe = { change_knowledge_tags: { action: 'create' },
         report_agent_service: { action: 'register', taskContextToken: 'fuli-task-probe' },
         run_delegated_action: { taskContextToken: 'fuli-task-probe', route: 'PATCH /api/recall-policy', reason: 'probe' },
+        read_occupation_kit: { personalSpaceId: 'space-a', occupation: 'testing' },
         ...Object.fromEntries(['propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
           'pause_work_surfaces', 'resume_work_surfaces'].map(tool => [tool, { taskContextToken: 'fuli-task-probe' }])) }[name];
       await callAgentTool(app, name, { probe: name, ...probe });
@@ -563,7 +565,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'workflow-propose', 'workflow-index', 'workflow-read', 'workflow-recordRun',
     'surfaces-list', 'surfaces-pause', 'surfaces-resume',
     'delegated-send',
-    'diagnostics-read', 'old-data-list',
+    'diagnostics-read', 'old-data-list', 'occupation-kit',
     'read-task-preferences',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',

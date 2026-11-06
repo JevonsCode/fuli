@@ -28,6 +28,10 @@ export const WIDGETS = {
     component: defineAsyncComponent(() => import('@/features/fla-page/FlaGrowth.vue')),
     slots: ['fla.overview'],
   },
+  'fla-kit': {
+    component: defineAsyncComponent(() => import('@/features/fla-page/FlaOccupationKit.vue')),
+    slots: ['fla.overview'],
+  },
   'recent-notices': {
     component: defineAsyncComponent(() => import('@/features/overview/RecentNotices.vue')),
     slots: ['workbench.feed'],

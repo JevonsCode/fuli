@@ -7,7 +7,7 @@ export type WidgetLayout = Record<SlotId, string[]>
 export const DEFAULT_LAYOUT: WidgetLayout = {
   'workbench.feed': ['team-cards', 'recent-notices'],
   'shell.aboveDock': ['team-island'],
-  'fla.overview': ['fla-growth', 'fla-sheets'],
+  'fla.overview': ['fla-growth', 'fla-kit', 'fla-sheets'],
 }
 
 // A stored layout is untrusted data: unknown slots and widgets, widgets in a

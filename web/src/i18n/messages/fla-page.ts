@@ -28,6 +28,17 @@ export const flaPageMessages = {
       more: '查看全部 {count} 条',
       less: '收起',
     },
+    kit: {
+      title: '起步包',
+      loading: '正在读取 {name} 的起步包',
+      pieces: '干活清单 {checklist} 条 · 验收 {acceptance} 条',
+      unanswered: '还没定用哪些，点一下就启用',
+      outdated: '起步包更新了，你的选择是按 {version} 定的',
+      skills: 'Skill',
+      mcpServers: 'MCP（只是建议，不会自动连接）',
+      enabled: '已为 {name} 启用「{item}」',
+      disabled: '已为 {name} 停用「{item}」',
+    },
   },
   'en-US': {
     sheets: {
@@ -56,6 +67,17 @@ export const flaPageMessages = {
       partial: 'Too many experiences: only part was read.',
       more: 'Show all {count}',
       less: 'Show less',
+    },
+    kit: {
+      title: 'Starter kit',
+      loading: 'Reading {name}’s starter kit',
+      pieces: '{checklist} checklist items · {acceptance} acceptance checks',
+      unanswered: 'Nothing chosen yet; click one to enable it',
+      outdated: 'The kit was updated; your choice was made for {version}',
+      skills: 'Skills',
+      mcpServers: 'MCP (suggestions only, never connected for you)',
+      enabled: 'Enabled “{item}” for {name}',
+      disabled: 'Turned off “{item}” for {name}',
     },
   },
 }

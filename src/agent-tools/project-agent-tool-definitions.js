@@ -276,7 +276,7 @@ export const PROJECT_AGENT_TOOL_DEFINITIONS = [
   {
     name: 'decide_project_agent_recruitment',
     title: 'WRITE · Approve or cancel recruitment',
-    description: 'Approve or cancel one pending AR recruitment event with an expected revision. Approval creates only the declared durable or bounded temporary role through the Provider.',
+    description: 'Approve or cancel one pending AR recruitment event with an expected revision. Approval creates only the declared durable or bounded temporary role through the Provider. occupationKit: the kit recommendations the person enabled for the new FLA (ids from occupation_kits).',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: id,
@@ -284,6 +284,10 @@ export const PROJECT_AGENT_TOOL_DEFINITIONS = [
       expectedRevision: integerSchema({ minimum: 0 }),
       decision: recruitmentDecision,
       occupation: projectAgentOccupation,
+      occupationKit: objectSchema({
+        skills: arraySchema(boundedString(128), { maxItems: 6 }),
+        mcpServers: arraySchema(boundedString(128), { maxItems: 6 })
+      }),
       reason: shortText
     }, ['personalSpaceId', 'personalProjectId', 'recruitmentId', 'expectedRevision', 'decision', 'reason'])
   }

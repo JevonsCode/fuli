@@ -130,6 +130,8 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   read_diagnostic_events: UNSCOPED,
   // Reads files under the data directory, outside any app's space.
   read_old_data: UNSCOPED,
+  // Public upstream text plus the space's own answers, read by occupation or Agent.
+  read_occupation_kit: UNSCOPED,
   explain_settings: UNSCOPED,
   get_agent_naming_style: UNSCOPED,
   update_capture_policy: UNSCOPED,

@@ -2,6 +2,7 @@ import { ApplicationError, ApplicationErrorCode } from '../app/application-error
 import { applyFieldAuthorship, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
 import { loadProjectAgentContinuity } from './project-agent-task-entry.js';
 import { dismissalLessonHint } from './project-agent-dismissal.js';
+import { recordRecruitmentKitAnswer, recruitmentKitHint } from '../occupation-plugins/recruitment.js';
 import { requireGroupedAgentTaskContext } from './project-team-hierarchy.js';
 import { otherProjectTask, resolveCoordinationScope, scopedTaskIdempotencyKey } from './temporary-project-scope.js';
 import { enrichProjectAgentTaskActivity } from '../agents/token-usage-resolver.js';
@@ -329,10 +330,13 @@ export async function coordinateProjectAgentTask(
     }, input.sourceApplication);
   }
   // A recruitment waiting for a decision learns only that earlier lessons exist.
+  const recruitmentOccupations = [route.recruitment, ...route.recruitments].map(item => item?.occupation?.role);
   const recruitmentLessons = route.task.status === 'awaiting_recruitment'
-    ? await dismissalLessonHint(application, { personalProjectId: projectId,
-      occupations: [route.recruitment, ...route.recruitments].map(item => item?.occupation?.role) })
+    ? await dismissalLessonHint(application, { personalProjectId: projectId, occupations: recruitmentOccupations })
     : null;
+  // The occupation kits a pending recruitment would hire with (occupation-plugins/recruitment.js).
+  const recruitmentKits = route.task.status === 'awaiting_recruitment'
+    ? recruitmentKitHint(application, application.config.personal.spaceId, recruitmentOccupations) : null;
   // The current conversation owner stays accountable even when the routed
   // execution lead differs. Requests with an entry context retain that parent.
   const boundTask = adoptedTask ?? (entryTask
@@ -357,6 +361,7 @@ export async function coordinateProjectAgentTask(
       required_action: 'Review the returned recruitment proposal and use decide_project_agent_recruitment with its current revision before starting a worker.'
     } : {}),
     ...(recruitmentLessons ? { dismissal_lessons: recruitmentLessons } : {}),
+    ...(recruitmentKits ? { occupation_kits: recruitmentKits } : {}),
     route,
     ...(boundTask ? { task_context: {
       task_context_token: boundTask.token,
@@ -472,9 +477,9 @@ export async function decideProjectAgentRecruitment(application, input) {
   const value = await application.personal.decideProjectAgentRecruitment(
     providerProjectAgentRecruitmentDecision(input)
   );
-  return projectAgentRecruitmentRecord(
-    value?.recruitment ?? value?.record ?? value
-  );
+  const record = projectAgentRecruitmentRecord(value?.recruitment ?? value?.record ?? value);
+  const occupationKit = recordRecruitmentKitAnswer(application, input, record);
+  return occupationKit ? { ...record, occupationKit } : record;
 }
 
 export async function upsertExecutor(application, input) {

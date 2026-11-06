@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { t } from '@/i18n'
+import OccupationKitSection from './OccupationKitSection.vue'
 import { occupationDescription, occupationName } from './occupation-catalog'
 import type { OccupationPeekState } from './occupation-peek'
 
@@ -50,6 +51,7 @@ const emit = defineEmits<{ edit: []; archive: []; restore: []; remove: []; retry
         {{ occupationDescription(state.entry) || t('occupations.noDescription') }}
       </p>
     </section>
+    <OccupationKitSection :occupation="state.entry.key" />
     <p v-if="state.entry.status === 'active'" class="m-0 text-sm text-muted-foreground" data-occupation-archive-hint>{{ t('occupations.archiveHint') }}</p>
     <p v-if="actionError" class="m-0 text-sm text-destructive" role="alert">{{ actionError }}</p>
     <DialogFooter class="border-t pt-4">

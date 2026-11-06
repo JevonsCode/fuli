@@ -49,6 +49,8 @@ import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-st
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
 import { CONSOLE_AUTOSTART_FILE, CONSOLE_AUTOSTART_FORMAT } from '../local-runtime/console-autostart-record.js';
 import { CLIENT_LINKS_STATE_FORMAT } from '../client-links/registry.js';
+import { OCCUPATION_PLUGINS_STATE_FORMAT } from '../occupation-plugins/port.js';
+import { OCCUPATION_KIT_CHOICES_FORMAT } from '../occupation-plugins/choice-store.js';
 import { SESSION_CLIENT_FORMAT } from '../agent-kits/session-clients.js';
 import { ENTRY_PROMPT_FORMAT } from '../agent-delegation/entry-prompts.js';
 import { PERSON_PROFILE_FORMAT } from '../person-profile/port.js';
@@ -84,6 +86,8 @@ const sqliteStores = () => [
   ['recall-impressions.sqlite', RECALL_IMPRESSIONS_FORMAT],
   // Each Agent's look as the person chose it, every earlier choice kept (rec#11 D-89).
   ['agent-avatars.sqlite', AGENT_AVATARS_FORMAT],
+  // Which recommended Skills and MCP servers of its occupation kit each FLA uses, every answer kept.
+  ['occupation-kit-choices.sqlite', OCCUPATION_KIT_CHOICES_FORMAT],
   // Who changed which field of a project's profile and when, with before and after text; never pruned.
   ['project-change-log.sqlite', PROJECT_CHANGE_LOG_FORMAT],
   // 全部暂停 snapshots of every FLA's work surfaces and each pause and resume (rec#11 D-85).
@@ -130,6 +134,8 @@ const jsonStores = () => [
   ['model-evaluations.json', MODEL_EVALUATIONS_FORMAT],
   // The applied client link manifest, its auto-update switch and what each update changed.
   ['client-links.json', CLIENT_LINKS_STATE_FORMAT],
+  // The applied occupation plugin manifest, its auto-update switch and what each update changed.
+  ['occupation-plugins.json', OCCUPATION_PLUGINS_STATE_FORMAT],
   // The person's own name and picture (「我」), changed only in the console on this computer.
   ['person-profile.json', PERSON_PROFILE_FORMAT],
   // Whether the person stopped FULI on purpose and when client sessions started it (rec#94).
