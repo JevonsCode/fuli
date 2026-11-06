@@ -112,8 +112,34 @@ test('a session of new prompts sends the skeleton once and then only the fields 
     return value;
   };
   const sent = [];
+  // What the model holds for each turn: the frame's own fields over what its
+  // skeleton_unchanged names, resolved by revision; a null field is gone.
+  const byRevision = new Map();
+  const viewOf = frame => {
+    const named = frame.skeleton_unchanged;
+    const base = named === undefined ? {} : typeof named === 'string' || Array.isArray(named)
+      ? Object.assign({}, ...[named].flat().map(revision => byRevision.get(revision)))
+      : Object.fromEntries(Object.entries(named).flatMap(([revision, parts]) => parts.map(part => [part, byRevision.get(revision)[part]])));
+    const own = Object.fromEntries(['agent_receipt', 'judgment_context', 'context', 'task_guidance', 'task_knowledge_recall',
+      'project_agent_context'].filter(field => Object.hasOwn(frame, field)).flatMap(field =>
+      ['task_knowledge_recall', 'project_agent_context'].includes(field)
+        ? Object.entries(frame[field]).map(([key, item]) => [`${field}.${key}`, item]) : [[field, frame[field]]]));
+    const view = { ...base, ...own };
+    if (frame.skeleton_revision) byRevision.set(frame.skeleton_revision, view);
+    return view;
+  };
   for (const [index, categories] of sixTurns.entries()) {
-    sent.push(await f.turn(realistic(`task-${index}`, categories, index), `Synthetic prompt ${index}`));
+    const value = realistic(`task-${index}`, categories, index);
+    const turn = await f.turn(value, `Synthetic prompt ${index}`);
+    sent.push(turn);
+    // Nothing is withheld: every field of the entry is in the frame or named, and nothing stale stays.
+    const view = Object.fromEntries(Object.entries(viewOf(turn.frame)).filter(([, item]) => item !== null));
+    for (const field of ['task_knowledge_recall', 'project_agent_context']) {
+      for (const [key, item] of Object.entries(value[field])) assert.deepEqual(view[`${field}.${key}`], item, `turn ${index + 1} ${field}.${key}`);
+      const extra = Object.keys(view).filter(part => part.startsWith(`${field}.`) && !Object.hasOwn(value[field], part.slice(field.length + 1)));
+      assert.deepEqual(extra, [], `turn ${index + 1} ${field}`);
+    }
+    assert.deepEqual(view.agent_receipt, value.agent_receipt);
   }
   const bytes = sent.map(turn => Buffer.byteLength(turn.text));
   assert.equal(sent[0].frame.skeleton_unchanged, undefined, 'the first prompt carries the whole skeleton');
