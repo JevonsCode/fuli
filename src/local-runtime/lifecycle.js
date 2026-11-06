@@ -40,7 +40,7 @@ const START_LOCK_WAIT_MS = 5 * 60_000;
 export async function startLocalRuntime(input, dependencies = {}) {
   const deps = lifecycleDependencies(dependencies);
   // One start at a time per data directory: a later one finds FULI running.
-  const release = deps.lockStart(dirname(input.paths.graphRuntimeStatePath));
+  const release = deps.lockStart(dataDirOf(input.paths));
   try {
     return await startUnlocked(input, deps);
   } finally {
@@ -58,9 +58,9 @@ async function startUnlocked(input, deps) {
   // A start a client session's MCP process asked for (console-autostart.js)
   // yields to a stop the person made after it decided; any other start is the
   // person wanting FULI again.
-  const dataDir = dirname(input.paths.graphRuntimeStatePath);
+  const dataDir = dataDirOf(input.paths);
   if (input.automatic === true) {
-    if (deps.readAutostart(dataDir).stoppedAt) {
+    if (dataDir && deps.readAutostart(dataDir).stoppedAt) {
       throw new Error('FULI was stopped on purpose; it is not started automatically.');
     }
   } else {
@@ -99,7 +99,7 @@ export async function stopLocalRuntime(input, dependencies = {}) {
   const config = deps.readConfig(input.paths.graphRuntimeConfigPath);
   const state = deps.readState(input.paths.graphRuntimeStatePath);
   // Recorded first, so no client session starts it again while it stops.
-  deps.recordStop(dirname(input.paths.graphRuntimeStatePath));
+  deps.recordStop(dataDirOf(input.paths));
   const consoleResult = await stopRecordedConsole(state, input.paths, deps);
   const managesDevelopmentWorkspace = state?.managedProviders?.includes(
     'development-workspace'
@@ -308,8 +308,14 @@ function lifecycleDependencies(overrides) {
   };
 }
 
+// The data directory the paths name, or null for paths that name none.
+function dataDirOf(paths) {
+  if (typeof paths?.dataDir === 'string' && paths.dataDir) return paths.dataDir;
+  return typeof paths?.graphRuntimeStatePath === 'string' ? dirname(paths.graphRuntimeStatePath) : null;
+}
+
 function lockConsoleStart(dataDir) {
-  if (!existsSync(dataDir)) return () => {};
+  if (!dataDir || !existsSync(dataDir)) return () => {};
   try {
     return acquireConsoleStartLock(dataDir, { waitMs: START_LOCK_WAIT_MS });
   } catch (error) {
@@ -322,7 +328,7 @@ function lockConsoleStart(dataDir) {
 // starts FULI once more, or not at all, until the next start or stop.
 function keepIntent(record) {
   return (dataDir) => {
-    if (!existsSync(dataDir)) return;
+    if (!dataDir || !existsSync(dataDir)) return;
     try { record(dataDir); } catch { /* the start or stop itself goes on */ }
   };
 }
