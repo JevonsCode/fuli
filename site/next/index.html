@@ -21,6 +21,7 @@
     <link rel="stylesheet" href="../scene.css">
     <link rel="stylesheet" href="../growth.css">
     <link rel="stylesheet" href="../screens.css">
+    <link rel="stylesheet" href="../preferences.css">
     <script type="module" src="../next.js"></script>
   </head>
   <body>
@@ -55,6 +56,7 @@
           <div class="diagram-overlay" data-overlay="owner">
             <div data-i18n-html="diagram.receipt" class="receipt-plate">FULI Agent：负责人 <b>Milo Reed</b> · 协作 <b>Jefa</b>、<b>Nova</b></div>
           </div>
+          <div class="diagram-overlay quotes-overlay" data-overlay="knowledge" data-copy="#knowledge .pref-quotes" data-progress></div>
           <div class="diagram-overlay screen-overlay" data-overlay="knowledge" data-copy="#knowledge .screen-figure"></div>
           <div class="diagram-overlay screen-overlay" data-overlay="projects" data-copy="#projects .screen-figure"></div>
           <div class="diagram-overlay growth-overlay" data-overlay="growth" data-copy="#growth .growth-anim"></div>
@@ -143,6 +145,14 @@
               </div>
               <figcaption data-i18n="start.windowCaption">界面截图，数据为合成示例</figcaption>
             </figure>
+            <ul data-i18n-aria-label="knowledge.quotes" class="pref-quotes static-figure" aria-label="偏好示例">
+              <li class="pq is-impact" style="--x: 6%; --top: 66px; --at: .02"><small data-i18n="knowledge.kind.taste"></small><span data-i18n="knowledge.quote1"></span></li>
+              <li class="pq" style="--x: 6%; --top: 24px; --at: .08"><small data-i18n="knowledge.kind.judgment"></small><span data-i18n="knowledge.quote2"></span></li>
+              <li class="pq is-impact" style="--x: 6%; --bottom: 34px; --at: .14"><small data-i18n="knowledge.kind.personality"></small><span data-i18n="knowledge.quote3"></span></li>
+              <li class="pq" style="--x: 60%; --bottom: 34px; --at: .21"><small data-i18n="knowledge.kind.taste"></small><span data-i18n="knowledge.quote4"></span></li>
+              <li class="pq is-impact" style="--x: 48%; --top: 66px; --at: .27"><small data-i18n="knowledge.kind.judgment"></small><span data-i18n="knowledge.quote5"></span></li>
+              <li class="pq" style="--x: 60%; --top: 24px; --at: .34"><small data-i18n="knowledge.kind.personality"></small><span data-i18n="knowledge.quote6"></span></li>
+            </ul>
           </section>
 
           <section class="chapter" id="projects" data-scene="projects" aria-labelledby="projects-title">

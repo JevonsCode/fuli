@@ -161,6 +161,15 @@ test('the home story walks through the product in order, with measured numbers a
       assert.ok(document.querySelector(`#${id} .model-modes .is-base`) && document.querySelector(`#${id} .model-modes .is-model`), path + id);
       assert.ok(document.querySelector(`[data-overlay="${id}"][data-copy="#${id} .screen-figure"]`), path + id);
     }
+    // 沉淀 surfaces preferences in the person's own words: two each of taste, personality and judgment,
+    // a few landing big, all behind the window; without the story they are a plain list.
+    const quotes = [...document.querySelectorAll('#knowledge .pref-quotes .pq')];
+    assert.deepEqual(quotes.map(node => node.querySelector('small').getAttribute('data-i18n').split('.').pop()).sort(), ['judgment', 'judgment', 'personality', 'personality', 'taste', 'taste'], path);
+    assert.equal(quotes.filter(node => node.classList.contains('is-impact')).length, 3, path);
+    for (const node of quotes) assert.ok(node.querySelector('span').textContent.trim(), path);
+    const quotesOverlay = document.querySelector('[data-overlay="knowledge"][data-copy="#knowledge .pref-quotes"]');
+    assert.ok(quotesOverlay?.hasAttribute('data-progress'), path);
+    assert.equal(quotesOverlay.nextElementSibling.dataset.copy, '#knowledge .screen-figure', path);
     // The model's lines read the same everywhere: the 接了模型 pill.
     assert.ok(document.querySelectorAll('.model-modes .is-model .model-tag').length >= 4, path);
     for (const link of document.querySelectorAll('.nav nav > a[href^="#"]')) assert.ok(document.querySelector(link.getAttribute('href')), path + link.getAttribute('href'));

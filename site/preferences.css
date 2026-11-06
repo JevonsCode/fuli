@@ -1,0 +1,100 @@
+/* 沉淀: preferences in the person's own words surface behind the chapter. Faint ones drift; a few
+   land big for a beat, then settle back. Scroll moves only opacity and transforms (--scene-progress
+   from scene.js); the drift is a slow compositor animation. Without the story they are a still list. */
+
+/* Still list: reduced motion, short screens, no script. */
+.pref-quotes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.pq {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.pq small {
+  flex: none;
+  color: var(--jade);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+/* In the story: free text behind the window, in a band under the header or under the window. */
+.quotes-overlay .pref-quotes { position: absolute; inset: 72px 0 0; display: block; margin: 0; }
+.quotes-overlay .pq {
+  --p: var(--scene-progress, 0);
+  --shown: clamp(0, (var(--p) - var(--at)) / .05, 1);
+  --beat: 0;
+  position: absolute;
+  left: var(--x);
+  top: var(--top, auto);
+  bottom: var(--bottom, auto);
+  display: block;
+  max-width: 44vw;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--chapter-ink, var(--ink));
+  font-size: 19px;
+  font-weight: 560;
+  white-space: nowrap;
+  transform-origin: 0 50%;
+  translate: 0 calc(-50% + (1 - var(--shown)) * 14px);
+  opacity: calc(var(--shown) * (.3 + .7 * var(--beat)));
+  scale: calc(1 + .5 * var(--beat));
+  will-change: opacity, transform;
+}
+.quotes-overlay .pq small { margin-right: 10px; font-size: 12px; }
+/* A big one arrives, holds for a moment, then settles back with the rest. */
+.quotes-overlay .pq.is-impact {
+  --beat: min(clamp(0, (var(--p) - var(--at)) / .04, 1), clamp(0, (var(--at) + .13 - var(--p)) / .05, 1));
+  font-weight: 650;
+  letter-spacing: -.01em;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .enhanced .quotes-overlay .pq { animation: pq-drift 18s ease-in-out infinite alternate; }
+  .enhanced .quotes-overlay .pq:nth-child(2n) { animation-duration: 23s; animation-delay: -7s; }
+  .enhanced .quotes-overlay .pq:nth-child(3n) { animation-duration: 15s; animation-delay: -11s; }
+}
+@keyframes pq-drift {
+  from { transform: translate(0, 0); }
+  to { transform: translate(14px, -6px); }
+}
+
+/* Room to read them: the chapter dwells longer. */
+.enhanced #knowledge { height: 210svh; }
+
+/* Phone: one quote of each kind, one at a time, in the strip between the copy and the window. */
+@media (max-width: 700px) {
+  .quotes-overlay .pq:not(.is-impact) { display: none; }
+  .quotes-overlay .pq {
+    --gone: clamp(0, (var(--p) - var(--until)) / .03, 1);
+    left: 22px;
+    top: auto;
+    bottom: calc(100vw * .62 + 50px);
+    right: 22px;
+    max-width: none;
+    font-size: 15px;
+    white-space: normal;
+    translate: 0 calc((1 - var(--shown)) * 10px - var(--gone) * 10px);
+    opacity: calc(var(--shown) * (1 - var(--gone)) * (.55 + .45 * var(--beat)));
+    scale: calc(1 + .06 * var(--beat));
+  }
+  .quotes-overlay .pq small { margin-right: 8px; }
+  .quotes-overlay .pq:nth-child(1) { --until: .14; }
+  .quotes-overlay .pq:nth-child(3) { --until: .27; }
+  .quotes-overlay .pq:nth-child(5) { --until: 9; }
+}
