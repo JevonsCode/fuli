@@ -241,6 +241,7 @@ figure.window figcaption { padding: 0 20px; }
    English link text would run together into one unbreakable line wider than a phone. */
 .footer > span:last-child { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; }
 .footer a { color: var(--muted); }
+.footer a[data-ydys-badge] { display: inline-block; width: 100px; height: 22px; vertical-align: middle; flex: 0 0 100px; }
 
 /* Reveal on scroll only when scripting is available; content is visible otherwise. */
 .js .reveal { opacity: 0; transform: translateY(16px); transition: opacity .7s ease, transform .7s cubic-bezier(.2, .8, .2, 1); }
