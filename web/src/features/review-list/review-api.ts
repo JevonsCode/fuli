@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { getJson, patchJson, postJson, putJson } from '@/api/client'
 import { shapeFor, shapeOf } from '@/api/response-shape'
 import { appendKnowledgeGraphPage, itemConfirmationBasis } from '@/features/knowledge/model'
-import { t } from '@/i18n'
+import { currentLocale, t } from '@/i18n'
 import type { KnowledgeGraph, KnowledgeItem } from '@/types'
 
 import type { DelegatedReviews } from './review-list'
@@ -18,7 +18,7 @@ const delegatedEntry = z.looseObject({
 })
 const delegatedShape = shapeFor<DelegatedReviews>(z.looseObject({ confirmed: z.array(delegatedEntry), questions: z.array(delegatedEntry) }))
 const delegationSchema = z.looseObject({
-  enabled: z.boolean(), changedAt: z.string().nullable(), revision: z.number(),
+  enabled: z.boolean(), changedAt: z.string().nullable(), revision: z.number(), language: z.string().nullable().optional(),
   model: z.looseObject({ connected: z.boolean(), status: z.string(), reason: z.string().nullable() }),
 })
 export type ReviewDelegation = z.infer<typeof delegationSchema>
@@ -46,8 +46,9 @@ export const readDelegatedReviews = (spaceId: string) =>
 export const readDelegation = (spaceId: string) =>
   getJson(`/api/judgment/delegation?${new URLSearchParams({ personalSpaceId: spaceId })}`, delegationShape)
 
+/** The console's language goes along, so Tonborg asks the person in it. */
 export const saveDelegation = (spaceId: string, enabled: boolean, expectedRevision: number) =>
-  putJson('/api/judgment/delegation', { personalSpaceId: spaceId, enabled, expectedRevision }, delegationShape)
+  putJson('/api/judgment/delegation', { personalSpaceId: spaceId, enabled, expectedRevision, language: currentLocale() }, delegationShape)
 
 /** 不要: the item stops being current; it can be restored, so nothing asks twice. */
 export const dropKnowledgeItem = (spaceId: string, projectId: string | null, item: KnowledgeItem) =>

@@ -58,3 +58,25 @@ test('稍后处理 snoozes the question for 24 hours, then it is asked again', a
   assert.equal(judgmentHumanInteraction([{ ...escalation, feedback: { revision: 2, vote: null, reason: '' } }], 's')
     .human_interaction.source.id, 'r');
 });
+
+test('an escalation whose item the person already confirmed elsewhere is not asked, though nobody voted (11-06)', async t => {
+  // The item's own state decides, not only the record's feedback: an escalate record with vote null about a preference
+  // the person confirmed through 全部确认 or the knowledge page, as the checkpoint reads it.
+  const states = new Map([['entity:item', 'pending']]);
+  const app = { config: { personal: { spaceId: 's' } }, listPersonalProjects: async () => [{ project_id: 'p' }],
+    personal: { readVisibleKnowledgeItems: async ({ items, with_state }) => ({ items,
+      ...(with_state ? { states: items.map(item => ({ ...item, state: states.get(`${item.item_kind}:${item.item_id}`) })) } : {}) }) } };
+  const service = createJudgmentService({ app }); t.after(() => service.close());
+  const record = service.store().record('s', { personalProjectId: 'p', kind: 'review', outcome: 'escalate',
+    target: 'entity:item', title: 'Synthetic brand colour preference', summary: 'Keep or correct?', evidenceFingerprint: 'e' }, 'k');
+  const ask = () => service.agent.conversationQuestions({ personalSpaceId: 's', personalProjectId: 'p' });
+  assert.equal((await ask()).human_interaction.source.id, record.id);
+  assert.equal(record.feedback.vote, null);
+  for (const state of ['confirmed', 'historical']) {
+    states.set('entity:item', state);
+    assert.deepEqual(await ask(), {}, state);
+  }
+  // Tonborg's own confirmation does not answer the person's question.
+  states.set('entity:item', 'agent_confirmed');
+  assert.equal((await ask()).human_interaction.source.id, record.id);
+});

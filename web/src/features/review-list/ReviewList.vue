@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardHeader, CardTitle } from '@/components/ui/card'
+import { employeeAvatarUrl } from '@/features/employees/avatars'
 import { itemEditPath } from '@/features/knowledge-quick-edit/model'
 import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
@@ -30,11 +31,21 @@ watch(() => props.personalSpaceId, (id) => {
   if (id && review.loaded) void review.refresh()
 }, { immediate: true })
 
+// Coming back to the page reads what Tonborg decided meanwhile.
+const onVisible = () => { if (document.visibilityState === 'visible') void review.refreshIfTonborgMoved() }
+onMounted(() => document.addEventListener('visibilitychange', onVisible))
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
+
 const projectNames = computed(() => new Map(props.projects.map(project => [project.project_id, project.profile.name])))
 const projectName = (line: ReviewLine) => line.projectId
   ? projectNames.value.get(line.projectId) ?? line.projectId : t('reviewList.everywhere')
 const meta = (line: ReviewLine) => [projectName(line), line.proposer, line.reason ? t(`reviewList.reasons.${line.reason}`) : '']
   .filter(Boolean).join(' · ')
+// What Tonborg asks stands apart (Jevons 11-06: 「长得都一样，看不出来」): its own lifted
+// glass card first, its avatar and name, and each line says what Tonborg guessed.
+const tonborgAvatar = employeeAvatarUrl('tonborg')
+const askedMeta = (line: ReviewLine) => [projectName(line), line.proposer,
+  line.review?.guess ? t(`reviewList.guesses.${line.review.guess}`) : t('reviewList.reasons.tonborg_unsure')].filter(Boolean).join(' · ')
 const busy = (key: string) => review.pending[key]
 const pendingLabel = (key: string) => t(`reviewList.pending.${busy(key) ?? 'confirm'}`)
 // A whole group's progress counts the requests that came back, never invented stages.
@@ -62,9 +73,13 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
       <template #actions><Button variant="outline" size="sm" :disabled="review.loading" @click="review.refresh()">{{ t('attention.refresh') }}</Button></template>
     </UiNotice>
 
-    <Card v-if="review.list.questions.length" as="section" class="review-group" aria-labelledby="review-questions-title" data-review-group="questions">
+    <Card v-if="review.list.questions.length" as="section" class="review-group review-group--asks" aria-labelledby="review-questions-title" data-review-group="questions">
       <CardHeader class="review-group__header">
-        <CardTitle id="review-questions-title" as="h2" class="review-group__title">{{ t('reviewList.groups.questions') }} · {{ review.list.questions.length }}</CardTitle>
+        <CardTitle id="review-questions-title" as="h2" class="review-group__title review-group__title--asks">
+          <img v-if="tonborgAvatar" class="review-group__avatar" :src="tonborgAvatar" alt="" />
+          <span class="review-group__name" :title="t('reviewList.groups.questions')">{{ t('reviewList.groups.questions') }}</span>
+          <span class="review-group__count">· {{ review.list.questions.length }}</span>
+        </CardTitle>
         <CardAction v-if="editableQuestions" class="review-group__action">
           <span class="review-busy review-busy--progress"><GrowthLoading v-if="busy('questions')" variant="inline" :label="progressLabel('questions')" /></span>
           <Button size="sm" variant="outline" :disabled="Boolean(busy('questions'))" @click="review.actAll('questions')">{{ t('reviewList.actions.acceptGuesses') }}</Button>
@@ -73,7 +88,7 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
       <TransitionGroup name="ui-list" tag="ul" class="review-rows">
         <li v-for="line in review.list.questions" :key="line.key" class="review-row" :data-review-line="line.key">
           <span class="review-row__body">
-            <span class="review-row__meta">{{ meta(line) }}</span>
+            <span class="review-row__meta">{{ askedMeta(line) }}</span>
             <span class="review-row__text" :title="line.review?.question ?? line.text">{{ line.review?.question ?? line.text }}</span>
           </span>
           <span class="review-row__actions">

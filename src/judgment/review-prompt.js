@@ -42,17 +42,31 @@ const OPTIONS_RULE = 'options: for a candidate you escalate, or approve with con
 // rec#96 「交给 Tonborg 确认」: the person handed the review to Tonborg. An
 // approval that applies confirms the item as Tonborg's (never the person's);
 // everything else becomes one short question phrased as Tonborg's guess.
+// The question is read by the person in the console (Jevons 11-06: an English
+// question in a Chinese console), so it is in their language, whatever the evidence's.
+// A setting saved before the console sent its language reads as its default, 简体中文.
+const QUESTION_LANGUAGES = Object.freeze({
+  'zh-CN': { name: 'Simplified Chinese', example: '我猜你会保留这条：……，对吗？' },
+  'en-US': { name: 'English', example: 'I think you keep this: ... right?' },
+});
+const LANGUAGE_SLOT = '{language}';
+const EXAMPLE_SLOT = '{example}';
 const DELEGATED_REVIEW_RULE = 'The person handed this review to you: decide each candidate the way this person would, '
   + 'using their confirmed preferences and their earlier votes and reasons in feedback. Approve only what they would clearly keep as it is. '
-  + 'For every candidate give guess (keep, drop or edit: what you think the person would do) and question: one short question in the '
-  + 'evidence language, under 80 characters, phrased as your guess so they can accept or correct it (for example "I think you keep this: ... right?"). '
+  + `For every candidate give guess (keep, drop or edit: what you think the person would do) and question: one short question in ${LANGUAGE_SLOT}, `
+  + `the person's language, even when the evidence is in another language, under 80 characters, phrased as your guess so they can accept or correct it (for example "${EXAMPLE_SLOT}"). `
   + 'Escalate anything you would drop or edit; never drop or edit it yourself.';
+
+function delegatedRule(language) {
+  const { name, example } = QUESTION_LANGUAGES[language] ?? QUESTION_LANGUAGES['zh-CN'];
+  return DELEGATED_REVIEW_RULE.replace(LANGUAGE_SLOT, name).replace(EXAMPLE_SLOT, example);
+}
 const DELEGATED_REVIEW_EXAMPLE = '{"decisions":[{"target":"exact candidate_key","outcome":"approve|escalate","summary":"concise reason in the evidence language","evidence":["specific supporting evidence"],"confidence":0.0,"guess":"keep|drop|edit","question":"short question phrased as your guess"}]}';
 
 export function reviewInstructions(policy) {
   const instructions = REVIEW_TEMPLATE.replace(QUALITY_SLOT, policy.quality)
     .replace(OPTIONS_SLOT, policy.delegated ? '' : ` ${OPTIONS_RULE}`);
-  return policy.delegated ? `${instructions} ${DELEGATED_REVIEW_RULE}` : instructions;
+  return policy.delegated ? `${instructions} ${delegatedRule(policy.language)}` : instructions;
 }
 
 export function reviewExample(policy) {

@@ -8,6 +8,19 @@
   margin: 0; color: var(--color-muted); font-size: var(--text-meta); font-weight: var(--weight-medium);
   letter-spacing: 0.02em; user-select: none;
 }
+/* Tonborg's questions (Jevons 11-06): the one group that needs the person's call
+   lifts off the page as tinted glass, with Tonborg's face and name; no side bar. */
+.review-group--asks {
+  border-color: transparent; background: var(--glass-sheen), var(--surface-panel-glass); box-shadow: var(--shadow-glass);
+  -webkit-backdrop-filter: var(--filter-panel); backdrop-filter: var(--filter-panel);
+}
+/* As tall as the button beside it, so the face, the words and the button share one centre line. */
+.review-group__title--asks { display: flex; align-items: center; gap: 6px; min-height: 30px; color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-strong, 600); }
+.review-group__avatar { flex: none; width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+.review-group__avatar { margin-right: 2px; }
+/* On a narrow screen the words give way; how many wait for the person always shows. */
+.review-group__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.review-group__count { flex: none; }
 .review-group__action { display: inline-flex; align-items: center; gap: 8px; }
 .review-rows { display: grid; margin: 0; padding: 0; list-style: none; }
 /* Each row (Jevons 11-06): a small meta line on top (project, who proposed it,
