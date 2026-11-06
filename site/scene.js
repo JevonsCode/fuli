@@ -62,12 +62,8 @@ const poses = {
     if (i < 4) return [-150 + ((i % 2) - 0.5) * 106, -14 + (Math.floor(i / 2) - 0.5) * 76, (3 - i) * 10, 0, -8, -4, 0.56, 1];
     return [158 + (i - 4) * 2, 18 + (i - 4) * 4, -(i - 4) * 20, 0, 0, 0, 0.64, mix(1, 0.35, (i - 4) / 7)];
   },
-  // Growth: four columns rise in steps; the newest lessons on top stay faint until kept.
-  growth: (i) => {
-    const column = i % 4, row = Math.floor(i / 4);
-    const pending = row === 2 && column < 2;
-    return [(column - 1.5) * 142, 46 - column * 26, row * 34 + column * 26, 0, 0, 0, 0.58, pending ? 0.5 : 1];
-  },
+  // Growth is drawn, not built from pieces (growth.css): they gather behind it and fade.
+  growth: () => [0, 20, -60, 0, 0, 0, 0.3, 0],
   // What it grows: three columns, Workbench cards, a Workflow chain, Agent Apps.
   workbench: (i) => {
     const column = Math.floor(i / 4), row = i % 4;
@@ -105,6 +101,19 @@ export function createScrollScene({ labels }) {
   const nav = document.querySelector(".chapter-nav");
   const dots = [...nav.querySelectorAll("a")];
   const overlays = [...document.querySelectorAll("[data-overlay]")];
+  // The growth chapter's figure plays inside the stage: a copy of the chapter's own figure,
+  // which stays as the reduced-motion end state.
+  const growthIndex = sceneNames.indexOf("growth");
+  const growthOverlay = document.querySelector('[data-overlay="growth"]');
+  const growthFigure = document.querySelector("#growth .growth-anim");
+  if (growthOverlay && growthFigure && !growthOverlay.firstElementChild) {
+    const copy = growthFigure.cloneNode(true);
+    copy.classList.remove("static-figure");
+    copy.removeAttribute("aria-label");
+    copy.removeAttribute("data-i18n-aria-label");
+    growthOverlay.append(copy);
+  }
+  const growthArt = growthOverlay?.querySelector(".ga-stage");
   const header = document.querySelector(".nav");
   const progress = document.querySelector(".story-progress");
   const pieces = labels('default').map(createFragment);
@@ -129,6 +138,9 @@ export function createScrollScene({ labels }) {
     const local = clamp((y - positions[index]) / length);
     const next = Math.min(index + 1, sceneNames.length - 1);
     const t = smooth(clamp((local - 0.43) / 0.48));
+    // The drawing plays while its chapter dwells, before the morph to the next scene.
+    const growth = index === growthIndex ? clamp(local / 0.42) : index > growthIndex ? 1 : 0;
+    growthArt?.style.setProperty("--growth-progress", growth.toFixed(3));
     const darkness = (scene) => (darkScenes.has(sceneNames[scene]) ? 1 : 0);
     const dark = mix(darkness(index), darkness(next), t);
     const database = mix(sceneNames[index] === "database" ? 1 : 0, sceneNames[next] === "database" ? 1 : 0, t);

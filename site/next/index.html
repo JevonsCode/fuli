@@ -19,6 +19,7 @@
     <script>document.documentElement.classList.add('js')</script>
     <link rel="stylesheet" href="../style.css">
     <link rel="stylesheet" href="../scene.css">
+    <link rel="stylesheet" href="../growth.css">
     <script type="module" src="../next.js"></script>
   </head>
   <body>
@@ -52,6 +53,7 @@
           <div class="diagram-overlay" data-overlay="owner">
             <div data-i18n-html="diagram.receipt" class="receipt-plate">FULI Agent：负责人 <b>Milo Reed</b> · 协作 <b>Jefa</b>、<b>Nova</b></div>
           </div>
+          <div class="diagram-overlay growth-overlay" data-overlay="growth"></div>
           <div class="diagram-overlay team-overlay" data-overlay="team">
             <svg class="links" aria-hidden="true"><path data-from="0" data-to="8" /><path data-from="2" data-to="8" /><path data-from="4" data-to="8" /><path data-from="6" data-to="8" /><path data-from="8" data-to="9" /><path data-from="8" data-to="11" /></svg>
             <span data-i18n="diagram.astro" class="tag tag-fixed" data-anchor="0">Astro · 接待与复盘</span>
@@ -138,11 +140,25 @@
               <h2 data-i18n-html="growth.title" id="growth-title">FLA 会自己成长，<br><em>留不留由你定。</em></h2>
               <p data-i18n="growth.description">边干边记经验，真用上的排在前面，你点保留或不要。几位 FLA 一起或分多步做完的任务，Astro 写一份复盘。</p>
             </div>
-            <ol class="growth-cards growth-steps static-figure">
-              <li><b data-i18n="growth.record">边干边记</b><p data-i18n="growth.recordBody">任务结束时，FLA 记下可复用的经验，先放进待确认。</p></li>
-              <li><b data-i18n="growth.used">用上才算</b><p data-i18n="growth.usedBody">FLA 页的「学会了」列出它学到的经验，真用过的排前面，写明用过几次、在几个任务里。你点保留或不要。</p></li>
-              <li><b data-i18n="growth.review">回头看</b><p data-i18n="growth.reviewBody">几位 FLA 一起或分多步做完的任务，Astro 写一份复盘；Dreaming 读最近的会话，提出该记住的知识。都等你确认。</p></li>
-            </ol>
+            <figure data-i18n-aria-label="growth.anim.label" class="growth-anim static-figure" aria-label="FLA 做任务时记下经验；真用上的经你确认留下，变成验收清单；重复的步骤做成 Agent App；它的 Workbench 和 Workflow 长了出来">
+              <div class="ga-stage">
+                <div class="ga-workflow"><b>Workflow</b><i class="ga-flow-line"></i><i class="ga-node"></i><i class="ga-node"></i><i class="ga-node"></i></div>
+                <span data-i18n="growth.anim.tasks" class="ga-label ga-label-tasks">做任务</span>
+                <i class="ga-task" style="--i: 0"></i><i class="ga-task" style="--i: 1"></i><i class="ga-task" style="--i: 2"></i>
+                <div class="ga-avatar"><span>M</span><small>FLA</small></div>
+                <span data-i18n="growth.anim.lessons" class="ga-label ga-label-lessons">经验</span>
+                <span data-i18n="growth.anim.kept" class="ga-label ga-label-kept">用上的，你 ✓ 才留下</span>
+                <div class="ga-checks"><b data-i18n="growth.anim.checks">验收清单</b><em data-i18n="growth.soon">即将</em><i class="ga-row" style="--i: 0"></i><i class="ga-row" style="--i: 1"></i><i class="ga-row" style="--i: 2"></i></div>
+                <i class="ga-lesson is-kept" style="--i: 0; --x1: 15em; --y1: 9.6em; --x2: 34.4em; --y2: 11.2em"><i class="ga-tick">✓</i></i>
+                <i class="ga-lesson" style="--i: 1; --x1: 17.6em; --y1: 14em"></i>
+                <i class="ga-lesson is-kept" style="--i: 2; --x1: 15em; --y1: 18.4em; --x2: 34.4em; --y2: 14.4em"><i class="ga-tick">✓</i></i>
+                <i class="ga-lesson is-kept" style="--i: 3; --x1: 17.6em; --y1: 22.8em; --x2: 34.4em; --y2: 17.6em"><i class="ga-tick">✓</i></i>
+                <i class="ga-lesson" style="--i: 4; --x1: 15em; --y1: 27.2em"></i>
+                <i class="ga-step" style="--i: 0"></i><i class="ga-step" style="--i: 1"></i><i class="ga-step" style="--i: 2"></i>
+                <div class="ga-app"><i></i><b>Agent App</b></div>
+                <div class="ga-workbench"><b>Workbench</b><span><i></i><i></i></span><span><i></i><i></i><i></i></span><span><i></i></span></div>
+              </div>
+            </figure>
           </section>
 
           <section class="chapter" id="workbench" data-scene="workbench" aria-labelledby="workbench-title">

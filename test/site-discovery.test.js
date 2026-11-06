@@ -159,7 +159,13 @@ test('the home story walks through the product in order, with measured numbers a
     // Tokens and accuracy: the report's numbers, and the link says plainly that FULI still adds input.
     assert.deepEqual([...document.querySelectorAll('#memory .chapter-stats b')].map(node => node.textContent), ['24.3 KB', '4/6', '18/18'], path);
     assert.match(document.querySelector('#memory .chapter-link').textContent, /1.53/, path);
-    assert.equal(document.querySelectorAll('#growth .growth-steps > li').length, 3, path);
+    // Growth is drawn: lessons out of the work, the kept ones ticked, checks marked as coming, then the app and its surfaces.
+    const growth = document.querySelector('#growth .growth-anim');
+    assert.equal(growth.querySelectorAll('.ga-lesson').length, 5, path);
+    assert.equal(growth.querySelectorAll('.ga-lesson.is-kept .ga-tick').length, 3, path);
+    assert.ok(growth.querySelector('.ga-checks [data-i18n="growth.soon"]'), path);
+    for (const part of ['.ga-avatar', '.ga-app', '.ga-workbench', '.ga-workflow']) assert.ok(growth.querySelector(part), path + part);
+    assert.ok(document.querySelector('[data-overlay="growth"]'), path);
     assert.deepEqual([...document.querySelectorAll('#workbench .growth-cards b')].map(node => node.textContent), ['Workbench', 'Workflow', 'Agent App'], path);
     // Upcoming work sits only under the 即将 / Coming badge, never among the shipped cards.
     assert.equal(document.querySelectorAll('#workbench .growth-next li').length, 2, path);
