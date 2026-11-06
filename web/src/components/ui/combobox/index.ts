@@ -3,7 +3,8 @@
 // not an upgrading dependency; compare with `npx shadcn-vue@2.8.2 diff combobox`.
 // Pages use OptionCombobox, FULI's composition of these parts for a list of
 // options (single, multiple with chips, or multiple without search), with an
-// empty row, `loading` (one inline GrowthLoading above the options it has)
+// empty row, `loading` (one inline GrowthLoading above the options it has),
+// `freeText` (single: typed text is the value, the options only suggest)
 // and, for multiple, `summary` text in place of the chips (a count). The
 // parts stay internal until a page needs its own item layout.
 // Local changes:

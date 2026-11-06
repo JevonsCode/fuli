@@ -30,6 +30,7 @@ import { handleJudgmentApiRequest } from '../judgment/http.js';
 import { KNOWLEDGE_EMBEDDING_OPERATION } from '../model-backends/config.js';
 import { handleModelBackendApiRequest } from '../model-backends/http.js';
 import { handleModelKeyRequest } from '../model-backends/keys-http.js';
+import { handleModelListRequest } from '../model-backends/models-http.js';
 import { TONBORG_OPERATIONS } from '../judgment/backend.js';
 import { ASTRO_OPERATION } from '../graphiti/assistant-project-candidate.js';
 import { DREAMING_OPERATION } from '../dreaming/run.js';
@@ -68,6 +69,7 @@ export async function handleApiRequest({
   const url = new URL(request.url, 'http://127.0.0.1');
   if (await handlePeerApiRequest({ request, response, url, peer })) return true;
   if (await handleModelKeyRequest({ request, response, url, secrets: modelSecrets })) return true;
+  if (await handleModelListRequest({ request, response, url, secrets: modelSecrets })) return true;
   if (await handleClientLinksRequest({ request, response, url, clientLinks })) return true;
   if (await handleAgentDelegationRequest({ request, response, url, delegation: agentDelegation })) return true;
   if (await handleRoundtableApiRequest({ request, response, url, roundtable: app.roundtable })) return true;

@@ -4,7 +4,9 @@ import { computed, ref, watch } from 'vue'
 import { apiErrorReason } from '@/api/client'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
+import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Checkbox } from '@/components/ui/checkbox'
+import { OptionCombobox } from '@/components/ui/combobox'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,8 +18,10 @@ import { UiDialog, UiSegmented } from '@/ui'
 import type { PersonalProject } from '@/types'
 import ModelKeyEntry from './ModelKeyEntry.vue'
 import ModelSecretRefField from './ModelSecretRefField.vue'
+import { modelListReason, modelListRequest, orderModels } from './model-list'
+import { useEndpointModels } from './useEndpointModels'
 import {
-  MODEL_PROTOCOLS, REASONING_EFFORTS, SEMANTIC_PRESETS, SEMANTIC_ROLE, configConflict, knownKeyReferences, projectKey, roleDraft, roleName,
+  MODEL_PROTOCOLS, REASONING_EFFORTS, SEMANTIC_PRESETS, SEMANTIC_ROLE, configConflict, endpointSuggestions, knownKeyReferences, projectKey, roleDraft, roleName,
   rolesSharing, saveModelRole, semanticPreset, validKeyReference, withConnection, withProject, withSemanticPreset,
   type ConfigConflict, type ModelRoleId, type ModelRolesPayload, type RoleDraft, type SemanticPreset, modelGuideUrl } from './model'
 
@@ -39,15 +43,32 @@ const inactive = computed(() => frozen.value || !draft.value?.enabled)
 const shownError = computed(() => (locked.value
   ? t('modelSettings.invalidWhileEditing', { error: props.payload.error ?? '' }) : error.value))
 const error = ref('')
-watch(() => props.role, (role) => {
-  draft.value = role ? roleDraft(props.payload, role) : null
-  error.value = ''
-}, { immediate: true })
-
-const name = computed(() => (props.role ? roleName(props.role) : ''))
 // 语义搜索 shows only its address, model, key and projects: its protocol is
 // fixed, and it has no task types, budget or session to fall back to.
 const semantic = computed(() => props.role === SEMANTIC_ROLE)
+// The models the typed address lists, asked while the form can be edited; typing any name stays possible.
+const { models: listed, refresh: refreshModels } = useEndpointModels(() => (draft.value && !inactive.value
+  ? modelListRequest(draft.value.protocol, draft.value.endpoint, draft.value.secretRef) : null))
+const modelOptions = computed(() => orderModels(listed.value.ids, semantic.value).map(id => ({ value: id, label: id })))
+const endpointOptions = computed(() => (draft.value ? endpointSuggestions(draft.value.protocol) : []))
+const modelListText = computed(() => {
+  const state = listed.value
+  if (inactive.value) return ''
+  if (state.status === 'idle') return t('modelSettings.modelList.needsEndpoint')
+  if (state.status === 'failed') return t('modelSettings.modelList.failed', { reason: modelListReason(state.code) })
+  if (state.status === 'ok') {
+    return state.ids.length ? t('modelSettings.modelList.found', { count: state.ids.length })
+      : t('modelSettings.modelList.empty')
+  }
+  return ''
+})
+watch(() => props.role, (role) => {
+  draft.value = role ? roleDraft(props.payload, role) : null
+  error.value = ''
+  refreshModels()
+}, { immediate: true })
+
+const name = computed(() => (props.role ? roleName(props.role) : ''))
 const presetOptions = computed(() => SEMANTIC_PRESETS.map(value => ({ value, label: t(`modelSettings.semantic.presets.${value}`) })))
 const preset = computed({
   get: () => semanticPreset(draft.value?.endpoint ?? ''),
@@ -144,12 +165,21 @@ async function save() {
         </Field>
         <Field class="model-role-wide">
           <FieldLabel for="model-role-endpoint">{{ t('modelSettings.endpoint') }}</FieldLabel>
-          <Input id="model-role-endpoint" v-model="draft.endpoint" type="url" inputmode="url" autocomplete="off"
+          <OptionCombobox control-id="model-role-endpoint" v-model="draft.endpoint" free-text :options="endpointOptions" :label="t('modelSettings.endpoint')"
             placeholder="https://" :disabled="inactive" data-model-endpoint />
         </Field>
         <Field>
           <FieldLabel for="model-role-model">{{ t('modelSettings.model') }}</FieldLabel>
-          <Input id="model-role-model" v-model="draft.model" autocomplete="off" :disabled="inactive" data-model-name />
+          <OptionCombobox control-id="model-role-model" v-model="draft.model" free-text :options="modelOptions" :label="t('modelSettings.model')"
+            :placeholder="t('modelSettings.modelList.placeholder')" :disabled="inactive" data-model-name />
+          <!-- One reserved line: what the list holds or why it is empty, and 刷新; nothing around it moves. -->
+          <div class="model-role-list" data-model-list-line>
+            <GrowthLoading v-if="listed.status === 'loading' && !inactive" variant="inline"
+              :label="t('modelSettings.modelList.loading', { host: listed.host })" />
+            <span v-else class="model-role-list-text" :title="modelListText" data-model-list-state>{{ modelListText }}</span>
+            <Button type="button" variant="link" size="sm" class="model-role-list-refresh" :disabled="inactive || listed.status === 'loading'"
+              data-model-list-refresh @click="refreshModels">{{ t('modelSettings.modelList.refresh') }}</Button>
+          </div>
         </Field>
         <Field v-if="draft.protocol === 'openai_chat'">
           <FieldLabel for="model-role-effort">{{ t('modelSettings.reasoningEffort') }}</FieldLabel>
@@ -274,5 +304,10 @@ async function save() {
 .model-role-advanced :deep(.model-role-advanced-trigger) { padding-block: 8px; font-size: var(--text-body); font-weight: var(--weight-medium); }
 .model-role-advanced :deep(.model-role-advanced-body) { display: grid; gap: 16px; padding-top: 8px; }
 .model-role-muted { margin: 0; color: var(--color-muted); font-size: 13px; }
+.model-role-list { display: flex; align-items: center; gap: 8px; min-width: 0; height: 24px; color: var(--color-muted); font-size: 13px; }
+.model-role-list > :first-child { flex: 1 1 auto; min-width: 0; }
+.model-role-list-text, .model-role-list :deep(.growth-loading__label) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-role-list :deep(.growth-loading__content) { min-width: 0; }
+.model-role-list-refresh { flex: none; min-height: 24px; padding-inline: 0; user-select: none; }
 .model-role-inactive { opacity: .5; }
 </style>

@@ -10,6 +10,7 @@ vi.mock('@/api/client', async importOriginal => ({
 import { messages } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { optionSelectStubs } from '@/test-support/OptionSelectStub'
+import { openCombobox, optionLabels, toggleOption } from '@/test-support/option-pickers'
 import ModelSettingsPage from '@/pages/ModelSettingsPage.vue'
 import { roleDraft, roleEdit, semanticPreset, withSemanticPreset, type ModelRolesPayload } from './model'
 
@@ -32,24 +33,22 @@ const configured = () => payload({ role: 'semantic', state: 'enabled', answeredB
   reasoningEffort: null, pricing: null } })
 
 describe('semantic search presets', () => {
-  it('fill the address, leave the model as typed, and a local Ollama needs no key', () => {
+  it('local Ollama fills its address and needs no key; 在线服务 empties only that address', () => {
     const draft = { ...roleDraft(payload(), 'semantic'), model: 'synthetic-embed', secretRef: 'qwen-key' }
     expect(draft.protocol).toBe('openai_embeddings')
     expect(draft.fallbackToSession).toBe(false)
-    const qwen = withSemanticPreset(draft, 'qwen')
-    expect([qwen.endpoint, qwen.model, qwen.secretRef]).toEqual([QWEN, 'synthetic-embed', 'qwen-key'])
-    const ollama = withSemanticPreset(qwen, 'ollama')
+    const ollama = withSemanticPreset(draft, 'ollama')
     expect([ollama.endpoint, ollama.model, ollama.secretRef]).toEqual([OLLAMA, 'synthetic-embed', ''])
-    expect(withSemanticPreset(ollama, 'custom').endpoint).toBe('')
-    const own = { ...draft, endpoint: 'https://embed.example.test/v1' }
-    expect(withSemanticPreset(own, 'custom')).toBe(own)
+    expect(withSemanticPreset(ollama, 'online').endpoint).toBe('')
+    const own = { ...draft, endpoint: QWEN }
+    expect(withSemanticPreset(own, 'online')).toBe(own)
   })
 
-  it('read back from the saved address', () => {
+  it('read back from the saved address: a saved 千问 address is 在线服务', () => {
     expect(semanticPreset(`${OLLAMA}/`)).toBe('ollama')
-    expect(semanticPreset(QWEN)).toBe('qwen')
-    expect(semanticPreset('https://embed.example.test/v1')).toBe('custom')
-    expect(semanticPreset('')).toBe('custom')
+    expect(semanticPreset(QWEN)).toBe('online')
+    expect(semanticPreset('https://embed.example.test/v1')).toBe('online')
+    expect(semanticPreset('')).toBe('online')
   })
 
   it('save the embeddings protocol, its one operation and no session fallback', () => {
@@ -81,6 +80,8 @@ describe('语义搜索 on the model page', () => {
     api.getJson.mockReset()
     api.putJson.mockReset()
     api.postJson.mockReset()
+    // The model field asks the typed address for its models; a test that checks the connection answers that instead.
+    api.postJson.mockImplementation(async (url: string) => (url === '/api/model-backends/models' ? { models: [], source: 'models' } : undefined))
   })
 
   const mountPage = async (roles: ModelRolesPayload) => {
@@ -89,7 +90,8 @@ describe('语义搜索 on the model page', () => {
         : url.startsWith('/api/model-backends/history') ? { entries: [] }
           : url.startsWith('/api/model-backends/keys') ? { saved: [] }
             : url.startsWith('/api/dreaming') ? { readiness: 'needs_model', runs: [] } : roles))
-    const wrapper = mount(ModelSettingsPage, { attachTo: document.body, global: { stubs: { RouterLink: true, ...optionSelectStubs } } })
+    // The address and model fields are real comboboxes that take typing; other single choices are native selects.
+    const wrapper = mount(ModelSettingsPage, { attachTo: document.body, global: { stubs: { RouterLink: true, OptionSelect: optionSelectStubs.OptionSelect } } })
     await flushPromises()
     return wrapper
   }
@@ -128,14 +130,20 @@ describe('语义搜索 on the model page', () => {
     expect(dialog.find('#model-role-protocol').exists()).toBe(false)
     await dialog.get('#model-role-enabled').trigger('click')
     const presets = dialog.get('[data-semantic-presets]')
-    expect(presets.findAll('button').map(button => button.text())).toEqual(['本机 Ollama', '千问', '自定义'])
-    await presets.get('[data-value="qwen"]').trigger('click')
-    expect((dialog.get('[data-model-endpoint]').element as HTMLInputElement).value).toBe(QWEN)
+    expect(presets.findAll('button').map(button => button.text())).toEqual(['本机 Ollama', '在线服务'])
+    const endpoint = () => (dialog.get('[data-model-endpoint] input').element as HTMLInputElement).value
+    expect(endpoint()).toBe('')
     expect(dialog.find('[data-model-secret-ref]').exists()).toBe(true)
+    // 千问 is one suggested address of 在线服务, not a tab of its own.
+    await openCombobox(dialog.get('[data-model-endpoint]'))
+    expect(optionLabels(dialog.get('[data-model-endpoint]'))).toEqual([`${QWEN}千问（阿里云百炼）`, 'https://api.openai.com/v1OpenAI'])
+    await toggleOption(dialog.get('[data-model-endpoint]'), '千问')
+    expect(endpoint()).toBe(QWEN)
+    expect(presets.get('[data-value="online"]').attributes('aria-pressed')).toBe('true')
     await presets.get('[data-value="ollama"]').trigger('click')
-    expect((dialog.get('[data-model-endpoint]').element as HTMLInputElement).value).toBe(OLLAMA)
+    expect(endpoint()).toBe(OLLAMA)
     expect(dialog.find('[data-model-secret-ref]').exists()).toBe(false)
-    await dialog.get('[data-model-name]').setValue('synthetic-embed')
+    await dialog.get('[data-model-name] input').setValue('synthetic-embed')
     await dialog.get('[data-model-egress-project]').trigger('click')
     await dialog.get('form').trigger('submit')
     await flushPromises()

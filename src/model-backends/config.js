@@ -18,7 +18,7 @@ export const MODEL_BACKEND_ROLES = Object.freeze(['assistant', 'bole', 'jefa', '
 export const SEMANTIC_ROLE = 'semantic';
 export const KNOWLEDGE_EMBEDDING_OPERATION = 'knowledge_embedding';
 const EMBEDDING_PROTOCOL = 'openai_embeddings';
-const MODEL_BACKEND_PROTOCOLS = Object.freeze(['openai_chat', 'anthropic_messages', 'typesafe_systemone', EMBEDDING_PROTOCOL]);
+export const MODEL_BACKEND_PROTOCOLS = Object.freeze(['openai_chat', 'anthropic_messages', 'typesafe_systemone', EMBEDDING_PROTOCOL]);
 export const OPERATION_PATTERN = /^[a-z][a-z0-9_.-]{0,63}$/;
 
 const CONFIG_VERSION = 1;
@@ -143,7 +143,7 @@ function normalizeHeaders(value, label) {
   return Object.fromEntries(entries);
 }
 
-function endpointUrl(value, label) {
+export function endpointUrl(value, label) {
   const text = requiredString(value, label, 2048);
   let url;
   try {
