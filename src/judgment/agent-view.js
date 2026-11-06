@@ -1,4 +1,4 @@
-import { judgmentHumanInteraction } from './conversation.js';
+import { judgmentHumanInteraction, settledQuestionIds } from './conversation.js';
 import { INJECTION_SIGNALS } from './review-injection-precheck.js';
 import { KNOWLEDGE_KEY, visibleKnowledgeKeys } from './visible-items.js';
 
@@ -51,10 +51,11 @@ export async function agentJudgmentView(personal, result, { personalSpaceId, rea
     records.filter(record => record.kind === 'review').map(record => record.target));
   const shown = records.map(record => agentRecord(record, targets));
   if (!listed) return shown[0];
-  // The question is asked again from what this reader may see.
+  // The question is asked again from what this reader may see; whether the person
+  // answered it reads the full records, since the view withholds the feedback reason.
   const rest = { ...result };
   delete rest.human_interaction;
-  return { ...rest, ...judgmentHumanInteraction(shown, personalSpaceId), records: shown };
+  return { ...rest, ...judgmentHumanInteraction(shown, personalSpaceId, settledQuestionIds(records)), records: shown };
 }
 
 function agentRecord(record, targets) {
