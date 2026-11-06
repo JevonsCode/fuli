@@ -1,7 +1,10 @@
 /* The model guide (/models/): its own pieces over guide-page.css and the :root tokens in style.css. */
-.mode-grid, .use-grid { display: grid; gap: clamp(14px, 2vw, 22px); }
+.mode-grid { display: grid; gap: clamp(14px, 2vw, 22px); }
 .mode-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 960px; }
-.use-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-items: start; }
+/* The uses differ a lot in length (Jevons 11-06): a masonry of columns, each card kept whole,
+   so short cards don't leave gaps beside long ones. */
+.use-grid { columns: 4 300px; column-gap: clamp(14px, 2vw, 22px); }
+.use-grid > .use-card { break-inside: avoid; margin-bottom: clamp(14px, 2vw, 22px); }
 
 .card-note { color: var(--muted) !important; font-size: 14px; }
 .use-card h3 { padding-right: 36px; }
