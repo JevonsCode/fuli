@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { experienceCapture } from './task-experiences.js';
-import { PREFERENCE_CONSTRAINTS, TASTE_DOMAINS, WORK_KINDS } from './task-scene.js';
+import { PREFERENCE_CONSTRAINTS, TASTE_DOMAINS, WORK_KINDS, taskWorkKind } from './task-scene.js';
 
 // Compact memory routing at checkpoint (F-P0-08): the finishing host lists what
 // to remember as plain items and FULI builds the routed capture. The chat tool
@@ -101,17 +101,28 @@ function entity(task, key, statement, type, profileAspect, existenceReason) {
   };
 }
 
-// The scene qualifiers a user stated (task-scene.js); never inferred from the text.
-const SCENE_FIELDS = Object.freeze({ constraint: PREFERENCE_CONSTRAINTS, workKind: WORK_KINDS, tasteDomain: TASTE_DOMAINS });
-
+// The scene qualifiers a user stated (task-scene.js); never inferred from the text. constraint
+// is listed as an enum and checked. workKind and tasteDomain stay plain strings in the chat
+// listing to save tokens on every request (rec#95), so an unlisted value never rejects the
+// item: a work kind is read with the same hints as a task prompt ("front-end styling" →
+// frontend), and anything still unknown is left off; the preference itself is kept.
 function sceneAttributes(item) {
   const attributes = {};
-  for (const [field, allowed] of Object.entries(SCENE_FIELDS)) {
-    if (item[field] === undefined) continue;
-    if (!allowed.includes(item[field])) throw invalid(`remember[].${field} must be one of ${allowed.join(', ')}`);
-    attributes[field] = item[field];
+  if (item.constraint !== undefined) {
+    if (!PREFERENCE_CONSTRAINTS.includes(item.constraint)) throw invalid(`remember[].constraint must be one of ${PREFERENCE_CONSTRAINTS.join(', ')}`);
+    attributes.constraint = item.constraint;
   }
+  const workKind = listedOrHinted(item.workKind, WORK_KINDS, value => taskWorkKind(value.replace(/_+/gu, ' ')));
+  if (workKind) attributes.workKind = workKind;
+  const tasteDomain = listedOrHinted(item.tasteDomain, TASTE_DOMAINS, () => null);
+  if (tasteDomain) attributes.tasteDomain = tasteDomain;
   return Object.keys(attributes).length ? { attributes } : {};
+}
+
+function listedOrHinted(value, allowed, hint) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const plain = value.trim().toLowerCase();
+  return allowed.includes(plain) ? plain : hint(plain);
 }
 
 function text(value, limit, field) {
