@@ -158,7 +158,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
   const catalog = agentInterfaceCatalog();
   const defaults = new Map(catalog.delegationCategories.map(({ id, defaultEnabled }) => [id, defaultEnabled]));
   assert.deepEqual([...defaults], [['settings', true], ['organisation', true], ['projects', true],
-    ['services_apps', true], ['roundtable', true], ['decisions', true], ['lan_roundtable', false], ['model_settings', false],
+    ['services_apps', true], ['roundtable', true], ['decisions', true], ['lan_roundtable', false], ['model_settings', true],
     ['public_projects', false]]);
   const delegable = catalog.uiMutationParity.filter(({ access }) => access.startsWith('agent_delegable'));
   for (const entry of delegable) {
@@ -167,7 +167,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [45, 11, 12, 28]);
+    catalog.coverage.localUserOnly], [48, 8, 12, 28]);
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
   for (const entry of relayed) {
