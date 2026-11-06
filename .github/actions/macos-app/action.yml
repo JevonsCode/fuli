@@ -96,9 +96,30 @@ runs:
         node scripts/sign-macos-app.js --app "$RUNNER_TEMP/fuli-macos/FULI.app" --identity "$identity" --keychain "$keychain"
         echo "FULI_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
         echo "FULI_SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+    # dmgbuild writes the window layout (background, icon places) without
+    # driving Finder; pinned, in its own virtual environment.
     - name: Create the disk image
       shell: bash
-      run: node scripts/package-macos-dmg.js --app "$RUNNER_TEMP/fuli-macos/FULI.app" --output "$RUNNER_TEMP/fuli-macos-release"
+      run: |
+        python3 -m venv "$RUNNER_TEMP/dmgbuild"
+        "$RUNNER_TEMP/dmgbuild/bin/pip" install --quiet dmgbuild==1.6.7
+        node scripts/package-macos-dmg.js --app "$RUNNER_TEMP/fuli-macos/FULI.app" --output "$RUNNER_TEMP/fuli-macos-release" \
+          --dmgbuild "$RUNNER_TEMP/dmgbuild/bin/dmgbuild"
+    - name: Check the disk image window
+      shell: bash
+      run: |
+        dmg="$(ls "$RUNNER_TEMP"/fuli-macos-release/*.dmg)"
+        mount="$RUNNER_TEMP/fuli-dmg-check"
+        hdiutil attach "$dmg" -nobrowse -readonly -noautoopen -mountpoint "$mount" > /dev/null
+        trap 'hdiutil detach "$mount" > /dev/null' EXIT
+        ls -la "$mount"
+        test -d "$mount/FULI.app" || { echo "No FULI.app in the image"; exit 1; }
+        [ "$(readlink "$mount/Applications")" = /Applications ] || { echo "No Applications link in the image"; exit 1; }
+        test -s "$mount/.DS_Store" || { echo "The image has no window layout (.DS_Store)"; exit 1; }
+        # dmgbuild joins background.png and @2x into one HiDPI TIFF.
+        test -s "$mount/.background.tiff" || { echo "The image has no background picture"; exit 1; }
+        tiffutil -info "$mount/.background.tiff"
+        [ "$(tiffutil -info "$mount/.background.tiff" | grep -ci 'width')" -ge 2 ] || { echo "The background has no Retina copy"; exit 1; }
     - name: Sign, notarize and staple the disk image
       if: steps.mode.outputs.signed == 'true'
       shell: bash

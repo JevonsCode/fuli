@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>FULI Setup pictures</title>
+<link rel="stylesheet" href="art.css">
+</head>
+<!--
+  FULI-Setup's page pictures on a transparent background, drawn on a 120 x 120
+  view and rendered at each DPI: #icon the app icon (the first page), #done the
+  app icon with a check (the last page), #mark the mark (the progress page),
+  #small the app icon edge to edge (the wizard's small image).
+-->
+<body class="transparent">
+<svg id="art" viewBox="0 0 120 120" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="lift" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#1d1d1f" flood-opacity="0.14"/>
+    </filter>
+  </defs>
+  <g id="icon">
+    <image href="../../brand/png/app-icon/fuli-app-icon-light-1024.png" x="10" y="8" width="100" height="100" filter="url(#lift)"/>
+  </g>
+  <g id="check">
+    <circle cx="96" cy="92" r="19" fill="#087b63" stroke="#ffffff" stroke-width="4"/>
+    <path d="M 87.5 92.5 L 93.5 98.5 L 105 86.5" fill="none" stroke="#ffffff" stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g id="mark">
+    <image href="../../brand/svg/mark/fuli-mark-color.svg" x="8" y="8" width="104" height="104"/>
+  </g>
+  <g id="small">
+    <image href="../../brand/png/app-icon/fuli-app-icon-light-1024.png" x="0" y="0" width="120" height="120"/>
+  </g>
+</svg>
+<script>
+  const shown = { '#icon': ['icon'], '#done': ['icon', 'check'], '#mark': ['mark'], '#small': ['small'] }[location.hash] || ['icon'];
+  for (const id of ['icon', 'check', 'mark', 'small']) {
+    if (!shown.includes(id)) document.getElementById(id).remove();
+  }
+</script>
+</body>
+</html>

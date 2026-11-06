@@ -1,0 +1,33 @@
+/* Shared look of the installer pictures (scripts/build-installer-art.js renders
+   every page here with headless Chrome). Interface colours come from DESIGN.md;
+   the logo palette stays inside the mark and the app icon. Bundled OFL fonts only. */
+@import url('../../node_modules/@fontsource-variable/inter/index.css');
+@import url('../../node_modules/@fontsource-variable/noto-sans-sc/index.css');
+
+:root {
+  --paper: #f5f5f7;
+  --white: #ffffff;
+  --ink: #1d1d1f;
+  --muted: #6e6e73;
+  --line: #d6dad7;
+  --jade: #087b63;
+  --jade-soft: #8bc1a8;
+  --silver: #d8dfdc;
+  --amber: #e8a33d;
+  --settings-blue: #2f7cf6;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Inter Variable', 'Noto Sans SC Variable', sans-serif;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+body.transparent { background: transparent; }
+body.paper { background: var(--paper); }
+svg { display: block; }

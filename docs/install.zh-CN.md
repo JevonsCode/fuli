@@ -16,7 +16,11 @@
 两种方式，任选其一：
 
 - **下载客户端（推荐，Windows）**：到[最新版本](https://github.com/JevonsCode/fuli/releases)下载 `FULI-Setup-<版本>.exe`，双击安装，不需要终端。Node.js、Java 和图数据库都已内置，不用另装，也不需要管理员权限。第一次打开时，FULI 会找到这台电脑上的 AI 客户端，一键接入，也可以设置开机启动。已经装过 FULI 的，用它安装会直接更新，数据保留。安装包暂时没有代码签名，Windows 可能提示“已保护你的电脑”，点“更多信息 → 仍要运行”即可。
-- **下载客户端（macOS，Apple 芯片）**：在同一个版本里下载 `fuli-macos-arm64-<版本>.dmg`，打开后把 FULI.app 拖进「应用程序」。需要 macOS 13.5 以上；Intel 芯片的 Mac 请用终端安装。安装包暂时没有签名，第一次打开被拦下时，到「系统设置 › 隐私与安全性」点「仍要打开」。详见 [docs/macos-app.md](macos-app.md)。
+
+  ![更多信息，然后仍要运行](images/install/windows-smartscreen.png)
+- **下载客户端（macOS，Apple 芯片）**：在同一个版本里下载 `fuli-macos-arm64-<版本>.dmg`，打开后照窗口里的箭头把 FULI.app 拖进「应用程序」；打开 FULI 时它会自己推出安装盘。需要 macOS 13.5 以上；Intel 芯片的 Mac 请用终端安装。安装包暂时没有签名，第一次打开被拦下时，到「系统设置 › 隐私与安全性」点「仍要打开」。详见 [docs/macos-app.md](macos-app.md)。
+
+  ![被拦下一次，然后系统设置 › 隐私与安全性 › 仍要打开](images/install/macos-first-open.png)
 - **用终端安装**：适合开发者和 macOS / Linux。
 
 在具备 Node.js 24.12+ 和 Docker Compose v2 的环境下（默认容器模式；macOS / Linux 原生模式见[安装](install.zh-CN.md#安装)），运行：
