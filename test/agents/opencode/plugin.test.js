@@ -72,7 +72,7 @@ test('the prompt hook starts FULI\'s entry and the context hook adds it as syste
   const hook = recordingHook({ prompt: { context: 'Fuli task context (OpenCode plugin). {"taskContextToken":"fuli-task-x"}' } });
   const host = openCode({ sessions: { child: { id: 'child', parentID: 'ses-1' },
     'ses-1': { id: 'ses-1', location: { directory: '/synthetic/project' }, subpath: 'packages/app' } } });
-  const cleanup = await fuliOpenCodePlugin(CONFIG, { ...hook, now: () => 0 }).setup(host.ctx);
+  const cleanup = await fuliOpenCodePlugin(CONFIG, { ...hook, now: () => 0, env: {} }).setup(host.ctx);
   t.after(cleanup);
   const event = await host.prompt('ses-1', 'Fix the login bug.');
   assert.deepEqual(event.prompt, { text: 'Fix the login bug.' }, 'the person\'s prompt is never changed');
@@ -91,6 +91,17 @@ test('the prompt hook starts FULI\'s entry and the context hook adds it as syste
 
   await host.prompt('child', 'Search the codebase.');
   assert.equal(hook.runs.length, 1, 'a subagent child session starts no task of its own');
+});
+
+test('inside WSL the prompt names its distribution, so a Windows FULI can open the directory', async (t) => {
+  const hook = recordingHook();
+  const host = openCode({ sessions: { 'ses-1': { id: 'ses-1', location: { directory: '/home/me/project' } } } });
+  const cleanup = await fuliOpenCodePlugin(CONFIG, { ...hook, now: () => 0, env: { WSL_DISTRO_NAME: 'Ubuntu' } })
+    .setup(host.ctx);
+  t.after(cleanup);
+  await host.prompt('ses-1', 'Fix the login bug.');
+  assert.deepEqual(hook.runs[0].input, { session_id: 'ses-1', message_id: 'msg-ses-1', cwd: '/home/me/project',
+    prompt: 'Fix the login bug.', wsl_distribution: 'Ubuntu' });
 });
 
 test('a successful execution runs the stop; a failed or interrupted one closes nothing', async (t) => {

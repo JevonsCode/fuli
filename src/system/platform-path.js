@@ -11,23 +11,35 @@ export function platformPath(platform = process.platform) {
 // Windows name cannot (WSL stores those as other characters), so it names the
 // same file on the drive.
 const WSL_DRIVE_MOUNT = /^\/mnt\/([a-z])(?:\/([^\\:]*))?$/i;
-// The server of a UNC path, also in its \\?\UNC\ and \\.\UNC\ forms, with
-// either slash and any case.
-const UNC_SERVER = /^[\\/]{2,}(?:[?.][\\/]+UNC[\\/]+)?([^\\/]*)/i;
-const WSL_SERVERS = new Set(['wsl$', 'wsl.localhost']);
+// A WSL distribution's name as `wsl --list` shows it.
+const WSL_DISTRIBUTION = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const WSL_SHARE = '\\\\wsl.localhost\\';
 
 // A path a caller reported, as a host with these path rules opens it, or null
 // when that host has no path for it. An Agent in WSL reports /mnt/<drive>/... to
 // a Windows FULI; that is the Windows drive, after the POSIX path is normalized
 // so .. cannot cross into another mount or out of the mounts. Any other POSIX
-// path (/home, /tmp) and the WSL shares (\\wsl$, \\wsl.localhost) are inside the
-// WSL file system, which a Windows FULI does not resolve projects in. POSIX
-// hosts and native Windows paths are unchanged.
+// path (/home, /tmp) is inside a WSL distribution's own file system and names
+// nothing on Windows until wslCallerPath turns it into that distribution's
+// share. The shares (\\wsl.localhost, \\wsl$) are ordinary UNC paths Windows
+// opens while the distribution runs. POSIX hosts and native paths are unchanged.
 export function hostPathOfCallerPath(callerPath, pathApi) {
   if (pathApi !== win32) return callerPath;
   if (posixRooted(callerPath)) return wslDrivePath(posix.normalize(callerPath));
-  const server = UNC_SERVER.exec(callerPath)?.[1].toLowerCase();
-  return WSL_SERVERS.has(server) ? null : callerPath;
+  return callerPath;
+}
+
+// A path an Agent running inside the named WSL distribution reported, as a
+// Windows host opens it: a path in that distribution's own file system becomes
+// its \\wsl.localhost share. /mnt/<drive> paths stay for hostPathOfCallerPath;
+// POSIX hosts, native paths, a rest Windows cannot name and a distribution
+// name that is not one are unchanged.
+export function wslCallerPath(callerPath, distribution, pathApi) {
+  if (pathApi !== win32 || typeof distribution !== 'string' || !WSL_DISTRIBUTION.test(distribution)
+    || !posixRooted(callerPath)) return callerPath;
+  const posixPath = posix.normalize(callerPath);
+  if (WSL_DRIVE_MOUNT.test(posixPath) || /[\\:]/.test(posixPath)) return callerPath;
+  return win32.join(`${WSL_SHARE}${distribution}\\`, posixPath);
 }
 
 // One leading slash, or three or more, is the POSIX root. Exactly two is

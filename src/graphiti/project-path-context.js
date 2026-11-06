@@ -14,8 +14,8 @@ const INVALID_PATH_MESSAGE = 'projectPath must be an existing absolute directory
   + 'Pass the absolute path of the current working directory.';
 
 const UNSUPPORTED_PATH_MESSAGE = 'projectPath is a WSL or POSIX path this Windows FULI cannot open. '
-  + 'Pass the Windows path of the current working directory, such as C:\\Users\\name\\project; '
-  + '/mnt/<drive>/ paths are translated.';
+  + 'Pass the Windows path of the current working directory, such as C:\\Users\\name\\project '
+  + 'or \\\\wsl.localhost\\<distribution>\\home\\name\\project; /mnt/<drive>/ paths are translated.';
 
 const CHILD_PROJECT_MARKERS = Object.freeze([
   '.git',

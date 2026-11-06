@@ -57,8 +57,13 @@ const DELIVERED_EVENT = 'session.inbox.delivered';
 const CANCELLED_EVENT = 'session.inbox.cancelled';
 
 export function fuliOpenCodePlugin({ nodePath, hookPath, runtimeConfigPath, events, timeoutMs },
-  { runHook = spawnHook, now = Date.now } = {}) {
+  { runHook = spawnHook, now = Date.now, env = process.env } = {}) {
   const wanted = new Set(events);
+  // OpenCode inside WSL reports paths of its distribution's own file system;
+  // a Windows FULI opens them through that distribution's share
+  // (wslCallerPath), and its Node does not inherit WSL_DISTRO_NAME.
+  const distribution = typeof env.WSL_DISTRO_NAME === 'string' && env.WSL_DISTRO_NAME
+    ? { wsl_distribution: env.WSL_DISTRO_NAME } : {};
   const run = (event, input, limitMs, extra = {}) => runHook({ command: nodePath, input, killAfterMs: limitMs + KILL_GRACE_MS,
     args: [hookPath, OPENCODE_LIFECYCLE_MARKER, '--runtime-config', runtimeConfigPath, '--event', event,
       '--timeout-ms', String(limitMs)], ...extra });
@@ -84,7 +89,7 @@ export function fuliOpenCodePlugin({ nodePath, hookPath, runtimeConfigPath, even
       // its deadline counts from when its own hook starts.
       const begin = (sessionID, turn) => {
         turn.entry = queue(sessionID, () => run('prompt', { session_id: sessionID, message_id: turn.messageID,
-          cwd: turn.cwd, prompt: turn.text }, timeoutMs))
+          cwd: turn.cwd, prompt: turn.text, ...distribution }, timeoutMs))
           .then((answer) => typeof answer?.context === 'string' && answer.context.trim()
             ? answer.context : unavailableNotice(answer?.cause), () => unavailableNotice());
         return turn.entry;

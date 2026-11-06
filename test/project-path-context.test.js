@@ -241,11 +241,7 @@ test('a POSIX path a Windows FULI cannot open is a typed error that names the fi
   const opened = [];
   const host = windowsHost(new Set(), { fileExists: (candidate) => { opened.push(candidate); return false; } });
   for (const unsupported of ['/home/me/fuli', '/tmp', '/', '/mnt/wsl/fuli', '/mnt', '///home/me',
-    '/mnt/t/a\\b', '/mnt/t/a:b',
-    '\\\\wsl$\\Ubuntu\\home\\me', '//wsl$/Ubuntu/home/me', '\\/wsl$/Ubuntu', '\\\\\\wsl$\\Ubuntu',
-    '\\\\wsl.localhost\\Ubuntu\\home\\me', '\\\\WSL.LOCALHOST\\Ubuntu', '\\\\Wsl$',
-    '\\\\?\\UNC\\wsl$\\Ubuntu\\home\\alpha', '\\\\?\\UNC\\wsl.localhost\\Ubuntu\\home\\alpha',
-    '//?/unc/WSL$/Ubuntu', '\\\\.\\UNC\\wsl$\\Ubuntu', '\\\\.\\unc\\wsl.localhost\\Ubuntu']) {
+    '/mnt/t/a\\b', '/mnt/t/a:b']) {
     let error;
     assert.throws(() => resolvePersonalProjectPath(unsupported, PROJECTS, host), (thrown) => {
       error = thrown;
@@ -266,6 +262,21 @@ test('a POSIX path a Windows FULI cannot open is a typed error that names the fi
   assert.equal(resolvePersonalProjectPath('\\\\server\\share\\fuli', PROJECTS, shares).personalProjectId, 'fuli');
   for (const share of ['//mnt/t/work/fuli', '\\\\?\\UNC\\server\\share\\missing', '\\\\.\\UNC\\server\\missing']) {
     assert.throws(() => resolvePersonalProjectPath(share, PROJECTS, shares), /existing absolute directory/, share);
+  }
+});
+
+// An Agent inside WSL works in its distribution's own file system, which Windows
+// opens through the \\wsl.localhost (or \\wsl$) share while the distribution runs.
+test('a WSL share path resolves on Windows like any share, its repository included', () => {
+  const host = windowsHost(new Set(['\\\\wsl.localhost\\Ubuntu\\home\\me\\fuli\\src',
+    '\\\\wsl.localhost\\Ubuntu\\home\\me\\fuli\\.git', '\\\\wsl$\\Ubuntu\\home\\me\\fuli', '\\\\wsl$\\Ubuntu\\home\\me\\fuli\\.git']));
+  assert.deepEqual(resolvePersonalProjectPath('\\\\wsl.localhost\\Ubuntu\\home\\me\\fuli\\src', PROJECTS, host),
+    { status: 'matched', basis: 'repository_root', personalProjectId: 'fuli' });
+  assert.equal(findRepositoryRoot('\\\\wsl.localhost\\Ubuntu\\home\\me\\fuli\\src', host),
+    '\\\\wsl.localhost\\Ubuntu\\home\\me\\fuli');
+  assert.equal(resolvePersonalProjectPath('//wsl$/Ubuntu/home/me/fuli', PROJECTS, host).personalProjectId, 'fuli');
+  for (const missing of ['\\\\wsl.localhost\\Ubuntu\\home\\me\\other', '\\\\?\\UNC\\wsl$\\Ubuntu\\missing', '\\\\Wsl$']) {
+    assert.throws(() => resolvePersonalProjectPath(missing, PROJECTS, host), /existing absolute directory/, missing);
   }
 });
 

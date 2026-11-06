@@ -12,6 +12,7 @@ import { createRuntimeLeaseClient } from '../../adaptive-runtime/lease-client.js
 import { openFederatedGraphApplication } from '../../graphiti/federated-application.js';
 import { resolveGraphRuntimeOptions } from '../../graphiti/runtime-config.js';
 import { isMainModule } from '../../system/main-module.js';
+import { platformPath, wslCallerPath } from '../../system/platform-path.js';
 import { readHookInput } from '../lifecycle-input.js';
 
 // The FULI side of the OpenCode V2 plugin (plugin.js): OpenCode runs plugins
@@ -31,7 +32,9 @@ const DEFAULT_PROMPT_TIMEOUT_MS = 15_000;
 
 const ENTRY_LABEL = 'Fuli task context (OpenCode plugin). Apply effective_preferences. ';
 
-export async function openCodeLifecycleOutput(event, input, invoke, session = {}) {
+// pathApi: the path rules of the host FULI runs on.
+export async function openCodeLifecycleOutput(event, input, invoke, { command: sessionCommand, entryRefusal,
+  pathApi = platformPath() } = {}) {
   if (!OPENCODE_EVENTS.includes(event)) throw new TypeError('Unsupported OpenCode lifecycle event');
   const sessionId = input?.session_id;
   if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId.length > 256) {
@@ -49,19 +52,20 @@ export async function openCodeLifecycleOutput(event, input, invoke, session = {}
   if (typeof input.cwd !== 'string' || !input.cwd.trim() || typeof input.prompt !== 'string') {
     throw new TypeError('OpenCode task entry requires cwd and prompt');
   }
+  const projectPath = wslCallerPath(input.cwd, input.wsl_distribution, pathApi);
   // OpenCode's prompt hook cannot hold a prompt back, so the person's FULI
   // command line still reaches the model: it is told the answer to relay.
-  const command = await session.command?.({ sessionId, sourceApplication: SOURCE_APPLICATION, prompt: input.prompt,
-    projectPath: input.cwd });
+  const command = await sessionCommand?.({ sessionId, sourceApplication: SOURCE_APPLICATION, prompt: input.prompt,
+    projectPath });
   if (command) {
     return { context: `The person's message is a FULI session command; FULI already applied it and answered: `
       + `${JSON.stringify(`FULI: ${command.message}`)}. Reply with that answer only; no task was started.` };
   }
-  const off = await session.entryRefusal?.();
+  const off = await entryRefusal?.();
   if (off) return { context: sessionFuliOffContext(off) };
   const context = await invoke('begin_task_context', { sessionId,
     ...(typeof input.message_id === 'string' ? { turnId: input.message_id } : {}),
-    projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192), ...source, ...taskSceneInput(input.prompt) });
+    projectPath, taskPrompt: input.prompt.slice(0, 8192), ...source, ...taskSceneInput(input.prompt) });
   const entry = compactTaskContext(context);
   const output = await preferenceHookOutput(entry, 'UserPromptSubmit', input, null, SOURCE_APPLICATION,
     ENTRY_LABEL + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);

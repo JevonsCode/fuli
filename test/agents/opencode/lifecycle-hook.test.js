@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import path, { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
@@ -50,6 +50,29 @@ test('the entry label tells the model the stop closes a hook task and to pass it
     async () => ({ taskContextToken: 'fuli-task-synthetic', checkpoint_required: false, checkpoint_guidance: 'reported' }));
   assert.match(output.context, /^Fuli task context \(OpenCode plugin\)\. Apply effective_preferences\. The Stop hook closes this task\./);
   assert.match(output.context, /Pass taskContextToken to every FULI call\./);
+});
+
+test('a Windows FULI opens the directory of an OpenCode inside WSL through its distribution\'s share', async () => {
+  const entered = async (input, pathApi) => {
+    const paths = [];
+    await openCodeLifecycleOutput('prompt', { session_id: SESSION, prompt: 'Outline.', ...input }, async (name, parameters) => {
+      paths.push(parameters.projectPath);
+      return { taskContextToken: 'fuli-task-synthetic', checkpoint_required: false };
+    }, { pathApi, command: async ({ projectPath }) => { paths.push(projectPath); return null; } });
+    return paths;
+  };
+  assert.deepEqual(await entered({ cwd: '/home/me/novel', wsl_distribution: 'Ubuntu' }, path.win32),
+    Array(2).fill('\\\\wsl.localhost\\Ubuntu\\home\\me\\novel'));
+  assert.deepEqual(await entered({ cwd: '///tmp//novel', wsl_distribution: 'Ubuntu-24.04' }, path.win32),
+    Array(2).fill('\\\\wsl.localhost\\Ubuntu-24.04\\tmp\\novel'));
+  // A drive mount stays for the resolver's own translation; anything else is left as reported.
+  for (const [input, pathApi] of [[{ cwd: '/mnt/t/novel', wsl_distribution: 'Ubuntu' }, path.win32],
+    [{ cwd: '/home/me/novel' }, path.win32], [{ cwd: '/home/me/novel', wsl_distribution: 'Ub/untu' }, path.win32],
+    [{ cwd: '/home/me/a:b', wsl_distribution: 'Ubuntu' }, path.win32], [{ cwd: '/home/me/novel', wsl_distribution: 'Ubuntu' }, path.posix],
+    [{ cwd: 'T:\\novel', wsl_distribution: 'Ubuntu' }, path.win32],
+    [{ cwd: '\\\\wsl.localhost\\Ubuntu\\home\\me\\novel', wsl_distribution: 'Ubuntu' }, path.win32]]) {
+    assert.deepEqual(await entered(input, pathApi), [input.cwd, input.cwd], JSON.stringify(input));
+  }
 });
 
 test('a successful execution closes the hook-delivered task honestly, as a Stop hook does', async () => {
