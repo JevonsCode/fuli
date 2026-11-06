@@ -62,7 +62,9 @@ const showDetail = computed(() => !narrow.value || rt.hasSelection.value)
 /* The list and the conversation fill the window down to its bottom edge, under the floating dock
    (Jevons 11-02); each scrolls inside itself and keeps its last line and the composer clear of the dock. */
 .rt-view { --rt-dock-room: calc(var(--dock-clearance) - 40px); display: flex; flex-direction: column; overflow: hidden; padding-bottom: 20px !important; }
-.rt :deep(.rt-composer) { padding-bottom: var(--rt-dock-room); }
+/* The dock floats over the list column, not the conversation (Jevons 11-06): the composer keeps
+   no dock room beside the list, only when the conversation takes the whole width. */
+.rt.is-narrow :deep(.rt-composer) { padding-bottom: var(--rt-dock-room); }
 .rt :deep(.rt-chat:not(.roundtable-thread-chat) .rt-chat-body), .rt :deep(.rt-list-body) { padding-bottom: var(--rt-dock-room); }
 .rt {
   --rt-list-width: 300px;
