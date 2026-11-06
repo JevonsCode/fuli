@@ -25,6 +25,8 @@ const BATCH_CHARS = 120_000;
 // corrected it. A long session's parts are far apart, so each is a place.
 const MIN_PLACES = 3;
 const DECISION_TIMEOUT_MS = 600_000;
+// A smaller part asks for a shorter answer and less hidden reasoning.
+const SPLIT_REASONS = new Set(['invalid_output', 'output_token_limit', 'reply_too_long']);
 const INSTRUCTIONS = 'You are reviewing one project\'s recent AI work sessions, outside any task, to improve what its Agents remember. '
   + 'Each evidence item is one session, or part of a long one: what was said, and the stored knowledge it touched with itemId and itemKind. '
   + 'List every durable lesson here, even one seen only once: the rest of the project is read separately and repeats are counted afterwards. '
@@ -82,8 +84,8 @@ export async function dreamProject(application, ownerReads, { personalProjectId,
   const stopped = (outcome, last) => note(application, personalProjectId, { status: outcome, sessions: sessions.length, proposed: [], usage, modelReceipt: last.receipt });
 
   // Every part is read; a long project takes several calls. One call that fails
-  // costs only its own part: a reply that won't validate is tried again in
-  // halves, and the rest of the run goes on.
+  // costs only its own part: a reply that won't validate or did not fit the
+  // model's output is tried again in halves, and the rest of the run goes on.
   const found = [];
   let last = null;
   let answered = 0;
@@ -96,7 +98,7 @@ export async function dreamProject(application, ownerReads, { personalProjectId,
       if (asked.envelope.decision === 'propose') found.push(...asked.envelope.payload.proposals);
       return true;
     }
-    if (asked.receipt.reason === 'invalid_output' && batch.length > 1) {
+    if (SPLIT_REASONS.has(asked.receipt.reason) && batch.length > 1) {
       const middle = Math.ceil(batch.length / 2);
       return await read(batch.slice(0, middle)) && read(batch.slice(middle));
     }

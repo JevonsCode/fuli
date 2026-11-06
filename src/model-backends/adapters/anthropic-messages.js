@@ -64,13 +64,13 @@ export const anthropicMessagesAdapter = Object.freeze({
           state.stop = event.delta?.stop_reason ?? state.stop;
           absorbUsage(counts, event.usage, { withOutput: true });
         }
-        if (state.text.length > MAX_REPLY_CHARS) return attemptFailure(modelFailure('configuration', 'output_truncated'), progress());
+        if (state.text.length > MAX_REPLY_CHARS) return attemptFailure(modelFailure('configuration', 'reply_too_long'), progress());
       }
     } catch (error) {
       return attemptFailure(readFailure(error), progress());
     }
     if (state.stop === 'refusal') return attemptFailure(modelFailure('refusal', 'model_refusal'), progress());
-    if (state.stop === 'max_tokens') return attemptFailure(modelFailure('configuration', 'output_truncated'), progress());
+    if (state.stop === 'max_tokens') return attemptFailure(modelFailure('configuration', 'output_token_limit'), progress());
     return { ok: true, reply: state.text, ...progress() };
   }
 });

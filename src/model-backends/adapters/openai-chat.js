@@ -59,7 +59,7 @@ export const openAiChatAdapter = Object.freeze({
     }
     if (state.refusal) return attemptFailure(modelFailure('refusal', 'model_refusal'), state);
     if (state.finish === 'content_filter') return attemptFailure(modelFailure('refusal', 'content_policy'), state);
-    if (state.finish === 'length') return attemptFailure(modelFailure('configuration', 'output_truncated'), state);
+    if (state.finish === 'length') return attemptFailure(modelFailure('configuration', 'output_token_limit'), state);
     return { ok: true, reply: state.text, usage: state.usage, actualModel: state.actualModel };
   }
 });
@@ -79,5 +79,5 @@ function absorb(state, chunk, part) {
     if (typeof content.refusal === 'string') state.refusal += content.refusal;
     state.finish = choice.finish_reason ?? state.finish;
   }
-  return state.text.length > MAX_REPLY_CHARS ? modelFailure('configuration', 'output_truncated') : null;
+  return state.text.length > MAX_REPLY_CHARS ? modelFailure('configuration', 'reply_too_long') : null;
 }
