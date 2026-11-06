@@ -65,6 +65,7 @@ export const undoTonborgReview = (spaceId: string, decisionId: string) =>
 
 /** At most this many items go in one transaction; the progress moves once per batch. */
 export const CONFIRM_BATCH = 25
+const batchShape = shapeOf(z.looseObject({ confirmed_count: z.number(), item_keys: z.array(z.string()) }))
 
 /**
  * 全部确认 (Jevons 11-06): the person's own confirmation of several pending
@@ -72,8 +73,8 @@ export const CONFIRM_BATCH = 25
  * If one moved since the list read it, nothing is saved (409).
  */
 export const confirmReviewBatch = (spaceId: string, items: KnowledgeItem[]) =>
-  postJson<{ confirmed_count: number; item_keys: string[] }>('/api/knowledge/batch-confirmation', {
+  postJson('/api/knowledge/batch-confirmation', {
     personalSpaceId: spaceId, groupKind: 'review', groupValue: 'pending', reason: t('reviewList.confirmAllReason'),
     confirmer: { kind: 'user', label: t('knowledge.domain.actors.currentUser') },
     items: items.map(item => ({ itemId: item.id, itemKind: item.itemKind, ...itemConfirmationBasis(item) })),
-  })
+  }, batchShape)
