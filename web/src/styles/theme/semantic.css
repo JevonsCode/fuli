@@ -40,15 +40,17 @@
   /* The dock's frosted glass (Jevons, 11-01): a light tint over a strong blur, so what lies
      beneath turns into soft colour and text cannot be read, and the panel still reads as glass,
      not a white plate; a solid surface where backdrop-filter is missing. */
-  --surface-dock: rgb(255 255 255 / 36%);
+  /* Lighter (Jevons 11-06): the bar must stay see-through frosted glass, never read as solid. */
+  --surface-dock: rgb(255 255 255 / 22%);
   /* A taller glass panel over busy content (the pinned FLAs) takes a little more tint. */
   --surface-dock-panel: rgb(255 255 255 / 56%);
   /* A faint sheen on the glass (Jevons 11-01, lighter 11-02): a breath of pink in the top-left
      corner and of gold in the bottom-right; everything between stays the neutral tint. */
   --glass-sheen: radial-gradient(60% 90% at 0% 0%, rgb(255 205 220 / 22%), transparent 70%),
     radial-gradient(60% 90% at 100% 100%, rgb(255 222 160 / 22%), transparent 70%);
-  /* A stronger blur (Jevons 11-02: about 30px) lets the floating glass be a little more see-through. */
-  --filter-dock: blur(30px) saturate(180%);
+  /* A softer blur (Jevons 11-06, was 30px): the page shows through as soft shapes, so the glass reads
+     as half-transparent, and it changes little against the unblurred snapshot drawn during a page change. */
+  --filter-dock: blur(14px) saturate(170%);
   /* The workbench's panels: a touch of glass over the page's moving backdrop. */
   --surface-panel-glass: rgb(255 255 255 / 70%);
   --filter-panel: blur(30px) saturate(160%);
