@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { createClientInstallerPort } from '../../src/agent-kits/client-installer.js';
+import { createClientInstallerPort, noteChanged } from '../../src/agent-kits/client-installer.js';
 
 // The port without a usable agent-installer: nothing is written and every
 // call says so. Synthetic paths only.
@@ -31,4 +31,17 @@ test('a write without agent-installer answers unavailable instead of falling bac
     (ids) => retired.push(ids));
   assert.equal((await broken.apply(['gemini'])).status, 'unavailable');
   assert.deepEqual(retired, [['gemini']]);
+});
+
+test('only a change an open session would not reread leaves a note, and only for a client FULI can tell apart', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-client-note-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'runtime.json');
+  noteChanged([
+    { id: 'codex', changes: [{ path: '~/.codex/config.toml', components: ['mcp'] }] },
+    { id: 'claude-code', changes: [{ path: '~/.claude/skills/fuli', components: ['skills'] }] },
+    { id: 'cursor', changes: [] },
+    { id: 'gemini', changes: [{ path: '~/.gemini/settings.json', components: ['hooks'] }] }
+  ], config);
+  assert.deepEqual(readdirSync(join(root, 'mcp-processes')), ['client-changed-claude_code.json']);
 });

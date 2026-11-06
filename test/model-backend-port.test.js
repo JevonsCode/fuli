@@ -457,6 +457,19 @@ test('C7: unapproved project or unassigned content is blocked before any request
   assert.equal(allowed.modelReceipt.status, 'completed');
 });
 
+test('C8: an endpoint that ignores the schema is shown it in the repair, and in the prompt from then on', async () => {
+  const offShape = JSON.stringify({ decision: 'propose', payload: { anything: true }, reason: 'r', evidenceIds: [], uncertainty: null });
+  const { port, calls } = harness({ bole: role('claude') }, { responses: [anthropicStream(offShape), anthropicStream(answer()), anthropicStream(answer())] });
+  const repaired = await port.decide(request());
+  assert.equal(repaired.modelReceipt.status, 'completed');
+  assert.ok(calls[0].body.output_config, 'the first call trusts the endpoint');
+  assert.doesNotMatch(calls[1].body.system, /must match this JSON schema/);
+  assert.match(calls[1].body.messages.at(-1).content, /must match this JSON schema/);
+  await port.decide(request({ requestId: 'request-next' }));
+  assert.match(calls[2].body.system, /must match this JSON schema/, 'later calls start in the prompt');
+  assert.equal(calls[2].body.output_config, undefined);
+});
+
 test('C8: broken JSON gets exactly one repair attempt and a second invalid reply is never acted on', async () => {
   const repaired = harness({ bole: role('local') }, { responses: [openAiStream('{"decision": "propose", '), openAiStream(answer())] });
   const ok = await repaired.port.decide(request());

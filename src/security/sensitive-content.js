@@ -16,3 +16,14 @@ export function detectSensitiveContent(text) {
     .map(([reason]) => reason);
   return { restricted: reasons.length > 0, reasons };
 }
+
+// A key's header is enough to detect it; masking hides the whole block.
+const PRIVATE_KEY_BLOCK = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|$)/gi;
+const REDACTORS = DETECTORS.map(([reason, pattern]) =>
+  [reason, reason === 'private_key' ? PRIVATE_KEY_BLOCK : new RegExp(pattern.source, `${pattern.flags}g`)]);
+
+// The same patterns, each match replaced by its reason, for text that is kept
+// for a person to read (a #fulidebug turn record) rather than refused.
+export function redactSensitiveContent(text) {
+  return REDACTORS.reduce((value, [reason, pattern]) => value.replace(pattern, `[redacted:${reason}]`), text);
+}

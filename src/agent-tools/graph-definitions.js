@@ -7,6 +7,8 @@ import { AGENT_SERVICE_DEFINITIONS } from './agent-service-definitions.js';
 import { AGENT_WORKFLOW_DEFINITIONS } from './agent-workflow-definitions.js';
 import { WORK_SURFACE_DEFINITIONS } from './work-surface-definitions.js';
 import { DELEGATION_DEFINITIONS } from './delegation-definitions.js';
+import { DIAGNOSTIC_DEFINITIONS } from './diagnostic-definitions.js';
+import { OLD_DATA_DEFINITIONS } from './old-data-definitions.js';
 import { TASK_RUN_DEFINITIONS } from './task-run-definitions.js';
 import { TASK_PREFERENCE_DEFINITIONS } from './task-preference-definitions.js';
 import { AGENT_INTERFACE_DEFINITIONS } from './interface-definitions.js';
@@ -35,6 +37,8 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...AGENT_WORKFLOW_DEFINITIONS,
   ...WORK_SURFACE_DEFINITIONS,
   ...DELEGATION_DEFINITIONS,
+  ...DIAGNOSTIC_DEFINITIONS,
+  ...OLD_DATA_DEFINITIONS,
   ...TASK_PREFERENCE_DEFINITIONS,
   ...TASK_ENTRY_DEFINITIONS,
   ...KNOWLEDGE_DEFINITIONS,

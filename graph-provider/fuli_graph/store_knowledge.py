@@ -10,6 +10,7 @@ from .graph_query import read_graph
 from .knowledge_basis_review import inherited_reasons, record_inherited
 from .knowledge_dependencies import require_current_bases
 from .knowledge_hard_delete_traces import episode_hard_deleted, fresh_identities
+from .knowledge_outdated import settle_older_knowledge
 from .knowledge_source_fence import require_source_available
 from .knowledge_search import search_knowledge
 from .models import (
@@ -21,8 +22,9 @@ from .models import (
     StructuredEpisode,
 )
 from .personal_project_access import authorize_personal_project
+from .preference_versions import restated_preferences
 from .project_agent_access import authorize_project_agent
-from .knowledge_versions import link_reasserted, lock_knowledge, reasserted_entities
+from .knowledge_versions import link_reasserted, lock_knowledge, reasserted_entities, restated_relationships
 from .provider_values import now_utc, stable_uuid
 from .store_transactions import query_store_transaction
 from .workflow_candidates import materialize_workflow_candidates
@@ -193,6 +195,12 @@ class StoreKnowledge:
                 reasserted[entity_id]['item_id'] if entity_id in reasserted else entity_id
                 for entity_id in entity_ids
             ]
+            # A confirmed preference stated again with other words is a new
+            # version; the stored one keeps its words and ends below (rec#75).
+            landed_ids = list(entity_ids)
+            restated_preference_ids = await restated_preferences(
+                self, space, episode.entities, landed_ids, episode_id)
+            entity_ids = [restated_preference_ids.get(entity_id, entity_id) for entity_id in entity_ids]
             entity_id_by_key = {
                 entity.key: entity_id
                 for entity, entity_id in zip(
@@ -215,6 +223,10 @@ class StoreKnowledge:
             stated_relationship_ids = list(relationship_ids)
             renamed_relationships = await fresh_identities(self, space, stated_relationship_ids)
             relationship_ids = [renamed_relationships.get(item_id, item_id) for item_id in relationship_ids]
+            # The same words said again after their item ended are a new
+            # current item; landing on the ended one hid them (rec#63).
+            restated = await restated_relationships(self, space, relationship_ids)
+            relationship_ids = [restated.get(item_id, item_id) for item_id in relationship_ids]
             entity_input_by_key = {
                 entity.key: entity for entity in episode.entities
             }
@@ -291,7 +303,14 @@ class StoreKnowledge:
                     raise HTTPException(status_code=409, detail={
                         'code': 'versions_changed',
                         'message': 'something this capture names was permanently deleted meanwhile; retry the capture'})
-                if reasserted != await reasserted_entities(scoped, space, captured_ids, episode_id):
+                if restated != await restated_relationships(scoped, space, [
+                        renamed_relationships.get(item_id, item_id) for item_id in stated_relationship_ids]):
+                    raise HTTPException(status_code=409, detail={
+                        'code': 'versions_changed',
+                        'message': 'something this capture names ended meanwhile; retry the capture'})
+                if reasserted != await reasserted_entities(scoped, space, captured_ids, episode_id) or (
+                        restated_preference_ids != await restated_preferences(
+                            scoped, space, episode.entities, landed_ids, episode_id)):
                     raise HTTPException(status_code=409, detail={
                         'code': 'versions_changed',
                         'message': 'a version this capture names changed meanwhile; retry the capture'})
@@ -721,12 +740,19 @@ class StoreKnowledge:
                                        created_at=created_at)
                 await materialize_workflow_candidates(scoped, space,
                     personal_project_id=personal_project_id, pairs=workflow_pairs)
+                # What this capture replaces or may have made stale (no model).
+                settled = await settle_older_knowledge(
+                    scoped, {'id': actor_id or 'capture'}, space,
+                    [('entity', item_id) for item_id in entity_ids]
+                    + [('relationship', item_id) for item_id in relationship_ids],
+                    created_at=created_at) if space['kind'] == 'personal' else {}
             return CommitResult(
                 status='committed',
                 space_id=space['id'],
                 episode_id=episode_id,
                 entity_ids=entity_ids,
                 relationship_ids=relationship_ids,
+                **settled,
             )
 
 

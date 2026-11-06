@@ -4,13 +4,13 @@ Tonborg is the built-in judgment Agent, alongside Jefa and Bole. It has a persis
 
 ## Choose the amount of autonomy
 
-Settings offers three choices, saved immediately with Undo:
+The 判断标准 / Standards tab of Tonborg's workbench says in plain words what it reviews knowledge by, and offers three choices, saved immediately with Undo:
 
 - **I decide**: Tonborg analyzes and records suggestions.
 - **Shared decisions**: Tonborg applies routine knowledge reviews backed by existing confirmation and accepts verified FULI tasks.
 - **Autonomous**: Tonborg may also review ordinary pending knowledge. Conflicts, sensitive preferences, uncertain evidence, and actions outside existing authority remain for the user.
 
-Projects inherit the global policy unless the user sets an exception. Updating FULI does not silently expand existing authority.
+Projects inherit the global policy unless the user sets an exception, on the same tab or on the project page. Settings only links to this tab. Updating FULI does not silently expand existing authority.
 
 ## Who answers a judgment
 
@@ -25,7 +25,7 @@ A model the person configured for a role is trusted by default (rec#10 D-36). To
 A review approval is written back without the person only when all of these hold at the moment of the write:
 
 - **Tonborg's configured model answered it.** The role is enabled in `model-backends.json`, `knowledge_review` is in its allowed operations, and the role still names the same connection that answered: the same connection id, protocol, endpoint and model. An answer from the current session (no model, a disabled role, or a fallback after the model failed) or from an opted-in legacy CLI is a suggestion, as before this change (`session_answer`). An answer from a connection the role no longer names is not trusted (`connection_changed`), including the same model name on another connection and the same connection with its endpoint changed in place.
-- **The role is not set to 「只给建议 / Suggestions only」.** Each role card on the model settings page has this switch; it is off by default. When it is on, every answer is a suggestion (`suggestions_only`).
+- **The role is not set to 「只给建议 / Suggestions only」.** Each role's 「查看详情」 on the model settings page has this switch; it is off by default. When it is on, every answer is a suggestion (`suggestions_only`).
 - **The person has read the warning.** Next to the switch the card says: 「模型可能判断错，它的判断会直接生效；你可以随时改成「只给建议」，部分写入可在回执里撤回。」 It counts as read only when the person presses 「我已看过 / I have read this」 on the settings page. Opening the page, rendering a receipt or any background read never sets it. Until then the configured model's approval is a suggestion (`warning_not_seen`), and that receipt shows the same warning with a link to the settings page. The item stays a suggestion for the person; it is not asked again while its evidence is unchanged.
 - **Every rule that applied before still allows it.** Trust relaxes none of them: the autonomy choice (**I decide** keeps every approval a suggestion), items that need attention or have negative or conflicting evidence, the confidence floor, Tonborg's permission for the scope, the role's data-sharing approval for the review's project as it is now (`egress_not_approved`), the capture switch for the scope, globally and for the project (`capture_off`), the hard-delete fence, injection isolation of the evidence, the injection pattern pre-check below, and the Provider's evidence snapshot check. These checks govern what passes through FULI's host; they are not a sandbox.
 
@@ -93,4 +93,4 @@ Each answers only a loopback request. A request from another device is refused w
 
 Agents keep their own tools (`list_judgments`, `review_with_tonborg`, `assess_agent_action`, `assess_task_completion`), and no MCP or Agent tool module imports these routes or the proof check (`test/judgment-console-owner.test.js`). `GET /api/agent-pins` and `GET /api/judgment/policy` hold no history and stay as they were; the undo keeps its own check, since only the human-review channel can send it.
 
-**Known limit: local HTTP callers are trusted.** The console server trusts every local HTTP caller and attaches the proof itself. The proof shows only that the console server holds the token; it shows nothing about who sent the request. So any local process, including an Agent with a shell, can still read the full history over loopback HTTP (for example `GET /api/judgment/records` with only a `Host` header) without reading any token. D-60 makes these routes consistent with the console's other full reads and refuses LAN requests; it does not close that local HTTP path. FULI is a local tool for one person, so the console has no login and none is planned (rec#11 D-70, which drops D-61's console session).
+**Known limit: local HTTP callers are trusted.** The console server trusts every local HTTP caller and attaches the proof itself. The proof shows only that the console server holds the token; it shows nothing about who sent the request. So any local process, including an Agent with a shell, can still read the full history over loopback HTTP (for example `GET /api/judgment/records` with only a `Host` header) without reading any token. D-60 makes these routes consistent with the console's other full reads and refuses LAN requests; it does not close that local HTTP path. FULI is a local tool for one person, so the console has no login and none is planned (rec#11 D-70, which drops D-61's console session). The same holds for every person-only route and for `personWords`: they stop an Agent going through its tools, and they do not stop a process on this computer. An Agent with a shell can call the console, or run `fuli session stop`, as the person could. They prevent mistakes and keep an honest record; they are not a security boundary against a local program.

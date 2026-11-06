@@ -4,7 +4,8 @@ import { refuseRemoteDecision } from '../http/request-policy.js';
 import { readJson, sendJson } from '../http/response.js';
 import { confirmConsoleOwner } from '../knowledge-owner-reads/owner-proof.js';
 import { positiveInteger } from '../validation/values.js';
-import { MODEL_BACKEND_ROLES } from './config.js';
+import { MODEL_BACKEND_ROLES, SEMANTIC_ROLE } from './config.js';
+import { compactReceipt } from './receipt.js';
 import { MAX_HISTORY_LIMIT } from './settings-history.js';
 import { RETENTION } from './suggestion-log.js';
 
@@ -39,6 +40,7 @@ import { RETENTION } from './suggestion-log.js';
 // trust change answers whether its change was recorded there.
 const ROLE_ROUTE = /^\/api\/model-backends\/roles\/([a-z]+)$/;
 const TRUST_ROUTE = /^\/api\/model-backends\/roles\/([a-z]+)\/trust$/;
+const CHECK_ROUTE = /^\/api\/model-backends\/roles\/([a-z]+)\/check$/;
 const SUGGESTIONS_ROUTE = '/api/model-backends/suggestions';
 const HISTORY_ROUTE = '/api/model-backends/history';
 const READ_ROUTES = ['/api/model-backends/usage', '/api/model-backends/roles', SUGGESTIONS_ROUTE, HISTORY_ROUTE];
@@ -48,11 +50,27 @@ const TRUST_EDIT = z.union([
   z.object({ expectedRevision: revision, acknowledgeWarning: z.number().int().min(1) }).strict()
 ]);
 
+// 测试连接 on the model page: one real request with the saved settings. The
+// fixed check carries no project and nothing of the person's, as `fuli models check` does.
+async function handleConnectionCheck({ request, response, modelBackends, role }) {
+  if (request.method !== 'POST') { sendJson(response, 405, { error: 'Method not allowed' }); return true; }
+  if (refuseRemoteDecision(request, response, 'A model is tested only on this computer')) return true;
+  if (!modelBackends) { sendJson(response, 503, { error: 'Model backends need a local FULI installation' }); return true; }
+  if (!MODEL_BACKEND_ROLES.includes(role)) throw new TypeError(`Unknown role: ${role}`);
+  const { modelReceipt, dimensions } = await modelBackends.checkConnection(role);
+  // The semantic role's check also says how long its vectors are; never the vector itself.
+  sendJson(response, 200, { ok: modelReceipt.status === 'completed', receipt: compactReceipt(modelReceipt),
+    ...(role === SEMANTIC_ROLE ? { dimensions: dimensions ?? null } : {}) });
+  return true;
+}
+
 export async function handleModelBackendApiRequest({
   request, response, url, modelBackends, roleWork = null, readRoleSuggestions = null, roleSettings = null, operations = {},
   automaticOperations = {}, modelTrust = null, settingsHistory = null, readEvaluation = null, ownerReads = null,
   personalSpaceId = null
 }) {
+  const checked = CHECK_ROUTE.exec(url.pathname)?.[1] ?? null;
+  if (checked) return handleConnectionCheck({ request, response, modelBackends, role: checked });
   const roleEdit = ROLE_ROUTE.exec(url.pathname)?.[1] ?? null;
   const trustEdit = TRUST_ROUTE.exec(url.pathname)?.[1] ?? null;
   if (!roleEdit && !trustEdit && !READ_ROUTES.includes(url.pathname)) return false;

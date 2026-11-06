@@ -11,8 +11,12 @@ export type ContextTarget =
   | { kind: 'field'; field: EditableField; range: FieldRange; selected: string; actions: FieldAction[] }
   | { kind: 'text'; text: string }
   | { kind: 'link'; url: URL; internal: boolean }
+  /** A debug record's row: copy or export all of it. */
+  | { kind: 'debug-turn'; id: string }
   /** An FLA portrait (`data-agent-portrait` = its agentId): the dock pins' menu without 取消置顶. */
   | { kind: 'agent'; agentId: string }
+  /** Anything that reads as exactly one project's name. */
+  | { kind: 'project'; projectId: string; name: string }
 
 export interface ContextTargetOptions {
   selection: Selection | null
@@ -20,6 +24,8 @@ export interface ContextTargetOptions {
   origin: string
   /** False where the page cannot read the clipboard, so 粘贴 is hidden, never dead. */
   canPaste: boolean
+  /** This space's projects by name: any element that says exactly one of them offers its menu. */
+  projects?: ReadonlyMap<string, string>
 }
 
 const TEXT_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel', 'email', 'password', 'number'])
@@ -66,8 +72,22 @@ function linkAt(element: Element, origin: string) {
   return LINK_PROTOCOLS.has(url.protocol) ? { url, internal: url.origin === origin } : null
 }
 
+// A project's name is written in many places (Jevons 11-04: all of them get the
+// menu), so it is found by what the element says, not by a mark on each one: the
+// click's element or one of the nearest few around it, as a label wraps its text.
+const PROJECT_NAME_DEPTH = 3
+function projectAt(element: Element, projects: ReadonlyMap<string, string> | undefined) {
+  let current: Element | null = element
+  for (let depth = 0; projects?.size && current && depth < PROJECT_NAME_DEPTH; depth += 1, current = current.parentElement) {
+    const name = current.textContent?.trim() ?? ''
+    const projectId = projects.get(name)
+    if (projectId) return { projectId, name }
+  }
+  return null
+}
+
 /** The menu for a right-click on `target`, or null when nothing there has one. */
-export function readContextTarget(target: EventTarget | null, { selection, origin, canPaste }: ContextTargetOptions): ContextTarget | null {
+export function readContextTarget(target: EventTarget | null, { selection, origin, canPaste, projects }: ContextTargetOptions): ContextTarget | null {
   const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null
   if (!element) return null
   const field = editableField(element)
@@ -83,6 +103,10 @@ export function readContextTarget(target: EventTarget | null, { selection, origi
   const portrait = element.closest<HTMLElement>('[data-agent-portrait]')
   const agentId = portrait?.dataset.agentPortrait
   if (agentId) return { kind: 'agent', agentId }
+  const debugTurnId = element.closest<HTMLElement>('[data-debug-turn-id]')?.dataset.debugTurnId
+  if (debugTurnId) return { kind: 'debug-turn', id: debugTurnId }
+  const project = projectAt(element, projects)
+  if (project) return { kind: 'project', ...project }
   const link = linkAt(element, origin)
   return link ? { kind: 'link', ...link } : null
 }

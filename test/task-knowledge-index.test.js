@@ -22,17 +22,21 @@ function entity(id, name, extra = {}) {
     defined_project_id: PROJECT, scope_distance: 0, confirmation_status: 'confirmed', score: 1, ...extra };
 }
 
-function application(found, calls = []) {
+// found answers the index search; topic answers the search by the prompt's own
+// words (rec#88), which comes first and finds nothing unless a test says so.
+function application(found, calls = [], topic = { facts: [], entities: [] }) {
   return {
     config: { personal: { spaceId: 'personal-space' } },
     consoleUrl: 'http://127.0.0.1:2727',
     async searchKnowledge(input) {
       calls.push(input);
-      if (found instanceof Error) throw found;
-      return found;
+      const answer = input.agentToolName === 'automatic_task_knowledge_index' ? found : topic;
+      if (answer instanceof Error) throw answer;
+      return answer;
     }
   };
 }
+const indexCalls = calls => calls.filter(({ agentToolName }) => agentToolName === 'automatic_task_knowledge_index');
 
 const NOT_NEEDED = async prompt => JSON.stringify(await recallTaskKnowledge(application({ facts: [], entities: [] }),
   { personalProjectId: PROJECT }, prompt));
@@ -75,12 +79,13 @@ test('a coding prompt gets at most five exact-project titles with ids and the ma
   assert.deepEqual(recall.entities, []);
   assert.equal(recall.sourceMarker, undefined, 'titles alone support no answer, so they need no source marker');
   assert.equal(JSON.stringify(recall).includes(PROMPT), false);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].personalProjectId, PROJECT);
-  assert.equal(calls[0].projectAgentId, undefined, 'the recall\'s own reader: a plain session');
-  assert.equal(calls[0].agentToolName, 'automatic_task_knowledge_index');
-  assert.equal(calls[0].query.includes(PROMPT), false);
-  assert.match(calls[0].query, /find_agents/);
+  const [indexCall] = indexCalls(calls);
+  assert.equal(indexCalls(calls).length, 1);
+  assert.equal(indexCall.personalProjectId, PROJECT);
+  assert.equal(indexCall.projectAgentId, undefined, 'the recall\'s own reader: a plain session');
+  assert.equal(indexCall.query.includes(PROMPT), false);
+  assert.match(indexCall.query, /find_agents/);
+  assert.ok(calls.every(call => call.projectAgentId === undefined));
 });
 
 test('with nothing relevant, no project, a failed search or too little time the recall is byte for byte as before', async () => {
@@ -102,7 +107,7 @@ test('with nothing relevant, no project, a failed search or too little time the 
   const recall = await runWithEntryBudget(late, () => recallTaskKnowledge(
     application({ facts: [], entities: [entity('rule', 'find_agents rule')] }, calls), { personalProjectId: PROJECT }, PROMPT));
   assert.equal(JSON.stringify(recall), before);
-  assert.equal(calls.length, 0, 'with the entry\'s time low the index is not searched');
+  assert.equal(indexCalls(calls).length, 0, 'with the entry\'s time low the index is not searched');
 });
 
 // The change-request heuristic: a clause that opens with a change verb.
@@ -168,9 +173,9 @@ test('an FLA\'s own knowledge never reaches another reader\'s index', async () =
       : pathname === '/v1/knowledge/agent-views' ? { recorded_count: 1, item_keys: [] } : []);
   });
   const recall = await recallTaskKnowledge(app, { personalProjectId: PROJECT }, PROMPT, { sourceApplication: 'opencode' });
-  assert.equal(searches.length, 1);
-  assert.equal(searches[0].project_agent_id ?? null, null);
-  assert.deepEqual(recall.knowledge_index.items.map(([id]) => id), ['shared']);
+  assert.ok(searches.length >= 1);
+  assert.ok(searches.every(search => (search.project_agent_id ?? null) === null), 'every search reads as a plain session');
+  assert.match(JSON.stringify(recall), /shared/);
   assert.equal(JSON.stringify(recall).includes('private FLA'), false);
 });
 
@@ -193,3 +198,14 @@ test('2 s only gates the start: a search already running stops with the hook\'s 
   assert.equal(JSON.stringify(await running), before);
   assert.equal(reason?.message, 'synthetic hook deadline', 'the hook\'s abort, not the Provider timeout, ended it');
 });
+
+test('rec#88: a search by the prompt\'s own words that finds the item delivers it, and no index is searched', async () => {
+  const calls = [];
+  const topic = { facts: [], entities: [entity('rule', 'find_agents whole-word rule')] };
+  const recall = await recallTaskKnowledge(application({ facts: [], entities: [] }, calls, topic), { personalProjectId: PROJECT }, PROMPT);
+  assert.equal(recall.status, 'matched');
+  assert.deepEqual(recall.trigger_categories, ['topic']);
+  assert.equal(recall.knowledge_index, undefined);
+  assert.equal(indexCalls(calls).length, 0);
+});
+

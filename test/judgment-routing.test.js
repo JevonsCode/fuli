@@ -128,3 +128,26 @@ test('session reuse accepts only scoped conversation IDs and preserves choice co
   app.queryAgentConversations = async () => ({ conversations: [] });
   assert.equal((await service.assess({ ...routingInput, action: 'session', requestId: 'missing' })).outcome, 'failed');
 });
+
+// rec#83: a failed judgment said only provider_error.
+test('a failed executor judgment says where it stopped and what to do, without the error text', async t => {
+  const { app, service } = routingFixture(t, { executors: [availableExecutor('space')] });
+  const missing = Object.assign(new Error('secret provider words'), { code: 'provider_error', status: 404 });
+  app.viewProjectAgentTask = async () => { throw missing; };
+  const record = await service.assess({ ...routingInput, action: 'session', taskId: 'task-a', requestId: 'failed-read' });
+  assert.equal(record.outcome, 'failed');
+  assert.equal(record.error, 'provider_error');
+  assert.deepEqual({ stage: record.failure.stage, category: record.failure.category, status: record.failure.status, retryable: record.failure.retryable },
+    { stage: 'task', category: 'not_found', status: 404, retryable: false });
+  assert.match(record.failure.recovery, /check the IDs/);
+  assert.match(record.guidance, /no execution receipt/);
+  assert.equal(JSON.stringify(record).includes('secret provider words'), false);
+});
+
+// rec#83: a global read naming an FLA crashed as internal_error.
+test('a global read that names an FLA says what to do, and one without it reads', async t => {
+  const { service } = routingFixture(t, { executors: [availableExecutor('space')] });
+  await assert.rejects(service.agent.records({ personalSpaceId: 's', personalProjectId: null, projectAgentId: 'a', limit: 3 }),
+    { code: 'invalid_input', message: /leave projectAgentId out/ });
+  assert.ok(Array.isArray((await service.agent.records({ personalSpaceId: 's', personalProjectId: null, limit: 3 })).records));
+});

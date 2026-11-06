@@ -7,6 +7,9 @@ import { handleAgentAppApiRequest } from './agent-app-api-router.js';
 import { handleDataFormatApiRequest } from './data-format-api-router.js';
 import { handleDoctorApiRequest } from './doctor-api-router.js';
 import { handleDiagnosticsApiRequest } from './diagnostics-api-router.js';
+import { handleOldDataRequest } from './old-data-api-router.js';
+import { handleDebugTurnsRequest } from './debug-turns-api-router.js';
+import { handleDiagnosticEventsRequest } from './diagnostic-events-api-router.js';
 import { handlePersonProfileRequest } from './person-profile-api-router.js';
 import { handleSessionLaunchRequest } from './session-launch-api-router.js';
 import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-router.js';
@@ -24,10 +27,16 @@ import { handleAgentDelegationRequest } from './agent-delegation-api-router.js';
 import { handleRoundtableApiRequest } from '../agent-roundtable/http.js';
 import { handlePeerApiRequest } from '../agent-peer/http.js';
 import { handleJudgmentApiRequest } from '../judgment/http.js';
+import { KNOWLEDGE_EMBEDDING_OPERATION } from '../model-backends/config.js';
 import { handleModelBackendApiRequest } from '../model-backends/http.js';
 import { handleModelKeyRequest } from '../model-backends/keys-http.js';
 import { TONBORG_OPERATIONS } from '../judgment/backend.js';
 import { ASTRO_OPERATION } from '../graphiti/assistant-project-candidate.js';
+import { DREAMING_OPERATION } from '../dreaming/run.js';
+import { handleDreamingRequest } from './dreaming-api-router.js';
+import { handleSemanticRequest } from './semantic-api-router.js';
+import { handleRetrievalTermsRequest } from './retrieval-terms-api-router.js';
+import { RETRIEVAL_TERMS_OPERATION } from '../retrieval-terms/terms-model.js';
 import { JEFA_OPERATION } from '../graphiti/jefa-board-match.js';
 import { FULI_VERSION } from '../package-metadata.js';
 
@@ -65,7 +74,8 @@ export async function handleApiRequest({
   if (await handleAgentAppApiRequest({ request, response, url, app })) return true;
   const modelBackendRequest = () => handleModelBackendApiRequest({ request, response, url, modelBackends: app.modelBackends, roleWork: app.roleWork,
     readRoleSuggestions: app.roleSuggestions ? input => app.readRoleSuggestions(input) : null,
-    roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS) },
+    roleSettings: modelRoleSettings, operations: { assistant: [ASTRO_OPERATION, DREAMING_OPERATION, RETRIEVAL_TERMS_OPERATION], jefa: [JEFA_OPERATION], tonborg: Object.values(TONBORG_OPERATIONS),
+      semantic: [KNOWLEDGE_EMBEDDING_OPERATION] },
     automaticOperations: { tonborg: TONBORG_OPERATIONS.review }, modelTrust: app.modelTrust ?? null,
     settingsHistory: app.modelSettingsHistory ?? null, readEvaluation: readModelEvaluation,
     ownerReads: knowledgeOwnerReads, personalSpaceId: app.config?.personal?.spaceId ?? null });
@@ -192,6 +202,12 @@ export async function handleApiRequest({
   // sleeping provider (its graph format plan then reads as unavailable).
   if (await handleDoctorApiRequest({ request, response, url, system })) return true;
   if (await handleDiagnosticsApiRequest({ request, response, url, app, system })) return true;
+  if (await handleOldDataRequest({ request, response, url, shelf: app.oldData, restore: dataFormatMigrations?.restore ?? null })) return true;
+  if (await handleDreamingRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads })) return true;
+  if (await handleSemanticRequest({ request, response, url, app, indexer: app.semanticIndexer ?? null })) return true;
+  if (await handleRetrievalTermsRequest({ request, response, url, app, runner: app.retrievalTerms ?? null })) return true;
+  if (await handleDebugTurnsRequest({ request, response, url, debugTurns: system?.debugTurns ?? null, modelCapture: system?.modelCapture ?? null })) return true;
+  if (await handleDiagnosticEventsRequest({ request, response, url, diagnosticEvents: app.diagnosticEvents ?? null })) return true;
   if (await handlePersonProfileRequest({ request, response, url, app })) return true;
   if (await handleSessionLaunchRequest({ request, response, url, system })) return true;
 
@@ -247,7 +263,7 @@ export async function handleApiRequest({
   const graphRequest = async () =>
     await handleDataFormatApiRequest({ request, response, url, migrations: dataFormatMigrations }) ||
     await handleKnowledgeHardDeleteRequest({ request, response, url, app, hardDelete: knowledgeHardDelete }) ||
-    await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: knowledgeScope }) ||
+    await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: knowledgeScope, ownerReads: knowledgeOwnerReads }) ||
     await handleProjectHierarchyRequest({ request, response, url, app, hierarchyConsole: projectHierarchy }) ||
     await handleTaskBlockerRequest({ request, response, url, app, blockerConsole: taskBlockers }) ||
     await handleKnowledgeTagsRequest({ request, response, url, app, tagsConsole: knowledgeTags }) ||

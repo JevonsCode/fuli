@@ -8,6 +8,7 @@ import { handleAgentAppPageRequest } from './http/agent-app-page-router.js';
 import { handleApiRequest } from './http/api-router.js';
 import { handleDelegatedRequest } from './http/agent-delegation-gate.js';
 import { mapHttpError } from './http/error-mapping.js';
+import { recordHttpFailure } from './diagnostics/failure-records.js';
 import { isCrossSiteNavigation, localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';
 import { sendJson } from './http/response.js';
 import { closeTaskEventStreams } from './http/task-events-api-router.js';
@@ -26,6 +27,9 @@ import { createWorkerPlanRuntime } from './server/worker-plan-runtime.js';
 import { listenFetchableServer } from './server/listen.js';
 import { resolveSetupPaths } from './setup/paths.js';
 import { createSystemService } from './system/system-service.js';
+import { startDreamingScheduler } from './dreaming/scheduler.js';
+import { startSemanticIndexer } from './semantic/scheduler.js';
+import { createTermsRunner } from './retrieval-terms/runner.js';
 import { startJudgmentScheduler } from './judgment/scheduler.js';
 import { dataFormatNoticeLine, dataFormatNotices, latestNotices } from './data-format/format-notices.js';
 import { personalGraphFormat } from './data-format/graph-format-client.js';
@@ -155,13 +159,16 @@ export async function createServer(options = {}) {
   let system = null;
   let resourcesClosing = null;
   let stopJudgment = () => {};
+  let stopDreaming = () => {};
+  let semanticIndexer = null;
+  let retrievalTerms = null;
   let stopClientLinkUpdates = () => {};
   let peer = null;
   let workerRuntime = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopClientLinkUpdates(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
+      for (const close of [() => stopJudgment(), () => stopDreaming(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
         () => releaseDataDirectory()]) {
         try {
           const pending = close();
@@ -223,6 +230,7 @@ export async function createServer(options = {}) {
   let authority = null;
   let allowedLanAuthorities = [];
   const server = createHttpServer((request, response) => {
+    const startedAt = Date.now();
     handleRequest({
       request,
       response,
@@ -253,11 +261,13 @@ export async function createServer(options = {}) {
         // A post-response lease/storage failure cannot be converted into a second response.
         if (!response.writableEnded) response.destroy();
         console.error('Request failed after its response was committed or disconnected');
+        recordHttpFailure(application.diagnosticEvents, { request, error, status: 500, startedAt });
         return;
       }
       const mapped = mapHttpError(error);
       if (mapped.body.code === 'knowledge_recovery_pending') void knowledgeRecovery?.check();
       sendJson(response, mapped.status, mapped.body);
+      recordHttpFailure(application.diagnosticEvents, { request, error, status: mapped.status, startedAt });
     });
   });
 
@@ -277,6 +287,15 @@ export async function createServer(options = {}) {
   }
   stopJudgment = startJudgmentScheduler({ app: application,
     ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
+  stopDreaming = startDreamingScheduler({ app: application, ownerReads: knowledgeOwnerReads,
+    ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
+  semanticIndexer = startSemanticIndexer({ app: application,
+    ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
+  application.semanticIndexer = semanticIndexer;
+  retrievalTerms = createTermsRunner({ app: application,
+    ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
+  application.retrievalTerms = retrievalTerms;
+  void semanticIndexer.runNow();
   stopClientLinkUpdates = clientLinks?.startAutoUpdate({
     onError: (error) => console.warn(`Client links were not updated: ${error?.message ?? error}`)
   }) ?? (() => {});

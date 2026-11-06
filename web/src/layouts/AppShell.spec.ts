@@ -168,7 +168,7 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('offers a pinned FLA its profile, its Workbench only when it has one, and unpinning from the right-click menu', async () => {
+  it('offers a pinned FLA its profile and unpinning from the right-click menu, and no Workbench it does not have', async () => {
     pinnedIds = ['agent-a']
     const { wrapper } = await setup('/project-agents')
     await wrapper.get('[data-pinned-agent="agent-a"]').trigger('contextmenu', { clientX: 40, clientY: 600 })
@@ -176,8 +176,20 @@ describe('AppShell', () => {
     const menu = document.querySelector('[data-pin-menu]')
     expect(menu?.textContent).toContain('Ada')
     const actions = () => [...document.querySelectorAll('[data-pin-action]')].map(item => item.getAttribute('data-pin-action'))
-    expect(actions()).toEqual(['home', 'workbench', 'unpin'])
+    expect(actions()).toEqual(['home', 'unpin'])
     wrapper.unmount()
+  })
+
+  // Jevons 11-04.
+  it('plays the brand on 工作台 and goes home from any other page', async () => {
+    const { wrapper, router } = await setup('/project-agents')
+    await wrapper.get('[data-brand-home]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/')
+    expect(wrapper.get('.brand-block').classes()).not.toContain('is-sparkling')
+    await wrapper.get('[data-brand-home]').trigger('click')
+    expect(wrapper.get('.brand-block').classes()).toContain('is-sparkling')
+    expect(router.currentRoute.value.path).toBe('/')
   })
 
   it('draws the brand with the FULI wordmark in every language, the service dot on its middle', async () => {
@@ -209,6 +221,22 @@ describe('AppShell', () => {
     store.runtimeStatus = 'error'
     await flushPromises()
     expect(wrapper.get('.app-runtime-text').classes()).toContain('is-visible')
+    wrapper.unmount()
+  })
+
+  // Jevons 11-04: the update dot sits at the version's top-right, never on the mark.
+  it('marks a newer release with a dot on the version, not on the mark', async () => {
+    const quiet = await setup('/')
+    expect(quiet.wrapper.find('[data-update-dot]').exists()).toBe(false)
+    quiet.wrapper.unmount()
+    const base = vi.mocked(getJson).getMockImplementation()!
+    vi.mocked(getJson).mockImplementation(async (url: string, ...rest) => url === '/api/system/version'
+      ? { status: 'ready', currentVersion: '0.20.0', latestVersion: '0.21.0', updateAvailable: true, packageUrl: '', checkedAt: '' }
+      : base(url, ...rest))
+    const { wrapper } = await setup('/')
+    expect(wrapper.find('[data-app-version] [data-update-dot]').exists()).toBe(true)
+    expect(wrapper.get('[data-app-version]').attributes('aria-label')).toContain('0.21.0')
+    expect(wrapper.find('.brand-compact-update').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -293,7 +321,7 @@ describe('AppShell', () => {
   it('names section tabs by state words, never repeating the page title', async () => {
     const { wrapper } = await setup('/project-agents')
     expect(wrapper.get('h1').text()).toBe('FLAs')
-    expect(wrapper.findAll('[data-section]').map(tab => tab.text())).toEqual(['全部', '编排', '职业', '服务', '应用'])
+    expect(wrapper.findAll('[data-section]').map(tab => tab.text())).toEqual(['全部', '编排', '职业', '服务', 'Agent App'])
     wrapper.unmount()
   })
 

@@ -70,6 +70,8 @@ Before updating an existing project, call `list_personal_projects` with its exac
 
 Each of `purpose`, `scope`, `technicalSummary` and `boundaries` carries its author in `profile.authors`: `person` (the user wrote it, weight 100%, authoritative), `both` (the user edited an Agent's draft, 90%) or `agent` (an AI draft, 50%, editable). Fill empty or `agent` fields freely. Never overwrite a `person` or `both` field: FULI keeps it and lists it in `refused_fields`; tell the user what you would change and let them edit it in the console. When you report the profile, say which fields the user wrote and which are your drafts.
 
+FULI records each real change to the profile's name, lifecycle, sources and the authored fields in the project's 修改记录, under the writer's Agent name and with the before and after text. A save that changes nothing and a field you were refused add nothing, and the record cannot be edited. The console shows it with the project's creation date on the overview; there is no Agent tool for it, so read the current profile as usual.
+
 ## Evidence coverage assessment
 
 Recompute the assessment when evidence changes. Follow the dimensions and scoring guidance in the reference.

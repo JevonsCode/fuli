@@ -96,7 +96,7 @@
             <div class="chapter-copy">
               <p class="eyebrow"><span data-i18n="next.eyebrow">抢先体验 · npm beta</span> <span data-preview-version>0.23.0-beta.1</span></p>
               <h1 data-i18n-html="hero.title" id="hero-title">让每一次协作，<br>都产生<em>复利</em>。</h1>
-              <p data-i18n="hero.description" class="lede">这是下一版的公开预览，给愿意先试新功能的人用。下面列出它相对稳定版 0.22.1 的全部变化。</p>
+              <p data-i18n="hero.description" class="lede">这是下一版的公开预览，给愿意先试新功能的人用。下面列出它相对稳定版 0.23.0 的全部变化。</p>
               <div class="hero-actions">
                 <div class="terminal" data-copy="npm install --global fuli-context@beta && fuli setup">
                   <code><span>$</span> npm install --global fuli-context@beta</code>
@@ -221,7 +221,7 @@
             <div class="chapter-copy">
               <p data-i18n="nav.database" class="eyebrow">数据库</p>
               <h2 data-i18n-html="database.title" id="database-title">升级之前，<br><em>先知道会变什么。</em></h2>
-              <p data-i18n="database.description">从 0.20.1 升级时，图谱有一步迁移要你在「设置 → 数据格式迁移」确认，确认之前图谱只读；另一步结构变化和圆桌存储升级，会在备份后自动完成。升级后的数据旧版本打不开，退回需要升级前的备份。数据全部在你本机的 Neo4j 图数据库里，每次变化都留有历史。</p>
+              <p data-i18n="database.description">从 0.22.1 升级时，图谱有一步迁移要你在「设置 → 数据格式迁移」确认（内置的 Jefa、Tonborg 改为项目经理和决策员），确认之前图谱只读，任务照常进行；其余格式变化会自动完成。升级后的数据旧版本打不开，退回需要升级前的备份。数据全部在你本机的 Neo4j 图数据库里，每次变化都留有历史。</p>
             </div>
             <figure data-i18n-aria-label="database.example" class="stack static-figure" aria-label="Fuli 的四层结构">
               <div><span data-i18n="architecture.clients">接入</span><b data-i18n="architecture.compatibleClients">兼容 MCP 的客户端</b></div>
@@ -243,38 +243,16 @@
         <div><h3 data-i18n="principles.context">按需取回</h3><p data-i18n="principles.contextBody">不会把全部历史塞给模型，只取与当前任务有关、仍然有效的内容。</p></div>
       </section>
 
-      <section class="principles preview-changes" data-preview-baseline="0.22.1" aria-labelledby="changes-title" id="changes">
-        <div class="changes-intro"><h2 data-i18n="next.changes" id="changes-title">相对稳定版 0.22.1 的全部变化</h2><p data-i18n="next.description">这里列出这个预览版相对当前稳定版 0.22.1 的全部新功能和变化，不只是比上一个 beta 多了什么。发布前会跑完整的自动测试，但还没有经过稳定版那样的长期使用；遇到问题，请在 GitHub 提 issue。</p></div>
+      <section class="principles preview-changes" data-preview-baseline="0.23.0" aria-labelledby="changes-title" id="changes">
+        <div class="changes-intro"><h2 data-i18n="next.changes" id="changes-title">相对稳定版 0.23.0 的全部变化</h2><p data-i18n="next.description">这里列出这个预览版相对当前稳定版 0.23.0 的全部新功能和变化，不只是比上一个 beta 多了什么。发布前会跑完整的自动测试，但还没有经过稳定版那样的长期使用；遇到问题，请在 GitHub 提 issue。</p></div>
         <div><h3 data-i18n="next.c.features">新功能</h3><ul>
-          <li data-i18n="next.c.features.1">体检：FULI 自己检查客户端连接是否过期、迁移是否在等你、会话是否还在用旧版、上次更新有没有做完；能自动修的点一下就修好，修不了的告诉你去哪里处理。控制台顶部显示「有 N 件事需要你」。</li>
-          <li data-i18n="next.c.features.2">Windows 安装包的托盘换成 FULI 桌面客户端（Beta）：控制台能连上时，窗口里直接就是控制台，不用再开浏览器；连不上时一句话告诉你 FULI 怎么了，每件事一张卡片一个按钮。托盘圆点变色，情况变差时发系统通知；默认开机启动，可在托盘菜单关闭。</li>
-          <li data-i18n="next.c.features.3">一键更新和回退会先关掉客户端，做完再打开；卸载会关掉它并删掉开机启动项。从 0.22 的旧托盘一键更新过来，打开的就是新客户端。</li>
-<li data-i18n="next.c.features.4">FLA 自己的工作台：有任务或工作流的 FLA，首页第一个标签就是工作台，看得到派给它的任务看板和它自己的工作流。工作流由它从经常重复的工作里提议，你确认后才生效；不会自动执行，也不会塞进上下文。</li>
-<li data-i18n="next.c.features.5">「#FLA 姓名」也能叫内置角色 Bole、Jefa、Tonborg 和 Astro；句中随口提到 #FLA 不再误弹选人；叫不到时说明原因和处理办法。控制台里 Bole、Tonborg 的负责项目可以保存了。</li>
-<li data-i18n="next.c.features.6">知识检索可以先看索引（标题和大致 Token 数），再按 ID 读选中的几条全文，更省 Token。</li>
-          <li data-i18n="next.c.features.7">回执链接改成 fuli://（装了桌面客户端时）：点开由客户端用 FULI 当前的端口打开对应页面，换端口后旧链接照样能用；「关闭提醒」写明页面位置。</li>
-          <li data-i18n="next.c.features.8">新增支持的客户端 Antigravity：应用和 agy 命令行共用一份配置，在「设置 → 客户端」接入。</li>
-          <li data-i18n="next.c.features.9">一键安装（Windows）：下载 FULI-Setup 安装包双击即可，不用终端；第一次打开会找到你电脑上的 AI 客户端，一键接入，还能设开机启动。</li>
-          <li data-i18n="next.c.features.10">全新界面：墨与金主题、底部浮动导航、会动的背景；工作台显示当前工作、时间轴和谁在干活；圆桌像聊天软件一样，列表可折叠成头像。</li>
-          <li data-i18n="next.c.features.11">设置里新增「版本」（接收测试版开关、一键更新）和「常用操作」（可复制的常用说法和真实案例）；顶栏绿点旁直接显示版本号。</li>
-          <li data-i18n="next.c.features.12">你的主页：设个头像、告诉 FULI 怎么称呼你；FLA 取名偏好也在这里，伯乐按它给新 FLA 起名。</li>
-          <li data-i18n="next.c.features.13">背景会动：每页的光晕大幅漂移、转动、明暗起伏，鼠标经过时跟着偏；「减少动态」下完全静止。</li>
-          <li data-i18n="next.c.features.14">老用户一键搬家：旧版 Docker 图数据库在设置里一键迁移到内置图数据库，搬不动时有给 AI 的迁移指南，不删任何数据。</li>
-          <li data-i18n="next.c.features.15">AI 权限：FLA 可以直接替你改设置、整理项目、管理服务；每一类一个开关，代你做的每件事都能撤回。</li>
-          <li data-i18n="next.c.features.16">Mac 也能一键更新：点一下，FULI 自己下载、替换、重启回来；新版起不来自动换回原版本，数据不动。</li>
-          <li data-i18n="next.c.features.17">FLAs 页有了卡片布局，按「一起干活的」和「全局的」分组；停用的默认藏起来。</li>
+          <li data-i18n="next.c.features.1">下一个预览版的新功能会列在这里。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.changes">变化</h3><ul>
-          <li data-i18n="next.c.changes.1">旧的 FuliTray 托盘不再提供，桌面和开始菜单的 Fuli 快捷方式打开新客户端；想回到旧托盘，可以用 Rollback-Fuli 回到更新前的版本。</li>
-          <li data-i18n="next.c.changes.2">控制台里所有开关换成同一种组件；客户端的颜色和字号来自控制台主题。</li>
-<li data-i18n="next.c.changes.3">会话折叠改为保留 Claude Code、Codex 自己压缩对话时写的摘要，不再按关键词挑句子。</li>
-<li data-i18n="next.c.changes.4">开始使用共享组件 agent-session-launcher / agent-installer（这一版只读，不改任何客户端配置）；ID 含特殊字符的会话不再显示「打开会话」链接。</li>
-<li data-i18n="next.c.changes.5">修复某些 Windows 更新之后 FULI 无法启动、更新失败也无法回滚的问题；依赖安全更新。</li>
-          <li data-i18n="next.c.changes.6">Windows 安装版的客户端配置改用安装目录里固定的 FuliNode.exe，更新、回退之后不用重新接入。</li>
+          <li data-i18n="next.c.changes.1">相对稳定版改了什么、去掉了什么，会列在这里。</li>
         </ul></div>
         <div><h3 data-i18n="next.c.upgrade">升级前要知道</h3><ul>
-          <li data-i18n="next.c.upgrade.1">新增两个本地存储（agent-workflows.sqlite、session-clients/），第一次使用时创建；从 0.22.1 升级不需要确认迁移。</li>
-          <li data-i18n="next.c.upgrade.2">桌面客户端是 Beta：内嵌控制台在一台 Windows 11 电脑上实际用过，托盘、通知和开机启动还没完整验证；macOS 版客户端（Apple 芯片）第一次随发布提供，还没在真机上装过。</li>
+          <li data-i18n="next.c.upgrade.1">数据格式有没有变化、怎么退回，会写在这里。</li>
         </ul></div>
       </section>
 
@@ -299,7 +277,7 @@
 
     <footer class="footer">
       <span data-i18n="footer.copyright">© Fuli 复利 · Apache-2.0</span>
-      <span><button data-i18n="motion.reduce" type="button" id="motion-toggle" hidden>减少动效</button><a href="https://github.com/JevonsCode/fuli">GitHub</a><a data-i18n="next.stableSite" href="../">稳定版网站</a></span>
+      <span><button data-i18n="motion.reduce" type="button" id="motion-toggle" hidden>减少动效</button><a data-i18n="footer.guide" data-i18n-href="footer.guideUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/guide/">快速上手</a><a data-i18n="footer.models" data-i18n-href="footer.modelsUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/models/">模型</a><a data-i18n="footer.tech" data-i18n-href="footer.techUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/tech/">技术</a><a href="https://github.com/JevonsCode/fuli">GitHub</a><a data-i18n="next.stableSite" href="../">稳定版网站</a></span>
     </footer>
   </body>
 </html>

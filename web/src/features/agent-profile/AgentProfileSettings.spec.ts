@@ -34,17 +34,31 @@ async function setup(person = agent()) {
 describe('Agent profile settings integration', () => {
   it('saves character and expectations while preserving all other profile fields', async () => {
     const original = agent(), wrapper = await setup(original)
-    const textareas = wrapper.findAll('textarea')
-    await textareas[0]!.setValue('Explain test evidence.')
-    await textareas[1]!.setValue('Verify assumptions.')
-    await textareas[2]!.setValue('Prefer simple navigation.')
-    await textareas[3]!.setValue('Direct and patient.')
+    await wrapper.findAll('textarea')[1]!.setValue('Explain test evidence.')
+    for (const [key, text] of [['judgment', 'Verify assumptions.'], ['taste', 'Prefer simple navigation.'], ['personality', 'Direct and patient.']] as const) {
+      await wrapper.get(`[data-preference="${key}"] [data-preference-edit]`).trigger('click')
+      await wrapper.get(`[data-preference="${key}"] textarea`).setValue(text)
+    }
     await wrapper.get('form').trigger('submit'); await flushPromises()
     const profile = { ...original.profile, expectations: 'Explain test evidence.', character: { judgment: 'Verify assumptions.', taste: 'Prefer simple navigation.', personality: 'Direct and patient.' } }
     expect(putJson).toHaveBeenCalledWith('/api/project-agents', { personalSpaceId: 'space-a', personalProjectId: 'project-a', agentId: 'alpha', profile })
     expect(wrapper.emitted('saved')?.[0]?.[0]).toEqual({ ...original, profile })
     expect(original.profile.expectations).toBe('Report failures.')
     expect(wrapper.find('form').exists()).toBe(true)
+  })
+
+  // Jevons 11-04: 多看 少打字. A preference is text to read, with who wrote it.
+  it('shows preferences as text with their author, and a field only when asked', async () => {
+    const person = agent()
+    person.profile.character = { judgment: 'Verify first.', taste: '', personality: '' }
+    const wrapper = await setup(person)
+    const judgment = wrapper.get('[data-preference="judgment"]')
+    expect(judgment.text()).toContain('Verify first.')
+    expect(judgment.find('textarea').exists()).toBe(false)
+    expect(judgment.get('[data-author]').attributes('data-author')).toBe('agent')
+    expect(wrapper.get('[data-preference="taste"]').find('[data-author]').exists()).toBe(false)
+    await judgment.get('[data-preference-edit]').trigger('click')
+    expect(judgment.find('textarea').exists()).toBe(true)
   })
 
   it('keeps an executor lock immutable when editing user expectations', async () => {
@@ -55,7 +69,7 @@ describe('Agent profile settings integration', () => {
     expect(wrapper.get('.agent-locked-platforms').text()).toContain('Synthetic runtime')
     expect(wrapper.get('.agent-locked-platforms').text()).toContain('runtime-b')
     expect(wrapper.get('.agent-locked-platforms').text()).not.toContain('自动选择')
-    await wrapper.get('textarea').setValue('Keep the existing executor.')
+    await wrapper.findAll('textarea')[1]!.setValue('Keep the existing executor.')
     await wrapper.get('form').trigger('submit'); await flushPromises()
     expect(putJson.mock.calls[0]![1].profile.executorPolicy).toEqual(original.profile.executorPolicy)
   })
@@ -69,7 +83,7 @@ describe('Agent profile settings integration', () => {
     await wrapper.setProps({ agent: next }); await flushPromises()
     finish(agent()); await flushPromises()
     expect(wrapper.emitted('saved')).toBeUndefined()
-    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('Different space expectations.')
+    expect((wrapper.findAll('textarea')[1]!.element as HTMLTextAreaElement).value).toBe('Different space expectations.')
     expect(getJson).toHaveBeenLastCalledWith('/api/executors?personalSpaceId=space-b')
   })
 })

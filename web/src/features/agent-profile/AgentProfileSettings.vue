@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
+import ProfileAuthorChip from "@/features/projects/ProfileAuthorChip.vue";
+import { UiIconButton } from "@/ui";
 import { computed, ref, watch } from "vue";
 import { getJson, putJson } from "@/api/client";
 import GrowthLoading from "@/components/GrowthLoading.vue";
@@ -17,6 +19,15 @@ let originalPlatform = "";
 const platform = ref(""),
   expectations = ref("");
 const character = ref({ judgment: "", taste: "", personality: "" });
+const responsibility = ref("");
+const PREFERENCES = ["judgment", "taste", "personality"] as const;
+type Preference = (typeof PREFERENCES)[number];
+// Read first: a preference is text to look at, a field only when asked for.
+const editing = ref<Preference | null>(null);
+// Text saved before authors were recorded came from AI at recruitment.
+function preferenceAuthor(key: Preference) {
+  return props.agent.profile.characterAuthors?.[key] ?? (character.value[key] ? { kind: "agent" as const } : null);
+}
 const locked = computed(
   () => props.agent.profile.executorPolicy?.mode === "locked",
 );
@@ -64,6 +75,7 @@ watch(
   async () => {
     const agent = props.agent;
     const current = ++generation;
+    responsibility.value = agent.profile.responsibility ?? "";
     expectations.value = agent.profile.expectations ?? "";
     character.value = {
       judgment: "",
@@ -111,6 +123,7 @@ async function save() {
       agentId: agent.agentId,
       profile: {
         ...agent.profile,
+        responsibility: responsibility.value.trim() || agent.profile.responsibility,
         character: { ...character.value },
         expectations: expectations.value,
         executorPolicy:
@@ -167,6 +180,10 @@ async function save() {
       }}</small>
     </div>
     <label
+      >{{ t("agentProfiles.responsibility")
+      }}<textarea v-model="responsibility" rows="2" maxlength="4096" :disabled="saving" data-agent-responsibility />
+    </label>
+    <label
       >{{ t("agentProfiles.expectations")
       }}<textarea
         v-model="expectations"
@@ -176,20 +193,18 @@ async function save() {
         :placeholder="t('agentProfiles.expectationsPlaceholder')"
       />
     </label>
-    <details>
-      <summary>{{ t("agentProfiles.editCharacter") }}</summary>
-      <label
-        v-for="key in ['judgment', 'taste', 'personality'] as const"
-        :key="key"
-        >{{ t(`agentProfiles.${key}`)
-        }}<textarea
-          v-model="character[key]"
-          rows="2"
-          maxlength="2048"
-          :disabled="saving"
-        />
-      </label>
-    </details>
+    <section class="agent-preferences" data-agent-preferences>
+      <h4>{{ t("agentProfiles.preferences") }}</h4>
+      <div v-for="key in PREFERENCES" :key="key" class="agent-preference" :data-preference="key">
+        <div class="agent-preference-head">
+          <span class="agent-preference-label">{{ t(`agentProfiles.${key}`) }}</span>
+          <ProfileAuthorChip :author="preferenceAuthor(key)" />
+          <UiIconButton icon="edit" size="sm" class="agent-preference-edit" :label="t('agentProfiles.editPreference', { name: t(`agentProfiles.${key}`) })" data-preference-edit @click="editing = key" />
+        </div>
+        <textarea v-if="editing === key" v-model="character[key]" rows="3" maxlength="2048" :aria-label="t(`agentProfiles.${key}`)" :disabled="saving" />
+        <p v-else-if="character[key]" class="agent-preference-text">{{ character[key] }}</p>
+      </div>
+    </section>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="saved" role="status">{{ t("agentProfiles.saved") }}</p>
     <Button size="sm" :disabled="loading" :loading="saving" :loading-label="t('agentProfiles.saving')" type="submit">

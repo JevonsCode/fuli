@@ -35,6 +35,8 @@ const Page = defineComponent(() => () => h('div', [
   h('a', { id: 'outer', href: 'https://example.com/docs' }, 'Docs'),
   // An FLA portrait inside a link, as in the FLAs list.
   h('a', { id: 'card', href: '/inbox' }, [h('span', { id: 'face' }, [h('img', { id: 'portrait', 'data-agent-portrait': 'agent-1', alt: '' })]), ' Ada Vale']),
+  // A portrait in a modal peek: the dialog's top layer covers anything outside it.
+  h('dialog', { id: 'peek', open: true }, [h('img', { id: 'peek-portrait', 'data-agent-portrait': 'agent-1', alt: '' })]),
   h(ContextMenu, () => [
     h(ContextMenuTrigger, { asChild: true }, () => h('div', { id: 'own' }, 'Pinned FLA')),
     h(ContextMenuContent, { 'data-own-menu': '' }, () => h(ContextMenuItem, () => 'Unpin')),
@@ -45,7 +47,7 @@ const Page = defineComponent(() => () => h('div', [
 async function setup() {
   setActivePinia(createPinia())
   getJson.mockResolvedValue({ agentId: 'agent-1', personalSpaceId: 'space', profile: { name: 'Ada Vale', displayName: 'Ada Vale', status: 'active', capabilities: [] } })
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { render: () => null } }, { path: '/inbox', component: { render: () => null } }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { render: () => null } }, { path: '/agents/:spaceId/:agentId', component: { render: () => null } }, { path: '/inbox', component: { render: () => null } }] })
   await router.push('/')
   const wrapper = mount(Page, { global: { plugins: [router] }, attachTo: document.body })
   mounted = wrapper
@@ -149,6 +151,42 @@ describe('AppContextMenu', () => {
     expect([...document.querySelectorAll('[data-app-context-menu] [data-portrait-action]')].map(item => item.getAttribute('data-portrait-action'))).toEqual(['home', 'workbench'])
     expect(actions()).toEqual([])
     expect(document.querySelector('[data-app-context-menu]')?.textContent).not.toContain('取消置顶')
+  })
+
+  it('opens a portrait menu inside the dialog it was opened from', async () => {
+    await setup()
+    await rightClick('#peek-portrait')
+    expect(document.querySelector('#peek [data-app-context-menu]')).not.toBeNull()
+  })
+
+  it('offers nothing on an FLA portrait on that FLA own page', async () => {
+    const { router } = await setup()
+    await router.push('/agents/space/agent-1')
+    await flushPromises()
+    await rightClick('#portrait')
+    expect(menu()).toBeNull()
+    await router.push('/agents/space/agent-2')
+    await flushPromises()
+    await rightClick('#portrait')
+    expect(menu()).not.toBeNull()
+  })
+
+  it('stays open through a moment of lost window focus, and closes when the focus stays away', async () => {
+    await setup()
+    await rightClick('#portrait')
+    vi.useFakeTimers()
+    try {
+      const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+      window.dispatchEvent(new Event('blur'))
+      await vi.advanceTimersByTimeAsync(400)
+      expect(menu()).not.toBeNull()
+      focused.mockReturnValue(false)
+      window.dispatchEvent(new Event('blur'))
+      await vi.advanceTimersByTimeAsync(400)
+    } finally { vi.useRealTimers() }
+    await flushPromises()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(document.querySelector('[data-app-context-menu][data-state="open"]')).toBeNull()
   })
 
   it('shakes the face of a clicked FLA portrait, and not under reduced motion', async () => {

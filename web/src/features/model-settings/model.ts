@@ -1,8 +1,9 @@
-import { ApiError, apiErrorCode, getJson, putJson } from '@/api/client'
+import { ApiError, apiErrorCode, getJson, postJson, putJson } from '@/api/client'
 import { t } from '@/i18n'
 import { roleName as builtInRoleName } from '@/features/agent-profile/role-names'
 import { shortDigest } from '@/features/data-format/model'
 import { formatDateTime } from '@/lib/date-time'
+import { websitePageUrl } from '@/lib/website'
 
 // The console's model settings page (rec#8): each built-in Agent's model,
 // budget and egress, edited through the loopback route, and its usage from
@@ -11,14 +12,38 @@ import { formatDateTime } from '@/lib/date-time'
 // key by secretRef; the page can save a key under that name, but no key is
 // ever sent back to it.
 
-export const MODEL_ROLES = ['assistant', 'bole', 'jefa', 'tonborg'] as const
+// semantic is no Agent: the person's own model for 语义搜索 (rec#88), which
+// only takes the embeddings protocol; the Agents take every other one.
+export const SEMANTIC_ROLE = 'semantic'
+export const MODEL_ROLES = ['assistant', 'bole', 'jefa', 'tonborg', SEMANTIC_ROLE] as const
 export type ModelRoleId = typeof MODEL_ROLES[number]
+const EMBEDDING_PROTOCOL = 'openai_embeddings'
 export const MODEL_PROTOCOLS = ['openai_chat', 'anthropic_messages', 'typesafe_systemone'] as const
-export type ModelProtocol = typeof MODEL_PROTOCOLS[number]
+export type ModelProtocol = typeof MODEL_PROTOCOLS[number] | typeof EMBEDDING_PROTOCOL
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high'] as const
 
 // A role by the name it goes by now; Astro's stable id is assistant.
-export const roleName = (role: ModelRoleId) => builtInRoleName(role === 'assistant' ? 'astro' : role)
+export const roleName = (role: ModelRoleId) => (role === SEMANTIC_ROLE ? t('modelSettings.semantic.title')
+  : builtInRoleName(role === 'assistant' ? 'astro' : role))
+
+// 语义搜索's three presets: each fills the address and leaves the model to the person.
+export const SEMANTIC_PRESETS = ['ollama', 'qwen', 'custom'] as const
+export type SemanticPreset = typeof SEMANTIC_PRESETS[number]
+const PRESET_ENDPOINTS: Record<Exclude<SemanticPreset, 'custom'>, string> = {
+  ollama: 'http://127.0.0.1:11434/v1',
+  qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+}
+
+export function semanticPreset(endpoint: string): SemanticPreset {
+  const address = endpoint.trim().replace(/\/+$/, '')
+  return (['ollama', 'qwen'] as const).find(preset => PRESET_ENDPOINTS[preset] === address) ?? 'custom'
+}
+
+// A local Ollama needs no key; 自定义 empties an address a preset filled, so the person types their own.
+export function withSemanticPreset(draft: RoleDraft, preset: SemanticPreset): RoleDraft {
+  if (preset === 'custom') return semanticPreset(draft.endpoint) === 'custom' ? draft : { ...draft, endpoint: '' }
+  return { ...draft, endpoint: PRESET_ENDPOINTS[preset], ...(preset === 'ollama' ? { secretRef: '' } : {}) }
+}
 
 export interface ModelPricing {
   currency: string
@@ -33,15 +58,16 @@ export interface ModelConnection {
   model: string
   secretRef: string | null
   reasoningEffort: string | null
+  headers?: Record<string, string>
   pricing: ModelPricing | null
 }
 
 export interface ModelBudget {
-  maxInputTokens: number
-  maxOutputTokens: number
-  timeoutMs: number
-  windowHours: number
-  maxTokensPerWindow: number
+  maxInputTokens: number | null
+  maxOutputTokens: number | null
+  timeoutMs: number | null
+  windowHours: number | null
+  maxTokensPerWindow: number | null
   maxCostPerWindow: number | null
 }
 
@@ -117,15 +143,6 @@ export function trustStatusText(trust: RoleTrust, model: string | null): string 
   return t(`modelSettings.trust.reasons.${reason}`)
 }
 
-// A role row's one summary line: who answers, through which service, and how
-// its automatic operation runs. The model itself is shown beside it.
-export function roleSummary(view: ModelRoleView): string {
-  const answer = view.answeredBy ? t(`modelSettings.answer.${view.answeredBy}`) : t('modelSettings.none')
-  const service = view.connection ? `${t(`modelSettings.protocols.${view.connection.protocol}`)} · ${view.connection.endpointHost}` : ''
-  const trust = view.trust ? trustStatusText(view.trust, view.connection?.model ?? null) : ''
-  return [answer, service, trust].filter(Boolean).join(' · ')
-}
-
 // The one evaluation line, naming its set, day and model; it is not a general accuracy.
 export function evaluationText(evaluation: ModelEvaluation | null, locale: string): string | null {
   if (!evaluation) return null
@@ -150,6 +167,10 @@ export interface ModelRolesPayload {
   history?: 'recorded' | 'unchanged' | 'not_recorded'
 }
 
+// dimensions: the length of 语义搜索's vectors, on its check only.
+export interface ModelRoleCheckResult { ok: boolean; receipt: { status: string; reason?: string | null; actualModel?: string | null }; dimensions?: number | null }
+export const checkModelRole = (role: ModelRoleId) => postJson<ModelRoleCheckResult>(`/api/model-backends/roles/${role}/check`, {})
+
 export const readModelRoles = (signal?: AbortSignal) =>
   getJson<ModelRolesPayload>('/api/model-backends/roles', { signal })
 
@@ -165,6 +186,7 @@ export interface RoleDraft {
   model: string
   secretRef: string
   reasoningEffort: string
+  headers: string
   priced: boolean
   currency: string
   inputPrice: NumberText
@@ -182,10 +204,10 @@ export interface RoleDraft {
   fallbackToSession: boolean
 }
 
-// A new role starts from the example in fuli PR 236: modest per-call limits,
-// a 24-hour window and no project approved for the model API's egress.
+// A new role has no limit until the person sets one, and no project approved
+// for the model API's egress.
 const NEW_ROLE_BUDGET: ModelBudget = {
-  maxInputTokens: 8000, maxOutputTokens: 600, timeoutMs: 60_000, windowHours: 24, maxTokensPerWindow: 200_000, maxCostPerWindow: null,
+  maxInputTokens: null, maxOutputTokens: null, timeoutMs: null, windowHours: null, maxTokensPerWindow: null, maxCostPerWindow: null,
 }
 const NEW_CONNECTION: ModelConnection = {
   protocol: 'openai_chat', endpoint: '', model: '', secretRef: null, reasoningEffort: null, pricing: null,
@@ -198,20 +220,23 @@ export function roleDraft(payload: ModelRolesPayload, role: ModelRoleId): RoleDr
   const view = payload.roles.find(entry => entry.role === role)
   const connectionId = view?.connection?.id ?? role
   const budget = view?.budget ?? NEW_ROLE_BUDGET
+  const semantic = role === SEMANTIC_ROLE
   return {
-    ...connectionFields(payload.connections[connectionId] ?? NEW_CONNECTION),
+    ...connectionFields(payload.connections[connectionId] ?? (semantic ? { ...NEW_CONNECTION, protocol: EMBEDDING_PROTOCOL } : NEW_CONNECTION)),
     enabled: view?.state === 'enabled',
     connectionId,
-    operations: (view?.allowedOperations ?? payload.operations[role] ?? []).join(', '),
+    // Dreaming sends sessions to the model, so a new role starts without it: the person turns it on.
+    operations: (view?.allowedOperations ?? (payload.operations[role] ?? []).filter(operation => operation !== 'dreaming')).join(', '),
     approvedProjects: [...(view?.egress?.approvedProjects ?? [])],
     allowUnassigned: view?.egress?.allowUnassigned ?? false,
     maxInputTokens: text(budget.maxInputTokens),
     maxOutputTokens: text(budget.maxOutputTokens),
-    timeoutSeconds: text(budget.timeoutMs / 1000),
+    timeoutSeconds: text(budget.timeoutMs === null ? null : budget.timeoutMs / 1000),
     windowHours: text(budget.windowHours),
     maxTokensPerWindow: text(budget.maxTokensPerWindow),
     maxCostPerWindow: text(budget.maxCostPerWindow),
-    fallbackToSession: view?.fallbackToSession ?? true,
+    // A session cannot turn text into vectors, so 语义搜索 never falls back to one.
+    fallbackToSession: !semantic && (view?.fallbackToSession ?? true),
   }
 }
 
@@ -229,6 +254,7 @@ function connectionFields(connection: ModelConnection) {
     model: connection.model,
     secretRef: connection.secretRef ?? '',
     reasoningEffort: connection.reasoningEffort ?? '',
+    headers: Object.entries(connection.headers ?? {}).map(([name, value]) => `${name}: ${value}`).join('\n'),
     priced: Boolean(connection.pricing),
     currency: connection.pricing?.currency ?? 'USD',
     inputPrice: text(connection.pricing?.inputPerMillionTokens),
@@ -264,6 +290,7 @@ export function roleEdit(draft: RoleDraft, revision: string | null) {
       model: draft.model.trim(),
       secretRef: secretRef || null,
       reasoningEffort: draft.protocol === 'openai_chat' && draft.reasoningEffort ? draft.reasoningEffort : null,
+      ...headerFields(draft.headers),
       pricing: draft.priced ? {
         currency: draft.currency.trim().toUpperCase(),
         inputPerMillionTokens: number(draft.inputPrice),
@@ -300,6 +327,15 @@ export function configConflict(cause: unknown): ConfigConflict | null {
   return code === 'model_config_changed' || code === 'model_config_invalid' ? code : null
 }
 
+// One `Name: value` per line, as the field shows them.
+function headerFields(text: string) {
+  const headers = Object.fromEntries(text.split('\n').flatMap((line) => {
+    const colon = line.indexOf(':')
+    return colon > 0 ? [[line.slice(0, colon).trim(), line.slice(colon + 1).trim()]] : []
+  }))
+  return Object.keys(headers).length ? { headers } : {}
+}
+
 export const saveModelRole = (role: ModelRoleId, draft: RoleDraft, revision: string | null) =>
   putJson<ModelRolesPayload>(`/api/model-backends/roles/${role}`, roleEdit(draft, revision))
 
@@ -312,6 +348,12 @@ const KEY_REFERENCE = /^[a-z0-9][a-z0-9._-]{0,63}$/i
 
 export function validKeyReference(reference: string): boolean {
   return KEY_REFERENCE.test(reference.trim())
+}
+
+/** Every key name this computer already knows: saved keys and those connections name. */
+export function knownKeyReferences(payload: ModelRolesPayload, saved: readonly string[]) {
+  const named = Object.values(payload.connections).flatMap(connection => connection.secretRef ?? [])
+  return [...new Set([...saved, ...named])].sort((left, right) => left.localeCompare(right))
 }
 
 export const readSavedKeys = () => getJson<{ saved: string[] }>('/api/model-backends/keys')
@@ -406,3 +448,8 @@ export function usageParts(value: UsageValue, locale: string, currency?: string)
 }
 
 export const formatCount = (value: number, locale: string) => new Intl.NumberFormat(locale).format(value)
+
+// The website's model guide (site/models): what each model does, what is enough
+// and what it cost when we measured, in the console's language.
+export const modelGuideUrl = (locale: string) => websitePageUrl('models', locale)
+

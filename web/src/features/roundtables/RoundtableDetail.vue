@@ -5,9 +5,9 @@ import Breadcrumb from '@/components/Breadcrumb.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { currentLocale, t } from '@/i18n'
-import { UiIcon } from '@/ui'
 import RoundtableRoom from './RoundtableRoom.vue'
 import RoundtableThreadChat from './RoundtableThreadChat.vue'
+import { chatRoomName } from './roundtable-model'
 import type { Roundtable } from './useRoundtable'
 
 // The open conversation beside the list: a thread as a chat, an Agent room, or
@@ -28,7 +28,8 @@ function time(value: string) {
 <template>
   <div class="rt-detail-pane">
     <template v-if="rt.hasSelection.value">
-      <Breadcrumb v-if="narrow" :parent="{ label: t('roundtable.back'), to: listPath, from: openedFromList }" data-roundtable-back />
+      <Breadcrumb v-if="narrow" :parent="{ label: t('roundtable.back'), to: listPath, from: openedFromList }"
+        :current="rt.thread.value?.subject ?? (rt.room.value ? chatRoomName(rt.room.value) : undefined)" data-roundtable-back />
       <RoundtableThreadChat v-if="rt.thread.value" :thread="rt.thread.value" :time="time" :stale="rt.detailStale.value" @updated="rt.threadUpdated" />
       <RoundtableRoom v-else-if="rt.room.value" :room="rt.room.value" :time="time" :loading-later="rt.loadingLater.value" :later-failed="rt.laterFailed.value"
         :later-stuck="rt.laterStuck.value" :new-messages="rt.newMessages.value" @later="rt.loadLater" />
@@ -44,7 +45,6 @@ function time(value: string) {
       </div>
     </template>
     <div v-else class="rt-detail-none" data-roundtable-none>
-      <UiIcon name="roundtable" :size="40" />
       <p class="ui-sr-only">{{ t('roundtable.list.none') }}</p>
     </div>
   </div>

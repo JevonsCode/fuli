@@ -148,7 +148,30 @@ GRAPH_MIGRATIONS = (
         fields_only=True,
     ),
     GraphMigration(
-        'graph/15-blocker-resolution-evidence', 15, 'schema',
+        'graph/15-possibly-outdated', 15, 'schema',
+        "knowledge newer knowledge may replace, queued for a person (revision action 'possibly_outdated')",
+        fields_only=True,
+    ),
+    _records(
+        'graph/16-builtin-role-occupations', 16, 'rewrite',
+        "Jefa's built-in occupation becomes Project manager and Tonborg's Decision maker; "
+        'a role a person changed stays',
+        builtin_occupations.pending_role_occupations,
+        builtin_occupations.apply_role_occupations,
+        builtin_occupations.ROLE_OCCUPATION_JOURNAL,
+    ),
+    GraphMigration(
+        'graph/17-semantic-vectors', 17, 'schema',
+        'an optional meaning vector on entities and relationships, with its model and text hash',
+        fields_only=True,
+    ),
+    GraphMigration(
+        'graph/18-retrieval-terms', 18, 'schema',
+        'optional retrieval terms and context on entities and relationships, with the hash of the words they came from',
+        fields_only=True,
+    ),
+    GraphMigration(
+        'graph/19-blocker-resolution-evidence', 19, 'schema',
         "a block an Agent resolved ('agent') or the person confirmed ('person_confirmed'), "
         "and the task's probably-resolved evidence (blocker_hint_*)",
         fields_only=True,

@@ -29,6 +29,19 @@ const actionsOf = (target: ReturnType<typeof readContextTarget>) => (target?.kin
 
 afterEach(() => window.getSelection()?.removeAllRanges())
 
+describe('a debug record', () => {
+  it('offers the whole record from anywhere on its row', () => {
+    const inner = place('<a href="/debug/r1" data-debug-turn-id="r1"><span>Hello</span></a>').querySelector('span')!
+    expect(readContextTarget(inner, options())).toEqual({ kind: 'debug-turn', id: 'r1' })
+  })
+
+  it('leaves selected words to the ordinary copy', () => {
+    const inner = place('<div data-debug-turn-id="r1"><span>Hello</span></div>').querySelector('span')!
+    selectContents(inner)
+    expect(readContextTarget(inner, options())).toEqual({ kind: 'text', text: 'Hello' })
+  })
+})
+
 describe('readContextTarget', () => {
   it('offers cut, copy, paste and select all in a text field with a selection', () => {
     const input = field('<input value="hello world">', [0, 5])
@@ -78,5 +91,21 @@ describe('readContextTarget', () => {
   it('has no menu anywhere else', () => {
     expect(readContextTarget(place('<div><span>plain</span></div>').querySelector('span'), options())).toBeNull()
     expect(readContextTarget(null, options())).toBeNull()
+  })
+})
+
+// Jevons 11-04: every place that writes a project's name gets its menu.
+describe('a project name', () => {
+  const projects = new Map([['FULI', 'project-a']])
+  const options = { selection: null, origin: 'http://localhost', canPaste: false, projects }
+  it('offers the project wherever an element says exactly its name', () => {
+    const label = document.createElement('label')
+    label.innerHTML = '<input type="checkbox"><span>FULI</span>'
+    expect(readContextTarget(label.querySelector('span'), options)).toEqual({ kind: 'project', projectId: 'project-a', name: 'FULI' })
+  })
+  it('leaves a sentence that only mentions it alone', () => {
+    const line = document.createElement('p')
+    line.textContent = 'FULI needs a release'
+    expect(readContextTarget(line, options)).toBeNull()
   })
 })

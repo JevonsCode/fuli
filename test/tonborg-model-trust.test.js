@@ -356,8 +356,9 @@ test('undo takes back an applied review and never overwrites a later edit or a p
 });
 
 test('only the local console can undo, and no Agent tool reaches the undo channel or a trust change', async () => {
+  // rec#80: an FLA reaches the console's undo only by relaying the person's words.
   const entry = agentInterfaceCatalog().uiMutationParity.find(item => item.route === 'POST /api/judgment/undo');
-  assert.equal(entry.access, 'local_user_only');
+  assert.deepEqual([entry.access, entry.category], ['agent_relayed', 'decisions']);
   const trustEntry = agentInterfaceCatalog().uiMutationParity.find(item => item.route === 'PUT /api/model-backends/roles/:role/trust');
   // rec#11 D-81: an FLA switches it for the person only after they turn model_settings on.
   assert.deepEqual([trustEntry.access, trustEntry.category], ['agent_delegable_off', 'model_settings']);

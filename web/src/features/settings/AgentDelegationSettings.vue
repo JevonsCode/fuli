@@ -89,6 +89,7 @@ async function setCategory(id: string, enabled: boolean) {
               <li v-for="operation in policy.operations" :key="operation.id" :data-delegated-operation="operation.id">
                 <strong>{{ operation.route }}</strong>
                 <small>{{ time(operation.at) }} · {{ operation.actor.agentId ?? '-' }} · {{ operation.reason }}<template v-if="operation.outcome === 'failed'"> · {{ t('agentDelegation.failed') }}</template></small>
+                <small v-if="operation.relayed" data-relayed-words>{{ t('agentDelegation.relayedWords', { words: operation.relayed.words }) }}</small>
                 <small>{{ t('agentDelegation.undo', { undo: operation.undo }) }}</small>
               </li>
             </ul>

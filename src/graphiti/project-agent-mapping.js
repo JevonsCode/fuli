@@ -61,6 +61,7 @@ export function projectAgentRecord(value) {
     updatedAt: value.updated_at
   };
   copyOptional(result.profile, 'character', profile.character, Object.hasOwn(profile, 'character'));
+  copyOptional(result.profile, 'characterAuthors', profile.character_authors, Object.hasOwn(profile, 'character_authors'));
   copyOptional(result.profile, 'expectations', profile.expectations, Object.hasOwn(profile, 'expectations'));
   copyOptional(
     result.profile,

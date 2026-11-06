@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import AgentDelegationSettings from './AgentDelegationSettings.vue'
 
 // rec#11 D-81, synthetic data only.
-const IDS = ['settings', 'organisation', 'projects', 'services_apps', 'roundtable', 'lan_roundtable', 'model_settings', 'public_projects']
+const IDS = ['settings', 'organisation', 'projects', 'services_apps', 'roundtable', 'decisions', 'lan_roundtable', 'model_settings', 'public_projects']
 const OFF = new Set(['lan_roundtable', 'model_settings', 'public_projects'])
 const policy = (changes: Record<string, boolean> = {}, operations: unknown[] = []) => ({
   categories: IDS.map(id => ({ id, defaultEnabled: !OFF.has(id), enabled: changes[id] ?? !OFF.has(id) })),
@@ -45,7 +45,11 @@ it('shows one switch per category as a plain card and saves a switch at once', a
 it('lists what always stays the person\'s and the latest changes with their undo in 「查看详情」', async () => {
   server({ 'GET /api/agent-delegation': policy({}, [{ id: 'op-1', at: '2026-11-03T08:00:00.000Z', route: 'PATCH /api/recall-policy',
     path: '/api/recall-policy', category: 'settings', actor: { agentId: 'fla-synthetic', projectId: null, client: 'codex', sessionId: 's' },
-    reason: 'Asked to turn it off', bodyFields: ['answerFromConfirmed'], status: 200, outcome: 'succeeded', undo: 'Set answerFromConfirmed back.' }]) })
+    reason: 'Asked to turn it off', bodyFields: ['answerFromConfirmed'], status: 200, outcome: 'succeeded', undo: 'Set answerFromConfirmed back.', relayed: null }, {
+    id: 'op-2', at: '2026-11-04T08:00:00.000Z', route: 'POST /api/judgment/feedback', path: '/api/judgment/feedback', category: 'decisions',
+    actor: { agentId: 'fla-synthetic', projectId: null, client: 'codex', sessionId: 's' }, reason: 'Relayed the vote',
+    bodyFields: ['vote'], status: 200, outcome: 'succeeded', undo: 'Vote again; every earlier vote and reason is kept.',
+    relayed: { words: '这条判断不对', messageRef: { taskId: 't', conversationId: null, at: null } } }]) })
   const wrapper = mount(AgentDelegationSettings, { attachTo: document.body })
   await flushPromises()
   await wrapper.get('[data-agent-delegation-details]').trigger('click')
@@ -57,5 +61,8 @@ it('lists what always stays the person\'s and the latest changes with their undo
   expect(operation?.textContent).toContain('PATCH /api/recall-policy')
   expect(operation?.textContent).toContain('fla-synthetic')
   expect(operation?.textContent).toContain('撤销：Set answerFromConfirmed back.')
+  expect(operation?.querySelector('[data-relayed-words]')).toBeNull()
+  expect(dialog?.querySelector('[data-delegated-operation="op-2"] [data-relayed-words]')?.textContent).toBe('你的原话：「这条判断不对」')
+  expect(dialog?.textContent).toContain('原样转达你的原话')
   wrapper.unmount()
 })

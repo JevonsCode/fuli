@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  costValue, roleDraft, roleEdit, roleSummary, rolesSharing, tokenValue, usageParts, usageRows, usageWindowStart, withConnection, withProject,
+  costValue, roleDraft, roleEdit, rolesSharing, tokenValue, usageParts, usageRows, usageWindowStart, withConnection, withProject,
   type ModelRolesPayload, type UsageGroup,
 } from './model'
 
@@ -47,10 +47,10 @@ describe('model settings drafts', () => {
     expect(JSON.stringify(body)).not.toMatch(/apiKey|"key"/)
   })
 
-  it('starts an unconfigured role on its own new connection with bounded defaults and its wired task types', () => {
+  it('starts an unconfigured role on its own new connection with no limits and its wired task types', () => {
     const draft = roleDraft(payload(), 'jefa')
     expect(draft).toMatchObject({ enabled: false, connectionId: 'jefa', endpoint: '', operations: '', approvedProjects: [],
-      maxInputTokens: '8000', timeoutSeconds: '60', fallbackToSession: true })
+      maxInputTokens: '', timeoutSeconds: '', maxTokensPerWindow: '', fallbackToSession: true })
     expect(roleDraft(payload(), 'tonborg').operations).toBe('knowledge_review')
     const edit = roleEdit({ ...draft, secretRef: '  ', maxCostPerWindow: '3' }, null)
     expect(edit.connection.secretRef).toBeNull()
@@ -76,16 +76,6 @@ const group = (overrides: Partial<UsageGroup>): UsageGroup => ({
   requests: 3, attempts: 4, failedAttempts: 1,
   tokens: { input: { reported: 300, unknownAttempts: 1 }, output: { reported: 60, unknownAttempts: 1 }, total: { reported: 360, unknownAttempts: 1 } },
   estimatedCost: null, ...overrides,
-})
-
-describe('model role rows', () => {
-  it('sums a row up in one line: who answers, the service, and how its operation runs', () => {
-    const [assistant, , , tonborg] = payload().roles
-    expect(roleSummary(assistant!)).toBe('当前会话')
-    expect(roleSummary({ ...tonborg!, trust: { operation: 'knowledge_review', suggestionsOnly: true, warningSeen: true, warningSeenAt: null,
-      warningVersion: 1, revision: 1, status: 'suggestion', reason: 'suggestions_only', evaluation: null } }))
-      .toBe('自己的模型 · OpenAI 兼容 · 127.0.0.1:11434 · 只给建议')
-  })
 })
 
 describe('model usage', () => {
@@ -117,5 +107,12 @@ describe('model usage', () => {
     expect(usageWindowStart('today', now)).toBe(new Date(2026, 9, 23).toISOString())
     expect(usageWindowStart('7d', now)).toBe(new Date(now.getTime() - 7 * 86_400_000).toISOString())
     expect(usageWindowStart('30d', now)).toBe(new Date(now.getTime() - 30 * 86_400_000).toISOString())
+  })
+})
+
+describe('a new role and Dreaming', () => {
+  it('starts without it, so the person turns it on', () => {
+    const payload = { state: 'ok', revision: 'r', roles: [], connections: {}, operations: { assistant: ['project_candidate', 'dreaming'] } } as unknown as ModelRolesPayload
+    expect(roleDraft(payload, 'assistant').operations).toBe('project_candidate')
   })
 })

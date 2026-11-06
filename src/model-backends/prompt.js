@@ -30,9 +30,10 @@ export function promptForMode(prompt, mode) {
     : prompt;
 }
 
-// The one bounded repair: the model sees its reply and why it was rejected.
-export function repairTurns(turns, reply, issues) {
+// The one bounded repair: the model sees its reply, why it was rejected and the
+// schema, which an endpoint that ignored it never showed.
+export function repairTurns(turns, reply, issues, schema) {
   return [...turns,
     { role: 'assistant', text: reply.slice(0, REPAIR_ECHO_CHARS) || '(empty reply)' },
-    { role: 'user', text: `Your previous reply was not valid: ${issues.join('; ')}. Reply again with only the corrected JSON object.` }];
+    { role: 'user', text: `Your previous reply was not valid: ${issues.join('; ')}. Reply again with only the corrected JSON object. It must match this JSON schema: ${JSON.stringify(schema)}` }];
 }

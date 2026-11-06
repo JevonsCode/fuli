@@ -2,8 +2,9 @@
 export const flasMessages = {
   'zh-CN': {
     search: '搜索名字、职业或任务',
-    view: { label: '分组方式', team: '按团队', work: '按状态', projects: '按项目' },
-    scopes: { team: '一起干活的', global: '全局的' },
+    view: { label: '分组方式', team: '按归属', work: '按状态', projects: '按项目' },
+    scopes: { team: '在项目里的', global: '全局的' },
+    now: { working: '正在做：{title}', idle: '空闲', unknown: '状态没读到' },
     layout: { label: '布局', cards: '卡片', list: '列表' },
     inactive: { show: '显示已停用', tag: '已停用' },
     occupations: {
@@ -36,8 +37,9 @@ export const flasMessages = {
   },
   'en-US': {
     search: 'Search names, occupations or work',
-    view: { label: 'Group by', team: 'By team', work: 'By status', projects: 'By project' },
-    scopes: { team: 'Working together', global: 'Global' },
+    view: { label: 'Group by', team: 'By placement', work: 'By status', projects: 'By project' },
+    scopes: { team: 'On a project', global: 'Global' },
+    now: { working: 'Working on: {title}', idle: 'Idle', unknown: 'State not read' },
     layout: { label: 'Layout', cards: 'Cards', list: 'List' },
     inactive: { show: 'Show switched off', tag: 'Switched off' },
     occupations: {

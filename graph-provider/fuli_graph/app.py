@@ -10,6 +10,7 @@ from .auth import (
     matches_human_review_token,
     matches_workflow_observation_token,
 )
+from .client_version_note import install_client_version_note
 from .config import Settings, get_settings
 from .temporary_project_scope import TemporaryProjectEnsure, ensure_temporary_project
 from .publication_submission_models import PublicationSubmissionDecision
@@ -150,6 +151,8 @@ from .project_agent_routes import register_project_agent_routes
 from .knowledge_item_routes import register_knowledge_item_routes
 from .knowledge_hard_delete_routes import register_knowledge_hard_delete_routes
 from .knowledge_deletion_watermark import register_knowledge_deletion_watermark_route
+from .knowledge_semantic_index import register_knowledge_semantic_routes
+from .knowledge_retrieval_terms import register_knowledge_retrieval_routes
 from .knowledge_tag_routes import register_knowledge_tag_routes
 from .preference_conflicts import (
     complete_preference_conflict,
@@ -201,6 +204,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.store = store
     application.state.settings = resolved_settings
+    install_client_version_note(application)
 
     @application.exception_handler(GraphFormatUnavailable)
     async def graph_format_unavailable(_request, error: GraphFormatUnavailable):
@@ -372,6 +376,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_knowledge_item_routes(application, store, Actor, ReviewAwareActor, HumanReviewer)
     register_knowledge_hard_delete_routes(application, store, HumanReviewer)
     register_knowledge_deletion_watermark_route(application, store, Actor)
+    register_knowledge_semantic_routes(application, store, Actor)
+    register_knowledge_retrieval_routes(application, store, Actor)
 
     @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord)
     async def create_publication_draft(

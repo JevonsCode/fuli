@@ -26,7 +26,7 @@ export function entryHintSkipped() {
 // delivered as it is at the deadline, so a partial entry still says how to
 // checkpoint, and that the person asked to keep something.
 const DELIVERED_AT_DEADLINE = Object.freeze(['checkpoint_required', 'checkpoint_guidance', 'remember_guidance',
-  'previous_checkpoint_missing', 'project_scope']);
+  'update_guidance', 'previous_checkpoint_missing', 'project_scope']);
 
 // The task this entry wrote, with its opening writes done in time. One noted
 // after the deadline was cut short and is never delivered. The entry is kept
@@ -96,7 +96,7 @@ function missingParts(entry) {
   const memory = (part, personalProjectId) => continuity?.[part] && spaceId
     ? [{ parts: [`project_agent_context.${part}`], tool: 'get_project_agent_memory',
       arguments: { personalSpaceId: spaceId, personalProjectId, agentId } }] : [];
-  const messages = ['agent_messages', 'attention_replies'].filter(part => entry[part]?.length);
+  const messages = ['agent_messages', 'agent_replies', 'attention_replies'].filter(part => entry[part]?.length);
   return [
     { parts: ['effective_preferences', 'task_guidance', ...['project_agent_context', 'judgment_context'].filter(part => entry[part])],
       tool: 'read_task_preferences', arguments: { taskContextToken: token }, note: RECOVERY_NOTE },

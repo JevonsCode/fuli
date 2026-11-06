@@ -88,6 +88,10 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
         }]
       };
     }
+    // The Provider checks a capture before the checkpoint binds it (rec#79).
+    if (request.path === '/v1/knowledge/commits/preflight') {
+      return { status: 'validated', count: request.body.length };
+    }
     if (request.path === '/v1/knowledge/commits') {
       received.push(request.body);
       return {
@@ -251,6 +255,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
     'list_work_surfaces', 'pause_work_surfaces', 'resume_work_surfaces',
     'run_delegated_action',
+    'read_diagnostic_events', 'read_old_data',
     'read_task_preferences',
     'begin_task_context',
     'checkpoint_task_knowledge',

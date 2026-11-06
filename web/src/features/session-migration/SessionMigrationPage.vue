@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 import { ApiError, apiErrorReason } from '@/api/client'
@@ -19,10 +19,10 @@ import { projectLabel, sessionRecordsPath } from '@/features/session-records/mod
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import {
-  MAX_MOVE, appendPage, defaultReason, itemKey, migrationRefusal, migrationRequest, reconcileChoice,
-  type MigrationTarget, type SessionMigrationPreview,
+  MAX_MOVE, appendPage, defaultReason, itemKey, migrationDeliveryNotice, migrationRefusal, migrationRequest, reconcileChoice,
+  type MigrationDelivery, type MigrationTarget, type SessionMigrationPreview,
 } from './model'
-import { applySessionMigration, readSessionMigration } from './session-migration-api'
+import { applySessionMigration, readMigrationDelivery, readSessionMigration } from './session-migration-api'
 
 // A session's batch migration (rec#20 part 2): what the session saved while
 // nobody chose a scope waits in its temporary project; here the person moves
@@ -32,6 +32,10 @@ import { applySessionMigration, readSessionMigration } from './session-migration
 // here. A move the Provider refuses moves nothing: an item changed (the page
 // reads the list again and marks it) or the target already holds a matching
 // item (加入项目 decides). Until a fresh read succeeds, nothing can be sent.
+// rec#82: a move that succeeded is told to that chat when it next runs; the
+// notice shows whether it has been, read again while it may still change.
+// Nothing here wakes the chat.
+const DELIVERY_POLL_MS = 4000
 const route = useRoute()
 const store = useConsoleStore()
 const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
@@ -55,6 +59,12 @@ const saving = ref(false)
 // A refused move left the page showing what may be out of date: no send until a fresh read.
 const stale = ref(false)
 const notice = ref<{ kind: 'status' | 'alert'; text: string } | null>(null)
+// The last confirmed move and whether its chat has been told.
+const confirmed = ref<{ migrationId: string; target: MigrationTarget; delivery: MigrationDelivery } | null>(null)
+const deliveryNotice = computed(() => confirmed.value ? migrationDeliveryNotice(confirmed.value.delivery) : null)
+// One id per confirm: a retry of the same request after a lost answer repeats it and moves nothing twice.
+let pendingMove: { signature: string; id: string } | null = null
+let deliveryTimer: ReturnType<typeof setInterval> | undefined
 const showLoading = useMinimumLoadingDisplay(computed(() => loading.value && !preview.value))
 let requestVersion = 0
 
@@ -127,11 +137,16 @@ async function migrate() {
   conflicted.value = []
   const name = project.value
   const shown = preview.value
+  const signature = JSON.stringify(body)
+  if (pendingMove?.signature !== signature) pendingMove = { signature, id: crypto.randomUUID() }
+  const moveTarget = target.value
   try {
-    const result = await applySessionMigration(body)
+    const result = await applySessionMigration({ ...body, migrationId: pendingMove.id })
+    pendingMove = null
     refusal = null
     changed.value = new Set()
     notice.value = { kind: 'status', text: t('sessionMigration.moved', { count: result.moved.length, project: name }) }
+    confirmed.value = { migrationId: result.migration_id, target: moveTarget, delivery: result.delivery }
     await load()
   } catch (cause) {
     if (cause instanceof ApiError && cause.status === 409) await refused(cause, shown, name)
@@ -174,8 +189,29 @@ async function reread() {
     next.gone ? t('sessionMigration.gone', { count: next.gone }) : ''].filter(Boolean).join(' ') }
 }
 
+// Reads the delivery again while it may still change; a failed read keeps what was shown.
+async function refreshDelivery() {
+  const shown = confirmed.value
+  if (!shown || deliveryNotice.value?.settled || document.visibilityState === 'hidden') return
+  try {
+    const read = await readMigrationDelivery(shown.target, shown.migrationId)
+    if (confirmed.value === shown) confirmed.value = { ...shown, delivery: read.delivery }
+  } catch { /* the next read tries again */ }
+}
+
+onMounted(() => {
+  deliveryTimer = setInterval(refreshDelivery, DELIVERY_POLL_MS)
+  document.addEventListener('visibilitychange', refreshDelivery)
+})
+onBeforeUnmount(() => {
+  clearInterval(deliveryTimer)
+  document.removeEventListener('visibilitychange', refreshDelivery)
+})
+
 watch([spaceId, sessionId, client, projectId], () => {
   preview.value = null
+  confirmed.value = null
+  pendingMove = null
   chosen.value = new Set()
   changed.value = new Set()
   conflicted.value = []
@@ -206,6 +242,10 @@ watch([spaceId, sessionId, client, projectId], () => {
         <div v-if="notice" :role="notice.kind" class="grid justify-items-start gap-2 rounded-lg border bg-card px-4 py-3 text-sm"
           :class="notice.kind === 'status' ? 'border-success' : 'border-warning'" data-migration-notice>
           <p class="m-0 [overflow-wrap:anywhere]">{{ notice.text }}</p>
+          <p v-if="notice.kind === 'status' && deliveryNotice" class="m-0 text-muted-foreground [overflow-wrap:anywhere]"
+            aria-live="polite" data-migration-delivery :data-state="confirmed?.delivery.state">
+            {{ deliveryNotice.text }}
+          </p>
           <ul v-if="conflicted.length" class="m-0 grid list-none gap-1 p-0" data-migration-conflicts>
             <li v-for="item in conflicted" :key="itemKey(item)" class="[overflow-wrap:anywhere]">
               <RouterLink :to="knowledgeWorkspaceItemPath(spaceId, item)" class="underline underline-offset-4">

@@ -15,8 +15,13 @@ const MAX_ITEMS = 8;
 // Hosts such as Claude Code keep their own memory files; a request to keep
 // something must still reach FULI. Detected only on the prompt, so ordinary
 // tasks carry no extra entry text.
-const REMEMBER_REQUEST = /(?:记住|记一下|记下来|别忘|以后要用|\bremember\b|keep in mind|don't forget)/iu;
-export const REMEMBER_GUIDANCE = 'The user asked to keep something: record it with checkpoint_task_knowledge remember (preference or project_fact), not only in the host memory files.';
+// rec#63: "make sure this decision is remembered" and "keep this for later
+// sessions" were missed, and the model wrote only a repository file.
+const REMEMBER_REQUEST = new RegExp('(?:记住|记一下|记下来|记好|别忘|以后要用|今后|往后|以后(?:都|也|就)?(?:要|按|用|这样)|下次(?:也|还)?(?:要|按|用)'
+  + '|\\bremember(?:ed|s|ing)?\\b|keep in mind|don\'?t forget|from now on|going forward'
+  + '|\\b(?:keep|save|note) (?:this|it|that)(?: \\w+){0,2} for (?:later|next time|future)'
+  + '|\\bfor (?:later|future) (?:sessions?|work|tasks?|reference)|\\bfuture (?:sessions?|work)\\b)', 'iu');
+export const REMEMBER_GUIDANCE = 'The user asked to keep something: record it with checkpoint_task_knowledge remember (preference or project_fact) before finishing; a repository file or the host memory files are not FULI memory.';
 
 export function rememberRequested(taskPrompt) {
   return typeof taskPrompt === 'string' && REMEMBER_REQUEST.test(taskPrompt);

@@ -400,17 +400,25 @@ async def test_a_rejected_preference_keeps_its_block_through_an_agent_rewrite_bu
         assert own_id in await applied(client, space_id, 'alpha')
 
 
+async def no_older_preferences(*_args, **_kwargs):
+    return []
+
+
 @pytest.mark.asyncio
-async def test_a_conflict_merge_writes_the_merged_words_as_a_new_version_the_other_points_at():
+async def test_a_conflict_merge_writes_the_merged_words_as_a_new_version_the_other_points_at(monkeypatch):
     settings = fixture_settings()
     async with provider_client(settings) as (client, _):
         space_id = await space_with_projects(client, 'alpha')
         ids = []
-        for key, text in [('style-a', 'Reports start with a summary'), ('style-b', 'Reports start with the data')]:
-            item_id = (await commit(client, space_id, [preference(
-                key, text, attributes={'preferenceKey': 'report-opening'})]))['entity_ids'][0]
-            await confirm(client, space_id, item_id)
-            ids.append(item_id)
+        # Since rec#75 the later confirmation replaces the earlier one, so two current
+        # preferences of one key are data from before it: confirm these as it was then.
+        with monkeypatch.context() as earlier:
+            earlier.setattr('fuli_graph.knowledge_outdated.end_older_preferences', no_older_preferences)
+            for key, text in [('style-a', 'Reports start with a summary'), ('style-b', 'Reports start with the data')]:
+                item_id = (await commit(client, space_id, [preference(
+                    key, text, attributes={'preferenceKey': 'report-opening'})]))['entity_ids'][0]
+                await confirm(client, space_id, item_id)
+                ids.append(item_id)
         left, right = sorted(ids)
         context = ok(await client.get('/v1/collaboration-preferences', params={
             'personal_space_id': space_id, 'personal_project_id': 'alpha'}))
@@ -611,3 +619,54 @@ async def test_a_new_version_keeps_a_property_an_older_fuli_stored_and_names_it(
                        if revision['action'] == 'supersede']
         assert supersede['current']['carriedLegacyKeys'] == ['fuli_synthetic_legacy_note']
         assert 'synthetic legacy value' not in json.dumps(supersede['current'])
+
+
+@pytest.mark.asyncio
+async def test_the_same_words_captured_after_their_relationship_ended_are_a_new_current_item():
+    """rec#63: the same words at the same time took the ended item's ID, so the
+    capture answered committed while the fact stayed ended and unsearchable."""
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        endpoints = [{'key': 'team', 'name': 'Synthetic team', 'type': 'Team'},
+                     {'key': 'rule', 'name': 'Rounding rule', 'type': 'Rule'}]
+        relation = {'key': 'team-rounds', 'source': 'team', 'target': 'rule', 'type': 'FOLLOWS',
+                    'fact': 'Amounts round half up to two decimals'}
+        [old_id] = (await commit(client, space_id, endpoints, relationships=[relation]))['relationship_ids']
+        old = await view(client, space_id, old_id, 'relationship')
+        ok(await client.patch(f'/v1/knowledge/items/{old_id}', json={
+            'personal_space_id': space_id, 'item_kind': 'relationship', 'action': 'invalidate',
+            'reason': 'Synthetic reset.', 'operation_actor': 'human', 'expected_version': old['version']}))
+        ended = await view(client, space_id, old_id, 'relationship')
+        again = await commit(client, space_id, endpoints, relationships=[relation], key=f'again-{uuid4()}')
+        [new_id] = again['relationship_ids']
+        assert new_id != old_id
+        current = await view(client, space_id, new_id, 'relationship')
+        assert (current['status'], current['content']) == ('current', 'Amounts round half up to two decimals')
+        assert again['episode_id'] in {source['episode_id'] for source in current['evidence']}
+        assert await view(client, space_id, old_id, 'relationship') == ended, 'the ended item keeps its history'
+        later = await commit(client, space_id, endpoints, relationships=[relation], key=f'later-{uuid4()}')
+        assert later['relationship_ids'] == [new_id], 'saying it once more lands on the same current item'
+
+
+@pytest.mark.asyncio
+async def test_the_same_entity_captured_after_it_was_invalidated_is_a_new_current_version():
+    """rec#63: an entity's mention landed on its invalidated head, so the capture
+    answered committed while the statement stayed ended and unsearchable."""
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        entity = {'key': 'freeze', 'name': 'Release freeze', 'type': 'Rule',
+                  'summary': 'No releases from December 15 to January 5'}
+        [old_id] = (await commit(client, space_id, [entity]))['entity_ids']
+        old = await view(client, space_id, old_id)
+        ok(await client.patch(f'/v1/knowledge/items/{old_id}', json={
+            'personal_space_id': space_id, 'item_kind': 'entity', 'action': 'invalidate',
+            'reason': 'Synthetic reset.', 'operation_actor': 'human', 'expected_version': old['version']}))
+        again = await commit(client, space_id, [entity], key=f'again-{uuid4()}')
+        [new_id] = again['entity_ids']
+        assert new_id != old_id
+        current = await view(client, space_id, new_id)
+        assert (current['status'], current['content']) == ('current', 'No releases from December 15 to January 5')
+        assert again['episode_id'] in {source['episode_id'] for source in current['evidence']}
+        assert (await view(client, space_id, old_id))['status'] != 'current'

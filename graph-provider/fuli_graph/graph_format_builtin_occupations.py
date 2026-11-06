@@ -6,14 +6,22 @@ Earlier FULI shipped Bole with the `management` occupation and named `hr`
 migration changes them, and only where the stored value is still exactly
 what FULI shipped: a role or a text a person changed stays as they left it.
 The key stays `hr`, so roles, tags and staffing history keep pointing at it.
+
+graph/16: Jefa and Tonborg, who also shipped with `management`, hold their own
+built-in occupations, `project_manager` and `decision_maker`. Only an identity
+still on exactly the shipped role moves. `management` itself stays in the
+catalog, and an Agent of a person's that holds it keeps it. The two new rows
+need no step: `_ensure_occupation_catalog` adds a missing built-in to a space
+on its next read, and until then the role is accepted as a built-in key.
 """
 
 from .graph_format_journal import RecordJournal, RecordTouch
 from .occupation_catalog import BUILTIN_AGENT_OCCUPATIONS, BUILTIN_OCCUPATIONS, TEXT_FIELDS
 from .provider_values import now_utc
-from .system_agents import SYSTEM_HR_AGENT_ID
+from .system_agents import SYSTEM_COORDINATOR_AGENT_ID, SYSTEM_HR_AGENT_ID, SYSTEM_JUDGMENT_AGENT_ID
 
 SHIPPED_BOLE_ROLE = 'management'
+SHIPPED_JEFA_TONBORG_ROLE = 'management'
 SHIPPED_HR_TEXT = {
     'name_zh': '人力资源',
     'name_en': 'Human resources',
@@ -41,6 +49,11 @@ _SHIPPED_HR = (
     f'MATCH (item:FuliOccupation {{key: {_literal(_HR_KEY)}}}) WHERE item.builtin = true AND ('
     + ' OR '.join(f'item.{field} = {_literal(text)}' for field, text in SHIPPED_HR_TEXT.items())
     + ') '
+)
+_SHIPPED_ROLES = (
+    'MATCH (item:FuliProjectAgent) WHERE item.agent_id IN ['
+    + ', '.join(_literal(agent_id) for agent_id in (SYSTEM_COORDINATOR_AGENT_ID, SYSTEM_JUDGMENT_AGENT_ID))
+    + f'] AND item.occupation_role = {_literal(SHIPPED_JEFA_TONBORG_ROLE)} '
 )
 _HR_FIELDS = ',\n'.join(
     f'item.{field} = CASE WHEN item.{field} = $shipped.{field} THEN $current.{field} ELSE item.{field} END'
@@ -77,4 +90,23 @@ async def apply_builtin_occupations(driver, _settings, *, apply_id=None) -> None
 BUILTIN_OCCUPATION_JOURNAL = RecordJournal(touches=(
     RecordTouch('node', _SHIPPED_BOLE, ('occupation_role', 'occupation_updated_at')),
     RecordTouch('node', _SHIPPED_HR, (*TEXT_FIELDS, 'revision', 'updated_at')),
+))
+
+
+async def pending_role_occupations(driver, _settings) -> list[str]:
+    """Jefa and Tonborg identities still on the shipped role."""
+    records, _, _ = await driver.execute_query(_SHIPPED_ROLES + 'RETURN item.id AS key', routing_='r')
+    return sorted(str(record['key']) for record in records)
+
+
+async def apply_role_occupations(driver, _settings, *, apply_id=None) -> None:
+    # A new occupation time, as for Bole: staffing demand counts only the work since it.
+    await driver.execute_query(
+        _SHIPPED_ROLES + 'SET item.occupation_role = $roles[item.agent_id], item.occupation_updated_at = $now',
+        roles=BUILTIN_AGENT_OCCUPATIONS, now=now_utc(),
+    )
+
+
+ROLE_OCCUPATION_JOURNAL = RecordJournal(touches=(
+    RecordTouch('node', _SHIPPED_ROLES, ('occupation_role', 'occupation_updated_at')),
 ))

@@ -164,10 +164,20 @@ function compatibilityFixture(health, options = {}) {
     processMatches: async pid => !(options.staleProvider && pid === 4500), stopProcess: async pid => stopped.push(pid),
     spawnProvider: () => { spawned.push('provider'); return { pid: 4600 }; },
     spawnDatabase: () => { spawned.push('database'); return { pid: 4700 }; },
-    fetchImpl: async () => Response.json(health), wait: async ms => waits.push(ms)
+    fetchImpl: async () => Response.json(health), wait: async ms => waits.push(ms),
+    ...(options.recordFailure ? { recordFailure: options.recordFailure } : {})
   });
   return { services, initial, stopped, spawned, waits, state: () => state };
 }
+
+test('a native start failure is recorded once with its fixed code, after cleanup', async () => {
+  const recorded = [];
+  const f = compatibilityFixture({ status: 'ok' }, { recordFailure: (error, durationMs) => recorded.push([error.code, durationMs]) });
+  await assert.rejects(f.services.start(), /incompatible/i);
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0][0], 'provider_incompatible');
+  assert.ok(Number.isFinite(recorded[0][1]));
+});
 
 test('native readiness rejects a healthy legacy Provider lacking the transcript contract', async () => {
   const f = compatibilityFixture({ status: 'ok' });

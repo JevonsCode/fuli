@@ -33,7 +33,10 @@
 .bole-agent-identity small, .bole-recruitment-identity small { display: block; margin-top: 4px; color: var(--color-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .bole-agent-work p { margin: 6px 0 0; font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
 .bole-agent-work .is-idle { margin: 0; color: var(--color-muted); font-size: 13px; }
-.bole-agent-projects { margin-top: auto; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
+.bole-agent-foot { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-top: auto; }
+.bole-agent-actions { display: flex; flex: 0 0 auto; gap: 4px; }
+/* The first line shares the centre of the sm buttons beside it (30px); more projects grow below without moving them. */
+.bole-agent-projects { flex: 1 1 auto; min-width: 0; padding-block: 5px; color: var(--color-muted); font-size: 12px; line-height: 1.6; }
 .bole-agent-projects span { display: block; overflow-wrap: anywhere; }
 .bole-agent-projects summary { width: fit-content; min-height: 32px; padding-block: 6px; cursor: pointer; color: var(--color-ink); }
 

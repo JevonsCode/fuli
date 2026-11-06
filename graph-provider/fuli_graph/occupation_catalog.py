@@ -7,10 +7,11 @@ from .model_base import StrictModel
 
 # The occupation each fixed identity ships with: stored on the Agent when the
 # identity is created, read back from there, and never reassigned by a person
-# (occupation_locked). Bole is AR, so it holds Agent resources (graph/12).
+# (occupation_locked). Bole is AR, so it holds Agent resources (graph/12);
+# Jefa and Tonborg hold what they are called, not 管理 (graph/16).
 BUILTIN_AGENT_OCCUPATIONS = {
-    'employee.jefa': 'management', 'employee.bole': 'hr',
-    'employee.tonborg': 'management', 'employee.assistant': 'assistant',
+    'employee.jefa': 'project_manager', 'employee.bole': 'hr',
+    'employee.tonborg': 'decision_maker', 'employee.assistant': 'assistant',
 }
 
 _BUILTINS = [
@@ -25,6 +26,8 @@ _BUILTINS = [
     ('data', '数据', 'Data', '核验和分析数据并解释指标变化。', 'Validate and analyze data and explain metric changes.'),
     ('writing', '写作', 'Writing', '撰写和修改适合目标读者的内容。', 'Write and revise content for its intended audience.'),
     ('management', '管理', 'Management', '规划工作、协调资源并追踪项目进展。', 'Plan work, coordinate resources, and track project progress.'),
+    ('project_manager', '项目经理', 'Project manager', '拆解目标、维护看板与进展并为任务选择合适的 Agent。', 'Break down goals, maintain the board and progress, and choose the right Agent for each task.'),
+    ('decision_maker', '决策员', 'Decision maker', '依照用户偏好审核日常事项、给出建议并保留判断依据。', 'Review routine matters against user preferences, make recommendations, and keep the reasoning on record.'),
     ('frontend', '前端', 'Frontend', '实现和维护用户界面及浏览器端交互。', 'Build and maintain user interfaces and browser interactions.'),
     ('backend', '后端', 'Backend', '实现和维护服务接口、业务规则及存储。', 'Build and maintain service APIs, domain rules, and storage.'),
     ('mobile', '移动端', 'Mobile', '开发和维护移动应用及设备端体验。', 'Develop and maintain mobile applications and device experiences.'),

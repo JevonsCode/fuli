@@ -22,7 +22,7 @@ def recruitment_occupation(request):
         'maintenance': 'engineering', 'code_review': 'engineering',
         'review': 'testing', 'verification': 'testing', 'test_validation': 'testing',
         'planning': 'management', 'project_context': 'lead',
-        'project_management': 'management', 'design': 'design',
+        'project_management': 'project_manager', 'design': 'design',
         'research': 'research', 'writing': 'writing', 'data': 'data',
         'operations': 'operations', 'product': 'product',
     }

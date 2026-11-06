@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { t } from '@/i18n'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -8,8 +8,11 @@ import { agentPinsText } from '@/features/agent-profile/agent-pins'
 import { agentProfilePath } from '@/features/agent-profile/profile-model'
 import { useAgentWorkSurfaces } from '@/features/agent-profile/use-agent-work-surfaces'
 import { usePortraitShake } from '@/features/agent-profile/use-portrait-shake'
+import { debugRecordText, readDebugTurn } from '@/features/debug-turns/model'
+import { saveFile } from '@/lib/save-file'
+import { personalProjectsPath } from '@/router/paths'
 import { useConsoleStore } from '@/stores/console'
-import { getJson } from '@/api/client'
+import { apiErrorReason, getJson } from '@/api/client'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { projectAgentShape } from '@/features/agent-profile/agent-record-shape'
 import type { ProjectAgentRecord } from '@/types'
@@ -26,11 +29,36 @@ import { replaceFieldRange, selectAllInField } from './field-edit'
 type MenuAction = 'cut' | 'copy' | 'paste' | 'selectAll' | 'open' | 'copyLink'
 
 const router = useRouter()
+const route = useRoute()
 const store = useConsoleStore()
 const spaceId = computed(() => store.activePersonalSpace?.id ?? '')
 const work = useAgentWorkSurfaces(spaceId)
 const { shake } = usePortraitShake()
 const agentTarget = computed(() => target.value?.kind === 'agent' ? target.value : null)
+const projectTarget = computed(() => target.value?.kind === 'project' ? target.value : null)
+const projectsByName = computed(() => new Map((store.state?.personalProjects ?? [])
+  .filter(project => project.personal_space_id === spaceId.value && project.profile.name)
+  .map(project => [project.profile.name, project.project_id])))
+function editProject(projectId: string) {
+  void router.push({ path: personalProjectsPath(spaceId.value, 'overview', projectId), query: { edit: 'profile' } })
+}
+const debugTarget = computed(() => target.value?.kind === 'debug-turn' ? target.value : null)
+async function copyDebugTurn(id: string) {
+  try {
+    writeClipboard(debugRecordText(await readDebugTurn(id)))
+    store.notify(t('debugTurns.copiedAll'))
+  } catch (cause) {
+    store.notify(t('debugTurns.readFailed', { reason: apiErrorReason(cause) }))
+  }
+}
+async function exportDebugTurn(id: string) {
+  try {
+    const path = await saveFile(`fuli-debug-${id.slice(0, 8)}.md`, debugRecordText(await readDebugTurn(id)), 'text/markdown;charset=utf-8')
+    store.notify(path ? t('debugTurns.exportedTo', { path }) : t('debugTurns.exported'))
+  } catch (cause) {
+    store.notify(t('debugTurns.exportFailed', { reason: apiErrorReason(cause) }))
+  }
+}
 // A portrait names only its FLA's id: the menu reads that FLA's record for its name and,
 // with it, where its workbench and workflows are. Records read once stay for the visit.
 const agents = ref<Record<string, ProjectAgentRecord | 'missing'>>({})
@@ -57,6 +85,9 @@ function onPortraitClick(event: MouseEvent) {
 const open = ref(false)
 const point = ref({ x: 0, y: 0 })
 const target = ref<ContextTarget | null>(null)
+// A modal <dialog> sits in the top layer above everything else in the page, so
+// a menu opened from inside one renders inside it.
+const portalTo = ref<HTMLElement>()
 let returnFocus: HTMLElement | null = null
 let dismissedOutside = false
 
@@ -88,7 +119,9 @@ function menuPoint(event: MouseEvent) {
 }
 
 async function onContextMenu(event: MouseEvent) {
-  const found = readContextTarget(event.target, { selection: window.getSelection(), origin: window.location.origin, canPaste: canPaste() })
+  const read = readContextTarget(event.target, { selection: window.getSelection(), origin: window.location.origin, projects: projectsByName.value, canPaste: canPaste() })
+  // On an FLA's own page its portrait has nowhere to go: the page is where the menu leads.
+  const found = read?.kind === 'agent' && route.params.agentId === read.agentId ? null : read
   // A component's own menu decides a tick later (reka-ui's trigger does); let it claim the event first.
   await nextTick()
   if (event.defaultPrevented) return
@@ -98,6 +131,7 @@ async function onContextMenu(event: MouseEvent) {
   if (!found) return
   await nextTick()
   target.value = found
+  portalTo.value = event.target instanceof Element ? event.target.closest<HTMLElement>('dialog[open]') ?? undefined : undefined
   if (found.kind === 'agent') void readAgent(found.agentId)
   point.value = menuPoint(event)
   returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -107,6 +141,15 @@ async function onContextMenu(event: MouseEvent) {
 
 function onInteractOutside() { dismissedOutside = true }
 function close() { open.value = false }
+// The desktop client's window loses focus for a moment when a click hands focus
+// to the page, which would close the menu under that very click: only a blur
+// that lasts closes it.
+const BLUR_GRACE = 300
+let blurTimer: ReturnType<typeof setTimeout> | undefined
+function onBlur() {
+  clearTimeout(blurTimer)
+  blurTimer = setTimeout(() => { if (!document.hasFocus()) close() }, BLUR_GRACE)
+}
 function onScroll(event: Event) { if (open.value && !insideMenu(event.target)) close() }
 
 // Focus goes back where it was (the field keeps typing), unless the menu closed because the person clicked elsewhere.
@@ -148,7 +191,7 @@ async function cut(current: FieldTarget) {
 function run(action: MenuAction) {
   const current = target.value
   // A portrait's menu runs its own items (goAgent), never these.
-  if (!current || current.kind === 'agent') return
+  if (!current || current.kind === 'agent' || current.kind === 'project' || current.kind === 'debug-turn') return
   if (current.kind === 'link') {
     if (action === 'copyLink') return writeClipboard(current.url.href)
     // An outside link opens the way the app opens every outside link: a new window, which the desktop client hands to the browser.
@@ -168,14 +211,15 @@ onMounted(() => {
   window.addEventListener('contextmenu', onContextMenu)
   window.addEventListener('click', onPortraitClick, true)
   window.addEventListener('scroll', onScroll, true)
-  window.addEventListener('blur', close)
+  window.addEventListener('blur', onBlur)
   window.addEventListener('resize', close)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('contextmenu', onContextMenu)
   window.removeEventListener('click', onPortraitClick, true)
   window.removeEventListener('scroll', onScroll, true)
-  window.removeEventListener('blur', close)
+  window.removeEventListener('blur', onBlur)
+  clearTimeout(blurTimer)
   window.removeEventListener('resize', close)
 })
 </script>
@@ -186,9 +230,18 @@ onBeforeUnmount(() => {
     <ContextMenuTrigger as-child>
       <span class="app-context-anchor" :style="{ left: `${point.x}px`, top: `${point.y}px` }" aria-hidden="true" />
     </ContextMenuTrigger>
-    <ContextMenuContent class="app-context-menu" :collision-padding="8" data-app-context-menu
+    <ContextMenuContent class="app-context-menu" :portal-to="portalTo" :collision-padding="8" data-app-context-menu
       @close-auto-focus="onCloseAutoFocus" @interact-outside="onInteractOutside">
-      <template v-if="agentTarget">
+      <template v-if="debugTarget">
+        <ContextMenuItem data-debug-action="copy" @select="copyDebugTurn(debugTarget.id)">{{ t('debugTurns.copyAll') }}</ContextMenuItem>
+        <ContextMenuItem data-debug-action="export" @select="exportDebugTurn(debugTarget.id)">{{ t('debugTurns.exportFile') }}</ContextMenuItem>
+      </template>
+      <template v-else-if="projectTarget">
+        <ContextMenuLabel>{{ projectTarget.name }}</ContextMenuLabel>
+        <ContextMenuItem data-project-action="copy-name" @select="writeClipboard(projectTarget.name)">{{ t('contextMenu.copyProjectName') }}</ContextMenuItem>
+        <ContextMenuItem data-project-action="edit" @select="editProject(projectTarget.projectId)">{{ t('contextMenu.editProject') }}</ContextMenuItem>
+      </template>
+      <template v-else-if="agentTarget">
         <ContextMenuLabel>{{ agentName(agentTarget.agentId) }}</ContextMenuLabel>
         <ContextMenuItem data-portrait-action="home" @select="goAgent({ path: agentProfilePath(spaceId, agentTarget.agentId), query: { tab: 'overview' } })">
           {{ agentPinsText('menu.home', 'Open profile') }}

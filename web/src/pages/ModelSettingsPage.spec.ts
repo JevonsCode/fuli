@@ -59,7 +59,8 @@ beforeEach(() => {
   api.putJson.mockReset()
   api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/model-backends/usage') ? usage()
     : url.startsWith('/api/model-backends/suggestions') || url.startsWith('/api/judgment/suggestions') ? { suggestions: [] }
-      : url.startsWith('/api/model-backends/history') ? { entries: [] } : rolesPayload))
+      : url.startsWith('/api/model-backends/history') ? { entries: [] }
+        : url.startsWith('/api/dreaming') ? { readiness: 'needs_model', runs: [] } : rolesPayload))
 })
 
 const mountPage = async () => {
@@ -69,28 +70,63 @@ const mountPage = async () => {
   return wrapper
 }
 
+// A use's 「查看详情」: facts, trust and history open in a dialog, not in place.
+const openDetails = async (wrapper: Awaited<ReturnType<typeof mountPage>>, role: string) => {
+  await wrapper.get(`[data-model-role="${role}"] [data-model-role-details]`).trigger('click')
+  return wrapper.get('[data-model-use-details]')
+}
+const closeDetails = (wrapper: Awaited<ReturnType<typeof mountPage>>) => wrapper.get('[data-model-use-details] button[aria-label="关闭"]').trigger('click')
+
 describe('ModelSettingsPage', () => {
-  it('shows each built-in Agent with its model, key reference and limits, never a key', async () => {
+  it('shows every use as a card with its state, its model, what is enough and one quick action', async () => {
     const wrapper = await mountPage()
-    expect(wrapper.findAll('[data-model-role]').map(card => card.get('[data-model-role-name]').text())).toEqual(['Astro', 'Bole', 'Jefa', 'Tonborg'])
+    expect(wrapper.findAll('.model-use-grid > article h3').map(heading => heading.text()))
+      .toEqual(['语义搜索', 'Astro', 'Dreaming', '补检索词', 'Jefa', 'Tonborg', 'Bole'])
+    // No accordion or disclosure on the page: every use is an open card.
+    expect(wrapper.find('[data-model-role] [aria-expanded]').exists()).toBe(false)
     const tonborg = wrapper.get('[data-model-role="tonborg"]')
-    expect(tonborg.get('[data-model-role-state]').text()).toBe('已启用')
-    expect(tonborg.get('[data-model-fact="secretRef"]').text()).toContain('local-ref')
-    expect(tonborg.get('[data-model-fact="egress"]').text()).toContain('1 个项目')
-    expect(tonborg.get('[data-model-fact="callBudget"]').text()).toContain('输入 4,000 · 输出 400 tokens · 30 秒')
-    expect(tonborg.get('[data-model-fact="fallback"]').text()).toContain('允许')
-    expect(wrapper.get('[data-model-role="assistant"]').get('[data-model-fact="answeredBy"]').text()).toContain('当前会话')
+    expect(tonborg.get('[data-model-use-state]').text()).toBe('已接上')
+    expect(tonborg.get('[data-model-use-model]').text()).toBe('qwen-test127.0.0.1:11434')
+    expect(tonborg.get('[data-model-use-advice]').text()).toBe('推荐要做判断：用强的在线模型或当前会话，本机小模型不够准。')
+    expect(tonborg.get('[data-model-role-edit]').text()).toBe('编辑')
+    const astro = wrapper.get('[data-model-role="assistant"]')
+    expect(astro.get('[data-model-use-state]').text()).toBe('未接')
+    expect(astro.get('[data-model-use-model]').text()).toBe('没接模型，用当前会话回答')
+    expect(astro.get('[data-model-role-edit]').text()).toBe('接入')
+    expect(wrapper.get('[data-dreaming] [data-model-use-model]').text()).toBe('Astro 还没接模型')
+  })
+
+  it("lists a model's key reference and limits in 查看详情, never a key, with the guide section of that use", async () => {
+    const wrapper = await mountPage()
+    let details = await openDetails(wrapper, 'tonborg')
+    expect(details.get('h2').text()).toBe('Tonborg')
+    expect(details.get('[data-model-guide]').attributes('href')).toBe('https://xn--8ovp9s.xn--m8txu.com/fuli/models/zh/#tonborg')
+    expect(details.get('[data-model-fact="secretRef"]').text()).toContain('local-ref')
+    expect(details.get('[data-model-fact="egress"]').text()).toContain('1 个项目')
+    expect(details.get('[data-model-fact="callBudget"]').text()).toContain('输入 4,000 · 输出 400 tokens · 30 秒')
+    expect(details.get('[data-model-fact="fallback"]').text()).toContain('允许')
+    expect(details.find('[data-model-check]').exists()).toBe(true)
+    await closeDetails(wrapper)
+    details = await openDetails(wrapper, 'assistant')
+    expect(details.get('[data-model-fact="answeredBy"]').text()).toContain('当前会话')
+    expect(details.find('[data-model-check]').exists()).toBe(false)
   })
 
   it('asks the person to read the warning before Tonborg\'s model executes by itself, and saves only that acknowledgement (D-36)', async () => {
     ;(rolesPayload.roles[3] as Record<string, unknown>).trust = trust({ status: 'suggestion', reason: 'warning_not_seen' })
     const wrapper = await mountPage()
-    // The row waiting for the person opens by itself; the others stay closed until asked (rec#38).
-    expect(wrapper.get('[data-model-role="tonborg"]').attributes('data-state')).toBe('open')
-    expect(wrapper.get('[data-model-role="bole"]').attributes('data-state')).toBe('closed')
-    // Roles with nothing that runs by themselves show no execution row.
-    for (const role of ['assistant', 'bole', 'jefa']) expect(wrapper.find(`[data-model-role="${role}"] [data-model-trust]`).exists()).toBe(false)
-    const section = wrapper.get('[data-model-role="tonborg"] [data-model-trust="tonborg"]')
+    // The card waiting for the person lifts and says so; the others stay as they are.
+    const tonborg = wrapper.get('[data-model-role="tonborg"]')
+    expect(tonborg.attributes('data-model-needs-person')).toBeDefined()
+    expect(tonborg.classes()).toContain('shadow-md')
+    expect(tonborg.get('[data-model-role-waiting]').text()).toBe('有一条提示等你看过，打开详情确认。')
+    expect(wrapper.get('[data-model-role="bole"]').attributes('data-model-needs-person')).toBeUndefined()
+    // Roles with nothing that runs by themselves show no execution section.
+    for (const role of ['assistant', 'bole', 'jefa']) {
+      expect((await openDetails(wrapper, role)).find('[data-model-trust]').exists()).toBe(false)
+      await closeDetails(wrapper)
+    }
+    const section = (await openDetails(wrapper, 'tonborg')).get('[data-model-trust="tonborg"]')
     expect(section.get('[data-model-trust-status]').text()).toBe('看过下面的提示后自动执行')
     expect(section.get('[data-model-trust-warning]').text())
       .toBe('模型可能判断错，它的判断会直接生效；你可以随时改成「只给建议」，部分写入可在回执里撤回。')
@@ -115,6 +151,7 @@ describe('ModelSettingsPage', () => {
     ;(rolesPayload.roles[3] as Record<string, unknown>).trust = trust({ warningSeen: true, revision: 3, evaluation: { role: 'tonborg',
       operation: 'knowledge_review', model: 'qwen-test', set: 'tonborg-review-eval/holdout', evaluatedAt: '2026-10-22T08:00:00.000Z', agreed: 71, total: 162 } })
     const wrapper = await mountPage()
+    await openDetails(wrapper, 'tonborg')
     expect(wrapper.get('[data-model-trust-evaluation]').text())
       .toBe('本机评测 2026/10/22 · tonborg-review-eval/holdout · qwen-test · 一致率 44%（不代表普遍准确率）')
     api.putJson.mockImplementation(() => new Promise(() => {}))
@@ -129,7 +166,7 @@ describe('ModelSettingsPage', () => {
     const wrapper = await mountPage()
     const historyReads = () => api.getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/model-backends/history')).length
     const roleReads = () => api.getJson.mock.calls.filter(([url]) => url === '/api/model-backends/roles').length
-    await wrapper.get('[data-model-role="tonborg"] [data-model-history-toggle]').trigger('click')
+    await (await openDetails(wrapper, 'tonborg')).get('[data-model-history-toggle]').trigger('click')
     await flushPromises()
     expect(historyReads()).toBe(1)
     const before = roleReads()
@@ -145,7 +182,7 @@ describe('ModelSettingsPage', () => {
     rolesPayload.roles[3] = { role: 'tonborg', state: 'not_configured', answeredBy: 'current_session',
       trust: trust({ status: 'suggestion', reason: 'session_answer' }) } as never
     const wrapper = await mountPage()
-    expect(wrapper.get('[data-model-role="tonborg"] [data-model-fact="execution"]').text()).toContain('只给建议（由当前会话回答）')
+    expect((await openDetails(wrapper, 'tonborg')).get('[data-model-fact="execution"]').text()).toContain('只给建议（由当前会话回答）')
     expect(wrapper.find('[data-model-trust]').exists()).toBe(false)
   })
 
@@ -153,14 +190,15 @@ describe('ModelSettingsPage', () => {
     const digest = '0123456789abcdef'.repeat(4)
     ;(rolesPayload.roles[3] as Record<string, unknown>).localBuild = { status: 'observed', digest, completedAt: '2026-10-24T08:00:00.000Z' }
     const wrapper = await mountPage()
-    const fact = wrapper.get('[data-model-role="tonborg"] [data-model-fact="localBuild"]')
+    const fact = (await openDetails(wrapper, 'tonborg')).get('[data-model-fact="localBuild"]')
     expect(fact.get('dt').text()).toBe('本地模型版本')
     expect(fact.get('dd code').text()).toBe('0123456789ab…')
     const title = fact.get('dd').attributes('title')!
     expect(title.startsWith(`${digest}\n最近一次回答（`)).toBe(true)
     expect(title).toContain('这是观察值，不是本次回答的版本证明。')
     // A role without a model shows no row at all.
-    expect(wrapper.find('[data-model-role="assistant"] [data-model-fact="localBuild"]').exists()).toBe(false)
+    await closeDetails(wrapper)
+    expect((await openDetails(wrapper, 'assistant')).find('[data-model-fact="localBuild"]').exists()).toBe(false)
   })
 
   it('says no record and not observed in words, never a made-up build or a cause it cannot know', async () => {
@@ -171,7 +209,7 @@ describe('ModelSettingsPage', () => {
     for (const [localBuild, text, hint] of cases) {
       ;(rolesPayload.roles[3] as Record<string, unknown>).localBuild = localBuild
       const wrapper = await mountPage()
-      const fact = wrapper.get('[data-model-role="tonborg"] [data-model-fact="localBuild"]')
+      const fact = (await openDetails(wrapper, 'tonborg')).get('[data-model-fact="localBuild"]')
       expect(fact.get('dd').text()).toBe(text)
       expect(fact.find('dd code').exists()).toBe(false)
       if (hint) expect(fact.get('dd').attributes('title')).toContain(hint)
@@ -184,7 +222,7 @@ describe('ModelSettingsPage', () => {
   it('omits the row for a connection a local build is never read from', async () => {
     ;(rolesPayload.roles[3] as Record<string, unknown>).localBuild = { status: 'not_applicable', digest: null, completedAt: null }
     const wrapper = await mountPage()
-    expect(wrapper.find('[data-model-role="tonborg"] [data-model-fact="localBuild"]').exists()).toBe(false)
+    expect((await openDetails(wrapper, 'tonborg')).find('[data-model-fact="localBuild"]').exists()).toBe(false)
   })
 
   it('edits a role in a labelled form and saves it with the revision it read', async () => {
@@ -196,6 +234,9 @@ describe('ModelSettingsPage', () => {
     const dialog = wrapper.get('[data-model-role-dialog]')
     expect(dialog.get('[data-model-secret-ref]').attributes('id')).toBe('model-role-secret-ref')
     expect(dialog.find('label[for="model-role-secret-ref"]').text()).toBe('密钥引用')
+    expect(dialog.find('[data-model-budget="maxOutputTokens"]').exists()).toBe(false)
+    await dialog.get('[data-model-advanced] button').trigger('click')
+    await flushPromises()
     expect(dialog.text()).toContain('已接入：knowledge_review')
     await dialog.get('[data-model-name]').setValue('qwen-next')
     await dialog.get('[data-model-budget="maxOutputTokens"]').setValue('800')
@@ -210,6 +251,50 @@ describe('ModelSettingsPage', () => {
     expect(body.settings.egress.approvedProjects).toEqual([{ personalSpaceId: 'space-1', personalProjectId: 'alpha' }])
     expect(wrapper.find('[data-model-role-dialog]').exists()).toBe(false)
     expect(wrapper.text()).toContain('已保存 Tonborg 的模型设置。')
+  })
+
+  it('says why a key name is refused, keeps it from saving, and offers the names already known', async () => {
+    const wrapper = await mountPage()
+    await wrapper.get('[data-model-role="tonborg"] [data-model-role-edit]').trigger('click')
+    const dialog = wrapper.get('[data-model-role-dialog]')
+    await dialog.get('[data-model-secret-ref]').setValue('my key')
+    expect(dialog.get('[data-model-secret-ref-error]').text()).toContain('不能有空格')
+    expect(dialog.get('[data-model-save]').attributes('disabled')).toBeDefined()
+    await dialog.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.putJson).not.toHaveBeenCalled()
+
+    await dialog.get('[data-model-secret-choice="local-ref"]').trigger('click')
+    expect((dialog.get('[data-model-secret-ref]').element as HTMLInputElement).value).toBe('local-ref')
+    expect(dialog.find('[data-model-secret-ref-error]').exists()).toBe(false)
+    expect(dialog.get('[data-model-save]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('greys out the model settings while the role uses the chat client\'s model', async () => {
+    const wrapper = await mountPage()
+    await wrapper.get('[data-model-role="tonborg"] [data-model-role-edit]').trigger('click')
+    const dialog = wrapper.get('[data-model-role-dialog]')
+    expect(dialog.get('[data-model-endpoint]').attributes('disabled')).toBeUndefined()
+    expect(dialog.get('[data-model-enabled-hint]').text()).toContain('不用聊天客户端里的模型')
+
+    await dialog.get('#model-role-enabled').trigger('click')
+    expect(dialog.get('[data-model-endpoint]').attributes('disabled')).toBeDefined()
+    expect(dialog.get('[data-model-secret-ref]').attributes('disabled')).toBeDefined()
+    expect(dialog.get('[data-model-enabled-hint]').text()).toContain('现在用你聊天客户端里的模型')
+    expect(dialog.get('[data-model-save]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('finds a project by name and says when none matches', async () => {
+    const wrapper = await mountPage()
+    await wrapper.get('[data-model-role="tonborg"] [data-model-role-edit]').trigger('click')
+    const dialog = wrapper.get('[data-model-role-dialog]')
+    const shown = dialog.findAll('[data-model-egress-project]').length
+    expect(shown).toBeGreaterThan(0)
+    await dialog.get('[data-model-project-search]').setValue('no-such-synthetic-project')
+    expect(dialog.findAll('[data-model-egress-project]')).toHaveLength(0)
+    expect(dialog.text()).toContain('没有匹配的项目。')
+    await dialog.get('[data-model-project-search]').setValue('')
+    expect(dialog.findAll('[data-model-egress-project]')).toHaveLength(shown)
   })
 
   it('reads the settings again when they changed meanwhile, and shows a refusal in the form', async () => {
@@ -310,6 +395,40 @@ describe('ModelSettingsPage', () => {
     const card = wrapper.get('[data-role-suggestions] article[data-role-suggestion="tonborg"]')
     expect(card.get('[data-suggestion-text]').text()).toBe('Seed rule · 模型认为可以通过审核')
     expect(card.get('[data-suggestion-held]').text()).toBe('留给你你选了「只给建议」')
+  })
+
+  it('says once that no model is connected, and offers 接入 on every role', async () => {
+    rolesPayload = roles({ connections: {}, roles: ['assistant', 'bole', 'jefa', 'tonborg', 'semantic']
+      .map(role => ({ role, state: 'not_configured', answeredBy: role === 'semantic' ? null : 'current_session' })) })
+    const wrapper = await mountPage()
+    expect(wrapper.get('[data-model-list-empty]').text()).toBe('还没有接模型。接一个，FULI 就能按意思找和整理。')
+    expect(wrapper.findAll('[data-model-connection-id]')).toHaveLength(0)
+    expect(wrapper.findAll('[data-model-role-edit]').map(button => button.text())).toEqual(['接入', '接入', '接入', '接入', '接入'])
+  })
+
+  it('lists a model two roles share once, with both and Astro\'s allowed tasks as who uses it, and opens a use', async () => {
+    const shared = { id: 'local-qwen', protocol: 'openai_chat', endpointHost: '127.0.0.1:11434', model: 'qwen-test', secretRef: 'local-ref' }
+    rolesPayload = roles()
+    rolesPayload.roles[0] = { role: 'assistant', state: 'enabled', answeredBy: 'model_api', connection: shared,
+      allowedOperations: ['conversation_attribution', 'retrieval_terms'] } as never
+    rolesPayload.roles[2] = { role: 'jefa', state: 'disabled', answeredBy: 'current_session', connection: shared } as never
+    const wrapper = await mountPage()
+    const rows = wrapper.findAll('[data-model-connection-id]')
+    expect(rows.map(row => row.attributes('data-model-connection-id'))).toEqual(['local-qwen'])
+    expect(rows[0]!.get('code').text()).toBe('qwen-test')
+    expect(rows[0]!.findAll('[data-model-use-chip]').map(chip => chip.text())).toEqual(['Astro', '补检索词', 'Jefa', 'Tonborg'])
+    // A use that is off stays listed, quieter, and says so.
+    expect(rows[0]!.get('[data-model-use-chip="jefa"]').attributes('title')).toBe('已停用')
+    expect(rows[0]!.get('[data-model-use-chip="assistant"]').attributes('title')).toBeUndefined()
+    expect(wrapper.get('[data-retrieval-terms] [data-model-use-state]').text()).toBe('已打开')
+    expect(wrapper.get('[data-dreaming] [data-model-use-state]').text()).toBe('未打开')
+    expect(wrapper.get('[data-dreaming] [data-model-use-model]').text()).toBe('qwen-testAstro 的模型')
+    // An Astro task opens Astro's details.
+    await rows[0]!.get('[data-model-use-chip="retrieval_terms"]').trigger('click')
+    expect(wrapper.get('[data-model-use-details] h2').text()).toBe('Astro')
+    await wrapper.get('[data-model-details-edit]').trigger('click')
+    expect(wrapper.find('[data-model-use-details]').exists()).toBe(false)
+    expect(wrapper.get('[data-model-role-dialog]').text()).toContain('这个连接也用于 Jefa, Tonborg')
   })
 
   it('names its pending reads with GrowthLoading', async () => {

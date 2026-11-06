@@ -55,7 +55,9 @@ RuntimeReport parseCliStatus(String stdout) {
     return const RuntimeReport(RuntimeState.unknown, error: 'fuli status printed invalid JSON.');
   }
   if (status is! Map) return const RuntimeReport(RuntimeState.unknown, error: 'fuli status printed invalid JSON.');
-  return RuntimeReport(_state(status['status']), consolePort: _consolePort(status));
+  final console = status['console'];
+  return RuntimeReport(_state(status['status']), consolePort: _consolePort(status),
+      crashed: console is Map && console['crashed'] == true);
 }
 
 Map? _lastJsonLine(String stdout) {

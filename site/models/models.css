@@ -1,0 +1,36 @@
+/* The model guide (/models/): its own pieces over guide-page.css and the :root tokens in style.css. */
+.mode-grid, .use-grid { display: grid; gap: clamp(14px, 2vw, 22px); }
+.mode-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 960px; }
+.use-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); align-items: start; }
+
+.card-note { color: var(--muted) !important; font-size: 14px; }
+.use-card h3 { padding-right: 36px; }
+
+.guide-card dl { display: grid; gap: 16px; margin: 20px 0 0; padding-top: 18px; border-top: 1px solid var(--line); }
+.guide-card dt { color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: .04em; }
+.guide-card dd { margin: 4px 0 0; font-size: 15px; overflow-wrap: anywhere; }
+.guide-card dd p + p { margin-top: 6px; }
+.guide-card .pending { color: var(--faint); }
+.results { display: grid; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }
+.results li { display: grid; gap: 2px; padding: 10px 14px; border-radius: 10px; background: var(--paper); }
+.results b { font-size: 14px; font-weight: 500; font-family: var(--mono); }
+.results li:last-child b { font-family: var(--sans); }
+.results span { color: var(--ink-soft); font-size: 14px; }
+
+/* The playful touch: a small gold bolt that lights as its card scrolls into view. */
+/* Its gold is the page's own, not the logo's (--fuli-logo-* stays logo-only). Browsers
+   without scroll-driven animations, and reduced motion, show it lit and still. */
+.bolt { position: absolute; top: 26px; right: 26px; width: 22px; height: 22px; fill: #c99a3b; }
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .bolt { animation: bolt-light linear both; animation-timeline: view(); animation-range: entry 10% cover 40%; }
+  }
+}
+@keyframes bolt-light { from { opacity: .2; transform: scale(.82) rotate(-8deg); } }
+
+@media (max-width: 880px) {
+  .mode-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 480px) {
+  .bolt { top: 22px; right: 18px; }
+}

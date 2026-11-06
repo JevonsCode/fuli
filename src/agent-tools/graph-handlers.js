@@ -10,6 +10,8 @@ import { reportAgentService } from '../agent-services/agent-report.js';
 import { AGENT_WORKFLOW_HANDLERS } from '../agent-workflows/agent-tools.js';
 import { WORK_SURFACE_HANDLERS } from '../work-surfaces/agent-tools.js';
 import { DELEGATION_HANDLERS } from '../agent-delegation/agent-tool.js';
+import { DIAGNOSTIC_HANDLERS } from '../diagnostics/agent-tool.js';
+import { OLD_DATA_HANDLERS } from '../old-data/agent-tools.js';
 import { agentNamingStyleAnswer } from '../agent-naming/naming-style.js';
 
 // These tools read or change the two local stores that can retain deleted
@@ -30,6 +32,8 @@ const HANDLERS = Object.freeze({
   ...AGENT_WORKFLOW_HANDLERS,
   ...WORK_SURFACE_HANDLERS,
   ...DELEGATION_HANDLERS,
+  ...DIAGNOSTIC_HANDLERS,
+  ...OLD_DATA_HANDLERS,
   control_project_agent_task_run: (app, input) => app.controlProjectAgentTaskRun({ ...input, agentInvocation: true }),
   // An Agent reads Tonborg's records without their words (rec#50, judgment/agent-view.js).
   list_judgments: (app, input) => app.judgment.agent.records(input),
@@ -183,7 +187,8 @@ const HANDLERS = Object.freeze({
     async () => app.upsertPersonalProject({ ...input, writer: await app.agentProfileWriter(input) })),
   list_personal_projects: (app, input) => app.listPersonalProjects(input),
   upsert_project_agent: (app, input) => captureGuard(app, { sourceApplication: input?.sourceApplication,
-    personalProjectId: input?.personalProjectId ?? null }, () => app.upsertProjectAgent(input)),
+    personalProjectId: input?.personalProjectId ?? null },
+    async () => app.upsertProjectAgent({ ...input, writer: await app.agentProfileWriter(input) })),
   rename_project_agent: (app, input) => app.renameProjectAgent(input),
   list_project_agents: (app, input) => app.listCurrentProjectAgents(input),
   get_project_agent: (app, input) => app.getProjectAgent(input),

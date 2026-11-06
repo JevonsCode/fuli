@@ -16,9 +16,17 @@ import { projectSelectOptions } from './project-options'
 import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import AgentHand from '@/features/project-agents/AgentHand.vue'
 import AgentName from '@/features/agent-profile/AgentName.vue'
-import { agentResponsibility, fuzzyMatch } from '@/features/agent-profile/profile-model'
+import { agentProfilePath, agentResponsibility, fuzzyMatch } from '@/features/agent-profile/profile-model'
+import { builtInRole } from '@/features/agent-profile/role-names'
 import { recruitmentStatusLabel, taskStatusLabel, taskStatusTone } from '@/features/project-agents/task-labels'
 import TaskReason from '@/features/project-agents/TaskReason.vue'
+import { useConsoleStore } from '@/stores/console'
+import { dismissalBlock, readProjectLeads } from './bole-dismissal'
+import BoleDismissDialog from './BoleDismissDialog.vue'
+import BolePerformanceDialog from './BolePerformanceDialog.vue'
+import BolePerformanceSummary from './BolePerformanceSummary.vue'
+import { refreshEmployeeCatalog } from './catalog'
+import { useBoleScoreCards } from './useBoleScoreCards'
 import { useWorkbenchToolbarActions } from './workbench-toolbar'
 
 type UnknownRecord = Record<string, unknown>
@@ -63,6 +71,11 @@ const partialError = ref(false)
 const agentsReadFailed = ref(false)
 const recruitmentsReadFailed = ref(false)
 const toolbarActions = useWorkbenchToolbarActions()
+const store = useConsoleStore()
+const { reads: scoreCards, reading: scoreCardsReading, readAll: readScoreCards, retry: retryScoreCard } = useBoleScoreCards()
+const projectLeads = ref(new Set<string>())
+const performanceAgentId = ref('')
+const dismissingAgentId = ref('')
 const activeView = ref<'people' | 'history'>('people')
 const search = ref('')
 const roleFilter = ref('')
@@ -94,16 +107,17 @@ const distribution = computed(() => {
     .sort(([left], [right]) => sortIndex(order, left) - sortIndex(order, right))
     .map(([type, count]) => ({ type, count, label: typeLabel(type) }))
 })
-const agentRows = computed(() => activeAgents.value.map((agent) => ({
-  ...agent,
-  task: agent.workStatus ? (openStatuses.has(agent.workStatus) && agent.currentTaskId
-    ? tasks.value.find((task) => task.id === agent.currentTaskId) ?? {
+const agentRows = computed(() => activeAgents.value.map((agent) => {
+  const agentOpenTasks = openTasks.value.filter((task) => task.agentIds.includes(agent.id))
+  const task = agent.workStatus ? (openStatuses.has(agent.workStatus) && agent.currentTaskId
+    ? tasks.value.find((item) => item.id === agent.currentTaskId) ?? {
       id: agent.currentTaskId, title: agent.currentTaskId, status: agent.workStatus,
       projectId: '', agentIds: [agent.id], updatedAt: '',
-    } : undefined) : openTasks.value
-    .filter((task) => task.agentIds.includes(agent.id))
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0],
-})))
+    } : undefined) : [...agentOpenTasks].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]
+  return { ...agent, task, dismissalBlock: dismissalBlock({
+    id: agent.id, hasOpenTask: Boolean(task) || agentOpenTasks.length > 0, leadsProject: projectLeads.value.has(agent.id),
+  }) }
+}))
 const roleFilterOptions = computed(() => [
   { value: '', label: t('employees.bole.allRoles') },
   ...distribution.value.map((item) => ({ value: item.type, label: item.label, count: item.count })),
@@ -161,6 +175,8 @@ async function load() {
   partialError.value = false
   agentsReadFailed.value = false
   recruitmentsReadFailed.value = false
+  projectLeads.value = new Set()
+  void readScoreCards(props.personalSpaceId, [])
   if (!props.personalSpaceId) { loading.value = false; return }
   loading.value = true
   const query = new URLSearchParams({ personalSpaceId: props.personalSpaceId })
@@ -177,6 +193,31 @@ async function load() {
   agentsReadFailed.value = results[0].status === 'rejected'
   recruitmentsReadFailed.value = results[2].status === 'rejected'
   loading.value = false
+  void readScoreCards(props.personalSpaceId, activeAgents.value.map((agent) => agent.id))
+  void readLeads(current)
+}
+
+// Who cannot leave yet because they lead a project, read only for the projects
+// of Agents who could otherwise leave.
+async function readLeads(current: number) {
+  const candidates = activeAgents.value.filter((agent) => !builtInRole(agent.id))
+  const leads = await readProjectLeads(props.personalSpaceId, [...new Set(candidates.flatMap((agent) => agent.projectIds))])
+  if (current === requestVersion) projectLeads.value = leads
+}
+
+function dismissLabel(agent: { name: string; dismissalBlock: string | null }) {
+  return agent.dismissalBlock
+    ? t(`employees.bole.dismissal.blocked.${agent.dismissalBlock}`, { name: agent.name })
+    : t('employees.bole.dismissal.title', { name: agent.name })
+}
+
+// The record stays, archived: recruitment history keeps its name and every count follows the active list.
+function finishDismissal() {
+  const agentId = dismissingAgentId.value
+  dismissingAgentId.value = ''
+  agents.value = agents.value.map((agent) => agent.id === agentId ? { ...agent, status: 'archived' } : agent)
+  store.notify(t('employees.bole.dismissal.done', { name: agentName(agentId) }), { to: agentProfilePath(props.personalSpaceId, agentId) })
+  void refreshEmployeeCatalog(props.personalSpaceId)
 }
 
 function record(value: unknown): UnknownRecord {
@@ -302,6 +343,7 @@ function formattedDate(value: string) {
           <UiSegmented v-model="roleFilter" class="bole-role-segmented" :label="t('employees.bole.distribution')" :options="roleFilterOptions" />
           <Button v-if="filtersActive" size="sm" variant="ghost" class="bole-clear" @click="clearFilters">{{ t('employees.bole.clearFilters') }}</Button>
           <span v-if="filtersActive && !loading" class="bole-result-count" role="status">{{ t('employees.bole.resultCount', { count: activeView === 'people' ? filteredAgents.length : filteredRecruitments.length }) }}</span>
+          <GrowthLoading v-if="scoreCardsReading && activeView === 'people'" variant="inline" :label="t('employees.bole.performance.readingTeam')" />
           <dl class="bole-summary" :aria-label="t('employees.bole.overview')">
             <div data-testid="people-working"><dt>{{ t('employees.bole.workingNow') }}</dt><dd>{{ shownCount(workingAgentIds.size, agentsReadFailed) }}</dd></div>
             <div><dt>{{ t('employees.bole.coveredProjects') }}</dt><dd>{{ shownCount(coveredProjectIds.size, agentsReadFailed) }}</dd></div>
@@ -327,9 +369,16 @@ function formattedDate(value: string) {
                 <template v-if="agent.task"><Badge class="bole-status" :variant="taskStatusTone(agent.task.status)">{{ taskStatusLabel(agent.task.status) }}</Badge><p>{{ agent.task.title }}</p></template>
                 <p v-else class="is-idle">{{ t('employees.bole.idle') }}</p>
               </div>
-              <div class="bole-agent-projects">
-                <template v-if="agent.projectIds.length"><span v-for="id in agent.projectIds.slice(0, 2)" :key="id">{{ projectName(id) }}</span><details v-if="agent.projectIds.length > 2"><summary>{{ t('employees.bole.moreProjects', { count: agent.projectIds.length - 2 }) }}</summary><span v-for="id in agent.projectIds.slice(2)" :key="id">{{ projectName(id) }}</span></details></template>
-                <span v-else>{{ agent.task?.projectId ? projectName(agent.task.projectId) : t('employees.bole.noProject') }}</span>
+              <BolePerformanceSummary :read="scoreCards[agent.id]" />
+              <div class="bole-agent-foot">
+                <div class="bole-agent-projects">
+                  <template v-if="agent.projectIds.length"><span v-for="id in agent.projectIds.slice(0, 2)" :key="id">{{ projectName(id) }}</span><details v-if="agent.projectIds.length > 2"><summary>{{ t('employees.bole.moreProjects', { count: agent.projectIds.length - 2 }) }}</summary><span v-for="id in agent.projectIds.slice(2)" :key="id">{{ projectName(id) }}</span></details></template>
+                  <span v-else>{{ agent.task?.projectId ? projectName(agent.task.projectId) : t('employees.bole.noProject') }}</span>
+                </div>
+                <div class="bole-agent-actions">
+                  <Button size="sm" variant="ghost" data-bole-open-performance :aria-label="t('employees.bole.performance.title', { name: agent.name })" @click="performanceAgentId = agent.id">{{ t('employees.bole.performance.button') }}</Button>
+                  <Button v-if="agent.dismissalBlock !== 'built_in'" size="sm" variant="ghost" class="text-destructive" data-bole-dismiss :disabled="Boolean(agent.dismissalBlock)" :title="dismissLabel(agent)" :aria-label="dismissLabel(agent)" @click="dismissingAgentId = agent.id">{{ t('employees.bole.dismissal.action') }}</Button>
+                </div>
               </div>
             </li>
           </ul>
@@ -353,6 +402,11 @@ function formattedDate(value: string) {
         <p v-else class="ui-empty m-0 rounded-lg border border-dashed bg-card" data-bole-empty>{{ t(filtersActive ? 'employees.bole.noMatch' : 'employees.bole.noRecruitments') }}</p>
       </TabsContent>
     </Tabs>
+
+    <BolePerformanceDialog v-if="performanceAgentId" :name="agentName(performanceAgentId)" :read="scoreCards[performanceAgentId]"
+      @close="performanceAgentId = ''" @retry="retryScoreCard(personalSpaceId, performanceAgentId)" />
+    <BoleDismissDialog v-if="dismissingAgentId" :personal-space-id="personalSpaceId" :agent-id="dismissingAgentId" :name="agentName(dismissingAgentId)"
+      @close="dismissingAgentId = ''" @dismissed="finishDismissal" />
   </div>
 </template>
 

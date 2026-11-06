@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import {
-  attentionItems, canRepair, doctorItemView, outdatedSessions, portsMovedNotice, readDoctor, repairDoctor,
+  attentionItems, canRepair, doctorItemView, outdatedSessions, portsMovedNotice, readDoctor, repairDoctor, repairingLabel,
   type DoctorReport, type DoctorRepairResult,
 } from './model'
 import DoctorOutdatedSessions from './DoctorOutdatedSessions.vue'
@@ -124,7 +124,7 @@ onBeforeUnmount(() => {
       </ul>
       <p v-if="failure" class="doctor-failure" role="alert" data-doctor-failure>{{ failure }}</p>
       <div v-if="shown && (canRepair(items) || repairing)" class="doctor-actions">
-        <Button size="sm" variant="outline" :loading="repairing" :loading-label="t('doctor.repairing')" data-doctor-repair @click="repair">
+        <Button size="sm" variant="outline" :loading="repairing" :loading-label="repairingLabel(items)" data-doctor-repair @click="repair">
           {{ t('doctor.repair') }}
         </Button>
       </div>

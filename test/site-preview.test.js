@@ -9,8 +9,8 @@ import { messages, sceneMessages } from '../site/next/translations.js';
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 // The preview page is built only while the package version is a prerelease, so these
 // tests build a synthetic one; the stable package version gets the no-preview page.
-const version = '0.23.0-beta.1';
-const pages = siteVersion => createSitePages({ home: read('../site/index.html'), preview: read('../site/next/index.html'), version: siteVersion });
+const version = '0.24.0-beta.1';
+const pages = siteVersion => createSitePages({ home: read('../site/index.html'), preview: read('../site/next/index.html'), models: read('../site/models/index.html'), tech: read('../site/tech/index.html'), guide: read('../site/guide/index.html'), version: siteVersion });
 const files = pages(version);
 const base = 'https://xn--8ovp9s.xn--m8txu.com/fuli/';
 const home = parseHTML(read('../site/index.html')).document;
@@ -106,13 +106,13 @@ test('the stable page links to the preview page in its own language', () => {
 });
 
 test('a stable version has no newer preview, so /next/ says so and links home in its language', () => {
-  const site = pages('0.22.0');
+  const site = pages('0.23.0');
   for (const [route, locale] of [['', 'zh-CN'], ['zh/', 'zh-CN'], ['en/', 'en']]) {
     const { document } = parseHTML(site.get(`next/${route}index.html`));
     assert.equal(document.documentElement.lang, locale);
     assert.match(document.querySelector('meta[name="robots"]').content, /noindex/);
     assert.equal(document.querySelector('link[rel="canonical"]').href, base + route);
-    assert.ok(document.querySelector('main p').textContent.includes('0.22.0'));
+    assert.ok(document.querySelector('main p').textContent.includes('0.23.0'));
     assert.deepEqual([...document.querySelectorAll('a')].map(link => link.href), [base + route]);
     assert.equal(document.querySelector('.preview-changes, [data-preview-version], .terminal'), null);
     if (locale === 'en') assert.doesNotMatch(document.documentElement.textContent, /[㐀-鿿]/);

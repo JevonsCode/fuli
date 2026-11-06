@@ -320,7 +320,7 @@ def test_the_console_route_takes_only_the_human_review_actor():
     assert calls == []
 
 
-# Evidence from another session (graph 15). The task's lead saying the task
+# Evidence from another session (graph 19). The task's lead saying the task
 # moves on is the Agent's word and ends the block; other work by one of its
 # Agents only marks it probably resolved, for the person to confirm.
 def lead_row(**task_changes):

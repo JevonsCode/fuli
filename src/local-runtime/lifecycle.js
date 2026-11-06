@@ -162,6 +162,9 @@ export async function inspectLocalRuntime(input, dependencies = {}) {
       status: consoleReady ? 'ready' : processAlive ? 'unverified' : 'stopped',
       url: stateLooksOwned ? state.url : `http://127.0.0.1:${input.port}`,
       pid: processAlive ? state.pid : null,
+      // A stop removes the state file, so a state left behind by a dead process
+      // means nobody asked it to stop: the desktop client starts it again.
+      ...(stateLooksOwned && !processAlive ? { crashed: true } : {}),
       ...(stateLooksOwned && state.lan === true
         ? { lan: true, lanUrls: safeLanUrls(state.lanUrls) }
         : {})

@@ -13,6 +13,7 @@ import { AGENT_SERVICES_FORMAT } from '../agent-services/store.js';
 import { AGENT_WORKFLOWS_FORMAT } from '../agent-workflows/store.js';
 import { RECALL_IMPRESSIONS_FORMAT } from '../knowledge-impressions/store.js';
 import { AGENT_AVATARS_FORMAT } from '../agent-avatars/store.js';
+import { PROJECT_CHANGE_LOG_FORMAT } from '../project-change-log/store.js';
 import { WORK_SURFACES_FORMAT } from '../work-surfaces/store.js';
 import { EMPLOYEE_MANAGEMENT_FORMAT } from '../employees/management-policy.js';
 import { JEFA_BOARD_FORMAT } from '../employees/builtin/jefa/board-store.js';
@@ -47,9 +48,13 @@ import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-st
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
 import { CLIENT_LINKS_STATE_FORMAT } from '../client-links/registry.js';
 import { SESSION_CLIENT_FORMAT } from '../agent-kits/session-clients.js';
+import { ENTRY_PROMPT_FORMAT } from '../agent-delegation/entry-prompts.js';
 import { PERSON_PROFILE_FORMAT } from '../person-profile/port.js';
 import { AGENT_DELEGATION_FORMAT } from '../agent-delegation/operation-log.js';
 import { AGENT_DELEGATION_POLICY_FORMAT } from '../agent-delegation/policy-store.js';
+import { DEBUG_TURN_FORMAT, DEBUG_TURN_PENDING_FORMAT } from '../debug-turns/store.js';
+import { SESSION_MIGRATION_NOTICE_DIRECTORY, SESSION_MIGRATION_NOTICE_FORMAT } from '../graphiti/session-migration-notices.js';
+import { DIAGNOSTICS_DIRECTORY, inspectDiagnosticEvents } from '../diagnostics/event-log.js';
 
 // Every FULI store kept in one data directory, by the path its owner opens
 // (rec#17 D-09). Labels are relative to the data directory, so a report names
@@ -77,6 +82,8 @@ const sqliteStores = () => [
   ['recall-impressions.sqlite', RECALL_IMPRESSIONS_FORMAT],
   // Each Agent's look as the person chose it, every earlier choice kept (rec#11 D-89).
   ['agent-avatars.sqlite', AGENT_AVATARS_FORMAT],
+  // Who changed which field of a project's profile and when, with before and after text; never pruned.
+  ['project-change-log.sqlite', PROJECT_CHANGE_LOG_FORMAT],
   // 全部暂停 snapshots of every FLA's work surfaces and each pause and resume (rec#11 D-85).
   ['work-surfaces.sqlite', WORK_SURFACES_FORMAT],
   // Each console change an FLA made for the person under their AI permissions (rec#11 D-81); never pruned.
@@ -136,7 +143,21 @@ const jsonDirectories = () => [
   ['capture-session-pause/pins/on', CAPTURE_SESSION_PAUSE_FORMAT],
   ['capture-session-pause/pins/off', CAPTURE_SESSION_PAUSE_FORMAT],
   // Which client each session ran in, as the session launcher classified it (rec#11 D-79).
-  ['session-clients', SESSION_CLIENT_FORMAT]
+  ['session-clients', SESSION_CLIENT_FORMAT],
+  // The prompt of the session's current hook-entered task, until its checkpoint (rec#80 relay check).
+  ['entry-prompts', ENTRY_PROMPT_FORMAT],
+  // The #fulidebug turn records the person reads in Settings › 系统, newest 20 within 50 MB; local only.
+  ['debug-turns', DEBUG_TURN_FORMAT],
+  // The turn a #fulidebug prompt began, until its Stop records it.
+  ['debug-turns/pending', DEBUG_TURN_PENDING_FORMAT],
+  // A person's confirmed session migration until that session's next task entry claims it (rec#82).
+  [SESSION_MIGRATION_NOTICE_DIRECTORY, SESSION_MIGRATION_NOTICE_FORMAT]
+];
+// Append-only logs whose every line carries its own version: inspected, never
+// migrated or restored (a line this FULI does not read is skipped and counted).
+const logStores = () => [
+  // FULI's runtime failures (rec#73), at most four rotated files of about 1 MB.
+  [DIAGNOSTICS_DIRECTORY, inspectDiagnosticEvents]
 ];
 // The worst state of a directory's records names the directory's state.
 const STATE_ORDER = ['unavailable', 'newer_format', 'half_applied', 'pending_confirmation', 'unsupported',
@@ -156,7 +177,8 @@ export function inspectLocalStores(dataDir) {
   return [
     ...sqliteStores().map(([label, format]) => ({ label, ...inspectSqliteStore(join(dataDir, label), format) })),
     ...jsonStores().map(([label, format]) => ({ label, ...inspectJsonStore(join(dataDir, label), format) })),
-    ...jsonDirectories().map(([label, format]) => ({ label, ...inspectJsonDirectory(join(dataDir, label), format) }))
+    ...jsonDirectories().map(([label, format]) => ({ label, ...inspectJsonDirectory(join(dataDir, label), format) })),
+    ...logStores().map(([label, inspect]) => ({ label, ...inspect(dataDir) }))
   ];
 }
 

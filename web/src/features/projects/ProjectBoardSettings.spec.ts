@@ -1,5 +1,5 @@
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi, onTestFinished } from 'vitest'
 
 const getJson = vi.hoisted(() => vi.fn())
 const postJson = vi.hoisted(() => vi.fn())
@@ -76,7 +76,15 @@ describe('project board settings', () => {
     expect(wrapper.text()).toContain('项目看板已保存。')
   })
 
+  // Jevons 11-04: Jefa runs one kind of board, so there is nothing to choose.
+  it('asks for a board type only when the project has its own manager', async () => {
+    const jefa = await setup()
+    expect(jefa.findComponent(RadioGroup).exists()).toBe(false)
+  })
+
   it('checks an external link before saving it', async () => {
+    Object.assign(untouched, { managerAgentId: 'synthetic-manager' })
+    onTestFinished(() => { Object.assign(untouched, { managerAgentId: null }) })
     const wrapper = await setup()
     wrapper.getComponent(RadioGroup).vm.$emit('update:modelValue', 'external')
     await flushPromises()
@@ -92,7 +100,7 @@ describe('project board settings', () => {
     expect(configureCall().board).toEqual({ kind: 'external', external: { url: 'https://project.example.test/board', label: '飞书项目' } })
   })
 
-  it('recruits a new manager with the 管理 occupation and makes it the manager in its assignment', async () => {
+  it('recruits a new manager with the 项目经理 occupation and makes it the manager in its assignment', async () => {
     const wrapper = await setup()
     await wrapper.get('[data-action="open-recruit"]').trigger('click')
     expect((wrapper.get('[data-recruit-name]').element as HTMLInputElement).value).toBe('活动项目经理')
@@ -101,7 +109,7 @@ describe('project board settings', () => {
 
     const [url, agent] = putJson.mock.calls[0]!
     expect(url).toBe('/api/project-agents')
-    expect(agent).toMatchObject({ personalSpaceId: 'space-a', personalProjectId: null, occupation: { role: 'management', tags: [] },
+    expect(agent).toMatchObject({ personalSpaceId: 'space-a', personalProjectId: null, occupation: { role: 'project_manager', tags: [] },
       profile: { name: '活动项目经理', status: 'active' } })
     const assignment = postJson.mock.calls.find(([target]) => target === '/api/project-agent-assignments')![1]
     expect(assignment).toMatchObject({ personalProjectId: 'project-a', agentId: agent.agentId, projectManager: { board: { kind: 'builtin', columns: [] } } })

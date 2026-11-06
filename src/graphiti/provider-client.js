@@ -1,4 +1,5 @@
 import { ApplicationError } from '../app/application-error.js';
+import { FULI_VERSION } from '../package-metadata.js';
 import { activeAgentRequestSignal } from '../app/agent-request-context.js';
 import { graphReadPath, preferenceConflictsPath, publicationDraftsPath } from './knowledge-reader.js';
 import { preferenceTaskSession } from './preference-task-scope.js';
@@ -924,6 +925,42 @@ export class GraphitiProviderClient {
     );
   }
   search(input) { return this.#request('/v1/search', { method: 'POST', body: input }); }
+  // rec#88: the meaning index. Node embeds the pending texts with the model a
+  // person connected and hands the vectors back; ordinary access token.
+  semanticPending({ personalSpaceId, model, limit, after }) {
+    return this.#request('/v1/semantic/pending', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, model, limit, after }
+    });
+  }
+  writeSemanticVectors({ personalSpaceId, model, items }) {
+    return this.#request('/v1/semantic/vectors', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, model, items }
+    });
+  }
+  semanticStatus({ personalSpaceId, model }) {
+    return this.#request('/v1/semantic/status', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, model }
+    });
+  }
+  // rec#92: retrieval terms for old knowledge. Node asks a model for the other
+  // ways someone would ask for each item and stores them beside it; ordinary
+  // access token, no version and nothing a person confirms.
+  retrievalCandidates({ personalSpaceId, personalProjectId, limit, after, missingOnly }) {
+    return this.#request('/v1/retrieval/candidates', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, personal_project_id: personalProjectId,
+        limit, after, missing_only: missingOnly }
+    });
+  }
+  writeRetrievalTerms({ personalSpaceId, items }) {
+    return this.#request('/v1/retrieval/terms', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, items }
+    });
+  }
+  retrievalStats({ personalSpaceId, personalProjectId }) {
+    return this.#request('/v1/retrieval/stats', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, personal_project_id: personalProjectId }
+    });
+  }
   collaborationPreferences(
     personalSpaceId,
     personalProjectId = null,
@@ -976,7 +1013,8 @@ export class GraphitiProviderClient {
     signal: requestSignal = activeAgentRequestSignal(),
     timeoutMs = this.requestTimeoutMs
   } = {}) {
-    const headers = { accept: stream ? 'text/event-stream' : 'application/json' };
+    // The provider names an older connection in its refusals by this (rec#74).
+    const headers = { accept: stream ? 'text/event-stream' : 'application/json', 'x-fuli-client-version': FULI_VERSION };
     if (authenticated) headers.authorization = `Bearer ${this.accessToken}`;
     if (workflowObservation) {
       headers['x-fuli-workflow-observation-token'] = this.#workflowObservationToken;

@@ -140,6 +140,8 @@ async def test_single_confirmation_records_server_time_without_changing_content(
         }],
         [{'item_id': 'written'}],  # the compare-and-set write matched
         [],
+        [],  # write-time supersession: no preference it may replace
+        [],  # write-time supersession: nothing older it may replace
     ])
     store = StoreStub(driver)
     request = KnowledgeRevisionCreate(
@@ -193,6 +195,8 @@ async def test_a_persons_confirmation_clears_attention_and_keeps_the_negative_ev
         [],  # no earlier versions: this confirmation reviews no rewrite
         [{'item_id': 'written'}],  # the compare-and-set write matched
         [],  # the revision record
+        [],  # write-time supersession: no preference it may replace
+        [],  # write-time supersession: nothing older it may replace
         [{'human_change_version': 1}],  # the human-change audit
     ])
     request = KnowledgeRevisionCreate(
@@ -302,6 +306,17 @@ async def test_historical_knowledge_can_link_to_a_current_replacement_with_audit
     assert history_parameters['action'] == 'link_replacement'
 
 
+# After a batch, for each item a preference it may replace, then the entity's
+# older candidates and the relationship's keyed value and older candidates:
+# nothing to replace or queue.
+SUPERSESSION_READS = ([], [], [], [], [])
+
+
+def batch_query(driver):
+    assert all('write-time supersession' in query for query, _ in driver.calls[-5:])
+    return driver.calls[-6]
+
+
 @pytest.mark.asyncio
 async def test_batch_confirmation_updates_one_source_group_with_individual_revision_history():
     driver = SequentialDriver([
@@ -328,6 +343,7 @@ async def test_batch_confirmation_updates_one_source_group_with_individual_revis
         UNCHANGED_SINCE_READ['entity-1'],
         UNCHANGED_SINCE_READ['relationship-1'],
         [{'confirmed_count': 2}],
+        *SUPERSESSION_READS,
     ])
     store = StoreStub(driver)
     request = KnowledgeBatchConfirmationCreate(
@@ -360,7 +376,7 @@ async def test_batch_confirmation_updates_one_source_group_with_individual_revis
         request,
     )
 
-    query, parameters = driver.calls[-1]
+    query, parameters = batch_query(driver)
     assert 'valid_count = size(items)' in query
     assert "action: 'batch_confirm'" in query
     assert query.count("ORDER BY 'entity:' + row.item_id") == 1
@@ -411,6 +427,7 @@ async def test_batch_confirmation_lifts_a_negative_feedback_block_and_keeps_it_i
         UNCHANGED_SINCE_READ['entity-1'],
         UNCHANGED_SINCE_READ['relationship-1'],
         [{'confirmed_count': 2}],
+        *SUPERSESSION_READS,
     ])
 
     await confirm_knowledge_batch(StoreStub(driver), {'id': 'principal-1'},
@@ -435,7 +452,7 @@ async def test_batch_confirmation_lifts_a_negative_feedback_block_and_keeps_it_i
         }],
     ))
 
-    query, parameters = driver.calls[-1]
+    query, parameters = batch_query(driver)
     blocked, unrelated = parameters['items']
     assert query.count('item.fuli_negative_feedback_block_json = NULL') == 2
     assert json.loads(blocked['previous_json'])['negativeFeedbackBlock'] == block

@@ -61,6 +61,25 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('links to Tonborg\'s standards and leaves the judgment policy to its workbench', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConsoleStore()
+    store.runtimeStatus = 'ready'
+    store.state = { mode: 'connected', activePersonalSpaceId: 'space-a', personalSpaces: [{ id: 'space-a', name: '我' }], personalProjects: [], projects: [], subscriptions: [] } as never
+    const fetchSettings = vi.fn(async (input: unknown) => String(input) === '/api/system/settings'
+      ? Response.json({ configured, active: configured, restartRequired: false })
+      : Response.json({}, { status: 503 }))
+    vi.stubGlobal('fetch', fetchSettings)
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
+    await flushPromises()
+
+    expect(wrapper.get('[data-open-judgment-standards]').attributes('href')).toBe('/employees/tonborg?view=standards')
+    expect(wrapper.find('.judgment-policy-fields').exists()).toBe(false)
+    expect(fetchSettings.mock.calls.some(([url]) => String(url).startsWith('/api/judgment/'))).toBe(false)
+    wrapper.unmount()
+  })
+
   it('narrows the page to matching settings and says when nothing matches', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -358,7 +377,7 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('资源占用')
-    expect(wrapper.text()).toContain('1.00 GiB')
+    expect(wrapper.text()).toContain('1 GB')
     expect(wrapper.text()).toContain('个人 Neo4j')
     expect(wrapper.text()).toContain('Synthetic extension')
     expect(warnings).not.toHaveBeenCalled()

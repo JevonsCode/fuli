@@ -106,7 +106,7 @@ const next = computed(() => {
         :status-label="statusLabel" :next="next" :flying="flying" :partial="tasks.data?.partial === true" @cleared="blockerCleared" />
       <WorkbenchFeed :requests="data.requestItems.value" :requests-state="requests" :request-total="requests.data?.total ?? 0"
         :running="others" :tasks-state="tasks" :done="done" :title="taskTitle" :agent-name="agentName" :owner="owner"
-        :status-label="statusLabel" :format-time="formatTime" :flying="flying" @select="select" @retry-requests="data.loadRequests" @retry-tasks="data.loadTasks" />
+        :status-label="statusLabel" :format-time="formatTime" @select="select" @retry-requests="data.loadRequests" @retry-tasks="data.loadTasks" />
     </div>
   </section>
 </template>

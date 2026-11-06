@@ -106,7 +106,7 @@ export function graphBackupDirectory(dataDir) {
   return join(dataDir, 'backups', 'graph');
 }
 
-function defaultDataDir({ platform, env, homeDir }) {
+export function defaultDataDir({ platform = process.platform, env = process.env, homeDir = homedir() } = {}) {
   if (platform === 'win32') {
     return join(nonEmpty(env.LOCALAPPDATA) ?? join(homeDir, 'AppData', 'Local'), 'Fuli');
   }

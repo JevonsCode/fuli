@@ -22,14 +22,21 @@ import { createDoctorRepair } from './doctor-repair.js';
 import { createDiagnosticsBundle } from './diagnostics-bundle.js';
 import { readGraphMigration, startGraphMigration } from './graph-migration.js';
 import { createLogRetention } from './log-retention.js';
-import { liveMcpProcesses } from '../mcp/process-registry.js';
+import { liveMcpProcesses, sessionsAwaitingRestart } from '../mcp/process-registry.js';
 import { agentKitPorts } from '../agent-kits/ports.js';
 import { sessionClientRecords } from '../agent-kits/session-clients.js';
 import { createSessionOffers } from '../agent-kits/session-offers.js';
 import { customClientStore } from '../agent-kits/custom-clients.js';
 import { createCustomClients } from './custom-client-connection.js';
 import { CODEX_HOOK_TRUST_CLIENT, createCodexHookTrust } from '../agents/codex/hook-trust.js';
+import { createTranscriptFormatProbe } from '../agents/transcript-format-registry.js';
 import { readFormatOperations } from '../data-format/operations-log.js';
+import { createModelCapture } from '../debug-turns/model-capture.js';
+import { windowsDataAcl } from './windows-data-acl.js';
+import { debugTurnStore } from '../debug-turns/store.js';
+import { runningMcpServers } from './mcp-process-scan.js';
+
+const MCP_SCAN_CACHE_MS = 5 * 60_000;
 
 export function createSystemService({
   paths,
@@ -46,7 +53,8 @@ export function createSystemService({
   clientObserver = createClientConnectionObserver({
     installer: agentKits.clientInstaller,
     customClients,
-    historyPath: join(paths.dataDir, 'client-connection-observations.json')
+    historyPath: join(paths.dataDir, 'client-connection-observations.json'),
+    awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath)
   }),
   clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller }),
   executorAdapters = new Map(),
@@ -56,6 +64,13 @@ export function createSystemService({
   previewDataFormats = null,
   // Reads Codex's hook trust from its app-server (src/agents/codex/hook-trust.js).
   codexHookTrust = createCodexHookTrust(),
+  // How much of each client's newest transcript FULI still reads (src/agents/transcript-format-registry.js).
+  transcriptFormat = createTranscriptFormatProbe(),
+  // Who can open the data directory on Windows (windows-data-acl.js).
+  dataDirAcl = windowsDataAcl(),
+  // This installation's MCP servers the OS shows running (mcp-process-scan.js).
+  scanMcpServers = runningMcpServers,
+  now = Date.now,
   runtimeBroker = createAdaptiveRuntimeBroker({
     paths,
     settings: readAdaptiveRuntimeSettings(paths.adaptiveRuntimeSettingsPath),
@@ -122,11 +137,20 @@ export function createSystemService({
   }
 
   const observeClients = () => clientObserver.observe();
-  const doctor = createDoctor({ observeClients, previewDataFormats,
+  // The client polls the doctor; the OS process list is read at most once per window.
+  let serverScan = null;
+  const runningServers = () => {
+    if (!serverScan || now() - serverScan.at >= MCP_SCAN_CACHE_MS) {
+      serverScan = { at: now(), answer: scanMcpServers(runtimeConfigPath) };
+    }
+    return serverScan.answer;
+  };
+  const doctor = createDoctor({ observeClients, previewDataFormats, runningServers,
     formatOperations: () => readFormatOperations(paths.dataDir), graphStage: () => runtimeBroker.status().stage,
-    hookTrust: async () => ({ [CODEX_HOOK_TRUST_CLIENT]: await codexHookTrust() }),
-    liveProcesses: () => liveMcpProcesses(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
+    hookTrust: async () => ({ [CODEX_HOOK_TRUST_CLIENT]: await codexHookTrust() }), transcriptFormat,
+    liveProcesses: () => liveMcpProcesses(runtimeConfigPath), awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath), latestVersion: () => versionChecker.peek(),
     lastUpdate: () => update.status(),
+    dataDirShared: () => dataDirAcl.sharedWith(paths.dataDir),
     // Only a graph that was set up has a mode; a fresh data directory has nothing to move.
     graphRuntime: () => readJson(paths.graphRuntimeStatePath, null)
       ? { mode: activeSettings().graphRuntimeMode, migration: readGraphMigration(paths) } : null,
@@ -141,6 +165,8 @@ export function createSystemService({
     settings: () => ({ configured: configuredSettings(), active: activeSettings() }) });
   const logRetention = createLogRetention({ paths });
 
+  const turnRecords = debugTurnStore(paths.dataDir);
+  const modelCapture = createModelCapture({ store: turnRecords });
   return {
     getSettings,
     updateSettings,
@@ -174,8 +200,12 @@ export function createSystemService({
     // The kept copies of FULI's logs and the person's 「清理旧日志」 (log-retention.js).
     logArchives: () => logRetention.archives(),
     clearLogArchives: () => logRetention.clearArchives(),
+    // The #fulidebug turn records the person reads in Settings › 系统 (debug-turns/store.js).
+    debugTurns: turnRecords,
+    modelCapture,
     repairDoctor: createDoctorRepair({ check: doctor.check, connectClient: clientInstaller, observeClients,
-      recordClientsReconnected: (id) => update.recordClientsReconnected(id) }),
+      recordClientsReconnected: (id) => update.recordClientsReconnected(id),
+      restrictDataDir: () => dataDirAcl.restrictToOwner(paths.dataDir) }),
     runtimeStatus: () => runtimeBroker.status(),
     acquireRuntimeLease: (input) => runtimeBroker.acquire(input),
     refreshRuntimeLease: (leaseId) => runtimeBroker.refresh(leaseId),
@@ -190,6 +220,7 @@ export function createSystemService({
     ),
     close: () => {
       logRetention.close();
+      void modelCapture.close();
       return runtimeBroker.close();
     }
   };
@@ -240,7 +271,8 @@ function settingsResult(configured, active) {
         conversationLaunchers: active.conversationLaunchers,
         notifications: active.notifications,
         agentNamingStyle: active.agentNamingStyle,
-        topicPromotion: active.topicPromotion
+        topicPromotion: active.topicPromotion,
+        updateChannel: active.updateChannel
       },
       active
     )

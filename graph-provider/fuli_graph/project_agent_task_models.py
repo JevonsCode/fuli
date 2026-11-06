@@ -96,7 +96,7 @@ ProjectAgentTokenUsageSource = Literal['executor', 'host', 'dingdong']
 # Why a blocked task left blocked without its own status report: the session
 # it was blocked in recorded more work or the person replied there, the
 # person answered its blocking request in FULI, or the person marked it
-# unblocked in the console (graph 14). Graph 15: an Agent said it resolved the
+# unblocked in the console (graph 14). Graph 19: an Agent said it resolved the
 # block from another session ('agent'), or the person confirmed a block FULI
 # saw as probably resolved ('person_confirmed').
 BlockerClearCause = Literal[

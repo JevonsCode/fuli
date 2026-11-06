@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { RouterLink } from 'vue-router'
+import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
+import { agentDisplayName, agentProfilePath } from '@/features/agent-profile/profile-model'
 import { Badge } from '@/components/ui/badge'
 import { formatRelativeTime } from '@/lib/relative-time'
 import { currentLocale, t } from '@/i18n'
@@ -66,6 +69,11 @@ const participants = computed(() => props.task.participants.map(participant => {
 function toggle(event: Event) {
   expanded.value = (event.target as HTMLDetailsElement).open
 }
+// Who worked on this task, so 工作经历 needs no separate list of partners.
+const people = computed(() => [...new Set((props.task.participants ?? []).map(person => person.agentId))].slice(0, 5).map((id) => {
+  const known = props.agents?.find(agent => agent.agentId === id)
+  return { id, name: known ? agentDisplayName(known) : id }
+}))
 </script>
 
 <template>
@@ -78,6 +86,11 @@ function toggle(event: Event) {
         <span class="task-card-meta" data-task-meta>{{ meta }}</span>
       </div>
       <div class="task-card-side">
+        <span v-if="people.length" class="task-card-people" data-task-people>
+          <RouterLink v-for="person in people" :key="person.id" :to="agentProfilePath(personalSpaceId ?? '', person.id)" :title="person.name" :aria-label="person.name">
+            <img :src="agentAvatarUrl(person.id)" alt="" />
+          </RouterLink>
+        </span>
         <Badge :variant="taskStatusTone(task.status)" data-task-status>{{ taskStatusLabel(task.status) }}</Badge>
         <TaskBlockerClear v-if="blocked && scope" :scope="scope" :title="task.title" :blocker="task.blocker!" :updated-at="task.updatedAt"
           hint="tooltip" @cleared="emit('changed')" />

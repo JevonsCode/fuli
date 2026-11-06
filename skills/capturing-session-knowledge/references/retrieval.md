@@ -17,6 +17,10 @@ Use `search_connected_knowledge` for a project-bound third-party source or expli
 public project. Keep its source sets separate and obey the project's conflict policy;
 `agent_decide` affects only the current response and never mutates or confirms a source.
 
+Every search and the automatic recall answer with current versions only. Pass
+`includeHistorical: true` only when the task is about what used to hold (an earlier port, a
+previous owner); each historical record then carries `invalid_at` and is never the current answer.
+
 Search when prior durable context can materially improve the task.
 Before saying that a stable fact is unknown or asking the user to provide it again, search
 Fuli if it may have been learned earlier. Strong triggers include URLs, deployment routes,
@@ -25,10 +29,12 @@ personal preferences. Do not search for a fully self-contained task or use Fuli 
 external state.
 
 First inspect `task_knowledge_recall` returned by the lifecycle or preference tool. Its automatic
-query plan is deliberately bounded and based on implementation trigger categories, not on a
-claim that every returned candidate supports the task. If it misses or its candidates are
-irrelevant while durable context may still matter, call `search_current_project_knowledge`
-yourself. A coding task without such a trigger may instead get `status: indexed` with a
+query plan is deliberately bounded: trigger categories (including a named convention, owner or
+"the way we" do something) plus short queries from the prompt's own clauses, not on a claim that
+every returned candidate supports the task. A `no_match` recall is one quick search, and says so in
+`next`: before taking a project value or rule (port, command, owner, convention) from repository
+files, which may be out of date, call `search_current_project_knowledge` for it yourself. Do the same
+whenever its candidates are irrelevant while durable context may still matter. A coding task without such a trigger may instead get `status: indexed` with a
 `knowledge_index`: up to five `[id, title]` pairs of matching items in the exact current project and
 `matched_in_search`, how many items that one bounded search kept, never their bodies. It is not the
 project's total: more may match a search of your own. A title is only a pointer: read the item with
@@ -109,10 +115,21 @@ wins, while equal-layer conflicting instructions remain deferred and weight cann
 
 After a retrieved personal item materially affects the final answer or a completed action, call
 `record_knowledge_usage` once for that task and item with `cited` or `applied`. Do not record
-retrieval, inspection, automatic preference injection, or unused context. Usage evidence can
+retrieval, inspection, automatic preference injection, or unused context. For an item the
+automatic `task_knowledge_recall` delivered, report the same material use in
+`checkpoint_task_knowledge` `knowledgeUsage`: the entry recall orders later candidates partly by
+how often a recalled item was used once shown. That order shift is bounded, never hides or drops an
+item, and never changes confirmation; so do not report use you did not make. Usage evidence can
 promote only to `agent_confirmed`; it never substitutes for human confirmation or makes an item
 eligible for public publication. Use the current user task's caller-stable identifier as
 `taskId` and reuse it on retries; never generate another ID to recount the same task.
+
+A task the Stop hook closes needs no report: a FULI source link in your final reply is recorded as `cited` for that item, so keep `sourceMarker` links exact. Only cite what supported the answer.
+
+This is also how an FLA grows: a reusable experience it reported counts only when a later task
+records applying it. Experiences used across several tasks appear on the FLA's page (「学会了」),
+where the person keeps or drops each; never confirm or drop your own experiences instead. When the
+person corrects your approach, report the corrected approach as an experience with its `boundary`.
 
 ## Use the Generated Taste Skill
 

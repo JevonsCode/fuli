@@ -7,6 +7,7 @@ vi.mock('@/api/client', async (importOriginal) => ({
 }))
 
 import { ApiError } from '@/api/client'
+import { setLocale } from '@/i18n'
 import DataFormatPage from './DataFormatPage.vue'
 
 const DIGEST = 'a'.repeat(64)
@@ -42,6 +43,35 @@ const mountPage = async () => {
 }
 
 describe('DataFormatPage', () => {
+  it.each([
+    ['zh-CN', '已完成的迁移', '已迁移', '将从版本 9 恢复到 8'],
+    ['en-US', 'Completed migrations', 'Migrated', 'Will restore version 9 to 8'],
+  ] as const)('distinguishes completed migration state from undo in %s', async (locale, heading, status, direction) => {
+    setLocale(locale)
+    try {
+      api.getJson.mockResolvedValue({ ...plan(), stores: [], blocked: [] })
+      const wrapper = await mountPage()
+      expect(wrapper.get('#data-format-completed').text()).toBe(heading)
+      const row = wrapper.get('[data-completed-migration]')
+      expect(row.text()).toContain(status)
+      expect(row.text()).toContain('8 → 9')
+      expect(row.text()).not.toContain('9 → 8')
+      expect(wrapper.find('[data-undo-details]').exists()).toBe(false)
+      expect(api.postJson).not.toHaveBeenCalled()
+
+      await row.get('[data-undo]').trigger('click')
+      expect(wrapper.get('[data-undo-details]').text()).toContain(direction)
+      expect(api.postJson).not.toHaveBeenCalled()
+      await wrapper.get('[data-cancel-undo]').trigger('click')
+      expect(wrapper.find('[data-undo-details]').exists()).toBe(false)
+      expect(row.text()).toContain(status)
+      expect(api.postJson).not.toHaveBeenCalled()
+      wrapper.unmount()
+    } finally {
+      setLocale('zh-CN')
+    }
+  })
+
   it('lets the person close the current completion reminders without hiding future migrations', async () => {
     const id = 'a'.repeat(64)
     api.getJson.mockResolvedValue({ ...plan(), notice: { active: [{ id,

@@ -33,7 +33,7 @@ export const anthropicMessagesAdapter = Object.freeze({
     const state = { text: '', stop: null, actualModel: null };
     const progress = () => ({ actualModel: state.actualModel, usage: usageOf(counts) });
     const sent = await postJson({ fetchImpl, signal, url: `${connection.endpoint}/messages`,
-      headers: { 'x-api-key': secret, 'anthropic-version': API_VERSION },
+      headers: { ...connection.headers, 'x-api-key': secret, 'anthropic-version': API_VERSION },
       body: {
         model: connection.model,
         max_tokens: maxOutputTokens,

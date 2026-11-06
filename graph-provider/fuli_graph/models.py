@@ -23,6 +23,7 @@ from .knowledge_audit_models import (
     KnowledgeHumanChangeItem,
     KnowledgeHumanChangeSearchRequest,
     KnowledgeHumanChangeSearchResult,
+    KnowledgeItemKey,
     KnowledgeItemKind,
     KnowledgeOperationActor,
     KnowledgeRevisionAction,
@@ -32,6 +33,7 @@ from .knowledge_audit_models import (
     PreferenceScopeChange,
 )
 from .model_base import StrictModel
+from .knowledge_semantic_query import SearchMatch, SemanticQuery
 from .knowledge_weight_models import KnowledgeWeightView
 from .provider_values import json_object
 from .project_profile_authors import AuthoredField, ProjectFieldAuthor, default_field_authors
@@ -767,6 +769,10 @@ class CommitResult(StrictModel):
     episode_id: str
     entity_ids: list[str]
     relationship_ids: list[str]
+    # Older values a confirmed keyed value ended, and older items this capture
+    # may silently replace that now wait for a person (still current).
+    superseded: list[KnowledgeItemKey] = Field(default_factory=list)
+    possibly_outdated: list[KnowledgeItemKey] = Field(default_factory=list)
 
 
 class ProposalCreate(StrictModel):
@@ -813,6 +819,7 @@ class SearchRequest(StrictModel):
     project_agent_id: str | None = Field(default=None, min_length=1, max_length=128)
     inherit_project_knowledge: bool = True
     include_personal_global: bool = False
+    semantic: SemanticQuery | None = None
 
     @field_validator('personal_project_ids')
     @classmethod
@@ -846,6 +853,8 @@ class EntitySearchResult(KnowledgeWeightView):
     type: str
     summary: str
     created_at: datetime | None = None
+    # Set only on a historical version, which a search returns when asked to.
+    invalid_at: datetime | None = None
     origin_quadrant: EpistemicQuadrant = 'known_known'
     current_quadrant: EpistemicQuadrant = 'known_known'
     epistemic_status: EpistemicStatus = 'confirmed'
@@ -883,6 +892,7 @@ class EntitySearchResult(KnowledgeWeightView):
     scope_path: list[str] = Field(default_factory=list, max_length=9)
     source_uris: list[str] = Field(default_factory=list, max_length=20)
     score: float | None = None
+    matched_by: SearchMatch = 'lexical'
 
 
 class FactResult(KnowledgeWeightView):
@@ -934,6 +944,7 @@ class FactResult(KnowledgeWeightView):
     scope_path: list[str] = Field(default_factory=list, max_length=9)
     source_uris: list[str] = Field(default_factory=list, max_length=20)
     score: float | None = None
+    matched_by: SearchMatch = 'lexical'
 
 
 class SearchResult(StrictModel):

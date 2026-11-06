@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { handleKnowledgeItemRequest } from '../src/http/knowledge-item-api-router.js';
 
 import { AUTO_CLOSE_SUMMARY, stopHookOutcome } from '../src/conversations/stop-auto-close.js';
 
@@ -82,4 +83,50 @@ test('a request to remember something is never auto-closed and says to record it
     { sessionId: 's', taskPrompt: '修一下登录页的样式。' }, { entryVia: 'hook' });
   assert.equal(ordinary.checkpoint_required, false);
   assert.equal('remember_guidance' in ordinary, false);
+});
+
+const LINK = 'http://127.0.0.1:2828/knowledge/project/space-1/directory';
+
+test('rec#88: what the reply cites through a FULI source link is recorded as use, at no cost to the model', async () => {
+  let sent;
+  const reply = `**[🌠 FULI · 知识增强](${LINK}/entity/item-a)**\n\nDone. - [Title](${LINK}/relationship/item%2Fb) and again [x](${LINK}/entity/item-a).`;
+  await stopHookOutcome({ decision: 'block', reason: 'x', task_context_token: 't', entry_via: 'hook' },
+    async (name, input) => { sent = input; }, source, { reply });
+  assert.deepEqual(sent.knowledgeUsage, [{ itemId: 'item-a', itemKind: 'entity', useKind: 'cited' },
+    { itemId: 'item/b', itemKind: 'relationship', useKind: 'cited' }]);
+});
+
+test('rec#88: a reply with no source link, or one from elsewhere, reports nothing', async () => {
+  for (const reply of [undefined, null, 'Done.', '[x](https://example.test/knowledge/project/s/directory/entity/item-a)']) {
+    let sent;
+    await stopHookOutcome({ decision: 'block', reason: 'x', task_context_token: 't', entry_via: 'hook' },
+      async (name, input) => { sent = input; }, source, { reply });
+    assert.equal(Object.hasOwn(sent, 'knowledgeUsage'), false, String(reply));
+  }
+});
+
+test('rec#88: a cited link the store refuses still closes the task', async () => {
+  const sent = [];
+  const result = await stopHookOutcome({ decision: 'block', reason: 'x', task_context_token: 't', entry_via: 'hook' }, async (name, input) => {
+    sent.push(input);
+    if (input.knowledgeUsage) throw new Error('knowledge item not found');
+  }, source, { reply: `[x](${LINK}/entity/gone)` });
+  assert.deepEqual(result, {});
+  assert.equal(sent.length, 2);
+  assert.equal(Object.hasOwn(sent[1], 'knowledgeUsage'), false);
+});
+
+test('rec#88: the console reads how often shown knowledge was used, counts only', async () => {
+  const asked = [];
+  const answer = { tasks: 4, shown: 9, used: 2, byRank: [] };
+  let body = '';
+  const response = { setHeader() {}, writeHead() {}, end(text) { body = text; } };
+  const app = { recallImpressions: { summary: (input) => { asked.push(input); return answer; } } };
+  const url = new URL('http://127.0.0.1/api/knowledge/recall-usage?personalSpaceId=space-1');
+  assert.equal(await handleKnowledgeItemRequest({ request: { method: 'GET' }, response, url, app }), true);
+  assert.deepEqual(asked, [{ personalSpaceId: 'space-1', personalProjectId: null }]);
+  assert.deepEqual(JSON.parse(body), answer);
+
+  await handleKnowledgeItemRequest({ request: { method: 'GET' }, response, url, app: {} });
+  assert.deepEqual(JSON.parse(body), { tasks: 0, shown: 0, used: 0, byRank: [] });
 });

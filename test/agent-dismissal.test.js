@@ -3,10 +3,14 @@ import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import test from 'node:test';
 
 import { connectMcp } from '../test-support/mcp-client.js';
+import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import { loadProjectAgentContinuity } from '../src/graphiti/project-agent-task-entry.js';
+import { mapHttpError } from '../src/http/error-mapping.js';
+import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
 import { upsertProjectAgent } from '../src/graphiti/project-agent-workflows.js';
 import { listenFetchableServer } from '../src/server/listen.js';
 
@@ -100,6 +104,65 @@ test('Bole dismisses through one MCP tool: a real reason in, lessons and a hando
   assert.equal(handoff.isError, undefined, JSON.stringify(handoff));
   assert.equal(handoff.structuredContent.reason, REASON);
   assert.deepEqual(handoff.structuredContent.handoff, { format: 'markdown', filename: 'handoff.md', markdown: '# Handoff\n' });
+});
+
+test('the console route passes the person\'s words to the same dismissal and keeps its refusals', async () => {
+  const writes = [];
+  let refusal = null;
+  const fetchImpl = async (url, options = {}) => {
+    const { pathname } = new URL(url);
+    if (pathname === `/v1/project-agents/${AGENT}/memory`) {
+      return Response.json(memoryView(new URL(url).searchParams.get('personal_project_id')));
+    }
+    if (pathname === `/v1/project-agents/${AGENT}` && (options.method ?? 'GET') === 'GET') return Response.json(agentRecord());
+    if (pathname === `/v1/project-agents/${AGENT}/dismissal`) {
+      if (refusal) return Response.json({ detail: refusal.detail }, { status: refusal.status });
+      const body = JSON.parse(options.body);
+      writes.push(body);
+      return Response.json({ dismissal_id: 'dismissal-1', agent_id: AGENT, agent_name: 'Synthetic engineer',
+        employee_number: '000012', occupation_role: 'engineering', project_ids: ['project-a'], lesson_count: 1,
+        handoff_filename: body.handoff.filename, handoff_characters: body.handoff.markdown.length,
+        dismissed_at: STAMP, replayed: false });
+    }
+    return Response.json({ detail: 'not found' }, { status: 404 });
+  };
+  const app = new FederatedGraphApplication({ version: 1, workspaces: [], personal: { providerUrl: 'http://127.0.0.1:8787',
+    accessToken: 'synthetic-provider-token', principalId: 'test-person', spaceId: SPACE } }, { fetchImpl });
+  const post = async (body, agentId = AGENT) => {
+    let status; let answer;
+    const request = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), { method: 'POST' });
+    const response = { writeHead(code) { status = code; }, end(text) { answer = JSON.parse(text); } };
+    const url = new URL(`http://127.0.0.1/api/project-agents/${encodeURIComponent(agentId)}/dismissal`);
+    try {
+      await handleGraphApiRequest({ request, response, url, app });
+    } catch (error) {
+      ({ status, body: answer } = mapHttpError(error));
+    }
+    return { status, body: answer };
+  };
+
+  for (const reason of [undefined, '   ', 'n/a', 'archived by user', '没有理由']) {
+    assert.equal((await post({ personalSpaceId: SPACE, reason })).status, 400, String(reason));
+  }
+  assert.equal((await post({ personalSpaceId: SPACE, reason: 'token sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789' })).status, 400);
+  assert.equal((await post({ personalSpaceId: 'other-space', reason: REASON })).status, 400, 'another space never reaches the Provider');
+  assert.deepEqual(writes, []);
+
+  const dismissed = await post({ personalSpaceId: SPACE, reason: `  ${REASON}  `, lessons: [` ${LESSON} `],
+    sourceApplication: 'claude_code', sourceSessionId: 'claimed-session' });
+  assert.equal(dismissed.status, 200);
+  assert.deepEqual([dismissed.body.status, dismissed.body.agentId, dismissed.body.lessonCount], ['dismissed', AGENT, 1]);
+  assert.deepEqual([writes[0].reason, writes[0].lessons], [REASON, [LESSON]]);
+  assert.deepEqual([writes[0].source_application, writes[0].source_session_id], [null, null],
+    'a console dismissal never claims an Agent session');
+
+  for (refusal of [{ status: 409, detail: 'Agent has 1 open task; finish, cancel or reassign them before it leaves' },
+    { status: 409, detail: 'Agent leads a project; hand off the project lead before dismissal' },
+    { status: 422, detail: 'system roles cannot be dismissed' }]) {
+    const refused = await post({ personalSpaceId: SPACE, reason: REASON });
+    assert.deepEqual([refused.status, refused.body.error], [refusal.status, refusal.detail]);
+  }
+  assert.equal(writes.length, 1);
 });
 
 test('an upsert can never archive an Agent, on any entry that reaches the workflow', async () => {

@@ -10,6 +10,7 @@ import {
   useForwardPropsEmits,
 } from "reka-ui"
 import { cn } from "@/lib/class-names"
+import { usePopupTarget } from "../popup-host"
 import { SelectScrollDownButton, SelectScrollUpButton } from "."
 
 defineOptions({
@@ -27,10 +28,11 @@ const emits = defineEmits<SelectContentEmits>()
 const delegatedProps = reactiveOmit(props, "class")
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
+const popupTarget = usePopupTarget()
 </script>
 
 <template>
-  <SelectPortal>
+  <SelectPortal :to="popupTarget">
     <SelectContent
       data-slot="select-content"
       v-bind="{ ...$attrs, ...forwarded }"

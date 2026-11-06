@@ -4,6 +4,9 @@ import test from 'node:test';
 import { parseHTML } from 'linkedom';
 import { createLanguageController, resolveLanguage } from '../site/i18n.js';
 import { messages, sceneMessages } from '../site/translations.js';
+import * as modelsCatalog from '../site/models/translations.js';
+import * as techCatalog from '../site/tech/translations.js';
+import * as guideCatalog from '../site/guide/translations.js';
 
 const html = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');
 const page = () => parseHTML(html).document;
@@ -84,4 +87,25 @@ test('both languages cover the complete page, accessibility text, metadata and s
   assert.deepEqual([...document.querySelectorAll('.terminal code, .start code')].map(node => node.textContent), commands);
   assert.match(document.querySelector('[data-i18n="start.docs"]').href, /\/README\.zh-CN\.md$/);
   assert.doesNotMatch(document.documentElement.textContent, /不按天数遗忘/);
+});
+
+for (const [name, catalog] of [['models', modelsCatalog], ['tech', techCatalog], ['guide', guideCatalog]]) test(`the ${name} guide page covers both languages with the same keys and no Chinese in English`, () => {
+  const { messages: copy, sceneMessages: scenes } = catalog;
+  assert.deepEqual(Object.keys(copy.en).sort(), Object.keys(copy['zh-CN']).sort());
+  assert.deepEqual(scenes, { 'zh-CN': {}, en: {} });
+  const document = parseHTML(readFileSync(new URL(`../site/${name}/index.html`, import.meta.url), 'utf8')).document;
+  const used = new Set();
+  for (const element of document.querySelectorAll('*')) {
+    for (const attribute of element.attributes) {
+      if (!attribute.name.startsWith('data-i18n')) continue;
+      used.add(attribute.value);
+      for (const locale of ['en', 'zh-CN']) assert.ok(copy[locale][attribute.value], `Missing ${locale}: ${attribute.value}`);
+    }
+  }
+  assert.deepEqual([...used].sort(), Object.keys(copy.en).sort(), 'every key is used on the page');
+  createLanguageController({ document, languages: ['en-US'], catalog });
+  assert.equal(document.title, copy.en['meta.title']);
+  for (const element of document.querySelectorAll('.brand, .language-switch')) element.remove();
+  assert.doesNotMatch(document.documentElement.textContent, /[\u3400-\u9fff]/);
+  assert.equal(document.querySelector(`[data-i18n="${name}.backHome"]`).href, 'https://xn--8ovp9s.xn--m8txu.com/fuli/en/');
 });

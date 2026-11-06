@@ -26,20 +26,18 @@ test('short follow-up push request still recalls the release runbook', () => {
   assert.ok(plan.queries.some((query) => /push.*commit/i.test(query)));
 });
 
-test('self-contained tasks without durable-context signals skip automatic recall', () => {
+test('rec#88: a task with no cue is searched by its own words, and a bare continue is not searched', () => {
   const plan = planTaskKnowledgeRecall('把数组按数字从小到大排序');
-
-  assert.deepEqual(plan, {
-    status: 'not_needed',
-    trigger_categories: [],
-    queries: []
-  });
+  assert.equal(plan.status, 'planned');
+  assert.deepEqual(plan.trigger_categories, ['topic']);
+  assert.ok(plan.queries.length >= 1);
+  for (const bare of ['继续', 'ok']) assert.equal(planTaskKnowledgeRecall(bare).status, 'not_needed', bare);
 });
 
 test('model token usage does not recall authentication methods', () => {
   for (const prompt of ['检查 Token 消耗成本，减少工具 Schema tokens',
     'Measure input token usage and cache token cost', '优化 Token P0']) {
-    assert.deepEqual(planTaskKnowledgeRecall(prompt).trigger_categories, [], prompt);
+    assert.deepEqual(planTaskKnowledgeRecall(prompt).trigger_categories.filter(category => category !== 'topic'), [], prompt);
   }
   assert.ok(planTaskKnowledgeRecall('How do I configure an access token for login?')
     .trigger_categories.includes('access_authentication'));
@@ -64,7 +62,7 @@ test('negated delivery instructions do not recall a release runbook', () => {
 test('comma-separated negated actions and relative where do not trigger recall', () => {
   for (const prompt of ['Do not commit, push, or create branches', 'Do not commit, push or deploy',
     'WSL Ubuntu, where `node` is installed']) {
-    assert.deepEqual(planTaskKnowledgeRecall(prompt).trigger_categories, [], prompt);
+    assert.deepEqual(planTaskKnowledgeRecall(prompt).trigger_categories.filter(category => category !== 'topic'), [], prompt);
   }
   for (const prompt of ['Where is the deploy runbook?', 'Can you find where config.json is loaded?',
     'Find where config.json is loaded', 'Show me where the API handler is defined.',
@@ -84,11 +82,7 @@ test('self-contained workflow optimization does not trigger generic runbook reca
   const prompt = '分析并优化 Analytics Dashboard Builder 的搭建、局部修改与询问速度和流程，测试 model-k3 可行性；禁止提交代码。';
   const plan = planTaskKnowledgeRecall(prompt);
 
-  assert.deepEqual(plan, {
-    status: 'not_needed',
-    trigger_categories: [],
-    queries: []
-  });
+  assert.deepEqual(plan.trigger_categories, ['topic'], 'no runbook intent; only its own words');
 });
 
 test('explicit workflow questions keep the named target in every recall query', () => {
@@ -124,9 +118,10 @@ test('a recall that ran no search carries no marker, and only a searched miss sa
     consoleUrl: 'http://127.0.0.1:2727',
     async searchKnowledge() { calls += 1; return { facts: [], entities: [] }; }
   };
+  // A search by the prompt's own words that found nothing reads as no search (rec#88).
   const notSearched = await recallTaskKnowledge(application, { personalProjectId: 'fuli' }, 'Rename the parser variable.');
   assert.equal(notSearched.status, 'not_needed');
-  assert.equal(calls, 0);
+  calls = 0;
   assert.equal('sourceMarker' in notSearched, false);
   assert.equal('noMatchSourceMarker' in notSearched, false);
   assert.match(notSearched.guidance.candidate_selection, /without markers ran no search: show no marker/);
@@ -358,4 +353,44 @@ test('a person who wants every answer checked against the files gets no confirme
     'Use the amount format we decided previously for Delta Ledger.');
   assert.equal(recall.status, 'matched');
   assert.equal('confirmed_use' in recall, false);
+});
+
+// rec#63: facts are stored under their concept; queries of file paths and
+// category words found none of them, and "no match" stopped the search.
+test('a change request full of file paths still queries the fact it names by concept', () => {
+  const plan = planTaskKnowledgeRecall('Make `fetchRate` in `src/rates.js` retry failed requests following the retry '
+    + 'policy we agreed for the rates client. Keep the signature, so tests do not wait. Add tests to `test/rates.test.js`.');
+  assert.equal(plan.status, 'planned');
+  assert.equal(plan.queries[0], 'retry failed requests policy agreed');
+  assert.ok(plan.queries.every((query) => !/tests do not wait|not wait/.test(query)), plan.queries.join(' | '));
+});
+
+test('a convention, an owner or "the way we" do something is a recall intent of its own', () => {
+  const owner = planTaskKnowledgeRecall('Add the CODEOWNERS entry for `src/ledger/` naming the team that owns the ledger code.');
+  assert.deepEqual(owner.trigger_categories, ['project_convention']);
+  assert.equal(owner.queries[0], 'codeowners naming team owns ledger');
+  assert.deepEqual(planTaskKnowledgeRecall('Add a `NegativeAmountError` following our error code convention.').queries[0],
+    'our error code convention');
+  assert.equal(planTaskKnowledgeRecall('按我们约定的重试策略改一下 fetchRate').queries[0], '按约定重试策略改 fetchrate');
+});
+
+test('a search that found nothing says it was one quick search, not the whole store', async () => {
+  const recall = await recallTaskKnowledge(recallApplication([]), { personalProjectId: 'delta' },
+    'Use the retry policy we agreed for the rates client.');
+  assert.equal(recall.status, 'no_match');
+  assert.match(recall.next, /search_current_project_knowledge/);
+  const found = await recallTaskKnowledge(recallApplication([ledgerNote('n', 'confirmed', 2)]), { personalProjectId: 'delta' },
+    'Use the amount format we decided previously for Delta Ledger.');
+  assert.equal(found.next, undefined);
+});
+
+test('trailing environment notes neither hide the prompt\'s own clauses nor take the focus slots (rec#63)', () => {
+  const task = 'Make `fetchRate` in `src/rates.js` retry failed requests following the retry policy we agreed for the rates client.';
+  const notes = 'Environment: you are running in WSL Ubuntu, where `node` is not installed; use the Windows Node 24 that is on PATH '
+    + 'as `node.exe` (for example `node.exe --test test/rates.test.js`). Do not commit, push, or create branches.';
+  const alone = planTaskKnowledgeRecall(task);
+  const withNotes = planTaskKnowledgeRecall(`${task}\n\n${notes}`);
+  assert.equal(withNotes.queries[0], alone.queries[0]);
+  assert.match(withNotes.queries[0], /retry/);
+  assert.ok(withNotes.queries.every((query) => !/WSL|Ubuntu|Windows/.test(query)), JSON.stringify(withNotes.queries));
 });

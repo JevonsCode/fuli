@@ -10,6 +10,7 @@ import { withProjectCandidate } from './assistant-project-candidate.js';
 import { withBoardMatch } from './jefa-board-match.js';
 import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 import { ATTENTION_REPLIES_GUIDANCE } from '../../packages/roundtable/src/roundtable/attention-inbox.js';
+import { AGENT_REPLIES_GUIDANCE } from '../../packages/roundtable/src/roundtable/reply-inbox.js';
 import { captureDecision } from './capture-decision.js';
 import { receiptNotices } from './capture-notice.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
@@ -17,13 +18,24 @@ import { noteEntryTask } from '../conversations/entry-budget.js';
 import { withSharedProjectList } from './shared-project-list.js';
 import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 import { standingOwnerEntry } from './task-entry-standing-owner.js';
+import { roundtableAskEntry } from './task-entry-roundtable-ask.js';
+import { isReadOnlyRefusal, readOnlyLifecycle, readOnlyTaskEntry } from './task-entry-read-only.js';
 
 export async function finishTaskEntryPreferences(application, preferences, input) {
   if (!input.agentInvocation || input.agentToolName !== 'get_collaboration_preferences') return preferences;
   if (!input.sessionId || typeof input.taskPrompt !== 'string') return { ...preferences,
     task_lifecycle: { status: 'not_started', reason: !input.sessionId ? 'native_session_required' : 'task_prompt_required',
       guidance: 'Preferences were loaded, but no task token was created. Supply the current host sessionId and taskPrompt to get_collaboration_preferences. Do not guess a session ID, use an MCP process ID or reuse an earlier task token.' } };
-  return withEntryHint(application, await beginTaskFromPreferences(application, preferences, input), input);
+  let entry;
+  try {
+    entry = await beginTaskFromPreferences(application, preferences, input);
+  } catch (error) {
+    if (!isReadOnlyRefusal(error)) throw error;
+    return { ...preferences, checkpoint_required: false, task_lifecycle: readOnlyLifecycle() };
+  }
+  // An Agent's own entry keeps no prompt; it drops what the session's earlier task kept.
+  keepEntryPrompt(application, entry, input, null);
+  return withEntryHint(application, entry, input);
 }
 
 // begin_task_context and the lifecycle hooks: the same hints, once per session each.
@@ -32,7 +44,14 @@ export async function finishTaskEntryPreferences(application, preferences, input
 export function beginTaskEntry(application, input) {
   return withSharedProjectList(async () => {
     if (input.projectPath !== undefined && input.projectPath !== null) application.listPersonalProjects().catch(() => {});
-    const entry = await beginTaskContext(application, input);
+    let entry;
+    try {
+      entry = await beginTaskContext(application, input);
+    } catch (error) {
+      if (!isReadOnlyRefusal(error)) throw error;
+      return readOnlyTaskEntry(application, input);
+    }
+    keepEntryPrompt(application, entry, input, input.taskPrompt);
     // Its task and opening writes are done: a hook deadline from here on
     // delivers the token instead of nothing (entry-budget.js).
     noteEntryTask(entry);
@@ -42,6 +61,18 @@ export function beginTaskEntry(application, input) {
     const [hinted] = await Promise.all([withEntryHint(application, entry, input), clearReplyBlockers(application, input)]);
     return hinted;
   });
+}
+
+// The prompt the relay check reads in this same turn (entry-prompts.js);
+// kept only for a hook's entry, never failing the entry.
+function keepEntryPrompt(application, entry, input, prompt) {
+  if (!application.entryPrompts || typeof entry?.taskContextToken !== 'string' || !input.sessionId) return;
+  try {
+    application.entryPrompts.enter({ token: entry.taskContextToken, sessionId: input.sessionId,
+      sourceApplication: input.sourceApplication ?? 'other' }, prompt);
+  } catch {
+    // Ignore: without it a same-turn relay asks the person again.
+  }
 }
 
 // The person replied in this session; the clear is one of its writes, so it
@@ -136,7 +167,7 @@ async function entryPreferences(application, projectResolution, {
       includeTeam ? taskJudgmentContext(application, projectResolution.personalProjectId) : null
     ]);
   });
-  const [preferences, management, [context, judgmentContext], triage, capture, formatNotices] = await Promise.all([
+  const [preferences, management, [context, judgmentContext], triage, capture, formatNotices, roundtableAsk] = await Promise.all([
     getCollaborationPreferencesWorkflow(
       application,
       projectResolution,
@@ -160,7 +191,10 @@ async function entryPreferences(application, projectResolution, {
     selection?.agent?.agentId === ASSISTANT_AGENT_ID && !projectResolution.personalProjectId
       ? triageCandidates(application) : null,
     reads.capture,
-    reads.formatNotices
+    reads.formatNotices,
+    // "去看看 / 问问 X 项目": which project's lead to ask on the roundtable (rec#71).
+    includeMessages && agentInvocation ? roundtableAskEntry(application, { taskPrompt, sessionId },
+      { personalProjectId: projectResolution.personalProjectId ?? null, agentId: selection?.agent?.agentId ?? null }) : null
   ]);
   const managedPreferences = management ? { ...preferences, project_management_context: management } : preferences;
   if (context) applyAgentAssignment(context, selection);
@@ -170,6 +204,9 @@ async function entryPreferences(application, projectResolution, {
   // Answers a person gave to this Agent's own requests while it was away.
   const answered = includeMessages && selection?.agent && projectResolution.personalProjectId && application.roundtable?.attentionReplies
     ? application.roundtable.attentionReplies(selection.agent.agentId, projectResolution.personalProjectId) : [];
+  // Other Agents' replies to asks this Agent sent, announced once; the body comes from read_agent_messages.
+  const replied = includeMessages && selection?.agent && projectResolution.personalProjectId && application.roundtable?.agentReplies
+    ? application.roundtable.agentReplies(selection.agent.agentId, projectResolution.personalProjectId) : [];
   const notices = [...[fla?.notice, group?.notice].filter(Boolean).map(receiptText),
     ...(standing?.notice ? [standing.receiptNotice] : []),
     ...receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : [],
@@ -184,6 +221,8 @@ async function entryPreferences(application, projectResolution, {
     ...(waiting.length ? { agent_messages: waiting,
       agent_messages_guidance: 'Other Agents are waiting for your answers. Reply to each with reply_agent_message.' } : {}),
     ...(answered.length ? { attention_replies: answered, attention_replies_guidance: ATTENTION_REPLIES_GUIDANCE } : {}),
+    ...(roundtableAsk ? { roundtable_ask: roundtableAsk } : {}),
+    ...(replied.length ? { agent_replies: replied, agent_replies_guidance: AGENT_REPLIES_GUIDANCE } : {}),
     agent_receipt: taskAgentReceipt(application, {
       projectId: projectResolution.personalProjectId, agentId: selection?.agent?.agentId ?? null,
       name: context?.role?.name, role: selection?.agent?.profile?.name, sourceApplication,

@@ -19,7 +19,7 @@ export const typeSafeSystemOneAdapter = Object.freeze({
   async call({ connection, secret, request, signal, fetchImpl }) {
     const unknown = { usage: reportedUsage({ definition: DEFINITION }) };
     const sent = await postJson({ fetchImpl, signal, url: `${connection.endpoint}/systemone`,
-      headers: { authorization: `Bearer ${secret}` },
+      headers: { ...connection.headers, authorization: `Bearer ${secret}` },
       body: {
         model: connection.model,
         state: { evidence: request.evidence.map(({ id, text }) => ({ id, text })) },

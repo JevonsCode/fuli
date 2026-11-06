@@ -415,13 +415,29 @@ export async function allocatedDirectorySize(root) {
       continue;
     }
     try {
-      const stats = await lstat(path);
-      total += Number.isFinite(stats.blocks) ? stats.blocks * 512 : stats.size;
+      total += allocatedBytes(await lstat(path));
     } catch {
       // Files may be replaced while the snapshot is being collected.
     }
   }
   return total;
+}
+
+// The disk a file or a whole directory takes, measured as the data directory
+// is; 0 for a link or a path that is gone.
+export async function allocatedPathSize(path) {
+  let stats;
+  try {
+    stats = await lstat(path);
+  } catch {
+    return 0;
+  }
+  if (stats.isSymbolicLink()) return 0;
+  return stats.isDirectory() ? allocatedDirectorySize(path) : allocatedBytes(stats);
+}
+
+function allocatedBytes(stats) {
+  return Number.isFinite(stats.blocks) ? stats.blocks * 512 : stats.size;
 }
 
 async function hostFilesystemStats(path) {

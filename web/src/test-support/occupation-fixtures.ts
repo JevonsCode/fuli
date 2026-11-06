@@ -11,5 +11,6 @@ export function syntheticOccupations(rows: readonly (readonly [string, string])[
 
 export const SYNTHETIC_OCCUPATIONS = syntheticOccupations([
   ['lead', '负责人'], ['product', '产品'], ['engineering', '工程'], ['design', '设计'], ['testing', '测试'],
-  ['research', '研究'], ['data', '数据'], ['writing', '写作'], ['management', '管理'], ['hr', 'Agent 资源'],
+  ['research', '研究'], ['data', '数据'], ['writing', '写作'], ['management', '管理'], ['project_manager', '项目经理'],
+  ['decision_maker', '决策员'], ['hr', 'Agent 资源'],
 ])

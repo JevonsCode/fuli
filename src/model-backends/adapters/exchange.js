@@ -68,8 +68,8 @@ export function isJsonResponse(response) {
   return /application\/json/i.test(response.headers.get('content-type') ?? '');
 }
 
-export async function readJsonBody(response) {
-  const { text, truncated } = await readBounded(response, MAX_RESPONSE_BYTES);
+export async function readJsonBody(response, { maxBytes = MAX_RESPONSE_BYTES } = {}) {
+  const { text, truncated } = await readBounded(response, maxBytes);
   if (truncated) throw new ResponseFormatError('The model response is too large');
   return JSON.parse(text);
 }

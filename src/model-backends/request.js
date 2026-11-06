@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 
-import { MODEL_BACKEND_ROLES, OPERATION_PATTERN } from './config.js';
+import { KNOWLEDGE_EMBEDDING_OPERATION, MODEL_BACKEND_ROLES, OPERATION_PATTERN, SEMANTIC_ROLE } from './config.js';
 import { DECISIONS, DEFAULT_DECISIONS } from './decision-contract.js';
 
 // Caller input of the model port. Invalid input is a programming error and
@@ -10,6 +10,12 @@ import { DECISIONS, DEFAULT_DECISIONS } from './decision-contract.js';
 // so the egress check sees it; instructions and options are operation text.
 
 export const CONNECTION_CHECK = 'connection_check';
+// The most texts one embedding call sends; a caller batches longer lists.
+const MAX_EMBEDDING_TEXTS = 64;
+const MAX_EMBEDDING_TEXT_CHARS = 20_000;
+const CHECK_TEXT = 'FULI connection check.';
+// The built-in Agents decide; the semantic role only embeds.
+const DECISION_ROLES = MODEL_BACKEND_ROLES.filter(role => role !== SEMANTIC_ROLE);
 
 const id = z.string().trim().min(1).max(256);
 const key = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/);
@@ -23,12 +29,14 @@ const outputSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('structured'), schema: z.looseObject({}) }).strict()
 ]);
 
+const scopeSchema = z.object({ personalSpaceId: id, personalProjectId: id.nullable(), sessionRef: id.nullable() }).strict();
+
 const requestSchema = z.object({
-  role: z.enum(MODEL_BACKEND_ROLES),
+  role: z.enum(DECISION_ROLES),
   operation: z.string().regex(OPERATION_PATTERN),
   requestId: id,
   sourceEventId: id.nullable().default(null),
-  scope: z.object({ personalSpaceId: id, personalProjectId: id.nullable(), sessionRef: id.nullable() }).strict(),
+  scope: scopeSchema,
   versions: z.object({ evidence: id, policy: id }).strict(),
   instructions: z.string().trim().min(1).max(4000),
   evidence: z.array(z.object({ id: key, personalProjectId: id.nullable(), text: z.string().trim().min(1).max(20_000) }).strict())
@@ -38,6 +46,17 @@ const requestSchema = z.object({
   decisions: z.array(z.enum(DECISIONS)).min(1).max(DECISIONS.length).default([...DEFAULT_DECISIONS]),
   budget: z.object({ maxOutputTokens: z.number().int().positive(), timeoutMs: z.number().int().positive() })
     .partial().strict().default({})
+}).strict();
+
+// Every text belongs to the request's project, or to none.
+const embeddingSchema = z.object({
+  role: z.literal(SEMANTIC_ROLE),
+  operation: z.literal(KNOWLEDGE_EMBEDDING_OPERATION),
+  requestId: id,
+  scope: scopeSchema,
+  texts: z.array(z.string().trim().min(1).max(MAX_EMBEDDING_TEXT_CHARS)).min(1).max(MAX_EMBEDDING_TEXTS),
+  // A search waits only so long for its query's vector, then goes on by words.
+  budget: z.object({ timeoutMs: z.number().int().positive() }).strict().optional()
 }).strict();
 
 const usageQuerySchema = z.object({
@@ -56,6 +75,18 @@ const submitSchema = z.object({ ...sessionInput, packageId: id, leaseToken: id, 
 
 export function parseDecisionRequest(input) {
   return parse(requestSchema, input, 'model decision request');
+}
+
+export function parseEmbeddingRequest(input) {
+  return parse(embeddingSchema, input, 'embedding request');
+}
+
+// What the egress check sees of an embedding request: each text as an item
+// of the request's project. The connection check's fixed text is nobody's
+// content, so it carries none.
+export function embeddingEgress(request) {
+  const items = request.operation === CONNECTION_CHECK ? [] : request.texts;
+  return { scope: request.scope, evidence: items.map(() => ({ personalProjectId: request.scope.personalProjectId })) };
 }
 
 export function parseRoleWorkClaim(input) {
@@ -80,6 +111,14 @@ export function connectionCheckRequest(role) {
     instructions: 'This is a connection check. Choose the option ready.',
     output: { type: 'choice', options: [{ id: 'ready', description: 'The model can answer.' },
       { id: 'not_ready', description: 'Something prevents an answer.' }] }
+  };
+}
+
+// The semantic role's check: one short fixed text, no project.
+export function embeddingCheckRequest() {
+  return {
+    role: SEMANTIC_ROLE, operation: CONNECTION_CHECK, requestId: `${CONNECTION_CHECK}:${randomUUID()}`,
+    scope: { personalSpaceId: 'connection-check', personalProjectId: null, sessionRef: null }, texts: [CHECK_TEXT]
   };
 }
 

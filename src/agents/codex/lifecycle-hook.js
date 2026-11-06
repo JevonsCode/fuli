@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../lifecycle-message.js';
+import { hookFailureCause, PASS_TASK_TOKEN, TASK_RULES_ON_DEMAND, taskClosingInstruction } from '../lifecycle-message.js';
+import { recordHookFailure } from '../lifecycle-failure.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 import { transcriptLifecycle } from '../../conversations/transcript-lifecycle.js';
@@ -25,6 +26,8 @@ import { readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
 import { taskSceneInput } from '../../graphiti/task-scene.js';
 import { entryBudget, entryNotice, noteEntryNotice, NO_TASK_AT_DEADLINE, partialEntryText, runWithEntryBudget } from '../../conversations/entry-budget.js';
+import { recordDebugTurn } from '../../debug-turns/recorder.js';
+import { withDebugMarkNotice, withoutDebugMark } from '../../debug-turns/trigger.js';
 
 // Task entry gets longer: a warm entry already takes 2–4 s on a Mac and a cold
 // first one ran past 5 s, which costs the model two fallback requests. Both
@@ -52,7 +55,7 @@ export async function codexStopLifecycleOutput(input, invoke) {
   });
   // Never force another model turn. A hook-delivered task with no checkpoint
   // is closed as honestly reported retain_nothing; others get the reminder.
-  return stopHookOutcome(check, invoke, { sourceApplication: 'codex', sourceSessionId: sessionId });
+  return stopHookOutcome(check, invoke, { sourceApplication: 'codex', sourceSessionId: sessionId }, { reply: input?.last_assistant_message });
 }
 
 export async function codexLifecycleOutput(event, input, invoke, { delivery, currentTask, entryRefusal, onCurrentTask } = {}) {
@@ -70,8 +73,8 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
   if (codexRefreshTurn(event, input)) return refreshCurrentTaskInPlace(event, input, invoke, CODEX_UNRESOLVED_TURNS,
     { delivery, currentTask, onCurrentTask });
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
-    turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: input.prompt.slice(0, 8192),
-    sourceApplication: 'codex', sourceSessionId: input.session_id, ...taskSceneInput(input.prompt) });
+    turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: withoutDebugMark(input.prompt).slice(0, 8192),
+    sourceApplication: 'codex', sourceSessionId: input.session_id, ...taskSceneInput(withoutDebugMark(input.prompt)) });
   const entry = compactTaskContext(context);
   const output = await preferenceHookOutput(entry, event, input, delivery, 'codex',
     'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);
@@ -153,9 +156,16 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
       if (entered) await endTurnsObservedAtEntry(ledger, held, input, CODEX_UNRESOLVED_TURNS);
       return lifecycle;
     }, { signal: dependencies.signal });
-    const delivered = event === 'UserPromptSubmit' ? withOutdatedMcpNotice(output, notice()) : output;
+    const delivered = event === 'UserPromptSubmit'
+      ? withDebugMarkNotice(withOutdatedMcpNotice(output, notice()), input?.prompt) : output;
     write(`${JSON.stringify(delivered)}\n`);
+    // After the host has its answer; a #fulidebug record never changes or delays it.
+    await recordDebugTurn({ runtimeConfigPath, sourceApplication: 'codex', event, input, output: delivered, adapter: CODEX_TRANSCRIPT });
     return delivered;
+  } catch (error) {
+    await recordDebugTurn({ runtimeConfigPath, sourceApplication: 'codex', event, input,
+      output: { hookFailed: hookFailureCause(error) }, adapter: CODEX_TRANSCRIPT });
+    throw error;
   } finally {
     await cleanup();
   }
@@ -274,7 +284,15 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
     (dependencies.write ?? (value => process.stdout.write(value)))(value);
   };
   let input = null;
+  let runtimeConfigPath = null;
+  const startedAt = Date.now();
   const readInput = dependencies.readInput ?? readHookInput;
+  // The hook's own resolution, kept so a failure is recorded where its data lives.
+  const resolveRuntimeOptions = (...resolveArgs) => {
+    const options = (dependencies.resolveRuntimeOptions ?? resolveGraphRuntimeOptions)(...resolveArgs);
+    runtimeConfigPath = options?.runtimeConfigPath ?? null;
+    return options;
+  };
   const unavailable = cause => `${JSON.stringify(codexLifecycleUnavailable(event, input, cause))}\n`;
   const budget = entryBudget(timeoutMs);
   let cleanup = async () => {};
@@ -293,11 +311,13 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
   });
   try {
     const running = runWithEntryBudget(budget, () => runCodexLifecycleHook(args, { ...dependencies, signal: controller.signal, write,
+      resolveRuntimeOptions,
       captureTimeoutMs: Math.max(1, Math.min(750, Math.floor(timeoutMs / 4))),
       readInput: async () => { input = await readInput(); return input; },
-      onCleanup: close => { cleanup = close; } })).then(() => ({ timedOut: false }), () => {
+      onCleanup: close => { cleanup = close; } })).then(() => ({ timedOut: false }), (error) => {
       // Never print prompts, transcripts, paths or credentials.
-      write(unavailable('the hook failed'));
+      write(unavailable(hookFailureCause(error)));
+      recordHookFailure({ runtimeConfigPath, client: 'codex', event, error, sessionId: input?.session_id, startedAt });
       return { timedOut: false };
     });
     return await Promise.race([running, expired]);

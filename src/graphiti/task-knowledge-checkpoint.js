@@ -91,6 +91,8 @@ export async function checkpointTaskKnowledge(application, {
     );
   }
   const finish = async (result, checkpointTask = task, memory = null) => {
+    // The turn is finished: the prompt kept for the relay check goes (rec#80).
+    try { application.entryPrompts?.checkpointed(task); } catch { /* the next entry replaces it */ }
     const team = await taskTeam(application, checkpointTask, collaborators);
     const effectiveLog = workLog ?? { status: 'reported', summary: reason };
     const conversation = captureCheck.allowed ? await checkpointConversation(application, task, effectiveLog, team)
@@ -135,6 +137,10 @@ export async function checkpointTaskKnowledge(application, {
   // Local validation has no side effects. Reject correctable input before
   // binding an immutable checkpoint or advancing the Agent's memory revision.
   if (captureInput) await application.validateCaptureSessionKnowledge(captureInput, { captureScope });
+  // The Provider's own rules (e.g. confirmedBy only with confirmedAt) are
+  // checked before binding too: a rejection after binding left the token
+  // locked on input that could never be saved (rec#79).
+  if (captureInput && captureCheck.allowed) await application.preflightPersonalKnowledgeCaptures([captureInput]);
   const temporaryProjectId = captureCheck.allowed && scopedCaptures?.some(batch => batch.scope === 'session_temporary')
     ? await ensureSessionTemporaryProject(application, task) : null;
   const scopedInputs = scopedCaptures?.map(batch => ({ scope: batch.scope,

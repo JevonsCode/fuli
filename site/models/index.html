@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6f5f1">
+    <title data-i18n="meta.title">FULI 复利 · 模型指南：每个模型做什么、花多少 Token</title>
+    <meta data-i18n-content="meta.description" name="description" content="">
+    <meta data-i18n-content="meta.title" property="og:title" content="">
+    <meta data-i18n-content="meta.social" property="og:description" content="">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://xn--8ovp9s.xn--m8txu.com/fuli/models/">
+    <meta property="og:image" content="https://xn--8ovp9s.xn--m8txu.com/fuli/assets/brand/fuli-mark-color-512.png">
+    <meta data-i18n-content="meta.locale" property="og:locale" content="zh_CN">
+    <meta name="twitter:card" content="summary">
+    <link rel="canonical" href="https://xn--8ovp9s.xn--m8txu.com/fuli/models/">
+    <link rel="icon" href="../assets/brand/favicon.ico" sizes="any">
+    <link rel="preload" href="../assets/unbounded-latin.woff2" as="font" type="font/woff2" crossorigin="">
+    <script>document.documentElement.classList.add('js')</script>
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../guide-page.css">
+    <link rel="stylesheet" href="./models.css">
+    <script type="module" src="../models.js"></script>
+  </head>
+  <body class="guide-page">
+    <a data-i18n="nav.skip" class="skip" href="#main">跳到正文</a>
+    <header class="nav">
+      <a data-i18n-aria-label="models.home" data-i18n-href="models.homeUrl" class="brand" href="https://xn--8ovp9s.xn--m8txu.com/fuli/" aria-label="Fuli 复利 首页"><img class="brand-mark" src="../assets/brand/fuli-mark-color.svg" alt="" width="28" height="28"><span>复利</span><b>FULI</b></a>
+      <nav data-i18n-aria-label="nav.label" aria-label="页面导航">
+        <a data-i18n="models.nav.modes" href="#modes">两种用法</a>
+        <a data-i18n="models.nav.uses" href="#uses">用途</a>
+        <a data-i18n="models.nav.privacy" href="#privacy">隐私</a>
+        <a data-i18n="models.nav.method" href="#method">怎么测</a>
+        <a class="nav-github" href="https://github.com/JevonsCode/fuli">GitHub</a>
+        <div data-i18n-aria-label="nav.language" aria-label="语言" role="group" class="language-switch">
+          <a href="./zh/" lang="zh-CN" hreflang="zh-Hans" data-locale="zh-CN" aria-current="true">中文</a>
+          <a href="./en/" lang="en" hreflang="en" data-locale="en" aria-label="English">EN</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="guide-hero" aria-labelledby="models-title">
+        <p data-i18n="models.eyebrow" class="eyebrow">模型指南</p>
+        <h1 data-i18n-html="models.title" id="models-title">接一个模型，<em>FULI 多一种能力。</em></h1>
+        <p data-i18n="models.lead" class="lede">FULI 不接模型也能用。模型是可选的：接上后，FULI 能按意思查找、给项目归类、整理记忆。</p>
+        <p data-i18n="models.choice" class="lede">可以用 Ollama 在本机跑模型，也可以用在线模型；它能看哪些项目，由你批准。</p>
+      </section>
+
+      <section class="guide-section" id="modes" aria-labelledby="modes-title">
+        <h2 data-i18n="models.modes" id="modes-title">两种用法</h2>
+        <div class="mode-grid">
+          <article class="guide-card">
+            <h3 data-i18n="models.mode.none">不用模型（默认）</h3>
+            <p data-i18n="models.mode.noneBody">关键词排序，加上你正在对话的 AI。</p>
+            <p data-i18n="models.mode.noneCost" class="card-note">免费，不用装任何东西。</p>
+          </article>
+          <article class="guide-card">
+            <h3 data-i18n="models.mode.small">配小模型</h3>
+            <p data-i18n="models.mode.smallBody">多了按意思搜索，内置 Agent 也能自己判断。</p>
+            <p data-i18n="models.mode.smallCost" class="card-note">多数用途，小模型就够。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="guide-section" id="uses" aria-labelledby="uses-title">
+        <h2 data-i18n="models.uses" id="uses-title">每个模型做什么</h2>
+        <div class="use-grid">
+          <article class="guide-card use-card" id="semantic-search">
+            <svg class="bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" /></svg>
+            <h3 data-i18n="models.search">语义搜索</h3>
+            <p data-i18n="models.searchBody">把每条知识和每个问题变成向量，按意思找。</p>
+            <dl>
+              <div><dt data-i18n="models.enough">够用</dt><dd data-i18n="models.searchEnough">支持中文的小型向量模型，0.3B–0.6B。</dd></div>
+              <div><dt data-i18n="models.examples">示例</dt><dd data-i18n="models.searchExamples">通过 Ollama：qwen3-embedding:0.6b（639 MB）、embeddinggemma-2:270m（304 MB）。在线向量接口也可以。</dd></div>
+              <div>
+                <dt data-i18n="models.measured">实测</dt>
+                <dd>
+                  <p data-i18n="models.searchSet">合成留出集：40 个问题、58 条知识、取前 3 条。</p>
+                  <ul class="results">
+                    <li><b>qwen3-embedding:0.6b</b><span data-i18n="models.searchQwen">32/32 找到 · 8 次中误命中 1 次 · 每次查询 16 ms（台式机 CPU）</span></li>
+                    <li><b>embeddinggemma-2:270m</b><span data-i18n="models.searchGemma">28/32 找到 · 误命中 1 次 · 18 ms</span></li>
+                    <li><b data-i18n="models.searchKeyword">只用关键词排序</b><span data-i18n="models.searchKeywordResult">同一组题 31/32 找到</span></li>
+                  </ul>
+                </dd>
+              </div>
+              <div><dt data-i18n="models.cost">Token</dt><dd data-i18n="models.searchCost">用本机模型，不花 Token。</dd></div>
+            </dl>
+          </article>
+
+          <article class="guide-card use-card" id="astro">
+            <svg class="bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" /></svg>
+            <h3 data-i18n="models.astro">Astro 项目归类</h3>
+            <p data-i18n="models.astroBody">建议一段对话属于哪个项目。</p>
+            <dl>
+              <div><dt data-i18n="models.enough">够用</dt><dd data-i18n="models.astroEnough">能返回 JSON 的小型或中型对话模型。</dd></div>
+              <div><dt data-i18n="models.measured">实测</dt><dd data-i18n="models.notMeasured" class="pending">未实测</dd></div>
+            </dl>
+          </article>
+
+          <article class="guide-card use-card" id="dreaming">
+            <svg class="bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" /></svg>
+            <h3 data-i18n="models.dreaming">Dreaming 记忆整理</h3>
+            <p data-i18n="models.dreamingBody">读一个项目最近的会话，提议该记住或退役什么；由人确认。</p>
+            <dl>
+              <div><dt data-i18n="models.enough">够用</dt><dd data-i18n="models.dreamingEnough">上下文长的强对话模型。</dd></div>
+              <div><dt data-i18n="models.measured">实测</dt><dd><p data-i18n="models.dreamingRun">对一个项目的 21 个真实会话完整跑一次：3 次模型调用，共 143,292 Token。</p><p data-i18n="models.dreamingDaily">每天的运行只读上次之后的新内容，花得少得多。</p></dd></div>
+            </dl>
+          </article>
+
+          <article class="guide-card use-card" id="tonborg">
+            <svg class="bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" /></svg>
+            <h3 data-i18n="models.tonborg">Tonborg 判断</h3>
+            <p data-i18n="models.tonborgBody">知识留下之前，先审一遍。</p>
+            <dl>
+              <div><dt data-i18n="models.enough">够用</dt><dd data-i18n="models.tonborgEnough">强对话模型。</dd></div>
+              <div><dt data-i18n="models.measured">实测</dt><dd><p data-i18n="models.tonborgResult">本地 qwen3.5:4b 在 48 个留出案例上与标注一致 60.4%，低于 85% 的门槛。</p><p data-i18n="models.tonborgAdvice">所以我们建议用强的在线模型，或者当前会话。</p></dd></div>
+            </dl>
+          </article>
+
+          <article class="guide-card use-card" id="jefa">
+            <svg class="bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" /></svg>
+            <h3 data-i18n="models.jefa">Jefa 看板</h3>
+            <p data-i18n="models.jefaBody">把工作对上看板上的条目。</p>
+            <dl>
+              <div><dt data-i18n="models.enough">够用</dt><dd data-i18n="models.jefaEnough">小型对话模型。</dd></div>
+              <div><dt data-i18n="models.measured">实测</dt><dd data-i18n="models.notMeasured" class="pending">未实测</dd></div>
+            </dl>
+          </article>
+
+          <article class="guide-card use-card" id="bole">
+            <svg class="bolt" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 2 5 13.5h6L10 22l9-12h-6.2z" /></svg>
+            <h3 data-i18n="models.bole">Bole 绩效</h3>
+            <p data-i18n="models.boleBody">根据 Agent 的成绩卡，建议下一步做的一件事。</p>
+            <dl>
+              <div><dt data-i18n="models.enough">够用</dt><dd data-i18n="models.boleEnough">中型对话模型。</dd></div>
+              <div><dt data-i18n="models.measured">实测</dt><dd data-i18n="models.notMeasured" class="pending">未实测</dd></div>
+            </dl>
+          </article>
+        </div>
+      </section>
+
+      <section class="guide-section" id="privacy" aria-labelledby="privacy-title">
+        <h2 data-i18n="models.privacy" id="privacy-title">模型能看到什么</h2>
+        <ul class="guide-list">
+          <li data-i18n="models.privacyProjects">模型只看到你批准的项目。</li>
+          <li data-i18n="models.privacyLocal">用本机的 Ollama 模型，所有内容都留在你的电脑上。</li>
+          <li data-i18n="models.privacyKeys">密钥只保存在这台电脑上。</li>
+        </ul>
+      </section>
+
+      <section class="guide-section" id="method" aria-labelledby="method-title">
+        <h2 data-i18n="models.method" id="method-title">我们怎么测</h2>
+        <p data-i18n="models.methodBody">只用合成数据，只测一个项目，题目也不多。数字是参考，不是承诺。</p>
+        <p class="guide-links">
+          <a data-i18n="models.methodRetrieval" href="https://github.com/JevonsCode/fuli/blob/main/docs/retrieval-design.md">检索设计与测试</a>
+          <a data-i18n="models.methodBenchmark" href="https://github.com/JevonsCode/fuli/blob/main/FULI_ALIGNMENT_BENCHMARK.md#8-%E5%8D%8F%E4%BD%9C%E6%88%90%E6%9C%AC-ab">对齐基准第 8 节</a>
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span data-i18n="footer.copyright">© Fuli 复利 · Apache-2.0</span>
+      <span><a href="https://github.com/JevonsCode/fuli">GitHub</a><a data-i18n="models.backHome" data-i18n-href="models.homeUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到首页</a></span>
+    </footer>
+  </body>
+</html>

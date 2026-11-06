@@ -120,9 +120,79 @@
 .agent-resume-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
+  align-items: center;
   gap: var(--space-5, 20px);
-  padding: var(--space-6, 24px);
+  padding: var(--space-4, 16px) var(--space-5, 20px);
+}
+
+.agent-resume-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  min-width: 0;
+}
+
+.agent-resume-title > [data-agent-name] {
+  flex: 0 1 auto;
+}
+
+/* Who this FLA is folds to one row once the work below is scrolled. */
+.agent-resume-more {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--motion-fast) var(--motion-ease);
+}
+
+.agent-resume-more > div {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.is-compact .agent-resume-more {
+  grid-template-rows: 0fr;
+}
+
+.agent-resume-inline-summary {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-muted);
+  font-size: var(--text-control);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--motion-ease);
+}
+
+.is-compact .agent-resume-inline-summary {
+  visibility: visible;
+  opacity: 1;
+}
+
+.is-compact .agent-resume-header {
+  padding-block: var(--space-2, 8px);
+}
+
+.is-compact .agent-portrait {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+  border-radius: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-resume-more, .agent-resume-inline-summary { transition: none; }
+}
+:root[data-motion="reduced"] .agent-resume-more, :root[data-motion="reduced"] .agent-resume-inline-summary { transition: none; }
+
+.agent-resume-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .agent-resume-intro {
@@ -410,6 +480,13 @@
   color: var(--color-ink);
   font-size: 14px;
 }
+
+.agent-preferences { display: grid; gap: var(--space-3, 12px); }
+.agent-preference { display: grid; gap: 4px; }
+.agent-preference-head { display: flex; align-items: center; gap: var(--space-2, 8px); min-height: var(--control-height-sm); }
+.agent-preference-label { color: var(--color-ink-soft); font-size: var(--text-meta, 12px); font-weight: var(--weight-medium); }
+.agent-preference-edit { margin-left: auto; color: var(--color-muted); }
+.agent-preference-text { margin: 0; color: var(--color-ink); line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
 
 .agent-simple-settings small {
   color: var(--color-muted);

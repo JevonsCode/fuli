@@ -1,0 +1,30 @@
+/* The guide pages (/models/, /tech/, /guide/): shared layout over the :root tokens in style.css.
+   Each page adds only its own pieces in its own stylesheet. */
+.guide-page main { padding-bottom: clamp(48px, 8vh, 96px); }
+.guide-page .nav a, .guide-page .footer a, .guide-links a { user-select: none; }
+
+.guide-hero { max-width: 820px; padding: clamp(64px, 12vh, 128px) var(--gutter) clamp(40px, 6vh, 64px); }
+.guide-hero .lede { max-width: 620px; margin-top: 18px; color: var(--ink-soft); font-size: clamp(17px, 1.6vw, 20px); line-height: 1.8; }
+.guide-hero h1 + .lede { margin-top: 26px; }
+
+.guide-section { padding: clamp(48px, 8vh, 88px) var(--gutter); border-top: 1px solid var(--line); }
+.guide-section h2 { margin: 0 0 clamp(24px, 4vh, 36px); font-size: clamp(26px, 3vw, 40px); }
+.guide-section > p { max-width: 640px; color: var(--ink-soft); }
+
+.guide-card { position: relative; min-width: 0; padding: 26px 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 1px 2px rgb(27 31 29 / 4%); transition: transform .25s cubic-bezier(.2, .8, .2, 1), box-shadow .25s ease; }
+.guide-card:hover { transform: translateY(-3px); box-shadow: 0 18px 44px rgb(27 31 29 / 10%); }
+.guide-card h3 { font-size: 18px; font-weight: 600; line-height: 1.4; }
+.guide-card > p { margin-top: 8px; color: var(--ink-soft); }
+
+.guide-list { display: grid; gap: 12px; max-width: 640px; margin: 0; padding: 0; list-style: none; }
+.guide-list li { padding: 14px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.guide-links { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-top: 18px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .guide-card { transition: none; }
+  .guide-card:hover { transform: none; }
+}
+@media (max-width: 480px) {
+  .guide-card { padding: 22px 20px; }
+  .footer a { margin-left: 0; margin-right: 18px; }
+}

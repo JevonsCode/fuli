@@ -89,7 +89,7 @@ describe('应用', () => {
       throw new ApiError('Not found', 404)
     })
     const wrapper = await mountPage()
-    expect(wrapper.text()).toContain('这台电脑上的 FULI 还不能管理应用')
+    expect(wrapper.text()).toContain('这台电脑上的 FULI 还不能管理 Agent App')
   })
 })
 
@@ -111,7 +111,7 @@ describe('应用 lifecycle', () => {
     expect(callout.textContent).toContain('FULI 不会隔离它')
     await click('[data-app-confirm]')
     expect(postJson).toHaveBeenCalledWith('/api/agent-apps/app-new/confirm', { action: 'approve', version: '1.1.0' }, expect.anything())
-    expect(document.querySelector('[data-app-confirm-opened]')?.textContent).toContain('输入应用名「app-new」')
+    expect(document.querySelector('[data-app-confirm-opened]')?.textContent).toContain('输入 Agent App 名「app-new」')
     expect(document.querySelector('[data-app-sheet]')?.textContent).not.toMatch(/终端|fl app/)
   })
 

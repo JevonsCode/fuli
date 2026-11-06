@@ -1,12 +1,13 @@
 import { sendJson } from './response.js';
 import { readKnowledgeItem, readTurnReceiptItems } from '../graphiti/knowledge-item-edit.js';
-import { readSessionMigration } from '../graphiti/session-knowledge-migration.js';
+import { readSessionMigration, readSessionMigrationDelivery } from '../graphiti/session-knowledge-migration.js';
 import { assertJsonObject } from '../validation/values.js';
 
 const ITEM_PATH = /^\/api\/knowledge\/(entity|relationship)\/([^/]+)$/;
 
 // The console's reads behind a turn receipt's links (rec#20): one knowledge
-// item, a turn's full receipt and what a session holds for a batch migration.
+// item, a turn's full receipt, what a session holds for a batch migration and
+// whether that session was told of a confirmed one.
 // Content edits and deactivation use the existing item PATCH with the version
 // the page read; tags use the tag vocabulary routes; scope writes are the
 // person's own (knowledge-scope-api-router.js).
@@ -29,6 +30,22 @@ export async function handleKnowledgeItemRequest({ request, response, url, app, 
       personalSpaceId: url.searchParams.get('personalSpaceId'), sourceApplication: url.searchParams.get('client'),
       sessionId: url.searchParams.get('sessionId'), projectId: url.searchParams.get('projectId'),
       offset: url.searchParams.get('offset') }));
+    return true;
+  }
+  // rec#88: how often shown knowledge was used, so "does learning get any input" can be read. Counts only.
+  if (url.pathname === '/api/knowledge/recall-usage') {
+    response.setHeader('Cache-Control', 'no-store');
+    sendJson(response, 200, app.recallImpressions?.summary({ personalSpaceId: url.searchParams.get('personalSpaceId'),
+      personalProjectId: url.searchParams.get('projectId') }) ?? { tasks: 0, shown: 0, used: 0, byRank: [] });
+    return true;
+  }
+  // rec#82: whether the session a confirmed migration moved items for has been told; counts only.
+  if (url.pathname === '/api/knowledge/session-migration/delivery') {
+    response.setHeader('Cache-Control', 'no-store');
+    sendJson(response, 200, readSessionMigrationDelivery(app, {
+      personalSpaceId: url.searchParams.get('personalSpaceId'), sourceApplication: url.searchParams.get('client'),
+      sessionId: url.searchParams.get('sessionId'), projectId: url.searchParams.get('projectId'),
+      migrationId: url.searchParams.get('migrationId') }));
     return true;
   }
   const match = url.pathname.match(ITEM_PATH);

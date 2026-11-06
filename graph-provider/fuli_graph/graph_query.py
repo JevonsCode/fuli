@@ -21,6 +21,7 @@ from .personal_project_access import authorize_personal_project
 from .provider_values import (
     json_object,
     native_datetime as _native_datetime,
+    preference_key,
     preference_qualifiers,
 )
 from .project_knowledge import (
@@ -600,12 +601,7 @@ def _graph_node(
         group_id=record['group_id'],
         summary=record['summary'],
         key=record.get('key') or record['id'],
-        preference_key=(
-            attributes.get('preferenceKey')
-            or attributes.get('preference_key')
-            or record.get('key')
-            or record['id']
-        ),
+        preference_key=preference_key(attributes, record.get('key'), record['id']),
         preference_qualifiers=preference_qualifiers(attributes),
         origin_quadrant=record.get('origin_quadrant') or 'known_known',
         current_quadrant=record.get('current_quadrant') or 'known_known',
@@ -720,12 +716,7 @@ def _graph_edge(
         type=record['type'],
         fact=record['fact'],
         key=record.get('key') or record['id'],
-        preference_key=(
-            attributes.get('preferenceKey')
-            or attributes.get('preference_key')
-            or record.get('key')
-            or record['id']
-        ),
+        preference_key=preference_key(attributes, record.get('key'), record['id']),
         preference_qualifiers=preference_qualifiers(attributes),
         origin_quadrant=record.get('origin_quadrant') or 'known_known',
         current_quadrant=record.get('current_quadrant') or 'known_known',

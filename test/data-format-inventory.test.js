@@ -15,6 +15,7 @@ import { AgentServiceStore } from '../src/agent-services/store.js';
 import { AgentWorkflowStore } from '../src/agent-workflows/store.js';
 import { RecallImpressionsStore } from '../src/knowledge-impressions/store.js';
 import { AgentAvatarStore } from '../src/agent-avatars/store.js';
+import { ProjectChangeStore } from '../src/project-change-log/store.js';
 import { WorkSurfaceStore } from '../src/work-surfaces/store.js';
 import { DelegatedOperationLog } from '../src/agent-delegation/operation-log.js';
 import { localStoreFiles } from '../src/data-format/local-stores.js';
@@ -40,6 +41,7 @@ const SQLITE_STORES = {
   'agent-workflows': (path) => { const store = new AgentWorkflowStore(path); void store.db; return () => store.close(); },
   'recall-impressions': (path) => { const store = new RecallImpressionsStore(path); void store.db; return () => store.close(); },
   'agent-avatars': (path) => { const store = new AgentAvatarStore(path); void store.db; return () => store.close(); },
+  'project-change-log': (path) => { const store = new ProjectChangeStore(path); void store.db; return () => store.close(); },
   'work-surfaces': (path) => { const store = new WorkSurfaceStore(path); void store.db; return () => store.close(); },
   'agent-delegation': (path) => { const store = new DelegatedOperationLog(path); void store.db; return () => store.close(); },
   'employee-management': (path) => {

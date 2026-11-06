@@ -198,8 +198,10 @@ function workLine(agent: ProjectAgentRecord) {
   const group = groupOf(agent)
   const entry = entries.value[agent.agentId]
   if (group === 'inactive' && view.value !== 'work') return { group, text: `${t('flas.inactive.tag')} · ${agentResponsibility(agent)}` }
-  if (group === 'inactive' || group === 'unknown' || group === 'idle') return { group, text: agentResponsibility(agent) }
-  if (group === 'working') return { group, text: entry?.title ?? t(`agentRedesign.workStatus.${entry!.status}`) }
+  if (group === 'inactive') return { group, text: agentResponsibility(agent) }
+  // The line says what the FLA is doing now; what it is for comes after, never in its place.
+  if (group === 'unknown' || group === 'idle') return { group, text: `${t(`flas.now.${group}`)} · ${agentResponsibility(agent)}` }
+  if (group === 'working') return { group, text: entry?.title ? t('flas.now.working', { title: entry.title }) : t(`agentRedesign.workStatus.${entry!.status}`) }
   const detail = workbenchStatusDetail(entry) ?? entry?.title
   return { group, text: [t(`agentRedesign.workStatus.${entry!.status}`), detail].filter(Boolean).join(' · ') }
 }

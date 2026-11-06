@@ -12,6 +12,7 @@ import { readSavedKeys, saveModelKey, validKeyReference } from './model'
 // write-only: after saving it empties, and the page shows only that a key is
 // saved under the reference, never the key.
 const props = defineProps<{ reference: string; disabled?: boolean }>()
+const emit = defineEmits<{ keys: [saved: string[]] }>()
 
 const saved = ref<Set<string> | null>(null)
 const key = ref('')
@@ -23,7 +24,10 @@ const usable = computed(() => validKeyReference(reference.value))
 const hasKey = computed(() => usable.value && Boolean(saved.value?.has(reference.value)))
 
 onMounted(async () => {
-  try { saved.value = new Set((await readSavedKeys()).saved) } catch { saved.value = null }
+  try {
+    saved.value = new Set((await readSavedKeys()).saved)
+    emit('keys', [...saved.value])
+  } catch { saved.value = null }
 })
 watch(reference, () => { message.value = ''; error.value = '' })
 
@@ -35,6 +39,7 @@ async function save() {
   try {
     await saveModelKey(reference.value, key.value)
     saved.value = new Set([...saved.value ?? [], reference.value])
+    emit('keys', [...saved.value])
     message.value = t('modelSettings.key.saved', { reference: reference.value })
   } catch (cause) {
     error.value = apiErrorReason(cause)

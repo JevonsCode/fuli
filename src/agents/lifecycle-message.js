@@ -1,7 +1,17 @@
+import { errorCode } from '../diagnostics/safe-event.js';
+
 // Every listed rule fetch is a model round trip (Codex re-sends its whole
 // prompt each time), so ordinary tasks must not read the shared rules at all.
 // A call that carries its task token is decided by that session; without one
 // it may be refused while another session of the client is off (rec#5 C3b).
+// Why a lifecycle hook failed, as far as it is safe to say (rec#85): an error's
+// code or class, which are fixed identifiers. Never its message, which may carry
+// a prompt, path or credential.
+export function hookFailureCause(error) {
+  const code = errorCode(error);
+  return code ? `the hook failed: ${code}` : 'the hook failed';
+}
+
 export const PASS_TASK_TOKEN = 'Pass taskContextToken to every FULI call. ';
 export const TASK_RULES_ON_DEMAND = 'Shared rules are referenced by version. Do not read fuli://rules/task-entry for an ordinary task; read one referenced section only when you must act on it (workers, Agent choices, board writes, memory merge, conflicts).';
 

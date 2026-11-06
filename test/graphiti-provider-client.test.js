@@ -5,6 +5,7 @@ import {
   GraphitiProviderClient,
   ProviderRequestError
 } from '../src/graphiti/provider-client.js';
+import { FULI_VERSION } from '../src/package-metadata.js';
 
 test('hard-deletion watermark uses ordinary auth and sends only the personal space', async () => {
   const calls = [];
@@ -18,6 +19,55 @@ test('hard-deletion watermark uses ordinary auth and sends only the personal spa
   assert.deepEqual(JSON.parse(calls[0].options.body), { personal_space_id: 'synthetic-space' });
   assert.equal(calls[0].options.headers.authorization, 'Bearer synthetic-token');
   assert.equal(calls[0].options.headers['x-fuli-human-review-token'], undefined);
+  // The provider names an older connection by it (rec#74).
+  assert.equal(calls[0].options.headers['x-fuli-client-version'], FULI_VERSION);
+});
+
+test('meaning index calls send the space and model with ordinary auth', async () => {
+  const calls = [];
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonResponse(200, {}); } });
+  const items = [{ item_kind: 'entity', item_id: 'synthetic-item', hash: 'a'.repeat(64), vector: [0.1, 0.2] }];
+  await client.semanticPending({ personalSpaceId: 'synthetic-space', model: 'synthetic-model', limit: 8,
+    after: 'entity:synthetic-item' });
+  await client.writeSemanticVectors({ personalSpaceId: 'synthetic-space', model: 'synthetic-model', items });
+  await client.semanticStatus({ personalSpaceId: 'synthetic-space', model: 'synthetic-model' });
+  assert.deepEqual(calls.map(({ url }) => url.replace('http://provider.test', '')),
+    ['/v1/semantic/pending', '/v1/semantic/vectors', '/v1/semantic/status']);
+  assert.deepEqual(calls.map(({ options }) => JSON.parse(options.body)), [
+    { personal_space_id: 'synthetic-space', model: 'synthetic-model', limit: 8, after: 'entity:synthetic-item' },
+    { personal_space_id: 'synthetic-space', model: 'synthetic-model', items },
+    { personal_space_id: 'synthetic-space', model: 'synthetic-model' }
+  ]);
+  for (const { options } of calls) {
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.authorization, 'Bearer synthetic-token');
+    assert.equal(options.headers['x-fuli-human-review-token'], undefined);
+  }
+});
+
+test('retrieval term calls send the space, project and items with ordinary auth', async () => {
+  const calls = [];
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonResponse(200, {}); } });
+  const items = [{ item_kind: 'entity', item_id: 'synthetic-item', hash: 'a'.repeat(64), terms: ['ship window'] }];
+  await client.retrievalCandidates({ personalSpaceId: 'synthetic-space', personalProjectId: 'synthetic-project',
+    limit: 8, after: 'entity:synthetic-item', missingOnly: true });
+  await client.writeRetrievalTerms({ personalSpaceId: 'synthetic-space', items });
+  await client.retrievalStats({ personalSpaceId: 'synthetic-space' });
+  assert.deepEqual(calls.map(({ url }) => url.replace('http://provider.test', '')),
+    ['/v1/retrieval/candidates', '/v1/retrieval/terms', '/v1/retrieval/stats']);
+  assert.deepEqual(calls.map(({ options }) => JSON.parse(options.body)), [
+    { personal_space_id: 'synthetic-space', personal_project_id: 'synthetic-project', limit: 8,
+      after: 'entity:synthetic-item', missing_only: true },
+    { personal_space_id: 'synthetic-space', items },
+    { personal_space_id: 'synthetic-space' }
+  ]);
+  for (const { options } of calls) {
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.authorization, 'Bearer synthetic-token');
+    assert.equal(options.headers['x-fuli-human-review-token'], undefined);
+  }
 });
 
 test('conversation triage reaches every Provider operation, decline and reopen included', async () => {

@@ -24,6 +24,9 @@ const SEVERITY_ORDER = Object.freeze({ blocking: 0, warning: 1, info: 2 });
 const GRAPH_SLEEPING = new Set(['provider-sleeping', 'sleeping']);
 // The sessions one outdated item names: what the console's offers request takes at once.
 const MAX_OUTDATED_SESSIONS = 20;
+// Too few transcript lines say nothing about a format; under half read means it changed.
+const MIN_FORMAT_LINES = 5;
+const MIN_RECOGNIZED_SHARE = 0.5;
 
 // The clients a repair may reconnect: once connected, FULI's integration still
 // present, and installable without the person (detected, not manual-only).
@@ -38,6 +41,8 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 // formatOperations: the data directory's format operations log (operations-log.js).
 // graphStage: the adaptive runtime's stage (runtime-broker.js), or null.
 // liveProcesses: live MCP server records (process-registry.js).
+// awaitingRestart: the open sessions that started before their client's last
+// change (process-registry.js).
 // latestVersion: the version checker's last answer without waiting, or null.
 // lastUpdate: the console update journal's status (console-update.js), or null.
 // hookTrust: whether each client's host trusts FULI's lifecycle hooks, read by
@@ -45,13 +50,26 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 //   async function returning { [clientId]: { readable: true, untrusted: [eventName...] }
 //   | { readable: false, reason } }. A readable client with untrusted hooks is a
 //   warning; an unreadable one stays in unchecked, never guessed healthy.
+// transcriptFormat: how much of each client's newest private transcript FULI's
+//   parser still reads, by that client's own probe
+//   (src/agents/transcript-format-registry.js): an async function returning
+//   { [clientId]: { readable: true, recognized, total } | { readable: false, reason } }.
+//   A connected client whose parser reads under half of at least five lines
+//   changed its format; an unreadable one stays in unchecked.
 // portMoves: the ports the running console's start moved by itself
 // ({ movedAt, moves }, blocked-port-recovery.js), or null.
 // graphRuntime: { mode, migration } — the active graph runtime mode and the
 // last one-click migration (graph-migration.js), or null.
+// dataDirShared: the principals besides the person and SYSTEM that the data
+// directory's ACL lets in (windows-data-acl.js); none outside Windows.
+// runningServers: this installation's MCP servers the OS shows running
+// ([{ pid, parentPid, startedAt }], mcp-process-scan.js), or null when the
+// list could not be read.
 export function createDoctor({ observeClients, previewDataFormats = null, formatOperations = () => [],
-  graphStage = () => null, liveProcesses, latestVersion, lastUpdate, hookTrust = async () => ({}),
-  portMoves = () => null, graphRuntime = () => null, version = FULI_VERSION, now = () => new Date() }) {
+  graphStage = () => null, liveProcesses, awaitingRestart = () => [], latestVersion, lastUpdate, hookTrust = async () => ({}),
+  transcriptFormat = async () => ({}),
+  portMoves = () => null, graphRuntime = () => null, dataDirShared = async () => [], runningServers = () => [],
+  version = FULI_VERSION, now = () => new Date() }) {
   // The personal graph's last answer while its provider answered: the step it
   // waited on, or null, and when that was seen.
   let lastGraph = null;
@@ -90,20 +108,40 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
         untrustedHooks.push(hookTrustUntrustedItem(client, result.untrusted));
       }
     }
+    const formatsRead = await read('transcript_format', transcriptFormat) ?? {};
+    const changedFormats = [];
+    for (const client of (clients?.clients ?? []).filter((candidate) => candidate.status === 'connected')) {
+      const result = formatsRead[client.id];
+      if (!result) continue;
+      if (result.readable !== true) notChecked(`transcript_format:${client.id}`, result.reason);
+      else if (result.total >= MIN_FORMAT_LINES && result.recognized / result.total < MIN_RECOGNIZED_SHARE) {
+        changedFormats.push(item(`client_format_changed:${client.id}`, 'client_format_changed', 'warning', 'person',
+          { clientId: client.id, label: client.label, recognized: result.recognized, total: result.total }));
+      }
+    }
     const processes = await read('sessions', liveProcesses);
+    const running = await read('sessions', runningServers);
+    // A list that could not be read says nothing about unrecorded servers.
+    if (running === null) notChecked('sessions', 'process_list_unavailable');
+    const waiting = await read('sessions', awaitingRestart);
     const latest = await read('update', latestVersion);
     const update = await read('update', lastUpdate);
     const moved = await read('runtime', portMoves);
     const runtime = await read('runtime', graphRuntime);
+    const shared = await read('data_dir', dataDirShared);
     const items = [
       ...graphRuntimeItems(runtime),
       ...clientItems(clients?.clients ?? []),
       ...untrustedHooks,
+      ...changedFormats,
       ...dataFormatItems(formats),
       ...rememberedGraph,
       ...sessionItems(processes ?? [], version),
+      ...unrecordedItems(processes && running ? unrecordedServers(running, processes) : []),
+      ...restartItems(waiting ?? []),
       ...updateItems(latest, update, version),
-      ...portItems(moved)
+      ...portItems(moved),
+      ...dataDirItems(shared)
     ].sort((left, right) => SEVERITY_ORDER[left.severity] - SEVERITY_ORDER[right.severity]);
     return { checkedAt, version, overall: overallOf(items), items, unchecked: [...new Set(unchecked)], uncheckedReasons };
   }
@@ -212,12 +250,46 @@ function sessionItems(processes, version) {
     { ...group, ...(since ? { since } : {}), sessions: [...sessions.values()].slice(0, MAX_OUTDATED_SESSIONS) }));
 }
 
+// Running servers a FULI older than process-registry.js started: they write no
+// record, so neither their client nor their version is known. A process that
+// is the parent of another listed one is not a session's server of its own:
+// a relay (stdio-relay.js) or FuliNode.exe runs the same command line as the
+// server under it, and that server is recorded or counted itself.
+function unrecordedServers(running, records) {
+  const recorded = new Set(records.map(({ pid }) => pid));
+  const parents = new Set(running.map(({ parentPid }) => parentPid));
+  return running.filter(({ pid }) => !recorded.has(pid) && !parents.has(pid));
+}
+
+function unrecordedItems(servers) {
+  if (!servers.length) return [];
+  const since = servers.map(({ startedAt }) => startedAt).filter((startedAt) => typeof startedAt === 'string').sort()[0];
+  return [item('sessions_outdated:other:unknown', 'sessions_outdated', 'warning', 'person',
+    { client: 'other', count: servers.length, runningVersion: null, ...(since ? { since } : {}), sessions: [] })];
+}
+
+// Open sessions that started before FULI changed their client's Skills or hooks:
+// only a restart loads them, and starting one clears this by itself.
+function restartItems(waiting) {
+  return waiting.map(({ sourceApplication, count, changedAt, sessions }) => item(`client_restart:${sourceApplication}`, 'client_restart', 'warning', 'person',
+    { client: sourceApplication, count, since: changedAt,
+      sessions: sessions.slice(0, MAX_OUTDATED_SESSIONS).map(sessionId => ({ sourceApplication, sessionId })) }));
+}
+
 // Ports this console's start moved because Windows reserved them or another
 // program held them. Nothing is left to do; the id names the start, so a
 // client says it once per move.
 function portItems(moved) {
   if (!moved?.moves?.length) return [];
   return [item(`ports_moved:${moved.movedAt}`, 'ports_moved', 'info', 'person', moved)];
+}
+
+// On Windows the data directory, with the human-review token and every
+// store, is open to other accounts or sandboxes (rec#53). The repair limits
+// it to the person and SYSTEM; principals are SIDs or SDDL aliases.
+function dataDirItems(shared) {
+  if (!shared?.length) return [];
+  return [item('data_dir_shared', 'data_dir_shared', 'warning', 'auto', { principals: shared })];
 }
 
 function updateItems(latest, update, version) {

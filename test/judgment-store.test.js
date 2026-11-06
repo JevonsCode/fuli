@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { JudgmentStore } from '../src/judgment/store.js';
+import { knowledgeReferences } from '../src/knowledge-hard-delete/forget-references.js';
 
 test('pins preserve an explicitly empty list and reject stale writes', () => {
   const store = new JudgmentStore();
@@ -58,4 +62,21 @@ test('one active judgment per scope; token owns lease release', () => {
     store.release('s', 'p', lease);
     assert.ok(store.claim('s', 'p'));
   } finally { store.close(); }
+});
+
+test('rec#80: a vote an FLA relayed is the person\'s, kept with the FLA and the person\'s words until the item is deleted', t => {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-judgment-relay-'));
+  const store = new JudgmentStore(join(root, 'judgment.sqlite'), { recoveryGate: { state: () => ({ state: 'open' }) } });
+  t.after(() => { store.close(); rmSync(root, { recursive: true, force: true }); });
+  const record = store.record('s', { kind: 'acceptance', target: 'item', outcome: 'completed', summary: 'Synthetic' }, 'request-relay');
+  store.feedback('s', record.id, 'up', 'Looks right', 0);
+  store.feedback('s', record.id, 'down', 'The person disagreed', 1,
+    { relayedBy: 'fla-synthetic', personWords: '这个结论不对，给个踩' });
+  const [own, relayed] = store.get('s', record.id).feedbackHistory;
+  assert.equal('decidedBy' in own, false, 'the person\'s own console vote is unchanged');
+  assert.deepEqual([relayed.vote, relayed.decidedBy, relayed.relayedBy, relayed.personWords],
+    ['down', 'person', 'fla-synthetic', '这个结论不对，给个踩']);
+  assert.ok(store.forgetKnowledgeItems('s', knowledgeReferences({ itemIds: ['item'] })) > 0);
+  const forgotten = store.get('s', record.id).feedbackHistory.at(-1);
+  assert.deepEqual([forgotten.reason, forgotten.decidedBy, forgotten.personWords], ['', 'person', '']);
 });

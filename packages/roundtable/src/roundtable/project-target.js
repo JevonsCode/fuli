@@ -4,6 +4,23 @@ export function projectAddress(to) {
   return typeof to === 'string' && to.startsWith('project:') ? to.slice(8) : null;
 }
 
+// `project:<id>` is exact; `project:<name>` (rec#71) names one active formal
+// project by its name, ignoring case, so an Agent can ask "the AICG project"
+// as the person said it. A name several projects share is refused with their
+// IDs rather than picking one; an unknown value stays as typed and fails as
+// an unknown project does.
+export async function resolveProjectAddress(host, value) {
+  if (!value || value.length > 128 || value.trim() !== value) return value;
+  const projects = await host.listProjects();
+  if (projects.some(project => project.projectId === value)) return value;
+  const key = value.toLowerCase();
+  const named = projects.filter(project => !project.temporary && !project.archived && project.name?.toLowerCase() === key);
+  if (named.length > 1) {
+    throw new RoundtableError('validation', `Several projects are named "${value}"; use project:<projectId> (${named.map(project => project.projectId).join(', ')})`);
+  }
+  return named[0]?.projectId ?? value;
+}
+
 export async function resolveProjectLead(host, projectId, { source = null, recruit = false } = {}) {
   if (!projectId || projectId.length > 128 || projectId.trim() !== projectId) {
     throw new RoundtableError('validation', 'Use an exact project:<projectId> address');

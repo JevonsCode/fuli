@@ -4,7 +4,10 @@ defineProps<{ titleId: string; title: string; description: string }>()
 
 <template>
   <header class="about-section-heading">
-    <h2 :id="titleId">{{ title }}</h2>
+    <div class="about-section-heading__row">
+      <h2 :id="titleId">{{ title }}</h2>
+      <slot name="action" />
+    </div>
     <p>{{ description }}</p>
   </header>
 </template>
@@ -13,6 +16,15 @@ defineProps<{ titleId: string; title: string; description: string }>()
 .about-section-heading {
   padding-bottom: 24px;
   border-bottom: 1px solid var(--color-border);
+}
+
+/* The title with an optional action on its right; the action wraps below on a narrow page. */
+.about-section-heading__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
 }
 
 .about-section-heading h2 {

@@ -31,37 +31,43 @@ export function createWorkSurfaces({ path = ':memory:', sources, names, now = ()
   }
 
   // Every kind's rows with their owners' names. A kind whose owner cannot be
-  // read is reported in unavailable instead of failing the whole table.
-  async function gather(personalSpaceId) {
+  // read is reported in unavailable instead of failing the whole table. A kind
+  // may answer { rows, truncated } when its owner stopped at a limit.
+  async function gather(personalSpaceId, filter = {}) {
     const [named, ...listed] = await Promise.allSettled([names(personalSpaceId),
-      ...kinds.map((kind) => sources[kind].list(personalSpaceId))]);
+      ...kinds.map((kind) => sources[kind].list(personalSpaceId, filter))]);
     const unavailable = [];
+    const truncated = [];
     const lookup = named.status === 'fulfilled' ? named.value : { agents: new Map(), projects: new Map() };
     if (named.status === 'rejected') unavailable.push(unavailableEntry('names', named.reason));
     const rows = listed.flatMap((result, index) => {
-      if (result.status === 'fulfilled') return result.value;
-      unavailable.push(unavailableEntry(kinds[index], result.reason));
-      return [];
+      if (result.status === 'rejected') {
+        unavailable.push(unavailableEntry(kinds[index], result.reason));
+        return [];
+      }
+      if (Array.isArray(result.value)) return result.value;
+      if (result.value.truncated) truncated.push(kinds[index]);
+      return result.value.rows;
     }).map((row) => {
       const agent = lookup.agents.get(row.agentId);
       const personalProjectId = row.personalProjectId ?? agent?.personalProjectId ?? null;
       return { ...row, agentName: agent?.name ?? null, personalProjectId,
         projectName: lookup.projects.get(personalProjectId) ?? null };
     });
-    return { rows, unavailable };
+    return { rows, unavailable, truncated };
   }
 
   async function list({ personalSpaceId, filter: input }) {
     const filter = filterOf(input, kinds);
-    const { rows, unavailable } = await gather(personalSpaceId);
-    return { items: rows.filter((row) => matches(row, filter)).map(publicRow), unavailable,
-      partial: unavailable.length > 0, checkedAt: at() };
+    const { rows, unavailable, truncated } = await gather(personalSpaceId, filter);
+    return { items: rows.filter((row) => matches(row, filter)).map(publicRow), unavailable, truncated,
+      partial: unavailable.length > 0 || truncated.length > 0, checkedAt: at() };
   }
 
   function pause({ personalSpaceId, filter: input, actor }) {
     const filter = filterOf(input, kinds);
     return serial(async () => {
-      const { rows, unavailable } = await gather(personalSpaceId);
+      const { rows, unavailable } = await gather(personalSpaceId, filter);
       const matched = rows.filter((row) => matches(row, filter));
       const covered = matched.filter((row) => row.pausable);
       const skipped = matched.length - covered.length;

@@ -326,3 +326,30 @@ test('the console routes list, pause and resume on this computer only', async (t
   assert.equal((await api(app, 'GET', '/api/agent-services')).handled, false);
   assert.equal((await api({ config: app.config }, 'GET', '/api/work-surfaces')).status, 503);
 });
+
+test('rec#72: a filter reaches the task read, and a read that hit its limit never reads as complete', async () => {
+  const reads = [];
+  const task = (index, agentId) => ({ taskId: `task-${index}`, title: 'Synthetic task', status: 'running', participants: [{ agentId, role: 'owner', status: 'running' }], events: [] });
+  const app = {
+    listProjectAgents: async () => [],
+    listPersonalProjects: async () => [],
+    listProjectAgentTasks: async (input) => {
+      reads.push(input);
+      return input.agentId ? [task(999, input.agentId)]
+        : Array.from({ length: 200 }, (_, index) => task(index, 'agent-busy'));
+    }
+  };
+  const surfaces = createWorkSurfaces({ sources: { workbench: workSurfaceSources(app).workbench },
+    names: personalSpaceId => workSurfaceNames(app, personalSpaceId) });
+
+  const filtered = await surfaces.list({ personalSpaceId: SPACE, filter: { agentId: 'agent-quiet', kind: 'workbench' } });
+  assert.equal(reads[0].agentId, 'agent-quiet');
+  assert.deepEqual(filtered.items.map(item => item.agentId), ['agent-quiet']);
+  assert.equal(filtered.partial, false);
+
+  const whole = await surfaces.list({ personalSpaceId: SPACE, filter: { agentId: null } });
+  assert.deepEqual(whole.truncated, ['workbench']);
+  assert.equal(whole.partial, true, 'an empty or short table never reads as complete after a cut');
+  const missed = await surfaces.list({ personalSpaceId: SPACE, filter: { q: 'agent-quiet' } });
+  assert.deepEqual([missed.items.length, missed.partial], [0, true]);
+});

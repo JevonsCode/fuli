@@ -21,6 +21,8 @@ const WAITING = item('data_format_waiting:graph (personal)', 'data_format_waitin
   { store: 'graph', label: 'graph (personal)', steps: ['graph-0007'] })
 const SESSIONS = item('sessions_outdated:claude_code:0.21.0', 'sessions_outdated', 'warning', 'person',
   { client: 'claude_code', count: 2, runningVersion: '0.21.0' })
+const RESTART = item('client_restart:claude_code', 'client_restart', 'warning', 'person',
+  { client: 'claude_code', count: 2, since: '2026-10-28T01:00:00.000Z', sessions: [] })
 const UPDATE = item('update_available', 'update_available', 'info', 'person', { latest: '0.23.0' })
 
 function mountBanner() {
@@ -44,6 +46,17 @@ describe('DoctorBanner', () => {
     await flushPromises()
     expect(api.getJson).toHaveBeenCalledWith('/api/system/doctor')
     expect(wrapper.find('[data-doctor-banner]').exists()).toBe(false)
+  })
+
+  it('says which client needs a restart to load an update', async () => {
+    api.getJson.mockResolvedValue(report('degraded', [RESTART]))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    const list = wrapper.get('[data-doctor-items]')
+    expect(list.text()).toContain('客户端要重启才用上更新：Claude Code')
+    expect(list.text()).toContain('2 个会话是更新前开的')
+    expect(list.text()).not.toContain('client_restart')
   })
 
   it('counts what needs the person and lists it in plain words, with where to handle it', async () => {
@@ -153,6 +166,20 @@ describe('DoctorBanner', () => {
     expect(wrapper.find('[data-doctor-repair]').exists()).toBe(false)
   })
 
+  it('names a client whose record format changed and how much FULI still read', async () => {
+    const changed = item('client_format_changed:codex', 'client_format_changed', 'warning', 'person',
+      { clientId: 'codex', label: 'Codex', recognized: 2, total: 9 })
+    api.getJson.mockResolvedValue(report('needs_person', [changed]))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    const text = wrapper.get('[data-doctor-items]').text()
+    expect(text).toContain('客户端的记录格式变了，FULI 可能记不全：Codex')
+    expect(text).toContain('这个客户端更新后，FULI 只读懂了 2/9 行记录。更新 FULI 通常能解决。')
+    expect(text).not.toMatch(/client_format_changed/)
+    expect(wrapper.find('[data-doctor-repair]').exists()).toBe(false)
+  })
+
   it('reads a kind it does not know yet as something to look at', async () => {
     api.getJson.mockResolvedValue(report('needs_person', [item('graph_offline', 'graph_offline', 'warning', 'person')]))
     const { wrapper } = mountBanner()
@@ -177,6 +204,29 @@ describe('DoctorBanner', () => {
     expect(store.feedback).toEqual({ tone: 'success', message: '已自动修复 1 件事' })
     expect(wrapper.text()).toContain('有 1 件事需要你')
     expect(wrapper.find('[data-doctor-repair]').exists()).toBe(false)
+  })
+
+  it('names a data folder other accounts can read and says what its repair is doing', async () => {
+    const shared = item('data_dir_shared', 'data_dir_shared', 'warning', 'auto', { principals: ['BU'] })
+    api.getJson.mockResolvedValue(report('needs_person', [shared]))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    api.postJson.mockReturnValueOnce(new Promise(() => {}))
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    expect(wrapper.get('[data-doctor-items]').text()).toBe('数据目录其他账户也能读自动修复会只留给你自己和系统。')
+    await wrapper.get('[data-doctor-repair]').trigger('click')
+    expect(wrapper.getComponent(GrowthLoading).props()).toMatchObject({ variant: 'inline', label: '正在自动修复：数据目录只留给你自己和系统…' })
+  })
+
+  it('names both repairs while it reconnects clients and limits the data folder', async () => {
+    const shared = item('data_dir_shared', 'data_dir_shared', 'warning', 'auto', { principals: ['BU'] })
+    api.getJson.mockResolvedValue(report('needs_person', [OUTDATED, shared]))
+    const { wrapper } = mountBanner()
+    await flushPromises()
+    api.postJson.mockReturnValueOnce(new Promise(() => {}))
+    await wrapper.get('[data-doctor-toggle]').trigger('click')
+    await wrapper.get('[data-doctor-repair]').trigger('click')
+    expect(wrapper.getComponent(GrowthLoading).props().label).toBe('正在自动修复：重新连接客户端，数据目录只留给你和系统…')
   })
 
   it('says what could not be repaired and keeps the banner', async () => {

@@ -1,17 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { modelFetch } from './model-fetch.js';
 
 import { MODEL_ADAPTERS } from './adapters/registry.js';
 import { budgetBlock, callLimits, ceilingCost, estimateCost, estimateTokens, roundCost, windowStart } from './budget.js';
-import { MODEL_BACKEND_ROLES, configRevision, connectionIdentity } from './config.js';
+import { MODEL_BACKEND_ROLES, SEMANTIC_ROLE, configRevision, connectionIdentity } from './config.js';
 import { decisionContract, decisionEnvelope } from './decision-contract.js';
 import { egressAllowed } from './egress.js';
 import { FAILURE_STATUS, isFallbackEligible, modelFailure } from './failures.js';
 import { decisionPrompt, promptForMode, repairTurns } from './prompt.js';
-import { CONNECTION_CHECK, connectionCheckRequest, parseDecisionRequest, parseUsageQuery } from './request.js';
+import {
+  CONNECTION_CHECK, connectionCheckRequest, embeddingCheckRequest, embeddingEgress, parseDecisionRequest, parseEmbeddingRequest,
+  parseUsageQuery
+} from './request.js';
 import { reportedUsage } from './usage.js';
 
-// The shared model port of the four built-in Agents (rec#8, D-04). It owns
+// The shared model port of the four built-in Agents (rec#8, D-04), and of
+// the person's semantic search model (rec#88), which only embeds. It owns
 // configuration, egress, budget, bounded retry and repair, strict output
 // validation and the usage ledger; protocol differences stay in adapters.
 // It returns the compact decision envelope and a model receipt; it never
@@ -36,21 +41,46 @@ const USAGE_NOTES = 'One record per actual model API attempt; requests count dis
   + 'cachedInput, cacheWriteInput and reasoning are subsets of input or output as each provider defines them and are never added to totals. '
   + 'Costs are estimates from configured unit prices only; without prices the cost is unknown.';
 
-export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl = globalThis.fetch, wait = delay,
+export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl = modelFetch, wait = delay,
   now = () => new Date(), timeoutSignal = ms => AbortSignal.timeout(ms) }) {
   // Endpoints that rejected json_schema output, for this process.
   const promptOnly = new Set();
 
-  async function run(request) {
-    const startedAt = now().getTime();
-    const attempts = [];
-    let target = null;
-    let roleConfig = null;
-    let mode = null;
-    let reportedConfidence = null;
+  // What every call needs before its first attempt: the role's enabled
+  // settings for this operation, its connection and adapter, the egress
+  // approval and the key, kept on the call. Answers { stop } with the result
+  // that ends the call, or { adapter, secret }.
+  async function prepare(request, call, { approved }) {
+    const loaded = readConfig();
+    if (loaded.state === 'absent') return { stop: call.notConfigured('no_config') };
+    if (loaded.state === 'invalid') return { stop: call.stop('configuration', 'invalid_config') };
+    call.roleConfig = loaded.config.roles[request.role] ?? null;
+    if (!call.roleConfig) return { stop: call.notConfigured('role_not_configured') };
+    if (!call.roleConfig.enabled) return { stop: call.notConfigured('role_disabled') };
+    if (request.operation !== CONNECTION_CHECK && !call.roleConfig.allowedOperations.includes(request.operation)) {
+      return { stop: call.notConfigured('operation_not_allowed') };
+    }
+    call.target = { id: call.roleConfig.connection, ...loaded.config.connections[call.roleConfig.connection] };
+    const adapter = MODEL_ADAPTERS[call.target.protocol];
+    if (!approved.supports(adapter)) return { stop: call.stop('configuration', 'unsupported_output') };
+    if (!approved.egress(call.roleConfig.egress)) return { stop: call.stop('refusal', 'egress_not_approved') };
+    if (!call.target.secretRef) return { adapter, secret: null };
+    let secret;
+    try {
+      secret = await secrets.read(call.target.secretRef);
+    } catch (error) {
+      return { stop: call.stop('configuration', error?.code === 'secret_store_insecure' ? 'secret_store_insecure' : 'secret_unreadable') };
+    }
+    return secret ? { adapter, secret } : { stop: call.stop('configuration', 'missing_key') };
+  }
 
-    const receipt = (status, { reason = null, failure = null } = {}) => {
-      const fallbackEligible = failure ? isFallbackEligible(failure, roleConfig) : false;
+  // The receipt of one call and the results that end it. empty is the
+  // result without an answer, to which each ending adds its receipt.
+  function callRecord(empty) {
+    const call = { startedAt: now().getTime(), attempts: [], target: null, roleConfig: null, mode: null, reportedConfidence: null };
+    call.receipt = (status, { reason = null, failure = null } = {}) => {
+      const { target, attempts } = call;
+      const fallbackEligible = failure ? isFallbackEligible(failure, call.roleConfig) : false;
       return {
         backend: 'model_api', status, reason: failure?.reason ?? reason, failureClass: failure?.failureClass ?? null,
         fallbackEligible, fallbackReason: fallbackEligible ? failure.reason : null,
@@ -58,44 +88,53 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         // Which configured connection was asked (config.js connectionIdentity); a role's trust gate compares it.
         connectionIdentity: target ? connectionIdentity(target.id, target) : null,
         actualModel: attempts.findLast(attempt => attempt.actualModel)?.actualModel ?? null,
-        outputMode: attempts.length ? mode : null, attempts: attempts.length, usage: receiptUsage(attempts),
-        reportedConfidence, durationMs: now().getTime() - startedAt
+        outputMode: attempts.length ? call.mode : null, attempts: attempts.length, usage: receiptUsage(attempts),
+        reportedConfidence: call.reportedConfidence, durationMs: now().getTime() - call.startedAt
       };
     };
-    const notConfigured = reason => ({ envelope: null, modelReceipt: receipt('not_configured', { reason }) });
-    const fail = failure => ({ envelope: null, modelReceipt: receipt(FAILURE_STATUS[failure.failureClass], { failure }) });
-    const stop = (failureClass, reason) => fail(modelFailure(failureClass, reason));
+    call.notConfigured = reason => ({ ...empty, modelReceipt: call.receipt('not_configured', { reason }) });
+    call.fail = failure => ({ ...empty, modelReceipt: call.receipt(FAILURE_STATUS[failure.failureClass], { failure }) });
+    call.stop = (failureClass, reason) => call.fail(modelFailure(failureClass, reason));
+    return call;
+  }
 
-    const loaded = readConfig();
-    if (loaded.state === 'absent') return notConfigured('no_config');
-    if (loaded.state === 'invalid') return stop('configuration', 'invalid_config');
-    roleConfig = loaded.config.roles[request.role] ?? null;
-    if (!roleConfig) return notConfigured('role_not_configured');
-    if (!roleConfig.enabled) return notConfigured('role_disabled');
-    if (request.operation !== CONNECTION_CHECK && !roleConfig.allowedOperations.includes(request.operation)) {
-      return notConfigured('operation_not_allowed');
-    }
-    target = { id: roleConfig.connection, ...loaded.config.connections[roleConfig.connection] };
-    const adapter = MODEL_ADAPTERS[target.protocol];
-    if (!adapter.supports(request)) return stop('configuration', 'unsupported_output');
-    if (!egressAllowed(request, roleConfig.egress)) return stop('refusal', 'egress_not_approved');
+  // An attempt as the ledger keeps it before it goes out: metadata only,
+  // never prompt text, texts or vectors. Reserves its ceiling in the role's
+  // window and answers the reason it may not start, or null.
+  function reserveAttempt(request, call, { purpose, inputTokens, maxOutputTokens, remainingMs }) {
+    const { target, roleConfig } = call;
+    const attemptStarted = now();
+    const pending = {
+      requestId: request.requestId, attemptId: randomUUID(), attemptNumber: call.attempts.length + 1, purpose, channel: 'model_api',
+      role: request.role, operation: request.operation, personalSpaceId: request.scope.personalSpaceId,
+      personalProjectId: request.scope.personalProjectId, connectionId: target.id, protocol: target.protocol,
+      endpointHost: new URL(target.endpoint).host, endpoint: target.endpoint, requestedModel: target.model, outputMode: call.mode,
+      startedAt: attemptStarted.toISOString(), budgetCeilingTokens: inputTokens + maxOutputTokens,
+      costCurrency: target.pricing?.currency ?? null
+    };
+    const blocked = ledger.reserve({ attempt: pending, ceilingCost: ceilingCost(target.pricing, inputTokens, maxOutputTokens),
+      expiresAt: new Date(attemptStarted.getTime() + remainingMs + RESERVATION_GRACE_MS).toISOString(),
+      since: windowStart(roleConfig.budget, attemptStarted), now: attemptStarted.toISOString(),
+      check: window => budgetBlock({ budget: roleConfig.budget, pricing: target.pricing, window,
+        estimatedInputTokens: inputTokens, maxOutputTokens }) });
+    return { pending, attemptStarted, blocked };
+  }
 
-    let secret = null;
-    if (target.secretRef) {
-      try {
-        secret = await secrets.read(target.secretRef);
-      } catch (error) {
-        return stop('configuration', error?.code === 'secret_store_insecure' ? 'secret_store_insecure' : 'secret_unreadable');
-      }
-      if (!secret) return stop('configuration', 'missing_key');
-    }
+  async function run(request) {
+    const call = callRecord({ envelope: null });
+    const { stop, fail } = call;
+    const prepared = await prepare(request, call, { approved: {
+      supports: adapter => adapter.supports(request), egress: egress => egressAllowed(request, egress) } });
+    if (prepared.stop) return prepared.stop;
+    const { adapter, secret } = prepared;
+    const { target, roleConfig, attempts, startedAt } = call;
 
     const contract = decisionContract(request);
     const prompt = decisionPrompt(request, contract.providerSchema);
     const limits = callLimits(roleConfig.budget, request.budget);
     const deadline = startedAt + limits.timeoutMs;
     const formatKey = `${target.protocol} ${target.endpoint} ${target.model}`;
-    mode = adapter.outputMode === 'json_schema' && promptOnly.has(formatKey) ? 'prompt' : adapter.outputMode;
+    call.mode = adapter.outputMode === 'json_schema' && promptOnly.has(formatKey) ? 'prompt' : adapter.outputMode;
     let turns = prompt.turns;
     let purpose = 'initial';
     let retries = 0;
@@ -106,30 +145,18 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       if (remainingMs < MIN_ATTEMPT_MS) return stop('transient', 'timeout');
       // Each attempt is checked as it will go out: a repair adds turns and
       // prompt mode writes the schema into the prompt.
-      const outgoing = promptForMode({ ...prompt, turns }, mode);
+      const outgoing = promptForMode({ ...prompt, turns }, call.mode);
       const inputTokens = estimateTokens(outgoing);
       if (inputTokens > limits.maxInputTokens) return stop('budget_exhausted', 'per_call_input');
 
-      const attemptStarted = now();
-      const pending = {
-        requestId: request.requestId, attemptId: randomUUID(), attemptNumber: attempts.length + 1, purpose, channel: 'model_api',
-        role: request.role, operation: request.operation, personalSpaceId: request.scope.personalSpaceId,
-        personalProjectId: request.scope.personalProjectId, connectionId: target.id, protocol: target.protocol,
-        endpointHost: new URL(target.endpoint).host, endpoint: target.endpoint, requestedModel: target.model, outputMode: mode,
-        startedAt: attemptStarted.toISOString(), budgetCeilingTokens: inputTokens + limits.maxOutputTokens,
-        costCurrency: target.pricing?.currency ?? null
-      };
-      const blocked = ledger.reserve({ attempt: pending, ceilingCost: ceilingCost(target.pricing, inputTokens, limits.maxOutputTokens),
-        expiresAt: new Date(attemptStarted.getTime() + remainingMs + RESERVATION_GRACE_MS).toISOString(),
-        since: windowStart(roleConfig.budget, attemptStarted), now: attemptStarted.toISOString(),
-        check: window => budgetBlock({ budget: roleConfig.budget, pricing: target.pricing, window,
-          estimatedInputTokens: inputTokens, maxOutputTokens: limits.maxOutputTokens }) });
+      const { pending, attemptStarted, blocked } = reserveAttempt(request, call,
+        { purpose, inputTokens, maxOutputTokens: limits.maxOutputTokens, remainingMs });
       if (blocked) return stop('budget_exhausted', blocked);
 
       let result;
       const attemptSignal = timeoutSignal(remainingMs);
       try {
-        result = await adapter.call({ connection: target, secret, request, mode, signal: attemptSignal,
+        result = await adapter.call({ connection: target, secret, request, mode: call.mode, signal: attemptSignal,
           prompt: outgoing, maxOutputTokens: limits.maxOutputTokens, fetchImpl });
       } catch (error) {
         ledger.settleUnknown(pending, { durationMs: now().getTime() - attemptStarted.getTime(), failureReason: 'attempt_error' });
@@ -151,26 +178,88 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       attempts.push(attempt);
 
       if (verdict.ok) {
-        reportedConfidence = result.reportedConfidence ?? null;
-        return { envelope: decisionEnvelope(request, verdict.value), modelReceipt: receipt('completed') };
+        call.reportedConfidence = result.reportedConfidence ?? null;
+        return { envelope: decisionEnvelope(request, verdict.value), modelReceipt: call.receipt('completed') };
       }
       if (verdict.issues) {
+        // JSON outside the schema means the endpoint took the schema and ignored
+        // it, as some gateways do: later calls get it in the prompt.
+        if (verdict.offSchema && call.mode === 'json_schema') promptOnly.add(formatKey);
         if (!adapter.repairable || repairs >= REPAIR_LIMIT) return stop('configuration', 'invalid_output');
         repairs += 1;
         purpose = 'repair';
-        turns = repairTurns(turns, result.reply ?? '', verdict.issues);
+        turns = repairTurns(turns, result.reply ?? '', verdict.issues, prompt.schema);
         continue;
       }
       const { failure } = verdict;
-      if (failure.reason === 'unsupported_response_format' && mode === 'json_schema') {
+      if (failure.reason === 'unsupported_response_format' && call.mode === 'json_schema') {
         promptOnly.add(formatKey);
-        mode = 'prompt';
+        call.mode = 'prompt';
         purpose = 'format_fallback';
         continue;
       }
-      if (failure.failureClass !== 'transient' || retries >= TRANSIENT_RETRY_LIMIT) return fail(failure);
-      const pauseMs = failure.retryAfterMs ?? BASE_BACKOFF_MS * 2 ** retries;
-      if (now().getTime() + pauseMs + MIN_ATTEMPT_MS > deadline) return fail(failure);
+      const pauseMs = retryPause(failure, retries, deadline);
+      if (pauseMs === null) return fail(failure);
+      retries += 1;
+      purpose = 'retry';
+      await wait(pauseMs);
+    }
+  }
+
+  // How long to wait before retrying a failed attempt, or null when it is
+  // not retried: not transient, out of retries, or past the deadline.
+  function retryPause(failure, retries, deadline) {
+    if (failure.failureClass !== 'transient' || retries >= TRANSIENT_RETRY_LIMIT) return null;
+    const pauseMs = failure.retryAfterMs ?? BASE_BACKOFF_MS * 2 ** retries;
+    return now().getTime() + pauseMs + MIN_ATTEMPT_MS > deadline ? null : pauseMs;
+  }
+
+  // The semantic role's call (rec#88): its texts as vectors, whole or not at
+  // all. The same settings, egress, budget, retry and ledger as a decision;
+  // no repair, and no fallback, because a session cannot embed. Texts and
+  // vectors never reach the ledger or a log.
+  async function embedTexts(request) {
+    const call = callRecord({ vectors: null, dimensions: null, model: null });
+    const { stop, fail } = call;
+    const prepared = await prepare(request, call, { approved: {
+      supports: adapter => typeof adapter.embed === 'function', egress: egress => egressAllowed(embeddingEgress(request), egress) } });
+    if (prepared.stop) return prepared.stop;
+    const { adapter, secret } = prepared;
+    const { target, roleConfig, attempts, startedAt } = call;
+    call.mode = adapter.outputMode;
+    const limits = callLimits(roleConfig.budget, request.budget);
+    const deadline = startedAt + limits.timeoutMs;
+    const inputTokens = estimateTokens(request.texts);
+    if (inputTokens > limits.maxInputTokens) return stop('budget_exhausted', 'per_call_input');
+    let purpose = 'initial';
+    let retries = 0;
+
+    for (;;) {
+      const remainingMs = deadline - now().getTime();
+      if (remainingMs < MIN_ATTEMPT_MS) return stop('transient', 'timeout');
+      const { pending, attemptStarted, blocked } = reserveAttempt(request, call, { purpose, inputTokens, maxOutputTokens: 0, remainingMs });
+      if (blocked) return stop('budget_exhausted', blocked);
+      let result;
+      try {
+        result = await adapter.embed({ connection: target, secret, texts: request.texts, signal: timeoutSignal(remainingMs), fetchImpl });
+      } catch (error) {
+        ledger.settleUnknown(pending, { durationMs: now().getTime() - attemptStarted.getTime(), failureReason: 'attempt_error' });
+        throw error;
+      }
+      const failure = result.ok ? null : result.failure;
+      const attempt = {
+        ...pending, actualModel: result.actualModel, durationMs: now().getTime() - attemptStarted.getTime(),
+        outcome: failure ? 'failed' : 'succeeded', failureClass: failure?.failureClass ?? null, failureReason: failure?.reason ?? null,
+        usage: result.usage, estimatedCost: estimateCost(result.usage, target.pricing)
+      };
+      ledger.settle(attempt);
+      attempts.push(attempt);
+      if (!failure) {
+        return { vectors: result.vectors, dimensions: result.dimensions, model: result.actualModel ?? target.model,
+          modelReceipt: call.receipt('completed') };
+      }
+      const pauseMs = retryPause(failure, retries, deadline);
+      if (pauseMs === null) return fail(failure);
       retries += 1;
       purpose = 'retry';
       await wait(pauseMs);
@@ -191,11 +280,20 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     return run(parseDecisionRequest(input));
   }
 
+  // { role: 'semantic', operation: 'knowledge_embedding', requestId, scope,
+  // texts } with at most MAX_EMBEDDING_TEXTS texts, answering { vectors,
+  // dimensions, model, modelReceipt }; vectors is null unless it completed.
+  async function embed(input) {
+    return embedTexts(parseEmbeddingRequest(input));
+  }
+
   return {
     decide,
+    embed,
     // A user-run check with fixed synthetic text: it carries no project or
     // user content, so any enabled role may run it within its own budget.
-    checkConnection: role => decide(connectionCheckRequest(role)),
+    // The semantic role embeds its one short text instead of deciding.
+    checkConnection: role => (role === SEMANTIC_ROLE ? embedTexts(embeddingCheckRequest()) : decide(connectionCheckRequest(role))),
     usage(input) {
       const query = parseUsageQuery(input);
       const loaded = readConfig();
@@ -235,7 +333,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     // disabled or no longer allowed the operation allows nothing.
     allowsEgress(request) {
       const settings = this.operationSettings(request.role, request.operation);
-      return Boolean(settings) && egressAllowed(request, settings.egress);
+      return Boolean(settings) && egressAllowed(request.texts ? embeddingEgress(request) : request, settings.egress);
     },
     // What Settings shows of the local build behind a role's latest answer
     // on its configured endpoint and model (rec#10 D-32). An observation of

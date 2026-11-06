@@ -9,6 +9,7 @@ import {
   useForwardPropsEmits,
 } from "reka-ui"
 import { cn } from "@/lib/class-names"
+import { usePopupTarget } from "../popup-host"
 
 defineOptions({
   inheritAttrs: false,
@@ -26,10 +27,11 @@ const emits = defineEmits<PopoverContentEmits>()
 const delegatedProps = reactiveOmit(props, "class")
 
 const forwarded = useForwardPropsEmits(delegatedProps, emits)
+const popupTarget = usePopupTarget()
 </script>
 
 <template>
-  <PopoverPortal>
+  <PopoverPortal :to="popupTarget">
     <PopoverContent
       data-slot="popover-content"
       v-bind="{ ...$attrs, ...forwarded }"

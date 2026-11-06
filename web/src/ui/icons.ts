@@ -8,6 +8,10 @@ export const ICONS = {
   // carries its turn (--seat) so the dock can pulse them in sequence while live.
   roundtable: '<circle cx="12" cy="12" r="4.2"/><g class="roundtable-seats"><circle style="--seat:0" cx="12" cy="3.6" r="1.5"/><circle style="--seat:1" cx="19.3" cy="7.8" r="1.5"/><circle style="--seat:2" cx="19.3" cy="16.2" r="1.5"/><circle style="--seat:3" cx="12" cy="20.4" r="1.5"/><circle style="--seat:4" cx="4.7" cy="16.2" r="1.5"/><circle style="--seat:5" cx="4.7" cy="7.8" r="1.5"/></g>',
   // 即时对话 wakes the Agent now; 留言板 waits on a pinned note until it next works.
+  // The model entry (Jevons 11-06): a dashed core with a bolt while nothing is
+  // connected; a whole core with a filled bolt once a model powers FULI.
+  modelCore: '<circle cx="12" cy="12" r="8.5" stroke-dasharray="2.6 2.4"/><path d="M12.9 6.6 8.8 12.9h3.1l-.7 4.5 4.1-6.3h-3.1z"/>',
+  modelCoreOn: '<circle cx="12" cy="12" r="8.5"/><path class="core-bolt" d="M12.9 6.6 8.8 12.9h3.1l-.7 4.5 4.1-6.3h-3.1z"/>',
   instant: '<path d="M13 3 5 13.5h6.5L11 21l8-10.5h-6.5z"/>',
   board: '<path d="M6 4.5h12A1.5 1.5 0 0 1 19.5 6v8.5L14 20H6a1.5 1.5 0 0 1-1.5-1.5V6A1.5 1.5 0 0 1 6 4.5z"/><path d="M19.5 14.5H15.5A1.5 1.5 0 0 0 14 16v4"/><path d="M8.5 9h7M8.5 12.5h4"/>',
   sidebar: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9.5 4.5v15"/>',
@@ -19,6 +23,7 @@ export const ICONS = {
   search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>',
   sort: '<path d="M7 4v16M3.5 16.5 7 20l3.5-3.5"/><path d="M17 20V4M13.5 7.5 17 4l3.5 3.5"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  expand: '<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>',
   more: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',
   // The check is Lucide's `check` (https://lucide.dev, ISC License; "Copyright (c) for portions
   // of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c)

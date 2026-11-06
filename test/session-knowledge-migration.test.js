@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -8,9 +10,9 @@ import { listAgentTools } from '../src/agent-tools.js';
 import { agentInterfaceCatalog } from '../src/agent-tools/interface-catalog.js';
 import { beginTaskFromPreferences } from '../src/graphiti/agent-knowledge-workflows.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
-import { sessionMigrationLine, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
+import { sessionMigrationLine, sessionMigrationNotice, sessionMigrationOffer } from '../src/graphiti/session-knowledge-migration.js';
 import { ensureSessionTemporaryProject } from '../src/graphiti/temporary-project-scope.js';
-import { checkpointTurnReceipt } from '../src/graphiti/turn-receipt-delivery.js';
+import { checkpointTurnReceipt, entryAgentReceipt } from '../src/graphiti/turn-receipt-delivery.js';
 import { handleGraphApiRequest } from '../src/http/graph-api-router.js';
 import { handleKnowledgeScopeRequest } from '../src/http/knowledge-scope-api-router.js';
 import { knowledgeOwnerReads } from '../src/knowledge-owner-reads/console-port.js';
@@ -25,9 +27,9 @@ const CONFIG = { version: 1, workspaces: [], personal: { providerUrl: 'http://12
 const CONSOLE = 'http://127.0.0.1:3999';
 const SESSION = '0b3c6f5e-2d41-4c8a-9e57-6a1f0c2d9b84';
 
-function application(reply = () => ({ status: 200, body: { ok: true } })) {
+function application(reply = () => ({ status: 200, body: { ok: true } }), { runtimeConfigPath = null } = {}) {
   const calls = [];
-  const app = new FederatedGraphApplication(CONFIG, { fetchImpl: async (rawUrl, options = {}) => {
+  const app = new FederatedGraphApplication(CONFIG, { runtimeConfigPath, fetchImpl: async (rawUrl, options = {}) => {
     const call = { path: new URL(rawUrl).pathname, body: options.body ? JSON.parse(options.body) : null };
     calls.push(call);
     const { status, body } = reply(call);
@@ -59,7 +61,7 @@ async function api(app, method, path, body, remoteAddress = '127.0.0.1', ownerRe
     end(text) { sent.body = text ? JSON.parse(text) : null; } };
   try {
     const url = new URL(`http://127.0.0.1${path}`);
-    await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: app.scopeConsole })
+    await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: app.scopeConsole, ownerReads })
       || await handleGraphApiRequest({ request, response, url, app, ownerReads });
     return sent;
   } catch (error) {
@@ -93,7 +95,9 @@ test('the person\'s chosen items move with the versions the page showed, as thei
   const { app, calls } = application(() => ({ status: 200, body: { target_project_id: 'alpha', moved: [] } }));
   const result = await api(app, 'POST', '/api/knowledge/session-migration', { ...migration, operationActor: 'agent' });
   assert.equal(result.status, 200);
-  assert.deepEqual(calls, [{ path: '/v1/knowledge/session-migrations/apply', review: true, body: { personal_space_id: 'personal-space',
+  // Then what the session still holds is read once, for the line its next entry carries (rec#82).
+  assert.deepEqual(calls.map(call => call.path), ['/v1/knowledge/session-migrations/apply', '/v1/knowledge/session-migrations/preview']);
+  assert.deepEqual(calls.slice(0, 1), [{ path: '/v1/knowledge/session-migrations/apply', review: true, body: { personal_space_id: 'personal-space',
     source_application: 'codex', session_id: SESSION, target_project_id: 'alpha', reason: 'This session belongs to Alpha',
     items: [{ item_kind: 'entity', item_id: 'item-1', expected_version: 2 },
       { item_kind: 'relationship', item_id: 'item-2', expected_version: 0 }], operation_actor: 'human' } }]);
@@ -102,7 +106,7 @@ test('the person\'s chosen items move with the versions the page showed, as thei
     { items: Array.from({ length: 101 }, (_, index) => ({ itemKind: 'entity', itemId: `i${index}`, expectedVersion: 0 })) }]) {
     assert.equal((await api(app, 'POST', '/api/knowledge/session-migration', { ...migration, ...change })).status, 400);
   }
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
 });
 
 test('a migration is confirmed only on this computer and never by an Agent tool', async () => {
@@ -219,4 +223,103 @@ test('the offer follows the entry receipt the Agent copies, after a late receipt
   { context: { personal_project_id: 'alpha', project_agent_id: null }, effective_preferences: [],
     agent_receipt: { required: true, markdown: 'FULI Agent：负责人 X' } }, { sessionId: SESSION, sourceApplication: 'claude_code' });
   assert.equal(entry.agent_receipt.markdown, `FULI Agent：负责人 X\n${sessionMigrationLine(app, task, { heldCount: 2 })}`);
+});
+
+// rec#82: a confirmed migration is told to the session whose items moved, at
+// its next task entry. Synthetic data directory under the OS temp folder.
+function dataDir(t) {
+  const root = mkdtempSync(join(tmpdir(), 'fuli-migration-notice-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  return join(root, 'graph-runtime.json');
+}
+
+function movingApp(t, { heldAfter = 1, stopped = false } = {}) {
+  const runtimeConfigPath = dataDir(t);
+  const { app, calls } = application(({ path }) => path.endsWith('/apply')
+    ? { status: 200, body: { target_project_id: 'alpha', moved: [
+      { item_kind: 'entity', item_id: 'item-1', previous_scope: {}, scope: {} },
+      { item_kind: 'relationship', item_id: 'item-2', previous_scope: {}, scope: {} }] } }
+    : { status: 200, body: { held_count: heldAfter, linked_task_count: 1, items: [] } }, { runtimeConfigPath });
+  app.getSessionCapturePause = () => ({ stopped, fuli: { enabled: !stopped, basis: 'session', since: null } });
+  return { app, calls, runtimeConfigPath };
+}
+
+const codexTask = { sessionId: SESSION, sourceApplication: 'codex', personalProjectId: 'alpha', token: 'fuli-task-next-1' };
+const deliveryPath = (migrationId, session = SESSION) => `/api/knowledge/session-migration/delivery?personalSpaceId=personal-space`
+  + `&client=codex&sessionId=${session}&projectId=alpha&migrationId=${migrationId}`;
+
+test('rec#82: a confirmed migration waits for its own session and reaches it once, at that session\'s next entry', async (t) => {
+  const { app, calls } = movingApp(t);
+  const applied = await api(app, 'POST', '/api/knowledge/session-migration', { ...migration, migrationId: 'move-1' });
+  assert.equal(applied.status, 200);
+  assert.deepEqual(applied.body, { migration_id: 'move-1', target_project_id: 'alpha', held_count: 1,
+    moved: [{ item_kind: 'entity', item_id: 'item-1' }, { item_kind: 'relationship', item_id: 'item-2' }],
+    delivery: { state: 'waiting' } });
+  // What still waits is read afterwards, as the person, counts only.
+  assert.deepEqual(calls.at(-1), { path: '/v1/knowledge/session-migrations/preview', review: true, method: 'POST',
+    body: { personal_space_id: 'personal-space', source_application: 'codex', session_id: SESSION,
+      target_project_id: 'alpha', include_items: false } });
+  // A repeated click with the same id moves nothing again and answers the recorded move.
+  const sent = calls.length;
+  const again = await api(app, 'POST', '/api/knowledge/session-migration', { ...migration, migrationId: 'move-1' });
+  assert.deepEqual(again.body, applied.body);
+  assert.equal(calls.length, sent, 'a repeat never reaches the Provider');
+  // Another chat never gets it: not another session, not the same session id of another client.
+  for (const other of [{ ...codexTask, sessionId: '1c4d7f6e-3e52-4d9b-8f68-7b2a1d3e0c95' },
+    { ...codexTask, sourceApplication: 'claude_code' }]) {
+    assert.equal(sessionMigrationNotice(app, other), null);
+  }
+  assert.equal((await api(app, 'GET', deliveryPath('move-1'))).body.delivery.state, 'waiting');
+  // The session's next entry carries one plain line; a retry of that same entry carries it again.
+  const line = 'FULI 迁移已确认：2 条迁入当前项目，仍有 1 条暂存待定范围';
+  assert.equal(sessionMigrationNotice(app, codexTask), line);
+  assert.equal(sessionMigrationNotice(app, codexTask), line);
+  assert.doesNotMatch(line, /\]\(|https?:|fuli-task/, 'no link, token or instruction');
+  const delivered = (await api(app, 'GET', deliveryPath('move-1'))).body;
+  assert.equal(delivered.delivery.state, 'delivered');
+  assert.ok(Date.parse(delivered.delivery.delivered_at));
+  // A later task of the session, and every other one, gets nothing more.
+  assert.equal(sessionMigrationNotice(app, { ...codexTask, token: 'fuli-task-next-2' }), null);
+});
+
+test('rec#82: the line follows the entry receipt the Agent copies, and an entry with nothing pays nothing', async (t) => {
+  const { app } = movingApp(t, { heldAfter: 0 });
+  app.personal.previewSessionMigration = async () => ({ held_count: 0, linked_task_count: 1 });
+  const receipt = { required: true, markdown: 'FULI Agent：负责人 X' };
+  const quiet = await entryAgentReceipt(app, { ...codexTask, unreadTurnReceipts: [] }, receipt);
+  assert.equal(quiet.markdown, receipt.markdown);
+  await api(app, 'POST', '/api/knowledge/session-migration', { ...migration, migrationId: 'move-2' });
+  const entry = await entryAgentReceipt(app, { ...codexTask, unreadTurnReceipts: [] }, receipt);
+  assert.equal(entry.markdown, 'FULI Agent：负责人 X\nFULI 迁移已确认：2 条迁入当前项目，临时项目已清空');
+});
+
+test('rec#82: a failed or refused move records nothing, and a stopped session cannot be reached', async (t) => {
+  const runtimeConfigPath = dataDir(t);
+  for (const reply of [{ status: 409, body: { detail: { code: 'stale_version', stale_items: [] } } },
+    { status: 503, body: { detail: 'provider down' } }]) {
+    const { app } = application(() => reply, { runtimeConfigPath });
+    const refused = await api(app, 'POST', '/api/knowledge/session-migration', { ...migration, migrationId: 'move-x' });
+    assert.notEqual(refused.status, 200);
+    assert.equal(sessionMigrationNotice(app, codexTask), null);
+    assert.deepEqual((await api(app, 'GET', deliveryPath('move-x'))).body.delivery,
+      { state: 'unreachable', reason: 'not_recorded' });
+  }
+  assert.deepEqual(readdirSync(join(runtimeConfigPath, '..')).filter(name => name.startsWith('session-migration')), []);
+  const { app } = movingApp(t, { stopped: true });
+  const applied = await api(app, 'POST', '/api/knowledge/session-migration', { ...migration, migrationId: 'move-3' });
+  assert.deepEqual(applied.body.delivery, { state: 'unreachable', reason: 'session_stopped' });
+  // Without a data directory nothing can carry it: the move stands and the page says so.
+  const memory = application(({ path }) => path.endsWith('/apply')
+    ? { status: 200, body: { target_project_id: 'alpha', moved: [] } } : { status: 200, body: { held_count: 0 } });
+  const unrecorded = await api(memory.app, 'POST', '/api/knowledge/session-migration', migration);
+  assert.equal(unrecorded.status, 200);
+  assert.deepEqual(unrecorded.body.delivery, { state: 'unreachable', reason: 'not_recorded' });
+  // An id of another migration is refused before anything moves.
+  const moving = movingApp(t);
+  await api(moving.app, 'POST', '/api/knowledge/session-migration', { ...migration, migrationId: 'move-4' });
+  const sent = moving.calls.length;
+  const reused = await api(moving.app, 'POST', '/api/knowledge/session-migration', { ...migration, projectId: 'beta',
+    migrationId: 'move-4' });
+  assert.equal(reused.status, 400);
+  assert.equal(moving.calls.length, sent);
 });

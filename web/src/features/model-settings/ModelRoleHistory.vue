@@ -10,7 +10,7 @@ import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import { historyLines, readModelSettingsHistory, type HistoryEntry } from './history'
 import { roleName, type ModelRoleId } from './model'
 
-// 变更记录 inside a role's row (rec#11 D-42): collapsed until the person opens
+// 变更记录 in a use's 查看详情 (rec#11 D-42): collapsed until the person opens
 // it, then read on every opening, and again while open whenever the page
 // saved a change (version, a counter the page bumps: a content hash can come
 // back to an earlier value). Each read is tagged with the role and version it

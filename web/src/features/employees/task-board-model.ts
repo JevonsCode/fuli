@@ -12,7 +12,16 @@ export interface EmployeeBoardItem {
   boardColumn?: string
   priority?: 'critical' | 'high' | 'medium' | 'low'
   tags?: string[]
+  /** The calendar day it is due, YYYY-MM-DD. */
+  dueDate?: string
+  createdAt?: string
   updatedAt?: string
+  /** When the person accepted it as done. */
+  acceptedAt?: string
+  /** When it first went active; read from its history. */
+  startedAt?: string
+  /** When it reached the column it is in now; read from its history. */
+  columnSince?: string
 }
 
 export interface EmployeeProjectBoard {
@@ -20,6 +29,8 @@ export interface EmployeeProjectBoard {
   items: EmployeeBoardItem[]
   total: number
   truncated: boolean
+  /** Finished tasks older than this read shows; the board reads them on request. */
+  doneOlder?: number
   /** How the project's own board is set up (read_board); absent on a public report. */
   projectBoard?: ProjectBoardRecord
 }
@@ -41,6 +52,12 @@ export const EMPLOYEE_BOARD_STATUSES: ReadonlyArray<{ value: EmployeeBoardStatus
 
 function isEmployeeBoardStatus(value: unknown): value is EmployeeBoardStatus {
   return EMPLOYEE_BOARD_STATUSES.some((entry) => entry.value === value)
+}
+
+/** Every task with a known update, latest first. */
+export function recentBoardItems(boards: readonly EmployeeProjectBoard[]) {
+  return boards.flatMap(board => board.items).filter(item => item.updatedAt)
+    .sort((a, b) => b.updatedAt!.localeCompare(a.updatedAt!))
 }
 
 /** A task is unique by project and id; the same id can exist in two projects. */

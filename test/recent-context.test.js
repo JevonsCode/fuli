@@ -297,7 +297,7 @@ test('a client without a transcript gets the full window; proofs never reach the
   assert.doesNotMatch(plain.hookSpecificOutput.additionalContext, /content_sha256|own_event/);
 }));
 
-test('the cache is a bounded v2 record of hashes; v1 is read, a newer version is never overwritten', () => fixture(async f => {
+test('the cache is a bounded v3 record of hashes; v1 and v2 are read, a newer version is never overwritten', () => fixture(async f => {
   const c = await f.open('codex', C);
   const h = await f.open('claude_code', H);
   for (let i = 0; i < 12; i++) {
@@ -307,18 +307,19 @@ test('the cache is a bounded v2 record of hashes; v1 is read, a newer version is
   const cache = join(f.directory, 'cache');
   const [name] = (await readdir(cache)).filter(file => file.endsWith('.json'));
   const record = JSON.parse(await readFile(join(cache, name), 'utf8'));
-  assert.equal(record.version, 2);
+  assert.equal(record.version, 3);
+  assert.ok(record.prompts.every(pair => pair.every(hash => /^[a-f0-9]{64}$/.test(hash))));
   assert.ok(record.recent.length <= 8 && record.recent.every(frame => frame.messages.length <= 32));
   // No message body or task token; the pending scene's table name is not one.
   assert.doesNotMatch(JSON.stringify(record), /secret body|task-\d/);
-  assert.deepEqual(PREFERENCE_SESSION_FORMAT.versions, [1, 2]);
+  assert.deepEqual(PREFERENCE_SESSION_FORMAT.versions, [1, 2, 3]);
   // Eviction of old frames only resends: the window is at most what was evicted.
   assert.ok((await f.enter(c, f.journal.recovery('codex', C))).contents.length <= 12);
 
   await writeFile(join(cache, name), JSON.stringify({ version: 1, pending: [], floor: 0 }));
   assert.equal((await f.enter(c, f.journal.recovery('codex', C))).contents.length, 12, 'v1 has no recent frames: full');
-  assert.equal(JSON.parse(await readFile(join(cache, name), 'utf8')).version, 2);
-  const newer = JSON.stringify({ version: 3, pending: [], recent: [], floor: 0 });
+  assert.equal(JSON.parse(await readFile(join(cache, name), 'utf8')).version, 3);
+  const newer = JSON.stringify({ version: 4, pending: [], recent: [], prompts: [], floor: 0 });
   await writeFile(join(cache, name), newer);
   assert.equal((await f.enter(c, f.journal.recovery('codex', C))).contents.length, 12);
   assert.equal(await readFile(join(cache, name), 'utf8'), newer);
@@ -359,7 +360,7 @@ test('only the visible recovery block confirms a tool result, never its structur
 // dot 6362281995 P1-2: a record this FULI cannot trust may have held a reset's
 // boundary, so the session's own message from before that reset is delivered.
 test('a newer or corrupt cache after a reset never lets an older own message be left out', () => fixture(async f => {
-  for (const unreadable of [JSON.stringify({ version: 3, pending: [], recent: [], floor: 0 }), '{"version":2,', 'x'.repeat(70 * 1024)]) {
+  for (const unreadable of [JSON.stringify({ version: 4, pending: [], recent: [], prompts: [], floor: 0 }), '{"version":3,', 'x'.repeat(70 * 1024)]) {
     const sessionId = randomUUID();
     const target = await f.open('codex', sessionId);
     const own = journal();

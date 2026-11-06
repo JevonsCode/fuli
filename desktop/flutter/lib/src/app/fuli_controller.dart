@@ -40,6 +40,9 @@ typedef ApiFactory = FuliApi Function(int port);
 /// The one state the window and the tray show: the latest check of FULI, the
 /// operation running now (with a label from what it is really doing) and the
 /// outcome of the last one.
+const maxRestarts = 3;
+const restartWindow = Duration(minutes: 10);
+
 class FuliController extends ChangeNotifier {
   FuliController({
     required this.apiFor,
@@ -72,6 +75,8 @@ class FuliController extends ChangeNotifier {
   bool _polling = false;
   // The person stopped FULI: being stopped is not news to them.
   bool _stoppedByPerson = false;
+  bool _startOnOpen = false;
+  final _restarts = <DateTime>[];
   int _failures = 0;
   // The port `fuli status` reported when it differs from the settings file.
   int? _runtimePort;
@@ -100,9 +105,12 @@ class FuliController extends ChangeNotifier {
   /// differs, else `ports.console` from the settings file.
   Future<int> consolePort() async => _runtimePort ?? await runtime.consolePort();
 
-  /// Checks now and keeps checking on the poll schedule.
-  void startPolling() {
+  /// Checks now and keeps checking on the poll schedule. [startFuli]: opening
+  /// the client, at login too, means wanting FULI, so a first check that finds
+  /// it stopped starts it. A start that fails stays on the page with its button.
+  void startPolling({bool startFuli = false}) {
     _polling = true;
+    _startOnOpen = startFuli;
     unawaited(refresh());
   }
 
@@ -125,6 +133,23 @@ class FuliController extends ChangeNotifier {
     _show(snapshot);
     if (snapshot.reached && snapshot.running) await _announceAttention(apiFor(snapshot.port));
     _schedule();
+    _startIfWanted(snapshot);
+  }
+
+  // Opening the client means wanting FULI; so does a stop nobody asked for,
+  // though a FULI that keeps falling over is left to the person's button.
+  void _startIfWanted(FuliSnapshot snapshot) {
+    final opened = _startOnOpen;
+    _startOnOpen = false;
+    if (snapshot.condition != FuliCondition.notRunning || _pending != null) return;
+    if (!opened) {
+      if (!snapshot.crashed || _stoppedByPerson) return;
+      final now = _now();
+      _restarts.removeWhere((at) => now.difference(at) > restartWindow);
+      if (_restarts.length >= maxRestarts) return;
+      _restarts.add(now);
+    }
+    unawaited(start());
   }
 
   // Each new request an Agent leaves for the person is one notification; a
@@ -149,7 +174,7 @@ class FuliController extends ChangeNotifier {
     // schedule: backing off would leave the page stale for minutes (11-03).
     _failures = snapshot.reached || snapshot.running ? 0 : _failures + 1;
     if (snapshot.condition != FuliCondition.notRunning) _stoppedByPerson = false;
-    if (_gate.observe(snapshot.condition, quiet: _stoppedByPerson || _pending != null)) {
+    if (_gate.observe(snapshot.condition, quiet: _stoppedByPerson || _startOnOpen || _pending != null)) {
       unawaited(notifier.notify('FULI', snapshot.sentence(strings)));
     }
     notifyListeners();
@@ -210,6 +235,7 @@ class FuliController extends ChangeNotifier {
         running: report.running,
         problem: report.running ? strings.noAnswer : null,
         reached: false,
+        crashed: report.crashed,
       );
     }
   }
@@ -446,6 +472,7 @@ class FuliController extends ChangeNotifier {
       'client_outdated' => strings.reconnecting(Strings.clientName(
           '${item.data['label'] ?? item.data['clientId'] ?? ''}')),
       'update_left_work' => strings.reconnectingAgents,
+      'data_dir_shared' => strings.restrictingDataDir,
       _ => strings.repairingOne,
     };
   }

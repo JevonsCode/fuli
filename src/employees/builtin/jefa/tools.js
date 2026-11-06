@@ -1,7 +1,7 @@
 import { InvalidInputError } from '../../../app/application-error.js';
 import { arraySchema, booleanSchema, boundedString, enumSchema, integerSchema, objectSchema } from '../../../agent-tools/schema.js';
 import { jsonSchemaToZod } from '../../../mcp/tool-schema.js';
-import { parseProjectBoard, projectBoardSchema, TASK_STATUSES } from './project-board.js';
+import { DUE_DATE_SCHEMA, parseProjectBoard, projectBoardSchema, TASK_STATUSES } from './project-board.js';
 import { prepareSessionTitle, reportSessionTitle } from './session-titles.js';
 
 // Jefa's nine workbench tools (docs/employee-agents.md). Each runs in the
@@ -24,13 +24,14 @@ const taskFields = {
   acceptanceCriteria: arraySchema(boundedString(500), { maxItems: 20 }),
   tags: arraySchema(boundedString(60), { maxItems: 12 }),
   workType: boundedString(60),
-  boardColumn: boundedString(48)
+  boardColumn: boundedString(48),
+  dueDate: DUE_DATE_SCHEMA
 };
 
 const DEFINITIONS = [
-  tool('read_board', 'board.read', 'Read this project\'s board: tasks ordered by status (active, blocked, review, planned, done), then priority and recency. version changes on every board write; truncated means more tasks exist than limit. projectBoard is how the project\'s own board is set up: its project manager (managerAgentId, null when Jefa manages it directly) and board. A builtin board with columns names the person\'s own columns, each standing for one status; a task\'s boardColumn is the column it was moved to (none: the first column for its status). An external board means the project\'s work is tracked at its link, not here.',
-    objectSchema({ limit: integerSchema({ minimum: 1, maximum: BOARD_LIMIT_MAX }), statuses: arraySchema(enumSchema(ALL_STATUSES), { maxItems: 5 }) }),
-    (store, scope, input) => ({ ...store.board(scope, { limit: input.limit ?? BOARD_LIMIT_DEFAULT, statuses: input.statuses }),
+  tool('read_board', 'board.read', 'Read this project\'s board: tasks ordered by status (active, blocked, review, planned, done), then priority and recency. version changes on every board write; truncated means more tasks exist than limit. projectBoard is how the project\'s own board is set up: its project manager (managerAgentId, null when Jefa manages it directly) and board. A builtin board with columns names the person\'s own columns, each standing for one status; a task\'s boardColumn is the column it was moved to (none: the first column for its status). An external board means the project\'s work is tracked at its link, not here. times adds startedAt and columnSince to each task.',
+    objectSchema({ limit: integerSchema({ minimum: 1, maximum: BOARD_LIMIT_MAX }), statuses: arraySchema(enumSchema(ALL_STATUSES), { maxItems: 5 }), doneSince: boundedString(64), doneBefore: boundedString(64), times: booleanSchema() }),
+    (store, scope, input) => ({ ...store.board(scope, { limit: input.limit ?? BOARD_LIMIT_DEFAULT, statuses: input.statuses, doneSince: input.doneSince, doneBefore: input.doneBefore, times: input.times }),
       projectBoard: store.projectBoard(scope) })),
   tool('get_task', 'board.read', 'Read one task with its acceptance criteria and recent change history. Its updatedAt is the version update_tasks expects.',
     objectSchema({ workItemId: id }, ['workItemId']),
@@ -38,7 +39,7 @@ const DEFINITIONS = [
   tool('create_tasks', 'board.write', 'Create concise tasks for new work after reading the board to avoid duplicates. messageId makes a retry return the same tasks. New tasks are private and start planned unless a status or boardColumn (a custom column id, whose status the task takes) is given; done is never allowed.',
     objectSchema({ messageId: requestId, tasks: arraySchema(objectSchema(taskFields, ['title']), { minItems: 1, maxItems: 20 }) }, ['messageId', 'tasks']),
     (store, scope, input) => ({ createdWorkItems: store.create(scope, { requestId: input.messageId, tasks: input.tasks, actor: 'agent' }) })),
-  tool('update_tasks', 'board.write', 'Change tasks you read. Each update carries the task\'s updatedAt as expectedUpdatedAt; if any task changed meanwhile the whole request fails with version_conflict and nothing is written, so read again. requestId makes a retry return the same result. Agent completion moves a task to review; only the person marks it done. boardColumn moves a task to one of the project\'s custom columns and sets its status to the one that column stands for; a status change alone puts it in the first column for that status.',
+  tool('update_tasks', 'board.write', 'Change tasks you read. Each update carries the task\'s updatedAt as expectedUpdatedAt; if any task changed meanwhile the whole request fails with version_conflict and nothing is written, so read again. requestId makes a retry return the same result. Agent completion moves a task to review; only the person marks it done. boardColumn moves a task to one of the project\'s custom columns and sets its status to the one that column stands for; a status change alone puts it in the first column for that status. dueDate is a calendar day (YYYY-MM-DD); null clears it.',
     objectSchema({ requestId, updates: arraySchema(objectSchema({ id, expectedUpdatedAt: boundedString(64), ...taskFields }, ['id', 'expectedUpdatedAt']), { minItems: 1, maxItems: 50 }) }, ['requestId', 'updates']),
     (store, scope, input) => ({ updatedWorkItems: store.update(scope, { requestId: input.requestId, updates: input.updates, actor: 'agent' }) })),
   tool('configure_project_board', 'board.write', 'Only on the person\'s explicit request: set up this project\'s own board. managerAgentId names the project\'s own project manager, an Agent with an active assignment in this project (null: Jefa manages it directly). board is either kind builtin with the person\'s own columns in order, each { label, mapsTo } standing for one status so Jefa still sees every project\'s progress (no columns: the built-in ones), or kind external with external.url (and an optional label) when the project is tracked on another board. Read projectBoard with read_board first and pass its revision as expectedRevision; keep each existing column\'s id when renaming or reordering it, and omit id only for a new column. An omitted field keeps its value. requestId makes a retry return the same result. Jefa\'s own flow and the built-in statuses never change.',

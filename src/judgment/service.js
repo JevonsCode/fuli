@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { InvalidInputError } from '../app/application-error.js';
 import { JudgmentStore } from './store.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { judgmentHumanInteraction } from './conversation.js';
@@ -111,9 +112,10 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       await prepareStore(parsed.personalSpaceId);
       return acceptanceReviewVerdicts(store().acceptances(parsed.personalSpaceId, parsed.agentId, parsed.personalProjectId ?? null));
     },
-    async feedback(input) { const parsed = parse(feedbackSchema, input); space(parsed);
+    // relay: the person's vote an FLA relayed in their words (rec#80), or null.
+    async feedback(input, relay = null) { const parsed = parse(feedbackSchema, input); space(parsed);
       await prepareStore(parsed.personalSpaceId);
-      return store().feedback(parsed.personalSpaceId, parsed.decisionId, parsed.vote, parsed.reason, parsed.expectedRevision); },
+      return store().feedback(parsed.personalSpaceId, parsed.decisionId, parsed.vote, parsed.reason, parsed.expectedRevision, relay); },
     async review(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.review(service, input); },
     async reviewAutomatic(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.reviewAutomatic(service, input); },
     async assess(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.assess(service, input); },
@@ -149,8 +151,12 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
 const agentReaderSchema = z.object({ personalProjectId: id, projectAgentId: id }).strict();
 
 // The FLA an Agent names, in the one project it reads; null for a plain session.
+// An FLA with no project is refused, saying what to do (rec#83: it surfaced as internal_error).
 function agentReader(input, projectAgentId) {
   if (projectAgentId === null) return null;
+  if (!input.personalProjectId) {
+    throw new InvalidInputError('projectAgentId reads in one project: pass its personalProjectId, or leave projectAgentId out for a global read');
+  }
   return taskKnowledgeReader(parse(agentReaderSchema, { personalProjectId: input.personalProjectId, projectAgentId }));
 }
 

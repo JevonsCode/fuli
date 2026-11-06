@@ -6,13 +6,19 @@ import {
 } from '../validation/values.js';
 import { secretReference } from './secret-store.js';
 
-// Optional per-role model backends for the four built-in Agents. The file
+// Optional per-role model backends for the four built-in Agents and semantic
+// search (rec#88). The file
 // holds connections and role settings only; keys live in the secret store and
 // are named here by secretRef. A missing file or roles section configures no
 // role, so older installations keep using the current session.
 
-export const MODEL_BACKEND_ROLES = Object.freeze(['assistant', 'bole', 'jefa', 'tonborg']);
-const MODEL_BACKEND_PROTOCOLS = Object.freeze(['openai_chat', 'anthropic_messages', 'typesafe_systemone']);
+export const MODEL_BACKEND_ROLES = Object.freeze(['assistant', 'bole', 'jefa', 'tonborg', 'semantic']);
+// semantic is no Agent: the person's own model that turns knowledge text into
+// vectors (rec#88). It takes only the embeddings protocol, which serves no other role.
+export const SEMANTIC_ROLE = 'semantic';
+export const KNOWLEDGE_EMBEDDING_OPERATION = 'knowledge_embedding';
+const EMBEDDING_PROTOCOL = 'openai_embeddings';
+const MODEL_BACKEND_PROTOCOLS = Object.freeze(['openai_chat', 'anthropic_messages', 'typesafe_systemone', EMBEDDING_PROTOCOL]);
 export const OPERATION_PATTERN = /^[a-z][a-z0-9_.-]{0,63}$/;
 
 const CONFIG_VERSION = 1;
@@ -27,6 +33,10 @@ const REASONING_EFFORTS = Object.freeze(['none', 'minimal', 'low', 'medium', 'hi
 export const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const MAX_OPERATIONS = 32;
 const MAX_APPROVED_PROJECTS = 256;
+const MAX_HEADERS = 16;
+const MAX_HEADER_VALUE = 512;
+const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$/;
+const RESERVED_HEADERS = new Set(['authorization', 'x-api-key', 'content-type', 'accept', 'host', 'content-length', 'anthropic-version']);
 const MIN_TIMEOUT_MS = 1000;
 const BUDGET_LIMITS = Object.freeze({
   maxInputTokens: 2_000_000, maxOutputTokens: 200_000, timeoutMs: 600_000,
@@ -74,14 +84,14 @@ export function normalizeConfig(raw) {
   const roles = object(raw.roles ?? {}, 'roles');
   for (const role of Object.keys(roles)) {
     if (!MODEL_BACKEND_ROLES.includes(role)) {
-      throw new TypeError(`roles.${role} is not a built-in Agent role (${MODEL_BACKEND_ROLES.join(', ')})`);
+      throw new TypeError(`roles.${role} is not a model role (${MODEL_BACKEND_ROLES.join(', ')})`);
     }
   }
   return {
     version: CONFIG_VERSION,
     connections,
     roles: Object.fromEntries(Object.entries(roles).map(([role, value]) =>
-      [role, normalizeRole(value, `roles.${role}`, connections)]))
+      [role, normalizeRole(value, `roles.${role}`, connections, role)]))
   };
 }
 
@@ -95,7 +105,7 @@ function normalizeConnections(value) {
 }
 
 function normalizeConnection(value, label) {
-  object(value, label, ['protocol', 'endpoint', 'model', 'secretRef', 'reasoningEffort', 'pricing']);
+  object(value, label, ['protocol', 'endpoint', 'model', 'secretRef', 'reasoningEffort', 'headers', 'pricing']);
   if (!MODEL_BACKEND_PROTOCOLS.includes(value.protocol)) {
     throw new TypeError(`${label}.protocol must be one of ${MODEL_BACKEND_PROTOCOLS.join(', ')}`);
   }
@@ -114,8 +124,23 @@ function normalizeConnection(value, label) {
     model: plainText(value.model, `${label}.model`, 200),
     secretRef,
     reasoningEffort,
+    ...(value.headers == null ? {} : { headers: normalizeHeaders(value.headers, `${label}.headers`) }),
     pricing: value.pricing == null ? null : normalizePricing(value.pricing, `${label}.pricing`)
   };
+}
+
+// What a gateway asks of every request, such as a session header. Keys stay in
+// the secret store, so a header that carries one, or that the request sets itself, is refused.
+function normalizeHeaders(value, label) {
+  assertJsonObject(value, label);
+  const entries = Object.entries(value);
+  if (entries.length > MAX_HEADERS) throw new TypeError(`${label} may hold at most ${MAX_HEADERS} headers`);
+  for (const [name, text] of entries) {
+    if (!HEADER_NAME.test(name)) throw new TypeError(`${label} has an invalid name: ${name}`);
+    if (RESERVED_HEADERS.has(name.toLowerCase())) throw new TypeError(`${label}.${name} is set by FULI; a key goes in secretRef`);
+    if (typeof text !== 'string' || text.length > MAX_HEADER_VALUE || /[\r\n]/.test(text)) throw new TypeError(`${label}.${name} must be one short line`);
+  }
+  return Object.fromEntries(entries);
 }
 
 function endpointUrl(value, label) {
@@ -128,9 +153,8 @@ function endpointUrl(value, label) {
   }
   if (url.username || url.password) throw new TypeError(`${label} must not contain credentials; use secretRef`);
   if (url.search || url.hash) throw new TypeError(`${label} must not contain a query or fragment`);
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname))) {
-    throw new TypeError(`${label} must use HTTPS or loopback HTTP`);
-  }
+  // Plain HTTP on a LAN is the person's call: a model server at home often has no certificate.
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new TypeError(`${label} must use HTTP or HTTPS`);
   return url.href.replace(/\/+$/, '');
 }
 
@@ -149,12 +173,19 @@ function normalizePricing(value, label) {
   };
 }
 
-function normalizeRole(value, label, connections) {
+function normalizeRole(value, label, connections, role) {
   object(value, label, ['enabled', 'connection', 'allowedOperations', 'egress', 'budget', 'fallbackToSession']);
   if (typeof value.enabled !== 'boolean') throw new TypeError(`${label}.enabled must be a boolean`);
   const connection = requiredString(value.connection, `${label}.connection`, 64);
   if (!Object.hasOwn(connections, connection)) {
     throw new TypeError(`${label}.connection names a missing connection: ${connection}`);
+  }
+  const embeds = connections[connection].protocol === EMBEDDING_PROTOCOL;
+  if (role === SEMANTIC_ROLE && !embeds) {
+    throw new TypeError(`${label}.connection must use ${EMBEDDING_PROTOCOL}: semantic search turns text into vectors and cannot use a chat model`);
+  }
+  if (role !== SEMANTIC_ROLE && embeds) {
+    throw new TypeError(`${label}.connection uses ${EMBEDDING_PROTOCOL}, which only semantic search takes; a built-in Agent needs a chat model`);
   }
   const allowedOperations = uniqueTextArray(value.allowedOperations, `${label}.allowedOperations`, MAX_OPERATIONS);
   if (allowedOperations.some(operation => !OPERATION_PATTERN.test(operation))) {
@@ -165,6 +196,7 @@ function normalizeRole(value, label, connections) {
   if (value.enabled && !budget) throw new TypeError(`${label}.budget is required for an enabled role`);
   const fallbackToSession = value.fallbackToSession ?? false;
   if (typeof fallbackToSession !== 'boolean') throw new TypeError(`${label}.fallbackToSession must be a boolean`);
+  if (fallbackToSession && role === SEMANTIC_ROLE) throw new TypeError(`${label}.fallbackToSession must be false: a session cannot turn text into vectors`);
   return {
     enabled: value.enabled, connection, allowedOperations,
     egress: normalizeEgress(value.egress, `${label}.egress`), budget, fallbackToSession
@@ -196,15 +228,17 @@ function normalizeEgress(value, label) {
 }
 
 function normalizeBudget(value, label, connection) {
-  object(value, label, [...Object.keys(BUDGET_LIMITS), 'maxCostPerWindow']);
+  object(value ?? {}, label, [...Object.keys(BUDGET_LIMITS), 'maxCostPerWindow']);
+  const given = value ?? {};
+  // No limit unless the person set one: an empty field is null.
   const budget = Object.fromEntries(Object.entries(BUDGET_LIMITS).map(([key, maximum]) =>
-    [key, positiveInteger(value[key], `${label}.${key}`, maximum)]));
-  if (budget.timeoutMs < MIN_TIMEOUT_MS) throw new TypeError(`${label}.timeoutMs must be at least ${MIN_TIMEOUT_MS}`);
-  if (value.maxCostPerWindow == null) return { ...budget, maxCostPerWindow: null };
+    [key, given[key] == null ? null : positiveInteger(given[key], `${label}.${key}`, maximum)]));
+  if (budget.timeoutMs !== null && budget.timeoutMs < MIN_TIMEOUT_MS) throw new TypeError(`${label}.timeoutMs must be at least ${MIN_TIMEOUT_MS}`);
+  if (given.maxCostPerWindow == null) return { ...budget, maxCostPerWindow: null };
   if (!connection.pricing) {
     throw new TypeError(`${label}.maxCostPerWindow needs unit prices on the connection; without them the cost is unknown (费用未知)`);
   }
-  const maxCostPerWindow = price(value.maxCostPerWindow, `${label}.maxCostPerWindow`);
+  const maxCostPerWindow = price(given.maxCostPerWindow, `${label}.maxCostPerWindow`);
   if (maxCostPerWindow === 0) throw new TypeError(`${label}.maxCostPerWindow must be greater than 0`);
   return { ...budget, maxCostPerWindow };
 }

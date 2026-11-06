@@ -70,7 +70,11 @@ personal global scope must use preference convergence, with an explicit target a
 into a public proposal.
 For a preference that may have both global and project-specific forms, store a stable
 `attributes.preferenceKey` on each form so the project value can explicitly override the same
-global decision without hiding unrelated preferences.
+global decision without hiding unrelated preferences. Once a person confirms a preference whose
+key matches a current one in the same scope (scope, project and Agent), FULI stores it as a new
+version and ends the older one (history kept, nothing deleted; to go back, the person states the
+old preference again). `search_current_project_knowledge` and `search_knowledge_graph` find an
+entity preference by its key.
 
 Task entry injects these preferences by scene. When the user limits one to a kind of work, record
 it as `attributes.tasteDomain` (`frontend`, `ui`, `ux`, `design`, `visual`, `architecture`, `code`,
@@ -81,6 +85,11 @@ a scene key applies to every task except small talk; a `judgment_preference` wit
 boundary and applies everywhere. Set `attributes.constraint` only when the user says so: `"hard"`
 keeps a rule in every scene, `"soft"` lets small talk leave it out. The compact `remember` items
 take the same `constraint`, `workKind` and `tasteDomain` fields.
+
+When the person asks to keep something for later ("remember", "keep this for later sessions",
+"from now on", 记住, 以后都…), task entry adds `remember_guidance` and the task is never auto-closed:
+record it with `checkpoint_task_knowledge` `remember` before finishing. Writing it into a repository
+file or the host's own memory files does not put it in FULI.
 
 ## Route by Ownership
 
@@ -135,6 +144,9 @@ Use `capture_session_knowledge` with a small, coherent batch:
 3. Create stable entity keys, typed entities, and explicit uppercase relationships. When relevant, model `GitCommit`, `CodeSymbol`, `PRDSection`, `Runbook`, and `Incident` entities and connect them with relationships such as `IMPLEMENTED_IN`, `DEFINED_BY`, `MOTIVATED_BY`, `APPLIES_TO`, and `INVESTIGATED_WITH`.
 4. Include source kind, source application, a non-sensitive source description, reference time, session ID, and a retry-safe idempotency key. When an online source was actually read, also include its exact stable `sourceUri`. When available, include a stable source turn ID and only the smallest relevant excerpt needed to understand the evidence; never include a full transcript.
 5. Use `supersedes` when replacing a known relationship and set confidence below `1` only when the source itself expresses uncertainty.
+   When the person says something kept changed ("moved", "instead of", "no longer", "correction", 改成, 不再), task entry adds `update_guidance` and the task is not auto-closed: find the current item with `search_current_project_knowledge` and revise it with `revise_personal_knowledge` (`action: update`). A delivered preference carries its `id` (and `item_kind` when it is not `entity`) for this; a task entry bounded to an inline limit leaves the IDs out, so search by its `preference_key`. Capture a new item only when none matches; a new one beside the old leaves both current.
+   A value its subject has only one of (a URL, port, command, host, endpoint or owner) goes in one relationship from the subject whose type names it (`HAS_URL`, `RUNS_ON_PORT`, `START_COMMAND`, `OWNED_BY`); set `attributes.singleValued` to `true` for another single-valued relation, or `false` when such a type holds several. Once a person confirms a new value, FULI ends the older value of the same project, subject and relation itself (history kept; the person can restore it), so do not mark it outdated as well. Until then the older value stays current and waits for the person.
+   A capture result's `possibly_outdated` lists older items the new knowledge may silently replace (a pending keyed value, or a note of the same type in the same project that mostly repeats it). They stay current and wait for the person's review; `superseded` lists keyed values and same-key preferences a confirmed one ended. Neither is a write of yours to repeat or undo.
    When an item is concluded from current knowledge (a project fact drawn from a preference), list those item IDs in `derivedFrom`; once one of them is marked outdated the conclusion is no longer delivered as a current fact.
 6. Flush silently at the boundary. Continue the user's task without narrating routine capture.
 

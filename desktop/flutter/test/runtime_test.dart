@@ -106,6 +106,8 @@ void main() {
       expect(report.state, RuntimeState.stopped);
       expect(report.consolePort, 4400);
       expect(parseCliStatus('fuli: command not found').state, RuntimeState.unknown);
+      expect(parseCliStatus('{"status":"stopped","console":{"status":"stopped","crashed":true}}').crashed, isTrue);
+      expect(parseCliStatus('{"status":"stopped","console":{"status":"stopped"}}').crashed, isFalse);
     });
   });
 

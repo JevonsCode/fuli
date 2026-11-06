@@ -94,6 +94,25 @@ test('a coding task\'s knowledge index is reduced to a pointer before any prefer
   assert.equal(withIndex.task_knowledge_recall.knowledge_index, undefined);
 });
 
+// rec#75: a delivered preference names its item for revise_personal_knowledge;
+// past the inline limit the IDs go before any preference does.
+test('preference IDs are dropped before any preference is left out', async () => {
+  const fitting = hookFrame(await claudeEntry(syntheticLargeEntry({ items: syntheticPreferences(4), sessionId: SESSION })));
+  assert.deepEqual(fitting.effective_preferences.map(item => item.id), syntheticPreferences(4).map(item => item.id));
+  assert.equal(fitting.effective_preferences.some(item => 'item_kind' in item), false, 'entity is the default kind');
+  let found = null;
+  for (let count = 8; count <= 24 && !found; count++) {
+    for (let length = 300; length <= 440 && !found; length += 5) {
+      const items = syntheticPreferences(count, { length });
+      const frame = hookFrame(await claudeEntry(syntheticLargeEntry({ items, sessionId: SESSION })));
+      if (frame.preferences_omitted === undefined && !frame.effective_preferences[0].id) found = { items, frame };
+    }
+  }
+  assert.ok(found, 'some synthetic entry fits only without its preference IDs');
+  assert.deepEqual(keys(found.frame.effective_preferences), keys(found.items), 'every preference stays');
+  assert.equal(found.frame.effective_preferences.some(item => item.id), false);
+});
+
 test('an entry that fits is the same as without an inline budget, and other Agents are unchanged', async () => {
   const fitting = compactTaskContext(syntheticLargeEntry({ items: syntheticPreferences(10), sessionId: SESSION }));
   const label = 'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(fitting) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND;

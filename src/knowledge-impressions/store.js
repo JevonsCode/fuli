@@ -3,11 +3,11 @@ import { existsSync } from 'node:fs';
 
 import { openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 
-// rec#63 direction A, step 1: which knowledge items the automatic task-entry
-// recall showed an Agent, and which of them the Agent later reported using, so
-// ranking can later be learned from "shown but not used" vs "shown and used".
-// Recording only: nothing reads this for ranking yet, and nothing changes what
-// the Agent receives. No item text, names or summaries are stored: ids, rank,
+// rec#63 direction A: which knowledge items the automatic task-entry recall
+// showed an Agent, and which of them the Agent later reported using. Step 2
+// reads the per-item counts (usage) as a bounded ranking prior
+// (ranking-prior.js); it reorders the recall, never removes an item from it.
+// No item text, names or summaries are stored: ids, rank,
 // score and confirmation status only. task_key is a SHA-256 hex of the task
 // context token, so the token itself is never stored.
 export const RECALL_IMPRESSIONS_FORMAT = sqliteFormat({
@@ -93,6 +93,28 @@ export class RecallImpressionsStore {
         update.run(item.useKind, usedAt, taskKey, item.itemKind, item.itemId);
       }
     });
+  }
+
+  // Per item id, how many distinct reporting tasks were shown it and how many
+  // of those used it, within one personal space. Only items with such a row appear; a store
+  // nothing was ever shown in reads as empty and is not created.
+  usage({ personalSpaceId, items }) {
+    const usage = new Map();
+    const wanted = new Set((items ?? []).filter(item => item?.itemId).map(item => `${item.itemKind}:${item.itemId}`));
+    if (!wanted.size || !this.readable) return usage;
+    const ids = [...new Set([...wanted].map(key => key.slice(key.indexOf(':') + 1)))];
+    // Only a task that reported using something tells "shown, not used"
+    // apart from "never reports use" (a client may never send knowledgeUsage),
+    // so other tasks count for nothing. One grouped read; the 180-day
+    // retention keeps the table small.
+    const rows = this.db.prepare('SELECT item_kind, item_id, COUNT(*) AS shown, COUNT(use_kind) AS used '
+      + `FROM recall_impressions WHERE personal_space_id = ? AND item_id IN (${ids.map(() => '?').join(', ')}) `
+      + 'AND task_key IN (SELECT task_key FROM recall_impressions WHERE use_kind IS NOT NULL) '
+      + 'GROUP BY item_kind, item_id').all(personalSpaceId, ...ids);
+    for (const { item_kind: itemKind, item_id: itemId, shown, used } of rows) {
+      if (wanted.has(`${itemKind}:${itemId}`)) usage.set(itemId, { shown, used });
+    }
+    return usage;
   }
 
   summary({ personalSpaceId, personalProjectId = null }) {

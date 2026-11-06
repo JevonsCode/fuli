@@ -145,6 +145,21 @@ test('a native execution/window change forces a new complete baseline in a survi
   assert.equal((await f.service.deliver(entry('new-window-next'), fresh, format)).structuredContent.preference_delivery.base_revision, recovered.structuredContent.revision);
 }));
 
+// Review of #654: a hook reset saves no host window, and a new MCP process no
+// longer resets the record, so a window change after a hook reset must still
+// start a new generation.
+test('a window change after a hook reset never names a frame of the old window', () => fixture(async f => {
+  const first = { ...origin, nativeGeneration: { execution: 'execution-a', window: 'window-a' } };
+  await f.delivered('window-a', await f.service.deliver(entry(), first, format));
+  assert.equal(await f.service.reset(origin), true);
+  const hook = await f.service.deliver(entry('hook'), origin, format);
+  await f.delivered('hook-frame', hook);
+  const next = { ...origin, nativeGeneration: { execution: 'execution-a', window: 'window-b' } };
+  const result = (await f.service.deliver(entry('window-b'), next, format)).structuredContent;
+  assert.equal(result.preference_delivery, undefined);
+  assert.equal(result.effective_preferences.length, 12);
+}));
+
 // rec#15 D-29.2: the scene lives in the private pending item, bound to the
 // producer's scope, snapshot and whole-frame hashes.
 test('a pending item without its scene, or with another scene, confirms nothing', async () => {

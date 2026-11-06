@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, provide, watch, watchEffect } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch, watchEffect } from 'vue'
 import { MotionConfig } from 'motion-v'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import BrandEasterEgg from '@/components/BrandEasterEgg.vue'
 import GrowingBackdrop from '@/components/GrowingBackdrop.vue'
 import NavigationRecovery from '@/components/NavigationRecovery.vue'
@@ -10,14 +10,17 @@ import { loadPersonProfile } from '@/features/person-home/person-profile'
 import { loadRoleNames } from '@/features/agent-profile/role-names'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
 import CaptureOnboardingDialog from '@/features/capture/CaptureOnboardingDialog.vue'
+import ModelPowerButton from '@/features/model-settings/ModelPowerButton.vue'
 import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
+import { offersUpdate, readVersionStatus } from '@/features/update/version-status'
 import { useRoundtableLive } from '@/features/roundtables/roundtable-live'
 import { t } from '@/i18n'
 import { fuliWordmarkUrl } from '@/lib/brand'
 import { vWindowDrag } from '@/lib/desktop-client'
+import { useHold } from '@/lib/use-hold'
 import { SPRING, motionConfigReduced } from '@/lib/motion'
 import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { useConsoleStore } from '@/stores/console'
@@ -46,6 +49,18 @@ const destination = computed(() => activeDestination(destinations.value, route.p
 const section = computed(() => activeSection(destination.value, route.path))
 const dockDestinations = computed(() => destinations.value.filter(item => item.placement === 'dock'))
 const settingsActive = computed(() => destination.value?.key === 'settings')
+// Holding the settings button opens the #fulidebug records (Jevons 11-04): nothing in Settings names them.
+const router = useRouter()
+// The mark and the wordmark: on 工作台 they play the mark's effect; on any other
+// page they go back to it (Jevons 11-04).
+const brand = ref<InstanceType<typeof BrandEasterEgg> | null>(null)
+const onHome = computed(() => route.path === '/')
+const brandLabel = computed(() => onHome.value ? t('console.brandEffect.aria') : t('shell.destinations.constellation'))
+function pressBrand() {
+  if (onHome.value) brand.value?.play()
+  else void router.push('/')
+}
+const settingsHold = useHold(() => { void router.push('/debug') })
 // The dock stays open on the workbench and folds to the current destination
 // elsewhere. A page outside the dock (settings) has nothing to fold to, so the
 // dock stays open there instead of shrinking to an empty capsule.
@@ -90,13 +105,22 @@ function refreshConsole() {
   void store.refresh()
   if (!attention.loading) void attention.refresh()
 }
+// A newer release is a dot at the version's top-right (Jevons 11-04: not on the mark);
+// the version opens 设置 › 版本, where it installs.
+const latestVersion = ref<string | null>(null)
+const versionRequest = new AbortController()
 onMounted(() => {
   measureScrollbarSize()
+  void readVersionStatus(versionRequest.signal)
+    .then((status) => { latestVersion.value = offersUpdate(status) ? status.latestVersion : null })
+    // Version checks are advisory and never interrupt the console.
+    .catch(() => {})
   if (store.runtimeStatus === 'idle') void store.refresh()
   attentionTimer = setInterval(refreshAttention, 30000)
   document.addEventListener('visibilitychange', refreshAttention)
 })
 onBeforeUnmount(() => {
+  versionRequest.abort()
   clearInterval(attentionTimer)
   document.removeEventListener('visibilitychange', refreshAttention)
   attention.setSpace('')
@@ -116,12 +140,14 @@ watchEffect(() => {
     <header v-window-drag class="app-topbar">
       <div class="app-topbar-inner">
         <div class="app-brand">
-          <BrandEasterEgg compact />
+          <BrandEasterEgg ref="brand" compact :label="brandLabel" @press="pressBrand" />
           <!-- The official FULI wordmark in every language (Jevons 11-03: the title bar always says FULI,
                never 复利, and switching languages leaves it alone), centred on the mark as in the
                brand lockup; the service dot sits on its middle. -->
           <span class="app-brand-word">
-            <img class="app-wordmark" :src="fuliWordmarkUrl('en-US')" alt="FULI" draggable="false" data-wordmark />
+            <button type="button" class="app-wordmark-button" :aria-label="brandLabel" data-brand-home @click="pressBrand">
+              <img class="app-wordmark" :src="fuliWordmarkUrl('en-US')" alt="FULI" draggable="false" data-wordmark />
+            </button>
             <!-- The service dot says ready on its own; its words show only when the service is not ready. -->
             <span class="app-runtime" :class="{ 'is-ready': runtimeReady }" role="status"
               :title="t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline')" data-runtime>
@@ -129,8 +155,10 @@ watchEffect(() => {
               <span class="app-runtime-text" :class="{ 'is-visible': !runtimeReady }">{{ t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline') }}</span>
             </span>
             <!-- The version beside the dot opens 设置 › 版本 (update channel and updates). -->
-            <RouterLink class="app-version" to="/settings?tab=version" :aria-label="t('shell.versionLink', { version: FULI_VERSION })"
-              draggable="false" data-app-version>v{{ FULI_VERSION }}</RouterLink>
+            <RouterLink class="app-version" to="/settings?tab=version" draggable="false" data-app-version
+              :aria-label="latestVersion ? t('shell.versionUpdate', { version: FULI_VERSION, latest: latestVersion })
+                : t('shell.versionLink', { version: FULI_VERSION })">v{{ FULI_VERSION }}<span
+                v-if="latestVersion" class="app-version-dot" aria-hidden="true" data-update-dot /></RouterLink>
           </span>
         </div>
         <!-- Only a record's own name is shown; a destination is already named by the dock
@@ -146,7 +174,9 @@ watchEffect(() => {
             :data-attention="attention.total ? 'full' : 'empty'" data-shell-inbox data-term="section.askedYou">
             <UiIcon :name="attention.total ? 'trayFull' : 'tray'" :size="18" />
           </RouterLink>
-          <RouterLink to="/settings" class="app-round" :class="{ 'is-active': settingsActive }" :aria-current="settingsActive ? 'page' : undefined"
+          <ModelPowerButton />
+          <RouterLink to="/settings" class="app-round" :class="{ 'is-active': settingsActive, 'is-shaking': settingsHold.shaking.value }" :aria-current="settingsActive ? 'page' : undefined"
+            draggable="false" v-bind="settingsHold.handlers"
             :aria-label="t('shell.destinations.settings')" :title="t('shell.destinations.settings')" data-destination="settings" data-term="destination.settings">
             <UiIcon name="settings" :size="18" />
           </RouterLink>
@@ -202,6 +232,8 @@ watchEffect(() => {
 }
 .app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-height: 44px; }
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.app-wordmark-button { display: inline-flex; padding: 0; border: 0; background: none; cursor: pointer; user-select: none; }
+.app-wordmark-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 /* The brand lockup's proportions (brand/svg/lockup): the wordmark's glyphs stand at about 0.54 of the
    mark's art (21px for the 38px mark; the files keep 16 of 232 units of clear space around the glyphs)
    and start about a quarter of the art to its right. The status dot and its words sit on the wordmark's
@@ -212,10 +244,15 @@ watchEffect(() => {
 .app-runtime { display: inline-flex; align-items: center; gap: 6px; --runtime: var(--status-error); }
 .app-runtime.is-ready { --runtime: var(--color-success); }
 .app-version {
-  color: var(--color-muted); font-size: var(--text-meta); font-variant-numeric: tabular-nums; text-decoration: none;
+  position: relative; color: var(--color-muted); font-size: var(--text-meta); font-variant-numeric: tabular-nums; text-decoration: none;
   user-select: none; border-radius: var(--radius-control, 6px);
 }
 .app-version:hover, .app-version:focus-visible { color: var(--color-ink); }
+/* Over the corner, not beside the text: the version never moves when it appears. */
+.app-version-dot {
+  position: absolute; top: -2px; right: -6px; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-danger); box-shadow: 0 1px 4px color-mix(in srgb, var(--color-danger) 28%, transparent);
+}
 .app-runtime-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--runtime); }
 .app-runtime-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .app-runtime-text.is-visible { position: static; width: auto; height: auto; overflow: visible; clip-path: none; color: var(--runtime); font-size: var(--text-meta); font-weight: var(--weight-medium); }
@@ -231,6 +268,8 @@ watchEffect(() => {
 .app-round.is-active { color: var(--color-on-accent); background: var(--color-accent); }
 /* A full tray reads in ink; its papers drop in when it fills (reduced motion zeroes this in primitives.css). */
 .app-round.is-full { color: var(--color-ink); }
+.app-round.is-shaking { animation: app-round-shake 120ms linear infinite; }
+@keyframes app-round-shake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-7deg); } 75% { transform: rotate(7deg); } }
 .app-round :deep(.tray-papers) { transform-box: fill-box; animation: tray-papers-in var(--motion-enter); }
 @keyframes tray-papers-in { from { opacity: 0; transform: translateY(-5px); } }
 /* A long record name takes at most two lines. */
@@ -248,6 +287,7 @@ watchEffect(() => {
   /* Brand, title and actions share the first row; the section tabs take their own. */
   .app-topbar-inner > .section-tabs { order: 3; flex-basis: 100%; }
 }
-@media (prefers-reduced-motion: reduce) { .app-round { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .app-round { transition: none; } .app-round.is-shaking { animation: none; } }
+:root[data-motion="reduced"] .app-round.is-shaking { animation: none; }
 :root[data-motion="reduced"] .app-round { transition: none; }
 </style>

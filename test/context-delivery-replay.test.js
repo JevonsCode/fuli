@@ -11,6 +11,9 @@ import { PROVIDER_RECOVERY_WINDOW, syntheticJournal } from '../test-support/synt
 // The exact encoding a complete frame with preferences adds (D-29.10): its
 // 12-hex revision field. The per-turn allowance is this measured byte count.
 const REVISION_FIELD_BYTES = Buffer.byteLength(',"revision":"0123456789ab"', 'utf8');
+// A hook frame that still shows skeleton fields names them by a 12-hex
+// skeleton_revision so a later frame can leave them out (rec#76).
+const SKELETON_REVISION_FIELD_BYTES = Buffer.byteLength(',"skeleton_revision":"0123456789ab"', 'utf8');
 // A turn that carries a recovery.withdrawn block may exceed by this much more (D-29.5).
 const WITHDRAWN_ALLOWANCE_BYTES = 128;
 // D-29.5 (and the unchanged-preferences scenario): strictly below the uncached baseline with the scaled fixture.
@@ -23,8 +26,9 @@ const describe = (variant, scenario, turn, index) => `${variant} ${scenario} tur
   + `produced ${turn.produced_bytes} B, no cache ${turn.no_cache_bytes} B, revision field ${turn.revision_field_bytes} B`;
 
 function allowance(turn) {
-  const full = turn.preference_delivery === 'full' && turn.preferences_sent > 0 ? turn.revision_field_bytes : 0;
-  return full + (turn.withdrawn_sequences.length ? WITHDRAWN_ALLOWANCE_BYTES : 0);
+  // A refreshed task's complete frame (read_task_preferences) is full too.
+  const full = ['full', 'complete'].includes(turn.preference_delivery) && turn.preferences_sent > 0 ? turn.revision_field_bytes : 0;
+  return full + turn.skeleton_revision_field_bytes + (turn.withdrawn_sequences.length ? WITHDRAWN_ALLOWANCE_BYTES : 0);
 }
 
 test('the replay measures both fixtures in bytes with fixed synthetic sizes', async () => {
@@ -62,13 +66,17 @@ test('every delivered turn keeps the model view whole and every scenario check p
   }
 });
 
-test('a complete frame adds exactly its 12-hex revision field and no turn costs more than the uncached entry otherwise', async () => {
+test('a complete frame adds exactly its 12-hex revision fields and no turn costs more than the uncached entry otherwise', async () => {
   assert.equal(REVISION_FIELD_BYTES, 26);
+  assert.equal(SKELETON_REVISION_FIELD_BYTES, 35);
   const failures = [];
   for (const { variant, scenarios } of await variants()) {
     for (const scenario of scenarios) {
       scenario.detail.forEach((turn, index) => {
         if (![0, REVISION_FIELD_BYTES].includes(turn.revision_field_bytes)) failures.push(`${describe(variant, scenario.scenario, turn, index)}: revision encoding`);
+        if (![0, SKELETON_REVISION_FIELD_BYTES].includes(turn.skeleton_revision_field_bytes)) {
+          failures.push(`${describe(variant, scenario.scenario, turn, index)}: skeleton revision encoding`);
+        }
         if (turn.produced_bytes - turn.no_cache_bytes > allowance(turn)) {
           failures.push(`${describe(variant, scenario.scenario, turn, index)}: over by ${turn.produced_bytes - turn.no_cache_bytes - allowance(turn)} B`);
         }
@@ -171,6 +179,23 @@ test('explicit resume is reused only after a complete visible result, in both fi
     for (const turn of complete) {
       assert.equal(turn.messages_sent, 0, `${variant} ${turn.client}`);
       assert.equal(turn.correctness.ok, true);
+    }
+  }
+});
+
+// rec#76: once a notification or a repeated prompt has a recorded frame of its
+// task to name, it sends neither the skeleton nor the hook's instructions again.
+test('repeated notifications and prompts name the skeleton they already showed', async () => {
+  for (const { variant, scenarios } of await variants()) {
+    // The first repeat still shows the conversation's first saved result once.
+    for (const [name, steady] of [['notifications', 2], ['repeated_prompt', 2]]) {
+      const turns = scenarios.find(item => item.scenario === name).detail.slice(steady);
+      assert.equal(turns.length, 11 - steady, `${variant} ${name}`);
+      for (const [index, turn] of turns.entries()) {
+        assert.equal(turn.skeleton_delivery, 'unchanged', describe(variant, name, turn, index + steady));
+        assert.equal(turn.skeleton_revision_field_bytes, 0, describe(variant, name, turn, index + steady));
+        assert.ok(turn.produced_bytes <= 0.35 * turn.no_cache_bytes, describe(variant, name, turn, index + steady));
+      }
     }
   }
 });

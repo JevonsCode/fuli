@@ -11,6 +11,7 @@ from .provider_values import (
     json_object,
     native_datetime as _native_datetime,
     normalized_text as _normalized,
+    preference_key,
     preference_qualifiers,
 )
 from .search_projection import (
@@ -20,11 +21,16 @@ from .search_projection import (
     read_edge_epistemic_metadata,
     source_uris_from_references,
 )
+from .knowledge_semantic import fused_ranking, meaning_matches, usable_vector
 from .knowledge_weight import knowledge_weight, ranking_weight
 from .knowledge_tag_ranking import TagRanking
 from .knowledge_visibility import AgentReader, fla_endpoints_visible_cypher, fla_visible, reader_parameter
 
 MIN_TERM_COVERAGE = 0.25
+# How many items with a vector of the query's model one search compares (rec#88).
+SEMANTIC_CANDIDATE_LIMIT = 5000
+# A preference key's separators, so `reply-language` is also the words "reply language".
+_KEY_SEPARATORS = re.compile(r'[-_.:/]+')
 LATIN_QUERY_FILLERS = {
     'a', 'an', 'and', 'are', 'can', 'could', 'do', 'does', 'find', 'for',
     'from', 'give', 'how', 'i', 'in', 'is', 'it', 'me', 'of', 'on', 'please',
@@ -48,6 +54,14 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
         group_ids=group_ids,
         num_results=min(max(request.limit * 8, 40), 100),
     )
+    # Relationships found only by their retrieval terms join the lexical ones (rec#92).
+    edge_terms, term_edges = await _term_edge_candidates(store, personal_space, request)
+    found = {edge.uuid for edge in edges}
+    edges = [*edges, *(edge for edge in term_edges if edge.uuid not in found)]
+    lexical_ids = {edge.uuid for edge in edges}
+    # Relationships found by meaning pass the very same filters below.
+    meaning_vectors, meaning_edges = await _semantic_edge_candidates(store, personal_space, request)
+    edges = [*edges, *(edge for edge in meaning_edges if edge.uuid not in lexical_ids)]
     if not request.include_historical:
         edges = [edge for edge in edges if edge.invalid_at is None]
     project_scopes = {}
@@ -82,6 +96,8 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
         ]
     names = await _entity_names(store, edges)
     tag_ranking = await TagRanking.for_search(store, personal_space, request, project_scopes)
+    in_scope_vectors = {edge.uuid: meaning_vectors[edge.uuid] for edge in edges if edge.uuid in meaning_vectors}
+    edges = [edge for edge in edges if edge.uuid in lexical_ids]
     ranked_edges = sorted(
         (
             (
@@ -92,6 +108,7 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
                         names,
                         position,
                         len(edges),
+                        edge_terms.get(edge.uuid),
                     ),
                     epistemic.get(edge.uuid, {}),
                 ),
@@ -103,6 +120,10 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
         reverse=True,
     )
     ranked_edges = [item for item in ranked_edges if item[0] > 0]
+    meaning_edges = {edge.uuid: edge for edge in meaning_edges}
+    ranked_edges, edge_matches = _fused_with_meaning(
+        ranked_edges, [meaning_edges[edge_id] for edge_id in _meaning_order(request, in_scope_vectors)],
+        lambda edge: edge.uuid)
     if personal_space:
         ranked_edges = _dedupe_ranked_edges(
             ranked_edges,
@@ -132,7 +153,7 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
                 space_ids_by_group[edge.group_id],
                 epistemic.get(edge.uuid, {}),
             ).model_copy(
-                update={'score': score}
+                update={'score': score, 'matched_by': edge_matches.get(edge.uuid, 'lexical')}
             )
             for score, edge in ranked_edges
         ],
@@ -352,9 +373,48 @@ async def _personal_entities(
 ) -> list[EntitySearchResult]:
     if not project_scopes and not request.include_personal_global:
         return []
+    scoped_records = await _scoped_entity_records(store, space, request, project_scopes)
+    ranked = sorted(
+        (
+            (
+                record,
+                _ranked_relevance(
+                    _relevance(request.query, record),
+                    record,
+                ),
+            )
+            for record in scoped_records
+        ),
+        key=lambda item: (item[1], _tie_weight(item[0]), _timestamp(item[0].get('created_at'))),
+        reverse=True,
+    )
+    ranked = [item for item in ranked if item[1] > 0]
+    meaning = await _semantic_entities(store, space, request, project_scopes)
+    fused, entity_matches = _fused_with_meaning(
+        [(score, record) for record, score in ranked], meaning, lambda record: record['id'])
+    ranked = _dedupe_ranked_entities(
+        [(record, score) for score, record in fused],
+        request.active_personal_project_id,
+        request.project_agent_id,
+    )
+    ranked = [(record, score) for _, score, record in await (tag_ranking or TagRanking()).rerank(
+        [(record['id'], score, record) for record, score in ranked], 'entity', tag_explanations
+    )][: request.limit]
+    return [
+        _entity_search_result(record, score, space['id'], entity_matches.get(record['id'], 'lexical'))
+        for record, score in ranked
+    ]
+
+
+async def _scoped_entity_records(store, space, request: SearchRequest, project_scopes: dict[str, dict],
+                                 *, semantic_model: str | None = None) -> list[dict]:
+    """The entities this search may return, with their scope. With a
+    semantic_model, only those carrying a vector of that model, and the
+    vector: the same filters decide either way (rec#88)."""
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (node:Entity {group_id: $group_id})
+        WHERE $semantic_model IS NULL OR node.fuli_semantic_model = $semantic_model
         OPTIONAL MATCH (episode:Episodic {group_id: $group_id})-[:MENTIONS]->(node)
         WITH node, collect(DISTINCT episode) AS episodes
         OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {
@@ -385,7 +445,7 @@ async def _personal_entities(
         RETURN node.uuid AS id, node.group_id AS group_id,
                node.name AS name, coalesce(node.fuli_type, 'Entity') AS type,
                coalesce(node.summary, '') AS summary,
-               node.created_at AS created_at,
+               node.created_at AS created_at, node.fuli_invalid_at AS invalid_at,
                coalesce(node.fuli_origin_quadrant, 'known_known') AS origin_quadrant,
                coalesce(node.fuli_current_quadrant, 'known_known') AS current_quadrant,
                coalesce(node.fuli_epistemic_status, 'confirmed') AS epistemic_status,
@@ -439,6 +499,12 @@ async def _personal_entities(
                  AS requires_attention,
                node.fuli_last_feedback_kind AS last_feedback_kind,
                node.fuli_last_feedback_at AS last_feedback_at,
+               node.fuli_retrieval_terms AS retrieval_terms,
+               node.fuli_retrieval_context AS retrieval_context,
+               CASE WHEN $semantic_model IS NOT NULL THEN node.fuli_semantic_vector END
+                 AS semantic_vector,
+               CASE WHEN $semantic_model IS NOT NULL THEN node.fuli_semantic_hash END
+                 AS semantic_hash,
                [episode IN episodes | episode.uuid] AS evidence_ids,
                [episode IN episodes
                  WHERE episode.fuli_source_uri IS NOT NULL |
@@ -455,7 +521,8 @@ async def _personal_entities(
         project_ids=list(project_scopes),
         include_historical=request.include_historical,
         include_pending=request.include_pending,
-        candidate_limit=store.settings.graph_limit,
+        semantic_model=semantic_model,
+        candidate_limit=SEMANTIC_CANDIDATE_LIMIT if semantic_model else store.settings.graph_limit,
         routing_='r',
     )
     scoped_records = []
@@ -481,33 +548,119 @@ async def _personal_entities(
         )
         if scope is not None:
             scoped_records.append({**record, **scope})
-    ranked = sorted(
-        (
-            (
-                record,
-                _ranked_relevance(
-                    _relevance(request.query, record),
-                    record,
-                ),
-            )
-            for record in scoped_records
-        ),
-        key=lambda item: (item[1], _tie_weight(item[0]), _timestamp(item[0].get('created_at'))),
-        reverse=True,
+    return scoped_records
+
+
+async def _semantic_entities(store, space, request: SearchRequest, project_scopes: dict[str, dict]) -> list[dict]:
+    """The in-scope entities that stand out for the query's meaning, best first."""
+    if request.semantic is None:
+        return []
+    records = await _scoped_entity_records(store, space, request, project_scopes,
+                                           semantic_model=request.semantic.model)
+    length = len(request.semantic.vector)
+    by_id, vectors = {}, {}
+    for record in records:
+        vector = usable_vector('entity', record, length)
+        if vector is not None:
+            by_id[record['id']], vectors[record['id']] = record, vector
+    return [by_id[item_id] for item_id in _meaning_order(request, vectors)]
+
+
+async def _semantic_edge_candidates(store, space, request: SearchRequest) -> tuple[dict, list[EntityEdge]]:
+    """Every relationship of the personal space with a usable vector of the
+    query's model, as candidates for the search's own filters (rec#88)."""
+    if request.semantic is None or space is None:
+        return {}, []
+    length = len(request.semantic.vector)
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (source:Entity)-[edge:RELATES_TO {group_id: $group_id}]->(target:Entity)
+        WHERE edge.fuli_semantic_model = $semantic_model
+          AND size(edge.fuli_semantic_vector) = $length
+        RETURN edge.uuid AS uuid, source.uuid AS source_node_uuid, target.uuid AS target_node_uuid,
+               edge.group_id AS group_id, edge.name AS name, edge.fact AS fact,
+               coalesce(edge.episodes, []) AS episodes, edge.created_at AS created_at,
+               edge.valid_at AS valid_at, edge.invalid_at AS invalid_at, edge.expired_at AS expired_at,
+               edge.fuli_semantic_vector AS semantic_vector, edge.fuli_semantic_hash AS semantic_hash,
+               edge.fuli_retrieval_terms AS retrieval_terms, edge.fuli_retrieval_context AS retrieval_context
+        ORDER BY edge.uuid
+        LIMIT $candidate_limit
+        ''',
+        group_id=space['group_id'],
+        semantic_model=request.semantic.model,
+        length=length,
+        candidate_limit=SEMANTIC_CANDIDATE_LIMIT,
+        routing_='r',
     )
-    ranked = [item for item in ranked if item[1] > 0]
-    ranked = _dedupe_ranked_entities(
-        ranked,
-        request.active_personal_project_id,
-        request.project_agent_id,
+    vectors, edges = {}, []
+    for record in records:
+        vector = usable_vector('relationship', record, length)
+        if vector is None:
+            continue
+        vectors[record['uuid']] = vector
+        edges.append(_edge_from_record(record))
+    return vectors, edges
+
+
+async def _term_edge_candidates(store, space, request: SearchRequest) -> tuple[dict, list[EntityEdge]]:
+    """The retrieval terms of the personal space's relationships, by id, and
+    the relationships the query finds through them, as candidates for the
+    search's own filters (rec#92). Word search over facts alone never sees
+    terms stored beside them."""
+    if space is None:
+        return {}, []
+    records, _, _ = await store.runtime.driver.execute_query(
+        '''
+        MATCH (source:Entity)-[edge:RELATES_TO {group_id: $group_id}]->(target:Entity)
+        WHERE edge.fuli_retrieval_terms IS NOT NULL
+        RETURN edge.uuid AS uuid, source.uuid AS source_node_uuid, target.uuid AS target_node_uuid,
+               edge.group_id AS group_id, edge.name AS name, edge.fact AS fact,
+               coalesce(edge.episodes, []) AS episodes, edge.created_at AS created_at,
+               edge.valid_at AS valid_at, edge.invalid_at AS invalid_at, edge.expired_at AS expired_at,
+               edge.fuli_retrieval_terms AS retrieval_terms, edge.fuli_retrieval_context AS retrieval_context
+        ORDER BY edge.uuid
+        LIMIT $candidate_limit
+        ''',
+        group_id=space['group_id'],
+        candidate_limit=SEMANTIC_CANDIDATE_LIMIT,
+        routing_='r',
     )
-    ranked = [(record, score) for _, score, record in await (tag_ranking or TagRanking()).rerank(
-        [(record['id'], score, record) for record, score in ranked], 'entity', tag_explanations
-    )][: request.limit]
-    return [
-        _entity_search_result(record, score, space['id'])
-        for record, score in ranked
-    ]
+    terms = {record['uuid']: {'retrieval_terms': record['retrieval_terms'],
+                              'retrieval_context': record['retrieval_context']} for record in records}
+    found = [_edge_from_record(record) for record in records
+             if _relevance(request.query, {'summary': record['fact'], **terms[record['uuid']]}) > 0]
+    return terms, found
+
+
+def _edge_from_record(record) -> EntityEdge:
+    return EntityEdge(
+        uuid=record['uuid'], source_node_uuid=record['source_node_uuid'],
+        target_node_uuid=record['target_node_uuid'], group_id=record['group_id'],
+        name=record['name'] or '', fact=record['fact'] or '', episodes=list(record['episodes']),
+        created_at=_native_datetime(record['created_at']), valid_at=_native_datetime(record['valid_at']),
+        invalid_at=_native_datetime(record['invalid_at']), expired_at=_native_datetime(record['expired_at']),
+    )
+
+
+def _meaning_order(request: SearchRequest, vectors: dict) -> list[str]:
+    if request.semantic is None:
+        return []
+    return list(meaning_matches(vectors, request.semantic.vector, request.limit))
+
+
+def _fused_with_meaning(lexical, meaning, item_id):
+    """lexical: [(score, payload)] in its ranked order; meaning: [payload] best
+    first. Without meaning the lexical result stands as it is. Otherwise every
+    item's score is its reciprocal rank fusion value; an item found only by
+    meaning never met the term-coverage cut. Returns the ranked
+    [(score, payload)] and {item id: matched_by}."""
+    if not meaning:
+        return lexical, {}
+    fused = fused_ranking([item_id(payload) for _, payload in lexical], [item_id(payload) for payload in meaning])
+    payloads = {item_id(payload): payload for payload in meaning}
+    payloads.update({item_id(payload): payload for _, payload in lexical})
+    ranked = sorted(((fused[key][0], payloads[key]) for key in fused), key=lambda item: -item[0])
+    return ranked, {key: matched_by for key, (_, matched_by) in fused.items()}
 
 
 def _item_scope_metadata(
@@ -671,7 +824,7 @@ def _dedupe_ranked_edges(
     selected = {}
     for score, edge in ranked:
         metadata = metadata_by_id.get(edge.uuid, {})
-        key = metadata.get('key') or edge.uuid
+        key = _dedupe_key(metadata.get('key'), edge.uuid, edge.invalid_at)
         quality = (
             _scope_precedence(metadata, active_project_id, project_agent_id),
             -score,
@@ -690,7 +843,7 @@ def _dedupe_ranked_edges(
 def _dedupe_ranked_entities(ranked, active_project_id, project_agent_id=None):
     selected = {}
     for record, score in ranked:
-        key = record.get('key') or record.get('id')
+        key = _dedupe_key(record.get('key'), record.get('id'), record.get('invalid_at'))
         quality = (
             _scope_precedence(record, active_project_id, project_agent_id),
             -score,
@@ -706,25 +859,27 @@ def _dedupe_ranked_entities(ranked, active_project_id, project_agent_id=None):
     )
 
 
+def _dedupe_key(key, item_id, invalid_at):
+    """One current item per key across scopes. A historical version, asked
+    for explicitly, never stands in for the current one: each is its own."""
+    return ('current', key or item_id) if invalid_at is None else ('historical', item_id)
+
+
 def _tie_weight(metadata) -> float:
     """At equal score, the heavier item comes first."""
     return ranking_weight(metadata, evidence_ids=metadata.get('evidence_ids') or [])
 
 
-def _entity_search_result(record, score: float, space_id: str) -> EntitySearchResult:
+def _entity_search_result(record, score: float, space_id: str, matched_by: str = 'lexical') -> EntitySearchResult:
     value = dict(record)
     value.update(knowledge_weight(record, evidence_ids=value.pop('evidence_ids', [])))
     attributes = json_object(value.get('attributes_json'))
-    value['preference_key'] = (
-        attributes.get('preferenceKey')
-        or attributes.get('preference_key')
-        or value.get('key')
-        or value.get('id')
-    )
+    value['preference_key'] = preference_key(attributes, value.get('key'), value.get('id'))
     value['preference_qualifiers'] = preference_qualifiers(attributes)
     basis = json_object(value.pop('confirmation_basis_json', None))
     source_references = value.pop('source_references', [])
     created_at = _native_datetime(value.pop('created_at', None))
+    invalid_at = _native_datetime(value.pop('invalid_at', None))
     last_human_changed_at = _native_datetime(
         value.pop('last_human_changed_at', None)
     )
@@ -747,12 +902,17 @@ def _entity_search_result(record, score: float, space_id: str) -> EntitySearchRe
         'has_global_episode',
         'reference_project_ids',
         'inherited',
+        'semantic_vector',
+        'semantic_hash',
+        'retrieval_terms',
+        'retrieval_context',
     ):
         value.pop(field, None)
     return EntitySearchResult(
         **value,
         space_id=space_id,
         created_at=created_at,
+        invalid_at=invalid_at,
         last_human_changed_at=last_human_changed_at,
         last_agent_viewed_at=last_agent_viewed_at,
         last_agent_reviewed_at=last_agent_reviewed_at,
@@ -763,6 +923,7 @@ def _entity_search_result(record, score: float, space_id: str) -> EntitySearchRe
         ),
         source_uris=source_uris_from_references(source_references),
         score=score,
+        matched_by=matched_by,
     )
 
 
@@ -786,7 +947,7 @@ def _relevance(query: str, record) -> float:
     needle = _normalized(query)
     haystack = _normalized(' '.join(filter(None, [
         record.get('name'), record.get('type'), record.get('summary'),
-        record.get('reasoning_summary'), record.get('profile_aspect'),
+        record.get('reasoning_summary'), record.get('profile_aspect'), record.get('retrieval_context'),
     ])))
     if not needle:
         return 0.0
@@ -803,8 +964,10 @@ def _relevance(query: str, record) -> float:
     return round(score, 4)
 
 
-def _edge_relevance(query: str, edge, names: dict[str, str], position: int, total: int) -> float:
+def _edge_relevance(query: str, edge, names: dict[str, str], position: int, total: int,
+                    retrieval: dict | None = None) -> float:
     lexical = _relevance(query, {
+        **(retrieval or {}),
         'name': edge.name,
         'type': 'Relationship',
         'summary': ' '.join(filter(None, [
@@ -823,7 +986,7 @@ def _edge_relevance(query: str, edge, names: dict[str, str], position: int, tota
 
 def _terms(value: str) -> set[str]:
     latin = {
-        term for term in re.findall(r'[a-z0-9_]+', value)
+        _word_stem(term) for term in re.findall(r'[a-z0-9_]+', value)
         if term not in LATIN_QUERY_FILLERS
     }
     chinese_segments = re.findall(r'[\u4e00-\u9fff]+', value)
@@ -836,6 +999,23 @@ def _terms(value: str) -> set[str]:
             for index in range(max(0, len(chinese) - 1))
         )
     return latin | grams
+
+
+def _word_stem(term: str) -> str:
+    """One English word form for its inflections, applied to both sides of a
+    match: "owns", "owned" and "owner" meet, as do "codes" and "code"; a
+    question names a concept in whatever form it happens to use (rec#63)."""
+    if not term.isalpha() or len(term) < 4:
+        return term
+    if term.endswith('ies') and len(term) > 4:
+        term = term[:-3] + 'y'
+    elif term.endswith('s') and not term.endswith(('ss', 'us', 'is')):
+        term = term[:-1]
+    for suffix in ('ing', 'ed', 'er'):
+        if term.endswith(suffix) and len(term) - len(suffix) >= 3:
+            term = term[:-len(suffix)]
+            break
+    return term[:-1] if term.endswith('e') and len(term) > 3 else term
 
 
 def _retrieval_aliases(record) -> list[str]:
@@ -851,11 +1031,20 @@ def _retrieval_aliases(record) -> list[str]:
         values = [values]
     if not isinstance(values, list):
         return []
-    return [
+    # Terms stored beside the item later count like those it was saved with (rec#92).
+    stored = record.get('retrieval_terms')
+    values = [*values, *(stored if isinstance(stored, list) else [])]
+    aliases = [
         value.strip()
-        for value in values[:32]
+        for value in values[:64]
         if isinstance(value, str) and 0 < len(value.strip()) <= 256
     ]
+    # A preference is found by its key, as written and as words (rec#75).
+    if record.get('profile_aspect'):
+        key = preference_key(attributes, record.get('key'), None)
+        if isinstance(key, str) and 0 < len(key.strip()) <= 256:
+            aliases += [key.strip(), _KEY_SEPARATORS.sub(' ', key).strip()]
+    return aliases
 
 
 def _alias_relevance(query: str, aliases: list[str]) -> float:

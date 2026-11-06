@@ -34,7 +34,9 @@ export function turnStart(transcriptPath) {
 // any preference, conflict or checkpoint change since. It never begins or
 // switches a task, so an unfinished task keeps its checkpoint, and it never
 // claims that this turn belongs to that task. Without a readable owned task it
-// establishes none. onCurrentTask names the task found.
+// establishes none. onCurrentTask names the task found. Like a task entry it
+// leaves out what this context generation provably shows already (rec#76): a
+// run of host notifications otherwise resent the whole task every turn.
 export async function refreshCurrentTaskInPlace(event, input, invoke,
   { sourceApplication, unconfirmed, resolution, inlineChars = null }, { delivery, currentTask, onCurrentTask }) {
   let refresh;
@@ -50,7 +52,7 @@ export async function refreshCurrentTaskInPlace(event, input, invoke,
     refresh = { status: 'unreadable', reason: error?.code === 'preference_recovery_blocked' ? error.message : null };
   }
   return refresh.status === 'refreshed' ? preferenceHookOutput(refresh.context, event, input, delivery, sourceApplication,
-    `${unconfirmed} ${resolution} ${START_NEW_WORK} ${TASK_RULES_ON_DEMAND}`, true, { inlineChars })
+    `${unconfirmed} ${resolution} ${START_NEW_WORK} ${TASK_RULES_ON_DEMAND}`, false, { inlineChars })
     : { hookSpecificOutput: { hookEventName: event, additionalContext: noValidContext(refresh) } };
 }
 

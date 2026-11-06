@@ -3,9 +3,9 @@ import {
 } from './agent-project-resolution.js';
 import {
   activePreferenceConflicts,
-  agentCollaborationPreference,
   agentDeferredPreferenceConflict,
-  deferredPreferenceConflicts
+  deferredPreferenceConflicts,
+  deliveredCollaborationPreference
 } from './collaboration-preference-projection.js';
 import {
   recallTaskKnowledge,
@@ -167,7 +167,7 @@ export function projectAgentCollaborationPreferences(raw, projectResolution, { p
   const applicationGuidance = guidanceFor(projectResolution.personalProjectId, projectAgentId);
   return {
     effective_preferences: effectivePreferences
-      .map(agentCollaborationPreference),
+      .map(deliveredCollaborationPreference),
     ...(scopeUnknown.length ? { scope_unknown: scopeUnknown } : {}),
     deferred_conflicts: deferredConflicts.map(agentDeferredPreferenceConflict),
     active_conflicts: activePreferenceConflicts(result),

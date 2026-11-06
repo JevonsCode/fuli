@@ -30,7 +30,7 @@ async function jefa(t) {
 async function projectAgent(app, agentId, { personalProjectId = PROJECT, capabilities = [] } = {}) {
   await app.upsertProjectAgent({ personalSpaceId: 'employee-test-space', agentId,
     profile: { name: agentId, responsibility: 'Synthetic project management', status: 'active', capabilities },
-    occupation: { role: 'management', tags: [] } });
+    occupation: { role: 'project_manager', tags: [] } });
   if (personalProjectId) {
     await app.createProjectAgentAssignment({ personalSpaceId: 'employee-test-space', personalProjectId, agentId,
       idempotencyKey: `assign-${agentId}`, responsibility: 'Synthetic project management', reason: 'Synthetic test' });
@@ -38,7 +38,7 @@ async function projectAgent(app, agentId, { personalProjectId = PROJECT, capabil
 }
 
 function personMove(app, itemId, body) {
-  const request = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), { method: 'PATCH', socket: { remoteAddress: '127.0.0.1' } });
+  const request = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), { method: 'PATCH', headers: {}, socket: { remoteAddress: '127.0.0.1' } });
   let status;
   let payload = '';
   const response = { writeHead(code) { status = code; }, setHeader() {}, end(chunk) { payload += chunk ?? ''; } };
