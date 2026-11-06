@@ -79,3 +79,18 @@ test('a source that cannot be read is left out without emptying the list', async
   const { items } = await recentNotices({ app, now: NOW });
   assert.deepEqual(items.map(item => item.kind), ['model_failing', 'topic_promoted']);
 });
+
+test('fuli#346: a finished task\'s retrospective with lessons to confirm leads to the review queue', async () => {
+  const retrospective = (id, extra) => ({ id, operation: 'retrospective', at: ago(0.5), personalProjectId: 'garden', status: 'written',
+    subject: { personalProjectId: 'garden', taskId: `task-${id}` }, taskTitle: `Synthetic task ${id}`, ...extra });
+  const app = syntheticApp({ readRoleSuggestions: async () => [
+    retrospective('a', { lessons: [{ title: 'L1', status: 'queued' }, { title: 'L2', status: 'queued' }, { title: 'L3', status: 'failed' }] }),
+    retrospective('b', { lessons: [] }),
+    retrospective('c', { status: 'model_failed' }),
+    retrospective('d', { hard_deleted: true, taskTitle: undefined, lessons: [{ status: 'queued' }] })
+  ] });
+  const { items } = await recentNotices({ app, now: NOW });
+  const found = items.filter(item => item.kind === 'retrospective_ready');
+  assert.deepEqual(found, [{ id: 'retrospective_ready:task-a', kind: 'retrospective_ready', at: ago(0.5),
+    params: { task: 'Synthetic task a', project: 'Garden', lessons: 2 }, href: '/inbox' }]);
+});

@@ -35,6 +35,14 @@ describe('RecentNotices', () => {
     expect(rows[1].text()).toContain('Tonborg 的模型没回应')
   })
 
+  it('leads a finished task retrospective to the lessons waiting in the review queue', async () => {
+    const wrapper = await mountNotices([notice('retrospective_ready', 'task-a', { task: 'Synthetic task', project: 'Garden', lessons: 2 })])
+    const row = wrapper.get('[data-notice="retrospective_ready"]')
+    expect(row.text()).toContain('「Synthetic task」做完了，Astro 写了复盘，2 条经验等你确认')
+    expect(row.text()).toContain('去确认')
+    expect(row.getComponent(RouterLinkStub).props('to')).toBe('/inbox')
+  })
+
   it('shows seven and opens the rest from the head', async () => {
     const wrapper = await mountNotices(Array.from({ length: 9 }, (_, i) => notice('fla_joined', `a${i}`, { name: `Synthetic ${i}`, project: 'Garden' })))
     expect(wrapper.findAll('[data-notice]')).toHaveLength(7)

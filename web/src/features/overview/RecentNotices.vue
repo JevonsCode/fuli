@@ -15,7 +15,7 @@ import './workbench-card.css'
 
 // Widget 'recent-notices' (Jevons 11-06): 「最近你可能需要知道的事」, what changed in
 // the last two weeks that the person may want to know (a topic made into a project,
-// what Dreaming found, what Tonborg confirmed, who joined or left, a model that
+// what Dreaming found, a finished task's retrospective, what Tonborg confirmed, who joined or left, a model that
 // stopped answering, a new version), each with its one quick way in. Seven show;
 // 更多 opens the rest. With nothing to say, the card stays away.
 const notice = z.looseObject({ id: z.string(), kind: z.string(), at: z.string(), params: z.record(z.string(), z.union([z.string(), z.number()])), href: z.string() })
@@ -23,7 +23,7 @@ const noticesShape = shapeOf(z.looseObject({ items: z.array(notice) }))
 type Notice = z.infer<typeof notice>
 const FEED_ROWS = 7
 const ICONS: Record<string, IconName> = {
-  topic_promoted: 'project', dreaming_found: 'memory', dreaming_stopped: 'warning', tonborg_confirmed: 'check',
+  topic_promoted: 'project', dreaming_found: 'memory', dreaming_stopped: 'warning', retrospective_ready: 'memory', tonborg_confirmed: 'check',
   fla_joined: 'agents', fla_left: 'agents', delegated_change: 'settings', model_failing: 'error', update_available: 'refresh',
 }
 

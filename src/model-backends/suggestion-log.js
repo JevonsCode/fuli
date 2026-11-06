@@ -40,9 +40,10 @@ import { assertKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.
 export const RETENTION = Object.freeze({ days: 90, rows: 300 });
 const DAY_MS = 86_400_000;
 const LIST_LIMIT = 50;
-// The words a row carries: its hint, and in its suggestion the model's reason
-// and uncertainty and the names it showed. Host IDs and option keys stay.
-const RESULT_WORDS = Object.freeze(['hint', 'issues']);
+// The words a row carries: its hint and issues, a retrospective's task title
+// and lessons, and in its suggestion the model's reason and uncertainty and the
+// names it showed. Host IDs and option keys stay.
+const RESULT_WORDS = Object.freeze(['hint', 'issues', 'taskTitle', 'lessons']);
 const SUGGESTION_WORDS = Object.freeze(['reason', 'uncertainty', 'name', 'title']);
 // A delete whose outcome or local cleanup is not finished.
 const OPEN = new Set(['pending', 'graph_deleted']);

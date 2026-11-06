@@ -17,6 +17,10 @@ export const projectAgentMessages = {
       executionState: { unreported: '尚未收到工作进程报告', queued: '工作进程已排队', running: '工作进程报告运行中', ended: '已收到结束状态', reported: '已收到工作进程报告' },
     },
     taskDetails: '详情',
+    retrospective: {
+      title: '复盘', loading: '正在读取任务复盘', problems: '不顺的地方', lessons: '可复用的经验',
+      confirm: '去确认 {count} 条经验', removed: '这份复盘的文字已随永久删除一起删掉。',
+    },
     card: { sharedBy: '{count} 个 FLA 一起做' },
     techDetails: '技术细节（任务 ID、策略、排班依据）',
     profileDetails: 'Agent 资料',
@@ -411,6 +415,10 @@ export const projectAgentMessages = {
       executionState: { unreported: 'No worker report received', queued: 'Worker queued', running: 'Worker reported running', ended: 'Terminal status received', reported: 'Worker report received' },
     },
     taskDetails: 'Details',
+    retrospective: {
+      title: 'Retrospective', loading: 'Loading the task retrospective', problems: 'What went wrong or was slow', lessons: 'Reusable lessons',
+      confirm: 'Review lessons ({count})', removed: "This retrospective's words were removed with a permanent delete.",
+    },
     card: { sharedBy: '{count} FLAs share it' },
     techDetails: 'Technical details (task ID, strategy, staffing basis)',
     profileDetails: 'Agent profile',
