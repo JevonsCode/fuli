@@ -204,7 +204,9 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
   wal.close();
   const judgmentAgain = new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate });
   const review = judgmentAgain.record(SPACE, { kind: 'review', target: 'entity:item-1', title: long,
-    summary: `Approve ${PASTED}`, evidence: [`said ${PASTED}`], outcome: 'escalate', confidence: 0.4 }, 'review:item-1');
+    summary: `Approve ${PASTED}`, evidence: [`said ${PASTED}`], outcome: 'escalate', confidence: 0.4,
+    // A delegated review's question (rec#96) and its question's options (rec#99) are its words too.
+    delegated: true, guess: 'keep', question: `Keep ${PASTED}?`, options: [{ label: `Keep ${PASTED}`, action: 'keep' }] }, 'review:item-1');
   judgmentAgain.execute(SPACE, review.id, 'applying', { reviewId: 'run-1', candidateKey: 'entity:item-1' });
   judgmentAgain.feedback(SPACE, review.id, 'down', `Do not keep ${PASTED}`, 0);
   const kept = judgmentAgain.record(SPACE, { kind: 'review', target: 'entity:other', title: 'Synthetic staging target',
@@ -247,8 +249,8 @@ test('after the graph committed, Tonborg judgments and handed-off work forget th
 
   const reopened = new JudgmentStore(join(dataDir, 'judgment.sqlite'), { recoveryGate });
   const forgotten = reopened.get(SPACE, review.id);
-  assert.deepEqual([forgotten.title, forgotten.summary, forgotten.evidence, forgotten.hard_deleted, forgotten.outcome],
-    [null, null, [], true, 'escalate']);
+  assert.deepEqual([forgotten.title, forgotten.summary, forgotten.evidence, forgotten.question, forgotten.options, forgotten.guess,
+    forgotten.hard_deleted, forgotten.outcome], [null, null, [], null, [], 'keep', true, 'escalate']);
   assert.equal(forgotten.feedback.reason, '');
   assert.equal(reopened.get(SPACE, kept.id).title, 'Synthetic staging target');
   reopened.close();

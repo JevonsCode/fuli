@@ -7,7 +7,9 @@
 
 const NAMING_FIELDS = ['item_id', 'itemId', 'target', 'candidate_key', 'candidateKey', 'id'];
 const TEXT_FIELDS = ['title', 'name', 'summary', 'content', 'fact', 'instruction', 'reason', 'excerpt',
-  'note', 'text', 'objective', 'resultSummary'];
+  'note', 'text', 'objective', 'resultSummary',
+  // A delegated review's question to the person, phrased as Tonborg's guess (rec#96).
+  'question'];
 // options: the choices Tonborg's question offered about the item (rec#99).
 const LIST_FIELDS = ['evidence', 'options'];
 
