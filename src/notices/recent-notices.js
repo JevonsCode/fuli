@@ -7,14 +7,24 @@ import { retrospectiveRuns } from '../retrospectives/runs.js';
 // that the person may want to know, each with the one place to act on it. It is
 // read from records FULI already keeps; nothing new is stored. A source that
 // cannot be read is left out, so one broken record never empties the list.
-// Each notice is { id, kind, at, params, href }; the console words it.
+// Each notice is { id, kind, at, params, href } and, where its record names
+// them, projectId and agentId; the console words it. The workbench reads the
+// first page of the last two weeks; the list's own page (/workbench/notices)
+// reads up to 90 days, filtered and a page at a time.
 export const NOTICE_WINDOW_DAYS = 14;
+export const MAX_NOTICE_WINDOW_DAYS = 90;
+const NOTICE_PAGE_SIZE = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MAX_NOTICES = 50;
 
-export async function recentNotices({ app, delegation = null, system = null, now = Date.now() }) {
+/**
+ * `query` (all optional): days, kinds, projectIds, agentIds, text (matched
+ * against what the notice names), sort ('newest' | 'oldest'), cursor (the
+ * nextCursor of the page before) and limit.
+ */
+export async function recentNotices({ app, delegation = null, system = null, now = Date.now(), query = {} }) {
   const space = app.config.personal.spaceId;
-  const since = now - NOTICE_WINDOW_DAYS * DAY_MS;
+  const days = query.days ?? NOTICE_WINDOW_DAYS;
+  const since = now - days * DAY_MS;
   const projects = await read(() => app.listPersonalProjects({ personalSpaceId: space }), []);
   const context = { app, delegation, system, space, projectName: nameLookup(projects) };
   const lists = await Promise.all([
@@ -27,11 +37,22 @@ export async function recentNotices({ app, delegation = null, system = null, now
     read(() => modelProblems(context), []),
     read(() => versionUpdate(context), [])
   ]);
-  const items = lists.flat()
-    .filter(notice => time(notice.at) >= since)
-    .sort((a, b) => time(b.at) - time(a.at))
-    .slice(0, MAX_NOTICES);
-  return { windowDays: NOTICE_WINDOW_DAYS, items };
+  const direction = query.sort === 'oldest' ? -1 : 1;
+  const matching = lists.flat()
+    .filter(notice => time(notice.at) >= since && matches(notice, query))
+    .sort((a, b) => direction * (time(b.at) - time(a.at)) || a.id.localeCompare(b.id));
+  const start = Number(query.cursor ?? 0);
+  const end = start + (query.limit ?? NOTICE_PAGE_SIZE);
+  return { windowDays: days, total: matching.length, items: matching.slice(start, end),
+    nextCursor: end < matching.length ? String(end) : null };
+}
+
+function matches(notice, { kinds = [], projectIds = [], agentIds = [], text = '' }) {
+  if (kinds.length && !kinds.includes(notice.kind)) return false;
+  if (projectIds.length && !projectIds.includes(notice.projectId)) return false;
+  if (agentIds.length && !agentIds.includes(notice.agentId)) return false;
+  const needle = text.trim().toLowerCase();
+  return !needle || Object.values(notice.params).some(value => String(value).toLowerCase().includes(needle));
 }
 
 // A topic Astro made into a project by itself; an undone one is archived and drops out.
@@ -41,7 +62,7 @@ function promotedTopics(projects) {
     .map(project => {
       const name = project.profile?.name ?? project.project_id;
       return notice('topic_promoted', project.project_id, project.created_at, { project: name },
-        `/employees/assistant?${new URLSearchParams({ promoted: project.project_id, topic: name })}`);
+        `/employees/assistant?${new URLSearchParams({ promoted: project.project_id, topic: name })}`, { projectId: project.project_id });
     });
 }
 
@@ -50,12 +71,13 @@ async function dreamingResults({ app, projectName }) {
   const rows = await dreamingRuns(app);
   return rows.flatMap(row => {
     const project = projectName(row.personalProjectId);
+    const refs = { projectId: row.personalProjectId };
     if (row.status === 'dreamed') {
       const proposed = (row.proposed ?? []).filter(proposal => proposal.status === 'queued').length;
-      return proposed ? [notice('dreaming_found', row.id, row.at, { project, sessions: row.sessions ?? 0, proposed }, '/inbox')] : [];
+      return proposed ? [notice('dreaming_found', row.id, row.at, { project, sessions: row.sessions ?? 0, proposed }, '/inbox', refs)] : [];
     }
     if (row.status === 'nothing_to_read') return [];
-    return [notice('dreaming_stopped', row.id, row.at, { project, status: row.status }, '/models')];
+    return [notice('dreaming_stopped', row.id, row.at, { project, status: row.status }, '/models', refs)];
   });
 }
 
@@ -67,7 +89,7 @@ async function retrospectiveResults({ app, projectName }) {
     const lessons = (row.lessons ?? []).filter(lesson => lesson.status === 'queued').length;
     if (row.status !== 'written' || row.hard_deleted || !lessons) return [];
     return [notice('retrospective_ready', row.subject?.taskId ?? row.id, row.at,
-      { task: row.taskTitle ?? '', project: projectName(row.personalProjectId), lessons }, '/inbox')];
+      { task: row.taskTitle ?? '', project: projectName(row.personalProjectId), lessons }, '/inbox', { projectId: row.personalProjectId })];
   });
 }
 
@@ -92,11 +114,12 @@ async function teamChanges({ app, space, projectName }) {
   ]);
   const href = agent => `/agents/${encodeURIComponent(space)}/${encodeURIComponent(agent.agentId)}`;
   // An FLA goes by its display name; its project is where it is assigned when the record names none itself.
-  const params = agent => ({ name: agent.profile?.displayName ?? agent.profile?.name ?? agent.agentId,
-    project: projectName(agent.personalProjectId ?? agent.assignments?.[0]?.personalProjectId) });
+  const projectOf = agent => agent.personalProjectId ?? agent.assignments?.[0]?.personalProjectId;
+  const params = agent => ({ name: agent.profile?.displayName ?? agent.profile?.name ?? agent.agentId, project: projectName(projectOf(agent)) });
+  const refs = agent => ({ agentId: agent.agentId, projectId: projectOf(agent) });
   return [
-    ...active.filter(agent => agent.recruitedAt).map(agent => notice('fla_joined', agent.agentId, agent.recruitedAt, params(agent), href(agent))),
-    ...archived.filter(agent => agent.archivedAt).map(agent => notice('fla_left', agent.agentId, agent.archivedAt, params(agent), href(agent)))
+    ...active.filter(agent => agent.recruitedAt).map(agent => notice('fla_joined', agent.agentId, agent.recruitedAt, params(agent), href(agent), refs(agent))),
+    ...archived.filter(agent => agent.archivedAt).map(agent => notice('fla_left', agent.agentId, agent.archivedAt, params(agent), href(agent), refs(agent)))
   ];
 }
 
@@ -128,8 +151,9 @@ function versionUpdate({ system }) {
   return [notice('update_available', status.latestVersion, status.checkedAt, { version: status.latestVersion }, '/settings?tab=version')];
 }
 
-function notice(kind, key, at, params, href) {
-  return { id: `${kind}:${key}`, kind, at, params, href };
+function notice(kind, key, at, params, href, { projectId, agentId } = {}) {
+  return { id: `${kind}:${key}`, kind, at, params, href,
+    ...(projectId ? { projectId } : {}), ...(agentId ? { agentId } : {}) };
 }
 
 function nameLookup(projects) {

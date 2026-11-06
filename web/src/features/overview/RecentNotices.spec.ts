@@ -10,9 +10,9 @@ import RecentNotices from './RecentNotices.vue'
 const notice = (kind: string, id: string, params: Record<string, string | number>, href = '/inbox') =>
   ({ id: `${kind}:${id}`, kind, at: new Date().toISOString(), params, href })
 
-async function mountNotices(items: unknown[]) {
+async function mountNotices(items: unknown[], total = items.length) {
   setLocale('zh-CN')
-  api.getJson.mockResolvedValue({ items })
+  api.getJson.mockResolvedValue({ items, total, nextCursor: null })
   const wrapper = mount(RecentNotices, { global: { stubs: { RouterLink: RouterLinkStub } } })
   await flushPromises()
   return wrapper
@@ -43,11 +43,16 @@ describe('RecentNotices', () => {
     expect(row.getComponent(RouterLinkStub).props('to')).toBe('/inbox')
   })
 
-  it('shows seven and opens the rest from the head', async () => {
-    const wrapper = await mountNotices(Array.from({ length: 9 }, (_, i) => notice('fla_joined', `a${i}`, { name: `Synthetic ${i}`, project: 'Garden' })))
+  it('reads seven of the kinds it can word and links the rest to its own page', async () => {
+    const wrapper = await mountNotices(Array.from({ length: 7 }, (_, i) => notice('fla_joined', `a${i}`, { name: `Synthetic ${i}`, project: 'Garden' })), 12)
+    const url = new URL(api.getJson.mock.calls[0][0], 'http://fixture')
+    expect(url.pathname).toBe('/api/notices')
+    expect(url.searchParams.get('limit')).toBe('7')
+    expect(url.searchParams.getAll('kind')).toContain('retrospective_ready')
     expect(wrapper.findAll('[data-notice]')).toHaveLength(7)
-    await wrapper.get('[data-notices-more]').trigger('click')
-    expect(wrapper.findAll('[data-notice]')).toHaveLength(9)
+    const more = wrapper.findAllComponents(RouterLinkStub).find(link => link.attributes('data-workbench-more') === 'notices')!
+    expect(more.text()).toBe('更多 5')
+    expect(more.props('to')).toBe('/workbench/notices')
   })
 
   it('stays away when there is nothing to say or the read fails', async () => {

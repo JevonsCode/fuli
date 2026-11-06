@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { recentNotices } from '../src/notices/recent-notices.js';
+import { handleNoticesRequest } from '../src/http/notices-api-router.js';
 
 const NOW = Date.parse('2026-11-06T12:00:00.000Z');
 const SPACE = 'synthetic-space';
@@ -92,5 +93,55 @@ test('fuli#346: a finished task\'s retrospective with lessons to confirm leads t
   const { items } = await recentNotices({ app, now: NOW });
   const found = items.filter(item => item.kind === 'retrospective_ready');
   assert.deepEqual(found, [{ id: 'retrospective_ready:task-a', kind: 'retrospective_ready', at: ago(0.5),
-    params: { task: 'Synthetic task a', project: 'Garden', lessons: 2 }, href: '/inbox' }]);
+    params: { task: 'Synthetic task a', project: 'Garden', lessons: 2 }, href: '/inbox', projectId: 'garden' }]);
+});
+
+test('the full list reads a longer window a page at a time, newest or oldest first, without skips or repeats', async () => {
+  const app = syntheticApp();
+  const all = await recentNotices({ app, delegation, system, now: NOW, query: { days: 90 } });
+  // The 90-day window adds the 30-day-old promotion and the 40-day-old recruit.
+  assert.equal(all.windowDays, 90);
+  assert.equal(all.total, 11);
+  assert.deepEqual(all.items.slice(-2).map(item => item.id), ['topic_promoted:old', 'fla_joined:veteran']);
+  const seen = [];
+  let cursor;
+  do {
+    const page = await recentNotices({ app, delegation, system, now: NOW, query: { days: 90, limit: 4, cursor } });
+    assert.equal(page.total, 11);
+    seen.push(...page.items.map(item => item.id));
+    cursor = page.nextCursor;
+  } while (cursor);
+  assert.deepEqual(seen, all.items.map(item => item.id));
+  const oldest = await recentNotices({ app, delegation, system, now: NOW, query: { days: 90, sort: 'oldest' } });
+  assert.deepEqual(oldest.items.map(item => item.id), [...seen].reverse());
+});
+
+test('notices filter by kind, project, FLA and the words they name', async () => {
+  const app = syntheticApp();
+  const read = async query => (await recentNotices({ app, delegation, system, now: NOW, query })).items.map(item => item.id);
+  assert.deepEqual(await read({ kinds: ['fla_joined', 'fla_left'] }), ['fla_left:gone', 'fla_joined:new']);
+  assert.deepEqual(await read({ projectIds: ['garden'] }), ['dreaming_found:run-1', 'topic_promoted:garden', 'fla_left:gone', 'fla_joined:new']);
+  assert.deepEqual(await read({ agentIds: ['new'] }), ['fla_joined:new']);
+  assert.deepEqual(await read({ text: ' synthetic NEW' }), ['fla_joined:new']);
+  assert.deepEqual(await read({ kinds: ['update_available'], projectIds: ['garden'] }), []);
+});
+
+test('the notices route keeps the workbench answer and refuses a query it cannot use', async () => {
+  const call = async (search) => {
+    let status; let body;
+    const response = { setHeader() {}, writeHead(code) { status = code; }, end(text) { body = JSON.parse(text); } };
+    const request = { method: 'GET', socket: { remoteAddress: '127.0.0.1' }, headers: { host: '127.0.0.1' } };
+    await handleNoticesRequest({ request, response, url: new URL(`http://127.0.0.1/api/notices${search}`), app: syntheticApp(), delegation, system });
+    return { status, body };
+  };
+  const plain = await call('');
+  assert.equal(plain.status, 200);
+  assert.equal(plain.body.windowDays, 14);
+  assert.equal(plain.body.nextCursor, null);
+  const paged = await call('?days=90&limit=2&kind=fla_joined&kind=topic_promoted&sort=oldest');
+  assert.deepEqual(paged.body.items.map(item => item.id), ['fla_joined:veteran', 'topic_promoted:old']);
+  assert.equal(paged.body.nextCursor, '2');
+  for (const bad of ['?days=91', '?limit=0', '?sort=sideways', '?cursor=-1']) {
+    await assert.rejects(call(bad), TypeError, bad);
+  }
 });

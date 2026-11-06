@@ -438,6 +438,18 @@ export class GraphitiProviderClient {
     if (limit !== null && limit !== undefined) query.set('limit', String(limit));
     return this.#request(`/v1/project-agent-tasks?${query}`);
   }
+  // One keyset page of the console's full task lists (store_project_agent_task_pages.py).
+  listProjectAgentTaskPage(personalSpaceId, options) {
+    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
+    for (const [key, values] of [['status', options.statuses], ['project', options.projectIds], ['agent', options.agentIds]]) {
+      for (const value of values ?? []) query.append(key, value);
+    }
+    for (const [key, value] of [['text', options.text], ['since', options.since], ['until', options.until],
+      ['order', options.order], ['sort', options.sort], ['limit', options.limit], ['cursor', options.cursor]]) {
+      if (value !== undefined && value !== null && value !== '') query.set(key, String(value));
+    }
+    return this.#request(`/v1/project-agent-task-pages?${query}`);
+  }
   viewProjectAgentTask(personalSpaceId, taskId, {
     personalProjectId = null,
     includeEvents = true

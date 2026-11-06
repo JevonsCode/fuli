@@ -48,6 +48,7 @@ import {
   listProjectAgentTasks as listProjectAgentTasksWorkflow,
   listProjectAgents as listProjectAgentsWorkflow,
   listProjectAgentPage as listProjectAgentPageWorkflow,
+  listProjectAgentTaskPage as listProjectAgentTaskPageWorkflow,
   preflightExecutor as preflightExecutorWorkflow,
   recordProjectAgentExecutorActual as recordProjectAgentExecutorActualWorkflow,
   recordProjectAgentTaskActivity as recordProjectAgentTaskActivityWorkflow,
@@ -269,6 +270,11 @@ export class ProjectAgentControlPlaneApplication {
   async listProjectAgentTasks(input) {
     this.#assertSpace(input.personalSpaceId);
     return listProjectAgentTasksWorkflow(this, input);
+  }
+
+  async listProjectAgentTaskPage(input) {
+    this.#assertSpace(input.personalSpaceId);
+    return listProjectAgentTaskPageWorkflow(this, input);
   }
 
   async listAgentWorkbenches(input) {

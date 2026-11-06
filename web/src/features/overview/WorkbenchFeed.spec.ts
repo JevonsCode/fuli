@@ -29,17 +29,18 @@ function mountFeed(running: number, done: number) {
 describe('WorkbenchFeed', () => {
   beforeEach(() => { setActivePinia(createPinia()); setLocale('zh-CN') })
 
-  it('shows seven of each list and opens the rest from the head', async () => {
+  it('shows seven of each list and links the rest to its own page', () => {
     const wrapper = mountFeed(9, 10)
     expect(wrapper.findAll('[data-workbench-pick]')).toHaveLength(7)
     expect(wrapper.findAll('[data-workbench-done] li')).toHaveLength(7)
-    const more = wrapper.get('[data-workbench-more="done"]')
-    expect(more.text()).toBe('更多 3')
-    await more.trigger('click')
-    expect(wrapper.findAll('[data-workbench-done] li')).toHaveLength(10)
-    expect(wrapper.get('[data-workbench-more="done"]').text()).toBe('收起')
-    await wrapper.get('[data-workbench-more="running"]').trigger('click')
-    expect(wrapper.findAll('[data-workbench-pick]')).toHaveLength(9)
+    const more = (list: string) => wrapper.findAllComponents(RouterLinkStub).find(link => link.attributes('data-workbench-more') === list)!
+    expect(more('done').text()).toBe('更多 3')
+    expect(more('done').props('to')).toBe('/workbench/done')
+    expect(more('running').text()).toBe('更多 2')
+    expect(more('running').props('to')).toBe('/workbench/running')
+    // Each card carries the name its page grows from.
+    expect(wrapper.get('[data-workbench-done]').attributes('data-list-morph')).toBe('done')
+    expect(wrapper.get('[data-workbench-running]').attributes('data-list-morph')).toBe('running')
   })
 
   it('has no 更多 when a list fits', () => {

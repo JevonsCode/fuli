@@ -28,6 +28,8 @@ export const router = createRouter({
       component: () => import('@/pages/OverviewPage.vue'),
       meta: { title: 'routes.overview.title' },
     },
+    // The workbench's lists, each on its own page with search and filters in the query (Jevons 11-06).
+    { path: '/workbench/:list(running|done|notices)', name: 'workbench-list', component: () => import('@/features/workbench-lists/WorkbenchListPage.vue'), meta: { title: 'routes.overview.title', detail: true } },
     {
       path: '/preferences',
       name: 'personal-profile',
