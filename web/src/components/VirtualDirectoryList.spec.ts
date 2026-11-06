@@ -42,6 +42,29 @@ describe('VirtualDirectoryList', () => {
     expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001101')
   })
 
+  it('shows no position capsule while every row fits, and one once they overflow', async () => {
+    const wrapper = mount(VirtualDirectoryList, {
+      props: {
+        items: [{ id: 0 }],
+        rowHeight: 68,
+        label: '测试目录',
+        scrollsWith: 'page',
+      },
+      slots: {
+        default: ({ index }: { index: number }) =>
+          h('button', { class: 'test-row' }, `Row ${index + 1}`),
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.virtual-directory-list').classes()).toContain('is-page-scroll')
+    expect(wrapper.findAll('.test-row')).toHaveLength(1)
+    expect(wrapper.find('.virtual-directory-list__position').exists()).toBe(false)
+
+    await wrapper.setProps({ items: Array.from({ length: 20 }, (_, index) => ({ id: index })) })
+    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001020')
+  })
+
   it('scrolls an active row into the virtual viewport', async () => {
     const wrapper = mount(VirtualDirectoryList, {
       props: {
