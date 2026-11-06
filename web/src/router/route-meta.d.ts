@@ -12,5 +12,7 @@ declare module 'vue-router' {
     /** The page keeps a sticky save bar at the bottom; floating tools stay off it. */
     saveBar?: boolean
     publicReport?: boolean
+    /** The glossary term of the page's 「?」 in the top bar (features/ai-help): what it is for and 「让 AI 来做」. */
+    aiHelp?: string
   }
 }

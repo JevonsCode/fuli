@@ -19,6 +19,7 @@ export const glossaryMessages = {
       tonborg: '@:{\'roleNames.tonborg\'} 判断',
       setting: '设置',
       concept: '概念',
+      task: '这里能做什么',
     },
     concept: {
       fla: { label: 'FLA', body: 'FuLi Agent：你在 FULI 里的一位 Agent，有名字、头像、职业和自己的记忆。它在 Claude Code、Codex 等客户端里替你干活，换个会话也接得上之前的工作。' },
@@ -144,6 +145,7 @@ export const glossaryMessages = {
       tonborg: '@:{\'roleNames.tonborg\'} judgment',
       setting: 'Setting',
       concept: 'Concept',
+      task: 'What this is for',
     },
     concept: {
       fla: { label: 'FLA', body: 'FuLi Agent: one of your Agents in FULI, with a name, portrait, occupation and memory of its own. It works for you in clients such as Claude Code and Codex, and picks up earlier work in a new session.' },

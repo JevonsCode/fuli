@@ -5,6 +5,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import TextField from '@/components/TextField.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { OptionSelect } from '@/components/ui/select'
 import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
@@ -205,7 +206,7 @@ async function copy() {
 <template>
   <Card as="section" class="settings-card connection-settings" aria-labelledby="client-connection-title" data-client-connection>
     <CardHeader>
-      <CardTitle id="client-connection-title" as="h2">{{ t('settings.connection.title') }}</CardTitle>
+      <CardTitle id="client-connection-title" as="h2">{{ t('settings.connection.title') }}<AiHelpButton term="task.clients" /></CardTitle>
       <!-- Reserved height: the summary appears without moving anything below it. -->
       <CardDescription class="connection-summary" data-connection-summary>
         <template v-if="observation?.available !== false && summary.total">{{ t('settings.connection.summary', summary) }}</template>

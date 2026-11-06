@@ -1,14 +1,20 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { t } from '@/i18n'
 import { UiPopover } from '@/ui'
-import { findTerm, type GlossaryTerm } from './terms'
+import AiTaskPrompt from '@/features/ai-help/AiTaskPrompt.vue'
+import { findTerm, termById } from './terms'
 import { useGlossaryMode } from './glossary-mode'
 
 // While glossary mode is on, the cursor changes, the term under it is
 // outlined, and a click explains that term instead of activating the control.
-const { held, pinned, active } = useGlossaryMode()
-const selected = ref<{ term: GlossaryTerm; anchor: DOMRect } | null>(null)
+// A card's 「?」 opens the same explanation (features/ai-help/AiHelpButton.vue).
+const { held, pinned, active, explaining, explain } = useGlossaryMode()
+const selected = computed(() => {
+  const term = explaining.value && termById(explaining.value.termId)
+  return term ? { term, anchor: explaining.value!.anchor } : null
+})
+const close = () => { explaining.value = null }
 let highlighted: HTMLElement | null = null
 
 function highlight(element: HTMLElement | null) {
@@ -22,7 +28,7 @@ function highlight(element: HTMLElement | null) {
 function leave() {
   held.value = false
   pinned.value = false
-  selected.value = null
+  close()
 }
 
 // Alt shows the mode while held; pressed while it is pinned, it also unpins,
@@ -50,7 +56,7 @@ function onClick(event: MouseEvent) {
   event.preventDefault()
   event.stopPropagation()
   const hit = findTerm(event.target)
-  if (hit) selected.value = { term: hit.term, anchor: hit.element.getBoundingClientRect() }
+  if (hit) explain(hit.term.id, hit.element.getBoundingClientRect())
 }
 
 watch(active, on => {
@@ -82,18 +88,19 @@ onBeforeUnmount(() => {
 <template>
   <span v-if="active" class="glossary-live" role="status">{{ t('glossary.modeOn') }}</span>
   <UiPopover :open="Boolean(selected)" :anchor="selected?.anchor ?? null" :label="selected ? t(selected.term.labelKey) : ''"
-    @close="selected = null">
+    @close="close">
     <div v-if="selected" class="glossary-card" :data-glossary-term="selected.term.id">
       <small>{{ t(`glossary.groups.${selected.term.group}`) }}</small>
       <strong>{{ t(selected.term.labelKey) }}</strong>
       <p>{{ t(selected.term.bodyKey) }}</p>
+      <AiTaskPrompt v-if="selected.term.aiTask" :task="selected.term.aiTask" :area="t(selected.term.labelKey)" />
     </div>
   </UiPopover>
 </template>
 
 <style scoped>
 .glossary-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.glossary-card { display: grid; gap: 4px; max-width: 280px; }
+.glossary-card { display: grid; gap: 4px; max-width: 320px; }
 .glossary-card small { color: var(--color-muted); font-size: 11px; font-weight: 650; letter-spacing: .04em; }
 .glossary-card strong { font-size: 14px; }
 .glossary-card p { margin: 0; color: var(--color-ink-soft); font-size: 13px; line-height: 1.55; }

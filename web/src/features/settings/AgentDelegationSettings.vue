@@ -4,6 +4,7 @@ import { apiErrorReason, getJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
 import { currentLocale, t } from '@/i18n'
@@ -41,7 +42,7 @@ async function setCategory(id: string, enabled: boolean) {
 <template>
   <Card as="section" id="ai-permissions" class="settings-card agent-delegation-settings" aria-labelledby="agent-delegation-title" data-agent-delegation-settings>
     <CardHeader>
-      <CardTitle id="agent-delegation-title" as="h2">{{ t('agentDelegation.title') }}</CardTitle>
+      <CardTitle id="agent-delegation-title" as="h2">{{ t('agentDelegation.title') }}<AiHelpButton term="task.aiPermissions" /></CardTitle>
       <CardDescription>{{ t('agentDelegation.description') }}</CardDescription>
       <CardAction>
         <Button type="button" size="sm" variant="outline" :disabled="!policy" aria-haspopup="dialog" data-agent-delegation-details
@@ -88,7 +89,7 @@ async function setCategory(id: string, enabled: boolean) {
             <ul v-else>
               <li v-for="operation in policy.operations" :key="operation.id" :data-delegated-operation="operation.id">
                 <strong>{{ operation.route }}</strong>
-                <small>{{ time(operation.at) }} · {{ operation.actor.agentId ?? '-' }} · {{ operation.reason }}<template v-if="operation.outcome === 'failed'"> · {{ t('agentDelegation.failed') }}</template></small>
+                <small>{{ time(operation.at) }} · {{ operation.actor.agentId ?? (operation.actor.client === 'webmcp' ? t('aiHelp.webmcp.actor') : '-') }} · {{ operation.reason }}<template v-if="operation.outcome === 'failed'"> · {{ t('agentDelegation.failed') }}</template></small>
                 <small v-if="operation.relayed" data-relayed-words>{{ t('agentDelegation.relayedWords', { words: operation.relayed.words }) }}</small>
                 <small>{{ t('agentDelegation.undo', { undo: operation.undo }) }}</small>
               </li>

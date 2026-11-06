@@ -4,6 +4,7 @@ import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { Switch } from '@/components/ui/switch'
 import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
@@ -63,7 +64,7 @@ async function setAutoUpdate(enabled: boolean) {
 <template>
   <Card as="section" id="client-links" class="settings-card client-links-settings" aria-labelledby="client-links-title" data-client-links-settings>
     <CardHeader>
-      <CardTitle id="client-links-title" as="h2">{{ t('clientLinks.title') }}</CardTitle>
+      <CardTitle id="client-links-title" as="h2">{{ t('clientLinks.title') }}<AiHelpButton term="task.clientLinks" /></CardTitle>
       <CardDescription>{{ t('clientLinks.description') }}</CardDescription>
       <CardAction>
         <Button type="button" size="sm" variant="outline" :disabled="!state" :loading="checking" :loading-label="t('clientLinks.checking')"

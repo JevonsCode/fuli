@@ -3,6 +3,7 @@ import { formatBytes as formatByteCount } from '@/lib/format-bytes'
 import { Button } from '@/components/ui/button'
 import PageOutline from '@/components/PageOutline.vue'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -32,6 +33,8 @@ import { captureSourceOff, withCaptureSource } from '@/features/capture/capture-
 import { clientDetectionShape, shownCaptureClients, type ClientDetection } from '@/features/capture/capture-clients'
 import { fieldErrorMessage } from '@/features/settings/settings-field-error'
 import { linkedCard, settingSearchTerm, useSettingsSearch } from '@/features/settings/settings-search'
+import { settingsPageTools } from '@/features/settings/settings-page-tools'
+import { usePageTools } from '@/features/webmcp/usePageTools'
 import {
   CONVERSATION_SOURCE_APPLICATIONS,
   sourceApplicationName,
@@ -248,6 +251,9 @@ function adoptSettings(result: SystemSettingsResult) {
   setConversationLauncherConfiguration(result.configured.conversationLaunchers)
 }
 
+// The browser's AI agent can change the settings that need no restart (WebMCP).
+usePageTools(() => settingsPageTools({ saved: adoptSettings }))
+
 const putSettings = (value: RuntimeSettings) => putJson<SystemSettingsResult>('/api/system/settings', value)
 
 // An automatic save leaves the form alone: the person may still be typing.
@@ -407,7 +413,7 @@ function checkFields(): ValidatedField[] {
             <TabsContent value="memory" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="memory">
               <PageColumns>
               <Card as="section" class="settings-card behavior-card" aria-labelledby="settings-capture-title">
-                <CardHeader><CardTitle id="settings-capture-title" as="h2">{{ t('settings.groups.capture') }}</CardTitle></CardHeader>
+                <CardHeader><CardTitle id="settings-capture-title" as="h2">{{ t('settings.groups.capture') }}<AiHelpButton term="task.capture" /></CardTitle></CardHeader>
                 <div class="setting-list">
                   <label class="setting-row">
                     <span><strong>{{ t('settings.behavior.capture') }}</strong><small>{{ t('settings.behavior.captureMeta') }}</small></span>
@@ -431,13 +437,13 @@ function checkFields(): ValidatedField[] {
               </Card>
               <Card as="section" class="settings-card" aria-labelledby="settings-capture-projects-title" data-capture-projects-card>
                 <CardHeader>
-                  <CardTitle id="settings-capture-projects-title" as="h2">{{ t('capture.settings.title') }}</CardTitle>
+                  <CardTitle id="settings-capture-projects-title" as="h2">{{ t('capture.settings.title') }}<AiHelpButton term="task.captureProjects" /></CardTitle>
                   <CardDescription>{{ t('capture.settings.description') }}</CardDescription>
                 </CardHeader>
                 <CaptureProjectSettings class="px-5" />
               </Card>
               <Card as="section" class="settings-card" aria-labelledby="settings-access-title">
-                <CardHeader><CardTitle id="settings-access-title" as="h2">{{ t('settings.groups.access') }}</CardTitle></CardHeader>
+                <CardHeader><CardTitle id="settings-access-title" as="h2">{{ t('settings.groups.access') }}<AiHelpButton term="task.access" /></CardTitle></CardHeader>
                 <div class="setting-list">
                   <label class="setting-row">
                     <span><strong>{{ t('settings.behavior.agentAccess') }}</strong><small>{{ t('settings.behavior.agentAccessMeta') }}</small></span>
@@ -457,7 +463,7 @@ function checkFields(): ValidatedField[] {
               </Card>
               <Card as="section" class="settings-card" aria-labelledby="settings-judgment-title">
                 <CardHeader>
-                  <CardTitle id="settings-judgment-title" as="h2">{{ t('judgment.settings.link') }}</CardTitle>
+                  <CardTitle id="settings-judgment-title" as="h2">{{ t('judgment.settings.link') }}<AiHelpButton term="task.judgment" /></CardTitle>
                   <CardAction>
                     <Button as-child size="sm" variant="outline">
                       <RouterLink to="/employees/tonborg?view=standards" data-open-judgment-standards>{{ t('judgment.settings.open') }}</RouterLink>
@@ -467,7 +473,7 @@ function checkFields(): ValidatedField[] {
               </Card>
               <Card as="section" class="settings-card" aria-labelledby="settings-models-title">
                 <CardHeader>
-                  <CardTitle id="settings-models-title" as="h2">{{ t('modelSettings.title') }}</CardTitle>
+                  <CardTitle id="settings-models-title" as="h2">{{ t('modelSettings.title') }}<AiHelpButton term="task.models" /></CardTitle>
                   <CardDescription>{{ t('modelSettings.settingsEntry') }}</CardDescription>
                   <CardAction>
                     <Button as-child size="sm" variant="outline">
@@ -484,7 +490,7 @@ function checkFields(): ValidatedField[] {
               <PageColumns>
               <ClientConnectionSettings data-span="wide" />
               <Card v-if="form.notifications" as="section" id="notifications" class="settings-card notifications-card" aria-labelledby="settings-notifications-title">
-                <CardHeader><CardTitle id="settings-notifications-title" as="h2">{{ t('settings.notifications.title') }}</CardTitle></CardHeader>
+                <CardHeader><CardTitle id="settings-notifications-title" as="h2">{{ t('settings.notifications.title') }}<AiHelpButton term="task.notifications" /></CardTitle></CardHeader>
                 <div class="setting-list">
                   <label class="notification-url">
                     <span><strong>{{ t('settings.notifications.needsPersonUrl') }}</strong><small>{{ t('settings.notifications.needsPersonUrlMeta') }}</small></span>
@@ -497,7 +503,7 @@ function checkFields(): ValidatedField[] {
                 </div>
               </Card>
               <Card as="section" id="conversation-launchers" class="settings-card conversation-launcher-card" aria-labelledby="settings-launchers-title">
-                <CardHeader><CardTitle id="settings-launchers-title" as="h2">{{ t('settings.conversationLaunchers.title') }}</CardTitle></CardHeader>
+                <CardHeader><CardTitle id="settings-launchers-title" as="h2">{{ t('settings.conversationLaunchers.title') }}<AiHelpButton term="task.launchers" /></CardTitle></CardHeader>
                 <div class="setting-list conversation-launcher-list">
                   <article v-for="application in conversationApplications" :key="application" class="conversation-launcher-row">
                     <div class="conversation-launcher-heading">
@@ -555,7 +561,7 @@ function checkFields(): ValidatedField[] {
             <TabsContent value="network" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="network">
               <PageColumns>
               <Card as="section" class="settings-card" aria-labelledby="settings-lan-title">
-                <CardHeader><CardTitle id="settings-lan-title" as="h2">{{ t('settings.groups.lan') }}</CardTitle></CardHeader>
+                <CardHeader><CardTitle id="settings-lan-title" as="h2">{{ t('settings.groups.lan') }}<AiHelpButton term="task.lan" /></CardTitle></CardHeader>
                 <div class="setting-list">
                   <label class="setting-row">
                     <span><strong>{{ t('settings.behavior.lanAccess') }}</strong><small>{{ t('settings.behavior.lanAccessMeta') }}</small></span>
@@ -566,7 +572,7 @@ function checkFields(): ValidatedField[] {
               </Card>
               <PeerSettings />
               <Card as="section" id="ports" class="settings-card ports-card" aria-labelledby="settings-ports-title">
-                <CardHeader><CardTitle id="settings-ports-title" as="h2">{{ t('settings.ports.title') }}</CardTitle></CardHeader>
+                <CardHeader><CardTitle id="settings-ports-title" as="h2">{{ t('settings.ports.title') }}<AiHelpButton term="task.ports" /></CardTitle></CardHeader>
                 <div class="setting-list">
                   <div class="port-section">
                     <h3 class="ui-group-label">{{ t('settings.ports.personal') }}</h3>
@@ -599,7 +605,7 @@ function checkFields(): ValidatedField[] {
             <TabsContent value="system" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="system">
               <PageColumns>
               <Card as="section" class="settings-card" aria-labelledby="settings-interface-title">
-                <CardHeader><CardTitle id="settings-interface-title" as="h2">{{ t('settings.groups.interface') }}</CardTitle></CardHeader>
+                <CardHeader><CardTitle id="settings-interface-title" as="h2">{{ t('settings.groups.interface') }}<AiHelpButton term="task.interface" /></CardTitle></CardHeader>
                 <div class="setting-list">
                   <div class="setting-row select-row">
                     <span><strong>{{ t('settings.behavior.language') }}</strong></span>
@@ -619,7 +625,7 @@ function checkFields(): ValidatedField[] {
                 </div>
               </Card>
               <Card as="section" class="settings-card" aria-labelledby="settings-runtime-title">
-                <CardHeader><CardTitle id="settings-runtime-title" as="h2">{{ t('settings.groups.runtime') }}</CardTitle></CardHeader>
+                <CardHeader><CardTitle id="settings-runtime-title" as="h2">{{ t('settings.groups.runtime') }}<AiHelpButton term="task.runtime" /></CardTitle></CardHeader>
                 <div class="setting-list">
                   <!-- Native is the only runtime that grows; an older Docker install
                        moves over once through the migration, never by switching here. -->
@@ -639,7 +645,7 @@ function checkFields(): ValidatedField[] {
               </Card>
               <Card as="section" class="settings-card" aria-labelledby="settings-data-format-title">
                 <CardHeader>
-                  <CardTitle id="settings-data-format-title" as="h2">{{ t('dataFormat.title') }}</CardTitle>
+                  <CardTitle id="settings-data-format-title" as="h2">{{ t('dataFormat.title') }}<AiHelpButton term="task.dataFormat" /></CardTitle>
                   <CardDescription>{{ t('dataFormat.settingsEntry') }}</CardDescription>
                   <CardAction>
                     <Button as-child size="sm" variant="outline">
@@ -710,7 +716,7 @@ function checkFields(): ValidatedField[] {
             <TabsContent value="version" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="version">
               <PageColumns>
                 <Card as="section" id="version" class="settings-card" aria-labelledby="settings-version-title" data-version-settings>
-                  <CardHeader><CardTitle id="settings-version-title" as="h2">{{ t('settings.version.title') }}</CardTitle></CardHeader>
+                  <CardHeader><CardTitle id="settings-version-title" as="h2">{{ t('settings.version.title') }}<AiHelpButton term="task.version" /></CardTitle></CardHeader>
                   <div class="setting-list">
                     <div class="setting-row">
                       <span><strong>{{ t('settings.version.current') }}</strong></span>
