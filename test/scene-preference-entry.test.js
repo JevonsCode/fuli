@@ -123,11 +123,26 @@ test('remember carries a stated hard constraint and scene qualifiers into the ca
   assert.deepEqual(attributes(remember[0].text), { constraint: 'hard' });
   assert.deepEqual(attributes(remember[1].text), { workKind: 'frontend', tasteDomain: 'design' });
   assert.deepEqual(attributes(remember[2].text), {});
-  for (const [field, value] of [['constraint', 'always'], ['tasteDomain', 'cooking'], ['workKind', 'chatting']]) {
-    await assert.rejects(callAgentTool(f.app, 'checkpoint_task_knowledge', { taskContextToken: context.taskContextToken,
-      sourceApplication: 'codex', disposition: 'capture_candidates', reason: 'Invalid qualifier.',
-      workLog: { status: 'completed', summary: 'Rejected.' }, remember: [{ kind: 'preference', text: 'X', [field]: value }] }));
-  }
+  // constraint is a listed enum and still checked.
+  await assert.rejects(callAgentTool(f.app, 'checkpoint_task_knowledge', { taskContextToken: context.taskContextToken,
+    sourceApplication: 'codex', disposition: 'capture_candidates', reason: 'Invalid qualifier.',
+    workLog: { status: 'completed', summary: 'Rejected.' }, remember: [{ kind: 'preference', text: 'X', constraint: 'always' }] }));
+});
+
+test('rec#95: an unlisted workKind or tasteDomain never rejects the preference it qualifies', async t => {
+  const f = await fixture(t);
+  const { context } = await codexEntry(f, f.dirs.novel, { prompt: '记住：按钮文案用动词开头；周末不排发布' });
+  const remember = [
+    { kind: 'preference', scope: 'project', workKind: 'Front-end styling', tasteDomain: 'UI', text: 'Button labels start with a verb.' },
+    { kind: 'preference', scope: 'project', workKind: 'release_ops', tasteDomain: 'cooking', text: 'No releases on weekends.' }];
+  await callAgentTool(f.app, 'checkpoint_task_knowledge', { taskContextToken: context.taskContextToken,
+    sourceApplication: 'codex', disposition: 'capture_candidates', reason: 'The user asked to keep these.',
+    workLog: { status: 'completed', summary: 'Kept two preferences.' }, remember });
+  const entities = f.knowledge.flatMap(commit => commit.episode.entities);
+  const attributes = text => entities.find(entity => entity.summary === text).attributes;
+  // A free-form kind is read with the task-prompt hints; an unknown one is left off.
+  assert.deepEqual(attributes(remember[0].text), { workKind: 'frontend', tasteDomain: 'ui' });
+  assert.deepEqual(attributes(remember[1].text), {});
 });
 
 test('the Provider-backed registry persists the hook scene as preference_scope', async () => {

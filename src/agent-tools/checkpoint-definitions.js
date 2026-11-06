@@ -24,7 +24,8 @@ export const checkpointRememberSchema = { ...arraySchema(objectSchema({
   scope: enumSchema(['global', 'project', 'unsure']),
   aspect: enumSchema(['taste', 'personality', 'judgment_preference']),
   constraint: enumSchema(PREFERENCE_CONSTRAINTS),
-  // Checked against the versioned scene table (task-remember.js); kept short, chat lists it.
+  // Plain strings to keep the chat listing short; task-remember.js maps them onto the versioned
+  // scene table and leaves an unknown one off rather than rejecting the item (rec#95).
   workKind: stringSchema(),
   tasteDomain: stringSchema()
 }, ['kind', 'text']), { minItems: 1, maxItems: 8 }),
