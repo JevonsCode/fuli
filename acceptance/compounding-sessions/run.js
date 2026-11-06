@@ -11,7 +11,8 @@
 //   node acceptance/compounding-sessions/run.js --out <dir> --tag base --reps 2 \
 //     --fuli-config <dir with mcp.json + settings.json> --fuli-data-dir <isolated data dir>
 //
-// Isolation: --strict-mcp-config (off: no servers), --settings (off: none), --setting-sources project,local, no
+// Isolation: --strict-mcp-config (off: no servers), --settings (off: none), --setting-sources project,local, the
+// same tools in both arms (PowerShell and web tools off, so shell work goes through Bash), no
 // CLAUDE.md (CLAUDE_CODE_DISABLE_CLAUDE_MDS) and no Claude Code auto memory (CLAUDE_CODE_DISABLE_AUTO_MEMORY), so the
 // only memory across sessions is FULI's. Uses the logged-in Claude Code; no credentials are read or copied.
 // Synthetic data only: point --fuli-config/--fuli-data-dir at an isolated FULI, never the real one.
@@ -32,6 +33,11 @@ const { values } = parseArgs({ options: {
   reps: { type: 'string', default: '2' },
   from: { type: 'string', default: '1' },
   sessions: { type: 'string', default: String(SESSIONS.length) },
+  // Run only these sessions (still each from its own reference start state), e.g. s2,s3,s4,s5,s6.
+  only: { type: 'string' },
+  // Oracle arm: seed the new FULI project with confirmed knowledge (a JSON list of { key, name, summary }) before its
+  // first session, as if earlier sessions had kept exactly that. Measures what recall can save at best.
+  seed: { type: 'string' },
   model: { type: 'string', default: 'claude-haiku-5-5' },
   timeout: { type: 'string', default: '900' },
   'max-turns': { type: 'string', default: '60' },
@@ -96,13 +102,28 @@ function registerProject(projectId) {
     name: `Tidewater (${projectId})`, purpose: 'Synthetic notification relay used by the FULI compounding-sessions eval.',
     scope: 'Synthetic benchmark project; no real data.', technicalSummary: 'Node 24 ESM, node:test.', lifecycle: 'active',
     sources: [], boundaries: ['Synthetic benchmark data only; never publish.'] } });
+  if (values.seed) seedKnowledge(spaceId, projectId, JSON.parse(readFileSync(resolve(values.seed), 'utf8')));
+}
+
+function seedKnowledge(spaceId, projectId, items) {
+  const at = new Date().toISOString();
+  const by = { kind: 'user', label: 'benchmark operator' };
+  fuliCall('capture_session_knowledge', { targetKind: 'personal', spaceId, personalProjectId: projectId,
+    sessionId: `compound-seed-${projectId}`, idempotencyKey: `compound-seed-${projectId}`, name: 'Tidewater oracle knowledge',
+    sourceKind: 'benchmark_seed', sourceDescription: 'Synthetic facts for the compounding-sessions oracle arm.',
+    sourceApplication: 'other', referenceTime: at, sensitivity: 'normal', relationships: [],
+    entities: items.map((item) => ({ ...item, key: `${projectId}:${item.key}`, type: 'ProjectKnowledge',
+      originQuadrant: 'known_known', currentQuadrant: 'known_known', epistemicStatus: 'confirmed', confirmationStatus: 'confirmed',
+      confirmationBasis: { existenceReason: 'Synthetic benchmark fact.', quadrantReason: 'Stated by the benchmark operator.',
+        proposedBy: by, confirmedBy: by, confirmedAt: at },
+      reasoningSummary: null, profileAspect: null, inheritanceMode: 'local_only', inheritedProjectIds: [], attributes: {} })) });
 }
 
 function runClaude({ arm, prompt, cwd, events }) {
   const config = CONFIG[arm];
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-hook-events', '--model', values.model,
     '--strict-mcp-config', '--mcp-config', config.mcp, '--settings', config.settings, '--setting-sources', 'project,local',
-    '--max-turns', values['max-turns'], '--allowedTools', TOOLS[arm].join(',')];
+    '--max-turns', values['max-turns'], '--allowedTools', TOOLS[arm].join(','), '--disallowedTools', 'PowerShell,WebFetch,WebSearch'];
   const started = Date.now();
   return new Promise((done) => {
     const out = createWriteStream(events);
@@ -140,8 +161,11 @@ async function runChain(arm, rep) {
   const projectId = `tw-${values.tag}-r${rep}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
   const chain = `${arm}-r${rep}`;
   const repoDir = join(OUT, 'runs', values.tag, chain, projectId);
-  if (arm === 'fuli' && !existsSync(join(RESULTS, `${chain}-s1.json`))) registerProject(projectId);
-  for (const [index, session] of SESSIONS.slice(0, Number(values.sessions)).entries()) {
+  const only = values.only ? new Set(values.only.split(',')) : null;
+  const planned = SESSIONS.slice(0, Number(values.sessions)).map((session, index) => [index, session])
+    .filter(([, session]) => !only || only.has(session.id));
+  if (arm === 'fuli' && !existsSync(join(RESULTS, `${chain}-${planned[0][1].id}.json`))) registerProject(projectId);
+  for (const [index, session] of planned) {
     const resultPath = join(RESULTS, `${chain}-${session.id}.json`);
     if (existsSync(resultPath)) { log(`${chain} ${session.id}: already done`); continue; }
     if (spent() > Number(values['max-cost'])) { log(`${chain}: cost cap ${values['max-cost']} USD reached`); return; }

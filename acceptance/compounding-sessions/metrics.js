@@ -5,13 +5,21 @@ const bytes = (value) => Buffer.byteLength(typeof value === 'string' ? value : J
 
 const EXPLORE_TOOLS = new Set(['Read', 'Grep', 'Glob', 'LS', 'NotebookRead']);
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-const EXPLORE_COMMAND = /^\s*(cat|ls|head|tail|grep|rg|find|tree|wc|sed -n|git (log|show|diff|status))\b/;
+// A shell command is a run when any step runs the project (node, npm, npx); otherwise it is exploration when a step
+// reads or lists files (`cd x && cat a && grep b` is exploration).
+const RUN_COMMAND = /(^|[\s;&|(])(npm|npx|node|node\.exe)(\s|$)/;
+const EXPLORE_COMMAND = /(^|[\s;&|(])(cat|ls|head|tail|grep|rg|find|tree|wc|sed|awk|git)(\s|$)/;
+const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
 
 export function toolKind(tool) {
   if (tool.name.startsWith('mcp__fuli__')) return 'fuli';
   if (EXPLORE_TOOLS.has(tool.name)) return 'explore';
   if (EDIT_TOOLS.has(tool.name)) return 'edit';
-  if (tool.name === 'Bash') return EXPLORE_COMMAND.test(String(tool.input?.command ?? '')) ? 'explore' : 'run';
+  if (SHELL_TOOLS.has(tool.name)) {
+    const command = String(tool.input?.command ?? '');
+    if (RUN_COMMAND.test(command)) return 'run';
+    return EXPLORE_COMMAND.test(command) ? 'explore' : 'other';
+  }
   return 'other';
 }
 

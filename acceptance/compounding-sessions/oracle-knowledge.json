@@ -1,0 +1,27 @@
+[
+  {
+    "key": "tidewater:retry-policy",
+    "name": "Tidewater retry policy and its shared helper",
+    "summary": "Every outbound channel retries through withRetry(attempt, { sleep, attempts, delays, shouldRetry }) in src/retry.js: at most 3 attempts, 200 ms before the second and 400 ms before the third, retry a 5xx answer or a thrown (network) error, never a 4xx. Channels pass options.sleep through so tests do not wait."
+  },
+  {
+    "key": "tidewater:spec-fixtures",
+    "name": "Tidewater tests need generated fixtures",
+    "summary": "Run `npm run fixtures` before `npm test`: the specs read spec/fixtures/messages.json, which is generated and gitignored; without it every spec fails with ENOENT. Fake transports come from scriptedTransport in spec/helpers.js."
+  },
+  {
+    "key": "tidewater:channel-convention",
+    "name": "Tidewater channel convention",
+    "summary": "A channel is src/channels/<name>.js exporting name and async send(message, { transport, sleep }); the injected transport resolves to { status, id }. Register every channel in src/channels/index.js."
+  },
+  {
+    "key": "tidewater:error-codes",
+    "name": "Tidewater error-code convention",
+    "summary": "Throw ChannelError(code, message) from src/errors.js with codes shaped TW-<AREA>-<NNN>; list every code in docs/error-codes.md. `npm run check` fails when a code used under src/ is not listed. A task is done when `npm test` and `npm run check` both pass."
+  },
+  {
+    "key": "tidewater:ports",
+    "name": "Tidewater ports per environment",
+    "summary": "config/ports.json: dev 4610, staging 4611, e2e 4619; read them with port('e2e') from src/config.js. src/server.js start({ port, transports }) resolves to the listening server."
+  }
+]
