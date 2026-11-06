@@ -32,14 +32,20 @@ afterEach(() => {
 })
 
 describe('connectDesktopClient', () => {
-  it('marks the page and keeps room for the window controls inside the desktop client', () => {
+  it('puts the bar below the caption buttons on Windows rather than beside them', () => {
     inClient('windows', 0, 138)
     const root = document.createElement('html')
     connectDesktopClient(root)
     expect(root.dataset.desktopClient).toBe('windows')
-    expect(root.style.getPropertyValue('--desktop-caption-start')).toBe('0px')
-    expect(root.style.getPropertyValue('--desktop-caption-end')).toBe('146px')
-    expect(root.style.getPropertyValue('--desktop-caption-clear')).toBe('32px')
+    expect(root.style.getPropertyValue('--desktop-caption-top')).toBe('32px')
+    expect(root.style.getPropertyValue('--desktop-caption-end')).toBe('')
+  })
+
+  it('keeps a Windows client that names its own top strip at that strip', () => {
+    inClient('windows', 0, 138, () => undefined, 40)
+    const root = document.createElement('html')
+    connectDesktopClient(root)
+    expect(root.style.getPropertyValue('--desktop-caption-top')).toBe('40px')
   })
 
   it('keeps a strip along the top for the traffic lights on macOS, so the brand sits below them', () => {
@@ -47,9 +53,7 @@ describe('connectDesktopClient', () => {
     const root = document.createElement('html')
     connectDesktopClient(root)
     expect(root.dataset.desktopClient).toBe('macos')
-    expect(root.style.getPropertyValue('--desktop-caption-start')).toBe('0px')
     expect(root.style.getPropertyValue('--desktop-caption-top')).toBe('28px')
-    expect(root.style.getPropertyValue('--desktop-caption-clear')).toBe('28px')
   })
 
   it('changes nothing in a browser or for a malformed global', () => {

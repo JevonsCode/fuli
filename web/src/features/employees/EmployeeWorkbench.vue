@@ -456,10 +456,10 @@ async function projectsSaved() {
 .fills-height:has(.employee-all-projects) .employee-workbench-canvas { flex: 1 0 auto; }
 /* Over the whole app, below the window's own controls; the board keeps its controls. */
 .employee-workbench-view.is-fullscreen {
-  position: fixed; inset: 0; z-index: var(--z-dialog); overflow: auto; padding: calc(16px + var(--desktop-caption-clear, 0px)) var(--page-inline, 24px) 16px;
+  position: fixed; inset: 0; z-index: var(--z-dialog); overflow: auto; padding: calc(16px + var(--desktop-caption-top, 0px)) var(--page-inline, 24px) 16px;
   border: 0; border-radius: 0; background: var(--color-bg); box-shadow: none;
 }
-.is-fullscreen.is-native .employee-workbench-toolbar { top: calc(10px + var(--desktop-caption-clear, 0px)); right: var(--page-inline, 24px); }
+.is-fullscreen.is-native .employee-workbench-toolbar { top: calc(10px + var(--desktop-caption-top, 0px)); right: var(--page-inline, 24px); }
 .employee-workbench-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; }
 .employee-workbench-toolbar:has(.employee-workbench-actions:empty) { display: none; }
 /* A native panel's actions sit in the corner of the card, on the row of its own

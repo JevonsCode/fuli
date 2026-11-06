@@ -244,14 +244,10 @@ watchEffect(() => {
   background: var(--surface-dock); -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock);
   box-shadow: 0 1px 0 var(--edge-dock);
 }
-/* In the desktop client the bar is the window's title bar: its own minimise, maximise and
-   close sit in the top right corner (Windows) and the bar keeps clear of them; on macOS the
-   traffic lights take a strip along the top and the brand sits below them (lib/desktop-client.ts). */
-:root[data-desktop-client] .app-topbar {
-  padding-top: calc(12px + var(--desktop-caption-top, 0px));
-  padding-left: max(var(--page-inline), var(--desktop-caption-start));
-  padding-right: max(calc(var(--page-inline) + var(--scrollbar-size)), var(--desktop-caption-end));
-}
+/* In the desktop client the bar is the window's title bar: the window's own controls (Windows'
+   minimise, maximise and close, macOS's traffic lights) take a strip along its top and the bar's
+   row sits below them; the strip is the bar's empty area, so it moves the window (lib/desktop-client.ts). */
+:root[data-desktop-client] .app-topbar { padding-top: calc(12px + var(--desktop-caption-top, 0px)); }
 .app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-height: 44px; }
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .app-wordmark-button { display: inline-flex; padding: 0; border: 0; background: none; cursor: pointer; user-select: none; }

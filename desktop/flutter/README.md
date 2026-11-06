@@ -12,8 +12,8 @@ A Windows and macOS app for people who do not use a terminal: one window and a t
   bar (`lib/src/ui/window_caption.dart`). On Windows the client's minimise, maximise and close (46 x 32 each;
   close hides the window, as before) sit over the top right corner, over the console's WebView too; macOS
   keeps its traffic lights. The console page learns this before it runs (`window.fuliDesktopClient`, a user
-  script in `console_webview.dart`), marks itself `data-desktop-client`, keeps its top bar clear of those
-  corners and asks the client (`fuliWindow`) to move the window when its empty top bar is dragged, or to
+  script in `console_webview.dart`), marks itself `data-desktop-client`, keeps a strip along its top for
+  those controls (on Windows the caption buttons' 32 px) so its own row sits below them, and asks the client (`fuliWindow`) to move the window when its empty top bar is dragged, or to
   maximise or restore it on a double click (`web/src/lib/desktop-client.ts`). The status and waiting pages'
   top line does the same in Flutter, where a right click also opens the window menu. The frame keeps its
   resize edges, shadow, rounded corners and snapping; the runner keeps the top edge resizable and hands the

@@ -71,6 +71,6 @@ const opened = computed(() => shown.value.find(workflow => workflow.workflowId =
 /* The dialog renders outside this component: over the whole app, below the window's controls. */
 [data-slot="dialog-content"].agent-workflow-full {
   top: 0; left: 0; display: flex; flex-direction: column; width: 100vw; max-width: none; height: 100dvh; max-height: none; overflow: auto;
-  padding: calc(16px + var(--desktop-caption-clear, 0px)) var(--page-inline, 24px) 24px; border: 0; border-radius: 0; background: var(--color-bg); transform: none;
+  padding: calc(16px + var(--desktop-caption-top, 0px)) var(--page-inline, 24px) 24px; border: 0; border-radius: 0; background: var(--color-bg); transform: none;
 }
 </style>
