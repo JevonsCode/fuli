@@ -270,6 +270,12 @@ the new version) for that installation's own data, on macOS the package inside F
 installation. A source checkout or build folder never starts anything. Sessions share one lock and one
 record, `console-autostart.json` in the data directory, so only one of them starts it.
 
+A console whose process is alive but has not answered its health check for about 40 seconds counts as
+stopped: the start ends it (only when the system shows FULI's server running this data directory's
+runtime config) and starts a new one. `fuli start` and `fuli restart` do the same for such a console and
+say so. The console itself exits within 10 seconds of SIGTERM or SIGINT, even when a request or a
+resource would keep a graceful close waiting.
+
 It does not start FULI:
 
 - after `fuli stop` (also the desktop client's stop, an update's or a restore's stop) until FULI is
