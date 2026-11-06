@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { z } from 'zod'
 import { RouterLink } from 'vue-router'
 import { getJson } from '@/api/client'
+import { shapeOf } from '@/api/response-shape'
 import { Button } from '@/components/ui/button'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { roleName, type ModelRoleId } from '@/features/model-settings/model'
@@ -16,7 +18,9 @@ import './workbench-card.css'
 // what Dreaming found, what Tonborg confirmed, who joined or left, a model that
 // stopped answering, a new version), each with its one quick way in. Seven show;
 // 更多 opens the rest. With nothing to say, the card stays away.
-type Notice = { id: string; kind: string; at: string; params: Record<string, string | number>; href: string }
+const notice = z.looseObject({ id: z.string(), kind: z.string(), at: z.string(), params: z.record(z.string(), z.union([z.string(), z.number()])), href: z.string() })
+const noticesShape = shapeOf(z.looseObject({ items: z.array(notice) }))
+type Notice = z.infer<typeof notice>
 const FEED_ROWS = 7
 const ICONS: Record<string, IconName> = {
   topic_promoted: 'project', dreaming_found: 'memory', dreaming_stopped: 'warning', tonborg_confirmed: 'check',
@@ -30,7 +34,7 @@ const shown = computed(() => (expanded.value ? items.value : items.value.slice(0
 
 onMounted(async () => {
   try {
-    items.value = (await getJson<{ items: Notice[] }>('/api/notices')).items.filter(item => item.kind in ICONS)
+    items.value = (await getJson('/api/notices', noticesShape)).items.filter(item => item.kind in ICONS)
     state.value = 'ready'
   } catch {
     // The workbench says nothing rather than show a broken card.
