@@ -370,7 +370,7 @@ test('a convention, an owner or "the way we" do something is a recall intent of 
   assert.deepEqual(owner.trigger_categories, ['project_convention']);
   assert.equal(owner.queries[0], 'codeowners naming team owns ledger');
   assert.deepEqual(planTaskKnowledgeRecall('Add a `NegativeAmountError` following our error code convention.').queries[0],
-    'our error code convention');
+    'error code convention');
   assert.equal(planTaskKnowledgeRecall('按我们约定的重试策略改一下 fetchRate').queries[0], '按约定重试策略改 fetchrate');
 });
 
@@ -393,4 +393,17 @@ test('trailing environment notes neither hide the prompt\'s own clauses nor take
   assert.equal(withNotes.queries[0], alone.queries[0]);
   assert.match(withNotes.queries[0], /retry/);
   assert.ok(withNotes.queries.every((query) => !/WSL|Ubuntu|Windows/.test(query)), JSON.stringify(withNotes.queries));
+});
+
+test('a named target leaves room for the clause that names a kept fact (compounding eval)', () => {
+  // "SMS" is a named target; the retry behaviour is the fact the task needs.
+  const sms = planTaskKnowledgeRecall('SMS messages get dropped whenever the provider has a hiccup. Give the SMS channel the '
+    + 'same retry behaviour we use for email, with tests, and make sure the whole suite passes.');
+  assert.match(sms.queries[0], /^SMS .*convention policy rule owner$/);
+  assert.ok(sms.queries.some((query) => /^SMS .*\bretry\b/.test(query)), sms.queries.join(' | '));
+  assert.ok(sms.queries.every((query) => query.startsWith('SMS ')), 'every query keeps the target');
+  // A named target with no clause naming a kept fact plans as before.
+  const workflow = planTaskKnowledgeRecall('Analytics Dashboard Builder 应该按什么流程搭建？').queries;
+  assert.equal(workflow.length, 1);
+  assert.match(workflow[0], /方法 方式 流程 步骤 runbook workflow procedure$/);
 });
