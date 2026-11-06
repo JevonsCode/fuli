@@ -10,13 +10,19 @@
 .install-story.is-playing .install-pin { position: sticky; top: 72px; height: calc(100svh - 72px); }
 
 .install-steps { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
-.install-steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 2px 12px; padding: 12px 14px; border-radius: 14px; counter-increment: step; transition: opacity .35s ease, background-color .35s ease; }
-.install-steps li::before { content: counter(step); grid-row: span 2; display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid #2c3a36; border-radius: 50%; color: #8bc1a8; font: 600 12px/1 "Unbounded", var(--sans); }
+.install-steps li { display: block; padding: 0; border-radius: 14px; counter-increment: step; transition: opacity .35s ease, background-color .35s ease; }
+.install-steps li::before { content: none; }
+/* Each step is a button: while the story plays it jumps there; without it the list is plain text. */
+.install-steps button { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 2px 12px; width: 100%; padding: 12px 14px; border: 0; border-radius: 14px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; user-select: none; }
+.install-steps button:disabled { cursor: default; }
+.install-steps button:focus-visible { outline: 2px solid #8bc1a8; outline-offset: 2px; }
+.install-story.is-playing .install-steps li:not(.is-current):hover { opacity: .8; }
+.install-steps button::before { content: counter(step); grid-row: span 2; display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid #2c3a36; border-radius: 50%; color: #8bc1a8; font: 600 12px/1 "Unbounded", var(--sans); }
 .install-steps b { color: #fff; font-size: 17px; font-weight: 600; }
 .install-steps span { color: #a9bab4; font-size: 14px; line-height: 1.6; }
 .install-story.is-playing .install-steps li { opacity: .5; }
 .install-story.is-playing .install-steps li.is-current { opacity: 1; background: #16201d; }
-.install-story.is-playing .install-steps li.is-current::before { border-color: #8bc1a8; background: #8bc1a8; color: var(--night); }
+.install-story.is-playing .install-steps li.is-current button::before { border-color: #8bc1a8; background: #8bc1a8; color: var(--night); }
 .install-progress { display: none; }
 .install-story.is-playing .install-progress { display: block; height: 2px; margin: 14px 14px 0; overflow: hidden; border-radius: 1px; background: #26332f; }
 .install-progress i { display: block; height: 100%; background: linear-gradient(90deg, #8bc1a8, #c99a3b); transform: scaleX(var(--install-progress, 0)); transform-origin: left; }
@@ -51,7 +57,7 @@
   .install-pin { grid-template-columns: minmax(0, 1fr); align-content: center; gap: 18px; }
   .install-story.is-playing .install-pin { top: 64px; height: calc(100svh - 64px); }
   .install-story.is-playing .install-steps li:not(.is-current) span { display: none; }
-  .install-steps li { padding: 8px 10px; }
+  .install-steps button { padding: 8px 10px; }
   .install-steps b { font-size: 15px; }
   .install-story.is-playing .install-note { display: none; }
   .install-downloads { margin-top: 14px; }

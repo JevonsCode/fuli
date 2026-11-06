@@ -200,17 +200,35 @@ test('the home story walks through the product in order, with measured numbers a
     assert.ok(growth.querySelector('.ga-checks [data-i18n="growth.soon"]'), path);
     for (const part of ['.ga-avatar', '.ga-app', '.ga-workbench', '.ga-workflow']) assert.ok(growth.querySelector(part), path + part);
     assert.ok(document.querySelector('[data-overlay="growth"]'), path);
-    // Real FLA portraits, not a letter: the card's FLA cycles through four, and the chapter ends in a crowd of groups,
-    // some talking (one line each, translated), some producing work.
+    // Real FLA portraits, not a letter: the card's FLA cycles through four, and the chapter ends in a crowd of
+    // sixteen groups: half hold a four-turn exchange from real work (both FLAs speak, in turn), half produce work.
     assert.equal(growth.querySelector('.ga-avatar').textContent.trim(), '', path);
     assert.equal(growth.querySelectorAll('.ga-avatar img[src*="assets/avatars/fla-"]').length, 4, path);
     const crowd = document.querySelector('#growth .ga-crowd');
     assert.equal(crowd.getAttribute('aria-hidden'), 'true', path);
-    assert.equal(crowd.querySelectorAll('.ga-group').length, 8, path);
-    assert.deepEqual([...crowd.querySelectorAll('.ga-group.is-talking .ga-bubble')].map(node => node.getAttribute('data-i18n')), [1, 2, 3, 4].map(n => `growth.crowd.line${n}`), path);
-    assert.equal(crowd.querySelectorAll('.ga-group.is-working .ga-output').length, 4, path);
-    // A phone shows the first five, each with its own place below the title.
-    for (const group of [...crowd.querySelectorAll('.ga-group')].slice(0, 5)) assert.match(group.getAttribute('style'), /--px: \d+%; --py: \d+%/, path);
+    const groups = [...crowd.querySelectorAll('.ga-group')];
+    assert.equal(groups.length, 16, path);
+    const talking = groups.filter(group => group.classList.contains('is-talking'));
+    assert.equal(talking.length, 8, path);
+    for (const group of talking) {
+      assert.equal(group.querySelectorAll('img').length, 2, path);
+      const turns = [...group.querySelectorAll('.ga-bubble')];
+      assert.deepEqual(turns.map(node => node.getAttribute('data-i18n').replace(/^growth\.crowd\.c\d\./, '')), ['l1', 'l2', 'l3', 'l4'], path);
+      assert.deepEqual(turns.map(node => node.classList.contains('is-b')), [false, true, false, true], path);
+      for (const node of turns) assert.ok(node.textContent.trim(), path);
+    }
+    assert.equal(crowd.querySelectorAll('.ga-group.is-working .ga-output').length, 8, path);
+    assert.equal(new Set(groups.flatMap(group => [...group.querySelectorAll('img')].map(node => node.getAttribute('src')))).size, 40, path);
+    // A phone shows the first ten, each with its own place below the title.
+    for (const group of groups.slice(0, 10)) assert.match(group.getAttribute('style'), /--px: \d+%; --py: \d+%/, path);
+    // The roundtable: every question gets its answer, back and forth, in the chapter and in the story.
+    const thread = [...document.querySelectorAll('#roundtable .thread .thread-msg')];
+    assert.deepEqual(thread.map(node => node.classList.contains('reply')), [false, true, false, true], path);
+    for (const node of thread) assert.ok(node.querySelector('.bubble').textContent.trim(), path);
+    const lines = [...document.querySelectorAll('.roundtable-overlay .rt-line')];
+    assert.deepEqual(lines.map(node => node.classList.contains('is-b')), [false, true, false, true], path);
+    assert.ok(document.querySelector('.roundtable-overlay').hasAttribute('data-progress'), path);
+    for (const node of lines) assert.ok(node.querySelector('img[src*="assets/avatars/fla-"]') && node.querySelector('span').textContent.trim(), path);
     assert.ok(document.querySelector('[data-overlay="growth"][data-copy="#growth .ga-crowd"]'), path);
     assert.deepEqual([...document.querySelectorAll('#workbench .growth-cards b')].map(node => node.textContent), ['Workbench', 'Workflow', 'Agent App'], path);
     // Upcoming work sits only under the 即将 / Coming badge, never among the shipped cards.
@@ -229,9 +247,10 @@ test('the install chapter leads with the client: four steps beside real screens,
   const files = pages();
   for (const [path, lang] of [['index.html', 'zh'], ['en/index.html', 'en']]) {
     const { document } = parseHTML(files.get(path));
-    // 不会配？: a 「?」 card's prompt goes to the person's own AI client, which sets the model up.
+    // AI-friendly, said as a statement: a 「?」 card's prompt goes to the person's own AI client, which sets the model up.
     // What has shipped is said plainly; the 「?」 prompt and WebMCP sit under the 即将 / Coming badge.
     const aiSetup = document.querySelector('#start .ai-setup');
+    assert.doesNotMatch(aiSetup.querySelector('h3').textContent, /[?？]/, path);
     assert.equal(aiSetup.querySelector('.ai-help-prompt q').textContent, aiSetup.querySelector('.ai-setup-chat .msg.user').textContent, path);
     assert.ok(aiSetup.querySelector('.ai-help-head [data-i18n="aiSetup.soon"]'), path);
     assert.match(aiSetup.querySelector('.ai-setup-soon').textContent, /WebMCP/, path);
@@ -239,6 +258,8 @@ test('the install chapter leads with the client: four steps beside real screens,
     assert.match(aiSetup.querySelector('.ai-setup-control').textContent, lang === 'zh' ? /AI 权限.*密钥/ : /AI permissions.*keys/, path);
     const story = document.querySelector('#start .install-story');
     assert.equal(story.querySelectorAll('.install-steps > li').length, 4, path);
+    // Each step is a button that jumps the story to it (enabled by the story script, plain text without it).
+    assert.equal(story.querySelectorAll('.install-steps > li > button[type="button"][disabled]').length, 4, path);
     // The download drawn first, then six console screens, each in both languages.
     const frames = [...story.querySelectorAll('.app-frame')];
     assert.equal(frames.length, 7, path);

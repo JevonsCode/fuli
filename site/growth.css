@@ -110,27 +110,39 @@
 .enhanced #growth { height: 340svh; }
 .growth-overlay .growth-anim { opacity: calc(1 - .88 * var(--growth-finale, 0)); scale: calc(1 - .06 * var(--growth-finale, 0)); }
 
-/* The finale: FLAs everywhere, in small groups. Some talk (a bubble each), some work together
-   with what they make growing behind them. --growth-finale (scene.js) brings the groups in one
-   after another; each group then keeps its own small motion. Without the story it is a still strip. */
-.ga-crowd { display: flex; flex-wrap: wrap; justify-content: center; gap: 28px 40px; grid-column: 1 / -1; padding: 12px 0 8px; }
+/* The finale: FLAs everywhere, in small groups. Some talk: a four-line exchange from real work,
+   one bubble at a time, the speaker raised while the other listens. Some work together with what
+   they make growing behind them. --growth-finale (scene.js) brings the groups in one after another;
+   each then keeps its own loop. Without the story it is a still strip with each exchange written out. */
+.ga-crowd { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end; gap: 36px 48px; grid-column: 1 / -1; padding: 12px 0 8px; }
+.ga-crowd .is-more { display: none; }
 .ga-group { position: relative; display: flex; align-items: flex-end; }
 .ga-group img { position: relative; width: 56px; height: 56px; border-radius: 50%; background: var(--surface); box-shadow: 0 0 0 3px var(--paper), 0 8px 20px rgb(27 31 29 / 12%); }
 .ga-group img + img { margin-left: -12px; }
-.ga-bubble { position: absolute; bottom: calc(100% + 10px); left: 50%; padding: 6px 12px; border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; background: var(--surface); color: var(--ink); font-size: 13px; white-space: nowrap; box-shadow: 0 6px 18px rgb(27 31 29 / 10%); translate: -20% 0; user-select: none; }
+.ga-talk { position: absolute; bottom: calc(100% + 10px); left: 50%; display: grid; gap: 6px; width: max-content; max-width: 240px; translate: -50% 0; }
+.ga-bubble { justify-self: start; padding: 6px 12px; border: 1px solid var(--line); border-radius: 14px 14px 14px 4px; background: var(--surface); color: var(--ink); font-size: 13px; line-height: 1.45; box-shadow: 0 6px 18px rgb(27 31 29 / 10%); user-select: none; }
+.ga-bubble.is-b { justify-self: end; border-radius: 14px 14px 4px 14px; background: var(--jade-soft); border-color: var(--jade-line); }
 .ga-output { position: absolute; z-index: 0; left: 50%; bottom: 44px; display: grid; gap: 7px; width: 150px; padding: 14px 14px 22px; border: 1px solid var(--line); border-radius: 12px; background: rgb(255 254 251 / 80%); translate: -50% 0; }
 .ga-output i { display: block; height: 7px; border-radius: 3px; background: var(--jade-line); transform-origin: left; }
 .ga-output i:nth-child(2) { width: 80%; background: var(--sunk); }
 .ga-output i:nth-child(3) { width: 60%; background: var(--sunk); }
 .ga-group.is-working img { z-index: 1; }
+/* The still strip: each exchange written out above its pair, each work card above its team. */
+.ga-crowd.static-figure .ga-group { flex-wrap: wrap; justify-content: center; max-width: 260px; }
+.ga-crowd.static-figure .ga-group.is-working { max-width: 170px; }
+.ga-crowd.static-figure .ga-talk, .ga-crowd.static-figure .ga-output { position: static; order: -1; flex: 0 0 100%; margin-bottom: 12px; translate: none; }
 
 .crowd-overlay .ga-crowd { position: absolute; inset: 72px 0 0; display: block; padding: 0; }
+.crowd-overlay .ga-crowd .is-more { display: flex; }
 .crowd-overlay .ga-group {
-  --show: clamp(0, var(--growth-finale, 0) * 9 - var(--i), 1);
+  --show: clamp(0, var(--growth-finale, 0) * 17 - var(--i), 1);
   position: absolute; left: var(--x); top: var(--y); translate: -50% -50%;
   opacity: var(--show); transform: scale(calc(.6 + .4 * var(--show)));
 }
-.crowd-overlay .ga-bubble { opacity: clamp(0, var(--growth-finale, 0) * 9 - var(--i) - .6, 1); }
+/* In the story the four lines share one place: each shows for its turn. */
+.crowd-overlay .ga-talk { display: block; width: 240px; height: 0; }
+.crowd-overlay .ga-bubble { position: absolute; bottom: 0; left: 50%; width: max-content; max-width: 240px; translate: -50% 0; opacity: 0; }
+.crowd-overlay .ga-bubble:nth-child(1) { opacity: 1; }
 
 @media (prefers-reduced-motion: no-preference) {
   .enhanced .ga-avatar { animation: ga-hop 2s ease-in-out infinite; }
@@ -138,10 +150,17 @@
   .enhanced .ga-avatar img:nth-child(2) { animation-delay: -6s; }
   .enhanced .ga-avatar img:nth-child(3) { animation-delay: -4s; }
   .enhanced .ga-avatar img:nth-child(4) { animation-delay: -2s; }
-  .enhanced .crowd-overlay .ga-group img { animation: ga-hop 1.8s ease-in-out infinite; }
-  .enhanced .crowd-overlay .ga-group img:nth-child(2n) { animation-delay: -.6s; }
-  .enhanced .crowd-overlay .ga-group img:nth-child(3n) { animation-delay: -1.2s; }
-  .enhanced .crowd-overlay .ga-group.is-talking img { animation-duration: 2.6s; }
+  .enhanced .crowd-overlay .ga-group.is-working img { animation: ga-hop 1.8s ease-in-out infinite; }
+  .enhanced .crowd-overlay .ga-group.is-working img:nth-child(2n) { animation-delay: -.6s; }
+  .enhanced .crowd-overlay .ga-group.is-working img:nth-child(3n) { animation-delay: -1.2s; }
+  /* A 10 s exchange: four turns of 2.5 s. The first FLA speaks on turns 1 and 3, the second on 2 and 4. */
+  .enhanced .crowd-overlay .ga-bubble { animation: ga-say 10s ease-out infinite; animation-delay: calc(var(--turn) * 2.5s - var(--o, 0s)); }
+  .enhanced .crowd-overlay .ga-bubble:nth-child(1) { --turn: 0; }
+  .enhanced .crowd-overlay .ga-bubble:nth-child(2) { --turn: 1; }
+  .enhanced .crowd-overlay .ga-bubble:nth-child(3) { --turn: 2; }
+  .enhanced .crowd-overlay .ga-bubble:nth-child(4) { --turn: 3; }
+  .enhanced .crowd-overlay .ga-group.is-talking img { animation: ga-speak 5s ease-in-out infinite; animation-delay: calc(0s - var(--o, 0s)); }
+  .enhanced .crowd-overlay .ga-group.is-talking img + img { animation-delay: calc(2.5s - var(--o, 0s)); }
   .enhanced .crowd-overlay .ga-output i { animation: ga-produce 3.2s ease-in-out infinite; }
   .enhanced .crowd-overlay .ga-output i:nth-child(2) { animation-delay: .4s; }
   .enhanced .crowd-overlay .ga-output i:nth-child(3) { animation-delay: .8s; }
@@ -150,12 +169,17 @@
 @keyframes ga-swap { 0% { opacity: 1; } 25%, 100% { opacity: 0; } }
 @keyframes ga-hop { 0%, 60%, 100% { translate: 0 0; } 18% { translate: 0 -14%; } 32% { translate: 0 0; } 42% { translate: 0 -5%; } }
 @keyframes ga-produce { 0% { transform: scaleX(0); opacity: 1; } 55%, 85% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
+/* One turn in four: in, hold, out before the next speaker. */
+@keyframes ga-say { 0% { opacity: 0; translate: -50% 8px; } 4%, 22% { opacity: 1; translate: -50% 0; } 25%, 100% { opacity: 0; translate: -50% 0; } }
+/* Speaking for half the loop: raised and bright; listening: settled and a little dim. */
+@keyframes ga-speak { 0%, 46% { translate: 0 -8%; scale: 1.08; opacity: 1; } 50%, 96% { translate: 0 0; scale: .96; opacity: .72; } 100% { translate: 0 -8%; scale: 1.08; opacity: 1; } }
 
 @media (max-width: 700px) {
-  .crowd-overlay .ga-group:nth-child(n + 6) { display: none; }
+  .crowd-overlay .ga-group:nth-child(n + 11) { display: none; }
   .crowd-overlay .ga-group { left: var(--px); top: var(--py); }
-  .ga-bubble { translate: -30% 0; }
   .ga-group img { width: 42px; height: 42px; }
-  .ga-bubble { font-size: 12px; padding: 5px 10px; }
-  .ga-output { width: 96px; }
+  .crowd-overlay .ga-talk { width: 160px; }
+  .ga-bubble { padding: 5px 10px; font-size: 12px; }
+  .crowd-overlay .ga-bubble { max-width: 160px; }
+  .ga-output { bottom: 34px; gap: 5px; width: 96px; padding: 9px 10px 14px; }
 }

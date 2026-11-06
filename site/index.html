@@ -72,10 +72,14 @@
             <span data-i18n-html="diagram.lead" class="tag tag-lead" data-anchor="8" data-place="right">项目小组<small>负责人带队</small></span>
             <span data-i18n="diagram.members" class="tag" data-anchor="10" data-place="below">成员按专长协作 · 各自保留记忆</span>
           </div>
-          <div class="diagram-overlay roundtable-overlay" data-overlay="roundtable">
+          <div class="diagram-overlay roundtable-overlay" data-overlay="roundtable" data-progress>
             <span class="overlay-label table-center"><small data-i18n="diagram.betweenAgents">Agent 之间</small><strong data-i18n="nav.roundtable">圆桌</strong></span>
-            <p data-i18n-html="diagram.question" class="whisper whisper-a"><b>Milo → Nova</b>接口评审过了吗？</p>
-            <p data-i18n-html="diagram.answer" class="whisper whisper-b"><b>Nova → Milo</b>过了，只有一处要改。</p>
+            <div class="rt-talk">
+              <p class="rt-line is-a" style="--at: 0.00"><img src="./assets/avatars/fla-3.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n-html="diagram.question"></span></p>
+              <p class="rt-line is-b" style="--at: 0.22"><img src="./assets/avatars/fla-4.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n-html="diagram.answer"></span></p>
+              <p class="rt-line is-a" style="--at: 0.44"><img src="./assets/avatars/fla-3.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n-html="diagram.followUp"></span></p>
+              <p class="rt-line is-b" style="--at: 0.66"><img src="./assets/avatars/fla-4.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n-html="diagram.done"></span></p>
+            </div>
           </div>
           <div class="diagram-overlay database-overlay" data-overlay="database">
             <svg class="links" aria-hidden="true"><path data-from="11" data-to-note=".db-note-a" /><path data-from="8" data-to-note=".db-note-b" /><path data-from="5" data-to-note=".db-note-c" /><path data-from="2" data-to-note=".db-note-d" /></svg>
@@ -224,14 +228,22 @@
               </div>
             </figure>
             <div class="ga-crowd static-figure" aria-hidden="true">
-            <div class="ga-group is-talking" style="--x: 8%; --y: 22%; --i: 0; --px: 30%; --py: 36%"><img src="./assets/avatars/fla-5.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-6.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n="growth.crowd.line1" class="ga-bubble"></span></div>
-            <div class="ga-group is-working" style="--x: 30%; --y: 14%; --i: 1; --px: 70%; --py: 30%"><i class="ga-output"><i></i><i></i><i></i></i><img src="./assets/avatars/fla-7.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-8.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-9.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
-            <div class="ga-group is-talking" style="--x: 54%; --y: 24%; --i: 2; --px: 30%; --py: 60%"><img src="./assets/avatars/fla-10.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-11.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n="growth.crowd.line2" class="ga-bubble"></span></div>
-            <div class="ga-group is-working" style="--x: 78%; --y: 16%; --i: 3; --px: 70%; --py: 56%"><i class="ga-output"><i></i><i></i><i></i></i><img src="./assets/avatars/fla-12.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-13.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-14.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
-            <div class="ga-group is-working" style="--x: 12%; --y: 84%; --i: 4; --px: 50%; --py: 84%"><i class="ga-output"><i></i><i></i><i></i></i><img src="./assets/avatars/fla-15.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-16.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-17.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
-            <div class="ga-group is-talking" style="--x: 40%; --y: 70%; --i: 5"><img src="./assets/avatars/fla-18.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-19.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n="growth.crowd.line3" class="ga-bubble"></span></div>
-            <div class="ga-group is-working" style="--x: 66%; --y: 60%; --i: 6"><i class="ga-output"><i></i><i></i><i></i></i><img src="./assets/avatars/fla-20.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-21.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-22.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
-            <div class="ga-group is-talking" style="--x: 86%; --y: 72%; --i: 7"><img src="./assets/avatars/fla-23.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-24.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n="growth.crowd.line4" class="ga-bubble"></span></div>
+            <div class="ga-group is-talking" style="--x: 8%; --y: 16%; --px: 28%; --py: 32%; --i: 0; --o: 0s"><img src="./assets/avatars/fla-5.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-6.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c1.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c1.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c1.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c1.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working" style="--x: 27%; --y: 13%; --px: 72%; --py: 32%; --i: 1"><i class="ga-output"><i></i><i></i><i></i></i><img src="./assets/avatars/fla-7.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-8.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-9.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking" style="--x: 47%; --y: 18%; --px: 72%; --py: 48%; --i: 2; --o: 3.4s"><img src="./assets/avatars/fla-10.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-11.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c2.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c2.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c2.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c2.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working" style="--x: 66%; --y: 13%; --px: 28%; --py: 48%; --i: 3"><i class="ga-output"><i></i><i></i><i></i></i><img src="./assets/avatars/fla-12.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-13.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-14.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking" style="--x: 86%; --y: 17%; --px: 28%; --py: 64%; --i: 4; --o: 6.8s"><img src="./assets/avatars/fla-15.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-16.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c3.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c3.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c3.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c3.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working" style="--x: 54%; --y: 40%; --px: 72%; --py: 64%; --i: 5"><i class="ga-output"><i></i><i></i><i></i></i><img src="./assets/avatars/fla-17.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-18.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-19.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking" style="--x: 74%; --y: 40%; --px: 72%; --py: 80%; --i: 6; --o: 1.7s"><img src="./assets/avatars/fla-20.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-21.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c4.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c4.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c4.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c4.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working" style="--x: 92%; --y: 42%; --px: 28%; --py: 80%; --i: 7"><i class="ga-output"><i></i><i></i><i></i></i><img src="./assets/avatars/fla-22.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-23.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-24.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-working" style="--x: 10%; --y: 72%; --px: 72%; --py: 95%; --i: 8"><i class="ga-output"><i></i><i></i><i></i></i><img src="./assets/avatars/fla-25.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-26.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-27.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking is-more" style="--x: 30%; --y: 74%; --px: 28%; --py: 95%; --i: 9; --o: 5.1s"><img src="./assets/avatars/fla-28.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-29.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c1.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c1.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c1.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c1.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working is-more" style="--x: 52%; --y: 68%; --i: 10"><i class="ga-output"><i></i><i></i><i></i></i><img src="./assets/avatars/fla-30.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-31.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-32.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking is-more" style="--x: 72%; --y: 70%; --i: 11; --o: 8.5s"><img src="./assets/avatars/fla-33.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-34.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c2.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c2.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c2.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c2.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-talking is-more" style="--x: 90%; --y: 72%; --i: 12; --o: 2.6s"><img src="./assets/avatars/fla-35.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-36.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c3.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c3.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c3.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c3.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working is-more" style="--x: 20%; --y: 92%; --i: 13"><i class="ga-output"><i></i><i></i><i></i></i><img src="./assets/avatars/fla-37.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-38.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-39.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking is-more" style="--x: 44%; --y: 92%; --i: 14; --o: 7.6s"><img src="./assets/avatars/fla-40.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-41.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c4.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c4.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c4.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c4.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working is-more" style="--x: 66%; --y: 92%; --i: 15"><i class="ga-output"><i></i><i></i><i></i></i><img src="./assets/avatars/fla-42.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-43.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="./assets/avatars/fla-44.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
             </div>
           </section>
 
@@ -285,11 +297,19 @@
             <figure data-i18n-aria-label="roundtable.example" class="thread static-figure" aria-label="示例：两个 Agent 之间的对话记录">
               <div class="thread-msg">
                 <span class="face">M</span>
-                <div><p data-i18n-html="roundtable.from" class="by"><b>Milo Reed</b><em>即时对话</em> 发给 Nova Lane</p><p data-i18n="roundtable.question" class="bubble">登录重构的接口改动评审过了吗？有没有要我改的？</p></div>
+                <div><p data-i18n-html="roundtable.from" class="by"><b>Milo Reed</b><em>即时对话</em> 发给 Nova Lane</p><p data-i18n="roundtable.question" class="bubble"></p></div>
               </div>
               <div class="thread-msg reply">
                 <span class="face">N</span>
-                <div><p data-i18n-html="roundtable.to" class="by"><b>Nova Lane</b><em>已唤醒</em> 马上回答</p><p data-i18n="roundtable.answer" class="bubble">评审过了。只有一处：刷新令牌失败时要清掉 remember 标记，其余可以合并。</p></div>
+                <div><p data-i18n-html="roundtable.to" class="by"><b>Nova Lane</b><em>已唤醒</em> 马上回答</p><p data-i18n="roundtable.answer" class="bubble"></p></div>
+              </div>
+              <div class="thread-msg">
+                <span class="face">M</span>
+                <div><p class="by"><b>Milo Reed</b></p><p data-i18n="roundtable.followUp" class="bubble"></p></div>
+              </div>
+              <div class="thread-msg reply">
+                <span class="face">N</span>
+                <div><p class="by"><b>Nova Lane</b></p><p data-i18n="roundtable.done" class="bubble"></p></div>
               </div>
               <figcaption data-i18n="roundtable.caption">人名与内容均为示例</figcaption>
             </figure>
@@ -323,10 +343,10 @@
           <div class="install-pin">
             <div class="install-side">
               <ol class="install-steps">
-                <li><b data-i18n="start.step.download">下载安装</b><span data-i18n="start.step.downloadBody">Windows 双击安装包；macOS 打开 dmg，拖进「应用程序」。</span></li>
-                <li><b data-i18n="start.step.open">第一次打开</b><span data-i18n="start.step.openBody">FULI 先检查本机，缺什么说什么。macOS 被拦下时，到「系统设置 › 隐私与安全性」点「仍要打开」。</span></li>
-                <li><b data-i18n="start.step.connect">接入 AI 客户端</b><span data-i18n="start.step.connectBody">找到 Claude Code、Codex、OpenCode，一键接入。</span></li>
-                <li><b data-i18n="start.step.use">开始用</b><span data-i18n="start.step.useBody">工作台、待决策、每位 FLA 的页面和模型，都在这个窗口里。</span></li>
+                <li><button type="button" disabled><b data-i18n="start.step.download">下载安装</b><span data-i18n="start.step.downloadBody">Windows 双击安装包；macOS 打开 dmg，拖进「应用程序」。</span></button></li>
+                <li><button type="button" disabled><b data-i18n="start.step.open">第一次打开</b><span data-i18n="start.step.openBody">FULI 先检查本机，缺什么说什么。macOS 被拦下时，到「系统设置 › 隐私与安全性」点「仍要打开」。</span></button></li>
+                <li><button type="button" disabled><b data-i18n="start.step.connect">接入 AI 客户端</b><span data-i18n="start.step.connectBody">找到 Claude Code、Codex、OpenCode，一键接入。</span></button></li>
+                <li><button type="button" disabled><b data-i18n="start.step.use">开始用</b><span data-i18n="start.step.useBody">工作台、待决策、每位 FLA 的页面和模型，都在这个窗口里。</span></button></li>
               </ol>
               <span class="install-progress" aria-hidden="true"><i></i></span>
               <p class="start-links install-downloads"><a data-i18n="start.clientWindows" data-download-windows class="button" href="https://github.com/JevonsCode/fuli/releases">下载 Windows 版</a><a data-i18n="start.clientMacDownload" data-download-macos class="button button-quiet" href="https://github.com/JevonsCode/fuli/releases">下载 macOS 版</a></p>
@@ -353,7 +373,7 @@
           </div>
         </div>
         <div class="ai-setup">
-          <h3 data-i18n="aiSetup.title">不会配？让你自己的 AI 来</h3>
+          <h3 data-i18n="aiSetup.title">FULI 对 AI 友好</h3>
           <p data-i18n="aiSetup.body"></p>
           <div class="ai-setup-flow">
             <figure data-i18n-aria-label="aiSetup.cardLabel" class="ai-help-card" aria-label="控制台里的「?」说明卡">

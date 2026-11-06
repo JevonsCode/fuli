@@ -269,20 +269,27 @@
 }
 .roundtable-overlay .table-center { left: 68%; top: 52%; color: #d2e7db; }
 .roundtable-overlay .table-center strong { display: block; font-size: 30px; letter-spacing: 0.02em; }
-.roundtable-overlay .whisper {
-  position: absolute;
-  white-space: nowrap;
+/* The roundtable's exchange: four lines arrive one after another as the chapter scrolls, each beside
+   its speaker's portrait; the newest one is bright, the earlier ones stay to read. */
+.roundtable-overlay .rt-talk { position: absolute; left: 58%; top: 14%; display: grid; gap: 10px; width: min(420px, 34vw); }
+.roundtable-overlay .rt-line {
+  --shown: clamp(0, (var(--scene-progress, 1) - var(--at)) / .08, 1);
+  display: flex; align-items: center; gap: 8px; margin: 0;
+  opacity: var(--shown); translate: 0 calc((1 - var(--shown)) * 10px);
+}
+.roundtable-overlay .rt-line.is-b { flex-direction: row-reverse; justify-self: end; }
+.roundtable-overlay .rt-line img { flex: none; width: 30px; height: 30px; border-radius: 50%; background: #e9f1ee; box-shadow: 0 0 0 2px #16201d; }
+.roundtable-overlay .rt-line span {
   padding: 8px 12px;
   border: 1px solid #2c3a36;
   border-radius: 4px 12px 12px 12px;
   background: #16201dd9;
   color: #cfe3da;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
 }
-.roundtable-overlay .whisper b { color: #8bc1a8; font-weight: 600; margin-right: 6px; }
-.roundtable-overlay .whisper-a { left: 76%; top: 18%; }
-.roundtable-overlay .whisper-b { left: 48%; top: 74%; border-radius: 12px 4px 12px 12px; }
+.roundtable-overlay .rt-line.is-b span { border-radius: 12px 4px 12px 12px; background: #1d2c27e6; }
+.roundtable-overlay .rt-line b { color: #8bc1a8; font-weight: 600; margin-right: 6px; }
 
 @media (min-width: 1700px) {
   .scene-perspective { --scene-scale: 1.45; }
@@ -307,7 +314,9 @@
   .receipt-plate { left: 50%; top: 90%; font-size: 11px; padding: 7px 12px; }
   .roundtable-overlay .table-center { left: 50%; top: 69%; }
   .roundtable-overlay .table-center strong { font-size: 20px; }
-  .roundtable-overlay .whisper { display: none; }
+  .roundtable-overlay .rt-talk { left: 16px; right: 16px; top: auto; bottom: 39%; width: auto; gap: 6px; }
+  .roundtable-overlay .rt-line span { padding: 6px 10px; font-size: 12px; }
+  .roundtable-overlay .rt-line img { width: 24px; height: 24px; }
 }
 @media (max-width: 380px) {
   .scene-perspective { --scene-scale: 0.58; }
