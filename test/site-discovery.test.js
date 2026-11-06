@@ -155,12 +155,26 @@ test('the home story walks through the product in order, with measured numbers a
     const { document } = parseHTML(files.get(path));
     assert.deepEqual([...document.querySelectorAll('.chapter')].map(node => node.dataset.scene),
       ['scatter', 'memory', 'knowledge', 'projects', 'owner', 'growth', 'workbench', 'team', 'roundtable', 'database'], path);
-    // 沉淀 and 项目 show real console screens, in both languages, and say what a model changes.
+    // 沉淀 and 项目 say what a model changes; 沉淀 shows real console screens in both languages.
     for (const id of ['knowledge', 'projects']) {
-      assert.ok(document.querySelector(`#${id} .screen-figure .screen-zh`) && document.querySelector(`#${id} .screen-figure .screen-en`), path + id);
       assert.ok(document.querySelector(`#${id} .model-modes .is-base`) && document.querySelector(`#${id} .model-modes .is-model`), path + id);
-      assert.ok(document.querySelector(`[data-overlay="${id}"][data-copy="#${id} .screen-figure"]`), path + id);
     }
+    assert.ok(document.querySelector('#knowledge .screen-figure .screen-zh') && document.querySelector('#knowledge .screen-figure .screen-en'), path);
+    assert.ok(document.querySelector('[data-overlay="knowledge"][data-copy="#knowledge .screen-figure"]'), path);
+    // 项目 grows a graph: projects around 我, each with its knowledge; three start temporary and two of
+    // them become projects with a lead; late items (hidden on phone) make it dense. Played along the chapter.
+    const graph = document.querySelector('#projects .project-graph');
+    assert.equal(graph.querySelectorAll('.pg-me').length, 1, path);
+    const projects = [...graph.querySelectorAll('.pg-project')];
+    assert.equal(projects.length, 5, path);
+    assert.equal(projects.filter(node => node.classList.contains('is-temp')).length, 3, path);
+    assert.equal(projects.filter(node => /--grad:/.test(node.getAttribute('style'))).length, 2, path);
+    assert.equal(projects.filter(node => node.querySelector('.pg-lead[src*="assets/avatars/fla-"]')).length, 4, path);
+    for (const node of projects) assert.ok(node.querySelector('em').textContent.trim(), path);
+    const items = graph.querySelectorAll('.pg-node').length;
+    assert.ok(items >= 30 && graph.querySelectorAll('.pg-node:not(.is-extra)').length <= 30, `${path}: ${items} items`);
+    assert.ok(graph.querySelectorAll('.pg-link').length >= items, path);
+    assert.ok(document.querySelector('[data-overlay="projects"][data-copy="#projects .project-graph"]')?.hasAttribute('data-progress'), path);
     // 沉淀 surfaces preferences in the person's own words: two each of taste, personality and judgment,
     // a few landing big, all behind the window; without the story they are a plain list.
     const quotes = [...document.querySelectorAll('#knowledge .pref-quotes .pq')];

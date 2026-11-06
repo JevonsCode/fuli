@@ -141,16 +141,6 @@ async function writeKnowledge(origin, space) {
   }
 }
 
-// The project overview opens on its settings; the team is the part this screen is for.
-async function showTeam(page) {
-  await page.evaluate(() => {
-    const heading = [...document.querySelectorAll('h2, h3')].find((node) => /^(项目团队|Project team)$/.test(node.textContent.trim()));
-    // The whole team card at the bottom of the view, the project's name and settings above it.
-    (heading?.closest('section, article, .card') ?? heading)?.scrollIntoView({ block: 'end' });
-  });
-  await page.waitForTimeout(600);
-}
-
 async function connectAll(page) {
   const button = page.getByRole('button', { name: /^(一键接入|Connect all)$/ });
   // Once every client is connected the button is disabled: nothing left to do.
@@ -198,7 +188,6 @@ export async function seedDemo(origin, { write }) {
     { name: 'inbox', path: '/inbox' },
     { name: 'agent', path: `/agents/${space}/${agents.get('Milo Reed')}` },
     { name: 'models', path: '/models' },
-    { name: 'project', path: project('shop-web', 'overview'), prepare: showTeam },
     { name: 'knowledge', path: project('orbit-ledger', 'directory') },
   ] };
 }
