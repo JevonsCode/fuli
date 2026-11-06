@@ -181,7 +181,7 @@ watchEffect(() => {
           <DoctorBanner />
           <GlossaryToggle />
           <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" data-shell-refresh @click="refreshConsole" />
-          <!-- 待决策 is a tray: empty when nothing waits, with papers in it when something does. -->
+          <!-- 待决策 is a tray: empty when nothing waits, heaped with rice when something does. -->
           <RouterLink to="/inbox" class="app-round" :class="{ 'is-full': waiting }" :aria-label="inboxLabel" :title="inboxLabel"
             :data-attention="waiting ? 'full' : 'empty'" data-shell-inbox data-term="section.askedYou">
             <UiIcon :name="waiting ? 'trayFull' : 'tray'" :size="18" />
@@ -283,7 +283,17 @@ watchEffect(() => {
    motion zeroes this in primitives.css). */
 .app-round.is-full { color: var(--color-ink); background: var(--color-accent-soft); animation: app-round-nudge 12s ease-in-out 3s infinite; }
 .app-round.is-full:hover { background: var(--color-surface-hover); }
-.app-round.is-full :deep(.tray-papers) { fill: var(--color-surface); }
+/* The full tray (Jevons 11-06): a heaped bowl of white rice spilling over a solid tray, dotted
+   with coloured grains. */
+.app-round.is-full :deep(.tray-rice-mound), .app-round.is-full :deep(.tray-rice-spill) { fill: var(--color-surface); stroke-width: 1.3; }
+.app-round.is-full :deep(.tray-front) { fill: currentColor; }
+.app-round.is-full :deep(.tray-slot) { stroke: var(--color-surface); stroke-width: 1.5; }
+.app-round.is-full :deep(.tray-grain) { stroke: none; }
+.app-round.is-full :deep(.tray-grain--1) { fill: var(--color-power-mid); }
+.app-round.is-full :deep(.tray-grain--2) { fill: var(--color-glitch-cyan); }
+.app-round.is-full :deep(.tray-grain--3) { fill: var(--color-gold); }
+.app-round.is-full :deep(.tray-grain--4) { fill: var(--color-glitch-magenta); }
+.app-round.is-full :deep(.tray-grain--5) { fill: var(--color-success); }
 @keyframes app-round-nudge {
   0%, 6%, 100% { transform: rotate(0); }
   1% { transform: rotate(-12deg); } 2% { transform: rotate(10deg); } 3% { transform: rotate(-7deg); }
@@ -291,8 +301,8 @@ watchEffect(() => {
 }
 .app-round.is-shaking { animation: app-round-shake 120ms linear infinite; }
 @keyframes app-round-shake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-7deg); } 75% { transform: rotate(7deg); } }
-.app-round :deep(.tray-papers) { transform-box: fill-box; animation: tray-papers-in var(--motion-enter); }
-@keyframes tray-papers-in { from { opacity: 0; transform: translateY(-5px); } }
+.app-round :deep(.tray-rice) { transform-box: fill-box; animation: tray-rice-in var(--motion-enter); }
+@keyframes tray-rice-in { from { opacity: 0; transform: translateY(-5px); } }
 /* A long record name takes at most two lines. */
 .app-title.is-screen-reader-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .app-title:not(.is-screen-reader-only) { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }

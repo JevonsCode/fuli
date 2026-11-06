@@ -241,13 +241,13 @@ describe('AppShell', () => {
     wrapper.unmount()
   })
 
-  it('shows 待决策 as a full tray with papers while requests wait, and an empty tray otherwise', async () => {
+  it('shows 待决策 as a full tray heaped with rice while requests wait, and an empty tray otherwise', async () => {
     attentionTotal = 12
     const { wrapper } = await setup('/')
     const inbox = wrapper.get('[data-shell-inbox]')
     expect(inbox.attributes('data-attention')).toBe('full')
     expect(inbox.attributes('aria-label')).toBe('待决策：12 件事在等你')
-    expect(inbox.find('.tray-papers').exists()).toBe(true)
+    expect(inbox.find('.tray-rice').exists()).toBe(true)
     // The drawing says it, not a coloured count badge.
     expect(inbox.text()).toBe('')
     wrapper.unmount()
@@ -256,7 +256,7 @@ describe('AppShell', () => {
     const empty = quiet.wrapper.get('[data-shell-inbox]')
     expect(empty.attributes('data-attention')).toBe('empty')
     expect(empty.attributes('aria-label')).toBe('待决策')
-    expect(empty.find('.tray-papers').exists()).toBe(false)
+    expect(empty.find('.tray-rice').exists()).toBe(false)
     quiet.wrapper.unmount()
   })
 
