@@ -139,6 +139,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     let purpose = 'initial';
     let retries = 0;
     let repairs = 0;
+    let outputTokens = limits.maxOutputTokens;
 
     for (;;) {
       const remainingMs = deadline - now().getTime();
@@ -150,14 +151,14 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       if (inputTokens > limits.maxInputTokens) return stop('budget_exhausted', 'per_call_input');
 
       const { pending, attemptStarted, blocked } = reserveAttempt(request, call,
-        { purpose, inputTokens, maxOutputTokens: limits.maxOutputTokens, remainingMs });
+        { purpose, inputTokens, maxOutputTokens: outputTokens, remainingMs });
       if (blocked) return stop('budget_exhausted', blocked);
 
       let result;
       const attemptSignal = timeoutSignal(remainingMs);
       try {
         result = await adapter.call({ connection: target, secret, request, mode: call.mode, signal: attemptSignal,
-          prompt: outgoing, maxOutputTokens: limits.maxOutputTokens, fetchImpl });
+          prompt: outgoing, maxOutputTokens: outputTokens, fetchImpl });
       } catch (error) {
         ledger.settleUnknown(pending, { durationMs: now().getTime() - attemptStarted.getTime(), failureReason: 'attempt_error' });
         throw error;
@@ -196,6 +197,13 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
         promptOnly.add(formatKey);
         call.mode = 'prompt';
         purpose = 'format_fallback';
+        continue;
+      }
+      // Stopped at the output limit, mostly by hidden reasoning: once more with
+      // the room no limit of the person's forbids.
+      if (failure.reason === 'output_token_limit' && outputTokens < limits.outputRoomTokens) {
+        outputTokens = limits.outputRoomTokens;
+        purpose = 'retry';
         continue;
       }
       const pauseMs = retryPause(failure, retries, deadline);

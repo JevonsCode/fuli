@@ -634,3 +634,15 @@ function pendingAttempt(overrides) {
   const { actualModel, durationMs, outcome, failureClass, failureReason, usage: _usage, estimatedCost, ...pending } = attempt(overrides);
   return pending;
 }
+
+test('an attempt stopped at the default output limit is tried once more with room; a limit the person set is kept', async () => {
+  const unset = role('claude', { budget: { maxInputTokens: 4000, maxOutputTokens: null, timeoutMs: 30_000, windowHours: 24, maxTokensPerWindow: null } });
+  const grown = harness({ bole: unset }, { responses: [anthropicStream('', { stopReason: 'max_tokens' }), anthropicStream(answer())] });
+  const ok = await grown.port.decide(request());
+  assert.equal(ok.modelReceipt.status, 'completed');
+  assert.deepEqual(grown.calls.map(call => call.body.max_tokens), [16_000, 64_000]);
+  const capped = harness({ bole: role('claude') }, { responses: [anthropicStream('', { stopReason: 'max_tokens' })] });
+  const stopped = await capped.port.decide(request());
+  assert.equal(stopped.modelReceipt.reason, 'output_token_limit');
+  assert.equal(capped.calls.length, 1);
+});

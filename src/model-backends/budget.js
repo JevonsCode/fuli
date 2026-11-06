@@ -11,6 +11,11 @@ const COST_PRECISION = 1e10;
 // What a request still has to name when no limit is set: a provider needs an
 // output size, a hung connection needs an end, and usage is read over a period.
 const DEFAULT_OUTPUT_TOKENS = 16_000;
+// A reasoning model's hidden reasoning counts against the same output limit:
+// gpt-5.6 behind an Anthropic Messages gateway spent about 14k of 16k tokens
+// reasoning over one Dreaming batch. Without a limit the person set, an
+// attempt stopped at the default is tried once more with this much room.
+const UNSET_OUTPUT_ROOM_TOKENS = 64_000;
 const DEFAULT_TIMEOUT_MS = 600_000;
 const DEFAULT_WINDOW_HOURS = 24;
 
@@ -19,10 +24,14 @@ export function estimateTokens(value) {
 }
 
 // A request may tighten the role's per-call limits, never widen them.
+// outputRoomTokens: the most a retry stopped at the output limit may ask for.
 export function callLimits(budget, requested = {}) {
+  const maxOutputTokens = Math.min(budget.maxOutputTokens ?? DEFAULT_OUTPUT_TOKENS, requested.maxOutputTokens ?? Infinity);
+  const unset = budget.maxOutputTokens == null && requested.maxOutputTokens == null;
   return {
     maxInputTokens: budget.maxInputTokens ?? Infinity,
-    maxOutputTokens: Math.min(budget.maxOutputTokens ?? DEFAULT_OUTPUT_TOKENS, requested.maxOutputTokens ?? Infinity),
+    maxOutputTokens,
+    outputRoomTokens: unset ? UNSET_OUTPUT_ROOM_TOKENS : maxOutputTokens,
     timeoutMs: Math.min(budget.timeoutMs ?? DEFAULT_TIMEOUT_MS, requested.timeoutMs ?? Infinity)
   };
 }
