@@ -3,6 +3,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const api = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn() }))
+const routing = vi.hoisted(() => ({ route: { query: {} as Record<string, string>, hash: '' }, replace: vi.fn() }))
+vi.mock('vue-router', async (importOriginal) => ({
+  ...await importOriginal<typeof import('vue-router')>(), useRoute: () => routing.route, useRouter: () => ({ replace: routing.replace }),
+}))
 vi.mock('@/api/client', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/api/client')>(), getJson: api.getJson, putJson: api.putJson,
 }))
@@ -57,6 +61,9 @@ beforeEach(() => {
     { project_id: 'beta', personal_space_id: 'space-1', scope_type: 'registered', profile: { name: 'Beta 项目' } },
   ] } as never
   rolesPayload = roles()
+  routing.route.query = {}
+  routing.route.hash = ''
+  routing.replace.mockReset()
   api.getJson.mockReset()
   api.putJson.mockReset()
   api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/model-backends/usage') ? usage()
@@ -100,6 +107,18 @@ describe('ModelSettingsPage', () => {
     expect(astro.get('[data-model-use-model]').text()).toBe('没接模型，用当前会话回答')
     expect(astro.get('[data-model-role-edit]').text()).toBe('接入')
     expect(wrapper.get('[data-dreaming] [data-model-use-model]').text()).toBe('Astro 还没接模型')
+  })
+
+  it("opens Tonborg's details from a link to its confirmation settings and rings the switch", async () => {
+    routing.route.query = { details: 'tonborg', tab: 'x' }
+    routing.route.hash = '#delegation'
+    const wrapper = await mountPage()
+    const details = wrapper.get('[data-model-use-details]')
+    expect(details.get('h2').text()).toBe('Tonborg')
+    expect(details.get('[data-tonborg-delegation]').attributes('data-model-details-linked')).toBe('')
+    expect(routing.replace).toHaveBeenCalledWith({ query: { tab: 'x' }, hash: '' })
+    await closeDetails(wrapper)
+    expect(wrapper.find('[data-model-use-details] [data-tonborg-delegation]').exists()).toBe(false)
   })
 
   it("lists a model's key reference and limits in 查看详情, never a key, with the guide section of that use", async () => {

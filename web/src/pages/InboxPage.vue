@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import PageOutline from '@/components/PageOutline.vue'
 import { peekItemValue, useRoutePeek } from '@/composables/useRoutePeek'
 import AttentionWorkspace from '@/features/project-agents/AttentionWorkspace.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
@@ -21,6 +22,8 @@ const router = useRouter()
 const attention = useAgentAttention()
 const review = useReviewList()
 const peek = useRoutePeek()
+// Long enough, the page gets its 目录 of groups with their counts (Jevons 11-07).
+const pageRoot = ref<HTMLElement | null>(null)
 const space = computed(() => store.activePersonalSpace?.id ?? '')
 const projects = computed(() => (store.state?.personalProjects ?? []).filter(project => project.personal_space_id === space.value))
 const agentFilter = computed(() => typeof route.query.agent === 'string' ? route.query.agent : '')
@@ -45,16 +48,17 @@ onBeforeUnmount(() => { attention.open = false })
 
 <template>
   <section class="view inbox-page">
-    <div class="@container flex w-full flex-col gap-4">
+    <div ref="pageRoot" class="@container flex w-full flex-col gap-4">
       <header class="inbox-head">
         <h1 class="inbox-head__title" data-inbox-total>{{ total ? t('reviewList.headline', { count: total }) : '' }}</h1>
-        <TonborgDelegationSwitch v-if="space" :personal-space-id="space" @changed="review.refresh()" />
+        <TonborgDelegationSwitch v-if="space" :personal-space-id="space" settings-link @changed="review.refresh()" />
       </header>
       <ReviewList v-if="space" :personal-space-id="space" :projects="projects">
         <AttentionWorkspace :personal-space-id="space" :projects="projects" :open-request-id="openRequestId"
           @open="peek.open({ spaceId: space, id: $event })" @close="peek.close()" />
       </ReviewList>
     </div>
+    <PageOutline :content="pageRoot" />
   </section>
 </template>
 

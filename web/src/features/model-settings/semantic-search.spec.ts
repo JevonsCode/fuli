@@ -6,6 +6,10 @@ const api = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn(), postJson: vi
 vi.mock('@/api/client', async importOriginal => ({
   ...await importOriginal<typeof import('@/api/client')>(), getJson: api.getJson, putJson: api.putJson, postJson: api.postJson,
 }))
+// The page reads a link into a use's details from its address; these tests open it plainly.
+vi.mock('vue-router', async importOriginal => ({
+  ...await importOriginal<typeof import('vue-router')>(), useRoute: () => ({ query: {}, hash: '' }), useRouter: () => ({ replace: vi.fn() }),
+}))
 
 import { messages } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'

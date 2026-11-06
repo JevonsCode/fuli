@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import PageOutline from '@/components/PageOutline.vue'
 import { Button } from '@/components/ui/button'
 import DreamingCard from '@/features/model-settings/DreamingCard.vue'
+import { linkedModelDetails, type ModelDetailsPart } from '@/features/model-settings/details-link'
 import ModelList from '@/features/model-settings/ModelList.vue'
 import ModelRoleCard from '@/features/model-settings/ModelRoleCard.vue'
 import ModelRoleDialog from '@/features/model-settings/ModelRoleDialog.vue'
@@ -30,6 +33,9 @@ import { UiNotice } from '@/ui'
 // the roles suggested and their usage. A save is accepted only at the local
 // process boundary (a loopback request).
 const store = useConsoleStore()
+const route = useRoute()
+const router = useRouter()
+const pageRoot = ref<HTMLElement | null>(null)
 const payload = ref<ModelRolesPayload | null>(null)
 const loading = ref(true)
 const loadError = ref('')
@@ -50,6 +56,22 @@ const view = (role: ModelRoleId): ModelRoleView =>
   payload.value?.roles.find(entry => entry.role === role) ?? { role, state: 'not_configured', answeredBy: null }
 const astroModel = computed(() => (view('assistant').state === 'enabled' ? view('assistant').connection?.model ?? null : null))
 const detailsView = computed(() => (details.value ? view(details.value) : null))
+// A link into a use's details (待决策's 「设置」 beside 交给 Tonborg 确认) opens
+// them once the uses are read, with the part it is about marked; the address
+// then drops the link, so a reload shows the page itself.
+const linkedPart = ref<ModelDetailsPart | null>(null)
+watch([payload, () => route.query.details], ([value]) => {
+  const linked = value ? linkedModelDetails(route.query, route.hash) : null
+  if (!linked) return
+  details.value = linked.role
+  linkedPart.value = linked.part
+  const { details: _linked, ...query } = route.query
+  void router.replace({ query, hash: '' })
+}, { immediate: true })
+function closeDetails() {
+  details.value = null
+  linkedPart.value = null
+}
 
 // Whether the settings were read.
 async function load() {
@@ -71,7 +93,7 @@ async function load() {
 function edit(role: ModelRoleId) {
   notice.value = ''
   stale.value = false
-  details.value = null
+  closeDetails()
   editing.value = role
 }
 
@@ -126,7 +148,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="view model-settings-view" :aria-label="t('modelSettings.title')">
-    <div class="model-settings-column">
+    <div ref="pageRoot" class="model-settings-column">
 
       <GrowthLoading v-if="loading && !payload" :label="t('modelSettings.loading')" />
       <div v-else-if="loadError && !payload" class="ui-empty rounded-lg border bg-card" role="alert">
@@ -171,12 +193,13 @@ onBeforeUnmount(() => {
 
         <ModelUsage />
 
-        <ModelUseDetails :view="detailsView" :payload="payload" :history-version="historyVersion"
-          @close="details = null" @edit="edit(details!)" @trust-saved="trustSaved" @changed="settingsChanged()" />
+        <ModelUseDetails :view="detailsView" :payload="payload" :history-version="historyVersion" :linked-part="linkedPart"
+          @close="closeDetails()" @edit="edit(details!)" @trust-saved="trustSaved" @changed="settingsChanged()" />
         <ModelRoleDialog :role="editing" :payload="payload" :projects="projects"
           @close="editing = null" @saved="saved" @conflict="conflict" />
       </template>
     </div>
+    <PageOutline :content="pageRoot" />
   </section>
 </template>
 

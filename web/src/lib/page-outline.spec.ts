@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { outlineEntries, readingIndex } from './page-outline'
+import { outlineEntries, outlineNeeded, readingIndex } from './page-outline'
 
 function page(html: string) {
   const root = document.createElement('div')
@@ -15,6 +15,19 @@ describe('the page outline', () => {
   it('names each section by its heading alone, without a count beside it', () => {
     const entries = outlineEntries(page('<h2>任务单 <span>2</span></h2><h3>not a section</h3><h2><span>工作记录</span></h2><h2> </h2>'))
     expect(entries.map(entry => entry.label)).toEqual(['任务单', '工作记录'])
+  })
+
+  it('takes the name and count a heading gives for itself', () => {
+    const entries = outlineEntries(page('<h2 data-outline-label="待确认的知识" data-outline-count="40">待确认的知识 · 40</h2><h2 data-outline-count="x">plain</h2>'))
+    expect(entries.map(({ label, count }) => ({ label, count }))).toEqual([{ label: '待确认的知识', count: 40 }, { label: 'plain', count: undefined }])
+  })
+
+  it('is needed from three sections, or from two on a page over two screens tall', () => {
+    const sections = (count: number) => Array.from({ length: count }, (_, index) => entryAt(index))
+    expect(outlineNeeded(sections(3), scroller(0, 800, 900))).toBe(true)
+    expect(outlineNeeded(sections(2), scroller(0, 800, 1600))).toBe(false)
+    expect(outlineNeeded(sections(2), scroller(0, 800, 1700))).toBe(true)
+    expect(outlineNeeded(sections(1), scroller(0, 800, 9000))).toBe(false)
   })
 
   it('leaves out a heading the page is not showing', () => {

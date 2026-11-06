@@ -34,6 +34,7 @@ export const reviewListMessages = {
     delegation: {
       label: "交给 @:{'roleNames.tonborg'} 确认", saving: "正在保存「交给 @:{'roleNames.tonborg'} 确认」…",
       needsModel: "需要先给 @:{'roleNames.tonborg'} 接一个模型，会用掉它的 token。", connect: '去接模型',
+      settings: '设置', settingsTitle: "在模型与用量里打开 @:{'roleNames.tonborg'} 的确认设置",
       offHint: "打开后，@:{'roleNames.tonborg'} 按你的偏好替你确认清楚的知识，拿不准的一次问你。",
       onHint: "@:{'roleNames.tonborg'} 正在替你确认；它做的每个决定都写着理由，可撤销。",
       on: "已交给 @:{'roleNames.tonborg'} 确认，几分钟内它会看完待确认的知识", off: '已收回，知识确认回到你手上',
@@ -73,6 +74,7 @@ export const reviewListMessages = {
     delegation: {
       label: "Let @:{'roleNames.tonborg'} confirm", saving: "Saving “Let @:{'roleNames.tonborg'} confirm”…",
       needsModel: "Connect a model for @:{'roleNames.tonborg'} first; it spends that model’s tokens.", connect: 'Connect a model',
+      settings: 'Settings', settingsTitle: "Open @:{'roleNames.tonborg'}’s confirmation settings in Models and usage",
       offHint: "When on, @:{'roleNames.tonborg'} confirms the clear items your way and asks about the rest at once.",
       onHint: "@:{'roleNames.tonborg'} confirms for you; every decision shows its reason and can be undone.",
       on: "Handed to @:{'roleNames.tonborg'}; it will look through pending knowledge within minutes", off: 'Taken back; confirming knowledge is yours again',
