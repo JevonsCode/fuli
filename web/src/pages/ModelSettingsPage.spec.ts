@@ -10,6 +10,7 @@ vi.mock('@/api/client', async (importOriginal) => ({
 import { ApiError } from '@/api/client'
 import { useConsoleStore } from '@/stores/console'
 import { optionSelectStubs } from '@/test-support/OptionSelectStub'
+import { reloadPage } from '@/layouts/page-refresh'
 import ModelSettingsPage from './ModelSettingsPage.vue'
 
 // Synthetic settings and usage only; no real key, model or data directory.
@@ -370,9 +371,10 @@ describe('ModelSettingsPage', () => {
     await flushPromises()
     expect(wrapper.find('[data-role-suggestions]').exists()).toBe(false)
 
-    useConsoleStore().runtimeStatus = 'loading'
+    void reloadPage()
     await flushPromises()
     expect(reads().filter(url => url === '/api/model-backends/suggestions')).toHaveLength(2)
+    expect(reads().filter(url => url === '/api/model-backends/roles')).toHaveLength(2)
   })
 
   it('reads Tonborg\'s suggestions of the active space into the same section, also when the space arrives later', async () => {

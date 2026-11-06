@@ -21,6 +21,7 @@ import { currentLocale, t } from '@/i18n'
 import { DATE_TIME_MINUTE, formatDateTime } from '@/lib/date-time'
 import { useConsoleStore } from '@/stores/console'
 import { UiDialog, UiIcon, UiStatRow, type UiStat } from '@/ui'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 // 职业: the space's occupation table, read from the graph and seeded with the
 // built-in rows. Only active (在用) rows show until the status filter asks for
@@ -141,6 +142,8 @@ watch(peekKey, async (key) => {
   await nextTick()
   grid.value?.querySelector(`[data-return-focus="${key.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'nearest' })
 }, { immediate: true })
+// The top bar's 刷新 reads the occupation catalog again.
+usePageRefresh(() => catalog.load({ force: true }))
 </script>
 
 <template>

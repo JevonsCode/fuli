@@ -25,6 +25,7 @@ import type {
 } from '@/types'
 import { OptionSelect } from '@/components/ui/select'
 import { OptionCombobox } from '@/components/ui/combobox'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 const store = useConsoleStore()
 const selectedProjectKey = ref('')
@@ -495,6 +496,8 @@ function required(value: string, label: string) {
   if (!value.trim()) throw new TypeError(`${label} is required`)
   return value.trim()
 }
+// The top bar's 刷新 reads the external knowledge connections again.
+usePageRefresh(refreshExternalKnowledge)
 </script>
 
 <template>

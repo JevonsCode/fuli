@@ -7,7 +7,8 @@ import type { IconName } from './icons'
 // An action shown as an icon only: the shared Button in its ghost icon size.
 // The wrapper exists for one repeated contract: the label is required and
 // becomes both the accessible name and the hover tooltip, so no icon button
-// ships unnamed; the icon comes from FULI's own set.
+// ships unnamed; the icon comes from FULI's own set. `loading` hands the
+// shared Button its inline GrowthLoading, named by `loadingLabel`.
 withDefaults(defineProps<{
   icon: IconName
   label: string
@@ -15,7 +16,9 @@ withDefaults(defineProps<{
   size?: ControlSize
   active?: boolean
   disabled?: boolean
-}>(), { shape: 'round', size: 'md', active: false, disabled: false })
+  loading?: boolean
+  loadingLabel?: string
+}>(), { shape: 'round', size: 'md', active: false, disabled: false, loading: false, loadingLabel: '' })
 </script>
 
 <template>
@@ -23,7 +26,8 @@ withDefaults(defineProps<{
     :class="[shape === 'round' ? 'rounded-full' : '',
              'transition-[color,background-color,border-color,scale] active:not-disabled:scale-94',
              'aria-pressed:bg-primary-soft aria-pressed:text-primary']"
-    :aria-label="label" :title="label" :aria-pressed="active || undefined" :disabled="disabled">
+    :aria-label="label" :title="label" :aria-pressed="active || undefined" :disabled="disabled"
+    :loading="loading" :loading-label="loadingLabel">
     <UiIcon :name="icon" :size="ICON_GLYPH[size]" />
   </Button>
 </template>

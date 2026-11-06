@@ -104,7 +104,12 @@ export function useAgentRosterPages(spaceId: Ref<string>, status: Ref<string>) {
   /** Drop the pages read so far and start again from the first one. */
   function reload() {
     loadedRosters.delete(key);
-    return start();
+    generation += 1;
+    loading.value = false;
+    error.value = "";
+    // The rows on screen stay until the first page read again replaces them.
+    roster = emptyRoster();
+    return loadMore();
   }
 
   watch([spaceId, status], start, { immediate: true });

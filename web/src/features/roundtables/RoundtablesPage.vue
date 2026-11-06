@@ -9,6 +9,7 @@ import { rememberPlace, restorePlace, type ListPlace } from './roundtable-scroll
 import RoundtableDetail from './RoundtableDetail.vue'
 import RoundtableList from './RoundtableList.vue'
 import { useRoundtable } from './useRoundtable'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 // 圆桌 (11-02): where Agents talk to each other, laid out like Discord. The
 // conversation list on one side, the open conversation on the other, each
@@ -39,6 +40,8 @@ const rt = useRoundtable({
 })
 const showList = computed(() => !narrow.value || !rt.hasSelection.value)
 const showDetail = computed(() => !narrow.value || rt.hasSelection.value)
+// The top bar's 刷新 reads both lists again; the open conversation stays live on its own.
+usePageRefresh(() => Promise.all([rt.loadThreads(), rt.loadChats()]))
 </script>
 
 <template>

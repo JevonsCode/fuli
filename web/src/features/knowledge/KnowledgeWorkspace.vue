@@ -73,6 +73,7 @@ import {
 } from './project-relation-weights'
 import { OptionSelect } from '@/components/ui/select'
 import { OptionCombobox } from '@/components/ui/combobox'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 const props = withDefaults(defineProps<{
   personalProjectsOnly?: boolean
@@ -995,7 +996,8 @@ function queryValues(value: unknown) {
   if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string')
   return typeof value === 'string' ? [value] : []
 }
-
+// The top bar's 刷新 reads the knowledge again, as the ↻ beside the search does, except while an item is being edited.
+usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
 </script>
 
 <template>
