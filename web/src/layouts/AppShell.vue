@@ -50,6 +50,8 @@ const destination = computed(() => activeDestination(destinations.value, route.p
 const section = computed(() => activeSection(destination.value, route.path))
 const dockDestinations = computed(() => destinations.value.filter(item => item.placement === 'dock'))
 const settingsActive = computed(() => destination.value?.key === 'settings')
+// 待决策 is lit on its own page, like 设置 and the model button on theirs.
+const inboxActive = computed(() => route.path === '/inbox' || route.path.startsWith('/inbox/'))
 // Holding the settings button opens the #fulidebug records (Jevons 11-04): nothing in Settings names them.
 const router = useRouter()
 // The mark and the wordmark: on 工作台 they play the mark's effect; on any other
@@ -182,7 +184,7 @@ watchEffect(() => {
           <GlossaryToggle />
           <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" data-shell-refresh @click="refreshConsole" />
           <!-- 待决策 is a tray: empty when nothing waits, heaped with rice when something does. -->
-          <RouterLink to="/inbox" class="app-round" :class="{ 'is-full': waiting }" :aria-label="inboxLabel" :title="inboxLabel"
+          <RouterLink to="/inbox" class="app-round" :class="{ 'is-full': waiting, 'is-active': inboxActive }" :aria-current="inboxActive ? 'page' : undefined" :aria-label="inboxLabel" :title="inboxLabel"
             :data-attention="waiting ? 'full' : 'empty'" data-shell-inbox data-term="section.askedYou">
             <UiIcon :name="waiting ? 'trayFull' : 'tray'" :size="18" />
           </RouterLink>
@@ -281,14 +283,17 @@ watchEffect(() => {
 /* A full tray reads in ink on a filled disc (Jevons 11-06), and every twelve seconds it gives a
    short wiggle so waiting decisions are noticed; its papers drop in when it fills (reduced
    motion zeroes this in primitives.css). */
-.app-round.is-full { color: var(--color-ink); background: var(--color-accent-soft); animation: app-round-nudge 12s ease-in-out 3s infinite; }
-.app-round.is-full:hover { background: var(--color-surface-hover); }
+/* The heaped tray is filling enough on its own (Jevons 11-06: a resting disc looked like a stuck hover). */
+.app-round.is-full { color: var(--color-ink); animation: app-round-nudge 12s ease-in-out 3s infinite; }
 /* The full tray (Jevons 11-06): a heaped bowl of white rice spilling over a solid tray, dotted
    with coloured grains. */
 .app-round.is-full :deep(.tray-rice-mound), .app-round.is-full :deep(.tray-rice-spill) { fill: var(--color-surface); stroke-width: 1.3; }
 .app-round.is-full :deep(.tray-front) { fill: currentColor; }
 .app-round.is-full :deep(.tray-slot) { stroke: var(--color-surface); stroke-width: 1.5; }
 .app-round.is-full :deep(.tray-grain) { stroke: none; }
+/* Lit on its own page: white tray on the dark disc, the rice a light grey so it still reads. */
+.app-round.is-active.is-full :deep(.tray-rice-mound), .app-round.is-active.is-full :deep(.tray-rice-spill) { fill: var(--color-accent-soft); }
+.app-round.is-active.is-full :deep(.tray-slot) { stroke: var(--color-accent); }
 .app-round.is-full :deep(.tray-grain--1) { fill: var(--color-power-mid); }
 .app-round.is-full :deep(.tray-grain--2) { fill: var(--color-glitch-cyan); }
 .app-round.is-full :deep(.tray-grain--3) { fill: var(--color-gold); }

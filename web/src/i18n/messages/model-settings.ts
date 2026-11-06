@@ -152,7 +152,7 @@ export const modelSettingsMessages = {
       passed: '连接正常，{model} 回答了，每段文字 {dimensions} 维。',
     },
     dreaming: {
-      enable: '打开 Dreaming（每个授权项目每天整理一次）',
+      enable: '打开 Dreaming（每天只整理有新会话的授权项目）',
       needsModel: "要先给 @:{'roleNames.astro'} 接上模型，并在它的设置里打开 Dreaming。",
       notApproved: "这个项目还没授权发给 @:{'roleNames.astro'} 的模型。",
       project: '项目',
@@ -468,7 +468,7 @@ export const modelSettingsMessages = {
       passed: 'Connected: {model} answered with {dimensions} dimensions per text.',
     },
     dreaming: {
-      enable: 'Turn on Dreaming (once a day for each approved project)',
+      enable: 'Turn on Dreaming (daily, only approved projects with new sessions)',
       needsModel: "Connect a model to @:{'roleNames.astro'} first, then turn on Dreaming in its settings.",
       notApproved: "This project isn't approved for @:{'roleNames.astro'}'s model yet.",
       project: 'Project',

@@ -260,6 +260,19 @@ describe('AppShell', () => {
     quiet.wrapper.unmount()
   })
 
+  it('lights 待决策 on its own page and leaves it unlit elsewhere', async () => {
+    attentionTotal = 3
+    const { wrapper } = await setup('/inbox')
+    const inbox = wrapper.get('[data-shell-inbox]')
+    expect(inbox.classes()).toContain('is-active')
+    expect(inbox.attributes('aria-current')).toBe('page')
+    wrapper.unmount()
+    const other = await setup('/')
+    expect(other.wrapper.get('[data-shell-inbox]').classes()).not.toContain('is-active')
+    other.wrapper.unmount()
+    attentionTotal = 0
+  })
+
   it('renders one H1: a record page names itself, the route title is only the fallback', async () => {
     const profile = defineComponent({ setup() { usePageTitle('Ada Lovelace'); return () => h('div', { class: 'routed-page' }) } })
     const { wrapper, router } = await setup('/agents/personal-1/agent-a', {}, [
