@@ -42,7 +42,7 @@ describe('学会了', () => {
     expect(wrapper.text()).toContain('1 条已在多个任务里用上，等你定留不留')
     await wrapper.get('.growth-more').trigger('click')
     expect(wrapper.findAll('.growth-row')).toHaveLength(4)
-    expect(wrapper.findAll('.growth-row')[3]!.text()).toContain('已保留')
+    expect(wrapper.findAll('.growth-row')[3]!.text()).toContain('人确认')
   })
 
   it('keeps one as the person\'s confirmation and drops another as outdated, with no second dialog', async () => {
@@ -55,11 +55,28 @@ describe('学会了', () => {
     expect(patchJson.mock.calls[0]![0]).toBe('/api/knowledge/entity/a')
     expect(patchJson.mock.calls[0]![1]).toMatchObject({ action: 'confirm', confirmationStatus: 'confirmed', personalProjectId: 'app',
       confirmationBasis: { existenceReason: 'Reported at checkpoint', confirmedBy: { kind: 'user' } } })
-    expect(wrapper.findAll('.growth-row')[0]!.text()).toContain('已保留')
+    expect(wrapper.findAll('.growth-row')[0]!.text()).toContain('人确认')
     await wrapper.findAll('.growth-row')[1]!.findAll('button')[1]!.trigger('click')
     await flushPromises()
     expect(patchJson.mock.calls[1]![1]).toMatchObject({ action: 'mark_outdated', personalSpaceId: 'space-a' })
     expect(wrapper.findAll('.growth-row')).toHaveLength(1)
+  })
+
+  it('says each verification state from the server evidence, never more', async () => {
+    getJson.mockResolvedValue(growth([
+      item('tested', { uses: 2, tasks: 2, proven: true, verification: { state: 'auto_verified', evidence: [
+        { state: 'auto_verified', source: 'verification', ref: 'a1', refs: ['ci://synthetic/1', 'ci://synthetic/2'] },
+        { state: 'ai_assessed', source: 'tonborg', ref: 'd1' }] } }),
+      item('plain', { verification: { state: 'unverified', evidence: [] } }),
+      item('older-server')]))
+    const wrapper = render()
+    await flushPromises()
+    const [tested, plain, older] = wrapper.findAll('.growth-meta')
+    expect(tested!.text()).toBe('用过 2 次 · 2 个任务 · 自动验证通过')
+    expect(tested!.attributes('title')).toBe('测试证据 2 条 · Tonborg 验收通过')
+    expect(plain!.text()).toBe('还没用过 · 尚未验证')
+    expect(plain!.attributes('title')).toBeUndefined()
+    expect(older!.text()).toBe('还没用过')
   })
 
   it('shows nothing when the FLA has learned nothing or the server cannot say', async () => {

@@ -9,6 +9,7 @@ import { jsonSchemaToZod } from '../mcp/tool-schema.js';
 import { failureProvenance, judgmentProvenance, pendingRecord, TONBORG_OPERATIONS } from './backend.js';
 import { PREFERENCE_RECEIPT_RULES, preferenceDeliveryRecord, preferenceHold } from './preference-receipt.js';
 import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
+import { taskKeyFor } from '../knowledge-impressions/store.js';
 
 const id = z.string().min(1).max(256);
 const request = z.object({ personalSpaceId: id, personalProjectId: id, requestId: id,
@@ -75,7 +76,7 @@ export async function assessAcceptance({ app, decide, context, service, input: r
       agentId: task.leadAgentId, title: task.title, ...decision, outcome: !selfAssessed && decision.confidence >= 0.85 ? decision.outcome : 'escalate',
       ...(selfAssessed ? { proposedOutcome: decision.outcome } : {}),
       artifactRevision: input.artifactRevision, taskRevision: input.expectedRevision, verification: attempt ?? null,
-      requestFingerprint, policy, ...judgmentProvenance(answer),
+      requestFingerprint, policy, ...judgmentProvenance(answer), taskKey: taskKeyFor(input.taskContextToken),
       memoryRevision: evidenceContext.memoryRevision,
       preferenceDelivery: preferenceDeliveryRecord(evidenceContext.preferences) }, key);
     if (record.evaluationId !== evaluationId) {

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { getJson, patchJson } from '@/api/client'
 import { shapeOf } from '@/api/response-shape'
 import { t } from '@/i18n'
+import { verificationSchema } from '@/features/verification/verification'
 
 // rec#78 slice 1: what an FLA learned by doing. The server lists its reusable
 // experiences, proven-first (used in more tasks); the person keeps one
@@ -25,6 +26,8 @@ const itemSchema = z.looseObject({
   /** Used in enough tasks to be judged first (the server decides). */
   proven: z.boolean(),
   basis: basisSchema.nullable(),
+  /** Absent from a server older than the verification states. */
+  verification: verificationSchema.optional(),
 })
 const growthSchema = z.looseObject({
   partial: z.boolean(),

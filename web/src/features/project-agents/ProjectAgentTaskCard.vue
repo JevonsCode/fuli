@@ -13,6 +13,7 @@ import TaskRunControls from './TaskRunControls.vue'
 import TaskBlockerNotice from './TaskBlockerNotice.vue'
 import TaskReason from './TaskReason.vue'
 import TaskRetrospective from './TaskRetrospective.vue'
+import TaskVerification from './TaskVerification.vue'
 import TaskBlockerClear from './TaskBlockerClear.vue'
 import { blockerClearLine, lastBlockerClear } from './task-blocker'
 import { parallelPlanHasEvidence, workerEventEvidence } from './task-evidence'
@@ -111,6 +112,8 @@ const people = computed(() => [...new Set((props.task.participants ?? []).map(pe
       <p v-if="participants.length" class="project-agent-task-people" data-task-participants>
         {{ t('projectAgents.fields.collaborators') }} · {{ participants.map(participant => participant.label).join('、') }}
       </p>
+      <TaskVerification v-if="scope && (task.status === 'completed' || task.status === 'awaiting_review')" :personal-space-id="scope.personalSpaceId"
+        :personal-project-id="scope.personalProjectId" :task-id="task.taskId" :active="expanded" />
       <TaskRetrospective v-if="task.status === 'completed'" :task-id="task.taskId" :active="expanded" />
       <TaskExecutionPlan :task="task" :personal-space-id="personalSpaceId" :active="expanded" />
       <TaskRunControls :task="task" :personal-space-id="personalSpaceId" :active="expanded" @changed="emit('changed')" />

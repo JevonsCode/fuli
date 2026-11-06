@@ -13,12 +13,21 @@ const MAX_REVIEW_VERDICTS = 2000;
 const JUDGED_OUTCOMES = Object.freeze({ approve: 'passed', escalate: 'not_passed' });
 
 export function acceptanceReviewVerdicts(records) {
+  return judgedAcceptances(records).map(judged => ({ task_id: judged.taskId, personal_project_id: judged.personalProjectId,
+    result: judged.result, artifact_revision: judged.artifactRevision, verification_attempt_id: judged.verification.attempt_id,
+    occurred_at: judged.at })).slice(-MAX_REVIEW_VERDICTS);
+}
+
+// The same verdicts with what the verification states (src/fla-growth/)
+// show: the attempt's evidence and, when recorded, the hashed task context
+// key the recall impressions join on.
+export function judgedAcceptances(records) {
   return records.flatMap(record => {
     const result = verdictResult(record);
-    return result ? [{ task_id: record.target, personal_project_id: record.personalProjectId, result,
-      artifact_revision: record.artifactRevision, verification_attempt_id: record.verification.attempt_id,
-      occurred_at: record.createdAt }] : [];
-  }).slice(-MAX_REVIEW_VERDICTS);
+    return result ? [{ decisionId: record.id, taskId: record.target, personalProjectId: record.personalProjectId, result,
+      artifactRevision: record.artifactRevision, verification: record.verification, taskKey: record.taskKey ?? null,
+      at: record.createdAt }] : [];
+  });
 }
 
 function verdictResult(record) {

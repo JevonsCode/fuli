@@ -638,6 +638,10 @@ class ProjectAgentTaskRecord(StrictModel):
     updated_at: datetime
     completed_at: datetime | None = None
     blocker: ProjectAgentTaskBlocker | None = None
+    # The exact-revision verification gate (record_agent_verification) the
+    # task's verification state reads; passed needs a verifier's evidence refs.
+    quality_gate: str | None = None
+    verified_artifact_revision: str | None = None
     events: list[ProjectAgentTaskEventRecord] = Field(default_factory=list)
 
 

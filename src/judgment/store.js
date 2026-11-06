@@ -164,6 +164,16 @@ export class JudgmentStore {
       AND json_extract(body,'$.agentId')=? AND (? IS NULL OR project=?) ORDER BY rowid`)
       .all(space, agentId, personalProjectId, personalProjectId).map(({ id }) => this.get(space, id));
   }
+  // Acceptance records of one task, or of the task contexts (hashed keys) a
+  // verification state joins on; oldest first, as acceptances() reads.
+  acceptancesFor(space, { taskId = null, taskKeys = [] }) {
+    this.#assertRecovery(space);
+    if (!taskId && !taskKeys.length) return [];
+    const keys = taskKeys.length ? `json_extract(body,'$.taskKey') IN (${taskKeys.map(() => '?').join(',')})` : '0';
+    return this.db.prepare(`SELECT id FROM judgment_records WHERE space=? AND json_extract(body,'$.kind')='acceptance'
+      AND (json_extract(body,'$.target')=? OR ${keys}) ORDER BY rowid`)
+      .all(space, taskId, ...taskKeys).map(({ id }) => this.get(space, id));
+  }
   // exceptRequest: records of that request key prefix do not count.
   reviewed(space, project, target, evidenceFingerprint, policyVersion, { exceptRequest = null } = {}) {
     const row = this.db.prepare(`SELECT id, json_extract(body,'$.outcome') AS outcome FROM judgment_records WHERE space=? AND project=?

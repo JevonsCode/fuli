@@ -117,6 +117,18 @@ export class RecallImpressionsStore {
     return usage;
   }
 
+  // Per item id, the hashed task contexts that reported applying it: what a
+  // verification state joins with those tasks' judged acceptances.
+  appliedTaskKeys({ personalSpaceId, itemIds }) {
+    const keys = new Map();
+    const ids = [...new Set((itemIds ?? []).filter(Boolean))];
+    if (!ids.length || !this.readable) return keys;
+    const rows = this.db.prepare('SELECT item_id, task_key FROM recall_impressions WHERE personal_space_id = ? '
+      + `AND use_kind = 'applied' AND item_id IN (${ids.map(() => '?').join(', ')})`).all(personalSpaceId, ...ids);
+    for (const { item_id: itemId, task_key: taskKey } of rows) keys.set(itemId, [...(keys.get(itemId) ?? []), taskKey]);
+    return keys;
+  }
+
   summary({ personalSpaceId, personalProjectId = null }) {
     if (!this.readable) return { tasks: 0, shown: 0, used: 0, byRank: [] };
     const rows = personalProjectId
@@ -145,6 +157,8 @@ export class RecallImpressionsStore {
   }
 }
 
-function taskKeyFor(taskContextToken) {
+// What a judged acceptance records too, so a verification state joins its
+// task context to the items used there without keeping the token.
+export function taskKeyFor(taskContextToken) {
   return createHash('sha256').update(taskContextToken).digest('hex');
 }

@@ -320,6 +320,8 @@ class StoreProjectAgentTaskReads:
             'created_at': native_datetime(raw['created_at']),
             'updated_at': native_datetime(raw['updated_at']),
             'completed_at': native_datetime(raw.get('completed_at')),
+            'quality_gate': raw.get('quality_gate'),
+            'verified_artifact_revision': raw.get('verified_artifact_revision'),
             'events': events,
         }
         fields['execution_summary'] = self._execution_summary(row, events)
