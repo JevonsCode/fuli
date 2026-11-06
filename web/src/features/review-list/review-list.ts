@@ -59,9 +59,12 @@ export function projectIdOf(item: KnowledgeItem) {
 }
 
 /** Who proposed it: the recorded proposer, else the client its source came from. */
+// A recorded label that is only an internal id (an Agent's uuid) tells a person nothing.
+const INTERNAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-|^[0-9a-f]{16,}$/i
+
 export function proposerOf(item: KnowledgeItem) {
   const proposer = item.confirmationBasis?.proposed_by
-  if (proposer) return confirmationActorLabel(proposer)
+  if (proposer) return confirmationActorLabel(proposer.label && INTERNAL_ID.test(proposer.label) ? { ...proposer, label: '' } : proposer)
   return item.evidence.find(evidence => evidence.source_application)?.source_application ?? confirmationActorLabel(null)
 }
 
