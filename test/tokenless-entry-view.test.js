@@ -44,8 +44,14 @@ test('an entry with a task token keeps its previews', async () => {
   const view = compactTaskContext({ ...entry, taskContextToken: 'synthetic-token' });
   assert.equal(view.project_agent_context.memory.view, 'preview');
   assert.ok(view.project_agent_context.team.roster.length);
-  assert.ok(view.project_management_context.managers[0].tools);
-  assert.ok(view.judgment_context.policy);
+  // rec#88: an empty board's manager shows its reader instead of its tools and
+  // session fields; Tonborg's saved policy is read by assess_agent_action itself.
+  const [manager] = view.project_management_context.managers;
+  if (entry.project_management_context.managers[0].board?.total === 0) {
+    assert.equal(manager.tools, undefined);
+    assert.deepEqual(manager.read, { tool: 'list_employee_tools', arguments: { templateId: 'jefa', personalProjectId: 'project' } });
+  } else assert.ok(manager.tools);
+  assert.deepEqual(Object.keys(view.judgment_context).sort(), ['agentId', 'guidance']);
 });
 
 test('an unavailable memory layer stays null in the token-less view', async () => {

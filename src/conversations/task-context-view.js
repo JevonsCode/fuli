@@ -54,17 +54,23 @@ export function compactTaskContext(value) {
       guidance: text(value.agent_receipt.continuation.guidance, 'continuation_guidance') } };
   if (Array.isArray(value.effective_preferences)) result.effective_preferences = value.effective_preferences.map(preferenceInstructionView);
   if (value.project_management_context?.managers) result.project_management_context = managementContextView(
-    value.project_management_context, guidance => text(guidance, 'manager_guidance'));
+    value.project_management_context, guidance => text(guidance, 'manager_guidance'), { lean: share });
   const continuity = value.project_agent_context;
   const management = value.project_management_context;
   const omitTeam = !value.worker_run && Object.hasOwn(value, 'project_management_context')
     && (management?.status === 'degraded' || !management?.managers?.length);
   if (omitTeam) delete result.judgment_context;
-  else if (value.judgment_context?.guidance) result.judgment_context = { ...value.judgment_context,
-    guidance: text(value.judgment_context.guidance, 'judgment_guidance') };
-  const teamRules = !omitTeam && (continuity?.team?.guidance ?? continuity?.team_guidance);
+  else if (value.judgment_context?.guidance) result.judgment_context = share
+    // Tonborg reads the saved policy itself (assess_agent_action); the entry names the Agent and its rule.
+    ? { agentId: value.judgment_context.agentId, guidance: text(value.judgment_context.guidance, 'judgment_guidance') }
+    : { ...value.judgment_context, guidance: text(value.judgment_context.guidance, 'judgment_guidance') };
+  // A team of one has nobody to report to or staff from: its rules wait for a second member.
+  const solo = share && Array.isArray(continuity?.team?.roster) && continuity.team.roster.length <= 1 && !continuity?.team?.assigned_collaborators?.length
+    && !continuity?.team?.assigned_peers?.length;
+  const teamRules = !omitTeam && !solo && (continuity?.team?.guidance ?? continuity?.team_guidance);
   const teamGuidance = teamRules ? text(teamRules, 'team_guidance') : undefined;
   if (continuity) result.project_agent_context = { ...continuity, ...selectionView(continuity, share),
+    ...(share && continuity.project_brief?.authors ? { project_brief: { ...continuity.project_brief, authors: undefined } } : {}),
     ...(share && continuity.directorySnapshot ? { directorySnapshot: snapshotView(continuity.directorySnapshot) } : {}),
     team: omitTeam ? undefined : compactTeamRoster(continuity.team, teamGuidance),
     team_guidance: undefined,
@@ -78,8 +84,8 @@ export function compactTaskContext(value) {
       ...(continuity.global_memory !== undefined ? { global_memory: continuity.global_memory
         && memoryPreview(continuity.global_memory, ruleOrReference('global_memory_guidance', share)) } : {}) };
   }
-  if (share && result.project_agent_context) result.project_agent_context = withoutDefaults(result.project_agent_context,
-    { flags: false, keep: AGENT_CONTEXT_STATES });
+  if (share && result.project_agent_context) result.project_agent_context = withoutDefaults(withoutContextIds(
+    result.project_agent_context, value.context), { flags: false, keep: AGENT_CONTEXT_STATES });
   if (share && withoutTaskToken(value)) return copyPreferenceScope(value, withRulesVersion(onDemandDetails(result)));
   return copyPreferenceScope(value, share ? withRulesVersion(result) : result);
 }
@@ -140,12 +146,18 @@ function withRulesVersion(entry) {
 // `guidance` gives those rules as this entry delivers them (a task entry
 // references them). The receipt of the entry's own board read names no work
 // the Agent did, so the view leaves it out.
-export function managementContextView(management, guidance) {
+// `lean` (a task entry): a manager whose board is empty has no item to match
+// or title the session by, so it shows only who it is, its routing rules and
+// the call that lists its tools (rec#88: every request re-read the rest).
+export function managementContextView(management, guidance, { lean = false } = {}) {
   return { ...management,
-    managers: management.managers.map(({ collaboration_receipt: _receipt, ...manager }) => ({ ...manager,
-      ...(manager.guidance ? { guidance: guidance(manager.guidance) } : {}),
-      board: manager.board && { version: manager.board.version, total: manager.board.total, view: 'on_demand' }
-    }))
+    managers: management.managers.map(({ collaboration_receipt: _receipt, ...manager }) => (lean && manager.board?.total === 0
+      && !manager.suggested_match ? withoutDefaults({ template_id: manager.template_id, agent_id: manager.agent_id,
+        name: manager.name, board: { total: 0 }, guidance: manager.guidance && guidance(manager.guidance), read: managerRead(manager) })
+      : { ...manager,
+        ...(manager.guidance ? { guidance: guidance(manager.guidance) } : {}),
+        board: manager.board && { version: manager.board.version, total: manager.board.total, view: 'on_demand' }
+      }))
   };
 }
 
@@ -155,6 +167,14 @@ export function receiptView(receipt) {
   return withoutDefaults({ required: receipt.required, markdown: receipt.markdown,
     collaborators: receipt.collaborators, work_status: receipt.work_status, persistence: receipt.persistence,
     guidance: ruleTextView(receipt.guidance, 'receipt_guidance') }, { flags: true });
+}
+
+// The Agent's and project's IDs are the entry context's; repeated here they
+// only cost tokens (rec#88).
+function withoutContextIds(continuity, context) {
+  return { ...continuity,
+    ...(context?.project_agent_id && continuity.project_agent_id === context.project_agent_id ? { project_agent_id: undefined } : {}),
+    ...(context?.personal_project_id && continuity.personal_project_id === context.personal_project_id ? { personal_project_id: undefined } : {}) };
 }
 
 // null memory means that layer is unavailable and an empty team means no
@@ -201,20 +221,26 @@ function recallView(recall) {
 // When the selected lead also executes, the execution pair repeats the
 // selection and match_basis only explains it; any other execution decision
 // keeps both, since its match_basis then says how to staff the work.
+// A team gap (nobody else fits, so the lead works itself) keeps its reason
+// code; how to staff it is read on demand (details_guidance, get_project_team).
+const TEAM_GAPS = new Set(['project_team_gap', 'project_sub_team_gap']);
 function selectionView(continuity, share) {
   const selfExecuting = share && typeof continuity.execution_reason === 'string'
     && continuity.execution_agent_id === continuity.project_agent_id
     && continuity.execution_reason === continuity.selection_reason;
-  return selfExecuting ? { match_basis: undefined, execution_reason: undefined, execution_agent_id: undefined } : {};
+  if (selfExecuting) return { match_basis: undefined, execution_reason: undefined, execution_agent_id: undefined };
+  const gap = share && TEAM_GAPS.has(continuity.execution_reason) && !continuity.execution_agent_id;
+  return gap ? { match_basis: undefined } : {};
 }
 
-// A snapshot whose files are all as the Agent's folder already holds them
-// says only where the folder is and how many files it holds.
+// A snapshot whose files share one state (all just written, or all as the
+// Agent's folder already holds them) says where the folder is and how many.
 function snapshotView(snapshot) {
-  if (!Array.isArray(snapshot.files) || !snapshot.files.length
-    || snapshot.files.some(file => file.state !== 'unchanged')) return snapshot;
+  const state = snapshot.files?.[0]?.state;
+  if (!Array.isArray(snapshot.files) || !snapshot.files.length || !['unchanged', 'written'].includes(state)
+    || snapshot.files.some(file => file.state !== state)) return snapshot;
   const { files, ...rest } = snapshot;
-  return { ...rest, files_unchanged: files.length };
+  return { ...rest, [`files_${state}`]: files.length };
 }
 
 function ruleOrReference(section, share) {
@@ -226,8 +252,9 @@ function ruleOrReference(section, share) {
 function memoryPreview(memory, guidance) {
   const current = memory.current;
   // A layer never written has nothing to preview, cut or read in full first:
-  // its scope, revision 0 (the first write's expectedRevision) and rules.
-  if (!current && memory.revision === 0 && !memory.scrubbedGuidance) return { scope: memory.scope, revision: 0, current: null, guidance };
+  // revision 0 (the first write's expectedRevision) and its rules; the field
+  // names the layer.
+  if (!current && memory.revision === 0 && !memory.scrubbedGuidance) return { revision: 0, guidance };
   const notes = current?.memory;
   let notesTruncated = false;
   const text = (value, limit) => {
