@@ -185,7 +185,7 @@ const active = computed(() => route?.path === '/models')
 .model-power-reticle::before {
   content: ''; position: absolute; inset: 0;
   background: linear-gradient(135deg, var(--color-reticle-from), var(--color-reticle-to));
-  --corner: linear-gradient(#000 0 0);
+  --corner: linear-gradient(currentColor 0 0);
   -webkit-mask:
     var(--corner) top left / 7px 1.5px, var(--corner) top left / 1.5px 7px,
     var(--corner) top right / 7px 1.5px, var(--corner) top right / 1.5px 7px,
