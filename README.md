@@ -599,7 +599,8 @@ The following must not be presented as already proven:
 - the A/B thresholds in `FULI_ALIGNMENT_BENCHMARK.md` are acceptance conventions; claims that Fuli
   reduces explanation or rework require a sufficiently large set of controlled, real paired tasks;
 - benchmark projects and conversations are explicitly labeled **MOCK / synthetic data**, not user or
-  production data;
+  production data; the measured token use and recall accuracy so far, small-sample trends on
+  synthetic projects, are on the [token and accuracy report](https://xn--8ovp9s.xn--m8txu.com/fuli/report/en/);
 - the decision tool can include validation during initial capture, but it does not yet expose a
   dedicated operation for appending immutable validation results to an existing `Decision`;
 - Installed files do not prove host loading, trust, or execution. Claude Code and Codex adapters
@@ -989,6 +990,7 @@ setup stops before modifying agent configuration and reports the cause.
 ## Acceptance and development
 
 - [Alignment Benchmark](FULI_ALIGNMENT_BENCHMARK.md)
+- [Token and accuracy report](https://xn--8ovp9s.xn--m8txu.com/fuli/report/en/): measured token use and recall accuracy, with method, model, client, date and what is not measured yet
 - [Chinese acceptance index](acceptance/README.md)
 - [Knowledge retrieval and confirmation diagrams](acceptance/知识检索与确认流程图.md)
 - [Read-only external-knowledge architecture](docs/external-knowledge-architecture.md)

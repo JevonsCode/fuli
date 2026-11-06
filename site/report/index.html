@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6f5f1">
+    <title data-i18n="meta.title">FULI 复利 · 实测报告：token 用量与召回准确率</title>
+    <meta data-i18n-content="meta.description" name="description" content="">
+    <meta data-i18n-content="meta.title" property="og:title" content="">
+    <meta data-i18n-content="meta.social" property="og:description" content="">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://xn--8ovp9s.xn--m8txu.com/fuli/report/">
+    <meta property="og:image" content="https://xn--8ovp9s.xn--m8txu.com/fuli/assets/brand/fuli-mark-color-512.png">
+    <meta data-i18n-content="meta.locale" property="og:locale" content="zh_CN">
+    <meta name="twitter:card" content="summary">
+    <link rel="canonical" href="https://xn--8ovp9s.xn--m8txu.com/fuli/report/">
+    <link rel="icon" href="../assets/brand/favicon.ico" sizes="any">
+    <link rel="preload" href="../assets/unbounded-latin.woff2" as="font" type="font/woff2" crossorigin="">
+    <script>document.documentElement.classList.add('js')</script>
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../guide-page.css">
+    <link rel="stylesheet" href="./report.css">
+    <script type="module" src="../report.js"></script>
+  </head>
+  <body class="guide-page">
+    <a data-i18n="nav.skip" class="skip" href="#main">跳到正文</a>
+    <header class="nav">
+      <a data-i18n-aria-label="report.home" data-i18n-href="report.homeUrl" class="brand" href="https://xn--8ovp9s.xn--m8txu.com/fuli/" aria-label="Fuli 复利 首页"><img class="brand-mark" src="../assets/brand/fuli-mark-color.svg" alt="" width="28" height="28"><span>复利</span><b>FULI</b></a>
+      <nav data-i18n-aria-label="nav.label" aria-label="页面导航">
+        <a data-i18n="report.nav.tokens" href="#tokens">Token</a>
+        <a data-i18n="report.nav.recall" href="#recall">召回</a>
+        <a data-i18n="report.nav.outcome" href="#outcome">任务结果</a>
+        <a href="#tonborg">Tonborg</a>
+        <a data-i18n="report.nav.gaps" href="#gaps">没测的</a>
+        <a class="nav-github" href="https://github.com/JevonsCode/fuli">GitHub</a>
+        <div data-i18n-aria-label="nav.language" aria-label="语言" role="group" class="language-switch">
+          <a href="./zh/" lang="zh-CN" hreflang="zh-Hans" data-locale="zh-CN" aria-current="true">中文</a>
+          <a href="./en/" lang="en" hreflang="en" data-locale="en" aria-label="English">EN</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="guide-hero" aria-labelledby="report-title">
+        <p data-i18n="report.eyebrow" class="eyebrow">实测报告</p>
+        <h1 data-i18n-html="report.title" id="report-title">多花多少 token，<em>记得准不准。</em></h1>
+        <p data-i18n="report.lead" class="lede">同一组任务，开着和关着 FULI 各跑一遍。每个数字都写明怎么测、用的模型和客户端、哪天测的。</p>
+        <div class="summary">
+          <p data-i18n="report.summary" class="summary-title">先说结论</p>
+          <ul>
+            <li data-i18n="report.summary.tokens">开着 FULI 仍比不开多花输入 token：最新一轮是 1.53 倍，修复前 2.50 倍。</li>
+            <li data-i18n="report.summary.outcome">需要项目知识的任务，开着 FULI 18 次全做成，不开只做成 3 次。</li>
+            <li data-i18n="report.summary.recall">留出的 32 个提问，入口找到 25 个；8 个不该命中的，误报 2 个。</li>
+          </ul>
+          <p data-i18n="report.summary.scope" class="summary-scope">全部在合成项目上测，样本小，只能看趋势。</p>
+        </div>
+      </section>
+
+      <section class="guide-section" id="tokens" aria-labelledby="tokens-title">
+        <h2 data-i18n="report.tokens" id="tokens-title">多轮会话花多少 token</h2>
+        <p data-i18n="report.tokensLead">一段 6 轮的编码会话，比较开着 FULI 时的输入量是不开时的几倍。</p>
+        <dl class="stat-grid">
+          <div class="stat">
+            <dt data-i18n="report.stat.input">输入量，开 / 不开</dt>
+            <dd><b>1.53×</b><span><small data-i18n="report.stat.before">修复前</small> <s>2.50×</s></span></dd>
+          </div>
+          <div class="stat">
+            <dt data-i18n="report.stat.cost">费用，开 / 不开</dt>
+            <dd><b>1.42×</b><span><small data-i18n="report.stat.before">修复前</small> <s>1.51×</s></span></dd>
+          </div>
+          <div class="stat">
+            <dt data-i18n="report.stat.entry">6 轮入口合计</dt>
+            <dd><b>24.3 KB</b><span><small data-i18n="report.stat.before">修复前</small> <s>48.2 KB</s></span></dd>
+          </div>
+        </dl>
+        <p data-i18n="report.tokensFix" class="section-note">修复：入口在同一会话里只发变了的部分；召回不再被提示末尾的固定说明带偏。已合入，随 0.23.1 发布。</p>
+
+        <h3 data-i18n="report.turns" class="table-title">每一轮</h3>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th data-i18n="report.col.turn" scope="col">轮</th><th data-i18n="report.col.kind" scope="col">做什么</th><th data-i18n="report.col.entry" class="num" scope="col">入口字节</th><th data-i18n="report.col.share" class="num" scope="col">多出的输入占比</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td data-i18n="report.kind.read">读代码</td><td class="num">8297 → <b>7969</b></td><td class="num">9.2% → <b>19.3%</b></td></tr>
+              <tr><td>2</td><td data-i18n="report.kind.change">改代码</td><td class="num">8281 → <b>2825</b></td><td class="num">36.4% → <b>15.0%</b></td></tr>
+              <tr><td>3</td><td data-i18n="report.kind.test">跑测试</td><td class="num">8259 → <b>3481</b></td><td class="num">44.8% → <b>34.1%</b></td></tr>
+              <tr><td>4</td><td data-i18n="report.kind.change">改代码</td><td class="num">8297 → <b>2614</b></td><td class="num">57.4% → <b>21.6%</b></td></tr>
+              <tr><td>5</td><td data-i18n="report.kind.correct">纠正</td><td class="num">8337 → <b>4345</b></td><td class="num">78.0% → <b>63.6%</b></td></tr>
+              <tr><td>6</td><td data-i18n="report.kind.change">改代码</td><td class="num">6750 → <b>3096</b></td><td class="num">77.4% → <b>17.8%</b></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p data-i18n="report.shareNote" class="table-note">「多出的输入占比」= 开 FULI 比不开多出的输入，占开 FULI 时输入的比例。左边修复前，右边修复后。</p>
+        <details class="fold">
+          <summary data-i18n="report.method">怎么测的</summary>
+          <ul>
+            <li data-i18n="report.tokens.client">客户端：Claude Code 2.1.301 无头模式，第 1 轮新开会话，之后每轮接着同一会话。</li>
+            <li data-i18n="report.tokens.model">模型：claude-haiku-5-5。日期：2026-11-06，修复前后各测一轮。</li>
+            <li data-i18n="report.tokens.task">任务：一个合成小项目上的 6 轮会话：读代码、改三处、跑测试、纠正一次。</li>
+            <li data-i18n="report.tokens.scale">规模：开、关各 2 个会话。开着的一组接独立的测试用 FULI，只有合成数据。</li>
+            <li data-i18n="report.tokens.count">输入 = 每次模型请求的未缓存输入、缓存读取和缓存写入之和；费用是 Claude Code 报告的标价。</li>
+          </ul>
+        </details>
+        <details class="fold">
+          <summary data-i18n="report.caveats">要注意</summary>
+          <ul>
+            <li data-i18n="report.tokens.offArm">两轮测量里，不开的那组本身长短不同，所以比较倍数和占比，不比绝对数。</li>
+            <li data-i18n="report.tokens.cache">多出的输入大多是缓存读取，所以费用涨得比输入少。</li>
+            <li data-i18n="report.tokens.turn5">第 5 轮占比仍高：模型多加载了一次工具、多做了一次收尾调用。</li>
+            <li data-i18n="report.tokens.noSuccess">两组都没有完整做成的会话，所以还没有「每做成一个任务花多少」的数。</li>
+          </ul>
+        </details>
+      </section>
+
+      <section class="guide-section" id="recall" aria-labelledby="recall-title">
+        <h2 data-i18n="report.recall" id="recall-title">送到的知识对不对</h2>
+        <p data-i18n="report.recallLead">FULI 在每次提问时先自动找一遍。这里看它找到的是不是这个任务要的那条知识。</p>
+
+        <div class="table-pair">
+          <div>
+            <h3 data-i18n="report.multiTurn" class="table-title">多轮会话里</h3>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th data-i18n="report.col.check" scope="col">检查</th><th data-i18n="report.col.before" class="num" scope="col">修复前</th><th data-i18n="report.col.after" class="num" scope="col">修复后</th></tr></thead>
+                <tbody>
+                  <tr><td data-i18n="report.recall.rightFact">改代码的三轮里，送到了对的知识</td><td class="num">0/6</td><td class="num"><b>4/6</b></td></tr>
+                  <tr><td data-i18n="report.recall.offTopic">送了无关条目的轮次</td><td class="num">10/12</td><td class="num"><b>0/12</b></td></tr>
+                  <tr><td data-i18n="report.recall.endChecks">会话结束时三项检查通过（开 FULI 组）</td><td class="num">0/6</td><td class="num"><b>3/6</b></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div>
+            <h3 data-i18n="report.holdout" class="table-title">留出题</h3>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead><tr><th data-i18n="report.col.when" scope="col">版本</th><th data-i18n="report.col.found" class="num" scope="col">找到</th><th data-i18n="report.col.old" class="num" scope="col">带出旧说法</th><th data-i18n="report.col.false" class="num" scope="col">误报</th></tr></thead>
+                <tbody>
+                  <tr><td data-i18n="report.holdout.before">入口召回改版前</td><td class="num">12/32</td><td class="num">6/32</td><td class="num">2/8</td></tr>
+                  <tr><td data-i18n="report.holdout.after">改版后</td><td class="num"><b>25/32</b></td><td class="num">13/32</td><td class="num">2/8</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p data-i18n="report.holdoutNote" class="table-note">误报的 2 个都只给了标题，没有送出知识内容。旧说法要靠模型自己挑。</p>
+          </div>
+        </div>
+        <details class="fold">
+          <summary data-i18n="report.method">怎么测的</summary>
+          <ul>
+            <li data-i18n="report.recall.set">留出题：另一个合成项目，40 个中英文提问。32 个各有一条该找到的知识，8 个什么都不该找到。题目在读召回代码之前写好。</li>
+            <li data-i18n="report.recall.probe">只跑 FULI 的任务入口，不调模型；每个提问 1 次。日期：改版前 2026-11-05，改版后 2026-11-06。</li>
+            <li data-i18n="report.recall.multi">多轮一栏和上面的 token 测量是同一批会话，按模型实际看到的入口内容计。</li>
+          </ul>
+        </details>
+        <details class="fold">
+          <summary data-i18n="report.caveats">要注意</summary>
+          <ul>
+            <li data-i18n="report.recall.errorCodes">错误码那条两次都没找到，是排序问题，还没修。</li>
+            <li data-i18n="report.recall.short">只说「继续」、不带任何主题的提问，所有检索方法都找不到。</li>
+          </ul>
+        </details>
+      </section>
+
+      <section class="guide-section" id="outcome" aria-labelledby="outcome-title">
+        <h2 data-i18n="report.outcome" id="outcome-title">知识送到后，任务做成了吗</h2>
+        <p data-i18n="report.outcomeLead">6 个任务都需要一条仓库里找不到、或仓库里写的是旧值的项目知识。做完由隐藏检查判定。</p>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th data-i18n="report.col.arm" scope="col">组</th><th data-i18n="report.col.success" class="num" scope="col">做成</th><th data-i18n="report.col.tokens" class="num" scope="col">token 中位数</th></tr></thead>
+            <tbody>
+              <tr><td data-i18n="report.arm.off">不开 FULI</td><td class="num">3/18</td><td class="num">43k</td></tr>
+              <tr><td data-i18n="report.arm.fuli">开 FULI</td><td class="num"><b>18/18</b></td><td class="num">63k</td></tr>
+              <tr class="reference-row"><td data-i18n="report.arm.inject">把正确知识直接写进提示（参照）</td><td class="num">18/18</td><td class="num">39k</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p data-i18n="report.outcomeNote" class="table-note">开着 FULI 追平了直接给答案，但 token 比不开多 47%。不开时做成的 3 次，都是能从代码推出答案的那题。</p>
+        <details class="fold">
+          <summary data-i18n="report.method">怎么测的</summary>
+          <ul>
+            <li data-i18n="report.outcome.client">客户端：OpenCode。模型：Claude Opus 5.5。日期：2026-11-04。</li>
+            <li data-i18n="report.outcome.scale">规模：6 个任务，每组每个任务 3 次，共 54 次；失败的运行也计入。</li>
+            <li data-i18n="report.outcome.earlier">同一天入口召回修好之前，用 DeepSeek flash：不开 6%，开 FULI 72%，直接给知识 100%。</li>
+            <li data-i18n="report.outcome.memory">记住新决定：6 次都成了当前知识（待你确认）。改写旧知识：6 次都由新版本替换旧版本。</li>
+          </ul>
+        </details>
+      </section>
+
+      <section class="guide-section" id="tonborg" aria-labelledby="tonborg-title">
+        <h2 data-i18n="report.tonborg" id="tonborg-title">Tonborg 审核准不准</h2>
+        <p data-i18n="report.tonborgLead">知识留下之前，Tonborg 先审一遍：该存、该丢，还是交给你。这里看它的判断和人工标注是否一致。</p>
+        <div class="tonborg-grid">
+          <article class="guide-card">
+            <h3 data-i18n="report.tonborg.recorded">已测</h3>
+            <p data-i18n="report.tonborg.recordedBody">本机 qwen3.5:4b，48 个留出合成案例，与人工标注一致 29/48（60.4%），门槛 85%。2026-10-22。</p>
+          </article>
+          <article class="guide-card is-pending" id="tonborg-strong">
+            <h3 data-i18n="report.tonborg.next">强模型复测</h3>
+            <p data-i18n="report.tonborg.nextBody">用 gpt-5.6-sol 重测进行中，结果出来后补在这里，连同方法。</p>
+          </article>
+        </div>
+        <p data-i18n="report.tonborg.note" class="table-note">这是合成案例上的判断一致率，不是真实审核的结果。</p>
+      </section>
+
+      <section class="guide-section" id="history" aria-labelledby="history-title">
+        <h2 data-i18n="report.history" id="history-title">更早的测量</h2>
+        <p data-i18n="report.historyLead">早期几轮里，开着 FULI 往往多花 token，知识也常常没送到。上面的数字是这些问题修过之后测的。</p>
+        <details class="fold">
+          <summary data-i18n="report.history.mac">Mac 上的 Claude Code，同一个三轮小维护任务</summary>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead><tr><th data-i18n="report.col.version" scope="col">FULI 版本</th><th data-i18n="report.col.date" scope="col">日期</th><th data-i18n="report.col.extra" class="num" scope="col">开比不开多用</th></tr></thead>
+              <tbody>
+                <tr><td>0.20.0-beta.12</td><td>2026-10-25</td><td class="num">+215%</td></tr>
+                <tr><td>0.20.0-beta.15</td><td>2026-10-25</td><td class="num">+15%</td></tr>
+                <tr><td>0.21.0-beta.1</td><td>2026-10-26</td><td class="num">+33%</td></tr>
+                <tr><td>0.21.0-beta.2</td><td>2026-10-27</td><td class="num">+15%</td></tr>
+                <tr><td>0.21.0-beta.3</td><td>2026-10-27</td><td class="num">+46%</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p data-i18n="report.history.macMethod" class="table-note">Claude Code 2.1.280，模型 claude-opus-5。输入加输出 token，客户端报告。每版只跑 1 次，波动大。</p>
+        </details>
+        <details class="fold">
+          <summary data-i18n="report.history.others">其他两轮</summary>
+          <ul>
+            <li data-i18n="report.history.opencode">2026-11-01 · OpenCode + Claude Opus 5.5 · 6 个小任务各 2 次，知识库是空的：开着多用 17% token，做成 11/12，不开 12/12。</li>
+            <li data-i18n="report.history.deepseek">2026-10-25 · OpenCode + DeepSeek v4.1 flash · 重做 11 个已合并的改动，共 66 次：开着做成 19/33，不开 16/33；知识几乎没送到。</li>
+          </ul>
+        </details>
+      </section>
+
+      <section class="guide-section" id="gaps" aria-labelledby="gaps-title">
+        <h2 data-i18n="report.gaps" id="gaps-title">还没测的</h2>
+        <ul class="guide-list">
+          <li data-i18n="report.gap.real">全部是合成项目，没有在真实用户的数据上测。</li>
+          <li data-i18n="report.gap.scale">多轮每组只有 2 个会话，看不出波动。</li>
+          <li data-i18n="report.gap.compact">长会话压缩之后的表现，没有实测。</li>
+          <li data-i18n="report.gap.clients">多轮只测了 Windows 上的 Claude Code + Haiku 5.5；Codex、Cursor、OpenCode 没测。</li>
+          <li data-i18n="report.gap.entry">OpenCode 的入口仍是每轮整份发送；Codex 用同一套增量入口，但没有实测。</li>
+          <li data-i18n="report.gap.tonborg">Tonborg 用强模型的审核准确率还在测。</li>
+        </ul>
+      </section>
+
+      <section class="guide-section" id="related" aria-labelledby="related-title">
+        <h2 data-i18n="report.related" id="related-title">完整数据</h2>
+        <p class="guide-links">
+          <a data-i18n="report.related.benchmark" href="https://github.com/JevonsCode/fuli/blob/main/FULI_ALIGNMENT_BENCHMARK.md#8-%E5%8D%8F%E4%BD%9C%E6%88%90%E6%9C%AC-ab">对齐基准第 8 节</a>
+          <a data-i18n="report.related.retrieval" href="https://github.com/JevonsCode/fuli/blob/main/docs/retrieval-design.md">检索设计</a>
+          <a data-i18n="report.related.models" data-i18n-href="report.related.modelsUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/models/">模型指南</a>
+        </p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span data-i18n="footer.copyright">© Fuli 复利 · Apache-2.0</span>
+      <span><a href="https://github.com/JevonsCode/fuli">GitHub</a><a data-i18n="report.backHome" data-i18n-href="report.homeUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到首页</a><a href="https://xn--8ovp9s.xn--m8txu.com/" data-ydys-badge>ydys.com</a></span>
+    </footer>
+    <script src="https://xn--8ovp9s.xn--m8txu.com/ydys-badge.js" defer></script>
+  </body>
+</html>

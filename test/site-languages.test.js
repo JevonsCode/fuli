@@ -7,6 +7,7 @@ import { messages, sceneMessages } from '../site/translations.js';
 import * as modelsCatalog from '../site/models/translations.js';
 import * as techCatalog from '../site/tech/translations.js';
 import * as guideCatalog from '../site/guide/translations.js';
+import * as reportCatalog from '../site/report/translations.js';
 
 const html = readFileSync(new URL('../site/index.html', import.meta.url), 'utf8');
 const page = () => parseHTML(html).document;
@@ -89,7 +90,7 @@ test('both languages cover the complete page, accessibility text, metadata and s
   assert.doesNotMatch(document.documentElement.textContent, /不按天数遗忘/);
 });
 
-for (const [name, catalog] of [['models', modelsCatalog], ['tech', techCatalog], ['guide', guideCatalog]]) test(`the ${name} guide page covers both languages with the same keys and no Chinese in English`, () => {
+for (const [name, catalog] of [['models', modelsCatalog], ['tech', techCatalog], ['guide', guideCatalog], ['report', reportCatalog]]) test(`the ${name} guide page covers both languages with the same keys and no Chinese in English`, () => {
   const { messages: copy, sceneMessages: scenes } = catalog;
   assert.deepEqual(Object.keys(copy.en).sort(), Object.keys(copy['zh-CN']).sort());
   assert.deepEqual(scenes, { 'zh-CN': {}, en: {} });
