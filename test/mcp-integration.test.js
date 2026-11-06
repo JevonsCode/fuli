@@ -253,6 +253,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'get_agent_score_card',
     'control_project_agent_task_run', 'register_standing_assignment', 'report_agent_service',
     'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
+    'record_fla_lesson',
     'list_work_surfaces', 'pause_work_surfaces', 'resume_work_surfaces',
     'run_delegated_action',
     'read_diagnostic_events', 'read_old_data', 'read_occupation_kit',
