@@ -9,6 +9,7 @@ import * as guideCatalog from '../site/guide/translations.js';
 import * as reportCatalog from '../site/report/translations.js';
 import { SITE_URL, structuredData } from '../site/metadata.js';
 import { isMainModule } from '../src/system/main-module.js';
+import { stampAssetVersions } from './site-asset-versions.js';
 
 // Each page is published at its template's own route (Chinese by default) and
 // one directory below it per language; every language lists the same alternates.
@@ -168,9 +169,9 @@ export function createSitePages({ home, preview, models, tech, guide, report, ve
   return files;
 }
 
-export async function buildSite() {
+// `output` is a directory URL ending in a slash; tests build into a temporary one.
+export async function buildSite(output = new URL('../dist/site/', import.meta.url)) {
   const source = new URL('../site/', import.meta.url);
-  const output = new URL('../dist/site/', import.meta.url);
   await cp(source, output, { recursive: true });
   const files = createSitePages({
     home: await readFile(new URL('index.html', source), 'utf8'),
@@ -190,6 +191,7 @@ export async function buildSite() {
   const archivePath = new URL('v0/index.html', output);
   const archive = await readFile(archivePath, 'utf8');
   await writeFile(archivePath, archive.replace('</head>', '<meta name="robots" content="noindex, follow" />\n</head>'));
+  await stampAssetVersions(fileURLToPath(output));
   return fileURLToPath(output);
 }
 
