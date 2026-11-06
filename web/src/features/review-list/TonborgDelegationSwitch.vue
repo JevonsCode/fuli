@@ -28,7 +28,7 @@ async function load() {
 onMounted(load)
 watch(() => props.personalSpaceId, load)
 
-const connected = computed(() => state.value?.model.connected === true)
+const connected = computed(() => state.value?.model?.connected === true)
 const hint = computed(() => {
   if (!state.value) return ''
   if (!connected.value) return t('reviewList.delegation.needsModel')

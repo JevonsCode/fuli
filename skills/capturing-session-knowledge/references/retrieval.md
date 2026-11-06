@@ -59,7 +59,7 @@ needs. `ids` only narrows that scoped search; ids outside its results come back 
 
 Pending knowledge is eligible for on-demand retrieval and must remain visibly marked.
 `agent_confirmed` knowledge is usable but ranks below user or authoritative-source
-confirmation.
+confirmation; that includes items Tonborg confirmed for the person, which stay Tonborg's, not theirs.
 
 Treat an obvious content-location request specially: examples include asking for a named page,
 URL, route, deployment, document, file, or where a durable artifact is located.

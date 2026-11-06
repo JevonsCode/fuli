@@ -38,6 +38,8 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('model_settings', 'PUT /api/model-backends/roles/:role/trust', 'Switch it back.'),
   local('POST /api/semantic/fill', 'Filling the meaning index sends knowledge to their own model, so it starts only from this computer; it also runs by itself every few minutes while a model is connected.'),
   local('PUT /api/judgment/policy', 'Autonomy grants delegated authority and requires the local user.'),
+  // 「交给 Tonborg 确认」 (rec#96) also clears Tonborg's 「只给建议」, so it shares that switch's category.
+  delegable('model_settings', 'PUT /api/judgment/delegation', 'Switch it back; what Tonborg confirmed stays undoable in 待决策.'),
   relayed('POST /api/judgment/feedback', 'Vote again; every earlier vote and reason is kept.'),
   relayed('POST /api/judgment/undo', 'Not undone from FULI; ask Tonborg to review the item again.'),
   agent('POST /api/judgment/review', 'review_with_tonborg'),
