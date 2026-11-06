@@ -7,6 +7,7 @@
 // received, for the raw per-case record.
 
 import { fetchWithoutRedirect } from '../../src/model-backends/no-redirect-fetch.js';
+import { recordedExchange } from './exchange-record.js';
 
 export const OLLAMA_ORIGIN = 'http://127.0.0.1:11434';
 export const CHAT_PATH = '/v1/chat/completions';
@@ -20,8 +21,6 @@ const ALLOWED_ROUTES = Object.freeze({
 const CHAT_FIELDS = new Set(['model', 'messages', 'max_tokens', 'reasoning_effort', 'stream', 'stream_options', 'response_format']);
 const SAMPLING_FIELDS = new Set(['temperature', 'seed']);
 const MESSAGE_ROLES = new Set(['system', 'user', 'assistant']);
-// A re-wrapped body is already decoded and its length is the text's own.
-const STALE_HEADERS = ['content-encoding', 'content-length', 'transfer-encoding'];
 
 function assertLocalOllama(url, method = 'GET') {
   const target = new URL(String(url));
@@ -66,11 +65,6 @@ export function createLocalOllamaTransport({ sampling, fetchImpl = globalThis.fe
       body = JSON.stringify({ ...chat, ...sampling });
     }
     const response = await send(target.href, { ...init, body });
-    const responseText = await response.text();
-    onExchange({ url: target.href, method: method.toUpperCase(), requestBody: body ?? null,
-      status: response.status, contentType: response.headers.get('content-type'), responseText });
-    const headers = new Headers(response.headers);
-    for (const name of STALE_HEADERS) headers.delete(name);
-    return new Response(responseText, { status: response.status, statusText: response.statusText, headers });
+    return recordedExchange({ target, method, body, response, onExchange });
   };
 }

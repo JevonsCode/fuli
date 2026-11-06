@@ -9,13 +9,14 @@ import { fileURLToPath } from 'node:url';
 
 import { listenFetchableServer } from '../src/server/listen.js';
 
+import { createAnthropicGatewayTransport, gatewayOnlyFetch } from '../acceptance/tonborg-review-eval/anthropic-gateway-transport.js';
 import { buildSets, normalizedText } from '../acceptance/tonborg-review-eval/case-sets.js';
 import { createLocalOllamaTransport, localOnlyFetch } from '../acceptance/tonborg-review-eval/local-ollama-transport.js';
 import { createReviewPath } from '../acceptance/tonborg-review-eval/review-path.js';
 import { compactRow } from '../acceptance/tonborg-review-eval/run.js';
 import { holdoutEvaluation, perCaseTable, scoreResults } from '../acceptance/tonborg-review-eval/score.js';
 import { OUTCOME_VIEWS, SCORING_CONTRACT, preGateHostOutcome, readResults, scoreSet } from '../acceptance/tonborg-review-eval/scoring.js';
-import { openAiStream } from './fixtures/model-transport.js';
+import { anthropicStream, openAiStream } from './fixtures/model-transport.js';
 
 // rec#26: the Tonborg review evaluation harness. No real model runs here; a
 // fake transport stands in for the local Ollama.
@@ -139,6 +140,70 @@ test('a title that also occurs in the fixed instructions is not mistaken for a l
   const review = await path.review(candidate({ title: 'Preference', content: '' }), 'case-2:run-1');
   assert.match(ollama.bodies[1].messages[1].content, /^TASK: .*Preferences: apply only/);
   assert.equal(review.modelVerdict.outcome, 'approve');
+});
+
+const GATEWAY = { endpoint: 'http://192.0.2.10:6666/v1', headers: { 'X-Claude-Code-Session-Id': 'synthetic-session' } };
+const MESSAGES = `${GATEWAY.endpoint}/messages`;
+const messagesBody = (extra = {}) => JSON.stringify({ model: 'm', max_tokens: 10, system: 's', messages: [{ role: 'user', content: 'hi' }],
+  stream: true, ...extra });
+
+test('the gateway transport reaches only the named messages route and refuses tool-bearing requests', async () => {
+  const sent = [];
+  const exchanges = [];
+  const transport = createAnthropicGatewayTransport({ endpoint: GATEWAY.endpoint, sampling: { temperature: 0 }, onExchange: exchange => exchanges.push(exchange),
+    fetchImpl: async (url, init) => { sent.push({ url, body: init.body }); return new Response('{"ok":true}'); } });
+  for (const url of ['https://api.example.com/v1/messages', 'http://192.0.2.10:6667/v1/messages', `${GATEWAY.endpoint}/chat/completions`,
+    'http://192.0.2.10:6666/messages']) {
+    await assert.rejects(transport(url, { method: 'POST', body: messagesBody() }), /Refusing/);
+  }
+  await assert.rejects(transport(MESSAGES, { method: 'GET' }), /Refusing GET/);
+  await assert.rejects(transport(MESSAGES, { method: 'POST', body: messagesBody({ tools: [{ name: 'x' }] }) }), /tools/);
+  await assert.rejects(transport(MESSAGES, { method: 'POST', body: messagesBody({ messages: [{ role: 'user', content: [{ type: 'tool_result' }] }] }) }),
+    /not plain text/);
+  await assert.rejects(gatewayOnlyFetch(GATEWAY.endpoint, async () => new Response(''))('http://192.0.2.10:6666/v1/models'), /Refusing/);
+  assert.throws(() => createAnthropicGatewayTransport({ endpoint: GATEWAY.endpoint, sampling: { temperature: 0, seed: 1 } }), /seed/);
+  assert.equal(sent.length, 0);
+
+  await transport(MESSAGES, { method: 'POST', body: messagesBody() });
+  assert.equal(JSON.parse(sent[0].body).temperature, 0);
+  assert.equal(exchanges[0].requestBody, sent[0].body);
+});
+
+function fakeGateway(replies) {
+  const requests = [];
+  const fetchImpl = async (url, init) => {
+    requests.push({ url, headers: init.headers, body: JSON.parse(init.body) });
+    return anthropicStream(replies[Math.min(requests.length, replies.length) - 1], { deltas: [{ input_tokens: 1500, output_tokens: 2400 }] });
+  };
+  return { requests, fetchImpl };
+}
+const proposal = (extra = {}) => JSON.stringify({ decision: 'propose', payload: { decisions: [verdict(extra)] },
+  reason: 'From the candidate.', evidenceIds: ['candidates'], uncertainty: null });
+
+test('a gateway review runs the anthropic_messages path with no output cap and survives the switch to prompt mode', async t => {
+  // The first reply ignores the schema, as the Kiro gateway does; the port repairs it and writes the schema into later prompts.
+  const offSchema = JSON.stringify({ decision: 'ask_user', payload: { candidate_key: 'entity:syn-abc' }, reason: 'r', evidenceIds: [], uncertainty: null });
+  const gateway = fakeGateway([offSchema, proposal(), proposal({ target: 'entity:syn-def' })]);
+  const path = createReviewPath({ model: 'gpt-test', sampling: { temperature: 0 }, gateway: GATEWAY, fetchImpl: gateway.fetchImpl });
+  t.after(() => path.close());
+  const first = await path.review(candidate(), 'case-1:run-1');
+  const second = await path.review(candidate({ candidate_key: 'entity:syn-def', item_id: 'syn-def', title: 'Other' }), 'case-2:run-1');
+
+  assert.deepEqual(gateway.requests.map(request => request.url), [MESSAGES, MESSAGES, MESSAGES]);
+  const [initial, repair, later] = gateway.requests.map(request => request.body);
+  assert.equal(gateway.requests[0].headers['X-Claude-Code-Session-Id'], 'synthetic-session');
+  assert.equal(gateway.requests[0].headers['x-api-key'], 'placeholder');
+  // No per-call output limit, as a role saved without one: 800 would cut off a model that reasons first.
+  assert.ok(initial.max_tokens > 800);
+  assert.equal(initial.temperature, 0);
+  assert.ok(initial.output_config);
+  assert.match(initial.messages[0].content, /^TASK: You are Tonborg/);
+  assert.equal(repair.messages.length, 3);
+  assert.equal(later.output_config, undefined);
+  assert.match(later.system, /\nThe reply must match this JSON schema: .*entity:syn-def/);
+  assert.deepEqual([first.receipt.attempts, first.modelVerdict.outcome, second.receipt.outputMode, second.modelVerdict.target],
+    [2, 'approve', 'prompt', 'entity:syn-def']);
+  assert.deepEqual([compactRow({ blindId: 'H2-02', set: 'holdout', run: 1 }, second).inputTokens, second.receipt.usage.outputTokens], [1500, 2400]);
 });
 
 const rowFor = async (t, answer, extra = {}) => {
