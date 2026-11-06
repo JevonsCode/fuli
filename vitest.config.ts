@@ -20,6 +20,7 @@ export default defineConfig({
     testTimeout: 15_000,
     // Token, theme and shared chrome stylesheets are read as text by specs that
     // check contrast, layering, divider lines, the motion rules and the page loading's layout.
-    css: { include: [/tokens\.css/, /styles[\\/]theme[\\/]/, /web[\\/]styles\.css/, /primitives\.css/, /motion\.css/, /styles[\\/]vue\.css/] },
+    // The centred line font (styles/fonts.css) is checked against the bundled Inter stylesheet.
+    css: { include: [/tokens\.css/, /styles[\\/]theme[\\/]/, /web[\\/]styles\.css/, /primitives\.css/, /motion\.css/, /styles[\\/]vue\.css/, /styles[\\/]fonts\.css/, /fontsource-variable[\\/]inter[\\/]index\.css/] },
   },
 })

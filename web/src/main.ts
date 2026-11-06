@@ -10,6 +10,7 @@ import { router } from './router'
 // The bundled fonts (SIL OFL 1.1) register before the theme names them.
 import '@fontsource-variable/inter'
 import '@fontsource-variable/noto-sans-sc'
+import './styles/fonts.css'
 // The theme comes first: it declares the cascade layer order.
 import './styles/theme/tailwind.css'
 import './styles/tokens.css'
