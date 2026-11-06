@@ -5,11 +5,15 @@ import { EmployeeError } from '../employees/manifest.js';
 import { confirmConsoleOwner } from '../knowledge-owner-reads/owner-proof.js';
 import { undoAutomaticReview } from './review-undo.js';
 import { tonborgReviewSuggestions } from './review-suggestions.js';
+import { delegatedReviewList, reviewDelegation, setReviewDelegation } from './review-delegation.js';
 
 const UNDO_PATH = '/api/judgment/undo';
 const SUGGESTIONS_PATH = '/api/judgment/suggestions';
+// 「交给 Tonborg 确认」 (rec#96): the switch, and Tonborg's delegated decisions and questions.
+const DELEGATION_PATH = '/api/judgment/delegation';
+const DELEGATED_PATH = '/api/judgment/delegated';
 const PATHS = ['/api/agent-pins', '/api/judgment/policy', '/api/judgment/policies', '/api/judgment/records', '/api/judgment/feedback',
-  '/api/judgment/review', '/api/judgment/assess', '/api/judgment/accept', UNDO_PATH, SUGGESTIONS_PATH];
+  '/api/judgment/review', '/api/judgment/assess', '/api/judgment/accept', UNDO_PATH, SUGGESTIONS_PATH, DELEGATION_PATH, DELEGATED_PATH];
 // The routes that answer with Tonborg's full records (summary, evidence,
 // receipts, feedback reasons) or its suggestions (rec#11 D-60): a judgment
 // keeps an item's title and key from when Tonborg read it, the item may be
@@ -26,7 +30,7 @@ const PATHS = ['/api/agent-pins', '/api/judgment/policy', '/api/judgment/policie
 // or Agent tool module imports this one (test/judgment-console-owner.test.js).
 // Pins and policy hold no history and stay readable as before.
 const OWNER_ROUTES = new Set(['GET /api/judgment/records', 'POST /api/judgment/feedback', 'POST /api/judgment/review',
-  'POST /api/judgment/assess', 'POST /api/judgment/accept', `GET ${SUGGESTIONS_PATH}`]);
+  'POST /api/judgment/assess', 'POST /api/judgment/accept', `GET ${SUGGESTIONS_PATH}`, `GET ${DELEGATED_PATH}`]);
 
 // undoConsole: the human-review channel the person's undo is sent on
 // (review-undo.js); ownerReads: the console's human-review read port
@@ -41,6 +45,14 @@ export async function handleJudgmentApiRequest({ request, response, url, app, un
     if (refuseRemoteDecision(request, response, 'Undoing Tonborg\'s review is done only on this computer')) return true;
     if (!undoConsole) sendJson(response, 503, { error: 'Undoing Tonborg\'s review needs a local FULI installation' });
     else sendJson(response, 200, await undoAutomaticReview({ judgment: app.judgment, undoConsole, input: await readJson(request) }));
+    return true;
+  }
+  // The person turns delegation on or off only on this computer; the switch's state holds no words.
+  if (route === `PUT ${DELEGATION_PATH}`) {
+    response.setHeader('Cache-Control', 'no-store');
+    if (refuseRemoteDecision(request, response, 'Handing review to Tonborg is changed only on this computer')) return true;
+    sendJson(response, 200, await setReviewDelegation({ judgment: app.judgment, modelTrust: app.modelTrust ?? null,
+      input: await readJson(request) }));
     return true;
   }
   if (OWNER_ROUTES.has(route)) {
@@ -63,6 +75,9 @@ export async function handleJudgmentApiRequest({ request, response, url, app, un
     'POST /api/judgment/accept': async () => app.judgment.accept(await readJson(request)),
     [`GET ${SUGGESTIONS_PATH}`]: async () => ({ suggestions: await tonborgReviewSuggestions({ judgment: app.judgment,
       input: { personalSpaceId: query.personalSpaceId } }) }),
+    [`GET ${DELEGATION_PATH}`]: () => reviewDelegation({ judgment: app.judgment, modelTrust: app.modelTrust ?? null,
+      input: { personalSpaceId: query.personalSpaceId } }),
+    [`GET ${DELEGATED_PATH}`]: () => delegatedReviewList({ judgment: app.judgment, input: { personalSpaceId: query.personalSpaceId } }),
   };
   const action = actions[route];
   if (!action) sendJson(response, 405, { error: 'Method not allowed' });

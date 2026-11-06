@@ -654,3 +654,48 @@ async def test_real_neo4j_undo_waits_for_an_edit_in_flight_and_never_removes_wha
         assert edited.status_code == 200, edited.text
         assert undo.status_code == 409, undo.text
         assert undo.json()['detail']['code'] == 'ai_review_changed'
+
+
+@pytest.mark.asyncio
+async def test_real_neo4j_tonborg_confirms_for_the_person_and_the_undo_takes_it_back():
+    """rec#96 「交给 Tonborg 确认」: a delegated review makes the pending item
+    agent_confirmed by Tonborg (recall uses it), never a person's
+    confirmation; the person's undo returns it to pending with its marks."""
+
+    settings = fixture_settings().model_copy(update={'human_review_token': _REVIEW_TOKEN})
+    suffix = uuid4().hex
+
+    async with provider_client(settings, raise_app_exceptions=True) as (client, _):
+        space_id, project_id, item_id = await _create_review_fixture(client, suffix)
+        run = await _start_tonborg_review(client, space_id, project_id)
+        candidate = await _read_candidate(client, space_id, run['review_id'], item_id)
+        before = await _read_graph_node(client, space_id, project_id, item_id)
+        assert before['confirmation_status'] == 'pending'
+
+        response = await client.post('/v1/knowledge/reviews/progress', json={
+            'personal_space_id': space_id,
+            'review_id': run['review_id'],
+            'candidate_key': candidate['candidate_key'],
+            'outcome': 'ai_reviewed',
+            'ai_review_evidence_token': candidate['ai_review_evidence_token'],
+            'confirm_as_agent': True,
+            'ai_assessment': {
+                'outcome': 'approve',
+                'summary': 'The synthetic statement matches confirmed preferences.',
+                'evidence': ['The current entity content is the reviewed statement.'],
+                'confidence': 0.93,
+                'model': 'synthetic-review-model',
+            },
+        })
+        _require_status(response)
+        confirmed = await _read_graph_node(client, space_id, project_id, item_id)
+        assert confirmed['confirmation_status'] == 'agent_confirmed'
+        assert confirmed['confirmation_basis']['confirmed_by'] == {'kind': 'agent', 'label': 'Tonborg'}
+        assert confirmed['confirmation_basis']['agent_policy_version'] == 'tonborg-review-v1'
+
+        human = {'x-fuli-human-review-token': _REVIEW_TOKEN}
+        _require_status(await _withdraw(client, space_id, run['review_id'], candidate, headers=human))
+        restored = await _read_graph_node(client, space_id, project_id, item_id)
+        assert restored['confirmation_status'] == 'pending'
+        assert (restored['confirmation_basis'] or {}).get('confirmed_by') is None
+        assert restored['ai_assessment'] is None

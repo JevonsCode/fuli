@@ -152,11 +152,16 @@ class KnowledgeReviewProgress(StrictModel):
         pattern=r'^[0-9a-f]{64}$',
     )
     ai_assessment: KnowledgeReviewAIAssessment | None = None
+    # rec#96 「交给 Tonborg 确认」: the applied review also makes the pending
+    # item agent_confirmed, with Tonborg as its agent confirmer.
+    confirm_as_agent: bool = False
 
     @model_validator(mode='after')
     def validate_ai_review_fields(self):
         has_token = self.ai_review_evidence_token is not None
         has_assessment = self.ai_assessment is not None
+        if self.confirm_as_agent and self.outcome != 'ai_reviewed':
+            raise ValueError('confirm_as_agent is only valid for ai_reviewed outcomes')
         if self.outcome == 'ai_reviewed':
             if not has_token or not has_assessment:
                 raise ValueError(

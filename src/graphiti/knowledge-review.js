@@ -27,7 +27,8 @@ export function recordKnowledgeReviewProgress(app, input) {
     outcome: input.outcome,
     note: input.note ?? null,
     ...(input.aiReviewEvidenceToken ? { ai_review_evidence_token: input.aiReviewEvidenceToken } : {}),
-    ...(input.aiAssessment ? { ai_assessment: input.aiAssessment } : {})
+    ...(input.aiAssessment ? { ai_assessment: input.aiAssessment } : {}),
+    ...(input.confirmAsAgent ? { confirm_as_agent: true } : {})
   });
 }
 

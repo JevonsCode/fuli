@@ -19,6 +19,7 @@ from .knowledge_review_models import (
     KnowledgeReviewStart,
 )
 from .ai_review import ai_review_evidence_token
+from .tonborg_confirmation import basis_json, tonborg_confirmation_basis, withdrawn_tonborg_basis
 from .knowledge_visibility import (
     PLAIN_SESSION,
     fla_endpoints_visible_cypher,
@@ -388,6 +389,20 @@ async def _record_ai_review_progress(
                 detail='knowledge review evidence changed; reload candidate',
             )
 
+        # The marks keep naming the snapshot Tonborg judged, so the undo and a
+        # rerun's settlement match them as before; the graph shows the
+        # assessment only until the item changes, this confirmation included.
+        confirmation_basis_json = None
+        if request.confirm_as_agent:
+            if normalized['confirmation_status'] != 'pending':
+                raise HTTPException(
+                    status_code=409,
+                    detail='only pending knowledge can be confirmed by Tonborg',
+                )
+            confirmation_basis_json = basis_json(tonborg_confirmation_basis(
+                current.get('confirmation_basis_json'), updated_at,
+            ))
+
         assessment_json = request.ai_assessment.model_dump_json()
         write_query = (
             _AI_REVIEW_ENTITY_WRITE_QUERY
@@ -405,6 +420,7 @@ async def _record_ai_review_progress(
             note=request.note,
             ai_review_evidence_token=current_token,
             ai_assessment_json=assessment_json,
+            confirmation_basis_json=confirmation_basis_json,
             updated_at=updated_at,
         )
         if not records:
@@ -435,6 +451,20 @@ async def withdraw_ai_review(
         request.review_id,
         request.candidate_key,
     )
+    # A Tonborg confirmation (rec#96) goes back to pending with the marks, but
+    # only while the item still holds the basis Tonborg wrote.
+    basis_records, _, _ = await store.runtime.driver.execute_query(
+        _AI_REVIEW_ENTITY_BASIS_QUERY
+        if item_kind == 'entity' else _AI_REVIEW_RELATIONSHIP_BASIS_QUERY,
+        group_id=space['group_id'],
+        item_id=item_id,
+        routing_='r',
+    )
+    stored = dict(basis_records[0]) if basis_records else {}
+    restored = (
+        withdrawn_tonborg_basis(stored.get('confirmation_basis_json'))
+        if stored.get('confirmation_status') == 'agent_confirmed' else None
+    )
     records, _, _ = await store.runtime.driver.execute_query(
         _AI_REVIEW_ENTITY_WITHDRAW_QUERY
         if item_kind == 'entity' else _AI_REVIEW_RELATIONSHIP_WITHDRAW_QUERY,
@@ -442,6 +472,8 @@ async def withdraw_ai_review(
         item_id=item_id,
         decision_id=decision_id,
         ai_review_evidence_token=request.ai_review_evidence_token,
+        tonborg_basis_json=stored.get('confirmation_basis_json') if restored else None,
+        pending_basis_json=basis_json(restored) if restored else None,
     )
     if not records:
         raise HTTPException(status_code=404, detail={
@@ -1112,7 +1144,12 @@ MATCH (item:Entity {uuid: $item_id, group_id: $group_id})
 WHERE run.status IN ['active', 'paused'] AND size(coalesce(item.fuli_unresolved_bases, [])) = 0
 MERGE (decision:FuliKnowledgeReviewDecision {id: $decision_id})
 ON CREATE SET decision.created_at = $updated_at
-SET item.fuli_ai_review_evidence_token = $ai_review_evidence_token,
+SET item.fuli_confirmation_status = CASE WHEN $confirmation_basis_json IS NULL
+        THEN item.fuli_confirmation_status ELSE 'agent_confirmed' END,
+    item.fuli_confirmation_basis_json = coalesce($confirmation_basis_json, item.fuli_confirmation_basis_json),
+    item.fuli_epistemic_status = CASE WHEN $confirmation_basis_json IS NULL THEN item.fuli_epistemic_status
+        WHEN item.fuli_origin_quadrant = 'unknown_unknown' THEN 'exploratory' ELSE 'observed' END,
+    item.fuli_ai_review_evidence_token = $ai_review_evidence_token,
     item.fuli_ai_assessment_json = $ai_assessment_json,
     item.fuli_ai_review_scope = run.scope,
     item.fuli_ai_review_project_id = run.personal_project_id,
@@ -1141,7 +1178,12 @@ MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()
 WHERE run.status IN ['active', 'paused'] AND size(coalesce(item.fuli_unresolved_bases, [])) = 0
 MERGE (decision:FuliKnowledgeReviewDecision {id: $decision_id})
 ON CREATE SET decision.created_at = $updated_at
-SET item.fuli_ai_review_evidence_token = $ai_review_evidence_token,
+SET item.fuli_confirmation_status = CASE WHEN $confirmation_basis_json IS NULL
+        THEN item.fuli_confirmation_status ELSE 'agent_confirmed' END,
+    item.fuli_confirmation_basis_json = coalesce($confirmation_basis_json, item.fuli_confirmation_basis_json),
+    item.fuli_epistemic_status = CASE WHEN $confirmation_basis_json IS NULL THEN item.fuli_epistemic_status
+        WHEN item.fuli_origin_quadrant = 'unknown_unknown' THEN 'exploratory' ELSE 'observed' END,
+    item.fuli_ai_review_evidence_token = $ai_review_evidence_token,
     item.fuli_ai_assessment_json = $ai_assessment_json,
     item.fuli_ai_review_scope = run.scope,
     item.fuli_ai_review_project_id = run.personal_project_id,
@@ -1178,6 +1220,11 @@ WITH item,
      (item.fuli_replaced_by_item_id IS NOT NULL
       OR coalesce(item.fuli_invalid_at, item.invalid_at) IS NOT NULL
       OR coalesce(item.fuli_last_human_changed_at > item.fuli_ai_reviewed_at, false)) AS changed
+FOREACH (ignored IN CASE WHEN carries AND NOT changed AND $pending_basis_json IS NOT NULL
+                          AND item.fuli_confirmation_status = 'agent_confirmed'
+                          AND item.fuli_confirmation_basis_json = $tonborg_basis_json THEN [1] ELSE [] END |
+  SET item.fuli_confirmation_status = 'pending',
+      item.fuli_confirmation_basis_json = $pending_basis_json)
 FOREACH (ignored IN CASE WHEN carries AND NOT changed THEN [1] ELSE [] END |
   REMOVE item.fuli_ai_review_evidence_token, item.fuli_ai_assessment_json,
          item.fuli_ai_review_scope, item.fuli_ai_review_project_id,
@@ -1185,6 +1232,22 @@ FOREACH (ignored IN CASE WHEN carries AND NOT changed THEN [1] ELSE [] END |
          item.fuli_ai_review_decision_id)
 RETURN carries, changed
 '''
+
+
+_AI_REVIEW_BASIS = '''
+RETURN item.fuli_confirmation_status AS confirmation_status,
+       item.fuli_confirmation_basis_json AS confirmation_basis_json
+'''
+
+
+_AI_REVIEW_ENTITY_BASIS_QUERY = (
+    'MATCH (item:Entity {uuid: $item_id, group_id: $group_id})' + _AI_REVIEW_BASIS
+)
+
+
+_AI_REVIEW_RELATIONSHIP_BASIS_QUERY = (
+    'MATCH ()-[item:RELATES_TO {uuid: $item_id, group_id: $group_id}]->()' + _AI_REVIEW_BASIS
+)
 
 
 _AI_REVIEW_ENTITY_WITHDRAW_QUERY = (
