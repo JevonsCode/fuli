@@ -15,7 +15,7 @@ import { taskStatement } from './task-prompt-statement.js';
 // statements; nothing the model wrote is read here.
 const MAX_RULES = 3;
 const MAX_RULE_CHARS = 600;
-const STATED = [
+export const STATED_RULE_PATTERNS = [
   // "Our retry policy for every outbound channel: …", "our deploy command is …"
   /\bour\s+(?:[\w./-]+\s+){0,6}?(?:policy|policies|convention|conventions|rule|rules|standard|port|ports|command|commands|process|workflow|naming)\b[^.?!]*?(?::|\b(?:is|are)\b)/iu,
   // "We always run the migrations first", "we never retry a 4xx"
@@ -38,7 +38,7 @@ const SENTENCES = /(?<=[.!?])\s+(?=[A-Z0-9`"'(])|(?<=[。！？])|\r?\n/u;
 export function statedProjectRules(prompt) {
   if (typeof prompt !== 'string' || !prompt.trim()) return [];
   const sentences = taskStatement(prompt).split(SENTENCES).map(sentence => sentence.trim()).filter(Boolean);
-  const rules = sentences.filter(sentence => !QUESTION.test(sentence) && STATED.some(pattern => pattern.test(sentence)))
+  const rules = sentences.filter(sentence => !QUESTION.test(sentence) && STATED_RULE_PATTERNS.some(pattern => pattern.test(sentence)))
     .map(sentence => sentence.slice(0, MAX_RULE_CHARS));
   return [...new Set(rules)].slice(0, MAX_RULES);
 }
