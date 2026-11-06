@@ -86,8 +86,9 @@ h2 { margin-top: 12px; font-size: clamp(30px, 3.6vw, 52px); font-weight: 680; li
 .chapter-stats { display: grid; gap: 6px; max-width: 420px; margin: 18px 0 0; }
 .chapter-stats div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .chapter-stats dt { color: var(--chapter-soft, var(--ink-soft)); font-size: 14px; }
-.chapter-stats dd { margin: 0; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chapter-stats dd { margin: 0; color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .chapter-stats b { color: var(--chapter-ink, var(--ink)); font: 600 16px/1 "Unbounded", var(--sans); }
+.chapter-stats dd small { display: block; margin-top: 4px; font-size: 12px; }
 .chapter-link { display: inline-block; margin-top: 14px; font-size: 14px; font-weight: 550; text-decoration: none; user-select: none; }
 .chapter-link::after { content: " →"; }
 .chapter-link:hover { text-decoration: underline; }
@@ -139,6 +140,7 @@ figcaption { margin-top: 10px; color: var(--faint); font-size: 12px; }
   .enhanced .database-chapter .chapter-copy { top: 12svh; width: 100%; max-width: 640px; }
 }
 @media (max-width: 700px) {
+  .chapter-stats dd small { display: none; }
   .enhanced .spatial-stage { min-height: 580px; }
   .enhanced .chapter { height: 150svh; padding: 0 22px; }
   .enhanced .chapter-copy, .enhanced .hero-chapter .chapter-copy { top: max(90px, 10svh); width: 100%; max-width: 380px; }
