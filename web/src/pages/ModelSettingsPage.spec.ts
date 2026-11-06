@@ -65,7 +65,7 @@ beforeEach(() => {
 
 const mountPage = async () => {
   const wrapper = mount(ModelSettingsPage, { attachTo: document.body,
-    global: { stubs: { RouterLink: true, ...optionSelectStubs } } })
+    global: { stubs: { RouterLink: true, OptionSelect: optionSelectStubs.OptionSelect } } })
   await flushPromises()
   return wrapper
 }
@@ -238,7 +238,7 @@ describe('ModelSettingsPage', () => {
     await dialog.get('[data-model-advanced] button').trigger('click')
     await flushPromises()
     expect(dialog.text()).toContain('已接入：knowledge_review')
-    await dialog.get('[data-model-name]').setValue('qwen-next')
+    await dialog.get('[data-model-name] input').setValue('qwen-next')
     await dialog.get('[data-model-budget="maxOutputTokens"]').setValue('800')
     await dialog.get('form').trigger('submit')
     await flushPromises()
@@ -274,11 +274,11 @@ describe('ModelSettingsPage', () => {
     const wrapper = await mountPage()
     await wrapper.get('[data-model-role="tonborg"] [data-model-role-edit]').trigger('click')
     const dialog = wrapper.get('[data-model-role-dialog]')
-    expect(dialog.get('[data-model-endpoint]').attributes('disabled')).toBeUndefined()
+    expect(dialog.get('[data-model-endpoint] input').attributes('disabled')).toBeUndefined()
     expect(dialog.get('[data-model-enabled-hint]').text()).toContain('不用聊天客户端里的模型')
 
     await dialog.get('#model-role-enabled').trigger('click')
-    expect(dialog.get('[data-model-endpoint]').attributes('disabled')).toBeDefined()
+    expect(dialog.get('[data-model-endpoint] input').attributes('disabled')).toBeDefined()
     expect(dialog.get('[data-model-secret-ref]').attributes('disabled')).toBeDefined()
     expect(dialog.get('[data-model-enabled-hint]').text()).toContain('现在用你聊天客户端里的模型')
     expect(dialog.get('[data-model-save]').attributes('disabled')).toBeUndefined()
@@ -325,7 +325,7 @@ describe('ModelSettingsPage', () => {
 
     const dialog = wrapper.get('[data-model-role-dialog]')
     expect(dialog.get('[role="alert"]').text()).toContain('修好文件前不能编辑：roles.nobody is not a built-in Agent role')
-    expect(dialog.get('[data-model-name]').attributes('disabled')).toBeDefined()
+    expect(dialog.get('[data-model-name] input').attributes('disabled')).toBeDefined()
     expect(dialog.get('[data-model-save]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-model-stale]').exists()).toBe(false)
     expect(wrapper.get('[data-model-config-invalid]').text()).toContain('roles.nobody')

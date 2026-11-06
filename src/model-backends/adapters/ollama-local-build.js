@@ -40,7 +40,7 @@ export async function observeLocalBuild({ connection, signal, fetchImpl }) {
   }
 }
 
-function localTagsUrl(endpoint) {
+export function localTagsUrl(endpoint) {
   const url = new URL(endpoint);
   if (url.protocol !== 'http:' || !LOOPBACK_HOSTS.has(url.hostname) || !OLLAMA_API_BASE.test(url.pathname)) return null;
   url.pathname = url.pathname.replace(OLLAMA_API_BASE, '/api/tags');

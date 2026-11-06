@@ -6,6 +6,8 @@
 // `searchable: false` keeps the field from taking typing, for a short
 // multiple-choice list. `label` names the control; `field` also shows it above.
 // `loading` shows an inline indicator above the options it already has.
+// `freeText` (single): what is typed is the value too, so a value outside the
+// options stays (a model name the list does not have); the options are suggestions.
 import type { HTMLAttributes } from "vue"
 import { ComboboxInput } from "reka-ui"
 import { computed, useId } from "vue"
@@ -45,6 +47,7 @@ const props = withDefaults(defineProps<{
   hint?: string
   disabled?: boolean
   loading?: boolean
+  freeText?: boolean
   required?: boolean
   name?: string
   controlId?: string
@@ -52,7 +55,7 @@ const props = withDefaults(defineProps<{
   class?: HTMLAttributes["class"]
 }>(), {
   multiple: false, searchable: true, field: false, placeholder: undefined, allLabel: undefined, summary: undefined, maxChips: 2, hint: undefined,
-  disabled: false, loading: false, required: false, name: undefined, controlId: undefined, size: "md", class: undefined,
+  disabled: false, loading: false, freeText: false, required: false, name: undefined, controlId: undefined, size: "md", class: undefined,
 })
 
 const emit = defineEmits<{ "update:modelValue": [value: V] }>()
@@ -81,7 +84,13 @@ const placeholderText = computed(() => props.placeholder ?? t("ui.select.placeho
 function labelOf(itemValue: unknown) {
   if (typeof itemValue !== "string") return ""
   // Before the options arrive the field stays empty rather than showing a raw value.
-  return optionByItem.value.get(itemValue)?.label ?? (props.options.length ? fromItemValue(itemValue) : "")
+  return optionByItem.value.get(itemValue)?.label ?? (props.options.length || props.freeText ? fromItemValue(itemValue) : "")
+}
+
+// Free text: the typed text, or the option whose label it is (picking one shows its label).
+function typed(text: string) {
+  if (!props.freeText || props.multiple) return
+  emit("update:modelValue", (props.options.find(option => option.label === text)?.value ?? text) as V)
 }
 
 function emitValues(values: string[]) {
@@ -114,6 +123,7 @@ const inputClass = "h-full min-h-0 min-w-8 flex-1 border-0 bg-transparent px-1 p
       :name="name"
       :required="required"
       open-on-click
+      :reset-search-term-on-blur="!freeText"
       @update:model-value="choose"
     >
       <ComboboxAnchor :as-child="multiple" :class="multiple ? undefined : fieldClass" :data-size="multiple ? undefined : size" :data-disabled="disabled ? '' : undefined">
@@ -147,6 +157,7 @@ const inputClass = "h-full min-h-0 min-w-8 flex-1 border-0 bg-transparent px-1 p
             :placeholder="placeholderText"
             :readonly="!searchable"
             :aria-label="field ? undefined : label"
+            @update:model-value="typed"
           />
           <ComboboxTrigger class="shrink-0 cursor-pointer text-muted-foreground"><UiIcon name="chevron-down" :size="16" /></ComboboxTrigger>
         </template>

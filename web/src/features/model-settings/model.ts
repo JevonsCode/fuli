@@ -26,23 +26,39 @@ export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high'] as
 export const roleName = (role: ModelRoleId) => (role === SEMANTIC_ROLE ? t('modelSettings.semantic.title')
   : builtInRoleName(role === 'assistant' ? 'astro' : role))
 
-// 语义搜索's three presets: each fills the address and leaves the model to the person.
-export const SEMANTIC_PRESETS = ['ollama', 'qwen', 'custom'] as const
-export type SemanticPreset = typeof SEMANTIC_PRESETS[number]
-const PRESET_ENDPOINTS: Record<Exclude<SemanticPreset, 'custom'>, string> = {
+// Addresses the address field suggests, by the protocol they speak. Any
+// other OpenAI-compatible address works the same; these only save typing.
+const ENDPOINTS = {
   ollama: 'http://127.0.0.1:11434/v1',
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  deepseek: 'https://api.deepseek.com/v1',
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com/v1',
+} as const
+type KnownEndpoint = keyof typeof ENDPOINTS
+// 语义搜索's local Ollama is its own choice, and DeepSeek has no vectors.
+const SUGGESTED: Partial<Record<ModelProtocol, readonly KnownEndpoint[]>> = {
+  openai_chat: ['ollama', 'qwen', 'deepseek', 'openai'],
+  openai_embeddings: ['qwen', 'openai'],
+  anthropic_messages: ['anthropic'],
 }
+
+export const endpointSuggestions = (protocol: ModelProtocol) => (SUGGESTED[protocol] ?? [])
+  .map(name => ({ value: ENDPOINTS[name], label: ENDPOINTS[name], meta: t(`modelSettings.endpointNames.${name}`) }))
+
+// 语义搜索's two choices: this computer's Ollama, or any online
+// OpenAI-compatible service (a saved 千问 address is one of them).
+export const SEMANTIC_PRESETS = ['ollama', 'online'] as const
+export type SemanticPreset = typeof SEMANTIC_PRESETS[number]
 
 export function semanticPreset(endpoint: string): SemanticPreset {
-  const address = endpoint.trim().replace(/\/+$/, '')
-  return (['ollama', 'qwen'] as const).find(preset => PRESET_ENDPOINTS[preset] === address) ?? 'custom'
+  return endpoint.trim().replace(/\/+$/, '') === ENDPOINTS.ollama ? 'ollama' : 'online'
 }
 
-// A local Ollama needs no key; 自定义 empties an address a preset filled, so the person types their own.
+// A local Ollama needs no key; 在线服务 empties the Ollama address, so the person types or picks theirs.
 export function withSemanticPreset(draft: RoleDraft, preset: SemanticPreset): RoleDraft {
-  if (preset === 'custom') return semanticPreset(draft.endpoint) === 'custom' ? draft : { ...draft, endpoint: '' }
-  return { ...draft, endpoint: PRESET_ENDPOINTS[preset], ...(preset === 'ollama' ? { secretRef: '' } : {}) }
+  if (preset === 'online') return semanticPreset(draft.endpoint) === 'online' ? draft : { ...draft, endpoint: '' }
+  return { ...draft, endpoint: ENDPOINTS.ollama, secretRef: '' }
 }
 
 export interface ModelPricing {

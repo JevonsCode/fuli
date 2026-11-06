@@ -77,6 +77,7 @@ const UI_MUTATION_PARITY = Object.freeze([
   local('POST /api/retrieval-terms/fill', 'The local person fills retrieval terms, which sends project knowledge to their own model.'),
   local('POST /api/retrieval-terms/stop', 'Stops a fill the local person started; it runs only on this computer.'),
   local('POST /api/model-backends/roles/:role/check', 'The local person sends one fixed test request to a role\'s model.'),
+  local('POST /api/model-backends/models', 'The model settings dialog lists the models a typed endpoint offers, sending the person\'s saved key to it; only on this computer.'),
   delegable('settings', 'DELETE /api/debug-turns/:id', 'Not undone; the next #fulidebug turn records again.'),
   delegable('settings', 'POST /api/debug-turns/delete', 'Not undone; the next #fulidebug turn records again.'),
   agent('POST /api/capture', 'capture_session_knowledge'),

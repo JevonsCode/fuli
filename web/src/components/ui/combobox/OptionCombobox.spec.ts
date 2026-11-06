@@ -234,3 +234,27 @@ describe('OptionCombobox before its options arrive', () => {
     expect(input().value).toBe('Alpha 项目')
   })
 })
+
+describe('OptionCombobox with free text', () => {
+  const models: SelectOption[] = [{ value: 'synthetic-chat:4b', label: 'synthetic-chat:4b' }, { value: 'synthetic-embed', label: 'synthetic-embed' }]
+
+  it('keeps what is typed as the value, filters the suggestions, and picks one too', async () => {
+    const { value } = mountCombobox('', { options: models, freeText: true })
+    input().focus()
+    await type('my-own-model')
+    expect(value.value).toBe('my-own-model')
+    expect(options()).toHaveLength(0)
+    await type('embed')
+    expect(options().map(option => option.textContent?.trim())).toEqual(['synthetic-embed'])
+    options()[0].click()
+    await flushPromises()
+    expect(value.value).toBe('synthetic-embed')
+    expect(input().value).toBe('synthetic-embed')
+  })
+
+  it('shows a value outside the options, even before any option arrives', async () => {
+    mountCombobox('not-listed', { options: [], freeText: true })
+    await flushPromises()
+    expect(input().value).toBe('not-listed')
+  })
+})
