@@ -102,5 +102,6 @@ export function startToolSuggestionScheduler({ app, withLease = (_owner, run) =>
   };
   const timer = setInterval(() => { if (!running && !stopped) active = tick(); }, intervalMs);
   timer.unref?.();
-  return async () => { stopped = true; clearInterval(timer); await active; };
+  // Synchronous unless a tick is running, so a shutdown waits for nothing else.
+  return () => { stopped = true; clearInterval(timer); return active; };
 }
