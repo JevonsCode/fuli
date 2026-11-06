@@ -70,6 +70,8 @@ const copy = {
     "models.methodBody": "只用合成数据，只测一个项目，题目也不多。数字是参考，不是承诺。",
     "models.methodRetrieval": "检索设计与测试",
     "models.methodBenchmark": "对齐基准第 8 节",
+    "models.methodReport": "token 与准确率实测",
+    "models.methodReportUrl": "https://xn--8ovp9s.xn--m8txu.com/fuli/report/",
     "models.backHome": "回到首页",
   },
   "en": {
@@ -136,6 +138,8 @@ const copy = {
     "models.methodBody": "Synthetic data only, one project, small sets. The numbers are a guide, not a promise.",
     "models.methodRetrieval": "Retrieval design and tests",
     "models.methodBenchmark": "Alignment benchmark, section 8",
+    "models.methodReport": "Token and accuracy report",
+    "models.methodReportUrl": "https://xn--8ovp9s.xn--m8txu.com/fuli/report/en/",
     "models.backHome": "Home",
   },
 };

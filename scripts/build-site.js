@@ -6,6 +6,7 @@ import * as previewCatalog from '../site/next/translations.js';
 import * as modelsCatalog from '../site/models/translations.js';
 import * as techCatalog from '../site/tech/translations.js';
 import * as guideCatalog from '../site/guide/translations.js';
+import * as reportCatalog from '../site/report/translations.js';
 import { SITE_URL, structuredData } from '../site/metadata.js';
 import { isMainModule } from '../src/system/main-module.js';
 
@@ -17,6 +18,7 @@ const PREVIEW_BASE = 'next/';
 const MODELS_BASE = 'models/';
 const TECH_BASE = 'tech/';
 const GUIDE_BASE = 'guide/';
+const REPORT_BASE = 'report/';
 const plain = node => node.textContent.replace(/\s+/g, ' ').trim();
 
 function add(document, tag, attributes, text) {
@@ -105,7 +107,7 @@ function previewPages(template, version, files) {
   }
 }
 
-// A guide page (the model guide, the technology page, the quick start) in each language, at its own route.
+// A guide page (the model guide, the technology page, the quick start, the report) in each language, at its own route.
 function guidePages(template, base, catalog, files) {
   for (const [route, locale] of languageRoutes) {
     const { document } = renderPage(template, base, route, locale, catalog);
@@ -148,7 +150,7 @@ function noPreviewPages(version, files) {
   }
 }
 
-export function createSitePages({ home, preview, models, tech, guide, version }) {
+export function createSitePages({ home, preview, models, tech, guide, report, version }) {
   const files = new Map();
   // A prerelease version (0.23.0-beta.1) is a preview; a stable one has none ahead of it.
   const hasPreview = version.includes('-');
@@ -158,10 +160,11 @@ export function createSitePages({ home, preview, models, tech, guide, version })
   guidePages(models, MODELS_BASE, modelsCatalog, files);
   guidePages(tech, TECH_BASE, techCatalog, files);
   guidePages(guide, GUIDE_BASE, guideCatalog, files);
+  guidePages(report, REPORT_BASE, reportCatalog, files);
 
-  const urls = (hasPreview ? ['', PREVIEW_BASE, GUIDE_BASE, MODELS_BASE, TECH_BASE] : ['', GUIDE_BASE, MODELS_BASE, TECH_BASE]).flatMap(base => languageRoutes.map(([route]) => `  <url>\n    <loc>${SITE_URL}${base}${route}</loc>\n${alternateRoutes.map(([locale, alternate]) => `    <xhtml:link rel="alternate" hreflang="${locale}" href="${SITE_URL}${base}${alternate}" />`).join('\n')}\n  </url>`));
+  const urls = (hasPreview ? ['', PREVIEW_BASE, GUIDE_BASE, MODELS_BASE, TECH_BASE, REPORT_BASE] : ['', GUIDE_BASE, MODELS_BASE, TECH_BASE, REPORT_BASE]).flatMap(base => languageRoutes.map(([route]) => `  <url>\n    <loc>${SITE_URL}${base}${route}</loc>\n${alternateRoutes.map(([locale, alternate]) => `    <xhtml:link rel="alternate" hreflang="${locale}" href="${SITE_URL}${base}${alternate}" />`).join('\n')}\n  </url>`));
   files.set('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls.join('\n')}\n</urlset>\n`);
-  files.set('llms.txt', `# FULI\n\n> FULI (Fuli, 复利; npm: fuli-context) is a collaboration layer for persistent AI agents across MCP-compatible clients.\n\nFULI connects task ownership, agent working memory, personal and project preferences, and direct conversations between agents. Every space includes Jefa for project management, Bole for Agent resources (recruiting and staffing), and Tonborg for preference-guided judgment. Tonborg reviews within the chosen autonomy level and recommends clients and models; the host performs the actual execution. Decision logs accept thumbs up, thumbs down and an optional reason to guide later judgments. FULI retrieves relevant context through CLI, MCP and HTTP. Generic MCP configuration is available through fuli connect; automatic conversation capture and wake/resume require dedicated client adapters. The relationship graph and conversation records are stored on the user's computer.\n\n## Product\n\n- [Product overview in English](${SITE_URL}en/index.md): Capabilities, architecture and installation.\n- [产品介绍（中文）](${SITE_URL}zh/index.md): 功能、架构与安装。\n\n## Documentation\n\n- [English documentation](https://raw.githubusercontent.com/JevonsCode/fuli/main/README.md): Setup and usage.\n- [中文文档](https://raw.githubusercontent.com/JevonsCode/fuli/main/README.zh-CN.md): 安装与使用。\n\n## Optional\n\n- [Source repository](https://github.com/JevonsCode/fuli): Source code and issues.\n- [npm package](https://www.npmjs.com/package/fuli-context): Published installation package.\n- [Release notes](https://github.com/JevonsCode/fuli/releases): Version history.\n`);
+  files.set('llms.txt', `# FULI\n\n> FULI (Fuli, 复利; npm: fuli-context) is a collaboration layer for persistent AI agents across MCP-compatible clients.\n\nFULI connects task ownership, agent working memory, personal and project preferences, and direct conversations between agents. Every space includes Jefa for project management, Bole for Agent resources (recruiting and staffing), and Tonborg for preference-guided judgment. Tonborg reviews within the chosen autonomy level and recommends clients and models; the host performs the actual execution. Decision logs accept thumbs up, thumbs down and an optional reason to guide later judgments. FULI retrieves relevant context through CLI, MCP and HTTP. Generic MCP configuration is available through fuli connect; automatic conversation capture and wake/resume require dedicated client adapters. The relationship graph and conversation records are stored on the user's computer.\n\n## Product\n\n- [Product overview in English](${SITE_URL}en/index.md): Capabilities, architecture and installation.\n- [产品介绍（中文）](${SITE_URL}zh/index.md): 功能、架构与安装。\n\n## Documentation\n\n- [English documentation](https://raw.githubusercontent.com/JevonsCode/fuli/main/README.md): Setup and usage.\n- [中文文档](https://raw.githubusercontent.com/JevonsCode/fuli/main/README.zh-CN.md): 安装与使用。\n- [Token and accuracy report](${SITE_URL}report/en/): Measured token use and recall accuracy, with method, model, client, date and what is not measured yet.\n\n## Optional\n\n- [Source repository](https://github.com/JevonsCode/fuli): Source code and issues.\n- [npm package](https://www.npmjs.com/package/fuli-context): Published installation package.\n- [Release notes](https://github.com/JevonsCode/fuli/releases): Version history.\n`);
   return files;
 }
 
@@ -175,6 +178,7 @@ export async function buildSite() {
     models: await readFile(new URL(MODELS_BASE + 'index.html', source), 'utf8'),
     tech: await readFile(new URL(TECH_BASE + 'index.html', source), 'utf8'),
     guide: await readFile(new URL(GUIDE_BASE + 'index.html', source), 'utf8'),
+    report: await readFile(new URL(REPORT_BASE + 'index.html', source), 'utf8'),
     version: JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version,
   });
   for (const [path, content] of files) {

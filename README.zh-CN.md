@@ -488,7 +488,8 @@ Agent 上下文。
 
 - `FULI_ALIGNMENT_BENCHMARK.md` 中 A/B 阈值是验收约定；只有完成足量、同条件的真实配对任务
   后，才能声称 Fuli 已降低重复解释或返工；
-- Benchmark 的测试项目和对话是明确标注的 **MOCK / 合成数据**，不是用户或生产数据；
+- Benchmark 的测试项目和对话是明确标注的 **MOCK / 合成数据**，不是用户或生产数据；目前实测的
+  token 用量和召回准确率（合成项目、小样本，只能看趋势）见[实测报告](https://xn--8ovp9s.xn--m8txu.com/fuli/report/)；
 - 当前决策工具可在首次记录时附带验证，但还没有面向既有 `Decision` 单独追加不可变验证结果
   的专用入口；
 - 安装文件不等于宿主已加载、信任或执行。Claude Code 和 Codex 适配器会生成入口/Stop Hook
@@ -840,6 +841,7 @@ checkpoint，但只有真实连接后的 Claude 会话才能证明该行为。
 ## 验收与源码开发
 
 - [Alignment Benchmark](FULI_ALIGNMENT_BENCHMARK.md)
+- [Token 与准确率实测报告](https://xn--8ovp9s.xn--m8txu.com/fuli/report/)：多花多少 token、召回准不准，写明方法、模型、客户端、日期和还没测的部分
 - [中文验收索引](acceptance/README.md)
 - [知识检索与确认流程图](acceptance/知识检索与确认流程图.md)
 - [外部知识库只读接入架构](docs/external-knowledge-architecture.md)

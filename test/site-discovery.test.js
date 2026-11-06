@@ -6,7 +6,7 @@ import { createSitePages } from '../scripts/build-site.js';
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const template = read('../site/index.html');
-const pages = () => createSitePages({ home: template, preview: read('../site/next/index.html'), models: read('../site/models/index.html'), tech: read('../site/tech/index.html'), guide: read('../site/guide/index.html'), version: '0.0.0-beta.0' });
+const pages = () => createSitePages({ home: template, preview: read('../site/next/index.html'), models: read('../site/models/index.html'), tech: read('../site/tech/index.html'), guide: read('../site/guide/index.html'), report: read('../site/report/index.html'), version: '0.0.0-beta.0' });
 const base = 'https://xn--8ovp9s.xn--m8txu.com/fuli/';
 
 test('each language is complete without JavaScript and has reciprocal discovery links', () => {
@@ -50,7 +50,7 @@ test('sitemap and machine-readable summaries describe the same public product', 
   const files = pages();
   assert.deepEqual(files, pages(), 'Generation is deterministic');
   const sitemap = files.get('sitemap.xml');
-  for (const path of ['', 'zh/', 'en/', 'next/', 'next/zh/', 'next/en/', 'models/', 'models/zh/', 'models/en/', 'tech/', 'tech/zh/', 'tech/en/', 'guide/', 'guide/zh/', 'guide/en/']) assert.ok(sitemap.includes(`<loc>${base}${path}</loc>`));
+  for (const path of ['', 'zh/', 'en/', 'next/', 'next/zh/', 'next/en/', 'models/', 'models/zh/', 'models/en/', 'tech/', 'tech/zh/', 'tech/en/', 'guide/', 'guide/zh/', 'guide/en/', 'report/', 'report/zh/', 'report/en/']) assert.ok(sitemap.includes(`<loc>${base}${path}</loc>`));
   assert.doesNotMatch(sitemap, /127\.0\.0\.1|localhost|v0/);
   assert.match(files.get('llms.txt'), /AI agent/);
   assert.ok(files.get('llms.txt').includes(base + 'en/index.md'));
@@ -129,6 +129,26 @@ test('the quick start walks through install, connect, use, an optional model and
   });
 });
 
+test('the report shows each measured number with its method folded beside it, and keeps a spot for Tonborg', () => {
+  assertGuidePages('report', (document, locale) => {
+    assert.deepEqual([...document.querySelectorAll('main > section[id]')].map(node => node.id), ['tokens', 'recall', 'outcome', 'tonborg', 'history', 'gaps', 'related']);
+    assert.deepEqual([...document.querySelectorAll('#tokens .stat b')].map(node => node.textContent), ['1.53×', '1.42×', '24.3 KB']);
+    assert.match(document.querySelector('#recall').textContent, /25\/32/);
+    assert.match(document.querySelector('#outcome').textContent, /18\/18/);
+    // Every measured section names its method in a fold; the key numbers stay outside it.
+    for (const id of ['tokens', 'recall', 'outcome']) {
+      const method = document.querySelector(`#${id} details.fold`).textContent;
+      assert.match(method, /20\d\d-\d\d-\d\d/, id);
+      assert.equal(document.querySelector(`#${id} details .table-wrap`), null, id);
+    }
+    assert.ok(document.querySelector('#tonborg #tonborg-strong.is-pending'));
+    assert.ok(document.querySelector('#tonborg').textContent.includes('60.4%'));
+    assert.ok(document.querySelectorAll('#gaps li').length >= 4);
+    const models = document.querySelector('#related [data-i18n="report.related.models"]').href;
+    assert.equal(models, base + 'models/' + (locale === 'en' ? 'en/' : ''));
+  });
+});
+
 test('the home and preview pages link the guide pages in their own language', () => {
   const files = pages();
   for (const [path, suffix] of [['index.html', ''], ['en/index.html', 'en/'], ['next/index.html', ''], ['next/en/index.html', 'en/']]) {
@@ -136,5 +156,7 @@ test('the home and preview pages link the guide pages in their own language', ()
     assert.equal(document.querySelector('.footer [data-i18n="footer.models"]').href, base + 'models/' + suffix, path);
     assert.equal(document.querySelector('.footer [data-i18n="footer.tech"]').href, base + 'tech/' + suffix, path);
     assert.equal(document.querySelector('.footer [data-i18n="footer.guide"]').href, base + 'guide/' + suffix, path);
+    assert.equal(document.querySelector('.footer [data-i18n="footer.report"]').href, base + 'report/' + suffix, path);
+    assert.equal(document.querySelector('.principles .principle-link').href, base + 'report/' + suffix, path);
   }
 });
