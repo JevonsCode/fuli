@@ -52,7 +52,7 @@ export function createNeedsPersonNotifier({ readUrl, consoleUrl = '', fetchImpl 
       if (record?.status !== 'open' || !record.requestId) return Promise.resolve('skipped');
       let url;
       try { url = normalizeNeedsPersonUrl(readUrl()); } catch { return Promise.resolve('invalid_url'); }
-      const event = needsPersonEvent(record, { consoleUrl });
+      const event = needsPersonEvent(record, { consoleUrl: typeof consoleUrl === 'function' ? consoleUrl() : consoleUrl });
       if (!url || sent.has(event.id)) return Promise.resolve(url ? 'duplicate' : 'off');
       sent.add(event.id);
       if (sent.size > SENT_LIMIT) sent.delete(sent.values().next().value);
