@@ -47,7 +47,7 @@ test('the preview page is built at /next/ in Chinese by default and in English, 
 // can replace the home page when the release goes stable.
 test('the preview page has every part of the home page and its scroll story', () => {
   const { document } = parseHTML(files.get('next/index.html'));
-  const ids = page => [...page.querySelectorAll('.chapter, [data-overlay], .chapter-nav a, .principles:not(.preview-changes) > div, #fragment-rig')].map(node => node.dataset.scene ?? node.dataset.overlay ?? node.getAttribute('href') ?? node.id ?? '');
+  const ids = page => [...page.querySelectorAll('.chapter, [data-overlay], .chapter-nav a, #fragment-rig')].map(node => node.dataset.scene ?? node.dataset.overlay ?? node.getAttribute('href') ?? node.id ?? '');
   assert.deepEqual(ids(document), ids(home));
   for (const link of document.querySelectorAll('.nav nav > a[href^="#"], .chapter-nav a')) assert.ok(document.querySelector(link.getAttribute('href')), link.getAttribute('href'));
   assert.equal(document.querySelector('.brand').getAttribute('href'), '#top');

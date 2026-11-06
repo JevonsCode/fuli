@@ -267,26 +267,6 @@
 .receipt-plate b {
   color: #0f6b55;
 }
-.handoff-overlay .client-left { left: 50%; top: 30%; }
-.handoff-overlay .client-right { left: 86%; top: 30%; }
-.handoff-overlay .agent-center { left: 68%; top: 22%; color: #0f6b55; }
-.handoff-overlay .agent-center strong { display: block; font-size: 34px; letter-spacing: -0.03em; }
-.handoff-arrow {
-  position: absolute;
-  left: 58%;
-  top: 75%;
-  width: 20%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #8bc1a8 30%, #8bc1a8 70%, transparent);
-}
-.handoff-arrow::after {
-  content: "";
-  position: absolute;
-  right: 18%;
-  top: -4px;
-  border: 5px solid transparent;
-  border-left: 8px solid #8bc1a8;
-}
 .roundtable-overlay .table-center { left: 68%; top: 52%; color: #d2e7db; }
 .roundtable-overlay .table-center strong { display: block; font-size: 30px; letter-spacing: 0.02em; }
 .roundtable-overlay .whisper {
@@ -303,11 +283,6 @@
 .roundtable-overlay .whisper b { color: #8bc1a8; font-weight: 600; margin-right: 6px; }
 .roundtable-overlay .whisper-a { left: 76%; top: 18%; }
 .roundtable-overlay .whisper-b { left: 48%; top: 74%; border-radius: 12px 4px 12px 12px; }
-.taste-overlay .layer-global { left: 52%; top: 72%; }
-.taste-overlay .layer-project { left: 84%; top: 26%; color: #0f6b55; }
-.memory-overlay .mem-recent { left: 54%; top: 26%; }
-.memory-overlay .mem-digest { left: 84%; top: 32%; color: #0f6b55; }
-.memory-overlay .mem-note { left: 68%; top: 84%; font-size: 13px; font-weight: 500; color: #3a7c5c; }
 
 @media (min-width: 1700px) {
   .scene-perspective { --scene-scale: 1.45; }
@@ -330,19 +305,9 @@
   .object-shadow { left: 14%; top: 88%; width: 72%; height: 5%; filter: blur(18px); }
   .overlay-label { font-size: 12px; }
   .receipt-plate { left: 50%; top: 90%; font-size: 11px; padding: 7px 12px; }
-  .handoff-overlay .client-left { left: 18%; top: 54%; }
-  .handoff-overlay .client-right { left: 82%; top: 54%; }
-  .handoff-overlay .agent-center { left: 50%; top: 50%; }
-  .handoff-overlay .agent-center strong { font-size: 24px; }
-  .handoff-arrow { left: 30%; top: 90%; width: 40%; }
   .roundtable-overlay .table-center { left: 50%; top: 69%; }
   .roundtable-overlay .table-center strong { font-size: 20px; }
   .roundtable-overlay .whisper { display: none; }
-  .taste-overlay .layer-global { left: 28%; top: 90%; }
-  .taste-overlay .layer-project { left: 76%; top: 52%; }
-  .memory-overlay .mem-recent { left: 24%; top: 52%; }
-  .memory-overlay .mem-digest { left: 76%; top: 56%; }
-  .memory-overlay .mem-note { left: 50%; top: 92%; font-size: 11px; }
 }
 @media (max-width: 380px) {
   .scene-perspective { --scene-scale: 0.58; }

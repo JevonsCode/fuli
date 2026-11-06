@@ -149,18 +149,28 @@ test('the report shows each measured number with its method folded beside it, an
   });
 });
 
-test('the home and preview pages say how an FLA grows, what it grows, and mark what is still coming', () => {
+test('the home story walks through the product in order, with measured numbers and what is still coming', () => {
   const files = pages();
   for (const path of ['index.html', 'en/index.html', 'next/index.html', 'next/en/index.html']) {
     const { document } = parseHTML(files.get(path));
-    const growth = document.querySelector('#growth');
-    assert.ok(document.querySelector('.nav nav a[href="#growth"]'), path);
-    assert.equal(growth.querySelectorAll('.growth-steps > li').length, 3, path);
-    assert.deepEqual([...growth.querySelectorAll('.growth-cards:not(.growth-steps) b')].map(node => node.textContent), ['Workbench', 'Workflow', 'Agent App'], path);
+    assert.deepEqual([...document.querySelectorAll('.chapter')].map(node => node.dataset.scene),
+      ['scatter', 'owner', 'memory', 'growth', 'workbench', 'team', 'roundtable', 'database'], path);
+    for (const link of document.querySelectorAll('.nav nav > a[href^="#"]')) assert.ok(document.querySelector(link.getAttribute('href')), path + link.getAttribute('href'));
+    // Tokens and accuracy: the report's numbers, and the link says plainly that FULI still adds input.
+    assert.deepEqual([...document.querySelectorAll('#memory .chapter-stats b')].map(node => node.textContent), ['24.3 KB', '4/6', '18/18'], path);
+    assert.match(document.querySelector('#memory .chapter-link').textContent, /1.53/, path);
+    assert.equal(document.querySelectorAll('#growth .growth-steps > li').length, 3, path);
+    assert.deepEqual([...document.querySelectorAll('#workbench .growth-cards b')].map(node => node.textContent), ['Workbench', 'Workflow', 'Agent App'], path);
     // Upcoming work sits only under the 即将 / Coming badge, never among the shipped cards.
-    assert.equal(growth.querySelectorAll('.growth-next li').length, 2, path);
-    assert.ok(growth.querySelector('.growth-next .growth-badge'), path);
+    assert.equal(document.querySelectorAll('#workbench .growth-next li').length, 2, path);
+    assert.ok(document.querySelector('#workbench .growth-next .growth-badge'), path);
+    assert.deepEqual([...document.querySelectorAll('#team .member b')].slice(0, 4).map(node => node.textContent), ['Astro', 'Jefa', 'Bole', 'Tonborg'], path);
   }
+  // On the stable page the client downloads lead the hero; npm is one link to the server install.
+  const { document } = parseHTML(files.get('index.html'));
+  assert.deepEqual([...document.querySelectorAll('.hero-actions [data-download-windows], .hero-actions [data-download-macos]')].length, 2);
+  assert.equal(document.querySelector('.hero-actions .hero-server').getAttribute('href'), '#start');
+  assert.equal(document.querySelector('.terminal'), null);
 });
 
 test('the home and preview pages link the guide pages in their own language', () => {
@@ -171,6 +181,6 @@ test('the home and preview pages link the guide pages in their own language', ()
     assert.equal(document.querySelector('.footer [data-i18n="footer.tech"]').href, base + 'tech/' + suffix, path);
     assert.equal(document.querySelector('.footer [data-i18n="footer.guide"]').href, base + 'guide/' + suffix, path);
     assert.equal(document.querySelector('.footer [data-i18n="footer.report"]').href, base + 'report/' + suffix, path);
-    assert.equal(document.querySelector('.principles .principle-link').href, base + 'report/' + suffix, path);
+    assert.equal(document.querySelector('#memory .chapter-link').href, base + 'report/' + suffix, path);
   }
 });

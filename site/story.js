@@ -67,7 +67,7 @@ export function startStory(catalog) {
     })
   }
 
-  const targets = document.querySelectorAll('.principles > div, .start > *')
+  const targets = document.querySelectorAll('.preview-changes > div, .start > *')
   if ('IntersectionObserver' in window) {
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
