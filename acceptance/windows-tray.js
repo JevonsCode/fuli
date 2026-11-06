@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { loadTrayContext } from '../src/desktop/windows-controller.js';
 import { inspectWindowsNativeProcess } from '../src/native-runtime/windows-processes.js';
+import { readReservedPortRanges, reservedRange } from '../src/system/reserved-ports.js';
 import { DEFAULT_RUNTIME_SETTINGS, PORT_KEYS } from '../src/system/runtime-settings.js';
 
 assert.equal(process.platform, 'win32');
@@ -58,8 +59,7 @@ try {
   check('complete candidate hashes, x64 GUI launcher and desktop client, and the console client-configuration launcher verified; status leaves a fresh external data directory absent');
 
   await mkdir(context.dataDir);
-  await writeFile(join(context.dataDir, 'runtime-settings.json'), JSON.stringify({ ...DEFAULT_RUNTIME_SETTINGS,
-    graphRuntimeMode: 'native', ports }));
+  await writeRuntimeSettings(ports);
   await writeFile(join(context.dataDir, 'adaptive-runtime-settings.json'), JSON.stringify({ version: 1, enabled: false }));
   await writeFile(join(context.dataDir, 'graph-provider.env'), 'FULI_NEO4J_MEMORY_PROFILE=low\n');
   running = true;
@@ -73,6 +73,10 @@ try {
   assert.equal((await action('start')).ok, true);
   assert.deepEqual(await processState(), original, 'Repeated start preserves owned process identities');
   check('real controller first/repeated start uses only bundled executables, explicit external data and native ownership');
+
+  // The console answers on the port its settings name, as the process the runtime recorded.
+  await assertConsoleAt(ports.console, launched);
+  check('the console answers /api/health on its configured port as the recorded console process of this version');
 
   const config = await json(join(context.dataDir, 'graph-runtime.json'));
   const request = async (path, body) => {
@@ -100,6 +104,8 @@ try {
   await stopAndVerify();
   check('real controller stop/start recalls the same persisted synthetic graph entity and releases all recorded processes');
 
+  // A console port another program holds: the start moves the console to the
+  // nearest usable port, saves it and leaves that program alone (blocked-port-recovery.js).
   const sockets = new Set();
   const blocker = createServer(socket => {
     sockets.add(socket); socket.once('close', () => sockets.delete(socket));
@@ -107,22 +113,43 @@ try {
   });
   await new Promise(resolveListen => blocker.listen(ports.console, '127.0.0.1', resolveListen));
   try {
-    evidence.inducedPortConflictOccurredAtBeijing = beijingNow();
     running = true;
-    const failed = await action('start');
-    evidence.inducedPortConflictDetectedAtBeijing = beijingNow();
-    assert.equal(failed.ok, false);
-    assert.match(failed.error, /Fuli Graphiti console could not start/);
-    assert.equal(failed.status, 'degraded');
-    assert.equal((await action('stop')).ok, true);
-    running = false;
-    assert.equal(await portOpen(ports.console), true, 'The unrelated conflict listener is still alive');
+    const moved = await action('start');
+    assert.equal(moved.ok, true, moved.error);
+    assert.equal(moved.status, 'running');
+    const saved = (await json(join(context.dataDir, 'runtime-settings.json'))).ports;
+    evidence.occupiedConsolePort = { from: ports.console, to: saved.console };
+    assert.notEqual(saved.console, ports.console);
+    await assertConsoleAt(saved.console, launched);
+    await stopAndVerify(saved);
+    assert.equal(await portOpen(ports.console), true, 'The unrelated listener is still alive');
   } finally {
     for (const socket of sockets) socket.destroy();
     await new Promise(resolveClose => blocker.close(resolveClose));
   }
-  assert.deepEqual(await Promise.all(Object.values(ports).map(portOpen)), PORT_KEYS.map(() => false));
-  check('induced console conflict returns a truthful failed/degraded result; safe stop leaves the unrelated listener untouched');
+  await writeRuntimeSettings(ports);
+  check('an occupied console port moves the console to a usable port that is saved; stop leaves the other program untouched');
+
+  // Windows' own reserved ranges (Hyper-V, WSL, winnat) are only read, never added.
+  const ranges = readReservedPortRanges();
+  const reserved = ranges.find(range => range.end >= 1024 && !Object.values(ports).some(port => reservedRange(port, [range])));
+  if (!reserved) {
+    evidence.reservedConsolePort = 'skipped: Windows reserves no TCP range above 1023 on this machine';
+    process.stdout.write('SKIP ' + evidence.reservedConsolePort + '\n');
+  } else {
+    const port = Math.max(reserved.start, 1024);
+    await writeRuntimeSettings({ ...ports, console: port });
+    running = true;
+    const moved = await action('start');
+    assert.equal(moved.ok, true, moved.error);
+    const saved = (await json(join(context.dataDir, 'runtime-settings.json'))).ports;
+    evidence.reservedConsolePort = { range: reserved, from: port, to: saved.console };
+    assert.equal(reservedRange(saved.console, ranges), null, 'The console left the reserved range');
+    await assertConsoleAt(saved.console, launched);
+    await stopAndVerify(saved);
+    await writeRuntimeSettings(ports);
+    check('a console port inside a range Windows reserves moves out of it on start and is saved; stop releases every port');
+  }
   assert.equal(existsSync(env.FULI_DATA_DIR), false);
   assert.equal(existsSync(join(bundle, 'data')), false);
   await verifyFiles(files);
@@ -142,6 +169,10 @@ try {
   }
 }
 
+async function writeRuntimeSettings(selected) {
+  await writeFile(join(context.dataDir, 'runtime-settings.json'), JSON.stringify({ ...DEFAULT_RUNTIME_SETTINGS,
+    graphRuntimeMode: 'native', ports: selected }));
+}
 function check(message) { evidence.checks.push(message); process.stdout.write('PASS ' + message + '\n'); }
 function beijingNow() { return new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }); }
 async function json(path) { return JSON.parse(await readFile(path, 'utf8')); }
@@ -155,7 +186,7 @@ async function action(name) {
       try { resolveAction(JSON.parse(stdout)); } catch { reject(new Error('Controller did not return JSON: ' + stderr)); }
     }));
 }
-async function stopAndVerify() {
+async function stopAndVerify(selected = ports) {
   const graph = await processState();
   const consoleState = await json(join(context.dataDir, 'graph-runtime-state.json'));
   const result = await action('stop');
@@ -166,7 +197,15 @@ async function stopAndVerify() {
     .flatMap(entry => [entry, ...(entry.relatedProcesses ?? [])]);
   for (const entry of entries) assert.equal(await inspectWindowsNativeProcess(entry.pid), null);
   assert.equal(await inspectWindowsNativeProcess(consoleState.pid), null);
-  assert.deepEqual(await Promise.all(Object.values(ports).map(portOpen)), PORT_KEYS.map(() => false));
+  assert.deepEqual(await Promise.all(Object.values(selected).map(portOpen)), PORT_KEYS.map(() => false));
+}
+// The console answers on this port, as this version and the process the runtime recorded.
+async function assertConsoleAt(port, version) {
+  const health = await fetch('http://127.0.0.1:' + port + '/api/health', { signal: AbortSignal.timeout(30000) })
+    .then(response => response.json());
+  assert.equal(health.service, 'fuli-local-console');
+  assert.equal(health.version, version);
+  assert.equal(health.pid, (await json(join(context.dataDir, 'graph-runtime-state.json'))).pid);
 }
 async function verifyFiles(files) {
   for (const [name, hash] of files) assert.equal(createHash('sha256').update(await readFile(join(bundle, name))).digest('hex'), hash, name);
