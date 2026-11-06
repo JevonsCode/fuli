@@ -257,7 +257,11 @@ test('wait returns an empty page and unchanged cursor on timeout', { timeout: 30
   assert.equal(result.nextAfter, 0);
 });
 
-test('a separate MCP process wait observes a committed message without polling', { timeout: 5000 }, async t => {
+// The child says it is ready only once its wait has subscribed, so the message
+// is committed after the subscription and must arrive through the store's
+// change signal. Nothing here depends on how fast the child starts: the wait
+// ends on the message, and a child that exits early fails the test at once.
+test('a separate MCP process wait observes a committed message without polling', async t => {
   const { spawn } = await import('node:child_process');
   const { once } = await import('node:events');
   const { app } = fixture(t);
@@ -270,16 +274,27 @@ test('a separate MCP process wait observes a committed message without polling',
     import {createChatService} from './packages/roundtable/src/roundtable/chat-service.js';
     const store=createRoundtableStore(process.argv[1]);
     const chat=createChatService({store:store.chat,transaction:store.transaction,scope:'space',transport:'local'});
-    const pending=chat({address:'local:beta'},{action:'wait',chatId:process.argv[2],timeoutSeconds:3});
-    process.send('ready'); process.send(await pending); store.close(); process.disconnect();`;
+    const subscribe=store.chat.subscribe, subscribed=Promise.withResolvers(); let signals=0;
+    store.chat.subscribe=listener=>{const stop=subscribe(error=>{signals++;listener(error);});subscribed.resolve();return stop;};
+    const pending=chat({address:'local:beta'},{action:'wait',chatId:process.argv[2],timeoutSeconds:60});
+    await subscribed.promise; process.send('ready');
+    const page=await pending; process.send({body:page.messages[0]?.body,signals}); store.close(); process.disconnect();`;
   const child = spawn(process.execPath, ['--input-type=module','-e',code,path,room.chatId], { stdio: ['ignore','ignore','pipe','ipc'] });
   t.after(async () => { child.kill(); roundtable.close(); await rm(directory, { recursive: true, force: true }); });
-  assert.deepEqual(await once(child, 'message'), ['ready', undefined]);
-  const result = once(child, 'message');
+  let stderr = '';
+  child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+  const exited = once(child, 'exit').then(([code]) => { throw new Error(`The waiting process exited (${code}) before answering: ${stderr}`); });
+  const next = () => Promise.race([once(child, 'message'), exited]);
+  assert.deepEqual(await next(), ['ready', undefined]);
+  const result = next();
   await roundtable.chat({ taskContextToken: 'alpha', sourceApplication: 'codex', action: 'send',
     chatId: room.chatId, requestId: 'process-send', body: 'committed cross process' });
-  assert.equal((await result)[0].messages[0].body, 'committed cross process');
-  await once(child, 'exit');
+  const [{ body, signals }] = await result;
+  assert.equal(body, 'committed cross process');
+  // macOS can drop a file event written just after its watcher starts; the
+  // store's recheck then delivers it (chat-wait.js). Elsewhere the signal must.
+  if (process.platform !== 'darwin') assert.ok(signals > 0, 'the cross-process change signal woke the wait');
+  await exited.catch(() => {});
 });
 
 test('cancelled waits release their storage subscriptions', async t => {

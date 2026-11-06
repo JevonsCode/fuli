@@ -14,11 +14,12 @@ import { runWithAgentRequestContext } from '../src/app/agent-request-context.js'
 // native stream is initialized; the claim or the next hook then hands the
 // transcript to the entered task, whose import writes its conversation.
 //
-// No outcome here depends on how fast the machine is. The begin is cut short
-// by the event that cuts a capture window, an abort that its own (never
-// answered) request raises; the steps before it either run under a budget
-// they cannot reach or wait on a read that is never answered.
-async function entryWithCutBegin(t, { initialized = true, sessionRead = 'answered', captureTimeoutMs = 30_000 } = {}) {
+// No outcome here depends on how fast the machine is: no capture window can
+// reach its budget. The begin is cut short by the abort its own (never
+// answered) request raises; the steps before it either complete or, when their
+// session read is never answered, are expired by the hook's signal the way an
+// exhausted budget expires them.
+async function entryWithCutBegin(t, { initialized = true, sessionRead = 'answered' } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'fuli-transcript-deferred-'));
   t.after(() => rm(root, { recursive: true, force: true, maxRetries: 5 }));
   const transcript = join(root, 'session.jsonl');
@@ -27,7 +28,7 @@ async function entryWithCutBegin(t, { initialized = true, sessionRead = 'answere
   const end = Buffer.byteLength(native);
   const current = { token: 'fuli-task-synthetic', project_agent_id: 'engineer', personal_project_id: 'synthetic-project',
     session_id: 'synthetic-session', source_application: 'codex', personal_space_id: 'space' };
-  const cut = new AbortController();
+  const cut = new AbortController(), steps = new AbortController();
   // What the transcript guard held when the begin was sent: the entry recorded ('beginning') or nothing.
   const guardAtBegin = async () => {
     const guards = join(root, 'transcript-guards');
@@ -46,13 +47,15 @@ async function entryWithCutBegin(t, { initialized = true, sessionRead = 'answere
         }
         if (query.mode === 'policy') return { enabled: true };
         if (query.mode === 'session') {
-          return sessionRead === 'hangs' ? new Promise(() => {}) : { initialized, cursor: initialized ? end : 0 };
+          if (sessionRead !== 'hangs') return { initialized, cursor: initialized ? end : 0 };
+          steps.abort();
+          return new Promise(() => {});
         }
         return { status: 'saved', cursor: end };
       } } };
   let conversation;
   await transcriptLifecycle({ application, runtimeConfigPath: join(root, 'runtime.json'), event: 'UserPromptSubmit',
-    sourceApplication: 'codex', captureTimeoutMs,
+    sourceApplication: 'codex', captureTimeoutMs: 30_000, signal: steps.signal,
     input: { session_id: 'synthetic-session', cwd: root, prompt: 'Synthetic task.', transcript_path: transcript },
     adapter: { normalize: normalizeCodexRecord, verify: verifyCodexTranscript },
     run: async onContext => {
@@ -75,10 +78,10 @@ test('a fresh session has no guard recording its entry yet, so a begin cut short
     { conversation: ['unsaved', 'begin', 'transcript_capture_timeout'], guard: null });
 });
 
-// The import before the entry may use up its own budget first: the entry then
+// The import before the entry may be cut short first: the entry then
 // runs on the blocked path, which records nothing for the next hook to finish.
-test('when the steps before the entry exhaust their budget, a begin cut short stays unsaved', async t => {
-  assert.deepEqual(await entryWithCutBegin(t, { sessionRead: 'hangs', captureTimeoutMs: 20 }),
+test('when the steps before the entry run out of time, a begin cut short stays unsaved', async t => {
+  assert.deepEqual(await entryWithCutBegin(t, { sessionRead: 'hangs' }),
     { conversation: ['unsaved', 'begin', 'transcript_capture_timeout'], guard: null });
 });
 

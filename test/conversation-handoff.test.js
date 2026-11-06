@@ -64,6 +64,8 @@ async function fixture(t, tail) {
     resolveRuntimeOptions: () => ({ runtimeConfigPath: runtime }),
     openApplication: () => app,
     createLeases: () => ({ withGraphLease: async (_owner, operation) => operation() }),
+    // A budget the hook cannot reach: what it imports must not depend on how fast the machine is.
+    captureTimeoutMs: 30_000,
     callTool: async (_app, name) => { entries.push(name); task = 'new'; return { taskContextToken: 'new' }; }
   });
   return { dir, input, app, run, hook, entries, appended, calls, runtime,
