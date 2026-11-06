@@ -1,0 +1,12 @@
+{
+  "name": "tidewater",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "Relays notifications to email and SMS providers.",
+  "scripts": {
+    "test": "node --test \"spec/**/*.spec.js\"",
+    "fixtures": "node scripts/make-fixtures.mjs",
+    "check": "node scripts/check-codes.mjs"
+  }
+}

@@ -1,0 +1,1 @@
+Environment: this directory is a small Node project on Windows. The shell is Git Bash and `node` (Node 24) and `npm` are on PATH. Do not commit or push; leave your changes in the working tree. When you are done, reply with a short summary of what you changed and the exact test results you observed.
