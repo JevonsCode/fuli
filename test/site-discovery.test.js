@@ -154,7 +154,15 @@ test('the home story walks through the product in order, with measured numbers a
   for (const path of ['index.html', 'en/index.html', 'next/index.html', 'next/en/index.html']) {
     const { document } = parseHTML(files.get(path));
     assert.deepEqual([...document.querySelectorAll('.chapter')].map(node => node.dataset.scene),
-      ['scatter', 'owner', 'memory', 'growth', 'workbench', 'team', 'roundtable', 'database'], path);
+      ['scatter', 'memory', 'knowledge', 'projects', 'owner', 'growth', 'workbench', 'team', 'roundtable', 'database'], path);
+    // 沉淀 and 项目 show real console screens, in both languages, and say what a model changes.
+    for (const id of ['knowledge', 'projects']) {
+      assert.ok(document.querySelector(`#${id} .screen-figure .screen-zh`) && document.querySelector(`#${id} .screen-figure .screen-en`), path + id);
+      assert.ok(document.querySelector(`#${id} .model-modes .is-base`) && document.querySelector(`#${id} .model-modes .is-model`), path + id);
+      assert.ok(document.querySelector(`[data-overlay="${id}"][data-copy="#${id} .screen-figure"]`), path + id);
+    }
+    // The model's lines read the same everywhere: the 接了模型 pill.
+    assert.ok(document.querySelectorAll('.model-modes .is-model .model-tag').length >= 4, path);
     for (const link of document.querySelectorAll('.nav nav > a[href^="#"]')) assert.ok(document.querySelector(link.getAttribute('href')), path + link.getAttribute('href'));
     // Tokens and accuracy: the report's numbers, and the link says plainly that FULI still adds input.
     assert.deepEqual([...document.querySelectorAll('#memory .chapter-stats b')].map(node => node.textContent), ['24.3 KB', '4/6', '18/18'], path);
@@ -180,6 +188,26 @@ test('the home story walks through the product in order, with measured numbers a
   assert.deepEqual([...document.querySelectorAll('.hero-actions [data-download-windows], .hero-actions [data-download-macos]')].length, 2);
   assert.equal(document.querySelector('.hero-actions .hero-server').getAttribute('href'), '#start');
   assert.equal(document.querySelector('.terminal'), null);
+});
+
+test('the install chapter leads with the client: four steps beside real screens, npm folded for servers', () => {
+  const files = pages();
+  for (const [path, lang] of [['index.html', 'zh'], ['en/index.html', 'en']]) {
+    const { document } = parseHTML(files.get(path));
+    const story = document.querySelector('#start .install-story');
+    assert.equal(story.querySelectorAll('.install-steps > li').length, 4, path);
+    // The download drawn first, then six console screens, each in both languages.
+    const frames = [...story.querySelectorAll('.app-frame')];
+    assert.equal(frames.length, 7, path);
+    assert.ok(frames[0].classList.contains('install-download'), path);
+    for (const frame of frames.slice(1)) assert.ok(frame.querySelector('.screen-zh') && frame.querySelector('.screen-en'), path);
+    assert.equal(story.querySelectorAll('.install-static').length, 1, path);
+    assert.ok(story.querySelector('[data-download-windows]') && story.querySelector('[data-download-macos]'), path);
+    // The terminal install is the folded path for servers and VMs.
+    const server = document.querySelector('#start details.install-server');
+    assert.match(server.textContent, /npm install --global fuli-context/, path);
+    assert.ok(document.querySelector(`#start .screen-${lang}`), path);
+  }
 });
 
 test('the home and preview pages link the guide pages in their own language', () => {

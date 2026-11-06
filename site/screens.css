@@ -1,0 +1,42 @@
+/* The client's window around real console screens (site/assets/screens/, synthetic demo data from
+   scripts/site-screenshots.js), and the marks for what a connected model changes. Shared by the
+   story's screen chapters (沉淀, 项目) and the install chapter. Motion is opacity and transform only. */
+:root { --power: #7c3aed; --power-soft: #f1ebff; --power-line: #c9b6f7; }
+
+.app-window { margin: 0; }
+.app-chrome { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border: 1px solid #d9d6ce; border-bottom: 0; border-radius: 14px 14px 0 0; background: #e9ebe6; }
+.app-chrome i { width: 11px; height: 11px; border-radius: 50%; background: #c9cdc6; }
+.app-chrome span { flex: 1; margin-right: 46px; color: #66706a; font-size: 12px; font-weight: 600; text-align: center; letter-spacing: .06em; }
+.app-screen { position: relative; aspect-ratio: 1280 / 800; overflow: hidden; border: 1px solid #d9d6ce; border-top: 0; border-radius: 0 0 14px 14px; background: #f6f5f1; box-shadow: 0 30px 80px rgb(27 31 29 / 18%); }
+.app-frame { position: absolute; inset: 0; opacity: 0; transform: scale(1.015); transition: opacity .5s ease, transform .7s cubic-bezier(.2, .8, .2, 1); }
+.app-frame.is-current, .app-frame.is-static { opacity: 1; transform: none; }
+.app-frame img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top left; }
+html:lang(zh) .screen-en, html:lang(en) .screen-zh { display: none; }
+.app-window figcaption { margin-top: 8px; color: var(--muted); font-size: 12px; text-align: right; }
+
+/* What changes with a model: the same two pills everywhere; the model's lines are violet. */
+.model-modes { display: grid; gap: 8px; max-width: 520px; margin: 18px 0 0; }
+.model-modes div { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 10px; }
+.model-modes dd { margin: 0; color: var(--chapter-soft, var(--ink-soft)); font-size: 14px; line-height: 1.6; }
+.model-modes .is-model dd { color: var(--power); }
+.model-tag { display: inline-block; padding: 1px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; user-select: none; }
+.is-model .model-tag { border-color: var(--power-line); background: var(--power-soft); color: var(--power); }
+.enhanced .roundtable-chapter .model-modes .is-model dd, .enhanced .database-chapter .model-modes .is-model dd { color: #c4b5fd; }
+
+/* In the story: the screen's copy in the 3D stage, like the growth card. */
+.screen-overlay .app-window { position: absolute; left: 70%; top: calc(50svh + 36px); width: min(760px, 52vw); translate: -50% -50%; }
+@media (max-width: 1050px) {
+  .screen-overlay .app-window { left: 72%; width: 50vw; }
+}
+@media (max-width: 700px) {
+  /* On a phone the window sits at the bottom, under the chapter's words. */
+  .screen-overlay .app-window { left: 50%; top: auto; bottom: 14px; width: calc(100vw - 32px); translate: -50% 0; }
+  .model-modes { gap: 6px; margin-top: 12px; }
+  .model-modes dd { font-size: 13px; line-height: 1.5; }
+  .app-chrome { height: 24px; padding: 0 10px; }
+  .app-chrome i { width: 7px; height: 7px; }
+  .app-window figcaption { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-frame { transition: none; }
+}
