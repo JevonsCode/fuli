@@ -10,9 +10,13 @@ export const KNOWLEDGE_KEY = /^(entity|relationship):(.+)$/;
 // The Provider's visible-items limit per read.
 const VISIBILITY_BATCH = 100;
 
-export async function visibleKnowledgeKeys(personal, { personalSpaceId, reader }, keys) {
+// withState: also each visible item's review state (pending, agent_confirmed,
+// confirmed, historical), so a question about an item the person decided
+// elsewhere is not asked again (11-06).
+export async function visibleKnowledgeKeys(personal, { personalSpaceId, reader }, keys, { withState = false } = {}) {
   const asked = [...new Set(keys)].filter(key => KNOWLEDGE_KEY.test(key ?? ''));
   const visible = new Set();
+  const states = new Map();
   try {
     for (let start = 0; start < asked.length; start += VISIBILITY_BATCH) {
       const items = asked.slice(start, start + VISIBILITY_BATCH).map(key => {
@@ -20,11 +24,12 @@ export async function visibleKnowledgeKeys(personal, { personalSpaceId, reader }
         return { item_kind, item_id };
       });
       const answer = await personal.readVisibleKnowledgeItems({ personal_space_id: personalSpaceId, items,
-        ...providerReaderFields(reader) });
+        ...providerReaderFields(reader), ...(withState ? { with_state: true } : {}) });
       for (const item of answer?.items ?? []) visible.add(`${item.item_kind}:${item.item_id}`);
+      for (const item of answer?.states ?? []) states.set(`${item.item_kind}:${item.item_id}`, item.state);
     }
-    return { visible, unavailable: false };
+    return { visible, states, unavailable: false };
   } catch {
-    return { visible, unavailable: true };
+    return { visible, states, unavailable: true };
   }
 }

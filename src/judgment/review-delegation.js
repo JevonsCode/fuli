@@ -4,6 +4,7 @@ import { EmployeeError } from '../employees/manifest.js';
 import { TONBORG_OPERATIONS } from './backend.js';
 import { isOpenQuestion } from './conversation.js';
 import { parse } from './service.js';
+import { visibleKnowledgeKeys } from './visible-items.js';
 
 // 「交给 Tonborg 确认」 (rec#96): the person hands knowledge review to
 // Tonborg. With it on, Tonborg's scheduled review decides the clear items the
@@ -65,10 +66,11 @@ export async function setReviewDelegation({ judgment, modelTrust, input }) {
 
 // What the person's list shows of Tonborg's delegated work: the items it
 // confirmed and the questions it asks, the newest review of each item only.
-// One the person already voted on, undid, or that went stale is done.
-// The console joins these with the items still pending, so a question about
-// an item the person handled elsewhere is not asked again.
-export async function delegatedReviewList({ judgment, input }) {
+// One the person already voted on, undid, or that went stale is done, and so
+// is one whose item they confirmed, dropped or replaced elsewhere (11-06: after
+// 全部确认 the list still named them, and the Agents kept asking); a
+// confirmation stays listed only while the item is still Tonborg's.
+export async function delegatedReviewList({ judgment, personal = null, input }) {
   const { personalSpaceId } = parse(readInput, input);
   await judgment.scope({ personalSpaceId });
   const seen = new Set();
@@ -84,5 +86,14 @@ export async function delegatedReviewList({ judgment, input }) {
     if (record.execution.status === 'applied') confirmed.push(entry);
     else if (isOpenQuestion(record)) questions.push(entry);
   }
-  return { confirmed, questions };
+  if (!personal) return { confirmed, questions };
+  // A failed read keeps every entry: the console joins them with the items it shows.
+  const { states } = await visibleKnowledgeKeys(personal, { personalSpaceId, reader: null },
+    [...confirmed, ...questions].map(entry => entry.target), { withState: true });
+  const current = (entry, kind) => {
+    const state = states.get(entry.target);
+    return state === undefined || (kind === 'confirmed' ? state === 'agent_confirmed' : state === 'pending');
+  };
+  return { confirmed: confirmed.filter(entry => current(entry, 'confirmed')),
+    questions: questions.filter(entry => current(entry, 'question')) };
 }

@@ -48,7 +48,7 @@ export async function agentJudgmentView(personal, result, { personalSpaceId, rea
   const listed = Array.isArray(result?.records);
   const records = listed ? result.records : [result];
   const targets = await visibleKnowledgeKeys(personal, { personalSpaceId, reader },
-    records.filter(record => record.kind === 'review').map(record => record.target));
+    records.filter(record => record.kind === 'review').map(record => record.target), { withState: listed });
   const shown = records.map(record => agentRecord(record, targets));
   if (!listed) return shown[0];
   // The question is asked again from what this reader may see; whether the person
@@ -58,8 +58,18 @@ export async function agentJudgmentView(personal, result, { personalSpaceId, rea
   const rest = { ...result };
   delete rest.human_interaction;
   const options = new Map(records.map(record => [record.id, record.options]));
-  return { ...rest, ...judgmentHumanInteraction(shown, personalSpaceId, settledQuestionIds(records), id => options.get(id)),
+  // A question about an item the person already confirmed, dropped or replaced elsewhere is settled too.
+  const settled = settledQuestionIds(records);
+  for (const record of records) if (decidedElsewhere(record, targets.states)) settled.add(record.id);
+  return { ...rest, ...judgmentHumanInteraction(shown, personalSpaceId, settled, id => options.get(id)),
     records: shown };
+}
+
+// The item of a knowledge review no longer waits for the person: they (or an
+// authoritative source) confirmed it, or it ended. Unknown reads as waiting.
+function decidedElsewhere(record, states) {
+  const state = record.kind === 'review' ? states?.get(record.target) : undefined;
+  return state === 'confirmed' || state === 'historical';
 }
 
 function agentRecord(record, targets) {

@@ -57,3 +57,27 @@ async def test_one_item_confirmed_since_the_read_saves_nothing_from_the_review_b
         assert response.status_code == 409, response.text
         for item_id in ids[1:]:
             assert (await view(client, space_id, item_id))['confirmation_status'] == 'pending'
+
+
+@pytest.mark.asyncio
+async def test_visible_items_say_which_ones_still_wait_for_the_person():
+    """Tonborg's questions and confirmations name items the person may have
+    decided elsewhere since (11-06: 全部确认): the read says each one's state."""
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        waiting, confirmed, dropped = await pending_items(client, space_id, 3, 'state')
+        await confirm(client, space_id, confirmed)
+        ok(await client.patch(f'/v1/knowledge/items/{dropped}', json={
+            'personal_space_id': space_id, 'item_kind': 'entity', 'action': 'invalidate',
+            'reason': 'Synthetic drop.', 'operation_actor': 'human'}))
+        missing = f'state-missing-{uuid4()}'
+        keys = [waiting, confirmed, dropped, missing]
+        read = ok(await client.post('/v1/knowledge/visible-items', json={
+            'personal_space_id': space_id, 'with_state': True,
+            'items': [{'item_kind': 'entity', 'item_id': item_id} for item_id in keys]}))
+        assert [(state['item_id'], state['state']) for state in read['states']] == [
+            (waiting, 'pending'), (confirmed, 'confirmed'), (dropped, 'historical')]
+        plain = ok(await client.post('/v1/knowledge/visible-items', json={
+            'personal_space_id': space_id, 'items': [{'item_kind': 'entity', 'item_id': waiting}]}))
+        assert 'states' not in plain

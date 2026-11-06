@@ -214,3 +214,32 @@ test('Tonborg asks in the person\'s language: the console\'s, saved with the swi
   await assert.rejects(setReviewDelegation({ judgment: english.service, modelTrust: english.app.modelTrust,
     input: { personalSpaceId: 's', enabled: true, expectedRevision: off.revision, language: 'fr-FR' } }));
 });
+
+test('an item the person decided elsewhere leaves Tonborg\'s list and is not asked again (11-06: 全部确认)', async t => {
+  const f = fixture(t);
+  await turnOn(f);
+  await f.service.review(input);
+  const states = new Map([['entity:keep', 'agent_confirmed'], ['entity:unsure', 'pending']]);
+  const asked = [];
+  const personal = { readVisibleKnowledgeItems: async request => {
+    asked.push(request.with_state);
+    return { items: request.items, states: request.items.map(item => ({ ...item, state: states.get(`${item.item_kind}:${item.item_id}`) })) };
+  } };
+  const list = () => delegatedReviewList({ judgment: f.service, personal, input: { personalSpaceId: 's' } });
+  assert.deepEqual(Object.values(await list()).map(entries => entries.length), [1, 1]);
+  assert.deepEqual(asked, [true]);
+  const records = f.service.store().records('s', { personalProjectId: 'p' });
+  assert.ok((await agentJudgmentView(personal, { records }, { personalSpaceId: 's' })).human_interaction);
+
+  // The person confirms both through 全部确认: neither is Tonborg's or a question any more.
+  states.set('entity:keep', 'confirmed').set('entity:unsure', 'confirmed');
+  assert.deepEqual(await list(), { confirmed: [], questions: [] });
+  const view = await agentJudgmentView(personal, { records }, { personalSpaceId: 's' });
+  assert.equal(view.human_interaction, undefined);
+
+  // Dropped or replaced reads as history: still not asked. A failed read keeps every entry.
+  states.set('entity:unsure', 'historical');
+  assert.equal((await list()).questions.length, 0);
+  const failing = { readVisibleKnowledgeItems: async () => { throw new Error('provider down'); } };
+  assert.equal((await delegatedReviewList({ judgment: f.service, personal: failing, input: { personalSpaceId: 's' } })).questions.length, 1);
+});

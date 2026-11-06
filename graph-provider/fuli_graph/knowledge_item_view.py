@@ -28,6 +28,7 @@ from .knowledge_item_view_models import (
     KnowledgeTurnReceiptRead,
     KnowledgeVisibleItems,
     KnowledgeVisibleItemsRead,
+    KnowledgeVisibleItemState,
     KnowledgeWeightBasis,
 )
 from .knowledge_management import _read_item
@@ -130,7 +131,44 @@ async def read_visible_items(store, actor: dict, request: KnowledgeVisibleItemsR
     space = await personal_reader_space(store, actor, request.personal_space_id)
     reader = await request_reader(store, actor, space, request)
     visible = await visible_refs(store, space, reader, [(item.item_kind, item.item_id) for item in request.items])
-    return KnowledgeVisibleItems(items=[item for item in request.items if (item.item_kind, item.item_id) in visible])
+    items = [item for item in request.items if (item.item_kind, item.item_id) in visible]
+    if not request.with_state:
+        return KnowledgeVisibleItems(items=items)
+    states = await _review_states(store, space, items)
+    return KnowledgeVisibleItems(items=items, states=[
+        KnowledgeVisibleItemState(item_kind=item.item_kind, item_id=item.item_id,
+                                  state=states.get((item.item_kind, item.item_id), 'pending'))
+        for item in items])
+
+
+# Ended or replaced is history whatever its confirmation says.
+_REVIEW_STATE_QUERIES = {
+    'entity': '''
+        MATCH (item:Entity {group_id: $group_id}) WHERE item.uuid IN $item_ids
+        RETURN item.uuid AS id, item.fuli_invalid_at IS NOT NULL OR item.fuli_replaced_by_item_id IS NOT NULL AS ended,
+               coalesce(item.fuli_confirmation_status, 'pending') AS confirmation_status,
+               item.fuli_confirmation_basis_json AS confirmation_basis_json''',
+    'relationship': '''
+        MATCH ()-[item:RELATES_TO {group_id: $group_id}]->() WHERE item.uuid IN $item_ids
+        RETURN item.uuid AS id, item.invalid_at IS NOT NULL OR item.fuli_replaced_by_item_id IS NOT NULL AS ended,
+               coalesce(item.fuli_confirmation_status, 'pending') AS confirmation_status,
+               item.fuli_confirmation_basis_json AS confirmation_basis_json''',
+}
+
+
+async def _review_states(store, space, items) -> dict[tuple[str, str], str]:
+    states = {}
+    for item_kind, query in _REVIEW_STATE_QUERIES.items():
+        ids = [item.item_id for item in items if item.item_kind == item_kind]
+        if not ids:
+            continue
+        records, _, _ = await store.runtime.driver.execute_query(
+            query, group_id=space['group_id'], item_ids=ids, routing_='r')
+        for record in records:
+            status = effective_confirmation_status(dict(record))
+            states[(item_kind, record['id'])] = ('historical' if record['ended']
+                                                 else status if status in ('agent_confirmed', 'confirmed') else 'pending')
+    return states
 
 
 async def item_summary(store, space, item_kind, item_id, current, *, source_ids,
