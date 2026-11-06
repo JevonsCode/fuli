@@ -235,7 +235,9 @@ RETURN item_id, item.fuli_ai_review_lock_version AS lock_version
 
 
 # Runs after _refuse_items_changed_since_read in the same transaction, which
-# already locked every item and bumped its version.
+# already locked every item and bumped its version. A source or session group
+# confirms only items from that source; the review list ('review') is every
+# pending item the person saw in 待决策, from wherever it came.
 _BATCH_CONFIRM_QUERY = '''
 MATCH (space:FuliSpace {id: $space_id, kind: 'personal'})
 WITH space, $items AS items
@@ -254,12 +256,12 @@ CALL {
     AND item.name = row.expected_name
     AND coalesce(item.summary, '') = row.expected_summary
     AND item.fuli_origin_quadrant = row.expected_origin_quadrant
-    AND EXISTS {
+    AND ($group_kind = 'review' OR EXISTS {
       MATCH (episode:Episodic {group_id: $group_id})-[:MENTIONS]->(item)
       WHERE ($group_kind = 'source' AND episode.uuid = $group_value)
          OR ($group_kind = 'session'
              AND episode.fuli_session_id = $group_value)
-    }
+    })
   RETURN collect({item: item, row: row}) AS valid_entities
 }
 CALL {
@@ -276,7 +278,7 @@ CALL {
     AND coalesce(item.fuli_confirmation_status, 'pending') = 'pending'
     AND item.fact = row.expected_fact
     AND item.fuli_origin_quadrant = row.expected_origin_quadrant
-    AND EXISTS {
+    AND ($group_kind = 'review' OR EXISTS {
       MATCH (episode:Episodic {group_id: $group_id})
       WHERE episode.uuid IN coalesce(item.episodes, [])
         AND (
@@ -284,7 +286,7 @@ CALL {
           OR ($group_kind = 'session'
               AND episode.fuli_session_id = $group_value)
         )
-    }
+    })
   RETURN collect({item: item, row: row}) AS valid_relationships
 }
 WITH space, items, valid_entities, valid_relationships,

@@ -1,14 +1,16 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-import { apiErrorReason } from '@/api/client'
+import { ApiError, apiErrorReason } from '@/api/client'
 import { knowledgeItems } from '@/features/knowledge/model'
 import { confirmKnowledgeItem } from '@/features/knowledge/useKnowledgeConfirm'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeItem } from '@/types'
 
-import { dropKnowledgeItem, readDelegatedReviews, readSpaceKnowledge, undoTonborgReview, voteOnReview } from './review-api'
+import {
+  CONFIRM_BATCH, confirmReviewBatch, dropKnowledgeItem, readDelegatedReviews, readSpaceKnowledge, undoTonborgReview, voteOnReview,
+} from './review-api'
 import {
   agreesWithGuess, buildReviewList, guessedAction, oneLine, reviewTotal,
   type DelegatedReviews, type ReviewAction, type ReviewLine,
@@ -16,6 +18,8 @@ import {
 
 const EMPTY: DelegatedReviews = { confirmed: [], questions: [] }
 const TOAST_TEXT = 24
+/** Votes on Tonborg's guesses sent at once after a whole group is handled. */
+const VOTES_AT_ONCE = 4
 
 /**
  * What waits for the person in the active space (rec#96), read once for the
@@ -32,6 +36,8 @@ export const useReviewList = defineStore('review-list', () => {
   const error = ref('')
   /** The line key (or a whole group's name) whose action is pending, and which action. */
   const pending = ref<Record<string, ReviewAction | 'undo' | 'ack'>>({})
+  /** How far a whole group's action got, counted from the requests that came back. */
+  const progress = ref<Record<string, { done: number; total: number }>>({})
   let version = 0
 
   const list = computed(() => buildReviewList(items.value, delegated.value))
@@ -41,7 +47,7 @@ export const useReviewList = defineStore('review-list', () => {
     if (spaceId.value === id) return
     version++
     spaceId.value = id; items.value = []; delegated.value = EMPTY
-    loaded.value = false; error.value = ''; pending.value = {}
+    loaded.value = false; error.value = ''; pending.value = {}; progress.value = {}
     if (id) void refresh()
   }
 
@@ -112,19 +118,82 @@ export const useReviewList = defineStore('review-list', () => {
     await vote(line, 'edit').catch(() => {})
   }
 
-  /** 全部确认 / 全按猜的办: one line after another, one toast for all of them. */
+  /** The lines leave the list together: one change, one list animation. */
+  function leave(lines: ReviewLine[]) {
+    const gone = new Set(lines.map(line => line.item))
+    if (gone.size) items.value = items.value.filter(candidate => !gone.has(candidate))
+  }
+
+  /**
+   * Confirms up to CONFIRM_BATCH lines in one request. If the batch is refused
+   * because one item moved since the list read it, each line goes on its own,
+   * so the rest are still confirmed; the lines that went through are returned.
+   */
+  async function confirmBatch(lines: ReviewLine[]) {
+    if (lines.length > 1) {
+      try {
+        await confirmReviewBatch(spaceId.value, lines.map(line => line.item!))
+        return lines
+      } catch (cause) {
+        if (!(cause instanceof ApiError) || cause.status !== 409) throw cause
+      }
+    }
+    const confirmed: ReviewLine[] = []
+    for (const line of lines) {
+      try {
+        await confirmKnowledgeItem(spaceId.value, line.projectId, line.item!)
+        confirmed.push(line)
+      } catch { /* it stays in the list; the read after says why */ }
+    }
+    return confirmed
+  }
+
+  /**
+   * 全部确认 / 全按猜的办 (Jevons 11-06): confirmations go in batches of one
+   * transaction each, the progress counts what came back, the handled lines
+   * leave once per batch, and one toast names the result at the end.
+   */
   async function actAll(group: 'pending' | 'questions') {
-    const lines = list.value[group]
-    let count = 0
-    await guarded(group, 'confirm', async () => {
-      for (const line of lines) {
-        const action = group === 'questions' ? guessedAction(line.review?.guess ?? null) : 'confirm'
-        // A guess to edit needs the person's own words; it stays in the list.
-        if (action === 'confirm' || action === 'drop') { await apply(line, action); count++ }
+    const chosen = list.value[group].filter(line => line.item).map(line => ({
+      line, action: group === 'questions' ? guessedAction(line.review?.guess ?? null) : 'confirm' as ReviewAction,
+    }))
+    // A guess to edit needs the person's own words; it stays in the list.
+    const confirms = chosen.filter(({ action }) => action === 'confirm').map(({ line }) => line)
+    const drops = chosen.filter(({ action }) => action === 'drop').map(({ line }) => line)
+    const total = confirms.length + drops.length
+    if (!total) return
+    let handled: ReviewLine[] = []
+    let failed = 0
+    const advance = (done: ReviewLine[], tried: number) => {
+      handled = handled.concat(done); failed += tried - done.length
+      progress.value = { ...progress.value, [group]: { done: handled.length + failed, total } }
+      leave(done)
+    }
+    progress.value = { ...progress.value, [group]: { done: 0, total } }
+    const finished = await guarded(group, 'confirm', async () => {
+      for (let start = 0; start < confirms.length; start += CONFIRM_BATCH) {
+        const batch = confirms.slice(start, start + CONFIRM_BATCH)
+        advance(await confirmBatch(batch), batch.length)
+      }
+      for (const line of drops) {
+        const done = await dropKnowledgeItem(spaceId.value, line.projectId, line.item!).then(() => true, () => false)
+        advance(done ? [line] : [], 1)
+      }
+      // Answering Tonborg's questions is also the vote on each guess.
+      const asked = handled.filter(line => line.review?.question)
+      for (let start = 0; start < asked.length; start += VOTES_AT_ONCE) {
+        await Promise.all(asked.slice(start, start + VOTES_AT_ONCE).map(line =>
+          vote(line, drops.includes(line) ? 'drop' : 'confirm').catch(() => {})))
       }
     })
-    if (count) consoleStore.notify(t('reviewList.done.all', { count }))
-    await refresh()
+    const { [group]: _finished, ...rest } = progress.value
+    progress.value = rest
+    // A failed request already showed its error; a read then shows what the server kept.
+    if (!finished) return refresh()
+    if (failed) {
+      consoleStore.notify(t('reviewList.done.partial', { count: handled.length, failed }))
+      await refresh()
+    } else consoleStore.notify(t(`reviewList.done.${group === 'pending' ? 'confirmedAll' : 'all'}`, { count: handled.length }), { to: '/knowledge' })
   }
 
   async function undo(line: ReviewLine) {
@@ -149,6 +218,6 @@ export const useReviewList = defineStore('review-list', () => {
     if (done) delegated.value = { ...delegated.value, confirmed: [] }
   }
 
-  return { spaceId, items, delegated, loaded, loading, error, pending, list, total,
+  return { spaceId, items, delegated, loaded, loading, error, pending, progress, list, total,
     setSpace, refresh, act, edit, actAll, undo, acknowledgeConfirmed }
 })

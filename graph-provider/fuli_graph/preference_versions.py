@@ -46,24 +46,37 @@ async def _preferences(store, space, query, **parameters) -> list[dict]:
                                                               record['item_id'])} for record in records]
 
 
+_SAME_SCOPE_QUERY = ' UNION ALL '.join(query.replace('$where', _SAME_SCOPE) for query in (_ENTITIES, _RELATIONSHIPS))
+
+
 def _named(item_kind) -> str:
     return (_ENTITIES if item_kind == 'entity' else _RELATIONSHIPS).replace('$where', 'item.uuid IN $item_ids')
 
 
-async def end_older_preferences(scoped, actor, space, item_kind, item_id, *, changed_by, created_at) -> list[dict]:
+async def end_older_preferences(scoped, actor, space, item_kind, item_id, *, changed_by, created_at,
+                                scopes: dict | None = None) -> list[dict]:
     """Make the confirmed preference `item_id` the only current one of its key
-    and scope, inside the caller's transaction. Returns the items it ended."""
+    and scope, inside the caller's transaction. Returns the items it ended.
+
+    A caller settling many items in one transaction passes one `scopes` dict:
+    each scope's current preferences are then read once (11-06: 全部确认 read
+    every preference of the scope again for each item) and kept current here
+    as items end, so every item sees what a fresh read would show."""
     found = await _preferences(scoped, space, _named(item_kind), item_ids=[item_id])
     if not found or found[0]['confirmation_status'] != 'confirmed':
         return []
     new = found[0]
     await lock_knowledge(scoped, space)
-    same_scope = ' UNION ALL '.join(query.replace('$where', _SAME_SCOPE + ' AND item.uuid <> $item_id')
-                                    for query in (_ENTITIES, _RELATIONSHIPS))
+    scope = (new['preference_scope'], new['preference_project_id'], new['preference_agent_id'])
+    current = scopes.get(scope) if scopes is not None else None
+    if current is None:
+        current = await _preferences(scoped, space, _SAME_SCOPE_QUERY, scope=scope[0], project_id=scope[1],
+                                     agent_id=scope[2])
+        if scopes is not None:
+            scopes[scope] = current
     ended = []
-    for old in await _preferences(scoped, space, same_scope, item_id=item_id, scope=new['preference_scope'],
-                                  project_id=new['preference_project_id'], agent_id=new['preference_agent_id']):
-        if old['preference_key'] == new['preference_key']:
+    for old in list(current):
+        if old['item_id'] != item_id and old['preference_key'] == new['preference_key']:
             old_kind = old['item_kind']
             await _end(scoped, space, old_kind, old['item_id'], item_kind, item_id, created_at)
             await record_version_revision(
@@ -77,7 +90,15 @@ async def end_older_preferences(scoped, actor, space, item_kind, item_id, *, cha
                          'preferenceReplacement': {'preferenceKey': new['preference_key']}},
                 changed_by=changed_by, created_at=created_at)
             ended.append({'item_kind': old_kind, 'item_id': old['item_id']})
+            current.remove(old)
     return ended
+
+
+def forget_ended(scopes: dict, ended: list[dict]) -> None:
+    """Items another rule ended in the same transaction are no longer current."""
+    gone = {(item['item_kind'], item['item_id']) for item in ended}
+    for current in scopes.values():
+        current[:] = [item for item in current if (item['item_kind'], item['item_id']) not in gone]
 
 
 async def _end(scoped, space, item_kind, item_id, replaced_by_kind, replaced_by_id, created_at) -> None:

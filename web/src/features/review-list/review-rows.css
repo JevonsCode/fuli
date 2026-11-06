@@ -4,6 +4,7 @@
 .review-group { gap: 8px; padding-block: 14px 8px; }
 .review-group__header { align-items: center; }
 .review-group__title {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   margin: 0; color: var(--color-muted); font-size: var(--text-meta); font-weight: var(--weight-medium);
   letter-spacing: 0.02em; user-select: none;
 }
@@ -30,8 +31,21 @@
 /* Every row of a group has the same buttons in the same places. */
 .review-row__actions { display: inline-flex; align-items: center; gap: 6px; user-select: none; }
 .review-row__note { grid-column: 1 / -1; }
-/* The slot a pending action's indicator shows in, reserved so no button moves. */
+/* The slot a pending action's indicator shows in, reserved so no button moves.
+   In a row the mark alone shows; its words are its accessible name, as in a
+   loading button (11-06: the words wrapped one character per line here). */
 .review-busy { display: inline-flex; width: 16px; justify-content: center; }
+.review-busy .growth-loading .growth-loading__label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+/* A whole group's progress (「正在确认 32/75」) is one short line left of its
+   button: it takes room from the title side only, so the button keeps its
+   place, and it never wraps. */
+.review-busy--progress { width: auto; min-width: 16px; max-width: 12em; justify-content: flex-end; }
+.review-busy--progress .growth-loading .growth-loading__label {
+  position: static; width: auto; height: auto; clip: auto; min-width: 0;
+  font-size: var(--text-meta); font-variant-numeric: tabular-nums; text-overflow: ellipsis;
+}
 /* Narrow: the words take the whole width; the actions keep their order on their own line. */
 @container (max-width: 720px) {
   .review-row { grid-template-columns: minmax(0, 1fr); row-gap: 4px; padding-block: 10px; }

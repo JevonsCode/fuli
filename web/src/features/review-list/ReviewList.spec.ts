@@ -47,7 +47,7 @@ const mountList = async () => {
   return wrapper
 }
 const row = (wrapper: Awaited<ReturnType<typeof mountList>>, key: string) => wrapper.get(`[data-review-line="${key}"]`)
-const button = (scope: { findAll: (selector: string) => Array<{ text: () => string; trigger: (event: string) => Promise<void> }> }, text: string) =>
+const button = (scope: { findAll: (selector: string) => Array<{ text: () => string; trigger: (event: string) => Promise<void>; attributes: (name: string) => string | undefined }> }, text: string) =>
   scope.findAll('button').find(candidate => candidate.text() === text)!
 
 describe('ReviewList', () => {
@@ -81,6 +81,72 @@ describe('ReviewList', () => {
     await button(wrapper.get('[data-review-group=questions]'), '全按猜的办').trigger('click'); await flushPromises()
     expect(patchJson).toHaveBeenCalledWith('/api/knowledge/entity/asked', expect.objectContaining({ action: 'invalidate' }))
     expect(postJson).toHaveBeenCalledWith('/api/judgment/feedback', expect.objectContaining({ decisionId: 'decision-entity:asked', vote: 'up' }))
+  })
+
+  describe('全部确认 (Jevons 11-06: 75 items were extremely slow)', () => {
+    const many = (count: number) => Array.from({ length: count }, (_, index) => node(`bulk-${String(index).padStart(3, '0')}`))
+    const batches = () => postJson.mock.calls.filter(([url]) => url === '/api/knowledge/batch-confirmation')
+    const graphReads = () => getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/graph?')).length
+
+    it('confirms in batches of one request each, without a request or a list read per item', async () => {
+      nodes = many(60)
+      delegated = { questions: [], confirmed: [] }
+      const wrapper = await mountList()
+      const reads = graphReads()
+      await button(wrapper.get('[data-review-group=pending]'), '全部确认').trigger('click'); await flushPromises()
+      expect(batches().map(([, body]) => body.items.length)).toEqual([25, 25, 10])
+      expect(batches()[0]![1]).toEqual(expect.objectContaining({ personalSpaceId: 'space-a', groupKind: 'review', groupValue: 'pending',
+        confirmer: expect.objectContaining({ kind: 'user' }) }))
+      expect(batches()[0]![1].items[0]).toEqual(expect.objectContaining({ itemId: 'bulk-000', itemKind: 'entity', existenceReason: 'Synthetic.' }))
+      expect(patchJson).not.toHaveBeenCalled()
+      expect(graphReads()).toBe(reads)
+      expect(wrapper.find('[data-review-group=pending]').exists()).toBe(false)
+      expect(useConsoleStore().feedback).toEqual(expect.objectContaining({ message: '已确认 60 条知识', link: { to: '/knowledge' } }))
+    })
+
+    it('shows one short progress line counted from the batches that came back, and holds the rows meanwhile', async () => {
+      nodes = many(30)
+      delegated = { questions: [], confirmed: [] }
+      const answers: Array<() => void> = []
+      postJson.mockImplementation((url: string) => url === '/api/knowledge/batch-confirmation'
+        ? new Promise(resolve => answers.push(() => resolve({}))) : Promise.resolve({}))
+      const wrapper = await mountList()
+      const group = () => wrapper.get('[data-review-group=pending]')
+      await button(group(), '全部确认').trigger('click'); await flushPromises()
+      const label = () => group().get('.review-busy--progress [role=status]').attributes('aria-label')
+      expect(label()).toBe('正在确认 0/30')
+      expect(group().findAll('.review-busy--progress [role=status]')).toHaveLength(1)
+      expect(button(group(), '全部确认').attributes('disabled')).toBeDefined()
+      expect(button(row(wrapper, 'entity:bulk-029'), '确认').attributes('disabled')).toBeDefined()
+      answers.shift()!(); await flushPromises()
+      expect(label()).toBe('正在确认 25/30')
+      expect(wrapper.find('[data-review-line="entity:bulk-000"]').exists()).toBe(false)
+      expect(wrapper.find('[data-review-line="entity:bulk-029"]').exists()).toBe(true)
+      answers.shift()!(); await flushPromises()
+      expect(wrapper.find('.review-busy--progress [role=status]').exists()).toBe(false)
+    })
+
+    it('goes item by item through a batch refused because one moved, and keeps the one that failed', async () => {
+      nodes = many(3)
+      delegated = { questions: [], confirmed: [] }
+      const { ApiError } = await import('@/api/client')
+      postJson.mockImplementation(async (url: string) => {
+        if (url === '/api/knowledge/batch-confirmation') throw new ApiError('changed since read', 409)
+        return {}
+      })
+      patchJson.mockImplementation(async (url: string) => {
+        if (url.endsWith('/bulk-001')) throw new ApiError('already confirmed', 409)
+        return {}
+      })
+      const wrapper = await mountList()
+      await button(wrapper.get('[data-review-group=pending]'), '全部确认').trigger('click')
+      nodes = [nodes[1]!]
+      await flushPromises()
+      expect(patchJson.mock.calls.map(([url]) => url)).toEqual(['/api/knowledge/entity/bulk-000', '/api/knowledge/entity/bulk-001',
+        '/api/knowledge/entity/bulk-002'])
+      expect(useConsoleStore().feedback?.message).toBe('已处理 2 条，1 条没成功，还在列表里')
+      expect(wrapper.findAll('[data-review-line]').map(line => line.attributes('data-review-line'))).toEqual(['entity:bulk-001'])
+    })
   })
 
   it('undoes one of Tonborg\'s confirmations, and 都对 records the person agrees', async () => {
