@@ -275,11 +275,31 @@ watchEffect(() => {
 /* Quiet round buttons for the top-right destinations; only the current one is ink. */
 .app-round {
   position: relative; display: grid; width: 36px; height: 36px; place-items: center; border-radius: 50%;
-  color: var(--color-ink-soft); background: transparent; text-decoration: none;
+  color: var(--color-ink-soft); background: transparent; text-decoration: none; isolation: isolate;
   transition: color var(--motion-fast), background var(--motion-fast);
 }
 .app-round:hover { color: var(--color-ink); background: var(--color-surface-hover); }
-.app-round.is-active { color: var(--color-on-accent); background: var(--color-accent); }
+/* The current page (Jevons 11-06: not a solid black disc): two quick strokes of honey crayon
+   scribbled under the ink icon, rough-edged and grainy like wax on paper, inside the button.
+   They are drawn on like a hand would: the first stroke left to right, then the crayon comes
+   back right to left for the second. */
+.app-round.is-active, .app-round.is-active:hover { color: var(--color-ink); background: transparent; }
+.app-round.is-active::before, .app-round.is-active::after {
+  content: ''; position: absolute; inset: 3px; z-index: -1; pointer-events: none;
+  background: var(--color-scribble);
+  -webkit-mask: var(--scribble-stroke) center / contain no-repeat;
+  mask: var(--scribble-stroke) center / contain no-repeat;
+}
+.app-round.is-active::before {
+  --scribble-stroke: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Cfilter id='c' x='-20%25' y='-20%25' width='140%25' height='140%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.15' numOctaves='2' seed='4' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='2.4' result='d'/%3E%3CfeColorMatrix in='n' type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -1.6 1.85' result='g'/%3E%3CfeComposite in='d' in2='g' operator='in'/%3E%3C/filter%3E%3Cpath filter='url(%23c)' d='M8 20.5C13 15 19 12 27.5 9.5' fill='none' stroke='%23000' stroke-width='4.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  animation: app-round-scribble-across 200ms cubic-bezier(.4, 0, .6, 1) both;
+}
+.app-round.is-active::after {
+  --scribble-stroke: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Cfilter id='c' x='-20%25' y='-20%25' width='140%25' height='140%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.15' numOctaves='2' seed='4' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='2.4' result='d'/%3E%3CfeColorMatrix in='n' type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -1.6 1.85' result='g'/%3E%3CfeComposite in='d' in2='g' operator='in'/%3E%3C/filter%3E%3Cpath filter='url(%23c)' d='M9 28.5C14.5 23 21 20 29 18' fill='none' stroke='%23000' stroke-width='4.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  animation: app-round-scribble-back 220ms cubic-bezier(.4, 0, .6, 1) 160ms both;
+}
+@keyframes app-round-scribble-across { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+@keyframes app-round-scribble-back { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0); } }
 /* A full tray reads in ink on a filled disc (Jevons 11-06), and every twelve seconds it gives a
    short wiggle so waiting decisions are noticed; its papers drop in when it fills (reduced
    motion zeroes this in primitives.css). */
@@ -291,9 +311,6 @@ watchEffect(() => {
 .app-round.is-full :deep(.tray-front) { fill: currentColor; }
 .app-round.is-full :deep(.tray-slot) { stroke: var(--color-surface); stroke-width: 1.5; }
 .app-round.is-full :deep(.tray-grain) { stroke: none; }
-/* Lit on its own page: white tray on the dark disc, the rice a light grey so it still reads. */
-.app-round.is-active.is-full :deep(.tray-rice-mound), .app-round.is-active.is-full :deep(.tray-rice-spill) { fill: var(--color-accent-soft); }
-.app-round.is-active.is-full :deep(.tray-slot) { stroke: var(--color-accent); }
 .app-round.is-full :deep(.tray-grain--1) { fill: var(--color-power-mid); }
 .app-round.is-full :deep(.tray-grain--2) { fill: var(--color-glitch-cyan); }
 .app-round.is-full :deep(.tray-grain--3) { fill: var(--color-gold); }

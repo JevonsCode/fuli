@@ -35,6 +35,9 @@ abstract final class FuliColors {
   static const glowPower = Color(0xFFC4B5FD);
   static const glitchCyan = Color(0xFF22D3EE);
   static const glitchMagenta = Color(0xFFF472B6);
+  static const scribble = Color(0xFFF0C44F);
+  static const reticleFrom = Color(0xFF22D3EE);
+  static const reticleTo = Color(0xFF8B5CF6);
   static const warning = Color(0xFF8A5A12);
   static const warningSoft = Color(0xFFF8F0E0);
   static const danger = Color(0xFFA8392E);

@@ -73,6 +73,11 @@
   --color-glow-power: #c4b5fd;
   --color-glitch-cyan: #22d3ee;
   --color-glitch-magenta: #f472b6;
+  /* The current top-right page (Jevons 11-06): two quick strokes of honey crayon under the icon,
+     not a solid ink disc. The model page instead gets a small cyan-to-violet targeting frame. */
+  --color-scribble: #f0c44f;
+  --color-reticle-from: #22d3ee;
+  --color-reticle-to: #8b5cf6;
   --color-warning: #8a5a12;
   --color-warning-soft: #f8f0e0;
   --color-danger: #a8392e;
