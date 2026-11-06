@@ -177,6 +177,18 @@ test('the home story walks through the product in order, with measured numbers a
     assert.ok(growth.querySelector('.ga-checks [data-i18n="growth.soon"]'), path);
     for (const part of ['.ga-avatar', '.ga-app', '.ga-workbench', '.ga-workflow']) assert.ok(growth.querySelector(part), path + part);
     assert.ok(document.querySelector('[data-overlay="growth"]'), path);
+    // Real FLA portraits, not a letter: the card's FLA cycles through four, and the chapter ends in a crowd of groups,
+    // some talking (one line each, translated), some producing work.
+    assert.equal(growth.querySelector('.ga-avatar').textContent.trim(), '', path);
+    assert.equal(growth.querySelectorAll('.ga-avatar img[src*="assets/avatars/fla-"]').length, 4, path);
+    const crowd = document.querySelector('#growth .ga-crowd');
+    assert.equal(crowd.getAttribute('aria-hidden'), 'true', path);
+    assert.equal(crowd.querySelectorAll('.ga-group').length, 8, path);
+    assert.deepEqual([...crowd.querySelectorAll('.ga-group.is-talking .ga-bubble')].map(node => node.getAttribute('data-i18n')), [1, 2, 3, 4].map(n => `growth.crowd.line${n}`), path);
+    assert.equal(crowd.querySelectorAll('.ga-group.is-working .ga-output').length, 4, path);
+    // A phone shows the first five, each with its own place below the title.
+    for (const group of [...crowd.querySelectorAll('.ga-group')].slice(0, 5)) assert.match(group.getAttribute('style'), /--px: \d+%; --py: \d+%/, path);
+    assert.ok(document.querySelector('[data-overlay="growth"][data-copy="#growth .ga-crowd"]'), path);
     assert.deepEqual([...document.querySelectorAll('#workbench .growth-cards b')].map(node => node.textContent), ['Workbench', 'Workflow', 'Agent App'], path);
     // Upcoming work sits only under the 即将 / Coming badge, never among the shipped cards.
     assert.equal(document.querySelectorAll('#workbench .growth-next li').length, 2, path);
