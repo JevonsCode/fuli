@@ -97,9 +97,10 @@ The upstream kit is never edited. What a project learns sits beside it:
 
 - A lesson is a `ReusableExperience` knowledge item (checkpoint `experiences`) in that project, proposed by an FLA
   that holds the occupation and kept by the person (`confirmation_status: confirmed`, the FLA page's 「保留」).
-- An acceptance check learned in use is the same item with `attributes.check` (one line a reviewer can verify).
-  The self-growth side writes it; the kit only reads it.
+- An acceptance check learned in use is the same item with `attributes.check` (`{ kind: acceptance_item | regression_example, text }`, one line a reviewer can verify).
+  The self-growth side writes it (`record_fla_lesson`) and owns its one reader, `projectAcceptanceChecks` in
+  `src/acceptance-checks/port.js`; the kit reads its checks through that port.
 - `read_occupation_kit` with `personalProjectId` adds `learned: { personalProjectId, partial, total, lessons[≤3],
-  checks[≤10] }` (lessons: `itemId`, `title`, `solution`, `boundary`, `tasks`; checks: `itemId`, `check`). Only
+  checks[≤10] }` (lessons: `itemId`, `title`, `solution`, `boundary`, `tasks`; checks: `itemId`, `check`, newest kept first). Only
   person-kept items appear; Tonborg and Jefa check work against the kit's `acceptance` plus these `checks`.
 - History follows the knowledge rules: a dropped lesson soft-ends and leaves the layer; nothing is deleted.

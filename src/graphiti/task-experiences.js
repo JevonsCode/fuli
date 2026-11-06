@@ -7,6 +7,10 @@ import { ApplicationError, ApplicationErrorCode } from '../app/application-error
 // They become one pending current-project capture with searchKeys as terms.
 const MAX_EXPERIENCES = 3;
 const MAX_KEYS = 8;
+// What a lesson can become besides text (rec#78, 11-06 addition 2): an item
+// its project's acceptance list holds once the person keeps it.
+export const CHECK_KINDS = Object.freeze(['acceptance_item', 'regression_example']);
+const CHECK_CHARS = 300;
 
 export function experienceCapture(task, experiences, { sourceApplication = 'other', now = new Date() } = {}) {
   if (!Array.isArray(experiences) || !experiences.length || experiences.length > MAX_EXPERIENCES) {
@@ -17,6 +21,10 @@ export function experienceCapture(task, experiences, { sourceApplication = 'othe
     const title = text(experience?.task, 240, 'experiences[].task');
     const solution = text(experience?.solution, 2000, 'experiences[].solution');
     const boundary = experience?.boundary == null ? null : text(experience.boundary, 600, 'experiences[].boundary');
+    const check = experience?.check == null ? null : lessonCheck(experience.check);
+    // A person's lasting correction (rec#78 step 3): the strongest signal, with its boundary.
+    const corrected = experience?.origin === 'correction';
+    if (corrected && !boundary) throw invalid('A lasting correction needs its boundary: where the rule applies');
     const keys = Array.isArray(experience?.searchKeys)
       ? [...new Set(experience.searchKeys.map(key => text(key, 80, 'experiences[].searchKeys')))] : [];
     if (!keys.length || keys.length > MAX_KEYS) throw invalid(`experiences[].searchKeys takes 1 to ${MAX_KEYS} terms`);
@@ -27,10 +35,12 @@ export function experienceCapture(task, experiences, { sourceApplication = 'othe
     return {
       key, name: title, type: 'ReusableExperience',
       summary: boundary ? `${solution}\n适用边界：${boundary}` : solution,
-      attributes: { searchTerms: keys, solution, ...(boundary ? { boundary } : {}) },
+      attributes: { searchTerms: keys, solution, ...(boundary ? { boundary } : {}), ...(check ? { check } : {}),
+        ...(corrected ? { origin: 'correction' } : {}) },
       originQuadrant: 'known_known', epistemicStatus: 'observed', confirmationStatus: 'pending',
       contentSource: 'agent_inferred',
-      confirmationBasis: { existenceReason: 'The task owner reported this approach after completing the task.',
+      confirmationBasis: { existenceReason: corrected ? 'The person corrected the task owner\'s approach; the owner judged it a lasting rule.'
+          : 'The task owner reported this approach after completing the task.',
         quadrantReason: 'Observed in this task; it stays pending until a person confirms it.',
         proposedBy: { kind: 'agent', label: task.projectAgentId ?? null } }
     };
@@ -42,6 +52,11 @@ export function experienceCapture(task, experiences, { sourceApplication = 'othe
       sourceApplication, referenceTime: now.toISOString(), entities, relationships: [] },
     captureRouting: [{ scope: 'current_project', entityKeys: entities.map(entity => entity.key), relationshipKeys: [] }]
   };
+}
+
+function lessonCheck(value) {
+  if (!CHECK_KINDS.includes(value?.kind)) throw invalid(`experiences[].check.kind is one of ${CHECK_KINDS.join(', ')}`);
+  return { kind: value.kind, text: text(value.text, CHECK_CHARS, 'experiences[].check.text') };
 }
 
 function text(value, limit, field) {

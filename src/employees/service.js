@@ -6,6 +6,7 @@ import { EmployeeManagementStore } from './management-policy.js';
 import { employeeTaskEntry } from './task-entry.js';
 import { employeeCollaborationReceipt } from '../agents/identity-receipt.js';
 import { isPeerRoleAgent } from '../graphiti/project-team-view.js';
+import { briefAcceptanceChecks } from '../acceptance-checks/port.js';
 
 export function createEmployeeService({ app, runtimeConfigPath, registry: configuredRegistry, managementStore: configuredManagementStore }) {
   const registry = configuredRegistry ?? createEmployeePackageRegistry(employeeDirectories(runtimeConfigPath));
@@ -83,7 +84,8 @@ export function createEmployeeService({ app, runtimeConfigPath, registry: config
     try {
       const result = await runtime.callTool(input.tool, input.arguments ?? {}, { ...context, session });
       if (!result || typeof result !== 'object' || Array.isArray(result)) return result;
-      return { ...result, collaboration_receipt: employeeCollaborationReceipt(app, context, {
+      return { ...result, ...(context.templateId === 'jefa' && input.tool === 'get_task' ? await keptChecks(app, context) : {}),
+        collaboration_receipt: employeeCollaborationReceipt(app, context, {
         tool: input.tool, permission: tool.permission, sourceApplication: input.sourceApplication
       }) };
     }
@@ -134,4 +136,12 @@ function requestsHumanAcceptance(value, depth = 0) {
   if (depth > 32) throw new TypeError('Employee tool arguments are too deeply nested');
   return Object.entries(value).some(([key, entry]) =>
     (key === 'status' && entry === 'done') || requestsHumanAcceptance(entry, depth + 1));
+}
+
+// Beside a Jefa task's own acceptance criteria: what the person kept from this
+// project's earlier work (src/acceptance-checks/). Added outside the package,
+// which sees only its board.
+async function keptChecks(app, context) {
+  const checks = await briefAcceptanceChecks(app, { personalSpaceId: context.personalSpaceId, personalProjectId: context.project.id, limit: 5 });
+  return checks.length ? { projectAcceptanceChecks: checks } : {};
 }

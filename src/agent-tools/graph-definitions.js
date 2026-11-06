@@ -5,6 +5,7 @@ import { MODEL_BACKEND_DEFINITIONS } from './model-backend-definitions.js';
 import { STANDING_ASSIGNMENT_DEFINITIONS } from './standing-assignment-definitions.js';
 import { AGENT_SERVICE_DEFINITIONS } from './agent-service-definitions.js';
 import { AGENT_WORKFLOW_DEFINITIONS } from './agent-workflow-definitions.js';
+import { FLA_LESSON_DEFINITIONS } from './fla-lesson-definitions.js';
 import { WORK_SURFACE_DEFINITIONS } from './work-surface-definitions.js';
 import { DELEGATION_DEFINITIONS } from './delegation-definitions.js';
 import { DIAGNOSTIC_DEFINITIONS } from './diagnostic-definitions.js';
@@ -36,6 +37,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...STANDING_ASSIGNMENT_DEFINITIONS,
   ...AGENT_SERVICE_DEFINITIONS,
   ...AGENT_WORKFLOW_DEFINITIONS,
+  ...FLA_LESSON_DEFINITIONS,
   ...WORK_SURFACE_DEFINITIONS,
   ...DELEGATION_DEFINITIONS,
   ...DIAGNOSTIC_DEFINITIONS,

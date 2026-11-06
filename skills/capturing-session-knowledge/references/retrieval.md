@@ -138,7 +138,13 @@ verifier's passed `record_agent_verification` with evidence refs), AI 评估通�
 independent acceptance), or 尚未验证. An experience reaches the middle two only when a task whose
 recall showed it reported it `applied` in `knowledgeUsage` and that task passed acceptance, so
 report applied use honestly and never describe anything as verified yourself. When the
-person corrects your approach, report the corrected approach as an experience with its `boundary`.
+person corrects your approach, decide first whether it is a one-off requirement of this task or a
+lasting rule. Record it with `record_fla_lesson` (chat clients: `fuli_call`), `origin: correction`:
+`correctionScope: this_task` is applied and kept nowhere; `lasting` waits pending with the
+`boundary` it applies within. When a lesson can be checked, pass `check` (`acceptance_item` or
+`regression_example`, one short testable sentence) instead of a longer rule: once the person keeps it,
+Tonborg's acceptance and Jefa's `get_task` read it from the project's acceptance list. Keep lessons
+without a check as text. Do not report the same lesson again in the checkpoint's `experiences`.
 
 ## Use the Generated Taste Skill
 

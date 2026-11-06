@@ -149,14 +149,14 @@ const experience = (id, proposer, overrides = {}) => ({ id, name: `Synthetic les
 test('an FLA reads its kit by its own occupation, with kept project lessons and checks on top', async () => {
   await withPlugins(async plugins => {
     const app = application(plugins, { nodes: [
-      experience('kept-qa', 'fla-qa-2', { attributes: { solution: 'Synthetic', check: 'Synthetic: the smoke test passes' } }),
+      experience('kept-qa', 'fla-qa-2', { attributes: { solution: 'Synthetic', check: { kind: 'acceptance_item', text: 'Synthetic: the smoke test passes' } } }),
       experience('pending-qa', 'fla-qa', { confirmation_status: 'pending' }),
       experience('kept-dev', 'fla-dev')
     ] });
     const kit = await callAgentTool(app, 'read_occupation_kit', { personalSpaceId: SPACE, agentId: 'fla-qa', personalProjectId: 'p1' });
     assert.equal(kit.occupation, 'qa_automation');
     assert.deepEqual(kit.learned.lessons.map(item => item.itemId), ['kept-qa']);
-    assert.deepEqual(kit.learned.checks, [{ itemId: 'kept-qa', check: 'Synthetic: the smoke test passes' }]);
+    assert.deepEqual(kit.learned.checks, [{ itemId: 'kept-qa', check: { kind: 'acceptance_item', text: 'Synthetic: the smoke test passes' } }]);
     const plain = await callAgentTool(app, 'read_occupation_kit', { personalSpaceId: SPACE, occupation: 'testing' });
     assert.equal(plain.learned, undefined);
     await assert.rejects(callAgentTool(app, 'read_occupation_kit', { personalSpaceId: SPACE }), { code: 'invalid_input' });

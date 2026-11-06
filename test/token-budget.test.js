@@ -184,7 +184,10 @@ const BASELINE = Object.freeze({
   // Occupation plugins: one full-profile read, read_occupation_kit, and decide_project_agent_recruitment's
   // optional occupationKit answer: 202,313 -> 203,456 B (+1,143 B), measured; chat, instructions and every
   // task entry are unchanged (the kit is read on demand, never injected).
-  fullToolSchemaBytes: 203456,
+  // rec#78 record_fla_lesson: one full-profile write for a person's correction (one-off or lasting,
+  // with its boundary) or a lesson that carries an acceptance check: 203,456 -> 204,731 B (+1,275 B),
+  // measured. Chat, instructions and entry are unchanged; chat reaches it through list_agent_interfaces/fuli_call.
+  fullToolSchemaBytes: 204731,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.

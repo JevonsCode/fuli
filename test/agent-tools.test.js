@@ -39,6 +39,7 @@ const NAMES = [
   'get_agent_score_card',
   'control_project_agent_task_run', 'register_standing_assignment', 'report_agent_service',
   'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
+  'record_fla_lesson',
   'list_work_surfaces', 'pause_work_surfaces', 'resume_work_surfaces',
   'run_delegated_action',
   'read_diagnostic_events', 'read_old_data', 'read_occupation_kit',
@@ -546,6 +547,8 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       // A tag change and a service report name their write; every other probe is the bare tool name.
       const probe = { change_knowledge_tags: { action: 'create' },
         report_agent_service: { action: 'register', taskContextToken: 'fuli-task-probe' },
+        // A one-off correction is applied and kept nowhere: it calls nothing.
+        record_fla_lesson: { taskContextToken: 'fuli-task-probe', origin: 'correction', correctionScope: 'this_task' },
         run_delegated_action: { taskContextToken: 'fuli-task-probe', route: 'PATCH /api/recall-policy', reason: 'probe' },
         read_occupation_kit: { personalSpaceId: 'space-a', occupation: 'testing' },
         ...Object.fromEntries(['propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',

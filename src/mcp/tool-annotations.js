@@ -70,7 +70,7 @@ const READ_TOOLS = new Set([
 const WRITE_TOOLS = new Set([
   'agent_chat', 'group_discussion',
   'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'pin_agent', 'role_work',
-  'control_project_agent_task_run', 'register_standing_assignment', 'report_agent_service',
+  'control_project_agent_task_run', 'register_standing_assignment', 'report_agent_service', 'record_fla_lesson',
   'propose_agent_workflow', 'record_agent_workflow_run',
   'pause_work_surfaces', 'resume_work_surfaces', 'run_delegated_action',
   'message_agent', 'reply_agent_message', 'cancel_agent_message',

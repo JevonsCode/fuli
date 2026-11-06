@@ -7,6 +7,7 @@ import { refusedAgentWriteNotice } from '../graphiti/capture-notice.js';
 import { isTagGovernanceProposal, knowledgeTagChange, proposeTagGovernance } from '../graphiti/knowledge-tags.js';
 import { prepareKnowledgeRecovery } from '../knowledge-hard-delete/recovery-gate.js';
 import { reportAgentService } from '../agent-services/agent-report.js';
+import { recordFlaLesson } from '../fla-growth/lessons.js';
 import { AGENT_WORKFLOW_HANDLERS } from '../agent-workflows/agent-tools.js';
 import { WORK_SURFACE_HANDLERS } from '../work-surfaces/agent-tools.js';
 import { DELEGATION_HANDLERS } from '../agent-delegation/agent-tool.js';
@@ -30,6 +31,7 @@ const HANDLERS = Object.freeze({
   role_work: (app, { action, ...input }) => roleWork(app)[action === 'submit' ? 'submit' : 'claim'](input),
   register_standing_assignment: (app, input) => app.registerStandingAssignment(input),
   report_agent_service: (app, input) => reportAgentService(app, input),
+  record_fla_lesson: (app, input) => recordFlaLesson(app, input),
   ...AGENT_WORKFLOW_HANDLERS,
   ...WORK_SURFACE_HANDLERS,
   ...DELEGATION_HANDLERS,

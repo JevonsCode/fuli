@@ -1,6 +1,7 @@
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { projectExperiences } from '../graphiti/agent-growth.js';
 import { requiredString } from '../validation/values.js';
+import { projectAcceptanceChecks } from '../acceptance-checks/port.js';
 
 // read_occupation_kit: an FLA reads its occupation's starter kit when it starts
 // work of that kind, never on every turn (nothing of it is in the task entry).
@@ -44,7 +45,9 @@ async function learnedOnTop(app, { personalSpaceId, personalProjectId, occupatio
     personalProjectId, partial, total: items.length,
     lessons: items.slice(0, MAX_LESSONS).map(item => ({ itemId: item.itemId, title: item.title, solution: item.solution,
       boundary: item.boundary, tasks: item.tasks })),
-    checks: items.filter(item => item.check).slice(0, MAX_CHECKS).map(item => ({ itemId: item.itemId, check: item.check }))
+    // One reader of learned checks: the project's acceptance list, filtered to this occupation.
+    checks: (await projectAcceptanceChecks(app, { personalSpaceId, personalProjectId, occupation, limit: MAX_CHECKS })).checks
+      .map(check => ({ itemId: check.checkId, check: { kind: check.kind, text: check.text } }))
   };
 }
 
