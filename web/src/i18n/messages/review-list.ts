@@ -7,6 +7,7 @@ export const reviewListMessages = {
     everywhere: '通用',
     byTonborg: "@:{'roleNames.tonborg'} 替你确认",
     dropReason: '在待决策里点了「不要」',
+    confirmAllReason: '在待决策里点了「全部确认」',
     undoReason: "撤销了 @:{'roleNames.tonborg'} 的确认",
     voteReason: '你选了「{action}」',
     groups: { questions: "@:{'roleNames.tonborg'} 想问你", pending: '待确认的知识', attention: 'Agent 在问你', confirmed: "@:{'roleNames.tonborg'} 替你确认了" },
@@ -20,11 +21,11 @@ export const reviewListMessages = {
     },
     pending: {
       confirm: '正在确认这条知识…', drop: '正在把这条知识标为不要…', undo: "正在撤销 @:{'roleNames.tonborg'} 的确认…",
-      ack: "正在记下你认可 @:{'roleNames.tonborg'} 的确认…", all: '正在确认全部待确认的知识…', guesses: "正在按 @:{'roleNames.tonborg'} 的猜测处理…",
+      ack: "正在记下你认可 @:{'roleNames.tonborg'} 的确认…", all: '正在确认 {done}/{total}', guesses: "正在按猜的办 {done}/{total}",
     },
     done: {
       confirm: '已确认「{text}」', drop: '已标为不要「{text}」，可在知识里恢复', undo: "已撤销 @:{'roleNames.tonborg'} 对「{text}」的确认",
-      all: '已处理 {count} 条',
+      all: '已处理 {count} 条', confirmedAll: '已确认 {count} 条知识', partial: '已处理 {count} 条，{failed} 条没成功，还在列表里',
     },
     details: {
       title: '详情', content: '内容', project: '项目', proposer: '谁提的', reason: '为什么还等着', tonborg: "@:{'roleNames.tonborg'} 的理由", guess: "@:{'roleNames.tonborg'} 的猜测",
@@ -44,6 +45,7 @@ export const reviewListMessages = {
     everywhere: 'Everywhere',
     byTonborg: "Confirmed by @:{'roleNames.tonborg'} for you",
     dropReason: 'Chose “Drop” in Decisions',
+    confirmAllReason: 'Chose “Confirm all” in Decisions',
     undoReason: "Undid @:{'roleNames.tonborg'}’s confirmation",
     voteReason: 'You chose “{action}”',
     groups: { questions: "@:{'roleNames.tonborg'} asks you", pending: 'Knowledge to confirm', attention: 'Agents ask you', confirmed: "@:{'roleNames.tonborg'} confirmed for you" },
@@ -57,11 +59,11 @@ export const reviewListMessages = {
     },
     pending: {
       confirm: 'Confirming this item…', drop: 'Dropping this item…', undo: "Undoing @:{'roleNames.tonborg'}’s confirmation…",
-      ack: "Recording that @:{'roleNames.tonborg'}’s confirmations are right…", all: 'Confirming every pending item…', guesses: "Applying @:{'roleNames.tonborg'}’s guesses…",
+      ack: "Recording that @:{'roleNames.tonborg'}’s confirmations are right…", all: 'Confirming {done}/{total}', guesses: 'Applying guesses {done}/{total}',
     },
     done: {
       confirm: 'Confirmed “{text}”', drop: 'Dropped “{text}”; you can restore it in Knowledge', undo: "Undid @:{'roleNames.tonborg'}’s confirmation of “{text}”",
-      all: 'Handled {count} items',
+      all: 'Handled {count} items', confirmedAll: 'Confirmed {count} items', partial: 'Handled {count} items; {failed} failed and stay in the list',
     },
     details: {
       title: 'Details', content: 'Content', project: 'Project', proposer: 'Proposed by', reason: 'Why it waits', tonborg: "@:{'roleNames.tonborg'}’s reason", guess: "@:{'roleNames.tonborg'}’s guess",

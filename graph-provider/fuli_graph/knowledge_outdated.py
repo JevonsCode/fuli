@@ -21,7 +21,7 @@ from .knowledge_versions import (
     end_keyed_values, invalid_property, keyed_value, lock_knowledge, record_version_revision,
 )
 from .models import KnowledgeRevisionRecord
-from .preference_versions import end_older_preferences
+from .preference_versions import end_older_preferences, forget_ended
 from .provider_values import normalized_text, stable_uuid
 
 MARK_OUTDATED_TOOL = 'mark_outdated'
@@ -43,17 +43,20 @@ async def settle_older_knowledge(scoped, actor, space, items, *, created_at) -> 
     queues the older items it may silently replace for a person (flagged, not
     ended). Nothing is deleted."""
     superseded, flagged = [], []
+    scopes = {}  # each preference scope is read once for all the items
     for item_kind, item_id in items:
         # A confirmed preference ends the older one of its key and scope.
         ended = await end_older_preferences(scoped, actor, space, item_kind, item_id, changed_by='user',
-                                            created_at=created_at)
+                                            created_at=created_at, scopes=scopes)
         if ended:
             superseded += ended
             continue
         keyed = await keyed_value(scoped, space, item_id) if item_kind == 'relationship' else None
         if keyed and keyed['confirmation_status'] == 'confirmed':
             ended = await end_keyed_values(scoped, actor, space, keyed, changed_by='user', created_at=created_at)
-            superseded += [{'item_kind': 'relationship', 'item_id': ended_id} for ended_id in ended]
+            ended = [{'item_kind': 'relationship', 'item_id': ended_id} for ended_id in ended]
+            forget_ended(scopes, ended)
+            superseded += ended
             continue
         candidates = await _older_candidates(scoped, space, item_kind, item_id, keyed=keyed is not None)
         flagged += await _flag_possibly_outdated(scoped, actor, space, item_kind, item_id, candidates,

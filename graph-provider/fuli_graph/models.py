@@ -106,7 +106,8 @@ BasisMeaning = Literal['changed', 'wording_only']
 # The knowledge an item was concluded from (rec#5 C8-4): when one of them is
 # marked outdated, the conclusion stops being delivered as a current fact.
 MAX_DERIVED_FROM = 8
-KnowledgeConfirmationGroupKind = Literal['source', 'session']
+# 'review' is the person's 待决策 list: items that wait for them, from any source.
+KnowledgeConfirmationGroupKind = Literal['source', 'session', 'review']
 EpistemicQuadrant = Literal[
     'known_known',
     'known_unknown',
@@ -1273,6 +1274,10 @@ class KnowledgeBatchConfirmationCreate(StrictModel):
             raise ValueError('an agent or import cannot confirm knowledge')
         if self.confirmer.kind == 'authoritative_source' and not self.confirmer.label:
             raise ValueError('an authoritative source confirmer requires a label')
+        if self.group_kind == 'review' and (
+            self.confirmer.kind != 'user' or self.operation_actor != 'human'
+        ):
+            raise ValueError('only the person confirms their review list')
         identities = {
             (item.item_kind, item.item_id)
             for item in self.items

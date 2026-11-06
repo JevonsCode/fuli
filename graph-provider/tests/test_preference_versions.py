@@ -43,7 +43,7 @@ async def test_only_a_same_key_preference_in_the_same_scope_ends_and_its_history
 
     assert ended == [{'item_kind': 'entity', 'item_id': 'old'}, {'item_kind': 'relationship', 'item_id': 'edge'}]
     scan = driver.calls[2][1]
-    assert (scan['scope'], scan['project_id'], scan['agent_id'], scan['item_id']) == ('project', 'alpha', None, 'new')
+    assert (scan['scope'], scan['project_id'], scan['agent_id']) == ('project', 'alpha', None)
     end, revision = driver.calls[3][1], driver.calls[4][1]
     assert (end['item_id'], end['replaced_by_id'], end['replaced_by_kind']) == ('old', 'new', 'entity')
     assert 'fuli_invalid_at' in driver.calls[3][0] and 'item.invalid_at' in driver.calls[5][0]
@@ -89,3 +89,23 @@ async def test_the_same_words_or_a_pending_restatement_land_on_the_stored_prefer
     assert await restated_preferences(store(pending), SPACE, [entity('Reply in Chinese')], ['stored'],
                                       'episode-1') == {}
     assert pending.calls == [], 'a pending restatement needs no read'
+
+
+@pytest.mark.asyncio
+async def test_items_settled_together_read_their_scope_once_and_see_what_the_earlier_ones_ended():
+    first, second = row('new-1', 'reply-language'), row('new-2', 'indent', summary='Use spaces')
+    older = row('old', 'reply-language', summary='Reply in English')
+    driver = SequentialDriver([
+        [first], [], [first, second, older, row('tabs', 'indent', summary='Use tabs')],  # read, lock, the scope once
+        [], [],  # the old reply language ends, its revision
+        [second], [],  # the second item and the lock; its scope is already read
+        [], [],  # tabs ends, its revision
+    ])
+    scopes = {}
+    settle = lambda item_id: end_older_preferences(store(driver), {'id': 'principal-1'}, SPACE, 'entity', item_id,
+                                                   changed_by='user', created_at=AT, scopes=scopes)
+
+    assert await settle('new-1') == [{'item_kind': 'entity', 'item_id': 'old'}]
+    assert await settle('new-2') == [{'item_kind': 'entity', 'item_id': 'tabs'}]
+    assert sum('= $scope' in query for query, _ in driver.calls) == 1
+    assert [item['item_id'] for item in scopes[('project', 'alpha', None)]] == ['new-1', 'new-2']
