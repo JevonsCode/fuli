@@ -4,14 +4,15 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { SESSIONS } from '../acceptance/compounding-sessions/sessions.js';
 import { buildRepo } from '../acceptance/compounding-sessions/workspace.js';
 import { sessionReport } from '../acceptance/compounding-sessions/metrics.js';
 
-const CHECKS = new URL('../acceptance/compounding-sessions/checks.js', import.meta.url);
+const CHECKS = fileURLToPath(new URL('../acceptance/compounding-sessions/checks.js', import.meta.url));
 
 function check(sessionId, dir) {
-  const result = spawnSync(process.execPath, [CHECKS.pathname.replace(/^\/([A-Za-z]:)/, '$1'), sessionId, dir],
+  const result = spawnSync(process.execPath, [CHECKS, sessionId, dir],
     { encoding: 'utf8', timeout: 300_000 });
   return JSON.parse(result.stdout);
 }

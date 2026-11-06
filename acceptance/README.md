@@ -29,6 +29,8 @@ CLI 分发更新和真实智能体调用流程。验收连接真实的 Graphiti/
 9. [Windows 真机验收清单](./windows-real-machine.md)
    - 每个版本在真实 Windows 测试机上跑：官方包安装、首次打开、桌面客户端、客户端与托盘包更新、端口保留、控制台端口、接入 Claude Code / Codex / OpenCode、模型页、回滚与卸载。
    - 能自动检查的部分由 `windows-tray.js` 在开发机上用合成数据完成。
+10. [复利曲线评测](./compounding-sessions/README.md)
+    - 同一合成项目上 6 个先后发生的任务，off 与 fuli 两臂各跑一遍，看 FULI 是否越用越省；结果见 `FULI_ALIGNMENT_BENCHMARK.md` 8.9。
 
 以上文档的说明文字均使用中文。代码中仍会出现英文内容，但只限于以下不能随意翻译的
 技术标识：
