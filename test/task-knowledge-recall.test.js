@@ -430,3 +430,42 @@ test('a project that has stored nothing yet is not sent on a follow-up search; a
   assert.match(await next({ nodes: [...profile, { type: 'ProjectFact', invalid_at: '2026-01-01T00:00:00Z' }], edges: [] }),
     /no stored knowledge yet/);
 });
+
+test('a pending rule is sent whole only to a task its head names; otherwise it waits as a title (rec#88)', async () => {
+  const policy = 'Our retry policy for every outbound channel: at most 3 attempts in total, waiting 200 ms before the second '
+    + 'attempt and 400 ms before the third; retry only when the provider answers 5xx, never retry a 4xx.';
+  const pending = { id: 'p-1', space_id: 'personal-space', scope: 'personal', name: policy.slice(0, 120), type: 'ProjectFact',
+    summary: policy, defined_project_id: 'tidewater', scope_distance: 0, confirmation_status: 'pending', score: 0.2 };
+  const recall = prompt => recallTaskKnowledge(recallApplication([pending]), { personalProjectId: 'tidewater' }, prompt);
+  for (const prompt of [
+    'SMS messages get dropped whenever the provider has a hiccup. Give the SMS channel the same retry behaviour we use for email.',
+    'Add a webhook channel: it POSTs the message to `message.url` and uses our standard retry policy. Follow our conventions.',
+    'A partner complained that our webhook retries hammered them after 4xx answers. Check every channel follows our retry policy.'
+  ]) {
+    const whole = await recall(prompt);
+    assert.equal(whole.status, 'matched', prompt);
+    assert.equal(whole.entities[0].id, 'p-1');
+  }
+  for (const prompt of [
+    'Add `GET /healthz` to the server: it answers 200 with JSON listing the registered channel names. Follow our conventions.',
+    'Sending a message to a channel we do not have crashes the relay. Make it fail with an error that follows our error-code conventions.'
+  ]) {
+    const titled = await recall(prompt);
+    assert.equal(titled.status, 'indexed', prompt);
+    assert.deepEqual(titled.entities, []);
+    assert.equal(titled.knowledge_index.items[0][0], 'p-1');
+    assert.ok(titled.knowledge_index.items[0][1].length <= 41);
+  }
+  // A confirmed item is never held back by this rule.
+  const confirmed = await recallTaskKnowledge(recallApplication([{ ...pending, confirmation_status: 'confirmed' }]),
+    { personalProjectId: 'tidewater' }, 'Add `GET /healthz` to the server listing the registered channel names. Follow our conventions.');
+  assert.equal(confirmed.status, 'matched');
+});
+
+test('the pending relevance rule reads Chinese by character pairs (rec#88)', async () => {
+  const rule = { id: 'p-zh', name: '我们的重试策略：最多 3 次，间隔 200 和 400 毫秒。', type: 'ProjectFact',
+    summary: '我们的重试策略：最多 3 次，间隔 200 和 400 毫秒。', defined_project_id: 'tidewater', confirmation_status: 'pending' };
+  const recall = prompt => recallTaskKnowledge(recallApplication([rule]), { personalProjectId: 'tidewater' }, prompt);
+  assert.equal((await recall('短信渠道也按我们的重试策略来，补上测试。')).status, 'matched');
+  assert.equal((await recall('按我们的约定加一个健康检查接口。')).status, 'indexed');
+});

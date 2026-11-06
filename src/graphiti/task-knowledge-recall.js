@@ -268,8 +268,13 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
   const prior = usagePriorLookup(application.recallImpressions, {
     personalSpaceId: application.config.personal.spaceId, facts: factCandidates, entities: entityCandidates });
   const compare = (left, right) => compareRecallItems(left, right, prior);
-  const facts = rankedUnique(factCandidates, 'relationship', compare).slice(0, MAX_ITEMS_PER_KIND).map(compactFact);
-  const entities = rankedUnique(entityCandidates, 'entity', compare).slice(0, MAX_ITEMS_PER_KIND).map(compactEntity);
+  const ranked = {
+    facts: rankedUnique(factCandidates, 'relationship', compare).slice(0, MAX_ITEMS_PER_KIND).map(compactFact),
+    entities: rankedUnique(entityCandidates, 'entity', compare).slice(0, MAX_ITEMS_PER_KIND).map(compactEntity)
+  };
+  // rec#88: a pending item the task names only in passing waits as a title.
+  const { facts, entities, weak } = relevantPending(ranked, ownText);
+  if (!facts.length && !entities.length && weak.length) return weakPendingIndex(plan, weak);
   const pendingSlots = Object.entries({ facts, entities })
     .filter(([, items]) => items.some((item) => !isConfirmed(item))).map(([slot]) => slot);
   const sourceMarker = createFuliSourceMarker({
@@ -319,6 +324,51 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
 // only items the exact project defines that name one of those terms. Null,
 // so the entry carries the unchanged not_needed recall, for anything but a
 // change request in a resolved project with such a match in time.
+// Pending items fill a slot only when nothing confirmed matched (confirmedFirst),
+// and a long stated rule shares common project words with almost any task: the
+// compounding eval's retry policy came back, whole, for a health-check task
+// because both say "channel". A pending item is sent whole when the head of its
+// statement (before its first colon or semicolon) shares at least two terms
+// with the task's own words; otherwise only its title is listed, to read on
+// demand. Confirmed items are never held back here.
+const MIN_HEAD_OVERLAP = 2;
+function relevantPending({ facts, entities }, ownText) {
+  if ([...facts, ...entities].some(isConfirmed)) return { facts, entities, weak: [] };
+  const own = contentTerms(ownText);
+  const strong = item => [...contentTerms(statementHead(item))].filter(term => own.has(term)).length >= MIN_HEAD_OVERLAP;
+  const weak = [...facts.filter(item => !strong(item)).map(item => ({ item, kind: 'relationship' })),
+    ...entities.filter(item => !strong(item)).map(item => ({ item, kind: 'entity' }))];
+  return { facts: facts.filter(strong), entities: entities.filter(strong), weak };
+}
+
+function statementHead(item) {
+  return String(item.name ?? item.fact ?? item.summary ?? '').split(/[:：;；]/u)[0];
+}
+
+const HEAD_STOP_WORDS = new Set(['and', 'are', 'for', 'our', 'the', 'this', 'that', 'with', 'every', 'all', 'any', 'its', 'from', 'into']);
+// Words and Chinese character pairs, a plural reduced to its singular.
+function contentTerms(text) {
+  const lower = String(text).toLocaleLowerCase('en-US');
+  const words = (lower.match(/[a-z][a-z0-9-]{2,}/gu) ?? []).filter(word => !HEAD_STOP_WORDS.has(word) && !CLAUSE_STOP_WORDS.has(word))
+    .map(word => (word.endsWith('ies') ? `${word.slice(0, -3)}y` : word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word));
+  const han = (lower.replace(CLAUSE_HAN_FILLERS, '').match(/\p{Script=Han}+/gu) ?? []).flatMap(run => [...run].slice(0, -1).map((char, index) => char + run[index + 1]));
+  return new Set([...words, ...han]);
+}
+
+// Only weakly related pending items matched: their titles, as the index tier lists them.
+function weakPendingIndex(plan, weak) {
+  return {
+    status: 'indexed',
+    trigger_categories: plan.trigger_categories,
+    query_count: plan.queries.length,
+    guidance: taskKnowledgeRetrievalGuidance(),
+    knowledge_index: { matched_in_search: weak.length, read: INDEX_READ,
+      items: weak.slice(0, MAX_INDEX_ITEMS).map(({ item, kind }) => [item.id, indexTitle(knowledgeItemTitle(item, kind))]) },
+    facts: [],
+    entities: []
+  };
+}
+
 async function knowledgeIndexRecall(application, { personalProjectId }, taskPrompt, { sourceApplication, sessionId }) {
   const prompt = singleLine(taskPrompt).slice(0, 8192);
   if (!personalProjectId || !changeRequested(prompt) || entryTimeBelow(INDEX_MIN_REMAINING_MS)) return null;
