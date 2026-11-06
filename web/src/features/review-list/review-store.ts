@@ -74,6 +74,20 @@ export const useReviewList = defineStore('review-list', () => {
     }
   }
 
+  /**
+   * Tonborg reviews on its own schedule, so its questions can arrive after the
+   * page read the list (Jevons 11-06 saw none of them). Its small list is read
+   * again, and the items only when that list changed.
+   */
+  async function refreshIfTonborgMoved() {
+    const space = spaceId.value
+    if (!space || !loaded.value || loading.value || Object.keys(pending.value).length) return
+    const reviews = await readDelegatedReviews(space).catch(() => null)
+    if (!reviews || space !== spaceId.value) return
+    const ids = (value: DelegatedReviews) => [...value.questions, ...value.confirmed].map(review => review.id).sort().join()
+    if (ids(reviews) !== ids(delegated.value)) await refresh()
+  }
+
   async function guarded(key: string, action: ReviewAction | 'undo' | 'ack', work: () => Promise<void>) {
     if (pending.value[key]) return false
     pending.value = { ...pending.value, [key]: action }
@@ -219,5 +233,5 @@ export const useReviewList = defineStore('review-list', () => {
   }
 
   return { spaceId, items, delegated, loaded, loading, error, pending, progress, list, total,
-    setSpace, refresh, act, edit, actAll, undo, acknowledgeConfirmed }
+    setSpace, refresh, refreshIfTonborgMoved, act, edit, actAll, undo, acknowledgeConfirmed }
 })

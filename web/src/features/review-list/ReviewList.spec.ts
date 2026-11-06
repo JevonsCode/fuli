@@ -1,6 +1,6 @@
-import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { getJson, postJson, patchJson, putJson, push } = vi.hoisted(() => ({
   getJson: vi.fn(), postJson: vi.fn(), patchJson: vi.fn(), putJson: vi.fn(), push: vi.fn(),
@@ -23,6 +23,8 @@ const decision = (target: string, extra: Record<string, unknown> = {}) => ({ id:
 let nodes: Array<ReturnType<typeof node>> = []
 let delegated = { confirmed: [] as unknown[], questions: [] as unknown[] }
 const projects = [{ project_id: 'project-a', personal_space_id: 'space-a', profile: { name: 'Synthetic project' } }]
+
+enableAutoUnmount(afterEach)
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -60,6 +62,17 @@ describe('ReviewList', () => {
     expect(asked.findAll('button').map(candidate => candidate.attributes('data-variant'))).toEqual(['outline', 'default', 'ghost', 'ghost'])
     // Every row of a group offers the same actions in the same places.
     expect(row(wrapper, 'entity:plain').findAll('button').map(candidate => candidate.text())).toEqual(['确认', '不要', '改一下', ''])
+  })
+
+  it("sets Tonborg's questions apart: its face and name, how many need the person, and its guess on each line", async () => {
+    const wrapper = await mountList()
+    const asks = wrapper.get('[data-review-group=questions]')
+    expect(asks.classes()).toContain('review-group--asks')
+    expect(asks.find('img.review-group__avatar').exists()).toBe(true)
+    expect([asks.get('.review-group__name').text(), asks.get('.review-group__count').text()]).toEqual(['Tonborg 拿不准，要你定', '· 1'])
+    expect(row(wrapper, 'entity:asked').get('.review-row__meta').text()).toBe('Synthetic project · Synthetic Agent · Tonborg 猜你不要')
+    // Plain pending items keep their own group and look.
+    expect(wrapper.get('[data-review-group=pending]').classes()).not.toContain('review-group--asks')
   })
 
   it('confirms as the person, and answering Tonborg\'s question is the vote on its guess', async () => {
@@ -158,6 +171,19 @@ describe('ReviewList', () => {
     expect(postJson).toHaveBeenCalledWith('/api/judgment/feedback', expect.objectContaining({ decisionId: 'decision-entity:tonborg', vote: 'up' }))
   })
 
+  it('reads the list again when coming back to the page only if Tonborg decided something meanwhile', async () => {
+    delegated = { questions: [], confirmed: [] }
+    const wrapper = await mountList()
+    const reads = () => getJson.mock.calls.filter(([url]) => String(url).startsWith('/api/graph?')).length
+    const before = reads()
+    document.dispatchEvent(new Event('visibilitychange')); await flushPromises()
+    expect(reads()).toBe(before)
+    delegated = { questions: [decision('entity:asked')], confirmed: [] }
+    document.dispatchEvent(new Event('visibilitychange')); await flushPromises()
+    expect(reads()).toBe(before + 1)
+    expect(wrapper.find('[data-review-group=questions]').exists()).toBe(true)
+  })
+
   it('改一下 opens the item\'s own page', async () => {
     const wrapper = await mountList()
     await button(row(wrapper, 'entity:plain'), '改一下').trigger('click'); await flushPromises()
@@ -173,6 +199,18 @@ describe('ReviewList', () => {
 })
 
 describe('交给 Tonborg 确认', () => {
+  it("saves the console's language again while on, so Tonborg asks in it", async () => {
+    getJson.mockResolvedValue({ enabled: true, changedAt: '2026-11-06T00:00:00Z', revision: 5, language: null,
+      model: { connected: true, status: 'automatic', reason: null } })
+    putJson.mockResolvedValue({ enabled: true, changedAt: '2026-11-06T00:00:00Z', revision: 6, language: 'zh-CN',
+      model: { connected: true, status: 'automatic', reason: null } })
+    mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    expect(putJson).toHaveBeenCalledTimes(1)
+    expect(putJson).toHaveBeenCalledWith('/api/judgment/delegation', { personalSpaceId: 'space-a', enabled: true, expectedRevision: 5,
+      language: 'zh-CN' }, expect.anything())
+  })
+
   it('cannot be turned on without Tonborg\'s own model and says where to connect one', async () => {
     getJson.mockResolvedValue({ enabled: false, changedAt: null, revision: 0, model: { connected: false, status: 'suggestion', reason: 'not_configured' } })
     const wrapper = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
@@ -188,7 +226,8 @@ describe('交给 Tonborg 确认', () => {
     const wrapper = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
     await flushPromises()
     await wrapper.get('[data-slot=switch]').trigger('click'); await flushPromises()
-    expect(putJson).toHaveBeenCalledWith('/api/judgment/delegation', { personalSpaceId: 'space-a', enabled: true, expectedRevision: 3 }, expect.anything())
+    expect(putJson).toHaveBeenCalledWith('/api/judgment/delegation', { personalSpaceId: 'space-a', enabled: true, expectedRevision: 3,
+      language: 'zh-CN' }, expect.anything())
     expect(wrapper.emitted('changed')).toEqual([[true]])
     expect(wrapper.text()).toContain('Tonborg 正在替你确认')
   })

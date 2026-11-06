@@ -19,7 +19,10 @@ import { parse } from './service.js';
 
 const id = z.string().trim().min(1).max(256);
 const readInput = z.object({ personalSpaceId: id }).strict();
-const writeInput = readInput.extend({ enabled: z.boolean(), expectedRevision: z.number().int().min(0) }).strict();
+// The console's language goes with each save, so Tonborg asks the person in it.
+export const PERSON_LANGUAGES = Object.freeze(['zh-CN', 'en-US']);
+const writeInput = readInput.extend({ enabled: z.boolean(), expectedRevision: z.number().int().min(0),
+  language: z.enum(PERSON_LANGUAGES).optional() }).strict();
 // The newest delegated reviews the list reads; older ones stay on Tonborg's page.
 const LIST_LIMIT = 200;
 const ROLE = 'tonborg';
@@ -41,9 +44,10 @@ export async function reviewDelegation({ judgment, modelTrust, input }) {
 }
 
 export async function setReviewDelegation({ judgment, modelTrust, input }) {
-  const { personalSpaceId, enabled, expectedRevision } = parse(writeInput, input);
+  const { personalSpaceId, enabled, expectedRevision, language } = parse(writeInput, input);
   await judgment.scope({ personalSpaceId });
-  if (enabled) {
+  // Only turning it on is the say-so; saving it on again (a new language) changes no trust setting.
+  if (enabled && !judgment.store().delegation(personalSpaceId).enabled) {
     if (!tonborgModel(modelTrust).connected) {
       throw new EmployeeError('Connect a model for Tonborg first: delegated review runs on Tonborg\'s own model.', 409,
         'tonborg_model_required');
@@ -55,7 +59,7 @@ export async function setReviewDelegation({ judgment, modelTrust, input }) {
     }
     if (!trust.warningSeen) modelTrust.acknowledgeWarning(ROLE, trust.warningVersion, trust.revision);
   }
-  const saved = judgment.store().setDelegation(personalSpaceId, enabled, expectedRevision);
+  const saved = judgment.store().setDelegation(personalSpaceId, enabled, expectedRevision, language);
   return { ...saved, model: tonborgModel(modelTrust) };
 }
 

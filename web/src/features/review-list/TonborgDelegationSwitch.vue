@@ -5,7 +5,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Switch } from '@/components/ui/switch'
-import { t } from '@/i18n'
+import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 
 import { readDelegation, saveDelegation, type ReviewDelegation } from './review-api'
@@ -24,6 +24,15 @@ const id = `tonborg-delegation-${useId().replace(/[^A-Za-z0-9_-]/g, '')}`
 async function load() {
   if (!props.personalSpaceId) return
   try { state.value = await readDelegation(props.personalSpaceId) } catch { state.value = null }
+  void keepLanguage()
+}
+
+// While Tonborg asks for the person, it asks in this console's language: one
+// saved before the console sent it, or in another language, is saved again quietly.
+async function keepLanguage() {
+  const current = state.value
+  if (!current?.enabled || current.language === currentLocale() || saving.value) return
+  try { state.value = await saveDelegation(props.personalSpaceId, true, current.revision) } catch { /* the next load tries again */ }
 }
 onMounted(load)
 watch(() => props.personalSpaceId, load)
