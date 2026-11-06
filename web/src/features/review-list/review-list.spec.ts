@@ -33,6 +33,14 @@ describe('the 待决策 list', () => {
     expect(list.pending[0]).toMatchObject({ projectId: 'project-a', proposer: 'Synthetic Agent', reason: 'unreviewed' })
   })
 
+  it('names who proposed an item in words, never by an internal id', () => {
+    const byId = { ...proposed, proposed_by: { kind: 'agent', label: 'ca14b735-2331-51c9-8565-6e192eaeefb0' } }
+    const items = knowledgeItems(graph(node('one', { confirmation_basis: byId })))
+    const [line] = buildReviewList(items, { confirmed: [], questions: [] }).pending
+    expect(line.proposer).not.toContain('ca14b735')
+    expect(line.proposer.length).toBeGreaterThan(0)
+  })
+
   it('drops a question whose item the person already handled, and a confirmation they changed since', () => {
     const items = knowledgeItems(graph(
       node('handled', { confirmation_status: 'confirmed', confirmation_basis: { ...proposed, confirmed_by: { kind: 'user' }, confirmed_at: '2026-11-01T00:00:00Z' } }),

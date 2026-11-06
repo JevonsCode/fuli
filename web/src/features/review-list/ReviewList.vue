@@ -69,8 +69,10 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
       </CardHeader>
       <ul class="review-rows">
         <li v-for="line in review.list.questions" :key="line.key" class="review-row" :data-review-line="line.key">
-          <span class="review-row__text" :title="line.review?.question ?? line.text">{{ line.review?.question ?? line.text }}</span>
-          <span class="review-row__meta">{{ meta(line) }}</span>
+          <span class="review-row__body">
+            <span class="review-row__meta">{{ meta(line) }}</span>
+            <span class="review-row__text" :title="line.review?.question ?? line.text">{{ line.review?.question ?? line.text }}</span>
+          </span>
           <span class="review-row__actions">
             <span class="review-busy"><GrowthLoading v-if="busy(line.key)" variant="inline" :label="pendingLabel(line.key)" /></span>
             <Button size="sm" :variant="variant(line, 'confirm')" :disabled="Boolean(busy(line.key))" @click="review.act(line, 'confirm')">{{ t('reviewList.actions.confirm') }}</Button>
@@ -92,8 +94,10 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
       </CardHeader>
       <ul class="review-rows">
         <li v-for="line in review.list.pending" :key="line.key" class="review-row" :data-review-line="line.key">
-          <span class="review-row__text" :title="line.text">{{ line.text }}</span>
-          <span class="review-row__meta">{{ meta(line) }}</span>
+          <span class="review-row__body">
+            <span class="review-row__meta">{{ meta(line) }}</span>
+            <span class="review-row__text" :title="line.text">{{ line.text }}</span>
+          </span>
           <span class="review-row__actions">
             <span class="review-busy"><GrowthLoading v-if="busy(line.key)" variant="inline" :label="pendingLabel(line.key)" /></span>
             <Button size="sm" variant="outline" :disabled="Boolean(busy(line.key))" @click="review.act(line, 'confirm')">{{ t('reviewList.actions.confirm') }}</Button>
@@ -117,8 +121,10 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
       </CardHeader>
       <ul class="review-rows">
         <li v-for="line in review.list.confirmed" :key="line.key" class="review-row" :data-review-line="line.key">
-          <span class="review-row__text" :title="line.text">{{ line.text }}</span>
-          <span class="review-row__meta">{{ projectName(line) }} · {{ t('reviewList.byTonborg') }}</span>
+          <span class="review-row__body">
+            <span class="review-row__meta">{{ projectName(line) }} · {{ t('reviewList.byTonborg') }}</span>
+            <span class="review-row__text" :title="line.text">{{ line.text }}</span>
+          </span>
           <span class="review-row__actions">
             <span class="review-busy"><GrowthLoading v-if="busy(line.key)" variant="inline" :label="pendingLabel(line.key)" /></span>
             <Button size="sm" variant="outline" :disabled="Boolean(busy(line.key))" @click="review.undo(line)">{{ t('reviewList.actions.undo') }}</Button>
