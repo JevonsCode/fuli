@@ -8,12 +8,15 @@ const BOOLEAN_OPTIONS = Object.freeze({
   '--open': 'open',
   '--rebuild': 'rebuild',
   '--json': 'json',
-  '--allow-provider-downgrade': 'allowProviderDowngrade'
+  '--allow-provider-downgrade': 'allowProviderDowngrade',
+  // Started by a client session's MCP process, not by the person (console-autostart.js).
+  '--automatic': 'automatic'
 });
 
 const ALLOWED_BY_COMMAND = Object.freeze({
   start: new Set([
-    '--data-dir', '--personal-space', '--port', '--open', '--rebuild', '--lan', '--no-lan', '--allow-provider-downgrade'
+    '--data-dir', '--personal-space', '--port', '--open', '--rebuild', '--lan', '--no-lan', '--allow-provider-downgrade',
+    '--automatic'
   ]),
   stop: new Set(['--data-dir']),
   restart: new Set([
@@ -34,7 +37,8 @@ export function parseLocalRuntimeOptions(command, args = []) {
     rebuild: false,
     lan: null,
     json: false,
-    allowProviderDowngrade: false
+    allowProviderDowngrade: false,
+    automatic: false
   };
   const seen = new Set();
 

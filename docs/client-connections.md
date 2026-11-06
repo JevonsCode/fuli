@@ -257,7 +257,29 @@ in `test/fixtures/installer-manifest-snapshot.json` (`test/agent-kits/installer-
 | Settings shows **Update needed** (`changed`) or **Connected** (`connected`) after an upgrade | Run `fuli setup --yes --connected-only` to refresh clients that still have a Fuli MCP entry in their config |
 | A client row says open sessions need a restart | FULI changed that client's Skills or hooks after those sessions started. Restart them; the prompt clears by itself. **Connected** only means the files are current, and a Skill's receipt keeps the version that last changed it, so Skills of one client can show different versions while all are current |
 | Settings shows **Skills only** (`skills_left`), **Removed** (`removed`), **Not connected** (`not_connected`), or client is newly installed | Run a full `fuli setup`. `--connected-only` skips clients without a Fuli MCP entry and leaves existing Skills unchanged |
-| Unsure whether local UI / graph services are running | Run `fuli status` (and `fuli start` or `fuli restart` if stopped) |
+| Unsure whether local UI / graph services are running | Run `fuli status`. An open client session starts an installed FULI by itself (see below); `fuli start` or `fuli restart` if it still is not running |
+
+## FULI starts with your sessions
+
+Each client session's FULI MCP process keeps FULI running (`src/local-runtime/console-autostart.js`):
+a new session starts FULI when it is not running, and a session that stays open starts it again within
+about 15 seconds after it exits. It runs `fuli start --data-dir <the session's data> --automatic`
+detached, so FULI outlives the session, and only from an installed FULI: on Windows the package that
+`%LOCALAPPDATA%ProgramsFuliinstallation.json` names (read again at every start, so an update starts
+the new version) for that installation's own data, on macOS the package inside FULI.app, or an npm
+installation. A source checkout or build folder never starts anything. Sessions share one lock and one
+record, `console-autostart.json` in the data directory, so only one of them starts it.
+
+It does not start FULI:
+
+- after `fuli stop` (also the desktop client's stop, an update's or a restore's stop) until FULI is
+  started again; the stop is recorded before FULI stops, so no session brings it back meanwhile;
+- while a whole-store restore holds the data, or a local store's format step waits for the person
+  (`fuli migrate status`): start FULI yourself and confirm it under 设置 › 数据格式;
+- after 3 automatic starts within 10 minutes, until you start FULI yourself.
+
+In those cases the hooks' "Fuli context is unavailable" text says which one applies.
+`FULI_CONSOLE_AUTOSTART=off` in a client's environment turns it off for that client's sessions.
 
 ## Remote clients
 

@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import {
@@ -19,6 +20,12 @@ import {
 import { FULI_VERSION } from '../package-metadata.js';
 import { compareSemanticVersions, parseSemanticVersion } from '../semantic-version.js';
 import { isProcessAlive, stopProcess } from './processes.js';
+import {
+  acquireConsoleStartLock,
+  readConsoleAutostart,
+  recordPersonStart,
+  recordPersonStop
+} from './console-autostart-record.js';
 
 const CONSOLE_EXIT_TIMEOUT_MS = 15_000;
 const CONSOLE_VERSION_TIMEOUT_MS = 2_500;
@@ -27,15 +34,38 @@ const STOPPING_CONSOLE_GRACE_MS = 3_000;
 // console busy for a few seconds is still the one to stop, and an answer
 // missed here leaves it running (Update-Fuli: "could not be stopped").
 const STOP_IDENTITY_TIMEOUT_MS = 10_000;
+// A start waits this long for another one to finish (Neo4j's first start is slow).
+const START_LOCK_WAIT_MS = 5 * 60_000;
 
 export async function startLocalRuntime(input, dependencies = {}) {
   const deps = lifecycleDependencies(dependencies);
+  // One start at a time per data directory: a later one finds FULI running.
+  const release = deps.lockStart(dataDirOf(input.paths));
+  try {
+    return await startUnlocked(input, deps);
+  } finally {
+    release();
+  }
+}
+
+async function startUnlocked(input, deps) {
   const runtimeSettings = input.runtimeSettings ?? DEFAULT_RUNTIME_SETTINGS;
   const config = deps.readConfig(input.paths.graphRuntimeConfigPath);
   const managesDevelopmentWorkspace = hasManagedDevelopmentWorkspace(
     config,
     runtimeSettings
   );
+  // A start a client session's MCP process asked for (console-autostart.js)
+  // yields to a stop the person made after it decided; any other start is the
+  // person wanting FULI again.
+  const dataDir = dataDirOf(input.paths);
+  if (input.automatic === true) {
+    if (dataDir && deps.readAutostart(dataDir).stoppedAt) {
+      throw new Error('FULI was stopped on purpose; it is not started automatically.');
+    }
+  } else {
+    deps.recordStart(dataDir);
+  }
   const buildProviders = input.rebuild === true || !config ||
     !deps.fileExists(input.paths.graphEnvPath);
   // A first start without setup (the Windows tray) asks the same question (rec#5 C10).
@@ -68,6 +98,8 @@ export async function stopLocalRuntime(input, dependencies = {}) {
   const runtimeSettings = input.runtimeSettings ?? DEFAULT_RUNTIME_SETTINGS;
   const config = deps.readConfig(input.paths.graphRuntimeConfigPath);
   const state = deps.readState(input.paths.graphRuntimeStatePath);
+  // Recorded first, so no client session starts it again while it stops.
+  deps.recordStop(dataDirOf(input.paths));
   const consoleResult = await stopRecordedConsole(state, input.paths, deps);
   const managesDevelopmentWorkspace = state?.managedProviders?.includes(
     'development-workspace'
@@ -266,7 +298,38 @@ function lifecycleDependencies(overrides) {
       if (existsSync(path)) unlinkSync(path);
     },
     openExternal,
+    // The person's intent for client sessions (console-autostart-record.js).
+    // Stubbed runtimes in tests leave the data directory they name alone.
+    recordStop: overrides.stopProcess || overrides.ensureRuntime ? () => {} : keepIntent(recordPersonStop),
+    recordStart: overrides.ensureRuntime ? () => {} : keepIntent(recordPersonStart),
+    readAutostart: overrides.ensureRuntime ? () => ({ stoppedAt: null }) : readConsoleAutostart,
+    lockStart: overrides.ensureRuntime ? () => () => {} : lockConsoleStart,
     ...overrides
+  };
+}
+
+// The data directory the paths name, or null for paths that name none.
+function dataDirOf(paths) {
+  if (typeof paths?.dataDir === 'string' && paths.dataDir) return paths.dataDir;
+  return typeof paths?.graphRuntimeStatePath === 'string' ? dirname(paths.graphRuntimeStatePath) : null;
+}
+
+function lockConsoleStart(dataDir) {
+  if (!dataDir || !existsSync(dataDir)) return () => {};
+  try {
+    return acquireConsoleStartLock(dataDir, { waitMs: START_LOCK_WAIT_MS });
+  } catch (error) {
+    if (error?.code !== 'file_lock_busy') throw error;
+    throw new Error('Another FULI start is still running for this data directory; try again when it has finished.');
+  }
+}
+
+// A start or stop never fails over the intent record: at worst a session
+// starts FULI once more, or not at all, until the next start or stop.
+function keepIntent(record) {
+  return (dataDir) => {
+    if (!dataDir || !existsSync(dataDir)) return;
+    try { record(dataDir); } catch { /* the start or stop itself goes on */ }
   };
 }
 

@@ -1,3 +1,5 @@
+import { dirname } from 'node:path';
+
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import {
@@ -12,6 +14,7 @@ import { nativeMcpRequestContextResolver } from '../agents/native-mcp-context.js
 import { FULI_VERSION } from '../package-metadata.js';
 import { registerMcpProcess } from './process-registry.js';
 import { MCP_SESSION_STARTED_ENV } from './stdio-relay.js';
+import { superviseConsole } from '../local-runtime/console-autostart.js';
 
 export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames = null, toolProfile = 'full', worker = null }) {
   const app = openFederatedGraphApplication({ runtimeConfigPath });
@@ -34,13 +37,17 @@ export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames
   // Lets a later hook see that this client still runs this version after an
   // update, and the doctor offer to open the sessions this server answered.
   const registration = worker === null ? registerMcpProcess(runtimeConfigPath, { sourceApplication, version: FULI_VERSION, sessionStartedAt: process.env[MCP_SESSION_STARTED_ENV] }) : null;
+  // A client session keeps the installed console running (rec#94); a worker's
+  // process belongs to a session that already does.
+  const stopSupervising = worker === null && runtimeConfigPath
+    ? superviseConsole({ dataDir: dirname(runtimeConfigPath) }) : () => {};
   const close = createCloseOnce({
     closeServer: () => server.close(),
     closeApplication: async () => {
       await leaseClient.close();
       return app.close();
     },
-    afterClose: () => { registration?.unregister(); removeHandlers(signalHandlers); }
+    afterClose: () => { stopSupervising(); registration?.unregister(); removeHandlers(signalHandlers); }
   });
   const quietClose = createQuietCloser(close, () => { process.exitCode = 1; });
 
