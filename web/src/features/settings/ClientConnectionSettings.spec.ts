@@ -109,7 +109,7 @@ it('shows each client’s configuration status in plain words without claiming i
   expect(rows[0]!.text()).toContain('已接入')
   expect(rows[1]!.text()).toContain('不会自动重新安装')
   expect(rows[2]!.text()).toContain('无法读取')
-  expect(rows[3]!.text()).toContain('残留')
+  expect(rows[3]!.text()).toContain('只剩技能文件')
   expect(wrapper.text()).toContain('不代表客户端正在运行')
   expect(wrapper.text()).not.toMatch(/在线|运行中/)
   wrapper.unmount()

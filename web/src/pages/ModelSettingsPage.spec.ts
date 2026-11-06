@@ -130,7 +130,7 @@ describe('ModelSettingsPage', () => {
     const section = (await openDetails(wrapper, 'tonborg')).get('[data-model-trust="tonborg"]')
     expect(section.get('[data-model-trust-status]').text()).toBe('看过下面的提示后自动执行')
     expect(section.get('[data-model-trust-warning]').text())
-      .toBe('模型可能判断错，它的判断会直接生效；你可以随时改成「只给建议」，部分写入可在回执里撤回。')
+      .toBe('模型可能判断错，它的判断会直接生效。你可以随时改成「只给建议」，部分写入可在回执里撤回。')
     expect(section.get('[role="switch"]').attributes('aria-checked')).toBe('false')
     expect(section.find('[data-model-trust-evaluation]').exists()).toBe(false)
     expect(api.putJson).not.toHaveBeenCalled()
