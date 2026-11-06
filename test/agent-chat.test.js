@@ -257,10 +257,11 @@ test('wait returns an empty page and unchanged cursor on timeout', { timeout: 30
   assert.equal(result.nextAfter, 0);
 });
 
-// The child says it is ready only once its wait has subscribed, so the message
-// is committed after the subscription and must arrive through the store's
-// change signal. Nothing here depends on how fast the child starts: the wait
-// ends on the message, and a child that exits early fails the test at once.
+// The child says it is ready only once its wait has subscribed and finished its
+// first read (process.send writes at once, so an earlier "ready" can let this
+// process commit before that read). The message then reaches the wait only
+// through the store's change signal. Nothing here depends on how fast the
+// child starts: the wait ends on the message, and an early exit fails at once.
 test('a separate MCP process wait observes a committed message without polling', async t => {
   const { spawn } = await import('node:child_process');
   const { once } = await import('node:events');
@@ -273,12 +274,13 @@ test('a separate MCP process wait observes a committed message without polling',
   const code = `import {createRoundtableStore} from './packages/roundtable/src/roundtable/store.js';
     import {createChatService} from './packages/roundtable/src/roundtable/chat-service.js';
     const store=createRoundtableStore(process.argv[1]);
-    const chat=createChatService({store:store.chat,transaction:store.transaction,scope:'space',transport:'local'});
-    const subscribe=store.chat.subscribe, subscribed=Promise.withResolvers(); let signals=0;
-    store.chat.subscribe=listener=>{const stop=subscribe(error=>{signals++;listener(error);});subscribed.resolve();return stop;};
-    const pending=chat({address:'local:beta'},{action:'wait',chatId:process.argv[2],timeoutSeconds:60});
-    await subscribed.promise; process.send('ready');
-    const page=await pending; process.send({body:page.messages[0]?.body,signals}); store.close(); process.disconnect();`;
+    const subscribe=store.chat.subscribe; let subscribed=false, ready=false, signals=0;
+    store.chat.subscribe=listener=>{const stop=subscribe(error=>{signals++;listener(error);});subscribed=true;return stop;};
+    const transaction=work=>{const result=store.transaction(work);
+      if(subscribed&&!ready){ready=true;process.send('ready');} return result;};
+    const chat=createChatService({store:store.chat,transaction,scope:'space',transport:'local'});
+    const page=await chat({address:'local:beta'},{action:'wait',chatId:process.argv[2],timeoutSeconds:60});
+    process.send({body:page.messages[0]?.body,signals}); store.close(); process.disconnect();`;
   const child = spawn(process.execPath, ['--input-type=module','-e',code,path,room.chatId], { stdio: ['ignore','ignore','pipe','ipc'] });
   t.after(async () => { child.kill(); roundtable.close(); await rm(directory, { recursive: true, force: true }); });
   let stderr = '';
