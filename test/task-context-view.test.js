@@ -115,12 +115,11 @@ test('a no-match recall shows only noMatchSourceMarker; a match keeps both marke
   assert.deepEqual([matched.partial, matched.failed_query_count, matched.trigger_categories], [true, 1, ['release_delivery']]);
 });
 
-test('a never-written memory layer is its scope, revision 0 and rules; a written one keeps its preview', () => {
+test('a never-written memory layer is revision 0 and its rules; a written one keeps its preview', () => {
   const layer = current => ({ scope: 'private_agent_project', authority: 'working_context_not_confirmed_knowledge',
     revision: current ? 2 : 0, current, personalSpaceId: 's', personalProjectId: 'p', agentId: 'a' });
   const empty = compactTaskContext(entry({ project_agent_context: { memory: layer(null) } })).project_agent_context.memory;
-  assert.deepEqual(empty, { scope: 'private_agent_project', revision: 0, current: null,
-    guidance: { rules: `${ENTRY_RULES_URI}/memory_guidance` } });
+  assert.deepEqual(empty, { revision: 0, guidance: { rules: `${ENTRY_RULES_URI}/memory_guidance` } });
   const written = compactTaskContext(entry({ project_agent_context: { memory: layer({ revision: 2,
     memory: { summary: 'SYNTHETIC summary', decisions: [], openThreads: [], nextActions: [] } }) } })).project_agent_context.memory;
   assert.equal(written.requiresFullReadBeforeWrite, true);
@@ -209,4 +208,18 @@ test('a fresh project\'s task entry keeps who and how to read, not empty details
     managers: [{ ...manager, board: { version: 3, total: 2, view: 'on_demand' } }] } }));
   assert.equal(busy.project_management_context.managers[0].title_mode, 'auto');
   assert.ok(busy.project_management_context.managers[0].tools);
+});
+
+test('a team of one carries no team rules, and the Agent and project IDs are stated once, in context (rec#88)', () => {
+  const { sections } = entryRules();
+  const view = compactTaskContext(entry({ context: { personal_space_id: 's', personal_project_id: 'p', project_agent_id: 'lead' },
+    project_agent_context: { project_agent_id: 'lead', personal_project_id: 'p', guidance: sections.continuity_guidance,
+      team: { guidance: sections.team_guidance, roster: [{ agent_id: 'lead', name: 'Lead', occupation: 'lead' }] } } }));
+  assert.equal(view.project_agent_context.team_guidance, undefined);
+  assert.deepEqual(view.project_agent_context.team, { roster: [{ name: 'Lead', occupation: 'lead' }] });
+  assert.equal(view.project_agent_context.project_agent_id, undefined);
+  assert.equal(view.project_agent_context.personal_project_id, undefined);
+  const pair = compactTaskContext(entry({ project_agent_context: { guidance: sections.continuity_guidance,
+    team: { guidance: sections.team_guidance, roster: [{ agent_id: 'lead', name: 'Lead' }, { agent_id: 'm', name: 'Member' }] } } }));
+  assert.equal(pair.project_agent_context.team_guidance.rules, `${ENTRY_RULES_URI}/team_guidance`);
 });

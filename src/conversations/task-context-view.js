@@ -64,7 +64,10 @@ export function compactTaskContext(value) {
     // Tonborg reads the saved policy itself (assess_agent_action); the entry names the Agent and its rule.
     ? { agentId: value.judgment_context.agentId, guidance: text(value.judgment_context.guidance, 'judgment_guidance') }
     : { ...value.judgment_context, guidance: text(value.judgment_context.guidance, 'judgment_guidance') };
-  const teamRules = !omitTeam && (continuity?.team?.guidance ?? continuity?.team_guidance);
+  // A team of one has nobody to report to or staff from: its rules wait for a second member.
+  const solo = share && Array.isArray(continuity?.team?.roster) && continuity.team.roster.length <= 1 && !continuity?.team?.assigned_collaborators?.length
+    && !continuity?.team?.assigned_peers?.length;
+  const teamRules = !omitTeam && !solo && (continuity?.team?.guidance ?? continuity?.team_guidance);
   const teamGuidance = teamRules ? text(teamRules, 'team_guidance') : undefined;
   if (continuity) result.project_agent_context = { ...continuity, ...selectionView(continuity, share),
     ...(share && continuity.project_brief?.authors ? { project_brief: { ...continuity.project_brief, authors: undefined } } : {}),
@@ -81,8 +84,8 @@ export function compactTaskContext(value) {
       ...(continuity.global_memory !== undefined ? { global_memory: continuity.global_memory
         && memoryPreview(continuity.global_memory, ruleOrReference('global_memory_guidance', share)) } : {}) };
   }
-  if (share && result.project_agent_context) result.project_agent_context = withoutDefaults(result.project_agent_context,
-    { flags: false, keep: AGENT_CONTEXT_STATES });
+  if (share && result.project_agent_context) result.project_agent_context = withoutDefaults(withoutContextIds(
+    result.project_agent_context, value.context), { flags: false, keep: AGENT_CONTEXT_STATES });
   if (share && withoutTaskToken(value)) return copyPreferenceScope(value, withRulesVersion(onDemandDetails(result)));
   return copyPreferenceScope(value, share ? withRulesVersion(result) : result);
 }
@@ -166,6 +169,14 @@ export function receiptView(receipt) {
     guidance: ruleTextView(receipt.guidance, 'receipt_guidance') }, { flags: true });
 }
 
+// The Agent's and project's IDs are the entry context's; repeated here they
+// only cost tokens (rec#88).
+function withoutContextIds(continuity, context) {
+  return { ...continuity,
+    ...(context?.project_agent_id && continuity.project_agent_id === context.project_agent_id ? { project_agent_id: undefined } : {}),
+    ...(context?.personal_project_id && continuity.personal_project_id === context.personal_project_id ? { personal_project_id: undefined } : {}) };
+}
+
 // null memory means that layer is unavailable and an empty team means no
 // members, so these keys stay even when empty.
 const AGENT_CONTEXT_STATES = new Set(['memory', 'global_memory', 'team']);
@@ -241,8 +252,9 @@ function ruleOrReference(section, share) {
 function memoryPreview(memory, guidance) {
   const current = memory.current;
   // A layer never written has nothing to preview, cut or read in full first:
-  // its scope, revision 0 (the first write's expectedRevision) and rules.
-  if (!current && memory.revision === 0 && !memory.scrubbedGuidance) return { scope: memory.scope, revision: 0, current: null, guidance };
+  // revision 0 (the first write's expectedRevision) and its rules; the field
+  // names the layer.
+  if (!current && memory.revision === 0 && !memory.scrubbedGuidance) return { revision: 0, guidance };
   const notes = current?.memory;
   let notesTruncated = false;
   const text = (value, limit) => {

@@ -244,7 +244,10 @@ const BASELINE = Object.freeze({
   // null fields (-55), default flags and counts (-100), and the rules version is stated once
   // (-295): 5,939 -> 4,645 chars (about 1,650 -> 1,290 tokens). Role, preferences, receipt,
   // token, team, manager and judgment are unchanged.
-  noMatchEntryChars: 4645,
+  // rec#88 (compounding eval): an empty board's manager is its reader, a team gap its reason code, a
+  // solo team carries no team rules, an empty memory layer is its revision and rules, Tonborg is named
+  // without its policy, the brief without its authors, and repeated IDs are stated once: 4,645 -> 4,081.
+  noMatchEntryChars: 4081,
   // rec#51 D-59: a coding task (a change request naming a distinctive term) whose exact project
   // holds matching knowledge gets a title-only knowledge_index in its recall: [id, title] pairs, the
   // count that one bounded search kept and one read line, never a body. Measured over the same
