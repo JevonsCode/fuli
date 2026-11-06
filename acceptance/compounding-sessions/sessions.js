@@ -1,4 +1,4 @@
-// The compounding sequence: six follow-up tasks on the synthetic Tidewater repo, one fresh Agent session each.
+// The compounding sequence: nine follow-up tasks on the synthetic Tidewater repo, one fresh Agent session each.
 // Later tasks lean on what earlier ones established: the retry policy and its shared helper (s1 → s2, s3, s6),
 // the generated spec fixtures every test run needs (every session), the channel and error-code conventions plus
 // `npm run check` (s3, s5), and the e2e port (s4). Every session starts from the same repo state in both arms:
@@ -52,5 +52,31 @@ export const SESSIONS = [
     prompt: 'A partner complained that our webhook retries hammered them after 4xx answers, and the SMS retry delays look '
       + 'off too. Check that every channel follows our retry policy exactly and fix any drift, tests included. Make sure '
       + 'every project check passes.'
+  },
+  // Facts that are never in the code (rec#88 phase 4): the person states them once, in passing, in s7; s8 and s9
+  // need them. Without memory the Agent can only guess or ask again.
+  {
+    id: 's7',
+    title: 'Error code in the failure log (facts stated in passing)',
+    needs: ['spec fixtures'],
+    states: ['push provider sandbox URL and key header', 'on-call alert title rule'],
+    prompt: "Make the relay's `failed` log line include the error code as `code=...`. By the way, our push provider's sandbox "
+      + 'base URL is https://sandbox.tidepush.example/v2, and every request to it needs the header `X-Tide-Key` set from '
+      + '`process.env.TIDE_PUSH_KEY`. Our on-call alert titles are `[tidewater] ` followed by the channel name in upper case, '
+      + 'for example `[tidewater] SMS`. Make sure the whole suite passes.'
+  },
+  {
+    id: 's8',
+    title: 'Push channel to the provider sandbox',
+    needs: ['push provider sandbox URL and key header (s7)', 'retry policy', 'channel and error-code conventions', 'spec fixtures'],
+    prompt: "Add a `push` channel: it sends the message to our push provider's sandbox through the injected transport, with the "
+      + 'key header I gave you before, our standard retry policy and the channel conventions. Make sure every project check passes.'
+  },
+  {
+    id: 's9',
+    title: 'On-call alert titles',
+    needs: ['on-call alert title rule (s7)', 'spec fixtures'],
+    prompt: 'Add `alertTitle(channelName)` in a new `src/alerts.js` that formats on-call alert titles by our naming rule, with a '
+      + 'test, and make sure the whole suite passes.'
   }
 ];

@@ -143,6 +143,51 @@ const CHECKS = {
     await retryPolicy('sms', channel('sms').send, SMS, 'TW-SMS-002');
     await retryPolicy('webhook', channel('webhook').send, HOOK, 'TW-WEBHOOK-002');
     await suite();
+  },
+  async s7() {
+    const { start } = await load('src/server.js');
+    await item('failed log line carries code=<error code>', async () => {
+      const lines = [];
+      const write = process.stdout.write.bind(process.stdout);
+      process.stdout.write = (chunk, ...rest) => { lines.push(String(chunk)); return true || write(chunk, ...rest); };
+      const server = await start({ port: 0 });
+      try {
+        await fetch(`http://127.0.0.1:${server.address().port}/relay`, { method: 'POST',
+          body: JSON.stringify({ channel: 'email', to: 'not-an-address' }) });
+      } finally {
+        server.close();
+        process.stdout.write = write;
+      }
+      return lines.some((line) => /failed/.test(line) && /code=/.test(line) && /TW-EMAIL-001/.test(line));
+    });
+    await suite();
+  },
+  // The sandbox URL and key header exist only in what the person said in s7.
+  async s8() {
+    const { channel } = await load('src/channels/index.js');
+    const PUSH = { channel: 'push', to: 'device-7', body: 'tide alert' };
+    await item('push registered', () => channel('push')?.name === 'push');
+    await item('push goes to the provider sandbox with the X-Tide-Key header', async () => {
+      process.env.TIDE_PUSH_KEY = 'k-check-123';
+      const { transport, calls } = scripted([{ status: 200, id: 'p' }]);
+      await channel('push').send(PUSH, { transport, sleep: async () => {} });
+      const sent = JSON.stringify(calls[0] ?? {});
+      return sent.includes('https://sandbox.tidepush.example/v2') && /"x-tide-key":"k-check-123"/i.test(sent);
+    });
+    const send = (message, options) => channel('push').send(message, options);
+    const { transport } = scripted([{ status: 404 }]);
+    const refusal = (await rejects(send(PUSH, { transport, sleep: async () => {} })))?.code;
+    await item('push refusal code follows TW-<AREA>-<NNN>', () => /^TW-[A-Z]+-\d{3}$/.test(refusal ?? ''));
+    await retryPolicy('push', send, PUSH, refusal ?? 'TW-PUSH-002');
+    await codesListed();
+    await suite();
+  },
+  // The naming rule exists only in what the person said in s7.
+  async s9() {
+    const { alertTitle } = await load('src/alerts.js');
+    await item('alert titles follow the on-call naming rule', () =>
+      alertTitle('sms') === '[tidewater] SMS' && alertTitle('webhook') === '[tidewater] WEBHOOK');
+    await suite();
   }
 };
 
