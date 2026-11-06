@@ -28,6 +28,7 @@ import { createPersonProfile } from '../person-profile/port.js';
 import { entryPromptRecords } from '../agent-delegation/entry-prompts.js';
 import { createWorkSurfaces } from '../work-surfaces/port.js';
 import { createOldDataShelf } from '../old-data/port.js';
+import { createOccupationPlugins } from '../occupation-plugins/port.js';
 import { workSurfaceNames, workSurfaceSources } from '../work-surfaces/sources.js';
 import { createAgentDirectorySnapshots } from '../agents/directory-snapshots.js';
 import { attachExternalKnowledgeRuntime } from '../external-knowledge/runtime.js';
@@ -104,6 +105,9 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
     names: (personalSpaceId) => workSurfaceNames(app, personalSpaceId) });
   // The copies FULI keeps before it changes something (旧数据, rec#80 group B); reads only.
   app.oldData = createOldDataShelf({ paths });
+  // Each occupation's starter kit and what the person enabled per FLA; the choices file is created by the first answer.
+  app.occupationPlugins = createOccupationPlugins({ statePath: join(dataDir, 'occupation-plugins.json'),
+    choicesPath: join(dataDir, 'occupation-kit-choices.sqlite'), fetchImpl });
   app.roundtableHost = createFuliRoundtableHost(app);
   app.peer = createPeerPort({ dataDir, host: app.roundtableHost });
   app.roundtable = createAgentRoundtable({
@@ -123,6 +127,7 @@ export function closeLocalRuntimes(app) {
   app.agentWorkflows?.close();
   app.recallImpressions?.close();
   app.agentAvatars?.close();
+  app.occupationPlugins?.close();
   app.projectChangeLog?.close();
   app.workSurfaces?.close();
   app.roleWork?.close();

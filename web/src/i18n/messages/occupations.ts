@@ -73,6 +73,12 @@ export const occupationsMessages = {
       tooShort: '要做的事至少写 8 个字。',
       nameRequired: '请填写名称。',
     },
+    kit: {
+      title: '起步包',
+      pieces: '干活清单 {checklist} 条 · 验收 {acceptance} 条，FLA 用到时才读',
+      skills: '推荐 Skill：',
+      mcpServers: '建议 MCP：',
+    },
   },
   'en-US': {
     title: 'Occupations',
@@ -147,6 +153,12 @@ export const occupationsMessages = {
       saving: 'Saving the occupation…',
       tooShort: 'Describe the work in at least 8 characters.',
       nameRequired: 'Enter a name.',
+    },
+    kit: {
+      title: 'Starter kit',
+      pieces: '{checklist} checklist items · {acceptance} acceptance checks, read only when an FLA needs them',
+      skills: 'Recommended Skills: ',
+      mcpServers: 'Suggested MCP: ',
     },
   },
 } as const

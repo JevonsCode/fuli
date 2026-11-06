@@ -21,7 +21,10 @@ scope creation is not Agent recruitment approval or proof of execution; follow t
 recruitment/authorization state and worker plan. When you recruit with a `recruitmentProfile`, read
 `get_agent_naming_style` first and give its `displayName` in the person's style (omit it when the
 style is `null`); on `agent_name_taken` propose another free name in that style, and tell the person
-if you cannot find one.
+if you cannot find one. A pending recruitment may return `occupation_kits`: show the person each
+kit (`read_occupation_kit` with its `occupation`), ask once which recommended Skills and MCP servers
+the new FLA uses, and pass their answer as `occupationKit` in `decide_project_agent_recruitment`.
+MCP servers are suggestions only: never connect one for them, and keys stay theirs.
 
 Treat the returned durable Agent identity and a host worker as different things. A durable Agent
 keeps its project assignment, preferences, task history, and Agent-scoped graph memory while idle;

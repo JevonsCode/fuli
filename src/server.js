@@ -165,12 +165,13 @@ export async function createServer(options = {}) {
   let semanticIndexer = null;
   let retrievalTerms = null;
   let stopClientLinkUpdates = () => {};
+  let stopOccupationPluginUpdates = () => {};
   let peer = null;
   let workerRuntime = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
+      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
         () => releaseDataDirectory()]) {
         try {
           const pending = close();
@@ -302,6 +303,10 @@ export async function createServer(options = {}) {
   void semanticIndexer.runNow();
   stopClientLinkUpdates = clientLinks?.startAutoUpdate({
     onError: (error) => console.warn(`Client links were not updated: ${error?.message ?? error}`)
+  }) ?? (() => {});
+  // Occupation plugins update once a day unless the person turned that off.
+  stopOccupationPluginUpdates = application.occupationPlugins?.startAutoUpdate({
+    onError: (error) => console.warn(`Occupation plugins were not updated: ${error?.message ?? error}`)
   }) ?? (() => {});
   // Resumes only what the owner already turned on; console LAN access never enables it.
   if (application.peer && options.peer !== false) {

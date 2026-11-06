@@ -8,6 +8,7 @@ import { handleDataFormatApiRequest } from './data-format-api-router.js';
 import { handleDoctorApiRequest } from './doctor-api-router.js';
 import { handleDiagnosticsApiRequest } from './diagnostics-api-router.js';
 import { handleOldDataRequest } from './old-data-api-router.js';
+import { handleOccupationPluginsRequest } from './occupation-plugins-api-router.js';
 import { handleDebugTurnsRequest } from './debug-turns-api-router.js';
 import { handleDiagnosticEventsRequest } from './diagnostic-events-api-router.js';
 import { handlePersonProfileRequest } from './person-profile-api-router.js';
@@ -207,6 +208,7 @@ export async function handleApiRequest({
   if (await handleDoctorApiRequest({ request, response, url, system })) return true;
   if (await handleDiagnosticsApiRequest({ request, response, url, app, system })) return true;
   if (await handleOldDataRequest({ request, response, url, shelf: app.oldData, restore: dataFormatMigrations?.restore ?? null })) return true;
+  if (await handleOccupationPluginsRequest({ request, response, url, app })) return true;
   if (await handleDreamingRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads })) return true;
   if (await handleNoticesRequest({ request, response, url, app, delegation: agentDelegation, system })) return true;
   if (await handleRetrospectivesRequest({ request, response, url, app })) return true;

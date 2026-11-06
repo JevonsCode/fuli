@@ -116,6 +116,7 @@ const RELAYED_DECISIONS = new Set([
   'POST /api/capture-onboarding',
   'POST /api/data-format/dismiss-notices',
   'POST /api/agent-apps/:appId/reveal-export',
+  'PUT /api/project-agents/:agentId/occupation-kit',
 ]);
 
 test('Agent interface catalog covers UI mutations with a tool or an explicit local-user boundary', () => {
@@ -167,7 +168,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [48, 8, 12, 28]);
+    catalog.coverage.localUserOnly], [51, 8, 13, 28]);
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
   for (const entry of relayed) {

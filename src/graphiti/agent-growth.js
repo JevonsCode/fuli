@@ -30,7 +30,8 @@ export async function getAgentGrowth(application, { personalSpaceId, agentId, pe
   let partial = false;
   const items = [];
   for (const projectId of projectIds) {
-    const read = await experiencesIn(application, personalSpaceId, projectId, agentId, ownerReads);
+    const read = await projectExperiences(application, personalSpaceId, projectId,
+      node => node.confirmation_basis?.proposed_by?.label === agentId, ownerReads);
     partial ||= read.partial;
     items.push(...read.items);
   }
@@ -42,16 +43,20 @@ export async function getAgentGrowth(application, { personalSpaceId, agentId, pe
     items: items.slice(0, ITEM_LIMIT) };
 }
 
-async function experiencesIn(application, spaceId, personalProjectId, agentId, ownerReads) {
+// The current reusable experiences of one project that accept(node) keeps.
+// Also the occupation kit's learned layer (occupation-plugins/agent-tools.js).
+export async function projectExperiences(application, spaceId, personalProjectId, accept, ownerReads = null) {
   const items = [];
   let offset = null;
   for (let page = 0; page < MAX_PAGES; page++) {
     const graph = await getKnowledgeGraph(application, { spaceId, personalProjectId, limit: PAGE_LIMIT, offset }, ownerReads);
     for (const node of graph.nodes) {
       if (node.type !== EXPERIENCE_TYPE || node.invalid_at || (node.version_status ?? 'current') !== 'current'
-          || node.confirmation_basis?.proposed_by?.label !== agentId) continue;
+          || !accept(node)) continue;
       items.push({ itemId: node.id, personalProjectId, title: node.name,
         solution: node.attributes?.solution ?? node.summary ?? '', boundary: node.attributes?.boundary ?? null,
+        // An acceptance check the experience is written as (rec#78 11-06 ②), when it has one.
+        check: node.attributes?.check ?? null, proposedBy: node.confirmation_basis?.proposed_by?.label ?? null,
         status: node.confirmation_status ?? 'pending', uses: node.qualified_use_count ?? 0,
         tasks: node.distinct_task_count ?? 0, proven: (node.distinct_task_count ?? 0) >= PROVEN_TASKS, lastUsedAt: node.last_used_at ?? null, createdAt: node.created_at ?? null,
         // What a person's 保留 confirms on: the reasons the FLA recorded with it.

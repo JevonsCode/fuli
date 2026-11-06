@@ -11,6 +11,7 @@ const READ_TOOLS = new Set([
   'list_work_surfaces',
   'read_diagnostic_events',
   'read_old_data',
+  'read_occupation_kit',
   'list_preference_conflicts',
   'list_agent_interfaces',
   'get_capture_policy',
