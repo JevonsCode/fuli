@@ -35,6 +35,7 @@ import { TONBORG_OPERATIONS } from '../judgment/backend.js';
 import { ASTRO_OPERATION } from '../graphiti/assistant-project-candidate.js';
 import { DREAMING_OPERATION } from '../dreaming/run.js';
 import { handleDreamingRequest } from './dreaming-api-router.js';
+import { handleNoticesRequest } from './notices-api-router.js';
 import { handleSemanticRequest } from './semantic-api-router.js';
 import { handleRetrievalTermsRequest } from './retrieval-terms-api-router.js';
 import { RETRIEVAL_TERMS_OPERATION } from '../retrieval-terms/terms-model.js';
@@ -206,6 +207,7 @@ export async function handleApiRequest({
   if (await handleDiagnosticsApiRequest({ request, response, url, app, system })) return true;
   if (await handleOldDataRequest({ request, response, url, shelf: app.oldData, restore: dataFormatMigrations?.restore ?? null })) return true;
   if (await handleDreamingRequest({ request, response, url, app, ownerReads: knowledgeOwnerReads })) return true;
+  if (await handleNoticesRequest({ request, response, url, app, delegation: agentDelegation, system })) return true;
   if (await handleSemanticRequest({ request, response, url, app, indexer: app.semanticIndexer ?? null })) return true;
   if (await handleRetrievalTermsRequest({ request, response, url, app, runner: app.retrievalTerms ?? null })) return true;
   if (await handleDebugTurnsRequest({ request, response, url, debugTurns: system?.debugTurns ?? null, modelCapture: system?.modelCapture ?? null })) return true;
