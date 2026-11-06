@@ -20,6 +20,7 @@ const SEARCHED_TEXT = ["json_extract(r.body,'$.title')", "json_extract(r.body,'$
   "json_extract(r.body,'$.evidence')", "json_extract(r.body,'$.client')", "json_extract(r.body,'$.model')", 'r.project',
   '(SELECT f.reason FROM judgment_feedback f WHERE f.decision = r.id ORDER BY f.revision DESC LIMIT 1)',
   `json_extract((SELECT e.receipt ${LATEST_EXECUTION}), '$.reason')`];
+const DELEGATION_KEY = 'review-delegation';
 const conflict = () => new EmployeeError('This record changed. Reload and try again.', 409, 'judgment_conflict');
 export const JUDGMENT_FORMAT = sqliteFormat({
   store: 'judgment',
@@ -174,9 +175,31 @@ export class JudgmentStore {
     const execution = this.db.prepare('SELECT status FROM judgment_execution WHERE decision=? ORDER BY id DESC LIMIT 1').get(row.id);
     return row.outcome !== 'failed' && !['failed', 'stale'].includes(execution?.status);
   }
+  // 「交给 Tonborg 确认」 (rec#96): whether Tonborg confirms knowledge for
+  // the person, and when that last changed.
+  delegation(space) {
+    const { revision, value } = this.setting(space, DELEGATION_KEY);
+    return { enabled: value?.enabled === true, changedAt: value?.changedAt ?? null, revision };
+  }
+  setDelegation(space, enabled, expectedRevision) {
+    this.writeSetting(space, DELEGATION_KEY, { enabled, changedAt: new Date().toISOString() }, expectedRevision);
+    return this.delegation(space);
+  }
+  // The reviews Tonborg made with delegation on, newest first: what the
+  // person's list shows as Tonborg's own decisions and its questions.
+  delegatedReviews(space, limit) {
+    this.#assertRecovery(space);
+    return this.db.prepare(`SELECT id FROM judgment_records WHERE space=? AND json_extract(body,'$.kind')='review'
+      AND json_extract(body,'$.delegated')=1 ORDER BY rowid DESC LIMIT ?`)
+      .all(space, limit).map(({ id }) => this.get(space, id));
+  }
+  // Whether Tonborg reviews on its own schedule: a shared or autonomous
+  // policy, or 「交给 Tonborg 确认」.
+  // Metadata only, like pins: readable while text recovery waits.
   hasAutomaticPolicy(space) {
-    return this.db.prepare(`SELECT 1 AS enabled FROM judgment_settings WHERE space=? AND key LIKE 'policy:%'
-      AND json_extract(value,'$.mode') IN ('shared','autonomous') LIMIT 1`).get(space)?.enabled === 1;
+    return this.db.prepare(`SELECT 1 AS enabled FROM judgment_settings WHERE space=? AND ((key LIKE 'policy:%'
+      AND json_extract(value,'$.mode') IN ('shared','autonomous')) OR (key=? AND json_extract(value,'$.enabled')=1))
+      LIMIT 1`).get(space, DELEGATION_KEY)?.enabled === 1;
   }
   // relay: the FLA that relayed the person's vote and their words (rec#80), or null.
   feedback(space, id, vote, reason, expectedRevision, relay = null) {

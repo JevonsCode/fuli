@@ -2,8 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardAction, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { focusReturnTarget } from '@/composables/useFocusReturn'
 import { t } from '@/i18n'
@@ -13,9 +13,9 @@ import AttentionPeek from './AttentionPeek.vue'
 import TaskBlockerNotice from './TaskBlockerNotice.vue'
 import type { AttentionAnswer, AttentionReplyDraft } from './attention-replies'
 import { inboxLocation, useAgentAttention, type AgentAttention, type AttentionPeekState } from './attention-store'
-import UiIcon from '@/ui/UiIcon.vue'
+import UiNotice from '@/ui/UiNotice.vue'
 
-// The inbox body: the queue as cards on one canvas; a request opens in a
+// The Agents' requests in the 待决策 list: one line each; a request opens in a
 // centred quick look (Peek) with its reply. The page keeps which request is
 // open in the URL; this component only asks to open or close it.
 const props = defineProps<{ personalSpaceId: string; projects: PersonalProject[]; openRequestId?: string }>()
@@ -121,35 +121,35 @@ async function respond(item: AgentAttention, answer: AttentionAnswer) {
 
 <template>
   <div ref="root" class="attention-page-body">
-    <div class="attention-toolbar flex flex-wrap items-center gap-2">
-      <span class="attention-page-count text-sm text-muted-foreground" :class="{ 'ui-sr-only': !pendingCount && !attention.agentId }" role="status">{{ attention.agentId ? names[attention.agentId] || t('attention.agentFallback') : t('attention.all') }} · {{ t('attention.count', { count: pendingCount }) }}</span>
-      <div class="ml-auto flex items-center gap-2">
-        <GrowthLoading v-if="attention.loading && attention.items.length" variant="inline" :label="t('attention.loading')" />
-        <Button v-if="attention.agentId" as-child variant="outline" size="sm"><RouterLink :to="inboxLocation()">{{ t('attention.all') }}</RouterLink></Button>
-      </div>
-    </div>
     <p v-if="attention.lastReply" class="attention-outcome" :class="`is-${attention.lastReply.status}`" role="status">{{ replyOutcome }}</p>
-    <div v-if="attention.error" role="alert" class="attention-error"><span>{{ t('attention.loadError') }}</span><Button variant="outline" size="sm" :disabled="attention.loading" @click="attention.refresh()">{{ t('attention.refresh') }}</Button></div>
-    <GrowthLoading v-if="attention.loading && !attention.items.length" variant="page" :label="t('attention.loading')" />
-    <div v-else-if="!attention.items.length && !attention.error" class="attention-empty"><span aria-hidden="true"><UiIcon name="check" :size="22" /></span><p>{{ t('attention.empty') }}</p></div>
-    <template v-else-if="attention.items.length">
-      <ul class="attention-request-list m-0 grid list-none grid-cols-1 gap-3 p-0 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3 @min-[1400px]:grid-cols-4"
-        :aria-label="t('attention.queue')" :aria-busy="attention.loading">
-        <li v-for="item in attention.items" :key="item.requestId" class="min-w-0">
-          <article class="attention-request flex h-full min-w-0 flex-col gap-2 rounded-lg border bg-card px-4 pt-3.5 pb-3 transition-[border-color,box-shadow] hover:border-border-strong"
-            :class="{ 'is-selected border-border-strong shadow-md': selectedId === item.requestId }" :data-return-focus="item.requestId">
-            <p class="m-0 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-              <span class="min-w-0 truncate">{{ agentName(item) }}</span>
-              <Badge class="ml-auto" variant="secondary" :title="t(`attention.kinds.${item.kind}`)">{{ t(`attention.kinds.${item.kind}`) }}</Badge>
-            </p>
-            <button type="button" class="attention-request-title" :disabled="Boolean(busy)" aria-haspopup="dialog" @click="openRequest(item.requestId)">{{ item.title }}</button>
-            <TaskBlockerNotice v-if="item.taskBlocker" compact :blocker="item.taskBlocker" />
-            <p class="m-0 mt-auto min-w-0 truncate text-xs text-muted-foreground" :title="projectName(item)">{{ projectName(item) }}</p>
-          </article>
+    <UiNotice v-if="attention.error" tone="error">{{ t('attention.loadError') }}
+      <template #actions><Button variant="outline" size="sm" :disabled="attention.loading" @click="attention.refresh()">{{ t('attention.refresh') }}</Button></template>
+    </UiNotice>
+    <!-- One group of the 待决策 list (rec#96): each request one line; nothing at all when none waits. -->
+    <Card v-if="attention.items.length" as="section" class="review-group" aria-labelledby="attention-group-title" data-review-group="attention">
+      <CardHeader class="review-group__header">
+        <CardTitle id="attention-group-title" as="h2" class="review-group__title">
+          {{ attention.agentId ? names[attention.agentId] || t('attention.agentFallback') : t('reviewList.groups.attention') }} · {{ pendingCount }}
+        </CardTitle>
+        <CardAction class="review-group__action">
+          <span class="review-busy"><GrowthLoading v-if="attention.loading" variant="inline" :label="t('attention.loading')" /></span>
+          <Button v-if="attention.agentId" as-child variant="outline" size="sm"><RouterLink :to="inboxLocation()">{{ t('attention.all') }}</RouterLink></Button>
+        </CardAction>
+      </CardHeader>
+      <ul class="review-rows" :aria-label="t('attention.queue')" :aria-busy="attention.loading">
+        <li v-for="item in attention.items" :key="item.requestId" class="review-row" :class="{ 'is-selected': selectedId === item.requestId }"
+          :data-return-focus="item.requestId">
+          <button type="button" class="attention-request-title review-row__text" :disabled="Boolean(busy)" aria-haspopup="dialog"
+            :title="item.title" @click="openRequest(item.requestId)">{{ item.title }}</button>
+          <span class="review-row__meta">{{ agentName(item) }} · {{ projectName(item) }} · {{ t(`attention.kinds.${item.kind}`) }}</span>
+          <span class="review-row__actions">
+            <Button size="sm" variant="outline" :disabled="Boolean(busy)" aria-haspopup="dialog" @click="openRequest(item.requestId)">{{ t('reviewList.actions.answer') }}</Button>
+          </span>
+          <TaskBlockerNotice v-if="item.taskBlocker" compact class="review-row__note" :blocker="item.taskBlocker" />
         </li>
       </ul>
       <Button v-if="attention.items.length < attention.filteredTotal" variant="outline" class="attention-more" :disabled="attention.loading || Boolean(busy)" @click="attention.more()">{{ t('attention.more') }}</Button>
-    </template>
+    </Card>
 
     <Dialog :open="Boolean(selectedId)" @update:open="peekOpenChange">
       <DialogContent size="lg" data-attention-peek-dialog @open-auto-focus="focusReply" @close-auto-focus="returnFocus">
@@ -172,3 +172,4 @@ async function respond(item: AgentAttention, answer: AttentionAnswer) {
 </template>
 
 <style src="./attention.css"></style>
+<style src="../review-list/review-rows.css"></style>

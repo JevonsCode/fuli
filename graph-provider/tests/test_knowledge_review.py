@@ -27,6 +27,13 @@ from fuli_graph.knowledge_review_models import (
     KnowledgeReviewProgress,
     KnowledgeReviewStart,
 )
+from fuli_graph.models import ConfirmationBasis, _validate_confirmation_state
+from fuli_graph.tonborg_confirmation import (
+    TONBORG_CONFIRMATION_POLICY_VERSION,
+    basis_json,
+    tonborg_confirmation_basis,
+    withdrawn_tonborg_basis,
+)
 
 
 def test_candidate_order_matches_review_policy_and_keeps_all_reasons():
@@ -350,6 +357,67 @@ async def test_ai_review_progress_locks_and_rechecks_current_content_before_writ
     assert result.ai_assessment.outcome == 'approve'
     assert 'SET item.fuli_ai_review_lock_version' in tx.calls[1][0]
     assert 'ai_assessment_json' in tx.calls[2][0]
+    assert tx.calls[2][1]['confirmation_basis_json'] is None
+    assert tx.calls[2][1]['ai_review_evidence_token'] == token
+
+
+@pytest.mark.asyncio
+async def test_a_delegated_tonborg_review_confirms_the_item_as_tonborgs():
+    """rec#96: with confirm_as_agent the applied review makes the pending item
+    agent_confirmed by Tonborg. Its marks keep the judged snapshot's token, the
+    one the undo and a rerun's settlement name; a confirmed item is refused."""
+
+    item = item_row('item-1', project_ids=['project-a'], confirmation_status='pending',
+                    confirmation_basis_json=json.dumps({'existence_reason': 'Synthetic.',
+                                                        'quadrant_reason': 'Synthetic.',
+                                                        'proposed_by': {'kind': 'agent'}}))
+    candidate = build_review_candidates(
+        [item], scope='project', personal_project_id='project-a', previous_completed_at=None,
+        conflict_item_keys=set(), decided_candidate_keys=set(),
+    )[0]
+    decision = {'id': 'decision-1', 'review_id': 'review-1', 'candidate_key': 'entity:item-1',
+                'outcome': 'ai_reviewed', 'note': None, 'created_at': item['created_at'],
+                'updated_at': item['created_at']}
+    tx = TransactionStub([
+        [{'run': run_record('review-1', 'active', item['created_at'], reviewer='tonborg',
+                            scope='project', personal_project_id='project-a')}],
+        [{**item, 'has_conflict': False}],
+        [{'decision': decision}],
+    ])
+    assessment = KnowledgeReviewAIAssessment(outcome='approve', summary='Useful', evidence=['Direct item'],
+                                             confidence=0.9)
+
+    await record_knowledge_review_progress(
+        StoreStub(TransactionRootDriver(tx)), {'id': 'principal-1'},
+        KnowledgeReviewProgress(personal_space_id='personal-space', review_id='review-1',
+                                candidate_key='entity:item-1', outcome='ai_reviewed',
+                                ai_review_evidence_token=candidate.ai_review_evidence_token,
+                                ai_assessment=assessment, confirm_as_agent=True),
+    )
+
+    query, parameters = tx.calls[2]
+    basis = ConfirmationBasis.model_validate(json.loads(parameters['confirmation_basis_json']))
+    assert basis.confirmed_by.kind == 'agent' and basis.confirmed_by.label == 'Tonborg'
+    assert "ELSE 'agent_confirmed' END" in query
+    assert parameters['ai_review_evidence_token'] == candidate.ai_review_evidence_token
+
+    run_row = [{'run': run_record('review-1', 'active', item['created_at'], reviewer='tonborg',
+                                  scope='project', personal_project_id='project-a')}]
+    confirmed = TransactionStub([run_row, [{**item_row('item-1', project_ids=['project-a']),
+                                                     'has_conflict': False}]])
+    confirmed_token = build_review_candidates(
+        [item_row('item-1', project_ids=['project-a'])], scope='project', personal_project_id='project-a',
+        previous_completed_at=None, conflict_item_keys=set(), decided_candidate_keys=set(),
+    )[0].ai_review_evidence_token
+    with pytest.raises(HTTPException) as refused:
+        await record_knowledge_review_progress(
+            StoreStub(TransactionRootDriver(confirmed)), {'id': 'principal-1'},
+            KnowledgeReviewProgress(personal_space_id='personal-space', review_id='review-1',
+                                    candidate_key='entity:item-1', outcome='ai_reviewed',
+                                    ai_review_evidence_token=confirmed_token,
+                                    ai_assessment=assessment, confirm_as_agent=True),
+        )
+    assert refused.value.status_code == 409
 
 
 @pytest.mark.asyncio
@@ -486,11 +554,13 @@ async def test_withdrawing_an_ai_review_clears_only_the_marks_of_that_decision(i
     the item while the item still carries it and nobody changed it since, and
     keeps the decision as history. Otherwise it says why and changes nothing."""
 
+    # Each undo first reads the item's confirmation (rec#96), then withdraws.
+    unconfirmed = [{'confirmation_status': 'pending', 'confirmation_basis_json': None}]
     driver = SequentialDriver([
-        [{'carries': True, 'changed': False}],
-        [{'carries': False, 'changed': False}],
-        [{'carries': True, 'changed': True}],
-        [],
+        unconfirmed, [{'carries': True, 'changed': False}],
+        unconfirmed, [{'carries': False, 'changed': False}],
+        unconfirmed, [{'carries': True, 'changed': True}],
+        [], [],
     ])
     request = KnowledgeAIReviewWithdrawal(
         personal_space_id='personal-space', review_id='review-1',
@@ -507,7 +577,7 @@ async def test_withdrawing_an_ai_review_clears_only_the_marks_of_that_decision(i
     assert result.candidate_key == f'{item_kind}:one'
     # A later review, a later edit or version, and an item that no longer exists.
     assert refusals == [(409, 'ai_review_changed'), (409, 'ai_review_changed'), (404, 'ai_review_deleted')]
-    query, parameters = driver.calls[0]
+    query, parameters = driver.calls[1]
     assert query.startswith(match)
     assert 'item.fuli_ai_review_decision_id = $decision_id' in query
     assert 'item.fuli_ai_review_evidence_token = $ai_review_evidence_token' in query
@@ -522,7 +592,63 @@ async def test_withdrawing_an_ai_review_clears_only_the_marks_of_that_decision(i
     assert parameters == {
         'group_id': 'personal-group', 'item_id': 'one',
         'decision_id': result.decision_id, 'ai_review_evidence_token': 'b' * 64,
+        'tonborg_basis_json': None, 'pending_basis_json': None,
     }
+
+
+@pytest.mark.asyncio
+async def test_undoing_a_tonborg_confirmation_returns_the_item_to_pending():
+    """rec#96: an undo takes back Tonborg's agent confirmation with its marks,
+    only while the item still holds the basis Tonborg wrote; a person's or the
+    usage policy's confirmation is never reverted by it."""
+
+    confirmed_at = datetime(2026, 11, 6, tzinfo=timezone.utc)
+    tonborg = basis_json(tonborg_confirmation_basis(
+        {'existence_reason': 'Synthetic.', 'quadrant_reason': 'Synthetic.',
+         'proposed_by': {'kind': 'agent', 'label': 'Synthetic Agent'}}, confirmed_at))
+    usage = json.dumps({'confirmed_by': {'kind': 'agent', 'label': 'Fuli usage evidence policy'},
+                        'agent_policy_version': 'agent-usage-v1'})
+    driver = SequentialDriver([
+        [{'confirmation_status': 'agent_confirmed', 'confirmation_basis_json': tonborg}],
+        [{'carries': True, 'changed': False}],
+        [{'confirmation_status': 'agent_confirmed', 'confirmation_basis_json': usage}],
+        [{'carries': True, 'changed': False}],
+    ])
+    request = KnowledgeAIReviewWithdrawal(
+        personal_space_id='personal-space', review_id='review-1',
+        candidate_key='entity:one', ai_review_evidence_token='b' * 64,
+    )
+
+    await withdraw_ai_review(StoreStub(driver), {'id': 'principal-1'}, request)
+    await withdraw_ai_review(StoreStub(driver), {'id': 'principal-1'}, request)
+
+    query, reverted = driver.calls[1]
+    assert reverted['tonborg_basis_json'] == tonborg
+    restored = json.loads(reverted['pending_basis_json'])
+    assert restored['confirmed_by'] is None and restored['confirmed_at'] is None
+    assert 'agent_policy_version' not in restored
+    assert restored['proposed_by'] == {'kind': 'agent', 'label': 'Synthetic Agent'}
+    assert "SET item.fuli_confirmation_status = 'pending'" in query
+    assert 'item.fuli_confirmation_basis_json = $tonborg_basis_json' in query
+    _, kept = driver.calls[3]
+    assert kept['tonborg_basis_json'] is None and kept['pending_basis_json'] is None
+
+
+def test_tonborg_confirmation_is_an_agent_confirmation_never_a_persons():
+    basis = tonborg_confirmation_basis(None, datetime(2026, 11, 6, tzinfo=timezone.utc))
+    stored = ConfirmationBasis.model_validate(basis)
+    assert stored.confirmed_by.kind == 'agent' and stored.confirmed_by.label == 'Tonborg'
+    assert stored.agent_policy_version == TONBORG_CONFIRMATION_POLICY_VERSION
+    _validate_confirmation_state('agent_confirmed', stored)
+    with pytest.raises(ValueError):
+        _validate_confirmation_state('confirmed', stored)
+    assert withdrawn_tonborg_basis(json.dumps({'agent_policy_version': 'agent-usage-v1'})) is None
+
+
+def test_confirm_as_agent_only_goes_with_an_ai_review():
+    with pytest.raises(ValueError):
+        KnowledgeReviewProgress(personal_space_id='personal-space', review_id='review-1',
+                                candidate_key='entity:one', outcome='confirmed', confirm_as_agent=True)
 
 
 @pytest.mark.asyncio

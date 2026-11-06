@@ -3,6 +3,8 @@ import { computed } from 'vue'
 
 import { Button } from '@/components/ui/button'
 import { currentLocale, t } from '@/i18n'
+import TonborgDelegationSwitch from '@/features/review-list/TonborgDelegationSwitch.vue'
+import { useConsoleStore } from '@/stores/console'
 import { UiDialog } from '@/ui'
 import ModelRoleCheck from './ModelRoleCheck.vue'
 import ModelRoleHistory from './ModelRoleHistory.vue'
@@ -20,6 +22,8 @@ const emit = defineEmits<{ close: []; edit: []; trustSaved: [payload: ModelRoles
 const locale = computed(() => currentLocale())
 const name = computed(() => (props.view ? roleName(props.view.role) : ''))
 const facts = computed(() => (props.view ? roleFacts(props.view, props.payload, locale.value) : []))
+// 「交给 Tonborg 确认」 (rec#96) runs on this model; turning it on also changes its execution mode.
+const spaceId = computed(() => useConsoleStore().activePersonalSpace?.id ?? '')
 </script>
 
 <template>
@@ -35,6 +39,8 @@ const facts = computed(() => (props.view ? roleFacts(props.view, props.payload, 
           <dd :title="fact.title"><code v-if="fact.code">{{ fact.value }}</code><template v-else>{{ fact.value }}</template></dd>
         </div>
       </dl>
+      <TonborgDelegationSwitch v-if="view.role === 'tonborg' && spaceId" class="model-details-delegation" :personal-space-id="spaceId"
+        @changed="emit('changed')" />
       <ModelRoleTrust v-if="view.trust && showsTrust(view)" :role="view.role" :trust="view.trust"
         :model="view.connection?.model ?? null" @saved="next => emit('trustSaved', next)" @changed="emit('changed')" />
       <ModelRoleHistory :role="view.role" :version="historyVersion" />
@@ -50,6 +56,8 @@ const facts = computed(() => (props.view ? roleFacts(props.view, props.payload, 
 
 <style scoped>
 .model-details { display: grid; gap: var(--space-4); min-width: 0; }
+.model-details-delegation { justify-items: start; }
+.model-details-delegation :deep(.tonborg-delegation__hint) { text-align: left; }
 .model-details-advice { margin: 0; color: var(--color-ink-soft); font-size: var(--text-body); }
 .model-details-advice a { margin-inline-start: 8px; }
 .model-details-label { margin-inline-end: 8px; color: var(--color-muted); font-size: var(--text-meta); }

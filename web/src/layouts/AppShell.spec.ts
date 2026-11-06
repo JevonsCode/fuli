@@ -19,6 +19,7 @@ vi.mock('@/api/client', () => ({
   patchJson: vi.fn(),
   postJson: vi.fn(),
   deleteJson: vi.fn(),
+  apiErrorReason: (error: unknown) => (error instanceof Error ? error.message : String(error)),
 }))
 
 let attentionTotal = 0

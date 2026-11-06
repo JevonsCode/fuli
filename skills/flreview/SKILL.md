@@ -53,7 +53,7 @@ Do not mutate knowledge until the user submits an explicit visualization action.
 
 ### 确认保留
 
-If the candidate is already confirmed, record `confirmed`. If it is pending, first call `revise_personal_knowledge` with `action: confirm`, an auditable user confirmation basis, and no content or taxonomy changes; then record `confirmed`.
+If the candidate is already confirmed, record `confirmed`. An `agent_confirmed` candidate (by the usage policy, or by Tonborg under 「交给 Tonborg 确认」) is not the person's confirmation: treat it like a pending one. If it is pending, first call `revise_personal_knowledge` with `action: confirm`, an auditable user confirmation basis, and no content or taxonomy changes; then record `confirmed`.
 
 ### 修改
 

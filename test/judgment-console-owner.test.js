@@ -40,7 +40,9 @@ function judgmentWithRecord(t) {
   const judgment = createJudgmentService({ app, engine: { review: answer('review'), assess: answer('assess'), accept: answer('accept') } });
   t.after(() => judgment.close());
   const record = judgment.store().record('s', { personalProjectId: 'p', kind: 'review', target: 'entity:pref', title: 'Use tabs',
-    summary: SECRET, evidence: [`${SECRET} evidence`], confidence: 0.6, outcome: 'escalate', aiReview: suggested }, 'r1:entity:pref');
+    summary: SECRET, evidence: [`${SECRET} evidence`], confidence: 0.6, outcome: 'escalate', aiReview: suggested,
+    // rec#96: a delegated review, so the list of Tonborg's questions holds it too.
+    delegated: true, guess: 'keep', question: `${SECRET} question` }, 'r1:entity:pref');
   return { judgment, record, runs };
 }
 
@@ -52,6 +54,7 @@ const ROUTES = [
   ['POST', '/api/judgment/assess', () => ({ personalSpaceId: 's' }), body => body.records[0].summary],
   ['POST', '/api/judgment/accept', () => ({ personalSpaceId: 's' }), body => body.records[0].summary],
   ['GET', '/api/judgment/suggestions?personalSpaceId=s', null, body => body.suggestions[0].summary],
+  ['GET', '/api/judgment/delegated?personalSpaceId=s', null, body => body.questions[0].summary],
 ];
 
 function request(method, path, body, { remoteAddress = '127.0.0.1', headers = {} } = {}) {
@@ -149,6 +152,14 @@ test('pins and policy hold no history and keep their protections; undo stays on 
   const undo = await callJudgment(judgment, request('POST', '/api/judgment/undo', { personalSpaceId: 's', decisionId: record.id },
     { remoteAddress: '192.168.1.20' }), noProof);
   assert.deepEqual([undo.status, undo.body.code], [403, 'local_user_only']);
+  // 「交给 Tonborg 确认」 (rec#96): its state holds no words; only this computer changes it.
+  const delegation = await callJudgment(judgment, request('GET', '/api/judgment/delegation?personalSpaceId=s'), noProof);
+  assert.deepEqual([delegation.status, delegation.body.enabled], [200, false]);
+  assert.equal(JSON.stringify(delegation.body).includes(SECRET), false);
+  const remoteSwitch = await callJudgment(judgment, request('PUT', '/api/judgment/delegation',
+    { personalSpaceId: 's', enabled: false, expectedRevision: 0 }, { remoteAddress: '192.168.1.20' }), noProof);
+  assert.deepEqual([remoteSwitch.status, remoteSwitch.body.code], [403, 'local_user_only']);
+  assert.equal(judgment.store().delegation('s').revision, 0);
   for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
     const refused = await callJudgment({ scope: () => assert.fail('a write method must not read') }, request(method, '/api/judgment/suggestions?personalSpaceId=s'),
       ownerProofPort().port);
@@ -198,7 +209,7 @@ test('the suggestion log\'s proof is confirmed under the graph runtime lease, wh
 });
 
 test('no MCP or Agent tool entry reaches the console\'s judgment routes, the suggestion log route or the proof check', () => {
-  for (const module of ['src/judgment/http.js', 'src/model-backends/http.js', 'src/knowledge-owner-reads/owner-proof.js',
+  for (const module of ['src/judgment/http.js', 'src/judgment/review-delegation.js', 'src/model-backends/http.js', 'src/knowledge-owner-reads/owner-proof.js',
     'src/knowledge-owner-reads/console-port.js']) {
     for (const entry of ['src/mcp-server.js', 'src/agent-tools.js', 'src/mcp/create-mcp-server.js']) {
       assert.equal(reachableModules(join(ROOT, entry)).has(join(ROOT, module)), false, `${entry} -> ${module}`);

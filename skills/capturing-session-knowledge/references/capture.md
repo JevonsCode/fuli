@@ -31,8 +31,10 @@ Every `confirmationBasis` must contain:
 - `confirmedBy` and `confirmedAt` together when confirmed.
 
 An Agent may propose and explain knowledge. A user or authoritative source creates
-`confirmed`; a deterministic Fuli usage policy may create only `agent_confirmed`, with an Agent
-confirmer, timestamp, and policy version. Agent confirmation is lower-authority, never
+`confirmed`. Only two things create `agent_confirmed`, with an Agent confirmer, timestamp, and
+policy version: a deterministic Fuli usage policy, and Tonborg while the person has 「交给 Tonborg
+确认」 on (confirmer `Tonborg`, policy `tonborg-review-v1`; the person sees and undoes it in the
+console's 待决策 list). Your own tools never do, and neither counts as the person's confirmation. Agent confirmation is lower-authority, never
 public-eligible, and must not be produced by retrieval alone. Confirmation covers the content
 and its classification. If either changes, return the item to `pending` and start a new usage
 generation unless the same revision explicitly records a new valid human/source confirmer and

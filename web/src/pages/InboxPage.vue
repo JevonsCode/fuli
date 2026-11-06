@@ -4,19 +4,28 @@ import { useRoute, useRouter } from 'vue-router'
 import { peekItemValue, useRoutePeek } from '@/composables/useRoutePeek'
 import AttentionWorkspace from '@/features/project-agents/AttentionWorkspace.vue'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
+import ReviewList from '@/features/review-list/ReviewList.vue'
+import TonborgDelegationSwitch from '@/features/review-list/TonborgDelegationSwitch.vue'
+import { useReviewList } from '@/features/review-list/review-store'
+import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 
-// "Needs you" is a page, not a modal: requests wait here without interrupting other work.
-// The open request is a quick look in the URL (?item=<space>/<request>).
+// 待决策 (rec#96): one page with everything that waits for the person —
+// Tonborg's questions, pending knowledge, the Agents' requests and what
+// Tonborg confirmed for them — and nothing else. Requests wait here without
+// interrupting other work; the open request is a quick look in the URL
+// (?item=<space>/<request>).
 const store = useConsoleStore()
 const route = useRoute()
 const router = useRouter()
 const attention = useAgentAttention()
+const review = useReviewList()
 const peek = useRoutePeek()
 const space = computed(() => store.activePersonalSpace?.id ?? '')
 const projects = computed(() => (store.state?.personalProjects ?? []).filter(project => project.personal_space_id === space.value))
 const agentFilter = computed(() => typeof route.query.agent === 'string' ? route.query.agent : '')
 const openRequestId = computed(() => peek.item.value?.spaceId === space.value ? peek.item.value.id : '')
+const total = computed(() => review.total + (attention.agentId ? attention.filteredTotal : attention.total))
 
 watch([space, agentFilter], ([id, agent]) => {
   if (!id) return
@@ -36,9 +45,20 @@ onBeforeUnmount(() => { attention.open = false })
 
 <template>
   <section class="view inbox-page">
-    <div class="@container flex w-full flex-col">
-      <AttentionWorkspace v-if="space" :personal-space-id="space" :projects="projects" :open-request-id="openRequestId"
-        @open="peek.open({ spaceId: space, id: $event })" @close="peek.close()" />
+    <div class="@container flex w-full flex-col gap-4">
+      <header class="inbox-head">
+        <h1 class="inbox-head__title" data-inbox-total>{{ total ? t('reviewList.headline', { count: total }) : '' }}</h1>
+        <TonborgDelegationSwitch v-if="space" :personal-space-id="space" @changed="review.refresh()" />
+      </header>
+      <ReviewList v-if="space" :personal-space-id="space" :projects="projects">
+        <AttentionWorkspace :personal-space-id="space" :projects="projects" :open-request-id="openRequestId"
+          @open="peek.open({ spaceId: space, id: $event })" @close="peek.close()" />
+      </ReviewList>
     </div>
   </section>
 </template>
+
+<style scoped>
+.inbox-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; min-height: 36px; }
+.inbox-head__title { margin: 0; color: var(--color-ink); font-size: 18px; font-weight: var(--weight-strong); line-height: 36px; white-space: nowrap; }
+</style>

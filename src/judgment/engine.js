@@ -9,11 +9,11 @@ import { recoverInterruptedWrites } from './review-recovery.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { judgmentHumanInteraction } from './conversation.js';
 import { arraySchema, enumSchema, objectSchema } from '../agent-tools/schema.js';
-import { VERDICT_FIELDS, verdictProperties } from './verdict-schema.js';
+import { DELEGATION_FIELDS, delegationProperties, VERDICT_FIELDS, verdictProperties } from './verdict-schema.js';
 import { jsonSchemaToZod } from '../mcp/tool-schema.js';
 import { PREFERENCE_RECEIPT_VERSION, preferenceDeliveryRecord, preferenceHold,
   readJudgmentPreferences } from './preference-receipt.js';
-import { REVIEW_EXAMPLE, reviewInstructions } from './review-prompt.js';
+import { reviewExample, reviewInstructions } from './review-prompt.js';
 import { injectionSignals } from './review-injection-precheck.js';
 import { automaticWriteDecision } from '../graphiti/capture-decision.js';
 import { coversClient } from '../agents/source-applications.js';
@@ -21,15 +21,25 @@ import { coversClient } from '../agents/source-applications.js';
 const id = z.string().min(1).max(256);
 const reviewInput = z.object({ personalSpaceId: id, personalProjectId: id.nullable().optional(), requestId: id,
   limit: z.number().int().min(1).max(10).default(10) }).strict();
-const reviewSchema = candidates => objectSchema({ decisions: arraySchema(objectSchema({
-  target: enumSchema(candidates.map(candidate => candidate.candidate_key)), ...verdictProperties },
-['target', ...VERDICT_FIELDS]), { minItems: candidates.length, maxItems: candidates.length }) }, ['decisions']);
+// A delegated review (rec#96) also answers, for each candidate, its best
+// guess of what the person would do and the short question that asks them.
+const reviewSchema = (candidates, delegated = false) => objectSchema({ decisions: arraySchema(objectSchema({
+  target: enumSchema(candidates.map(candidate => candidate.candidate_key)), ...verdictProperties,
+  ...(delegated ? delegationProperties : {}) },
+['target', ...VERDICT_FIELDS, ...(delegated ? DELEGATION_FIELDS : [])]), { minItems: candidates.length, maxItems: candidates.length }) }, ['decisions']);
 export const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 // A record of this request whose execution is final is never applied again.
 const SETTLED = Object.freeze(['applied', 'stale', 'failed', 'undone']);
 // An approval below this confidence goes to the person.
 const REVIEW_CONFIDENCE_FLOOR = 0.85;
-const policyVersion = p => `${PREFERENCE_RECEIPT_VERSION}:${p.revision}:${p.globalRevision}:${p.mode}:${p.quality}:${p.client}`;
+const policyVersion = p => `${PREFERENCE_RECEIPT_VERSION}:${p.revision}:${p.globalRevision}:${p.mode}:${p.quality}:${p.client}${p.delegated ? ':delegated' : ''}`;
+// The policy a review runs under: the scope's own, marked delegated while
+// 「交给 Tonborg 确认」 is on (rec#96). Turning it on or off is a new policy
+// version, so Tonborg looks again at what it left to the person before.
+const reviewPolicy = (store, space, project) => {
+  const policy = store.policy(space, project);
+  return store.delegation(space).enabled ? { ...policy, delegated: true } : policy;
+};
 
 // trust: whether Tonborg's configured model may apply a review by itself
 // (src/model-backends/role-trust.js, rec#10 D-36); without one, every review
@@ -96,7 +106,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     let run, cursor, page, offset, candidates = [], visited, evidenceContext, hold, handedOff = false;
     const cursorKey = `review-offset:${project}`, visitedKey = `review-visited:${project}`;
     try {
-      const policy = store.policy(space, project);
+      const policy = reviewPolicy(store, space, project);
       evidenceContext = await context(service, input, policy);
       hold = preferenceHold(evidenceContext.preferences);
       // Defer rather than escalate every candidate: they stay queued for a later cycle.
@@ -116,10 +126,10 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
         && !store.reviewed(space, project, candidate.candidate_key, fingerprint(candidate), policyVersion(policy), { exceptRequest: cacheKey })).slice(0, input.limit));
       records.push(...recovered.filter(record => !candidates.some(candidate => candidate.candidate_key === record.target)));
       if (candidates.length) {
-        const schema = reviewSchema(candidates);
+        const schema = reviewSchema(candidates, policy.delegated);
         const answer = await decide({ policy, operation: TONBORG_OPERATIONS.review, requestId: cacheKey, resume: input,
           scope: { personalSpaceId: space, personalProjectId: project || null }, instructions: reviewInstructions(policy),
-          example: REVIEW_EXAMPLE, schema, data: { policy, ...evidenceContext, candidates }, execution });
+          example: reviewExample(policy), schema, data: { policy, ...evidenceContext, candidates }, execution });
         // A handed-off review leaves its candidates unvisited for the session's answer.
         if (answer.pending) {
           handedOff = true;
@@ -143,6 +153,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
           let record = store.record(space, { personalProjectId: project || null, kind: 'review', target: decision.target,
             title: candidate.title, summary: decision.summary, evidence: decision.evidence, confidence: decision.confidence,
             outcome, aiReview, policy, policyVersion: policyVersion(policy), evidenceFingerprint: fingerprint(candidate),
+            ...(policy.delegated ? { delegated: true, guess: decision.guess, question: decision.question } : {}),
             memoryRevision: evidenceContext.memoryRevision, preferenceDelivery: preferenceDeliveryRecord(evidenceContext.preferences),
             ...judgmentProvenance(answer) }, `${cacheKey}:${decision.target}`);
           // Already settled by an interrupted run of this request: never apply twice.
@@ -151,7 +162,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
           if (record.aiReview?.state === 'ai_reviewed' && aiReview.state === 'ai_reviewed') {
             const current = await app.listKnowledgeReviewCandidates({ personalSpaceId: space, reviewId: run.review_id, limit: 50, offset: Math.max(0, offset - records.filter(r => r.execution.status === 'applied').length) });
             const fresh = current.candidates.find(c => c.candidate_key === decision.target);
-            if (!fresh || fingerprint(fresh) !== fingerprint(candidate) || policyVersion(store.policy(space, project)) !== policyVersion(policy)) {
+            if (!fresh || fingerprint(fresh) !== fingerprint(candidate) || policyVersion(reviewPolicy(store, space, project)) !== policyVersion(policy)) {
               record = store.execute(space, record.id, 'stale', { reason: 'Evidence or policy changed. Review again.' }, lease);
             } else if (fingerprint(await readPreferences(project || null)) !== fingerprint(evidenceContext.preferences)) {
               // The approval was judged against the receipt it saw; a changed or unreadable receipt defers the write.
@@ -173,6 +184,8 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
                 });
                 const receipt = await app.recordKnowledgeReviewProgress({ personalSpaceId: space, reviewId: run.review_id,
                   candidateKey: decision.target, outcome: 'ai_reviewed', aiReviewEvidenceToken: candidate.ai_review_evidence_token,
+                  // Delegated: the pending item becomes Tonborg's agent confirmation, never the person's.
+                  confirmAsAgent: Boolean(policy.delegated) && (candidate.confirmation_status ?? 'pending') === 'pending',
                   aiAssessment: { outcome: 'approve', summary: decision.summary, evidence: decision.evidence, confidence: decision.confidence,
                     client: answer.client, model: answer.model ?? null, session_id: answer.sessionId ?? null },
                   note: `Tonborg ${record.id}: ${decision.summary}`.slice(0, 2000) });
@@ -207,7 +220,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
           // Failed items stay retryable, but only once per pagination cycle.
           // They must not starve later pages of unrelated work.
           const attempted = new Set([...(visited.value ?? []), ...(handedOff ? [] : candidates.map(fingerprint))]);
-          const currentPolicy = policyVersion(store.policy(space, project));
+          const currentPolicy = policyVersion(reviewPolicy(store, space, project));
           const moreOnPage = page.candidates.some(candidate => !attempted.has(fingerprint(candidate))
             && !store.reviewed(space, project, candidate.candidate_key, fingerprint(candidate), currentPolicy));
           store.writeSetting(space, visitedKey, moreOnPage ? [...attempted] : [], visited.revision);
@@ -231,7 +244,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     let records = [], checked = 0;
     for (; checked < Math.min(scopes.length, 25); checked++) {
       const projectId = scopes[((cursor.value ?? 0) + checked) % scopes.length];
-      if (automatic && store.policy(space, projectId ?? '').mode === 'manual') continue;
+      if (automatic && store.policy(space, projectId ?? '').mode === 'manual' && !store.delegation(space).enabled) continue;
       try {
         const result = await review(service, { ...input, personalProjectId: projectId,
           requestId: `${input.requestId}:${projectId ?? 'global'}`.slice(0, 256) }, { localOnly: true });
@@ -298,7 +311,8 @@ function reviewDisposition(decision, { protectedItem, injection, batchInjected, 
     ...(contaminated ? ['batch_contaminated'] : []),
     ...(decision.confidence < REVIEW_CONFIDENCE_FLOOR ? ['below_confidence'] : []),
     ...(gate.status !== 'passed' ? ['gate_not_passed'] : []),
-    ...(policy.mode === 'manual' ? ['manual_policy'] : [])];
+    // 「交给 Tonborg 确认」 is the person's own say-so for knowledge reviews (rec#96).
+    ...(policy.mode === 'manual' && !policy.delegated ? ['manual_policy'] : [])];
   const applies = decision.outcome === 'approve' && !interceptions.length;
   return { state: applies ? 'ai_reviewed' : 'ai_suggested', modelOutcome: decision.outcome, interceptions, gate,
     ...(injection.length ? { injectionSignals: injection } : {}), ...(contaminated ? { injectionInBatch: true } : {}) };

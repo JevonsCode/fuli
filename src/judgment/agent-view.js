@@ -30,6 +30,8 @@ const KEPT = Object.freeze({
   executionRequired: true, agentId: true, workKind: true, taskRevision: true, artifactRevision: true,
   evaluationId: true, requestFingerprint: true, evidenceFingerprint: true, policy: true, policyVersion: true,
   memoryRevision: true, client: true, model: true, sessionId: true, judgedBy: true, modelReceipt: true,
+  // rec#96: a delegated review and Tonborg's guess are fixed values; its question is its own words.
+  delegated: true, guess: new Set(['keep', 'drop', 'edit']),
   error: true, failure: ['stage', 'category', 'status', 'retryable', 'recovery'], guidance: true, workPackage: true, hard_deleted: true,
   // State and counts; the preference keys stay out.
   preferenceDelivery: ['version', 'status', 'reason', 'scope', 'selected', 'truncated'],

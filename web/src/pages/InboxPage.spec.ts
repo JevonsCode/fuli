@@ -16,6 +16,14 @@ const request = (id: string, agentId = 'agent-a') => ({
   kind: 'question', status: 'open' as const, revision: 1, createdAt: '2026-10-17T00:00:00Z',
 })
 let open = [request('request-a'), request('request-b')]
+// The knowledge side of 待决策 (rec#96) has nothing waiting in these tests.
+function reviewRead(url: string) {
+  if (url.startsWith('/api/graph?')) return { nodes: [], edges: [], truncated: false }
+  if (url.startsWith('/api/judgment/delegated?')) return { confirmed: [], questions: [] }
+  if (url.startsWith('/api/judgment/delegation?')) return { enabled: false, changedAt: null, revision: 0,
+    model: { connected: false, status: 'suggestion', reason: 'not_configured' } }
+  return undefined
+}
 const mounted: Array<{ unmount: () => void }> = []
 
 beforeEach(() => {
@@ -29,6 +37,8 @@ beforeEach(() => {
   getJson.mockImplementation(async (url: string) => {
     if (url.startsWith('/api/project-agents?')) return [{ agentId: 'agent-a', profile: { name: 'Synthetic Agent', displayName: 'Milo' } }]
     if (url.startsWith('/api/agent-attention?')) return { items: open, total: open.length, counts: { 'agent-a': open.length } }
+    const review = reviewRead(url)
+    if (review) return review
     throw new Error(`Unexpected request: ${url}`)
   })
   postJson.mockImplementation(async (_url: string, payload: { requestId: string }) => {
@@ -58,14 +68,15 @@ async function type(value: string) {
 }
 
 describe('Inbox page', () => {
-  it('says an empty queue once: the count is left to screen readers', async () => {
+  it('says nothing when nothing waits; the headline counts what does', async () => {
     open = []
     const { wrapper } = await setup('/inbox')
-    expect(wrapper.find('.attention-empty').exists()).toBe(true)
-    expect(wrapper.get('.attention-page-count').classes()).toContain('ui-sr-only')
+    expect(wrapper.find('[data-review-group]').exists()).toBe(false)
+    expect(wrapper.get('[data-inbox-total]').text()).toBe('')
     open = [request('request-a')]
     const listed = await setup('/inbox')
-    expect(listed.wrapper.get('.attention-page-count').classes()).not.toContain('ui-sr-only')
+    expect(listed.wrapper.get('[data-inbox-total]').text()).toBe('1 件事等你')
+    expect(listed.wrapper.findAll('[data-review-group]').map(group => group.attributes('data-review-group'))).toEqual(['attention'])
   })
 
   it('opens a linked request as a quick look and keeps an unsent reply across navigation', async () => {
@@ -73,7 +84,7 @@ describe('Inbox page', () => {
     // The link becomes the request's quick look in place: ?item=<space>/<request>.
     expect(router.currentRoute.value.query).toEqual({ agent: 'agent-a', item: 'space-a/request-b' })
     expect(dialogTitle()).toBe('Synthetic request-b')
-    expect(wrapper.get('.attention-request.is-selected').text()).toContain('Synthetic request-b')
+    expect(wrapper.get('[data-review-group=attention] .review-row.is-selected').text()).toContain('Synthetic request-b')
     expect(getJson.mock.calls.some(([url]) => String(url).includes('agentId=agent-a'))).toBe(true)
 
     await type('Synthetic unsent reply')
@@ -86,18 +97,18 @@ describe('Inbox page', () => {
 
   it('follows a new linked request while another one is still open', async () => {
     const { router, wrapper } = await setup('/inbox?request=request-a')
-    expect(wrapper.get('.attention-request.is-selected').text()).toContain('Synthetic request-a')
+    expect(wrapper.get('[data-review-group=attention] .review-row.is-selected').text()).toContain('Synthetic request-a')
     await router.push('/inbox?request=request-b'); await flushPromises()
-    expect(wrapper.get('.attention-request.is-selected').text()).toContain('Synthetic request-b')
+    expect(wrapper.get('[data-review-group=attention] .review-row.is-selected').text()).toContain('Synthetic request-b')
     await router.back(); await flushPromises()
-    expect(wrapper.get('.attention-request.is-selected').text()).toContain('Synthetic request-a')
+    expect(wrapper.get('[data-review-group=attention] .review-row.is-selected').text()).toContain('Synthetic request-a')
   })
 
   it('opens a request from its card and closes back to the queue', async () => {
     const { router, wrapper } = await setup('/inbox')
     expect(document.querySelector('[role=dialog]')).toBeNull()
     // The shell's top-bar refresh reads the queue again; the page has no second one.
-    expect(wrapper.get('.attention-toolbar').findAll('button').map(button => button.text())).not.toContain('刷新')
+    expect(wrapper.findAll('button').map(button => button.text())).not.toContain('刷新')
     await wrapper.findAll('.attention-request-title')[1]!.trigger('click'); await flushPromises()
     expect(router.currentRoute.value.query).toEqual({ item: 'space-a/request-b' })
     expect(dialogTitle()).toBe('Synthetic request-b')
@@ -109,14 +120,14 @@ describe('Inbox page', () => {
 
   it('removes a confirmed reply, closes its quick look and updates the pending count', async () => {
     const { router, wrapper } = await setup('/inbox')
-    expect(wrapper.get('.attention-page-count').text()).toContain('2')
+    expect(wrapper.get('[data-inbox-total]').text()).toContain('2')
     await wrapper.get('.attention-request-title').trigger('click'); await flushPromises()
     await type('Synthetic decision')
     document.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); await flushPromises()
     await new Promise(resolve => setTimeout(resolve, 0)); await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/agent-attention/respond', expect.objectContaining({ requestId: 'request-a', choice: null, note: 'Synthetic decision' }), expect.objectContaining({ schema: expect.anything() }))
-    expect(wrapper.findAll('.attention-request').map(item => item.text())).toEqual([expect.stringContaining('Synthetic request-b')])
-    expect(wrapper.get('.attention-page-count').text()).toContain('1')
+    expect(wrapper.findAll('[data-review-group=attention] .review-row').map(item => item.text())).toEqual([expect.stringContaining('Synthetic request-b')])
+    expect(wrapper.get('[data-inbox-total]').text()).toContain('1')
     expect(router.currentRoute.value.query).toEqual({})
   })
 
@@ -138,6 +149,8 @@ describe('Inbox page', () => {
           const offset = Number(query.get('offset') ?? 0)
           return { items: open.slice(offset, offset + Number(query.get('limit'))), total: open.length, counts: { 'agent-a': open.length } }
         }
+        const review = reviewRead(url)
+        if (review) return review
         throw new Error(`Unexpected request: ${url}`)
       })
     })
@@ -146,7 +159,7 @@ describe('Inbox page', () => {
 
     it('opens the real request with its reply form, read by identity in the active space', async () => {
       const { wrapper } = await setup('/inbox?request=request-101')
-      expect(wrapper.findAll('.attention-request')).toHaveLength(100)
+      expect(wrapper.findAll('[data-review-group=attention] .review-row')).toHaveLength(100)
       expect(dialogTitle()).toBe('Synthetic request-101')
       expect(peekText()).toContain('Answer the synthetic question.')
       expect(textarea()).not.toBeNull()
@@ -165,14 +178,14 @@ describe('Inbox page', () => {
         ? new Promise(resolve => { pending.push(() => resolve(answer(url))) })
         : answer(url))
       const { wrapper } = await setup('/inbox?request=request-100')
-      expect(wrapper.findAll('.attention-request')).toHaveLength(0)
+      expect(wrapper.findAll('[data-review-group=attention] .review-row')).toHaveLength(0)
       expect(dialogTitle()).toBe('Synthetic request-100')
       expect(textarea()).not.toBeNull()
       expect(exactReads()).toHaveLength(1)
 
       await type('Synthetic draft while the queue loads')
       while (pending.length) { pending.shift()!(); await flushPromises() }
-      expect(wrapper.findAll('.attention-request')).toHaveLength(100)
+      expect(wrapper.findAll('[data-review-group=attention] .review-row')).toHaveLength(100)
       expect(dialogTitle()).toBe('Synthetic request-100')
       expect(textarea().value).toBe('Synthetic draft while the queue loads')
       expect(exactReads()).toHaveLength(1)
