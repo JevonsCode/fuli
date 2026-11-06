@@ -112,11 +112,14 @@ runs:
         mount="$RUNNER_TEMP/fuli-dmg-check"
         hdiutil attach "$dmg" -nobrowse -readonly -noautoopen -mountpoint "$mount" > /dev/null
         trap 'hdiutil detach "$mount" > /dev/null' EXIT
-        ls -la "$mount" "$mount/.background"
+        ls -la "$mount"
         test -d "$mount/FULI.app" || { echo "No FULI.app in the image"; exit 1; }
         [ "$(readlink "$mount/Applications")" = /Applications ] || { echo "No Applications link in the image"; exit 1; }
         test -s "$mount/.DS_Store" || { echo "The image has no window layout (.DS_Store)"; exit 1; }
-        ls "$mount/.background" | grep -q . || { echo "The image has no background picture"; exit 1; }
+        # dmgbuild joins background.png and @2x into one HiDPI TIFF.
+        test -s "$mount/.background.tiff" || { echo "The image has no background picture"; exit 1; }
+        tiffutil -info "$mount/.background.tiff"
+        [ "$(tiffutil -info "$mount/.background.tiff" | grep -ci 'width')" -ge 2 ] || { echo "The background has no Retina copy"; exit 1; }
     - name: Sign, notarize and staple the disk image
       if: steps.mode.outputs.signed == 'true'
       shell: bash
