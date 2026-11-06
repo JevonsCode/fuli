@@ -19,6 +19,7 @@ export const overviewMessages = {
         fla_joined: '查看', fla_left: '查看', delegated_change: '查看', model_failing: '去看看', update_available: '去更新',
       },
     },
+    more: { more: '更多 {count}', less: '收起' },
     sections: {
       attention: '等你处理',
       currentWork: '进行中',
@@ -95,6 +96,7 @@ export const overviewMessages = {
         fla_joined: 'View', fla_left: 'View', delegated_change: 'View', model_failing: 'Check', update_available: 'Update',
       },
     },
+    more: { more: '{count} more', less: 'Show less' },
     sections: {
       attention: 'Waiting for you',
       currentWork: 'In progress',

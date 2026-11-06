@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { motion } from 'motion-v'
-import { computed } from 'vue'
+import { computed, reactive } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -48,6 +48,11 @@ const solo = computed(() => {
   const together = new Set(team.sheets.value.map(sheet => sheet.taskId))
   return props.running.filter(task => !together.has(task.taskId))
 })
+// Each list shows its first seven (Jevons 11-06); 更多 at the card's head opens the rest in place.
+const FEED_ROWS = 7
+const expanded = reactive({ running: false, done: false })
+const shownRunning = computed(() => (expanded.running ? solo.value : solo.value.slice(0, FEED_ROWS)))
+const shownDone = computed(() => (expanded.done ? props.done : props.done.slice(0, FEED_ROWS)))
 </script>
 
 <template>
@@ -75,11 +80,16 @@ const solo = computed(() => {
     <!-- With nothing else in progress the stage already says so; the card stays away. -->
     <WidgetSlot place="workbench.feed" />
     <section v-if="solo.length || tasksState.loading || tasksState.error" class="workbench-card" aria-labelledby="workbench-running-heading" data-workbench-running>
-      <header class="workbench-card-head"><h2 id="workbench-running-heading">{{ t('overview.sections.currentWork') }}</h2></header>
+      <header class="workbench-card-head">
+        <h2 id="workbench-running-heading">{{ t('overview.sections.currentWork') }}</h2>
+        <Button v-if="solo.length > FEED_ROWS" variant="ghost" size="sm" :aria-expanded="expanded.running" data-workbench-more="running" @click="expanded.running = !expanded.running">
+          {{ expanded.running ? t('overview.more.less') : t('overview.more.more', { count: solo.length - FEED_ROWS }) }}
+        </Button>
+      </header>
       <OverviewReadStatus :state="tasksState" :label="t('overview.work.loading')" :failed="t('overview.work.loadFailed')" @retry="emit('retryTasks')" />
       <!-- A picked task leaves with its title flying to the stage; the rest close up instead of jumping. -->
       <TransitionGroup v-if="solo.length" name="ui-list" tag="ul" class="workbench-rows">
-        <li v-for="task in solo" :key="taskKey(task)">
+        <li v-for="task in shownRunning" :key="taskKey(task)">
           <Button variant="ghost" class="workbench-row workbench-pick" :aria-label="t('overview.stage.switchTo', { title: title(task) })" data-workbench-pick @click="emit('select', task)">
             <span class="workbench-face" :style="agentIdentityStyle(task.leadAgentId ?? task.ownerAgentId)" aria-hidden="true">
               <img v-if="task.leadAgentId || task.ownerAgentId" :src="agentAvatarUrl(task.leadAgentId ?? task.ownerAgentId ?? '')" :data-agent-portrait="task.leadAgentId ?? task.ownerAgentId ?? ''" alt="" />
@@ -97,9 +107,14 @@ const solo = computed(() => {
     </section>
 
     <section class="workbench-card" aria-labelledby="workbench-done-heading" data-workbench-done>
-      <header class="workbench-card-head"><h2 id="workbench-done-heading">{{ t('overview.sections.recentlyDone') }}</h2></header>
+      <header class="workbench-card-head">
+        <h2 id="workbench-done-heading">{{ t('overview.sections.recentlyDone') }}</h2>
+        <Button v-if="done.length > FEED_ROWS" variant="ghost" size="sm" :aria-expanded="expanded.done" data-workbench-more="done" @click="expanded.done = !expanded.done">
+          {{ expanded.done ? t('overview.more.less') : t('overview.more.more', { count: done.length - FEED_ROWS }) }}
+        </Button>
+      </header>
       <TransitionGroup v-if="done.length" name="ui-list" tag="ul" class="workbench-rows">
-        <li v-for="task in done" :key="taskKey(task)" class="workbench-row">
+        <li v-for="task in shownDone" :key="taskKey(task)" class="workbench-row">
           <span class="workbench-done-mark" aria-hidden="true"><UiIcon name="check" :size="16" /></span>
           <div class="workbench-row-text">
             <p class="workbench-row-title">{{ title(task) }}</p>
