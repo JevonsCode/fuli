@@ -6,6 +6,8 @@ import { createJudgmentEngine } from '../src/judgment/engine.js';
 import { agentJudgmentView } from '../src/judgment/agent-view.js';
 import { delegatedReviewList, reviewDelegation, setReviewDelegation } from '../src/judgment/review-delegation.js';
 import { undoAutomaticReview } from '../src/judgment/review-undo.js';
+import { judgmentHumanInteraction } from '../src/judgment/conversation.js';
+import { successToolResult } from '../src/mcp/tool-result.js';
 import { createRoleTrust } from '../src/model-backends/role-trust.js';
 import { completePreferences } from './fixtures/collaboration-preferences.js';
 import { MODEL_ANSWER, trustedTonborg } from './fixtures/model-trust.js';
@@ -168,4 +170,12 @@ test('the person undoes a Tonborg confirmation with its review receipt, and it l
   // The Provider takes back the marks and Tonborg's agent confirmation together (graph-provider tonborg_confirmation.py).
   assert.deepEqual(sent.map(body => [body.review_id, body.candidate_key]), [['review', 'entity:keep']]);
   assert.deepEqual((await delegatedReviewList({ judgment: f.service, input: { personalSpaceId: 's' } })).confirmed, []);
+});
+
+test('a batch of many delegated questions reaches the Agent whole', () => {
+  const records = Array.from({ length: 7 }, (_, index) => ({ id: `d${index}`, kind: 'review', delegated: true, outcome: 'escalate',
+    target: `entity:${index}`, question: `Keep item ${index}?`, feedback: { revision: 0, vote: null }, execution: { status: 'not_applied' } }));
+  const { human_interaction } = judgmentHumanInteraction(records, 's');
+  const delivered = successToolResult({ human_interaction }, { preserveHumanInteraction: true, limitBytes: 32 * 1024 });
+  assert.deepEqual(delivered.structuredContent.human_interaction.source.batch, records.map(record => record.id));
 });

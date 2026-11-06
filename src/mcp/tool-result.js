@@ -85,8 +85,9 @@ export function successToolResult(value, { limitBytes = RESULT_LIMIT_BYTES, item
     if (state.truncated) throw new ApplicationError('validation', 'Cannot deliver the complete required Agent receipt');
   }
   if (preserveHumanInteraction && value?.human_interaction) {
-    // Four choices, as a host's single-choice card shows them besides custom input (rec#99).
-    const nativeState = { truncated: false, itemLimit: 4 };
+    // A question is delivered whole or not at all; its producers bound its choices
+    // (at most four), and a batch's source lists every decision it asks about (rec#96).
+    const nativeState = { truncated: false, itemLimit: 1000 };
     required.human_interaction = sanitize(value.human_interaction, nativeState);
     if (nativeState.truncated) throw new ApplicationError('validation', 'Cannot deliver the complete human question');
   }
