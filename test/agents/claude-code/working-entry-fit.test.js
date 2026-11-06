@@ -162,7 +162,7 @@ test('a role too long to fit is never cut: the entry is the blocked frame, which
   const text = await claudeEntry(continuity(entry, { role }));
   assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);
   assert.ok(text.startsWith(BLOCKED_PREFERENCE_LABEL));
-  assert.ok(label(text).includes('End your final reply with agent_receipt.markdown, unchanged and once'));
+  assert.ok(label(text).includes('End your final reply with agent_receipt.markdown, unchanged, once'));
   assert.doesNotMatch(text, /Own the export service/);
   const frame = hookFrame(text);
   assert.deepEqual([frame.preference_delivery.status, frame.preference_delivery.reason], ['blocked', 'inline_budget']);
