@@ -142,6 +142,9 @@ test('the report shows each measured number with its method folded beside it, an
       assert.equal(document.querySelector(`#${id} details .table-wrap`), null, id);
     }
     assert.ok(document.querySelector('#tonborg #tonborg-strong.is-pending'));
+    // Only what is measured now: no "before the fix" values, columns or struck-through numbers.
+    assert.doesNotMatch(document.body.textContent, /修复前|修复后|before the fix|down from/i);
+    assert.equal(document.querySelectorAll('main s, main del').length, 0);
     assert.ok(document.querySelector('#tonborg').textContent.includes('60.4%'));
     assert.ok(document.querySelectorAll('#gaps li').length >= 4);
     const models = document.querySelector('#related [data-i18n="report.related.models"]').href;
@@ -190,6 +193,7 @@ test('the home story walks through the product in order, with measured numbers a
     // Tokens and accuracy: the report's numbers, and the link says plainly that FULI still adds input.
     assert.deepEqual([...document.querySelectorAll('#memory .chapter-stats b')].map(node => node.textContent), ['24.3 KB', '4/6', '18/18'], path);
     assert.match(document.querySelector('#memory .chapter-link').textContent, /1.53/, path);
+    assert.doesNotMatch(document.querySelector('#memory .chapter-stats').textContent, /→/, path);
     // Growth is drawn: lessons out of the work, the kept ones ticked, checks marked as coming, then the app and its surfaces.
     // The chapter says only that FLAs grow; the drawing says how.
     assert.deepEqual([...document.querySelectorAll('#growth .chapter-copy > :not(.eyebrow)')].map(node => node.tagName), ['H2'], path);
