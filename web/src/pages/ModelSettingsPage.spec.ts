@@ -46,6 +46,7 @@ const trust = (overrides: Record<string, unknown> = {}) => ({ operation: 'knowle
   warningSeenAt: null, warningVersion: 1, revision: 0, status: 'automatic', reason: null, evaluation: null, ...overrides })
 
 let rolesPayload = roles()
+const dreamingOff = { readiness: 'needs_model', projects: [] }
 beforeEach(() => {
   setActivePinia(createPinia())
   const store = useConsoleStore()
@@ -60,7 +61,7 @@ beforeEach(() => {
   api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/model-backends/usage') ? usage()
     : url.startsWith('/api/model-backends/suggestions') || url.startsWith('/api/judgment/suggestions') ? { suggestions: [] }
       : url.startsWith('/api/model-backends/history') ? { entries: [] }
-        : url.startsWith('/api/dreaming') ? { readiness: 'needs_model', runs: [] } : rolesPayload))
+        : url.startsWith('/api/dreaming') ? dreamingOff : rolesPayload))
 })
 
 const mountPage = async () => {
@@ -359,7 +360,7 @@ describe('ModelSettingsPage', () => {
     let answer: (value: unknown) => void = () => {}
     api.getJson.mockImplementation((url: string) => url.startsWith('/api/model-backends/suggestions')
       ? new Promise(resolve => { answer = resolve })
-      : Promise.resolve(url.startsWith('/api/model-backends/usage') ? usage() : rolesPayload))
+      : Promise.resolve(url.startsWith('/api/model-backends/usage') ? usage() : url.startsWith('/api/dreaming') ? dreamingOff : rolesPayload))
     const wrapper = await mountPage()
     const reads = () => api.getJson.mock.calls.map(([url]) => String(url).split('?')[0])
     expect(reads().slice(0, 2)).toEqual(['/api/model-backends/roles', '/api/model-backends/suggestions'])
@@ -384,7 +385,8 @@ describe('ModelSettingsPage', () => {
       model: 'qwen-test', client: null, judgedBy: { mode: 'model_api', independent: true } }
     api.getJson.mockImplementation(async (url: string) => url.startsWith('/api/judgment/suggestions') ? { suggestions: [review] }
       : url.startsWith('/api/model-backends/suggestions') ? { suggestions: [] }
-        : url.startsWith('/api/model-backends/usage') ? usage() : url.startsWith('/api/model-backends/history') ? { entries: [] } : rolesPayload)
+        : url.startsWith('/api/model-backends/usage') ? usage() : url.startsWith('/api/model-backends/history') ? { entries: [] }
+          : url.startsWith('/api/dreaming') ? dreamingOff : rolesPayload)
     const wrapper = await mountPage()
     const reviewReads = () => api.getJson.mock.calls.map(([url]) => String(url)).filter(url => url.startsWith('/api/judgment/suggestions'))
     expect(reviewReads()).toEqual([])

@@ -158,7 +158,7 @@ onBeforeUnmount(() => {
               @edit="edit(SEMANTIC_ROLE)" @details="details = SEMANTIC_ROLE" />
             <ModelRoleCard :view="view('assistant')" :locked="locked" :editing="editing === 'assistant'"
               @edit="edit('assistant')" @details="details = 'assistant'" />
-            <DreamingCard :projects="projects" :status="taskState(payload, 'dreaming')" :model="astroModel" @edit="edit('assistant')" />
+            <DreamingCard :status="taskState(payload, 'dreaming')" :model="astroModel" @edit="edit('assistant')" />
             <RetrievalTermsCard :projects="projects" :status="taskState(payload, 'retrieval_terms')" :model="astroModel" @edit="edit('assistant')" />
             <ModelRoleCard v-for="role in (['jefa', 'tonborg', 'bole'] as const)" :key="role" :view="view(role)" :locked="locked"
               :editing="editing === role" @edit="edit(role)" @details="details = role" />

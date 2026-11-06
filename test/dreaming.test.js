@@ -283,3 +283,54 @@ test('rec#89: a graph that cannot be read costs only the check for duplicates', 
   assert.equal(calls.requests.length, 1);
 });
 
+
+test('11-06: the card\'s read counts each project\'s new sessions without a model or a session\'s words', async () => {
+  const { dreamingProjects } = await import('../src/dreaming/projects.js');
+  const { app, calls } = fixture();
+  app.listPersonalProjects = async () => [
+    { project_id: PROJECT, scope_type: 'project', profile: { name: 'Synthetic project' } },
+    { project_id: 'project-temporary', scope_type: 'temporary', profile: { name: 'Synthetic temporary' } },
+    { project_id: 'project-unapproved', scope_type: 'project', profile: { name: 'Synthetic unapproved' } }];
+  app.readRoleSuggestions = async () => [
+    { operation: DREAMING_OPERATION, status: 'dreamed', unread: 0, personalProjectId: PROJECT, at: '2026-11-02T00:00:00.000Z', sessions: 2,
+      proposed: [{ action: 'add', seenIn: 3, status: 'queued' }, { action: 'add', seenIn: 3, status: 'failed' }] },
+    { operation: DREAMING_OPERATION, status: 'nothing_to_read', personalProjectId: PROJECT, at: '2026-11-01T00:00:00.000Z', sessions: 0, proposed: [] }];
+  const read = await dreamingProjects(app);
+  assert.equal(read.readiness, 'ready');
+  assert.deepEqual(read.projects, [
+    { personalProjectId: PROJECT, name: 'Synthetic project', readiness: 'ready', newSessions: 1,
+      lastRun: { at: '2026-11-02T00:00:00.000Z', status: 'dreamed', sessions: 2, proposed: 1 } },
+    { personalProjectId: 'project-unapproved', name: 'Synthetic unapproved', readiness: 'project_not_approved', newSessions: null, lastRun: null }]);
+  assert.deepEqual(calls.requests, [], 'no model call');
+  assert.doesNotMatch(JSON.stringify(read), /Synthetic words|session_id|s1/);
+
+  app.readRoleSuggestions = async () => [];
+  assert.equal((await dreamingProjects(app)).projects[0].newSessions, 3, 'a project never read counts every session');
+  const without = fixture({ settings: null });
+  assert.deepEqual(await dreamingProjects(without.app), { readiness: 'needs_model', projects: [] });
+});
+
+test('11-06: the run route reads on from the last run, or from the beginning when asked', async () => {
+  const { handleDreamingRequest } = await import('../src/http/dreaming-api-router.js');
+  const { app, ownerReads, calls } = fixture();
+  app.listPersonalProjects = async () => [{ project_id: PROJECT, scope_type: 'project', profile: { name: 'Synthetic project' } }];
+  app.readRoleSuggestions = async () => [{ operation: DREAMING_OPERATION, status: 'dreamed', unread: 0, personalProjectId: PROJECT, at: '2026-11-02T00:00:00.000Z' }];
+  ownerReads.sessionRecords = async () => ({ items: [], turns: [{ personal_project_id: PROJECT, messages: [
+    { role: 'user', text: 'Synthetic old words', created_at: '2026-11-01T00:00:00Z' }, { role: 'user', text: 'Synthetic new words', created_at: '2026-11-03T00:00:00Z' }] }] });
+  const call = async (method, path, body, address = '127.0.0.1') => {
+    const chunks = body ? [Buffer.from(JSON.stringify(body))] : [];
+    const request = { method, url: path, socket: { remoteAddress: address }, headers: {}, async *[Symbol.asyncIterator]() { yield* chunks; } };
+    const response = { headers: {}, status: null, body: null, setHeader(name, value) { this.headers[name] = value; },
+      writeHead(status) { this.status = status; }, end(text) { this.body = JSON.parse(text); } };
+    assert.equal(await handleDreamingRequest({ request, response, url: new URL(path, 'http://127.0.0.1'), app, ownerReads }), true);
+    return response;
+  };
+  assert.equal((await call('POST', '/api/dreaming/run', { personalProjectId: PROJECT }, '192.0.2.8')).status, 403);
+  assert.equal((await call('GET', '/api/dreaming')).body.projects[0].newSessions, 1);
+
+  await call('POST', '/api/dreaming/run', { personalProjectId: PROJECT });
+  assert.doesNotMatch(JSON.stringify(calls.requests.at(-1).evidence), /Synthetic old words/);
+  await call('POST', '/api/dreaming/run', { personalProjectId: PROJECT, fromStart: true });
+  assert.match(JSON.stringify(calls.requests.at(-1).evidence), /Synthetic old words/);
+  await assert.rejects(call('POST', '/api/dreaming/run', { personalProjectId: PROJECT, fromStart: 'yes' }), { code: 'invalid_input' });
+});

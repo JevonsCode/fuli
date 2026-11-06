@@ -1,4 +1,4 @@
-import { DREAMING_OPERATION, dreamingReadiness, dreamProject } from './run.js';
+import { DREAMING_OPERATION, dreamingConnected, dreamingReadiness, dreamProject } from './run.js';
 
 const DAY_MS = 86_400_000;
 
@@ -12,7 +12,7 @@ export function startDreamingScheduler({ app, ownerReads, withLease = (_owner, r
   const tried = new Map();
   const tick = async () => {
     if (stopped || running || app.getAgentAccessPolicy?.().enabled === false) return;
-    if (!app.modelBackends.operationSettings('assistant', DREAMING_OPERATION)) return;
+    if (!dreamingConnected(app)) return;
     running = true;
     try {
       const runs = await dreamingRuns(app);
