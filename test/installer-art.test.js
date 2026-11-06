@@ -38,7 +38,8 @@ test('the .dmg window matches its background and places both icons on it', () =>
   assert.deepEqual(settings.window.size, DMG_WINDOW);
   assert.equal(settings.icon, undefined, 'no volume icon unless the app has one');
   assert.deepEqual(settings.contents, [
-    { ...DMG_ICONS.app, type: 'file', path: '/tmp/FULI.app', hide_extension: true },
+    // Never hide_extension: it marks FULI.app with Finder info and breaks its signature.
+    { ...DMG_ICONS.app, type: 'file', path: '/tmp/FULI.app' },
     { ...DMG_ICONS.applications, type: 'link', path: '/Applications' },
   ]);
   for (const { x, y } of Object.values(DMG_ICONS)) {

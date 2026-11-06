@@ -36,7 +36,10 @@ export function dmgSettings({ app, background = DMG_BACKGROUND, volumeIcon = nul
     format: 'UDZO',
     filesystem: 'HFS+',
     contents: [
-      { ...DMG_ICONS.app, type: 'file', path: app, hide_extension: true },
+      // No hide_extension: its Finder flag on FULI.app breaks the bundle's
+      // signature (codesign: "Finder information ... not allowed"); Finder
+      // hides .app by default anyway.
+      { ...DMG_ICONS.app, type: 'file', path: app },
       { ...DMG_ICONS.applications, type: 'link', path: '/Applications' },
     ],
   };
