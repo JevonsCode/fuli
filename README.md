@@ -8,7 +8,7 @@
 <h1 align="center">Fuli</h1>
 
 <p align="center">
-  English · <a href="README.zh-CN.md">简体中文</a>
+  English · <a href="README.zh-CN.md">简体中文</a> · <a href="https://有点.意思.com/fuli/">Website</a>
 </p>
 
 <p align="center">
@@ -17,81 +17,67 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="license" /></a>
 </p>
 
-**Switch AI tools. Keep yourself**
+**Switch AI tools. Keep yourself.**
 
-Fuli (复利) is Chinese for **compound interest**: returns that generate further returns.
+FULI is a memory and collaboration layer that runs on your own computer. It remembers your taste,
+preferences and project knowledge, and shares them across Agent clients such as Claude Code, Codex
+and OpenCode. Each task gets only the small slice it needs, which saves tokens. Each project also gets
+its own team of Agents that know the work better the longer you use them.
 
-Fuli exists to preserve your own taste, personality, and judgment as you work with AI.
-We believe people should no longer be tied to doing everything themselves. You should
-be free to make decisions, come up with ideas, and take a break.
+Fuli (复利) is Chinese for **compound interest**. What you teach an Agent today keeps paying off
+tomorrow. We think people should not have to do everything themselves: you get your hands back to
+decide, come up with ideas, or take a break.
 
-Fuli works with Codex, Claude Code, and other agent clients that support MCP and Skills.
-Connect supported clients to the same Fuli data and continue with the same agent,
-carrying forward its recorded work and relevant context.
+## What we believe
 
-As AI learns to take on more of the work, Fuli helps you make the transition while
-keeping your own judgment at the center.
+- **Local first.** Your personal graph and conversation records stay on your computer. The shared team layer holds only confirmed project knowledge, never your taste, personality or judgment preferences.
+- **You decide.** AI looks things up, summarises and executes, and it tells you when something needs you. Still, humans retain final authority. A preference an Agent guessed counts only after you confirm it.
+- **Recall on demand, spend fewer tokens.** A session does not start with your whole history. It gets the preferences in effect and a small, relevant recall, and the Agent looks up the rest when it needs it.
+- **Keep only what is reusable.** Every task ends with one check, and only reusable knowledge is kept; often nothing is. We measure how often you no longer have to explain something twice, not how much is stored.
+- **History is kept.** When a newer approach replaces an older one, the source, time and reason stay. An Agent can say what to use now and why it used to be different.
 
-Fuli is a collaboration layer for long-lived agents across MCP-compatible AI clients. Connect
-your tools to the same accessible Fuli data, select the same agent, and continue with its identity,
-project responsibilities, and relevant working context. Use `fuli connect` for standard MCP
-configuration, or automatic setup where a client adapter is available (Codex, Claude Code, Cursor, and Claude
-Desktop with a compact chat tool profile). See [client connections](docs/client-connections.md).
+## What it does
 
-- **A lasting teammate:** keep an agent's role, collaboration history, and working memory between tasks.
-- **Context with boundaries:** retrieve relevant project knowledge, decisions, and preferences with
-  their sources, scope, and confirmation status.
-- **A team when needed:** coordinate specialist agents and record actual worker execution through
-  an available, authorized host client or executor.
-- **Every task has an owner:** ask for work inside a project directory; Fuli registers the project
-  and staffs a lead agent. The reply ends with who led and who helped.
-- **Three built-in specialists:** Jefa manages projects, Bole handles AR (Agent Resources) for
-  recruiting and staffing, and Tonborg helps with judgment. Every space starts with all three.
-- **Judgment guided by your preferences:** [Tonborg](docs/judgment-and-autonomy.md) reviews items
-  within your chosen autonomy level and recommends clients and models. Each decision has a log;
-  a thumbs up, thumbs down or short reason helps guide future judgments.
-- **Agents talk to each other:** through the [Roundtable](#agent-roundtable), one agent asks another
-  conversation directly, and every exchange is recorded.
+- **Same teammate in any client.** Connect several clients to the same FULI data, pick the same Agent, and carry on with its responsibilities, collaboration history and last piece of work.
+- **It remembers you.** Taste, personality and judgment preferences are stored apart, each with a source and a scope. Global preferences apply everywhere, project preferences only in their project.
+- **Every task has an owner.** Ask for work inside a project directory. FULI recognises the project and staffs a lead Agent, and the reply ends with who led and who helped.
+- **Agents grow.** An Agent in FULI is called an FLA. Each one has a name, an occupation and its own working memory, and gains experience from the tasks it has done.
+- **Agents talk to each other.** In the [Roundtable](docs/agent-roundtable.md) one Agent can ask an Agent in another conversation, and every exchange is recorded.
+- **External knowledge, read-only.** Bind Notion or Lark documents, or content behind an MCP or RAG endpoint, to a project. FULI reads it and never writes back.
 
-“Long-lived” means persistent identity and context. Fuli assembles that context and coordinates
-work; the connected AI tools run it. Client adapters determine which conversations can be captured
-and resumed. Connecting another tool does not grant access to another project's private memory.
+### Four built-in roles
 
-Fuli separates private conversation journals, agent working memory, and confirmed knowledge so
-ongoing collaboration produces reusable understanding. AI retrieves, summarizes, warns, and
-executes; humans retain final authority.
+Every space starts with these four. Nobody has to hire them.
 
-Explore the [product website](https://有点.意思.com/fuli/).
+| | Role | Does |
+| --- | --- | --- |
+| <img src="web/src/assets/astro-avatar.webp" alt="Astro" width="40" /> | **Astro** | Receives conversations that belong to no project yet. When a topic keeps coming back, it asks whether to make it a project |
+| <img src="web/src/assets/jefa-avatar.webp" alt="Jefa" width="40" /> | **Jefa** | Project manager: triages conversations and runs the task board |
+| <img src="web/src/assets/bole-avatar.webp" alt="Bole" width="40" /> | **Bole** | AR (Agent Resources): recruits by occupation and staffs projects |
+| <img src="web/src/assets/tonborg-avatar.webp" alt="Tonborg" width="40" /> | **Tonborg** | Reviews for you within the autonomy you set and recommends clients and models. Every decision is logged; a thumbs up, thumbs down or short reason changes the next one |
 
-## Start here
+## Quick start
 
-Install Fuli, connect a client, and run one actual tool call to verify the connection. See
-[Installation](#installation) for full requirements and [client connections](docs/client-connections.md)
-for configuration formats, Hooks, and troubleshooting.
+### Desktop client (recommended)
 
-Humans retain login, Hook trust, and manual review. **Settings showing `Connected` (`connected`)
-only means the current Fuli entry is present in the client's configuration file — it does not prove
-that the client loaded the MCP process, that a Hook delivered context, or that a tool call
-succeeded.**
+Download from the [latest release](https://github.com/JevonsCode/fuli/releases/latest).
 
-### 1. Install
+| System | File | How |
+| --- | --- | --- |
+| Windows | `FULI-Setup-<version>.exe` | Double-click to install. No terminal and no administrator rights; Node.js, Java and the graph database are bundled. The installer is not code-signed yet, so if Windows says it protected your PC, choose “More info → Run anyway”. Running it over an existing install updates it and keeps your data |
+| Windows offline update | `fuli-windows-tray-<version>.zip` | For an existing install. Check the matching `.sha256`, unzip, and run `Update-Fuli.cmd`. Normally you just click 「Update to vX」 in the console |
+| macOS (Apple silicon) | `fuli-macos-arm64-<version>.dmg` | Drag FULI.app into Applications; needs macOS 13.5 or later. The app is not signed yet, so the first time it is blocked, open System Settings › Privacy & Security and click “Open Anyway”. See [macOS app](docs/macos-app.md) |
 
-Pick one of two ways:
+On first launch FULI finds the AI clients on this computer and connects each with one click (Codex,
+Claude Code, Cursor, Claude Desktop and others). Restart the client, ask for something inside a
+project directory, and you are going. Other MCP clients can run `fuli connect` for a standard
+configuration. Sign-in, hook trust and human review are still yours to confirm.
 
-- **Download the app (recommended, Windows):** get `FULI-Setup-<version>.exe` from the
-  [latest release](https://github.com/JevonsCode/fuli/releases) and double-click it. No terminal,
-  no administrator rights; Node.js, Java and the graph database are built in. On first launch FULI
-  finds the AI clients on your computer and connects them in one click, and offers start at login.
-  If FULI is already installed, the setup updates it and keeps your data. The installer is not
-  code-signed yet, so Windows may show "Windows protected your PC": choose "More info → Run anyway".
-- **Download the app (macOS, Apple silicon):** get `fuli-macos-arm64-<version>.dmg` from the same
-  release, open it and drag FULI.app to Applications. macOS 13.5 or later; Intel Macs use the terminal
-  install. The app is not signed yet: the first time it is blocked, open System Settings › Privacy &
-  Security and choose "Open Anyway". See [docs/macos-app.md](docs/macos-app.md).
-- **Install from the terminal:** for developers, and for macOS / Linux.
+### Servers, VMs and the cloud
 
-With Node.js 24.12+ and Docker Compose v2 available (default container mode; see
-[Installation](#installation) for macOS/Linux native mode), run:
+Without a desktop, install with npm. Intel Macs and Linux use this path too. You need Node.js 24.12
+or later. The default container mode also needs Docker Compose v2, and macOS and Linux can choose a
+native mode without a VM instead (Java 21 and `uv`).
 
 ```bash
 npm install --global fuli-context
@@ -99,927 +85,45 @@ fuli setup
 fuli open
 ```
 
-The setup wizard shows its plan before changing your environment.
+`fuli setup` shows its plan and changes nothing until you confirm. The console runs at
+`http://127.0.0.1:2727` by default. Every command, port and fix is in [Install and run](docs/install.md).
 
-### 2. Connect a client
-
-- **Detected Codex, Claude Code, Cursor, or Claude Desktop:** `fuli setup` writes the MCP entry and
-  supported Hooks/Skills. Quit and reopen apps that read MCP configuration only at launch, then open
-  a new task. Codex Hook trust requires manual `/hooks` review in Codex.
-- **Other MCP clients:** run `fuli connect` (or open **Settings → Client connection** in the
-  console), merge the `fuli` entry into the client's MCP configuration while keeping other servers,
-  and reload or trust the server in that client. `fuli connect` prints JSON only.
-
-### 3. First actual tool call and verification
-
-1. Run `fuli status` and confirm the management UI and personal graph are ready (default
-   `http://127.0.0.1:2727`).
-2. Confirm Fuli tools appear in the client and **make one actual tool call** inside a project
-   directory (for example, ask the Agent to load project collaboration preferences or coordinate a
-   small task). Verify that Fuli resolves the right project (or registers/staffs a lead Agent) and
-   asks for missing context rather than inventing it.
-3. Optional cross-tool handoff: use the Agent's continuation instruction in another client
-   connected to the same data and verify that it recovers the same Agent, project, and prior work.
-   See [Agent conversations and collaboration](docs/agent-conversations-and-collaboration.md).
-
-For a one-off task, this source version also supports an isolated **temporary project** when no
-registered project matches; reading preferences alone creates nothing, and an ambiguous project
-still needs a choice. Fuli retains its task history and follows the existing Agent recruitment and
-executor permissions. The Agent directory explains the first-task entry, and task details show a
-completion table only after real worker execution is reported — an assigned Agent or an ordinary
-local conversation alone is not worker evidence.
-
-### 4. Troubleshooting
-
-If setup, client detection, or tool calls fail, see
-[Common failure recovery](docs/client-connections.md#common-failure-recovery). Use
-`fuli setup --yes --connected-only` only to refresh clients that still have an existing Fuli MCP
-entry (**Connected** / `connected` or **Configuration changed** / `changed` in Settings); clients
-showing **Skills only** (`skills_left`), **Removed** (`removed`), **Not connected**
-(`not_connected`), or newly installed clients without a Fuli MCP entry require a full `fuli setup`.
-
-[How it works](#philosophy) · [Installation](#installation) ·
-[Agent roles and teams](docs/employee-agents.md) ·
-[Cross-client acceptance](acceptance/cross-client-handoff.md) · [Contribute](CONTRIBUTING.md) ·
-[Report an issue](https://github.com/JevonsCode/fuli/issues/new/choose)
-
-## Agent Roundtable
-
-Agents talk to each other directly, the way a lead asks a teammate or a sub-agent. A Codex
-Agent can ask the Agent behind a specific Claude Code conversation, or a FULI Agent that has
-never run yet. Nobody creates rooms or invites participants: an Agent calls `message_agent`,
-Fuli wakes the recipient read-only in its own client and returns its answer: Claude Code
-forks the conversation; Codex records the exchange in it (or uses a new session while it is
-open in the app). A message that cannot be delivered waits in the recipient's inbox for its
-next task.
-
-Agents can also keep direct and group chats with `agent_chat`. Messages are pushed: an Agent
-that calls `wait` gets new messages at once, and a direct message or an `@` mention wakes an
-Agent that is not waiting. Chats only carry communication; they never change knowledge weights.
-
-Every exchange is kept locally; the console's Roundtable page shows who asked whom, through
-which client, and exactly what was said. Tools and limits: [Agent Roundtable](docs/agent-roundtable.md).
-
-## npm packages
-
-| Package | Status | Intended use |
-| --- | --- | --- |
-| [`fuli-context`](https://www.npmjs.com/package/fuli-context) | Available | Personal edition; personal knowledge, the graph database, and the management UI all run locally |
-| Fuli Server npm package | In development | A separate server for team-shared deployments; not yet published |
-
-`fuli-context` is currently the only available npm package. The shared layer never contains
-personal taste, personality, or judgment preferences.
-
-## Philosophy
-
-### 1. Measure reuse value, not knowledge volume
-
-Fuli is built around one question:
-
-> Without Fuli, would the agent have to relearn information that is confirmed, still valid, and
-> relevant to the current task?
-
-Node count, transcript count, and graph size are not success metrics. The product succeeds when a
-past collaboration asset is reused within the correct project, time, provenance, and authority
-boundaries—and reduces repeated explanation, correction, or rework.
-
-### 2. Review every task; do not retain every task
-
-A task may produce:
-
-- reusable knowledge such as API conventions, runbooks, release procedures, or constraints;
-- experience explaining why an approach worked or failed;
-- a decision trace with options, a human choice, rationale, and later validation;
-- judgment aids such as preferences, principles, taste, or personality tendencies.
-
-It may also produce only disposable output, a guess, or a one-off choice. In that case,
-`retain_nothing` is the correct result. Every task should perform a knowledge-value checkpoint, but
-not every task must become stored knowledge.
-
-### 3. Human authority outranks agent repetition
-
-An agent may discover candidates, surface conflicts, recommend promotion, or resolve a deferred
-conflict when explicitly authorized. It may not turn semantic similarity, repetition, or its own
-judgment into human confirmation. Shared-knowledge promotion and sensitive project mutations use a
-preview followed by an explicit, one-time, atomic action.
-
-### 4. Assemble context, then retrieve evidence on demand
-
-Fuli does not inject the complete history at session start. The entry step always loads effective
-personal-global preferences, preferences from one exactly matched project, and explicitly
-propagating preferences from authorized parent projects. When the current task signals that a
-stable prior fact, method, URL, decision, release, deployment, or authentication runbook may matter,
-the same step also performs a small bounded recall from that project and its authorized knowledge
-sources. The agent uses focused on-demand search when more evidence is needed.
-Retrieval alone is not usage; a usage event is recorded only when an item materially affects an
-answer, implementation, or decision.
-
-### 5. Preserve evolution instead of overwriting history
-
-An old approach may have been correct under earlier conditions and later replaced. Fuli preserves
-provenance, confirmation authority, time, rationale, revisions, supersession, and negative evidence
-so an agent can explain both what applies now and why the past was different. Negative feedback may
-lower rank or trigger review, but it never silently erases history.
-
-### 6. Put shared knowledge in the parent; keep differences in each child
-
-For example, hotel and flight projects can keep their own PRDs, configuration, and domain rules,
-while a parent activity-platform project owns shared local-run, mock, test, and deployment runbooks:
-
-```text
-Activity platform (parent: shared runbooks)
-├── Hotel project (child: hotel PRD / configuration / overrides)
-└── Flight project (child: flight PRD / configuration / overrides)
-```
-
-When an agent works in the hotel project, it searches hotel-local knowledge first, then follows
-explicit outgoing `PART_OF` or `USES_KNOWLEDGE_FROM` relationships to authorized sources, up to two
-hops. A child item with the same stable key overrides an inherited item. Project-scoped personal
-preferences remain exact by default; only preferences explicitly marked `descendants` or
-`selected_projects` may propagate over the same authorized relationships, with origin project,
-path, and distance preserved. Equally near parent conflicts require human judgment and are never
-resolved by weight. Generic `RELATED_TO` relationships do not expand scope automatically; search
-returns only a one-time read-only expansion suggestion that the Agent must ask the user to approve.
-
-Similar items from multiple children create only a common-knowledge candidate. A shared preference
-across projects without one common parent likewise creates only a personal-global candidate while
-preserving each source text, qualifier, and provenance. Current clustering is a lexical heuristic,
-not proof of semantic equivalence. A human must choose the content, scope, and rationale before it
-can apply.
-
-### 7. Local first; no personal model in the shared layer
-
-The personal graph stays local by default. Supported client adapters can journal visible
-conversations for private agent continuity, separately from structured confirmed knowledge.
-Conversation recall is bounded, with a default seven-day inactivity window. Credentials, temporary
-logs, and raw command output must not enter the knowledge graph. The team-shared layer contains only
-confirmed project or domain knowledge with context and provenance—not personal taste, personality,
-or judgment preferences.
-
-## Practical use: classification, scope, project resolution, and retrieval
-
-### Decide what to store before deciding where to store it
-
-Content type and effective scope are independent dimensions. The first three rows are personal
-collaboration preferences and carry a `profileAspect`. Project facts have no `profileAspect` and do
-not appear on the Personal preferences page.
-
-| Type | What belongs here | Example |
-| --- | --- | --- |
-| Taste (`taste`) | Outcomes, styles, and quality directions the user explicitly likes or rejects across UI, writing, product, architecture, or engineering work | “Use fewer large gradients and avoid cards nested inside cards.” |
-| Personality (`personality`) | A stable working or collaboration trait explicitly described by the user | “I communicate directly and want the Agent to move work forward proactively.” |
-| Judgment preference (`judgment_preference`) | Decision conditions, priorities, risk posture, and operational boundaries used when making trade-offs | “Discuss directional ambiguity first; never `git push` without explicit authorization.” |
-| Project knowledge | Reusable objective facts, terminology, requirements, routes, APIs, architecture, rationale, and runbooks | “A GitHub Release triggers Fuli's npm publication.” |
-
-Four questions provide a quick classifier: “What outcome do I want?” is taste; “How do I work over
-the long term?” is personality; “How do I decide under a trade-off?” is judgment preference; and
-“How does this system objectively work?” is project knowledge. One-off commands, temporary output,
-unverified guesses, raw chat, and credentials are not promoted into confirmed knowledge.
-
-Personality is not a catch-all category for everything learned about a person. Only an explicit,
-stable self-description can be confirmed with a human basis. A personality inferred by an Agent
-from one behavior must remain `pending`; it cannot masquerade as human-confirmed. An empty
-Personality filter on `/preferences` therefore usually means there is no qualifying item in the
-selected scope, not that capture failed. “Keep copy concise” is more likely taste, while “do not
-push without authorization” is more likely a judgment preference. To make the intent explicit,
-say: `This is a long-term collaboration trait; save it as a personal-global personality preference: I communicate directly.` An Agent-inferred candidate can be confirmed, corrected, or invalidated
-by the user from `/preferences` or `/flreview`.
-
-### Personal-global, project-scoped, and shared
-
-| Scope | When to use it | Key write fields | Retrieval rule |
-| --- | --- | --- | --- |
-| Personal-global preference | The behavior should remain the same in unrelated projects | `targetKind: "personal"`; omit `personalProjectId`; set `profileAspect` | Loaded for every task |
-| Project-scoped personal preference | The collaboration behavior belongs to one project or project family | Same fields plus the exact `personalProjectId`; default to `local_only` and never inherited by child projects; explicitly use `descendants` or `selected_projects` when propagation is intended | Exact project wins; propagation follows only the explicit inheritance mode and authorized relationships, and score never resolves a conflict automatically |
-| Project knowledge | A fact belongs to one project or to a designated parent/source project | `targetKind: "personal"`; set `personalProjectId`; omit `profileAspect` | Search the current project first, then authorized `PART_OF` / `USES_KNOWLEDGE_FROM` sources up to two hops |
-| Team-shared knowledge | Human-confirmed project or domain knowledge genuinely needed by a team | `targetKind: "project"` after preview/review | Visible only from explicitly selected or subscribed public projects; personal preferences never enter this layer |
-
-To choose a preference scope, ask: **Should this change the Agent's behavior in a completely
-unrelated project?** If yes, use personal-global. If it applies only to Fuli, use a project-scoped
-preference. If it applies to a project family, keep it project-scoped and explicitly choose whether
-it may propagate to descendants. Do not turn an objective project fact into a personal-global item
-merely because more than one project may reuse it. Put it in an explicit parent or knowledge-source
-project and add a directional authorization relation. When global and project-scoped variants have
-the same stable `attributes.preferenceKey`, human/source confirmation authority is resolved first;
-at equal authority, the exact project variant overrides the global one.
-
-### How Fuli identifies the current project
-
-Fuli matches only stable `project_id` values already registered under Personal projects; it does
-not guess from fuzzy directory similarity. Normally the `project_id` matches the repository
-directory name, so `/workspace/fuli` maps to `fuli`. Standard calls pass only the current working
-directory, and resolution follows this order:
-
-1. Find the nearest Git repository root, read its `origin` remote from its `.git/config` (a
-   worktree's common directory) and match it exactly to one registered project's recorded
-   repository source URL; ssh and https forms of the same repository are equal. Any clone or
-   worktree therefore resolves to its project (`git_remote`), whatever its folder is called.
-2. Otherwise match the repository directory name exactly to a registered `project_id`; for a
-   Codex worktree, the original repository ID from its `.git` pointer. A project that records a
-   different repository source is never matched by name (`repository_remote_conflict`).
-3. Match the current directory name exactly to a registered project ID.
-4. At a workspace root, match one registered direct child only when exactly one child contains
-   `.git`, `package.json`, `pyproject.toml`, `Cargo.toml`, or `go.mod`.
-5. Multiple candidates return `ambiguous`; no candidate returns `unmatched` (a remote recorded by
-   several projects counts as several). Neither state applies project preferences or guesses a project.
-
-For an unregistered repository with an unambiguous identity, the installed capture skill may call
-`upsert_personal_project` before the first project-scoped write to create a minimal local private
-project. It never creates or subscribes to a public project automatically. If a workspace has
-multiple candidates, run the Agent from the exact project directory or explicitly register and
-select the project first.
-
-### Which tool the Agent calls and when
-
-Normal use does not require manual MCP calls: submit a task to the Agent from the project directory.
-Fuli includes lifecycle adapters for Claude Code, Codex, and Cursor. When a loaded, trusted entry
-hook supplies `begin_task_context` context, use it without repeating the fallback. Cursor's adapter
-starts the durable task through a hook but relies on the Agent to retrieve preferences and role
-context. When no hook context was supplied, call the following once at task entry:
-
-```json
-{
-  "tool": "get_collaboration_preferences",
-  "arguments": {
-    "projectPath": "/workspace/fuli",
-    "taskPrompt": "Fix npm publishing and reuse this project's existing release conventions."
-  }
-}
-```
-
-The important part of a matched response resembles:
-
-```json
-{
-  "context": {
-    "personal_project_id": "fuli",
-    "project_resolution": {
-      "status": "matched",
-      "basis": "repository_root",
-      "personal_project_id": "fuli"
-    }
-  },
-  "effective_preferences": ["personal-global preferences + exact fuli preferences"]
-}
-```
-
-If entry-time `task_knowledge_recall` did not answer a stable project fact, search with one to four
-short queries centered on an action, artifact, target system, or identifier. Do not use the full
-user request verbatim as the only query:
-
-```json
-{
-  "tool": "search_current_project_knowledge",
-  "arguments": {
-    "projectPath": "/workspace/fuli",
-    "queries": ["npm publication runbook", "GitHub Release trigger"],
-    "includePending": false
-  }
-}
-```
-
-At task end, hook mode calls `checkpoint_task_knowledge`: use `capture_candidates` only for a small,
-durable, evidence-backed batch; otherwise use `retain_nothing`. A prompt-fallback Agent applies the
-same rule and writes through `capture_session_knowledge`. Personal preferences set the correct
-`profileAspect` and stable `attributes.preferenceKey`; project facts omit `profileAspect`. If
-automatic capture is disabled under Settings, automatic writes return `capture_disabled` and no
-category is created: transcripts, checkpoints, knowledge and preference candidates, knowledge usage,
-view records, and feedback or corrections reported through an Agent all stop. If the capture
-settings cannot be read, automatic writes stop the same way (`reason: policy_unavailable`). Edits
-you submit yourself in the FULI console and an explicit `新项目：` request still save, and reading
-existing knowledge keeps working. Session turns written while automatic recording is off are skipped
-with a content-free marker and are never imported after it comes back on.
-
-Capture can also be limited to projects. `projectMode` is `all` (the default), `all_except` with
-`excludedProjectIds`, or `selected` with `selectedProjectIds`; `unregisteredDirectories`
-(`skip` by default under `selected`, `capture` otherwise) decides work outside every registered
-project. A directory resolves to its project the same way task entry does, so a worktree of a
-repository is that repository's project. A project that is not recorded returns
-`reason: project_off`, an unregistered directory `project_unregistered`, and every task receipt
-ends with the reason and that explicit edits still save, for example
-`此项目未开启记忆；你明确提交的修改仍会保存`. Switching a project off never hides or
-deletes what it already recorded; `projectsOffSince` keeps when it stopped. Agents read the
-settings with `get_capture_policy` (pass `projectPath` to learn about the current project) and
-change them with `update_capture_policy` only after restating the change and getting the user's
-confirmation; the settings page uses `PATCH /api/capture-policy`. Saying "这次别记" in a session pauses
-only that session at once, without a confirmation: the Agent calls `update_capture_policy` with just
-`sessionPaused: true` and its `taskContextToken`, and every later receipt in the session says
-`本会话已暂停记录（自 HH:mm 起）` (`reason: session_paused`). Earlier records stay, workers the session
-starts are paused with it, "继续记" (`sessionPaused: false`) resumes from then on, and nothing written
-while paused is recorded later. The pause lives in the local runtime directory and ends with the session.
-
-To turn FULI off for one session altogether, the person types `/fuli stop` (Claude Code and Cursor, where
-setup installs the `fuli` command Skill) or `fuli stop` (any client; Codex accepts no custom slash command).
-The prompt hook answers the line itself, so the model never sees it: from then on that session gets no
-injected memory, preferences or recall, its Agent's own FULI reads (searches, Agent memory, conversations)
-are refused, it records nothing and starts no collaboration (workers, loans, other Agents, role work), while other sessions, the local service and existing memories stay as they are.
-`fuli start` turns it back on within the existing settings (a pause or a stricter global, client or project
-setting still applies), `fuli restart` also gives the next turn the full context again, and `fuli status`
-shows the session and the default; nothing said while FULI was off is recorded later. Context already sent
-to the model cannot be taken back, so isolation needs a new session. Only a task token shows which session a
-tool call is for (Claude Code keeps its tool connection across /clear; Codex and Cursor connections name no
-session), so while any session of a client is off FULI refuses that client's tool calls without a task token,
-rather than serve memory to a session that may be the stopped one. Agents pass the `taskContextToken` they
-already have (entry, searches and team reads take it), so other windows keep working. The same switch runs from a shell the
-client started (`!fuli session stop`), so an Agent with shell access can run it too (the same trust as
-access to your files); the console and `fuli mcp --call` still read for you, and `fuli session default off` makes new sessions start with FULI
-off until started; sessions already open keep theirs.
-
-Run these local contract tests to check that the README and project-path behavior still match the
-implementation:
-
-```bash
-npm run test:node -- test/acceptance-docs.test.js test/project-path-context.test.js
-```
-
-## Agent interaction sequence
-
-This is the simplified lifecycle for a normal task. The Chinese
-[detailed sequence diagram](acceptance/智能体调用时序图.md) also covers inheritance, usage counting,
-write previews, and source markers.
+## How it works
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor U as User
-    participant A as Agent
-    participant L as Lifecycle integration
-    participant F as Fuli MCP
-    participant G as Local graph
-
-    U->>A: Submit a task in the current project
-    alt Claude Code / Codex (hook context supplied)
-        L->>F: begin_task_context(projectPath, taskPrompt)
-        F-->>A: Preferences, exact project, bounded recall, and task token
-    else No hook context (prompt fallback, including Cursor)
-        A->>F: get_collaboration_preferences(projectPath, taskPrompt)
-        F-->>A: Preferences, exact project, and bounded recall
-    end
-
-    A->>A: Inspect task_knowledge_recall
-    opt Historical context is needed and recall did not answer it
-        A->>F: search_current_project_knowledge with focused queries
-        F->>G: Search child first, then authorized parents
-        G-->>A: Bounded content, status, provenance, and history
-        opt Knowledge materially affects the result
-            A->>F: record_knowledge_usage
-        end
-    end
-
-    A->>A: Complete the implementation, validation, or answer
-    opt The task creates a decision, contradiction, or stale signal
-        A->>F: Record rationale or knowledge feedback
-    end
-    opt Something is worth keeping (candidates, a decision, a meaningful work log)
-        A->>F: checkpoint_task_knowledge
-        F->>G: capture_candidates
-    end
-
-    alt Loaded and trusted Claude Code / Codex Stop hook
-        L->>F: verify_task_checkpoint
-        F-->>L: Close a routine task as retain_nothing / reported, otherwise remind
-    else Cursor or an Agent without a Stop hook
-        Note over A,F: Same contract. A routine fallback task closes at the next task entry
-    end
-    A-->>U: Return the result and any Fuli sources actually used
+flowchart LR
+    U[You] -->|ask inside a project| A[Agent client]
+    A -->|task starts| F[FULI local service]
+    F -->|preferences and a small recall| A
+    A -->|look up more if needed| F
+    A -->|write back what is reusable| F
+    F --- G[(Local graph)]
 ```
 
-## Read-only external knowledge
+1. You ask an Agent for something inside a project directory. The client's hook (or the Agent itself, where there is no hook) first asks FULI which project this is and which preferences apply.
+2. FULI answers with a small slice: the preferences in effect and a few pieces of project knowledge related to the task. If that is not enough, the Agent looks up more.
+3. When the work is done, the Agent writes back only what can be reused, such as a convention or a decision with its reason. Temporary output and guesses are not kept.
+4. Private conversation records, Agent working memory and confirmed knowledge are stored apart. Once a conversation grows long, its older part folds into a digest.
+5. FULI assembles context and coordinates work; the connected AI tools do the work. Client adapters decide which conversations can be resumed, and connecting another tool never opens another project's private memory.
 
-One knowledge-base connection can be bound to one or more existing personal projects without
-granting Fuli write access to the source. Each target keeps independent retrieval mode, sync
-cursor, and error state. The Connections page supports multi-project assignment, connection
-checks, manual synchronization, disconnection, and a per-project conflict switch.
+## Learn more
 
-| Connector | Read path | Current boundary |
-| --- | --- | --- |
-| MCP | Resources `list/read`; configured `search` / `fetch` tools | Default; HTTPS or loopback HTTP, plus stdio |
-| Notion | Page Markdown and Data Source queries | Current `2026-03-11` API; explicit page or data-source IDs |
-| Feishu / Lark | Wiki nodes, search, and Docx raw content | Docx text only; search may require a user access token |
-| RAG Retrieval API | Dify-compatible external-knowledge retrieval contract | Live only; for compatible endpoints or adapters in front of systems such as RAGFlow |
-| Trusted custom code | Local ESM `sync` / `retrieve` contract | Explicitly installed trusted code, not a sandbox |
-
-<a id="connect-external-knowledge"></a>
-
-### Connect one or more knowledge bases to a project
-
-One personal project can have multiple knowledge connections, and one connection can target
-multiple personal projects. Each submission adds a connection instead of replacing an existing
-one. Source configuration is stored once, while retrieval mode, synchronization state, and errors
-are isolated per target. Use Bind projects on an existing connection to add or remove targets.
-
-1. Create or confirm the target under Personal projects.
-2. If the source needs a token, set it in the environment that starts Fuli, then start or restart
-   the service. The binding stores only the environment-variable name. For example, run
-   `export PROJECT_KB_TOKEN='...'` and then `fl restart`.
-3. Open `http://127.0.0.1:2727/connections`. Under External knowledge, enter a connection name,
-   connector, one or more bound projects, and retrieval mode.
-4. For MCP HTTP, enter the final endpoint URL (redirects to another origin are not followed) and an
-   optional token environment-variable name. For MCP stdio,
-   enter its command and arguments. For Notion, enter the token environment-variable name and Page
-   IDs or Data Source IDs. For Feishu/Lark, enter the token environment-variable name, region, and
-   an explicit Space ID, root-node token, or node tokens. For RAG Retrieval API, enter a
-   Dify-compatible endpoint, knowledge-base IDs, and an optional token environment-variable name.
-   A custom connector takes a trusted local ESM module and source JSON.
-5. Select Add connection and then Check. A successful `mirror` or `hybrid` binding can be synced;
-   a `live` binding reads its source when an Agent query runs.
-6. After creation, use Bind projects to add or remove projects and select a mode per project.
-
-The project graph shows an External knowledge source node and a Uses external knowledge edge for
-each assignment. This is a read-only projection of connection configuration. Live bodies are still
-retrieved only when an Agent invokes `search_connected_knowledge`; showing the node does not mirror
-content locally.
-
-Retrieval modes differ as follows:
-
-- `live`: read the third party at query time without storing a body mirror in Fuli; the source must
-  be available.
-- `mirror`: manually mirror read-only content into the bound personal project and query the graph.
-- `hybrid`: use both the local mirror and live source results; recommended when the connector
-  supports both capabilities.
-
-Bindings support `live`, `mirror`, and `hybrid` modes. Mirror content is written only to the bound
-personal project as `observed`, `pending`, `restricted`, local-only knowledge. Credentials are read
-from named environment variables and are not stored in binding JSON. Source writes are never part
-of the connector contract. Documents that look like credential material are skipped individually,
-reported by count, and never enter the graph or Agent context.
-
-<a id="external-knowledge-conflict-policy"></a>
-
-### Conflict policy
-
-One default applies to every personal project; a project can keep its own choice as an exception
-(Connections → Conflict policy). The policy covers that project's personal graph, all external
-bindings, and explicitly selected public projects:
-
-- Ask in the Agent conversation is the built-in default. The Agent presents conflicting content,
-  source, and scope separately so the user can choose.
-- Allow an Agent decision lets the Agent select the stronger or fresher source for the current
-  response and requires it to explain the basis. It never confirms, invalidates, overwrites, or
-  writes back any knowledge.
-
-From the project directory, an Agent can be asked: `Search the current project and connected knowledge bases for the payment callback contract; list conflicting sources and ask me to decide.`
-
-`search_connected_knowledge` keeps personal-graph evidence, each external binding, and explicitly
-selected public projects as separate source sets. Public-project aggregation is **Beta**. When an
-Agent finds a material conflict, the default policy is to show it in the conversation and ask the
-user; the optional Agent-decision policy applies to the current response only and cannot confirm,
-invalidate, or rewrite any source. Direct external-to-public binding, reviewed public promotion,
-scheduled sync, webhooks, and full deletion reconciliation remain **TODO**.
-
-See the [external-knowledge architecture and connector contract](docs/external-knowledge-architecture.md), and the [public-workspace and personal-graph architecture](docs/public-personal-architecture.md).
-
-## Current capabilities and evidence boundaries
-
-Core mechanisms covered by implementation and automated tests include:
-
-- a local personal space, exact project scope, and selective parent inheritance;
-- preference confirmation, deferred conflict resolution, revision history, and source markers;
-- bounded task-prompt recall, focused on-demand retrieval, and material-usage auditing;
-- task entry and completion checkpoints, plus local Claude Code, Codex, and Cursor lifecycle adapters;
-- decision options, rationale, and validation results supplied during initial capture;
-- knowledge-usage events, negative feedback, and content-generation isolation;
-- persistent scoped knowledge reviews with pause/resume watermarks;
-- common-knowledge discovery and preview-token-protected atomic promotion;
-- read-only multi-project MCP, Notion, Feishu/Lark, Dify-compatible RAG Retrieval API, and trusted-code bindings with connected retrieval.
-
-New in 0.20 (public preview `0.20.0-beta`, see the [release notes](docs/releases/0.20.0.md)):
-
-- **Projects and people**: unassigned conversations go to Astro, Jefa triages them, and when a topic keeps coming back (three conversations over at least two days) Astro asks whether to make it a project with its own people. Every project has a brief and every Agent an occupation, which Bole recruits by.
-- **Tasks**: assign without starting (backlog), and stop, retry, or review any run from the task details. A temporary failure is retried automatically only when no prompt was sent.
-- **Decisions**: an Agent that needs you asks in the conversation first. A request that must wait for you goes to the Decisions page, and your reply reaches the Agent that asked.
-- **Roundtable**: besides asks (`message_agent`), Agents have direct and group chats (`agent_chat`) with push delivery and `wait`; the console shows them live.
-- **Memory between projects**: weighted links (related, frequent, close) say how much one project may draw on another. Weights never grant access.
-- **Lower token cost**: a smaller task entry, shared rules read on demand, long preference lists read in pages, and a Stop hook that closes routine tasks without another model turn.
-- **Console**: six entries (Workbench, Agents, Conversations, Projects, Memory, Settings), a phone layout, and Alt/Option-click explanations for any status or term.
-- **Windows**: download `FULI-Setup-<version>.exe` from the release and double-click it to install for your user (no terminal, no administrator; unsigned for now, so SmartScreen asks once). The installed build has Update-Fuli, Rollback-Fuli, and Uninstall-Fuli that keeps your data; the console's 「Update to vX」 downloads the release's verified Windows package and runs the same update in one click.
-
-The following must not be presented as already proven:
-
-- the A/B thresholds in `FULI_ALIGNMENT_BENCHMARK.md` are acceptance conventions; claims that Fuli
-  reduces explanation or rework require a sufficiently large set of controlled, real paired tasks;
-- benchmark projects and conversations are explicitly labeled **MOCK / synthetic data**, not user or
-  production data; the measured token use and recall accuracy so far, small-sample trends on
-  synthetic projects, are on the [token and accuracy report](https://xn--8ovp9s.xn--m8txu.com/fuli/report/en/);
-- the decision tool can include validation during initial capture, but it does not yet expose a
-  dedicated operation for appending immutable validation results to an existing `Decision`;
-- Installed files do not prove host loading, trust, or execution. Claude Code and Codex adapters
-  generate entry/Stop hook configuration; Codex trust review remains a user action. Cursor uses
-  task-entry hooks and bounded Stop reminders, not an equivalent unconditional Stop gate. Ordinary
-  input in each real client still requires live acceptance;
-- selected public projects in connected retrieval are Beta; external-to-public promotion and
-  background delta synchronization are not implemented.
-
-## Installation
-
-Requirements:
-
-- Node.js 24.12 or later;
-- the default container mode needs Docker Compose v2 through Docker Desktop, Rancher Desktop, or a compatible runtime;
-- macOS and Linux can use native mode without a VM; it requires Java 21 and `uv` (Python 3.12);
-- on a memory-constrained Mac, use
-  `fuli setup --runtime-mode native --memory-profile low --adaptive-memory`. Container mode remains the compatibility default and is never changed automatically.
-
-Install globally and initialize:
-
-```bash
-npm install --global fuli-context
-fuli setup
-```
-
-Or use the one-line installer, which checks the Node.js version first:
-
-```bash
-curl -fsSL https://xn--8ovp9s.xn--m8txu.com/fuli/install.sh | sh
-```
-
-On Windows PowerShell: `irm https://xn--8ovp9s.xn--m8txu.com/fuli/install.ps1 | iex`.
-
-`fuli setup` first shows its plan and asks for confirmation. It then checks the container runtime,
-initializes local Graphiti / Neo4j, creates a personal space, installs the companion Agent Skills,
-and registers the `fuli` MCP with detected agents. The default setup connects only the personal
-Provider; it does not simulate a team-shared service.
-
-Open the management UI after setup:
-
-```bash
-fuli open
-```
-
-The default URL is `http://127.0.0.1:2727`. On Windows, Hyper-V, WSL and winnat reserve port ranges that change
-between boots (`netsh interface ipv4 show excludedportrange protocol=tcp` lists them). A first setup picks ports outside
-those ranges. Every `fuli start`, `restart` and `setup` checks again: a Fuli port that is now reserved, or a console port
-Windows refuses or another program holds, moves to the nearest free port. Fuli backs up `runtime-settings.json`, saves
-the new port, starts normally and says so once (in the command output, the desktop client and the console). It never
-moves away from another running Fuli console on that port, and never starts a second one beside it. The Windows tray's
-**Use another port** still moves the console to a free port near the default on request.
-Open Agent sessions keep showing the old console address in Fuli links until they restart.
-
-The Settings page manages all seven local Fuli ports, graph runtime mode, LAN access, automatic capture,
-Agent access, UI language, and the resource refresh interval. Run `fuli restart` after saving port,
-runtime, or LAN changes;
-the refresh interval applies immediately. The same page polls real memory and disk usage for the
-management service, Providers, Neo4j, application files, and local data. Memory is sampled on every
-poll; disk usage is sampled at most once per minute, with separate timestamps. Missing container metrics
-are shown as partial instead of being replaced with mock values. Native Provider and Neo4j processes
-are included. Browser-tab memory is excluded; shared container-VM overhead is excluded in container mode.
-
-## CLI
-
-The global package provides two equivalent commands: `fuli` and the short alias `fl`.
-CLI help, prompts, status output, and errors are always in English and do not follow the web or
-system locale. User data such as paths and space names is displayed unchanged.
-
-| Command | Purpose |
+| You want to know | Read |
 | --- | --- |
-| `fuli --help` / `fuli -h` | List every public command and its available options |
-| `fuli --version` / `fuli -v` | Print the installed Fuli CLI version |
-| `fuli setup [options]` | Initialize the Provider, UI, agent integrations, and Skills; safe to rerun |
-| `fuli start [options]` | Check Agent integrations, then start the Provider and UI; optionally open a browser, rebuild containers, or enable LAN access |
-| `fuli stop [--data-dir DIR]` | Stop services without deleting data |
-| `fuli restart [options]` | Restart local services using the same runtime options as `start` |
-| `fuli status [--json] [--data-dir DIR] [--port PORT]` | Show UI, personal graph, and shared-service status; `--json` emits machine-readable output |
-| `fuli open [--data-dir DIR]` | Open the current management UI in the default browser |
-| `fuli graph export --output DIR [--mode container\|native]` | Export graph data as a checksummed, copyable offline bundle |
-| `fuli graph import --input DIR [--target-mode container\|native] [--yes]` | Verify and replace target graph data, preserving an automatic pre-import rollback bundle |
-| `fuli graph migrate --to native [--yes]` | Move a container graph to native mode, accepted only when node and relationship counts match |
-| `fuli update [setup options]` | Update the npm package and refresh local integrations |
-| `fuli uninstall [--yes] [--data-dir DIR]` | Remove agent integrations and services while preserving knowledge data and Neo4j volumes |
-
-Common commands:
-
-```bash
-fuli --version
-fuli status
-fuli restart --rebuild
-fuli start --lan
-fuli graph export --output "$HOME/Backups/fuli-graph"
-fuli stop
-```
-
-Connect a deployed `fuli-workspace` service:
-
-```bash
-fuli connect-workspace \
-  --url http://127.0.0.1:8789 \
-  --token-file /path/to/private-token
-fuli restart
-```
-
-The command verifies discovery, protocol version, and token scope before atomically updating the
-local runtime configuration with mode `0600`. It never prints the token, token-file path, or remote
-principal ID. Non-loopback services must use HTTPS. The current `fuli-workspace-v1` adapter enables
-discovery, explicit subscriptions, and queries; publishing, contributions, and review remain off
-until those protocol mappings are implemented.
-
-`start` and `restart` accept `--data-dir DIR`, `--personal-space NAME`, `--port PORT`, `--open`,
-`--rebuild`, `--lan`, and `--no-lan`. When port or LAN flags are omitted, the saved Settings values
-are used. LAN mode listens on private IPv4 addresses and prints the reachable URLs, the
-`fuli` username, and a temporary access code generated for that start. The default remains
-loopback-only; internal Providers and Neo4j ports are never exposed by `--lan`. LAN mode uses
-HTTP Basic Auth and is intended only for trusted home or office Wi-Fi, not public deployment.
-Before starting, `fuli start` performs a read-only check of detected Agent MCP, Skill, Codex bootstrap,
-and Claude lifecycle integrations. If any are missing or outdated, it still starts the local services
-and tells you to run `fuli setup`; it never applies setup changes implicitly.
-
-`setup` and `update` accept:
-
-| Option | Purpose |
-| --- | --- |
-| `--yes` | Skip confirmation for unattended setup |
-| `--codex-only` | Configure Codex only |
-| `--data-dir DIR` | Use a specific data and configuration directory |
-| `--personal-space NAME` | Set the personal-space name; defaults to `Personal` |
-| `--port PORT` | Set the management UI port; defaults to `2727` |
-| `--runtime-mode container\|native` | Select containers or native processes; defaults to `container`, with native mode currently on macOS/Linux |
-| `--memory-profile low\|balanced` | Select Neo4j's memory budget; fresh installs default to `balanced` |
-| `--adaptive-memory` | Enable on-demand wake and staged idle sleep, coordinated by the management service |
-| `--no-adaptive-memory` | Disable idle sleep and keep graph services running |
-| `--skip-agents` | Do not change agent configuration or Skills |
-| `--connected-only` | Refresh only clients that already have a Fuli MCP entry; used automatically by update |
-| `--no-start` | Initialize the Provider without starting the UI |
-| `--allow-provider-downgrade` | Accept a lower native Provider version, for example moving from a local `rc` build to a public `beta`; back up the data folder first |
-| `--personal-only` | Use only the personal Provider; this is the default |
-| `--with-dev-public` | Start a development shared Provider for local integration work only |
-
-The `low` profile uses a 128 MiB initial heap, 256 MiB maximum heap, and 64 MiB page cache.
-`balanced` uses 256 MiB, 512 MiB, and 256 MiB respectively. The low profile does not add a hard
-container memory limit: it lowers steady memory use while leaving room for Neo4j's native memory.
-It may cause more garbage collection and disk reads under bulk writes, large traversals, or high
-concurrency, but it does not change transaction semantics, storage format, or data volumes. If those
-workloads become slow or fail for lack of heap, run `fuli setup --memory-profile balanced --yes`.
-The selected profile is saved and reused by later setup, update, start, and restart commands.
-
-Adaptive memory is a lifecycle policy independent of the Neo4j memory profile. When enabled, the
-lightweight management service stays available. Real MCP tools, MCP resources, and graph requests
-acquire a runtime lease and wake services on demand. After the final lease is released, the personal
-Provider stops after 60 idle seconds by default and Neo4j stops after 180 idle seconds. Volumes are
-preserved and the next request restores the same data. Active calls renew their leases and cannot be
-interrupted by idle timers; a crashed client lease expires after at most 180 seconds. These durations
-are current product defaults, not measured hardware thresholds.
-
-This mode trades idle memory for first-request cold-start latency and additional disk reads. Health,
-runtime-status, and resource polling do not wake the graph, and `fuli status` treats intentional sleep
-as healthy. The management service must remain running to wake graph services, so `--no-start` only
-saves the policy for a later start. In container mode the policy stops only Fuli Provider and Neo4j
-containers; it does not shut down Rancher Desktop, Docker Desktop, Kubernetes, or the container VM
-itself. Native mode directly stops the corresponding Provider and Neo4j processes, so no shared VM
-overhead remains while idle.
-
-Jefa (project manager), Bole (AR, Agent Resources), and Tonborg (judgment) are built-in roles in every
-space and are never hired. Bole's workbench shows staffing, current work, and recruitment history;
-Tonborg's workbench shows decisions and feedback. Jefa's task board is built into FULI and needs no
-installation; **Manage assigned projects** on a role's card or workbench sets which projects it manages.
-The console has no hiring step: a custom employee package is recruited through the `recruit_employee` Agent
-tool, which reuses a durable identity with separate project assignments. An installed employee workbench and
-API share the FULI port; existing FULI MCP clients discover and call its tools. Recruitment does not start a
-model or rewrite client settings. See the [employee package and extension contract](docs/employee-agents.md).
-Agents can also grow small [Agent apps](docs/agent-apps.md); in this version an approved app runs
-unsandboxed with your account's permissions, after you confirm it with `fl app approve` in a terminal.
-
-Project Agent identities remain control-plane records rather than one resident process per identity.
-Roles now keep versioned, project-private working memory in the same Neo4j Provider. Task entry
-restores one owner across connected MCP clients; lifecycle checkpoints survive separate
-MCP processes. See [role memory, host hooks and acceptance boundaries](docs/project-agent-memory.md).
-Supported Codex and Claude Code hooks also journal visible conversations. Once unfolded messages pass
-a size threshold (64 KB by default), older ones fold into a digest; recovery stays within a byte budget. Specialist loans and artifact verification share the same Provider.
-See [conversation continuity and collaboration](docs/agent-conversations-and-collaboration.md)
-for client coverage, model capability configuration and acceptance limits.
-Physical executors share leases by executor ID. Fuli starts and stops only executors with an explicitly
-injected managed lifecycle adapter; host-owned external executors such as Codex are never started or
-killed implicitly. The current minimum-memory combination is:
-
-```bash
-fuli setup --yes --runtime-mode native --memory-profile low --adaptive-memory
-```
-
-The two modes use separate data directories. Switching preserves the old mode's data and never
-merges changes in the background. To migrate, export while the source mode is still active, then
-install or switch to the target mode and import:
-
-```bash
-# Rancher / Docker -> native
-fuli graph export --mode container --output "$HOME/Backups/fuli-container"
-fuli setup --yes --runtime-mode native --memory-profile low --adaptive-memory
-fuli graph import --target-mode native --input "$HOME/Backups/fuli-container" --yes
-```
-
-Or run the same steps as one command, from a package that has the native runtime (on Windows the
-installed Fuli desktop package):
-
-```bash
-fuli graph migrate --to native
-```
-
-It stops the running console, counts and exports the container graph, sets up native mode, imports,
-and accepts the result only when every label and relationship-type count matches. On any failure it
-switches back to container mode. The container volume is only read and is left stopped, never removed.
-Client integrations are not changed.
-
-Swap `container` and `native` for the reverse direction. Export briefly stops the source database
-and resumes only services that were actually running beforehand. Import validates the manifest and
-every dump's SHA-256 before stopping the target. It preserves the old target under `backups/graph`
-inside the data directory and attempts an immediate rollback if loading fails. Let active Agent graph
-writes finish before either operation.
-
-After loading, Fuli uses the target installation's bootstrap token to rotate local Provider access
-credentials and atomically updates the runtime configuration; plaintext access tokens are never added
-to the bundle. Unmanaged external Workspace connections are preserved for a same-device migration.
-Reconnect their credentials separately after moving the bundle to another device.
-
-The bundle is a directory containing `manifest.json`, `personal.dump`, and an optional
-`workspace.dump`; it can be copied to another disk or machine. Container mode transfers files through
-the Docker API, so the backup location does not need to be shared with Rancher. Dumps use the pinned
-Neo4j 5.26 format and are intended for the two Fuli runtime modes or a compatible Neo4j 5.26 setup;
-they are not a generic CSV/JSON interchange format for arbitrary databases.
-
-Update:
-
-```bash
-fuli update
-```
-
-The update flow shows the running CLI, Node, PATH launchers, and npm installation target. If the
-current version is already latest, it exits without reinstalling or restarting services. Otherwise,
-it verifies that it will not downgrade, stops the old services, installs the latest version, and
-refreshes only clients with an existing Fuli MCP entry. Existing knowledge, configuration backups,
-and Neo4j volumes remain intact. Reuse any custom setup options during updates.
-
-Reconnect Fuli in already-open clients, or restart those clients and open a new task, to load the
-new MCP process. To repair existing integrations that still have a Fuli MCP entry without upgrading,
-run `fuli setup --yes --connected-only`. Clients that are `skills-only`, `removed`, or newly added
-(no Fuli MCP entry) require a full `fuli setup`.
-
-Uninstall:
-
-```bash
-fuli uninstall
-npm uninstall --global fuli-context
-```
-
-Automated uninstall does not permanently delete the personal graph, which allows a later install to
-reuse the same data.
-
-## Agent integrations and primary tools
-
-Fuli installs the `capturing-session-knowledge`, `grilling-project`, `operating-fuli`, and `flreview` Skills for
-supported agents. `/flreview` asks FULI for ranked candidates, then the invoking Agent generates a
-fresh interactive review artifact. Codex rejects custom slash commands before any hook runs, so there the person
-types `fuli review` (or `flreview`) on its own line; the Codex prompt hook passes that exact line to the model with
-the installed Skill named, and in a session where FULI is off it answers the line itself without starting a review. FULI remains the durable source of truth and write surface; no
-permanent review tab or one-question-at-a-time chat flow is required.
-`operating-fuli` makes Agents inspect the structured interface-parity catalog before changing data,
-verify writes through matching read tools, and treat browser automation as visual verification only.
-See the [Agent interface architecture](docs/agent-interface-architecture.md).
-Fuli setup generates Claude Code `UserPromptSubmit`/`Stop` MCP hooks, a Codex
-`UserPromptSubmit` MCP hook plus a local `Stop` command, and Cursor
-`sessionStart`/`beforeSubmitPrompt`/`stop` hooks. The Codex Stop command first blocks an unfinished
-checkpoint; if the same token is still unfinished after one continuation, it records only
-`retain_nothing` to prevent an infinite loop and never invents knowledge or Agent memory. Codex
-bootstrap and Cursor instructions retain the fallback for tasks without supplied lifecycle context;
-they must not duplicate supplied preferences. Installing configuration never approves host trust.
-Preference content remains in local Fuli as the single source of truth and is not copied into agent
-configuration.
-
-FULI also exposes read-only `fuli://` resources for each local personal project and for global taste.
-Agents with MCP mention support can select them from the `@` picker; a project resource selects one
-exact project and never expands the search to other projects or `RELATED_TO` projects.
-
-### Remote Claude / Cowork connector upstream
-
-`fuli remote-mcp` serves a least-privilege Streamable HTTP MCP endpoint bound to one exact personal
-project. It uses the distinct `claude` client attribution, requires an owner-only bearer-token file,
-rejects cross-origin requests, and listens on loopback only:
-
-```bash
-umask 077
-openssl rand -hex 32 > ./fuli-remote.token
-fuli remote-mcp --personal-project-id YOUR_PROJECT_ID \
-  --bearer-token-file ./fuli-remote.token --port 2728
-```
-
-On POSIX systems the CLI opens the token nonblocking with no-follow semantics and requires mode
-`0600`. Windows does not provide the same `O_NOFOLLOW` or POSIX mode guarantees through Node.js, so
-the token must be a regular file in a directory protected by Windows ACLs and must not be a link.
-
-Startup fails closed unless the project exists in the configured personal space. The upstream
-allows at most eight concurrent sessions and evicts sessions idle for 15 minutes; tune those bounds
-with `--max-sessions` and `--session-idle-ttl-seconds` when needed. Idle means no completed MCP
-application request: a silent standalone SSE notification stream does not pin a slot forever and
-may be closed at the TTL, after which the client must reconnect and initialize a new session.
-Shutdown gives bounded requests and session cleanup one shared grace deadline before forcing the
-remaining HTTP connections closed. When a reverse proxy supplies a
-browser Origin or preserves its public Host, add the exact values with
-`--allowed-origin https://connector.example --allowed-host connector.example`. Otherwise configure
-the proxy to rewrite Host to the loopback upstream authority. Arbitrary Origin and Host values are
-rejected. Each MCP session may read private context and memory only for the Agent selected by its
-task entry. A checkpoint token is also bound to both the upstream's configured project and the MCP
-session that created it, so neither another project process nor a peer session can reuse it.
-
-This is an internal upstream, not a public deployment. Claude custom connectors originate from
-Anthropic's cloud and therefore require a public HTTPS endpoint with OAuth 2.1 in front of this
-listener. The proxy must validate user identity, token audience and scopes, then replace the external
-token with the internal bearer; never expose the Fuli Provider or Neo4j ports. Local lifecycle hooks
-do not run in claude.ai, so the MCP initialization instructions request task entry and checkpointing,
-but only a real connected Claude conversation can prove that behavior.
-
-When a task needs a taste or judgment recommendation, `get_user_taste_skill` generates a bounded,
-read-only `user-taste` Skill projection from the effective personal profile and prior task data.
-The projection labels evidence status and scope, returns task-matched recommendations, and is
-regenerated as preferences are added or revised. It never overwrites a user-authored taste Skill;
-the durable graph remains the source of truth.
-
-| Tool | Purpose |
-| --- | --- |
-| `begin_task_context` | Hook entry: resolve the task, run bounded recall when signaled, and create a task token |
-| `get_collaboration_preferences` | Fallback entry: read effective preferences and bounded task recall |
-| `get_user_taste_skill` | Generate the current evidence-labeled taste Skill projection and task recommendations |
-| `search_current_project_knowledge` | Search the child first, then authorized knowledge sources |
-| `search_knowledge_graph` | Run a general query within an explicit bounded scope |
-| `search_connected_knowledge` | Search the graph, project-bound read-only sources, and selected public projects without merging provenance |
-| `record_knowledge_usage` | Record a citation or application that materially affected the result |
-| `record_knowledge_feedback` | Preserve rejection, failed validation, contradiction, or stale evidence |
-| `record_decision_trace` | Store options, rejected alternatives, rationale, and optional initial validation |
-| `capture_session_knowledge` | Store a small structured batch of durable candidates |
-| `checkpoint_task_knowledge` | Complete review with `capture_candidates` or `retain_nothing` |
-| `discover_common_knowledge_candidates` | Read-only discovery of possible parent-project knowledge |
-| `preview_common_knowledge_promotion` | Preview a human-confirmed promotion |
-| `apply_common_knowledge_promotion` | Apply the preview atomically with a one-time token |
-| `resolve_deferred_preference_conflict` | Resolve an AI-deferred conflict only when a task needs it |
-| `start_knowledge_review` | Start or resume an exact personal review scope |
-| `list_knowledge_review_candidates` | Rank candidates by time, conflicts, weight, and cross-session repetition |
-| `record_knowledge_review_progress` | Save keep, update, invalidate, skip, or defer outcomes |
-| `finish_knowledge_review` | Pause, or complete and advance the next-review watermark |
-
-## Privacy and safety boundaries
-
-- Personal knowledge is written to the local Provider.
-- Agents distill structured knowledge separately from private, adapter-visible conversation journals.
-- Tokens, cookies, private keys, credentials, private contact details, temporary logs, and raw command
-  output must not enter the graph.
-- Graphiti's remote-LLM path is disabled; embeddings are currently computed locally.
-- Searches are bounded by personal space and project scope instead of mixing every project.
-- External connectors never write to third-party sources; raw credentials are rejected from stored
-  binding configuration.
-- Shared promotion requires auditable human confirmation. Agent usage evidence can promote an item
-  only as far as `agent_confirmed`.
-- Fuli is not a real-time monitoring or Git service; current state must be read from the relevant
-  source system.
-
-## Local services
-
-| Service | Default loopback address | Availability |
-| --- | --- | --- |
-| Fuli management UI | `127.0.0.1:2727` | Always |
-| Personal Provider | `127.0.0.1:8787` | Always |
-| Personal Neo4j Browser / Bolt | `127.0.0.1:8060` / `127.0.0.1:7687` | Always |
-| Development shared Provider | `127.0.0.1:8788` | `--with-dev-public` only |
-| Development shared Neo4j Browser / Bolt | `127.0.0.1:7475` / `127.0.0.1:7688` | `--with-dev-public` only |
-
-These seven ports can be changed in Settings. Provider and Neo4j bindings remain loopback-only even
-when the management UI is started in LAN mode.
-
-To access the UI from another device on the same Wi-Fi, run `fuli start --lan`. Starting LAN mode
-from a loopback-only runtime safely restarts only the management UI and preserves Provider and
-graph data. Disable LAN in Settings and run `fuli restart`, or run `fuli restart --no-lan`, to return
-to loopback-only mode. Starting LAN mode again rotates the temporary access code.
-
-If a port is occupied, Docker Compose is unavailable, or the container runtime is not running,
-setup stops before modifying agent configuration and reports the cause.
-
-## Acceptance and development
-
-- [Alignment Benchmark](FULI_ALIGNMENT_BENCHMARK.md)
-- [Token and accuracy report](https://xn--8ovp9s.xn--m8txu.com/fuli/report/en/): measured token use and recall accuracy, with method, model, client, date and what is not measured yet
-- [Chinese acceptance index](acceptance/README.md)
-- [Knowledge retrieval and confirmation diagrams](acceptance/知识检索与确认流程图.md)
-- [Read-only external-knowledge architecture](docs/external-knowledge-architecture.md)
-
-```bash
-npm install
-npm test
-npm run test:package
-npm run test:external-knowledge:live
-```
-
-The external-knowledge live test temporarily downloads two public official documentation
-repositories, validates read-only synchronization and retrieval, then removes the complete
-temporary directory. It is network-dependent and is not part of the default test suite.
-
-Provider validation:
-
-```bash
-python3.12 -m venv .venv
-. .venv/bin/activate
-python -m pip install "./graph-provider[dev]"
-python -m compileall -q graph-provider/fuli_graph
-python -m pytest -q graph-provider/tests
-docker compose -f compose.graphiti.yml config --quiet
-```
-
-`npm run test:package` builds the web UI, creates a real npm tarball, installs it into an isolated
-global prefix, and verifies `fuli` / `fl`, version output, help output, and the packaged UI. Tests,
-QA screenshots, and internal design documents are excluded from the npm package.
+| Install details, CLI commands and local ports | [Install and run](docs/install.md) |
+| The full principles, what is stored where, how a project is recognised | [How FULI works](docs/how-it-works.md) |
+| How to connect each client and recover from failures | [Connect a client](docs/client-connections.md) |
+| Which Skills, hooks and MCP tools an Agent gets | [Agent integrations and MCP tools](docs/agent-tools.md) |
+| Binding Notion, Lark and other knowledge bases | [External knowledge](docs/external-knowledge.md) |
+| Built-in roles and employee packages | [Specialist Agents](docs/employee-agents.md) |
+| Small apps that Agents build | [Agent apps](docs/agent-apps.md) |
+| How Tonborg decides | [Tonborg and autonomy](docs/judgment-and-autonomy.md) |
+| The Roundtable and cross-client continuity | [Roundtable](docs/agent-roundtable.md) · [Conversations and collaboration (Chinese)](docs/agent-conversations-and-collaboration.md) |
+| What is proven so far, and the privacy boundaries | [Capabilities and limits](docs/capabilities-and-limits.md) |
+| Tokens saved and recall accuracy | [Measured report](https://有点.意思.com/fuli/report/en/) |
+| Architecture | [External knowledge architecture (Chinese)](docs/external-knowledge-architecture.md) · [Retrieval design (Chinese)](docs/retrieval-design.md) · [Agent interface architecture](docs/agent-interface-architecture.md) |
+| Running the source and tests | [Develop and verify](docs/development.md) · [Contributing](CONTRIBUTING.md) |
+| What changed in each version | [Release notes](https://github.com/JevonsCode/fuli/releases) |
 
 ## Brand
 
@@ -1028,7 +132,7 @@ QA screenshots, and internal design documents are excluded from the npm package.
   <img src="https://raw.githubusercontent.com/JevonsCode/fuli/main/brand/svg/lockup/fuli-lockup-bilingual-horizontal.svg" alt="FULI 复利 lockup" width="280" />
 </picture>
 
-The FULI mark, wordmarks and lockups come from the [FULI 复利 brand system on Figma](https://www.figma.com/community/file/1698659778015746085). See [`brand/README.md`](brand/README.md) for the brand files and how to change them.
+The FULI mark, wordmark and lockups come from the [FULI 复利 brand system on Figma](https://www.figma.com/community/file/1698659778015746085). Brand files and how to change them are in [`brand/README.md`](brand/README.md).
 
 ## License
 

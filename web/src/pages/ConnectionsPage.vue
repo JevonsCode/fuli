@@ -14,7 +14,7 @@ import { currentLocale, t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
 import ConflictPolicyCard from '@/features/connections/ConflictPolicyCard.vue'
-import { readmeHelpUrl } from '@/features/connections/readme-help'
+import { docsHelpUrl } from '@/features/connections/docs-help'
 import type {
   ExternalKnowledgeBinding,
   ExternalKnowledgeBindingTarget,
@@ -85,7 +85,7 @@ const publicPurpose = computed(() => {
 })
 const subscriptions = computed(() => store.state?.subscriptions ?? [])
 const personalProjects = computed(() => store.state?.personalProjects ?? [])
-const externalKnowledgeHelpUrl = computed(() => readmeHelpUrl('connect-external-knowledge'))
+const externalKnowledgeHelpUrl = computed(() => docsHelpUrl('external-knowledge', 'connect-external-knowledge'))
 const subscribedKeys = computed(
   () => new Set(subscriptions.value.map(({ provider_url, project_id }) => `${provider_url}::${project_id}`)),
 )

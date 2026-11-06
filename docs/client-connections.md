@@ -1,6 +1,6 @@
 # Connect a client
 
-After [install and setup](../README.md#start-here), connect one MCP-capable client, verify that a
+After [install and setup](install.md#first-run), connect one MCP-capable client, verify that a
 Fuli tool call actually succeeds, and use the recovery table below if anything fails. A client's
 brand or model provider is not an admission requirement. Installation and configuration generation
 do not call a model. A model can help configure a client or diagnose an error, but is never
@@ -287,7 +287,7 @@ Fuli includes a project-bound Streamable HTTP MCP upstream via `fuli remote-mcp`
 from the console at port 2727. Cloud clients cannot reach a user's loopback address. They need a
 reachable HTTPS endpoint with authentication and the allowed project scope. The current upstream
 binds to loopback and requires an authenticated proxy for cloud use; it is not a turnkey public
-service. See the [remote connector setup](../README.md#remote-claude--cowork-connector-upstream).
+service. See the [remote connector setup](agent-tools.md#remote-claude--cowork-connector-upstream).
 
 ## References
 
