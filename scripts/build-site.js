@@ -35,7 +35,8 @@ function markdown(document) {
   for (const chapter of document.querySelectorAll('.chapter:not(.hero-chapter)')) {
     const heading = chapter.querySelector('h2').cloneNode(true);
     for (const br of heading.querySelectorAll('br')) br.replaceWith(' ');
-    lines.push('## ' + plain(heading), '', plain(chapter.querySelector('.chapter-copy > h2 + p')), '');
+    const description = chapter.querySelector('.chapter-copy > h2 + p');
+    lines.push('## ' + plain(heading), '', ...(description ? [plain(description), ''] : []));
   }
   lines.push('## ' + plain(document.querySelector('#start-title')), '', plain(document.querySelector('.start > p:first-of-type')), '', '```sh');
   for (const code of document.querySelectorAll('.start li code')) lines.push(plain(code));
