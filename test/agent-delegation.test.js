@@ -75,7 +75,7 @@ test('each category starts at its catalog default and the person\'s switch is ke
   const port = delegation(t, directory);
   const enabled = (policy) => Object.fromEntries(policy.categories.map(({ id, enabled: on }) => [id, on]));
   assert.deepEqual(enabled(port.read()), { settings: true, organisation: true, projects: true, services_apps: true,
-    roundtable: true, decisions: true, lan_roundtable: false, model_settings: false, public_projects: false });
+    roundtable: true, decisions: true, lan_roundtable: false, model_settings: true, public_projects: false });
   assert.equal(enabled(port.setCategory('lan_roundtable', true)).lan_roundtable, true);
   assert.equal(enabled(port.setCategory('settings', false)).settings, false);
   const reopened = delegation(t, directory);
@@ -160,8 +160,8 @@ test('Settings › AI permissions reads every category and switches one only fro
     return { handled, sent };
   };
   assert.equal((await route('GET', '/api/agent-delegation')).sent.body.categories.length, 9);
-  const changed = await route('PUT', '/api/agent-delegation/categories/model_settings', { enabled: true });
-  assert.equal(changed.sent.body.categories.find(({ id }) => id === 'model_settings').enabled, true);
+  const changed = await route('PUT', '/api/agent-delegation/categories/model_settings', { enabled: false });
+  assert.equal(changed.sent.body.categories.find(({ id }) => id === 'model_settings').enabled, false);
   const remote = await route('PUT', '/api/agent-delegation/categories/settings', { enabled: false }, '192.168.1.20');
   assert.equal(remote.sent.statusCode, 403);
   assert.equal(port.read().categories.find(({ id }) => id === 'settings').enabled, true);

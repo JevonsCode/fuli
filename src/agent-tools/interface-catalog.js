@@ -6,10 +6,11 @@
 // session's chat; FULI runs it only when it finds those words in the person's
 // recent messages, and records it as the person's, relayed by that FLA.
 // local_user_only: never an Agent, whatever the person's permissions say.
-// Each category's default:
+// Each category's default. Built-in Agent models start on (Jevons 11-06: a switch with no key
+// behind it is not worth a trip to Settings; keys stay the person's own, local_user_only).
 const DELEGATION_DEFAULTS = Object.freeze({
   settings: true, organisation: true, projects: true, services_apps: true, roundtable: true, decisions: true,
-  lan_roundtable: false, model_settings: false, public_projects: false,
+  lan_roundtable: false, model_settings: true, public_projects: false,
 });
 
 export const DELEGATION_CATEGORIES = Object.freeze(Object.entries(DELEGATION_DEFAULTS)
@@ -226,7 +227,7 @@ export function agentInterfaceCatalog() {
       { domain: 'executors', toolNames: ['list_executors', 'get_executor', 'list_executor_routing_rules', 'list_project_agent_routing_learning'] },
       { domain: 'agent-score-card', toolNames: ['get_agent_score_card'], readRoutes: ['GET /api/project-agents/:agentId/score-card', 'GET /api/project-agents/:agentId/score-card/evidence'], guidance: 'Bole\'s zero-token score card from recorded outcomes and Tonborg verdicts: separate dimensions with their samples, no total. 数据不足 is no conclusion. Tiers and tool flags are for people to read; they never trigger an action. Task IDs come only with dimension. review: true asks Bole\'s model for one suggested next step on a one-project card; a suggestion only.' },
       { domain: 'review', toolNames: ['list_personal_review_queue', 'list_project_review_queue', 'list_knowledge_review_candidates'] },
-      { domain: 'model-backends', toolNames: ['get_model_usage', 'role_work'], readRoutes: ['GET /api/model-backends/usage', 'GET /api/model-backends/roles', 'GET /api/model-backends/history'], guidance: 'Usage, role settings and their change history are read here. A role\'s model, egress, budget and 「只给建议」 change through run_delegated_action only after the person turns on model_settings (off by default); keys are entered only by the person on the model settings page or with fuli models set-key. role_work lets this session answer a built-in Agent\'s handed-off work package; nothing ran before the answer.' },
+      { domain: 'model-backends', toolNames: ['get_model_usage', 'role_work'], readRoutes: ['GET /api/model-backends/usage', 'GET /api/model-backends/roles', 'GET /api/model-backends/history'], guidance: 'Usage, role settings and their change history are read here. A role\'s model, egress, budget and 「只给建议」 change through run_delegated_action while model_settings is on (on by default; the person can turn it off); keys are entered only by the person on the model settings page or with fuli models set-key. role_work lets this session answer a built-in Agent\'s handed-off work package; nothing ran before the answer.' },
       { domain: 'standing-assignments', toolNames: ['register_standing_assignment', 'find_agents'], readRoutes: ['GET /api/standing-assignments'], guidance: 'The person\'s confirmed names for kinds of work, each sent to one project and Agent. Register, correct or end one only on the person\'s words, through preview and their yes.' },
       { domain: 'agent-services', toolNames: ['report_agent_service'], readRoutes: ['GET /api/agent-services', 'GET /api/agent-services/:serviceId/log'], guidance: 'Register each long-running server you start (address, purpose, pid, command) and update it when you stop or restart it. Agent app workbenches are recorded by FULI. Stopping one service through FULI, deleting a record or clearing a log runs through run_delegated_action (services_apps permission); pausing many is pause_work_surfaces.' },
       { domain: 'work-surfaces', toolNames: ['list_work_surfaces', 'pause_work_surfaces', 'resume_work_surfaces'], readRoutes: ['GET /api/work-surfaces', 'GET /api/work-surfaces/pauses'], guidance: 'Every FLA\'s Agent services, Agent apps, workflows and workbenches in one table; filter by FLA, project, kind, state or text. Pause snapshots and turns off what is on among services and apps; workflows and workbenches have no off switch and are only listed. Resume reopens exactly what that pause turned off; an Agent service is not restarted by FULI (restart_required). The person and Agents may both do it.' },
