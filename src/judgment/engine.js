@@ -14,6 +14,7 @@ import { jsonSchemaToZod } from '../mcp/tool-schema.js';
 import { PREFERENCE_RECEIPT_VERSION, preferenceDeliveryRecord, preferenceHold,
   readJudgmentPreferences } from './preference-receipt.js';
 import { reviewExample, reviewInstructions } from './review-prompt.js';
+import { optionsProperty, sanitizeQuestionOptions } from './question-options.js';
 import { injectionSignals } from './review-injection-precheck.js';
 import { automaticWriteDecision } from '../graphiti/capture-decision.js';
 import { coversClient } from '../agents/source-applications.js';
@@ -23,10 +24,13 @@ const reviewInput = z.object({ personalSpaceId: id, personalProjectId: id.nullab
   limit: z.number().int().min(1).max(10).default(10) }).strict();
 // A delegated review (rec#96) also answers, for each candidate, its best
 // guess of what the person would do and the short question that asks them.
-const reviewSchema = (candidates, delegated = false) => objectSchema({ decisions: arraySchema(objectSchema({
+// Any other review answers the choices its question offers the person (rec#99);
+// options: false is the schema a verdict is checked with, its options apart.
+const reviewSchema = (candidates, delegated = false, { options = !delegated } = {}) => objectSchema({ decisions: arraySchema(objectSchema({
   target: enumSchema(candidates.map(candidate => candidate.candidate_key)), ...verdictProperties,
-  ...(delegated ? delegationProperties : {}) },
-['target', ...VERDICT_FIELDS, ...(delegated ? DELEGATION_FIELDS : [])]), { minItems: candidates.length, maxItems: candidates.length }) }, ['decisions']);
+  ...(delegated ? delegationProperties : {}), ...(options ? optionsProperty : {}) },
+['target', ...VERDICT_FIELDS, ...(delegated ? DELEGATION_FIELDS : []), ...(options ? ['options'] : [])]),
+{ minItems: candidates.length, maxItems: candidates.length }) }, ['decisions']);
 export const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 // A record of this request whose execution is final is never applied again.
 const SETTLED = Object.freeze(['applied', 'stale', 'failed', 'undone']);
@@ -142,7 +146,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
         // any candidate may have steered every verdict of that answer.
         const signals = new Map(candidates.map(c => [c.candidate_key, injectionSignals(c)]));
         const batchInjected = [...signals.values()].some(found => found.length);
-        for (const decision of answer.pending ? [] : reviewDecisions(answer.value, schema, candidates)) {
+        for (const decision of answer.pending ? [] : reviewDecisions(answer.value, candidates, policy.delegated)) {
           const candidate = candidates.find(c => c.candidate_key === decision.target);
           // The person may have permanently deleted it while the model answered (rec#5 C9).
           if (store.forgets(decision.target, space)) continue;
@@ -154,6 +158,8 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
             title: candidate.title, summary: decision.summary, evidence: decision.evidence, confidence: decision.confidence,
             outcome, aiReview, policy, policyVersion: policyVersion(policy), evidenceFingerprint: fingerprint(candidate),
             ...(policy.delegated ? { delegated: true, guess: decision.guess, question: decision.question } : {}),
+            // Options of an answer injected text may have steered are not offered; the default choices are asked.
+            ...(decision.options && !batchInjected ? { options: decision.options } : {}),
             memoryRevision: evidenceContext.memoryRevision, preferenceDelivery: preferenceDeliveryRecord(evidenceContext.preferences),
             ...judgmentProvenance(answer) }, `${cacheKey}:${decision.target}`);
           // Already settled by an interrupted run of this request: never apply twice.
@@ -276,8 +282,19 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
   } };
 }
 
-function reviewDecisions(value, schema, candidates) {
-  const { decisions } = parse(jsonSchemaToZod(schema), value);
+// A verdict is checked whole; its options apart, so invalid or missing ones
+// fall back to the default choices and never fail the verdict (rec#99).
+function reviewDecisions(value, candidates, delegated) {
+  const raw = Array.isArray(value?.decisions) ? value.decisions : null;
+  const verdicts = raw ? { ...value, decisions: raw.map(decision => {
+    if (!decision || typeof decision !== 'object' || Array.isArray(decision)) return decision;
+    const { options, ...verdict } = decision; return verdict;
+  }) } : value;
+  const parsed = parse(jsonSchemaToZod(reviewSchema(candidates, delegated, { options: false })), verdicts);
+  const decisions = parsed.decisions.map((decision, index) => {
+    const options = delegated ? null : sanitizeQuestionOptions(raw[index]?.options);
+    return options ? { ...decision, options } : decision;
+  });
   if (decisions.length !== candidates.length || new Set(decisions.map(d => d.target)).size !== candidates.length
     || decisions.some(d => !candidates.some(c => c.candidate_key === d.target))) throw new TypeError('Judgment targets do not match evidence');
   return decisions;

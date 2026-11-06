@@ -53,9 +53,13 @@ export async function agentJudgmentView(personal, result, { personalSpaceId, rea
   if (!listed) return shown[0];
   // The question is asked again from what this reader may see; whether the person
   // answered it reads the full records, since the view withholds the feedback reason.
+  // Tonborg's options (rec#99) are its words for the question only: asked with a
+  // review whose item this reader may see, never shown in a record.
   const rest = { ...result };
   delete rest.human_interaction;
-  return { ...rest, ...judgmentHumanInteraction(shown, personalSpaceId, settledQuestionIds(records)), records: shown };
+  const options = new Map(records.map(record => [record.id, record.options]));
+  return { ...rest, ...judgmentHumanInteraction(shown, personalSpaceId, settledQuestionIds(records), id => options.get(id)),
+    records: shown };
 }
 
 function agentRecord(record, targets) {
