@@ -1,13 +1,8 @@
 import { spawn } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 
-import {
-  checkLocalConsoleHealth,
-  ensureGraphRuntime,
-  stopGraphProviders
-} from '../setup/graph-runtime.js';
+import { ensureGraphRuntime, stopGraphProviders } from '../setup/graph-runtime.js';
 import { beginFirstRunCapture } from '../setup/first-run-capture.js';
 import { readJsonFile } from '../storage/json-file.js';
 import { readAdaptiveRuntimeSettings } from '../adaptive-runtime/settings.js';
@@ -19,7 +14,9 @@ import {
 } from '../system/runtime-settings.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { compareSemanticVersions, parseSemanticVersion } from '../semantic-version.js';
-import { isProcessAlive, stopProcess } from './processes.js';
+import { checkLocalConsoleHealth } from './console-health.js';
+import { isProcessAlive, stopProcess, waitForExit } from './processes.js';
+import { CONSOLE_STOP_LIMITS, consoleProcessOwned, endUnresponsiveConsole, terminateConsole } from './unresponsive-console.js';
 import {
   acquireConsoleStartLock,
   readConsoleAutostart,
@@ -27,7 +24,6 @@ import {
   recordPersonStop
 } from './console-autostart-record.js';
 
-const CONSOLE_EXIT_TIMEOUT_MS = 15_000;
 const CONSOLE_VERSION_TIMEOUT_MS = 2_500;
 const STOPPING_CONSOLE_GRACE_MS = 3_000;
 // Stopping waits longer for the console's identity than status does: a
@@ -265,13 +261,27 @@ async function stopRecordedConsole(state, paths, deps) {
       deps.removeState(paths.graphRuntimeStatePath);
       return 'not_running';
     }
-    if (!await deps.consoleHealth(state.url, state.pid, state.version, STOP_IDENTITY_TIMEOUT_MS)) return 'unverified';
+    // Alive without answering (a shutdown that never finished, rec#94): asked
+    // once more, then ended only when the OS shows this data directory's console.
+    const ended = await endUnresponsiveConsole(state, paths, {
+      ...consoleStop(deps, STOP_IDENTITY_TIMEOUT_MS), limits: { ...CONSOLE_STOP_LIMITS, answerWaitMs: 0 } });
+    if (ended === 'unverified') return 'unverified';
+    if (ended === 'still_running') return 'still_running';
+    if (ended !== 'answering') {
+      deps.removeState(paths.graphRuntimeStatePath);
+      return ended === 'exited' ? 'not_running' : 'stopped';
+    }
   }
 
-  deps.stopProcess(state.pid);
-  if (!await deps.waitForExit(state.pid)) return 'still_running';
+  if (!await terminateConsole(state.pid, consoleStop(deps))) return 'still_running';
   deps.removeState(paths.graphRuntimeStatePath);
   return 'stopped';
+}
+
+// The lifecycle's own process and health checks, so a stubbed runtime stays stubbed.
+function consoleStop(deps, healthTimeoutMs) {
+  return { signal: deps.stopProcess, isAlive: deps.isProcessAlive, waitForExit: deps.waitForExit, owned: deps.consoleProcessOwned,
+    health: (url, pid, version) => deps.consoleHealth(url, pid, version, healthTimeoutMs) };
 }
 
 function lifecycleDependencies(overrides) {
@@ -294,6 +304,7 @@ function lifecycleDependencies(overrides) {
     isProcessAlive,
     stopProcess,
     waitForExit,
+    consoleProcessOwned,
     removeState: (path) => {
       if (existsSync(path)) unlinkSync(path);
     },
@@ -425,14 +436,4 @@ function safeLanUrls(value) {
   return Array.isArray(value)
     ? value.filter((url) => typeof url === 'string' && url.startsWith('http://'))
     : [];
-}
-
-// Closing graph connections can take several seconds on macOS.
-async function waitForExit(pid, timeoutMs = CONSOLE_EXIT_TIMEOUT_MS) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (!isProcessAlive(pid)) return true;
-    await delay(100);
-  }
-  return !isProcessAlive(pid);
 }

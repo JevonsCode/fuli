@@ -12,6 +12,7 @@ import { recordHttpFailure } from './diagnostics/failure-records.js';
 import { isCrossSiteNavigation, localServerAuthority, rejectRequestOutsidePolicy } from './http/request-policy.js';
 import { sendJson } from './http/response.js';
 import { closeTaskEventStreams } from './http/task-events-api-router.js';
+import { exitOnSignals } from './server/signal-shutdown.js';
 import { serveStatic } from './http/static-handler.js';
 import { isMainModule } from './system/main-module.js';
 import { DEFAULT_FULI_PORT } from './defaults.js';
@@ -437,27 +438,13 @@ async function runProgram(args) {
   const runtimeOptions = resolveGraphRuntimeOptions(args, process.env);
   const port = numberOption(args, '--port', DEFAULT_FULI_PORT);
   const lan = args.includes('--lan');
-  const { server, close: closeRuntime, url, lanUrls } = await createServer({
+  const { server, close, url, lanUrls } = await createServer({
     ...runtimeOptions,
     port,
     lan,
     lanAccessToken: lan ? process.env.FULI_LAN_ACCESS_TOKEN : null
   });
-  const handlers = new Map();
-  const close = () => {
-    void closeRuntime().catch((error) => {
-      console.error(`Server shutdown failed: ${error.message}`);
-      process.exitCode = 1;
-    });
-  };
-  for (const signal of ['SIGINT', 'SIGTERM']) {
-    const handler = close;
-    handlers.set(signal, handler);
-    process.once(signal, handler);
-  }
-  server.once('close', () => {
-    for (const [signal, handler] of handlers) process.off(signal, handler);
-  });
+  exitOnSignals({ server, close });
   console.log(`复利工作台 running at ${url}`);
   for (const lanUrl of lanUrls) console.log(`复利工作台 LAN at ${lanUrl}`);
 }

@@ -102,7 +102,10 @@ function formatLocalRuntimeResult(command, result, copy = String) {
 }
 
 function formatStartedRuntime(title, result, copy) {
-  const lines = [title, ...(result.portMoves ?? []).map(portMoveSentence), `Management UI: ${copy(result.url)}`];
+  const lines = [title, ...(result.portMoves ?? []).map(portMoveSentence),
+    ...(Number.isInteger(result.replacedConsole)
+      ? [`The previous console (process ${result.replacedConsole}) had stopped answering; it was ended and replaced.`] : []),
+    `Management UI: ${copy(result.url)}`];
   const agentSetupNotice = formatAgentSetupNotice(result.agentSetupCheck);
   if (agentSetupNotice) lines.push(agentSetupNotice);
   if (result.lan === true) {

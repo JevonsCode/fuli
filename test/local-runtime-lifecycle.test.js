@@ -166,6 +166,7 @@ test('fl stop refuses to kill a reused or unverifiable PID', async () => {
     isProcessAlive: () => true,
     consoleHealth: async () => false,
     waitForExit: async () => false,
+    consoleProcessOwned: async () => 'unknown',
     stopProcess: () => { killed = true; }
   });
 
@@ -183,6 +184,7 @@ test('a console that cannot be verified keeps its graph Providers; restart refus
     isProcessAlive: () => true,
     consoleHealth: async () => false,
     waitForExit: async () => false,
+    consoleProcessOwned: async () => 'unknown',
     stopProcess: () => calls.push('killed'),
     stopProviders: async () => calls.push('providers'),
     ensureRuntime: async () => calls.push('started')
@@ -193,6 +195,29 @@ test('a console that cannot be verified keeps its graph Providers; restart refus
   await assert.rejects(restartLocalRuntime(input(), deps),
     error => /restart was refused/.test(error.message) && error.nothingStopped === true);
   assert.deepEqual(calls, []);
+});
+
+test('fl stop and restart end the data directory console that stays alive without answering (rec#94)', async () => {
+  const calls = [];
+  let alive = true;
+  const deps = {
+    readConfig: () => ({ workspaces: [] }),
+    readState: () => (alive ? { version: 4, pid: 27, url: 'http://127.0.0.1:2727' } : null),
+    fileExists: () => true,
+    isProcessAlive: () => alive,
+    consoleHealth: async () => false,
+    consoleProcessOwned: async (pid) => (pid === 27 ? 'owned' : 'unknown'),
+    // It ignores SIGTERM: only SIGKILL ends it.
+    stopProcess: (pid, signal) => { calls.push(`${pid}:${signal}`); if (signal === 'SIGKILL') alive = false; },
+    waitForExit: async () => !alive,
+    removeState: () => calls.push('state:removed'),
+    stopProviders: async () => calls.push('providers'),
+    ensureRuntime: async () => { calls.push('started'); return { status: 'started', url: 'http://127.0.0.1:2727', pid: 28 }; }
+  };
+  const restarted = await restartLocalRuntime(input(), deps);
+  assert.equal(restarted.stopped.console, 'stopped');
+  assert.equal(restarted.status, 'restarted');
+  assert.deepEqual(calls, ['27:SIGTERM', '27:SIGKILL', 'state:removed', 'providers', 'started']);
 });
 
 test('fl stop waits for a console that is already shutting down instead of failing', async () => {

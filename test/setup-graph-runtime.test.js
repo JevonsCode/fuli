@@ -690,6 +690,59 @@ test('setup replaces a console left running by an older install', async () => {
   }
 });
 
+// rec#94: the recorded console's process is alive but its listener is gone.
+function unansweringConsoleCase(owner) {
+  const signals = [];
+  let spawned = 0;
+  const clock = { at: 0 };
+  const existing = { version: 4, pid: 2727, url: 'http://127.0.0.1:2727', port: 2727 };
+  const run = ensureGraphRuntime({ paths: PATHS, personalSpaceName: '我', personalOnly: true, port: 2727, lan: false,
+    noStart: false }, dependencies({
+    readConfig: configuredGraph,
+    readState: () => existing,
+    async fetch(url) {
+      if (url.endsWith('/health')) return response({ status: 'ready' });
+      if (url.includes('/v1/project-agents/system-hr?')) return response({ agent_id: 'employee.bole' });
+      throw new Error(`Unexpected Provider request: ${url}`);
+    },
+    stopProcess: (pid, signal) => signals.push(`${pid}:${signal}`),
+    waitForExit: async () => true,
+    consoleProcessOwned: async (pid, paths) => pid === 2727 && paths === PATHS ? owner : 'unknown',
+    spawnWebRuntime() { spawned += 1; return { pid: 2728 }; },
+    webHealth: async (_url, pid) => pid === 2728,
+    isProcessAlive: (pid) => pid === 2728 || (pid === 2727 && signals.length === 0),
+    wait: async (ms) => { clock.at += ms; },
+    now: () => clock.at,
+    writeState() {}
+  }));
+  return run.then((result) => ({ result, signals, spawned, waitedMs: clock.at }),
+    (error) => ({ error, signals, spawned }));
+}
+
+test('a start replaces this data directory\'s console that stays alive without answering', async () => {
+  const { result, signals, spawned, waitedMs } = await unansweringConsoleCase('owned');
+  assert.ok(waitedMs >= 10_000, 'it is given time to answer or exit first');
+  assert.deepEqual(signals, ['2727:SIGTERM']);
+  assert.equal(spawned, 1);
+  assert.equal(result.status, 'started');
+  assert.equal(result.replacedConsole, 2727);
+});
+
+test('a start leaves an unanswering process alone when the system cannot show what it is', async () => {
+  const { error, signals, spawned } = await unansweringConsoleCase('unknown');
+  assert.match(error.message, /process 2727 does not answer.*left running/);
+  assert.deepEqual(signals, []);
+  assert.equal(spawned, 0);
+});
+
+test('a recorded PID that now runs another program is not ended; the console starts', async () => {
+  const { result, signals, spawned } = await unansweringConsoleCase('other');
+  assert.deepEqual(signals, []);
+  assert.equal(spawned, 1);
+  assert.equal(result.status, 'started');
+  assert.equal(result.replacedConsole, undefined);
+});
+
 // The console's wait runs on a fake clock: `wait` advances it instead of
 // sleeping, and each health probe takes `probeMs` of it, up to its budget.
 function consoleStartCase({ answersAfterMs = Infinity, exitsAfterMs = Infinity, probeMs = 0, portProblem = null } = {}) {

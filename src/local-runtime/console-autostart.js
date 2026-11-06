@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { inspectLocalStores } from '../data-format/local-stores.js';
 import { holdDataDirectory } from '../data-format/maintenance-lock.js';
 import { readJsonFile } from '../storage/json-file.js';
+import { checkLocalConsoleHealth } from './console-health.js';
 import { acquireConsoleStartLock, readConsoleAutostart, updateConsoleAutostart } from './console-autostart-record.js';
 import { installedConsoleLauncher } from './installed-console-launcher.js';
 import { isProcessAlive } from './processes.js';
@@ -15,7 +16,10 @@ import { isProcessAlive } from './processes.js';
 // only one of them starts it. It never starts a console the person stopped
 // on purpose, one whose data waits for the person's format confirmation, or a
 // whole-store restore's data; and after 3 starts within 10 minutes it stops
-// trying until the person starts FULI.
+// trying until the person starts FULI. A console whose process stays alive
+// without answering (rec#94: a shutdown that never finished) counts as down
+// once it has not answered for stuckMs; the start then replaces it
+// (unresponsive-console.js).
 
 export const CONSOLE_AUTOSTART_LIMITS = Object.freeze({
   starts: 3,
@@ -23,21 +27,32 @@ export const CONSOLE_AUTOSTART_LIMITS = Object.freeze({
   // A start in progress (Neo4j can take a minute) is not started again.
   startingMs: 2 * 60_000,
   checkEveryMs: 15_000,
-  firstCheckMs: 1_000
+  firstCheckMs: 1_000,
+  // A busy console answers within a few checks; one that has not answered
+  // for this long is not coming back.
+  stuckMs: 40_000
 });
+const CONSOLE_HEALTH_CHECK_MS = 5_000;
 const CONSOLE_AUTOSTART_ENV = 'FULI_CONSOLE_AUTOSTART';
 // The local store states a person has to act on (format-notices.js).
 const WAITING_STORE_STATES = new Set(['pending_confirmation', 'half_applied', 'newer_format', 'unsupported']);
 
-// check() → running | stopped_by_person | not_configured | unreadable | busy
-//   | starting | gave_up | needs_person | started. Synchronous: it reads small
-// files and spawns at most one detached process.
+// check() → running | unanswered | stopped_by_person | not_configured
+//   | unreadable | busy | starting | gave_up | needs_person | started. It reads
+// small files, asks the recorded console's health and spawns at most one
+// detached process. consoleState() → ready | unanswered | down.
 export function consoleAutostart({ dataDir, launcher, now = Date.now, limits = CONSOLE_AUTOSTART_LIMITS,
-  consoleRunning = () => recordedConsoleAlive(dataDir), configured = () => existsSync(join(dataDir, 'graph-runtime.json')),
+  consoleState = () => recordedConsoleState(dataDir), configured = () => existsSync(join(dataDir, 'graph-runtime.json')),
   lock = () => acquireConsoleStartLock(dataDir), waitsForPerson = () => dataWaitsForPerson(dataDir) }) {
+  let unansweredSince = null;
   return {
-    check() {
-      if (consoleRunning()) return 'running';
+    async check() {
+      const state = await consoleState();
+      if (state === 'ready') { unansweredSince = null; return 'running'; }
+      if (state === 'unanswered') {
+        unansweredSince ??= now();
+        if (now() - unansweredSince < limits.stuckMs) return 'unanswered';
+      } else unansweredSince = null;
       const seen = readConsoleAutostart(dataDir);
       if (seen.unreadable) return 'unreadable';
       if (seen.stoppedAt) return 'stopped_by_person';
@@ -49,7 +64,7 @@ export function consoleAutostart({ dataDir, launcher, now = Date.now, limits = C
       }
       try {
         // Another session may have started it while this one waited.
-        if (consoleRunning()) return 'running';
+        if (await consoleState() === 'ready') return 'running';
         return startUnderLock();
       } finally { release(); }
     }
@@ -98,18 +113,20 @@ export function superviseConsole({ dataDir, env = process.env, limits = CONSOLE_
     timer = setTimer(tick, delayMs);
     timer?.unref?.();
   };
-  function tick() {
-    try { autostart.check(); } catch (error) { onError(error); }
+  async function tick() {
+    try { await autostart.check(); } catch (error) { onError(error); }
     schedule(limits.checkEveryMs);
   }
   schedule(limits.firstCheckMs);
   return () => { stopped = true; if (timer !== null) clearTimer(timer); };
 }
 
-function recordedConsoleAlive(dataDir) {
+async function recordedConsoleState(dataDir) {
   let state;
-  try { state = readJsonFile(join(dataDir, 'graph-runtime-state.json'), null); } catch { return false; }
-  return Number.isInteger(state?.pid) && isProcessAlive(state.pid);
+  try { state = readJsonFile(join(dataDir, 'graph-runtime-state.json'), null); } catch { return 'down'; }
+  if (!Number.isInteger(state?.pid) || !isProcessAlive(state.pid)) return 'down';
+  if (typeof state.url !== 'string') return 'unanswered';
+  return await checkLocalConsoleHealth(state.url, state.pid, state.version, CONSOLE_HEALTH_CHECK_MS) ? 'ready' : 'unanswered';
 }
 
 // A whole-store restore holding the data directory, or a local store whose

@@ -58,13 +58,14 @@ export {
   dockerInfoIndicatesDaemon,
   selectDockerEnvironment
 } from './container-runtime.js';
-import { isProcessAlive, stopProcess } from '../local-runtime/processes.js';
+import { CONSOLE_HEALTH_TIMEOUT_MS, checkLocalConsoleHealth } from '../local-runtime/console-health.js';
+import { isProcessAlive, stopProcess, waitForExit } from '../local-runtime/processes.js';
+import { consoleProcessOwned, endUnresponsiveConsole, terminateConsole } from '../local-runtime/unresponsive-console.js';
 import { isManagedWorkspace, waitForProviderHealth, waitUntilReady } from '../local-runtime/provider-readiness.js';
 import { parseProviderEnv } from './provider-env.js';
 
 const CONSOLE_READY_TIMEOUT_MS = 60_000;
 const CONSOLE_READY_INTERVAL_MS = 250;
-const CONSOLE_HEALTH_TIMEOUT_MS = 2500;
 
 export async function ensureGraphRuntime(input, dependencies = {}) {
   const deps = graphDependencies(dependencies);
@@ -212,8 +213,23 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   const reportedMoves = portMoves.length ? { portMoves } : {};
   if (input.noStart) return { status: 'initialized', url: null, pid: null, ...reportedMoves };
   const existing = activeRuntimeState;
+  const consoleStop = { signal: deps.stopProcess, isAlive: deps.isProcessAlive, health: deps.webHealth,
+    owned: deps.consoleProcessOwned, waitForExit: deps.waitForExit, wait: deps.wait, now: deps.now };
+  let replacedConsole = null;
   if (isGraphRuntimeState(existing) && deps.isProcessAlive(existing.pid)) {
-    const healthy = await deps.webHealth(existing.url, existing.pid, existing.version);
+    let healthy = await deps.webHealth(existing.url, existing.pid, existing.version);
+    if (!healthy) {
+      // Alive without answering (a shutdown that never finished, rec#94):
+      // this data directory's console is replaced, anything else is left alone.
+      const ended = await endUnresponsiveConsole(existing, input.paths, consoleStop);
+      if (ended === 'answering') healthy = true;
+      else if (ended === 'unverified') {
+        throw new Error(`The recorded Fuli console process ${existing.pid} does not answer and could not be verified ` +
+          'as this data directory\'s console, so it was left running. Check that process, end it if it is FULI, then start again.');
+      } else if (ended === 'still_running') {
+        throw new Error(`The Fuli console process ${existing.pid} stopped answering and did not end when asked to.`);
+      } else if (ended === 'stopped') replacedConsole = existing.pid;
+    }
     // A console left running by an older install keeps serving old code until replaced.
     if (
       healthy &&
@@ -227,9 +243,7 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
       }
       return runtimeResult('running', existing);
     }
-    if (!healthy) throw new Error('Recorded Fuli Graphiti runtime is not healthy');
-    deps.stopProcess(existing.pid);
-    if (!await deps.waitForExit(existing.pid)) {
+    if (healthy && !await terminateConsole(existing.pid, consoleStop)) {
       throw new Error('Fuli Graphiti console did not stop before restarting');
     }
   }
@@ -273,7 +287,8 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   };
   deps.writeState(input.paths.graphRuntimeStatePath, state);
   deps.secureFile(input.paths.graphRuntimeStatePath);
-  return { ...runtimeResult('started', state, lanAccessToken), ...reportedMoves };
+  return { ...runtimeResult('started', state, lanAccessToken), ...reportedMoves,
+    ...(replacedConsole === null ? {} : { replacedConsole }) };
 }
 
 function selectRuntimeConfig({ paths, previousRuntimeMode, runtimeMode, deps }) {
@@ -618,7 +633,8 @@ function graphDependencies(overrides) {
     consoleVersion: readLocalConsoleVersion,
     discoverLanAddresses,
     createLanAccessToken: secret,
-    waitForExit: waitForProcessExit,
+    waitForExit,
+    consoleProcessOwned,
     wait: delay,
     now: Date.now,
     ...overrides
@@ -659,28 +675,6 @@ async function readLocalConsoleVersion(url) {
   }
 }
 
-// timeoutMs bounds the whole check, including the legacy state fallback.
-export async function checkLocalConsoleHealth(url, expectedPid, stateVersion = 3, timeoutMs = CONSOLE_HEALTH_TIMEOUT_MS) {
-  const signal = AbortSignal.timeout(timeoutMs);
-  try {
-    const response = await fetch(`${url}/api/health`, { signal });
-    if (response.ok) {
-      const body = await response.json();
-      return body?.service === 'fuli-local-console' &&
-        (!Number.isInteger(expectedPid) || body.pid === expectedPid);
-    }
-    if (response.status !== 404 || stateVersion !== 2) return false;
-  } catch {
-    return false;
-  }
-
-  try {
-    return (await fetch(`${url}/api/state`, { signal })).ok;
-  } catch {
-    return false;
-  }
-}
-
 function isGraphRuntimeState(state) {
   return (state?.version === 2 || state?.version === 3 || state?.version === 4) &&
     Number.isInteger(state.pid) && typeof state.url === 'string';
@@ -715,10 +709,3 @@ function secret() {
   return randomBytes(32).toString('base64url');
 }
 
-async function waitForProcessExit(pid) {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    if (!isProcessAlive(pid)) return true;
-    await delay(100);
-  }
-  return false;
-}
