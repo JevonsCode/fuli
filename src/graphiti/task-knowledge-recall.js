@@ -152,9 +152,15 @@ export function planTaskKnowledgeRecall(taskPrompt, { earlierSentences } = {}) {
   const statement = leadParagraph(statementText);
   const leadTerms = distinctivePromptTerms(statement);
   const focus = (leadTerms.length ? leadTerms : distinctivePromptTerms(prompt)).join(' ').slice(0, 180);
-  const ownWords = namedTarget(statement) ? [] : ownClauseQueries(statementText);
-  const queries = unique([...ownWords, ...matched.flatMap(({ queries: values }) => values)
-    .map((query) => focus ? `${focus} ${query}` : query)]);
+  // A named target still leaves room for the clauses that name a kept fact
+  // ("the same retry behaviour we use for email" beside "SMS"): its focused
+  // category queries come first, then those clauses under the same focus
+  // (compounding eval: the task's topic was otherwise never searched).
+  const targeted = namedTarget(statement);
+  const categoryQueries = matched.flatMap(({ queries: values }) => values).map((query) => focus ? `${focus} ${query}` : query);
+  const queries = targeted
+    ? unique([...categoryQueries, ...ownClauseQueries(statementText, { cuedOnly: true }).map((query) => `${focus} ${query}`)])
+    : unique([...ownClauseQueries(statementText), ...categoryQueries]);
   return {
     status: 'planned',
     trigger_categories: matched.map(({ category }) => category),
@@ -521,8 +527,8 @@ const CLAUSE_WORD_LIMIT = 5;
 const CLAUSE_HAN_LIMIT = 16;
 // Asking and doing words: they say what to do with a fact, never which one.
 const CLAUSE_STOP_WORDS = new Set(('about add adding after also answer because been before bullet bullets could create '
-  + 'does entry existing exporting file folder following from full have here into just keep know like line list make more '
-  + 'most much need new now one only please reply repo return returns saying short should show some sure tell than that '
+  + 'does entry every existing exporting file folder following from full give have here into just keep know like line list make more '
+  + 'most much need new now one only our please reply repo return returns saying short should show some sure tell than that '
   + 'their them then there these they this those three throw update use using what when where which while will with '
   + 'would write your').split(' '));
 const CLAUSE_HAN_FILLERS = /请|帮我|帮忙|麻烦|一下|我们|你们|这个|那个|一个|然后|还有|的|了|吗|呢|吧/gu;
@@ -535,19 +541,20 @@ const KNOWN_FACT_CUE = /(?:agreed|decided|convention|policy|rule|owns?\b|owner|\
 // its lead paragraph's first line, or of the whole paragraph when that line
 // yields none (a heading such as "Fix these:"). A trailing line a script
 // appends ("Work only from this checkout") spends no query (rec#88).
-function ownClauseQueries(text) {
+function ownClauseQueries(text, { cuedOnly = false } = {}) {
   const [lead = ''] = text.trim().split(/\r?\n[ \t]*\r?\n/u);
   const lines = lead.split(/\r?\n/u).map(line => line.replace(CODE_SPAN, ' ')).filter(line => line.trim());
-  const first = clauseQueries(singleLine(lines[0] ?? ''));
-  return first.length ? first : clauseQueries(singleLine(lines.join(' ')));
+  const first = clauseQueries(singleLine(lines[0] ?? ''), { cuedOnly });
+  return first.length ? first : clauseQueries(singleLine(lines.join(' ')), { cuedOnly });
 }
 
 // When some clauses name a kept fact, only they query: the rest of a change
 // request ("so tests do not wait") would bring back unrelated items.
-function clauseQueries(prompt) {
+// `cuedOnly`: no clause names one, no query.
+function clauseQueries(prompt, { cuedOnly = false } = {}) {
   const clauses = prompt.split(/[,;:，；：。!?！？]|\.(?:\s|$)|\b(?:and|or|then)\b/iu);
   const cued = clauses.filter((clause) => KNOWN_FACT_CUE.test(clause));
-  return (cued.length ? cued : clauses)
+  return (cued.length || cuedOnly ? cued : clauses)
     .map(clauseQuery)
     .filter(Boolean)
     .slice(0, MAX_CLAUSE_QUERIES);
