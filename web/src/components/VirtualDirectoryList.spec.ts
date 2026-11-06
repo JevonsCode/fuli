@@ -27,19 +27,19 @@ describe('VirtualDirectoryList', () => {
     })
 
     expect(wrapper.findAll('.test-row').length).toBeLessThan(101)
-    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 101')
+    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001101')
 
     scroller.element.scrollTop = 68 * 50
     await scroller.trigger('scroll')
 
-    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('051/ 101')
+    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('051101')
     expect(wrapper.find('[data-virtual-index="50"]').exists()).toBe(true)
 
     await wrapper.setProps({ resetKey: 'filtered' })
     await flushPromises()
 
     expect(scroller.element.scrollTop).toBe(0)
-    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001/ 101')
+    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001101')
   })
 
   it('scrolls an active row into the virtual viewport', async () => {
@@ -65,6 +65,6 @@ describe('VirtualDirectoryList', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-virtual-index="90"]').exists()).toBe(true)
-    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('090/ 101')
+    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('090101')
   })
 })
