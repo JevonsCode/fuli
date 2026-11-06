@@ -280,19 +280,26 @@ watchEffect(() => {
 }
 .app-round:hover { color: var(--color-ink); background: var(--color-surface-hover); }
 /* The current page (Jevons 11-06: not a solid black disc): two quick strokes of honey crayon
-   scribbled under the ink icon, rough-edged and grainy like wax on paper. The strokes stay
-   inside the button and are drawn on with a short sweep when the page opens. */
+   scribbled under the ink icon, rough-edged and grainy like wax on paper, inside the button.
+   They are drawn on like a hand would: the first stroke left to right, then the crayon comes
+   back right to left for the second. */
 .app-round.is-active, .app-round.is-active:hover { color: var(--color-ink); background: transparent; }
-.app-round.is-active::before {
+.app-round.is-active::before, .app-round.is-active::after {
   content: ''; position: absolute; inset: 3px; z-index: -1; pointer-events: none;
   background: var(--color-scribble);
-  -webkit-mask: var(--scribble-mask) center / contain no-repeat;
-  mask: var(--scribble-mask) center / contain no-repeat;
-  transform-origin: 20% 70%;
-  animation: app-round-scribble 260ms var(--ease-out, ease-out) both;
+  -webkit-mask: var(--scribble-stroke) center / contain no-repeat;
+  mask: var(--scribble-stroke) center / contain no-repeat;
 }
-.app-round { --scribble-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Cfilter id='c' x='-20%25' y='-20%25' width='140%25' height='140%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.15' numOctaves='2' seed='4' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='2.4' result='d'/%3E%3CfeColorMatrix in='n' type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -1.6 1.85' result='g'/%3E%3CfeComposite in='d' in2='g' operator='in'/%3E%3C/filter%3E%3Cpath filter='url(%23c)' d='M8 20.5C13 15 19 12 27.5 9.5M9 28.5C14.5 23 21 20 29 18' fill='none' stroke='%23000' stroke-width='4.4' stroke-linecap='round'/%3E%3C/svg%3E"); }
-@keyframes app-round-scribble { from { opacity: 0; transform: scaleX(0.2) rotate(-6deg); } }
+.app-round.is-active::before {
+  --scribble-stroke: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Cfilter id='c' x='-20%25' y='-20%25' width='140%25' height='140%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.15' numOctaves='2' seed='4' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='2.4' result='d'/%3E%3CfeColorMatrix in='n' type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -1.6 1.85' result='g'/%3E%3CfeComposite in='d' in2='g' operator='in'/%3E%3C/filter%3E%3Cpath filter='url(%23c)' d='M8 20.5C13 15 19 12 27.5 9.5' fill='none' stroke='%23000' stroke-width='4.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  animation: app-round-scribble-across 200ms cubic-bezier(.4, 0, .6, 1) both;
+}
+.app-round.is-active::after {
+  --scribble-stroke: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Cfilter id='c' x='-20%25' y='-20%25' width='140%25' height='140%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.15' numOctaves='2' seed='4' result='n'/%3E%3CfeDisplacementMap in='SourceGraphic' in2='n' scale='2.4' result='d'/%3E%3CfeColorMatrix in='n' type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -1.6 1.85' result='g'/%3E%3CfeComposite in='d' in2='g' operator='in'/%3E%3C/filter%3E%3Cpath filter='url(%23c)' d='M9 28.5C14.5 23 21 20 29 18' fill='none' stroke='%23000' stroke-width='4.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  animation: app-round-scribble-back 220ms cubic-bezier(.4, 0, .6, 1) 160ms both;
+}
+@keyframes app-round-scribble-across { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0); } }
+@keyframes app-round-scribble-back { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0); } }
 /* A full tray reads in ink on a filled disc (Jevons 11-06), and every twelve seconds it gives a
    short wiggle so waiting decisions are noticed; its papers drop in when it fills (reduced
    motion zeroes this in primitives.css). */
