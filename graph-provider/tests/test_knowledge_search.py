@@ -12,7 +12,7 @@ from fuli_graph.knowledge_search import (
     _item_scope_metadata,
     _ranked_relevance,
     _relevance,
-    personal_edge_ids,
+    personal_edge_scopes,
     personal_project_scopes,
     search_knowledge,
 )
@@ -27,13 +27,23 @@ async def test_personal_edge_scope_uses_assignments_references_and_global_episod
     ])
     store = SimpleNamespace(runtime=SimpleNamespace(driver=driver))
 
-    result = await personal_edge_ids(
+    project_ids = ['project-a', 'project-b']
+    result = set(await personal_edge_scopes(
         store,
         {'id': 'personal-space', 'group_id': 'personal-group'},
-        ['project-a', 'project-b'],
+        SearchRequest(
+            space_ids=['personal-space'],
+            query='scope',
+            personal_project_ids=project_ids,
+            include_personal_global=True,
+        ),
+        {
+            project_id: {'scope_distance': 0, 'scope_path': [project_id], 'inherited': False}
+            for project_id in project_ids
+        },
         True,
         ['edge-a', 'edge-b', 'edge-global'],
-    )
+    ))
 
     query, parameters = driver.calls[0]
     assert result == {'edge-a', 'edge-global'}

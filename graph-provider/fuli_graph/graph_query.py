@@ -564,19 +564,21 @@ async def _read_preference_conflicts(store, space_id: str, item_ids: list[str]):
     return result
 
 
-def _graph_node(
+def _knowledge_item_fields(
     record,
     evidence,
     revisions,
     assignments,
     references,
     conflicts,
-    audits=None,
+    audits,
     *,
-    preference_conflicts=None,
-    review_scope: str = 'all',
-    personal_project_id: str | None = None,
-) -> GraphNode:
+    item_kind: str,
+    preference_conflicts,
+    review_scope: str,
+    personal_project_id: str | None,
+) -> dict:
+    """The fields a graph node and a graph edge project the same way."""
     episode_ids = record.get('episodes') or []
     status, basis, confidence, confirmation_explicit = _confirmation_projection(
         record
@@ -584,7 +586,7 @@ def _graph_node(
     attributes = json_object(record.get('attributes_json'))
     ai_assessment = _effective_ai_projection(
         record,
-        item_kind='entity',
+        item_kind=item_kind,
         evidence=evidence,
         assignments=assignments,
         references=references,
@@ -593,13 +595,9 @@ def _graph_node(
         review_scope=review_scope,
         personal_project_id=personal_project_id,
     )
-    return GraphNode(
+    return dict(
         **knowledge_weight(record, evidence_ids=[item for item in episode_ids if item in evidence]),
         id=record['id'],
-        name=record['name'],
-        type=record['type'],
-        group_id=record['group_id'],
-        summary=record['summary'],
         key=record.get('key') or record['id'],
         preference_key=preference_key(attributes, record.get('key'), record['id']),
         preference_qualifiers=preference_qualifiers(attributes),
@@ -674,6 +672,34 @@ def _graph_node(
             {**record, 'confirmation_status': status}
         ),
         audit_events=(audits or {}).get(record['id'], []),
+    )
+
+
+def _graph_node(
+    record,
+    evidence,
+    revisions,
+    assignments,
+    references,
+    conflicts,
+    audits=None,
+    *,
+    preference_conflicts=None,
+    review_scope: str = 'all',
+    personal_project_id: str | None = None,
+) -> GraphNode:
+    return GraphNode(
+        **_knowledge_item_fields(
+            record, evidence, revisions, assignments, references, conflicts, audits,
+            item_kind='entity',
+            preference_conflicts=preference_conflicts,
+            review_scope=review_scope,
+            personal_project_id=personal_project_id,
+        ),
+        name=record['name'],
+        type=record['type'],
+        group_id=record['group_id'],
+        summary=record['summary'],
     )
 
 
@@ -690,108 +716,23 @@ def _graph_edge(
     review_scope: str = 'all',
     personal_project_id: str | None = None,
 ) -> GraphEdge:
-    episode_ids = record.get('episodes') or []
-    status, basis, confidence, confirmation_explicit = _confirmation_projection(
-        record
-    )
-    attributes = json_object(record.get('attributes_json'))
-    ai_assessment = _effective_ai_projection(
-        record,
-        item_kind='relationship',
-        evidence=evidence,
-        assignments=assignments,
-        references=references,
-        conflicts=conflicts,
-        preference_conflicts=preference_conflicts or {},
-        review_scope=review_scope,
-        personal_project_id=personal_project_id,
-    )
     return GraphEdge(
-        **knowledge_weight(record, evidence_ids=[item for item in episode_ids if item in evidence]),
-        id=record['id'],
+        **_knowledge_item_fields(
+            record, evidence, revisions, assignments, references, conflicts, audits,
+            item_kind='relationship',
+            preference_conflicts=preference_conflicts,
+            review_scope=review_scope,
+            personal_project_id=personal_project_id,
+        ),
         source=record['source'],
         target=record['target'],
         source_name=record.get('source_name'),
         target_name=record.get('target_name'),
         type=record['type'],
         fact=record['fact'],
-        key=record.get('key') or record['id'],
-        preference_key=preference_key(attributes, record.get('key'), record['id']),
-        preference_qualifiers=preference_qualifiers(attributes),
-        origin_quadrant=record.get('origin_quadrant') or 'known_known',
-        current_quadrant=record.get('current_quadrant') or 'known_known',
-        epistemic_status=record.get('epistemic_status') or 'confirmed',
-        epistemic_state_explicit=record.get('epistemic_state_explicit') is True,
-        confirmation_status=status,
-        confirmation_state_explicit=confirmation_explicit,
-        confirmation_basis=basis,
-        reasoning_summary=record.get('reasoning_summary'),
-        profile_aspect=record.get('profile_aspect'),
-        preference_scope=record.get('preference_scope'),
-        preference_project_id=record.get('preference_project_id'),
-        preference_agent_id=record.get('preference_agent_id'),
-        inheritance_mode=record.get('inheritance_mode') or 'local_only',
-        inherited_project_ids=record.get('inherited_project_ids') or [],
-        human_edited=record.get('human_edited') is True,
-        human_change_status=record.get('human_change_status') or 'none',
-        human_change_version=int(record.get('human_change_version') or 0),
-        last_human_changed_at=_native_datetime(
-            record.get('last_human_changed_at')
-        ),
-        last_agent_viewed_at=_native_datetime(
-            record.get('last_agent_viewed_at')
-        ),
-        last_agent_reviewed_at=_native_datetime(
-            record.get('last_agent_reviewed_at')
-        ),
-        ai_review_evidence_token=record.get('ai_review_evidence_token'),
-        ai_assessment=ai_assessment,
-        ai_review_scope=record.get('ai_review_scope'),
-        ai_review_project_id=record.get('ai_review_project_id'),
-        ai_reviewed_at=_native_datetime(record.get('ai_reviewed_at'))
-        if ai_assessment is not None else None,
-        ai_review_id=record.get('ai_review_id'),
-        ai_review_decision_id=record.get('ai_review_decision_id'),
-        utility_score=float(record.get('utility_score') or 0),
-        confidence_score=confidence,
-        qualified_use_count=int(record.get('qualified_use_count') or 0),
-        distinct_task_count=int(record.get('distinct_task_count') or 0),
-        last_used_at=_native_datetime(record.get('last_used_at')),
-        negative_evidence_count=int(
-            record.get('negative_evidence_count') or 0
-        ),
-        requires_attention=record.get('requires_attention') is True,
-        last_feedback_kind=record.get('last_feedback_kind'),
-        last_feedback_at=_native_datetime(record.get('last_feedback_at')),
-        usage_generation=int(record.get('usage_generation') or 1),
         valid_at=_native_datetime(record.get('valid_at')),
-        invalid_at=_native_datetime(record.get('invalid_at')),
-        replaced_by_item_id=record.get('replaced_by_item_id'),
-        replaced_by_item_kind=record.get('replaced_by_item_kind'),
-        waits_for_review=bool(record.get('waits_for_review')),
-        version_status=version_status(record.get('invalid_at'), record.get('replaced_by_item_id'),
-                                      revisions.get(record['id'], [])),
-        created_at=_native_datetime(record.get('created_at')),
         confidence=record.get('confidence'),
-        attributes=attributes,
-        episodes=episode_ids,
-        evidence=[evidence[item] for item in episode_ids if item in evidence],
-        revisions=revisions.get(record['id'], []),
-        assignments=assignments.get(record['id'], []),
-        project_references=references.get(record['id'], []),
-        conflicts=conflicts.get(record['id'], []),
-        agent_confirmation_progress=agent_confirmation_progress(
-            record,
-            knowledge_conflicts=conflicts.get(record['id'], []),
-            preference_conflicts=(preference_conflicts or {}).get(
-                record['id'], []
-            ),
-        ),
-        # Judged on the displayed status: an unaudited 'confirmed' reads pending.
-        agent_authority_suspension=agent_authority_suspension(
-            {**record, 'confirmation_status': status}
-        ),
-        audit_events=(audits or {}).get(record['id'], []),
+        episodes=record.get('episodes') or [],
     )
 
 

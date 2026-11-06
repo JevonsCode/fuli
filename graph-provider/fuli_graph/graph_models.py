@@ -50,12 +50,10 @@ class AgentConfirmationProgress(StrictModel):
     )
 
 
-class GraphNode(KnowledgeWeightView):
+class KnowledgeItemView(KnowledgeWeightView):
+    """What a graph node and a graph edge share: key, epistemic and confirmation
+    state, preference scope, human and AI review, usage, versions and audit."""
     id: str
-    name: str
-    type: str
-    group_id: str
-    summary: str
     key: str | None = None
     preference_key: str | None = None
     preference_qualifiers: dict[str, Any] = Field(default_factory=dict)
@@ -114,73 +112,24 @@ class GraphNode(KnowledgeWeightView):
     audit_events: list[KnowledgeAuditRecord] = Field(default_factory=list)
 
 
-class GraphEdge(KnowledgeWeightView):
-    id: str
+class GraphNode(KnowledgeItemView):
+    name: str
+    type: str
+    group_id: str
+    summary: str
+
+
+class GraphEdge(KnowledgeItemView):
     source: str
     target: str
     source_name: str | None = None
     target_name: str | None = None
     type: str
     fact: str
-    key: str | None = None
-    preference_key: str | None = None
-    preference_qualifiers: dict[str, Any] = Field(default_factory=dict)
-    origin_quadrant: EpistemicQuadrant = 'known_known'
-    current_quadrant: EpistemicQuadrant = 'known_known'
-    epistemic_status: EpistemicStatus = 'confirmed'
-    epistemic_state_explicit: bool = True
-    confirmation_status: ConfirmationStatus = 'pending'
-    confirmation_state_explicit: bool = False
-    confirmation_basis: ConfirmationBasis | None = None
-    reasoning_summary: str | None = None
-    profile_aspect: PersonalProfileAspect | None = None
-    preference_scope: ScopedPreferenceScope | None = None
-    preference_project_id: str | None = None
-    preference_agent_id: str | None = None
-    inheritance_mode: KnowledgeInheritanceMode = 'local_only'
-    inherited_project_ids: list[str] = Field(default_factory=list, max_length=32)
-    human_edited: bool = False
-    human_change_status: HumanChangeStatus = 'none'
-    human_change_version: int = Field(default=0, ge=0)
-    last_human_changed_at: datetime | None = None
-    last_agent_viewed_at: datetime | None = None
-    last_agent_reviewed_at: datetime | None = None
-    ai_review_evidence_token: str | None = None
-    ai_assessment: dict[str, Any] | None = None
-    ai_review_scope: str | None = None
-    ai_review_project_id: str | None = None
-    ai_reviewed_at: datetime | None = None
-    ai_review_id: str | None = None
-    ai_review_decision_id: str | None = None
-    utility_score: float = Field(default=0, ge=0, le=1)
-    confidence_score: float = Field(default=0.5, ge=0, le=1)
-    qualified_use_count: int = Field(default=0, ge=0)
-    distinct_task_count: int = Field(default=0, ge=0)
-    last_used_at: datetime | None = None
-    negative_evidence_count: int = Field(default=0, ge=0)
-    requires_attention: bool = False
-    last_feedback_kind: KnowledgeFeedbackKind | None = None
-    last_feedback_at: datetime | None = None
-    usage_generation: int = Field(default=1, ge=1)
-    agent_confirmation_progress: AgentConfirmationProgress | None = None
-    agent_authority_suspension: AgentAuthoritySuspension | None = None
     valid_at: datetime | None
     invalid_at: datetime | None
-    replaced_by_item_id: str | None = None
-    replaced_by_item_kind: KnowledgeItemKind | None = None
-    version_status: KnowledgeVersionStatus = 'current'
-    # A basis it rests on changed meaning; a person's review is pending (D-20.7).
-    waits_for_review: bool = False
-    created_at: datetime | None = None
     confidence: float | None = None
-    attributes: dict[str, Any] = Field(default_factory=dict)
     episodes: list[str] = Field(default_factory=list)
-    evidence: list[GraphEvidence] = Field(default_factory=list)
-    revisions: list[KnowledgeRevisionRecord] = Field(default_factory=list)
-    assignments: list[KnowledgeAssignmentRecord] = Field(default_factory=list)
-    project_references: list[KnowledgeProjectReferenceRecord] = Field(default_factory=list)
-    conflicts: list[KnowledgeConflictRecord] = Field(default_factory=list)
-    audit_events: list[KnowledgeAuditRecord] = Field(default_factory=list)
 
 
 class GraphResult(StrictModel):

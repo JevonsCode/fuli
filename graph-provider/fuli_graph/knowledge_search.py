@@ -161,37 +161,6 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
     )
 
 
-async def personal_edge_ids(
-    store,
-    space: dict,
-    project_ids: list[str],
-    include_personal_global: bool,
-    edge_ids: list[str],
-) -> set[str]:
-    request = SearchRequest(
-        space_ids=[space['id']],
-        query='scope',
-        personal_project_ids=project_ids,
-        include_personal_global=include_personal_global,
-    )
-    scopes = {
-        project_id: {
-            'scope_distance': 0,
-            'scope_path': [project_id],
-            'inherited': False,
-        }
-        for project_id in project_ids
-    }
-    return set(await personal_edge_scopes(
-        store,
-        space,
-        request,
-        scopes,
-        include_personal_global,
-        edge_ids,
-    ))
-
-
 async def personal_edge_scopes(
     store,
     space: dict,
