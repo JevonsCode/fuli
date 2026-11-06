@@ -2,6 +2,8 @@ import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const api = vi.hoisted(() => ({ getJson: vi.fn() }))
+const routeState = vi.hoisted(() => ({ path: '/' }))
+vi.mock('vue-router', async (importOriginal) => ({ ...await importOriginal<typeof import('vue-router')>(), useRoute: () => routeState }))
 vi.mock('@/api/client', async (importOriginal) => ({ ...await importOriginal<typeof import('@/api/client')>(), ...api }))
 
 import { setLocale } from '@/i18n'
@@ -25,7 +27,7 @@ async function mountButton() {
   return wrapper
 }
 
-afterEach(() => { api.getJson.mockReset() })
+afterEach(() => { api.getJson.mockReset(); routeState.path = '/' })
 
 describe('ModelPowerButton', () => {
   it('stays quiet when no model is connected, and points to the model page', async () => {
@@ -33,7 +35,7 @@ describe('ModelPowerButton', () => {
     const wrapper = await mountButton()
     const link = wrapper.get('[data-model-power]')
     expect(link.attributes('data-model-power')).toBe('off')
-    expect(wrapper.getComponent(RouterLinkStub).props('to')).toBe('/settings/models')
+    expect(wrapper.getComponent(RouterLinkStub).props('to')).toBe('/models')
     expect(link.attributes('aria-label')).toContain('还没有接模型')
     wrapper.unmount()
   })
@@ -61,6 +63,17 @@ describe('ModelPowerButton', () => {
     const wrapper = await mountButton()
     expect(wrapper.get('[data-model-power]').attributes('data-model-power')).toBe('problem')
     expect(wrapper.find('.model-power-dot').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('is lit on the model page, which is its own page beside 设置', async () => {
+    answer(roles(['enabled']), { model: null, total: 0, done: 0, running: false })
+    routeState.path = '/models'
+    const wrapper = await mountButton()
+    const link = wrapper.find('[data-model-power]')
+    expect(link.classes()).toContain('is-active')
+    expect(link.attributes('aria-current')).toBe('page')
+    expect(wrapper.findComponent(RouterLinkStub).props('to')).toBe('/models')
     wrapper.unmount()
   })
 })

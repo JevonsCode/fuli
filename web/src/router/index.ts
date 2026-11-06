@@ -201,15 +201,16 @@ export const router = createRouter({
         saveBar: true,
       },
     },
+    // Models are their own page beside 设置 (Jevons 11-06), reached from the model button.
     {
-      path: '/settings/models',
+      path: '/models',
       name: 'model-settings',
       component: () => import('@/pages/ModelSettingsPage.vue'),
       meta: {
         title: 'modelSettings.title',
-        detail: true,
       },
     },
+    { path: '/settings/models', redirect: '/models' },
     {
       path: '/settings/data-format',
       name: 'data-format',

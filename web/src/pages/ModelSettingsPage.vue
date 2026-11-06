@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { apiErrorReason } from '@/api/client'
-import Breadcrumb from '@/components/Breadcrumb.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import DreamingCard from '@/features/model-settings/DreamingCard.vue'
@@ -43,7 +42,6 @@ let reading: AbortController | null = null
 const activeSpace = computed(() => store.activePersonalSpace?.id ?? '')
 const suggestions = useRoleSuggestions(activeSpace)
 const { entries: suggestionEntries, loading: suggestionsLoading, error: suggestionsError, reviews, reviewsLoading, reviewsError } = suggestions
-const openedFromSettings = /^\/settings(?:[?#]|$)/
 
 const projects = computed(() => store.state?.personalProjects ?? [])
 const locked = computed(() => payload.value?.state === 'invalid')
@@ -128,7 +126,6 @@ onBeforeUnmount(() => {
 <template>
   <section class="view model-settings-view" :aria-label="t('modelSettings.title')">
     <div class="model-settings-column">
-      <Breadcrumb :parent="{ label: t('modelSettings.back'), to: '/settings', from: openedFromSettings }" :current="t('modelSettings.title')" />
 
       <GrowthLoading v-if="loading && !payload" :label="t('modelSettings.loading')" />
       <div v-else-if="loadError && !payload" class="ui-empty rounded-lg border bg-card" role="alert">

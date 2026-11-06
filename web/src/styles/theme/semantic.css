@@ -63,6 +63,14 @@
      keeps muted text at 4.5:1 (page-backdrops.spec.ts). */
   --color-glow-gold: #f3d68c;
   --color-glow-success: #b2e6cc;
+  /* A powered FULI (Jevons 11-06): the model button turns a violet gradient, with a soft violet
+     glow and, now and then, a brief cyan/magenta glitch inside the button. */
+  --color-power-from: #a78bfa;
+  --color-power-mid: #7c3aed;
+  --color-power-to: #c026d3;
+  --color-glow-power: #c4b5fd;
+  --color-glitch-cyan: #22d3ee;
+  --color-glitch-magenta: #f472b6;
   --color-warning: #8a5a12;
   --color-warning-soft: #f8f0e0;
   --color-danger: #a8392e;

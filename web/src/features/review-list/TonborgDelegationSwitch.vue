@@ -63,7 +63,7 @@ async function change(enabled: boolean) {
     </div>
     <p v-if="hint" class="tonborg-delegation__hint">
       {{ hint }}
-      <RouterLink v-if="state && !connected" to="/settings/models" class="tonborg-delegation__link">{{ t('reviewList.delegation.connect') }}</RouterLink>
+      <RouterLink v-if="state && !connected" to="/models" class="tonborg-delegation__link">{{ t('reviewList.delegation.connect') }}</RouterLink>
     </p>
   </div>
 </template>
