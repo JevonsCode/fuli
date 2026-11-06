@@ -39,7 +39,8 @@ const flying = ref('')
 let flyingTimer: ReturnType<typeof setTimeout> | undefined
 const staged = computed(() => current.value.find(task => taskKey(task) === selectedKey.value) ?? current.value[0] ?? null)
 const others = computed(() => current.value.filter(task => task !== staged.value))
-const done = computed(() => recentlyDone(data.taskItems.value))
+// The feed shows seven and opens the rest itself.
+const done = computed(() => recentlyDone(data.taskItems.value, Infinity))
 function select(task: ProjectAgentTaskRecord) {
   flying.value = taskKey(task)
   void nextTick(() => { selectedKey.value = taskKey(task) })

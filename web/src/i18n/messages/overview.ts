@@ -1,5 +1,6 @@
 export const overviewMessages = {
   'zh-CN': {
+    more: { more: '更多 {count}', less: '收起' },
     sections: {
       attention: '等你处理',
       currentWork: '进行中',
@@ -57,6 +58,7 @@ export const overviewMessages = {
     actions: { request: '查看请求', task: '查看任务', blocked: '查看详情', failed: '查看详情', awaiting_review: '查看交付记录' },
   },
   'en-US': {
+    more: { more: '{count} more', less: 'Show less' },
     sections: {
       attention: 'Waiting for you',
       currentWork: 'In progress',
