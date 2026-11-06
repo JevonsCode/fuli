@@ -163,7 +163,7 @@ export function managementKnowledgeItems(graph: KnowledgeGraph | null): Knowledg
     .filter(isManagementNode)
     .map((node) => knowledgeItemFromNode(node))
   const edges = graph.edges
-    .filter(isManagementEdge)
+    .filter((edge) => isManagementEdge(edge) && !isSystemDerivedId(edge.id))
     .map((edge) => knowledgeItemFromEdge(edge, names))
   return [...nodes, ...edges]
 }
@@ -257,8 +257,21 @@ function isManagementEdge(edge: KnowledgeEdge) {
   return isManagementId(edge.id)
 }
 
+/**
+ * Structure the Provider derives from its own records, not knowledge anyone
+ * said or learned: a project sits in its space (contains-project:), how often
+ * one project read another's memory (project-memory-usage:). The graph draws
+ * it; no list offers it, so nothing asks the person to confirm it.
+ */
+const SYSTEM_DERIVED_PREFIXES = ['contains-project:', 'project-memory-usage:']
+
+function isSystemDerivedId(id: string) {
+  return SYSTEM_DERIVED_PREFIXES.some((prefix) => String(id).startsWith(prefix))
+}
+
 function isManagementId(id: string) {
-  return String(id).startsWith('project-profile:')
+  return isSystemDerivedId(id)
+    || String(id).startsWith('project-profile:')
     || String(id).startsWith('project-profile-edge:')
     || String(id).startsWith('space-edge:')
     || String(id).startsWith('personal-project-relation:')

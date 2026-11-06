@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { knowledgeItems } from '@/features/knowledge/model'
-import type { KnowledgeGraph, KnowledgeNode } from '@/types'
+import { isManagementKnowledgeItem, knowledgeItemFromEdge, knowledgeItems, managementKnowledgeItems } from '@/features/knowledge/model'
+import type { KnowledgeEdge, KnowledgeGraph, KnowledgeNode } from '@/types'
 
 import { agreesWithGuess, buildReviewList, oneLine, reviewTotal, type DelegatedReview } from './review-list'
 
@@ -64,5 +64,27 @@ describe('the 待决策 list', () => {
     expect(agreesWithGuess(review('entity:x', { guess: 'drop' }), 'drop')).toBe(true)
     expect(agreesWithGuess(review('entity:x', { guess: 'drop' }), 'confirm')).toBe(false)
     expect(agreesWithGuess(null, 'confirm')).toBe(false)
+  })
+
+  it('never asks the person about projects the system put in the space, conversation projects included', () => {
+    // Synthetic Provider output for a space with 3 temporary conversation projects and
+    // one named project: the management projection draws each project and its
+    // contains-project edge; memory use between projects is an observation edge.
+    const space = node('space:personal', { name: 'Personal', type: 'PersonalSpace' })
+    const projects = ['conv-1', 'conv-2', 'conv-3', 'named'].map(id => node(`personal-project:${id}`, {
+      name: id === 'named' ? 'Synthetic Project' : '会话项目', type: 'PersonalProject' }))
+    const structure = projects.map(project => ({ id: `contains-project:${project.id.split(':')[1]}`, source: space.id, target: project.id,
+      type: 'CONTAINS_PROJECT', fact: `个人项目“${project.name}”保存在该个人空间中。` }) as KnowledgeEdge)
+    const usage = { id: 'project-memory-usage:obs-1', source: projects[0].id, target: projects[3].id, type: 'PROJECT_MEMORY_ACCESS',
+      fact: '会话项目 → Synthetic Project: 3', attributes: { totalCount: 3 } } as KnowledgeEdge
+    const learned = node('learned')
+    const projectGraph = { nodes: [space, ...projects, learned], edges: [...structure, usage] } as unknown as KnowledgeGraph
+
+    const list = buildReviewList(knowledgeItems(projectGraph))
+    expect(list.pending.map(line => line.key)).toEqual(['entity:learned'])
+    expect(reviewTotal(list)).toBe(1)
+    // Not project material either, and read-only if the graph canvas opens one.
+    expect(managementKnowledgeItems(projectGraph).filter(item => item.itemKind === 'relationship')).toEqual([])
+    expect(isManagementKnowledgeItem(knowledgeItemFromEdge(structure[0], new Map()))).toBe(true)
   })
 })
