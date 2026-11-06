@@ -28,6 +28,7 @@ import {
 import { RecallPolicyStore, recallPolicyPathForRuntime } from './recall-policy.js';
 import { sessionMigrationNoticesForRuntime } from './session-migration-notices.js';
 import {
+  liveSourceConsoleUrl,
   sourceConsoleUrl
 } from './source-marker.js';
 import { resolvePersonalProjectPath } from './project-path-context.js';
@@ -155,7 +156,9 @@ export function openFederatedGraphApplication({
     recallPolicyStore: recallPolicyStore ?? new RecallPolicyStore(recallPolicyPathForRuntime(runtimeConfigPath)),
     firstRunGuide: createFirstRunGuide(firstRunGuidePathForRuntime(runtimeConfigPath)),
     tokenUsageResolver,
-    consoleUrl: sourceConsoleUrl(runtimeConfigPath),
+    // Read per use (briefly cached): an MCP process that starts while the console is restarting
+    // (an update reconnects every client) must not keep the default port for its whole life.
+    consoleUrl: liveSourceConsoleUrl(runtimeConfigPath),
     fuliLinkOrigin: fuliLinkOrigin(),
     runtimeConfigPath,
     providerRequestTimeoutMs: providerRequestTimeoutFromEnv(env),
@@ -165,7 +168,7 @@ export function openFederatedGraphApplication({
     const paths = resolveSetupPaths({ dataDir: dirname(runtimeConfigPath) });
     openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImpl });
     // Read per call so a saved settings change applies without a restart.
-    app.needsPerson = createNeedsPersonNotifier({ fetchImpl, consoleUrl: app.consoleUrl,
+    app.needsPerson = createNeedsPersonNotifier({ fetchImpl, consoleUrl: () => app.consoleUrl,
       readUrl: () => readRuntimeSettings(paths.runtimeSettingsPath).notifications.needsPersonUrl });
     app.explainSettings = () => describeSettings({ settings: readRuntimeSettings(paths.runtimeSettingsPath),
       capturePolicy: app.getCapturePolicy(), consoleUrl: app.consoleUrl });
@@ -192,6 +195,10 @@ function providerRequestTimeoutFromEnv(env) {
 // The application's public methods. Each capability lives in its own module;
 // a method here only wires the request to that module or to a workflow.
 export class FederatedGraphApplication extends ProjectAgentControlPlaneApplication {
+  // The console origin links open; a function is read at each use.
+  get consoleUrl() { return this.readConsoleUrl(); }
+  set consoleUrl(value) { this.readConsoleUrl = typeof value === 'function' ? value : () => value; }
+
   constructor(config, {
     fetchImpl = globalThis.fetch,
     capturePolicyStore = new CapturePolicyStore(),
@@ -217,7 +224,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     this.config = config;
     this.capturePolicyStore = capturePolicyStore;
     // An Agent's long-term capture change waits for the person's confirmed preview (rec#5 C4-2).
-    const captureChangeReads = { listProjects: () => this.listPersonalProjects(), consoleUrl,
+    const captureChangeReads = { listProjects: () => this.listPersonalProjects(), consoleUrl: () => this.consoleUrl,
       taskContext: (token, client) => this.taskContextRegistry.context(token, client) };
     this.captureChanges = createCaptureChanges(capturePolicyStore, captureChangeReads);
     this.captureOnboarding = createCaptureOnboarding(capturePolicyStore);
@@ -681,3 +688,4 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   }
 
 }
+

@@ -199,3 +199,18 @@ test('source marker uses the configured local console origin and rejects non-loo
   assert.equal(configured, 'http://localhost:3838');
   assert.equal(rejected, 'http://127.0.0.1:2727');
 });
+
+test('a console origin read per use finds the console once it is back after a restart', async () => {
+  const { liveSourceConsoleUrl } = await import('../src/graphiti/source-marker.js');
+  let state = null;
+  let clock = 0;
+  const read = liveSourceConsoleUrl('/synthetic/fuli/graph-runtime.json', {
+    now: () => clock,
+    readText: () => { if (!state) throw new Error('ENOENT'); return JSON.stringify(state); }
+  });
+  assert.equal(read(), 'http://127.0.0.1:2727', 'no state yet: the default');
+  state = { url: 'http://127.0.0.1:2828' };
+  assert.equal(read(), 'http://127.0.0.1:2727', 'cached for a moment');
+  clock = 2500;
+  assert.equal(read(), 'http://127.0.0.1:2828', 'then the console it finds');
+});

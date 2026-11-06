@@ -137,7 +137,7 @@ async function proposeCaptureChange({ store, previews, taskContext, consoleUrl, 
     sourceApplication: caller.sourceApplication, sessionId: await askingSession(taskContext, caller),
     createdAt: new Date().toISOString() });
   return { status: 'confirmation_required', preview, expiresAt,
-    ...(consoleUrl ? { confirmUrl: `${consoleUrl}/capture-change/${id}`, guidance: CONSOLE_GUIDANCE }
+    ...(consoleOrigin(consoleUrl) ? { confirmUrl: `${consoleOrigin(consoleUrl)}/capture-change/${id}`, guidance: CONSOLE_GUIDANCE }
       : { guidance: NO_CONSOLE_GUIDANCE }) };
 }
 
@@ -251,3 +251,6 @@ function projectChanges(current, next, name) {
       started.length > 1 ? '这些' : '这个'}项目里的会话会被记录`] : [])
   ];
 }
+
+// The console origin, read now when it is given as a function.
+const consoleOrigin = consoleUrl => (typeof consoleUrl === 'function' ? consoleUrl() : consoleUrl);

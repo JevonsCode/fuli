@@ -195,3 +195,17 @@ function markdownLabel(value) {
     .replaceAll('>', '&gt;')
     .replace(/([\\[\]])/g, '\\$1');
 }
+
+// The same origin read per use, cached for a moment: a process that started while the console
+// was restarting (an update reconnects every client) finds it once it is back, instead of keeping
+// the default port for its whole life.
+const LIVE_TTL_MS = 2000;
+export function liveSourceConsoleUrl(runtimeConfigPath, { now = Date.now, readText } = {}) {
+  let cached = null;
+  return () => {
+    if (!cached || now() - cached.at > LIVE_TTL_MS) {
+      cached = { url: sourceConsoleUrl(runtimeConfigPath, readText ? { readText } : undefined), at: now() };
+    }
+    return cached.url;
+  };
+}
