@@ -16,7 +16,7 @@ import { currentWork } from './agent-roster-records'
 import { agentManagementPath, projectChipGroups } from './orchestration-filters'
 import { statusTone, taskStatusLabel } from './task-labels'
 
-// One Agent in 编排's collection, built like the directory's AgentCard: the
+// One Agent in 编排's collection: the
 // name opens the Agent's management page, "quick look" (or a click on the
 // card's empty surface) asks the collection for a Peek, and the card lifts
 // while its Peek is open. Running work shows as the status dot beside the
