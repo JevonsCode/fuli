@@ -149,6 +149,20 @@ test('the report shows each measured number with its method folded beside it, an
   });
 });
 
+test('the home and preview pages say how an FLA grows, what it grows, and mark what is still coming', () => {
+  const files = pages();
+  for (const path of ['index.html', 'en/index.html', 'next/index.html', 'next/en/index.html']) {
+    const { document } = parseHTML(files.get(path));
+    const growth = document.querySelector('#growth');
+    assert.ok(document.querySelector('.nav nav a[href="#growth"]'), path);
+    assert.equal(growth.querySelectorAll('.growth-steps > li').length, 3, path);
+    assert.deepEqual([...growth.querySelectorAll('.growth-cards:not(.growth-steps) b')].map(node => node.textContent), ['Workbench', 'Workflow', 'Agent App'], path);
+    // Upcoming work sits only under the 即将 / Coming badge, never among the shipped cards.
+    assert.equal(growth.querySelectorAll('.growth-next li').length, 2, path);
+    assert.ok(growth.querySelector('.growth-next .growth-badge'), path);
+  }
+});
+
 test('the home and preview pages link the guide pages in their own language', () => {
   const files = pages();
   for (const [path, suffix] of [['index.html', ''], ['en/index.html', 'en/'], ['next/index.html', ''], ['next/en/index.html', 'en/']]) {

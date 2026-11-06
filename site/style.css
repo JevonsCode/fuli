@@ -182,6 +182,31 @@ figure.window figcaption { padding: 0 20px; }
 .memory-recent span:nth-child(odd) { width: 70%; justify-self: end; }
 .memory b { font-size: 13px; color: var(--muted); }
 
+/* FLA self-growth: how an FLA learns, then what it grows to work with you, then what is coming. */
+.growth { display: grid; gap: clamp(32px, 5vh, 52px); padding: clamp(72px, 11vh, 128px) var(--gutter); border-top: 1px solid var(--line); }
+.growth-intro { max-width: 720px; }
+.growth-intro h2 { margin: 0; }
+.growth-intro > p:not(.eyebrow) { margin-top: 18px; color: var(--ink-soft); font-size: clamp(16px, 1.3vw, 18px); }
+.growth-group h3 { margin-bottom: 14px; color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: .08em; }
+.growth-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(14px, 2vw, 22px); margin: 0; padding: 0; list-style: none; }
+.growth-cards li { min-width: 0; padding: 24px 26px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.growth-cards b { display: block; font-size: 18px; font-weight: 600; line-height: 1.4; }
+.growth-cards p { margin-top: 8px; color: var(--ink-soft); font-size: 15px; }
+/* The growth steps count up in the display face, a sprout of order beside each title. */
+.growth-steps { counter-reset: growth; }
+.growth-steps li { counter-increment: growth; }
+.growth-steps b::before { content: "0" counter(growth); margin-right: 10px; color: var(--jade); font: 500 14px/1 "Unbounded", var(--sans); }
+.growth-next { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px 18px; padding: 18px 24px; border: 1px dashed var(--jade-line); border-radius: 16px; }
+.growth-badge { flex: 0 0 auto; padding: 2px 10px; border-radius: 999px; background: var(--amber-soft); color: var(--amber); font-size: 13px; font-weight: 600; user-select: none; }
+.growth-next ul { display: grid; flex: 1 1 320px; gap: 6px; margin: 0; padding: 0; list-style: none; color: var(--ink-soft); font-size: 15px; }
+.growth-more { color: var(--ink-soft); font-size: 15px; }
+.growth-more summary { width: fit-content; color: var(--muted); cursor: pointer; user-select: none; }
+.growth-more summary:hover { color: var(--jade); }
+.growth-more ul { display: grid; gap: 6px; max-width: 760px; margin: 10px 0 0; padding-left: 1.1em; }
+@media (max-width: 880px) {
+  .growth-cards { grid-template-columns: minmax(0, 1fr); }
+}
+
 .principles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(20px, 4vw, 56px); padding: clamp(64px, 10vh, 112px) var(--gutter); border-top: 1px solid var(--line); }
 .principles h3 { font-size: 18px; font-weight: 650; }
 .principles p { margin-top: 10px; color: var(--ink-soft); }
