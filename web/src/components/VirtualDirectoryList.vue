@@ -244,7 +244,7 @@ defineExpose({
       })"
     >
       <strong>{{ formatIndex(currentIndex) }}</strong>
-      <span>/ {{ formatIndex(itemCount) }}</span>
+      <span>{{ formatIndex(itemCount) }}</span>
     </output>
   </section>
 </template>
@@ -296,37 +296,47 @@ defineExpose({
   z-index: 2;
 }
 
+/* Where you are in the list, standing up along the right edge (Jevons 11-06): a narrow
+   glass capsule, current over total, that takes no room from the rows. */
 .virtual-directory-list__position {
   position: absolute;
   z-index: 4;
-  right: 12px;
+  right: 4px;
   bottom: 12px;
   display: flex;
-  align-items: baseline;
-  gap: 4px;
-  padding: 6px 9px;
-  border: 1px solid var(--color-border);
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 4px;
   border-radius: 999px;
   color: var(--color-muted);
-  background: var(--color-surface);
+  background: var(--glass-sheen), var(--surface-dock);
+  box-shadow: var(--shadow-glass);
+  -webkit-backdrop-filter: var(--filter-dock);
+  backdrop-filter: var(--filter-dock);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
-
-/* Page scroll: the list is as tall as its rows, the page scrolls, the header
-   sticks to the page's top and the position stays at the window's bottom.
-   clip (not hidden) so the sticky header still follows the page. */
-.virtual-directory-list.is-page-scroll { height: auto; overflow: clip; }
-.is-page-scroll .virtual-directory-list__scroller { height: auto; overflow: visible; }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .virtual-directory-list__position { background: var(--color-surface); }
+}
+.virtual-directory-list__position span::before {
+  display: block;
+  width: 12px;
+  height: 1px;
+  margin: 0 auto 3px;
+  background: var(--color-border-strong);
+  content: "";
+}
 .is-page-scroll .virtual-directory-list__position {
   position: sticky;
   right: auto;
   width: fit-content;
-  margin: -38px 12px 0 auto;
+  margin: -64px 4px 0 auto;
 }
-
 .virtual-directory-list__position strong {
   color: var(--color-ink);
   font-size: 12px;
