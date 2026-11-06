@@ -121,6 +121,9 @@ export function createScrollScene({ labels }) {
   const growthIndex = sceneNames.indexOf("growth");
   const growthArt = document.querySelector('[data-overlay="growth"] .ga-stage');
   const growthOverlays = [...document.querySelectorAll('[data-overlay="growth"]')];
+  // Overlays that play along their chapter's dwell read it as --scene-progress (0 → 1).
+  const progressOverlays = overlays.filter((overlay) => overlay.hasAttribute("data-progress"))
+    .map((overlay) => ({ overlay, scene: sceneNames.indexOf(overlay.dataset.overlay) }));
   // A shown chapter with several screens moves to the next one partway through its dwell.
   const screens = overlays.filter((overlay) => overlay.querySelector(".app-frame"))
     .map((overlay) => ({ scene: sceneNames.indexOf(overlay.dataset.overlay), frames: [...overlay.querySelectorAll(".app-frame")] }));
@@ -157,6 +160,10 @@ export function createScrollScene({ labels }) {
     const finale = index === growthIndex ? clamp((local - 0.28) / 0.13) : index > growthIndex ? 1 : 0;
     growthArt?.style.setProperty("--growth-progress", growth.toFixed(3));
     for (const overlay of growthOverlays) overlay.style.setProperty("--growth-finale", finale.toFixed(3));
+    for (const { overlay, scene } of progressOverlays) {
+      const played = scene === index ? clamp(local / 0.43) : scene < index ? 1 : 0;
+      overlay.style.setProperty("--scene-progress", played.toFixed(3));
+    }
     for (const { scene, frames } of screens) {
       const shown = scene === index ? Math.min(frames.length - 1, Math.floor(clamp(local / 0.42) * frames.length)) : scene < index ? frames.length - 1 : 0;
       frames.forEach((frame, i) => frame.classList.toggle("is-current", i === shown));

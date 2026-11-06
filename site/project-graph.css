@@ -1,0 +1,127 @@
+/* 项目: a graph that grows with the chapter. Projects and their knowledge appear, links draw out from
+   their start, temporary projects (dashed) become real ones with a name and a lead FLA, and the graph
+   thickens like the console's 关系图谱. Every piece is HTML moved by opacity and transforms only,
+   from --scene-progress (scene.js); outside the story --p is 1, the finished graph. */
+
+.project-graph {
+  --p: var(--scene-progress, 1);
+  --chart-blue: #2f5f8a;
+  --chart-teal: #3f7462;
+  --chart-violet: #6b4f8f;
+  --chart-amber: #a8691c;
+  --chart-rose: #a3445f;
+  --chart-cyan: #23707f;
+  --chart-slate: #66706a;
+  width: 100%;
+  max-width: 640px;
+  margin: 32px auto 0;
+}
+.pg-stage { position: relative; aspect-ratio: 600 / 520; container-type: inline-size; }
+.pg-stage > * { position: absolute; left: var(--x); top: var(--y); }
+
+/* Links draw from their first end: a line that scales along itself. */
+.pg-link {
+  --drawn: clamp(0, (var(--p) - var(--at)) / .05, 1);
+  width: var(--w);
+  height: 1.5px;
+  margin-top: -.75px;
+  background: #b4bbb5;
+  transform-origin: 0 50%;
+  rotate: var(--r);
+  scale: var(--drawn) 1;
+  opacity: calc(.75 * var(--drawn));
+}
+.pg-link.is-project { height: 2px; margin-top: -1px; background: #8f9890; }
+.pg-link.is-across { background: var(--chart-teal); opacity: calc(.5 * var(--drawn)); }
+
+.pg-node {
+  --shown: clamp(0, (var(--p) - var(--at)) / .04, 1);
+  width: 2.2%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--c);
+  translate: -50% -50%;
+  opacity: var(--shown);
+  scale: calc(.3 + .7 * var(--shown));
+}
+.pg-node span {
+  position: absolute;
+  left: 160%;
+  top: 50%;
+  translate: 0 -50%;
+  color: var(--muted);
+  font-size: 2.1cqw;
+  font-style: normal;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.pg-me {
+  display: grid;
+  width: 7.4%;
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--surface);
+  translate: -50% -50%;
+}
+.pg-me b { font-size: 2.4cqw; font-weight: 650; }
+
+/* A project: white ring, dark centre, its lead's portrait once it has one. A temporary one is a
+   faint dashed ring; when it becomes a project it fills in, takes its name and its lead, with a small pop. */
+.pg-project {
+  --shown: clamp(0, (var(--p) - var(--at)) / .04, 1);
+  --real: 1;
+  --pop: 0;
+  width: 8%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  opacity: var(--shown);
+  scale: calc((.5 + .5 * var(--shown)) * (1 + .16 * var(--pop)));
+}
+.pg-project.is-temp {
+  --grad: 9;
+  --real: clamp(0, (var(--p) - var(--grad)) / .04, 1);
+  --pop: min(clamp(0, (var(--p) - var(--grad)) / .03, 1), clamp(0, (var(--grad) + .09 - var(--p)) / .04, 1));
+}
+.pg-project::before,
+.pg-project b,
+.pg-project b::after,
+.pg-lead { position: absolute; border-radius: 50%; }
+.pg-project::before { content: ""; inset: 0; border: 1.5px dashed #9aa39c; opacity: calc(.8 * (1 - var(--real))); }
+.pg-project b { inset: 0; background: var(--surface); border: 1.5px solid #b4bbb5; box-shadow: 0 2px 6px rgb(30 40 35 / 12%); opacity: var(--real); }
+.pg-project b::after { content: ""; inset: 9%; background: var(--ink); border: 2px solid var(--surface); }
+.pg-lead { inset: 13%; width: 74%; height: 74%; opacity: var(--real); }
+.pg-project em {
+  display: grid;
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 4px);
+  translate: -50% 0;
+  font-size: 2.2cqw;
+  font-style: normal;
+  font-weight: 620;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.pg-project em > * { grid-area: 1 / 1; text-align: center; }
+/* The old name leaves before the new one arrives, so the two never show at once. */
+.pg-temp { color: var(--muted); font-weight: 500; opacity: clamp(0, 1 - 2 * var(--real), 1); }
+.pg-name { color: var(--ink); opacity: clamp(0, 2 * var(--real) - 1, 1); }
+
+/* In the story: where the screen windows sit, over a longer chapter so the graph has time to grow. */
+.graph-overlay .project-graph { position: absolute; left: 70%; top: calc(50svh + 36px); width: min(640px, 48vw); margin: 0; translate: -50% -50%; }
+.enhanced #projects { height: 230svh; }
+
+@media (max-width: 1050px) {
+  .graph-overlay .project-graph { left: 72%; width: 46vw; }
+}
+/* Phone: fewer items, the graph below the copy. */
+@media (max-width: 700px) {
+  .project-graph .is-extra { display: none; }
+  .pg-node span { font-size: 2.9cqw; }
+  .pg-project em { font-size: 3.3cqw; }
+  .pg-me b { font-size: 3.4cqw; }
+  .graph-overlay .project-graph { left: 50%; top: auto; bottom: 18px; width: calc(100vw - 24px); translate: -50% 0; }
+}
