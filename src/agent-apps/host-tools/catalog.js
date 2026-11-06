@@ -122,6 +122,7 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   read_session_records: UNSCOPED,
   register_standing_assignment: UNSCOPED,
   report_agent_service: UNSCOPED,
+  record_fla_lesson: UNSCOPED,
   propose_agent_workflow: UNSCOPED,
   list_agent_workflows: UNSCOPED,
   read_agent_workflow: UNSCOPED,

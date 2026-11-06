@@ -33,7 +33,7 @@ const DEFINITIONS = [
     objectSchema({ limit: integerSchema({ minimum: 1, maximum: BOARD_LIMIT_MAX }), statuses: arraySchema(enumSchema(ALL_STATUSES), { maxItems: 5 }), doneSince: boundedString(64), doneBefore: boundedString(64), times: booleanSchema() }),
     (store, scope, input) => ({ ...store.board(scope, { limit: input.limit ?? BOARD_LIMIT_DEFAULT, statuses: input.statuses, doneSince: input.doneSince, doneBefore: input.doneBefore, times: input.times }),
       projectBoard: store.projectBoard(scope) })),
-  tool('get_task', 'board.read', 'Read one task with its acceptance criteria and recent change history. Its updatedAt is the version update_tasks expects.',
+  tool('get_task', 'board.read', 'Read one task with its acceptance criteria and recent change history; projectAcceptanceChecks, when present, are checks the person kept from this project\'s earlier work. Its updatedAt is the version update_tasks expects.',
     objectSchema({ workItemId: id }, ['workItemId']),
     (store, scope, input) => ({ item: store.item(scope, input.workItemId) })),
   tool('create_tasks', 'board.write', 'Create concise tasks for new work after reading the board to avoid duplicates. messageId makes a retry return the same tasks. New tasks are private and start planned unless a status or boardColumn (a custom column id, whose status the task takes) is given; done is never allowed.',

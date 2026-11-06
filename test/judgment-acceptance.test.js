@@ -86,3 +86,21 @@ test('an acceptance keys its task context by hash, never by the token, for the v
   const [outcome] = await service.acceptanceOutcomes({ personalSpaceId: 's', taskKeys: [record.taskKey] });
   assert.deepEqual([outcome.taskId, outcome.result, outcome.verification.evidence_refs], ['t', 'passed', ['test-report']]);
 });
+test('kept project checks reach Tonborg only when there are some', async t => {
+  const prompts = [];
+  for (const nodes of [[], [{ id: 'c1', name: 'c1', type: 'ReusableExperience', confirmation_status: 'confirmed',
+    attributes: { solution: 'x', check: { kind: 'acceptance_item', text: 'Synthetic check: the build passes on Windows' } },
+    confirmation_basis: { proposed_by: { kind: 'agent', label: 'lead' } } }]]) {
+    const { app } = fixture(t);
+    app.personal = { graph: async () => ({ nodes, edges: [] }) };
+    const judge = async (...args) => { prompts.push(JSON.stringify(args)); return { client: 'codex',
+      body: JSON.stringify({ outcome: 'approve', summary: 'Verified routine result', evidence: ['test-report'], confidence: 0.95 }) }; };
+    const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge }) });
+    service.store().setPolicy('s', '', { mode: 'shared', quality: 'quality', client: 'codex' }, 0);
+    t.after(() => service.close());
+    await service.accept(input);
+  }
+  assert.doesNotMatch(prompts[0], /acceptanceChecks/);
+  assert.match(prompts[1], /acceptanceChecks/);
+  assert.match(prompts[1], /Synthetic check: the build passes on Windows/);
+});
