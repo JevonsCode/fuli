@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 import { Button } from '@/components/ui/button'
 import { currentLocale, t } from '@/i18n'
@@ -9,6 +9,7 @@ import { UiDialog } from '@/ui'
 import ModelRoleCheck from './ModelRoleCheck.vue'
 import ModelRoleHistory from './ModelRoleHistory.vue'
 import ModelRoleTrust from './ModelRoleTrust.vue'
+import type { ModelDetailsPart } from './details-link'
 import { roleName, type ModelRoleView, type ModelRolesPayload } from './model'
 import { useAdvice, useGuideUrl } from './model-uses'
 import { roleFacts, showsTrust } from './role-details'
@@ -16,7 +17,7 @@ import { roleFacts, showsTrust } from './role-details'
 // 「查看详情」 of one use: what is enough (with the website guide), the facts
 // of its settings, how its automatic operation runs, its change history, and
 // the connection test. Editing closes this and opens the form.
-const props = defineProps<{ view: ModelRoleView | null; payload: ModelRolesPayload; historyVersion: number }>()
+const props = defineProps<{ view: ModelRoleView | null; payload: ModelRolesPayload; historyVersion: number; linkedPart?: ModelDetailsPart | null }>()
 const emit = defineEmits<{ close: []; edit: []; trustSaved: [payload: ModelRolesPayload]; changed: [] }>()
 
 const locale = computed(() => currentLocale())
@@ -24,6 +25,13 @@ const name = computed(() => (props.view ? roleName(props.view.role) : ''))
 const facts = computed(() => (props.view ? roleFacts(props.view, props.payload, locale.value) : []))
 // 「交给 Tonborg 确认」 (rec#96) runs on this model; turning it on also changes its execution mode.
 const spaceId = computed(() => useConsoleStore().activePersonalSpace?.id ?? '')
+// A link about the switch (from 待决策) scrolls to it and rings it while the details stay open.
+const delegation = ref<{ $el?: Element } | null>(null)
+watch([() => props.view?.role, () => props.linkedPart, delegation], async ([, part]) => {
+  if (part !== 'delegation') return
+  await nextTick()
+  delegation.value?.$el?.scrollIntoView?.({ block: 'center' })
+}, { flush: 'post' })
 </script>
 
 <template>
@@ -39,8 +47,8 @@ const spaceId = computed(() => useConsoleStore().activePersonalSpace?.id ?? '')
           <dd :title="fact.title"><code v-if="fact.code">{{ fact.value }}</code><template v-else>{{ fact.value }}</template></dd>
         </div>
       </dl>
-      <TonborgDelegationSwitch v-if="view.role === 'tonborg' && spaceId" class="model-details-delegation" :personal-space-id="spaceId"
-        @changed="emit('changed')" />
+      <TonborgDelegationSwitch v-if="view.role === 'tonborg' && spaceId" ref="delegation" class="model-details-delegation" :personal-space-id="spaceId"
+        :data-model-details-linked="linkedPart === 'delegation' ? '' : undefined" @changed="emit('changed')" />
       <ModelRoleTrust v-if="view.trust && showsTrust(view)" :role="view.role" :trust="view.trust"
         :model="view.connection?.model ?? null" @saved="next => emit('trustSaved', next)" @changed="emit('changed')" />
       <ModelRoleHistory :role="view.role" :version="historyVersion" />
@@ -58,6 +66,8 @@ const spaceId = computed(() => useConsoleStore().activePersonalSpace?.id ?? '')
 .model-details { display: grid; gap: var(--space-4); min-width: 0; }
 .model-details-delegation { justify-items: start; }
 .model-details-delegation :deep(.tonborg-delegation__hint) { text-align: left; }
+/* The part a link pointed at, ringed without moving anything (as a linked settings card). */
+.model-details-delegation[data-model-details-linked] { border-radius: var(--radius-control); outline: 2px solid var(--ring); outline-offset: 6px; }
 .model-details-advice { margin: 0; color: var(--color-ink-soft); font-size: var(--text-body); }
 .model-details-advice a { margin-inline-start: 8px; }
 .model-details-label { margin-inline-end: 8px; color: var(--color-muted); font-size: var(--text-meta); }

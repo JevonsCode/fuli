@@ -5,6 +5,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Switch } from '@/components/ui/switch'
+import { modelDetailsLink } from '@/features/model-settings/details-link'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 
@@ -12,8 +13,10 @@ import { readDelegation, saveDelegation, type ReviewDelegation } from './review-
 
 // 「交给 Tonborg 确认」 (rec#96), the same switch on the 待决策 list and in
 // Tonborg's model settings. It runs on Tonborg's own model, so without one it
-// cannot be turned on and says where to connect one.
-const props = defineProps<{ personalSpaceId: string }>()
+// cannot be turned on and says where to connect one. On the list it also links
+// to where it is set up (settingsLink): Tonborg's details on 模型与用量, with
+// its model and how it runs.
+const props = defineProps<{ personalSpaceId: string; settingsLink?: boolean }>()
 const emit = defineEmits<{ changed: [enabled: boolean] }>()
 const store = useConsoleStore()
 const route = useRoute()
@@ -37,6 +40,7 @@ async function keepLanguage() {
 onMounted(load)
 watch(() => props.personalSpaceId, load)
 
+const settingsTarget = modelDetailsLink('tonborg', 'delegation')
 const connected = computed(() => state.value?.model?.connected === true)
 const hint = computed(() => {
   if (!state.value) return ''
@@ -73,6 +77,8 @@ async function change(enabled: boolean) {
     <p v-if="hint" class="tonborg-delegation__hint">
       {{ hint }}
       <RouterLink v-if="state && !connected" to="/models" class="tonborg-delegation__link">{{ t('reviewList.delegation.connect') }}</RouterLink>
+      <RouterLink v-else-if="settingsLink" :to="settingsTarget" class="tonborg-delegation__link" :title="t('reviewList.delegation.settingsTitle')"
+        data-tonborg-settings-link>{{ t('reviewList.delegation.settings') }}</RouterLink>
     </p>
   </div>
 </template>

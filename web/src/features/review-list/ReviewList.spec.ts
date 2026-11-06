@@ -117,6 +117,25 @@ describe('ReviewList', () => {
       expect(useConsoleStore().feedback).toEqual(expect.objectContaining({ message: '已确认 60 条知识', link: { to: '/knowledge' } }))
     })
 
+    it('draws only the rows near the screen in a long group, names each group for the page outline, and still confirms all', async () => {
+      nodes = many(60)
+      delegated = { questions: [], confirmed: [decision('entity:bulk-059', { question: null, guess: 'keep' })] }
+      nodes[59] = node('bulk-059', { confirmation_status: 'agent_confirmed', confirmation_basis: tonborg })
+      const wrapper = await mountList()
+      const pending = wrapper.get('[data-review-group=pending]')
+      expect(pending.get('[data-review-rows]').attributes('data-review-rows')).toBe('virtual')
+      const drawn = pending.findAll('[data-review-line]').length
+      expect(drawn).toBeGreaterThan(0)
+      expect(drawn).toBeLessThan(59)
+      // A short group stays a plain list.
+      expect(wrapper.get('[data-review-group=confirmed] [data-review-rows]').attributes('data-review-rows')).toBe('list')
+      const title = pending.get('h2')
+      expect([title.attributes('data-outline-label'), title.attributes('data-outline-count')]).toEqual(['待确认的知识', '59'])
+      await button(pending, '全部确认').trigger('click'); await flushPromises()
+      expect(batches().reduce((sum, [, body]) => sum + body.items.length, 0)).toBe(59)
+      expect(wrapper.find('[data-review-group=pending]').exists()).toBe(false)
+    })
+
     it('shows one short progress line counted from the batches that came back, and holds the rows meanwhile', async () => {
       nodes = many(30)
       delegated = { questions: [], confirmed: [] }
@@ -130,7 +149,7 @@ describe('ReviewList', () => {
       expect(label()).toBe('正在确认 0/30')
       expect(group().findAll('.review-busy--progress [role=status]')).toHaveLength(1)
       expect(button(group(), '全部确认').attributes('disabled')).toBeDefined()
-      expect(button(row(wrapper, 'entity:bulk-029'), '确认').attributes('disabled')).toBeDefined()
+      expect(button(row(wrapper, 'entity:bulk-005'), '确认').attributes('disabled')).toBeDefined()
       answers.shift()!(); await flushPromises()
       expect(label()).toBe('正在确认 25/30')
       expect(wrapper.find('[data-review-line="entity:bulk-000"]').exists()).toBe(false)
@@ -209,6 +228,18 @@ describe('交给 Tonborg 确认', () => {
     expect(putJson).toHaveBeenCalledTimes(1)
     expect(putJson).toHaveBeenCalledWith('/api/judgment/delegation', { personalSpaceId: 'space-a', enabled: true, expectedRevision: 5,
       language: 'zh-CN' }, expect.anything())
+  })
+
+  it("links from the list to Tonborg's confirmation settings, and only there", async () => {
+    getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', model: { connected: true, status: 'automatic', reason: null } })
+    const onList = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a', settingsLink: true }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    const link = onList.getComponent(RouterLinkStub)
+    expect(link.text()).toBe('设置')
+    expect(link.props('to')).toEqual({ path: '/models', query: { details: 'tonborg' }, hash: '#delegation' })
+    const inSettings = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    expect(inSettings.findComponent(RouterLinkStub).exists()).toBe(false)
   })
 
   it('cannot be turned on without Tonborg\'s own model and says where to connect one', async () => {

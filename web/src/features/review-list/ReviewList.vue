@@ -14,6 +14,7 @@ import UiIconButton from '@/ui/UiIconButton.vue'
 import UiNotice from '@/ui/UiNotice.vue'
 
 import { guessedAction, type ReviewAction, type ReviewLine } from './review-list'
+import ReviewRows from './ReviewRows.vue'
 import { useReviewList } from './review-store'
 
 // The knowledge part of 待决策 (rec#96): Tonborg's questions, every pending
@@ -75,7 +76,8 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
 
     <Card v-if="review.list.questions.length" as="section" class="review-group review-group--asks" aria-labelledby="review-questions-title" data-review-group="questions">
       <CardHeader class="review-group__header">
-        <CardTitle id="review-questions-title" as="h2" class="review-group__title review-group__title--asks">
+        <CardTitle id="review-questions-title" as="h2" class="review-group__title review-group__title--asks"
+          :data-outline-label="t('reviewList.groups.questions')" :data-outline-count="review.list.questions.length">
           <img v-if="tonborgAvatar" class="review-group__avatar" :src="tonborgAvatar" alt="" />
           <span class="review-group__name" :title="t('reviewList.groups.questions')">{{ t('reviewList.groups.questions') }}</span>
           <span class="review-group__count">· {{ review.list.questions.length }}</span>
@@ -85,71 +87,67 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
           <Button size="sm" variant="outline" :disabled="Boolean(busy('questions'))" @click="review.actAll('questions')">{{ t('reviewList.actions.acceptGuesses') }}</Button>
         </CardAction>
       </CardHeader>
-      <TransitionGroup name="ui-list" tag="ul" class="review-rows">
-        <li v-for="line in review.list.questions" :key="line.key" class="review-row" :data-review-line="line.key">
-          <span class="review-row__body">
-            <span class="review-row__meta">{{ askedMeta(line) }}</span>
-            <span class="review-row__text" :title="line.review?.question ?? line.text">{{ line.review?.question ?? line.text }}</span>
-          </span>
-          <span class="review-row__actions">
-            <span class="review-busy"><GrowthLoading v-if="busy(line.key)" variant="inline" :label="pendingLabel(line.key)" /></span>
-            <Button size="sm" :variant="variant(line, 'confirm')" :disabled="Boolean(busy(line.key) || busy('questions'))" @click="review.act(line, 'confirm')">{{ t('reviewList.actions.confirm') }}</Button>
-            <Button size="sm" :variant="variant(line, 'drop')" :disabled="Boolean(busy(line.key) || busy('questions'))" @click="review.act(line, 'drop')">{{ t('reviewList.actions.drop') }}</Button>
-            <Button size="sm" :variant="variant(line, 'edit')" :disabled="Boolean(busy(line.key) || busy('questions'))" @click="edit(line)">{{ t('reviewList.actions.edit') }}</Button>
-            <UiIconButton icon="info" size="sm" :label="t('reviewList.actions.details')" @click="detail = line" />
-          </span>
-        </li>
-      </TransitionGroup>
+      <ReviewRows v-slot="{ line }" :lines="review.list.questions" :label="t('reviewList.groups.questions')">
+        <span class="review-row__body">
+          <span class="review-row__meta">{{ askedMeta(line) }}</span>
+          <span class="review-row__text" :title="line.review?.question ?? line.text">{{ line.review?.question ?? line.text }}</span>
+        </span>
+        <span class="review-row__actions">
+          <span class="review-busy"><GrowthLoading v-if="busy(line.key)" variant="inline" :label="pendingLabel(line.key)" /></span>
+          <Button size="sm" :variant="variant(line, 'confirm')" :disabled="Boolean(busy(line.key) || busy('questions'))" @click="review.act(line, 'confirm')">{{ t('reviewList.actions.confirm') }}</Button>
+          <Button size="sm" :variant="variant(line, 'drop')" :disabled="Boolean(busy(line.key) || busy('questions'))" @click="review.act(line, 'drop')">{{ t('reviewList.actions.drop') }}</Button>
+          <Button size="sm" :variant="variant(line, 'edit')" :disabled="Boolean(busy(line.key) || busy('questions'))" @click="edit(line)">{{ t('reviewList.actions.edit') }}</Button>
+          <UiIconButton icon="info" size="sm" :label="t('reviewList.actions.details')" @click="detail = line" />
+        </span>
+      </ReviewRows>
     </Card>
 
     <Card v-if="review.list.pending.length" as="section" class="review-group" aria-labelledby="review-pending-title" data-review-group="pending">
       <CardHeader class="review-group__header">
-        <CardTitle id="review-pending-title" as="h2" class="review-group__title">{{ t('reviewList.groups.pending') }} · {{ review.list.pending.length }}</CardTitle>
+        <CardTitle id="review-pending-title" as="h2" class="review-group__title"
+          :data-outline-label="t('reviewList.groups.pending')" :data-outline-count="review.list.pending.length">{{ t('reviewList.groups.pending') }} · {{ review.list.pending.length }}</CardTitle>
         <CardAction class="review-group__action">
           <span class="review-busy review-busy--progress"><GrowthLoading v-if="busy('pending')" variant="inline" :label="progressLabel('pending')" /></span>
           <Button size="sm" variant="outline" :disabled="Boolean(busy('pending'))" @click="review.actAll('pending')">{{ t('reviewList.actions.confirmAll') }}</Button>
         </CardAction>
       </CardHeader>
-      <TransitionGroup name="ui-list" tag="ul" class="review-rows">
-        <li v-for="line in review.list.pending" :key="line.key" class="review-row" :data-review-line="line.key">
-          <span class="review-row__body">
-            <span class="review-row__meta">{{ meta(line) }}</span>
-            <span class="review-row__text" :title="line.text">{{ line.text }}</span>
-          </span>
-          <span class="review-row__actions">
-            <span class="review-busy"><GrowthLoading v-if="busy(line.key)" variant="inline" :label="pendingLabel(line.key)" /></span>
-            <Button size="sm" variant="outline" :disabled="Boolean(busy(line.key) || busy('pending'))" @click="review.act(line, 'confirm')">{{ t('reviewList.actions.confirm') }}</Button>
-            <Button size="sm" variant="ghost" :disabled="Boolean(busy(line.key) || busy('pending'))" @click="review.act(line, 'drop')">{{ t('reviewList.actions.drop') }}</Button>
-            <Button size="sm" variant="ghost" :disabled="Boolean(busy(line.key) || busy('pending'))" @click="edit(line)">{{ t('reviewList.actions.edit') }}</Button>
-            <UiIconButton icon="info" size="sm" :label="t('reviewList.actions.details')" @click="detail = line" />
-          </span>
-        </li>
-      </TransitionGroup>
+      <ReviewRows v-slot="{ line }" :lines="review.list.pending" :label="t('reviewList.groups.pending')">
+        <span class="review-row__body">
+          <span class="review-row__meta">{{ meta(line) }}</span>
+          <span class="review-row__text" :title="line.text">{{ line.text }}</span>
+        </span>
+        <span class="review-row__actions">
+          <span class="review-busy"><GrowthLoading v-if="busy(line.key)" variant="inline" :label="pendingLabel(line.key)" /></span>
+          <Button size="sm" variant="outline" :disabled="Boolean(busy(line.key) || busy('pending'))" @click="review.act(line, 'confirm')">{{ t('reviewList.actions.confirm') }}</Button>
+          <Button size="sm" variant="ghost" :disabled="Boolean(busy(line.key) || busy('pending'))" @click="review.act(line, 'drop')">{{ t('reviewList.actions.drop') }}</Button>
+          <Button size="sm" variant="ghost" :disabled="Boolean(busy(line.key) || busy('pending'))" @click="edit(line)">{{ t('reviewList.actions.edit') }}</Button>
+          <UiIconButton icon="info" size="sm" :label="t('reviewList.actions.details')" @click="detail = line" />
+        </span>
+      </ReviewRows>
     </Card>
 
     <slot />
 
     <Card v-if="review.list.confirmed.length" as="section" class="review-group" aria-labelledby="review-confirmed-title" data-review-group="confirmed">
       <CardHeader class="review-group__header">
-        <CardTitle id="review-confirmed-title" as="h2" class="review-group__title">{{ t('reviewList.groups.confirmed') }} · {{ review.list.confirmed.length }}</CardTitle>
+        <CardTitle id="review-confirmed-title" as="h2" class="review-group__title"
+          :data-outline-label="t('reviewList.groups.confirmed')" :data-outline-count="review.list.confirmed.length">{{ t('reviewList.groups.confirmed') }} · {{ review.list.confirmed.length }}</CardTitle>
         <CardAction class="review-group__action">
           <span class="review-busy"><GrowthLoading v-if="busy('confirmed')" variant="inline" :label="t('reviewList.pending.ack')" /></span>
           <Button size="sm" variant="outline" :disabled="Boolean(busy('confirmed'))" @click="review.acknowledgeConfirmed()">{{ t('reviewList.actions.allRight') }}</Button>
         </CardAction>
       </CardHeader>
-      <TransitionGroup name="ui-list" tag="ul" class="review-rows">
-        <li v-for="line in review.list.confirmed" :key="line.key" class="review-row" :data-review-line="line.key">
-          <span class="review-row__body">
-            <span class="review-row__meta">{{ projectName(line) }} · {{ t('reviewList.byTonborg') }}</span>
-            <span class="review-row__text" :title="line.text">{{ line.text }}</span>
-          </span>
-          <span class="review-row__actions">
-            <span class="review-busy"><GrowthLoading v-if="busy(line.key)" variant="inline" :label="pendingLabel(line.key)" /></span>
-            <Button size="sm" variant="outline" :disabled="Boolean(busy(line.key))" @click="review.undo(line)">{{ t('reviewList.actions.undo') }}</Button>
-            <UiIconButton icon="info" size="sm" :label="t('reviewList.actions.details')" @click="detail = line" />
-          </span>
-        </li>
-      </TransitionGroup>
+      <ReviewRows v-slot="{ line }" :lines="review.list.confirmed" :label="t('reviewList.groups.confirmed')">
+        <span class="review-row__body">
+          <span class="review-row__meta">{{ projectName(line) }} · {{ t('reviewList.byTonborg') }}</span>
+          <span class="review-row__text" :title="line.text">{{ line.text }}</span>
+        </span>
+        <span class="review-row__actions">
+          <span class="review-busy"><GrowthLoading v-if="busy(line.key)" variant="inline" :label="pendingLabel(line.key)" /></span>
+          <Button size="sm" variant="outline" :disabled="Boolean(busy(line.key))" @click="review.undo(line)">{{ t('reviewList.actions.undo') }}</Button>
+          <UiIconButton icon="info" size="sm" :label="t('reviewList.actions.details')" @click="detail = line" />
+        </span>
+      </ReviewRows>
     </Card>
 
     <UiDialog :open="Boolean(detail)" :title="t('reviewList.details.title')" size="md" @close="detail = null">
