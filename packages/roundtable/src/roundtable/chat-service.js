@@ -43,7 +43,8 @@ export function createChatService({ store, transaction, scope, transport, direct
     }
     if (actor.owner && !['list', 'read'].includes(request.action)) error('chat_owner_read_only', 'The owner view is read only');
     const known = ['create', 'members'].includes(request.action) ? await directory() : [];
-    const resolve = address => known.find(m => m.address === address) ?? error('chat_member_unavailable', `No active shared Agent at ${address}`, 404);
+    const resolve = address => known.find(m => m.address === address) ?? error('chat_member_unavailable',
+      `No active Agent at ${address}. Members are local:<agentId> on this computer (find_agents lists agentId) or a peer: address from a paired device; a paused or dismissed Agent cannot join.`, 404);
     let delivered;
     const result = transaction(() => {
       const at = new Date(clock()).toISOString();

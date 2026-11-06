@@ -71,7 +71,7 @@ export function createAgentChat({ host, peer = null, store, agents, idFactory, m
         await authorize();
         return result;
       }
-      const result = await local({ address: `local:${sender.agentId}` }, request, { ...options, authorize,
+      const result = await local({ address: `local:${sender.agentId}` }, localAddresses(request), { ...options, authorize,
         inbox: attentionInbox.forWait(sender.agentId, task.personalProjectId),
         onMessage: delivery => wakes.dispatch({ ...delivery, targets: delivery.targets.filter(address =>
           currentAgents.some(agent => address === `local:${agent.agentId}` && canWake(agent))) }, { taskContextToken, sourceApplication, authorize }) })
@@ -104,4 +104,14 @@ export function createAgentChat({ host, peer = null, store, agents, idFactory, m
       return result;
     }
   };
+}
+
+// On this computer an Agent is addressed local:<agentId>; a bare Agent ID (as
+// find_agents and message_agent take it) means the same member (rec#97).
+function localAddresses(request) {
+  const local = value => typeof value === 'string' && !/^(local|peer):/.test(value) ? `local:${value.trim()}` : value;
+  const list = value => Array.isArray(value) ? value.map(local) : value;
+  return { ...request, ...('members' in request ? { members: list(request.members) } : {}),
+    ...('add' in request ? { add: list(request.add) } : {}), ...('remove' in request ? { remove: list(request.remove) } : {}),
+    ...('owner' in request ? { owner: local(request.owner) } : {}) };
 }
