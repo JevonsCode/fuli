@@ -2,7 +2,7 @@ import { RouterLinkStub, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import TaskRetrospective from './TaskRetrospective.vue'
 
-// fuli#346: a finished task's view shows Astro's retrospective and links its pending lessons.
+// Roadmap issue 346: a finished task's view shows Astro's retrospective and links its pending lessons.
 function respond(retrospective: unknown) {
   const urls: string[] = []
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {

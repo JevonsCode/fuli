@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { getJson } from '@/api/client'
 import { shapeOf } from '@/api/response-shape'
 
-// A finished task's retrospective (fuli#346): what Astro's model wrote after
+// A finished task's retrospective (roadmap issue 346): what Astro's model wrote after
 // FLAs finished it. Its lessons wait in the person's review queue.
 const lesson = z.looseObject({ title: z.string(), status: z.string() })
 const retrospective = z.looseObject({ at: z.string(), status: z.string(), summary: z.string().nullable(),
