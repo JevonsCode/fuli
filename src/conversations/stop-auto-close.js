@@ -7,9 +7,12 @@ export const AUTO_CLOSE_SUMMARY = 'Auto-closed by the Stop hook: the Agent recor
 // lifecycle hook, or a routine fallback the Provider marks closable, is closed
 // honestly as retain_nothing (status "reported", never "completed") instead of
 // costing the model another full turn; any other open task keeps the advisory
-// reminder. Nothing is invented or captured here. reply: the turn's last answer,
-// where the host gives it; what it cites is recorded as use.
-export async function stopHookOutcome(check, invoke, source, { reply = null } = {}) {
+// reminder. Nothing is invented here. reply: the turn's last answer, where the
+// host gives it; what it cites is recorded as use. findings: the host's reader
+// of what the turn itself showed (turn-findings.js), kept as pending
+// experiences with the close (rec#88); without any, it closes as retain_nothing.
+export const AUTO_KEEP_REASON = 'Auto-closed by the Stop hook: the Agent recorded no checkpoint; FULI kept what the turn itself showed, pending review.';
+export async function stopHookOutcome(check, invoke, source, { reply = null, findings = null } = {}) {
   if (check?.decision !== 'block') return {};
   const remind = () => {
     const reason = boundedHookMessage(check?.reason);
@@ -17,15 +20,24 @@ export async function stopHookOutcome(check, invoke, source, { reply = null } = 
   };
   const closable = check.entry_via === 'hook' || check.routine_auto_close_eligible === true;
   if (!closable || typeof check.task_context_token !== 'string') return remind();
-  const close = (usage) => invoke('checkpoint_task_knowledge', {
+  const close = (usage, experiences = []) => invoke('checkpoint_task_knowledge', {
     taskContextToken: check.task_context_token,
-    disposition: 'retain_nothing',
-    reason: AUTO_CLOSE_SUMMARY,
-    workLog: { status: 'reported', summary: AUTO_CLOSE_SUMMARY },
+    disposition: experiences.length ? 'capture_candidates' : 'retain_nothing',
+    reason: experiences.length ? AUTO_KEEP_REASON : AUTO_CLOSE_SUMMARY,
+    workLog: { status: 'reported', summary: experiences.length ? AUTO_KEEP_REASON : AUTO_CLOSE_SUMMARY },
     ...(usage.length ? { knowledgeUsage: usage } : {}),
+    ...(experiences.length ? { experiences } : {}),
     ...source
   });
   const cited = citedKnowledge(reply);
+  const found = foundExperiences(findings);
+  // What the turn showed is offered first; a refused capture never keeps the task open.
+  if (found.length) {
+    try {
+      await close(cited, found);
+      return {};
+    } catch { /* closed below without it */ }
+  }
   try {
     await close(cited);
     return {};
@@ -38,5 +50,14 @@ export async function stopHookOutcome(check, invoke, source, { reply = null } = 
     return {};
   } catch {
     return remind();
+  }
+}
+
+function foundExperiences(findings) {
+  try {
+    const found = typeof findings === 'function' ? findings() : findings;
+    return Array.isArray(found) ? found : [];
+  } catch {
+    return [];
   }
 }

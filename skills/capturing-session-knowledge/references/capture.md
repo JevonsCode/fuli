@@ -173,8 +173,10 @@ still require `checkpoint_task_knowledge` with `capture_candidates` or `retain_n
 A hook-delivered task that Stop closes keeps, at entry, the prompt's own sentences that state a
 project rule (a policy or convention of ours, a port, a command, why something fails) as pending
 project facts in the person's words; review still decides them. Do not checkpoint only to repeat
-such a sentence; what you found out yourself (a failure and its fix, a command you discovered) still
-needs your checkpoint.
+such a sentence. When Stop closes such a task it also keeps, as pending experiences, what the turn
+itself showed: a project script that failed until another ran first (with its first error line), the
+project scripts that ran clean at the end, and one rule your final reply spells out (a convention,
+port, command or cause). Anything else you found out yourself still needs your checkpoint.
 Assigned employees include a truthful workLog, even
 with `retain_nothing`; never claim automatic closure completed work or saved memory. A coordinated
 worker returns its result instead of checkpointing an inherited token. Do not finish a reusable

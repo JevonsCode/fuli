@@ -26,6 +26,8 @@ import { isMainModule } from '../../system/main-module.js';
 import { consoleRecoveryNotice, recordHookFailure, runtimeConfigPathOf } from '../lifecycle-failure.js';
 import { readHookInput } from '../lifecycle-input.js';
 import { stopHookOutcome } from '../../conversations/stop-auto-close.js';
+import { turnFindings } from '../../conversations/turn-findings.js';
+import { claudeTurnRecords } from './turn-records.js';
 import { outdatedMcpNotice, withOutdatedMcpNotice } from '../../mcp/process-registry.js';
 import { FULI_VERSION } from '../../package-metadata.js';
 import { taskSceneInput } from '../../graphiti/task-scene.js';
@@ -75,7 +77,8 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
       false, { inlineChars: CLAUDE_ENTRY_INLINE_CHARS }));
   }
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
-  return stopHookOutcome(check, invoke, source, { reply: input.last_assistant_message });
+  return stopHookOutcome(check, invoke, source, { reply: input.last_assistant_message,
+    findings: () => turnFindings(claudeTurnRecords(input.transcript_path, sessionId), input.last_assistant_message) });
 }
 
 // The last guard of the inline limit (rec#11 D-72): a context the bounded
