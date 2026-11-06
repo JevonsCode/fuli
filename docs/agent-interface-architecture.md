@@ -156,8 +156,13 @@ Workflows are the Agent's own repeated work as named, ordered steps, in
 - `propose_agent_workflow` proposes a workflow from a `list_workflow_candidates` candidate that
   repeated often enough across sessions, or from the Agent's own steps; with `workflowId` it
   proposes a change. Every proposal is a new version and older versions are kept.
+- A project Skill draft (rec#78 step 4) is a proposal from three or more of the Agent's own kept
+  experiences (`experienceIds`, checked against the project's current kept items). It must carry a
+  `workMap` (inputs, outputs, dependencies, branches, acceptance; at most three questions, which FULI
+  puts in the person's 待决策 once per draft). The work map is stored with the version
+  (agent-workflows format 2) and read back with it.
 - `list_agent_workflows` is the index (name, purpose, step count, `approxTokens`, status, last
-  run); `read_agent_workflow` returns the confirmed steps of one active workflow;
+  run, and `draftable` topics with three or more kept experiences); `read_agent_workflow` returns the confirmed steps of one active workflow;
   `record_agent_workflow_run` records the outcome of a run the Agent did.
 
 Only the person confirms, rejects or retires a workflow, on the Agent's home page, at the

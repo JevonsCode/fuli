@@ -22,7 +22,8 @@ const LABEL_PARTS = new Set(['label', 'itemLabel', 'index']);
 // tell, each with the reason. One that no longer occurs fails the test.
 const REVIEWED = new Map([
   ['src/model-backends/config.js `${label}.${key}`', 'key is a BUDGET_LIMITS key, a constant table'],
-  ['src/http/knowledge-tags-api-router.js name', 'numberParam is called only with literal query parameter names']
+  ['src/http/knowledge-tags-api-router.js name', 'numberParam is called only with literal query parameter names'],
+  ['src/agent-workflows/port.js `workMap.${name}[${index}]`', 'name is a WORK_MAP_LISTS key or questions, a constant table']
 ]);
 
 function sourceFiles(directory) {

@@ -45,7 +45,14 @@ export const AGENT_WORKFLOWS_FORMAT = sqliteFormat({
     CREATE TRIGGER IF NOT EXISTS agent_workflow_runs_no_update BEFORE UPDATE ON agent_workflow_runs
       BEGIN SELECT RAISE(ABORT, 'agent workflow runs are immutable'); END;
     CREATE TRIGGER IF NOT EXISTS agent_workflow_runs_no_delete BEFORE DELETE ON agent_workflow_runs
-      BEGIN SELECT RAISE(ABORT, 'agent workflow runs are immutable'); END;`
+      BEGIN SELECT RAISE(ABORT, 'agent workflow runs are immutable'); END;`,
+  migrations: [{
+    // A Skill drafted from kept experiences starts with its work map (rec#78, 11-06
+    // addition 5); versions proposed before it, and other proposals, keep NULL.
+    id: 'agent-workflows/2-work-map', to: 2, kind: 'add-columns', table: 'agent_workflow_versions',
+    summary: 'the work map (inputs, outputs, dependencies, branches, acceptance, questions) a version starts with',
+    columns: { work_map: 'TEXT' }
+  }]
 });
 
 export class AgentWorkflowStore {
@@ -119,9 +126,10 @@ export class AgentWorkflowStore {
   }
 
   addVersion(record) {
-    this.db.prepare('INSERT INTO agent_workflow_versions VALUES(?, ?, ?, ?, ?, ?, ?, ?)').run(record.workflowId,
-      record.version, record.name, record.purpose, JSON.stringify(record.steps), record.source, record.createdBy,
-      record.createdAt);
+    this.db.prepare(`INSERT INTO agent_workflow_versions(workflow_id, version, name, purpose, steps, source, created_by,
+      created_at, work_map) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(record.workflowId, record.version, record.name,
+      record.purpose, JSON.stringify(record.steps), record.source, record.createdBy, record.createdAt,
+      record.workMap ? JSON.stringify(record.workMap) : null);
   }
 
   addDecision({ workflowId, version, decision, decidedAt }) {
@@ -151,7 +159,8 @@ function workflowView(row) {
 function versionView(row) {
   if (!row) return null;
   return { workflowId: row.workflow_id, version: row.version, name: row.name, purpose: row.purpose,
-    steps: JSON.parse(row.steps), source: row.source, createdBy: row.created_by, createdAt: row.created_at };
+    steps: JSON.parse(row.steps), ...(row.work_map ? { workMap: JSON.parse(row.work_map) } : {}), source: row.source,
+    createdBy: row.created_by, createdAt: row.created_at };
 }
 
 function runView(row) {
