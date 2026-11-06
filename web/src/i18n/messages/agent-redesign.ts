@@ -93,7 +93,6 @@ export const agentRedesignMessages = {
       knowledgeReturnedKept: "搬进去的 {returned} 条知识已回到原会话暂存；{kept} 条之后改过，留在原处。",
     },
     workStatus: {
-      label: "工作状态",
       awaiting_recruitment: "等待招聘",
       backlog: "待开工",
       queued: "排队中",
@@ -176,7 +175,6 @@ export const agentRedesignMessages = {
       },
     },
     workStatus: {
-      label: "Work status",
       awaiting_recruitment: "Awaiting recruitment",
       backlog: "Backlog",
       queued: "Queued",
