@@ -83,7 +83,7 @@ for (const [name, path, failure] of [
   const stub = `import { registerHooks } from 'node:module';
     registerHooks({ load(url, context, nextLoad) {
       if (url === 'node:fs/promises') return { format: 'module', shortCircuit: true,
-        source: 'export const cp = async function blockedSiteWrite() { throw new Error("SYNTHETIC_SITE_COPY"); }; export const mkdir = cp, readFile = cp, writeFile = cp;' };
+        source: 'export const cp = async function blockedSiteWrite() { throw new Error("SYNTHETIC_SITE_COPY"); }; export const mkdir = cp, readFile = cp, writeFile = cp, readdir = cp, stat = cp;' };
       return nextLoad(url, context);
     } });
     if ((await import('node:fs/promises')).cp.name !== 'blockedSiteWrite') throw new Error('Site IO stub unavailable');`;
