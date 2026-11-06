@@ -213,7 +213,14 @@ native executable through its own ports (`src/agent-kits/session-launcher.js`,
   `apply`, FULI removes the `mcp_tool` hooks an earlier FULI registered in Claude Code and Codex
   (`begin_task_context`, `verify_task_checkpoint`; `src/agent-kits/legacy-hook-cleanup.js`),
   which agent-installer cannot recognize as FULI's, after copying the file to
-  `backups/agents/<client>/legacy-hooks/`; nothing is touched where none is left. Without the
+  `backups/agents/<client>/legacy-hooks/`; nothing is touched where none is left. Two pieces stay
+  on FULI's side until agent-installer can express them, each with an upstream issue: this legacy
+  hook cleanup (FULI's only write into a client file outside agent-installer;
+  [agent-installer#7](https://github.com/JevonsCode/agent-installer/issues/7)) and the OpenCode
+  plugin's version gate, which only decides whether the manifest names the plugin
+  ([agent-installer#8](https://github.com/JevonsCode/agent-installer/issues/8)). Lifecycle hooks
+  for Gemini CLI and Kiro exist on neither side yet
+  ([agent-installer#9](https://github.com/JevonsCode/agent-installer/issues/9)). Without the
   installer nothing is written and there is no fallback: setup and one-click connect fail with
   「无法下载客户端组件 agent-installer，请检查网络后重试。」 and its English text, uninstall leaves
   every client as it is and says why, and the console and doctor say detection is unavailable.
@@ -278,7 +285,7 @@ service. See the [remote connector setup](../README.md#remote-claude--cowork-con
 | Kiro | `~/.kiro/settings/mcp.json` | [`mcpServers`，command + args](https://kiro.dev/docs/mcp/configuration/) |
 | Antigravity | `~/.gemini/config/mcp_config.json`（桌面应用和 `agy` CLI 共用） | `mcpServers`，command + args（远程服务用 `url`，按本机实际文件确认） |
 
-新接入使用 chat 工具配置，已有显式 profile 会保留（清单的 `preserveArgs`）；Cursor 不写 profile，除非已有配置里选过。所有客户端都按 FULI 的产品清单由 agent-installer 写入：Codex、Claude Code、Cursor 的生命周期 Hook、Codex 的全局说明块、Claude Code 的权限白名单、Skills 和 OpenCode 2.x 插件，以及 Claude Desktop 的 MCP。Gemini CLI、Qwen Code、Kiro、Antigravity 仅安装 MCP，不导入聊天历史、不安装采集 Hook、不替用户批准工具信任（Gemini CLI、Kiro 的生命周期 Hook 留作后续）。
+新接入使用 chat 工具配置，已有显式 profile 会保留（清单的 `preserveArgs`）；Cursor 不写 profile，除非已有配置里选过。所有客户端都按 FULI 的产品清单由 agent-installer 写入：Codex、Claude Code、Cursor 的生命周期 Hook、Codex 的全局说明块、Claude Code 的权限白名单、Skills 和 OpenCode 2.x 插件，以及 Claude Desktop 的 MCP。Gemini CLI、Qwen Code、Kiro、Antigravity 仅安装 MCP，不导入聊天历史、不安装采集 Hook、不替用户批准工具信任（Gemini CLI、Kiro 的生命周期 Hook 等 agent-installer 内置后再加：[agent-installer#9](https://github.com/JevonsCode/agent-installer/issues/9)）。
 
 Antigravity（rec#11 D-80）在找到 `agy` 命令、上面的配置文件，或 `~/.gemini/antigravity`、`~/.gemini/antigravity-cli` 目录之一时显示为可接入。它用自己的来源名 `antigravity`，不与 Gemini CLI 共用；只改 `mcpServers.fuli`，其他服务（包括 `url` 远程服务）原样保留。FULI 不对 Antigravity 套用 Gemini CLI 的 `GEMINI_CLI_HOME`。和 OpenCode 一样，在它有自己的名字之前记作 `other`：读取时列表里有 `other` 而没有 `antigravity`，就同样算作包含 `antigravity`，所以在这之前招的 Agent（包括项目负责人）在 Antigravity 里照样可用；以前关掉了 `other` 的记录，Antigravity 仍然不记，可在设置里单独打开。
 

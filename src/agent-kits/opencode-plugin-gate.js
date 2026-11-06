@@ -9,7 +9,9 @@ import { isFuliOpenCodePlugin } from '../agents/opencode/plugin-file.js';
 // (rec#11 D-63): OpenCode 2.x loads it; 1.x plugins use another, incompatible
 // API, so there FULI connects only the MCP entry. An OpenCode whose version
 // cannot be read keeps a FULI plugin that is already there (an update or a
-// rollback reads no version) and gets no new one.
+// rollback reads no version) and gets no new one. agent-installer 0.3.1
+// cannot gate a component on the client's version; this goes once it can
+// (JevonsCode/agent-installer#8).
 const SUPPORTED_MAJOR = 2;
 const NOT_V2 = (version) => `OpenCode ${version} found: FULI's per-prompt plugin needs OpenCode 2.x, so only the FULI MCP entry is connected. Upgrade OpenCode and run fuli setup again.`;
 const VERSION_UNKNOWN = 'OpenCode\'s version could not be read (`opencode --version`), so FULI\'s per-prompt plugin was not installed; only the FULI MCP entry is connected. Run fuli setup again where opencode is on PATH.';
