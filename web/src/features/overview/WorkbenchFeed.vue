@@ -17,6 +17,7 @@ import { useTeamWork } from '@/features/team-work/useTeamWork'
 import { useConsoleStore } from '@/stores/console'
 import WidgetSlot from '@/widgets/WidgetSlot.vue'
 import UiIcon from '@/ui/UiIcon.vue'
+import './workbench-card.css'
 
 type ReadState = InstanceType<typeof OverviewReadStatus>['$props']['state']
 
@@ -114,19 +115,6 @@ const solo = computed(() => {
 
 <style scoped>
 .workbench-feed { display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; padding: 0 6px 112px 0; overflow: auto; overscroll-behavior: contain; }
-.workbench-card {
-  display: grid; gap: 6px; padding: 14px 18px; border-radius: var(--radius-panel);
-  background: var(--surface-panel-glass); -webkit-backdrop-filter: var(--filter-panel); backdrop-filter: var(--filter-panel); box-shadow: 0 0 0 1px var(--color-border);
-}
-.workbench-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
-.workbench-card-head h2 { margin: 0; font-size: var(--text-section); }
-.workbench-rows { margin: 0; padding: 0; list-style: none; }
-.workbench-rows > li + li { border-top: 1px solid var(--color-border); }
-.workbench-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; padding: 10px 0; }
-.workbench-row-text { display: grid; gap: 2px; min-width: 0; }
-.workbench-row-title { margin: 0; overflow: hidden; font-size: var(--text-body); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
-.workbench-meta { margin: 0; color: var(--color-muted); font-size: var(--text-meta); }
-.workbench-clamp { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .workbench-face { display: grid; width: 34px; height: 34px; overflow: hidden; place-items: center; border-radius: 50%; background: var(--agent-identity-soft, var(--color-accent-soft)); }
 .workbench-face img { width: 100%; height: 100%; object-fit: cover; }
 .workbench-face-none { width: 16px; height: 16px; color: var(--color-muted); }
@@ -138,7 +126,6 @@ const solo = computed(() => {
 }
 .workbench-pick:hover { background: var(--color-surface-subtle); }
 .workbench-pick:active { transform: scale(.98); }
-.workbench-empty { margin: 4px 0 8px; color: var(--color-muted); font-size: var(--text-body); }
 @media (max-width: 860px) {
   .workbench-feed { padding: 0 0 112px; overflow: visible; }
 }

@@ -1,5 +1,24 @@
 export const overviewMessages = {
   'zh-CN': {
+    notices: {
+      title: '最近你可能需要知道的事',
+      loading: '正在读最近的事',
+      kinds: {
+        topic_promoted: '话题「{project}」聊得多，升级成了项目',
+        dreaming_found: "@:{'roleNames.astro'} 读了「{project}」{sessions} 个会话，整理出 {proposed} 条等你确认",
+        dreaming_stopped: "@:{'roleNames.astro'} 整理「{project}」没跑完",
+        tonborg_confirmed: "@:{'roleNames.tonborg'} 替你确认了 {count} 条知识",
+        fla_joined: '{name} 加入了「{project}」',
+        fla_left: '{name} 离开了「{project}」',
+        delegated_change: 'FLA 替你改了设置：{reason}',
+        model_failing: '{role} 的模型没回应',
+        update_available: '有新版本 v{version}',
+      },
+      actions: {
+        topic_promoted: '改名或撤销', dreaming_found: '去确认', dreaming_stopped: '看看模型', tonborg_confirmed: '查看',
+        fla_joined: '查看', fla_left: '查看', delegated_change: '查看', model_failing: '去看看', update_available: '去更新',
+      },
+    },
     sections: {
       attention: '等你处理',
       currentWork: '进行中',
@@ -57,6 +76,25 @@ export const overviewMessages = {
     actions: { request: '查看请求', task: '查看任务', blocked: '查看详情', failed: '查看详情', awaiting_review: '查看交付记录' },
   },
   'en-US': {
+    notices: {
+      title: 'Worth knowing lately',
+      loading: 'Reading recent changes',
+      kinds: {
+        topic_promoted: 'The topic “{project}” came up often and became a project',
+        dreaming_found: "@:{'roleNames.astro'} read {sessions} sessions of “{project}” and found {proposed} to confirm",
+        dreaming_stopped: "@:{'roleNames.astro'} did not finish organising “{project}”",
+        tonborg_confirmed: "@:{'roleNames.tonborg'} confirmed {count} items for you",
+        fla_joined: '{name} joined “{project}”',
+        fla_left: '{name} left “{project}”',
+        delegated_change: 'An FLA changed a setting for you: {reason}',
+        model_failing: 'The {role} model is not answering',
+        update_available: 'Version v{version} is out',
+      },
+      actions: {
+        topic_promoted: 'Rename or undo', dreaming_found: 'Confirm', dreaming_stopped: 'Check models', tonborg_confirmed: 'View',
+        fla_joined: 'View', fla_left: 'View', delegated_change: 'View', model_failing: 'Check', update_available: 'Update',
+      },
+    },
     sections: {
       attention: 'Waiting for you',
       currentWork: 'In progress',
