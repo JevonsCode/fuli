@@ -90,4 +90,20 @@ describe('VirtualDirectoryList', () => {
     expect(wrapper.find('[data-virtual-index="90"]').exists()).toBe(true)
     expect(wrapper.get('.virtual-directory-list__position').text()).toBe('090101')
   })
+
+  it('says when the drawn rows reach the last loaded one, so a paged list reads on', async () => {
+    const wrapper = mount(VirtualDirectoryList, {
+      props: { items: Array.from({ length: 200 }, (_, index) => ({ id: index })), rowHeight: 50, label: '测试目录' },
+      slots: { default: ({ index }: { index: number }) => h('div', `Row ${index}`) },
+    })
+    const scroller = wrapper.get('.virtual-directory-list__scroller')
+    Object.defineProperty(scroller.element, 'clientHeight', { configurable: true, value: 500 })
+    expect(wrapper.emitted('nearEnd')).toBeUndefined()
+    scroller.element.scrollTop = 50 * 190
+    await scroller.trigger('scroll')
+    expect(wrapper.emitted('nearEnd')).toHaveLength(1)
+    // More rows arrive and the reader is still near the end: it asks again.
+    await wrapper.setProps({ items: Array.from({ length: 205 }, (_, index) => ({ id: index })) })
+    expect(wrapper.emitted('nearEnd')).toHaveLength(2)
+  })
 })

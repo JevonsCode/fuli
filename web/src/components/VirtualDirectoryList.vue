@@ -27,6 +27,9 @@ const props = withDefaults(defineProps<{
   scrollsWith: 'list',
 })
 
+// The drawn rows reach the last loaded ones: a paged list reads its next page.
+const emit = defineEmits<{ nearEnd: [] }>()
+
 defineSlots<{
   header?: () => unknown
   default: (props: { item: T; index: number; formattedIndex: string }) => unknown
@@ -69,6 +72,10 @@ const visibleRange = computed(() => {
     end: Math.min(itemCount.value, start + visibleCount),
   }
 })
+watch([() => visibleRange.value.end, () => props.items], ([end]) => {
+  if (itemCount.value && end >= itemCount.value) emit('nearEnd')
+}, { immediate: true })
+
 const visibleIndices = computed(() =>
   Array.from(
     { length: visibleRange.value.end - visibleRange.value.start },

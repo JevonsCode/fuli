@@ -1,6 +1,6 @@
 """HTTP route registration for the Project Agent collaboration control plane."""
 
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query
@@ -10,6 +10,7 @@ from .project_agent_memory_routes import register_project_agent_memory_routes
 from .project_agent_occupation_models import ProjectAgentOccupationUpdate
 from .occupation_routes import register_occupation_routes
 from .store_project_agent_pages import ProjectAgentPage
+from .store_project_agent_task_pages import ProjectAgentTaskPage, TaskPageOrder, TaskPageSort
 from .project_agent_score_card_routes import register_project_agent_score_card_routes
 from .project_agent_worker_routes import register_project_agent_worker_routes
 from .task_notifications import register_task_notification_routes
@@ -60,6 +61,7 @@ from .project_agent_task_models import (
     ProjectAgentTaskBlockerProgress,
     ProjectAgentTaskBlockerProgressResult,
     ProjectAgentTaskRecord,
+    ProjectAgentTaskStatus,
     ProjectAgentTaskRouteResult,
     ProjectAgentTaskSubmit,
 )
@@ -299,6 +301,46 @@ def register_project_agent_routes(
             agent_id=agent_id,
             status=status,
             limit=limit,
+        )
+
+    @application.get('/v1/project-agent-task-pages', response_model=ProjectAgentTaskPage)
+    async def list_project_agent_task_page(
+        actor: Actor,
+        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
+        status: Annotated[list[ProjectAgentTaskStatus], Query(min_length=1, max_length=16)],
+        project: Annotated[list[str], Query(max_length=50)] = [],
+        agent: Annotated[list[str], Query(max_length=50)] = [],
+        text: Annotated[str | None, Query(max_length=200)] = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        started_since: datetime | None = None,
+        changed_before: datetime | None = None,
+        has_result: bool | None = None,
+        took_at_least: Annotated[int | None, Query(ge=0)] = None,
+        took_at_most: Annotated[int | None, Query(ge=1)] = None,
+        order: TaskPageOrder = 'updated',
+        sort: TaskPageSort = 'newest',
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        cursor: Annotated[str | None, Query(min_length=1, max_length=1024)] = None,
+    ) -> ProjectAgentTaskPage:
+        return await store.list_project_agent_task_page(
+            actor,
+            personal_space_id,
+            statuses=status,
+            project_ids=project,
+            agent_ids=agent,
+            text=text,
+            since=since,
+            until=until,
+            started_since=started_since,
+            changed_before=changed_before,
+            has_result=has_result,
+            took_at_least=took_at_least,
+            took_at_most=took_at_most,
+            order=order,
+            sort=sort,
+            limit=limit,
+            cursor=cursor,
         )
 
     @application.get(

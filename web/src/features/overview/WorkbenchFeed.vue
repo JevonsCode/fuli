@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { motion } from 'motion-v'
-import { computed, reactive } from 'vue'
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import { t } from '@/i18n'
 import { SPRING } from '@/lib/motion'
 import type { ProjectAgentTaskRecord } from '@/types'
 import OverviewReadStatus from './OverviewReadStatus.vue'
+import WorkbenchListHead from './WorkbenchListHead.vue'
 import { taskKey } from './workbench-model'
 import { useTeamWork } from '@/features/team-work/useTeamWork'
 import { useConsoleStore } from '@/stores/console'
@@ -48,11 +49,11 @@ const solo = computed(() => {
   const together = new Set(team.sheets.value.map(sheet => sheet.taskId))
   return props.running.filter(task => !together.has(task.taskId))
 })
-// Each list shows its first seven (Jevons 11-06); 更多 at the card's head opens the rest in place.
+// Each list shows its first seven (Jevons 11-06); 更多 at the card's head opens
+// the list's own page (/workbench/<list>), with search, filters and the rest.
 const FEED_ROWS = 7
-const expanded = reactive({ running: false, done: false })
-const shownRunning = computed(() => (expanded.running ? solo.value : solo.value.slice(0, FEED_ROWS)))
-const shownDone = computed(() => (expanded.done ? props.done : props.done.slice(0, FEED_ROWS)))
+const shownRunning = computed(() => solo.value.slice(0, FEED_ROWS))
+const shownDone = computed(() => props.done.slice(0, FEED_ROWS))
 </script>
 
 <template>
@@ -79,13 +80,8 @@ const shownDone = computed(() => (expanded.done ? props.done : props.done.slice(
 
     <!-- With nothing else in progress the stage already says so; the card stays away. -->
     <WidgetSlot place="workbench.feed" />
-    <section v-if="solo.length || tasksState.loading || tasksState.error" class="workbench-card" aria-labelledby="workbench-running-heading" data-workbench-running>
-      <header class="workbench-card-head">
-        <h2 id="workbench-running-heading">{{ t('overview.sections.currentWork') }}</h2>
-        <Button v-if="solo.length > FEED_ROWS" variant="ghost" size="sm" :aria-expanded="expanded.running" data-workbench-more="running" @click="expanded.running = !expanded.running">
-          {{ expanded.running ? t('overview.more.less') : t('overview.more.more', { count: solo.length - FEED_ROWS }) }}
-        </Button>
-      </header>
+    <section v-if="solo.length || tasksState.loading || tasksState.error" class="workbench-card" aria-labelledby="workbench-running-heading" data-workbench-running data-list-morph="running">
+      <WorkbenchListHead id="workbench-running-heading" list="running" :title="t('overview.sections.currentWork')" :more="solo.length - shownRunning.length" />
       <OverviewReadStatus :state="tasksState" :label="t('overview.work.loading')" :failed="t('overview.work.loadFailed')" @retry="emit('retryTasks')" />
       <!-- A picked task leaves with its title flying to the stage; the rest close up instead of jumping. -->
       <TransitionGroup v-if="solo.length" name="ui-list" tag="ul" class="workbench-rows">
@@ -106,13 +102,8 @@ const shownDone = computed(() => (expanded.done ? props.done : props.done.slice(
       </TransitionGroup>
     </section>
 
-    <section class="workbench-card" aria-labelledby="workbench-done-heading" data-workbench-done>
-      <header class="workbench-card-head">
-        <h2 id="workbench-done-heading">{{ t('overview.sections.recentlyDone') }}</h2>
-        <Button v-if="done.length > FEED_ROWS" variant="ghost" size="sm" :aria-expanded="expanded.done" data-workbench-more="done" @click="expanded.done = !expanded.done">
-          {{ expanded.done ? t('overview.more.less') : t('overview.more.more', { count: done.length - FEED_ROWS }) }}
-        </Button>
-      </header>
+    <section class="workbench-card" aria-labelledby="workbench-done-heading" data-workbench-done data-list-morph="done">
+      <WorkbenchListHead id="workbench-done-heading" list="done" :title="t('overview.sections.recentlyDone')" :more="done.length - shownDone.length" />
       <TransitionGroup v-if="done.length" name="ui-list" tag="ul" class="workbench-rows">
         <li v-for="task in shownDone" :key="taskKey(task)" class="workbench-row">
           <span class="workbench-done-mark" aria-hidden="true"><UiIcon name="check" :size="16" /></span>
@@ -130,10 +121,6 @@ const shownDone = computed(() => (expanded.done ? props.done : props.done.slice(
 
 <style scoped>
 .workbench-feed { display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; padding: 0 6px 112px 0; overflow: auto; overscroll-behavior: contain; }
-.workbench-face { display: grid; width: 34px; height: 34px; overflow: hidden; place-items: center; border-radius: 50%; background: var(--agent-identity-soft, var(--color-accent-soft)); }
-.workbench-face img { width: 100%; height: 100%; object-fit: cover; }
-.workbench-face-none { width: 16px; height: 16px; color: var(--color-muted); }
-.workbench-done-mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; color: var(--color-gold); background: var(--color-gold-soft); font-weight: var(--weight-strong); }
 /* A row that puts its work on the stage: the whole row is the button. */
 .workbench-pick {
   height: auto; justify-content: stretch; margin: 0 -8px; padding: 10px 8px; width: calc(100% + 16px); border: 0; border-radius: 12px; color: inherit; background: none; text-align: left; font: inherit; white-space: normal;
