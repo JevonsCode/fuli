@@ -25,7 +25,8 @@ const OWNER_ONLY = `D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;${USER})`;
 
 function scratchRoot(t) {
   const root = mkdtempSync(join(tmpdir(), 'acl-unit-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  // macOS can still be releasing entries the fake icacls wrote (ENOTEMPTY); rm retries briefly.
+  t.after(() => rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   return root;
 }
 
