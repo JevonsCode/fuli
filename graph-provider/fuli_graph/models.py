@@ -1262,8 +1262,10 @@ class KnowledgeBatchConfirmationCreate(StrictModel):
     group_value: str = Field(min_length=1, max_length=256)
     reason: str = Field(min_length=1, max_length=2000)
     confirmer: ConfirmationActor
+    # One item is allowed: the person's single answer relayed from chat
+    # (answer_tonborg_question) is the same review as confirming one item.
     items: list[KnowledgeBatchConfirmationItem] = Field(
-        min_length=2,
+        min_length=1,
         max_length=200,
     )
     operation_actor: KnowledgeOperationActor = 'agent'

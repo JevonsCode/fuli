@@ -1,4 +1,5 @@
 import { nativeChoiceInteraction } from '../conversations/human-interaction.js';
+import { singleLineExcerpt } from '../text/single-line.js';
 import { questionOptions, SNOOZE_REASON } from './question-options.js';
 
 // rec#10 D-24: a model's review that may not apply itself reaches the person
@@ -15,12 +16,15 @@ const REASON_IN_CONSOLE = 'Tonborg 的理由只在 FULI 控制台的 Tonborg 记
 // rec#96: with 「交给 Tonborg 确认」 on, what Tonborg could not decide reaches
 // the person as ONE short batch, each item as Tonborg's guess, never one
 // question per item. The guesses and their one-click answers live in the
-// console's 待决策 list: an Agent cannot confirm, drop or edit knowledge for
-// the person, and an Agent's view of a record carries none of its words.
+// console's 待决策 list; an Agent's view of a record carries none of its words.
+// When the person asks their AI to go through them, list_tonborg_questions
+// lists the items and guesses (never Tonborg's words) and answer_tonborg_question
+// records each answer in the person's words (question-tools.js).
 const BATCH_TITLE = 'Tonborg 想跟你确认几件事 / Tonborg has a few questions for you';
 const BATCH_OPTIONS = ['去 FULI 待决策里看 Tonborg 的猜测 / See Tonborg\'s guesses in FULI 待决策', '稍后 / Later'];
 const BATCH_GUIDANCE = 'Ask once, with the host native single-choice UI. The person answers each guess with one click in the FULI console\'s '
-  + '待决策 list; do not confirm, drop or edit these knowledge items yourself, and do not ask about them one by one. An answer is intent, '
+  + '待决策 list; do not confirm, drop or edit these knowledge items on your own judgment, and do not ask about them one by one. If the '
+  + 'person asks you to explain them, use list_tonborg_questions and answer_tonborg_question. An answer is intent, '
   + 'not an approval token. Continue unrelated work.';
 const BATCH_LINES = 5;
 // A single Tonborg question: how the Agent records the person's answer so it
@@ -66,12 +70,8 @@ export function settledQuestionIds(records) {
 // question that quotes nothing leads with a short excerpt of the item's title.
 const EXCERPT_LIMIT = 24;
 const QUOTED = /[「“"]/;
-function excerpt(text) {
-  const flat = String(text).replace(/\s+/g, ' ').trim();
-  return flat.length > EXCERPT_LIMIT ? `${flat.slice(0, EXCERPT_LIMIT - 1).trimEnd()}…` : flat;
-}
 const namedQuestion = record => record.title && !QUOTED.test(record.question)
-  ? `「${excerpt(record.title)}」${record.question}` : record.question;
+  ? `「${singleLineExcerpt(record.title, EXCERPT_LIMIT)}」${record.question}` : record.question;
 
 function batchInteraction(batch, personalSpaceId) {
   const words = batch.filter(record => record.question && !record.content_withheld).map(namedQuestion);

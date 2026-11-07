@@ -22,7 +22,8 @@ const RECOVERY_STORES = Object.freeze({
   get_judgment_policy: 'judgment', pin_agent: 'judgment',
   list_judgments: 'judgment', review_with_tonborg: 'judgment',
   assess_agent_action: 'judgment', assess_task_completion: 'judgment',
-  get_agent_score_card: 'judgment', role_work: 'role-work'
+  get_agent_score_card: 'judgment', role_work: 'role-work',
+  list_tonborg_questions: 'judgment', answer_tonborg_question: 'judgment'
 });
 
 const HANDLERS = Object.freeze({
@@ -44,6 +45,8 @@ const HANDLERS = Object.freeze({
   review_with_tonborg: (app, input) => app.judgment.agent.review(input),
   assess_agent_action: (app, input) => app.judgment.agent.assess(input),
   assess_task_completion: (app, input) => app.judgment.agent.accept(input),
+  list_tonborg_questions: (app, input) => app.judgment.agent.questions(input),
+  answer_tonborg_question: (app, input) => app.judgment.agent.answerQuestion(input),
   get_agent_pins: (app, input) => app.judgment.pins(input),
   pin_agent: (app, input) => app.judgment.pin(input),
   get_agent_quality_gate: (app, input) => app.agentVerification('query', input),

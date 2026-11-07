@@ -290,6 +290,10 @@ def test_batch_confirmation_requires_unique_items_and_a_human_or_authoritative_c
 
     parsed = KnowledgeBatchConfirmationCreate.model_validate(value)
     assert len(parsed.items) == 2
+    # One relayed answer confirms one item; an empty batch is still refused.
+    assert len(KnowledgeBatchConfirmationCreate.model_validate(value | {'items': value['items'][:1]}).items) == 1
+    with pytest.raises(ValidationError, match='at least 1'):
+        KnowledgeBatchConfirmationCreate.model_validate(value | {'items': []})
 
     with pytest.raises(ValidationError, match='agent or import cannot confirm'):
         KnowledgeBatchConfirmationCreate.model_validate(

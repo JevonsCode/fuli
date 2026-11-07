@@ -31,7 +31,7 @@ const acceptanceOutcomeSchema = z.object({ personalSpaceId: id, taskId: id.nulla
 const feedbackSchema =z.object({ personalSpaceId: id, decisionId: id, vote: z.enum(['up', 'down']).nullable(),
   reason: z.string().trim().max(1000).default(''), expectedRevision: revision }).strict();
 
-export function createJudgmentService({ app, openStore = () => new JudgmentStore(), prepareStore = async () => {}, engine } = {}) {
+export function createJudgmentService({ app, openStore = () => new JudgmentStore(), prepareStore = async () => {}, engine, questionTools = null } = {}) {
   let database;
   const store = () => database ??= openStore();
   function space(input) {
@@ -74,6 +74,11 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
   // An Agent tool's answer: the records as this reader may read them (agent-view.js).
   const agentView = (result, personalSpaceId, reader = null) =>
     agentJudgmentView(app.personal, result, { personalSpaceId, reader });
+  let questionsPort;
+  const questions = () => {
+    if (!questionTools) throw new EmployeeError('Judgment runtime unavailable', 503);
+    return questionsPort ??= questionTools({ app, service });
+  };
   const service = {
     store, scope,
     async pins(input) { space(input); return store().pins(input.personalSpaceId); },
@@ -153,7 +158,10 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       accept: async input => agentView(await service.accept(input), input.personalSpaceId),
       // A stored role_work result, fresh or replayed, as the submitting
       // session reads it now: its task's FLA, else a plain session.
-      workResult: (result, session) => agentView(result, session.personalSpaceId, taskKnowledgeReader(session))
+      workResult: (result, session) => agentView(result, session.personalSpaceId, taskKnowledgeReader(session)),
+      // Tonborg's open questions for the person's own AI, the one place their words reach an Agent (question-tools.js).
+      questions: input => questions().list(input),
+      answerQuestion: input => questions().answer(input)
     },
     close() { database?.close(); }
   };

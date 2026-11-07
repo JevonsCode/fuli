@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from .knowledge_basis_review import basis_review
 from .knowledge_dependencies import dependents_of, item_bases
 from .knowledge_hard_delete_traces import hard_deletions_in_episodes, require_not_hard_deleted, unavailable_source_bases
-from .knowledge_item_version import edit_revision_of
+from .knowledge_item_version import edit_revision, edit_revision_of
 from .knowledge_item_view_models import (
     KnowledgeEvidenceSource,
     KnowledgeItemRef,
@@ -135,9 +135,14 @@ async def read_visible_items(store, actor: dict, request: KnowledgeVisibleItemsR
     if not request.with_state:
         return KnowledgeVisibleItems(items=items)
     states = await _review_states(store, space, items)
+    versions = {}
+    if request.with_version:
+        for item in items:
+            versions[(item.item_kind, item.item_id)] = await edit_revision(store, space, item.item_kind, item.item_id)
     return KnowledgeVisibleItems(items=items, states=[
         KnowledgeVisibleItemState(item_kind=item.item_kind, item_id=item.item_id,
-                                  state=states.get((item.item_kind, item.item_id), 'pending'))
+                                  state=states.get((item.item_kind, item.item_id), 'pending'),
+                                  version=versions.get((item.item_kind, item.item_id)))
         for item in items])
 
 
