@@ -12,6 +12,10 @@
   </picture>
 </p>
 
+<p align="center">FULI 是一个插件，让你的任务穿梭在你所有的 Agent 客户端之间：Claude Code、Codex、OpenCode……它们共用一份记忆、一套品味和一支 FLA 团队。哪个合适就用哪个，换着用也不用从头交代。你照常用你的客户端，什么都不用换。</p>
+
+<p align="center"><sub>如果你习惯用 harness 来理解：每个客户端是一个 harness，FULI 是它们上面的一层。</sub></p>
+
 <h3 align="center">一切都是能自动则自动，一切执行就交给 FLAs 吧。你做好判断，做好领头羊，领着你的 FLAs 大军披荆斩棘，或者去喝杯咖啡休息休息～享受你自己经验带给你自己的复利吧。</h3>
 
 <p align="center"><sub>项目的简历、FLAs 的招募，如果你不想关心，它们都是自动的，你唯一要做的就是把握方向。FLAs 可以自动带着上下文和各种工具穿梭在各个 Agent 客户端，无论是高等级模型还是低等级模型，在这里都可以发挥作用。</sub></p>
@@ -28,8 +32,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="许可证" /></a>
 </p>
 
-FULI 装在你自己的电脑上，让每个 AI 编程 Agent 共用同一份记忆：你的品味、你的偏好，还有每个项目的事实。
-Claude Code、Codex、OpenCode 等客户端都能用。每次任务只取回用得上的那一小份。名字取自复利：
+每次任务只取回用得上的那一小份。名字取自复利：
 今天教会 Agent 的事，明天还在生息。
 
 ## 它能做什么
@@ -99,6 +102,8 @@ flowchart LR
 
 ## 安装
 
+FULI 在你的电脑上跑一个小服务和一个控制台。
+
 **桌面客户端（推荐）。** 到[最新版本](https://github.com/JevonsCode/fuli/releases/latest)下载：
 
 | 系统 | 文件 |
@@ -148,6 +153,12 @@ Claude Code、Codex、OpenCode、Cursor 和 Claude 桌面版都能在控制台�
 
 会话开始时只带生效的偏好和几条相关事实，其余的 Agent 需要时再查。只有你知道的事实，比如你顺口提过一次的沙箱地址，
 之后会直接召回，不用在代码里翻找。数字见[基准文档](FULI_ALIGNMENT_BENCHMARK.md)第 8.9.4 节。
+</details>
+
+<details>
+<summary><b>内置 FLA 会多花钱吗？</b></summary>
+
+不会偷偷多花。内置 FLA 默认借你客户端的会话干活，你给它们接了模型，才用它们自己的模型。
 </details>
 
 <details>

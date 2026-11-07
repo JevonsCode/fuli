@@ -12,6 +12,10 @@
   </picture>
 </p>
 
+<p align="center">FULI is a plugin that lets your tasks move across all your Agent clients: Claude Code, Codex, OpenCode… They share one memory, one taste and one FLA team, so you use whichever fits and switch without explaining everything again. Keep using your clients as you do today; nothing to replace.</p>
+
+<p align="center"><sub>If you think in harnesses: each client is a harness, and FULI is the layer above them.</sub></p>
+
 <h3 align="center">Automate everything that can be automated, and hand the execution to your FLAs. You make the calls and lead the way: take your FLA crew through the hard parts, or go grab a coffee and enjoy the compound interest of your own experience.</h3>
 
 <p align="center"><sub>Project profiles and FLA hiring run on their own if you'd rather not think about them; your only job is to set the direction. FLAs carry context and tools across every Agent client, and both top-tier and lighter models pull their weight here.</sub></p>
@@ -28,8 +32,6 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="license" /></a>
 </p>
 
-FULI runs on your own computer and gives every AI coding Agent the same memory: your taste, your
-preferences and the facts of each project. Claude Code, Codex, OpenCode and other clients share it.
 Each task gets only the small slice it needs. FULI (复利) is Chinese for compound interest: what you
 teach an Agent today keeps paying off.
 
@@ -101,6 +103,8 @@ when it needs it, and at the end writes back only what the next task can reuse.
 
 ## Install
 
+FULI runs a small service and a console on your own computer.
+
 **Desktop client (recommended).** Download from the [latest release](https://github.com/JevonsCode/fuli/releases/latest):
 
 | System | File |
@@ -155,6 +159,13 @@ A session starts with only the preferences in effect and a few related facts; th
 the rest when it needs it. Facts that only you know, such as a sandbox URL you mentioned once,
 come back later without a search through the code. The numbers are in the
 [benchmark](FULI_ALIGNMENT_BENCHMARK.md) (section 8.9.4).
+</details>
+
+<details>
+<summary><b>Do the built-in FLAs cost extra?</b></summary>
+
+By default the built-in FLAs work inside your client's session. Only when you connect a model for
+them do they use their own model, so nothing spends money behind your back.
 </details>
 
 <details>
