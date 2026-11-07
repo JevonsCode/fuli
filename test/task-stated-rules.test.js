@@ -50,3 +50,11 @@ test('the stated rules are kept as pending project facts in the person\'s words,
   assert.equal(await keepStatedRules(application, unregistered, POLICY, { decide: allowed }), null);
   assert.deepEqual(captured, []);
 });
+
+test('a thing of ours with a concrete value (URL, code literal, number) is a stated fact (rec#88)', () => {
+  const said = "Make the relay's log carry the code. By the way, our push provider's sandbox base URL is "
+    + 'https://sandbox.tidepush.example/v2. Our on-call alert titles are `[tidewater] ` plus the channel name in upper case.';
+  assert.deepEqual(statedProjectRules(said).length, 2);
+  assert.deepEqual(statedProjectRules('Send it to our push provider\'s sandbox with the key header.'), []);
+  assert.deepEqual(statedProjectRules('Our tests are slow.'), []);
+});

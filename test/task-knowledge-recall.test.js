@@ -401,7 +401,9 @@ test('a named target leaves room for the clause that names a kept fact (compound
     + 'same retry behaviour we use for email, with tests, and make sure the whole suite passes.');
   assert.match(sms.queries[0], /^SMS .*convention policy rule owner$/);
   assert.ok(sms.queries.some((query) => /^SMS .*\bretry\b/.test(query)), sms.queries.join(' | '));
-  assert.ok(sms.queries.every((query) => query.startsWith('SMS ')), 'every query keeps the target');
+  // Every query keeps the target, except the bare checks query the "suite passes" clause adds.
+  assert.ok(sms.queries.filter((query) => !query.startsWith('project checks')).every((query) => query.startsWith('SMS ')),
+    'every query keeps the target');
   // A named target with no clause naming a kept fact plans as before.
   const workflow = planTaskKnowledgeRecall('Analytics Dashboard Builder 应该按什么流程搭建？').queries;
   assert.equal(workflow.length, 1);
@@ -468,4 +470,22 @@ test('the pending relevance rule reads Chinese by character pairs (rec#88)', asy
   const recall = prompt => recallTaskKnowledge(recallApplication([rule]), { personalProjectId: 'tidewater' }, prompt);
   assert.equal((await recall('短信渠道也按我们的重试策略来，补上测试。')).status, 'matched');
   assert.equal((await recall('按我们的约定加一个健康检查接口。')).status, 'indexed');
+});
+
+test('a task that asks for its checks to pass also looks up the kept project checks (rec#88)', async () => {
+  const plan = planTaskKnowledgeRecall('Give the SMS channel the same retry behaviour we use for email, with tests, '
+    + 'and make sure the whole suite passes.');
+  assert.ok(plan.trigger_categories.includes('verification'));
+  assert.equal(plan.queries.at(-1), 'project checks run test command script 检查 测试 命令');
+  assert.ok(plan.queries.length <= 5);
+  assert.equal(planTaskKnowledgeRecall('Rename the parser variable.').trigger_categories.includes('verification'), false);
+  // The kept checks reach the task whole; a pending rule about something else still waits as a title.
+  const checks = { id: 'c-1', name: 'Project checks: `npm run check`, `npm run fixtures`, `npm test`', type: 'ReusableExperience',
+    summary: 'These project scripts ran clean at the end of a finished task: `npm run check`, `npm run fixtures`, `npm test`.',
+    defined_project_id: 'tidewater', confirmation_status: 'pending' };
+  const policy = { id: 'p-1', name: 'Our retry policy for every outbound channel: at most 3 attempts', type: 'ProjectFact',
+    summary: 'Our retry policy for every outbound channel: at most 3 attempts.', defined_project_id: 'tidewater', confirmation_status: 'pending' };
+  const recall = await recallTaskKnowledge(recallApplication([checks, policy]), { personalProjectId: 'tidewater' },
+    'Add `GET /healthz` listing the registered channel names, with a test, and make sure the whole suite passes.');
+  assert.deepEqual(recall.entities.map(item => item.id), ['c-1']);
 });
