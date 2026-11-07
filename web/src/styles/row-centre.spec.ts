@@ -13,6 +13,8 @@ describe('row centre lines', () => {
   it('wraps Tonborg\'s group heading on a narrow screen instead of cutting it to 「Tonborg 拿不…」', () => {
     expect(rule(rows, '.review-group__title--asks')).toContain('white-space: normal')
     expect(rule(rows, '.review-group__name')).not.toContain('text-overflow: ellipsis')
+    // It breaks at the space after Tonborg, not between 拿不 and 准.
+    expect(rule(rows, '.review-group__name')).toContain('word-break: keep-all')
   })
 
   it('centres the raised hand on the first line of an agent card name', () => {
