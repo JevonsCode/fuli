@@ -41,24 +41,24 @@
   <tr>
     <td width="50%" valign="top">
       <img src="docs/readme/card-memory-zh.webp" alt="Claude Code、Codex 和 OpenCode 接入同一个 FULI" width="460" />
-      <h3>所有客户端共用一份记忆</h3>
+      <h3 align="center">所有客户端共用一份记忆</h3>
       点一下就接入 Claude Code、Codex、OpenCode 或 Cursor。在一个客户端里说过的规矩，换到另一个也还在。
     </td>
     <td width="50%" valign="top">
       <img src="docs/readme/card-team-zh.webp" alt="三位 FLA 在圆桌里一起评审一个修复" width="460" />
-      <h3>FLA 团队，在圆桌上对话</h3>
+      <h3 align="center">FLA 团队，在圆桌上对话</h3>
       每个项目有一位负责的 Agent（FLA），有名字、职业和自己的工作记忆；活儿需要时，几位 FLA 组成小组。它们在圆桌里互相评审、测试、交接，每一句你都看得到。
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <img src="docs/readme/card-tonborg-zh.webp" alt="等你确认的知识，以及交给 Tonborg 确认的开关" width="460" />
-      <h3><img src="docs/readme/fla-tonborg.webp" alt="" width="28" /> Tonborg 替你确认</h3>
+      <h3 align="center"><img src="docs/readme/fla-tonborg-inline.webp" alt="" width="28" align="absmiddle" /> Tonborg 替你确认</h3>
       新知识要等一句确认。打开「交给 Tonborg 确认」，它按你的偏好确认日常的条目，拿不准的留给你，每次都写下理由，点赞或点踩它下次就改。
     </td>
     <td width="50%" valign="top">
       <img src="docs/readme/card-tokens-zh.webp" alt="每个成功任务的 token：用 FULI 是 0.81 倍" width="460" />
-      <h3>越用越省 token</h3>
+      <h3 align="center">越用越省 token</h3>
       即将发布的 0.25.0 实测：同样的任务，用 FULI 每个成功任务花的 token 是不用时的 0.81 倍，72 个任务通过 70 个。省下的来自代码里没有、只在你话里的事实。
     </td>
   </tr>
@@ -174,7 +174,7 @@ FULI.app 移到废纸篓：只移到废纸篓的话，这些配置还留在客�
 <summary><b>留下什么由谁决定？</b></summary>
 
 由你决定：AI 负责查找和执行，人始终保留最终判断权。每个任务结束前检查一次，只留能复用的知识。Agent 猜出来的偏好，
-要等你或者在你设定的自主程度内的 <img src="docs/readme/fla-tonborg.webp" alt="" width="20" /> Tonborg 确认才算数。旧答案带着来源和理由留在历史里。
+要等你或者在你设定的自主程度内的 <img src="docs/readme/fla-tonborg-inline.webp" alt="" width="20" align="absmiddle" /> Tonborg 确认才算数。旧答案带着来源和理由留在历史里。
 </details>
 
 ## 深入了解
@@ -186,7 +186,7 @@ FULI.app 移到废纸篓：只移到废纸篓的话，这些配置还留在客�
 | 各客户端怎么接 | [客户端接入（英文）](docs/client-connections.md) |
 | Skills、Hook 和 MCP 工具 | [Agent 接入与 MCP 工具](docs/agent-tools.zh-CN.md) |
 | Notion、飞书等知识库 | [外部知识库只读接入](docs/external-knowledge.zh-CN.md) |
-| <img src="docs/readme/fla-tonborg.webp" alt="" width="20" /> Tonborg 与自主程度 | [Tonborg 怎么判断（英文）](docs/judgment-and-autonomy.md) |
+| <img src="docs/readme/fla-tonborg-inline.webp" alt="" width="20" align="absmiddle" /> Tonborg 与自主程度 | [Tonborg 怎么判断（英文）](docs/judgment-and-autonomy.md) |
 | 圆桌 | [圆桌](docs/agent-roundtable.md) |
 | 已经证明了什么 | [能力与边界](docs/capabilities-and-limits.zh-CN.md) · [实测报告](https://有点.意思.com/fuli/report/) |
 | 跑源码 | [开发与验收](docs/development.zh-CN.md) · [参与贡献](CONTRIBUTING.md) |
