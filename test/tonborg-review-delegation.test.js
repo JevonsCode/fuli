@@ -81,7 +81,8 @@ test('delegated: Tonborg confirms the clear item as its own and asks about the r
   const hint = result.human_interaction;
   assert.equal(hint.presentation, 'host_native_single_choice');
   assert.deepEqual(hint.source.batch, [unsure.id]);
-  assert.match(hint.question, /I think you drop this/);
+  // The question names its item: one that quotes nothing leads with the item's title.
+  assert.equal(hint.question, '1. 「Deploy on Fridays」I think you drop this: deploy on Fridays. Right?');
   assert.match(hint.guidance, /do not confirm, drop or edit these knowledge items yourself/);
 });
 
@@ -180,13 +181,27 @@ test('a batch of many delegated questions reaches the Agent whole', () => {
   assert.deepEqual(delivered.structuredContent.human_interaction.source.batch, records.map(record => record.id));
 });
 
+test('each batched question says what its item is, without quoting it twice', () => {
+  const record = (id, title, question) => ({ id, kind: 'review', delegated: true, outcome: 'escalate', target: `entity:${id}`,
+    title, question, feedback: { revision: 0, vote: null }, execution: { status: 'not_applied' } });
+  const { human_interaction } = judgmentHumanInteraction([
+    record('a', 'Synthetic   rule about a very long deploy window', '我猜你会保留这条，对吗？'),
+    record('b', 'Synthetic tooling note', '我猜你会保留「Synthetic tooling note」，对吗？'),
+    record('c', null, 'Keep the synthetic item?')], 's');
+  assert.deepEqual(human_interaction.question.split('\n'), [
+    '1. 「Synthetic rule about a…」我猜你会保留这条，对吗？',
+    '2. 我猜你会保留「Synthetic tooling note」，对吗？',
+    '3. Keep the synthetic item?']);
+});
+
 test('Tonborg asks in the person\'s language: the console\'s, saved with the switch, else 简体中文', async t => {
   const f = fixture(t);
   await turnOn(f);
   await f.service.review(input);
   // A switch saved without a language (before 11-06) asks in the console's default.
   assert.match(f.prompts[0].instructions, /one short question in Simplified Chinese, the person's language, even when the evidence is in another language/);
-  assert.match(f.prompts[0].instructions, /我猜你会保留这条/);
+  assert.match(f.prompts[0].instructions, /我猜你会保留「用 pnpm 安装依赖」/);
+  assert.match(f.prompts[0].instructions, /names the candidate by quoting a short excerpt of its own content/);
 
   const english = fixture(t);
   const saved = await setReviewDelegation({ judgment: english.service, modelTrust: english.app.modelTrust,
