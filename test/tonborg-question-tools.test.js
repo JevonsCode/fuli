@@ -5,6 +5,7 @@ import { createJudgmentService } from '../src/judgment/service.js';
 import { createQuestionTools } from '../src/judgment/question-tools.js';
 import { TONBORG_QUESTION_DEFINITIONS } from '../src/agent-tools/tonborg-question-definitions.js';
 import { agentInterfaceCatalog } from '../src/agent-tools/interface-catalog.js';
+import { delegatedReviewList } from '../src/judgment/review-delegation.js';
 
 // list_tonborg_questions / answer_tonborg_question (Jevons 11-07: the
 // person's own AI goes through Tonborg's unsure items), on synthetic records
@@ -18,6 +19,8 @@ const answer = (app, input) => app.judgment.agent.answerQuestion(input);
 const SECRET = 'PRIVATE-PREFERENCE-ALPHA';
 const PLAIN = { projectAgentId: null, personalProjectId: null, sourceApplication: 'codex', sessionId: 'session-1' };
 const FLA = { projectAgentId: 'fla-1', personalProjectId: 'p', sourceApplication: 'codex', sessionId: 'session-1' };
+// `#FLA Tonborg …` in a new chat with no project folder (task-entry-named-fla.js).
+const TONBORG = { projectAgentId: 'employee.tonborg', personalProjectId: null, sourceApplication: 'codex', sessionId: 'session-1' };
 
 // visible: the item keys each reader may see (key '' is a plain session); states, version: what the Provider says.
 function fixture(t, { task = PLAIN, visible = {}, states = {}, version = 3, said = '不要了，这条过时了', capture = true,
@@ -215,4 +218,30 @@ test('the tools are listed with their schemas and in the interface catalog', () 
   assert.ok(answerSchema.properties.newText && answerSchema.properties.expectedVersion);
   const domain = agentInterfaceCatalog().readWorkflows.find(entry => entry.domain === 'tonborg-questions');
   assert.deepEqual(domain.toolNames, ['list_tonborg_questions', 'answer_tonborg_question']);
+});
+
+test('Tonborg named without a project goes through every question the person sees, as the console lists them', async t => {
+  // A plain session sees every project's items but not one FLA's own (the Provider's rule).
+  const f = fixture(t, { task: TONBORG, said: '保留', visible: { '': ['entity:p-item', 'entity:q-item', 'entity:global'],
+    'fla-1': ['entity:p-item', 'entity:global', 'entity:fla-own'] } });
+  f.ask('entity:p-item', 'Project P item', 'keep');
+  const other = f.ask('entity:q-item', 'Project Q item', 'drop', { project: 'q' });
+  f.ask('entity:global', 'Global item', 'keep', { project: null });
+  f.ask('entity:fla-own', 'An FLA\'s own item', 'keep');
+  // The console's 「Tonborg 拿不准」: the person's own full read.
+  const owner = { readVisibleKnowledgeItems: async ({ items }) => ({ items, states: items.map(item => ({ ...item, state: 'pending' })) }) };
+  const consoleCount = (await delegatedReviewList({ judgment: f.service, personal: owner, input: { personalSpaceId: 's' } })).questions.length;
+  const read = await list(f.app, call);
+  assert.deepEqual(read.questions.map(question => question.item).sort(), ['Global item', 'Project P item', 'Project Q item']);
+  assert.equal(read.total + read.hiddenCount, consoleCount);
+  assert.equal(consoleCount, 4);
+  // Another project's item is answered from the same task, at its version, behind the same gate.
+  const result = await answer(f.app, { ...call, decisionId: other.id, answer: 'keep', personWords: '保留', expectedVersion: 3 });
+  assert.deepEqual([result.status, f.sent.map(sent => sent.path)], ['done', ['/api/knowledge/batch-confirmation', '/api/judgment/feedback']]);
+  assert.doesNotMatch(JSON.stringify(read), new RegExp(SECRET));
+  // Any other FLA still reads in its own project only.
+  const g = fixture(t, { task: FLA, visible: { 'fla-1': ['entity:p-item', 'entity:global', 'entity:q-item'] } });
+  g.ask('entity:p-item', 'Project P item', 'keep');
+  g.ask('entity:q-item', 'Project Q item', 'drop', { project: 'q' });
+  assert.deepEqual(await listed(g), ['Project P item']);
 });
