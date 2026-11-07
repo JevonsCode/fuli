@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import test from 'node:test';
 
 const 验收目录 = new URL('../acceptance/', import.meta.url);
@@ -16,22 +16,28 @@ function 读取仓库文件(文件名) {
 // The READMEs stay short; the detail they link to lives in these docs pages.
 const 文档页 = ['install', 'how-it-works', 'external-knowledge', 'agent-tools', 'capabilities-and-limits', 'development'];
 
-test('中英文 README 先讲理念和能力，并链接每个文档页', () => {
+test('中英文 README 用图讲清能力，再讲安装，并链接每个文档页', () => {
   const 中文 = 读取仓库文件('README.zh-CN.md');
   const 英文 = 读取仓库文件('README.md');
 
   assert.match(中文, /href="README\.md">English/);
   assert.match(英文, /href="README\.zh-CN\.md">简体中文/);
-  assert.match(中文, /width="72"/);
+  assert.match(中文, /srcset="docs\/readme\/hero-zh-dark\.webp"/);
+  assert.match(英文, /srcset="docs\/readme\/hero-en-dark\.webp"/);
   assert.match(英文, /img\.shields\.io\/npm\/v\/fuli-context/);
   assert.equal((中文.match(/^```mermaid$/gm) ?? []).length, 1);
   assert.equal((英文.match(/^```mermaid$/gm) ?? []).length, 1);
   assert.match(中文, /人始终保留最终判断权/);
   assert.match(英文, /humans retain final\s+authority/);
-  assert.ok(中文.indexOf('## 我们的理念') < 中文.indexOf('## 它能做什么'));
-  assert.ok(中文.indexOf('## 它能做什么') < 中文.indexOf('## 快速开始'));
-  assert.ok(英文.indexOf('## What we believe') < 英文.indexOf('## What it does'));
-  assert.ok(英文.indexOf('## What it does') < 英文.indexOf('## Quick start'));
+  assert.ok(中文.indexOf('## 它能做什么') < 中文.indexOf('## 安装'));
+  assert.ok(中文.indexOf('## 安装') < 中文.indexOf('## 控制台'));
+  assert.ok(英文.indexOf('## What FULI does') < 英文.indexOf('## Install'));
+  assert.ok(英文.indexOf('## Install') < 英文.indexOf('## The console'));
+  // Every README image is a compressed WebP in docs/readme/, small enough to load fast.
+  for (const 图 of [...中文.matchAll(/src(?:set)?="(docs\/readme\/[^"]+)"/g), ...英文.matchAll(/src(?:set)?="(docs\/readme\/[^"]+)"/g)]) {
+    assert.match(图[1], /\.webp$/);
+    assert.ok(statSync(new URL(`../${图[1]}`, import.meta.url)).size < 200 * 1024, 图[1]);
+  }
   for (const 页 of 文档页) {
     assert.ok(中文.includes(`(docs/${页}.zh-CN.md)`), 页);
     assert.ok(英文.includes(`(docs/${页}.md)`), 页);
