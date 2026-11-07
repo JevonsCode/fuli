@@ -1,4 +1,4 @@
-import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createAvatar } from '../web/src/vendor/fuli-avatar/avatar.js';
 
 // The website's FLA portraits, drawn at build time by the renderer the console ships
@@ -17,6 +17,6 @@ export async function writeSiteAvatars(directory) {
     await writeFile(new URL(`fla-${n}.svg`, directory), createAvatar(`site-fla-${n}`, { animate: false, eggs: false, size: 128 }));
   }
   for (const name of BUILT_IN_FLAS) {
-    await copyFile(new URL(`../docs/readme/fla-${name}.webp`, import.meta.url), new URL(`${name}.webp`, directory));
+    await writeFile(new URL(`${name}.webp`, directory), await readFile(new URL(`../docs/readme/fla-${name}.webp`, import.meta.url)));
   }
 }
