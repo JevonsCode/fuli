@@ -1,46 +1,70 @@
-/* The token and accuracy report (/report/): its own pieces over guide-page.css and the :root tokens in style.css. */
-.guide-page main { --report-width: 1120px; }
-/* The headline reads as two lines: what it costs, then whether it is right. */
-#report-title em { display: block; }
+/* The report (/report/): its own pieces over guide-page.css and the :root tokens in style.css. */
+.guide-page main { --report-width: 1120px; --bar-fuli: #0b7a5a; --bar-off: #c0842a; }
 #report-title { text-wrap: balance; }
-.summary { max-width: 760px; margin-top: clamp(28px, 5vh, 44px); padding: 24px 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
-.summary-title { color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: .04em; }
-.summary ul { display: grid; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }
-.summary li { position: relative; padding-left: 20px; font-size: 16px; font-weight: 500; }
-.summary li::before { content: ""; position: absolute; left: 2px; top: .7em; width: 7px; height: 7px; border-radius: 50%; background: var(--jade); }
-.summary-scope { margin-top: 14px; color: var(--muted); font-size: 14px; }
+#report-title em { display: block; }
 
-/* Before → after numbers: the current value is the large one, the old one is struck and muted. */
-.stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(14px, 2vw, 22px); max-width: var(--report-width); margin: clamp(24px, 4vh, 32px) 0 0; }
-.stat { min-width: 0; padding: 22px 24px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
-.stat dt { color: var(--muted); font-size: 13px; }
-.stat dd { display: grid; gap: 4px; margin: 8px 0 0; }
-.stat b { font: 600 clamp(28px, 3.4vw, 40px)/1.15 "Unbounded", var(--sans); color: var(--ink); letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
-.stat span { color: var(--muted); font-size: 13px; }
-.stat small { font-size: inherit; }
-.stat s { color: var(--faint); font-variant-numeric: tabular-nums; }
+/* One headline number, large, with what it compares beside it. */
+.report-hero { max-width: calc(var(--report-width) + 2 * var(--gutter)); }
+.report-hero h1, .report-hero .lede { max-width: 820px; }
+.headline { display: flex; flex-wrap: wrap; align-items: center; gap: 12px clamp(24px, 4vw, 48px); margin-top: clamp(28px, 5vh, 44px); }
+.headline-number b { display: block; color: var(--jade); font: 600 clamp(76px, 14vw, 150px)/.95 "Unbounded", var(--sans); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.headline-copy { flex: 1 1 300px; min-width: 0; max-width: 420px; }
+.headline-label { font-size: clamp(17px, 1.7vw, 20px); font-weight: 500; line-height: 1.6; }
+.headline-facts { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 14px 0 0; }
+.headline-facts dt { color: var(--muted); font-size: 13px; }
+.headline-facts dd { margin: 2px 0 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+.headline-facts dd span { color: var(--muted); font-weight: 400; }
+.report-hero .headline + .lede { margin-top: clamp(24px, 4vh, 32px); }
 
-.section-note { max-width: 720px; margin-top: 18px; color: var(--ink-soft); font-size: 15px; }
-.table-title { margin: clamp(32px, 5vh, 44px) 0 12px; font-size: 18px; font-weight: 600; }
+/* The session chart: percentage geometry keeps text at real size on any width. */
+.chart { max-width: var(--report-width); margin: clamp(24px, 4vh, 32px) 0 0; padding: clamp(18px, 2.4vw, 28px); border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 0 0 14px; padding: 0; list-style: none; color: var(--ink-soft); font-size: 13px; }
+.chart-legend li { display: inline-flex; align-items: center; gap: 8px; }
+.swatch { width: 14px; height: 10px; border-radius: 3px; background: var(--bar-fuli); }
+.swatch.is-off { background: var(--bar-off); }
+.swatch.is-missed { border: 1.5px solid var(--bar-off); background: repeating-linear-gradient(45deg, var(--bar-off) 0 1.5px, var(--surface) 1.5px 4px); }
+.session-chart { display: block; overflow: visible; font-family: var(--sans); }
+.session-chart .chart-band { fill: var(--jade-soft); }
+.session-chart .chart-group { fill: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: .04em; }
+.session-chart .chart-session { fill: var(--ink); font-size: 13px; font-weight: 500; }
+.session-chart .chart-value { fill: var(--ink-soft); font-size: 12px; font-variant-numeric: tabular-nums; }
+.session-chart .chart-value .is-missed { fill: var(--amber); font-weight: 600; }
+.session-chart .chart-value .is-done { fill: var(--jade); font-weight: 600; }
+.session-chart .bar-fuli { fill: var(--bar-fuli); }
+.session-chart .bar-off { fill: var(--bar-off); }
+.session-chart .bar-off.is-missed { fill: url(#missed-hatch); stroke: var(--bar-off); stroke-width: 1.5; }
+.session-chart .hatch-bg { fill: var(--surface); }
+.session-chart .hatch-line { stroke: var(--bar-off); stroke-width: 2; }
+
+/* Three reasons, each led by its number. */
+.why-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(14px, 2vw, 22px); max-width: var(--report-width); }
+.why-number b { display: block; color: var(--jade); font: 600 clamp(28px, 3vw, 38px)/1.15 "Unbounded", var(--sans); letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.why-card h3 { margin-top: 14px; }
+.first-cost { max-width: var(--report-width); margin-top: clamp(14px, 2vw, 22px); padding: 20px 28px; border: 1px dashed var(--line); border-radius: 16px; }
+.first-cost h3 { color: var(--muted); font-size: 13px; font-weight: 500; letter-spacing: .04em; }
+.first-cost p { max-width: 760px; margin-top: 6px; color: var(--ink-soft); }
+
+.stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(14px, 2vw, 22px); max-width: var(--report-width); margin: 0; }
+.stat { display: flex; flex-direction: column-reverse; justify-content: flex-end; min-width: 0; padding: 22px 24px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.stat dt { margin-top: 8px; color: var(--ink-soft); font-size: 14px; }
+.stat dd { margin: 0; }
+.stat b { font: 600 clamp(28px, 3.2vw, 40px)/1.15 "Unbounded", var(--sans); color: var(--ink); letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+
+.table-note { max-width: 720px; margin-top: 12px; color: var(--muted); font-size: 14px; }
 
 /* Tables stay inside the page width; a wide one scrolls inside its own box, never the page. */
 .table-wrap { max-width: var(--report-width); overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
-.guide-section > p + .table-wrap { margin-top: clamp(24px, 4vh, 32px); }
 .data-table { width: 100%; border-collapse: collapse; font-size: 15px; }
 .data-table th, .data-table td { padding: 11px 16px; text-align: left; vertical-align: top; }
 .data-table th { color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: .04em; background: var(--sunk); }
 .data-table tbody tr + tr td { border-top: 1px solid var(--line); }
 .data-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-.data-table td.num { white-space: nowrap; }
-.data-table td[data-i18n]:first-child { min-width: 6.5em; }
-.data-table td.num { color: var(--ink-soft); }
-.data-table td b { color: var(--ink); font-weight: 600; }
-.data-table .reference-row td { color: var(--muted); }
-.table-note { max-width: 720px; margin-top: 10px; color: var(--muted); font-size: 14px; }
+.data-table td.num { white-space: nowrap; color: var(--ink-soft); }
+.data-table td b { display: block; color: var(--ink); font-weight: 600; }
+.data-table td small { color: var(--muted); font-size: 12px; }
 
-/* Method and caveats are folded; the key numbers stay visible above them. */
+/* Method and the per-session table are folded; the key numbers stay visible above them. */
 .fold { max-width: var(--report-width); margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-.fold + .fold { margin-top: 10px; }
 .fold summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 18px; color: var(--ink-soft); font-size: 15px; font-weight: 500; cursor: pointer; list-style: none; user-select: none; }
 .fold summary::-webkit-details-marker { display: none; }
 .fold summary::before { content: ""; flex: 0 0 auto; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .2s ease; }
@@ -49,32 +73,25 @@
 .fold ul { display: grid; gap: 8px; margin: 0; padding: 0 18px 16px 33px; color: var(--ink-soft); font-size: 15px; }
 .fold .table-wrap { margin: 0 18px; }
 .fold .table-note { margin: 10px 18px 16px; }
-
-.tonborg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(14px, 2vw, 22px); max-width: var(--report-width); margin-top: clamp(24px, 4vh, 32px); }
-.tonborg-grid .is-pending { border-style: dashed; background: transparent; box-shadow: none; }
-.tonborg-grid .is-pending h3 { color: var(--muted); }
-
-#gaps .guide-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); max-width: var(--report-width); }
-
-/* Two related tables sit side by side when there is room, each with its own title. */
-.table-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 clamp(18px, 2.4vw, 32px); max-width: var(--report-width); }
-.table-pair > div { min-width: 0; }
+#method .fold { margin-top: 20px; }
 
 @media (prefers-reduced-motion: reduce) {
   .fold summary::before { transition: none; }
 }
-@media (max-width: 1100px) {
-  .table-pair { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 1000px) {
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 880px) {
-  .stat-grid { grid-template-columns: minmax(0, 1fr); }
-  .tonborg-grid { grid-template-columns: minmax(0, 1fr); }
+  .why-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 480px) {
-  .summary { padding: 20px; }
+  .chart { padding: 16px 14px; }
+  .first-cost { padding: 18px 20px; }
+  .stat { padding: 18px; }
   .data-table { font-size: 14px; }
   .data-table th, .data-table td { padding: 10px 7px; }
   .data-table th:first-child, .data-table td:first-child { padding-left: 12px; }
   .data-table th:last-child, .data-table td:last-child { padding-right: 12px; }
+  .data-table td:first-child { min-width: 9em; }
   .fold ul { padding-left: 30px; }
 }
