@@ -63,19 +63,30 @@ export function chosenOption(record, personWords) {
   return questionOptions(record).find(option => key(option.label) === key(personWords ?? '')) ?? null;
 }
 
-// How a picked option is voted: keep votes up, every other choice votes null.
-export const relayedChoiceVote = option => option.action === 'keep' ? 'up' : null;
+// The guess each answering action stands for (rec#96 delegated questions).
+const GUESS_OF = Object.freeze({ keep: 'keep', correct: 'edit', drop: 'drop' });
+
+// How a picked option is voted. A question Tonborg asked as its guess
+// (delegated) is a vote on that guess, as the console's buttons cast it: up
+// when the choice is the guessed action, down otherwise; later votes null. Any
+// other question: keep votes up, every other choice votes null.
+export function relayedChoiceVote(option, record) {
+  if (record?.delegated === true && record.guess && option.action !== 'later') {
+    return GUESS_OF[option.action] === record.guess ? 'up' : 'down';
+  }
+  return option.action === 'keep' ? 'up' : null;
+}
 
 // A choice the person picked from this question, relayed as their exact words,
-// is recorded only as its own action: keep votes up; the others vote null,
-// with 稍后处理 for later and what changed for correct and drop. Custom input
-// matches no label and is recorded as the Agent reads it.
+// is recorded only as its own action (relayedChoiceVote), with 稍后处理 for
+// later and what changed for correct and drop. Custom input matches no label
+// and is recorded as the Agent reads it.
 export function checkRelayedChoice(record, { vote, reason = '' }, personWords) {
   const chosen = chosenOption(record, personWords);
   if (!chosen) return;
-  const wanted = relayedChoiceVote(chosen);
+  const wanted = relayedChoiceVote(chosen, record);
   if (vote !== wanted) {
-    throw new InvalidInputError(`「${chosen.label}」 is recorded as ${chosen.action}: vote ${wanted === null ? 'null' : '"up"'}`);
+    throw new InvalidInputError(`「${chosen.label}」 is recorded as ${chosen.action}: vote ${wanted === null ? 'null' : `"${wanted}"`}`);
   }
   if (chosen.action === 'later' && !SNOOZE_REASON.test(reason)) {
     throw new InvalidInputError(`「${chosen.label}」 is recorded as later: reason "稍后处理"`);

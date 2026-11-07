@@ -33,6 +33,8 @@ const failed = ref(false)
 const HOVER_DELAY_MS = 260
 let hoverTimer: ReturnType<typeof setTimeout> | null = null
 let openedByHover = false
+// A press on the 「?」 while hover opened the panel: the click that follows keeps it open (it is now the click's).
+let pressedWhileHoverOpen = false
 
 // Only what this panel reads of /api/system/client-connection/status.
 const statusShape = shapeOf(z.looseObject({
@@ -68,6 +70,18 @@ function hoverStart() {
   if (open.value || hoverTimer) return
   hoverTimer = setTimeout(() => { hoverTimer = null; openedByHover = true; open.value = true }, HOVER_DELAY_MS)
 }
+function pressTrigger() {
+  pressedWhileHoverOpen = open.value && openedByHover
+  setTimeout(() => { pressedWhileHoverOpen = false }, 0)
+}
+function setOpen(next: boolean) {
+  if (!next && pressedWhileHoverOpen) {
+    pressedWhileHoverOpen = false
+    openedByHover = false
+    return
+  }
+  open.value = next
+}
 function hoverEnd() {
   if (hoverTimer) clearTimeout(hoverTimer)
   hoverTimer = null
@@ -96,10 +110,11 @@ async function copy() {
 </script>
 
 <template>
-  <Popover v-model:open="open">
+  <Popover :open="open" @update:open="setOpen">
     <PopoverTrigger as-child>
       <UiIconButton icon="help" size="sm" class="tonborg-explain__trigger" :label="t('reviewList.explain.title')" :active="open"
-        data-tonborg-explain @pointerenter="hoverStart" @pointerleave="hoverEnd" @click="hoverEnd" />
+        data-tonborg-explain @pointerenter="hoverStart" @pointerleave="hoverEnd" @pointerdown="pressTrigger"
+        @keydown.enter="pressTrigger" @keydown.space="pressTrigger" @click="hoverEnd" />
     </PopoverTrigger>
     <PopoverContent align="start" :side-offset="8" class="tonborg-explain" data-tonborg-explain-panel @open-auto-focus="autoFocus">
       <div class="tonborg-explain__head">

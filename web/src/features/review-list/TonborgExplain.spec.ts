@@ -68,7 +68,7 @@ describe('TonborgExplain', () => {
     expect(document.activeElement).toBe(trigger())
   })
 
-  it('opens on hover after a short delay without taking focus', async () => {
+  it('opens on hover after a short delay without taking focus, and a click then keeps it open', async () => {
     vi.useFakeTimers()
     try {
       mount(TonborgExplain, { props: { count: 3 }, attachTo: document.body })
@@ -78,6 +78,15 @@ describe('TonborgExplain', () => {
       await vi.advanceTimersByTimeAsync(300)
       expect(panel()).not.toBeNull()
       expect(document.activeElement).toBe(before)
+      // A click on the 「?」 after hover keeps it open; the next click closes it.
+      trigger().dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+      trigger().click()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(panel()).not.toBeNull()
+      trigger().dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+      trigger().click()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(panel()).toBeNull()
     } finally {
       vi.useRealTimers()
     }

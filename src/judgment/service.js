@@ -172,7 +172,7 @@ const agentReaderSchema = z.object({ personalProjectId: id, projectAgentId: id }
 
 // The FLA an Agent names, in the one project it reads; null for a plain session.
 // An FLA with no project is refused, saying what to do (rec#83: it surfaced as internal_error).
-export function agentReader(input, projectAgentId) {
+function agentReader(input, projectAgentId) {
   if (projectAgentId === null) return null;
   if (!input.personalProjectId) {
     throw new InvalidInputError('projectAgentId reads in one project: pass its personalProjectId, or leave projectAgentId out for a global read');

@@ -8,32 +8,40 @@ import { agentInterfaceCatalog } from '../src/agent-tools/interface-catalog.js';
 
 // list_tonborg_questions / answer_tonborg_question (Jevons 11-07: the
 // person's own AI goes through Tonborg's unsure items), on synthetic records
-// only. Tonborg's reason and question never reach the Agent; answers run only
-// on the person's words, at the item's version, and the vote goes through the
-// real feedback check behind a fake console.
+// only. The reader is the calling task's; Tonborg's reason and question never
+// reach the Agent; answers run only on the person's words, at the item's
+// version, behind the delegation gate; the vote goes through the real
+// feedback check behind a fake console.
 
 const list = (app, input) => app.judgment.agent.questions(input);
 const answer = (app, input) => app.judgment.agent.answerQuestion(input);
 const SECRET = 'PRIVATE-PREFERENCE-ALPHA';
+const PLAIN = { projectAgentId: null, personalProjectId: null, sourceApplication: 'codex', sessionId: 'session-1' };
+const FLA = { projectAgentId: 'fla-1', personalProjectId: 'p', sourceApplication: 'codex', sessionId: 'session-1' };
 
-function fixture(t, { visible = null, states = {}, version = 3, said = '不要了，这条过时了' } = {}) {
+// visible: the item keys each reader may see (key '' is a plain session); states, version: what the Provider says.
+function fixture(t, { task = PLAIN, visible = {}, states = {}, version = 3, said = '不要了，这条过时了', capture = true,
+  permission = true } = {}) {
   const sent = [], revisions = [];
   const app = {
     config: { personal: { spaceId: 's' } },
+    getCapturePolicy: () => ({ enabled: capture }),
     listPersonalProjects: async () => [{ project_id: 'p' }, { project_id: 'q' }],
     personal: {
-      readVisibleKnowledgeItems: async ({ items, with_state: withState, with_version: withVersion }) => {
-        const shown = items.filter(item => !visible || visible.includes(`${item.item_kind}:${item.item_id}`));
+      readVisibleKnowledgeItems: async ({ items, with_state: withState, with_version: withVersion, reader_agent_id: agent = '' }) => {
+        const allowed = visible[agent];
+        const shown = items.filter(item => !allowed || allowed.includes(`${item.item_kind}:${item.item_id}`));
         return { items: shown, ...(withState ? { states: shown.map(item => ({ ...item,
           state: states[`${item.item_kind}:${item.item_id}`] ?? 'pending', ...(withVersion ? { version } : {}) })) } : {}) };
       }
     },
-    taskContextRegistry: { context: () => ({ projectAgentId: 'fla-1', personalProjectId: 'p', sourceApplication: 'codex', sessionId: 'session-1' }) },
+    taskContextRegistry: { context: () => task },
     entryPrompts: { read: () => ({ prompt: said, keptAt: '2026-11-07T00:00:00.000Z' }) },
     recentSessionUserMessages: async () => [],
     reviseKnowledgeItem: async input => { revisions.push(input); return { ok: true }; },
-    // The console: feedback runs the real judgment check and store, as the delegation gate would.
+    // The console: its delegation gate, then feedback through the real judgment check and store.
     delegatedConsole: { send: async call => {
+      if (!permission) throw Object.assign(new Error('This category was taken back by you'), { code: 'delegation_category_off' });
       sent.push(call);
       if (call.path === '/api/judgment/feedback') {
         const relay = { relayedBy: call.call.actor.agentId, personWords: call.call.relayed.words, messageRef: call.call.relayed.messageRef };
@@ -52,39 +60,50 @@ function fixture(t, { visible = null, states = {}, version = 3, said = '不要�
   return { app, service, sent, revisions, ask };
 }
 
-const space = { personalSpaceId: 's' };
+const call = { personalSpaceId: 's', taskContextToken: 'task-token' };
 const changes = f => f.sent.length + f.revisions.length;
+const listed = async (f, extra = {}) => (await list(f.app, { ...call, ...extra })).questions.map(question => question.item).sort();
 
-test('the list and one question give the item and guess, never Tonborg\'s reason or question', async t => {
-  const f = fixture(t);
+test('the list and one question give the item, its version and the guess, never Tonborg\'s reason or question', async t => {
+  const f = fixture(t, { version: 5 });
   const unsure = f.ask('entity:fridays', 'Deploy on Fridays', 'drop');
   f.ask('relationship:pnpm', 'Use pnpm in this repo', 'keep', { project: null });
-  const listed = await list(f.app, space);
-  assert.equal(listed.total, 2);
-  assert.deepEqual(listed.questions.map(question => [question.item, question.guess]).sort(),
+  const all = await list(f.app, call);
+  assert.equal(all.total, 2);
+  assert.deepEqual(all.questions.map(question => [question.item, question.guess]).sort(),
     [['Deploy on Fridays', 'drop'], ['Use pnpm in this repo', 'keep']]);
-  const one = await list(f.app, { ...space, decisionId: unsure.id });
-  assert.deepEqual(one.item, { itemKind: 'entity', itemId: 'fridays', text: 'Deploy on Fridays' });
+  const one = await list(f.app, { ...call, decisionId: unsure.id });
+  assert.deepEqual(one.item, { itemKind: 'entity', itemId: 'fridays', text: 'Deploy on Fridays', version: 5 });
   assert.equal(one.guess, 'drop');
   assert.match(one.next, /reason stays in the FULI console/);
   // Written from Tonborg's private context: withheld in both reads.
-  assert.doesNotMatch(JSON.stringify([listed, one]), new RegExp(`${SECRET}|Right\\?|reason for`));
+  assert.doesNotMatch(JSON.stringify([all, one]), new RegExp(`${SECRET}|Right\\?|reason for`));
 });
 
-test('an FLA sees only its project\'s and global items it may see; a hidden one, even in the same batch, is only counted', async t => {
-  const f = fixture(t, { visible: ['entity:mine', 'entity:global'] });
+test('an FLA reads as its task\'s own FLA and project, whatever the arguments say, and learns nothing of what it may not see', async t => {
+  const f = fixture(t, { task: FLA, visible: { 'fla-1': ['entity:mine', 'entity:global', 'entity:other'] } });
   f.ask('entity:mine', 'Mine', 'keep');
   f.ask('entity:global', 'Global', 'keep', { project: null });
   const hidden = f.ask('entity:hidden', 'Secret item title', 'drop');
-  f.ask('entity:other', 'Other project item', 'keep', { project: 'q' });
-  const listed = await list(f.app, { ...space, personalProjectId: 'p', projectAgentId: 'fla-1' });
-  assert.deepEqual(listed.questions.map(question => question.item).sort(), ['Global', 'Mine']);
-  assert.equal(listed.hiddenCount, 1);
-  assert.doesNotMatch(JSON.stringify(listed), /Secret|Other project/);
-  await assert.rejects(list(f.app, { ...space, decisionId: hidden.id }), /not an open Tonborg question/);
-  await assert.rejects(answer(f.app, { ...space, decisionId: hidden.id, answer: 'keep', personWords: '不要了，这条过时了',
-    taskContextToken: 'task-token' }), /not an open Tonborg question/);
+  const other = f.ask('entity:other', 'Other project item', 'keep', { project: 'q' });
+  // No projectAgentId argument, and another project named: still the task's FLA in project p.
+  for (const extra of [{}, { personalProjectId: 'q' }]) {
+    const read = await list(f.app, { ...call, ...extra });
+    assert.deepEqual(read.questions.map(question => question.item).sort(), ['Global', 'Mine']);
+    assert.equal(read.hiddenCount, undefined);
+    assert.doesNotMatch(JSON.stringify(read), /Secret|Other project/);
+  }
+  for (const decision of [hidden, other]) {
+    await assert.rejects(list(f.app, { ...call, decisionId: decision.id }), /not an open Tonborg question/);
+    await assert.rejects(answer(f.app, { ...call, decisionId: decision.id, answer: 'keep', personWords: '不要了，这条过时了' }),
+      /not an open Tonborg question/);
+  }
   assert.equal(changes(f), 0);
+  // A plain session may know that hidden items exist.
+  const plain = fixture(t, { visible: { '': ['entity:mine'] } });
+  plain.ask('entity:mine', 'Mine', 'keep');
+  plain.ask('entity:hidden', 'Secret', 'drop');
+  assert.equal((await list(plain.app, call)).hiddenCount, 1);
 });
 
 test('an item decided elsewhere and an older question about the same item are not open', async t => {
@@ -92,56 +111,61 @@ test('an item decided elsewhere and an older question about the same item are no
   f.ask('entity:done', 'Done', 'keep');
   const older = f.ask('entity:open', 'Open', 'drop');
   const newer = f.ask('entity:open', 'Open', 'keep');
-  const listed = await list(f.app, space);
-  assert.deepEqual(listed.questions.map(question => question.decisionId), [newer.id]);
-  await assert.rejects(answer(f.app, { ...space, decisionId: older.id, answer: 'drop', personWords: '不要了，这条过时了',
-    taskContextToken: 'task-token' }), /not an open Tonborg question/);
+  assert.deepEqual((await list(f.app, call)).questions.map(question => question.decisionId), [newer.id]);
+  await assert.rejects(answer(f.app, { ...call, decisionId: older.id, answer: 'drop', personWords: '不要了，这条过时了' }),
+    /not an open Tonborg question/);
   assert.equal(changes(f), 0);
-});
-
-test('an answered question is no longer listed, and a long list says how many more there are', async t => {
-  const f = fixture(t);
-  const first = f.ask('entity:a', 'A', 'keep');
-  f.ask('entity:b', 'B', 'keep');
-  f.ask('entity:c', 'C', 'keep');
-  await f.service.feedback({ ...space, decisionId: first.id, vote: 'up', reason: '', expectedRevision: 0 });
-  const listed = await list(f.app, { ...space, limit: 1 });
-  assert.deepEqual([listed.total, listed.questions.length, listed.more], [2, 1, 1]);
 });
 
 test('keep confirms the item as the person\'s, then the real feedback check records the vote on the guess', async t => {
-  const f = fixture(t, { said: '保留，这条还对' });
+  const f = fixture(t, { said: '保留，这条还对', version: 4 });
   const unsure = f.ask('entity:fridays', 'Deploy on Fridays', 'drop');
-  const result = await answer(f.app, { ...space, decisionId: unsure.id, answer: 'keep', personWords: '保留',
-    taskContextToken: 'task-token', sourceApplication: 'codex', sourceSessionId: 'session-1' });
-  assert.deepEqual(f.sent.map(call => call.path), ['/api/knowledge/batch-confirmation', '/api/judgment/feedback']);
-  const [confirm] = f.sent;
-  assert.deepEqual(confirm.body.items.map(item => [item.itemKind, item.itemId]), [['entity', 'fridays']]);
-  assert.doesNotMatch(JSON.stringify(confirm.body), new RegExp(SECRET));
+  const result = await answer(f.app, { ...call, decisionId: unsure.id, answer: 'keep', personWords: '保留', expectedVersion: 4,
+    sourceApplication: 'codex', sourceSessionId: 'session-1' });
+  assert.deepEqual(f.sent.map(sent => sent.path), ['/api/knowledge/batch-confirmation', '/api/judgment/feedback']);
+  assert.deepEqual(f.sent[0].body.items.map(item => [item.itemKind, item.itemId]), [['entity', 'fridays']]);
+  assert.doesNotMatch(JSON.stringify(f.sent[0].body), new RegExp(SECRET));
   assert.equal(result.vote, 'down');
   const stored = f.service.store().get('s', unsure.id).feedback;
   assert.deepEqual({ vote: stored.vote, words: stored.personWords }, { vote: 'down', words: '保留' });
+  assert.deepEqual(await listed(f), []);
 });
 
-test('words that pick one of the question\'s options are voted as that option and must mean the same answer', async t => {
+test('an item that changed since the AI explained it is refused before anything changes', async t => {
+  const f = fixture(t, { version: 6 });
+  const asked = f.ask('entity:fridays', 'Deploy on Fridays', 'drop');
+  for (const choice of ['keep', 'drop']) {
+    await assert.rejects(answer(f.app, { ...call, decisionId: asked.id, answer: choice, personWords: '不要了', expectedVersion: 5 }),
+      error => error.code === 'stale_version');
+  }
+  assert.equal(changes(f), 0);
+});
+
+test('an option counts as agreeing with Tonborg only when it is the guessed action, and must mean the same answer', async t => {
   const f = fixture(t, { said: '保持当前记录' });
   const asked = f.ask('entity:fridays', 'Deploy on Fridays', 'drop');
-  // 保持当前记录 is the keep option: answering drop with it is refused before anything changes.
-  await assert.rejects(answer(f.app, { ...space, decisionId: asked.id, answer: 'drop', personWords: '保持当前记录',
-    taskContextToken: 'task-token' }), /is the answer keep, not drop/);
+  await assert.rejects(answer(f.app, { ...call, decisionId: asked.id, answer: 'drop', personWords: '保持当前记录' }),
+    /is the answer keep, not drop/);
   assert.equal(changes(f), 0);
-  // As keep it votes up (the option's rule) although Tonborg guessed drop, and the real check accepts it.
-  const result = await answer(f.app, { ...space, decisionId: asked.id, answer: 'keep', personWords: '保持当前记录',
-    taskContextToken: 'task-token' });
+  // Tonborg guessed drop; keeping it is a down vote, and the real check agrees.
+  const kept = await answer(f.app, { ...call, decisionId: asked.id, answer: 'keep', personWords: '保持当前记录' });
+  assert.equal(kept.vote, 'down');
+  assert.equal(f.service.store().get('s', asked.id).feedback.vote, 'down');
+
+  // An edit option on an edit guess is up, and the answered question does not come back.
+  const g = fixture(t, { said: '补充或纠正信息：只在周一到周四部署' });
+  const edited = g.ask('relationship:deploy', 'Deploy on Fridays', 'edit');
+  const result = await answer(g.app, { ...call, decisionId: edited.id, answer: 'edit', personWords: '补充或纠正信息',
+    newText: '只在周一到周四部署' });
   assert.equal(result.vote, 'up');
-  assert.equal(f.service.store().get('s', asked.id).feedback.vote, 'up');
+  assert.deepEqual(await listed(g), []);
 });
 
-test('drop and edit change the item themselves at the version read now, then vote', async t => {
+test('drop and edit vote first, then change the item at the version read now', async t => {
   const f = fixture(t, { version: 7 });
   const dropped = f.ask('entity:fridays', 'Deploy on Fridays', 'drop');
-  const result = await answer(f.app, { ...space, decisionId: dropped.id, answer: 'drop', personWords: '不要了',
-    taskContextToken: 'task-token' });
+  const result = await answer(f.app, { ...call, decisionId: dropped.id, answer: 'drop', personWords: '不要了' });
+  assert.deepEqual(f.sent.map(sent => sent.path), ['/api/judgment/feedback']);
   assert.deepEqual(f.revisions.map(({ itemKind, itemId, action, expectedVersion, operationActor }) =>
     ({ itemKind, itemId, action, expectedVersion, operationActor })),
   [{ itemKind: 'entity', itemId: 'fridays', action: 'invalidate', expectedVersion: 7, operationActor: 'agent' }]);
@@ -150,30 +174,45 @@ test('drop and edit change the item themselves at the version read now, then vot
 
   const g = fixture(t, { version: 2, said: '改成：只在周一到周四部署' });
   const edited = g.ask('relationship:deploy', 'Deploy on Fridays', 'keep');
-  await assert.rejects(answer(g.app, { ...space, decisionId: edited.id, answer: 'edit', personWords: '只在周一到周四部署',
-    taskContextToken: 'task-token' }), /newText is required/);
-  await answer(g.app, { ...space, decisionId: edited.id, answer: 'edit', personWords: '只在周一到周四部署',
-    newText: '只在周一到周四部署', taskContextToken: 'task-token' });
+  await assert.rejects(answer(g.app, { ...call, decisionId: edited.id, answer: 'edit', personWords: '只在周一到周四部署' }),
+    /newText is required/);
+  await answer(g.app, { ...call, decisionId: edited.id, answer: 'edit', personWords: '只在周一到周四部署', newText: '只在周一到周四部署' });
   assert.deepEqual(g.revisions.map(({ action, fact, expectedVersion }) => ({ action, fact, expectedVersion })),
     [{ action: 'update', fact: '只在周一到周四部署', expectedVersion: 2 }]);
   assert.equal(g.service.store().get('s', edited.id).feedback.vote, 'down');
 });
 
-test('words the person did not say change nothing', async t => {
-  const f = fixture(t, { said: '先别动，等我看完' });
-  const unsure = f.ask('entity:fridays', 'Deploy on Fridays', 'drop');
+test('with the person\'s permission off, recording off, or words they did not say, nothing changes', async t => {
+  const off = fixture(t, { permission: false });
+  const a = off.ask('entity:fridays', 'Deploy on Fridays', 'drop');
   for (const choice of ['keep', 'drop']) {
-    await assert.rejects(answer(f.app, { ...space, decisionId: unsure.id, answer: choice, personWords: '不要了',
-      taskContextToken: 'task-token' }), error => error.code === 'person_words_not_found');
+    await assert.rejects(answer(off.app, { ...call, decisionId: a.id, answer: choice, personWords: '不要了' }),
+      error => error.code === 'delegation_category_off');
   }
-  assert.equal(changes(f), 0);
+  assert.equal(off.revisions.length, 0);
+
+  const paused = fixture(t, { capture: false });
+  const b = paused.ask('entity:fridays', 'Deploy on Fridays', 'drop');
+  await assert.rejects(answer(paused.app, { ...call, decisionId: b.id, answer: 'drop', personWords: '不要了' }),
+    error => error.code === 'capture_disabled');
+  assert.equal(changes(paused), 0);
+
+  const unsaid = fixture(t, { said: '先别动，等我看完' });
+  const c = unsaid.ask('entity:fridays', 'Deploy on Fridays', 'drop');
+  for (const choice of ['keep', 'drop']) {
+    await assert.rejects(answer(unsaid.app, { ...call, decisionId: c.id, answer: choice, personWords: '不要了' }),
+      error => error.code === 'person_words_not_found');
+  }
+  assert.equal(changes(unsaid), 0);
 });
 
 test('the tools are listed with their schemas and in the interface catalog', () => {
   assert.deepEqual(TONBORG_QUESTION_DEFINITIONS.map(tool => tool.name), ['list_tonborg_questions', 'answer_tonborg_question']);
-  const answerSchema = TONBORG_QUESTION_DEFINITIONS[1].inputSchema;
+  const [listSchema, answerSchema] = TONBORG_QUESTION_DEFINITIONS.map(tool => tool.inputSchema);
+  assert.deepEqual(listSchema.required, ['personalSpaceId', 'taskContextToken']);
   assert.deepEqual(answerSchema.required, ['personalSpaceId', 'decisionId', 'answer', 'personWords', 'taskContextToken']);
-  assert.ok(answerSchema.properties.newText);
+  for (const schema of [listSchema, answerSchema]) assert.equal(schema.properties.projectAgentId, undefined);
+  assert.ok(answerSchema.properties.newText && answerSchema.properties.expectedVersion);
   const domain = agentInterfaceCatalog().readWorkflows.find(entry => entry.domain === 'tonborg-questions');
   assert.deepEqual(domain.toolNames, ['list_tonborg_questions', 'answer_tonborg_question']);
 });
