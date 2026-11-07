@@ -924,6 +924,10 @@ describe('KnowledgeWorkspace', () => {
         'knowledge-profile-filter',
         'knowledge-human-change-filter',
       ])
+    // The reload button draws the shared refresh icon, not a ↻ text glyph.
+    const reload = wrapper.get('button[aria-label="刷新"]')
+    expect(reload.find('svg').exists()).toBe(true)
+    expect(reload.text()).not.toContain('↻')
     wrapper.unmount()
   })
 
