@@ -41,24 +41,24 @@
   <tr>
     <td width="50%" valign="top">
       <img src="docs/readme/card-memory-zh.webp" alt="Claude Code、Codex 和 OpenCode 接入同一个 FULI" width="460" />
-      <h3>所有客户端共用一份记忆</h3>
+      <h3 align="center">所有客户端共用一份记忆</h3>
       点一下就接入 Claude Code、Codex、OpenCode 或 Cursor。在一个客户端里说过的规矩，换到另一个也还在。
     </td>
     <td width="50%" valign="top">
       <img src="docs/readme/card-team-zh.webp" alt="三位 FLA 在圆桌里一起评审一个修复" width="460" />
-      <h3>FLA 团队，在圆桌上对话</h3>
+      <h3 align="center">FLA 团队，在圆桌上对话</h3>
       每个项目有一位负责的 Agent（FLA），有名字、职业和自己的工作记忆；活儿需要时，几位 FLA 组成小组。它们在圆桌里互相评审、测试、交接，每一句你都看得到。
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <img src="docs/readme/card-tonborg-zh.webp" alt="等你确认的知识，以及交给 Tonborg 确认的开关" width="460" />
-      <h3><img src="docs/readme/fla-tonborg.webp" alt="" width="28" /> Tonborg 替你确认</h3>
+      <h3 align="center"><img src="docs/readme/fla-tonborg.webp" alt="" width="28" /> Tonborg 替你确认</h3>
       新知识要等一句确认。打开「交给 Tonborg 确认」，它按你的偏好确认日常的条目，拿不准的留给你，每次都写下理由，点赞或点踩它下次就改。
     </td>
     <td width="50%" valign="top">
       <img src="docs/readme/card-tokens-zh.webp" alt="每个成功任务的 token：用 FULI 是 0.81 倍" width="460" />
-      <h3>越用越省 token</h3>
+      <h3 align="center">越用越省 token</h3>
       即将发布的 0.25.0 实测：同样的任务，用 FULI 每个成功任务花的 token 是不用时的 0.81 倍，72 个任务通过 70 个。省下的来自代码里没有、只在你话里的事实。
     </td>
   </tr>
