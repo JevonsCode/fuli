@@ -114,16 +114,16 @@
             <div class="chapter-copy">
               <p data-i18n="memory.eyebrow" class="eyebrow">Token 与准确率</p>
               <h2 data-i18n-html="memory.title" id="memory-title">先给标题，<br><em>需要时再读正文。</em></h2>
-              <p data-i18n="memory.description">入口在同一会话里只发变了的部分，任务要用的知识按需取回。真实客户端上测的：</p>
+              <p data-i18n="memory.description">入口在同一会话里只发变了的部分，任务要用的知识按需取回。一个项目连续 9 个会话实测：</p>
               <dl class="chapter-stats">
-                <div><dt data-i18n="memory.statEntry">6 轮入口</dt><dd><b>24.3 KB</b></dd></div>
-                <div><dt data-i18n="memory.statFact">送到对的知识</dt><dd><b>4/6</b></dd></div>
-                <div><dt data-i18n="memory.statDone">需要项目知识的任务做成</dt><dd><b>18/18</b><small data-i18n="memory.statDoneOff">不开时 3/18</small></dd></div>
+                <div><dt data-i18n="memory.statTokens">每个做成的任务用的 token</dt><dd><b>0.81×</b><small data-i18n="memory.statTokensOff">不开 FULI 为 1×</small></dd></div>
+                <div><dt data-i18n="memory.statSaid">只说过一次的事，照样做对</dt><dd><b>6/8 · 8/8</b><small data-i18n="memory.statSaidOff">不开时 0/8</small></dd></div>
+                <div><dt data-i18n="memory.statRecall">留出提问送到对的知识</dt><dd><b>25/32</b></dd></div>
               </dl>
               <dl class="model-modes">
                 <div class="is-model"><dt><span data-i18n="model.on" class="model-tag">接了模型</span></dt><dd data-i18n="memory.modelOn"></dd></div>
               </dl>
-              <a data-i18n="memory.report" data-i18n-href="memory.reportUrl" class="chapter-link" href="https://xn--8ovp9s.xn--m8txu.com/fuli/report/">看完整实测：开着 FULI，输入是不开时的 1.53 倍</a>
+              <a data-i18n="memory.report" data-i18n-href="memory.reportUrl" class="chapter-link" href="https://xn--8ovp9s.xn--m8txu.com/fuli/report/">看完整实测：每做成一个任务，token 是不开时的 0.81 倍</a>
             </div>
             <figure data-i18n-aria-label="memory.example" class="memory static-figure" aria-label="对话记忆：较早的消息折叠成摘要，最近的保留原文">
               <div class="memory-digest"><b data-i18n="memory.summary">摘要</b><span data-i18n="memory.taskOne">10/08 完成 · 接口拆分</span><span data-i18n="memory.taskTwo">10/09 完成 · 补测试</span><span data-i18n="memory.earlier">更早的请求 · 6 条</span></div>
