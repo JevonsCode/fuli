@@ -1,5 +1,12 @@
 <p align="center">
   <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/svg/lockup/fuli-lockup-bilingual-horizontal-dark.svg" />
+    <img src="brand/svg/lockup/fuli-lockup-bilingual-horizontal.svg" alt="FULI 复利 logo" width="200" />
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/readme/hero-en-dark.webp" />
     <img src="docs/readme/hero-en.webp" alt="FULI 复利: your AI tools share one memory of you and your projects" width="800" />
   </picture>
@@ -12,6 +19,8 @@
 <p align="center">
   <a href="https://github.com/JevonsCode/fuli/releases/latest"><img src="https://img.shields.io/github/v/release/JevonsCode/fuli?style=flat&label=desktop" alt="latest release" /></a>
   <a href="https://www.npmjs.com/package/fuli-context"><img src="https://img.shields.io/npm/v/fuli-context?style=flat&logo=npm&label=fuli-context" alt="npm version" /></a>
+  <a href="https://github.com/JevonsCode/fuli/releases"><img src="https://img.shields.io/github/downloads/JevonsCode/fuli/total?style=flat&label=desktop%20downloads" alt="desktop downloads" /></a>
+  <a href="https://www.npmjs.com/package/fuli-context"><img src="https://img.shields.io/npm/dm/fuli-context?style=flat&label=npm%20downloads" alt="npm downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="license" /></a>
 </p>
 
