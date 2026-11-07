@@ -94,7 +94,7 @@ test('an OpenAI-compatible endpoint gets the saved key, which no answer or log c
     const refused = await list(url, { protocol: 'openai_chat', endpoint: `${model.base}/compatible-mode/v1` });
     assert.equal(refused.status, 502);
     assert.deepEqual(await refused.json(), { error: 'The endpoint\'s models could not be listed (auth_failed)', code: 'auth_failed' });
-    // The same key for another origin (rec#10 on fuli#784) is refused before any request leaves.
+    // The same key for another origin (dot review of fuli PR 784) is refused before any request leaves.
     const seen = model.seen.length;
     const elsewhere = await list(url, { protocol: 'openai_chat',
       endpoint: `${model.base.replace('127.0.0.1', 'localhost')}/compatible-mode/v1`, secretRef: 'synthetic' });

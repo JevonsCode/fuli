@@ -13,7 +13,7 @@ export const aiHelpMessages = {
       webmcp: '浏览器里的 AI 也能直接用这一页的工具；密钥和你的决定仍由你自己点。',
     },
     topics: {
-      models: '内置 Agent 和语义搜索用哪个模型、发哪些内容、花多少。让你的 Agent 去找接口和 Key 并接好。',
+      models: '内置 Agent 和语义搜索用哪个模型、发哪些内容、花多少。告诉你的 Agent 用哪个接口和 Key，它来接好。',
       capture: 'FULI 记录哪些对话。你的 Agent 可以按你的话调整，改动会先给你预览。',
       captureProjects: '哪些项目的对话会被记下。你的 Agent 可以按你的话调整。',
       access: 'Agent 能不能用 FULI 的总开关。只能你本人在这台电脑上改。',
@@ -54,7 +54,7 @@ export const aiHelpMessages = {
       webmcp: 'The AI in your browser can also use this page\'s tools; keys and your own decisions stay your clicks.',
     },
     topics: {
-      models: 'Which model the built-in Agents and semantic search use, what they send and spend. Your Agent can find an endpoint and key and connect it.',
+      models: 'Which model the built-in Agents and semantic search use, and what they send and spend. Name an endpoint and key; your Agent connects them.',
       capture: 'Which conversations FULI records. Your Agent can change it as you say; you see a preview first.',
       captureProjects: 'Which projects\' conversations are recorded. Your Agent can change it as you say.',
       access: 'Whether Agents may use FULI at all. Only you change it, on this computer.',

@@ -43,6 +43,7 @@ export function shellPageTools(shell: { router: Router; spaceId: () => string })
       input: z.object({ query: z.string().trim().min(1).max(500), projectId: z.string().min(1).optional(), includePending: z.boolean().optional() }),
       routes: ['GET /api/search'],
       readOnly: true,
+      untrustedContent: true,
       async run(input, context) {
         const params = new URLSearchParams({ personalSpaceId: shell.spaceId(), q: input.query, limit: String(SEARCH_LIMIT),
           ...(input.projectId ? { personalProjectId: input.projectId } : {}), ...(input.includePending ? { pending: 'true' } : {}) })

@@ -55,7 +55,7 @@ describe('ModelKeyEntry', () => {
     expect(wrapper.html()).not.toContain(SYNTHETIC_KEY)
   })
 
-  it('a key saved for another address says so, and asks for an address before any key is saved (rec#10 on fuli#784)', async () => {
+  it('a key saved for another address says so, and asks for an address before any key is saved (dot review of fuli PR 784)', async () => {
     api.getJson.mockResolvedValue({ saved: ['shared'], origins: { shared: 'https://api.deepseek.test' } })
     const wrapper = mount(ModelKeyEntry, { props: { reference: 'shared', endpoint: ENDPOINT } })
     await flushPromises()

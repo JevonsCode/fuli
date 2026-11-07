@@ -131,7 +131,7 @@ async function conflict(code: ConfigConflict) {
 }
 
 // The browser's AI agent can do what this page does (WebMCP); its changes show here as they land.
-usePageTools(() => modelPageTools({ spaceId: () => activeSpace.value, projects: () => projects.value, changed: () => void settingsChanged() }))
+usePageTools(() => modelPageTools({ changed: () => void settingsChanged() }))
 
 function trustSaved(next: ModelRolesPayload) {
   notice.value = historyNote(next)

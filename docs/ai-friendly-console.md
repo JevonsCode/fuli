@@ -10,12 +10,12 @@ Every console action should be doable by the person's own AI, with as little of 
 
 ## Console page tools (WebMCP)
 
-[WebMCP](https://webmachinelearning.github.io/webmcp/) lets a page offer tools to the browser's AI agent. Chrome's origin trial (149+) puts it on `document.modelContext`; older builds used `navigator.modelContext`. FULI feature-detects both (`web/src/features/webmcp/model-context.ts`). It registers each tool with `registerTool(tool, { signal })` and unregisters it by aborting the signal when the page goes; an older build's `unregister()` handle is called too. Read tools carry `readOnlyHint`, changes carry `consequentialHint`. Where the browser offers no model context, nothing is registered.
+[WebMCP](https://webmachinelearning.github.io/webmcp/) lets a page offer tools to the browser's AI agent. Chrome's origin trial (149+) puts it on `document.modelContext`; older builds used `navigator.modelContext`. FULI feature-detects both (`web/src/features/webmcp/model-context.ts`). It registers each tool with `registerTool(tool, { signal })` and unregisters it by aborting the signal when the page goes; an older build's `unregister()` handle is called too. Read tools carry `readOnlyHint` and changes carry `consequentialHint`. Tools whose answer holds text other Agents or sources wrote (knowledge search, the 待决策 lines) also carry `untrustedContentHint`. Where the browser offers no model context, nothing is registered.
 
 | Page | Tools |
 | --- | --- |
 | Every page | `fuli_open_page`, `fuli_search_knowledge` |
-| 模型与用量 | `fuli_read_model_settings`, `fuli_configure_model_role`, `fuli_test_model_role` |
+| 模型与用量 | `fuli_read_model_settings`, `fuli_configure_model_role` (connection, model, key name, on/off, operations; never which projects may send content), `fuli_test_model_role` |
 | 设置 | `fuli_read_settings`, `fuli_update_settings` (settings that apply without a restart) |
 | 待决策 | `fuli_list_decisions` (read only) |
 
@@ -23,7 +23,7 @@ Every console action should be doable by the person's own AI, with as little of 
 
 A page tool declares the catalog routes it reaches (`routes`) and cannot send a change anywhere else. Tools build their bodies with the page's own builders (`roleDraft`, `roleEdit`, `withoutRestartChanges`), not a copy. `test/ai-friendly-console.test.js` fails in two cases: a declared change route has no catalog entry, or a page tool reaches a route the catalog does not make `agent_delegable`.
 
-### Trust model (rec#10 on fuli#784)
+### Trust model (dot review of fuli PR 784)
 
 A page tool's change is sent only the way `run_delegated_action` sends it, with the `x-fuli-delegation` header (actor client `webmcp`, the agent's reason). The console's delegation gate decides from the catalog and the person's AI permissions, and records the change with its undo in 设置 › AI 权限 (shown as 浏览器 AI). A page tool never does more than an FLA could.
 
@@ -33,16 +33,17 @@ There is no in-page "allow" sheet. Anything that drives the page could click it,
 
 - **A model key.** The person enters it in the model dialog. Or their MCP Agent, when asked, pipes it into `fuli models set-key <secretRef> --endpoint <url>` on stdin.
 - **Listing an endpoint's models.** This sends a saved key to a typed address. The Agent that found the key lists the models itself.
+- **Which projects' content may go to a model (egress).** Text an agent read elsewhere could otherwise point project content at an address it chose. The person sets egress in the model dialog, or an MCP Agent sets it through `run_delegated_action`, where it is recorded with its undo.
 - **Confirming or dropping 待决策 items.** These are recorded as the person's decision. The agent reads the list and suggests, and the person clicks. An MCP Agent can instead relay the person's exact words through `agent_relayed`.
 
-### Keys are tied to their endpoint (rec#10 on fuli#784)
+### Keys are tied to their endpoint (dot review of fuli PR 784)
 
 Each saved key records the endpoint origin it was saved for: scheme, host and port (`src/model-backends/secret-store.js`). The store reads a key only for a request to that origin, so a connection pointed at another host never receives it:
 
 - **Saving.** The model dialog sends the endpoint typed above the key field; the CLI requires `--endpoint`.
 - **Sending.** The model port refuses a call before decrypting the key, with receipt reason `key_endpoint_mismatch`. That covers role calls and 测试连接. The endpoint listing answers `409 secret_endpoint_mismatch` before any request leaves.
 - **Editing.** A role edit (delegated, or the person's own) that points a connection naming a tied key at another origin is refused with `409 key_endpoint_mismatch` and leaves the file unchanged. Using the key elsewhere means saving it again for the new endpoint. The dialog says so when the typed address differs from the key's origin.
-- **Older keys.** Keys saved before origins were recorded are tied once, when a runtime first opens the store. Each goes to the single origin of the configured connections that name it. A key that none or several connections name stays untied, and is refused (`secret_endpoint_unbound`) until it is saved again.
+- **Older keys.** Keys saved before origins were recorded are tied once, when a runtime first opens the store. Each goes to the single origin of the configured connections that name it. A key that none or several connections name stays untied, and is refused (`secret_endpoint_unbound`) until it is saved again. A role edit may keep an untied key on the origin its connection already had, but cannot give it to a new connection or a new origin. Otherwise the one-time binding could tie it to an address an Agent chose.
 
 ## 「?」 and 「让 AI 来做」
 
@@ -56,7 +57,7 @@ The prompts address the person's Agent, not the person, so they are kept out of 
 
 The model prompt is the main case:
 
-1. Find an endpoint and key the person can use.
+1. Ask the person which endpoint and key to use, or use the one they named. Never search for a key yourself.
 2. List the endpoint's models with that key.
 3. Pipe the key into `fuli models set-key … --endpoint …`, or ask the person to paste it.
 4. Save the role with `run_delegated_action`.

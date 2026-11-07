@@ -61,7 +61,7 @@ test('every console page tool reaches only catalog routes or reads, and declares
       assert.ok(tool.routes.includes(route), `${tool.name} uses ${route} without declaring it`);
     }
   }
-  // rec#10 on fuli#784: a page tool only does what the delegation gate lets an FLA do; no page tool reaches a
+  // dot review of fuli PR 784: a page tool only does what the delegation gate lets an FLA do; no page tool reaches a
   // route that is the person's own (a key, the endpoint listing, a decision recorded as theirs).
   for (const tool of tools) {
     for (const route of tool.routes.filter((route) => !route.startsWith('GET '))) {

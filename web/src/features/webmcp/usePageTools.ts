@@ -12,7 +12,8 @@ export function registerPageTools(tools: readonly PageTool[], signal: AbortSigna
       title: tool.title,
       description: tool.description,
       inputSchema: toolInputSchema(tool),
-      annotations: tool.readOnly ? { readOnlyHint: true } : { consequentialHint: true },
+      annotations: { ...(tool.readOnly ? { readOnlyHint: true } : { consequentialHint: true }),
+        ...(tool.untrustedContent ? { untrustedContentHint: true } : {}) },
       execute: (input, options) => runPageTool(tool, input, options?.signal ?? signal),
     }, signal)
   }

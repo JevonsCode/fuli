@@ -17,7 +17,7 @@ import { t } from '@/i18n'
 // person's own (local_user_only, a decision in their words, a category they
 // turned off, a route with its own Agent tool), the tool is refused with the
 // gate's reason and nothing is sent again: the page has no channel that
-// proves the person, not the calling agent, approved it (rec#10 on fuli#784).
+// proves the person, not the calling agent, approved it (dot review of fuli PR 784).
 
 const DELEGATION_HEADER = 'x-fuli-delegation'
 const PERSON_DECIDES = new Set(['local_user_only', 'agent_tool_route', 'person_words_required', 'delegation_category_off'])
@@ -58,6 +58,8 @@ export interface PageTool<Input extends z.ZodType = z.ZodType> {
   /** Catalog routes (method and path pattern) the tool may reach; GET routes are reads. */
   routes: readonly string[]
   readOnly?: boolean
+  /** The answer carries text other Agents or sources wrote (WebMCP untrustedContentHint). */
+  untrustedContent?: boolean
   run: (input: z.infer<Input>, context: PageToolContext) => Promise<unknown>
 }
 

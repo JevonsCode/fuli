@@ -2,10 +2,9 @@ import { z } from 'zod'
 
 import { shapeFor, shapeOf } from '@/api/response-shape'
 import { definePageTool, PageToolError } from '@/features/webmcp/page-tool'
-import type { PersonalProject } from '@/types'
 
 import {
-  MODEL_ROLES, SEMANTIC_ROLE, roleDraft, roleEdit, roleName, rolesSharing, validKeyReference, withConnection, withProject,
+  MODEL_ROLES, SEMANTIC_ROLE, roleDraft, roleEdit, roleName, rolesSharing, validKeyReference, withConnection,
   type ModelRoleCheckResult, type ModelRoleId, type ModelRolesPayload, type RoleDraft,
 } from './model'
 import { modelsInUse } from './model-uses'
@@ -15,8 +14,12 @@ import { modelsInUse } from './model-uses'
 // their own agent. Role edits and 测试连接 go through the delegation gate
 // (model_settings). There is no page tool for a key or for the endpoint
 // listing, which sends a saved key to a typed address: those stay the
-// person's (rec#10 on fuli#784), and a key is sent only to the origin it was
-// saved for (src/model-backends/secret-store.js).
+// person's (dot review of fuli PR 784), and a key is sent only to the origin it was
+// saved for (src/model-backends/secret-store.js). Which projects' content
+// may go to a model (egress) is not a page tool's to change either: text an
+// agent read elsewhere could otherwise send project content to an address
+// it chose. The person sets it in the model dialog, or an MCP Agent through
+// run_delegated_action, where it is recorded with its undo.
 
 const PROTOCOLS = ['openai_chat', 'anthropic_messages', 'openai_embeddings', 'typesafe_systemone'] as const
 // The fields these tools rely on in each answer.
@@ -28,13 +31,11 @@ const CHECK_SHAPE = shapeFor<ModelRoleCheckResult>(z.looseObject({ ok: z.boolean
 const ROLE = z.enum(MODEL_ROLES).describe('assistant is Astro; semantic is 语义搜索 (embeddings).')
 
 export interface ModelPageContext {
-  spaceId: () => string
-  projects: () => readonly PersonalProject[]
   /** The page reads its settings again after a change. */
   changed: () => void
 }
 
-function summary(payload: ModelRolesPayload, keyOrigins: Record<string, string | null>, projects: readonly PersonalProject[]) {
+function summary(payload: ModelRolesPayload, keyOrigins: Record<string, string | null>) {
   return {
     revision: payload.revision,
     state: payload.state,
@@ -50,7 +51,6 @@ function summary(payload: ModelRolesPayload, keyOrigins: Record<string, string |
     modelsInUse: modelsInUse(payload).map(entry => ({ connectionId: entry.id, model: entry.model, uses: entry.uses })),
     // Each saved key name and the origin it is sent to; a connection may name a key only for that origin.
     savedKeys: keyOrigins,
-    projects: projects.map(project => ({ id: project.project_id, name: project.profile.name })),
   }
 }
 
@@ -65,12 +65,10 @@ const CONFIGURE = z.object({
     .describe('Name of a key saved on this computer for the origin of this endpoint (see savedKeys); never the key itself.'),
   enabled: z.boolean().optional(),
   operations: z.array(z.string().trim().min(1)).max(32).optional().describe('What this role sends to its model; see fuli_read_model_settings.'),
-  approveProjects: z.array(z.string().trim().min(1)).max(64).optional().describe('Project ids whose content may go to this model.'),
-  withdrawProjects: z.array(z.string().trim().min(1)).max(64).optional(),
-  allowUnassigned: z.boolean().optional(),
-})
+}).strict()
 
-function configuredDraft(payload: ModelRolesPayload, input: z.infer<typeof CONFIGURE>, spaceId: string, projects: readonly PersonalProject[]) {
+// The role's draft with the given fields; egress (approved projects) stays as it is.
+function configuredDraft(payload: ModelRolesPayload, input: z.infer<typeof CONFIGURE>) {
   let draft: RoleDraft = roleDraft(payload, input.role)
   if (input.connectionId && input.connectionId !== draft.connectionId) draft = withConnection(draft, payload, input.connectionId)
   const fields: Partial<RoleDraft> = {
@@ -78,17 +76,8 @@ function configuredDraft(payload: ModelRolesPayload, input: z.infer<typeof CONFI
     ...(input.model ? { model: input.model } : {}), ...(input.secretRef !== undefined ? { secretRef: input.secretRef } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
     ...(input.operations ? { operations: input.operations.join(', ') } : {}),
-    ...(input.allowUnassigned !== undefined ? { allowUnassigned: input.allowUnassigned } : {}),
   }
-  draft = { ...draft, ...fields }
-  const known = new Set(projects.map(project => project.project_id))
-  for (const [ids, approved] of [[input.approveProjects ?? [], true], [input.withdrawProjects ?? [], false]] as const) {
-    for (const id of ids) {
-      if (!known.has(id)) throw new PageToolError('invalid_input', `Unknown project ${id}; read fuli_read_model_settings for project ids`)
-      draft = withProject(draft, { personalSpaceId: spaceId, personalProjectId: id }, approved)
-    }
-  }
-  return draft
+  return { ...draft, ...fields }
 }
 
 export function modelPageTools(page: ModelPageContext) {
@@ -96,25 +85,25 @@ export function modelPageTools(page: ModelPageContext) {
     definePageTool({
       name: 'fuli_read_model_settings',
       title: 'Read FULI model settings',
-      description: 'Every built-in Agent role (Astro=assistant, Jefa, Tonborg, Bole, semantic search) with its state, connection, model, key name, operations and approved projects; saved key names with the origin each may be sent to (never keys), and the project ids.',
+      description: 'Every built-in Agent role (Astro=assistant, Jefa, Tonborg, Bole, semantic search) with its state, connection, model, key name, operations and approved projects; saved key names with the origin each may be sent to (never keys).',
       input: z.object({}),
       routes: ['GET /api/model-backends/roles', 'GET /api/model-backends/keys'],
       readOnly: true,
       async run(_input, context) {
         const [payload, keys] = await Promise.all([context.read('/api/model-backends/roles', ROLES_SHAPE),
           context.read('/api/model-backends/keys', KEYS_SHAPE)])
-        return summary(payload, keys.origins, page.projects())
+        return summary(payload, keys.origins)
       },
     }),
     definePageTool({
       name: 'fuli_configure_model_role',
       title: 'Connect or change a role\'s model',
-      description: 'Set a built-in Agent role\'s connection (protocol, endpoint, model, secretRef), switch it on or off, choose its operations and which projects may send content to it. Omitted fields stay as they are. Then test it with fuli_test_model_role.',
+      description: 'Set a built-in Agent role\'s connection (protocol, endpoint, model, secretRef), switch it on or off, choose its operations. Omitted fields stay as they are; which projects may send content to the model is left to the person. Then test it with fuli_test_model_role.',
       input: CONFIGURE,
       routes: ['GET /api/model-backends/roles', 'PUT /api/model-backends/roles/:role'],
       async run(input, context) {
         const payload = await context.read('/api/model-backends/roles', ROLES_SHAPE)
-        const draft = configuredDraft(payload, input, page.spaceId(), page.projects())
+        const draft = configuredDraft(payload, input)
         if (input.role === SEMANTIC_ROLE && draft.protocol !== 'openai_embeddings') {
           throw new PageToolError('invalid_input', 'semantic takes the openai_embeddings protocol')
         }

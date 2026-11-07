@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  endpointOrigin,
   costValue, roleDraft, roleEdit, rolesSharing, tokenValue, usageParts, usageRows, usageWindowStart, withConnection, withProject,
   type ModelRolesPayload, type UsageGroup,
 } from './model'
@@ -114,5 +115,16 @@ describe('a new role and Dreaming', () => {
   it('starts without it, so the person turns it on', () => {
     const payload = { state: 'ok', revision: 'r', roles: [], connections: {}, operations: { assistant: ['project_candidate', 'dreaming'] } } as unknown as ModelRolesPayload
     expect(roleDraft(payload, 'assistant').operations).toBe('project_candidate')
+  })
+})
+
+describe('endpointOrigin', () => {
+  it('names the origin a key is tied to, only for an address the server would save', () => {
+    expect(endpointOrigin(' https://api.example.test/v1 ')).toBe('https://api.example.test')
+    expect(endpointOrigin('http://127.0.0.1:11434/v1')).toBe('http://127.0.0.1:11434')
+    for (const refused of ['', 'not a url', 'ftp://api.example.test', 'https://user:pass@api.example.test/v1',
+      'https://api.example.test/v1?x=1', 'https://api.example.test/v1#part']) {
+      expect(endpointOrigin(refused), refused).toBeNull()
+    }
   })
 })

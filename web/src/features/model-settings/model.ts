@@ -382,14 +382,17 @@ export const readSavedKeys = () => getJson<{ saved: string[]; origins: Record<st
 export const saveModelKey = (reference: string, key: string, endpoint: string) =>
   putJson<{ reference: string; saved: true }>(`/api/model-backends/keys/${encodeURIComponent(reference.trim())}`, { key, endpoint })
 
-/** The origin a key for this endpoint is tied to, or null for an address the server would not save. */
+/**
+ * The origin a key for this endpoint is tied to, or null for an address the
+ * server would not save (src/model-backends/config.js endpointUrl): HTTP(S)
+ * only, with no user name, password, query or fragment.
+ */
 export function endpointOrigin(endpoint: string): string | null {
-  try {
-    const url = new URL(endpoint.trim())
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.origin : null
-  } catch {
-    return null
-  }
+  let url: URL
+  try { url = new URL(endpoint.trim()) } catch { return null }
+  const accepted = (url.protocol === 'https:' || url.protocol === 'http:')
+    && !url.username && !url.password && !url.search && !url.hash
+  return accepted ? url.origin : null
 }
 
 // ---- Usage ----------------------------------------------------------------

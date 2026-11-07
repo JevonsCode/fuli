@@ -37,7 +37,7 @@ describe('a card\'s 「?」', () => {
     await help.get('[data-ai-help]').trigger('click')
     await flushPromises()
     const card = document.querySelector('[data-glossary-term="task.models"]')!
-    expect(card.textContent).toContain('让你的 Agent 去找接口和 Key 并接好')
+    expect(card.textContent).toContain('告诉你的 Agent 用哪个接口和 Key，它来接好')
     expect(card.querySelector('pre')!.textContent).toContain(`GET ${window.location.origin}/api/model-backends/roles`)
     ;(card.querySelector('[data-ai-task-copy]') as HTMLButtonElement).click()
     await flushPromises()

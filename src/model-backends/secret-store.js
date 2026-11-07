@@ -12,7 +12,7 @@ import { createDpapiProtector } from './windows-dpapi.js';
 // carries the key. The file is not part of config export, sync or backup.
 //
 // Each key is tied to the endpoint origin (scheme, host, port) it was saved
-// for, and is read only for that origin (rec#10 on fuli#784): a connection
+// for, and is read only for that origin (dot review of fuli PR 784): a connection
 // pointed at another host, by a delegated role edit or anything else, cannot
 // take an existing key there. Using it elsewhere means saving it again for
 // the new endpoint. Keys saved before origins were recorded are tied once,

@@ -20,6 +20,9 @@ import { keyOrigin } from './secret-store.js';
 // keyOrigins() maps each saved key to the origin it is tied to (secret-store.js):
 // an edit that points a connection naming a tied key at another origin is
 // refused, whoever sends it, so the key is saved again for the new endpoint.
+// A key saved before origins were recorded and not tied yet (null) may stay
+// on the origin its connection already had, and goes nowhere new: otherwise
+// a later one-time binding could tie it to an address an Agent chose.
 
 const EDIT = z.object({
   revision: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
@@ -42,7 +45,7 @@ export function createModelRoleSettings(configPath, { history = null, keyOrigins
       let recorded = 'not_recorded';
       updateVersionedJsonFileAtomic(configPath, MODEL_BACKEND_CONFIG_FORMAT, () => {
         before = readModelBackendConfig(configPath);
-        return withTiedKeys(nextConfig(before, role, edit), edit.connectionId, keyOrigins());
+        return withTiedKeys(before, nextConfig(before, role, edit), edit.connectionId, keyOrigins());
       }, { read: () => null, write(path, next) {
         writeJsonFileAtomic(path, next);
         recorded = record(history, role, before, next);
@@ -79,14 +82,20 @@ function nextConfig(loaded, role, { revision, connectionId, connection, settings
   });
 }
 
-// The edited connection may name a key only for the origin that key is tied to; an untied key passes and is refused when sent.
-function withTiedKeys(next, connectionId, origins) {
+// The edited connection may name a saved key only for the origin that key is
+// tied to; an untied one only where this connection already sent it.
+function withTiedKeys(loaded, next, connectionId, origins) {
   const { secretRef, endpoint } = next.connections[connectionId];
-  const tied = secretRef ? origins[secretRef] : null;
-  if (tied && tied !== keyOrigin(endpoint)) {
-    throw new ApplicationError('key_endpoint_mismatch',
-      `The key ${secretRef} was saved for ${tied}, not ${keyOrigin(endpoint)}. Nothing was saved; save the key again for the new endpoint first.`,
-      { status: 409 });
+  if (!secretRef || !Object.hasOwn(origins, secretRef)) return next;
+  const origin = keyOrigin(endpoint);
+  const previous = loaded.state === 'ok' ? loaded.config.connections[connectionId] : null;
+  const allowed = origins[secretRef]
+    ?? (previous?.secretRef === secretRef ? keyOrigin(previous.endpoint) : null);
+  if (allowed !== origin) {
+    throw new ApplicationError('key_endpoint_mismatch', allowed
+      ? `The key ${secretRef} was saved for ${allowed}, not ${origin}. Nothing was saved; save the key again for the new endpoint first.`
+      : `The key ${secretRef} is not tied to an endpoint yet. Nothing was saved; save the key again for ${origin} first.`,
+    { status: 409 });
   }
   return next;
 }

@@ -8,7 +8,7 @@ import type { useReviewList } from './review-store'
 // 待决策's tool for the browser's AI agent (WebMCP): reading only. A decision
 // made from this page would be recorded as the person's own (人确认), and the
 // page cannot prove the person rather than the agent made it (rec#10 on
-// fuli#784). The agent sorts the list and suggests; the person decides with
+// fuli PR 784). The agent sorts the list and suggests; the person decides with
 // their own clicks, or tells their MCP Agent, which relays their exact words.
 
 const LINE_TEXT = 60
@@ -28,6 +28,7 @@ export function decisionPageTools(list: ReviewList) {
       input: z.object({}),
       routes: [],
       readOnly: true,
+      untrustedContent: true,
       async run() {
         if (!list.loaded) await list.refresh()
         return { questions: group(list, 'questions'), pending: group(list, 'pending'), confirmedByTonborg: group(list, 'confirmed') }

@@ -37,7 +37,7 @@ const ZH: Record<AiTaskId, Template> = {
   models: (c) => [
     '帮我给 FULI 接一个模型，用在：<写上用途，比如 Astro 和 Dreaming / 语义搜索 / Tonborg>。',
     COMMON_ZH(c),
-    '1. 找一个我能用的 OpenAI 或 Anthropic 兼容接口和它的 API Key：先看环境变量、我的配置文件和公司文档，找不到再问我。任何时候都不要打印 Key。',
+    '1. 先问我用哪个 OpenAI 或 Anthropic 兼容接口、哪个 API Key（我在这句话里点名了就用那个），不要自己去翻环境变量、配置文件或文档找 Key。任何时候都不要打印 Key。',
     `2. 用这个 Key 自己请求接口的模型列表（OpenAI 兼容是 GET <endpoint>/models），按 ${c.guide} 的说明挑一个够用的。`,
     '3. 把 Key 存进 FULI：在终端把 Key 从标准输入传给 fuli models set-key <key 名> --endpoint <endpoint>（例如 printf \'%s\' "$KEY" | fuli models set-key work-openai --endpoint https://api.example.com/v1），不要写进命令参数、文件或输出。FULI 只把这个 Key 发给这个地址；已有的 Key 要换地址，也要这样重新存。没有 fuli 命令就停下，请我在模型页「接入」里粘贴 Key。',
     `4. GET ${c.console}/api/model-backends/roles，记下 revision、要改的角色和它现在的 allowedOperations。`,
@@ -104,7 +104,7 @@ const EN: Record<AiTaskId, Template> = {
   models: (c) => [
     'Connect a model to FULI for: <the uses, e.g. Astro and Dreaming / semantic search / Tonborg>.',
     COMMON_EN(c),
-    '1. Find an OpenAI- or Anthropic-compatible endpoint I can use and its API key: check environment variables, my config files and company docs first; ask me only if you find none. Never print the key.',
+    '1. Ask me which OpenAI- or Anthropic-compatible endpoint and API key to use (or use the one I named here); never search environment variables, config files or documents for a key yourself. Never print the key.',
     `2. With that key, list the endpoint's models yourself (OpenAI-compatible: GET <endpoint>/models) and pick one that is enough, following ${c.guide}.`,
     '3. Store the key in FULI: pipe it on stdin into fuli models set-key <key name> --endpoint <endpoint> (e.g. printf \'%s\' "$KEY" | fuli models set-key work-openai --endpoint https://api.example.com/v1); never put it in an argument, a file or any output. FULI sends that key to that address only; moving an existing key to another address means storing it again this way. Without a fuli command, stop and ask me to paste the key in the model page\'s Connect dialog.',
     `4. GET ${c.console}/api/model-backends/roles and note revision, the role to change and its allowedOperations.`,

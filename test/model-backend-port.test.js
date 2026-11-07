@@ -647,7 +647,7 @@ test('an attempt stopped at the default output limit is tried once more with roo
   assert.equal(capped.calls.length, 1);
 });
 
-// rec#10 on fuli#784: a connection pointed at another origin never gets the key saved for the old one.
+// dot review of fuli PR 784: a connection pointed at another origin never gets the key saved for the old one.
 test('a key tied to one origin is not sent when its connection points elsewhere', async (t) => {
   const { createModelSecretStore } = await import('../src/model-backends/secret-store.js');
   const directory = mkdtempSync(join(tmpdir(), 'fuli-port-key-origin-'));

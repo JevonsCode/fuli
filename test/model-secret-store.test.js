@@ -73,7 +73,7 @@ test('Windows keys are encrypted with DPAPI for the current user', { skip: proce
   assert.ok(statSync(path).size > 0);
 });
 
-// rec#10 on fuli#784: a key goes only to the origin it was saved for.
+// dot review of fuli PR 784: a key goes only to the origin it was saved for.
 test('a key is tied to the origin it was saved for and is never read for another one', async t => {
   const { path, store } = temporaryStore(t, { platform: 'linux', fileMode: () => 0o600 });
   await assert.rejects(store.set('work', SECRET), TypeError);

@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setLocale } from '@/i18n'
 import { modelPageTools } from '@/features/model-settings/model-page-tools'
 import { decisionPageTools } from '@/features/review-list/decision-page-tools'
-import type { PersonalProject } from '@/types'
 
 import { pageModelContext, type ModelContextTool } from './model-context'
 import { runPageTool, type PageTool } from './page-tool'
@@ -12,7 +11,6 @@ import { registerPageTools } from './usePageTools'
 
 // Synthetic data only: a fake document.modelContext (WebMCP) and a fake
 // console behind fetch. No real key, endpoint or project.
-const PROJECTS = [{ project_id: 'project-a', profile: { name: 'Project A' } }] as unknown as PersonalProject[]
 const ROLES = {
   state: 'ok', error: null, revision: 'a'.repeat(64), connections: {}, operations: { tonborg: ['knowledge_review'] },
   roles: [{ role: 'tonborg', state: 'not_configured', answeredBy: null }],
@@ -38,7 +36,7 @@ afterEach(() => vi.unstubAllGlobals())
 const delegated = (request: Sent) => request.headers['x-fuli-delegation'] !== undefined
 const decoded = (request: Sent) => JSON.parse(decodeURIComponent(request.headers['x-fuli-delegation']))
 const tool = (name: string, tools: PageTool[]) => tools.find(candidate => candidate.name === name)!
-const models = () => modelPageTools({ spaceId: () => 'space-a', projects: () => PROJECTS, changed: vi.fn() })
+const models = () => modelPageTools({ changed: vi.fn() })
 
 function fakeContext() {
   const tools = new Map<string, ModelContextTool>()
@@ -66,6 +64,10 @@ describe('WebMCP model context', () => {
     expect(configure.inputSchema).toMatchObject({ type: 'object', properties: { role: { enum: expect.arrayContaining(['tonborg']) }, reason: {} } })
     expect(configure.annotations).toEqual({ consequentialHint: true })
     expect(context.tools.get('fuli_read_model_settings')!.annotations).toEqual({ readOnlyHint: true })
+    // Text other Agents wrote reaches the browser AI marked untrusted.
+    registerPageTools(decisionPageTools({} as never), controller.signal, context)
+    await flushPromises()
+    expect(context.tools.get('fuli_list_decisions')!.annotations).toEqual({ readOnlyHint: true, untrustedContentHint: true })
     controller.abort()
     expect(context.tools.size).toBe(0)
     expect(registerPageTools(models(), new AbortController().signal, null)).toBe(false)
@@ -87,18 +89,18 @@ describe('console page tools', () => {
       roles: [{ role: 'tonborg', state: 'enabled', answeredBy: 'model_api', connection: { id: 'work', model: 'model-x', protocol: 'openai_chat', endpointHost: 'llm.example.test', secretRef: 'work-key' } }] } }
     const result = JSON.parse(await runPageTool(tool('fuli_configure_model_role', models()), {
       role: 'tonborg', connectionId: 'work', protocol: 'openai_chat', endpoint: 'https://llm.example.test/v1', model: 'model-x',
-      secretRef: 'work-key', enabled: true, approveProjects: ['project-a'], reason: 'The person asked for a spare model',
+      secretRef: 'work-key', enabled: true, reason: 'The person asked for a spare model',
     }, new AbortController().signal))
     const put = sent.find(request => request.method === 'PUT')!
     expect(put.url).toBe('/api/model-backends/roles/tonborg')
     expect(decoded(put)).toEqual({ actor: { client: 'webmcp' }, reason: 'The person asked for a spare model', bodyFields: ['revision', 'connectionId', 'connection', 'settings'] })
     expect(put.body).toMatchObject({ revision: 'a'.repeat(64), connectionId: 'work',
       connection: { endpoint: 'https://llm.example.test/v1', model: 'model-x', secretRef: 'work-key' },
-      settings: { enabled: true, allowedOperations: ['knowledge_review'], egress: { approvedProjects: [{ personalSpaceId: 'space-a', personalProjectId: 'project-a' }] } } })
+      settings: { enabled: true, allowedOperations: ['knowledge_review'], egress: { approvedProjects: [], allowUnassigned: false } } })
     expect(result).toMatchObject({ role: 'tonborg', state: 'enabled', model: 'model-x', history: 'recorded' })
   })
 
-  it('a change the gate says is the person\'s is refused with its reason, and nothing is sent again (rec#10 on fuli#784)', async () => {
+  it('a change the gate says is the person\'s is refused with its reason, and nothing is sent again (dot review of fuli PR 784)', async () => {
     for (const code of ['local_user_only', 'agent_tool_route', 'person_words_required', 'delegation_category_off']) {
       sent = []
       answer = () => ({ status: 403, body: { code, error: 'synthetic refusal' } })
@@ -123,6 +125,11 @@ describe('console page tools', () => {
       .rejects.toMatchObject({ code: 'invalid_input' })
     await expect(runPageTool(tool('fuli_configure_model_role', models()), { role: 'tonborg', secretRef: '../x' }, new AbortController().signal))
       .rejects.toMatchObject({ code: 'invalid_input' })
+    // Which projects may send content to a model is the person's (or run_delegated_action's), never a page tool's.
+    for (const egress of [{ approveProjects: ['project-a'] }, { allowUnassigned: true }]) {
+      await expect(runPageTool(tool('fuli_configure_model_role', models()), { role: 'tonborg', ...egress }, new AbortController().signal))
+        .rejects.toMatchObject({ code: 'invalid_input' })
+    }
     expect(sent).toEqual([])
   })
 
