@@ -12,7 +12,7 @@
   </picture>
 </p>
 
-<p align="center">FULI is a plugin that lets your tasks move across all your Agent clients: Claude Code, Codex, OpenCode… They share one memory, one taste and one FLA team, so you use whichever fits and switch without explaining everything again. Keep using your clients as you do today; nothing to replace.</p>
+<p align="center">FULI is a plugin that lets your tasks move across all your Agent clients: Claude Code, Codex, OpenCode… They share one memory, one taste and one FLA team, so you use whichever fits and switch without explaining everything again. It doesn't replace your clients or change what you set up: your models, subscriptions, sessions and settings stay as they are. FULI plugs in as its own entries only, and removing it from a client in the console, or uninstalling FULI, takes those entries out again.</p>
 
 <p align="center"><sub>If you think in harnesses: each client is a harness, and FULI is the layer above them.</sub></p>
 
@@ -166,6 +166,16 @@ come back later without a search through the code. The numbers are in the
 
 By default the built-in FLAs work inside your client's session. Only when you connect a model for
 them do they use their own model, so nothing spends money behind your back.
+</details>
+
+<details>
+<summary><b>How do I take FULI out of a client?</b></summary>
+
+In the console, open Settings › Clients and choose Remove for that client. `fuli uninstall` and the
+Windows uninstaller do the same for every connected client. FULI takes out only its own entries
+(the MCP server, hooks, Skills and its permission lines), backs up each file first, and keeps a
+Skill you edited yourself. Your FULI data stays until you delete it. On macOS, remove the clients
+in the console before you move FULI.app to the Trash: the Trash alone leaves those entries in place.
 </details>
 
 <details>

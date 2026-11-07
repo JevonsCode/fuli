@@ -12,7 +12,7 @@
   </picture>
 </p>
 
-<p align="center">FULI 是一个插件，让你的任务穿梭在你所有的 Agent 客户端之间：Claude Code、Codex、OpenCode……它们共用一份记忆、一套品味和一支 FLA 团队。哪个合适就用哪个，换着用也不用从头交代。你照常用你的客户端，什么都不用换。</p>
+<p align="center">FULI 是一个插件，让你的任务穿梭在你所有的 Agent 客户端之间：Claude Code、Codex、OpenCode……它们共用一份记忆、一套品味和一支 FLA 团队。哪个合适就用哪个，换着用也不用从头交代。它不替代你的客户端，也不改动你自己的配置：你的模型、订阅、会话和设置都照旧，FULI 只作为插件加上自己的那几项；在控制台移除某个客户端，或者卸载 FULI，它加的配置就会拿掉。</p>
 
 <p align="center"><sub>如果你习惯用 harness 来理解：每个客户端是一个 harness，FULI 是它们上面的一层。</sub></p>
 
@@ -159,6 +159,15 @@ Claude Code、Codex、OpenCode、Cursor 和 Claude 桌面版都能在控制台�
 <summary><b>内置 FLA 会多花钱吗？</b></summary>
 
 不会偷偷多花。内置 FLA 默认借你客户端的会话干活，你给它们接了模型，才用它们自己的模型。
+</details>
+
+<details>
+<summary><b>怎么把 FULI 从客户端里拿掉？</b></summary>
+
+在控制台的「设置 › 客户端接入」里，对那个客户端点「移除」。`fuli uninstall` 和 Windows 卸载程序会对每个接入过的
+客户端做同样的事。FULI 只拿掉自己加的那几项（MCP 服务、Hook、Skills 和它的权限条目），改之前先备份每个文件，
+你自己改过的 Skill 会留着。FULI 的数据会一直保留，你自己删才会删。在 macOS 上，先在控制台移除客户端，再把
+FULI.app 移到废纸篓：只移到废纸篓的话，这些配置还留在客户端里。
 </details>
 
 <details>
