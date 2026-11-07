@@ -75,10 +75,13 @@ link is never guessed, and a reader never tells the person to run a command.
 
 A link whose only parameter is `prompt` opens a new chat with that text in
 the client's composer, never sent by itself (Codex `codex://new?prompt=`,
-Claude Code's VS Code `vscode://anthropic.claude-code/open?prompt=`). FULI
-passes `prompt` only where it hands the person's AI a task, such as 待决策's
-「让 AI 解释」, with the prompt on one line; a reader that passes only
-`sessionId` never builds one.
+Claude Code's VS Code `vscode://anthropic.claude-code/open?prompt=`, Claude
+Desktop `claude://claude.ai/new?q=`). FULI passes `prompt` only where it hands
+the person's AI a task, such as 待决策's 「让 Tonborg 给你解释」, with the prompt
+on one line, and offers it only for a client the connection status reports as
+`connected` (matched by its `sourceApplication`); a reader that passes only
+`sessionId` never builds one. No documented new-chat link takes a model yet;
+a `{model}` parameter would be filled from `web/src/features/review-list/explain-models.ts`.
 
 ## Validation of a fetched copy
 

@@ -8,16 +8,20 @@ vi.mock('@/api/client', async importOriginal => ({ ...await importOriginal<typeo
 import { useConsoleStore } from '@/stores/console'
 import TonborgExplain from './TonborgExplain.vue'
 
-// 「让 AI 解释」 on the Tonborg card (Jevons 11-07), synthetic data only.
+// 「让 Tonborg 给你解释」 on the Tonborg card (Jevons 11-07), synthetic data only.
+// HeaderPeek (the shared glass hover panel) is stubbed with its open model only.
+const HeaderPeek = { props: ['open', 'align'], emits: ['update:open'],
+  template: '<div><slot name="trigger" /><div v-if="open" data-peek-body><slot /></div></div>' }
 const link = (id: string, template: string, parameter: string) => ({ id, opens: 'App', template,
   parameters: { [parameter]: { format: parameter === 'prompt' ? 'any' : 'uuid' } }, platforms: ['windows'], notes: 'Synthetic.', source: 'https://example.test/docs' })
 const manifest = { format: 'fuli-client-links', formatVersion: 1, manifestVersion: 2, updatedAt: '2026-11-07', clients: [
   { id: 'codex', name: 'Codex', noSessionLink: null, sessionLinks: [link('codex-thread', 'codex://threads/{sessionId}', 'sessionId'),
     link('codex-new', 'codex://new?prompt={prompt}', 'prompt')] },
   { id: 'claude_code', name: 'Claude Code', noSessionLink: null, sessionLinks: [link('vscode-new', 'vscode://anthropic.claude-code/open?prompt={prompt}', 'prompt')] },
+  { id: 'claude', name: 'Claude', noSessionLink: null, sessionLinks: [link('claude-new', 'claude://claude.ai/new?q={prompt}', 'prompt')] },
   { id: 'cursor', name: 'Cursor', noSessionLink: 'Synthetic: no link.', sessionLinks: [] },
 ] }
-let clients: Array<{ id: string; status: string }> = []
+let clients: Array<{ id: string; status: string; sourceApplication: string | null }> = []
 const writeText = vi.fn(async (_text: string) => {})
 
 enableAutoUnmount(afterEach)
@@ -27,7 +31,10 @@ beforeEach(() => {
   getJson.mockReset()
   writeText.mockReset()
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-  clients = [{ id: 'codex', status: 'connected' }, { id: 'claude-code', status: 'not_detected' }, { id: 'cursor', status: 'connected' }]
+  clients = [{ id: 'codex', status: 'connected', sourceApplication: 'codex' },
+    { id: 'claude-code', status: 'not_detected', sourceApplication: 'claude_code' },
+    { id: 'claude-desktop', status: 'connected', sourceApplication: 'claude' },
+    { id: 'cursor', status: 'connected', sourceApplication: 'cursor' }]
   getJson.mockImplementation(async (url: string) => {
     if (url === '/api/client-links') return { manifest, source: 'bundled', remoteUrl: 'https://example.test', autoUpdate: false, lastCheckedAt: null, history: [] }
     if (url === '/api/system/client-connection/status') return { available: true, clients }
@@ -36,7 +43,7 @@ beforeEach(() => {
 })
 
 async function opened(count: number) {
-  const wrapper = mount(TonborgExplain, { props: { count }, attachTo: document.body })
+  const wrapper = mount(TonborgExplain, { props: { count }, attachTo: document.body, global: { stubs: { HeaderPeek } } })
   await wrapper.get('[data-tonborg-explain]').trigger('click')
   await flushPromises()
   return wrapper
@@ -44,26 +51,48 @@ async function opened(count: number) {
 const panel = () => document.querySelector('[data-tonborg-explain-panel]') as HTMLElement
 
 describe('TonborgExplain', () => {
-  it('offers copy and a new chat only in connected clients whose link takes a prompt', async () => {
+  it('lists each connected client whose new-chat link takes a prompt; a click opens it and says where', async () => {
     await opened(7)
     const openers = [...panel().querySelectorAll<HTMLAnchorElement>('[data-tonborg-explain-open]')]
-    // Codex is connected with a prompt link; Claude Code is not installed; Cursor documents no link.
-    expect(openers.map(item => item.dataset.tonborgExplainOpen)).toEqual(['codex'])
+    // Codex and Claude Desktop are connected with prompt links; Claude Code is not installed; Cursor documents no link.
+    expect(openers.map(item => item.dataset.tonborgExplainOpen)).toEqual(['codex', 'claude'])
     expect(openers[0].href.startsWith('codex://new?prompt=')).toBe(true)
-    expect(decodeURIComponent(openers[0].href.split('prompt=')[1])).toContain('一共 7 条，想先听几条，还是一次全部解释？')
-    expect(panel().textContent).toContain('共 7 条，AI 会先问你想听几条。')
-    expect(panel().closest('.ui-popover')?.classList.contains('ui-popover--glass')).toBe(true)
+    const prompt = decodeURIComponent(openers[0].href.split('prompt=')[1])
+    expect(prompt).toContain('一共 7 条，先听几条，还是一次讲完？')
+    expect(prompt.startsWith('你现在是 FULI 里的 Tonborg')).toBe(true)
+    expect(prompt).not.toContain('\n')
+    // No link takes a model, so no model name is shown.
+    expect(panel().querySelector('.tonborg-explain__model')).toBeNull()
+    expect(panel().textContent).toContain('复制给其他 AI')
+    openers[1].addEventListener('click', event => event.preventDefault())
+    openers[1].click()
+    await flushPromises()
+    expect(useConsoleStore().feedback?.message).toBe('已在 Claude 打开 Tonborg 的解释')
+    expect(panel()).toBeNull()
+  })
+
+  it('shows the cheap model only where the link carries it', async () => {
+    manifest.clients[0].sessionLinks[1] = link('codex-new', 'codex://new?prompt={prompt}&model={model}', 'prompt')
+    manifest.clients[0].sessionLinks[1].parameters.model = { format: 'any' }
+    try {
+      await opened(2)
+      const codex = panel().querySelector<HTMLAnchorElement>('[data-tonborg-explain-open="codex"]')!
+      expect(codex.href).toContain('&model=medium')
+      expect(codex.textContent).toContain('medium')
+    } finally {
+      manifest.clients[0].sessionLinks[1] = link('codex-new', 'codex://new?prompt={prompt}', 'prompt')
+    }
   })
 
   it('copies the prompt and names what was copied in a toast', async () => {
     await opened(3)
-    expect(panel().textContent).not.toContain('想听几条')
+    expect(panel().textContent).not.toContain('先听几条')
     panel().querySelector<HTMLButtonElement>('[data-tonborg-explain-copy]')!.click()
     await flushPromises()
     expect(writeText).toHaveBeenCalledTimes(1)
     expect(writeText.mock.calls[0][0]).toContain('list_tonborg_questions')
     expect(writeText.mock.calls[0][0]).not.toContain('想先听几条')
-    expect(useConsoleStore().feedback?.message).toMatch(/已复制.*3 条/)
+    expect(useConsoleStore().feedback?.message).toMatch(/已复制 Tonborg 的解释/)
     expect(panel()).toBeNull()
   })
 
@@ -72,6 +101,7 @@ describe('TonborgExplain', () => {
     writeText.mockRejectedValueOnce(new Error('denied'))
     await opened(2)
     expect(panel().querySelectorAll('[data-tonborg-explain-open]')).toHaveLength(0)
+    expect(panel().textContent).toContain('复制给你的 AI')
     panel().querySelector<HTMLButtonElement>('[data-tonborg-explain-copy]')!.click()
     await flushPromises()
     const text = panel().querySelector<HTMLTextAreaElement>('[data-tonborg-explain-text]')!

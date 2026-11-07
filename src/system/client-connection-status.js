@@ -40,7 +40,9 @@ export function createClientConnectionObserver({ installer, customClients, histo
     const history = sanitizeHistory(retained ?? readHistory(historyPath), builtin.map(({ id }) => id));
     let dirty = retained !== null;
     const clients = builtin.map((client) => {
-      const extra = { manualOnly: client.manual, restartSessions: waiting.get(clientSourceApplication(client.id)) ?? 0,
+      // sourceApplication: the client as FULI's other records name it (client links, capture), so a reader needs no mapping of its own.
+      const sourceApplication = clientSourceApplication(client.id);
+      const extra = { sourceApplication, manualOnly: client.manual, restartSessions: waiting.get(sourceApplication) ?? 0,
         ...(client.manual && MANUAL_URLS[client.id] ? { manualUrl: MANUAL_URLS[client.id] } : {}) };
       const record = history.clients[client.id] ?? { status: null, previouslyConnected: false, since: null, changes: [] };
       // A FULI entry FULI cannot read or call its own is never reported as a removal.

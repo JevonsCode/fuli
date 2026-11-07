@@ -51,6 +51,9 @@ test('installer states map to FULI\'s client statuses', async (t) => {
   assert.equal(byId(result, 'codex').manualOnly, false);
   assert.equal(byId(result, 'opencode').manualOnly, true);
   assert.equal(byId(result, 'opencode').manualUrl, 'https://opencode.ai/docs/config/');
+  // The client as FULI's other records name it, so the console matches client links without its own mapping.
+  assert.deepEqual([byId(result, 'codex').sourceApplication, byId(result, 'claude-code').sourceApplication, byId(result, 'gemini').sourceApplication],
+    ['codex', 'claude_code', null]);
   assert.equal(result.scope, 'configuration');
 });
 

@@ -3,8 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 // A small panel anchored to a point (e.g. the clicked element). It flips to
 // stay on screen, closes on Escape or an outside click, and returns focus.
-// glass: the dock's frosted glass, for a panel that floats over the page.
-const props = defineProps<{ open: boolean; anchor: DOMRect | null; label: string; glass?: boolean }>()
+const props = defineProps<{ open: boolean; anchor: DOMRect | null; label: string }>()
 const emit = defineEmits<{ close: [] }>()
 const panel = ref<HTMLElement | null>(null)
 const placement = ref({ top: 0, left: 0 })
@@ -43,7 +42,7 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" ref="panel" class="ui-popover" :class="{ 'ui-popover--glass': glass }" role="dialog" :aria-label="label" tabindex="-1" :style="style">
+    <div v-if="open" ref="panel" class="ui-popover" role="dialog" :aria-label="label" tabindex="-1" :style="style">
       <slot />
     </div>
   </Teleport>
@@ -55,13 +54,6 @@ onBeforeUnmount(() => {
   border: 1px solid var(--color-border); border-radius: var(--radius-card); color: var(--color-ink);
   background: var(--color-surface); box-shadow: var(--shadow-popover); font-size: 13px; line-height: 1.6;
   animation: ui-popover-in var(--motion-fast) var(--motion-ease);
-}
-.ui-popover--glass {
-  border-color: var(--edge-glass); background: var(--glass-sheen), var(--surface-dock-panel);
-  -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock);
-}
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .ui-popover--glass { background: var(--color-surface); }
 }
 .ui-popover:focus { outline: none; }
 @keyframes ui-popover-in { from { opacity: 0; transform: translateY(-3px); } }

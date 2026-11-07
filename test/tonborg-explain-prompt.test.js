@@ -4,7 +4,7 @@ import test from 'node:test';
 import { listAgentTools } from '../src/agent-tools.js';
 import { ASK_HOW_MANY_ABOVE, tonborgExplainPrompt } from '../web/src/features/review-list/tonborg-explain-prompt.ts';
 
-// 「让 AI 解释」's prompt (Jevons 11-07): it names only real Agent tools, asks
+// 「让 Tonborg 给你解释」's prompt (Jevons 11-07): it names only real Agent tools, asks
 // how many to hear first only above the threshold, and stays short enough to
 // travel in a client's new-chat link.
 
@@ -16,8 +16,10 @@ test('the prompt asks how many to hear first only above the threshold', () => {
   for (const locale of LOCALES) {
     const few = tonborgExplainPrompt(ASK_HOW_MANY_ABOVE, locale);
     const many = tonborgExplainPrompt(ASK_HOW_MANY_ABOVE + 1, locale);
-    assert.doesNotMatch(few, /想先听几条|How many do you want/, locale);
-    assert.match(many, locale === 'zh-CN' ? /一共 6 条，想先听几条，还是一次全部解释？/ : /6 items in all\. How many do you want to hear first/, locale);
+    assert.doesNotMatch(few, /先听几条|How many first/, locale);
+    assert.match(many, locale === 'zh-CN' ? /一共 6 条，先听几条，还是一次讲完？/ : /6 items in all\. How many first, or all at once\?/, locale);
+    // Tonborg speaks, in words: a new chat has no project folder for an @Tonborg entry.
+    assert.match(many, /^(你现在是 FULI 里的 Tonborg|Speak to me as Tonborg)/, locale);
     assert.match(few, new RegExp(`\\b${ASK_HOW_MANY_ABOVE}\\b`), locale);
   }
 });

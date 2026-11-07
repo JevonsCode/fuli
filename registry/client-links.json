@@ -76,6 +76,17 @@
           "platforms": ["macos", "windows", "linux"],
           "notes": "Opens a chat in the Claude desktop app by its conversation ID. It needs the chat's conversation ID; a tool session ID is not one. Claude Code sessions in the desktop app have no link by ID (claude://code/new only starts a new one).",
           "source": "https://support.claude.com/en/articles/14729294"
+        },
+        {
+          "id": "claude-desktop-new-with-prompt",
+          "opens": "Claude",
+          "template": "claude://claude.ai/new?q={prompt}",
+          "parameters": {
+            "prompt": { "format": "any" }
+          },
+          "platforms": ["macos", "windows"],
+          "notes": "Opens a new chat in the Claude desktop app with the prompt in its field; the person sends it. The text is cut at about 14,000 characters.",
+          "source": "https://support.claude.com/en/articles/14729294"
         }
       ],
       "noSessionLink": null
