@@ -4,13 +4,11 @@ import test from 'node:test';
 import { listAgentTools } from '../src/agent-tools.js';
 import { ASK_HOW_MANY_ABOVE, tonborgExplainPrompt } from '../web/src/features/review-list/tonborg-explain-prompt.ts';
 
-// 「让 Tonborg 给你解释」's prompt (Jevons 11-07): it names only real Agent tools, asks
-// how many to hear first only above the threshold, and stays short enough to
-// travel in a client's new-chat link.
+// 「让 Tonborg 给你解释」 (Jevons 11-07/08): the whole method (「复制给其他 AI」) names only real
+// Agent tools and asks how many to hear first only above the threshold; a client with
+// FULI gets one sentence naming Tonborg, and FULI says the rest.
 
 const LOCALES = ['zh-CN', 'en-US'];
-// Windows passes a URL protocol link of about 2 KB to the app reliably.
-const LINK_LIMIT = 2048;
 
 test('the prompt asks how many to hear first only above the threshold', () => {
   for (const locale of LOCALES) {
@@ -33,9 +31,16 @@ test('every tool the prompt names is a FULI Agent tool', () => {
   }
 });
 
-test('the prompt fits a new-chat link in either language', () => {
+test('a connected client gets one sentence that FULI\'s task entry reads as naming Tonborg', async () => {
+  const { tonborgExplainAsk } = await import('../web/src/features/review-list/tonborg-explain-prompt.ts');
+  const { parseFlaMention } = await import('../src/graphiti/fla-mention.js');
   for (const locale of LOCALES) {
-    const link = `vscode://anthropic.claude-code/open?prompt=${encodeURIComponent(tonborgExplainPrompt(200, locale))}`;
-    assert.ok(link.length <= LINK_LIMIT, `${locale}: ${link.length}`);
+    const ask = tonborgExplainAsk(locale);
+    assert.ok(ask.length <= 80, `${locale}: ${ask.length}`);
+    const mention = parseFlaMention(ask);
+    assert.equal(mention.explicit, true, locale);
+    assert.match(mention.query, /^Tonborg /, locale);
+    // The method is FULI's to say (explain-method.js), not the link's.
+    assert.doesNotMatch(ask, /list_tonborg_questions|answer_tonborg_question|fuli_call/, locale);
   }
 });

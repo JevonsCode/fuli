@@ -14,14 +14,14 @@ import UiIcon from '@/ui/UiIcon.vue'
 import UiIconButton from '@/ui/UiIconButton.vue'
 
 import { EXPLAIN_MODELS } from './explain-models'
-import { tonborgExplainPrompt } from './tonborg-explain-prompt'
+import { tonborgExplainAsk, tonborgExplainPrompt } from './tonborg-explain-prompt'
 
 // 「让 Tonborg 给你解释」 beside the Tonborg card's title (Jevons 11-07): one row
 // per connected client whose documented new-chat link takes a prompt
-// (registry/client-links.json); a click opens a new chat there with the
-// prompt filled in, never sent, where the person's AI speaks as Tonborg
-// (list_tonborg_questions, answer_tonborg_question). Copying the prompt is the
-// fallback for any other AI, and the only row when no client can open a chat.
+// (registry/client-links.json); a click opens a new chat there with one
+// sentence naming Tonborg filled in, never sent (11-08: the client has FULI,
+// which says the rest). Copying the whole method is the fallback for any
+// other AI, and the only row when no client can open a chat.
 // A popover, not a hover card: its rows are actions, reached with Tab, Enter
 // and Escape (focus returns to the 「?」). Hovering the 「?」 opens it too,
 // without taking focus.
@@ -46,8 +46,8 @@ const prompt = computed(() => tonborgExplainPrompt(props.count, currentLocale())
 const openers = computed(() => (links.state?.manifest.clients ?? []).filter(client => connected.value?.has(client.id)).flatMap(client => {
   const choice = EXPLAIN_MODELS[client.id]
   const link = client.sessionLinks.find(item => 'prompt' in item.parameters)
-  // A link value carries no line breaks (client-links/model.ts): the same prompt on one line.
-  const [built] = sessionLinksFor(links.state?.manifest, client.id, { prompt: prompt.value.replaceAll('\n', ' '), model: choice?.model })
+  // The client has FULI: one sentence names Tonborg, and FULI says how to go through the items.
+  const [built] = sessionLinksFor(links.state?.manifest, client.id, { prompt: tonborgExplainAsk(currentLocale()), model: choice?.model })
   if (!link || !built) return []
   // The model's name shows only when the link really carries it.
   return [{ id: client.id, name: client.name, href: built.href, model: choice && 'model' in link.parameters ? choice.label : '' }]

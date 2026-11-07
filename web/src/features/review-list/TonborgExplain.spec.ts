@@ -98,10 +98,9 @@ describe('TonborgExplain', () => {
     // Codex and Claude Desktop are connected with prompt links; Claude Code is not installed; Cursor documents no link.
     expect(openers.map(item => item.dataset.tonborgExplainOpen)).toEqual(['codex', 'claude'])
     expect(openers[0].href.startsWith('codex://new?prompt=')).toBe(true)
-    const prompt = decodeURIComponent(openers[0].href.split('prompt=')[1])
-    expect(prompt).toContain('一共 7 条，先听几条，还是一次讲完？')
-    expect(prompt.startsWith('你现在是 FULI 里的 Tonborg')).toBe(true)
-    expect(prompt).not.toContain('\n')
+    // The client has FULI: one sentence naming Tonborg, nothing about tools.
+    expect(decodeURIComponent(openers[0].href.split('prompt=')[1])).toBe('#FLA Tonborg 给我讲讲待决策里你拿不准的事')
+    expect(decodeURIComponent(openers[1].href.split('q=')[1])).toBe('#FLA Tonborg 给我讲讲待决策里你拿不准的事')
     // No link takes a model, so no model name is shown.
     expect(panel().querySelector('.tonborg-explain__model')).toBeNull()
     expect(panel().textContent).toContain('复制给其他 AI')

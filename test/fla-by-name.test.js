@@ -564,6 +564,29 @@ test('a built-in role outside its scope or outside any project says why and how 
   assert.deepEqual(outside.authorized, []);
 });
 
+test('Tonborg answers outside any project in its global scope, with how to go through its questions (11-08)', async () => {
+  const TONBORG = builtIn('tonborg', 'Tonborg', 'project-a');
+  // A new chat a console link opens has no project folder: Tonborg still continues, globally, without a scope check.
+  const outside = withScope(fixture({ roster: [ADA, BOLE, TONBORG] }));
+  outside.app.projectPathResolver = () => ({ status: 'not_provided', basis: null, personalProjectId: null });
+  const entry = await outside.run('#FLA Tonborg 给我讲讲待决策里你拿不准的事', { projectPath: null });
+  assert.deepEqual(owner(entry), [null, 'employee.tonborg']);
+  assert.equal(entry.fla.notice, '本会话由 Tonborg 继续其全局工作');
+  assert.match(entry.fla.guidance, /list_tonborg_questions/);
+  assert.match(entry.fla.guidance, /answer_tonborg_question in their exact words/);
+  assert.deepEqual(outside.authorized, []);
+  // In a project folder it keeps that project, through its own scope check, as before.
+  const inside = withScope(fixture({ roster: [ADA, BOLE, TONBORG] }));
+  assert.deepEqual(owner(await inside.run('#FLA Tonborg 给我讲讲待决策里你拿不准的事')), ['project-a', 'employee.tonborg']);
+  assert.deepEqual(inside.authorized, [['tonborg', 'project-a']]);
+  // Other roles still need a project, and their entry carries no Tonborg method.
+  const bole = withScope(fixture({ roster: [ADA, BOLE, TONBORG] }));
+  bole.app.projectPathResolver = () => ({ status: 'not_provided', basis: null, personalProjectId: null });
+  assert.equal((await bole.run('#FLA Bole 招一个前端', { projectPath: null })).fla.reason, 'needs_project');
+  const boleHere = await withScope(fixture({ roster: [ADA, BOLE, TONBORG] })).run('#FLA Bole 招一个前端');
+  assert.doesNotMatch(boleHere.fla.guidance, /list_tonborg_questions/);
+});
+
 test('an FLA sharing a built-in role\'s name is asked about, never guessed', async () => {
   const entry = await withScope(fixture({ roster: [ADA, BOLE, fla('bole-fla', 'Bole', '招聘', 'project-b')] }))
     .run('#FLA Bole 招一个前端');
