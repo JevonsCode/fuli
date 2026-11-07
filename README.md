@@ -62,8 +62,28 @@ teach an Agent today keeps paying off.
   </tr>
 </table>
 
-Four FLAs come built in: **Jefa** runs the task board, **Bole** hires and staffs, **Tonborg** confirms
-and recommends, and **Astro** takes conversations that belong to no project yet.
+Four FLAs come built in:
+
+<table>
+  <tr>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-jefa.webp" alt="Jefa" width="96" /><br />
+      <b>Jefa</b> is your project manager.
+    </td>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-bole.webp" alt="Bole" width="96" /><br />
+      <b>Bole</b> hires FLAs and staffs each project.
+    </td>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-tonborg.webp" alt="Tonborg" width="96" /><br />
+      <b>Tonborg</b> confirms for you and recommends clients and models.
+    </td>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-astro.webp" alt="Astro" width="96" /><br />
+      <b>Astro</b> takes conversations that belong to no project yet.
+    </td>
+  </tr>
+</table>
 
 ## How it works
 

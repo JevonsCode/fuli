@@ -61,8 +61,28 @@ Claude Code、Codex、OpenCode 等客户端都能用。每次任务只取回用�
   </tr>
 </table>
 
-自带四位 FLA：**Jefa** 管任务看板，**Bole** 招人、排人手，**Tonborg** 替你确认、推荐客户端和模型，
-**Astro** 接待还没归属项目的对话。
+自带四位 FLA：
+
+<table>
+  <tr>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-jefa.webp" alt="Jefa" width="96" /><br />
+      <b>Jefa</b> 是你的项目经理。
+    </td>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-bole.webp" alt="Bole" width="96" /><br />
+      <b>Bole</b> 招人，给每个项目排人手。
+    </td>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-tonborg.webp" alt="Tonborg" width="96" /><br />
+      <b>Tonborg</b> 替你确认，推荐客户端和模型。
+    </td>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-astro.webp" alt="Astro" width="96" /><br />
+      <b>Astro</b> 接待还没归属项目的对话。
+    </td>
+  </tr>
+</table>
 
 ## 怎么工作
 
