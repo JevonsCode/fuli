@@ -11,14 +11,15 @@
 </style>
 </head>
 <!--
-  The .dmg window (660 x 440 points; scripts/package-macos-dmg.js places
-  FULI.app at 170,150 and Applications at 490,150, icons 112 points). Top: drag
-  FULI onto Applications. Bottom: an unsigned build's first open, as three
-  pictures: blocked once, System Settings > Privacy & Security, Open Anyway.
+  The .dmg background (660 x 460 points under Finder's title bar; its bottom
+  28 points stay empty for Finder's status bar). scripts/package-macos-dmg.js
+  places FULI.app at 170,150 and Applications at 490,150, icons 112 points.
+  Top: drag FULI onto Applications. Bottom: an unsigned build's first open, as
+  three pictures: blocked once, System Settings > Privacy & Security, Open Anyway.
   #steps renders only the bottom strip (docs/images/install/macos-first-open.png).
 -->
 <body class="paper">
-<svg id="art" viewBox="0 0 660 440" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+<svg id="art" viewBox="0 0 660 460" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="trail" x1="0" x2="1" y1="0" y2="0">
       <stop offset="0" stop-color="#8bc1a8"/>

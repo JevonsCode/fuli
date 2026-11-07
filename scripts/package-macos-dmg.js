@@ -19,9 +19,16 @@ import { progress, run } from './bundle-build.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const DMG_BACKGROUND = join(ROOT, 'desktop', 'macos-dmg', 'background.png');
-// The background's size in points (build-installer-art.js DMG_WINDOW) and
-// where its arrow points: FULI.app on the left, Applications on the right.
-export const DMG_WINDOW = { width: 660, height: 440 };
+// The background's size in points (build-installer-art.js draws it) and where
+// its arrow points: FULI.app on the left, Applications on the right.
+export const DMG_ART = { width: 660, height: 460 };
+// Finder's chrome around the background in points, measured on macOS 26 from a
+// 2x screenshot (rec#101): the title bar above it, and the status bar Finder
+// lays over its bottom when View > Show Status Bar is on. dmgbuild's window
+// size is the whole frame, so the window is the art plus the title bar, and the
+// art leaves its bottom status-bar strip empty.
+export const FINDER_CHROME = { titleBar: 32, statusBar: 28 };
+export const DMG_WINDOW = { width: DMG_ART.width, height: DMG_ART.height + FINDER_CHROME.titleBar };
 export const DMG_ICONS = { app: { x: 170, y: 150 }, applications: { x: 490, y: 150 } };
 
 // dmgbuild's JSON settings for this image.

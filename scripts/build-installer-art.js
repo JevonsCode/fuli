@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isMainModule } from '../src/system/main-module.js';
 import { decodePng, encodePng } from './brand/png.js';
 import { resizeArea } from './brand/raster.js';
-import { DMG_WINDOW as DMG } from './package-macos-dmg.js';
+import { DMG_ART } from './package-macos-dmg.js';
 
 // The installers' pictures: desktop/installer-art/*.html (drawn from brand/ and
 // the DESIGN.md colours) rendered by headless Chrome into the PNG files the
@@ -36,8 +36,8 @@ export const SETUP_SCALES = [
 // The page pictures FULI-Setup's [Code] places, with their size in points at
 // 100 % (fuli-setup.iss #define PictureSize and MarkSize).
 export const SETUP_PICTURES = { icon: 120, done: 120, folder: 120, mark: 80 };
-// The .dmg window in points (scripts/package-macos-dmg.js lays the icons out on it).
-const DMG_WINDOW = [DMG.width, DMG.height];
+// The .dmg background in points (scripts/package-macos-dmg.js lays the icons out on it).
+const DMG_BACKGROUND = [DMG_ART.width, DMG_ART.height];
 
 const SETUP_ART = 'desktop/windows-setup/art';
 
@@ -46,9 +46,9 @@ const SETUP_ART = 'desktop/windows-setup/art';
 export function installerArt() {
   const scaled = (name, size) => SETUP_SCALES.map(scale => [`${SETUP_ART}/${name}-${scale.percent}.png`, ...size(scale)]);
   return [
-    { page: 'dmg-background.html', size: DMG_WINDOW, scale: 1, outputs: [['desktop/macos-dmg/background.png', ...DMG_WINDOW]] },
-    { page: 'dmg-background.html', size: DMG_WINDOW, scale: 2,
-      outputs: [['desktop/macos-dmg/background@2x.png', DMG_WINDOW[0] * 2, DMG_WINDOW[1] * 2]] },
+    { page: 'dmg-background.html', size: DMG_BACKGROUND, scale: 1, outputs: [['desktop/macos-dmg/background.png', ...DMG_BACKGROUND]] },
+    { page: 'dmg-background.html', size: DMG_BACKGROUND, scale: 2,
+      outputs: [['desktop/macos-dmg/background@2x.png', DMG_BACKGROUND[0] * 2, DMG_BACKGROUND[1] * 2]] },
     { page: 'dmg-background.html#steps', size: [612, 128], scale: 2, outputs: [['docs/images/install/macos-first-open.png', 1224, 256]] },
     { page: 'windows-smartscreen.html', size: [612, 200], scale: 2, outputs: [['docs/images/install/windows-smartscreen.png', 1224, 400]] },
     { page: 'wizard-panel.html', size: [1010, 1930], scale: 1, outputs: scaled('panel', scale => scale.panel) },
