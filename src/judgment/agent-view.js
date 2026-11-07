@@ -12,6 +12,8 @@ import { KNOWLEDGE_KEY, visibleKnowledgeKeys } from './visible-items.js';
 // does not name is withheld and listed in content_withheld, so a field added
 // later stays out until someone decides it is structure. The person's console
 // reads the full records (judgment/http.js); this view is for Agent tools.
+// The one exception: Tonborg's open delegated questions, which it wrote for
+// the person, reach the person's AI through question-tools.js.
 
 // Receipt reasons are the host's own fixed sentences or error codes, never a model's words.
 const RECEIPT = ['status', 'outcome', 'reason', 'reviewId', 'taskId', 'revision', 'decisionId', 'recovered'];

@@ -73,6 +73,13 @@ For a client and the values you have (FULI passes `sessionId`):
 No match means there is no link: show the session ID and a copy button. A
 link is never guessed, and a reader never tells the person to run a command.
 
+A link whose only parameter is `prompt` opens a new chat with that text in
+the client's composer, never sent by itself (Codex `codex://new?prompt=`,
+Claude Code's VS Code `vscode://anthropic.claude-code/open?prompt=`). FULI
+passes `prompt` only where it hands the person's AI a task, such as 待决策's
+「让 AI 解释」, with the prompt on one line; a reader that passes only
+`sessionId` never builds one.
+
 ## Validation of a fetched copy
 
 A copy fetched from the public URL is used only when all of this holds;
