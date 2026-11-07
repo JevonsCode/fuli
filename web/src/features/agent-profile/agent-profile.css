@@ -505,8 +505,9 @@
   font-size: 13px;
 }
 
+/* A multi-line field sized in lines, not as a row control: two and a half lines plus its 6px padding and 1px border (70px at 14px). */
 .agent-simple-settings textarea {
-  min-height: 70px;
+  min-height: calc(2.5lh + 14px);
 }
 
 .agent-simple-settings button:disabled {
