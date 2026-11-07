@@ -760,6 +760,8 @@ usePageRefresh(() => Promise.all([loadResources(), detectClients()]))
 <style scoped>
 .settings-view { scrollbar-gutter: stable; }
 .settings-tabbar { position: relative; }
+/* The tabs keep their row; once the tabs and a 180px search no longer fit side by side, the search wraps under them. */
+.settings-tabbar > :first-child { flex: 1 0 auto; max-width: 100%; }
 .settings-search { flex: 0 1 300px; min-width: 180px; }
 .settings-search input { box-sizing: border-box; width: 100%; }
 .settings-search-note, .settings-search-empty { margin: 0; color: var(--color-muted); font-size: 13px; }

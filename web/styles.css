@@ -120,7 +120,9 @@ body { margin: 0; min-width: 320px; }
   max-width: var(--layout-max); margin-inline: auto;
 }
 .knowledge-mode-tabs { flex: 1 1 auto; min-width: 0; }
-.knowledge-view-heading { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* The tabs keep their words; on a narrow window the node count wraps under them instead of cutting 「Relationship graph」. */
+.knowledge-view-heading { min-height: 42px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
+.knowledge-view-heading > .knowledge-mode-tabs { min-width: min(100%, max-content); }
 /* 6px above and below its controls however many lines they wrap to: one 36px
    line is the same 48px row as before. */
 .graph-toolbar {
@@ -162,10 +164,12 @@ body { margin: 0; min-width: 320px; }
 
 
 :is([data-slot=option-select], [data-slot=option-combobox])[data-select-id="graph-space"] { min-width: 225px; }
-:is([data-slot=option-select], [data-slot=option-combobox])[data-select-id="knowledge-type-filter"] { width: 120px; }
-:is([data-slot=option-select], [data-slot=option-combobox])[data-select-id="knowledge-quadrant-filter"] { width: 110px; }
-:is([data-slot=option-select], [data-slot=option-combobox])[data-select-id="knowledge-profile-filter"] { width: 112px; }
-:is([data-slot=option-select], [data-slot=option-combobox])[data-select-id="knowledge-status-filter"] { width: 105px; }
+/* The directory filters keep their Chinese widths as a floor and grow to an English label such as
+   「All quadrants」 (it was hard-clipped at a fixed width); 220px stops one long value taking the row. */
+:is([data-slot=option-select], [data-slot=option-combobox])[data-select-id="knowledge-type-filter"] { min-width: 120px; max-width: 220px; }
+:is([data-slot=option-select], [data-slot=option-combobox])[data-select-id="knowledge-quadrant-filter"] { min-width: 110px; max-width: 220px; }
+:is([data-slot=option-select], [data-slot=option-combobox])[data-select-id="knowledge-profile-filter"] { min-width: 112px; max-width: 220px; }
+:is([data-slot=option-select], [data-slot=option-combobox])[data-select-id="knowledge-status-filter"] { min-width: 105px; max-width: 220px; }
 .knowledge-editor-form :is([data-slot=option-select], [data-slot=option-combobox]),
 .knowledge-project-fields :is([data-slot=option-select], [data-slot=option-combobox]),
 .knowledge-project-relation :is([data-slot=option-select], [data-slot=option-combobox]) { width: 100%; }
@@ -203,9 +207,6 @@ body { margin: 0; min-width: 320px; }
 .personal-context-option small { color: var(--color-muted); font-size: 12px; }
 .search-form { flex: 0 1 300px; min-width: 220px; }
 .search-form input { width: 100%; }
-#knowledge-type-filter { max-width: 160px; }
-#knowledge-quadrant-filter { max-width: 130px; }
-#knowledge-profile-filter { max-width: 135px; }
 /* The directory's one compact filter row: search beside the four filters,
    controls lined up on the shared --control-height, never spread apart. The
    toolbar above ends 6px under its controls, so the filter row sits the same
