@@ -39,7 +39,7 @@
 /* A collection card's name (directory and 编排): two lines at most, the full name in its title. */
 .agent-card-name {
   display: -webkit-box; min-width: 0; overflow: hidden; color: var(--color-ink); font-size: 16px; font-weight: var(--weight-strong); line-height: 1.35;
-  text-decoration: none; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  text-decoration: none; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; -webkit-user-select: none; user-select: none;
 }
 .agent-card-name:hover { color: var(--color-accent); }
 /* The whole name line is the visible target, so its focus ring hugs the text. */
@@ -50,6 +50,7 @@
 .agent-card-current-label { flex: 0 0 auto; color: var(--color-faint); font-size: 12px; }
 .agent-card-current-task {
   flex: 1 1 12em; min-width: 0; overflow: hidden; color: var(--color-ink); font-weight: var(--weight-medium); text-decoration: none; text-overflow: ellipsis; white-space: nowrap;
+  -webkit-user-select: none; user-select: none;
 }
 .agent-card-current-task:hover { color: var(--color-accent); }
 .agent-card-current-task.is-unloaded { color: var(--color-muted); font-weight: var(--weight-regular); }

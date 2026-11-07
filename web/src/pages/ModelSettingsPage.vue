@@ -209,7 +209,7 @@ onBeforeUnmount(() => {
 .model-settings-column { display: grid; gap: var(--space-8); width: 100%; }
 /* The breadcrumb sits closer to the first section than sections sit to each other. */
 .model-settings-column > .breadcrumb { margin-bottom: calc(var(--space-4) - var(--space-8)); }
-.model-guide-link { font-size: var(--text-control); }
+.model-guide-link { font-size: var(--text-control); -webkit-user-select: none; user-select: none; }
 /* The use cards: one column on a narrow page, two on a laptop, three on a wide screen; 语义搜索 spans the row. */
 .model-uses { container-type: inline-size; }
 .model-use-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
