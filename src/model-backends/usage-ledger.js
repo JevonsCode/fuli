@@ -25,6 +25,7 @@ const TOKEN_FIELDS = Object.freeze([
   ['cachedInput', 'cached_input_tokens'], ['cacheWriteInput', 'cache_write_input_tokens'], ['reasoning', 'reasoning_tokens']
 ]);
 const SUBSET_FIELDS = new Set(['cachedInput', 'cacheWriteInput', 'reasoning']);
+const NO_USAGE = 'input_tokens IS NULL AND output_tokens IS NULL AND total_tokens IS NULL';
 const UNKNOWN_USAGE = Object.freeze({ inputTokens: null, outputTokens: null, totalTokens: null, cachedInputTokens: null,
   cacheWriteInputTokens: null, reasoningTokens: null, definition: null });
 
@@ -142,18 +143,24 @@ export class ModelUsageLedger {
 
   // Grouped by role, provider (protocol and endpoint host), configured model
   // and channel; the models the provider reported are listed per group.
+  // requests are distinct calls and failedRequests the calls no attempt
+  // answered; attempts and failedAttempts count every try, retries included.
+  // unreportedAttempts returned no token counts at all (the call threw, timed
+  // out or was cut off); unreportedFailedAttempts are those that failed.
+  // FULI bills nothing, so usage carries no cost; budgets keep their own.
   usage({ role = null, from = null, to = null }) {
     const tokenColumns = TOKEN_FIELDS.map(([name, column]) =>
       `SUM(${column}) AS ${name}_reported, SUM(${column} IS NULL) AS ${name}_unknown`).join(', ');
     const rows = this.db.prepare(`SELECT role, protocol, endpoint_host, requested_model, json_group_array(DISTINCT actual_model) AS actual_models,
-        channel, cost_currency, COUNT(DISTINCT request_id) AS requests, COUNT(*) AS attempts,
+        channel, COUNT(DISTINCT request_id) AS requests, COUNT(*) AS attempts,
         SUM(purpose = 'retry') AS retries, SUM(purpose = 'repair') AS repairs,
         SUM(outcome != 'succeeded') AS failed_attempts,
         COUNT(DISTINCT request_id) - COUNT(DISTINCT CASE WHEN outcome = 'succeeded' THEN request_id END) AS failed_requests,
-        ${tokenColumns}, SUM(estimated_cost) AS cost, SUM(estimated_cost IS NULL) AS cost_unknown
+        SUM(${NO_USAGE}) AS unreported_attempts, SUM(${NO_USAGE} AND outcome != 'succeeded') AS unreported_failed_attempts,
+        ${tokenColumns}
       FROM model_attempts
       WHERE (?1 IS NULL OR role = ?1) AND (?2 IS NULL OR started_at >= ?2) AND (?3 IS NULL OR started_at < ?3)
-      GROUP BY role, protocol, endpoint_host, requested_model, channel, cost_currency
+      GROUP BY role, protocol, endpoint_host, requested_model, channel
       ORDER BY role, requested_model LIMIT ${MAX_GROUPS}`).all(role, from, to);
     return rows.map(row => ({
       role: row.role,
@@ -167,11 +174,11 @@ export class ModelUsageLedger {
       repairs: row.repairs,
       failedAttempts: row.failed_attempts,
       failedRequests: row.failed_requests,
+      unreportedAttempts: row.unreported_attempts,
+      unreportedFailedAttempts: row.unreported_failed_attempts,
       tokens: Object.fromEntries(TOKEN_FIELDS
         .filter(([name]) => !SUBSET_FIELDS.has(name) || row[`${name}_reported`] !== null)
-        .map(([name]) => [name, { reported: row[`${name}_reported`], unknownAttempts: row[`${name}_unknown`] }])),
-      estimatedCost: row.cost_currency ? { amount: row.cost === null ? null : roundCost(row.cost), currency: row.cost_currency,
-        basis: 'estimate', unknownAttempts: row.cost_unknown } : null
+        .map(([name]) => [name, { reported: row[`${name}_reported`], unknownAttempts: row[`${name}_unknown`] }]))
     }));
   }
 

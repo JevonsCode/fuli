@@ -39,11 +39,12 @@ const roles = (overrides: Record<string, unknown> = {}) => ({
 })
 const usage = () => ({ groups: [
   { role: 'tonborg', provider: 'openai_chat@127.0.0.1:11434', model: 'qwen-test', actualModels: ['qwen-test'], channel: 'model_api',
-    requests: 2, attempts: 3, failedAttempts: 1, tokens: { input: { reported: 1200, unknownAttempts: 1 }, output: { reported: null, unknownAttempts: 3 },
-      total: { reported: null, unknownAttempts: 3 } }, estimatedCost: null },
-  { role: 'bole', provider: null, model: null, actualModels: [], channel: 'session', requests: 1, attempts: 1, failedAttempts: 0,
-    tokens: { input: { reported: null, unknownAttempts: 1 }, output: { reported: null, unknownAttempts: 1 }, total: { reported: null, unknownAttempts: 1 } },
-    estimatedCost: null },
+    requests: 2, failedRequests: 1, attempts: 3, failedAttempts: 2, unreportedAttempts: 1, unreportedFailedAttempts: 1,
+    tokens: { input: { reported: 1200, unknownAttempts: 1 }, output: { reported: 300, unknownAttempts: 2 }, cachedInput: { reported: 0, unknownAttempts: 1 },
+      total: { reported: 1500, unknownAttempts: 2 } } },
+  { role: 'bole', provider: null, model: null, actualModels: [], channel: 'session', requests: 1, failedRequests: 0, attempts: 1, failedAttempts: 0,
+    unreportedAttempts: 1, unreportedFailedAttempts: 0,
+    tokens: { input: { reported: null, unknownAttempts: 1 }, output: { reported: null, unknownAttempts: 1 }, total: { reported: null, unknownAttempts: 1 } } },
 ] })
 
 // rec#10 D-36: Tonborg's trust as the roles route reports it.
@@ -359,21 +360,29 @@ describe('ModelSettingsPage', () => {
     expect(api.putJson).toHaveBeenCalledTimes(1)
   })
 
-  it('shows usage by role and model with 未上报 counts, and session fallbacks apart', async () => {
+  it('shows usage in plain words: calls that add up, one note for tries without usage, no cost', async () => {
     const wrapper = await mountPage()
     const model = wrapper.get('[data-usage-list="model"]')
     expect(model.text()).toContain('Tonborg')
-    expect(model.text()).toContain('2 次 · 3 次尝试')
-    expect(model.get('[data-usage-cell="input"] dd').text()).toBe('1,200（另 1 次未上报）')
-    // The note wraps as a whole, never inside 未上/报.
-    expect(model.get('[data-usage-cell="input"] .model-usage-note').text()).toBe('（另 1 次未上报）')
-    expect(model.get('[data-usage-cell="output"]').text()).toContain('未上报 · 3 次')
-    expect(model.get('[data-usage-cell="cost"]').text()).toContain('未上报 · 3 次')
-    expect(model.text()).not.toMatch(/(^|\s)0(\s|$)/)
+    expect(model.text()).toContain('用量由模型服务返回')
+    // Calls are calls; failures are calls that failed in the end; tries are apart.
+    expect(model.get('.model-usage-failed').text()).toBe('1 次失败')
+    expect(model.get('dl > div:first-child dd').text()).toBe('2 次1 次失败（含重试共试了 3 次）')
+    // The failed try without usage is said once for the row, not on every cell.
+    expect(model.get('[data-usage-row-note]').text()).toBe('1 次失败的尝试没返回用量，上面的数没算它们。')
+    expect(model.get('[data-usage-cell="input"] dd').text()).toBe('1,200')
+    // The note wraps as a whole, never inside a word.
+    expect(model.get('[data-usage-cell="output"] .model-usage-note').text()).toBe('（另 1 次没返回）')
+    // A returned 0 is a real 0; a cache nothing returned has no cell at all.
+    expect(model.get('[data-usage-cell="cache"] dd').text()).toBe('0')
+    expect(model.find('[data-usage-cell="cacheWrite"]').exists()).toBe(false)
+    expect(model.find('[data-usage-cell="cost"]').exists()).toBe(false)
+    expect(wrapper.get('[data-model-usage]').text()).not.toMatch(/费用|估算|上报|US\$/)
     const session = wrapper.get('[data-usage-list="session"]')
     expect(session.get('h3').text()).toBe('回到当前会话')
-    expect(session.text()).toContain('客户端上报')
-    expect(session.get('[data-usage-cell="input"]').text()).toContain('未上报 · 1 次')
+    expect(session.text()).toContain('用量由客户端会话记录')
+    expect(session.get('[data-usage-cell="input"] dd').text()).toBe('没返回')
+    expect(session.find('[data-usage-row-note]').exists()).toBe(false)
 
     await wrapper.get('[data-value="today"]').trigger('click')
     await flushPromises()
