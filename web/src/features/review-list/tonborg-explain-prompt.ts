@@ -7,17 +7,25 @@
 // never the person, so it lives here and not among the console's messages.
 // test/tonborg-explain-prompt.test.js checks every tool it names.
 //
-// It speaks as Tonborg in words, not with a leading @Tonborg: a new chat opens
-// outside any project folder, where FULI's task entry refuses a built-in role.
-//
 // No imports: shaped like the 「让 AI 来做」 prompts of the AI-friendly
 // console (fuli pull request 784), which can take it in as one more task.
+
+/**
+ * What a client with FULI connected is asked (Jevons 11-08: 「#FLA Tonborg 在这里解释一下要我定的事情」):
+ * one sentence naming Tonborg the way FULI's task entry continues a built-in
+ * role. FULI itself says how to go through the items (src/judgment/explain-method.js).
+ */
+export function tonborgExplainAsk(locale: PromptLocale): string {
+  return locale === 'en-US' ? '#FLA Tonborg walk me through what you are unsure about in 待决策'
+    : '#FLA Tonborg 给我讲讲待决策里你拿不准的事'
+}
 
 /** Above this many items Tonborg first asks how many the person wants to hear. */
 export const ASK_HOW_MANY_ABOVE = 5
 
 export type PromptLocale = 'zh-CN' | 'en-US'
 
+/** The whole method, for an AI that may not know FULI's way yet: 「复制给其他 AI」. */
 export function tonborgExplainPrompt(count: number, locale: PromptLocale): string {
   const many = count > ASK_HOW_MANY_ABOVE
   if (locale === 'en-US') {

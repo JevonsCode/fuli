@@ -7,6 +7,8 @@ import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects } from './task-entry-project-mention.js';
 import { sessionMarkers, sessionTaskContext } from './task-entry-standing-owner.js';
 import { agentUnavailableReason } from './agent-availability.js';
+import { employeeAgentId } from '../employees/manifest.js';
+import { TONBORG_EXPLAIN_METHOD } from '../judgment/explain-method.js';
 import { markerField as field, markerValue as unfield } from './task-agent-assignment.js';
 
 // Continue a named FLA in this host session (rec#54). `@Jamie Ash …` or
@@ -40,6 +42,8 @@ const CONTINUE_GUIDANCE = 'The person named this FLA to continue its own work in
   + 'folder. Work as it with the restored memory. If conversation.recent_conversation is present, resume it with '
   + 'resume_agent_conversation before acting; otherwise find its conversation with list_agent_conversations. If the '
   + 'task to continue is unclear, ask. Later turns stay with this FLA until the person names another or says @FLA 结束.';
+// What a built-in role does when named, beyond continuing: Tonborg goes through its questions (explain-method.js).
+const ROLE_GUIDANCE = Object.freeze({ [employeeAgentId('tonborg')]: TONBORG_EXPLAIN_METHOD });
 const UNAVAILABLE_GUIDANCE = 'Tell the person this notice and do no task work: do not act as, or claim the context '
   + 'of, another FLA. They can name another FLA, pick one with @FLA, or end the binding with @FLA 结束.';
 const CHOOSE_GUIDANCE = 'Ask this now with the host native single-choice UI (a numbered list where there is none), '
@@ -193,7 +197,8 @@ export async function namedFlaEntry(application, request, selection, sourceAppli
     const current = { ...target, name: agent.profile.displayName || agent.profile.name || target.name };
     const notice = current.projectId ? `本会话由 ${current.name} 继续项目 ${current.project} 的工作`
       : `本会话由 ${current.name} 继续其全局工作`;
-    return { view: request.origin === 'session' ? null : { status: 'continuing', notice, guidance: CONTINUE_GUIDANCE },
+    const guidance = ROLE_GUIDANCE[current.agentId] ? `${CONTINUE_GUIDANCE} ${ROLE_GUIDANCE[current.agentId]}` : CONTINUE_GUIDANCE;
+    return { view: request.origin === 'session' ? null : { status: 'continuing', notice, guidance },
       notice, markers: [bindingMarker(current, notice)] };
   }
   if (agent && selection.requested_agent_id === target.agentId) {

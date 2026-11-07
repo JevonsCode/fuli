@@ -19,6 +19,8 @@ import { projectDisplayName } from './task-entry-project-mention.js';
 // list other clients show stays the same four, so a number means one thing.
 const PICKER_OPTIONS = 4;
 const GLOBAL_PROJECT = '全局';
+// Built-in roles that also work without a project (roleCandidates).
+const SPACE_ROLES = new Set([employeeAgentId('tonborg')]);
 // Management peers, AR and the assistant are FULI's own roles, and temporary
 // Agents belong to one task: none is an FLA a person continues by name.
 const NOT_PICKABLE_TYPES = new Set(['hr', 'temporary']);
@@ -43,16 +45,18 @@ export function flaCandidates(roster, projects, personalSpaceId) {
     .flatMap(agent => placements(agent, named).map(placement => candidate(agent, placement)));
 }
 
-// FULI's own roles (rec#58): Jefa, Bole and Tonborg work in the folder's
-// project (projectId undefined outside one), Astro globally. They are named
+// FULI's own roles (rec#58): Jefa and Bole work in the folder's project
+// (projectId undefined outside one), Astro globally, and Tonborg in the
+// folder's project or, outside any, in its global scope: what it asks the
+// person (待决策) belongs to the whole space (11-08). They are named
 // only exactly, with `#FLA <name>`, never listed in the picker; the Provider
 // and the role's own project scope still decide whether one may work there.
 // A role the person renamed still answers to its built-in name (rec#11 D-89).
 export function roleCandidates(roster, projects, personalSpaceId, currentProjectId) {
   const current = projects.find(project => project.project_id === currentProjectId);
   return inSpace(roster, personalSpaceId).filter(isFixedRole).map(agent => {
-    const role = { ...candidate(agent, { project: agent.agent_id === ASSISTANT_AGENT_ID ? null : current, assignment: null }),
-      role: true };
+    const project = agent.agent_id === ASSISTANT_AGENT_ID ? null : SPACE_ROLES.has(agent.agent_id) ? current ?? null : current;
+    const role = { ...candidate(agent, { project, assignment: null }), role: true };
     const builtIn = agent.profile?.name;
     return builtIn && identityKey(builtIn) !== identityKey(role.name) ? { ...role, aliases: [builtIn] } : role;
   });
