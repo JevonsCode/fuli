@@ -18,7 +18,10 @@ test('a token-less entry points to on-demand reads and keeps what the turn acts 
   assert.ok(bytes(after) <= bytes(before) * 0.65, `${bytes(before)} -> ${bytes(after)} B`);
   for (const key of ['effective_preferences', 'active_conflicts', 'deferred_conflicts', 'agent_receipt',
     'task_knowledge_recall', 'context', 'task_lifecycle', 'application_guidance']) {
-    assert.deepEqual(after[key], before[key], key);
+    // A task entry names the application rules once and leaves the recall's pointer to them out (rec#88).
+    const { guidance_ref: _ref, ...shown } = after[key] ?? {};
+    const { guidance_ref: _refBefore, ...expected } = before[key] ?? {};
+    assert.deepEqual(key === 'task_knowledge_recall' ? shown : after[key], key === 'task_knowledge_recall' ? expected : before[key], key);
   }
   assert.equal(after.task_lifecycle.reason, 'native_session_required');
   const continuity = after.project_agent_context;

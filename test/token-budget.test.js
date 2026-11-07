@@ -234,7 +234,8 @@ const BASELINE = Object.freeze({
   // reference, a complete recall drops its zero failures and empty categories, and a fresh
   // task its two off-flags: 1,818 -> 1,673 chars, measured.
   // rec#88: the label says each thing once (closing step, receipt, rules on demand): 1,673 -> 1,578.
-  projectEntryChars: 1578,
+  // ...and the same cuts in the project entry: 1,578 -> 1,451.
+  projectEntryChars: 1451,
   // rec#46: an ordinary small coding task of a working lead (team, Jefa's empty board, Tonborg,
   // both memory layers never written, the directory snapshot current) when nothing in the store
   // matches, through the Claude Code hook with its label (test-support/synthetic-large-entry.js).
@@ -251,7 +252,9 @@ const BASELINE = Object.freeze({
   // Its no-match marker drops label and count (the rules say how to show it): 4,081 -> 4,053.
   // rec#88 again: the shorter label, a settled snapshot left out, the role without its starting
   // preferences and the resolution without the project id: 4,053 -> 3,632.
-  noMatchEntryChars: 3632,
+  // rec#88 phase 4: routine state (ready, task_entry wake, no worker), the current scope filter and the
+  // recall's repeated rules pointer are left out of a task entry: 3,632 -> 3,465.
+  noMatchEntryChars: 3465,
   // rec#51 D-59: a coding task (a change request naming a distinctive term) whose exact project
   // holds matching knowledge gets a title-only knowledge_index in its recall: [id, title] pairs, the
   // count that one bounded search kept and one read line, never a body. Measured over the same

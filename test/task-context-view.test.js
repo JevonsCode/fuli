@@ -260,3 +260,22 @@ test('a task entry names the role without its starting preferences and the resol
     taskContextToken: undefined, task_lifecycle: { status: 'not_started' } });
   assert.deepEqual(tokenless.project_agent_context.role.initial_preferences, ['Verify first.']);
 });
+
+test('a task entry leaves out routine state and the current scope filter; other values stay (rec#88)', () => {
+  const { sections } = entryRules();
+  const view = compactTaskContext(entry({
+    context: { personal_space_id: 's', personal_project_id: 'p', project_agent_id: 'lead', task_scope_filter: 'provider_before_conflicts' },
+    project_management_context: { status: 'ready', worker_started: false, managers: [] },
+    project_agent_context: { status: 'ready', wake_mode: 'task_entry', worker_started: false, source_application: 'claude_code',
+      guidance: sections.continuity_guidance } }));
+  assert.equal(view.context.task_scope_filter, undefined);
+  for (const field of ['status', 'wake_mode', 'worker_started']) assert.equal(view.project_agent_context[field], undefined, field);
+  assert.equal(view.project_agent_context.source_application, 'claude_code');
+  const unusual = compactTaskContext(entry({
+    context: { personal_project_id: 'p', task_scope_filter: 'legacy_projection' },
+    project_agent_context: { status: 'degraded', wake_mode: 'preference_recovery', worker_started: true,
+      guidance: sections.continuity_guidance } }));
+  assert.equal(unusual.context.task_scope_filter, 'legacy_projection');
+  assert.deepEqual([unusual.project_agent_context.status, unusual.project_agent_context.wake_mode, unusual.project_agent_context.worker_started],
+    ['degraded', 'preference_recovery', true]);
+});

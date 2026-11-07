@@ -158,7 +158,7 @@ test('source overflow, oversize instructions and unsafe fields block without del
 // Keys an entry carries only as continuity evidence or entry-time state; every
 // other project_agent_context field is a delivered instruction or identity.
 const ENTRY_ONLY_KEYS = ['memory', 'global_memory', 'knowledge', 'recent_tasks', 'team', 'directorySnapshot',
-  'details_guidance', 'unavailable_components', 'status', 'wake_mode'];
+  'details_guidance', 'unavailable_components', 'status', 'wake_mode', 'worker_started'];
 const withoutEntryOnly = value => Object.fromEntries(Object.entries(value).filter(([key]) => !ENTRY_ONLY_KEYS.includes(key)));
 // The entry references shared rule text; resolve it before comparing with full recovery.
 const resolvedRules = value => Object.fromEntries(Object.entries(value).map(([key, item]) =>

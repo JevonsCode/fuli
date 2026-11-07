@@ -77,7 +77,8 @@ test('working-memory previews give way to hard rules, global layer first, and ke
     const few = await claudeEntrySession(async fresh =>
       fresh.turn(await syntheticWorkingEntry({ items: soft, sessionId: fresh.sessionId })));
     assert.ok(few.text.length <= INLINE_CHARS, `${few.text.length} chars`);
-    assert.equal(few.frame.project_agent_context.global_memory.view, 'omitted');
+    // The global layer gives way first when room is short; with the leaner entry of rec#88 it may fit too.
+    assert.ok(['omitted', 'preview'].includes(few.frame.project_agent_context.global_memory.view));
     const project = few.frame.project_agent_context.memory;
     assert.equal(project.view, 'preview');
     assert.ok(project.current.memory.summary.length > 0);
