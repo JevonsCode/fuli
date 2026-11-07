@@ -4,18 +4,14 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 // A top-bar button's own hover panel (Jevons 11-06: not the browser's grey title tooltip).
 // It opens on hover intent or keyboard focus under the button, in the frosted glass every
 // floating piece uses, and the button underneath keeps its place and its click.
-// align: which edge of the trigger the panel lines up with. v-model:open lets a
-// trigger whose click only opens the panel (no action of its own) toggle it too.
-withDefaults(defineProps<{ align?: 'start' | 'end' }>(), { align: 'end' })
-const open = defineModel<boolean>('open')
 </script>
 
 <template>
-  <HoverCard v-model:open="open" :open-delay="260" :close-delay="140">
+  <HoverCard :open-delay="260" :close-delay="140">
     <HoverCardTrigger as-child>
       <slot name="trigger" />
     </HoverCardTrigger>
-    <HoverCardContent :align="align" :side-offset="8" class="header-peek" data-header-peek>
+    <HoverCardContent align="end" :side-offset="8" class="header-peek" data-header-peek>
       <slot />
     </HoverCardContent>
   </HoverCard>

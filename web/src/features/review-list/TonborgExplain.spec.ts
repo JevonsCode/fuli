@@ -9,9 +9,7 @@ import { useConsoleStore } from '@/stores/console'
 import TonborgExplain from './TonborgExplain.vue'
 
 // 「让 Tonborg 给你解释」 on the Tonborg card (Jevons 11-07), synthetic data only.
-// HeaderPeek (the shared glass hover panel) is stubbed with its open model only.
-const HeaderPeek = { props: ['open', 'align'], emits: ['update:open'],
-  template: '<div><slot name="trigger" /><div v-if="open" data-peek-body><slot /></div></div>' }
+// The real popover: its rows are actions, so keyboard use is part of the contract.
 const link = (id: string, template: string, parameter: string) => ({ id, opens: 'App', template,
   parameters: { [parameter]: { format: parameter === 'prompt' ? 'any' : 'uuid' } }, platforms: ['windows'], notes: 'Synthetic.', source: 'https://example.test/docs' })
 const manifest = { format: 'fuli-client-links', formatVersion: 1, manifestVersion: 2, updatedAt: '2026-11-07', clients: [
@@ -43,14 +41,48 @@ beforeEach(() => {
 })
 
 async function opened(count: number) {
-  const wrapper = mount(TonborgExplain, { props: { count }, attachTo: document.body, global: { stubs: { HeaderPeek } } })
+  const wrapper = mount(TonborgExplain, { props: { count }, attachTo: document.body })
   await wrapper.get('[data-tonborg-explain]').trigger('click')
   await flushPromises()
   return wrapper
 }
 const panel = () => document.querySelector('[data-tonborg-explain-panel]') as HTMLElement
 
+const trigger = () => document.querySelector<HTMLButtonElement>('[data-tonborg-explain]')!
+
 describe('TonborgExplain', () => {
+  it('is used with the keyboard: every action is tabbable, and Escape closes it back on the 「?」', async () => {
+    mount(TonborgExplain, { props: { count: 3 }, attachTo: document.body })
+    trigger().focus()
+    trigger().click()
+    await flushPromises()
+    const actions = [...panel().querySelectorAll<HTMLElement>('a, button')]
+    expect(actions.map(item => item.dataset.tonborgExplainOpen ?? 'copy')).toEqual(['codex', 'claude', 'copy'])
+    // A hover card would set tabindex=-1 on these; a popover keeps them in the Tab order.
+    for (const action of actions) expect(action.getAttribute('tabindex')).not.toBe('-1')
+    actions[1].focus()
+    expect(document.activeElement).toBe(actions[1])
+    actions[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(panel()).toBeNull()
+    expect(document.activeElement).toBe(trigger())
+  })
+
+  it('opens on hover after a short delay without taking focus', async () => {
+    vi.useFakeTimers()
+    try {
+      mount(TonborgExplain, { props: { count: 3 }, attachTo: document.body })
+      const before = document.activeElement
+      trigger().dispatchEvent(new PointerEvent('pointerenter'))
+      expect(panel()).toBeNull()
+      await vi.advanceTimersByTimeAsync(300)
+      expect(panel()).not.toBeNull()
+      expect(document.activeElement).toBe(before)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('lists each connected client whose new-chat link takes a prompt; a click opens it and says where', async () => {
     await opened(7)
     const openers = [...panel().querySelectorAll<HTMLAnchorElement>('[data-tonborg-explain-open]')]

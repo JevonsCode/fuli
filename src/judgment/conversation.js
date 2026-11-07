@@ -17,9 +17,9 @@ const REASON_IN_CONSOLE = 'Tonborg 的理由只在 FULI 控制台的 Tonborg 记
 // the person as ONE short batch, each item as Tonborg's guess, never one
 // question per item. The guesses and their one-click answers live in the
 // console's 待决策 list; an Agent's view of a record carries none of its words.
-// When the person asks their AI to explain them, list_tonborg_questions shows
-// the words of these questions only and answer_tonborg_question records each
-// answer in the person's words (question-tools.js); never the Agent's own call.
+// When the person asks their AI to go through them, list_tonborg_questions
+// lists the items and guesses (never Tonborg's words) and answer_tonborg_question
+// records each answer in the person's words (question-tools.js).
 const BATCH_TITLE = 'Tonborg 想跟你确认几件事 / Tonborg has a few questions for you';
 const BATCH_OPTIONS = ['去 FULI 待决策里看 Tonborg 的猜测 / See Tonborg\'s guesses in FULI 待决策', '稍后 / Later'];
 const BATCH_GUIDANCE = 'Ask once, with the host native single-choice UI. The person answers each guess with one click in the FULI console\'s '

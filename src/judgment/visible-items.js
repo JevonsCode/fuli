@@ -12,11 +12,13 @@ const VISIBILITY_BATCH = 100;
 
 // withState: also each visible item's review state (pending, agent_confirmed,
 // confirmed, historical), so a question about an item the person decided
-// elsewhere is not asked again (11-06).
-export async function visibleKnowledgeKeys(personal, { personalSpaceId, reader }, keys, { withState = false } = {}) {
+// elsewhere is not asked again (11-06). withVersion: with it, each one's edit
+// version, so an answer changes the item only as it was read (11-07).
+export async function visibleKnowledgeKeys(personal, { personalSpaceId, reader }, keys, { withState = false, withVersion = false } = {}) {
   const asked = [...new Set(keys)].filter(key => KNOWLEDGE_KEY.test(key ?? ''));
   const visible = new Set();
   const states = new Map();
+  const versions = new Map();
   try {
     for (let start = 0; start < asked.length; start += VISIBILITY_BATCH) {
       const items = asked.slice(start, start + VISIBILITY_BATCH).map(key => {
@@ -24,12 +26,16 @@ export async function visibleKnowledgeKeys(personal, { personalSpaceId, reader }
         return { item_kind, item_id };
       });
       const answer = await personal.readVisibleKnowledgeItems({ personal_space_id: personalSpaceId, items,
-        ...providerReaderFields(reader), ...(withState ? { with_state: true } : {}) });
+        ...providerReaderFields(reader), ...(withState || withVersion ? { with_state: true } : {}),
+        ...(withVersion ? { with_version: true } : {}) });
       for (const item of answer?.items ?? []) visible.add(`${item.item_kind}:${item.item_id}`);
-      for (const item of answer?.states ?? []) states.set(`${item.item_kind}:${item.item_id}`, item.state);
+      for (const item of answer?.states ?? []) {
+        states.set(`${item.item_kind}:${item.item_id}`, item.state);
+        if (Number.isInteger(item.version)) versions.set(`${item.item_kind}:${item.item_id}`, item.version);
+      }
     }
-    return { visible, states, unavailable: false };
+    return { visible, states, versions, unavailable: false };
   } catch {
-    return { visible, states, unavailable: true };
+    return { visible, states, versions, unavailable: true };
   }
 }

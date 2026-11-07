@@ -81,3 +81,21 @@ async def test_visible_items_say_which_ones_still_wait_for_the_person():
         plain = ok(await client.post('/v1/knowledge/visible-items', json={
             'personal_space_id': space_id, 'items': [{'item_kind': 'entity', 'item_id': waiting}]}))
         assert 'states' not in plain
+
+
+@pytest.mark.asyncio
+async def test_visible_items_give_each_items_edit_version_only_when_asked():
+    """An answer to Tonborg changes the item only at the version it read
+    (11-07): with_version adds the edit revision a stale edit is refused by."""
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        (item_id,) = await pending_items(client, space_id, 1, 'version')
+        asked = {'personal_space_id': space_id, 'with_state': True, 'items': [{'item_kind': 'entity', 'item_id': item_id}]}
+        assert 'version' not in ok(await client.post('/v1/knowledge/visible-items', json=asked))['states'][0]
+        version = ok(await client.post('/v1/knowledge/visible-items', json={**asked, 'with_version': True}))['states'][0]['version']
+        edit = {'personal_space_id': space_id, 'item_kind': 'entity', 'action': 'update', 'summary': 'Synthetic edit.',
+                'reason': 'Synthetic.', 'operation_actor': 'agent'}
+        ok(await client.patch(f'/v1/knowledge/items/{item_id}', json={**edit, 'expected_version': version}))
+        stale = await client.patch(f'/v1/knowledge/items/{item_id}', json={**edit, 'expected_version': version})
+        assert stale.status_code == 409, stale.text

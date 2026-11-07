@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { z } from 'zod'
 
 import { getJson } from '@/api/client'
 import { shapeOf } from '@/api/response-shape'
-import HeaderPeek from '@/components/HeaderPeek.vue'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useClientLinks } from '@/features/client-links/client-links-store'
 import { sessionLinksFor } from '@/features/client-links/model'
 import { currentLocale, t } from '@/i18n'
@@ -22,11 +22,17 @@ import { tonborgExplainPrompt } from './tonborg-explain-prompt'
 // prompt filled in, never sent, where the person's AI speaks as Tonborg
 // (list_tonborg_questions, answer_tonborg_question). Copying the prompt is the
 // fallback for any other AI, and the only row when no client can open a chat.
+// A popover, not a hover card: its rows are actions, reached with Tab, Enter
+// and Escape (focus returns to the 「?」). Hovering the 「?」 opens it too,
+// without taking focus.
 const props = defineProps<{ count: number }>()
 const consoleStore = useConsoleStore()
 const links = useClientLinks()
 const open = ref(false)
 const failed = ref(false)
+const HOVER_DELAY_MS = 260
+let hoverTimer: ReturnType<typeof setTimeout> | null = null
+let openedByHover = false
 
 // Only what this panel reads of /api/system/client-connection/status.
 const statusShape = shapeOf(z.looseObject({
@@ -47,7 +53,7 @@ const openers = computed(() => (links.state?.manifest.clients ?? []).filter(clie
 
 watch(open, (now) => {
   failed.value = false
-  if (!now) return
+  if (!now) { openedByHover = false; return }
   // Either read may fail; copying still works without them.
   void links.load().catch(() => {})
   if (!connected.value) {
@@ -57,6 +63,21 @@ watch(open, (now) => {
     }).catch(() => {})
   }
 })
+
+function hoverStart() {
+  if (open.value || hoverTimer) return
+  hoverTimer = setTimeout(() => { hoverTimer = null; openedByHover = true; open.value = true }, HOVER_DELAY_MS)
+}
+function hoverEnd() {
+  if (hoverTimer) clearTimeout(hoverTimer)
+  hoverTimer = null
+}
+onBeforeUnmount(hoverEnd)
+
+// Opened by hover, the panel leaves focus where it was; opened by click or keyboard, it moves into the panel.
+function autoFocus(event: Event) {
+  if (openedByHover) event.preventDefault()
+}
 
 function opened(name: string) {
   open.value = false
@@ -75,14 +96,14 @@ async function copy() {
 </script>
 
 <template>
-  <HeaderPeek v-model:open="open" align="start">
-    <template #trigger>
+  <Popover v-model:open="open">
+    <PopoverTrigger as-child>
       <UiIconButton icon="help" size="sm" class="tonborg-explain__trigger" :label="t('reviewList.explain.title')" :active="open"
-        data-tonborg-explain @click="open = !open" />
-    </template>
-    <div class="tonborg-explain" data-tonborg-explain-panel>
+        data-tonborg-explain @pointerenter="hoverStart" @pointerleave="hoverEnd" @click="hoverEnd" />
+    </PopoverTrigger>
+    <PopoverContent align="start" :side-offset="8" class="tonborg-explain" data-tonborg-explain-panel @open-auto-focus="autoFocus">
       <div class="tonborg-explain__head">
-        <span class="header-peek-title">{{ t('reviewList.explain.title') }}</span>
+        <span class="tonborg-explain__title">{{ t('reviewList.explain.title') }}</span>
         <span v-if="openers.length" class="tonborg-explain__lead">{{ t('reviewList.explain.lead') }}</span>
       </div>
       <ul v-if="openers.length" class="tonborg-explain__clients">
@@ -102,15 +123,27 @@ async function copy() {
         <p class="tonborg-explain__lead" role="alert">{{ t('reviewList.explain.copyFailed') }}</p>
         <textarea class="tonborg-explain__text" readonly :value="prompt" rows="5" data-tonborg-explain-text />
       </template>
-    </div>
-  </HeaderPeek>
+    </PopoverContent>
+  </Popover>
 </template>
 
 <style scoped>
 /* Inside the title's own 30px line, as every card 「?」: opening the panel moves nothing. */
 .tonborg-explain__trigger { margin-block: -3px; color: var(--color-muted); }
-.tonborg-explain { display: grid; gap: 8px; width: min(300px, calc(100vw - 48px)); }
+</style>
+
+<style>
+/* Unscoped: the panel is portalled out of this component. The dock's frosted glass. */
+.tonborg-explain[data-slot='popover-content'] {
+  display: grid; gap: 8px; width: min(300px, calc(100vw - 48px)); padding: 12px 14px;
+  border-color: var(--edge-glass); background: var(--glass-sheen), var(--surface-dock-panel);
+  -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tonborg-explain[data-slot='popover-content'] { background: var(--color-surface); }
+}
 .tonborg-explain__head { display: grid; gap: 2px; }
+.tonborg-explain__title { font-size: var(--text-body); font-weight: var(--weight-medium); }
 .tonborg-explain__lead { margin: 0; color: var(--color-muted); font-size: var(--text-meta); line-height: 1.5; }
 .tonborg-explain__clients { display: grid; gap: 2px; margin: 0 -8px; padding: 0; list-style: none; }
 .tonborg-explain__row {

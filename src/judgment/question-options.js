@@ -58,14 +58,22 @@ export function questionOptions(record) {
   return sanitizeQuestionOptions(record?.options) ?? DEFAULT_OPTIONS.map(option => ({ ...option }));
 }
 
+// The option of this question the person's words pick, as written; null for custom input.
+export function chosenOption(record, personWords) {
+  return questionOptions(record).find(option => key(option.label) === key(personWords ?? '')) ?? null;
+}
+
+// How a picked option is voted: keep votes up, every other choice votes null.
+export const relayedChoiceVote = option => option.action === 'keep' ? 'up' : null;
+
 // A choice the person picked from this question, relayed as their exact words,
 // is recorded only as its own action: keep votes up; the others vote null,
 // with 稍后处理 for later and what changed for correct and drop. Custom input
 // matches no label and is recorded as the Agent reads it.
 export function checkRelayedChoice(record, { vote, reason = '' }, personWords) {
-  const chosen = questionOptions(record).find(option => key(option.label) === key(personWords ?? ''));
+  const chosen = chosenOption(record, personWords);
   if (!chosen) return;
-  const wanted = chosen.action === 'keep' ? 'up' : null;
+  const wanted = relayedChoiceVote(chosen);
   if (vote !== wanted) {
     throw new InvalidInputError(`「${chosen.label}」 is recorded as ${chosen.action}: vote ${wanted === null ? 'null' : '"up"'}`);
   }
