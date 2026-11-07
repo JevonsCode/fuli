@@ -129,24 +129,29 @@ test('the quick start walks through install, connect, use, an optional model and
   });
 });
 
-test('the report shows each measured number with its method folded beside it, and keeps a spot for Tonborg', () => {
+test('the report leads with one number, draws the nine sessions, and folds its method', () => {
   assertGuidePages('report', (document, locale) => {
-    assert.deepEqual([...document.querySelectorAll('main > section[id]')].map(node => node.id), ['tokens', 'recall', 'outcome', 'tonborg', 'history', 'gaps', 'related']);
-    assert.deepEqual([...document.querySelectorAll('#tokens .stat b')].map(node => node.textContent), ['1.53×', '1.42×', '24.3 KB']);
-    assert.match(document.querySelector('#recall').textContent, /25\/32/);
-    assert.match(document.querySelector('#outcome').textContent, /18\/18/);
-    // Every measured section names its method in a fold; the key numbers stay outside it.
-    for (const id of ['tokens', 'recall', 'outcome']) {
-      const method = document.querySelector(`#${id} details.fold`).textContent;
-      assert.match(method, /20\d\d-\d\d-\d\d/, id);
-      assert.equal(document.querySelector(`#${id} details .table-wrap`), null, id);
-    }
-    assert.ok(document.querySelector('#tonborg #tonborg-strong.is-pending'));
-    // Only what is measured now: no "before the fix" values, columns or struck-through numbers.
-    assert.doesNotMatch(document.body.textContent, /修复前|修复后|before the fix|down from/i);
+    assert.deepEqual([...document.querySelectorAll('main > section[id]')].map(node => node.id), ['curve', 'why', 'accuracy', 'method', 'related']);
+    assert.equal(document.querySelector('.headline-number b').textContent, '0.81×');
+    // The chart is inline SVG, labelled for assistive technology, with one pair of bars per session.
+    const chart = document.querySelector('#curve svg.session-chart');
+    assert.equal(chart.getAttribute('role'), 'img');
+    assert.ok(chart.querySelector('title').textContent.trim() && chart.querySelector('desc').textContent.trim());
+    assert.equal(chart.querySelectorAll('.bar-fuli').length, 9);
+    assert.equal(chart.querySelectorAll('.bar-off').length, 9);
+    assert.equal(chart.querySelectorAll('.bar-off.is-missed').length, 2);
+    assert.equal(document.querySelectorAll('#curve .session-table tbody tr').length, 9);
+    assert.equal(document.querySelectorAll('#why .why-card').length, 3);
+    assert.match(document.querySelector('#accuracy').textContent, /25\/32/);
+    const method = document.querySelector('#method details.fold').textContent;
+    assert.match(method, /2026-11-07/);
+    assert.match(method, /claude-haiku-5-5/);
+    // Only what the release does now: no before / after values, columns or struck-through numbers.
+    assert.doesNotMatch(document.body.textContent, /修复前|修复后|改版前|改版后|before the fix|down from|from \d/i);
     assert.equal(document.querySelectorAll('main s, main del').length, 0);
-    assert.ok(document.querySelector('#tonborg').textContent.includes('60.4%'));
-    assert.ok(document.querySelectorAll('#gaps li').length >= 4);
+    // FULI is always written in capitals, and the page states results rather than asking questions.
+    assert.doesNotMatch(document.querySelector('main').textContent, /[？?]/);
+    assert.doesNotMatch(document.querySelector('main').textContent, /\b(Fuli|fuli)\b/);
     const models = document.querySelector('#related [data-i18n="report.related.models"]').href;
     assert.equal(models, base + 'models/' + (locale === 'en' ? 'en/' : ''));
   });
@@ -190,9 +195,9 @@ test('the home story walks through the product in order, with measured numbers a
     // The model's lines read the same everywhere: the 接了模型 pill.
     assert.ok(document.querySelectorAll('.model-modes .is-model .model-tag').length >= 4, path);
     for (const link of document.querySelectorAll('.nav nav > a[href^="#"]')) assert.ok(document.querySelector(link.getAttribute('href')), path + link.getAttribute('href'));
-    // Tokens and accuracy: the report's numbers, and the link says plainly that FULI still adds input.
-    assert.deepEqual([...document.querySelectorAll('#memory .chapter-stats b')].map(node => node.textContent), ['24.3 KB', '4/6', '18/18'], path);
-    assert.match(document.querySelector('#memory .chapter-link').textContent, /1.53/, path);
+    // Tokens and accuracy: the report's numbers, and the link names the headline.
+    assert.deepEqual([...document.querySelectorAll('#memory .chapter-stats b')].map(node => node.textContent), ['0.81×', '6/8 · 8/8', '25/32'], path);
+    assert.match(document.querySelector('#memory .chapter-link').textContent, /0.81/, path);
     assert.doesNotMatch(document.querySelector('#memory .chapter-stats').textContent, /→/, path);
     // Growth is drawn: lessons out of the work, the kept ones ticked, checks marked as coming, then the app and its surfaces.
     // The chapter says only that FLAs grow; the drawing says how.

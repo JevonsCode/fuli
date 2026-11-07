@@ -21,6 +21,7 @@ export default defineConfig({
     // Token, theme and shared chrome stylesheets are read as text by specs that
     // check contrast, layering, divider lines, the motion rules and the page loading's layout.
     // The centred line font (styles/fonts.css) is checked against the bundled Inter stylesheet.
-    css: { include: [/tokens\.css/, /styles[\\/]theme[\\/]/, /web[\\/]styles\.css/, /primitives\.css/, /motion\.css/, /styles[\\/]vue\.css/, /styles[\\/]fonts\.css/, /fontsource-variable[\\/]inter[\\/]index\.css/] },
+    // Agent card and 待决策 row stylesheets are read for their selection and centre-line rules.
+    css: { include: [/tokens\.css/, /styles[\\/]theme[\\/]/, /web[\\/]styles\.css/, /primitives\.css/, /motion\.css/, /styles[\\/]vue\.css/, /styles[\\/]fonts\.css/, /fontsource-variable[\\/]inter[\\/]index\.css/, /agent-profile\.css/, /review-list[\\/]review-rows\.css/] },
   },
 })

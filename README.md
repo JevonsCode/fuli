@@ -1,89 +1,119 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JevonsCode/fuli/main/brand/svg/mark/fuli-mark-dark.svg" />
-    <img src="https://raw.githubusercontent.com/JevonsCode/fuli/main/brand/svg/mark/fuli-mark-color.svg" alt="Fuli logo" width="72" />
+    <source media="(prefers-color-scheme: dark)" srcset="brand/svg/lockup/fuli-lockup-bilingual-horizontal-dark.svg" />
+    <img src="brand/svg/lockup/fuli-lockup-bilingual-horizontal.svg" alt="FULI 复利 logo" width="200" />
   </picture>
 </p>
 
-<h1 align="center">Fuli</h1>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/readme/hero-en-dark.webp" />
+    <img src="docs/readme/hero-en.webp" alt="FULI 复利: your AI tools share one memory of you and your projects" width="800" />
+  </picture>
+</p>
+
+<h3 align="center">Automate everything that can be automated, and hand the execution to your FLAs. You make the calls and lead the way: take your FLA crew through the hard parts, or go grab a coffee and enjoy the compound interest of your own experience.</h3>
+
+<p align="center"><sub>Project profiles and FLA hiring run on their own if you'd rather not think about them; your only job is to set the direction. FLAs carry context and tools across every Agent client, and both top-tier and lighter models pull their weight here.</sub></p>
 
 <p align="center">
-  English · <a href="README.zh-CN.md">简体中文</a> · <a href="https://有点.意思.com/fuli/">Website</a>
+  English · <a href="README.zh-CN.md">简体中文</a> · <a href="https://有点.意思.com/fuli/">Website</a> · <a href="https://github.com/JevonsCode/fuli/releases/latest">Download</a>
 </p>
 
 <p align="center">
+  <a href="https://github.com/JevonsCode/fuli/releases/latest"><img src="https://img.shields.io/github/v/release/JevonsCode/fuli?style=flat&label=desktop" alt="latest release" /></a>
   <a href="https://www.npmjs.com/package/fuli-context"><img src="https://img.shields.io/npm/v/fuli-context?style=flat&logo=npm&label=fuli-context" alt="npm version" /></a>
-  <a href="https://www.npmjs.com/package/fuli-context"><img src="https://img.shields.io/npm/dm/fuli-context?style=flat" alt="npm downloads" /></a>
+  <a href="https://github.com/JevonsCode/fuli/releases"><img src="https://img.shields.io/github/downloads/JevonsCode/fuli/total?style=flat&label=desktop%20downloads" alt="desktop downloads" /></a>
+  <a href="https://www.npmjs.com/package/fuli-context"><img src="https://img.shields.io/npm/dm/fuli-context?style=flat&label=npm%20downloads" alt="npm downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="license" /></a>
 </p>
 
-**Switch AI tools. Keep yourself.**
+FULI runs on your own computer and gives every AI coding Agent the same memory: your taste, your
+preferences and the facts of each project. Claude Code, Codex, OpenCode and other clients share it.
+Each task gets only the small slice it needs. FULI (复利) is Chinese for compound interest: what you
+teach an Agent today keeps paying off.
 
-FULI is a memory and collaboration layer that runs on your own computer. It remembers your taste,
-preferences and project knowledge, and shares them across Agent clients such as Claude Code, Codex
-and OpenCode. Each task gets only the small slice it needs, which saves tokens. Each project also gets
-its own team of Agents that know the work better the longer you use them.
+## What FULI does
 
-Fuli (复利) is Chinese for **compound interest**. What you teach an Agent today keeps paying off
-tomorrow. We think people should not have to do everything themselves: you get your hands back to
-decide, come up with ideas, or take a break.
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/readme/card-memory-en.webp" alt="Claude Code, Codex and OpenCode connected to one FULI" width="460" />
+      <h3>One memory for every client</h3>
+      Connect Claude Code, Codex, OpenCode or Cursor with one click. A rule you stated in one of them is there in the others.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/readme/card-team-en.webp" alt="Three FLAs review a fix together in the roundtable" width="460" />
+      <h3>A team of FLAs, talking at a roundtable</h3>
+      Each project gets a lead Agent (an FLA) with a name, a job and its own working memory; several FLAs form a group when the work needs it. They review, test and hand work over to each other in the roundtable, and you can read every turn.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/readme/card-tonborg-en.webp" alt="Knowledge waiting to be confirmed, with Tonborg's switch" width="460" />
+      <h3><img src="docs/readme/fla-tonborg.webp" alt="" width="28" /> Tonborg confirms for you</h3>
+      New knowledge waits for a yes. Switch on Tonborg and it confirms everyday items by your preferences, asks you when it is unsure, writes down each reason, and learns from a thumbs up or down.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/readme/card-tokens-en.webp" alt="Tokens per successful task: 0.81 times with FULI" width="460" />
+      <h3>Fewer tokens per finished task</h3>
+      Measured for the upcoming 0.25.0: a successful task with FULI takes 0.81× the tokens of the same task without it, and 70 of 72 tasks pass. The saving comes from facts that live in your words, not in the code.
+    </td>
+  </tr>
+</table>
 
-## What we believe
+Four FLAs come built in:
 
-- **Local first.** Your personal graph and conversation records stay on your computer. The shared team layer holds only confirmed project knowledge, never your taste, personality or judgment preferences.
-- **You decide.** AI looks things up, summarises and executes, and it tells you when something needs you. Still, humans retain final authority. A preference an Agent guessed counts only after you confirm it.
-- **Recall on demand, spend fewer tokens.** A session does not start with your whole history. It gets the preferences in effect and a small, relevant recall, and the Agent looks up the rest when it needs it.
-- **Keep only what is reusable.** Every task ends with one check, and only reusable knowledge is kept; often nothing is. We measure how often you no longer have to explain something twice, not how much is stored.
-- **History is kept.** When a newer approach replaces an older one, the source, time and reason stay. An Agent can say what to use now and why it used to be different.
+<table>
+  <tr>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-jefa.webp" alt="Jefa" width="96" /><br />
+      <b>Jefa</b> is your project manager.
+    </td>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-bole.webp" alt="Bole" width="96" /><br />
+      <b>Bole</b> hires FLAs and staffs each project.
+    </td>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-tonborg.webp" alt="Tonborg" width="96" /><br />
+      <b>Tonborg</b> confirms for you and recommends clients and models.
+    </td>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-astro.webp" alt="Astro" width="96" /><br />
+      <b>Astro</b> takes conversations that belong to no project yet.
+    </td>
+  </tr>
+</table>
 
-## What it does
+## How it works
 
-- **Same teammate in any client.** Connect several clients to the same FULI data, pick the same Agent, and carry on with its responsibilities, collaboration history and last piece of work.
-- **It remembers you.** Taste, personality and judgment preferences are stored apart, each with a source and a scope. Global preferences apply everywhere, project preferences only in their project.
-- **Every task has an owner.** Ask for work inside a project directory. FULI recognises the project and staffs a lead Agent, and the reply ends with who led and who helped.
-- **Agents grow.** An Agent in FULI is called an FLA. Each one has a name, an occupation and its own working memory, and gains experience from the tasks it has done.
-- **Agents talk to each other.** In the [Roundtable](docs/agent-roundtable.md) one Agent can ask an Agent in another conversation, and every exchange is recorded.
-- **External knowledge, read-only.** Bind Notion or Lark documents, or content behind an MCP or RAG endpoint, to a project. FULI reads it and never writes back.
+```mermaid
+flowchart LR
+    U[You] -->|ask inside a project| A[Agent client]
+    A -->|task starts| F[FULI on your computer]
+    F -->|preferences and a small recall| A
+    A -->|look up more if needed| F
+    A -->|write back what is reusable| F
+```
 
-### Four built-in roles
+A task starts with the preferences in effect and a few related facts. The Agent looks up the rest
+when it needs it, and at the end writes back only what the next task can reuse.
 
-Every space starts with these four. Nobody has to hire them.
+## Install
 
-| | Role | Does |
-| --- | --- | --- |
-| <img src="web/src/assets/astro-avatar.webp" alt="Astro" width="40" /> | **Astro** | Receives conversations that belong to no project yet. When a topic keeps coming back, it asks whether to make it a project |
-| <img src="web/src/assets/jefa-avatar.webp" alt="Jefa" width="40" /> | **Jefa** | Project manager: triages conversations and runs the task board |
-| <img src="web/src/assets/bole-avatar.webp" alt="Bole" width="40" /> | **Bole** | AR (Agent Resources): recruits by occupation and staffs projects |
-| <img src="web/src/assets/tonborg-avatar.webp" alt="Tonborg" width="40" /> | **Tonborg** | Reviews for you within the autonomy you set and recommends clients and models. Every decision is logged; a thumbs up, thumbs down or short reason changes the next one |
+**Desktop client (recommended).** Download from the [latest release](https://github.com/JevonsCode/fuli/releases/latest):
 
-## Quick start
-
-### Desktop client (recommended)
-
-Download from the [latest release](https://github.com/JevonsCode/fuli/releases/latest).
-
-| System | File | How |
-| --- | --- | --- |
-| Windows | `FULI-Setup-<version>.exe` | Double-click to install; you can pick the folder the first time. No terminal and no administrator rights; Node.js, Java and the graph database are bundled. The installer is not code-signed yet, so if Windows says it protected your PC, choose “More info → Run anyway”. Running it over an existing install updates it and keeps your data |
-| Windows offline update | `fuli-windows-tray-<version>.zip` | For an existing install. Check the matching `.sha256`, unzip, and run `Update-Fuli.cmd`. Normally you just click 「Update to vX」 in the console |
-| macOS (Apple silicon) | `fuli-macos-arm64-<version>.dmg` | Drag FULI.app onto Applications as the window's arrow shows; FULI ejects the installer when you open it. Needs macOS 13.5 or later. The app is not signed yet, so the first time it is blocked, open System Settings › Privacy & Security and click “Open Anyway”. See [macOS app](docs/macos-app.md) |
-
-Not signed yet, so each system holds FULI back once:
-
-| Windows | macOS |
+| System | File |
 | --- | --- |
-| ![More info, then Run anyway](docs/images/install/windows-smartscreen.png) | ![Held back once, then System Settings › Privacy & Security › Open Anyway](docs/images/install/macos-first-open.png) |
+| Windows | `FULI-Setup-<version>.exe`. No terminal and no administrator rights. |
+| macOS (Apple silicon, 13.5 or later) | `fuli-macos-arm64-<version>.dmg`. Drag FULI onto Applications. |
 
-On first launch FULI finds the AI clients on this computer and connects each with one click (Codex,
-Claude Code, Cursor, Claude Desktop and others). Restart the client, ask for something inside a
-project directory, and you are going. Other MCP clients can run `fuli connect` for a standard
-configuration. Sign-in, hook trust and human review are still yours to confirm.
+On first launch FULI finds the AI clients on this computer and connects each with one click. The
+installers are not signed yet, so each system holds FULI back once; [Install and run](docs/install.md)
+shows the two clicks that let it through.
 
-### Servers, VMs and the cloud
-
-Without a desktop, install with npm. Intel Macs and Linux use this path too. You need Node.js 24.12
-or later. The default container mode also needs Docker Compose v2, and macOS and Linux can choose a
-native mode without a VM instead (Java 21 and `uv`).
+**Servers, VMs and the cloud.** Without a desktop, and on Intel Macs and Linux, install with npm
+(Node.js 24.12 or later):
 
 ```bash
 npm install --global fuli-context
@@ -91,55 +121,64 @@ fuli setup
 fuli open
 ```
 
-`fuli setup` shows its plan and changes nothing until you confirm. The console runs at
-`http://127.0.0.1:2727` by default. Every command, port and fix is in [Install and run](docs/install.md).
+`fuli setup` shows its plan and changes nothing until you confirm.
 
-## How it works
+## The console
 
-```mermaid
-flowchart LR
-    U[You] -->|ask inside a project| A[Agent client]
-    A -->|task starts| F[FULI local service]
-    F -->|preferences and a small recall| A
-    A -->|look up more if needed| F
-    A -->|write back what is reusable| F
-    F --- G[(Local graph)]
-```
+<p align="center">
+  <img src="docs/readme/console-en.webp" alt="The FULI console: a task in review, a question waiting for you and the FLAs at work" width="800" />
+</p>
 
-1. You ask an Agent for something inside a project directory. The client's hook (or the Agent itself, where there is no hook) first asks FULI which project this is and which preferences apply.
-2. FULI answers with a small slice: the preferences in effect and a few pieces of project knowledge related to the task. If that is not enough, the Agent looks up more.
-3. When the work is done, the Agent writes back only what can be reused, such as a convention or a decision with its reason. Temporary output and guesses are not kept.
-4. Private conversation records, Agent working memory and confirmed knowledge are stored apart. Once a conversation grows long, its older part folds into a digest.
-5. FULI assembles context and coordinates work; the connected AI tools do the work. Client adapters decide which conversations can be resumed, and connecting another tool never opens another project's private memory.
+The console opens on what matters now: questions waiting for you, the FLAs at work and what they
+finished. Everything runs on `127.0.0.1`; there is no account and no sign-in.
+
+## FAQ
+
+<details>
+<summary><b>Where is my data?</b></summary>
+
+On your computer. Your personal graph and conversation records stay local. External knowledge
+(Notion, Lark, MCP or RAG sources) is read-only: FULI never writes back.
+</details>
+
+<details>
+<summary><b>Which clients work with FULI?</b></summary>
+
+Claude Code, Codex, OpenCode, Cursor and Claude Desktop connect from the console with one click.
+Other MCP clients run `fuli connect` for a standard configuration.
+</details>
+
+<details>
+<summary><b>How does FULI save tokens?</b></summary>
+
+A session starts with only the preferences in effect and a few related facts; the Agent looks up
+the rest when it needs it. Facts that only you know, such as a sandbox URL you mentioned once,
+come back later without a search through the code. The numbers are in the
+[benchmark](FULI_ALIGNMENT_BENCHMARK.md) (section 8.9.4).
+</details>
+
+<details>
+<summary><b>Who decides what FULI keeps?</b></summary>
+
+You do: AI looks things up and does the work, and humans retain final authority. Each task ends
+with one check that keeps only reusable knowledge. A preference an Agent guessed counts once you,
+or <img src="docs/readme/fla-tonborg.webp" alt="" width="20" /> Tonborg within the autonomy you set, confirm it. Older answers stay in the history with their
+source and reason.
+</details>
 
 ## Learn more
 
-| You want to know | Read |
+| Topic | Read |
 | --- | --- |
-| Install details, CLI commands and local ports | [Install and run](docs/install.md) |
-| The full principles, what is stored where, how a project is recognised | [How FULI works](docs/how-it-works.md) |
-| How to connect each client and recover from failures | [Connect a client](docs/client-connections.md) |
-| Which Skills, hooks and MCP tools an Agent gets | [Agent integrations and MCP tools](docs/agent-tools.md) |
-| Binding Notion, Lark and other knowledge bases | [External knowledge](docs/external-knowledge.md) |
-| Built-in roles and employee packages | [Specialist Agents](docs/employee-agents.md) |
-| Small apps that Agents build | [Agent apps](docs/agent-apps.md) |
-| How Tonborg decides | [Tonborg and autonomy](docs/judgment-and-autonomy.md) |
-| The Roundtable and cross-client continuity | [Roundtable](docs/agent-roundtable.md) · [Conversations and collaboration (Chinese)](docs/agent-conversations-and-collaboration.md) |
-| What is proven so far, and the privacy boundaries | [Capabilities and limits](docs/capabilities-and-limits.md) |
-| Tokens saved and recall accuracy | [Measured report](https://有点.意思.com/fuli/report/en/) |
-| Architecture | [External knowledge architecture (Chinese)](docs/external-knowledge-architecture.md) · [Retrieval design (Chinese)](docs/retrieval-design.md) · [Agent interface architecture](docs/agent-interface-architecture.md) |
-| Running the source and tests | [Develop and verify](docs/development.md) · [Contributing](CONTRIBUTING.md) |
-| What changed in each version | [Release notes](https://github.com/JevonsCode/fuli/releases) |
+| Install details, CLI commands, ports | [Install and run](docs/install.md) |
+| Principles and what is stored where | [How FULI works](docs/how-it-works.md) |
+| Connecting each client | [Connect a client](docs/client-connections.md) |
+| Skills, hooks and MCP tools | [Agent integrations](docs/agent-tools.md) |
+| Notion, Lark and other knowledge bases | [External knowledge](docs/external-knowledge.md) |
+| <img src="docs/readme/fla-tonborg.webp" alt="" width="20" /> Tonborg and autonomy | [Judgment and autonomy](docs/judgment-and-autonomy.md) |
+| The roundtable | [Roundtable](docs/agent-roundtable.md) |
+| What is proven so far | [Capabilities and limits](docs/capabilities-and-limits.md) · [Measured report](https://有点.意思.com/fuli/report/en/) |
+| Running the source | [Develop and verify](docs/development.md) · [Contributing](CONTRIBUTING.md) |
 
-## Brand
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/JevonsCode/fuli/main/brand/svg/lockup/fuli-lockup-bilingual-horizontal-dark.svg" />
-  <img src="https://raw.githubusercontent.com/JevonsCode/fuli/main/brand/svg/lockup/fuli-lockup-bilingual-horizontal.svg" alt="FULI 复利 lockup" width="280" />
-</picture>
-
-The FULI mark, wordmark and lockups come from the [FULI 复利 brand system on Figma](https://www.figma.com/community/file/1698659778015746085). Brand files and how to change them are in [`brand/README.md`](brand/README.md).
-
-## License
-
-[Apache-2.0](LICENSE)
+The FULI mark and wordmarks come from the [FULI 复利 brand system](https://www.figma.com/community/file/1698659778015746085); see [`brand/README.md`](brand/README.md).
+Licensed under [Apache-2.0](LICENSE).

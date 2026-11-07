@@ -16,11 +16,12 @@
   -webkit-backdrop-filter: var(--filter-panel); backdrop-filter: var(--filter-panel);
 }
 /* As tall as the button beside it, so the face, the words and the button share one centre line. */
-.review-group__title--asks { display: flex; align-items: center; gap: 6px; min-height: 30px; color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-strong, 600); }
+.review-group__title--asks { display: flex; align-items: center; gap: 6px; min-height: 30px; white-space: normal; color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-strong, 600); }
 .review-group__avatar { flex: none; width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
 .review-group__avatar { margin-right: 2px; }
-/* On a narrow screen the words give way; how many wait for the person always shows. */
-.review-group__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* On a narrow screen the words wrap instead of being cut (「Tonborg 拿不…」 lost what it asks);
+   how many wait for the person always shows. */
+.review-group__name { min-width: 0; word-break: keep-all; overflow-wrap: anywhere; }
 .review-group__count { flex: none; }
 .review-group__action { display: inline-flex; align-items: center; gap: 8px; }
 /* A long group (ReviewRows) draws only the rows near the screen, each this tall:

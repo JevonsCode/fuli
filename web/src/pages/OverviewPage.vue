@@ -125,7 +125,9 @@ usePageRefresh(() => Promise.all([data.loadTasks(), data.loadRequests(), data.lo
   width: 100%; min-height: 0;
 }
 .workbench > :first-child { margin-bottom: 76px; }
-.workbench-loading { margin: auto; }
+/* Centred in the stage column: `.workbench > :first-child` would otherwise keep its 76px bottom
+   margin and push the indicator down beside the dock. */
+.workbench > .workbench-loading { margin: auto; }
 /* Small windows and phones: one column, the stage first, the page scrolls. */
 @media (max-width: 860px) {
   .overview-view { display: block; overflow: auto; padding-bottom: calc(112px + env(safe-area-inset-bottom)) !important; }

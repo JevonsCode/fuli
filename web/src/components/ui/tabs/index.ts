@@ -9,6 +9,8 @@
 // - Triggers use FULI type (13px/500), the FULI focus outline, and keep
 //   their label on one line; the list scrolls sideways instead of wrapping
 //   when a translation is long.
+// - A panel keeps the shared keyboard focus outline (upstream drops it with
+//   outline-none): Tab can land on a panel, so the person sees where they are.
 // - Dark-mode utilities are dropped (dark mode is reserved, not offered).
 export { default as Tabs } from "./Tabs.vue"
 export { default as TabsContent } from "./TabsContent.vue"

@@ -46,7 +46,10 @@ const copy = (id: string, text: string) => copyText(id, clipboardText(text));
           @click="copy('mention', mention)"
         >
           <UiIcon :name="copied === 'mention' ? 'check' : 'copy'" :size="14" />
-          {{ copied === "mention" ? t("agentProfiles.mention.copied") : t("agentProfiles.mention.copy") }}
+          <span class="agent-mention-labels" data-agent-mention-label>
+            <span :class="{ 'is-shown': copied !== 'mention' }">{{ t("agentProfiles.mention.copy") }}</span>
+            <span :class="{ 'is-shown': copied === 'mention' }">{{ t("agentProfiles.mention.copied") }}</span>
+          </span>
         </Button>
       </HoverCardTrigger>
       <HoverCardContent align="end" class="agent-mention-card p-3" style="width: min(340px, calc(100vw - 32px))" data-agent-mention-card>
@@ -78,6 +81,10 @@ const copy = (id: string, text: string) => copyText(id, clipboardText(text));
 
 <style scoped>
 .agent-mention { display: inline-flex; flex: 0 0 auto; }
+/* 复制 #FLA and 已复制 share one cell, so the button keeps its width and never moves when it says it copied. */
+.agent-mention-labels { display: grid; justify-items: center; }
+.agent-mention-labels > span { grid-area: 1 / 1; visibility: hidden; }
+.agent-mention-labels > .is-shown { visibility: visible; }
 .agent-mention-copy.is-copied,
 .agent-mention-phrasing.is-copied .agent-mention-state { color: var(--color-success); }
 .agent-mention-title { margin: 0 0 8px; color: var(--color-ink); font-size: 13px; font-weight: var(--weight-strong); line-height: 1.5; overflow-wrap: anywhere; }

@@ -56,7 +56,7 @@ export const doctorMessages = {
     },
   },
   'en-US': {
-    summary: '{count} things need you',
+    summary: '{count} thing needs you | {count} things need you',
     show: 'View',
     hide: 'Hide',
     repair: 'Fix automatically',

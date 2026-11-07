@@ -55,6 +55,13 @@ test('every local asset reference in the built site carries the hash of the file
     assert.ok(avatars.length >= 24, `${avatars.length} avatars`);
     assert.match(await readFile(join(root, 'assets', 'avatars', 'fla-1.svg'), 'utf8'), /^<svg[\s>]/);
     assert.match(home, /\.\/assets\/avatars\/fla-1\.svg\?v=[0-9a-f]{8}"/);
+    // The built-in FLAs wear the console's own portraits, one small copy for every page.
+    const models = await readFile(join(root, 'models', 'index.html'), 'utf8');
+    for (const name of ['astro', 'jefa', 'bole', 'tonborg']) {
+      assert.ok((await readFile(join(root, 'assets', 'avatars', `${name}.webp`))).length < 15 * 1024, name);
+      assert.equal(home.match(new RegExp(`\\./assets/avatars/${name}\\.webp\\?v=[0-9a-f]{8}"`, 'g'))?.length, 2, `home ${name}`);
+      assert.match(models, new RegExp(`\\.\\./assets/avatars/${name}\\.webp\\?v=[0-9a-f]{8}"`), `models ${name}`);
+    }
     // Pages and directories keep plain links.
     assert.match(home, /href="\.\/en\/"/);
   } finally {

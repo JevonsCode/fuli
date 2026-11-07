@@ -7,6 +7,7 @@ import { getJson } from '@/api/client'
 import BackToTop from '@/components/BackToTop.vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
+import UiIcon from '@/ui/UiIcon.vue'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
@@ -1112,7 +1113,7 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
           <Button variant="ghost" @click="graphCanvas?.fit()">{{ t('knowledge.workspace.workspace.view.fit') }}</Button>
           <Button variant="ghost" @click="graphCanvas?.reset()">{{ t('knowledge.workspace.workspace.view.reset') }}</Button>
         </div>
-        <Button size="icon" variant="ghost" :aria-label="t('common.actions.refresh')" :title="t('common.actions.refresh')" @click="loadGraph"><span aria-hidden="true">↻</span></Button>
+        <Button size="icon" variant="ghost" :aria-label="t('common.actions.refresh')" :title="t('common.actions.refresh')" @click="loadGraph"><UiIcon name="refresh" :size="16" /></Button>
       </div>
     </div>
 
