@@ -53,7 +53,7 @@
   <tr>
     <td width="50%" valign="top">
       <img src="docs/readme/card-tonborg-zh.webp" alt="等你确认的知识，以及交给 Tonborg 确认的开关" width="460" />
-      <h3 align="center"><img src="docs/readme/fla-tonborg.webp" alt="" width="28" align="absmiddle" /> Tonborg 替你确认</h3>
+      <h3 align="center"><img src="docs/readme/fla-tonborg-inline.webp" alt="" width="28" align="absmiddle" /> Tonborg 替你确认</h3>
       新知识要等一句确认。打开「交给 Tonborg 确认」，它按你的偏好确认日常的条目，拿不准的留给你，每次都写下理由，点赞或点踩它下次就改。
     </td>
     <td width="50%" valign="top">
@@ -174,7 +174,7 @@ FULI.app 移到废纸篓：只移到废纸篓的话，这些配置还留在客�
 <summary><b>留下什么由谁决定？</b></summary>
 
 由你决定：AI 负责查找和执行，人始终保留最终判断权。每个任务结束前检查一次，只留能复用的知识。Agent 猜出来的偏好，
-要等你或者在你设定的自主程度内的 <img src="docs/readme/fla-tonborg.webp" alt="" width="20" align="absmiddle" /> Tonborg 确认才算数。旧答案带着来源和理由留在历史里。
+要等你或者在你设定的自主程度内的 <img src="docs/readme/fla-tonborg-inline.webp" alt="" width="20" align="absmiddle" /> Tonborg 确认才算数。旧答案带着来源和理由留在历史里。
 </details>
 
 ## 深入了解
@@ -186,7 +186,7 @@ FULI.app 移到废纸篓：只移到废纸篓的话，这些配置还留在客�
 | 各客户端怎么接 | [客户端接入（英文）](docs/client-connections.md) |
 | Skills、Hook 和 MCP 工具 | [Agent 接入与 MCP 工具](docs/agent-tools.zh-CN.md) |
 | Notion、飞书等知识库 | [外部知识库只读接入](docs/external-knowledge.zh-CN.md) |
-| <img src="docs/readme/fla-tonborg.webp" alt="" width="20" align="absmiddle" /> Tonborg 与自主程度 | [Tonborg 怎么判断（英文）](docs/judgment-and-autonomy.md) |
+| <img src="docs/readme/fla-tonborg-inline.webp" alt="" width="20" align="absmiddle" /> Tonborg 与自主程度 | [Tonborg 怎么判断（英文）](docs/judgment-and-autonomy.md) |
 | 圆桌 | [圆桌](docs/agent-roundtable.md) |
 | 已经证明了什么 | [能力与边界](docs/capabilities-and-limits.zh-CN.md) · [实测报告](https://有点.意思.com/fuli/report/) |
 | 跑源码 | [开发与验收](docs/development.zh-CN.md) · [参与贡献](CONTRIBUTING.md) |
