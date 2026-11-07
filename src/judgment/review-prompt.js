@@ -46,8 +46,8 @@ const OPTIONS_RULE = 'options: for a candidate you escalate, or approve with con
 // question in a Chinese console), so it is in their language, whatever the evidence's.
 // A setting saved before the console sent its language reads as its default, 简体中文.
 const QUESTION_LANGUAGES = Object.freeze({
-  'zh-CN': { name: 'Simplified Chinese', example: '我猜你会保留这条：……，对吗？' },
-  'en-US': { name: 'English', example: 'I think you keep this: ... right?' },
+  'zh-CN': { name: 'Simplified Chinese', example: '我猜你会保留「用 pnpm 安装依赖」，对吗？' },
+  'en-US': { name: 'English', example: 'I think you keep "use pnpm": right?' },
 });
 const LANGUAGE_SLOT = '{language}';
 const EXAMPLE_SLOT = '{example}';
@@ -55,6 +55,8 @@ const DELEGATED_REVIEW_RULE = 'The person handed this review to you: decide each
   + 'using their confirmed preferences and their earlier votes and reasons in feedback. Approve only what they would clearly keep as it is. '
   + `For every candidate give guess (keep, drop or edit: what you think the person would do) and question: one short question in ${LANGUAGE_SLOT}, `
   + `the person's language, even when the evidence is in another language, under 80 characters, phrased as your guess so they can accept or correct it (for example "${EXAMPLE_SLOT}"). `
+  + 'The question names the candidate by quoting a short excerpt of its own content, under 20 characters; never only "this" or 「这条」 '
+  + '(Jevons 11-07: a question that does not say what the item is cannot be answered). '
   + 'Escalate anything you would drop or edit; never drop or edit it yourself.';
 
 function delegatedRule(language) {

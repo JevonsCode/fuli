@@ -43,6 +43,8 @@
 .review-rows--virtual .review-row:not(.is-first) { border-top: 1px solid var(--color-border); }
 .review-row:hover, .review-row.is-selected { background: var(--color-surface-subtle); }
 .review-row__body { display: grid; gap: 2px; min-width: 0; }
+/* Tonborg's guess in the meta line, a step darker than the rest of it. */
+.review-row__guess { color: var(--color-ink); font-weight: var(--weight-medium); }
 .review-row__meta {
   overflow: hidden; color: var(--color-muted); font-size: 11px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap;
 }

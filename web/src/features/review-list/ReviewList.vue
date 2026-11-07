@@ -13,7 +13,7 @@ import UiDialog from '@/ui/UiDialog.vue'
 import UiIconButton from '@/ui/UiIconButton.vue'
 import UiNotice from '@/ui/UiNotice.vue'
 
-import { guessedAction, type ReviewAction, type ReviewLine } from './review-list'
+import { guessedAction, oneLine, type ReviewAction, type ReviewLine } from './review-list'
 import ReviewRows from './ReviewRows.vue'
 import { useReviewList } from './review-store'
 
@@ -43,10 +43,15 @@ const projectName = (line: ReviewLine) => line.projectId
 const meta = (line: ReviewLine) => [projectName(line), line.proposer, line.reason ? t(`reviewList.reasons.${line.reason}`) : '']
   .filter(Boolean).join(' · ')
 // What Tonborg asks stands apart (Jevons 11-06: 「长得都一样，看不出来」): its own lifted
-// glass card first, its avatar and name, and each line says what Tonborg guessed.
+// glass card first, its avatar and name. Each line leads with the item itself
+// (Jevons 11-07: 「内容是什么呀？你不跟我说什么事儿」); Tonborg's guess and its
+// reason sit in the meta line, its own question only in 查看详情.
 const tonborgAvatar = employeeAvatarUrl('tonborg')
-const askedMeta = (line: ReviewLine) => [projectName(line), line.proposer,
-  line.review?.guess ? t(`reviewList.guesses.${line.review.guess}`) : t('reviewList.reasons.tonborg_unsure')].filter(Boolean).join(' · ')
+const REASON_LIMIT = 60
+const askedMeta = (line: ReviewLine) => [projectName(line), line.proposer].filter(Boolean).join(' · ')
+const guessLabel = (line: ReviewLine) => line.review?.guess
+  ? t('reviewList.guessed', { guess: t(`reviewList.guessShort.${line.review.guess}`) }) : t('reviewList.reasons.tonborg_unsure')
+const tonborgReason = (line: ReviewLine) => line.review?.summary ? oneLine(line.review.summary, REASON_LIMIT) : ''
 const busy = (key: string) => review.pending[key]
 const pendingLabel = (key: string) => t(`reviewList.pending.${busy(key) ?? 'confirm'}`)
 // A whole group's progress counts the requests that came back, never invented stages.
@@ -89,8 +94,8 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
       </CardHeader>
       <ReviewRows v-slot="{ line }" :lines="review.list.questions" :label="t('reviewList.groups.questions')">
         <span class="review-row__body">
-          <span class="review-row__meta">{{ askedMeta(line) }}</span>
-          <span class="review-row__text" :title="line.review?.question ?? line.text">{{ line.review?.question ?? line.text }}</span>
+          <span class="review-row__meta" :title="line.review?.summary">{{ askedMeta(line) }} · <span class="review-row__guess" data-review-guess>{{ guessLabel(line) }}</span><template v-if="tonborgReason(line)"> · {{ tonborgReason(line) }}</template></span>
+          <span class="review-row__text" :title="line.text">{{ line.text }}</span>
         </span>
         <span class="review-row__actions">
           <span class="review-busy"><GrowthLoading v-if="busy(line.key)" variant="inline" :label="pendingLabel(line.key)" /></span>
@@ -139,7 +144,7 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
       </CardHeader>
       <ReviewRows v-slot="{ line }" :lines="review.list.confirmed" :label="t('reviewList.groups.confirmed')">
         <span class="review-row__body">
-          <span class="review-row__meta">{{ projectName(line) }} · {{ t('reviewList.byTonborg') }}</span>
+          <span class="review-row__meta" :title="line.review?.summary">{{ projectName(line) }} · {{ t('reviewList.byTonborg') }}<template v-if="tonborgReason(line)"> · {{ tonborgReason(line) }}</template></span>
           <span class="review-row__text" :title="line.text">{{ line.text }}</span>
         </span>
         <span class="review-row__actions">

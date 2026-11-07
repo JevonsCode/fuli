@@ -15,7 +15,8 @@ export const reviewListMessages = {
       unreviewed: '还没人看过', tonborg_reviewed: "@:{'roleNames.tonborg'} 看过，等你点头", tonborg_unsure: "@:{'roleNames.tonborg'} 拿不准",
       conflict: '和别的条目冲突', attention: '需要留意', basis_changed: '依据变了',
     },
-    guesses: { keep: "@:{'roleNames.tonborg'} 猜你会保留", drop: "@:{'roleNames.tonborg'} 猜你不要", edit: "@:{'roleNames.tonborg'} 猜你要改一下" },
+    guessed: "@:{'roleNames.tonborg'} 猜：{guess}",
+    guessShort: { keep: '保留', drop: '不要', edit: '先改一下' },
     actions: {
       confirm: '确认', drop: '不要', edit: '改一下', details: '查看详情', confirmAll: '全部确认', acceptGuesses: '全按猜的办',
       undo: '撤销', allRight: '都对', answer: '回答',
@@ -55,7 +56,8 @@ export const reviewListMessages = {
       unreviewed: 'Nobody looked yet', tonborg_reviewed: "@:{'roleNames.tonborg'} looked; waits for your nod", tonborg_unsure: "@:{'roleNames.tonborg'} is unsure",
       conflict: 'Conflicts with another item', attention: 'Needs attention', basis_changed: 'Its basis changed',
     },
-    guesses: { keep: "@:{'roleNames.tonborg'} guesses you keep it", drop: "@:{'roleNames.tonborg'} guesses you drop it", edit: "@:{'roleNames.tonborg'} guesses you edit it" },
+    guessed: "@:{'roleNames.tonborg'} guesses: {guess}",
+    guessShort: { keep: 'keep', drop: 'drop', edit: 'edit first' },
     actions: {
       confirm: 'Confirm', drop: 'Drop', edit: 'Edit', details: 'Details', confirmAll: 'Confirm all', acceptGuesses: 'Accept guesses',
       undo: 'Undo', allRight: 'All right', answer: 'Answer',
