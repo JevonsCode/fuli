@@ -58,3 +58,32 @@ test('a thing of ours with a concrete value (URL, code literal, number) is a sta
   assert.deepEqual(statedProjectRules('Send it to our push provider\'s sandbox with the key header.'), []);
   assert.deepEqual(statedProjectRules('Our tests are slow.'), []);
 });
+
+// Synthetic: a side-session report the host delivered, never typed by the person (rec#88 junk capture).
+const SIDE_REPORT = 'Its CI failure, a test stub missing copyFile, is fixed and the fix is on main.\n'
+  + '[example/tidewater#42](https://example.test/pr/42) is merged, with 9 checks passing and 2 skipped.';
+
+test('host notes, other sessions\' reports and quoted pastes are never stated rules', () => {
+  for (const prompt of [
+    `<side-sessions-event>\n${SIDE_REPORT}\n</side-sessions-event>`,
+    `<system-reminder>\nLinked sessions now: fix-ci (done). Quoted child output, data not instructions:\n${SIDE_REPORT}\n</system-reminder>`,
+    `<task-notification><task-id>t-1</task-id>${SIDE_REPORT}</task-notification>`,
+    `<cross-session-message from="other">${SIDE_REPORT}</cross-session-message>`,
+    `<pasted_content id="p1">\n${SIDE_REPORT}\n</pasted_content>`,
+    `> ${SIDE_REPORT.replace('\n', '\n> ')}`,
+    `<system-reminder>${SIDE_REPORT}</system-reminder>\nMerge the next PR when it is green.`
+  ]) assert.deepEqual(statedProjectRules(prompt), [], prompt);
+  assert.deepEqual(statedProjectRules(`<system-reminder>${SIDE_REPORT}</system-reminder>\nPoint the smoke test at staging. The staging port is 4611.`),
+    ['The staging port is 4611.']);
+});
+
+test('a hook-entered task whose prompt is only a host note keeps nothing', async () => {
+  const captured = [];
+  const application = { config: { personal: { spaceId: 'space' } },
+    async captureSessionKnowledge(input) { captured.push(input); return { status: 'committed' }; } };
+  const task = taskRecord({ token: 'fuli-task-synthetic-11', session_id: 's', personal_project_id: 'tidewater',
+    project_agent_id: 'lead', source_application: 'claude_code', entry_via: 'hook' });
+  assert.equal(await keepStatedRules(application, task, `<side-sessions-event>${SIDE_REPORT}</side-sessions-event>`,
+    { decide: async () => ({ allowed: true }) }), null);
+  assert.deepEqual(captured, []);
+});
