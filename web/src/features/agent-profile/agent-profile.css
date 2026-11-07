@@ -42,6 +42,9 @@
   text-decoration: none; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; -webkit-user-select: none; user-select: none;
 }
 .agent-card-name:hover { color: var(--color-accent); }
+/* The raised hand beside the name sits on the name's first line centre: the 28px badge overhangs the
+   21.6px (16px × 1.35) line by 3.2px each way instead of hanging 6.4px below it. */
+@media (pointer: fine) { .agent-card-hand { margin-block: calc((16px * 1.35 - 28px) / 2); } }
 /* The whole name line is the visible target, so its focus ring hugs the text. */
 .agent-card-name:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: 4px; }
 .agent-card-current {

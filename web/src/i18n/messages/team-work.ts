@@ -5,7 +5,7 @@ export const teamWorkMessages = {
     cards: { title: '一起在做', loading: '正在读取 FLA 一起做的任务' },
     card: {
       flas: '{count} 位 FLA',
-      now: '{name} 正在{step}',
+      now: '{name} 正在做：{step}',
       progress: '完成 {completed} / {total} 步',
       shares: '分工',
       blocked: '这个任务被阻塞了。',
