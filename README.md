@@ -51,7 +51,7 @@ teach an Agent today keeps paying off.
   <tr>
     <td width="50%" valign="top">
       <img src="docs/readme/card-tonborg-en.webp" alt="Knowledge waiting to be confirmed, with Tonborg's switch" width="460" />
-      <h3>Tonborg confirms for you</h3>
+      <h3><img src="docs/readme/fla-tonborg.webp" alt="" width="28" /> Tonborg confirms for you</h3>
       New knowledge waits for a yes. Switch on Tonborg and it confirms everyday items by your preferences, asks you when it is unsure, writes down each reason, and learns from a thumbs up or down.
     </td>
     <td width="50%" valign="top">
@@ -162,7 +162,7 @@ come back later without a search through the code. The numbers are in the
 
 You do: AI looks things up and does the work, and humans retain final authority. Each task ends
 with one check that keeps only reusable knowledge. A preference an Agent guessed counts once you,
-or Tonborg within the autonomy you set, confirm it. Older answers stay in the history with their
+or <img src="docs/readme/fla-tonborg.webp" alt="" width="20" /> Tonborg within the autonomy you set, confirm it. Older answers stay in the history with their
 source and reason.
 </details>
 
@@ -175,7 +175,7 @@ source and reason.
 | Connecting each client | [Connect a client](docs/client-connections.md) |
 | Skills, hooks and MCP tools | [Agent integrations](docs/agent-tools.md) |
 | Notion, Lark and other knowledge bases | [External knowledge](docs/external-knowledge.md) |
-| Tonborg and autonomy | [Judgment and autonomy](docs/judgment-and-autonomy.md) |
+| <img src="docs/readme/fla-tonborg.webp" alt="" width="20" /> Tonborg and autonomy | [Judgment and autonomy](docs/judgment-and-autonomy.md) |
 | The roundtable | [Roundtable](docs/agent-roundtable.md) |
 | What is proven so far | [Capabilities and limits](docs/capabilities-and-limits.md) · [Measured report](https://有点.意思.com/fuli/report/en/) |
 | Running the source | [Develop and verify](docs/development.md) · [Contributing](CONTRIBUTING.md) |

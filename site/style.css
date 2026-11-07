@@ -184,6 +184,7 @@ figure.window figcaption { padding: 0 20px; }
 .team { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .member { display: grid; gap: 2px; padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
 .member span { display: grid; width: 42px; height: 42px; margin-bottom: 10px; place-items: center; border-radius: 12px; background: var(--jade-soft); color: var(--jade); font-size: 20px; font-weight: 650; }
+.member .fla-face { width: 42px; height: 42px; margin-bottom: 10px; border-radius: 50%; }
 .member small { color: var(--muted); font-size: 13px; }
 .member.lead { border-color: var(--jade-line); }
 
@@ -301,3 +302,8 @@ html:lang(zh) .nav.is-dark .wordmark-zh.wordmark--dark, html:lang(en) .nav.is-da
 /* Over the dark scene the nav swaps to the brand's dark mark (brand/svg/mark). */
 .brand-mark--dark, .nav.is-dark .brand-mark { display: none; }
 .nav.is-dark .brand-mark--dark { display: block; }
+
+/* A built-in FLA's portrait beside its name (scripts/site-avatars.js): round, like the console shows it. */
+.fla-face { display: inline-block; flex: none; border-radius: 50%; object-fit: cover; }
+.fla-title { display: flex; align-items: center; gap: 10px; }
+.fla-title .fla-face { width: 32px; height: 32px; }
