@@ -260,7 +260,7 @@ export const modelSettingsMessages = {
       partialNote: '（另 {count} 次没返回）',
       unreported: '另有 {count} 次尝试没返回用量，上面的数没算它们。',
       unreportedFailed: '{count} 次失败的尝试没返回用量，上面的数没算它们。',
-      sources: { model_api: '来自模型服务', session: '来自客户端' },
+      sources: { model_api: '用量由模型服务返回', session: '用量由客户端会话记录' },
     },
     suggestions: {
       title: '建议记录',
@@ -594,7 +594,7 @@ export const modelSettingsMessages = {
       partialNote: ' ({count} more not returned)',
       unreported: '{count} more tries returned no usage; the numbers above leave them out.',
       unreportedFailed: '{count} failed tries returned no usage; the numbers above leave them out.',
-      sources: { model_api: 'From the model service', session: 'From the client' },
+      sources: { model_api: 'Usage returned by the model service', session: 'Usage recorded by the client session' },
     },
     suggestions: {
       title: 'Suggestion records',

@@ -364,7 +364,7 @@ describe('ModelSettingsPage', () => {
     const wrapper = await mountPage()
     const model = wrapper.get('[data-usage-list="model"]')
     expect(model.text()).toContain('Tonborg')
-    expect(model.text()).toContain('来自模型服务')
+    expect(model.text()).toContain('用量由模型服务返回')
     // Calls are calls; failures are calls that failed in the end; tries are apart.
     expect(model.get('.model-usage-failed').text()).toBe('1 次失败')
     expect(model.get('dl > div:first-child dd').text()).toBe('2 次1 次失败（含重试共试了 3 次）')
@@ -377,10 +377,10 @@ describe('ModelSettingsPage', () => {
     expect(model.get('[data-usage-cell="cache"] dd').text()).toBe('0')
     expect(model.find('[data-usage-cell="cacheWrite"]').exists()).toBe(false)
     expect(model.find('[data-usage-cell="cost"]').exists()).toBe(false)
-    expect(wrapper.get('[data-model-usage]').text()).not.toMatch(/费用|估算|未上报|US\$/)
+    expect(wrapper.get('[data-model-usage]').text()).not.toMatch(/费用|估算|上报|US\$/)
     const session = wrapper.get('[data-usage-list="session"]')
     expect(session.get('h3').text()).toBe('回到当前会话')
-    expect(session.text()).toContain('来自客户端')
+    expect(session.text()).toContain('用量由客户端会话记录')
     expect(session.get('[data-usage-cell="input"] dd').text()).toBe('没返回')
     expect(session.find('[data-usage-row-note]').exists()).toBe(false)
 
