@@ -110,6 +110,8 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   resume_work_surfaces: LAUNCH,
   // The person's own console changes, made for them (rec#11 D-81).
   run_delegated_action: LAUNCH,
+  // The person's answer to Tonborg, relayed through run_delegated_action.
+  answer_tonborg_question: LAUNCH,
 
   // Local, but a session, a local path, another Agent's records or the
   // person's own settings and reviews: not confined to an app's scope.
@@ -141,6 +143,7 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   list_employee_tools: UNSCOPED,
   get_judgment_policy: UNSCOPED,
   list_judgments: UNSCOPED,
+  list_tonborg_questions: UNSCOPED,
   get_agent_pins: UNSCOPED,
   pin_agent: UNSCOPED,
   get_model_usage: UNSCOPED,
