@@ -176,7 +176,10 @@ project facts in the person's words; review still decides them. Do not checkpoin
 such a sentence. When Stop closes such a task it also keeps, as pending experiences, what the turn
 itself showed: a project script that failed until another ran first (with its first error line), the
 project scripts that ran clean at the end, and one rule your final reply spells out (a convention,
-port, command or cause). Anything else you found out yourself still needs your checkpoint.
+port, command or cause). Neither reads host notes in the turn (`<system-reminder>`,
+`<side-sessions-event>`, `<task-notification>` and other tagged host blocks) or quoted pastes (`> …`,
+`<pasted_content>`), and a turn the host started with only such a note keeps no reply rule: another
+session's report is not the person's words. Anything else you found out yourself still needs your checkpoint.
 Assigned employees include a truthful workLog, even
 with `retain_nothing`; never claim automatic closure completed work or saved memory. A coordinated
 worker returns its result instead of checkpointing an inherited token. Do not finish a reusable

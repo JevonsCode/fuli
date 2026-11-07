@@ -1,4 +1,5 @@
 import { STATED_RULE_PATTERNS } from '../graphiti/task-stated-rules.js';
+import { personWords } from './person-words.js';
 
 // What a finished turn showed by itself (rec#88 compounding eval): a task the
 // Stop hook closes has no model checkpoint, so what the Agent found out was
@@ -7,7 +8,11 @@ import { STATED_RULE_PATTERNS } from '../graphiti/task-stated-rules.js';
 // with no model call, this returns at most a few reusable experiences; the
 // checkpoint keeps them pending, for the usual review. Agent-agnostic: each
 // host adapter supplies its normalized transcript records
-// ({ kind: 'tool_call' | 'tool_result', content: JSON }) for the turn.
+// ({ kind: 'tool_call' | 'tool_result', content: JSON }) for the turn, with
+// the turn's prompt as { role: 'user', kind: 'message' } where it has it. A
+// turn the host started with only its own note (a <side-sessions-event>, a
+// <task-notification>) answers that note, so its reply relays someone else's
+// report: the turn's runs are still the task's own, its reply is not kept.
 const MAX_FINDINGS = 3;
 const ERROR_LINE = /(?:Error|ENOENT|not found|Cannot find|No such file|failed)/u;
 // A project script, as a person would type it again.
@@ -19,9 +24,16 @@ const REPLY_RULES = [...STATED_RULE_PATTERNS,
 
 export function turnFindings(records, reply = null) {
   const runs = shellRuns(records);
-  const findings = [prerequisite(runs), projectChecks(runs), ...replyRules(reply)].filter(Boolean);
+  const findings = [prerequisite(runs), projectChecks(runs), ...(personDriven(records) ? replyRules(reply) : [])].filter(Boolean);
   const seen = new Set();
   return findings.filter(item => !seen.has(item.task) && seen.add(item.task)).slice(0, MAX_FINDINGS);
+}
+
+// The person wrote something in the turn's prompt; records without the prompt
+// are taken as the person's turn.
+function personDriven(records = []) {
+  const prompts = records.filter(record => record?.role === 'user' && record.kind === 'message');
+  return !prompts.length || prompts.some(record => personWords(record.content));
 }
 
 // Each shell call with its project scripts and outcome, in order.
@@ -77,10 +89,12 @@ function projectChecks(runs) {
     searchKeys: [...scripts, 'checks'].slice(0, 8) };
 }
 
-// Sentences of the final reply that state a project rule (a convention, a port, a command, a cause).
+// Sentences of the final reply that state a project rule (a convention, a port,
+// a command, a cause), outside any host note or quoted report it carries.
 function replyRules(reply) {
-  if (typeof reply !== 'string' || !reply.trim()) return [];
-  return reply.split(/(?<=[.!?])\s+|(?<=[。！？])|\r?\n/u)
+  const own = personWords(reply);
+  if (!own) return [];
+  return own.split(/(?<=[.!?])\s+|(?<=[。！？])|\r?\n/u)
     .map(sentence => sentence.replace(/^[\s>*•-]+|\*\*/gu, '').trim())
     .filter(sentence => sentence.length >= 20 && !/[?？]$/u.test(sentence) && REPLY_RULES.some(pattern => pattern.test(sentence)))
     .slice(0, 1)
