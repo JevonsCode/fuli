@@ -39,7 +39,8 @@ const LOCAL_BUILD_MIN_MS = 100;
 const USAGE_NOTES = 'One record per actual model API attempt; requests count distinct requestIds. '
   + 'reported is null when no attempt reported that value: unknown, never 0. '
   + 'cachedInput, cacheWriteInput and reasoning are subsets of input or output as each provider defines them and are never added to totals. '
-  + 'Costs are estimates from configured unit prices only; without prices the cost is unknown.';
+  + 'unreportedAttempts returned no token counts at all; failedRequests are calls no attempt answered. '
+  + 'Usage carries no cost; a budget cost is an estimate from configured unit prices only.';
 
 // Why a saved key was not used; anything else the store refuses is secret_unreadable.
 const KEY_REFUSALS = Object.freeze({ secret_store_insecure: 'secret_store_insecure',

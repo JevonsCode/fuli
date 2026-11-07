@@ -8,13 +8,14 @@ import { Button } from '@/components/ui/button'
 import { currentLocale, t } from '@/i18n'
 import { UiSegmented } from '@/ui'
 import {
-  USAGE_WINDOWS, costValue, readModelUsage, roleName, tokenValue, usageParts, usageRows,
+  USAGE_WINDOWS, callParts, readModelUsage, roleName, usageCells, usageRowNote, usageRows,
   type UsagePayload, type UsageRow, type UsageWindow,
 } from './model'
 
 // Usage from the ledger by role, model and time range. Model API calls and
-// fallbacks to the current session are listed apart; an unreported value
-// reads 未上报 with its count, never 0.
+// fallbacks to the current session are listed apart. A value nothing returned
+// reads 没返回, never 0; tries that returned no usage get one note per row.
+// FULI bills nothing, so there is no cost here.
 const range = ref<UsageWindow>('7d')
 const payload = ref<UsagePayload | null>(null)
 const loading = ref(false)
@@ -39,19 +40,10 @@ async function load() {
   }
 }
 
-const cells = (row: UsageRow) => {
-  const { group } = row
-  const cost = costValue(group)
-  return [
-    { key: 'input', label: t('modelSettings.usage.input'), parts: usageParts(tokenValue(group.tokens.input, group.attempts), locale.value) },
-    { key: 'output', label: t('modelSettings.usage.output'), parts: usageParts(tokenValue(group.tokens.output, group.attempts), locale.value) },
-    { key: 'cache', label: t('modelSettings.usage.cache'), parts: usageParts(tokenValue(group.tokens.cachedInput, group.attempts), locale.value) },
-    ...(group.tokens.cacheWriteInput ? [{ key: 'cacheWrite', label: t('modelSettings.usage.cacheWrite'),
-      parts: usageParts(tokenValue(group.tokens.cacheWriteInput, group.attempts), locale.value) }] : []),
-    { key: 'cost', label: t('modelSettings.usage.cost'), parts: usageParts(cost, locale.value, cost.kind === 'unknown' ? undefined : cost.currency),
-      source: cost.kind === 'unknown' ? '' : t('modelSettings.usage.sources.estimate') },
-  ]
-}
+const view = (row: UsageRow) => ({
+  row, calls: callParts(row.group, locale.value), cells: usageCells(row.group, locale.value), note: usageRowNote(row.group, locale.value),
+})
+const views = computed(() => ({ model: rows.value.model.map(view), session: rows.value.session.map(view) }))
 
 watch(range, load, { immediate: true })
 onBeforeUnmount(() => reading?.abort())
@@ -77,7 +69,7 @@ onBeforeUnmount(() => reading?.abort())
           :aria-label="list === 'model' ? t('modelSettings.usage.title') : undefined" :data-usage-list="list">
           <h3 v-if="list === 'session'" id="model-usage-session">{{ t('modelSettings.usage.session') }}</h3>
           <ul class="ui-list model-usage-rows">
-            <li v-for="row in rows[list]" :key="row.key" class="model-usage-row" :data-usage-row="row.key">
+            <li v-for="{ row, calls, cells, note } in views[list]" :key="row.key" class="model-usage-row" :data-usage-row="row.key">
               <header>
                 <strong>{{ roleName(row.group.role) }}</strong>
                 <span v-if="row.group.model" class="model-usage-model" :title="row.group.provider ?? undefined">{{ row.group.model }}</span>
@@ -89,15 +81,15 @@ onBeforeUnmount(() => reading?.abort())
               <dl>
                 <div>
                   <dt>{{ t('modelSettings.usage.calls') }}</dt>
-                  <dd>{{ t('modelSettings.usage.callsValue', { calls: row.group.requests, attempts: row.group.attempts }) }}
-                    <span v-if="row.group.failedAttempts" class="model-usage-failed">{{ t('modelSettings.usage.failed', { count: row.group.failedAttempts }) }}</span>
-                  </dd>
+                  <dd>{{ calls.value }}<span v-if="calls.failed" class="model-usage-failed">{{ calls.failed }}</span><span
+                    v-if="calls.note" class="model-usage-note">{{ calls.note }}</span></dd>
                 </div>
-                <div v-for="cell in cells(row)" :key="cell.key" :data-usage-cell="cell.key">
-                  <dt>{{ cell.label }}<small v-if="cell.source"> · {{ cell.source }}</small></dt>
-                  <dd>{{ cell.parts.value }}<span v-if="cell.parts.note" class="model-usage-note">{{ cell.parts.note }}</span></dd>
+                <div v-for="cell in cells" :key="cell.key" :data-usage-cell="cell.key">
+                  <dt>{{ t(`modelSettings.usage.${cell.key}`) }}</dt>
+                  <dd>{{ cell.value }}<span v-if="cell.note" class="model-usage-note">{{ cell.note }}</span></dd>
                 </div>
               </dl>
+              <p v-if="note" class="model-usage-row-note" data-usage-row-note>{{ note }}</p>
             </li>
           </ul>
         </section>
@@ -123,6 +115,7 @@ onBeforeUnmount(() => reading?.abort())
 .model-usage-row dd { margin: 2px 0 0; font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .model-usage-note { display: inline-block; color: var(--color-muted); white-space: nowrap; }
 .model-usage-failed { margin-inline-start: 6px; color: var(--color-danger); font-size: 12px; }
+.model-usage-row-note { margin: 0; color: var(--color-muted); font-size: 12px; }
 .model-usage-empty { display: grid; justify-items: start; gap: 8px; margin: 0; padding: 16px; border: 1px dashed var(--color-border);
   border-radius: var(--radius-card); color: var(--color-muted); font-size: 14px; }
 .model-usage-empty p { margin: 0; }

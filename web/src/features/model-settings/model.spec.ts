@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   endpointOrigin,
-  costValue, roleDraft, roleEdit, rolesSharing, tokenValue, usageParts, usageRows, usageWindowStart, withConnection, withProject,
+  callParts, roleDraft, roleEdit, rolesSharing, tokenValue, usageCells, usageParts, usageRowNote, usageRows, usageWindowStart, withConnection, withProject,
   type ModelRolesPayload, type UsageGroup,
 } from './model'
 
@@ -74,22 +74,39 @@ describe('model settings drafts', () => {
 
 const group = (overrides: Partial<UsageGroup>): UsageGroup => ({
   role: 'tonborg', provider: 'openai_chat@127.0.0.1:11434', model: 'qwen-test', actualModels: ['qwen-test'], channel: 'model_api',
-  requests: 3, attempts: 4, failedAttempts: 1,
+  requests: 3, failedRequests: 0, attempts: 4, failedAttempts: 1, unreportedAttempts: 1, unreportedFailedAttempts: 1,
   tokens: { input: { reported: 300, unknownAttempts: 1 }, output: { reported: 60, unknownAttempts: 1 }, total: { reported: 360, unknownAttempts: 1 } },
-  estimatedCost: null, ...overrides,
+  ...overrides,
 })
 
 describe('model usage', () => {
-  it('keeps unknown usage unknown with its count, never 0', () => {
-    expect(tokenValue({ reported: null, unknownAttempts: 2 }, 2)).toEqual({ kind: 'unknown', unknown: 2 })
-    // A subset no attempt reported is absent from the group: every attempt is unknown.
-    expect(tokenValue(undefined, 4)).toEqual({ kind: 'unknown', unknown: 4 })
-    expect(usageParts(tokenValue(undefined, 4), 'zh-CN')).toEqual({ value: '未上报 · 4 次', note: '' })
-    expect(usageParts(tokenValue({ reported: 1200, unknownAttempts: 1 }, 2), 'zh-CN')).toEqual({ value: '1,200', note: '（另 1 次未上报）' })
-    expect(usageParts(tokenValue({ reported: 0, unknownAttempts: 0 }, 1), 'zh-CN')).toEqual({ value: '0', note: '' })
-    expect(costValue(group({}))).toEqual({ kind: 'unknown', unknown: 4 })
-    const priced = costValue(group({ estimatedCost: { amount: 0.0012, currency: 'USD', basis: 'estimate', unknownAttempts: 0 } }))
-    expect(usageParts(priced, 'en-US', 'USD').value).toBe('$0.0012')
+  it('keeps unknown usage unknown, never 0, and leaves the row note tries out of each cell', () => {
+    expect(tokenValue({ reported: null, unknownAttempts: 2 })).toEqual({ kind: 'unknown' })
+    expect(tokenValue(undefined)).toEqual({ kind: 'unknown' })
+    expect(usageParts(tokenValue(undefined), 'zh-CN')).toEqual({ value: '没返回', note: '' })
+    expect(usageParts(tokenValue({ reported: 1200, unknownAttempts: 1 }), 'zh-CN')).toEqual({ value: '1,200', note: '（另 1 次没返回）' })
+    expect(usageParts(tokenValue({ reported: 1200, unknownAttempts: 3 }, 2), 'zh-CN')).toEqual({ value: '1,200', note: '（另 1 次没返回）' })
+    expect(usageParts(tokenValue({ reported: 1200, unknownAttempts: 2 }, 2), 'zh-CN')).toEqual({ value: '1,200', note: '' })
+    expect(usageParts(tokenValue({ reported: 0, unknownAttempts: 0 }), 'zh-CN')).toEqual({ value: '0', note: '' })
+  })
+
+  it('says tries without usage once per row, naming them failed only when they all failed', () => {
+    expect(usageRowNote(group({}), 'zh-CN')).toBe('1 次失败的尝试没返回用量，上面的数没算它们。')
+    expect(usageRowNote(group({ unreportedFailedAttempts: 0 }), 'zh-CN')).toBe('另有 1 次尝试没返回用量，上面的数没算它们。')
+    expect(usageRowNote(group({ unreportedAttempts: 0, unreportedFailedAttempts: 0 }), 'zh-CN')).toBe('')
+    // When nothing came back at all, each cell already says 没返回.
+    expect(usageRowNote(group({ unreportedAttempts: 4 }), 'zh-CN')).toBe('')
+    expect(usageCells(group({}), 'zh-CN')).toEqual([
+      { key: 'input', value: '300', note: '' }, { key: 'output', value: '60', note: '' },
+    ])
+    expect(usageCells(group({ tokens: { input: { reported: 9, unknownAttempts: 1 }, cachedInput: { reported: 0, unknownAttempts: 2 } } }), 'zh-CN'))
+      .toEqual([{ key: 'input', value: '9', note: '' }, { key: 'output', value: '没返回', note: '' }, { key: 'cache', value: '0', note: '（另 1 次没返回）' }])
+  })
+
+  it('counts failures in calls and keeps the tries apart, so the numbers add up', () => {
+    expect(callParts(group({ requests: 38, failedRequests: 19, attempts: 66, failedAttempts: 47 }), 'zh-CN'))
+      .toEqual({ value: '38 次', failed: '19 次失败', note: '（含重试共试了 66 次）' })
+    expect(callParts(group({ requests: 2, failedRequests: 0, attempts: 2 }), 'zh-CN')).toEqual({ value: '2 次', failed: '', note: '' })
   })
 
   it('lists model calls and current-session fallbacks apart, with bars only for known totals', () => {

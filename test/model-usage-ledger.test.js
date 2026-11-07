@@ -47,9 +47,14 @@ test('retries are separate attempts of one logical request, by provider and mode
   assert.equal(bole.failedAttempts, 1);
   assert.equal(bole.failedRequests, 0);
   assert.deepEqual(bole.tokens.total, { reported: 60, unknownAttempts: 1 });
-  assert.equal(bole.estimatedCost, null);
+  // The failed try returned no usage at all: said once, apart from the cells.
+  assert.equal(bole.unreportedAttempts, 1);
+  assert.equal(bole.unreportedFailedAttempts, 1);
+  // FULI bills nothing: usage carries no cost, priced or not.
   const tonborg = groups.find(group => group.role === 'tonborg');
-  assert.deepEqual(tonborg.estimatedCost, { amount: 0.001, currency: 'USD', basis: 'estimate', unknownAttempts: 0 });
+  assert.equal(tonborg.unreportedAttempts, 0);
+  assert.equal('estimatedCost' in tonborg, false);
+  assert.equal('estimatedCost' in bole, false);
   assert.deepEqual(ledger.usage({ role: 'tonborg' }).map(group => group.role), ['tonborg']);
 });
 

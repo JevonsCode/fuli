@@ -284,7 +284,7 @@ test('usage keeps unknown values unknown with their count and session fallbacks 
   const session = usage.groups.find(group => group.channel === 'session');
   assert.equal(model.requests, 2);
   assert.deepEqual(model.tokens.input, { reported: 100, unknownAttempts: 1 });
-  assert.equal(model.estimatedCost, null);
+  assert.equal('estimatedCost' in model, false);
   assert.equal(session.requests, 1);
   assert.deepEqual(session.tokens.total, { reported: null, unknownAttempts: 1 });
   assert.equal(session.model, null);

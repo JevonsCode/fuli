@@ -12,9 +12,8 @@
   </picture>
 </p>
 
-<h3 align="center">Automate everything that can be automated, and hand the execution to your FLAs. You make the calls and lead the way: take your FLA crew through the hard parts, or go grab a coffee and enjoy the compound interest of your own experience.</h3>
+<p align="center">FULI is a plugin that lets your tasks move across all your Agent clients: Claude Code, Codex, OpenCode… They share one memory, one taste and one FLA team, so you use whichever fits and switch without explaining everything again. It doesn't replace your clients or change what you set up: your models, subscriptions, sessions and settings stay as they are. FULI plugs in as its own entries only, and removing it from a client in the console, or uninstalling FULI, takes those entries out again.</p>
 
-<p align="center"><sub>Project profiles and FLA hiring run on their own if you'd rather not think about them; your only job is to set the direction. FLAs carry context and tools across every Agent client, and both top-tier and lighter models pull their weight here.</sub></p>
 
 <p align="center">
   English · <a href="README.zh-CN.md">简体中文</a> · <a href="https://有点.意思.com/fuli/">Website</a> · <a href="https://github.com/JevonsCode/fuli/releases/latest">Download</a>
@@ -28,10 +27,15 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="license" /></a>
 </p>
 
-FULI runs on your own computer and gives every AI coding Agent the same memory: your taste, your
-preferences and the facts of each project. Claude Code, Codex, OpenCode and other clients share it.
-Each task gets only the small slice it needs. FULI (复利) is Chinese for compound interest: what you
-teach an Agent today keeps paying off.
+<h3 align="left">Automate everything that can be automated, and hand the execution to your FLAs. You make the calls and lead the way: take your FLA crew through the hard parts, or go grab a coffee and enjoy the compound interest of your own experience.</h3>
+
+<p align="left">Project profiles and FLA hiring run on their own if you'd rather not think about them; your only job is to set the direction. FLAs carry context and tools across every Agent client, and both top-tier and lighter models pull their weight here.</p>
+
+
+
+Each task gets only the small slice it needs. Your judgment and experience keep adding up, so FULI
+knows you better the more you use it. That is the compound interest. Little by little, what your
+AI makes starts to carry your taste.
 
 ## What FULI does
 
@@ -101,6 +105,8 @@ when it needs it, and at the end writes back only what the next task can reuse.
 
 ## Install
 
+FULI runs a small service and a console on your own computer.
+
 **Desktop client (recommended).** Download from the [latest release](https://github.com/JevonsCode/fuli/releases/latest):
 
 | System | File |
@@ -155,6 +161,23 @@ A session starts with only the preferences in effect and a few related facts; th
 the rest when it needs it. Facts that only you know, such as a sandbox URL you mentioned once,
 come back later without a search through the code. The numbers are in the
 [benchmark](FULI_ALIGNMENT_BENCHMARK.md) (section 8.9.4).
+</details>
+
+<details>
+<summary><b>Do the built-in FLAs cost extra?</b></summary>
+
+By default the built-in FLAs work inside your client's session. Only when you connect a model for
+them do they use their own model, so nothing spends money behind your back.
+</details>
+
+<details>
+<summary><b>How do I take FULI out of a client?</b></summary>
+
+In the console, open Settings › Clients and choose Remove for that client. `fuli uninstall` and the
+Windows uninstaller do the same for every connected client. FULI takes out only its own entries
+(the MCP server, hooks, Skills and its permission lines), backs up each file first, and keeps a
+Skill you edited yourself. Your FULI data stays until you delete it. On macOS, remove the clients
+in the console before you move FULI.app to the Trash: the Trash alone leaves those entries in place.
 </details>
 
 <details>
