@@ -7,7 +7,7 @@ const tokens = integerSchema({ minimum: 0 });
 
 export const MODEL_BACKEND_DEFINITIONS = [
   { name: 'get_model_usage', title: 'READ · Built-in Agent model usage',
-    description: 'Model API usage of built-in Agents (assistant=Astro) and semantic search by role, provider, model and channel, with each role\'s budget window. One record per attempt; requests are distinct requestIds. Unknown usage stays null, never 0; usage carries no cost (a budget cost is a configured-price estimate). No prompts or keys.',
+    description: 'Model API usage of built-in Agents (assistant=Astro) and semantic search by role, provider, model and channel, with each role\'s budget window. One record per attempt; requests are distinct requestIds. Unknown usage stays null, never 0; only budgets estimate cost. No prompts or keys.',
     inputSchema: objectSchema({ role: enumSchema(MODEL_BACKEND_ROLES), from: dateTime, to: dateTime }) },
   { name: 'role_work', title: 'WRITE · Built-in Agent work package',
     description: 'Answer a built-in Agent\'s handed-off work package in this session. claim (optional packageId) returns instructions, evidence, answerSchema and a lease; submit sends answer within it. The host validates it like a model answer; the role keeps its permission gates. Late or mismatched answers are stale. Never an independent verification.',
