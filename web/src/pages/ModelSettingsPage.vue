@@ -20,7 +20,9 @@ import {
   SEMANTIC_ROLE, modelGuideUrl, readModelRoles, roleName,
   type ConfigConflict, type ModelRoleId, type ModelRoleView, type ModelRolesPayload,
 } from '@/features/model-settings/model'
+import { modelPageTools } from '@/features/model-settings/model-page-tools'
 import { taskState, useRole, type ModelUseId } from '@/features/model-settings/model-uses'
+import { usePageTools } from '@/features/webmcp/usePageTools'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { usePageRefresh } from '@/layouts/page-refresh'
@@ -127,6 +129,9 @@ async function conflict(code: ConfigConflict) {
   }
   await settingsChanged()
 }
+
+// The browser's AI agent can do what this page does (WebMCP); its changes show here as they land.
+usePageTools(() => modelPageTools({ changed: () => void settingsChanged() }))
 
 function trustSaved(next: ModelRolesPayload) {
   notice.value = historyNote(next)

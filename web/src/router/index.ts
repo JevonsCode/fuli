@@ -80,7 +80,7 @@ export const router = createRouter({
       path: '/project-agents',
       name: 'project-agents',
       component: () => import('@/features/flas/FlasPage.vue'),
-      meta: { title: 'routes.projectAgents.title' },
+      meta: { title: 'routes.projectAgents.title', aiHelp: 'task.workbench' },
     },
     { path: '/agents/:spaceId/:agentId', name: 'agent-profile', component: () => import('@/pages/AgentProfilePage.vue'), meta: { title: 'agentProfiles.profile', detail: true } },
     { path: '/project-agents/occupations', name: 'occupations', component: () => import('@/pages/OccupationsPage.vue'), meta: { title: 'occupations.title' } },
@@ -108,7 +108,7 @@ export const router = createRouter({
       path: '/knowledge',
       name: 'knowledge-default',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title' },
+      meta: { title: 'routes.knowledge.title', aiHelp: 'task.knowledge' },
     },
     // rec#20: a turn receipt's links. Static segments outrank the knowledge
     // workspace's parameters, so these never open a workspace view.
@@ -156,25 +156,25 @@ export const router = createRouter({
       path: '/knowledge/:scope/:spaceId/:projectId/:mode/:itemKind/:itemId',
       name: 'project-knowledge-item',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title' },
+      meta: { title: 'routes.knowledge.title', aiHelp: 'task.knowledge' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:mode/:itemKind/:itemId',
       name: 'knowledge-item',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title' },
+      meta: { title: 'routes.knowledge.title', aiHelp: 'task.knowledge' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:projectId/:mode',
       name: 'project-knowledge',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title' },
+      meta: { title: 'routes.knowledge.title', aiHelp: 'task.knowledge' },
     },
     {
       path: '/knowledge/:scope/:spaceId/:mode',
       name: 'knowledge',
       component: () => import('@/pages/KnowledgePage.vue'),
-      meta: { title: 'routes.knowledge.title' },
+      meta: { title: 'routes.knowledge.title', aiHelp: 'task.knowledge' },
     },
     {
       path: '/inbox',
@@ -182,6 +182,7 @@ export const router = createRouter({
       component: () => import('@/pages/InboxPage.vue'),
       meta: {
         title: 'attention.title',
+        aiHelp: 'task.decisions',
       },
     },
     { path: '/review', redirect: '/public-projects' },
@@ -192,6 +193,7 @@ export const router = createRouter({
       meta: {
         title: 'routes.connections.title',
         description: 'routes.connections.description',
+        aiHelp: 'task.connections',
       },
     },
     {
@@ -210,6 +212,7 @@ export const router = createRouter({
       component: () => import('@/pages/ModelSettingsPage.vue'),
       meta: {
         title: 'modelSettings.title',
+        aiHelp: 'task.models',
       },
     },
     { path: '/settings/models', redirect: '/models' },

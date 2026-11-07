@@ -109,6 +109,12 @@ export function patchJson<T>(url: string, body: unknown, shape?: ResponseShape<T
   return requestJson<T>(url, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify(body) }, shape)
 }
 
+/** A request with extra headers, such as the delegation header a console page tool sends (features/webmcp). */
+export function sendJsonWithHeaders<T>(method: string, url: string, body: unknown, headers: Record<string, string>, shape: ResponseShape<T>, init?: Init): Promise<T> {
+  return requestJson<T>(url, { ...init, method, headers: { ...JSON_HEADERS, ...headers },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, shape)
+}
+
 export function deleteJson<T>(url: string, body?: unknown, shape?: ResponseShape<T>): Promise<T> {
   return requestJson<T>(url, body === undefined ? { method: 'DELETE' } : { method: 'DELETE', headers: JSON_HEADERS, body: JSON.stringify(body) }, shape)
 }

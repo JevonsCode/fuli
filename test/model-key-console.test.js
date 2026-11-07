@@ -17,6 +17,7 @@ import { reachableModules } from '../test-support/module-graph.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SYNTHETIC_KEY = 'sk-synthetic-NEVER-ECHO-4242';
+const ENDPOINT = 'https://api.deepseek.test/v1';
 // A reversible stand-in for DPAPI, so the test runs the same on every system.
 const PROTECTOR = Object.freeze({ scheme: 'synthetic-v1', protect: async (bytes) => bytes.toString('base64'),
   unprotect: async (data) => Buffer.from(data, 'base64') });
@@ -41,28 +42,31 @@ test('the page saves and replaces a key, and learns only that it is saved', asyn
     t.mock.method(console, method, (...args) => logged.push(args.join(' ')));
   }
   await withConsole(t, async ({ url, secrets, path }) => {
-    assert.deepEqual(await (await fetch(`${url}/api/model-backends/keys`)).json(), { saved: [] });
-    const saved = await put(`${url}/api/model-backends/keys/deepseek`, { key: SYNTHETIC_KEY });
+    assert.deepEqual(await (await fetch(`${url}/api/model-backends/keys`)).json(), { saved: [], origins: {} });
+    const saved = await put(`${url}/api/model-backends/keys/deepseek`, { key: SYNTHETIC_KEY, endpoint: ENDPOINT });
     const answer = await saved.text();
     assert.equal(saved.status, 200);
     assert.deepEqual(JSON.parse(answer), { reference: 'deepseek', saved: true });
-    assert.equal(await secrets.read('deepseek'), SYNTHETIC_KEY);
+    assert.equal(await secrets.read('deepseek', ENDPOINT), SYNTHETIC_KEY);
     const listed = await (await fetch(`${url}/api/model-backends/keys`)).text();
-    assert.deepEqual(JSON.parse(listed), { saved: ['deepseek'] });
+    assert.deepEqual(JSON.parse(listed), { saved: ['deepseek'], origins: { deepseek: 'https://api.deepseek.test' } });
     assert.doesNotMatch(listed, /NEVER-ECHO/);
     // Stored protected, not as typed.
     assert.doesNotMatch(readFileSync(path, 'utf8'), /NEVER-ECHO/);
 
-    assert.equal((await put(`${url}/api/model-backends/keys/deepseek`, { key: `${SYNTHETIC_KEY}-2` })).status, 200);
-    assert.equal(await secrets.read('deepseek'), `${SYNTHETIC_KEY}-2`);
+    assert.equal((await put(`${url}/api/model-backends/keys/deepseek`, { key: `${SYNTHETIC_KEY}-2`, endpoint: ENDPOINT })).status, 200);
+    assert.equal(await secrets.read('deepseek', ENDPOINT), `${SYNTHETIC_KEY}-2`);
 
-    const spaced = await put(`${url}/api/model-backends/keys/deepseek`, { key: 'sk synthetic NEVER-ECHO' });
+    const spaced = await put(`${url}/api/model-backends/keys/deepseek`, { key: 'sk synthetic NEVER-ECHO', endpoint: ENDPOINT });
     assert.equal(spaced.status, 400);
     assert.doesNotMatch(await spaced.text(), /NEVER-ECHO/);
-    assert.equal((await put(`${url}/api/model-backends/keys/bad%20ref`, { key: SYNTHETIC_KEY })).status, 400);
-    assert.equal((await put(`${url}/api/model-backends/keys/deepseek`, { key: SYNTHETIC_KEY, extra: 1 })).status, 400);
+    assert.equal((await put(`${url}/api/model-backends/keys/bad%20ref`, { key: SYNTHETIC_KEY, endpoint: ENDPOINT })).status, 400);
+    // A key is saved only together with the endpoint it is for.
+    assert.equal((await put(`${url}/api/model-backends/keys/deepseek`, { key: SYNTHETIC_KEY })).status, 400);
+    assert.equal((await put(`${url}/api/model-backends/keys/deepseek`, { key: SYNTHETIC_KEY, endpoint: 'ftp://x.test' })).status, 400);
+    assert.equal((await put(`${url}/api/model-backends/keys/deepseek`, { key: SYNTHETIC_KEY, endpoint: ENDPOINT, extra: 1 })).status, 400);
     assert.equal((await fetch(`${url}/api/model-backends/keys/deepseek`)).status, 405);
-    assert.equal(await secrets.read('deepseek'), `${SYNTHETIC_KEY}-2`);
+    assert.equal(await secrets.read('deepseek', ENDPOINT), `${SYNTHETIC_KEY}-2`);
   });
   assert.equal(logged.filter((line) => line.includes('NEVER-ECHO')).length, 0);
 });

@@ -376,9 +376,24 @@ export function knownKeyReferences(payload: ModelRolesPayload, saved: readonly s
   return [...new Set([...saved, ...named])].sort((left, right) => left.localeCompare(right))
 }
 
-export const readSavedKeys = () => getJson<{ saved: string[] }>('/api/model-backends/keys')
-export const saveModelKey = (reference: string, key: string) =>
-  putJson<{ reference: string; saved: true }>(`/api/model-backends/keys/${encodeURIComponent(reference.trim())}`, { key })
+// origins: the endpoint origin each saved key is tied to (null for a key saved before origins were recorded).
+export const readSavedKeys = () => getJson<{ saved: string[]; origins: Record<string, string | null> }>('/api/model-backends/keys')
+/** Saves a key for endpoint: the server sends it to that endpoint's origin only. */
+export const saveModelKey = (reference: string, key: string, endpoint: string) =>
+  putJson<{ reference: string; saved: true }>(`/api/model-backends/keys/${encodeURIComponent(reference.trim())}`, { key, endpoint })
+
+/**
+ * The origin a key for this endpoint is tied to, or null for an address the
+ * server would not save (src/model-backends/config.js endpointUrl): HTTP(S)
+ * only, with no user name, password, query or fragment.
+ */
+export function endpointOrigin(endpoint: string): string | null {
+  let url: URL
+  try { url = new URL(endpoint.trim()) } catch { return null }
+  const accepted = (url.protocol === 'https:' || url.protocol === 'http:')
+    && !url.username && !url.password && !url.search && !url.hash
+  return accepted ? url.origin : null
+}
 
 // ---- Usage ----------------------------------------------------------------
 

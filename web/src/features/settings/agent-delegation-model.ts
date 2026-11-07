@@ -8,7 +8,8 @@ const operation = z.looseObject({
   at: z.string(),
   route: z.string(),
   category: z.string(),
-  actor: z.looseObject({ agentId: z.string().nullable() }),
+  // client webmcp: the console page's own tool, called by the browser's AI agent (features/webmcp).
+  actor: z.looseObject({ agentId: z.string().nullable(), client: z.string().nullable().optional() }),
   reason: z.string(),
   outcome: z.enum(['succeeded', 'failed']),
   undo: z.string(),

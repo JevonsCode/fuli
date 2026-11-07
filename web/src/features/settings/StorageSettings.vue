@@ -4,6 +4,7 @@ import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import UiNotice from '@/ui/UiNotice.vue'
 import { currentLocale, t } from '@/i18n'
@@ -81,7 +82,7 @@ const busy = (item: OldDataItem, action: 'restore' | 'delete') => pending.value?
 <template>
   <Card as="section" id="storage" class="settings-card storage-settings" aria-labelledby="settings-storage-title" data-storage-settings>
     <CardHeader>
-      <CardTitle id="settings-storage-title" as="h2">{{ t('settings.storage.title') }}</CardTitle>
+      <CardTitle id="settings-storage-title" as="h2">{{ t('settings.storage.title') }}<AiHelpButton term="task.storage" /></CardTitle>
       <CardDescription v-if="oldData" data-storage-headline>{{ storageHeadline(oldData) }}</CardDescription>
       <CardAction v-if="oldData?.items.length">
         <Button type="button" size="sm" variant="outline" aria-haspopup="dialog" data-old-data-open @click="open = true">

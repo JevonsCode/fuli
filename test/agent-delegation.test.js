@@ -118,6 +118,24 @@ test('a category the person took back, or an off-by-default one, refuses before 
   assert.deepEqual(port.read().operations.map(({ route }) => route), ['POST /api/peer/join']);
 });
 
+test('测试连接 runs for the person under model_settings; a model key and the endpoint listing stay the person\'s', async (t) => {
+  const port = delegation(t);
+  // The console page's own WebMCP tool sends the same header, naming itself as the client.
+  const page = encodeDelegation({ actor: { client: 'webmcp' }, reason: 'The person asked their browser AI to test Tonborg', bodyFields: [] });
+  const check = await gate(port, 'POST', '/api/model-backends/roles/tonborg/check', { header: page });
+  assert.equal(check.ran, true);
+  const [operation] = port.read().operations;
+  assert.deepEqual([operation.route, operation.category, operation.actor.client],
+    ['POST /api/model-backends/roles/:role/check', 'model_settings', 'webmcp']);
+  for (const [method, url] of [['PUT', '/api/model-backends/keys/synthetic'], ['POST', '/api/model-backends/models']]) {
+    const refused = await gate(port, method, url, { header: page });
+    assert.deepEqual([refused.ran, refused.sent.body.code], [false, 'local_user_only'], url);
+  }
+  port.setCategory('model_settings', false);
+  const off = await gate(port, 'POST', '/api/model-backends/roles/tonborg/check');
+  assert.deepEqual([off.ran, off.sent.body.code], [false, 'delegation_category_off']);
+});
+
 test('local-user-only changes stay refused even when the policy file is tampered with', async (t) => {
   const directory = dataDir(t);
   writeFileSync(join(directory, 'agent-delegation-policy.json'), JSON.stringify({ version: 1, updatedAt: null,

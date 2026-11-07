@@ -10,10 +10,19 @@ import { ModelUsageLedger } from './usage-ledger.js';
 
 // Composition of the model port for one FULI data directory. The config is
 // read on every call, so a saved change applies without a restart.
+// Keys saved before they were tied to an endpoint are tied once here (secret-store.js bindLegacyKeys).
 export function openModelBackendRuntime(paths) {
+  const readConfig = () => readModelBackendConfig(paths.modelBackendConfigPath);
+  const secrets = createModelSecretStore({ path: paths.modelSecretStorePath });
+  const loaded = readConfig();
+  try {
+    if (loaded.state === 'ok') secrets.bindLegacyKeys(loaded.config.connections);
+  } catch (error) {
+    console.warn(`Model keys were not tied to their endpoints: ${error?.message ?? error}`);
+  }
   return createModelBackendPort({
-    readConfig: () => readModelBackendConfig(paths.modelBackendConfigPath),
-    secrets: createModelSecretStore({ path: paths.modelSecretStorePath }),
+    readConfig,
+    secrets,
     ledger: new ModelUsageLedger(paths.modelUsageLedgerPath)
   });
 }

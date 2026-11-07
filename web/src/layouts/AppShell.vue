@@ -15,6 +15,9 @@ import ModelPowerButton from '@/features/model-settings/ModelPowerButton.vue'
 import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
+import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
+import { shellPageTools } from '@/features/webmcp/shell-page-tools'
+import { usePageTools } from '@/features/webmcp/usePageTools'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
 import { useReviewList } from '@/features/review-list/review-store'
 import { offersUpdate, readVersionStatus } from '@/features/update/version-status'
@@ -57,6 +60,8 @@ const settingsActive = computed(() => destination.value?.key === 'settings')
 const inboxActive = computed(() => route.path === '/inbox' || route.path.startsWith('/inbox/'))
 // Holding the settings button opens the #fulidebug records (Jevons 11-04): nothing in Settings names them.
 const router = useRouter()
+// What every page offers the browser's AI agent (WebMCP) where the browser supports it.
+usePageTools(() => shellPageTools({ router, spaceId: () => activeSpaceId.value }))
 // The mark and the wordmark: on 工作台 they play the mark's effect; on any other
 // page they go back to it (Jevons 11-04).
 const brand = ref<InstanceType<typeof BrandEasterEgg> | null>(null)
@@ -193,6 +198,8 @@ watchEffect(() => {
         <SectionTabs :sections="sectionTabs" :active-key="section?.key" />
         <div class="app-actions">
           <DoctorBanner />
+          <!-- The page's own 「?」 keeps its place empty on pages without one, so the buttons never move. -->
+          <span class="app-help-slot"><AiHelpButton v-if="route.meta.aiHelp" :term="route.meta.aiHelp" size="md" /></span>
           <GlossaryToggle />
           <UiIconButton icon="refresh" :label="t('shell.refreshPage')" :loading="refreshing" :loading-label="t('shell.refreshingPage')"
             :disabled="!refreshing && store.runtimeStatus === 'loading'" data-shell-refresh @click="refreshConsole" />
@@ -358,4 +365,6 @@ watchEffect(() => {
 @media (prefers-reduced-motion: reduce) { .app-round { transition: none; } .app-round.is-shaking, .app-round.is-full { animation: none; } }
 :root[data-motion="reduced"] .app-round.is-shaking, :root[data-motion="reduced"] .app-round.is-full { animation: none; }
 :root[data-motion="reduced"] .app-round { transition: none; }
+.app-help-slot { display: inline-flex; width: var(--control-height-md); justify-content: center; }
+.app-help-slot :deep(.ai-help-button) { margin: 0; }
 </style>

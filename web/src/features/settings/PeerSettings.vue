@@ -4,6 +4,7 @@ import { ApiError, getJson, postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { t } from '@/i18n'
 import { OptionSelect } from '@/components/ui/select'
 
@@ -200,7 +201,7 @@ function shareState(projectId: string) {
 <template>
   <Card as="section" id="peer" class="settings-card peer-settings" aria-labelledby="settings-peer-title" data-peer-settings>
     <CardHeader>
-      <CardTitle id="settings-peer-title" as="h2">{{ t('settings.peer.title') }}</CardTitle>
+      <CardTitle id="settings-peer-title" as="h2">{{ t('settings.peer.title') }}<AiHelpButton term="task.peer" /></CardTitle>
       <CardDescription>{{ t('settings.peer.description') }}</CardDescription>
     </CardHeader>
     <div class="peer-body">

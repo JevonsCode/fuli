@@ -289,3 +289,53 @@ test('usage keeps unknown values unknown with their count and session fallbacks 
   assert.deepEqual(session.tokens.total, { reported: null, unknownAttempts: 1 });
   assert.equal(session.model, null);
 });
+
+// dot review of fuli PR 784: an edit, delegated or the person's own, cannot point a connection naming a tied key at another origin.
+test('a role edit that would send a saved key to another origin is refused and leaves the file as it is', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-model-key-origin-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'model-backends.json');
+  const settings = createModelRoleSettings(path, { keyOrigins: () => ({ 'local-ref': 'http://127.0.0.1:11434', untied: null }) });
+  settings.save('tonborg', edit());
+  const before = readFileSync(path, 'utf8');
+  const moved = edit({ revision: roleRevision(path),
+    connection: { ...edit().connection, endpoint: 'https://collector.example.test/v1' } });
+  assert.throws(() => settings.save('tonborg', moved), (error) => {
+    assert.equal(error.code, 'key_endpoint_mismatch');
+    assert.match(error.message, /saved for http:\/\/127\.0\.0\.1:11434, not https:\/\/collector\.example\.test/);
+    return true;
+  });
+  assert.equal(readFileSync(path, 'utf8'), before);
+  // Another path on the same origin, and a key name with no key saved yet, still save.
+  settings.save('tonborg', edit({ revision: roleRevision(path), connection: { ...edit().connection, endpoint: 'http://127.0.0.1:11434/other/v1' } }));
+  settings.save('tonborg', edit({ revision: roleRevision(path), connection: { ...edit().connection, endpoint: 'https://collector.example.test/v1', secretRef: 'not-saved' } }));
+});
+
+// A key saved before origins were recorded and still untied stays where its connection already sent it:
+// moving it would let the one-time binding tie it to an address an Agent chose.
+test('an untied older key may keep its connection\'s origin but is refused anywhere new', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-model-key-untied-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'model-backends.json');
+  // Written as an older FULI left it: the connection already names the untied key.
+  const settings = createModelRoleSettings(path, { keyOrigins: () => ({ legacy: null }) });
+  createModelRoleSettings(path).save('tonborg', edit({ connection: { ...edit().connection, secretRef: 'legacy' } }));
+  settings.save('tonborg', edit({ revision: roleRevision(path),
+    connection: { ...edit().connection, secretRef: 'legacy', model: 'qwen-other' } }));
+  const before = readFileSync(path, 'utf8');
+  for (const [label, connectionId, endpoint] of [['moved', 'local-qwen', 'https://collector.example.test/v1'],
+    ['new connection', 'collector', 'https://collector.example.test/v1'], ['new connection, same origin', 'twin', 'http://127.0.0.1:11434/v1']]) {
+    assert.throws(() => settings.save('tonborg', edit({ revision: roleRevision(path), connectionId,
+      connection: { ...edit().connection, secretRef: 'legacy', endpoint } })), (error) => {
+      assert.equal(error.code, 'key_endpoint_mismatch', label);
+      assert.match(error.message, /not tied to an endpoint yet|saved for http/, label);
+      return true;
+    });
+    assert.equal(readFileSync(path, 'utf8'), before, label);
+  }
+});
+
+function roleRevision(path) {
+  return createModelBackendPort({ readConfig: () => readModelBackendConfig(path), secrets: { read: async () => null },
+    ledger: new ModelUsageLedger(':memory:') }).roles().revision;
+}

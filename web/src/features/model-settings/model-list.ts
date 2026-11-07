@@ -33,7 +33,7 @@ export function orderModels(ids: readonly string[], semantic: boolean): string[]
   return [...ids.filter(id => embeds(id) === semantic), ...ids.filter(id => embeds(id) !== semantic)]
 }
 
-const LIST_REASONS = ['network', 'timeout', 'auth_failed', 'missing_key', 'model_or_endpoint_not_found', 'endpoint_redirected',
+const LIST_REASONS = ['network', 'timeout', 'auth_failed', 'missing_key', 'secret_endpoint_mismatch', 'secret_endpoint_unbound', 'model_or_endpoint_not_found', 'endpoint_redirected',
   'listing_unsupported', 'invalid_response'] as const
 
 export const modelListReason = (code: string | null) =>

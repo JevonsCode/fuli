@@ -1,16 +1,45 @@
+import type { AiTaskId } from '@/features/ai-help/ai-task-prompts'
 import { messages, SUPPORTED_LOCALES } from '@/i18n'
 
 // Every term the glossary can explain. Labels reuse the strings the pages
 // already show, so a click on visible text finds its term in either language.
 // A tagged term is found only through its element's data-term: its label is a
 // common word (全部, 我的, 知识) that also appears where it means something else.
-export type GlossaryGroup = 'quadrant' | 'review' | 'profile' | 'work' | 'presence' | 'weight' | 'authorship' | 'destination' | 'section' | 'memory' | 'occupation' | 'tonborg' | 'setting' | 'concept'
-export interface GlossaryTerm { id: string; group: GlossaryGroup; labelKey: string; bodyKey: string; tagged?: true }
+export type GlossaryGroup = 'quadrant' | 'review' | 'profile' | 'work' | 'presence' | 'weight' | 'authorship' | 'destination' | 'section' | 'memory' | 'occupation' | 'tonborg' | 'setting' | 'concept' | 'task'
+// aiTask: the 「让 AI 来做」 prompt a card's 「?」 offers (features/ai-help); a task term without one is the person's own.
+export interface GlossaryTerm { id: string; group: GlossaryGroup; labelKey: string; bodyKey: string; tagged?: true; aiTask?: AiTaskId }
 
 const term = (group: GlossaryGroup, key: string, labelKey: string, bodyKey: string): GlossaryTerm =>
   ({ id: `${group}.${key}`, group, labelKey, bodyKey })
 const taggedTerm = (group: GlossaryGroup, key: string, labelKey: string, bodyKey: string): GlossaryTerm =>
   ({ ...term(group, key, labelKey, bodyKey), tagged: true })
+
+// The 「?」 topics: [id, the area's visible title, its prompt or null when only the person does it].
+const AI_HELP_TOPICS: readonly (readonly [string, string, AiTaskId | null])[] = [
+  ['models', 'modelSettings.title', 'models'],
+  ['capture', 'settings.groups.capture', 'capture'],
+  ['captureProjects', 'capture.settings.title', 'capture'],
+  ['access', 'settings.groups.access', null],
+  ['aiPermissions', 'agentDelegation.title', null],
+  ['judgment', 'judgment.settings.link', null],
+  ['notifications', 'settings.notifications.title', 'settings'],
+  ['launchers', 'settings.conversationLaunchers.title', 'settings'],
+  ['lan', 'settings.groups.lan', 'lan'],
+  ['ports', 'settings.ports.title', 'settings'],
+  ['interface', 'settings.groups.interface', null],
+  ['runtime', 'settings.groups.runtime', 'settings'],
+  ['dataFormat', 'dataFormat.title', null],
+  ['version', 'settings.version.title', 'update'],
+  ['clients', 'settings.connection.title', 'clients'],
+  ['clientLinks', 'clientLinks.title', 'clients'],
+  ['storage', 'settings.storage.title', 'storage'],
+  ['diagnostics', 'settings.diagnostics.title', null],
+  ['peer', 'settings.peer.title', 'lan'],
+  ['connections', 'shell.sections.connections', 'connections'],
+  ['decisions', 'shell.sections.askedYou', 'decisions'],
+  ['workbench', 'shell.destinations.agents', 'workbench'],
+  ['knowledge', 'shell.sections.knowledge', 'knowledge'],
+]
 
 // Every sidebar destination and every top-bar section tab, so each page can say what it is for.
 const { destinations, sections } = messages['zh-CN'].shell
@@ -63,6 +92,9 @@ export const GLOSSARY_TERMS: readonly GlossaryTerm[] = [
   term('setting', 'agentNamingStyle', 'preferences.home.naming.title', 'glossary.setting.agentNamingStyle'),
   term('setting', 'topicPromotion', 'settings.topicPromotion.title', 'glossary.setting.topicPromotion'),
   term('setting', 'diagnostics', 'settings.diagnostics.title', 'glossary.setting.diagnostics'),
+  // Each card's and page area's 「?」: what it is for and how the person's own Agent does it.
+  ...AI_HELP_TOPICS.map(([key, labelKey, aiTask]) =>
+    ({ ...taggedTerm('task', key, labelKey, `aiHelp.topics.${key}`), ...(aiTask ? { aiTask } : {}) })),
 ]
 
 const byId = new Map(GLOSSARY_TERMS.map(entry => [entry.id, entry]))
@@ -104,3 +136,6 @@ export function findTerm(target: EventTarget | null): { term: GlossaryTerm; elem
   }
   return undefined
 }
+
+/** The term a 「?」 names by id; undefined for an unknown id. */
+export const termById = (id: string) => byId.get(id)

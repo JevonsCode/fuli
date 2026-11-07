@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { apiErrorReason } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import UiNotice from '@/ui/UiNotice.vue'
 import { t } from '@/i18n'
 import { formatBytes } from '@/lib/format-bytes'
@@ -81,7 +82,7 @@ async function exportBundle() {
 <template>
   <Card as="section" id="diagnostics" class="settings-card diagnostics-card" aria-labelledby="settings-diagnostics-title" data-diagnostics-card>
     <CardHeader>
-      <CardTitle id="settings-diagnostics-title" as="h2">{{ t('settings.diagnostics.title') }}</CardTitle>
+      <CardTitle id="settings-diagnostics-title" as="h2">{{ t('settings.diagnostics.title') }}<AiHelpButton term="task.diagnostics" /></CardTitle>
       <CardDescription>{{ t('settings.diagnostics.description') }}</CardDescription>
       <CardAction>
         <Button type="button" size="sm" variant="outline" :loading="generating" :loading-label="t('settings.diagnostics.generating')"

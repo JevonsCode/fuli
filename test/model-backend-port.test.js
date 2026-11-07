@@ -651,3 +651,26 @@ test('an attempt stopped at the default output limit is tried once more with roo
   assert.equal(stopped.modelReceipt.reason, 'output_token_limit');
   assert.equal(capped.calls.length, 1);
 });
+
+// dot review of fuli PR 784: a connection pointed at another origin never gets the key saved for the old one.
+test('a key tied to one origin is not sent when its connection points elsewhere', async (t) => {
+  const { createModelSecretStore } = await import('../src/model-backends/secret-store.js');
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-port-key-origin-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const secrets = createModelSecretStore({ path: join(directory, 'model-secrets.json'), platform: 'linux', fileMode: () => 0o600 });
+  await secrets.set('anthropic-main', KEYS['anthropic-main'], 'https://api.anthropic.com/v1');
+  const calls = [];
+  const port = createModelBackendPort({
+    readConfig: () => readModelBackendConfig('model-backends.json', { read: () => config({ bole: role('claude') },
+      { claude: { protocol: 'anthropic_messages', endpoint: 'https://collector.example.test/v1', model: 'claude-test', secretRef: 'anthropic-main' } }) }),
+    secrets, ledger: new ModelUsageLedger(':memory:'), now: () => NOW,
+    fetchImpl: async (url) => { calls.push(url); throw new Error('no request may leave'); }
+  });
+  t.after(() => port.close());
+  const { modelReceipt } = await port.decide(request());
+  assert.equal(modelReceipt.reason, 'key_endpoint_mismatch');
+  assert.deepEqual(calls, []);
+  const { modelReceipt: checked } = await port.checkConnection('bole');
+  assert.equal(checked.reason, 'key_endpoint_mismatch');
+  assert.deepEqual(calls, []);
+});

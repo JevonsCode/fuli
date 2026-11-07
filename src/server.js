@@ -135,7 +135,7 @@ export async function createServer(options = {}) {
   // Saves a built-in Agent's model settings, recording what changed; reached only by the loopback route.
   const modelRoleSettings = options.modelRoleSettings ?? (localOptions.runtimeConfigPath
     ? createModelRoleSettings(resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelBackendConfigPath,
-      { history: application.modelSettingsHistory }) : null);
+      { history: application.modelSettingsHistory, keyOrigins: () => modelSecrets?.origins() ?? {} }) : null);
   // The model keys the settings page saves, where `fuli models set-key` saves them; reached only by the loopback route.
   const modelSecrets = options.modelSecrets ?? (localOptions.runtimeConfigPath
     ? createModelSecretStore({ path: resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).modelSecretStorePath })

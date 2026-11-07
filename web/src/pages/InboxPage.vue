@@ -8,6 +8,8 @@ import { useAgentAttention } from '@/features/project-agents/attention-store'
 import ReviewList from '@/features/review-list/ReviewList.vue'
 import TonborgDelegationSwitch from '@/features/review-list/TonborgDelegationSwitch.vue'
 import { useReviewList } from '@/features/review-list/review-store'
+import { decisionPageTools } from '@/features/review-list/decision-page-tools'
+import { usePageTools } from '@/features/webmcp/usePageTools'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 
@@ -44,6 +46,8 @@ watch([() => route.query.request, space], ([request, id]) => {
   void router.replace({ query: { ...query, item: peekItemValue({ spaceId: id, id: request }) } })
 }, { immediate: true })
 onBeforeUnmount(() => { attention.open = false })
+// The browser's AI agent may propose decisions here (WebMCP); the person allows them with one click.
+usePageTools(() => decisionPageTools(review))
 </script>
 
 <template>
