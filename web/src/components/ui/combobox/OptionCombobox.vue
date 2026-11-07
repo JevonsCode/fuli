@@ -157,7 +157,7 @@ const inputClass = "h-full min-h-0 min-w-8 flex-1 border-0 bg-transparent px-1 p
               @keydown.enter.prevent
             />
           </ComboboxInput>
-          <ComboboxTrigger class="shrink-0 cursor-pointer text-muted-foreground"><UiIcon name="chevron-down" :size="16" /></ComboboxTrigger>
+          <ComboboxTrigger class="shrink-0 cursor-pointer text-muted-foreground" :aria-label="t('ui.select.open')"><UiIcon name="chevron-down" :size="16" /></ComboboxTrigger>
         </TagsInput>
         <template v-else>
           <ComboboxInput
@@ -170,7 +170,7 @@ const inputClass = "h-full min-h-0 min-w-8 flex-1 border-0 bg-transparent px-1 p
             :aria-label="field ? undefined : label"
             @update:model-value="typed"
           />
-          <ComboboxTrigger class="shrink-0 cursor-pointer text-muted-foreground"><UiIcon name="chevron-down" :size="16" /></ComboboxTrigger>
+          <ComboboxTrigger class="shrink-0 cursor-pointer text-muted-foreground" :aria-label="t('ui.select.open')"><UiIcon name="chevron-down" :size="16" /></ComboboxTrigger>
         </template>
       </ComboboxAnchor>
       <ComboboxList class="w-(--reka-popper-anchor-width) min-w-56">

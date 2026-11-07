@@ -45,6 +45,17 @@ async function type(text: string) {
 }
 
 describe('OptionCombobox', () => {
+  it('names its open arrow in the console language, not the library default', async () => {
+    mountCombobox('alpha')
+    await flushPromises()
+    const trigger = document.querySelector('button[aria-haspopup="listbox"]')!
+    expect(trigger.getAttribute('aria-label')).toBe('展开选项')
+    mountCombobox(['alpha'], { multiple: true })
+    await flushPromises()
+    const labels = [...document.querySelectorAll('button[aria-haspopup="listbox"]')].map(button => button.getAttribute('aria-label'))
+    expect(labels).toEqual(['展开选项', '展开选项'])
+  })
+
   it('single: opens from the keyboard, shows the chosen label and picks with Enter', async () => {
     const { value } = mountCombobox('alpha')
     await flushPromises()
