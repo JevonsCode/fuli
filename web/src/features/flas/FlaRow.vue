@@ -61,7 +61,7 @@ const emit = defineEmits<{ 'toggle-pin': [pinned: boolean]; copy: []; open: [] }
 .fla-item + .fla-item .fla-row:not([data-layout="cards"])::before { content: ''; position: absolute; top: 0; right: 0; left: 66px; height: 1px; background: var(--color-border); }
 .fla-row {
   position: relative; display: grid; grid-template-columns: 36px minmax(140px, 220px) minmax(0, 1fr) auto 16px; align-items: center; gap: 16px;
-  min-height: 60px; padding: 10px 18px; color: var(--color-ink); text-decoration: none;
+  min-height: 60px; padding: 10px 18px; color: var(--color-ink); text-decoration: none; -webkit-user-select: none; user-select: none;
   transition: background var(--motion-fast);
 }
 .fla-row:hover { background: var(--color-surface-subtle); }
