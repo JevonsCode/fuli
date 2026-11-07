@@ -10,6 +10,7 @@ import { useAgentAttention, type AgentAttention } from '@/features/project-agent
 import { setLocale } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConsoleState, ProjectAgentTaskStatus } from '@/types'
+import overviewSource from './OverviewPage.vue?raw'
 import OverviewPage from './OverviewPage.vue'
 
 const project = (id: string, name: string) => ({
@@ -356,5 +357,14 @@ describe('OverviewPage', () => {
 
     expect(wrapper.text()).toContain('任务 space-b-task')
     expect(wrapper.text()).not.toContain('任务 late-space-a')
+  })
+})
+
+describe('OverviewPage first-load indicator', () => {
+  it('centres the stage loading in its column instead of keeping the first child\'s bottom margin', () => {
+    // `.workbench > :first-child` gives the stage 76px of room above the dock; the loading indicator
+    // standing in for the stage needs the same weight to win back margin: auto (seen in the 0.25.0 walk).
+    expect(overviewSource).toContain('.workbench > .workbench-loading { margin: auto; }')
+    expect(overviewSource).not.toMatch(/^\.workbench-loading \{/m)
   })
 })
