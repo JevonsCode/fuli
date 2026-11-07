@@ -156,6 +156,9 @@ test('C2: transient failures retry once with backoff, then report fallback eligi
   assert.equal(group.retries, 1);
   assert.equal(group.failedAttempts, 2);
   assert.equal(group.failedRequests, 1);
+  // One try returned input only; the other returned nothing and failed.
+  assert.equal(group.unreportedAttempts, 1);
+  assert.equal(group.unreportedFailedAttempts, 1);
   assert.deepEqual(group.tokens.input, { reported: 120, unknownAttempts: 1 });
   assert.deepEqual(group.tokens.total, { reported: null, unknownAttempts: 2 });
 });
@@ -504,19 +507,21 @@ test('an endpoint that rejects json_schema falls back to prompt mode once and re
   assert.equal(calls[2].body.response_format, undefined);
 });
 
-test('C12: unreported usage stays unknown and cost appears only as a configured-price estimate', async () => {
+test('C12: unreported usage stays unknown and usage carries no cost, priced or not', async () => {
   const unreported = harness({ bole: role('local') }, { responses: [openAiStream(answer(), { usage: null })] });
   const result = await unreported.port.decide(request());
   assert.equal(result.modelReceipt.status, 'completed');
   assert.deepEqual(result.modelReceipt.usage, { inputTokens: null, outputTokens: null, totalTokens: null, unknownAttempts: 1 });
   const [group] = usageFor(unreported.port, 'bole');
   assert.deepEqual(group.tokens.total, { reported: null, unknownAttempts: 1 });
-  assert.equal(group.estimatedCost, null);
+  assert.equal(group.unreportedAttempts, 1);
+  assert.equal(group.unreportedFailedAttempts, 0);
+  assert.equal('estimatedCost' in group, false);
 
   const priced = harness({ tonborg: role('claude') }, { responses: [anthropicStream(answer())] });
   await priced.port.decide(request({ role: 'tonborg' }));
   const [claude] = usageFor(priced.port, 'tonborg');
-  assert.deepEqual(claude.estimatedCost, { amount: 0.00064, currency: 'USD', basis: 'estimate', unknownAttempts: 0 });
+  assert.equal('estimatedCost' in claude, false);
 });
 
 test('streamed usage is read at the end, cumulative deltas are not double counted, subsets stay subsets', async () => {

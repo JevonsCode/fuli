@@ -401,11 +401,16 @@ export interface UsageGroup {
   model: string | null
   actualModels: string[]
   channel: 'model_api' | 'session'
+  // requests are calls and failedRequests the calls no attempt answered;
+  // attempts count every try, retries included.
   requests: number
+  failedRequests: number
   attempts: number
   failedAttempts: number
+  // Attempts that returned no token counts at all, and how many of them failed.
+  unreportedAttempts: number
+  unreportedFailedAttempts: number
   tokens: Partial<Record<'input' | 'output' | 'total' | 'cachedInput' | 'cacheWriteInput' | 'reasoning', TokenCell>>
-  estimatedCost: { amount: number | null; currency: string; basis: 'estimate'; unknownAttempts: number } | null
 }
 
 export interface UsagePayload { groups: UsageGroup[] }
@@ -414,23 +419,48 @@ export const readModelUsage = (window: UsageWindow, signal?: AbortSignal) =>
   getJson<UsagePayload>(`/api/model-backends/usage?from=${encodeURIComponent(usageWindowStart(window))}`, { signal })
 
 // What a usage cell says: a known value, a known part with the attempts that
-// reported nothing, or nothing reported at all.
+// returned nothing for this cell alone, or nothing returned at all. Attempts
+// that returned no usage at all are said once for the row (usageRowNote), so
+// they are taken out of each cell's own count.
 export type UsageValue =
   | { kind: 'known'; value: number }
   | { kind: 'partial'; value: number; unknown: number }
-  | { kind: 'unknown'; unknown: number }
+  | { kind: 'unknown' }
 
-export function tokenValue(cell: TokenCell | undefined, attempts: number): UsageValue {
-  if (!cell || cell.reported === null) return { kind: 'unknown', unknown: cell?.unknownAttempts ?? attempts }
-  return cell.unknownAttempts ? { kind: 'partial', value: cell.reported, unknown: cell.unknownAttempts } : { kind: 'known', value: cell.reported }
+export function tokenValue(cell: TokenCell | undefined, unreportedAttempts = 0): UsageValue {
+  if (!cell || cell.reported === null) return { kind: 'unknown' }
+  const unknown = Math.max(0, cell.unknownAttempts - unreportedAttempts)
+  return unknown ? { kind: 'partial', value: cell.reported, unknown } : { kind: 'known', value: cell.reported }
 }
 
-export function costValue(group: UsageGroup): UsageValue & { currency?: string } {
-  const cost = group.estimatedCost
-  if (!cost || cost.amount === null) return { kind: 'unknown', unknown: cost?.unknownAttempts ?? group.attempts }
-  return cost.unknownAttempts
-    ? { kind: 'partial', value: cost.amount, unknown: cost.unknownAttempts, currency: cost.currency }
-    : { kind: 'known', value: cost.amount, currency: cost.currency }
+// The one note for a row whose numbers leave out attempts that returned no
+// usage; empty when nothing was left out or nothing came back at all.
+export function usageRowNote(group: UsageGroup, locale: string): string {
+  const count = group.unreportedAttempts
+  if (!count || count >= group.attempts) return ''
+  const key = count === group.unreportedFailedAttempts ? 'unreportedFailed' : 'unreported'
+  return t(`modelSettings.usage.${key}`, { count: formatCount(count, locale) })
+}
+
+// The token cells of a row, each in words. Cache cells appear only when the
+// provider returned them at all; the row note's tries leave each cell's count.
+const TOKEN_CELLS = [['input', 'input'], ['output', 'output'], ['cache', 'cachedInput'], ['cacheWrite', 'cacheWriteInput']] as const
+const OPTIONAL_FIELDS = new Set<string>(['cachedInput', 'cacheWriteInput'])
+
+export function usageCells(group: UsageGroup, locale: string): { key: typeof TOKEN_CELLS[number][0]; value: string; note: string }[] {
+  const leftOut = usageRowNote(group, locale) ? group.unreportedAttempts : 0
+  return TOKEN_CELLS.filter(([, field]) => !OPTIONAL_FIELDS.has(field) || group.tokens[field])
+    .map(([key, field]) => ({ key, ...usageParts(tokenValue(group.tokens[field], leftOut), locale) }))
+}
+
+// Calls in plain words: how many, how many failed in the end, and the tries
+// they took when retries added more.
+export function callParts(group: UsageGroup, locale: string): { value: string; failed: string; note: string } {
+  return {
+    value: t('modelSettings.usage.callsValue', { calls: formatCount(group.requests, locale) }),
+    failed: group.failedRequests ? t('modelSettings.usage.failed', { count: formatCount(group.failedRequests, locale) }) : '',
+    note: group.attempts > group.requests ? t('modelSettings.usage.tries', { count: formatCount(group.attempts, locale) }) : '',
+  }
 }
 
 export interface UsageRow {
@@ -447,7 +477,7 @@ export function usageRows(groups: UsageGroup[]): { model: UsageRow[]; session: U
     const list = groups.filter(group => group.channel === channel)
     const largest = Math.max(0, ...list.map(group => group.tokens.total?.reported ?? 0))
     return list.map(group => ({
-      key: [group.role, group.channel, group.provider, group.model, group.estimatedCost?.currency].join('|'),
+      key: [group.role, group.channel, group.provider, group.model].join('|'),
       group,
       share: group.tokens.total?.reported === null || group.tokens.total?.reported === undefined || !largest
         ? null : group.tokens.total.reported / largest,
@@ -456,15 +486,13 @@ export function usageRows(groups: UsageGroup[]): { model: UsageRow[]; session: U
   return { model: rows('model_api'), session: rows('session') }
 }
 
-// One usage cell in words: 未上报 with the number of attempts that reported
-// nothing, never 0. A partly reported value keeps its note apart, so the
-// note wraps as a whole instead of breaking inside a word.
-export function usageParts(value: UsageValue, locale: string, currency?: string): { value: string; note: string } {
-  if (value.kind === 'unknown') return { value: t('modelSettings.usage.notReportedCount', { count: value.unknown }), note: '' }
-  const shown = currency
-    ? new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 6 }).format(value.value)
-    : formatCount(value.value, locale)
-  return { value: shown, note: value.kind === 'partial' ? t('modelSettings.usage.partialNote', { count: value.unknown }) : '' }
+// One usage cell in words: 没返回 when nothing came back, never 0. A partly
+// returned value keeps its note apart, so the note wraps as a whole instead
+// of breaking inside a word.
+export function usageParts(value: UsageValue, locale: string): { value: string; note: string } {
+  if (value.kind === 'unknown') return { value: t('modelSettings.usage.notReturned'), note: '' }
+  const note = value.kind === 'partial' ? t('modelSettings.usage.partialNote', { count: formatCount(value.unknown, locale) }) : ''
+  return { value: formatCount(value.value, locale), note }
 }
 
 export const formatCount = (value: number, locale: string) => new Intl.NumberFormat(locale).format(value)
