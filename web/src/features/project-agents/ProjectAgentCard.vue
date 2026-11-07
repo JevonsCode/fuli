@@ -67,7 +67,7 @@ function surfaceClick(event: MouseEvent) {
       <div class="min-w-0 flex-1">
         <div class="flex min-w-0 items-start gap-1.5">
           <RouterLink class="agent-card-name" :to="path" :title="name" data-agent-manage-link>{{ name }}</RouterLink>
-          <AgentHand :agent-id="agent.agentId" />
+          <AgentHand class="agent-card-hand" :agent-id="agent.agentId" />
         </div>
         <p class="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           <span class="whitespace-nowrap" data-agent-type>{{ t(`projectAgents.agentType.${agent.profile.agentType ?? 'durable'}`) }}</span>

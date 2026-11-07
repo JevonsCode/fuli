@@ -51,7 +51,7 @@ describe('团队卡片', () => {
     expect(faces.map(face => face.find('.team-ring-fill').exists())).toEqual([true, true, false])
     expect(faces[2]!.find('.team-ring-track.is-unrecorded').exists()).toBe(true)
     expect(faces[1]!.classes()).toContain('is-working')
-    expect(wrapper.text()).toContain('Aster 正在Write script')
+    expect(wrapper.text()).toContain('Aster 正在做：Write script')
     expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('2')
   })
 
