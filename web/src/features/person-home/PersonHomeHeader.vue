@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import SettingsSaveCapsule, { type SaveCapsuleState } from '@/features/settings/SettingsSaveCapsule.vue'
 import { useSettingsAutoSave } from '@/features/settings/settings-autosave'
 import { t } from '@/i18n'
@@ -69,7 +69,7 @@ function retry() {
 
     <div class="person-home-naming" data-person-naming>
       <div class="person-home-naming-head">
-        <img class="person-home-bole" :src="agentAvatarUrl(BOLE)" alt="" :data-agent-portrait="BOLE" data-person-naming-bole />
+        <AgentAvatar class="person-home-bole" :agent-id="BOLE" data-person-naming-bole />
         <div class="person-home-naming-copy">
           <strong id="person-home-naming-title">{{ t('preferences.home.naming.title') }}</strong>
           <small id="person-home-naming-note">{{ t('preferences.home.naming.bole') }}</small>

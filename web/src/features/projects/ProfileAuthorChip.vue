@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { t } from '@/i18n'
 import type { ProjectFieldAuthor } from '@/types'
 import { UiAvatar } from '@/ui'
@@ -21,7 +20,7 @@ const tooltip = computed(() => chip.value && t(`projects.profileAuthors.weight.$
     :data-term="`authorship.${chip.kind}`" :data-author="chip.kind">
     <span v-if="chip.kind !== 'agent' || chip.agentIds.length" class="profile-author-faces" aria-hidden="true">
       <UiAvatar v-if="chip.kind !== 'agent'" size="sm" :name="t('projects.profileAuthors.you')" />
-      <UiAvatar v-for="agentId in chip.agentIds" :key="agentId" size="sm" :name="agentName" :image="agentAvatarUrl(agentId)" />
+      <UiAvatar v-for="agentId in chip.agentIds" :key="agentId" size="sm" :name="agentName"><AgentAvatar :agent-id="agentId" /></UiAvatar>
     </span>
     <span class="profile-author-label">{{ label }}</span>
   </span>

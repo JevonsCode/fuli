@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 // Edits which projects a built-in Agent manages, and Jefa's session titles.
 // Every Agent is built in, so the console has no hiring flow; a custom
 // package is recruited through the recruit_employee Agent tool.
@@ -7,7 +8,6 @@ import { RouterLink } from 'vue-router'
 import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { projectSelectOptions } from './project-options'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { employeeAvatarUrl } from './avatars'
 import { Button } from '@/components/ui/button'
 import UiDialog from '@/ui/UiDialog.vue'
@@ -178,7 +178,7 @@ function scopeKeydown(event: KeyboardEvent) {
     <template v-else>
       <div class="employee-profile">
         <span class="employee-avatar" aria-hidden="true">
-          <img v-if="employeeAvatarUrl(selected.id)" :src="agentAvatarUrl(`employee.${selected.id}`)" alt="" />
+          <AgentAvatar v-if="employeeAvatarUrl(selected.id)" :agent-id="selected.id" :name="employeeName(selected)" :link="false" />
           <template v-else>{{ employeeName(selected).slice(0, 1) }}</template>
         </span>
         <div>

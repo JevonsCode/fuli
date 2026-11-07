@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AgentAvatar from './AgentAvatar.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -6,7 +7,6 @@ import { pointInBox, usePointerPresence } from '@/composables/usePointerPresence
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { t } from '@/i18n'
 import type { ProjectAgentRecord } from '@/types'
-import { agentAvatarUrl } from './agent-avatar'
 import { agentIdentityStyle } from './agent-identity-color'
 import { agentPinsText, useAgentPinsState } from './agent-pins'
 import { agentDisplayName, agentProfilePath } from './profile-model'
@@ -119,7 +119,7 @@ const profile = (agentId: string): RouteLocationRaw => ({ path: agentProfilePath
           <RouterLink class="dock-pin" :class="{ 'is-active': isActive(agent.agentId) }" :to="agentProfilePath(spaceId, agent.agentId)"
             :aria-current="isActive(agent.agentId) ? 'page' : undefined" :aria-label="`${agentDisplayName(agent)} · ${t('agentProfiles.profile')}`"
             :data-name="agentDisplayName(agent)" :data-pinned-agent="agent.agentId" :style="agentIdentityStyle(agent.agentId)" @pointerdown="pressed">
-            <img :src="agentAvatarUrl(agent.agentId)" :data-agent-portrait="agent.agentId" alt="" />
+            <AgentAvatar :agent-id="agent.agentId" />
           </RouterLink>
         </ContextMenuTrigger>
         <ContextMenuContent data-pin-menu @close-auto-focus="returnFocus">

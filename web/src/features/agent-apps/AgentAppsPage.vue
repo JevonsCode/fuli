@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { apiErrorCode, apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
 import { useAgentRecords } from '@/features/agent-profile/useAgentRecords'
@@ -97,7 +97,7 @@ usePageRefresh(load)
                 <span class="app-meta">{{ appTypeLabel(app.type) }}<template v-if="app.version"> · v{{ app.version }}</template></span>
               </span>
               <span class="app-owner" :title="t('agentApps.by', { name: ownerName(app.agentId) })">
-                <span class="app-face" :style="agentIdentityStyle(app.agentId)" aria-hidden="true"><img :src="agentAvatarUrl(app.agentId)" :data-agent-portrait="app.agentId" alt="" /></span>
+                <span class="app-face" :style="agentIdentityStyle(app.agentId)" aria-hidden="true"><AgentAvatar :agent-id="app.agentId" /></span>
                 <span class="ui-sr-only">{{ t('agentApps.by', { name: ownerName(app.agentId) }) }}</span>
               </span>
               <span class="app-status" :data-tone="appStatus(app).tone">{{ appStatus(app).text }}</span>

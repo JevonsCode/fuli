@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 
 // The folded 悬浮岛 (TeamIsland.vue): the FLAs working right now ride the round
@@ -18,7 +18,7 @@ const placed = (index: number) => ({ '--turn': `${index * STACK_STEP_DEG}deg`, z
     <span class="team-orbit-ring">
       <span v-for="(agentId, index) in agentIds" :key="agentId" class="team-orbit-seat" :style="placed(index)">
         <span class="team-orbit-face" :style="agentIdentityStyle(agentId)">
-          <img :src="agentAvatarUrl(agentId)" :data-agent-portrait="agentId" alt="" />
+          <AgentAvatar :agent-id="agentId" />
         </span>
       </span>
     </span>

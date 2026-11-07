@@ -6,15 +6,15 @@ export type AvatarStatus = 'working' | 'waiting' | 'idle' | 'error' | 'none'
 
 // One avatar for every Agent surface. The status ring is drawn outside the
 // avatar box with its own layer, so no container can clip it, and looping
-// rings are phase-locked to a shared clock so re-renders never restart them.
+// rings are phase-locked to a shared clock so re-renders never restart them. An
+// Agent's picture comes in the slot as its AgentAvatar, so it keeps the portrait menu.
 const props = withDefaults(defineProps<{
   name: string
-  image?: string | null
   color?: string | null
   softColor?: string | null
   status?: AvatarStatus
   size?: 'sm' | 'md' | 'lg'
-}>(), { image: null, color: null, softColor: null, status: 'none', size: 'md' })
+}>(), { color: null, softColor: null, status: 'none', size: 'md' })
 
 const PERIOD = { working: 2400, waiting: 1400 } as const
 const initial = computed(() => [...props.name.trim()][0]?.toUpperCase() ?? '?')
@@ -29,8 +29,7 @@ const style = computed(() => ({
 <template>
   <span class="ui-avatar" :class="[`is-${size}`, `is-${status}`]" :style="style" :data-status="status"
     :data-term="status === 'none' ? undefined : `presence.${status}`">
-    <img v-if="image" :src="image" alt="" />
-    <span v-else aria-hidden="true">{{ initial }}</span>
+    <slot><span aria-hidden="true">{{ initial }}</span></slot>
   </span>
 </template>
 
@@ -45,7 +44,7 @@ const style = computed(() => ({
 .ui-avatar.is-sm { width: 28px; height: 28px; font-size: 13px; }
 .ui-avatar.is-md { width: 40px; height: 40px; font-size: 18px; }
 .ui-avatar.is-lg { width: 72px; height: 72px; font-size: 32px; }
-.ui-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.ui-avatar :slotted(img) { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 /* The ring sits outside the box; status colour comes from the shared tokens. */
 .ui-avatar::after {
   content: ''; position: absolute; inset: -4px; border: 2px solid transparent; border-radius: 34%;

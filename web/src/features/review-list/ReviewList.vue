@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardHeader, CardTitle } from '@/components/ui/card'
-import { employeeAvatarUrl } from '@/features/employees/avatars'
 import { itemEditPath } from '@/features/knowledge-quick-edit/model'
 import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
@@ -47,7 +47,6 @@ const meta = (line: ReviewLine) => [projectName(line), line.proposer, line.reaso
 // glass card first, its avatar and name. Each line leads with the item itself
 // (Jevons 11-07: 「内容是什么呀？你不跟我说什么事儿」); Tonborg's guess and its
 // reason sit in the meta line, its own question only in 查看详情.
-const tonborgAvatar = employeeAvatarUrl('tonborg')
 const REASON_LIMIT = 60
 const askedMeta = (line: ReviewLine) => [projectName(line), line.proposer].filter(Boolean).join(' · ')
 const guessLabel = (line: ReviewLine) => line.review?.guess
@@ -84,7 +83,7 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
       <CardHeader class="review-group__header">
         <CardTitle id="review-questions-title" as="h2" class="review-group__title review-group__title--asks"
           :data-outline-label="t('reviewList.groups.questions')" :data-outline-count="review.list.questions.length">
-          <img v-if="tonborgAvatar" class="review-group__avatar" :src="tonborgAvatar" alt="" />
+          <AgentAvatar class="review-group__avatar" agent-id="tonborg" />
           <span class="review-group__name" :title="t('reviewList.groups.questions')">{{ t('reviewList.groups.questions') }}</span>
           <span class="review-group__count">· {{ review.list.questions.length }}</span>
           <TonborgExplain :count="review.list.questions.length" />

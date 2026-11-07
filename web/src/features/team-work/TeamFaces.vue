@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 
 // The people on one task, overlapping like a group of contacts: the lead a
@@ -18,7 +18,7 @@ const C = 2 * Math.PI * R
   <span class="team-faces" aria-hidden="true" :style="{ '--face': `${size ?? 36}px` }">
     <span v-for="face in faces" :key="face.agentId" class="team-face" :class="{ 'is-lead': face.lead, 'is-working': face.working }"
       :style="agentIdentityStyle(face.agentId)">
-      <img :src="agentAvatarUrl(face.agentId)" :data-agent-portrait="face.agentId" alt="" />
+      <AgentAvatar :agent-id="face.agentId" />
       <svg class="team-ring" viewBox="0 0 36 36">
         <circle class="team-ring-track" :class="{ 'is-unrecorded': face.fill === null }" cx="18" cy="18" :r="R" />
         <circle v-if="face.fill !== null" class="team-ring-fill" cx="18" cy="18" :r="R" :stroke-dasharray="C" :stroke-dashoffset="C * (1 - face.fill)" />

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -10,7 +11,6 @@ import {
   clearServiceLog, deleteService, listServices, readServiceLog, stopService, type AgentService, type ServiceLog as ServiceLogRecord,
 } from '@/features/agent-services/agent-services'
 import { readServiceSearch, serviceGroups, serviceSearchLocationQuery, visibleServices } from '@/features/agent-services/service-table'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { normalizeAgent } from '@/features/project-agents/agent-roster-records'
 import { agentValues } from '@/features/project-agents/task-evidence'
@@ -223,7 +223,7 @@ usePageRefresh(() => Promise.all([load(), loadAgentNames()]))
                   <span class="service-meta">{{ service.address ?? t(`agentServices.kind.${service.kind}`) }}</span>
                 </span>
                 <span class="service-face" :class="{ 'is-none': !service.agentId }" :style="service.agentId ? agentIdentityStyle(service.agentId) : undefined" :title="names.agent(service.agentId)">
-                  <img v-if="service.agentId" :src="agentAvatarUrl(service.agentId)" :data-agent-portrait="service.agentId" alt="" />
+                  <AgentAvatar v-if="service.agentId" :agent-id="service.agentId" />
                   <span class="ui-sr-only">{{ names.agent(service.agentId) }}</span>
                 </span>
                 <UiIcon name="chevron-down" :size="16" class="service-chevron" />

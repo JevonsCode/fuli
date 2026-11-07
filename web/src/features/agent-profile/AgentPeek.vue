@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AgentAvatar from './AgentAvatar.vue'
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
 import GrowthLoading from "@/components/GrowthLoading.vue";
@@ -6,7 +7,6 @@ import PinIcon from "@/components/PinIcon.vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { agentAvatarUrl } from "@/features/agent-profile/agent-avatar";
 import { currentLocale, t } from "@/i18n";
 import { formatElapsed } from "@/lib/elapsed-time";
 import { useNow } from "@/composables/useNow";
@@ -75,8 +75,8 @@ const pinLabel = computed(() =>
   </template>
   <template v-else>
     <DialogHeader class="flex-row items-start gap-3">
-      <span class="agent-portrait small agent-card-identity" :style="agentIdentityStyle(agent.agentId)" aria-hidden="true">
-        <img :src="agentAvatarUrl(agent.agentId)" :data-agent-portrait="agent.agentId" alt="" />
+      <span class="agent-portrait small agent-card-identity" :style="agentIdentityStyle(agent.agentId)">
+        <AgentAvatar :agent-id="agent.agentId" :name="name" />
       </span>
       <div class="grid min-w-0 gap-1">
         <DialogTitle class="text-xl leading-tight [overflow-wrap:anywhere]">{{ name }}</DialogTitle>

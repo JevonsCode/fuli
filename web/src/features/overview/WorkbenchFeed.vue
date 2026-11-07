@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { motion } from 'motion-v'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { inboxLocation, type AgentAttention } from '@/features/project-agents/attention-store'
 import { taskStatusTone } from '@/features/project-agents/task-labels'
@@ -68,7 +68,7 @@ const shownDone = computed(() => props.done.slice(0, FEED_ROWS))
       <OverviewReadStatus :state="requestsState" :label="t('overview.attention.loading')" :failed="t('overview.attention.loadFailed')" @retry="emit('retryRequests')" />
       <TransitionGroup name="ui-list" tag="ul" class="workbench-rows">
         <li v-for="item in requests" :key="item.requestId" class="workbench-row" data-workbench-request>
-          <span class="workbench-face" :style="agentIdentityStyle(item.agentId)" aria-hidden="true"><img :src="agentAvatarUrl(item.agentId)" :data-agent-portrait="item.agentId" alt="" /></span>
+          <span class="workbench-face" :style="agentIdentityStyle(item.agentId)"><AgentAvatar :agent-id="item.agentId" :name="agentName(item.agentId)" /></span>
           <div class="workbench-row-text">
             <p class="workbench-row-title">{{ item.title?.trim() || t('overview.missing.requestTitle') }}</p>
             <p class="workbench-meta">{{ t('overview.attention.meta', { name: agentName(item.agentId), time: formatTime(item.createdAt) }) }}</p>
@@ -88,7 +88,7 @@ const shownDone = computed(() => props.done.slice(0, FEED_ROWS))
         <li v-for="task in shownRunning" :key="taskKey(task)">
           <Button variant="ghost" class="workbench-row workbench-pick" :aria-label="t('overview.stage.switchTo', { title: title(task) })" data-workbench-pick @click="emit('select', task)">
             <span class="workbench-face" :style="agentIdentityStyle(task.leadAgentId ?? task.ownerAgentId)" aria-hidden="true">
-              <img v-if="task.leadAgentId || task.ownerAgentId" :src="agentAvatarUrl(task.leadAgentId ?? task.ownerAgentId ?? '')" :data-agent-portrait="task.leadAgentId ?? task.ownerAgentId ?? ''" alt="" />
+              <AgentAvatar v-if="task.leadAgentId || task.ownerAgentId" :agent-id="task.leadAgentId ?? task.ownerAgentId ?? ''" />
               <!-- Nobody leads it yet: a quiet sign, not an empty circle that looks broken. -->
               <UiIcon v-else name="agents" class="workbench-face-none" data-unassigned />
             </span>

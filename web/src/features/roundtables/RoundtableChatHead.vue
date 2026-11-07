@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed, ref } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { t } from '@/i18n'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import RoundtableSeats from './RoundtableSeats.vue'
 import { isPerson, type RoundtableSeat } from './roundtable-model'
@@ -20,8 +20,8 @@ const open = ref(false)
 <template>
   <header class="rt-chat-head">
     <span class="rt-chat-faces" aria-hidden="true">
-      <span v-for="seat in faces" :key="seat.key" :style="agentIdentityStyle(seat.person.agentId)"><img
-        v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" :data-agent-portrait="seat.person.agentId" alt="" /><template v-else>{{ (seat.person.name ?? '?').slice(0, 1) }}</template></span>
+      <span v-for="seat in faces" :key="seat.key" :style="agentIdentityStyle(seat.person.agentId)"><AgentAvatar
+        v-if="seat.person.agentId" :agent-id="seat.person.agentId" :name="seat.person.name" /><template v-else>{{ (seat.person.name ?? '?').slice(0, 1) }}</template></span>
     </span>
     <h2 tabindex="-1" class="rt-chat-title" :title="title" data-roundtable-detail-title>{{ title }}</h2>
     <p class="rt-chat-meta">{{ meta }}</p>
