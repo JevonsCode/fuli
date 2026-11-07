@@ -6,7 +6,7 @@ import { t } from '@/i18n'
 import { motionReduced } from '@/lib/motion-preference'
 import { outlineEntries, outlineNeeded, readingIndex, scrollParent, type OutlineEntry } from '@/lib/page-outline'
 
-// A long page's 目录 (Jevons 11-04, 11-07): a few short bars in the left margin,
+// A long page's 目录 (Jevons 11-04, 11-07, 11-08): a few short bars in the right margin,
 // the one being read longer and darker. Moving onto them, or tabbing in, opens
 // the section names, with how many each holds, on frosted glass; a click goes
 // there. A window with room beside the page keeps the names open. It floats, so
@@ -70,13 +70,20 @@ function go(entry: OutlineEntry) {
 </template>
 
 <style scoped>
-/* One place on every page and window: it hangs from a fixed height in the left
-   margin, so more sections or a taller window only lengthen it downward. Only
-   the rail and the open list take the pointer: the closed list must not cover the page. */
-.page-outline { position: fixed; top: 136px; left: 4px; z-index: var(--z-nav); display: flex; align-items: flex-start; pointer-events: none; }
-.page-outline-rail { display: grid; justify-items: start; gap: 9px; width: auto; height: auto; padding: 10px 14px 10px 6px; border-radius: var(--radius-control); pointer-events: auto; }
+/* One place on every page and window: it hangs from a fixed height in the right
+   margin, close to the window's edge and clear of the page's scrollbar (Jevons 11-08:
+   放在右边，离最边上近一点), so more sections or a taller window only lengthen it
+   downward. The rail sits at the edge and the list opens leftwards from it, over
+   the page. Only the rail and the open list take the pointer: the closed list must
+   not cover the page. The bars end 14px from the window's edge and narrow with the
+   margin, so the rail never reaches the page's content. */
+.page-outline {
+  position: fixed; top: 136px; right: calc(max(var(--scrollbar-size), 8px) + 2px); z-index: var(--z-nav);
+  display: flex; flex-direction: row-reverse; align-items: flex-start; pointer-events: none;
+}
+.page-outline-rail { display: grid; justify-items: end; gap: 9px; width: auto; height: auto; padding: 10px 4px; border-radius: var(--radius-control); pointer-events: auto; }
 .page-outline-rail:hover { background: transparent; }
-.page-outline-bar { width: 14px; height: 2px; border-radius: var(--radius-pill); background: var(--color-border-strong); transform: scaleX(.6); transform-origin: left; transition: transform var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease); }
+.page-outline-bar { width: clamp(8px, calc(2.4vw - 10px), 14px); height: 2px; border-radius: var(--radius-pill); background: var(--color-border-strong); transform: scaleX(.6); transform-origin: right; transition: transform var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease); }
 .page-outline-bar.is-reading { background: var(--color-ink); transform: none; }
 .page-outline:hover .page-outline-bar { transform: none; }
 
@@ -86,7 +93,7 @@ function go(entry: OutlineEntry) {
 .page-outline-list {
   position: relative; isolation: isolate; display: grid; gap: 2px; width: 232px; max-height: calc(100dvh - 200px); margin: 0; padding: 6px; overflow-y: auto;
   border: 1px solid var(--edge-dock); border-radius: var(--radius-card); box-shadow: var(--shadow-glass); list-style: none;
-  visibility: hidden; scale: .96; transform-origin: left top; user-select: none; -webkit-user-select: none;
+  visibility: hidden; scale: .96; transform-origin: right top; user-select: none; -webkit-user-select: none;
   transition: scale var(--motion-fast) var(--motion-ease), visibility 0s linear var(--motion-fast);
 }
 .page-outline-list::before {
@@ -108,11 +115,11 @@ function go(entry: OutlineEntry) {
 /* The section being read lifts as a card; never a side bar. */
 .page-outline-item.is-reading { border-color: var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-sm); color: var(--color-ink); font-weight: var(--weight-medium); }
 
-/* A window with room left of the page (its margin holds the list and a gap) keeps the names open there. */
+/* A window with room right of the page keeps the names open there, by the window's edge where
+   the rail was; the list narrows so 24px stay between it and the page (that margin is 256px at 2400px). */
 @media (min-width: 2400px) {
-  .page-outline { left: calc(var(--page-inline) - 232px - 24px); }
   .page-outline-rail { display: none; }
-  .page-outline-list { visibility: visible; scale: 1; pointer-events: auto; transition: none; }
+  .page-outline-list { width: min(232px, calc((100vw - var(--canvas-max)) / 2 - 26px)); visibility: visible; scale: 1; pointer-events: auto; transition: none; }
 }
 @media (max-width: 760px) { .page-outline { display: none; } }
 @media (prefers-reduced-motion: reduce) { .page-outline-bar, .page-outline-list { transition: none; } }
