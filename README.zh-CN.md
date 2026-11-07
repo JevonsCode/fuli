@@ -14,12 +14,6 @@
 
 <p align="center">FULI 是一个插件，让你的任务穿梭在你所有的 Agent 客户端之间：Claude Code、Codex、OpenCode……它们共用一份记忆、一套品味和一支 FLA 团队。哪个合适就用哪个，换着用也不用从头交代。它不替代你的客户端，也不改动你自己的配置：你的模型、订阅、会话和设置都照旧，FULI 只作为插件加上自己的那几项；在控制台移除某个客户端，或者卸载 FULI，它加的配置就会拿掉。</p>
 
-<p align="center"><sub>如果你习惯用 harness 来理解：每个客户端是一个 harness，FULI 是它们上面的一层。</sub></p>
-
-<h3 align="center">一切都是能自动则自动，一切执行就交给 FLAs 吧。你做好判断，做好领头羊，领着你的 FLAs 大军披荆斩棘，或者去喝杯咖啡休息休息～享受你自己经验带给你自己的复利吧。</h3>
-
-<p align="center"><sub>项目的简历、FLAs 的招募，如果你不想关心，它们都是自动的，你唯一要做的就是把握方向。FLAs 可以自动带着上下文和各种工具穿梭在各个 Agent 客户端，无论是高等级模型还是低等级模型，在这里都可以发挥作用。</sub></p>
-
 <p align="center">
   <a href="README.md">English</a> · 简体中文 · <a href="https://有点.意思.com/fuli/">产品网站</a> · <a href="https://github.com/JevonsCode/fuli/releases/latest">下载</a>
 </p>
@@ -31,6 +25,12 @@
   <a href="https://www.npmjs.com/package/fuli-context"><img src="https://img.shields.io/npm/dm/fuli-context?style=flat&label=npm%20downloads" alt="npm 下载量" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="许可证" /></a>
 </p>
+
+<h3 align="left">一切都是能自动则自动，一切执行就交给 FLAs 吧。你做好判断，做好领头羊，领着你的 FLAs 大军披荆斩棘，或者去喝杯咖啡休息休息～享受你自己经验带给你自己的复利吧。</h3>
+
+<p align="left">项目的简历、FLAs 的招募，如果你不想关心，它们都是自动的，你唯一要做的就是把握方向。FLAs 可以自动带着上下文和各种工具穿梭在各个 Agent 客户端，无论是高等级模型还是低等级模型，在这里都可以发挥作用。</p>
+
+
 
 每次任务只取回用得上的那一小份。你的判断和经验一直在累积，FULI 越用越懂你，这就是复利。
 慢慢地，AI 做出来的东西也带上了你的品味。
