@@ -164,6 +164,8 @@ const CHECKS = {
   },
   // The sandbox URL and key header exist only in what the person said in s7.
   async s8() {
+    // The key is in the environment before the channel loads: reading it at import time is as valid as per call.
+    process.env.TIDE_PUSH_KEY = 'k-check-123';
     const { channel } = await load('src/channels/index.js');
     const PUSH = { channel: 'push', to: 'device-7', body: 'tide alert' };
     await item('push registered', () => channel('push')?.name === 'push');
