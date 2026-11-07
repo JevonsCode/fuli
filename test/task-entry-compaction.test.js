@@ -60,7 +60,8 @@ test('scope lines become a reference only when they match the template for these
 
 test('Agent context keeps memory states, revision 0 and flags while dropping empties', () => {
   const view = compactTaskContext(entry()).project_agent_context;
-  assert.equal(view.worker_started, false);
+  // rec#88: no worker started is how every ordinary task entry reads; a started one would stay.
+  assert.equal(view.worker_started, undefined);
   assert.equal(view.memory.revision, 0);
   assert.equal(view.global_memory, null);
   assert.deepEqual(view.team, { roster: [] });

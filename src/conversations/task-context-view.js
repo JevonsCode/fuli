@@ -22,8 +22,9 @@ export function compactTaskContext(value) {
   const sharedApplication = share && containsEntryRules(value.application_guidance, 'application_guidance');
   const retrieval = value.application_guidance?.knowledge_retrieval;
   if (retrieval && JSON.stringify(retrieval) === JSON.stringify(value.task_knowledge_recall?.guidance)) {
+    // A task entry already names the application rules once (rec#88); other views point to them.
     result.task_knowledge_recall = { ...value.task_knowledge_recall, guidance: undefined,
-      guidance_ref: sharedApplication ? entryRulesReference('application_guidance').rules
+      guidance_ref: sharedApplication ? (value.taskContextToken ? undefined : entryRulesReference('application_guidance').rules)
         : 'application_guidance.knowledge_retrieval' };
   }
   if (share && result.task_knowledge_recall) result.task_knowledge_recall = recallView(result.task_knowledge_recall, value.context);
@@ -55,6 +56,8 @@ export function compactTaskContext(value) {
   if (Array.isArray(value.effective_preferences)) result.effective_preferences = value.effective_preferences.map(preferenceInstructionView);
   if (value.project_management_context?.managers) result.project_management_context = managementContextView(
     value.project_management_context, guidance => text(guidance, 'manager_guidance'), { lean: share });
+  if (share && value.taskContextToken && result.project_management_context) result.project_management_context = {
+    ...result.project_management_context, ...withoutRoutineState(result.project_management_context) };
   const continuity = value.project_agent_context;
   const management = value.project_management_context;
   const omitTeam = !value.worker_run && Object.hasOwn(value, 'project_management_context')
@@ -176,7 +179,18 @@ export function receiptView(receipt) {
 function withoutContextIds(continuity, context) {
   return { ...continuity,
     ...(context?.project_agent_id && continuity.project_agent_id === context.project_agent_id ? { project_agent_id: undefined } : {}),
-    ...(context?.personal_project_id && continuity.personal_project_id === context.personal_project_id ? { personal_project_id: undefined } : {}) };
+    ...(context?.personal_project_id && continuity.personal_project_id === context.personal_project_id ? { personal_project_id: undefined } : {}),
+    ...withoutRoutineState(continuity) };
+}
+
+// rec#88: what every ordinary task entry says the same way (ready, woken by the
+// task entry, no worker started) is left out; any other value (a recovery wake,
+// a started worker, a degraded state) stays. The bound client stays: a remote
+// connection proves its binding by it.
+function withoutRoutineState(part) {
+  return { ...(part.status === 'ready' ? { status: undefined } : {}),
+    ...(part.wake_mode === 'task_entry' ? { wake_mode: undefined } : {}),
+    ...(part.worker_started === false ? { worker_started: undefined } : {}) };
 }
 
 // null memory means that layer is unavailable and an empty team means no
@@ -338,8 +352,10 @@ function compactTeamRoster(team, deliveredGuidance) {
 }
 
 // The resolution names the project the context already names; it keeps how it was matched.
+// The current scope filter is how every entry is read now; only another one is news (rec#88).
 function contextView(context) {
   const resolution = context.project_resolution;
-  return resolution?.personal_project_id && resolution.personal_project_id === context.personal_project_id
+  const view = resolution?.personal_project_id && resolution.personal_project_id === context.personal_project_id
     ? { ...context, project_resolution: { ...resolution, personal_project_id: undefined } } : context;
+  return view.task_scope_filter === 'provider_before_conflicts' ? { ...view, task_scope_filter: undefined } : view;
 }
