@@ -118,8 +118,9 @@ node scripts/package-macos-dmg.js --app /tmp/fuli-macos/FULI.app --output /tmp/f
 node scripts/macos-app-smoke.js /tmp/fuli-macos-release/fuli-macos-arm64-<version>.dmg
 ```
 
-The disk image window (660 x 440 points, toolbar and sidebar hidden, icons at
-112 points) is written by [dmgbuild](https://github.com/dmgbuild/dmgbuild)
+The disk image window (660 x 492 points: a 660 x 460 background under Finder's
+32-point title bar, its bottom 28 points left empty for the status bar; toolbar
+and sidebar hidden, icons at 112 points) is written by [dmgbuild](https://github.com/dmgbuild/dmgbuild)
 straight into the image's `.DS_Store`, without driving Finder, and FULI.app is
 copied with `ditto`. Its background is `desktop/macos-dmg/background.png` with
 `background@2x.png` for Retina (dmgbuild joins them into one TIFF): FULI.app at
