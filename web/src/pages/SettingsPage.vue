@@ -761,7 +761,11 @@ usePageRefresh(() => Promise.all([loadResources(), detectClients()]))
 .settings-view { scrollbar-gutter: stable; }
 .settings-tabbar { position: relative; }
 /* The tabs keep their row; once the tabs and a 180px search no longer fit side by side, the search wraps under them. */
-.settings-tabbar > :first-child { flex: 1 0 auto; max-width: 100%; }
+.settings-tabbar > :first-child { flex: 1 1 auto; min-width: min(100%, max-content); }
+/* One column no wider than the page: an auto column grew to the English tab row and scrolled the page sideways at 460pt (rec issue 102). */
+.settings-content { grid-template-columns: minmax(0, 1fr); }
+/* The client's narrowest window (460pt): 8px tab padding fits all five English tabs; narrower, the row scrolls on its own. */
+@media (max-width: 520px) { .settings-tabbar :deep([role="tab"]) { padding-inline: 8px; } }
 .settings-search { flex: 0 1 300px; min-width: 180px; }
 .settings-search input { box-sizing: border-box; width: 100%; }
 .settings-search-note, .settings-search-empty { margin: 0; color: var(--color-muted); font-size: 13px; }

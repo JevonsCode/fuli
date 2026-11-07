@@ -18,8 +18,11 @@ describe('English layout at the client\'s narrow width', () => {
     expect(pageStyles).toContain('.knowledge-view-heading > .knowledge-mode-tabs { min-width: min(100%, max-content); }')
   })
 
-  it('moves the settings search under the tabs when both no longer fit', () => {
-    expect(settingsPage).toContain('.settings-tabbar > :first-child { flex: 1 0 auto; max-width: 100%; }')
+  it('keeps the settings page from scrolling sideways at 460pt and moves the search under the tabs', () => {
+    expect(settingsPage).toContain('.settings-content { grid-template-columns: minmax(0, 1fr); }')
+    expect(settingsPage).toContain('@media (max-width: 520px) { .settings-tabbar :deep([role="tab"]) { padding-inline: 8px; } }')
+    // min(100%, max-content), not flex-shrink 0: a max-content floor widened the whole settings column (rec#102 re-test).
+    expect(settingsPage).toContain('.settings-tabbar > :first-child { flex: 1 1 auto; min-width: min(100%, max-content); }')
   })
 
   it('says one thing needs you in the singular', () => {
