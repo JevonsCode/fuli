@@ -340,6 +340,8 @@
 .tag[data-place="below"] { transform: translate(-50%, 0); }
 .tag[data-place="right"] { transform: translate(0, -50%); }
 .tag-fixed { border-color: #9cc7b6; color: #0f6b55; }
+.tag-fla { display: inline-flex; align-items: center; gap: 6px; padding-left: 4px; }
+.tag-fla .fla-face { width: 20px; height: 20px; }
 .tag-lead { border-radius: 12px; padding: 7px 12px; color: #1b1f1d; font-weight: 600; }
 .tag-lead small { display: block; color: #66706a; font-size: 11px; font-weight: 400; }
 .database-overlay .links { stroke: #5d8a74; }
@@ -354,6 +356,10 @@
 }
 @media (max-width: 700px) {
   .tag:not(.tag-lead) { display: none; }
+  /* The built-in FLAs keep their portrait above their card; the card already shows the name. */
+  .tag.tag-fla { display: inline-flex; padding: 2px; }
+  .tag-fla > span { display: none; }
+  .tag-fla .fla-face { width: 26px; height: 26px; }
   .db-captions { left: 49%; right: 26px; top: 69%; gap: 18px; }
   .db-note strong { font-size: 12px; line-height: 1.45; }
   .db-note span { font-size: 10px; }

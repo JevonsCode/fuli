@@ -50,7 +50,7 @@ Claude Code、Codex、OpenCode 等客户端都能用。每次任务只取回用�
   <tr>
     <td width="50%" valign="top">
       <img src="docs/readme/card-tonborg-zh.webp" alt="等你确认的知识，以及交给 Tonborg 确认的开关" width="460" />
-      <h3>Tonborg 替你确认</h3>
+      <h3><img src="docs/readme/fla-tonborg.webp" alt="" width="28" /> Tonborg 替你确认</h3>
       新知识要等一句确认。打开「交给 Tonborg 确认」，它按你的偏好确认日常的条目，拿不准的留给你，每次都写下理由，点赞或点踩它下次就改。
     </td>
     <td width="50%" valign="top">
@@ -61,8 +61,28 @@ Claude Code、Codex、OpenCode 等客户端都能用。每次任务只取回用�
   </tr>
 </table>
 
-自带四位 FLA：**Jefa** 管任务看板，**Bole** 招人、排人手，**Tonborg** 替你确认、推荐客户端和模型，
-**Astro** 接待还没归属项目的对话。
+自带四位 FLA：
+
+<table>
+  <tr>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-jefa.webp" alt="Jefa" width="96" /><br />
+      <b>Jefa</b> 是你的项目经理。
+    </td>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-bole.webp" alt="Bole" width="96" /><br />
+      <b>Bole</b> 招人，给每个项目排人手。
+    </td>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-tonborg.webp" alt="Tonborg" width="96" /><br />
+      <b>Tonborg</b> 替你确认，推荐客户端和模型。
+    </td>
+    <td width="25%" align="center" valign="top">
+      <img src="docs/readme/fla-astro.webp" alt="Astro" width="96" /><br />
+      <b>Astro</b> 接待还没归属项目的对话。
+    </td>
+  </tr>
+</table>
 
 ## 怎么工作
 
@@ -134,7 +154,7 @@ Claude Code、Codex、OpenCode、Cursor 和 Claude 桌面版都能在控制台�
 <summary><b>留下什么由谁决定？</b></summary>
 
 由你决定：AI 负责查找和执行，人始终保留最终判断权。每个任务结束前检查一次，只留能复用的知识。Agent 猜出来的偏好，
-要等你或者在你设定的自主程度内的 Tonborg 确认才算数。旧答案带着来源和理由留在历史里。
+要等你或者在你设定的自主程度内的 <img src="docs/readme/fla-tonborg.webp" alt="" width="20" /> Tonborg 确认才算数。旧答案带着来源和理由留在历史里。
 </details>
 
 ## 深入了解
@@ -146,7 +166,7 @@ Claude Code、Codex、OpenCode、Cursor 和 Claude 桌面版都能在控制台�
 | 各客户端怎么接 | [客户端接入（英文）](docs/client-connections.md) |
 | Skills、Hook 和 MCP 工具 | [Agent 接入与 MCP 工具](docs/agent-tools.zh-CN.md) |
 | Notion、飞书等知识库 | [外部知识库只读接入](docs/external-knowledge.zh-CN.md) |
-| Tonborg 与自主程度 | [Tonborg 怎么判断（英文）](docs/judgment-and-autonomy.md) |
+| <img src="docs/readme/fla-tonborg.webp" alt="" width="20" /> Tonborg 与自主程度 | [Tonborg 怎么判断（英文）](docs/judgment-and-autonomy.md) |
 | 圆桌 | [圆桌](docs/agent-roundtable.md) |
 | 已经证明了什么 | [能力与边界](docs/capabilities-and-limits.zh-CN.md) · [实测报告](https://有点.意思.com/fuli/report/) |
 | 跑源码 | [开发与验收](docs/development.zh-CN.md) · [参与贡献](CONTRIBUTING.md) |
