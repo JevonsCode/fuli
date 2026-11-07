@@ -3,6 +3,7 @@ import { normalizeTaskCaptures, taskCaptureInput } from './task-knowledge-routin
 import { taskCaptureScope } from './capture-decision.js';
 import { checkpointCaptureDecision } from './checkpoint-capture.js';
 import { taskStatement } from './task-prompt-statement.js';
+import { personWords } from '../conversations/person-words.js';
 
 // What the person states as a standing project rule in a prompt (rec#88
 // compounding eval): a policy or convention of theirs, a port, the command to
@@ -12,7 +13,9 @@ import { taskStatement } from './task-prompt-statement.js';
 // hook entry keeps such sentences itself, in the person's own words, as
 // pending project facts: the existing review (a person, or Tonborg under its
 // policy) decides whether they stand. Questions, requests and notes are never
-// statements; nothing the model wrote is read here.
+// statements; nothing the model wrote is read here, nor what the host put in
+// the prompt (a <system-reminder>, a <side-sessions-event> quoting another
+// session's report) or a quoted paste: only the person's own words count.
 const MAX_RULES = 3;
 const MAX_RULE_CHARS = 600;
 export const STATED_RULE_PATTERNS = [
@@ -39,8 +42,9 @@ const SENTENCES = /(?<=[.!?])\s+(?=[A-Z0-9`"'(])|(?<=[。！？])|\r?\n/u;
 
 // The sentences of a prompt that state a project rule, as written, at most a few.
 export function statedProjectRules(prompt) {
-  if (typeof prompt !== 'string' || !prompt.trim()) return [];
-  const sentences = taskStatement(prompt).split(SENTENCES).map(sentence => sentence.trim()).filter(Boolean);
+  const own = personWords(prompt);
+  if (!own) return [];
+  const sentences = taskStatement(own).split(SENTENCES).map(sentence => sentence.trim()).filter(Boolean);
   const rules = sentences.filter(sentence => !QUESTION.test(sentence) && STATED_RULE_PATTERNS.some(pattern => pattern.test(sentence)))
     .map(sentence => sentence.slice(0, MAX_RULE_CHARS));
   return [...new Set(rules)].slice(0, MAX_RULES);
