@@ -12,6 +12,10 @@
   </picture>
 </p>
 
+<h3 align="center">一切都是能自动则自动，一切执行就交给 FLAs 吧。你做好判断，做好领头羊，领着你的 FLAs 大军披荆斩棘，或者去喝杯咖啡休息休息～享受你自己经验带给你自己的复利吧。</h3>
+
+<p align="center"><sub>项目的简历、FLAs 的招募，如果你不想关心，它们都是自动的，你唯一要做的就是把握方向。FLAs 可以自动带着上下文和各种工具穿梭在各个 Agent 客户端，无论是高等级模型还是低等级模型，在这里都可以发挥作用。</sub></p>
+
 <p align="center">
   <a href="README.md">English</a> · 简体中文 · <a href="https://有点.意思.com/fuli/">产品网站</a> · <a href="https://github.com/JevonsCode/fuli/releases/latest">下载</a>
 </p>
