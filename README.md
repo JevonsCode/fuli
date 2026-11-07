@@ -32,8 +32,9 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="license" /></a>
 </p>
 
-Each task gets only the small slice it needs. FULI (复利) is Chinese for compound interest: what you
-teach an Agent today keeps paying off.
+Each task gets only the small slice it needs. Your judgment and experience keep adding up, so FULI
+knows you better the more you use it. That is the compound interest in its name, and along the way
+your AI quietly picks up your taste.
 
 ## What FULI does
 

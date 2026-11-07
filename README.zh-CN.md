@@ -32,8 +32,8 @@
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="许可证" /></a>
 </p>
 
-每次任务只取回用得上的那一小份。名字取自复利：
-今天教会 Agent 的事，明天还在生息。
+每次任务只取回用得上的那一小份。你的判断和经验会一直累积，越用越懂你，这就是复利；
+不知不觉间，AI 做事也有了你的品味。
 
 ## 它能做什么
 
