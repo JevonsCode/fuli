@@ -18,7 +18,10 @@ test('a token-less entry points to on-demand reads and keeps what the turn acts 
   assert.ok(bytes(after) <= bytes(before) * 0.65, `${bytes(before)} -> ${bytes(after)} B`);
   for (const key of ['effective_preferences', 'active_conflicts', 'deferred_conflicts', 'agent_receipt',
     'task_knowledge_recall', 'context', 'task_lifecycle', 'application_guidance']) {
-    assert.deepEqual(after[key], before[key], key);
+    // A task entry names the application rules once and leaves the recall's pointer to them out (rec#88).
+    const { guidance_ref: _ref, ...shown } = after[key] ?? {};
+    const { guidance_ref: _refBefore, ...expected } = before[key] ?? {};
+    assert.deepEqual(key === 'task_knowledge_recall' ? shown : after[key], key === 'task_knowledge_recall' ? expected : before[key], key);
   }
   assert.equal(after.task_lifecycle.reason, 'native_session_required');
   const continuity = after.project_agent_context;
@@ -44,8 +47,14 @@ test('an entry with a task token keeps its previews', async () => {
   const view = compactTaskContext({ ...entry, taskContextToken: 'synthetic-token' });
   assert.equal(view.project_agent_context.memory.view, 'preview');
   assert.ok(view.project_agent_context.team.roster.length);
-  assert.ok(view.project_management_context.managers[0].tools);
-  assert.ok(view.judgment_context.policy);
+  // rec#88: an empty board's manager shows its reader instead of its tools and
+  // session fields; Tonborg's saved policy is read by assess_agent_action itself.
+  const [manager] = view.project_management_context.managers;
+  if (entry.project_management_context.managers[0].board?.total === 0) {
+    assert.equal(manager.tools, undefined);
+    assert.deepEqual(manager.read, { tool: 'list_employee_tools', arguments: { templateId: 'jefa', personalProjectId: 'project' } });
+  } else assert.ok(manager.tools);
+  assert.deepEqual(Object.keys(view.judgment_context).sort(), ['agentId', 'guidance']);
 });
 
 test('an unavailable memory layer stays null in the token-less view', async () => {

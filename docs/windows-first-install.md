@@ -68,36 +68,54 @@ FuliTray.exe is no longer built.
 ## One-click installation (FULI-Setup.exe)
 
 For people who do not use a terminal, each release attaches `FULI-Setup-<version>.exe`
-next to the tray zip: download it, double-click it, click 「安装 / Install」, and FULI
-opens. The setup carries the same verified tray directory as the zip, so Node, Java
-and the graph database come with it and nothing else needs installing.
+next to the tray zip: download it, double-click it, click 「安装 / Install」, then
+「打开 FULI / Open FULI」. The setup carries the same verified tray directory as the zip,
+so Node, Java and the graph database come with it and nothing else needs installing.
+
+Pictures before words: the app icon with 「安装 FULI」 (「更新 FULI」 over an existing
+install) and the version; on a first install, 「安装位置」 with a folder picture, the
+folder (default `%LOCALAPPDATA%\Programs\Fuli`) and 浏览, then 「安装」; the FULI mark
+over one status line and the progress bar; the icon with a check, 「FULI 已就绪」 and one
+「打开 FULI」 button. The side panel and the pictures are drawn for every DPI from 100 %
+to 250 % (`desktop/windows-setup/art/`, `scripts/build-installer-art.js`).
+
+- The install location is chosen once. The folder must be a full path that does not
+  exist yet or is empty, outside FULI's data folder, and writable without administrator
+  rights (not Program Files); otherwise the setup says so and stays on the page. A silent
+  install takes it as `/INSTALLROOT="<folder>"`. The data folder is not asked and stays
+  `%LOCALAPPDATA%\Fuli`.
+- An update never asks: the setup finds FULI where its Installed apps entry
+  (`InstallLocation`) says, else in the default folder, and updates it there; the
+  console's one-click update already passes the recorded `installRoot`.
 
 - Per user, no administrator permission. The wizard is in Chinese or English,
   following the Windows display language.
 - It extracts the tray directory to its temporary folder, runs the bundled
-  `runtime\node\node.exe src\desktop\windows-install.js --yes` without a console
-  window, deletes the temporary copy, and offers 「启动 FULI / Launch FULI」 (checked),
-  which opens the installed `<package>\Fuli.exe`. Locations and shortcuts are the
-  defaults below; nothing is asked.
+  `runtime\node\node.exe src\desktop\windows-install.js --yes --install-root <folder>` without a console
+  window and deletes the temporary copy. 「打开 FULI」 on the last page opens the
+  installed `<package>\Fuli.exe` and closes the setup; closing the window instead
+  leaves FULI installed but not started. Locations and shortcuts are the defaults
+  below; nothing is asked.
 - Data a previous FULI left in `%LOCALAPPDATA%\Fuli` (an uninstall keeps it) is
   adopted unchanged (`--adopt-existing-data`); a folder there that is not FULI data
   is refused.
-- When FULI is already installed under `%LOCALAPPDATA%\Programs\Fuli`, it runs the
-  package's `src\desktop\windows-update-command.js --yes` instead, the same update as
+- When FULI is already installed (in the chosen or the default folder), it runs the
+  package's `src\desktop\windows-update-command.js --yes --install-root <folder>` instead, the same update as
   `Update-Fuli.cmd`: data is kept, the running desktop client closes and reopens. The
   same version is left as it is. A lower version is refused (no `--allow-downgrade`).
 - If that step fails, the last page shows its error text and the setup log path
   (`%TEMP%\Setup Log <date> #<n>.txt`, which also has the full node output), the
-  launch option is hidden and the setup exits with code 1.
+  open button is not offered and the setup exits with code 1.
 - It registers FULI in Windows' Installed apps (`HKCU\...\CurrentVersion\Uninstall\FULI`,
   no uninstaller of its own). Its uninstall runs `Uninstall-Fuli`'s script through the
   root `FuliNode.exe`, so it follows updates; `Uninstall-Fuli.cmd` removes the entry.
-- The setup is not code-signed yet. Windows SmartScreen warns about it 「Windows 已保护你的电脑 /
+- The setup is not code-signed yet. Windows SmartScreen holds it back once 「Windows 已保护你的电脑 /
   Windows protected your PC」; choose 「更多信息 / More info」 and then 「仍要运行 / Run anyway」.
-  Compare the download with its `.sha256` asset to check it.
+  The README and the install page show this as a picture (`docs/images/install/windows-smartscreen.png`);
+  the setup itself only runs after it. Compare the download with its `.sha256` asset to check it.
 
 It is built by `scripts/build-windows-setup.js --tray <tray> --output <folder>` with
-Inno Setup 6.3 or later (`ISCC.exe`, `--iscc` to name it) from
+Inno Setup 6.6 or later (`ISCC.exe`, `--iscc` to name it; CI pins 6.7.4) from
 `desktop/windows-setup/fuli-setup.iss`; the version is the tray's `package.json`.
 `.github/actions/windows-tray` builds it with the zip, installing Inno Setup with
 Chocolatey when the runner lacks it, and the Desktop client workflow installs it

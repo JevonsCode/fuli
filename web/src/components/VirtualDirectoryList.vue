@@ -27,6 +27,9 @@ const props = withDefaults(defineProps<{
   scrollsWith: 'list',
 })
 
+// The drawn rows reach the last loaded ones: a paged list reads its next page.
+const emit = defineEmits<{ nearEnd: [] }>()
+
 defineSlots<{
   header?: () => unknown
   default: (props: { item: T; index: number; formattedIndex: string }) => unknown
@@ -50,6 +53,9 @@ const scrollElement = computed(() => (pageScroll.value ? page.value : scroller.v
 
 const itemCount = computed(() => props.items.length)
 const indexWidth = computed(() => Math.max(3, String(itemCount.value).length))
+// Where you are only matters once the rows are taller than what shows at once;
+// a short list shows no 001/001.
+const showsPosition = computed(() => itemCount.value * props.rowHeight > viewportHeight.value)
 const currentIndex = computed(() => {
   if (!itemCount.value) return 0
   return Math.min(itemCount.value, Math.floor(scrollTop.value / props.rowHeight) + 1)
@@ -66,6 +72,10 @@ const visibleRange = computed(() => {
     end: Math.min(itemCount.value, start + visibleCount),
   }
 })
+watch([() => visibleRange.value.end, () => props.items], ([end]) => {
+  if (itemCount.value && end >= itemCount.value) emit('nearEnd')
+}, { immediate: true })
+
 const visibleIndices = computed(() =>
   Array.from(
     { length: visibleRange.value.end - visibleRange.value.start },
@@ -236,7 +246,7 @@ defineExpose({
     </div>
 
     <output
-      v-if="itemCount"
+      v-if="showsPosition"
       class="virtual-directory-list__position"
       :aria-label="t('common.counts.listPosition', {
         current: currentIndex,
@@ -263,6 +273,15 @@ defineExpose({
   height: 100%;
   overflow: auto;
   overscroll-behavior: contain;
+}
+
+/* Following the page, the list is no scroll box of its own: it grows with its
+   rows (or the room its parent gives it), so a short list never scrolls inside
+   and the header can stick to the page. The card around it clips the sides. */
+.virtual-directory-list.is-page-scroll,
+.is-page-scroll > .virtual-directory-list__scroller {
+  height: auto;
+  overflow: visible;
 }
 
 .virtual-directory-list__header {

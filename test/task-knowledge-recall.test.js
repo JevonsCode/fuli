@@ -370,7 +370,7 @@ test('a convention, an owner or "the way we" do something is a recall intent of 
   assert.deepEqual(owner.trigger_categories, ['project_convention']);
   assert.equal(owner.queries[0], 'codeowners naming team owns ledger');
   assert.deepEqual(planTaskKnowledgeRecall('Add a `NegativeAmountError` following our error code convention.').queries[0],
-    'our error code convention');
+    'error code convention');
   assert.equal(planTaskKnowledgeRecall('按我们约定的重试策略改一下 fetchRate').queries[0], '按约定重试策略改 fetchrate');
 });
 
@@ -393,4 +393,99 @@ test('trailing environment notes neither hide the prompt\'s own clauses nor take
   assert.equal(withNotes.queries[0], alone.queries[0]);
   assert.match(withNotes.queries[0], /retry/);
   assert.ok(withNotes.queries.every((query) => !/WSL|Ubuntu|Windows/.test(query)), JSON.stringify(withNotes.queries));
+});
+
+test('a named target leaves room for the clause that names a kept fact (compounding eval)', () => {
+  // "SMS" is a named target; the retry behaviour is the fact the task needs.
+  const sms = planTaskKnowledgeRecall('SMS messages get dropped whenever the provider has a hiccup. Give the SMS channel the '
+    + 'same retry behaviour we use for email, with tests, and make sure the whole suite passes.');
+  assert.match(sms.queries[0], /^SMS .*convention policy rule owner$/);
+  assert.ok(sms.queries.some((query) => /^SMS .*\bretry\b/.test(query)), sms.queries.join(' | '));
+  // Every query keeps the target, except the bare checks query the "suite passes" clause adds.
+  assert.ok(sms.queries.filter((query) => !query.startsWith('project checks')).every((query) => query.startsWith('SMS ')),
+    'every query keeps the target');
+  // A named target with no clause naming a kept fact plans as before.
+  const workflow = planTaskKnowledgeRecall('Analytics Dashboard Builder 应该按什么流程搭建？').queries;
+  assert.equal(workflow.length, 1);
+  assert.match(workflow[0], /方法 方式 流程 步骤 runbook workflow procedure$/);
+});
+
+test('a project that has stored nothing yet is not sent on a follow-up search; any doubt keeps the nudge (rec#88)', async () => {
+  const profile = [{ type: 'PersonalProject' }, { type: 'ProjectPurpose' }, { type: 'ProjectScope' },
+    { type: 'TechnicalSummary' }, { type: 'ProjectBoundary' }];
+  const withGraph = graph => ({ ...recallApplication([]), personal: { async graph(space, limit, project) {
+    assert.deepEqual([space, project], ['personal-space', 'delta']);
+    assert.ok(limit <= 50);
+    if (graph instanceof Error) throw graph;
+    return graph;
+  } } });
+  const prompt = 'Use the retry policy we agreed for the rates client.';
+  const next = async graph => (await recallTaskKnowledge(withGraph(graph), { personalProjectId: 'delta' }, prompt)).next;
+  assert.match(await next({ nodes: profile, edges: [], truncated: false }), /no stored knowledge yet; no further FULI search/);
+  for (const graph of [
+    { nodes: [...profile, { type: 'ProjectFact' }], edges: [] },
+    { nodes: profile, edges: [], truncated: true },
+    { nodes: profile, edges: [{ type: 'PART_OF' }] },
+    new Error('provider down')
+  ]) assert.match(await next(graph), /One quick search only/);
+  // A historical version alone is nothing a default search returns.
+  assert.match(await next({ nodes: [...profile, { type: 'ProjectFact', invalid_at: '2026-01-01T00:00:00Z' }], edges: [] }),
+    /no stored knowledge yet/);
+});
+
+test('a pending rule is sent whole only to a task its head names; otherwise it waits as a title (rec#88)', async () => {
+  const policy = 'Our retry policy for every outbound channel: at most 3 attempts in total, waiting 200 ms before the second '
+    + 'attempt and 400 ms before the third; retry only when the provider answers 5xx, never retry a 4xx.';
+  const pending = { id: 'p-1', space_id: 'personal-space', scope: 'personal', name: policy.slice(0, 120), type: 'ProjectFact',
+    summary: policy, defined_project_id: 'tidewater', scope_distance: 0, confirmation_status: 'pending', score: 0.2 };
+  const recall = prompt => recallTaskKnowledge(recallApplication([pending]), { personalProjectId: 'tidewater' }, prompt);
+  for (const prompt of [
+    'SMS messages get dropped whenever the provider has a hiccup. Give the SMS channel the same retry behaviour we use for email.',
+    'Add a webhook channel: it POSTs the message to `message.url` and uses our standard retry policy. Follow our conventions.',
+    'A partner complained that our webhook retries hammered them after 4xx answers. Check every channel follows our retry policy.'
+  ]) {
+    const whole = await recall(prompt);
+    assert.equal(whole.status, 'matched', prompt);
+    assert.equal(whole.entities[0].id, 'p-1');
+  }
+  for (const prompt of [
+    'Add `GET /healthz` to the server: it answers 200 with JSON listing the registered channel names. Follow our conventions.',
+    'Sending a message to a channel we do not have crashes the relay. Make it fail with an error that follows our error-code conventions.'
+  ]) {
+    const titled = await recall(prompt);
+    assert.equal(titled.status, 'indexed', prompt);
+    assert.deepEqual(titled.entities, []);
+    assert.equal(titled.knowledge_index.items[0][0], 'p-1');
+    assert.ok(titled.knowledge_index.items[0][1].length <= 41);
+  }
+  // A confirmed item is never held back by this rule.
+  const confirmed = await recallTaskKnowledge(recallApplication([{ ...pending, confirmation_status: 'confirmed' }]),
+    { personalProjectId: 'tidewater' }, 'Add `GET /healthz` to the server listing the registered channel names. Follow our conventions.');
+  assert.equal(confirmed.status, 'matched');
+});
+
+test('the pending relevance rule reads Chinese by character pairs (rec#88)', async () => {
+  const rule = { id: 'p-zh', name: '我们的重试策略：最多 3 次，间隔 200 和 400 毫秒。', type: 'ProjectFact',
+    summary: '我们的重试策略：最多 3 次，间隔 200 和 400 毫秒。', defined_project_id: 'tidewater', confirmation_status: 'pending' };
+  const recall = prompt => recallTaskKnowledge(recallApplication([rule]), { personalProjectId: 'tidewater' }, prompt);
+  assert.equal((await recall('短信渠道也按我们的重试策略来，补上测试。')).status, 'matched');
+  assert.equal((await recall('按我们的约定加一个健康检查接口。')).status, 'indexed');
+});
+
+test('a task that asks for its checks to pass also looks up the kept project checks (rec#88)', async () => {
+  const plan = planTaskKnowledgeRecall('Give the SMS channel the same retry behaviour we use for email, with tests, '
+    + 'and make sure the whole suite passes.');
+  assert.ok(plan.trigger_categories.includes('verification'));
+  assert.equal(plan.queries.at(-1), 'project checks run test command script 检查 测试 命令');
+  assert.ok(plan.queries.length <= 5);
+  assert.equal(planTaskKnowledgeRecall('Rename the parser variable.').trigger_categories.includes('verification'), false);
+  // The kept checks reach the task whole; a pending rule about something else still waits as a title.
+  const checks = { id: 'c-1', name: 'Project checks: `npm run check`, `npm run fixtures`, `npm test`', type: 'ReusableExperience',
+    summary: 'These project scripts ran clean at the end of a finished task: `npm run check`, `npm run fixtures`, `npm test`.',
+    defined_project_id: 'tidewater', confirmation_status: 'pending' };
+  const policy = { id: 'p-1', name: 'Our retry policy for every outbound channel: at most 3 attempts', type: 'ProjectFact',
+    summary: 'Our retry policy for every outbound channel: at most 3 attempts.', defined_project_id: 'tidewater', confirmation_status: 'pending' };
+  const recall = await recallTaskKnowledge(recallApplication([checks, policy]), { personalProjectId: 'tidewater' },
+    'Add `GET /healthz` listing the registered channel names, with a test, and make sure the whole suite passes.');
+  assert.deepEqual(recall.entities.map(item => item.id), ['c-1']);
 });

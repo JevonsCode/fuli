@@ -222,7 +222,7 @@ describe('JudgmentWorkbench', () => {
     const wrapper = mount(JudgmentWorkbench, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } } })
     await flushPromises()
     const warning = wrapper.get('[data-trust-warning]')
-    expect(warning.text()).toContain('模型可能判断错，它的判断会直接生效；你可以随时改成「只给建议」，部分写入可在回执里撤回。')
+    expect(warning.text()).toContain('模型可能判断错，它的判断会直接生效。你可以随时改成「只给建议」，部分写入可在回执里撤回。')
     expect(warning.text()).toContain('你还没看过这条提示，所以这次只作为建议。')
     expect(warning.text()).toContain('去模型设置确认')
     // Showing the receipt sends nothing: only the settings page acknowledges the warning.

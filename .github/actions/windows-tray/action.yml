@@ -67,9 +67,17 @@ runs:
       run: |
         $PSNativeCommandUseErrorActionPreference = $true
         $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-        # fuli-setup.iss needs 6.3 or later (ExecAndCaptureOutput); an older preinstalled copy is upgraded.
-        if (-not (Test-Path $iscc) -or [version](Get-Item $iscc).VersionInfo.FileVersion -lt [version]'6.3') {
-          choco upgrade innosetup --no-progress -y
+        # fuli-setup.iss needs 6.6 or later (PNG wizard pictures). An older preinstalled copy
+        # is replaced by the official 6.7.4 release, pinned by SHA-256 (Chocolatey lags behind,
+        # and Inno Setup 7 installs elsewhere and is not used).
+        if (-not (Test-Path $iscc) -or [version](Get-Item $iscc).VersionInfo.FileVersion -lt [version]'6.6') {
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.4.exe'
+          Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe' -OutFile $installer
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c') {
+            throw 'Inno Setup installer checksum mismatch'
+          }
+          $run = Start-Process $installer -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/ALLUSERS' -Wait -PassThru
+          if ($run.ExitCode -ne 0) { throw "The Inno Setup installer exited with $($run.ExitCode)" }
         }
         if (-not (Test-Path $iscc)) { throw "ISCC.exe not found at $iscc" }
         Write-Output "Inno Setup $((Get-Item $iscc).VersionInfo.FileVersion)"

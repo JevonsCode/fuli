@@ -640,7 +640,8 @@ describe('KnowledgeWorkspace', () => {
     expect(wrapper.get('#directory-tab-materials').text()).toContain('3')
     expect(wrapper.findAll('.knowledge-row')).toHaveLength(1)
     expect(wrapper.find('.project-material-row').exists()).toBe(false)
-    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001001')
+    // One row fits on the page: no position capsule.
+    expect(wrapper.find('.virtual-directory-list__position').exists()).toBe(false)
     expect(getJson.mock.calls.map(([url]) => String(url)).filter((url) => (
       url.startsWith('/api/graph?')
     ))).toEqual([
@@ -653,7 +654,7 @@ describe('KnowledgeWorkspace', () => {
     expect(router.currentRoute.value.query.section).toBe('materials')
     expect(wrapper.get('#directory-tab-materials').attributes('aria-selected')).toBe('true')
     expect(wrapper.findAll('.project-material-row')).toHaveLength(3)
-    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001003')
+    expect(wrapper.find('.virtual-directory-list__position').exists()).toBe(false)
     expect(wrapper.find('.knowledge-table-head').exists()).toBe(false)
     expect(wrapper.get('.search-form input').attributes('aria-label')).toBe('搜索项目资料')
 

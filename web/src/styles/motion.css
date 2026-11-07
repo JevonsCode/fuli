@@ -18,6 +18,18 @@
    snapshot showed as a tiny row of icons over the folded button (Jevons 11-01). */
 ::view-transition-old(app-topbar), ::view-transition-old(app-dock) { display: none; }
 ::view-transition-new(app-topbar), ::view-transition-new(app-dock) { animation: none; }
+/* A workbench list card and its own page (/workbench/<list>) share a name while
+   the page changes, so the card grows into the page and shrinks back on the way
+   home; the frame moves on the shared spring while its contents cross-fade. */
+.is-page-changing [data-list-morph="running"] { view-transition-name: workbench-list-running; }
+.is-page-changing [data-list-morph="done"] { view-transition-name: workbench-list-done; }
+.is-page-changing [data-list-morph="notices"] { view-transition-name: workbench-list-notices; }
+::view-transition-group(workbench-list-running), ::view-transition-group(workbench-list-done), ::view-transition-group(workbench-list-notices) {
+  animation-duration: var(--motion-spring); animation-timing-function: var(--motion-ease-spring);
+}
+::view-transition-old(workbench-list-running), ::view-transition-old(workbench-list-done), ::view-transition-old(workbench-list-notices) {
+  animation: page-out var(--motion-exit) both;
+}
 ::view-transition-old(root) { animation: page-out var(--motion-exit) both; }
 ::view-transition-new(root) { animation: page-in var(--motion-enter) both; }
 /* The transition's overlay covers the viewport and would swallow clicks while

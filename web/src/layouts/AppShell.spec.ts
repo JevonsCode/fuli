@@ -11,6 +11,7 @@ import { fuliWordmarkUrl } from '@/lib/brand'
 import { useConsoleStore } from '@/stores/console'
 import AppShell from './AppShell.vue'
 import { usePageTitle } from './page-title'
+import { usePageRefresh } from './page-refresh'
 import { updateDocumentTitle } from '@/router/meta'
 
 vi.mock('@/api/client', () => ({
@@ -318,6 +319,26 @@ describe('AppShell', () => {
     await router.push('/project-agents')
     await flushPromises()
     expect(wrapper.findAll('[data-section]').length).toBeGreaterThan(1)
+    wrapper.unmount()
+  })
+
+  it('refreshes the page in view with the console, showing its progress on the button until every read settles', async () => {
+    let finishPage: () => void = () => {}
+    const pageReload = vi.fn(() => new Promise<void>((resolve) => { finishPage = resolve }))
+    const reading = defineComponent({ setup() { usePageRefresh(pageReload); return () => h('div', { class: 'routed-page' }) } })
+    const { wrapper, store } = await setup('/reading', {}, [{ path: '/reading', component: reading, meta: { title: '页面' } }])
+    vi.spyOn(store, 'refresh').mockResolvedValue(undefined as never)
+    const button = wrapper.get('[data-shell-refresh]')
+    expect(button.attributes('title')).toBe('刷新这一页')
+    await button.trigger('click'); await flushPromises()
+    expect(pageReload).toHaveBeenCalledOnce()
+    expect(button.attributes('aria-busy')).toBe('true')
+    expect(button.find('[role="status"]').text()).toContain('正在刷新这一页')
+    // A second press while reading starts nothing new.
+    await button.trigger('click'); await flushPromises()
+    expect(pageReload).toHaveBeenCalledOnce()
+    finishPage(); await flushPromises()
+    expect(button.attributes('aria-busy')).toBeUndefined()
     wrapper.unmount()
   })
 

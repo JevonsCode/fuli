@@ -162,7 +162,7 @@ describe('KnowledgeOrganizerPage', () => {
     await flushPromises()
     expect(wrapper.findAll('.organizer-row')).toHaveLength(1)
     expect(wrapper.get('.organizer-row').text()).toContain('最后一页的知识')
-    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001001')
+    expect(wrapper.find('.virtual-directory-list__position').exists()).toBe(false)
     wrapper.unmount()
     page.remove()
   })

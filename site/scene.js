@@ -11,16 +11,19 @@ const icons = [
   "M4 4h16v12H9l-5 4zM8 8h8M8 12h5",
   "m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3z",
 ];
-// The order the page tells it: what FULI is, your FLA, tokens and recall, how an FLA grows,
-// what it grows (Workbench, Workflow, Agent App), the built-in roles, the round table, this computer.
-const sceneNames = ["scatter", "owner", "memory", "growth", "workbench", "team", "roundtable", "database"];
+// The order the page tells it: what FULI is, tokens and recall, what it keeps (沉淀), projects,
+// your FLA, how an FLA grows, what it grows (Workbench, Workflow, Agent App), the built-in roles,
+// the round table, this computer.
+const sceneNames = ["scatter", "memory", "knowledge", "projects", "owner", "growth", "workbench", "team", "roundtable", "database"];
 // Night scenes; the database scene also shifts the object left to make room for its layer notes.
 const darkScenes = new Set(["roundtable", "database"]);
 // Rig orientation per scene: rotateX, rotateY, rotateZ, scale.
 const views = [
   [48, -10, -25, 0.9],
-  [52, -8, -26, 1.12],
   [36, -12, -10, 1.04],
+  [40, -10, -16, 1],
+  [40, -10, -16, 1],
+  [52, -8, -26, 1.12],
   [58, -6, -30, 1],
   [38, 0, -8, 1],
   [14, -4, 0, 1.06],
@@ -62,8 +65,10 @@ const poses = {
     if (i < 4) return [-150 + ((i % 2) - 0.5) * 106, -14 + (Math.floor(i / 2) - 0.5) * 76, (3 - i) * 10, 0, -8, -4, 0.56, 1];
     return [158 + (i - 4) * 2, 18 + (i - 4) * 4, -(i - 4) * 20, 0, 0, 0, 0.64, mix(1, 0.35, (i - 4) / 7)];
   },
-  // Growth is drawn, not built from pieces (growth.css): they gather behind it and fade.
+  // Drawn or shown chapters (growth.css, screens.css): the pieces gather behind and fade.
   growth: () => [0, 20, -60, 0, 0, 0, 0.3, 0],
+  knowledge: () => [0, 20, -60, 0, 0, 0, 0.3, 0],
+  projects: () => [0, 20, -60, 0, 0, 0, 0.3, 0],
   // What it grows: three columns, Workbench cards, a Workflow chain, Agent Apps.
   workbench: (i) => {
     const column = Math.floor(i / 4), row = i % 4;
@@ -101,19 +106,27 @@ export function createScrollScene({ labels }) {
   const nav = document.querySelector(".chapter-nav");
   const dots = [...nav.querySelectorAll("a")];
   const overlays = [...document.querySelectorAll("[data-overlay]")];
-  // The growth chapter's figure plays inside the stage: a copy of the chapter's own figure,
-  // which stays as the reduced-motion end state.
-  const growthIndex = sceneNames.indexOf("growth");
-  const growthOverlay = document.querySelector('[data-overlay="growth"]');
-  const growthFigure = document.querySelector("#growth .growth-anim");
-  if (growthOverlay && growthFigure && !growthOverlay.firstElementChild) {
-    const copy = growthFigure.cloneNode(true);
+  // Some chapters are drawn or shown, not built from pieces: their overlay is a copy of the
+  // chapter's own figure, which stays as the reduced-motion version.
+  for (const overlay of overlays) {
+    const figure = overlay.dataset.copy && !overlay.firstElementChild ? document.querySelector(overlay.dataset.copy) : null;
+    if (!figure) continue;
+    const copy = figure.cloneNode(true);
     copy.classList.remove("static-figure");
     copy.removeAttribute("aria-label");
     copy.removeAttribute("data-i18n-aria-label");
-    growthOverlay.append(copy);
+    copy.querySelectorAll(".is-static").forEach((frame) => frame.classList.remove("is-static"));
+    overlay.append(copy);
   }
-  const growthArt = growthOverlay?.querySelector(".ga-stage");
+  const growthIndex = sceneNames.indexOf("growth");
+  const growthArt = document.querySelector('[data-overlay="growth"] .ga-stage');
+  const growthOverlays = [...document.querySelectorAll('[data-overlay="growth"]')];
+  // Overlays that play along their chapter's dwell read it as --scene-progress (0 → 1).
+  const progressOverlays = overlays.filter((overlay) => overlay.hasAttribute("data-progress"))
+    .map((overlay) => ({ overlay, scene: sceneNames.indexOf(overlay.dataset.overlay) }));
+  // A shown chapter with several screens moves to the next one partway through its dwell.
+  const screens = overlays.filter((overlay) => overlay.querySelector(".app-frame"))
+    .map((overlay) => ({ scene: sceneNames.indexOf(overlay.dataset.overlay), frames: [...overlay.querySelectorAll(".app-frame")] }));
   const header = document.querySelector(".nav");
   const progress = document.querySelector(".story-progress");
   const cue = document.querySelector(".scroll-cue");
@@ -142,8 +155,19 @@ export function createScrollScene({ labels }) {
     // The drawing plays while its chapter dwells, before the morph to the next scene.
     // The scroll arrow fades out over the first third of the first screen.
     if (cue) cue.style.opacity = String(1 - clamp(y / (window.innerHeight / 3)));
-    const growth = index === growthIndex ? clamp(local / 0.42) : index > growthIndex ? 1 : 0;
+    // The card plays over the first quarter of the chapter; then FLAs fill the stage.
+    const growth = index === growthIndex ? clamp(local / 0.26) : index > growthIndex ? 1 : 0;
+    const finale = index === growthIndex ? clamp((local - 0.28) / 0.13) : index > growthIndex ? 1 : 0;
     growthArt?.style.setProperty("--growth-progress", growth.toFixed(3));
+    for (const overlay of growthOverlays) overlay.style.setProperty("--growth-finale", finale.toFixed(3));
+    for (const { overlay, scene } of progressOverlays) {
+      const played = scene === index ? clamp(local / 0.43) : scene < index ? 1 : 0;
+      overlay.style.setProperty("--scene-progress", played.toFixed(3));
+    }
+    for (const { scene, frames } of screens) {
+      const shown = scene === index ? Math.min(frames.length - 1, Math.floor(clamp(local / 0.42) * frames.length)) : scene < index ? frames.length - 1 : 0;
+      frames.forEach((frame, i) => frame.classList.toggle("is-current", i === shown));
+    }
     const darkness = (scene) => (darkScenes.has(sceneNames[scene]) ? 1 : 0);
     const dark = mix(darkness(index), darkness(next), t);
     const database = mix(sceneNames[index] === "database" ? 1 : 0, sceneNames[next] === "database" ? 1 : 0, t);
@@ -164,7 +188,7 @@ export function createScrollScene({ labels }) {
     journey.style.setProperty("--chapter-ink", blendColor([27, 31, 29], [245, 245, 247], dark));
     journey.style.setProperty("--chapter-soft", blendColor([58, 64, 60], [186, 196, 195], dark));
 
-    const sceneView = scene => scene === 7 && narrow ? [57, 0, -24, 0.6] : views[scene];
+    const sceneView = scene => sceneNames[scene] === "database" && narrow ? [57, 0, -24, 0.6] : views[scene];
     const view = sceneView(index).map((value, j) => mix(value, sceneView(next)[j], t));
     rig.style.transform = `rotateX(${view[0]}deg) rotateY(${view[1]}deg) rotateZ(${view[2]}deg) scale(${view[3]})`;
     pieces.forEach((piece, i) => {

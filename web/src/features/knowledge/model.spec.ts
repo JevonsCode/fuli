@@ -232,6 +232,10 @@ describe('knowledge model', () => {
     })
 
     expect(humanChangeStatusLabel(unseen.humanChangeStatus)).toContain('Agent 未查看')
+    // Viewed is about the Agent's review of the human edit, never the item's
+    // confirmation: a confirmed item must not read as 待确认 beside 已确认.
+    expect(humanChangeStatusLabel('viewed')).toBe('人工改动 · Agent 待审核')
+    expect(humanChangeStatusLabel('viewed')).not.toContain('确认')
     expect(filterKnowledgeItems([unseen, reviewed], {
       humanChange: 'human_changed',
     })).toHaveLength(2)

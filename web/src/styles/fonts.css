@@ -1,0 +1,27 @@
+/*
+ * Inter with its line box raised so labels centre in small controls (Jevons 11-06: 「查看详情」
+ * sat high in its pill).
+ *
+ * The first font in --font-ui places the baseline in every line box, and Chinese glyphs from
+ * Noto Sans SC sit on that baseline. Stock Inter centres its box 0.364em above the baseline,
+ * where Latin capitals centre in theory; but Chinese ink centres higher, and Chromium snaps the
+ * baseline to whole pixels, which drew Chinese labels 0.5–1.4px and Latin ones 0.5–1.5px above
+ * centre. This face is the same Latin file with the box centre at 0.44em and the same total
+ * height (1.21em), so no line or control changes size; only the baseline moves inside it.
+ * 0.44 is measured, not derived: by scanning label ink in the built console, 0.40–0.43 still
+ * left 13px tabs a pixel high, while 0.44 centred them (Chinese 1.0 → 0, English 1.0 → 0.4)
+ * and kept 12px buttons, pills and badges within half a pixel, the most an odd ink height allows.
+ * Only the Latin subset is declared: it holds the space, so it is the face that sets the
+ * baseline; other scripts fall through to Inter Variable unchanged.
+ */
+@font-face {
+  font-family: 'Inter Centred';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+  ascent-override: 104.5%;
+  descent-override: 16.5%;
+  line-gap-override: 0%;
+}

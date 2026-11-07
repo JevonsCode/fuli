@@ -44,8 +44,8 @@ for (const [agent, enter, inlineChars] of AGENTS) {
     const preview = context.slice(0, PREVIEW_CHARS);
     const [label] = context.split('\n');
     assert.ok(label.length < PREVIEW_CHARS);
-    assert.ok(label.includes('The Stop hook closes this task. Call checkpoint_task_knowledge with this taskContextToken only when something is worth recording'));
-    assert.ok(label.includes('End your final reply with agent_receipt.markdown, unchanged and once'));
+    assert.ok(label.includes('The Stop hook closes this task; call checkpoint_task_knowledge with this taskContextToken only to record something worth keeping'));
+    assert.ok(label.includes('End your final reply with agent_receipt.markdown, unchanged, once'));
     // The label names the fields; their values are sent once, in the context (rec#11 D-72).
     assert.equal(label.includes(TOKEN), false);
     assert.equal(label.includes(RECEIPT), false);

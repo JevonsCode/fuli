@@ -13,7 +13,8 @@ export function hookFailureCause(error) {
 }
 
 export const PASS_TASK_TOKEN = 'Pass taskContextToken to every FULI call. ';
-export const TASK_RULES_ON_DEMAND = 'Shared rules are referenced by version. Do not read fuli://rules/task-entry for an ordinary task; read one referenced section only when you must act on it (workers, Agent choices, board writes, memory merge, conflicts).';
+// rec#88: every request re-reads the label, so it says each thing once and briefly.
+export const TASK_RULES_ON_DEMAND = 'Rules are referenced by version: read a fuli://rules/task-entry section only when you must act on it, never for an ordinary task.';
 
 // How a hook-delivered task ends, in the entry's own label (rec#47 F1). The
 // entry only references the checkpoint and receipt rules, so the label says
@@ -27,16 +28,14 @@ export function taskClosingInstruction(entry) {
   if (typeof entry?.taskContextToken !== 'string') return '';
   const call = 'checkpoint_task_knowledge with this taskContextToken';
   const checkpoint = entry.checkpoint_required === true ? `Before your final reply, call ${call}. `
-    : entry.checkpoint_guidance ? `The Stop hook closes this task. Call ${call} only when something is worth recording `
-      + '(knowledge, experience, memory changes, collaborators, a meaningful workLog). ' : '';
+    : entry.checkpoint_guidance ? `The Stop hook closes this task; call ${call} only to record something worth keeping. ` : '';
   return checkpoint + taskReceiptInstruction(entry);
 }
 
 // The receipt sentence alone: a blocked frame keeps it too (preference-lifecycle.js).
 export function taskReceiptInstruction(entry) {
   return entry?.agent_receipt?.required === true && typeof entry.agent_receipt.markdown === 'string'
-    ? 'End your final reply with agent_receipt.markdown, unchanged and once '
-      + '(a receipt returned by checkpoint_task_knowledge replaces it). ' : '';
+    ? 'End your final reply with agent_receipt.markdown, unchanged, once (a checkpoint receipt replaces it). ' : '';
 }
 
 const DEFAULT_MAX_BYTES = 8_000;

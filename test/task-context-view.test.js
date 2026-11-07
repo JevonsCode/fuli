@@ -107,36 +107,38 @@ test('a no-match recall shows only noMatchSourceMarker; a match keeps both marke
   const marker = status => ({ required: true, label: 'FULI 来源', status, count: 0, leadMarkdown: `**[◇ FULI · ${status}](http://127.0.0.1:2727/)**`, markdown: '' });
   const recall = extra => ({ status: 'no_match', partial: false, failed_query_count: 0, trigger_categories: [], query_count: 3,
     sourceMarker: marker('no_match'), noMatchSourceMarker: marker('no_match'), facts: [], entities: [], ...extra });
+  // rec#88: a marker keeps what the reply copies and its status; label and count are the rules'.
+  const shown = status => { const { label: _label, count: _count, ...rest } = marker(status); return rest; };
   const none = compactTaskContext(entry({ task_knowledge_recall: recall() })).task_knowledge_recall;
-  assert.deepEqual(none, { status: 'no_match', query_count: 3, noMatchSourceMarker: marker('no_match'), facts: [], entities: [] });
+  assert.deepEqual(none, { status: 'no_match', query_count: 3, noMatchSourceMarker: shown('no_match'), facts: [], entities: [] });
   const matched = compactTaskContext(entry({ task_knowledge_recall: recall({ status: 'matched', partial: true,
     failed_query_count: 1, trigger_categories: ['release_delivery'], sourceMarker: marker('matched') }) })).task_knowledge_recall;
-  assert.deepEqual(matched.sourceMarker, marker('matched'));
+  assert.deepEqual(matched.sourceMarker, shown('matched'));
   assert.deepEqual([matched.partial, matched.failed_query_count, matched.trigger_categories], [true, 1, ['release_delivery']]);
 });
 
-test('a never-written memory layer is its scope, revision 0 and rules; a written one keeps its preview', () => {
+test('a never-written memory layer is revision 0 and its rules; a written one keeps its preview', () => {
   const layer = current => ({ scope: 'private_agent_project', authority: 'working_context_not_confirmed_knowledge',
     revision: current ? 2 : 0, current, personalSpaceId: 's', personalProjectId: 'p', agentId: 'a' });
   const empty = compactTaskContext(entry({ project_agent_context: { memory: layer(null) } })).project_agent_context.memory;
-  assert.deepEqual(empty, { scope: 'private_agent_project', revision: 0, current: null,
-    guidance: { rules: `${ENTRY_RULES_URI}/memory_guidance` } });
+  assert.deepEqual(empty, { revision: 0, guidance: { rules: `${ENTRY_RULES_URI}/memory_guidance` } });
   const written = compactTaskContext(entry({ project_agent_context: { memory: layer({ revision: 2,
     memory: { summary: 'SYNTHETIC summary', decisions: [], openThreads: [], nextActions: [] } }) } })).project_agent_context.memory;
   assert.equal(written.requiresFullReadBeforeWrite, true);
   assert.equal(written.current.memory.summary, 'SYNTHETIC summary');
 });
 
-test('an unchanged directory snapshot counts its files; a written file keeps the list', () => {
+test('a settled directory snapshot is left out of a task entry; a mixed one keeps the list', () => {
   const snapshot = state => ({ status: 'current', path: '/synthetic/agents/a', files: [
     { file: 'AGENTS.md', scope: 'identity', state: 'unchanged' }, { file: 'MEMORY.md', scope: 'global', revision: 0, state }] });
   const view = state => compactTaskContext(entry({ project_agent_context: { directorySnapshot: snapshot(state) } }))
     .project_agent_context.directorySnapshot;
-  assert.deepEqual(view('unchanged'), { status: 'current', path: '/synthetic/agents/a', files_unchanged: 2 });
+  // rec#88: its path is relative to the data directory, so a task entry has nothing to act on.
+  assert.equal(view('unchanged'), undefined);
   assert.deepEqual(view('written'), snapshot('written'));
 });
 
-test('a self-executing lead drops its selection explanation; an unstaffed execution keeps it', () => {
+test('a self-executing or unstaffed lead drops its selection explanation; another executor keeps it', () => {
   const continuity = extra => ({ project_agent_id: 'lead', selection_reason: 'project_team_lead',
     match_basis: ['project team lead is the stable conversation owner'], ...extra });
   const self = compactTaskContext(entry({ project_agent_context: continuity({ execution_reason: 'project_team_lead',
@@ -145,8 +147,12 @@ test('a self-executing lead drops its selection explanation; an unstaffed execut
   assert.equal(self.selection_reason, 'project_team_lead');
   const gap = compactTaskContext(entry({ project_agent_context: continuity({ execution_reason: 'project_team_gap',
     execution_agent_id: null, match_basis: ['Execution is not staffed: use coordinate_project_agent_task.'] }) })).project_agent_context;
+  // rec#88: the reason code stays; how to staff the gap is read on demand.
   assert.equal(gap.execution_reason, 'project_team_gap');
-  assert.deepEqual(gap.match_basis, ['Execution is not staffed: use coordinate_project_agent_task.']);
+  assert.equal(gap.match_basis, undefined);
+  const member = compactTaskContext(entry({ project_agent_context: continuity({ execution_reason: 'project_team_member',
+    execution_agent_id: 'member-1', match_basis: ['member-1 fits test_validation'] }) })).project_agent_context;
+  assert.deepEqual(member.match_basis, ['member-1 fits test_validation']);
 });
 
 test('a fresh conversation and task leave out their null and off fields; a resumed one keeps them', () => {
@@ -171,4 +177,105 @@ test('an entry states the shared rules version once; a sealed worker keeps full 
   const worker = compactTaskContext(entry({ worker_run: true }));
   assert.equal(worker.rules_version, undefined);
   assert.equal(worker.task_guidance.checkpoint, entryRules().sections.task_guidance.checkpoint);
+});
+
+test('a fresh project\'s task entry keeps who and how to read, not empty details (rec#88 fixed overhead)', () => {
+  const { sections } = entryRules();
+  const manager = { template_id: 'jefa', agent_id: 'employee.jefa', name: 'Jefa', personal_project_id: 'p', scope_mode: 'all',
+    title_mode: 'auto', title_style: 'emoji', board: { version: 0, total: 0, view: 'on_demand' },
+    session: { sourceApplication: 'claude_code', sessionId: 's-1' },
+    tools: { discover: 'list_employee_tools', call: 'call_employee_tool', read_board: 'read_board', prepare_title: 'prepare_session_title' },
+    guidance: { summary: 'Route actionable project work through this manager.', rules: `${ENTRY_RULES_URI}/manager_guidance` } };
+  const view = compactTaskContext(entry({
+    project_management_context: { status: 'ready', managers: [manager], worker_started: false },
+    judgment_context: { agentId: 'employee.tonborg', policy: { mode: 'manual', quality: 'quality', client: 'codex', revision: 0 },
+      guidance: 'Tonborg is available for advice via assess_agent_action; retain human review.' },
+    project_agent_context: { project_agent_id: 'lead', selection_reason: 'project_team_lead', execution_reason: 'project_team_gap',
+      match_basis: ['project team lead is the stable conversation owner', 'Execution is not staffed: no team member fits this work.'],
+      project_brief: { name: 'Tidewater', summary: 'Synthetic relay.', authors: { purpose: 'agent 50% AI 草稿，可改' } },
+      directorySnapshot: { status: 'current', path: 'agents/a/b/c', files: [{ file: 'AGENTS.md', state: 'written' },
+        { file: 'MEMORY.md', state: 'written' }] },
+      guidance: sections.continuity_guidance, team: { guidance: sections.team_guidance } } }));
+  const continuity = view.project_agent_context;
+  assert.equal(continuity.match_basis, undefined);
+  assert.equal(continuity.execution_reason, 'project_team_gap');
+  assert.deepEqual(continuity.project_brief, { name: 'Tidewater', summary: 'Synthetic relay.' });
+  assert.equal(continuity.directorySnapshot, undefined);
+  assert.deepEqual(view.project_management_context.managers, [{ template_id: 'jefa', agent_id: 'employee.jefa', name: 'Jefa',
+    board: { total: 0 }, guidance: { summary: 'Route actionable project work through this manager.', rules: `${ENTRY_RULES_URI}/manager_guidance` },
+    read: { tool: 'list_employee_tools', arguments: { templateId: 'jefa', personalProjectId: 'p' } } }]);
+  assert.deepEqual(view.judgment_context, { agentId: 'employee.tonborg',
+    guidance: 'Tonborg is available for advice via assess_agent_action; retain human review.' });
+  // A board with items keeps its manager's tools, session and title fields.
+  const busy = compactTaskContext(entry({ project_management_context: { status: 'ready',
+    managers: [{ ...manager, board: { version: 3, total: 2, view: 'on_demand' } }] } }));
+  assert.equal(busy.project_management_context.managers[0].title_mode, 'auto');
+  assert.ok(busy.project_management_context.managers[0].tools);
+});
+
+test('a team of one carries no team rules, and the Agent and project IDs are stated once, in context (rec#88)', () => {
+  const { sections } = entryRules();
+  const view = compactTaskContext(entry({ context: { personal_space_id: 's', personal_project_id: 'p', project_agent_id: 'lead' },
+    project_agent_context: { project_agent_id: 'lead', personal_project_id: 'p', guidance: sections.continuity_guidance,
+      team: { guidance: sections.team_guidance, roster: [{ agent_id: 'lead', name: 'Lead', occupation: 'lead' }] } } }));
+  assert.equal(view.project_agent_context.team_guidance, undefined);
+  assert.deepEqual(view.project_agent_context.team, { roster: [{ name: 'Lead', occupation: 'lead' }] });
+  assert.equal(view.project_agent_context.project_agent_id, undefined);
+  assert.equal(view.project_agent_context.personal_project_id, undefined);
+  const pair = compactTaskContext(entry({ project_agent_context: { guidance: sections.continuity_guidance,
+    team: { guidance: sections.team_guidance, roster: [{ agent_id: 'lead', name: 'Lead' }, { agent_id: 'm', name: 'Member' }] } } }));
+  assert.equal(pair.project_agent_context.team_guidance.rules, `${ENTRY_RULES_URI}/team_guidance`);
+});
+
+test('a recalled item says each thing once: no repeated scope, hash key, empty fields, score or title prefix (rec#88)', () => {
+  const policy = 'Our retry policy for every outbound channel: at most 3 attempts in total.';
+  const item = { id: 'e-1', space_id: 's', scope: 'personal', key: 'remember-c3512b1fb1dd2f4f91e17c16', defined_project_id: 'p',
+    inherited_from_project_id: null, scope_distance: 0, confirmation_status: 'pending', source_uris: [], score: 0.208,
+    name: policy.slice(0, 40), type: 'ProjectFact', summary: policy };
+  const view = compactTaskContext(entry({ context: { personal_space_id: 's', personal_project_id: 'p' }, task_knowledge_recall: {
+    status: 'matched', query_count: 2, entities: [item], facts: [],
+    pending_fallback: { slots: ['entities'], note: 'Pending items are agent-proposed and not confirmed by a person; judge them before use.' },
+    retrieval_budget: { limit_bytes: 4096, returned_items: 1, omitted_items: 0, truncated: false } } })).task_knowledge_recall;
+  assert.deepEqual(view.entities, [{ id: 'e-1', confirmation_status: 'pending', type: 'ProjectFact', summary: policy }]);
+  assert.deepEqual(view.pending_fallback, { slots: ['entities'] });
+  assert.equal(view.retrieval_budget, undefined);
+  // A curated key, another project's item and a title of its own stay.
+  const kept = compactTaskContext(entry({ context: { personal_space_id: 's', personal_project_id: 'p' }, task_knowledge_recall: {
+    status: 'matched', query_count: 1, facts: [], entities: [{ ...item, key: 'willow:admin-port', defined_project_id: 'parent',
+      inherited_from_project_id: 'parent', scope_distance: 1, name: 'Admin console port' }],
+    retrieval_budget: { limit_bytes: 4096, returned_items: 3, omitted_items: 2, truncated: true } } })).task_knowledge_recall;
+  assert.deepEqual([kept.entities[0].key, kept.entities[0].defined_project_id, kept.entities[0].inherited_from_project_id,
+    kept.entities[0].scope_distance, kept.entities[0].name], ['willow:admin-port', 'parent', 'parent', 1, 'Admin console port']);
+  assert.equal(kept.retrieval_budget.truncated, true);
+});
+
+test('a task entry names the role without its starting preferences and the resolution without the project again (rec#88)', () => {
+  const view = compactTaskContext(entry({
+    context: { personal_space_id: 's', personal_project_id: 'p', project_agent_id: 'lead',
+      project_resolution: { status: 'matched', basis: 'repository_root', personal_project_id: 'p' } },
+    project_agent_context: { role: { name: 'Lead', responsibility: 'Own delivery.', initial_preferences: ['Verify first.'] } } }));
+  assert.deepEqual(view.project_agent_context.role, { name: 'Lead', responsibility: 'Own delivery.' });
+  assert.deepEqual(view.context.project_resolution, { status: 'matched', basis: 'repository_root' });
+  const tokenless = compactTaskContext({ ...entry({ project_agent_context: { role: { name: 'Lead', initial_preferences: ['Verify first.'] } } }),
+    taskContextToken: undefined, task_lifecycle: { status: 'not_started' } });
+  assert.deepEqual(tokenless.project_agent_context.role.initial_preferences, ['Verify first.']);
+});
+
+test('a task entry leaves out routine state and the current scope filter; other values stay (rec#88)', () => {
+  const { sections } = entryRules();
+  const view = compactTaskContext(entry({
+    context: { personal_space_id: 's', personal_project_id: 'p', project_agent_id: 'lead', task_scope_filter: 'provider_before_conflicts' },
+    project_management_context: { status: 'ready', worker_started: false, managers: [] },
+    project_agent_context: { status: 'ready', wake_mode: 'task_entry', worker_started: false, source_application: 'claude_code',
+      guidance: sections.continuity_guidance } }));
+  assert.equal(view.context.task_scope_filter, undefined);
+  for (const field of ['status', 'wake_mode', 'worker_started']) assert.equal(view.project_agent_context[field], undefined, field);
+  assert.equal(view.project_agent_context.source_application, 'claude_code');
+  const unusual = compactTaskContext(entry({
+    context: { personal_project_id: 'p', task_scope_filter: 'legacy_projection' },
+    project_agent_context: { status: 'degraded', wake_mode: 'preference_recovery', worker_started: true,
+      guidance: sections.continuity_guidance } }));
+  assert.equal(unusual.context.task_scope_filter, 'legacy_projection');
+  assert.deepEqual([unusual.project_agent_context.status, unusual.project_agent_context.wake_mode, unusual.project_agent_context.worker_started],
+    ['degraded', 'preference_recovery', true]);
 });

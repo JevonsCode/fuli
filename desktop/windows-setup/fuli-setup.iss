@@ -9,10 +9,17 @@
 ; src\desktop\windows-update-command.js --yes when FULI is already installed
 ; (data is kept). It writes no program files and no uninstaller of its own;
 ; Uninstall-Fuli.cmd stays the uninstall, reached from Installed apps.
-; Inno Setup 6.3 or later (ExecAndCaptureOutput).
+;
+; Pictures before words (art\, drawn by scripts/build-installer-art.js at
+; every DPI): the app icon; on a first install the install location (a folder
+; picture, the folder, 浏览) with 「安装」; the mark over the progress bar;
+; the icon with a check and one 「打开 FULI」 button. An update keeps FULI in
+; the folder its Installed apps entry names and asks nothing. SmartScreen's note for the unsigned setup is
+; a picture on the download page and in the README, not a page here.
+; Inno Setup 6.6 or later (PNG wizard images and TBitmapImage.PngImage).
 
-#if Ver < EncodeVer(6, 3, 0)
-  #error Inno Setup 6.3 or later is required
+#if Ver < EncodeVer(6, 6, 0)
+  #error Inno Setup 6.6 or later is required
 #endif
 #ifndef AppVersion
   #error Build with scripts/build-windows-setup.js: AppVersion comes from the tray's package.json
@@ -30,6 +37,10 @@
 #define TrayLauncher "Fuli.exe"
 #define TrayNodeLauncher "FuliNode.exe"
 
+; The page pictures' size in points at 100 % (build-installer-art.js SETUP_PICTURES).
+#define PictureSize 120
+#define MarkSize 80
+
 [Setup]
 AppId=FULI
 AppName=FULI
@@ -41,12 +52,16 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 CreateAppDir=no
-DisableWelcomePage=yes
+DisableWelcomePage=no
+DisableReadyPage=yes
 DisableProgramGroupPage=yes
 Uninstallable=no
 CreateUninstallRegKey=no
 SetupIconFile=..\..\brand\png\app-icon\fuli-app.ico
 WizardStyle=modern
+; Each DPI's own picture; Setup picks the one that fits.
+WizardImageFile=art\panel-100.png,art\panel-125.png,art\panel-150.png,art\panel-175.png,art\panel-200.png,art\panel-225.png,art\panel-250.png
+WizardSmallImageFile=art\small-100.png,art\small-125.png,art\small-150.png,art\small-175.png,art\small-200.png,art\small-225.png,art\small-250.png
 SetupLogging=yes
 ; The Windows display language picks Chinese or English; any other falls back to English.
 ShowLanguageDialog=no
@@ -61,8 +76,22 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "zh"; MessagesFile: "compiler:Default.isl,ChineseSimplified.isl"
 
 [CustomMessages]
-zh.LaunchFuli=启动 FULI
-en.LaunchFuli=Launch FULI
+zh.InstallTitle=安装 FULI
+en.InstallTitle=Install FULI
+zh.UpdateTitle=更新 FULI
+en.UpdateTitle=Update FULI
+zh.InstallButton=安装
+en.InstallButton=Install
+zh.UpdateButton=更新
+en.UpdateButton=Update
+zh.LocationTitle=安装位置
+en.LocationTitle=Install location
+zh.LocationUnusable=FULI 装不到这里。请选一个空的或新的文件夹，不要放在 Program Files 或 FULI 的数据文件夹里。
+en.LocationUnusable=FULI cannot be installed here. Choose an empty or new folder outside Program Files and FULI's data folder.
+zh.ReadyTitle=FULI 已就绪
+en.ReadyTitle=FULI is ready
+zh.OpenFuli=打开 FULI
+en.OpenFuli=Open FULI
 zh.Installing=正在安装 FULI 并核对每个文件…
 en.Installing=Installing FULI and verifying every file...
 zh.Updating=正在更新 FULI，数据保留不变…
@@ -76,20 +105,60 @@ en.NotStarted=The installer could not start (error %1).
 
 [Files]
 Source: "{#TrayDir}\*"; DestDir: "{tmp}\tray"; Flags: recursesubdirs createallsubdirs ignoreversion
-
-[Run]
-Filename: "{code:InstalledLauncher}"; Description: "{cm:LaunchFuli}"; Flags: postinstall nowait skipifsilent; Check: Succeeded
+; The page pictures, extracted when a page shows them (PagePicture).
+Source: "art\icon-*.png"; DestDir: "{tmp}"; Flags: dontcopy
+Source: "art\done-*.png"; DestDir: "{tmp}"; Flags: dontcopy
+Source: "art\mark-*.png"; DestDir: "{tmp}"; Flags: dontcopy
+Source: "art\folder-*.png"; DestDir: "{tmp}"; Flags: dontcopy
 
 [Code]
 const
   ErrorLines = 12;
+  InstalledAppsKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\FULI';
 
 var
   FailureText: String;
+  // The installation this setup updates, '' for a first install; read once.
+  RecordedRoot: String;
+  RecordedRootRead: Boolean;
+  LocationPage: TInputDirWizardPage;
+  WelcomePicture, MarkPicture, DonePicture, FolderPicture: TBitmapImage;
+  VersionLabel, LocationLabel: TNewStaticText;
 
-function InstallRoot: String;
+function DefaultRoot: String;
 begin
   Result := ExpandConstant('{localappdata}\Programs\Fuli');
+end;
+
+// Where FULI is already installed: the folder the Installed apps entry names
+// (a location chosen at the first install), else the default folder; only
+// a folder that holds installation.json counts.
+function PreviousRoot: String;
+var
+  Location: String;
+begin
+  if not RecordedRootRead then begin
+    RecordedRootRead := True;
+    RecordedRoot := '';
+    if RegQueryStringValue(HKCU, InstalledAppsKey, 'InstallLocation', Location)
+        and FileExists(AddBackslash(Location) + 'installation.json') then
+      RecordedRoot := RemoveBackslashUnlessRoot(Location)
+    else if FileExists(DefaultRoot + '\installation.json') then
+      RecordedRoot := DefaultRoot;
+  end;
+  Result := RecordedRoot;
+end;
+
+// An update keeps FULI where it is; a first install goes where the person
+// chose (/INSTALLROOT= when silent), by default under Programs.
+function InstallRoot: String;
+begin
+  Result := PreviousRoot;
+  if Result <> '' then Exit;
+  if LocationPage <> nil then
+    Result := RemoveBackslashUnlessRoot(Trim(LocationPage.Values[0]))
+  else
+    Result := ExpandConstant('{param:INSTALLROOT|' + DefaultRoot + '}');
 end;
 
 // One string field of installation.json. Only ASCII fields are read (version,
@@ -112,7 +181,7 @@ end;
 
 function Installed: Boolean;
 begin
-  Result := FileExists(InstallRoot + '\installation.json');
+  Result := PreviousRoot <> '';
 end;
 
 // The installed version's launcher: versions\<installation id>\Fuli.exe.
@@ -168,7 +237,7 @@ procedure RegisterInstalledApp;
 var
   Key, Launcher: String;
 begin
-  Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\FULI';
+  Key := InstalledAppsKey;
   Launcher := InstallRoot + '\{#TrayNodeLauncher}';
   if not FileExists(Launcher) then Exit;
   RegWriteStringValue(HKCU, Key, 'DisplayName', 'FULI');
@@ -184,24 +253,29 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Update: Boolean;
+  Root: String;
 begin
   if CurStep <> ssPostInstall then Exit;
   Update := Installed;
+  Root := '--install-root "' + InstallRoot + '"';
   WizardForm.ProgressGauge.Style := npbstMarquee;
   try
     if Update and (RecordField('applicationVersion') = '{#AppVersion}') then
       Log('FULI {#AppVersion} is already installed; nothing to change.')
     else if Update then begin
       WizardForm.StatusLabel.Caption := CustomMessage('Updating');
-      RunTrayScript('{#TrayUpdate}', '--yes');
+      RunTrayScript('{#TrayUpdate}', '--yes ' + Root);
     end else begin
       WizardForm.StatusLabel.Caption := CustomMessage('Installing');
+      // The installer creates the folder itself and refuses one that exists;
+      // an empty folder the person picked is removed first.
+      RemoveDir(InstallRoot);
       // Data left by an earlier FULI (an uninstall keeps it) is bound unchanged;
       // the installer refuses a folder that is not FULI data.
       if DirExists(ExpandConstant('{localappdata}\Fuli')) then
-        RunTrayScript('{#TrayInstall}', '--yes --adopt-existing-data')
+        RunTrayScript('{#TrayInstall}', '--yes --adopt-existing-data ' + Root)
       else
-        RunTrayScript('{#TrayInstall}', '--yes');
+        RunTrayScript('{#TrayInstall}', '--yes ' + Root);
     end;
   finally
     WizardForm.ProgressGauge.Style := npbstNormal;
@@ -210,13 +284,180 @@ begin
   if FailureText = '' then RegisterInstalledApp;
 end;
 
-procedure CurPageChanged(CurPageID: Integer);
+// The drawn scale for this DPI: the smallest one at least as large.
+function PictureScale: Integer;
+var
+  Wanted: Integer;
 begin
-  if (CurPageID <> wpFinished) or (FailureText = '') then Exit;
+  Wanted := ScaleX(100);
+  if Wanted <= 100 then Result := 100
+  else if Wanted <= 125 then Result := 125
+  else if Wanted <= 150 then Result := 150
+  else if Wanted <= 175 then Result := 175
+  else if Wanted <= 200 then Result := 200
+  else if Wanted <= 225 then Result := 225
+  else Result := 250;
+end;
+
+// art\<Name>-<scale>.png on Parent, Points square, centred on CentreX.
+function PagePicture(Parent: TWinControl; Name: String; Points, CentreX, Top: Integer): TBitmapImage;
+var
+  FileName: String;
+begin
+  FileName := Name + '-' + IntToStr(PictureScale) + '.png';
+  ExtractTemporaryFile(FileName);
+  Result := TBitmapImage.Create(WizardForm);
+  Result.Parent := Parent;
+  // The pages are window-coloured; the pictures' transparent edges blend into it.
+  Result.BackColor := clWindow;
+  Result.Stretch := True;
+  Result.Width := ScaleX(Points);
+  Result.Height := ScaleX(Points);
+  Result.Left := CentreX - Result.Width div 2;
+  Result.Top := Top;
+  Result.PngImage.LoadFromFile(ExpandConstant('{tmp}\') + FileName);
+end;
+
+procedure CentreBelow(Text: TNewStaticText; Picture: TBitmapImage; Gap: Integer);
+begin
+  Text.Alignment := taCenter;
+  Text.Top := Picture.Top + Picture.Height + ScaleY(Gap);
+  Text.AdjustHeight;
+end;
+
+procedure InitializeWizard;
+var
+  Centre, Shift: Integer;
+begin
+  // First page: the app icon, 「安装 FULI」 (or 「更新 FULI」), the version.
+  Centre := WizardForm.WelcomeLabel1.Left + WizardForm.WelcomeLabel1.Width div 2;
+  WelcomePicture := PagePicture(WizardForm.WelcomePage, 'icon', {#PictureSize}, Centre, ScaleY(64));
+  if Installed then
+    WizardForm.WelcomeLabel1.Caption := CustomMessage('UpdateTitle')
+  else
+    WizardForm.WelcomeLabel1.Caption := CustomMessage('InstallTitle');
+  CentreBelow(WizardForm.WelcomeLabel1, WelcomePicture, 20);
+  WizardForm.WelcomeLabel2.Visible := False;
+  VersionLabel := TNewStaticText.Create(WizardForm);
+  VersionLabel.Parent := WizardForm.WelcomePage;
+  VersionLabel.Caption := 'v{#AppVersion}';
+  VersionLabel.Font.Color := clGrayText;
+  VersionLabel.Top := WizardForm.WelcomeLabel1.Top + WizardForm.WelcomeLabel1.Height + ScaleY(8);
+  VersionLabel.Left := Centre - VersionLabel.Width div 2;
+
+  // Progress: no header (it would repeat the status line), the mark, one
+  // centred status line and the bar. The page takes the header's room.
+  Shift := WizardForm.InnerNotebook.Top - WizardForm.MainPanel.Top;
+  WizardForm.MainPanel.Visible := False;
+  WizardForm.Bevel1.Visible := False;
+  WizardForm.InnerNotebook.Top := WizardForm.InnerNotebook.Top - Shift;
+  WizardForm.InnerNotebook.Height := WizardForm.InnerNotebook.Height + Shift;
+  WizardForm.FilenameLabel.Visible := False;
+  Centre := WizardForm.ProgressGauge.Left + WizardForm.ProgressGauge.Width div 2;
+  MarkPicture := PagePicture(WizardForm.InstallingPage, 'mark', {#MarkSize}, Centre, ScaleY(64));
+  WizardForm.StatusLabel.Alignment := taCenter;
+  WizardForm.StatusLabel.Top := MarkPicture.Top + MarkPicture.Height + ScaleY(24);
+  WizardForm.ProgressGauge.Top := WizardForm.StatusLabel.Top + WizardForm.StatusLabel.Height + ScaleY(12);
+
+  // First install only: a folder picture, 「安装位置」, the folder and 浏览.
+  // An update keeps FULI where it is and never shows this page.
+  LocationPage := CreateInputDirPage(wpWelcome, CustomMessage('LocationTitle'), '', '', False, 'Fuli');
+  LocationPage.Add('');
+  LocationPage.Values[0] := ExpandConstant('{param:INSTALLROOT|' + DefaultRoot + '}');
+  Centre := LocationPage.SurfaceWidth div 2;
+  FolderPicture := PagePicture(LocationPage.Surface, 'folder', {#PictureSize}, Centre, ScaleY(48));
+  LocationLabel := TNewStaticText.Create(WizardForm);
+  LocationLabel.Parent := LocationPage.Surface;
+  LocationLabel.Caption := CustomMessage('LocationTitle');
+  LocationLabel.Font.Style := [fsBold];
+  LocationLabel.Top := FolderPicture.Top + FolderPicture.Height + ScaleY(16);
+  LocationLabel.Left := Centre - LocationLabel.Width div 2;
+  LocationPage.Buttons[0].Top := LocationLabel.Top + LocationLabel.Height + ScaleY(16);
+  LocationPage.Buttons[0].Left := LocationPage.SurfaceWidth - LocationPage.Buttons[0].Width;
+  LocationPage.Edits[0].Left := 0;
+  LocationPage.Edits[0].Width := LocationPage.Buttons[0].Left - ScaleX(8);
+  LocationPage.Edits[0].Top := LocationPage.Buttons[0].Top
+    + (LocationPage.Buttons[0].Height - LocationPage.Edits[0].Height) div 2;
+
+  // Last page: the icon with a check, 「FULI 已就绪」, and 「打开 FULI」.
+  Centre := WizardForm.FinishedHeadingLabel.Left + WizardForm.FinishedHeadingLabel.Width div 2;
+  DonePicture := PagePicture(WizardForm.FinishedPage, 'done', {#PictureSize}, Centre, ScaleY(64));
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := (PageID = LocationPage.ID) and Installed;
+end;
+
+// A folder the per-user installer can create: a full path, outside FULI's
+// data folder, not there yet or empty, and writable without administrator
+// rights (Program Files is not).
+function UsableLocation(Path: String): Boolean;
+var
+  Found: TFindRec;
+  Data: String;
+begin
+  Data := Lowercase(ExpandConstant('{localappdata}\Fuli'));
+  Result := (Length(Path) > 3) and (Copy(Path, 2, 2) = ':\')
+    and (Lowercase(Path) <> Data) and (Pos(Data + '\', Lowercase(Path) + '\') <> 1);
+  if not Result then Exit;
+  if DirExists(Path) then begin
+    if FindFirst(AddBackslash(Path) + '*', Found) then
+      try
+        repeat
+          if (Found.Name <> '.') and (Found.Name <> '..') then Result := False;
+        until (not Result) or (not FindNext(Found));
+      finally
+        FindClose(Found);
+      end;
+    Exit;
+  end;
+  Result := ForceDirectories(Path) and RemoveDir(Path);
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+var
+  Widen: Integer;
+begin
+  // 「安装」 sits on the last page before installing: the location page for a
+  // first install, the first page for an update.
+  if (CurPageID = wpWelcome) and Installed then
+    WizardForm.NextButton.Caption := CustomMessage('UpdateButton');
+  if CurPageID = LocationPage.ID then
+    WizardForm.NextButton.Caption := CustomMessage('InstallButton');
+  if CurPageID <> wpFinished then Exit;
+  if FailureText = '' then begin
+    WizardForm.FinishedHeadingLabel.Caption := CustomMessage('ReadyTitle');
+    CentreBelow(WizardForm.FinishedHeadingLabel, DonePicture, 20);
+    WizardForm.FinishedLabel.Visible := False;
+    if Succeeded then begin
+      Widen := ScaleX(40);
+      WizardForm.NextButton.Width := WizardForm.NextButton.Width + Widen;
+      WizardForm.NextButton.Left := WizardForm.NextButton.Left - Widen;
+      WizardForm.NextButton.Caption := CustomMessage('OpenFuli');
+    end;
+    Exit;
+  end;
+  DonePicture.Visible := False;
   WizardForm.FinishedHeadingLabel.Caption := CustomMessage('FailedHeading');
   // A [Code] line must not start with "[" or Inno Setup reads it as a section tag.
   WizardForm.FinishedLabel.Caption := FmtMessage(CustomMessage('FailedLabel'), [FailureText, ExpandConstant('{log}')]);
   WizardForm.FinishedLabel.AdjustHeight;
+end;
+
+// 「打开 FULI」 on the last page starts the installed version, then Setup closes.
+function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  Code: Integer;
+begin
+  Result := True;
+  if CurPageID = LocationPage.ID then begin
+    LocationPage.Values[0] := RemoveBackslashUnlessRoot(Trim(LocationPage.Values[0]));
+    Result := UsableLocation(LocationPage.Values[0]);
+    if not Result then MsgBox(CustomMessage('LocationUnusable'), mbError, MB_OK);
+  end;
+  if (CurPageID = wpFinished) and (not WizardSilent) and Succeeded then
+    ShellExec('', InstalledLauncher(''), '', '', SW_SHOWNORMAL, ewNoWait, Code);
 end;
 
 function GetCustomSetupExitCode: Integer;

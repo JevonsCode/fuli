@@ -165,10 +165,9 @@ test('MCP reads, memory checkpoints and task entry expose directorySnapshot stat
   const entry = (await call('get_collaboration_preferences', { projectPath: '/synthetic/sample-project',
     taskPrompt: 'Continue.', sessionId: 'synthetic-session' })).structuredContent;
   assert.equal(entry.taskContextToken, 'fuli-task-transport');
-  assert.equal(entry.project_agent_context.directorySnapshot.status, 'current');
-  // Every file is already as the read and checkpoint left it, so the entry counts them (rec#46).
-  assert.equal(entry.project_agent_context.directorySnapshot.files, undefined);
-  assert.equal(entry.project_agent_context.directorySnapshot.files_unchanged, 3);
+  // Every file is already as the read and checkpoint left it, so a task entry leaves the
+  // snapshot to the memory read too (rec#46 counted them; rec#88 leaves the count out).
+  assert.equal(entry.project_agent_context.directorySnapshot, undefined);
 
   const everything = JSON.stringify([read, written, tokenless, entry]);
   assert.equal(everything.includes(home), false, 'no absolute path');

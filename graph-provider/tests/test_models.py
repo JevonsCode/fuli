@@ -301,6 +301,23 @@ def test_batch_confirmation_requires_unique_items_and_a_human_or_authoritative_c
         )
 
 
+def test_only_the_person_confirms_their_review_list_in_a_batch():
+    value = {
+        'personal_space_id': 'personal-space', 'group_kind': 'review', 'group_value': 'pending',
+        'reason': 'Confirmed every item waiting in the review list.', 'operation_actor': 'human',
+        'confirmer': {'kind': 'user', 'label': 'Current user'},
+        'items': [{'item_id': f'entity-{index}', 'item_kind': 'entity', 'existence_reason': 'Synthetic.',
+                   'quadrant_reason': 'Synthetic.', 'proposed_by': {'kind': 'agent', 'label': 'Codex'}}
+                  for index in range(2)],
+    }
+    assert KnowledgeBatchConfirmationCreate.model_validate(value).group_kind == 'review'
+    with pytest.raises(ValidationError, match='only the person confirms'):
+        KnowledgeBatchConfirmationCreate.model_validate(value | {'operation_actor': 'agent'})
+    with pytest.raises(ValidationError, match='only the person confirms'):
+        KnowledgeBatchConfirmationCreate.model_validate(
+            value | {'confirmer': {'kind': 'authoritative_source', 'label': 'Synthetic spec'}})
+
+
 def test_structured_episode_rejects_credentials_at_provider_boundary():
     synthetic_credential = '='.join([
         'api_key',

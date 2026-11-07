@@ -186,11 +186,26 @@ class KnowledgeVisibleItemsRead(AgentReaderRef):
     local record that names one shows it only while it does."""
     personal_space_id: str = Field(min_length=1, max_length=128)
     items: list[KnowledgeItemKey] = Field(min_length=1, max_length=MAX_VISIBLE_ITEMS)
+    # Also each visible item's review state (11-06): a Tonborg question about an
+    # item the person already decided elsewhere is not asked again.
+    with_state: bool = False
+
+
+# pending: still waits for a person (an AI review included); agent_confirmed:
+# an Agent's confirmation the person has not changed; confirmed: the person's
+# own (or an authoritative source's); historical: ended or replaced.
+KnowledgeItemReviewState = Literal['pending', 'agent_confirmed', 'confirmed', 'historical']
+
+
+class KnowledgeVisibleItemState(KnowledgeItemKey):
+    state: KnowledgeItemReviewState
 
 
 class KnowledgeVisibleItems(StrictModel):
     # In the order asked, without the ones this reader may not see or that are gone.
     items: list[KnowledgeItemKey] = Field(default_factory=list)
+    # With with_state: the same items, each with its review state.
+    states: list[KnowledgeVisibleItemState] | None = None
 
 
 class KnowledgeReceiptEntry(KnowledgeItemSummary):

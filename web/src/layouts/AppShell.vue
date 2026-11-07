@@ -38,6 +38,7 @@ import WidgetSlot from '@/widgets/WidgetSlot.vue'
 import SectionTabs from './SectionTabs.vue'
 import { activeDestination, activeSection, navDestinations } from './nav-destinations'
 import { pageTitle } from './page-title'
+import { reloadPage } from './page-refresh'
 import { measureScrollbarSize } from './scrollbar-size'
 
 // The console frame (client redesign, 2026-11-01): a top bar with the brand,
@@ -116,12 +117,21 @@ let reviewTimer: ReturnType<typeof setInterval> | undefined
 function refreshAttention() { if (document.visibilityState === 'visible' && !attention.loading && !attention.open) void attention.refresh() }
 // The knowledge read is larger, so it refreshes less often; the 待决策 page refreshes it on open.
 function refreshReview() { if (document.visibilityState === 'visible' && !review.loading) void review.refresh() }
-// The top bar's one refresh reads the console again and the waiting requests with it:
-// the whole queue while the inbox is open, so that page needs no refresh of its own.
-function refreshConsole() {
-  void store.refresh()
-  if (!attention.loading) void attention.refresh()
-  if (!review.loading) void review.refresh()
+// The top bar's one refresh reads the console again, the waiting requests (the whole
+// queue while the inbox is open, so that page needs no refresh of its own) and the page in
+// view (page-refresh.ts). The button shows its progress until every read has settled.
+const refreshing = ref(false)
+async function refreshConsole() {
+  if (refreshing.value) return
+  refreshing.value = true
+  try {
+    await Promise.allSettled([
+      store.refresh(),
+      attention.loading ? undefined : attention.refresh(),
+      review.loading ? undefined : review.refresh(),
+      reloadPage(),
+    ])
+  } finally { refreshing.value = false }
 }
 // A newer release is a dot at the version's top-right (Jevons 11-04: not on the mark);
 // the version opens 设置 › 版本, where it installs.
@@ -191,7 +201,8 @@ watchEffect(() => {
           <!-- The page's own 「?」 keeps its place empty on pages without one, so the buttons never move. -->
           <span class="app-help-slot"><AiHelpButton v-if="route.meta.aiHelp" :term="route.meta.aiHelp" size="md" /></span>
           <GlossaryToggle />
-          <UiIconButton icon="refresh" :label="t('common.actions.refresh')" :disabled="store.runtimeStatus === 'loading'" data-shell-refresh @click="refreshConsole" />
+          <UiIconButton icon="refresh" :label="t('shell.refreshPage')" :loading="refreshing" :loading-label="t('shell.refreshingPage')"
+            :disabled="!refreshing && store.runtimeStatus === 'loading'" data-shell-refresh @click="refreshConsole" />
           <!-- 待决策 is a tray: empty when nothing waits, heaped with rice when something does. -->
           <!-- Hover shows what waits (InboxPeek), not a native tooltip. -->
           <HeaderPeek>
@@ -251,14 +262,10 @@ watchEffect(() => {
   background: var(--surface-dock); -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock);
   box-shadow: 0 1px 0 var(--edge-dock);
 }
-/* In the desktop client the bar is the window's title bar: its own minimise, maximise and
-   close sit in the top right corner (Windows) and the bar keeps clear of them; on macOS the
-   traffic lights take a strip along the top and the brand sits below them (lib/desktop-client.ts). */
-:root[data-desktop-client] .app-topbar {
-  padding-top: calc(12px + var(--desktop-caption-top, 0px));
-  padding-left: max(var(--page-inline), var(--desktop-caption-start));
-  padding-right: max(calc(var(--page-inline) + var(--scrollbar-size)), var(--desktop-caption-end));
-}
+/* In the desktop client the bar is the window's title bar: the window's own controls (Windows'
+   minimise, maximise and close, macOS's traffic lights) take a strip along its top and the bar's
+   row sits below them; the strip is the bar's empty area, so it moves the window (lib/desktop-client.ts). */
+:root[data-desktop-client] .app-topbar { padding-top: calc(12px + var(--desktop-caption-top, 0px)); }
 .app-topbar-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; min-height: 44px; }
 .app-brand { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .app-wordmark-button { display: inline-flex; padding: 0; border: 0; background: none; cursor: pointer; user-select: none; }

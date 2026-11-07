@@ -48,7 +48,7 @@
         <div class="summary">
           <p data-i18n="report.summary" class="summary-title">先说结论</p>
           <ul>
-            <li data-i18n="report.summary.tokens">开着 FULI 仍比不开多花输入 token：最新一轮是 1.53 倍，修复前 2.50 倍。</li>
+            <li data-i18n="report.summary.tokens">开着 FULI 仍会多花输入 token：最新一轮，输入是不开时的 1.53 倍。</li>
             <li data-i18n="report.summary.outcome">需要项目知识的任务，开着 FULI 18 次全做成，不开只做成 3 次。</li>
             <li data-i18n="report.summary.recall">留出的 32 个提问，入口找到 25 个；8 个不该命中的，误报 2 个。</li>
           </ul>
@@ -62,39 +62,39 @@
         <dl class="stat-grid">
           <div class="stat">
             <dt data-i18n="report.stat.input">输入量，开 / 不开</dt>
-            <dd><b>1.53×</b><span><small data-i18n="report.stat.before">修复前</small> <s>2.50×</s></span></dd>
+            <dd><b>1.53×</b></dd>
           </div>
           <div class="stat">
             <dt data-i18n="report.stat.cost">费用，开 / 不开</dt>
-            <dd><b>1.42×</b><span><small data-i18n="report.stat.before">修复前</small> <s>1.51×</s></span></dd>
+            <dd><b>1.42×</b></dd>
           </div>
           <div class="stat">
             <dt data-i18n="report.stat.entry">6 轮入口合计</dt>
-            <dd><b>24.3 KB</b><span><small data-i18n="report.stat.before">修复前</small> <s>48.2 KB</s></span></dd>
+            <dd><b>24.3 KB</b></dd>
           </div>
         </dl>
-        <p data-i18n="report.tokensFix" class="section-note">修复：入口在同一会话里只发变了的部分；召回不再被提示末尾的固定说明带偏。已合入，随 0.23.1 发布。</p>
+        <p data-i18n="report.tokensFix" class="section-note">入口在同一会话里只发变了的部分，召回不受提示末尾固定说明的影响。随 0.23.1 发布。</p>
 
         <h3 data-i18n="report.turns" class="table-title">每一轮</h3>
         <div class="table-wrap">
           <table class="data-table">
             <thead><tr><th data-i18n="report.col.turn" scope="col">轮</th><th data-i18n="report.col.kind" scope="col">做什么</th><th data-i18n="report.col.entry" class="num" scope="col">入口字节</th><th data-i18n="report.col.share" class="num" scope="col">多出的输入占比</th></tr></thead>
             <tbody>
-              <tr><td>1</td><td data-i18n="report.kind.read">读代码</td><td class="num">8297 → <b>7969</b></td><td class="num">9.2% → <b>19.3%</b></td></tr>
-              <tr><td>2</td><td data-i18n="report.kind.change">改代码</td><td class="num">8281 → <b>2825</b></td><td class="num">36.4% → <b>15.0%</b></td></tr>
-              <tr><td>3</td><td data-i18n="report.kind.test">跑测试</td><td class="num">8259 → <b>3481</b></td><td class="num">44.8% → <b>34.1%</b></td></tr>
-              <tr><td>4</td><td data-i18n="report.kind.change">改代码</td><td class="num">8297 → <b>2614</b></td><td class="num">57.4% → <b>21.6%</b></td></tr>
-              <tr><td>5</td><td data-i18n="report.kind.correct">纠正</td><td class="num">8337 → <b>4345</b></td><td class="num">78.0% → <b>63.6%</b></td></tr>
-              <tr><td>6</td><td data-i18n="report.kind.change">改代码</td><td class="num">6750 → <b>3096</b></td><td class="num">77.4% → <b>17.8%</b></td></tr>
+              <tr><td>1</td><td data-i18n="report.kind.read">读代码</td><td class="num">7969</td><td class="num">19.3%</td></tr>
+              <tr><td>2</td><td data-i18n="report.kind.change">改代码</td><td class="num">2825</td><td class="num">15.0%</td></tr>
+              <tr><td>3</td><td data-i18n="report.kind.test">跑测试</td><td class="num">3481</td><td class="num">34.1%</td></tr>
+              <tr><td>4</td><td data-i18n="report.kind.change">改代码</td><td class="num">2614</td><td class="num">21.6%</td></tr>
+              <tr><td>5</td><td data-i18n="report.kind.correct">纠正</td><td class="num">4345</td><td class="num">63.6%</td></tr>
+              <tr><td>6</td><td data-i18n="report.kind.change">改代码</td><td class="num">3096</td><td class="num">17.8%</td></tr>
             </tbody>
           </table>
         </div>
-        <p data-i18n="report.shareNote" class="table-note">「多出的输入占比」= 开 FULI 比不开多出的输入，占开 FULI 时输入的比例。左边修复前，右边修复后。</p>
+        <p data-i18n="report.shareNote" class="table-note">「多出的输入占比」= 开 FULI 比不开多出的输入，占开 FULI 时输入的比例。</p>
         <details class="fold">
           <summary data-i18n="report.method">怎么测的</summary>
           <ul>
             <li data-i18n="report.tokens.client">客户端：Claude Code 2.1.301 无头模式，第 1 轮新开会话，之后每轮接着同一会话。</li>
-            <li data-i18n="report.tokens.model">模型：claude-haiku-5-5。日期：2026-11-06，修复前后各测一轮。</li>
+            <li data-i18n="report.tokens.model">模型：claude-haiku-5-5。日期：2026-11-06。</li>
             <li data-i18n="report.tokens.task">任务：一个合成小项目上的 6 轮会话：读代码、改三处、跑测试、纠正一次。</li>
             <li data-i18n="report.tokens.scale">规模：开、关各 2 个会话。开着的一组接独立的测试用 FULI，只有合成数据。</li>
             <li data-i18n="report.tokens.count">输入 = 每次模型请求的未缓存输入、缓存读取和缓存写入之和；费用是 Claude Code 报告的标价。</li>
@@ -103,7 +103,6 @@
         <details class="fold">
           <summary data-i18n="report.caveats">要注意</summary>
           <ul>
-            <li data-i18n="report.tokens.offArm">两轮测量里，不开的那组本身长短不同，所以比较倍数和占比，不比绝对数。</li>
             <li data-i18n="report.tokens.cache">多出的输入大多是缓存读取，所以费用涨得比输入少。</li>
             <li data-i18n="report.tokens.turn5">第 5 轮占比仍高：模型多加载了一次工具、多做了一次收尾调用。</li>
             <li data-i18n="report.tokens.noSuccess">两组都没有完整做成的会话，所以还没有「每做成一个任务花多少」的数。</li>
@@ -120,11 +119,11 @@
             <h3 data-i18n="report.multiTurn" class="table-title">多轮会话里</h3>
             <div class="table-wrap">
               <table class="data-table">
-                <thead><tr><th data-i18n="report.col.check" scope="col">检查</th><th data-i18n="report.col.before" class="num" scope="col">修复前</th><th data-i18n="report.col.after" class="num" scope="col">修复后</th></tr></thead>
+                <thead><tr><th data-i18n="report.col.check" scope="col">检查</th><th data-i18n="report.col.result" class="num" scope="col">结果</th></tr></thead>
                 <tbody>
-                  <tr><td data-i18n="report.recall.rightFact">改代码的三轮里，送到了对的知识</td><td class="num">0/6</td><td class="num"><b>4/6</b></td></tr>
-                  <tr><td data-i18n="report.recall.offTopic">送了无关条目的轮次</td><td class="num">10/12</td><td class="num"><b>0/12</b></td></tr>
-                  <tr><td data-i18n="report.recall.endChecks">会话结束时三项检查通过（开 FULI 组）</td><td class="num">0/6</td><td class="num"><b>3/6</b></td></tr>
+                  <tr><td data-i18n="report.recall.rightFact">改代码的三轮里，送到了对的知识</td><td class="num"><b>4/6</b></td></tr>
+                  <tr><td data-i18n="report.recall.offTopic">送了无关条目的轮次</td><td class="num"><b>0/12</b></td></tr>
+                  <tr><td data-i18n="report.recall.endChecks">会话结束时三项检查通过（开 FULI 组）</td><td class="num"><b>3/6</b></td></tr>
                 </tbody>
               </table>
             </div>
@@ -179,7 +178,6 @@
           <ul>
             <li data-i18n="report.outcome.client">客户端：OpenCode。模型：Claude Opus 5.5。日期：2026-11-04。</li>
             <li data-i18n="report.outcome.scale">规模：6 个任务，每组每个任务 3 次，共 54 次；失败的运行也计入。</li>
-            <li data-i18n="report.outcome.earlier">同一天入口召回修好之前，用 DeepSeek flash：不开 6%，开 FULI 72%，直接给知识 100%。</li>
             <li data-i18n="report.outcome.memory">记住新决定：6 次都成了当前知识（待你确认）。改写旧知识：6 次都由新版本替换旧版本。</li>
           </ul>
         </details>
@@ -255,6 +253,6 @@
       <span data-i18n="footer.copyright">© Fuli 复利 · Apache-2.0</span>
       <span><a href="https://github.com/JevonsCode/fuli">GitHub</a><a data-i18n="report.backHome" data-i18n-href="report.homeUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/">回到首页</a><a href="https://xn--8ovp9s.xn--m8txu.com/" data-ydys-badge>ydys.com</a></span>
     </footer>
-    <script src="https://xn--8ovp9s.xn--m8txu.com/ydys-badge.js?v=3" defer></script>
+    <script src="https://xn--8ovp9s.xn--m8txu.com/ydys-badge.js?v=6" defer></script>
   </body>
 </html>

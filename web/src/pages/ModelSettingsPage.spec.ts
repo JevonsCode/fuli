@@ -1,8 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const api = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn() }))
+const routing = vi.hoisted(() => ({ route: { query: {} as Record<string, string>, hash: '' }, replace: vi.fn() }))
+vi.mock('vue-router', async (importOriginal) => ({
+  ...await importOriginal<typeof import('vue-router')>(), useRoute: () => routing.route, useRouter: () => ({ replace: routing.replace }),
+}))
 vi.mock('@/api/client', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/api/client')>(), getJson: api.getJson, putJson: api.putJson,
 }))
@@ -10,6 +14,7 @@ vi.mock('@/api/client', async (importOriginal) => ({
 import { ApiError } from '@/api/client'
 import { useConsoleStore } from '@/stores/console'
 import { optionSelectStubs } from '@/test-support/OptionSelectStub'
+import { reloadPage } from '@/layouts/page-refresh'
 import ModelSettingsPage from './ModelSettingsPage.vue'
 
 // Synthetic settings and usage only; no real key, model or data directory.
@@ -56,6 +61,9 @@ beforeEach(() => {
     { project_id: 'beta', personal_space_id: 'space-1', scope_type: 'registered', profile: { name: 'Beta 项目' } },
   ] } as never
   rolesPayload = roles()
+  routing.route.query = {}
+  routing.route.hash = ''
+  routing.replace.mockReset()
   api.getJson.mockReset()
   api.putJson.mockReset()
   api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/model-backends/usage') ? usage()
@@ -64,9 +72,13 @@ beforeEach(() => {
         : url.startsWith('/api/dreaming') ? dreamingOff : rolesPayload))
 })
 
+// Every page a test mounts leaves with it, so only the current test's page answers the top bar's refresh.
+const mounted: ReturnType<typeof mount>[] = []
+afterEach(() => { mounted.splice(0).forEach(wrapper => { if (!wrapper.vm.$.isUnmounted) wrapper.unmount() }) })
 const mountPage = async () => {
   const wrapper = mount(ModelSettingsPage, { attachTo: document.body,
     global: { stubs: { RouterLink: true, OptionSelect: optionSelectStubs.OptionSelect } } })
+  mounted.push(wrapper)
   await flushPromises()
   return wrapper
 }
@@ -95,6 +107,18 @@ describe('ModelSettingsPage', () => {
     expect(astro.get('[data-model-use-model]').text()).toBe('没接模型，用当前会话回答')
     expect(astro.get('[data-model-role-edit]').text()).toBe('接入')
     expect(wrapper.get('[data-dreaming] [data-model-use-model]').text()).toBe('Astro 还没接模型')
+  })
+
+  it("opens Tonborg's details from a link to its confirmation settings and rings the switch", async () => {
+    routing.route.query = { details: 'tonborg', tab: 'x' }
+    routing.route.hash = '#delegation'
+    const wrapper = await mountPage()
+    const details = wrapper.get('[data-model-use-details]')
+    expect(details.get('h2').text()).toBe('Tonborg')
+    expect(details.get('[data-tonborg-delegation]').attributes('data-model-details-linked')).toBe('')
+    expect(routing.replace).toHaveBeenCalledWith({ query: { tab: 'x' }, hash: '' })
+    await closeDetails(wrapper)
+    expect(wrapper.find('[data-model-use-details] [data-tonborg-delegation]').exists()).toBe(false)
   })
 
   it("lists a model's key reference and limits in 查看详情, never a key, with the guide section of that use", async () => {
@@ -130,7 +154,7 @@ describe('ModelSettingsPage', () => {
     const section = (await openDetails(wrapper, 'tonborg')).get('[data-model-trust="tonborg"]')
     expect(section.get('[data-model-trust-status]').text()).toBe('看过下面的提示后自动执行')
     expect(section.get('[data-model-trust-warning]').text())
-      .toBe('模型可能判断错，它的判断会直接生效；你可以随时改成「只给建议」，部分写入可在回执里撤回。')
+      .toBe('模型可能判断错，它的判断会直接生效。你可以随时改成「只给建议」，部分写入可在回执里撤回。')
     expect(section.get('[role="switch"]').attributes('aria-checked')).toBe('false')
     expect(section.find('[data-model-trust-evaluation]').exists()).toBe(false)
     expect(api.putJson).not.toHaveBeenCalled()
@@ -370,9 +394,10 @@ describe('ModelSettingsPage', () => {
     await flushPromises()
     expect(wrapper.find('[data-role-suggestions]').exists()).toBe(false)
 
-    useConsoleStore().runtimeStatus = 'loading'
+    void reloadPage()
     await flushPromises()
     expect(reads().filter(url => url === '/api/model-backends/suggestions')).toHaveLength(2)
+    expect(reads().filter(url => url === '/api/model-backends/roles')).toHaveLength(2)
   })
 
   it('reads Tonborg\'s suggestions of the active space into the same section, also when the space arrives later', async () => {

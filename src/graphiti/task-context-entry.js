@@ -2,6 +2,7 @@ import { taskAgentAssignment, withRouteMarkers } from './task-agent-assignment.j
 import { FLA_ROUTE } from './task-entry-named-fla.js';
 import { beginConversation } from './agent-conversations.js';
 import { REMEMBER_GUIDANCE, rememberRequested } from './task-remember.js';
+import { keepStatedRules } from './task-stated-rules.js';
 import { UPDATE_GUIDANCE, updateRequested } from './task-update-request.js';
 import { withRecoveredSource } from './task-knowledge-recall.js';
 import { entryAgentReceipt } from './turn-receipt-delivery.js';
@@ -117,6 +118,16 @@ export async function beginTaskFromPreferences(application, preferences, {
   const updating = updateRequested(taskPrompt);
   const autoClosed = !remembering && !updating
     && ((entryVia === 'hook' && task.entryVia === 'hook') || task.routineAutoCloseEligible === true);
+  // A task the Stop hook closes by itself has no model checkpoint to keep
+  // what the person stated as a project rule: the entry keeps it, pending
+  // review (task-stated-rules.js). Never fails the entry.
+  if (autoClosed && entryVia === 'hook' && !resumed && !existingTask) {
+    try {
+      await keepStatedRules(application, task, taskPrompt);
+    } catch {
+      // Ignore: the rule stays in the conversation; the entry goes on.
+    }
+  }
   const conversation = await beginConversation(application, task);
   const receipt = preferences.agent_receipt ? await entryAgentReceipt(application, task, preferences.agent_receipt) : null;
   return withPreferenceScope({

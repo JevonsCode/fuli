@@ -31,6 +31,7 @@ import FlaRow from './FlaRow.vue'
 import { FLA_GROUP_ORDER, flaGroup, groupFlas, groupFlasByScope, type FlaGroupKey } from './fla-groups'
 import { useFlaLayout, type FlaLayout } from './fla-layout'
 import { lacksOccupation, suggestedOccupation } from './occupation-backfill'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 // FLAs (重写, direction A): every FLA as cards or one dense list, grouped by
 // team (the FLAs working together on a project, then the global ones), by
@@ -266,6 +267,8 @@ watch([space, () => route.query.item, () => route.query.agent], ([spaceId, item,
   if (target && typeof route.query.task === 'string') void router.replace({ path: '/project-agents/manage', query: route.query })
   else if (target) void router.replace(agentProfilePath(spaceId, target))
 }, { immediate: true })
+// The top bar's 刷新 reads the roster and the work again; the rows stay until the first page replaces them.
+usePageRefresh(() => Promise.all([roster.reload(), work.load()]))
 </script>
 
 <template>

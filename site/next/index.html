@@ -20,6 +20,10 @@
     <link rel="stylesheet" href="../style.css">
     <link rel="stylesheet" href="../scene.css">
     <link rel="stylesheet" href="../growth.css">
+    <link rel="stylesheet" href="../screens.css">
+    <link rel="stylesheet" href="../preferences.css">
+    <link rel="stylesheet" href="../project-graph.css">
+    <link rel="stylesheet" href="../ai-setup.css">
     <script type="module" src="../next.js"></script>
   </head>
   <body>
@@ -27,8 +31,9 @@
     <header class="nav">
       <div class="brand-row"><a data-i18n-aria-label="next.home" class="brand" href="#top" aria-label="Fuli 复利 预览版首页"><img class="brand-mark" src="../assets/brand/fuli-mark-color.svg" alt="" width="28" height="28"><img class="brand-mark brand-mark--dark" src="../assets/brand/fuli-mark-dark.svg" alt="" width="28" height="28"><span class="brand-word"><img class="wordmark wordmark-zh" src="../assets/brand/fuli-wordmark-zh.svg" alt="" height="16"><img class="wordmark wordmark-en" src="../assets/brand/fuli-wordmark-en.svg" alt="" height="16"><img class="wordmark wordmark-zh wordmark--dark" src="../assets/brand/fuli-wordmark-zh-dark.svg" alt="" height="16"><img class="wordmark wordmark-en wordmark--dark" src="../assets/brand/fuli-wordmark-en-dark.svg" alt="" height="16"></span></a><a class="brand-version" data-release-version href="https://github.com/JevonsCode/fuli/releases">v0.0.0</a></div>
       <nav data-i18n-aria-label="nav.label" aria-label="页面导航">
-        <a data-i18n="nav.agents" href="#agents">Agent</a>
         <a data-i18n="nav.tokens" href="#memory">Token</a>
+        <a data-i18n="nav.knowledge" href="#knowledge">沉淀</a>
+        <a data-i18n="nav.projects" href="#projects">项目</a>
         <a data-i18n="nav.growth" href="#growth">成长</a>
         <a href="#workbench">Workbench</a>
         <a data-i18n="nav.roles" href="#team">角色</a>
@@ -53,7 +58,11 @@
           <div class="diagram-overlay" data-overlay="owner">
             <div data-i18n-html="diagram.receipt" class="receipt-plate">FULI Agent：负责人 <b>Milo Reed</b> · 协作 <b>Jefa</b>、<b>Nova</b></div>
           </div>
-          <div class="diagram-overlay growth-overlay" data-overlay="growth"></div>
+          <div class="diagram-overlay quotes-overlay" data-overlay="knowledge" data-copy="#knowledge .pref-quotes" data-progress></div>
+          <div class="diagram-overlay screen-overlay" data-overlay="knowledge" data-copy="#knowledge .screen-figure"></div>
+          <div class="diagram-overlay graph-overlay" data-overlay="projects" data-copy="#projects .project-graph" data-progress></div>
+          <div class="diagram-overlay growth-overlay" data-overlay="growth" data-copy="#growth .growth-anim"></div>
+          <div class="diagram-overlay crowd-overlay" data-overlay="growth" data-copy="#growth .ga-crowd"></div>
           <div class="diagram-overlay team-overlay" data-overlay="team">
             <svg class="links" aria-hidden="true"><path data-from="0" data-to="8" /><path data-from="2" data-to="8" /><path data-from="4" data-to="8" /><path data-from="6" data-to="8" /><path data-from="8" data-to="9" /><path data-from="8" data-to="11" /></svg>
             <span data-i18n="diagram.astro" class="tag tag-fixed" data-anchor="0">Astro · 接待与复盘</span>
@@ -63,10 +72,14 @@
             <span data-i18n-html="diagram.lead" class="tag tag-lead" data-anchor="8" data-place="right">项目小组<small>负责人带队</small></span>
             <span data-i18n="diagram.members" class="tag" data-anchor="10" data-place="below">成员按专长协作 · 各自保留记忆</span>
           </div>
-          <div class="diagram-overlay roundtable-overlay" data-overlay="roundtable">
+          <div class="diagram-overlay roundtable-overlay" data-overlay="roundtable" data-progress>
             <span class="overlay-label table-center"><small data-i18n="diagram.betweenAgents">Agent 之间</small><strong data-i18n="nav.roundtable">圆桌</strong></span>
-            <p data-i18n-html="diagram.question" class="whisper whisper-a"><b>Milo → Nova</b>接口评审过了吗？</p>
-            <p data-i18n-html="diagram.answer" class="whisper whisper-b"><b>Nova → Milo</b>过了，只有一处要改。</p>
+            <div class="rt-talk">
+              <p class="rt-line is-a" style="--at: 0.00"><img src="../assets/avatars/fla-3.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n-html="diagram.question"></span></p>
+              <p class="rt-line is-b" style="--at: 0.22"><img src="../assets/avatars/fla-4.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n-html="diagram.answer"></span></p>
+              <p class="rt-line is-a" style="--at: 0.44"><img src="../assets/avatars/fla-3.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n-html="diagram.followUp"></span></p>
+              <p class="rt-line is-b" style="--at: 0.66"><img src="../assets/avatars/fla-4.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span data-i18n-html="diagram.done"></span></p>
+            </div>
           </div>
           <div class="diagram-overlay database-overlay" data-overlay="database">
             <svg class="links" aria-hidden="true"><path data-from="11" data-to-note=".db-note-a" /><path data-from="8" data-to-note=".db-note-b" /><path data-from="5" data-to-note=".db-note-c" /><path data-from="2" data-to-note=".db-note-d" /></svg>
@@ -99,6 +112,75 @@
             </a>
           </section>
 
+          <section class="chapter" id="memory" data-scene="memory" aria-labelledby="memory-title">
+            <div class="chapter-copy">
+              <p data-i18n="memory.eyebrow" class="eyebrow">Token 与准确率</p>
+              <h2 data-i18n-html="memory.title" id="memory-title">先给标题，<br><em>需要时再读正文。</em></h2>
+              <p data-i18n="memory.description">入口在同一会话里只发变了的部分，任务要用的知识按需取回。真实客户端上测的：</p>
+              <dl class="chapter-stats">
+                <div><dt data-i18n="memory.statEntry">6 轮入口</dt><dd><b>24.3 KB</b></dd></div>
+                <div><dt data-i18n="memory.statFact">送到对的知识</dt><dd><b>4/6</b></dd></div>
+                <div><dt data-i18n="memory.statDone">需要项目知识的任务做成</dt><dd><b>18/18</b><small data-i18n="memory.statDoneOff">不开时 3/18</small></dd></div>
+              </dl>
+              <dl class="model-modes">
+                <div class="is-model"><dt><span data-i18n="model.on" class="model-tag">接了模型</span></dt><dd data-i18n="memory.modelOn"></dd></div>
+              </dl>
+              <a data-i18n="memory.report" data-i18n-href="memory.reportUrl" class="chapter-link" href="https://xn--8ovp9s.xn--m8txu.com/fuli/report/">看完整实测：开着 FULI，输入是不开时的 1.53 倍</a>
+            </div>
+            <figure data-i18n-aria-label="memory.example" class="memory static-figure" aria-label="对话记忆：较早的消息折叠成摘要，最近的保留原文">
+              <div class="memory-digest"><b data-i18n="memory.summary">摘要</b><span data-i18n="memory.taskOne">10/08 完成 · 接口拆分</span><span data-i18n="memory.taskTwo">10/09 完成 · 补测试</span><span data-i18n="memory.earlier">更早的请求 · 6 条</span></div>
+              <div class="memory-recent"><b data-i18n="memory.recent">最近原文</b><span></span><span></span><span></span><span></span></div>
+            </figure>
+          </section>
+
+          <section class="chapter" id="knowledge" data-scene="knowledge" aria-labelledby="knowledge-title">
+            <div class="chapter-copy">
+              <p data-i18n="knowledge.eyebrow" class="eyebrow">沉淀</p>
+              <h2 data-i18n-html="knowledge.title" id="knowledge-title">说过一次，<br><em>就沉淀下来。</em></h2>
+              <p data-i18n="knowledge.description"></p>
+              <dl class="model-modes">
+                <div class="is-base"><dt><span data-i18n="model.off" class="model-tag">不接模型</span></dt><dd data-i18n="knowledge.modelOff"></dd></div>
+                <div class="is-model"><dt><span data-i18n="model.on" class="model-tag">接了模型</span></dt><dd data-i18n="knowledge.modelOn"></dd></div>
+              </dl>
+            </div>
+            <figure data-i18n-aria-label="knowledge.window" class="app-window screen-figure static-figure" aria-label="项目的知识目录和待决策，界面是合成的示例数据">
+              <div class="app-chrome" aria-hidden="true"><i></i><i></i><i></i><span>FULI</span></div>
+              <div class="app-screen">
+                <div class="app-frame is-static" data-frame="0"><img class="screen-zh" src="../assets/screens/knowledge-zh-1600.webp" srcset="../assets/screens/knowledge-zh-800.webp 800w, ../assets/screens/knowledge-zh-1600.webp 1600w" sizes="(max-width: 700px) 92vw, 52vw" alt="" loading="lazy" decoding="async" width="1280" height="800"><img class="screen-en" src="../assets/screens/knowledge-en-1600.webp" srcset="../assets/screens/knowledge-en-800.webp 800w, ../assets/screens/knowledge-en-1600.webp 1600w" sizes="(max-width: 700px) 92vw, 52vw" alt="" loading="lazy" decoding="async" width="1280" height="800"></div>
+                <div class="app-frame" data-frame="1"><img class="screen-zh" src="../assets/screens/inbox-zh-1600.webp" srcset="../assets/screens/inbox-zh-800.webp 800w, ../assets/screens/inbox-zh-1600.webp 1600w" sizes="(max-width: 700px) 92vw, 52vw" alt="" loading="lazy" decoding="async" width="1280" height="800"><img class="screen-en" src="../assets/screens/inbox-en-1600.webp" srcset="../assets/screens/inbox-en-800.webp 800w, ../assets/screens/inbox-en-1600.webp 1600w" sizes="(max-width: 700px) 92vw, 52vw" alt="" loading="lazy" decoding="async" width="1280" height="800"></div>
+              </div>
+              <figcaption data-i18n="start.windowCaption">界面截图，数据为合成示例</figcaption>
+            </figure>
+            <ul data-i18n-aria-label="knowledge.quotes" class="pref-quotes static-figure" aria-label="偏好示例">
+              <li class="pq is-impact" style="--x: 6%; --top: 66px; --at: .02"><small data-i18n="knowledge.kind.taste"></small><span data-i18n="knowledge.quote1"></span></li>
+              <li class="pq" style="--x: 6%; --top: 24px; --at: .08"><small data-i18n="knowledge.kind.judgment"></small><span data-i18n="knowledge.quote2"></span></li>
+              <li class="pq is-impact" style="--x: 6%; --bottom: 34px; --at: .14"><small data-i18n="knowledge.kind.personality"></small><span data-i18n="knowledge.quote3"></span></li>
+              <li class="pq" style="--x: 60%; --bottom: 34px; --at: .21"><small data-i18n="knowledge.kind.taste"></small><span data-i18n="knowledge.quote4"></span></li>
+              <li class="pq is-impact" style="--x: 48%; --top: 66px; --at: .27"><small data-i18n="knowledge.kind.judgment"></small><span data-i18n="knowledge.quote5"></span></li>
+              <li class="pq" style="--x: 60%; --top: 24px; --at: .34"><small data-i18n="knowledge.kind.personality"></small><span data-i18n="knowledge.quote6"></span></li>
+            </ul>
+          </section>
+
+          <section class="chapter" id="projects" data-scene="projects" aria-labelledby="projects-title">
+            <div class="chapter-copy">
+              <p data-i18n="projects.eyebrow" class="eyebrow">项目</p>
+              <h2 data-i18n-html="projects.title" id="projects-title">每个项目，<br><em>一位负责人。</em></h2>
+              <p data-i18n="projects.description"></p>
+              <dl class="model-modes">
+                <div class="is-base"><dt><span data-i18n="model.off" class="model-tag">不接模型</span></dt><dd data-i18n="projects.modelOff"></dd></div>
+                <div class="is-model"><dt><span data-i18n="model.on" class="model-tag">接了模型</span></dt><dd data-i18n="projects.modelOn"></dd></div>
+              </dl>
+            </div>
+            <figure data-i18n-aria-label="projects.graph.label" class="project-graph static-figure" aria-label="项目和知识的关系图，越用越密">
+              <div class="pg-stage" aria-hidden="true">
+                <i class="pg-link is-project" style="--x: 50%; --y: 50.38%; --w: 29.07%; --r: -139.18deg; --at: 0.04"></i><i class="pg-link" style="--x: 28%; --y: 28.46%; --w: 13.91%; --r: 95.08deg; --at: 0.06"></i><i class="pg-link" style="--x: 28%; --y: 28.46%; --w: 12.89%; --r: 137.87deg; --at: 0.08"></i><i class="pg-link" style="--x: 28%; --y: 28.46%; --w: 13.01%; --r: 178.82deg; --at: 0.09"></i><i class="pg-link" style="--x: 28%; --y: 28.46%; --w: 12.65%; --r: -138.33deg; --at: 0.11"></i><i class="pg-link" style="--x: 28%; --y: 28.46%; --w: 10.29%; --r: -94.26deg; --at: 0.12"></i><i class="pg-link" style="--x: 28%; --y: 28.46%; --w: 12.72%; --r: -57.87deg; --at: 0.14"></i><i class="pg-link" style="--x: 28%; --y: 28.46%; --w: 11.5%; --r: -19.78deg; --at: 0.14"></i><i class="pg-link is-project" style="--x: 50%; --y: 50.38%; --w: 32.4%; --r: -40.41deg; --at: 0.16"></i><i class="pg-link" style="--x: 74.67%; --y: 26.15%; --w: 9.66%; --r: -149.96deg; --at: 0.18"></i><i class="pg-link" style="--x: 74.67%; --y: 26.15%; --w: 12.67%; --r: -109.07deg; --at: 0.2"></i><i class="pg-link" style="--x: 74.67%; --y: 26.15%; --w: 13.86%; --r: -77.43deg; --at: 0.21"></i><i class="pg-link" style="--x: 74.67%; --y: 26.15%; --w: 10.79%; --r: -42.97deg; --at: 0.23"></i><i class="pg-link" style="--x: 74.67%; --y: 26.15%; --w: 9.81%; --r: -5.2deg; --at: 0.24"></i><i class="pg-link" style="--x: 74.67%; --y: 26.15%; --w: 10.57%; --r: 35.3deg; --at: 0.26"></i><i class="pg-link" style="--x: 74.67%; --y: 26.15%; --w: 12.89%; --r: 76.46deg; --at: 0.27"></i><i class="pg-link is-project" style="--x: 50%; --y: 50.38%; --w: 32.22%; --r: 140.88deg; --at: 0.28"></i><i class="pg-link" style="--x: 25%; --y: 73.85%; --w: 10.46%; --r: 19.53deg; --at: 0.3"></i><i class="pg-link" style="--x: 25%; --y: 73.85%; --w: 11.25%; --r: 73.55deg; --at: 0.32"></i><i class="pg-link" style="--x: 25%; --y: 73.85%; --w: 10.84%; --r: 115.68deg; --at: 0.33"></i><i class="pg-link" style="--x: 25%; --y: 73.85%; --w: 11.75%; --r: 171.89deg; --at: 0.35"></i><i class="pg-link" style="--x: 25%; --y: 73.85%; --w: 10.51%; --r: -153.52deg; --at: 0.36"></i><i class="pg-link" style="--x: 25%; --y: 73.85%; --w: 10.77%; --r: -108.15deg; --at: 0.38"></i><i class="pg-link is-project" style="--x: 50%; --y: 50.38%; --w: 32.69%; --r: 39.21deg; --at: 0.38"></i><i class="pg-link" style="--x: 75.33%; --y: 74.23%; --w: 10.24%; --r: -66.51deg; --at: 0.4"></i><i class="pg-link" style="--x: 75.33%; --y: 74.23%; --w: 13.6%; --r: -15.64deg; --at: 0.42"></i><i class="pg-link" style="--x: 75.33%; --y: 74.23%; --w: 11.75%; --r: 41.9deg; --at: 0.43"></i><i class="pg-link" style="--x: 75.33%; --y: 74.23%; --w: 14.01%; --r: 97deg; --at: 0.44"></i><i class="pg-link" style="--x: 75.33%; --y: 74.23%; --w: 10.34%; --r: 151.38deg; --at: 0.46"></i><i class="pg-link is-project" style="--x: 50%; --y: 50.38%; --w: 33.33%; --r: 89.43deg; --at: 0.5800000000000001"></i><i class="pg-link" style="--x: 50.33%; --y: 88.85%; --w: 10.76%; --r: -3.57deg; --at: 0.6"></i><i class="pg-link" style="--x: 50.33%; --y: 88.85%; --w: 13.34%; --r: -173.24deg; --at: 0.63"></i><i class="pg-link is-extra" style="--x: 28%; --y: 28.46%; --w: 17.65%; --r: -164.76deg; --at: 0.7"></i><i class="pg-link is-extra" style="--x: 74.67%; --y: 26.15%; --w: 17.64%; --r: -86.44deg; --at: 0.71"></i><i class="pg-link is-extra" style="--x: 25%; --y: 73.85%; --w: 19.96%; --r: 124.71deg; --at: 0.73"></i><i class="pg-link is-extra" style="--x: 75.33%; --y: 74.23%; --w: 18.64%; --r: 112.17deg; --at: 0.74"></i><i class="pg-link is-extra" style="--x: 28%; --y: 28.46%; --w: 18.93%; --r: 171.54deg; --at: 0.75"></i><i class="pg-link is-extra" style="--x: 74.67%; --y: 26.15%; --w: 16.04%; --r: 176.47deg; --at: 0.76"></i><i class="pg-link is-extra" style="--x: 25%; --y: 73.85%; --w: 19.2%; --r: -64.35deg; --at: 0.78"></i><i class="pg-link is-extra" style="--x: 75.33%; --y: 74.23%; --w: 15.65%; --r: 62.9deg; --at: 0.79"></i><i class="pg-link is-extra" style="--x: 28%; --y: 28.46%; --w: 19.14%; --r: 61.77deg; --at: 0.8"></i><i class="pg-link is-extra" style="--x: 74.67%; --y: 26.15%; --w: 20.37%; --r: 92.61deg; --at: 0.82"></i><i class="pg-link is-extra" style="--x: 25%; --y: 73.85%; --w: 16.53%; --r: 97.95deg; --at: 0.83"></i><i class="pg-link is-extra" style="--x: 75.33%; --y: 74.23%; --w: 20.04%; --r: -106.18deg; --at: 0.84"></i><i class="pg-link is-extra" style="--x: 28%; --y: 28.46%; --w: 16.06%; --r: -14.72deg; --at: 0.86"></i><i class="pg-link is-extra" style="--x: 74.67%; --y: 26.15%; --w: 18.81%; --r: -24.55deg; --at: 0.87"></i><i class="pg-link is-extra" style="--x: 25%; --y: 73.85%; --w: 15.56%; --r: -166.32deg; --at: 0.88"></i><i class="pg-link is-extra" style="--x: 75.33%; --y: 74.23%; --w: 20.72%; --r: 174.89deg; --at: 0.89"></i><i class="pg-link is-across" style="--x: 14.99%; --y: 28.77%; --w: 51.57%; --r: 75.18deg; --at: 0.68"></i><i class="pg-link is-across" style="--x: 82.56%; --y: 17.67%; --w: 39.75%; --r: 94.54deg; --at: 0.71"></i><i class="pg-link is-across" style="--x: 34.77%; --y: 16.03%; --w: 35.9%; --r: -5.12deg; --at: 0.74"></i><i class="pg-link is-across" style="--x: 15.59%; --y: 68.44%; --w: 69.69%; --r: 10.64deg; --at: 0.77"></i><i class="pg-link is-across" style="--x: 61.08%; --y: 88.07%; --w: 48.88%; --r: -167.39deg; --at: 0.8"></i><i class="pg-link is-across" style="--x: 83.3%; --y: 33.2%; --w: 57.36%; --r: 170.22deg; --at: 0.83"></i><i class="pg-link is-across" style="--x: 66.26%; --y: 79.94%; --w: 29.81%; --r: 168.1deg; --at: 0.86"></i><i class="pg-link is-across is-extra" style="--x: 10.97%; --y: 23.11%; --w: 24.32%; --r: 49.5deg; --at: 0.72"></i><i class="pg-link is-across is-extra" style="--x: 75.76%; --y: 5.84%; --w: 15.89%; --r: 126.51deg; --at: 0.73"></i><i class="pg-link is-across is-extra" style="--x: 13.63%; --y: 92.78%; --w: 24.85%; --r: -31.32deg; --at: 0.75"></i><i class="pg-link is-across is-extra" style="--x: 68.3%; --y: 94.15%; --w: 18.38%; --r: -30.82deg; --at: 0.76"></i><i class="pg-link is-across is-extra" style="--x: 9.27%; --y: 31.68%; --w: 20.71%; --r: 32.32deg; --at: 0.77"></i><i class="pg-link is-across is-extra" style="--x: 58.65%; --y: 27.29%; --w: 25.81%; --r: -157.77deg; --at: 0.78"></i><i class="pg-link is-across is-extra" style="--x: 33.31%; --y: 53.88%; --w: 10.47%; --r: -128.68deg; --at: 0.8"></i>
+                <i class="pg-node" style="--x: 26.77%; --y: 44.45%; --at: 0.06; --c: var(--chart-violet)"><span data-i18n="projects.graph.retries"></span></i><i class="pg-node" style="--x: 18.44%; --y: 38.44%; --at: 0.08; --c: var(--chart-amber)"></i><i class="pg-node" style="--x: 14.99%; --y: 28.77%; --at: 0.09; --c: var(--chart-cyan)"></i><i class="pg-node" style="--x: 18.55%; --y: 18.76%; --at: 0.11; --c: var(--chart-rose)"></i><i class="pg-node" style="--x: 27.24%; --y: 16.62%; --at: 0.12; --c: var(--chart-violet)"></i><i class="pg-node" style="--x: 34.77%; --y: 16.03%; --at: 0.14; --c: var(--chart-blue)"><span data-i18n="projects.graph.contract"></span></i><i class="pg-node" style="--x: 38.82%; --y: 23.97%; --at: 0.15; --c: var(--chart-slate)"></i><i class="pg-node" style="--x: 66.31%; --y: 20.58%; --at: 0.18; --c: var(--chart-amber)"></i><i class="pg-node" style="--x: 70.53%; --y: 12.33%; --at: 0.2; --c: var(--chart-rose)"></i><i class="pg-node" style="--x: 77.68%; --y: 10.54%; --at: 0.21; --c: var(--chart-slate)"><span data-i18n="projects.graph.port"></span></i><i class="pg-node" style="--x: 82.56%; --y: 17.67%; --at: 0.23; --c: var(--chart-cyan)"></i><i class="pg-node" style="--x: 84.44%; --y: 25.13%; --at: 0.24; --c: var(--chart-violet)"></i><i class="pg-node" style="--x: 83.3%; --y: 33.2%; --at: 0.26; --c: var(--chart-slate)"></i><i class="pg-node" style="--x: 77.69%; --y: 40.61%; --at: 0.27; --c: var(--chart-slate)"></i><i class="pg-node" style="--x: 34.86%; --y: 77.88%; --at: 0.3; --c: var(--chart-amber)"><span data-i18n="projects.graph.settle"></span></i><i class="pg-node" style="--x: 28.18%; --y: 86.29%; --at: 0.32; --c: var(--chart-teal)"></i><i class="pg-node" style="--x: 20.3%; --y: 85.11%; --at: 0.33; --c: var(--chart-rose)"></i><i class="pg-node" style="--x: 13.37%; --y: 75.76%; --at: 0.35; --c: var(--chart-teal)"></i><i class="pg-node" style="--x: 15.59%; --y: 68.44%; --at: 0.36; --c: var(--chart-violet)"></i><i class="pg-node" style="--x: 21.64%; --y: 62.03%; --at: 0.38; --c: var(--chart-amber)"></i><i class="pg-node" style="--x: 79.42%; --y: 63.39%; --at: 0.4; --c: var(--chart-slate)"><span data-i18n="projects.graph.metric"></span></i><i class="pg-node" style="--x: 88.43%; --y: 70%; --at: 0.42; --c: var(--chart-rose)"></i><i class="pg-node" style="--x: 84.08%; --y: 83.29%; --at: 0.43; --c: var(--chart-amber)"></i><i class="pg-node" style="--x: 73.63%; --y: 90.28%; --at: 0.44; --c: var(--chart-violet)"></i><i class="pg-node" style="--x: 66.26%; --y: 79.94%; --at: 0.46; --c: var(--chart-rose)"></i><i class="pg-node" style="--x: 61.08%; --y: 88.07%; --at: 0.6; --c: var(--chart-violet)"></i><i class="pg-node" style="--x: 37.09%; --y: 87.04%; --at: 0.63; --c: var(--chart-teal)"></i><i class="pg-node is-extra" style="--x: 10.97%; --y: 23.11%; --at: 0.7; --c: var(--chart-amber)"></i><i class="pg-node is-extra" style="--x: 75.76%; --y: 5.84%; --at: 0.71; --c: var(--chart-amber)"></i><i class="pg-node is-extra" style="--x: 13.63%; --y: 92.78%; --at: 0.73; --c: var(--chart-violet)"></i><i class="pg-node is-extra" style="--x: 68.3%; --y: 94.15%; --at: 0.74; --c: var(--chart-slate)"></i><i class="pg-node is-extra" style="--x: 9.27%; --y: 31.68%; --at: 0.75; --c: var(--chart-rose)"></i><i class="pg-node is-extra" style="--x: 58.65%; --y: 27.29%; --at: 0.76; --c: var(--chart-violet)"></i><i class="pg-node is-extra" style="--x: 33.31%; --y: 53.88%; --at: 0.78; --c: var(--chart-violet)"></i><i class="pg-node is-extra" style="--x: 82.46%; --y: 90.31%; --at: 0.79; --c: var(--chart-amber)"></i><i class="pg-node is-extra" style="--x: 37.05%; --y: 47.92%; --at: 0.8; --c: var(--chart-violet)"></i><i class="pg-node is-extra" style="--x: 73.74%; --y: 49.64%; --at: 0.82; --c: var(--chart-teal)"></i><i class="pg-node is-extra" style="--x: 22.71%; --y: 92.74%; --at: 0.83; --c: var(--chart-rose)"></i><i class="pg-node is-extra" style="--x: 69.75%; --y: 52.02%; --at: 0.84; --c: var(--chart-amber)"></i><i class="pg-node is-extra" style="--x: 43.53%; --y: 23.76%; --at: 0.86; --c: var(--chart-rose)"></i><i class="pg-node is-extra" style="--x: 91.78%; --y: 17.14%; --at: 0.87; --c: var(--chart-slate)"></i><i class="pg-node is-extra" style="--x: 9.88%; --y: 69.6%; --at: 0.88; --c: var(--chart-blue)"></i><i class="pg-node is-extra" style="--x: 54.69%; --y: 76.36%; --at: 0.89; --c: var(--chart-cyan)"></i>
+                <span class="pg-me" style="--x: 50%; --y: 50.38%"><b data-i18n="projects.graph.me"></b></span>
+                <span class="pg-project" style="--x: 28%; --y: 28.46%; --at: 0.02"><b></b><img class="pg-lead" src="../assets/avatars/fla-5.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><em><span data-i18n="projects.graph.orders" class="pg-name"></span></em></span><span class="pg-project" style="--x: 74.67%; --y: 26.15%; --at: 0.14"><b></b><img class="pg-lead" src="../assets/avatars/fla-12.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><em><span data-i18n="projects.graph.website" class="pg-name"></span></em></span><span class="pg-project is-temp" style="--x: 25%; --y: 73.85%; --at: 0.26; --grad: 0.5"><b></b><img class="pg-lead" src="../assets/avatars/fla-18.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><em><span data-i18n="projects.graph.tempName" class="pg-temp"></span><span data-i18n="projects.graph.payments" class="pg-name"></span></em></span><span class="pg-project is-temp" style="--x: 75.33%; --y: 74.23%; --at: 0.36; --grad: 0.64"><b></b><img class="pg-lead" src="../assets/avatars/fla-23.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><em><span data-i18n="projects.graph.tempName" class="pg-temp"></span><span data-i18n="projects.graph.dashboard" class="pg-name"></span></em></span><span class="pg-project is-temp" style="--x: 50.33%; --y: 88.85%; --at: 0.56"><b></b><em><span data-i18n="projects.graph.tempName" class="pg-temp"></span></em></span>
+              </div>
+            </figure>
+          </section>
+
           <section class="chapter" id="agents" data-scene="owner" aria-labelledby="agents-title">
             <div class="chapter-copy">
               <p data-i18n="agents.eyebrow" class="eyebrow">你的 FLA</p>
@@ -116,24 +198,6 @@
             </figure>
           </section>
 
-          <section class="chapter" id="memory" data-scene="memory" aria-labelledby="memory-title">
-            <div class="chapter-copy">
-              <p data-i18n="memory.eyebrow" class="eyebrow">Token 与准确率</p>
-              <h2 data-i18n-html="memory.title" id="memory-title">先给标题，<br><em>需要时再读正文。</em></h2>
-              <p data-i18n="memory.description">入口在同一会话里只发变了的部分，任务要用的知识按需取回。真实客户端上测的：</p>
-              <dl class="chapter-stats">
-                <div><dt data-i18n="memory.statEntry">6 轮入口</dt><dd>48.2 → <b>24.3 KB</b></dd></div>
-                <div><dt data-i18n="memory.statFact">送到对的知识</dt><dd>0/6 → <b>4/6</b></dd></div>
-                <div><dt data-i18n="memory.statDone">需要项目知识的任务做成</dt><dd>3/18 → <b>18/18</b></dd></div>
-              </dl>
-              <a data-i18n="memory.report" data-i18n-href="memory.reportUrl" class="chapter-link" href="https://xn--8ovp9s.xn--m8txu.com/fuli/report/">看完整实测：开着 FULI 输入仍是 1.53 倍</a>
-            </div>
-            <figure data-i18n-aria-label="memory.example" class="memory static-figure" aria-label="对话记忆：较早的消息折叠成摘要，最近的保留原文">
-              <div class="memory-digest"><b data-i18n="memory.summary">摘要</b><span data-i18n="memory.taskOne">10/08 完成 · 接口拆分</span><span data-i18n="memory.taskTwo">10/09 完成 · 补测试</span><span data-i18n="memory.earlier">更早的请求 · 6 条</span></div>
-              <div class="memory-recent"><b data-i18n="memory.recent">最近原文</b><span></span><span></span><span></span><span></span></div>
-            </figure>
-          </section>
-
           <section class="chapter" id="growth" data-scene="growth" aria-labelledby="growth-title">
             <div class="chapter-copy">
               <p data-i18n="growth.eyebrow" class="eyebrow">自成长</p>
@@ -142,15 +206,15 @@
             <figure data-i18n-aria-label="growth.anim.label" class="growth-anim static-figure" aria-label="FLA 做任务时记下经验；真用上的经你确认留下，变成验收清单；重复的步骤做成 Agent App；它的 Workbench 和 Workflow 长了出来">
               <div class="ga-stage">
                 <div class="ga-head">
-                  <span class="ga-avatar">M</span><b>FLA</b>
+                  <span class="ga-avatar"><img src="../assets/avatars/fla-1.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-2.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-3.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-4.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></span><b>FLA</b>
                   <span class="ga-tasks"><i style="--i: 0"></i><i style="--i: 1"></i><i style="--i: 2"></i></span>
                 </div>
                 <div class="ga-lessons">
                   <b data-i18n="growth.anim.lessons">经验</b>
-                  <i class="ga-lesson is-kept" style="--i: 0"><i class="ga-tick">✓</i></i>
+                  <i class="ga-lesson is-kept" style="--i: 0"><i class="ga-tick"></i></i>
                   <i class="ga-lesson" style="--i: 1"></i>
-                  <i class="ga-lesson is-kept" style="--i: 2"><i class="ga-tick">✓</i></i>
-                  <i class="ga-lesson is-kept" style="--i: 3"><i class="ga-tick">✓</i></i>
+                  <i class="ga-lesson is-kept" style="--i: 2"><i class="ga-tick"></i></i>
+                  <i class="ga-lesson is-kept" style="--i: 3"><i class="ga-tick"></i></i>
                   <i class="ga-lesson" style="--i: 4"></i>
                 </div>
                 <div class="ga-checks">
@@ -165,6 +229,24 @@
                 <div class="ga-workbench"><b>Workbench</b><span><i></i><i></i></span><span><i></i><i></i><i></i></span><span><i></i></span></div>
               </div>
             </figure>
+            <div class="ga-crowd static-figure" aria-hidden="true">
+            <div class="ga-group is-talking" style="--x: 8%; --y: 16%; --px: 28%; --py: 32%; --i: 0; --o: 0s"><img src="../assets/avatars/fla-5.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-6.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c1.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c1.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c1.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c1.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working" style="--x: 27%; --y: 13%; --px: 72%; --py: 32%; --i: 1"><i class="ga-output"><i></i><i></i><i></i></i><img src="../assets/avatars/fla-7.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-8.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-9.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking" style="--x: 47%; --y: 18%; --px: 72%; --py: 48%; --i: 2; --o: 3.4s"><img src="../assets/avatars/fla-10.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-11.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c2.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c2.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c2.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c2.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working" style="--x: 66%; --y: 13%; --px: 28%; --py: 48%; --i: 3"><i class="ga-output"><i></i><i></i><i></i></i><img src="../assets/avatars/fla-12.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-13.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-14.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking" style="--x: 86%; --y: 17%; --px: 28%; --py: 64%; --i: 4; --o: 6.8s"><img src="../assets/avatars/fla-15.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-16.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c3.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c3.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c3.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c3.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working" style="--x: 54%; --y: 40%; --px: 72%; --py: 64%; --i: 5"><i class="ga-output"><i></i><i></i><i></i></i><img src="../assets/avatars/fla-17.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-18.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-19.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking" style="--x: 74%; --y: 40%; --px: 72%; --py: 80%; --i: 6; --o: 1.7s"><img src="../assets/avatars/fla-20.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-21.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c4.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c4.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c4.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c4.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working" style="--x: 92%; --y: 42%; --px: 28%; --py: 80%; --i: 7"><i class="ga-output"><i></i><i></i><i></i></i><img src="../assets/avatars/fla-22.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-23.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-24.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-working" style="--x: 10%; --y: 72%; --px: 72%; --py: 95%; --i: 8"><i class="ga-output"><i></i><i></i><i></i></i><img src="../assets/avatars/fla-25.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-26.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-27.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking is-more" style="--x: 30%; --y: 74%; --px: 28%; --py: 95%; --i: 9; --o: 5.1s"><img src="../assets/avatars/fla-28.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-29.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c1.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c1.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c1.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c1.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working is-more" style="--x: 52%; --y: 68%; --i: 10"><i class="ga-output"><i></i><i></i><i></i></i><img src="../assets/avatars/fla-30.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-31.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-32.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking is-more" style="--x: 72%; --y: 70%; --i: 11; --o: 8.5s"><img src="../assets/avatars/fla-33.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-34.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c2.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c2.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c2.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c2.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-talking is-more" style="--x: 90%; --y: 72%; --i: 12; --o: 2.6s"><img src="../assets/avatars/fla-35.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-36.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c3.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c3.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c3.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c3.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working is-more" style="--x: 20%; --y: 92%; --i: 13"><i class="ga-output"><i></i><i></i><i></i></i><img src="../assets/avatars/fla-37.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-38.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-39.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            <div class="ga-group is-talking is-more" style="--x: 44%; --y: 92%; --i: 14; --o: 7.6s"><img src="../assets/avatars/fla-40.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-41.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><span class="ga-talk"><span data-i18n="growth.crowd.c4.l1" class="ga-bubble"></span><span data-i18n="growth.crowd.c4.l2" class="ga-bubble is-b"></span><span data-i18n="growth.crowd.c4.l3" class="ga-bubble"></span><span data-i18n="growth.crowd.c4.l4" class="ga-bubble is-b"></span></span></div>
+            <div class="ga-group is-working is-more" style="--x: 66%; --y: 92%; --i: 15"><i class="ga-output"><i></i><i></i><i></i></i><img src="../assets/avatars/fla-42.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-43.svg" alt="" width="128" height="128" loading="lazy" decoding="async"><img src="../assets/avatars/fla-44.svg" alt="" width="128" height="128" loading="lazy" decoding="async"></div>
+            </div>
           </section>
 
           <section class="chapter" id="workbench" data-scene="workbench" aria-labelledby="workbench-title">
@@ -194,6 +276,9 @@
               <p data-i18n="team.eyebrow" class="eyebrow">内置角色</p>
               <h2 data-i18n-html="team.title" id="team-title">每个空间，<br><em>自带四位专职。</em></h2>
               <p data-i18n="team.description">Astro 接住还没归属的对话、写复盘；Jefa 管项目和看板；Bole 管 Agent 的招聘和绩效；Tonborg 按你的偏好判断，每次说明原因。</p>
+              <dl class="model-modes">
+                <div class="is-model"><dt><span data-i18n="model.on" class="model-tag">接了模型</span></dt><dd data-i18n="team.modelOn"></dd></div>
+              </dl>
             </div>
             <div class="team static-figure">
               <div class="member"><span>✦</span><b>Astro</b><small data-i18n="team.astro">接待与复盘</small></div>
@@ -214,11 +299,19 @@
             <figure data-i18n-aria-label="roundtable.example" class="thread static-figure" aria-label="示例：两个 Agent 之间的对话记录">
               <div class="thread-msg">
                 <span class="face">M</span>
-                <div><p data-i18n-html="roundtable.from" class="by"><b>Milo Reed</b><em>即时对话</em> 发给 Nova Lane</p><p data-i18n="roundtable.question" class="bubble">登录重构的接口改动评审过了吗？有没有要我改的？</p></div>
+                <div><p data-i18n-html="roundtable.from" class="by"><b>Milo Reed</b><em>即时对话</em> 发给 Nova Lane</p><p data-i18n="roundtable.question" class="bubble"></p></div>
               </div>
               <div class="thread-msg reply">
                 <span class="face">N</span>
-                <div><p data-i18n-html="roundtable.to" class="by"><b>Nova Lane</b><em>已唤醒</em> 马上回答</p><p data-i18n="roundtable.answer" class="bubble">评审过了。只有一处：刷新令牌失败时要清掉 remember 标记，其余可以合并。</p></div>
+                <div><p data-i18n-html="roundtable.to" class="by"><b>Nova Lane</b><em>已唤醒</em> 马上回答</p><p data-i18n="roundtable.answer" class="bubble"></p></div>
+              </div>
+              <div class="thread-msg">
+                <span class="face">M</span>
+                <div><p class="by"><b>Milo Reed</b></p><p data-i18n="roundtable.followUp" class="bubble"></p></div>
+              </div>
+              <div class="thread-msg reply">
+                <span class="face">N</span>
+                <div><p class="by"><b>Nova Lane</b></p><p data-i18n="roundtable.done" class="bubble"></p></div>
               </div>
               <figcaption data-i18n="roundtable.caption">人名与内容均为示例</figcaption>
             </figure>
@@ -240,7 +333,7 @@
         </div>
 
         <nav data-i18n-aria-label="chapters.label" class="chapter-nav" aria-label="故事章节" hidden>
-          <a data-i18n-aria-label="chapters.start" href="#top" aria-label="开始"><i></i></a><a data-i18n-aria-label="chapters.owner" href="#agents" aria-label="你的 FLA"><i></i></a><a data-i18n-aria-label="chapters.memory" href="#memory" aria-label="Token 与准确率"><i></i></a><a data-i18n-aria-label="chapters.growth" href="#growth" aria-label="自成长"><i></i></a><a data-i18n-aria-label="chapters.workbench" href="#workbench" aria-label="Workbench"><i></i></a><a data-i18n-aria-label="chapters.team" href="#team" aria-label="内置角色"><i></i></a><a data-i18n-aria-label="chapters.roundtable" href="#roundtable" aria-label="圆桌"><i></i></a><a data-i18n-aria-label="chapters.database" href="#database" aria-label="本机"><i></i></a>
+          <a data-i18n-aria-label="chapters.start" href="#top" aria-label="开始"><i></i></a><a data-i18n-aria-label="chapters.memory" href="#memory" aria-label="Token 与准确率"><i></i></a><a data-i18n-aria-label="chapters.knowledge" href="#knowledge" aria-label="沉淀"><i></i></a><a data-i18n-aria-label="chapters.projects" href="#projects" aria-label="项目"><i></i></a><a data-i18n-aria-label="chapters.owner" href="#agents" aria-label="你的 FLA"><i></i></a><a data-i18n-aria-label="chapters.growth" href="#growth" aria-label="自成长"><i></i></a><a data-i18n-aria-label="chapters.workbench" href="#workbench" aria-label="Workbench"><i></i></a><a data-i18n-aria-label="chapters.team" href="#team" aria-label="内置角色"><i></i></a><a data-i18n-aria-label="chapters.roundtable" href="#roundtable" aria-label="圆桌"><i></i></a><a data-i18n-aria-label="chapters.database" href="#database" aria-label="本机"><i></i></a>
         </nav>
         <div class="story-progress" aria-hidden="true"><i></i></div>
       </div>
@@ -265,6 +358,27 @@
           <p data-i18n="next.clientDescription">双击安装，不用终端。Node.js、图数据库都已内置。已经装过 FULI 的，安装包会直接更新，数据保留。</p>
           <p class="start-links"><a data-i18n="next.clientWindows" data-download-windows class="button" href="https://github.com/JevonsCode/fuli/releases">下载 Windows 版</a><a data-i18n="next.clientMacDownload" data-download-macos class="button" href="https://github.com/JevonsCode/fuli/releases">下载 macOS 版</a><span data-i18n="next.clientMac">macOS 版需要 Apple 芯片和 macOS 13.5 以上，暂未签名：第一次打开被拦下时，到「系统设置 › 隐私与安全性」点「仍要打开」。</span></p>
         </div>
+        <div class="ai-setup">
+          <h3 data-i18n="aiSetup.title">FULI 对 AI 友好</h3>
+          <p data-i18n="aiSetup.body"></p>
+          <div class="ai-setup-flow">
+            <figure data-i18n-aria-label="aiSetup.cardLabel" class="ai-help-card" aria-label="控制台里的「?」说明卡">
+              <div class="ai-help-head"><span class="ai-help-q" aria-hidden="true">?</span><b data-i18n="aiSetup.cardTitle"></b><span data-i18n="aiSetup.soon" class="growth-badge"></span></div>
+              <p data-i18n="aiSetup.cardGloss"></p>
+              <div class="ai-help-prompt"><span data-i18n="aiSetup.promptLabel"></span><q data-i18n="aiSetup.prompt"></q><span data-i18n="aiSetup.copied" class="ai-help-copied"></span></div>
+            </figure>
+            <span class="ai-setup-arrow" aria-hidden="true"></span>
+            <figure data-i18n-aria-label="aiSetup.chatLabel" class="window ai-setup-chat" aria-label="示例：AI 客户端按提示词设置模型">
+              <div class="window-bar"><i></i><i></i><i></i><span data-i18n="agents.client">AI 客户端 · 示例</span></div>
+              <div class="window-body">
+                <p data-i18n="aiSetup.prompt" class="msg user"></p>
+                <p data-i18n="aiSetup.reply" class="msg agent"></p>
+              </div>
+            </figure>
+          </div>
+          <p data-i18n="aiSetup.control" class="ai-setup-control"></p>
+          <p class="ai-setup-soon"><span data-i18n="aiSetup.soon" class="growth-badge"></span><span data-i18n="aiSetup.webmcp"></span></p>
+        </div>
         <h3 data-i18n="next.terminalTitle">用终端安装</h3>
         <p data-i18n="next.installDescription">已经装了 FULI 的话，先运行 fuli stop，并备份数据目录。下面的命令用原来的安装脚本，只是把安装的包换成 fuli-context@beta，装完会接着运行 fuli setup。</p>
         <div class="oneliner">
@@ -281,6 +395,6 @@
       <span data-i18n="footer.copyright">© Fuli 复利 · Apache-2.0</span>
       <span><button data-i18n="motion.reduce" type="button" id="motion-toggle" hidden>减少动效</button><a data-i18n="footer.guide" data-i18n-href="footer.guideUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/guide/">快速上手</a><a data-i18n="footer.models" data-i18n-href="footer.modelsUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/models/">模型</a><a data-i18n="footer.tech" data-i18n-href="footer.techUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/tech/">技术</a><a data-i18n="footer.report" data-i18n-href="footer.reportUrl" href="https://xn--8ovp9s.xn--m8txu.com/fuli/report/">实测</a><a href="https://github.com/JevonsCode/fuli">GitHub</a><a data-i18n="next.stableSite" href="../">稳定版网站</a><a href="https://xn--8ovp9s.xn--m8txu.com/" data-ydys-badge>ydys.com</a></span>
     </footer>
-    <script src="https://xn--8ovp9s.xn--m8txu.com/ydys-badge.js?v=3" defer></script>
+    <script src="https://xn--8ovp9s.xn--m8txu.com/ydys-badge.js?v=6" defer></script>
   </body>
 </html>

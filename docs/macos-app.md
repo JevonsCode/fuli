@@ -13,16 +13,30 @@ terminal install.
 
 ## Install
 
-1. Open `fuli-macos-arm64-<version>.dmg` and drag FULI.app onto Applications.
-   Open it from Applications, not from the disk image: an app started from a
-   disk image or Downloads runs from a temporary read-only location.
+1. Open `fuli-macos-arm64-<version>.dmg`. Its window shows FULI.app, an arrow
+   and Applications: drag FULI.app onto Applications, then open it from there.
+   On that first open FULI ejects the installer disk image itself (only the
+   mounted image under `/Volumes` that holds this FULI.app; the downloaded
+   .dmg file stays where it is).
+   Opened straight from the disk image (or from the read-only copy macOS
+   translocates it to), FULI first shows the app icon, an arrow and the
+   Applications folder with one button, 「移到「应用程序」 / Move to Applications」:
+   it copies itself there (`~/Applications` when `/Applications` is not
+   writable), opens the copy and quits, and the copy ejects the image. A FULI
+   already there that is as new or newer is opened instead; an older one goes
+   to the Trash. 「这次不移 / Not now」 goes on from the image
+   (`desktop/flutter/lib/src/platform/desktop/macos_install_place.dart`).
 2. Unsigned builds (every build until the Developer ID signature exists) are
-   stopped by Gatekeeper the first time. Open FULI once, close the message,
-   then go to System Settings > Privacy & Security, find "FULI was blocked to
-   protect your Mac" and click **Open Anyway**, then confirm with your
-   password. On macOS 14 and earlier, Control-click FULI.app > Open > Open
-   works too. This is needed again after replacing FULI.app with a newer
-   unsigned build.
+   stopped by Gatekeeper the first time. The lower half of the disk image
+   window shows the way as three pictures:
+
+   ![FULI held back once, System Settings › Privacy & Security, Open Anyway](images/install/macos-first-open.png)
+
+   Open FULI once, close the message, then go to System Settings > Privacy &
+   Security, find "FULI was blocked to protect your Mac" and click **Open
+   Anyway**, then confirm with your password. On macOS 14 and earlier,
+   Control-click FULI.app > Open > Open works too. This is needed again after
+   replacing FULI.app with a newer unsigned build.
 3. The window shows FULI's state. 「启动 FULI」 sets FULI up the first time
    (native mode, personal graph only, no Agent client changes) and starts it;
    the console then opens in the window. Agent clients are connected from the
@@ -98,9 +112,21 @@ npm ci
 (cd desktop/flutter && flutter pub get && flutter build macos --release)
 node scripts/build-macos-app.js --client "$PWD/desktop/flutter/build/macos/Build/Products/Release/FULI.app" \
   --output /tmp/fuli-macos --jdk "$JAVA_HOME" --cache-dir /tmp/fuli-macos-cache
-node scripts/package-macos-dmg.js --app /tmp/fuli-macos/FULI.app --output /tmp/fuli-macos-release
+python3 -m venv /tmp/dmgbuild && /tmp/dmgbuild/bin/pip install dmgbuild==1.6.7
+node scripts/package-macos-dmg.js --app /tmp/fuli-macos/FULI.app --output /tmp/fuli-macos-release \
+  --dmgbuild /tmp/dmgbuild/bin/dmgbuild
 node scripts/macos-app-smoke.js /tmp/fuli-macos-release/fuli-macos-arm64-<version>.dmg
 ```
+
+The disk image window (660 x 492 points: a 660 x 460 background under Finder's
+32-point title bar, its bottom 28 points left empty for the status bar; toolbar
+and sidebar hidden, icons at 112 points) is written by [dmgbuild](https://github.com/dmgbuild/dmgbuild)
+straight into the image's `.DS_Store`, without driving Finder, and FULI.app is
+copied with `ditto`. Its background is `desktop/macos-dmg/background.png` with
+`background@2x.png` for Retina (dmgbuild joins them into one TIFF): FULI.app at
+170,150 with the arrow to Applications at 490,150, and the unsigned first open
+below. The pictures are drawn by `node scripts/build-installer-art.js` from
+`desktop/installer-art/`; the action checks that the image carries the layout.
 
 `build-macos-app.js` downloads Node, CPython (python-build-standalone) and Neo4j
 pinned by SHA-256, builds the Provider wheel with the bundled Python and installs

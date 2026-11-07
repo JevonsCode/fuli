@@ -54,7 +54,7 @@ describe('DreamingCard', () => {
     expect(row(wrapper, 'empty').find('[data-dreaming-run]').exists()).toBe(false)
 
     expect(wrapper.find('[data-dreaming-row="unapproved"]').exists()).toBe(false)
-    expect(wrapper.get('[data-dreaming-unapproved]').text()).toBe('1 个项目还没授权发给 Astro 的模型。')
+    expect(wrapper.get('[data-dreaming-unapproved]').text()).toBe('1 个项目还没授权，内容不会发给 Astro 的模型。')
     await wrapper.get('[data-dreaming-open]').trigger('click')
     expect(wrapper.emitted('edit')).toHaveLength(1)
   })

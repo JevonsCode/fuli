@@ -108,11 +108,11 @@ test('a review of an item later made private to FLA-A shows FLA-B and a plain se
     // The question goes to a reader who may see the other item, never about this one.
     assert.equal(result.human_interaction.source.id, f.two.id);
   }
-  // One batched read per call, as the reader named itself.
+  // One batched read per call, as the reader named itself, with each item's state for the question (11-06).
   assert.equal(f.personal.calls.length, 2);
   assert.deepEqual(f.personal.calls[0], { personal_space_id: SPACE, reader_project_id: PROJECT, reader_agent_id: 'fla-b',
-    items: [{ item_kind: 'entity', item_id: 'two' }, { item_kind: 'entity', item_id: 'one' }] });
-  assert.deepEqual(Object.keys(f.personal.calls[1]).sort(), ['items', 'personal_space_id']);
+    items: [{ item_kind: 'entity', item_id: 'two' }, { item_kind: 'entity', item_id: 'one' }], with_state: true });
+  assert.deepEqual(Object.keys(f.personal.calls[1]).sort(), ['items', 'personal_space_id', 'with_state']);
 });
 
 test('FLA-A still sees its own item named, without the words', async t => {

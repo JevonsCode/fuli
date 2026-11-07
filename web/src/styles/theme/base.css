@@ -6,8 +6,10 @@
 :root {
   /* Inter and Noto Sans SC ship with the console (SIL OFL 1.1, @fontsource-variable);
      Latin and digits take Inter, Chinese falls through to Noto Sans SC. System
-     fonts are fallbacks only and are never bundled. */
-  --font-ui: "Inter Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
+     fonts are fallbacks only and are never bundled. The first font sets every
+     line box: Inter Centred is the same Inter with its box raised so labels
+     centre in their controls (styles/fonts.css). */
+  --font-ui: "Inter Centred", "Inter Variable", "Noto Sans SC Variable", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
   /* One type scale (Bringhurst: few sizes, each step a clear role). Size
      leads the hierarchy; weight only separates a heading from its text, so

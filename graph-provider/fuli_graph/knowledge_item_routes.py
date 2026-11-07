@@ -45,7 +45,9 @@ def register_knowledge_item_routes(application, store, Actor: Any, ReviewAwareAc
     async def turn_receipt(request: KnowledgeTurnReceiptRead, actor: ReviewAwareActor):
         return await read_turn_receipt(store, actor, request)
 
-    @application.post('/v1/knowledge/visible-items', response_model=KnowledgeVisibleItems)
+    # states only when asked (with_state); the keys-only answer stays as it was.
+    @application.post('/v1/knowledge/visible-items', response_model=KnowledgeVisibleItems,
+                      response_model_exclude_none=True)
     async def visible_items(request: KnowledgeVisibleItemsRead, actor: ReviewAwareActor):
         return await read_visible_items(store, actor, request)
 

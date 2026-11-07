@@ -102,8 +102,9 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
       assert.equal(begun.isError, undefined, JSON.stringify(begun));
       const value = begun.structuredContent;
       assert.equal(value.context.project_agent_id, 'engineer');
-      assert.equal(value.project_agent_context.status, 'ready');
-      assert.equal(value.project_agent_context.worker_started, false);
+      // rec#88: a task entry states only state that differs from an ordinary entry (ready, no worker started).
+      assert.equal(value.project_agent_context.status ?? 'ready', 'ready');
+      assert.equal(value.project_agent_context.worker_started ?? false, false);
       // The entry receipt only carries what is copied; owner details stay on the checkpoint receipt.
       assert.match(value.agent_receipt.markdown, /\\\[Synthetic engineer\\\]/);
       // The entry's role is named by the Agent's display name; the job stays in the receipt brackets.

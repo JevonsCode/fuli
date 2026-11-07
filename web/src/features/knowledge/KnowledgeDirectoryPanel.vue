@@ -160,8 +160,9 @@ const directoryTabs = computed(() => {
             @click="emit('select-item', item)"
           >
             <span class="knowledge-row-content">
-              <span class="knowledge-row-title">
-                <strong>{{ item.title }}</strong>
+              <!-- The title has the whole column; the full text on hover. -->
+              <strong :title="item.title">{{ item.title }}</strong>
+              <span class="knowledge-row-meta">
                 <em
                   v-if="
                     item.humanChangeStatus === 'unseen'
@@ -172,11 +173,11 @@ const directoryTabs = computed(() => {
                 >
                   {{ humanChangeStatusLabel(item.humanChangeStatus) }}
                 </em>
+                <small>
+                  {{ [item.profileAspect ? profileAspectLabel(item.profileAspect) : '', distinctSummary(item)]
+                    .filter(Boolean).join(' · ') }}
+                </small>
               </span>
-              <small>
-                {{ [item.profileAspect ? profileAspectLabel(item.profileAspect) : '', distinctSummary(item)]
-                  .filter(Boolean).join(' · ') }}
-              </small>
             </span>
             <span class="knowledge-row-quadrant" :class="item.originQuadrant">
               {{ quadrantLabel(item.originQuadrant) }}

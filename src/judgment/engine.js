@@ -42,7 +42,9 @@ const policyVersion = p => `${PREFERENCE_RECEIPT_VERSION}:${p.revision}:${p.glob
 // version, so Tonborg looks again at what it left to the person before.
 const reviewPolicy = (store, space, project) => {
   const policy = store.policy(space, project);
-  return store.delegation(space).enabled ? { ...policy, delegated: true } : policy;
+  const delegation = store.delegation(space);
+  // The language is how Tonborg words its questions, not how it judges: it stays out of policyVersion.
+  return delegation.enabled ? { ...policy, delegated: true, language: delegation.language } : policy;
 };
 
 // trust: whether Tonborg's configured model may apply a review by itself

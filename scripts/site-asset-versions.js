@@ -53,6 +53,25 @@ export async function stampAssetVersions(root) {
       last = match.index + whole.length;
     }
     parts.push(text.slice(last));
+    const stamped = parts.join('');
+    return extname(path) === '.html' ? stampSrcsets(path, stamped) : stamped;
+  }
+
+  // srcset lists several URLs, each followed by its width or density.
+  async function stampSrcsets(path, text) {
+    const parts = [];
+    let last = 0;
+    for (const match of text.matchAll(/(\bsrcset=")([^"]+)(")/g)) {
+      const entries = [];
+      for (const entry of match[2].split(',')) {
+        const [reference, ...descriptor] = entry.trim().split(/\s+/);
+        const target = await localAsset(path, reference);
+        entries.push([target ? `${reference}?v=${await versionOf(target)}` : reference, ...descriptor].join(' '));
+      }
+      parts.push(text.slice(last, match.index), match[1], entries.join(', '), match[3]);
+      last = match.index + match[0].length;
+    }
+    parts.push(text.slice(last));
     return parts.join('');
   }
 

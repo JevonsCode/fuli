@@ -49,6 +49,8 @@ def test_personal_projects_are_connected_to_the_personal_space_root():
     assert edges[0].source == 'space:personal-1'
     assert edges[0].target == 'personal-project:project-node-1'
     assert edges[0].type == 'CONTAINS_PROJECT'
+    # The console reads this id prefix as system-derived structure, never a review item.
+    assert edges[0].id == 'contains-project:project-node-1'
     assert nodes[1].attributes['projectId'] == 'hotel-theme'
 
 

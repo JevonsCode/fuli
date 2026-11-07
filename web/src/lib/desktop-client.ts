@@ -2,10 +2,10 @@
 // no OS title bar: the console's top bar is the title bar. Before the page runs, the client
 // sets `window.fuliDesktopClient` to its platform and the room its window controls take in
 // the top corners (its minimise, maximise and close on Windows, the traffic lights on
-// macOS). The page then keeps the top bar clear of them (`data-desktop-client` and the
-// `--desktop-caption-*` widths) and asks the client to move or maximise the window from the
-// bar's empty area (`v-window-drag`). In a browser there is no such global and nothing here
-// does anything.
+// macOS). The page then keeps a strip along its top for them, its own controls below
+// (`data-desktop-client` and `--desktop-caption-top`), and asks the client to move or
+// maximise the window from the bar's empty area (`v-window-drag`). In a browser there is no
+// such global and nothing here does anything.
 
 import type { ObjectDirective } from 'vue'
 
@@ -13,8 +13,6 @@ interface DesktopBridge { callHandler(name: string, ...args: unknown[]): Promise
 interface DesktopClient { platform: 'windows' | 'macos', captionStart: number, captionEnd: number, captionTop: number }
 
 export const DESKTOP_WINDOW_HANDLER = 'fuliWindow'
-// Room between the window's controls and the top bar's own.
-const CAPTION_GAP = 8
 // Windows' caption buttons (desktop/flutter caption_controls.dart) stand this tall over the page.
 const WINDOWS_CAPTION_HEIGHT = 32
 // How far the pointer moves before a press on the bar becomes a window drag, so a click stays a click.
@@ -47,13 +45,11 @@ export function connectDesktopClient(root: HTMLElement = document.documentElemen
   const client = desktopClient()
   if (!client) return
   root.dataset.desktopClient = client.platform
-  root.style.setProperty('--desktop-caption-start', client.captionStart ? `${client.captionStart + CAPTION_GAP}px` : '0px')
-  root.style.setProperty('--desktop-caption-end', client.captionEnd ? `${client.captionEnd + CAPTION_GAP}px` : '0px')
-  // macOS: the traffic lights take a strip along the top; the brand sits below them.
-  root.style.setProperty('--desktop-caption-top', `${client.captionTop}px`)
-  // What a layer over the whole window keeps clear at its top, on either platform.
-  const clear = client.captionTop || (client.captionEnd ? WINDOWS_CAPTION_HEIGHT : 0)
-  root.style.setProperty('--desktop-caption-clear', `${clear}px`)
+  // The window's controls keep a strip along the top and the bar's own sit below them: the
+  // traffic lights' strip on macOS; on Windows the caption buttons' height, as beside them the
+  // bar's actions were one slip from close (Jevons 11-06).
+  const top = client.captionTop || (client.captionStart || client.captionEnd ? WINDOWS_CAPTION_HEIGHT : 0)
+  root.style.setProperty('--desktop-caption-top', `${top}px`)
 }
 
 // Starting FULI when the person signs in to Windows: the client's own setting, shared with its tray menu

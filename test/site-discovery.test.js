@@ -142,6 +142,9 @@ test('the report shows each measured number with its method folded beside it, an
       assert.equal(document.querySelector(`#${id} details .table-wrap`), null, id);
     }
     assert.ok(document.querySelector('#tonborg #tonborg-strong.is-pending'));
+    // Only what is measured now: no "before the fix" values, columns or struck-through numbers.
+    assert.doesNotMatch(document.body.textContent, /修复前|修复后|before the fix|down from/i);
+    assert.equal(document.querySelectorAll('main s, main del').length, 0);
     assert.ok(document.querySelector('#tonborg').textContent.includes('60.4%'));
     assert.ok(document.querySelectorAll('#gaps li').length >= 4);
     const models = document.querySelector('#related [data-i18n="report.related.models"]').href;
@@ -154,11 +157,43 @@ test('the home story walks through the product in order, with measured numbers a
   for (const path of ['index.html', 'en/index.html', 'next/index.html', 'next/en/index.html']) {
     const { document } = parseHTML(files.get(path));
     assert.deepEqual([...document.querySelectorAll('.chapter')].map(node => node.dataset.scene),
-      ['scatter', 'owner', 'memory', 'growth', 'workbench', 'team', 'roundtable', 'database'], path);
+      ['scatter', 'memory', 'knowledge', 'projects', 'owner', 'growth', 'workbench', 'team', 'roundtable', 'database'], path);
+    // 沉淀 and 项目 say what a model changes; 沉淀 shows real console screens in both languages.
+    for (const id of ['knowledge', 'projects']) {
+      assert.ok(document.querySelector(`#${id} .model-modes .is-base`) && document.querySelector(`#${id} .model-modes .is-model`), path + id);
+    }
+    assert.ok(document.querySelector('#knowledge .screen-figure .screen-zh') && document.querySelector('#knowledge .screen-figure .screen-en'), path);
+    assert.ok(document.querySelector('[data-overlay="knowledge"][data-copy="#knowledge .screen-figure"]'), path);
+    // 项目 grows a graph: projects around 我, each with its knowledge; three start temporary and two of
+    // them become projects with a lead; late items (hidden on phone) make it dense. Played along the chapter.
+    const graph = document.querySelector('#projects .project-graph');
+    assert.equal(graph.querySelectorAll('.pg-me').length, 1, path);
+    const projects = [...graph.querySelectorAll('.pg-project')];
+    assert.equal(projects.length, 5, path);
+    assert.equal(projects.filter(node => node.classList.contains('is-temp')).length, 3, path);
+    assert.equal(projects.filter(node => /--grad:/.test(node.getAttribute('style'))).length, 2, path);
+    assert.equal(projects.filter(node => node.querySelector('.pg-lead[src*="assets/avatars/fla-"]')).length, 4, path);
+    for (const node of projects) assert.ok(node.querySelector('em').textContent.trim(), path);
+    const items = graph.querySelectorAll('.pg-node').length;
+    assert.ok(items >= 30 && graph.querySelectorAll('.pg-node:not(.is-extra)').length <= 30, `${path}: ${items} items`);
+    assert.ok(graph.querySelectorAll('.pg-link').length >= items, path);
+    assert.ok(document.querySelector('[data-overlay="projects"][data-copy="#projects .project-graph"]')?.hasAttribute('data-progress'), path);
+    // 沉淀 surfaces preferences in the person's own words: two each of taste, personality and judgment,
+    // a few landing big, all behind the window; without the story they are a plain list.
+    const quotes = [...document.querySelectorAll('#knowledge .pref-quotes .pq')];
+    assert.deepEqual(quotes.map(node => node.querySelector('small').getAttribute('data-i18n').split('.').pop()).sort(), ['judgment', 'judgment', 'personality', 'personality', 'taste', 'taste'], path);
+    assert.equal(quotes.filter(node => node.classList.contains('is-impact')).length, 3, path);
+    for (const node of quotes) assert.ok(node.querySelector('span').textContent.trim(), path);
+    const quotesOverlay = document.querySelector('[data-overlay="knowledge"][data-copy="#knowledge .pref-quotes"]');
+    assert.ok(quotesOverlay?.hasAttribute('data-progress'), path);
+    assert.equal(quotesOverlay.nextElementSibling.dataset.copy, '#knowledge .screen-figure', path);
+    // The model's lines read the same everywhere: the 接了模型 pill.
+    assert.ok(document.querySelectorAll('.model-modes .is-model .model-tag').length >= 4, path);
     for (const link of document.querySelectorAll('.nav nav > a[href^="#"]')) assert.ok(document.querySelector(link.getAttribute('href')), path + link.getAttribute('href'));
     // Tokens and accuracy: the report's numbers, and the link says plainly that FULI still adds input.
     assert.deepEqual([...document.querySelectorAll('#memory .chapter-stats b')].map(node => node.textContent), ['24.3 KB', '4/6', '18/18'], path);
     assert.match(document.querySelector('#memory .chapter-link').textContent, /1.53/, path);
+    assert.doesNotMatch(document.querySelector('#memory .chapter-stats').textContent, /→/, path);
     // Growth is drawn: lessons out of the work, the kept ones ticked, checks marked as coming, then the app and its surfaces.
     // The chapter says only that FLAs grow; the drawing says how.
     assert.deepEqual([...document.querySelectorAll('#growth .chapter-copy > :not(.eyebrow)')].map(node => node.tagName), ['H2'], path);
@@ -169,6 +204,36 @@ test('the home story walks through the product in order, with measured numbers a
     assert.ok(growth.querySelector('.ga-checks [data-i18n="growth.soon"]'), path);
     for (const part of ['.ga-avatar', '.ga-app', '.ga-workbench', '.ga-workflow']) assert.ok(growth.querySelector(part), path + part);
     assert.ok(document.querySelector('[data-overlay="growth"]'), path);
+    // Real FLA portraits, not a letter: the card's FLA cycles through four, and the chapter ends in a crowd of
+    // sixteen groups: half hold a four-turn exchange from real work (both FLAs speak, in turn), half produce work.
+    assert.equal(growth.querySelector('.ga-avatar').textContent.trim(), '', path);
+    assert.equal(growth.querySelectorAll('.ga-avatar img[src*="assets/avatars/fla-"]').length, 4, path);
+    const crowd = document.querySelector('#growth .ga-crowd');
+    assert.equal(crowd.getAttribute('aria-hidden'), 'true', path);
+    const groups = [...crowd.querySelectorAll('.ga-group')];
+    assert.equal(groups.length, 16, path);
+    const talking = groups.filter(group => group.classList.contains('is-talking'));
+    assert.equal(talking.length, 8, path);
+    for (const group of talking) {
+      assert.equal(group.querySelectorAll('img').length, 2, path);
+      const turns = [...group.querySelectorAll('.ga-bubble')];
+      assert.deepEqual(turns.map(node => node.getAttribute('data-i18n').replace(/^growth\.crowd\.c\d\./, '')), ['l1', 'l2', 'l3', 'l4'], path);
+      assert.deepEqual(turns.map(node => node.classList.contains('is-b')), [false, true, false, true], path);
+      for (const node of turns) assert.ok(node.textContent.trim(), path);
+    }
+    assert.equal(crowd.querySelectorAll('.ga-group.is-working .ga-output').length, 8, path);
+    assert.equal(new Set(groups.flatMap(group => [...group.querySelectorAll('img')].map(node => node.getAttribute('src')))).size, 40, path);
+    // A phone shows the first ten, each with its own place below the title.
+    for (const group of groups.slice(0, 10)) assert.match(group.getAttribute('style'), /--px: \d+%; --py: \d+%/, path);
+    // The roundtable: every question gets its answer, back and forth, in the chapter and in the story.
+    const thread = [...document.querySelectorAll('#roundtable .thread .thread-msg')];
+    assert.deepEqual(thread.map(node => node.classList.contains('reply')), [false, true, false, true], path);
+    for (const node of thread) assert.ok(node.querySelector('.bubble').textContent.trim(), path);
+    const lines = [...document.querySelectorAll('.roundtable-overlay .rt-line')];
+    assert.deepEqual(lines.map(node => node.classList.contains('is-b')), [false, true, false, true], path);
+    assert.ok(document.querySelector('.roundtable-overlay').hasAttribute('data-progress'), path);
+    for (const node of lines) assert.ok(node.querySelector('img[src*="assets/avatars/fla-"]') && node.querySelector('span').textContent.trim(), path);
+    assert.ok(document.querySelector('[data-overlay="growth"][data-copy="#growth .ga-crowd"]'), path);
     assert.deepEqual([...document.querySelectorAll('#workbench .growth-cards b')].map(node => node.textContent), ['Workbench', 'Workflow', 'Agent App'], path);
     // Upcoming work sits only under the 即将 / Coming badge, never among the shipped cards.
     assert.equal(document.querySelectorAll('#workbench .growth-next li').length, 2, path);
@@ -180,6 +245,37 @@ test('the home story walks through the product in order, with measured numbers a
   assert.deepEqual([...document.querySelectorAll('.hero-actions [data-download-windows], .hero-actions [data-download-macos]')].length, 2);
   assert.equal(document.querySelector('.hero-actions .hero-server').getAttribute('href'), '#start');
   assert.equal(document.querySelector('.terminal'), null);
+});
+
+test('the install chapter leads with the client: four steps beside real screens, npm folded for servers', () => {
+  const files = pages();
+  for (const [path, lang] of [['index.html', 'zh'], ['en/index.html', 'en']]) {
+    const { document } = parseHTML(files.get(path));
+    // AI-friendly, said as a statement: a 「?」 card's prompt goes to the person's own AI client, which sets the model up.
+    // What has shipped is said plainly; the 「?」 prompt and WebMCP sit under the 即将 / Coming badge.
+    const aiSetup = document.querySelector('#start .ai-setup');
+    assert.doesNotMatch(aiSetup.querySelector('h3').textContent, /[?？]/, path);
+    assert.equal(aiSetup.querySelector('.ai-help-prompt q').textContent, aiSetup.querySelector('.ai-setup-chat .msg.user').textContent, path);
+    assert.ok(aiSetup.querySelector('.ai-help-head [data-i18n="aiSetup.soon"]'), path);
+    assert.match(aiSetup.querySelector('.ai-setup-soon').textContent, /WebMCP/, path);
+    assert.equal([...aiSetup.querySelectorAll('p, b, q')].filter(node => /WebMCP/.test(node.textContent) && !node.closest('.ai-setup-soon')).length, 0, path);
+    assert.match(aiSetup.querySelector('.ai-setup-control').textContent, lang === 'zh' ? /AI 权限.*密钥/ : /AI permissions.*keys/, path);
+    const story = document.querySelector('#start .install-story');
+    assert.equal(story.querySelectorAll('.install-steps > li').length, 4, path);
+    // Each step is a button that jumps the story to it (enabled by the story script, plain text without it).
+    assert.equal(story.querySelectorAll('.install-steps > li > button[type="button"][disabled]').length, 4, path);
+    // The download drawn first, then six console screens, each in both languages.
+    const frames = [...story.querySelectorAll('.app-frame')];
+    assert.equal(frames.length, 7, path);
+    assert.ok(frames[0].classList.contains('install-download'), path);
+    for (const frame of frames.slice(1)) assert.ok(frame.querySelector('.screen-zh') && frame.querySelector('.screen-en'), path);
+    assert.equal(story.querySelectorAll('.install-static').length, 1, path);
+    assert.ok(story.querySelector('[data-download-windows]') && story.querySelector('[data-download-macos]'), path);
+    // The terminal install is the folded path for servers and VMs.
+    const server = document.querySelector('#start details.install-server');
+    assert.match(server.textContent, /npm install --global fuli-context/, path);
+    assert.ok(document.querySelector(`#start .screen-${lang}`), path);
+  }
 });
 
 test('the home and preview pages link the guide pages in their own language', () => {

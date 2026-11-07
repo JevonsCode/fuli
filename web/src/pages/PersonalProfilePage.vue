@@ -38,6 +38,7 @@ import { useConsoleStore } from '@/stores/console'
 import { versionStatusLabel } from '@/features/knowledge-quick-edit/model'
 import type { KnowledgeGraph, KnowledgeItem } from '@/types'
 import { OptionCombobox } from '@/components/ui/combobox'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 const store = useConsoleStore()
 const graph = ref<KnowledgeGraph | null>(null)
@@ -538,6 +539,8 @@ async function deferConflictToAi(conflict: PreferenceConflict) {
     if (version === loadVersion) deferringConflictId.value = ''
   }
 }
+// The top bar's 刷新 reads the profile again.
+usePageRefresh(() => load())
 </script>
 
 <template>

@@ -1,3 +1,4 @@
+import { projectStoresNothing } from './project-knowledge-presence.js';
 import { createFuliSourceMarker, knowledgeItemTitle, sourceConsoleUrl } from './source-marker.js';
 import { knowledgeItemRole } from './knowledge-item-role.js';
 import { detectSensitiveContent } from '../security/sensitive-content.js';
@@ -8,6 +9,9 @@ import { NEUTRAL, usagePriorLookup } from '../knowledge-impressions/ranking-prio
 import { promptSentenceKeys, taskStatement, withoutProhibitions } from './task-prompt-statement.js';
 
 const MAX_QUERIES = 4;
+// The verification intent's query rides beyond MAX_QUERIES: it is the only one
+// that finds the kept checks, and a change request already spends the four.
+const VERIFY_QUERY = 'project checks run test command script 检查 测试 命令';
 const MAX_ITEMS_PER_KIND = 3;
 const TOPIC_ONLY = plan => plan.trigger_categories.length === 1 && plan.trigger_categories[0] === 'topic';
 const MAX_ITEM_TEXT = 1000;
@@ -58,6 +62,14 @@ const RECALL_INTENTS = Object.freeze([
     category: 'prior_context',
     pattern: /(?:之前|以前|上次|已经存|保存过|记得|照旧|同样|还是用|不用再|先前|约定|定好的|previous|earlier|\bprior\b|last time|remember|same as|again|we (?:decided|agreed|settled|chose))/iu,
     queries: ['先前 方法 规则 决策 runbook previous method decision']
+  },
+  {
+    // rec#88: "make sure the whole suite passes", "every project check passes":
+    // the project's checks and the step a test run needs first are kept by the
+    // Stop hook (turn-findings.js), and only a query about checks finds them.
+    category: 'verification',
+    pattern: /(?:\b(?:tests?|suite|specs?|checks?)\b[^.?!\n]{0,20}\b(?:pass|passes|passing|green)\b|\bmake sure\b[^.?!\n]{0,60}\bpass(?:es)?\b|\brun (?:the )?(?:tests|suite|checks)\b|跑通|测试(?:都)?通过|检查(?:都)?通过)/iu,
+    queries: [VERIFY_QUERY]
   }
 ]);
 
@@ -102,6 +114,9 @@ const INDEX_READ = 'Titles of one bounded search: read one with search_current_p
 // rec#63: after "searched, no match" models stopped looking and copied a
 // stale value from the repository; one quick search is not the whole store.
 const MISS_NEXT = 'One quick search only. Before taking a project value or rule (port, command, owner, convention) from repo files, search_current_project_knowledge for it.';
+// rec#88: in a project that has stored nothing yet, that search can only miss
+// (7 of 12 compounding-eval sessions spent a tool round trip on it).
+const EMPTY_NEXT = 'This project has no stored knowledge yet; no further FULI search is needed.';
 
 export const TASK_KNOWLEDGE_RETRIEVAL_GUIDANCE = Object.freeze({
   before_reasking:
@@ -152,13 +167,21 @@ export function planTaskKnowledgeRecall(taskPrompt, { earlierSentences } = {}) {
   const statement = leadParagraph(statementText);
   const leadTerms = distinctivePromptTerms(statement);
   const focus = (leadTerms.length ? leadTerms : distinctivePromptTerms(prompt)).join(' ').slice(0, 180);
-  const ownWords = namedTarget(statement) ? [] : ownClauseQueries(statementText);
-  const queries = unique([...ownWords, ...matched.flatMap(({ queries: values }) => values)
-    .map((query) => focus ? `${focus} ${query}` : query)]);
+  // A named target still leaves room for the clauses that name a kept fact
+  // ("the same retry behaviour we use for email" beside "SMS"): its focused
+  // category queries come first, then those clauses under the same focus
+  // (compounding eval: the task's topic was otherwise never searched).
+  const targeted = namedTarget(statement);
+  const categoryQueries = matched.flatMap(({ queries: values }) => values).map((query) => focus ? `${focus} ${query}` : query);
+  const queries = targeted
+    ? unique([...categoryQueries, ...ownClauseQueries(statementText, { cuedOnly: true }).map((query) => `${focus} ${query}`)])
+    : unique([...ownClauseQueries(statementText), ...categoryQueries]);
+  // The checks query goes out bare: a target's name would only dilute it.
+  const verify = matched.some(({ category }) => category === 'verification');
   return {
     status: 'planned',
     trigger_categories: matched.map(({ category }) => category),
-    queries: queries.slice(0, MAX_QUERIES)
+    queries: [...queries.filter(query => !query.endsWith(VERIFY_QUERY)).slice(0, MAX_QUERIES), ...(verify ? [VERIFY_QUERY] : [])]
   };
 }
 
@@ -258,8 +281,13 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
   const prior = usagePriorLookup(application.recallImpressions, {
     personalSpaceId: application.config.personal.spaceId, facts: factCandidates, entities: entityCandidates });
   const compare = (left, right) => compareRecallItems(left, right, prior);
-  const facts = rankedUnique(factCandidates, 'relationship', compare).slice(0, MAX_ITEMS_PER_KIND).map(compactFact);
-  const entities = rankedUnique(entityCandidates, 'entity', compare).slice(0, MAX_ITEMS_PER_KIND).map(compactEntity);
+  const ranked = {
+    facts: rankedUnique(factCandidates, 'relationship', compare).slice(0, MAX_ITEMS_PER_KIND).map(compactFact),
+    entities: rankedUnique(entityCandidates, 'entity', compare).slice(0, MAX_ITEMS_PER_KIND).map(compactEntity)
+  };
+  // rec#88: a pending item the task names only in passing waits as a title.
+  const { facts, entities, weak } = relevantPending(ranked, ownText, { verifying: plan.trigger_categories.includes('verification') });
+  if (!facts.length && !entities.length && weak.length) return weakPendingIndex(plan, weak);
   const pendingSlots = Object.entries({ facts, entities })
     .filter(([, items]) => items.some((item) => !isConfirmed(item))).map(([slot]) => slot);
   const sourceMarker = createFuliSourceMarker({
@@ -292,7 +320,8 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
       })
     } : {}),
     ...(pendingSlots.length ? { pending_fallback: { slots: pendingSlots, note: PENDING_NOTE } } : {}),
-    ...(searched && !facts.length && !entities.length ? { next: MISS_NEXT } : {}),
+    ...(searched && !facts.length && !entities.length
+      ? { next: await projectStoresNothing(application, resolution.personalProjectId) ? EMPTY_NEXT : MISS_NEXT } : {}),
     ...(answersFromConfirmed(application) && confirmedByPeople([...facts, ...entities])
       ? { confirmed_use: CONFIRMED_USE } : {}),
     facts,
@@ -308,6 +337,57 @@ export async function recallTaskKnowledge(application, resolution, taskPrompt, {
 // only items the exact project defines that name one of those terms. Null,
 // so the entry carries the unchanged not_needed recall, for anything but a
 // change request in a resolved project with such a match in time.
+// Pending items fill a slot only when nothing confirmed matched (confirmedFirst),
+// and a long stated rule shares common project words with almost any task: the
+// compounding eval's retry policy came back, whole, for a health-check task
+// because both say "channel". A pending item is sent whole when the head of its
+// statement (before its first colon or semicolon) shares at least two terms
+// with the task's own words; otherwise only its title is listed, to read on
+// demand. Confirmed items are never held back here.
+const MIN_HEAD_OVERLAP = 2;
+// A task that asks for its checks to pass is about the project's checks: a
+// pending item whose head names a test, check, script or command is its topic.
+const VERIFY_TERMS = new Set(['test', 'suite', 'spec', 'check', 'script', 'command', 'fixture', '测试', '检查', '命令']);
+function relevantPending({ facts, entities }, ownText, { verifying = false } = {}) {
+  if ([...facts, ...entities].some(isConfirmed)) return { facts, entities, weak: [] };
+  const own = contentTerms(ownText);
+  const strong = item => {
+    const head = [...contentTerms(statementHead(item))];
+    return head.filter(term => own.has(term)).length >= MIN_HEAD_OVERLAP || (verifying && head.some(term => VERIFY_TERMS.has(term)));
+  };
+  const weak = [...facts.filter(item => !strong(item)).map(item => ({ item, kind: 'relationship' })),
+    ...entities.filter(item => !strong(item)).map(item => ({ item, kind: 'entity' }))];
+  return { facts: facts.filter(strong), entities: entities.filter(strong), weak };
+}
+
+function statementHead(item) {
+  return String(item.name ?? item.fact ?? item.summary ?? '').split(/[:：;；]/u)[0];
+}
+
+const HEAD_STOP_WORDS = new Set(['and', 'are', 'for', 'our', 'the', 'this', 'that', 'with', 'every', 'all', 'any', 'its', 'from', 'into']);
+// Words and Chinese character pairs, a plural reduced to its singular.
+function contentTerms(text) {
+  const lower = String(text).toLocaleLowerCase('en-US');
+  const words = (lower.match(/[a-z][a-z0-9-]{2,}/gu) ?? []).filter(word => !HEAD_STOP_WORDS.has(word) && !CLAUSE_STOP_WORDS.has(word))
+    .map(word => (word.endsWith('ies') ? `${word.slice(0, -3)}y` : word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word));
+  const han = (lower.replace(CLAUSE_HAN_FILLERS, '').match(/\p{Script=Han}+/gu) ?? []).flatMap(run => [...run].slice(0, -1).map((char, index) => char + run[index + 1]));
+  return new Set([...words, ...han]);
+}
+
+// Only weakly related pending items matched: their titles, as the index tier lists them.
+function weakPendingIndex(plan, weak) {
+  return {
+    status: 'indexed',
+    trigger_categories: plan.trigger_categories,
+    query_count: plan.queries.length,
+    guidance: taskKnowledgeRetrievalGuidance(),
+    knowledge_index: { matched_in_search: weak.length, read: INDEX_READ,
+      items: weak.slice(0, MAX_INDEX_ITEMS).map(({ item, kind }) => [item.id, indexTitle(knowledgeItemTitle(item, kind))]) },
+    facts: [],
+    entities: []
+  };
+}
+
 async function knowledgeIndexRecall(application, { personalProjectId }, taskPrompt, { sourceApplication, sessionId }) {
   const prompt = singleLine(taskPrompt).slice(0, 8192);
   if (!personalProjectId || !changeRequested(prompt) || entryTimeBelow(INDEX_MIN_REMAINING_MS)) return null;
@@ -521,8 +601,8 @@ const CLAUSE_WORD_LIMIT = 5;
 const CLAUSE_HAN_LIMIT = 16;
 // Asking and doing words: they say what to do with a fact, never which one.
 const CLAUSE_STOP_WORDS = new Set(('about add adding after also answer because been before bullet bullets could create '
-  + 'does entry existing exporting file folder following from full have here into just keep know like line list make more '
-  + 'most much need new now one only please reply repo return returns saying short should show some sure tell than that '
+  + 'does entry every existing exporting file folder following from full give have here into just keep know like line list make more '
+  + 'most much need new now one only our please reply repo return returns saying short should show some sure tell than that '
   + 'their them then there these they this those three throw update use using what when where which while will with '
   + 'would write your').split(' '));
 const CLAUSE_HAN_FILLERS = /请|帮我|帮忙|麻烦|一下|我们|你们|这个|那个|一个|然后|还有|的|了|吗|呢|吧/gu;
@@ -535,19 +615,20 @@ const KNOWN_FACT_CUE = /(?:agreed|decided|convention|policy|rule|owns?\b|owner|\
 // its lead paragraph's first line, or of the whole paragraph when that line
 // yields none (a heading such as "Fix these:"). A trailing line a script
 // appends ("Work only from this checkout") spends no query (rec#88).
-function ownClauseQueries(text) {
+function ownClauseQueries(text, { cuedOnly = false } = {}) {
   const [lead = ''] = text.trim().split(/\r?\n[ \t]*\r?\n/u);
   const lines = lead.split(/\r?\n/u).map(line => line.replace(CODE_SPAN, ' ')).filter(line => line.trim());
-  const first = clauseQueries(singleLine(lines[0] ?? ''));
-  return first.length ? first : clauseQueries(singleLine(lines.join(' ')));
+  const first = clauseQueries(singleLine(lines[0] ?? ''), { cuedOnly });
+  return first.length ? first : clauseQueries(singleLine(lines.join(' ')), { cuedOnly });
 }
 
 // When some clauses name a kept fact, only they query: the rest of a change
 // request ("so tests do not wait") would bring back unrelated items.
-function clauseQueries(prompt) {
+// `cuedOnly`: no clause names one, no query.
+function clauseQueries(prompt, { cuedOnly = false } = {}) {
   const clauses = prompt.split(/[,;:，；：。!?！？]|\.(?:\s|$)|\b(?:and|or|then)\b/iu);
   const cued = clauses.filter((clause) => KNOWN_FACT_CUE.test(clause));
-  return (cued.length ? cued : clauses)
+  return (cued.length || cuedOnly ? cued : clauses)
     .map(clauseQuery)
     .filter(Boolean)
     .slice(0, MAX_CLAUSE_QUERIES);

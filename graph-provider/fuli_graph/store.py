@@ -19,6 +19,7 @@ from .store_project_agent_occupation import StoreProjectAgentOccupation
 from .store_project_agent_rename import StoreProjectAgentRename
 from .store_occupation_catalog import StoreOccupationCatalog
 from .store_project_agent_pages import StoreProjectAgentPages
+from .store_project_agent_task_pages import StoreProjectAgentTaskPages
 from .store_project_agent_attention import StoreProjectAgentAttention
 from .store_project_agent_tasks import StoreProjectAgentTasks
 from .store_projects import StoreProjects
@@ -41,6 +42,7 @@ class GraphStore(
     StoreProjectAgentRename,
     StoreOccupationCatalog,
     StoreProjectAgentPages,
+    StoreProjectAgentTaskPages,
     StoreProjectAgentAttention,
     StoreProjectAgentMemory,
     StoreProjectAgentContext,

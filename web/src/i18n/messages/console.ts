@@ -30,7 +30,7 @@ export const consoleMessages = {
         rollback_failed: '新版本没能启动，换回原版本也没成功，请看详情。',
       },
       notBack: 'FULI 还没有重新应答，请稍后刷新这个页面。',
-      trayCopy: '会下载并校验 v{version} 的 Windows 安装包，关闭 FULI 桌面客户端，停止 FULI 后换成新版本，再启动 FULI，并重新打开原来开着的桌面客户端；页面会断开一会儿，完成后自动刷新。知识数据和旧版本都会保留，可以回退。',
+      trayCopy: '会下载并校验 v{version} 的 Windows 安装包，关掉 FULI 和桌面客户端，换上新版本后再打开。页面会断开一会儿，完成后自动刷新。知识数据和旧版本都会保留，可以回退。',
       steps: {
         downloading: '正在下载 v{version} 的 Windows 安装包…',
         verifying: '正在校验 v{version} 的安装包…',
@@ -49,7 +49,7 @@ export const consoleMessages = {
       npmLink: '在 npm 查看版本详情',
     },
     agentAccess: {
-      enabledNotice: 'Agent 使用已开启；已连接的 Agent 可以调用 FULI。',
+      enabledNotice: 'Agent 使用已开启，已连接的 Agent 可以调用 FULI。',
       disabledNotice: 'Agent 使用已关闭，所有 Agent 调用会被拦截。',
     },
     recall: {
@@ -92,7 +92,7 @@ export const consoleMessages = {
         rollback_failed: 'The new version did not start and switching back did not finish either; see the details.',
       },
       notBack: 'FULI has not answered again yet. Reload this page in a moment.',
-      trayCopy: 'Downloads and verifies the v{version} Windows package, closes the FULI desktop client, stops FULI and switches to the new version, then starts FULI and reopens the desktop client if it was open; this page disconnects for a moment and reloads when it is done. Your knowledge data and the previous version are kept, so you can go back.',
+      trayCopy: 'Downloads and verifies the v{version} Windows package, closes FULI and the desktop client, and reopens them on the new version. This page disconnects for a moment and reloads when done. Your knowledge and the previous version are kept, so you can go back.',
       steps: {
         downloading: 'Downloading the v{version} Windows package…',
         verifying: 'Verifying the v{version} package…',

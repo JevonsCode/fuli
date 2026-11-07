@@ -19,6 +19,7 @@ import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConversationSourceApplication } from '@/types'
 import { UiDialog, UiIcon } from '@/ui'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 // 服务管理 (rec#11 D-71): every service an FLA started and each Agent's
 // workbench, with the state checked live on each read. Rows are grouped by
@@ -181,6 +182,8 @@ async function confirmDelete() {
     deleting.value = false
   }
 }
+// The top bar's 刷新 reads the services and their Agents' names again.
+usePageRefresh(() => Promise.all([load(), loadAgentNames()]))
 </script>
 
 <template>

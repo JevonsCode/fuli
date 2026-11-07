@@ -10,6 +10,7 @@ import * as reportCatalog from '../site/report/translations.js';
 import { SITE_URL, structuredData } from '../site/metadata.js';
 import { isMainModule } from '../src/system/main-module.js';
 import { stampAssetVersions } from './site-asset-versions.js';
+import { writeSiteAvatars } from './site-avatars.js';
 
 // Each page is published at its template's own route (Chinese by default) and
 // one directory below it per language; every language lists the same alternates.
@@ -60,6 +61,13 @@ function renderPage(template, base, route, locale, catalog) {
         if (value?.startsWith('./')) element.setAttribute(attribute, '../' + value.slice(2));
         else if (value?.startsWith('../')) element.setAttribute(attribute, '../' + value);
       }
+    }
+    // srcset lists several URLs, each with its width.
+    for (const element of document.querySelectorAll('[srcset]')) {
+      element.setAttribute('srcset', element.getAttribute('srcset').split(',').map((entry) => {
+        const value = entry.trim();
+        return value.startsWith('./') ? '../' + value.slice(2) : value.startsWith('../') ? '../' + value : value;
+      }).join(', '));
     }
   }
   document.querySelector('link[rel="canonical"]').href = pageUrl;
@@ -205,6 +213,7 @@ export async function buildSite(output = new URL('../dist/site/', import.meta.ur
   const archivePath = new URL('v0/index.html', output);
   const archive = await readFile(archivePath, 'utf8');
   await writeFile(archivePath, archive.replace('</head>', '<meta name="robots" content="noindex, follow" />\n</head>'));
+  await writeSiteAvatars(new URL('assets/avatars/', output));
   await stampAssetVersions(fileURLToPath(output));
   return fileURLToPath(output);
 }

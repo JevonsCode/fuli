@@ -185,12 +185,17 @@ export class JudgmentStore {
   }
   // 「交给 Tonborg 确认」 (rec#96): whether Tonborg confirms knowledge for
   // the person, and when that last changed.
+  // language: the console's language when the person last saved the switch,
+  // so Tonborg asks in it (null for a setting saved before 11-06).
   delegation(space) {
     const { revision, value } = this.setting(space, DELEGATION_KEY);
-    return { enabled: value?.enabled === true, changedAt: value?.changedAt ?? null, revision };
+    return { enabled: value?.enabled === true, changedAt: value?.changedAt ?? null, language: value?.language ?? null, revision };
   }
-  setDelegation(space, enabled, expectedRevision) {
-    this.writeSetting(space, DELEGATION_KEY, { enabled, changedAt: new Date().toISOString() }, expectedRevision);
+  setDelegation(space, enabled, expectedRevision, language = null) {
+    const current = this.setting(space, DELEGATION_KEY).value;
+    // Only turning it on or off is a change of when; a new language keeps the time.
+    const changedAt = current && current.enabled === enabled ? current.changedAt : new Date().toISOString();
+    this.writeSetting(space, DELEGATION_KEY, { enabled, changedAt, language: language ?? current?.language ?? null }, expectedRevision);
     return this.delegation(space);
   }
   // The reviews Tonborg made with delegation on, newest first: what the

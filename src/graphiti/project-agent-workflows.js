@@ -397,6 +397,16 @@ export async function listProjectAgentTasks(application, input) {
   return asList(value, ['tasks', 'items']).map(projectAgentTaskRecord);
 }
 
+/** One keyset page of a full task list; `total` is counted on the first page only. */
+export async function listProjectAgentTaskPage(application, input) {
+  const value = await application.personal.listProjectAgentTaskPage(input.personalSpaceId, input);
+  return {
+    items: (value.items ?? []).map(projectAgentTaskRecord),
+    nextCursor: value.next_cursor ?? null,
+    total: Number.isInteger(value.total) ? value.total : null
+  };
+}
+
 export async function viewProjectAgentTask(application, input) {
   const value = await application.personal.viewProjectAgentTask(
     input.personalSpaceId,

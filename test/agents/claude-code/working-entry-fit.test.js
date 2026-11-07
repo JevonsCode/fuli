@@ -55,7 +55,8 @@ test('a working lead\'s entry with 31 preferences fits, keeps its hard rules, an
 
 test('working-memory previews give way to hard rules, global layer first, and keep their revision', () =>
   claudeEntrySession(async session => {
-    const items = syntheticPreferences(31);
+    // Enough hard rules to need the project layer's room too (the lean entry of rec#88 left room for 31).
+    const items = syntheticPreferences(38);
     const { frame, text } = await session.turn(await syntheticWorkingEntry({ items, sessionId: session.sessionId }));
     assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);
     const { memory, global_memory: global } = frame.project_agent_context;
@@ -76,7 +77,8 @@ test('working-memory previews give way to hard rules, global layer first, and ke
     const few = await claudeEntrySession(async fresh =>
       fresh.turn(await syntheticWorkingEntry({ items: soft, sessionId: fresh.sessionId })));
     assert.ok(few.text.length <= INLINE_CHARS, `${few.text.length} chars`);
-    assert.equal(few.frame.project_agent_context.global_memory.view, 'omitted');
+    // The global layer gives way first when room is short; with the leaner entry of rec#88 it may fit too.
+    assert.ok(['omitted', 'preview'].includes(few.frame.project_agent_context.global_memory.view));
     const project = few.frame.project_agent_context.memory;
     assert.equal(project.view, 'preview');
     assert.ok(project.current.memory.summary.length > 0);
@@ -161,7 +163,7 @@ test('a role too long to fit is never cut: the entry is the blocked frame, which
   const text = await claudeEntry(continuity(entry, { role }));
   assert.ok(text.length <= INLINE_CHARS, `${text.length} chars`);
   assert.ok(text.startsWith(BLOCKED_PREFERENCE_LABEL));
-  assert.ok(label(text).includes('End your final reply with agent_receipt.markdown, unchanged and once'));
+  assert.ok(label(text).includes('End your final reply with agent_receipt.markdown, unchanged, once'));
   assert.doesNotMatch(text, /Own the export service/);
   const frame = hookFrame(text);
   assert.deepEqual([frame.preference_delivery.status, frame.preference_delivery.reason], ['blocked', 'inline_budget']);

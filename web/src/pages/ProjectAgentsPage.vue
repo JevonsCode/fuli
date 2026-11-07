@@ -34,6 +34,7 @@ import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentRecord } from '@/types'
 import UiSegmented from '@/ui/UiSegmented.vue'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 // 编排: every Agent of the space on one canvas. A name opens that Agent's
 // management page; a quick look (Peek) answers a quick question in place.
@@ -248,6 +249,8 @@ function recordSaved(record: ProjectAgentRecord) {
   store.notify(t('projectAgents.saved'))
   if (created) void router.push(agentManagementPath(spaceId.value, saved.agentId))
 }
+// The top bar's 刷新 reads the roster again.
+usePageRefresh(() => roster.load())
 </script>
 
 <template>

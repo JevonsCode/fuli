@@ -98,6 +98,12 @@ class Strings {
   String actionFailed(String reason) => _t('没有完成：$reason', 'Did not finish: $reason');
   String sentences(String first, String second) => chinese ? '$first$second' : '$first $second';
 
+  // macOS: FULI.app opened from its disk image offers to move itself
+  String get moveToApplications => _t('移到「应用程序」', 'Move to Applications');
+  String get notNow => _t('这次不移', 'Not now');
+  String get movingToApplications => _t('正在移到「应用程序」…', 'Moving to Applications…');
+  String get moveFailed => _t('没能移到「应用程序」，这次在这里打开 FULI。', 'Could not move to Applications; open FULI from here this time.');
+
   // Data format dialog (the console's 数据格式迁移 page, in short)
   String get migrationTitle => _t('确认数据格式变化', 'Confirm the data format change');
   String get migrationLoading => _t('正在读取要变化的数据…', 'Reading what will change…');

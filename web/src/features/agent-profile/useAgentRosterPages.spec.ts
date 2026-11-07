@@ -110,7 +110,10 @@ describe('useAgentRosterPages', () => {
     expect(ids(back.agents.value)).toEqual(['aster', 'birch'])
     expect(back.complete.value).toBe(true)
 
-    await back.reload()
+    const reloading = back.reload()
+    // The rows read before stay on screen until the first page replaces them.
+    expect(ids(back.agents.value)).toEqual(['aster', 'birch'])
+    await reloading
     await flushPromises()
     expect(getJson).toHaveBeenCalledTimes(2)
     expect(ids(back.agents.value)).toEqual(['aster'])

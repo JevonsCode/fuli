@@ -22,11 +22,12 @@ export function compactTaskContext(value) {
   const sharedApplication = share && containsEntryRules(value.application_guidance, 'application_guidance');
   const retrieval = value.application_guidance?.knowledge_retrieval;
   if (retrieval && JSON.stringify(retrieval) === JSON.stringify(value.task_knowledge_recall?.guidance)) {
+    // A task entry already names the application rules once (rec#88); other views point to them.
     result.task_knowledge_recall = { ...value.task_knowledge_recall, guidance: undefined,
-      guidance_ref: sharedApplication ? entryRulesReference('application_guidance').rules
+      guidance_ref: sharedApplication ? (value.taskContextToken ? undefined : entryRulesReference('application_guidance').rules)
         : 'application_guidance.knowledge_retrieval' };
   }
-  if (share && result.task_knowledge_recall) result.task_knowledge_recall = recallView(result.task_knowledge_recall);
+  if (share && result.task_knowledge_recall) result.task_knowledge_recall = recallView(result.task_knowledge_recall, value.context);
   // Off-flags of a fresh task: a resumed or orphaned checkpoint says so.
   if (share && value.resumed_checkpoint === false) delete result.resumed_checkpoint;
   if (share && value.previous_checkpoint_missing === false) delete result.previous_checkpoint_missing;
@@ -46,7 +47,7 @@ export function compactTaskContext(value) {
     ...(templated ? { scope_rules: entryRulesReference('scope_guidance').rules } : {}) };
   }
   if (share && value.checkpoint_guidance) result.checkpoint_guidance = ruleTextView(value.checkpoint_guidance, 'checkpoint_guidance');
-  if (share && value.context) result.context = withoutDefaults(value.context, { counts: true, flags: true });
+  if (share && value.context) result.context = withoutDefaults(contextView(value.context), { counts: true, flags: true });
   if (value.conversation) result.conversation = conversationView(value.conversation, share);
   if (share && value.agent_receipt) result.agent_receipt = receiptView(value.agent_receipt);
   else if (value.agent_receipt?.continuation) result.agent_receipt = { ...value.agent_receipt,
@@ -54,18 +55,28 @@ export function compactTaskContext(value) {
       guidance: text(value.agent_receipt.continuation.guidance, 'continuation_guidance') } };
   if (Array.isArray(value.effective_preferences)) result.effective_preferences = value.effective_preferences.map(preferenceInstructionView);
   if (value.project_management_context?.managers) result.project_management_context = managementContextView(
-    value.project_management_context, guidance => text(guidance, 'manager_guidance'));
+    value.project_management_context, guidance => text(guidance, 'manager_guidance'), { lean: share });
+  if (share && value.taskContextToken && result.project_management_context) result.project_management_context = {
+    ...result.project_management_context, ...withoutRoutineState(result.project_management_context) };
   const continuity = value.project_agent_context;
   const management = value.project_management_context;
   const omitTeam = !value.worker_run && Object.hasOwn(value, 'project_management_context')
     && (management?.status === 'degraded' || !management?.managers?.length);
   if (omitTeam) delete result.judgment_context;
-  else if (value.judgment_context?.guidance) result.judgment_context = { ...value.judgment_context,
-    guidance: text(value.judgment_context.guidance, 'judgment_guidance') };
-  const teamRules = !omitTeam && (continuity?.team?.guidance ?? continuity?.team_guidance);
+  else if (value.judgment_context?.guidance) result.judgment_context = share
+    // Tonborg reads the saved policy itself (assess_agent_action); the entry names the Agent and its rule.
+    ? { agentId: value.judgment_context.agentId, guidance: text(value.judgment_context.guidance, 'judgment_guidance') }
+    : { ...value.judgment_context, guidance: text(value.judgment_context.guidance, 'judgment_guidance') };
+  // A team of one has nobody to report to or staff from: its rules wait for a second member.
+  const solo = share && Array.isArray(continuity?.team?.roster) && continuity.team.roster.length <= 1 && !continuity?.team?.assigned_collaborators?.length
+    && !continuity?.team?.assigned_peers?.length;
+  const teamRules = !omitTeam && !solo && (continuity?.team?.guidance ?? continuity?.team_guidance);
   const teamGuidance = teamRules ? text(teamRules, 'team_guidance') : undefined;
   if (continuity) result.project_agent_context = { ...continuity, ...selectionView(continuity, share),
-    ...(share && continuity.directorySnapshot ? { directorySnapshot: snapshotView(continuity.directorySnapshot) } : {}),
+    ...(share && continuity.project_brief?.authors ? { project_brief: { ...continuity.project_brief, authors: undefined } } : {}),
+    ...(share && continuity.directorySnapshot ? { directorySnapshot: snapshotView(continuity.directorySnapshot, { task: Boolean(value.taskContextToken) }) } : {}),
+    // rec#88: an FLA's starting preferences are its profile's; the entry names the role.
+    ...(share && value.taskContextToken && continuity.role?.initial_preferences ? { role: { ...continuity.role, initial_preferences: undefined } } : {}),
     team: omitTeam ? undefined : compactTeamRoster(continuity.team, teamGuidance),
     team_guidance: undefined,
     recent_tasks: undefined,
@@ -78,8 +89,8 @@ export function compactTaskContext(value) {
       ...(continuity.global_memory !== undefined ? { global_memory: continuity.global_memory
         && memoryPreview(continuity.global_memory, ruleOrReference('global_memory_guidance', share)) } : {}) };
   }
-  if (share && result.project_agent_context) result.project_agent_context = withoutDefaults(result.project_agent_context,
-    { flags: false, keep: AGENT_CONTEXT_STATES });
+  if (share && result.project_agent_context) result.project_agent_context = withoutDefaults(withoutContextIds(
+    result.project_agent_context, value.context), { flags: false, keep: AGENT_CONTEXT_STATES });
   if (share && withoutTaskToken(value)) return copyPreferenceScope(value, withRulesVersion(onDemandDetails(result)));
   return copyPreferenceScope(value, share ? withRulesVersion(result) : result);
 }
@@ -140,12 +151,18 @@ function withRulesVersion(entry) {
 // `guidance` gives those rules as this entry delivers them (a task entry
 // references them). The receipt of the entry's own board read names no work
 // the Agent did, so the view leaves it out.
-export function managementContextView(management, guidance) {
+// `lean` (a task entry): a manager whose board is empty has no item to match
+// or title the session by, so it shows only who it is, its routing rules and
+// the call that lists its tools (rec#88: every request re-read the rest).
+export function managementContextView(management, guidance, { lean = false } = {}) {
   return { ...management,
-    managers: management.managers.map(({ collaboration_receipt: _receipt, ...manager }) => ({ ...manager,
-      ...(manager.guidance ? { guidance: guidance(manager.guidance) } : {}),
-      board: manager.board && { version: manager.board.version, total: manager.board.total, view: 'on_demand' }
-    }))
+    managers: management.managers.map(({ collaboration_receipt: _receipt, ...manager }) => (lean && manager.board?.total === 0
+      && !manager.suggested_match ? withoutDefaults({ template_id: manager.template_id, agent_id: manager.agent_id,
+        name: manager.name, board: { total: 0 }, guidance: manager.guidance && guidance(manager.guidance), read: managerRead(manager) })
+      : { ...manager,
+        ...(manager.guidance ? { guidance: guidance(manager.guidance) } : {}),
+        board: manager.board && { version: manager.board.version, total: manager.board.total, view: 'on_demand' }
+      }))
   };
 }
 
@@ -155,6 +172,25 @@ export function receiptView(receipt) {
   return withoutDefaults({ required: receipt.required, markdown: receipt.markdown,
     collaborators: receipt.collaborators, work_status: receipt.work_status, persistence: receipt.persistence,
     guidance: ruleTextView(receipt.guidance, 'receipt_guidance') }, { flags: true });
+}
+
+// The Agent's and project's IDs are the entry context's; repeated here they
+// only cost tokens (rec#88).
+function withoutContextIds(continuity, context) {
+  return { ...continuity,
+    ...(context?.project_agent_id && continuity.project_agent_id === context.project_agent_id ? { project_agent_id: undefined } : {}),
+    ...(context?.personal_project_id && continuity.personal_project_id === context.personal_project_id ? { personal_project_id: undefined } : {}),
+    ...withoutRoutineState(continuity) };
+}
+
+// rec#88: what every ordinary task entry says the same way (ready, woken by the
+// task entry, no worker started) is left out; any other value (a recovery wake,
+// a started worker, a degraded state) stays. The bound client stays: a remote
+// connection proves its binding by it.
+function withoutRoutineState(part) {
+  return { ...(part.status === 'ready' ? { status: undefined } : {}),
+    ...(part.wake_mode === 'task_entry' ? { wake_mode: undefined } : {}),
+    ...(part.worker_started === false ? { worker_started: undefined } : {}) };
 }
 
 // null memory means that layer is unavailable and an empty team means no
@@ -191,30 +227,70 @@ function conversationView(conversation, share) {
 // A recall that matched nothing has one marker to show, so a sourceMarker that
 // repeats noMatchSourceMarker byte for byte is left out; so are a complete
 // search's zero failures and an unmatched prompt's empty categories.
-function recallView(recall) {
+// rec#88: a recalled item and its markers say each thing once. The item keeps
+// its id, content, confirmation and any scope that differs from the entry's
+// context; a marker keeps what is copied into the reply and its status; the
+// pending note and an untouched retrieval budget are the shared rules'.
+function recallView(recall, context = {}) {
   const repeated = recall.sourceMarker && isDeepStrictEqual(recall.sourceMarker, recall.noMatchSourceMarker);
-  return Object.fromEntries(Object.entries(recall).filter(([key, item]) => !(key === 'sourceMarker' && repeated)
+  const view = Object.fromEntries(Object.entries(recall).filter(([key, item]) => !(key === 'sourceMarker' && repeated)
     && !(key === 'partial' && item === false) && !(key === 'failed_query_count' && item === 0)
-    && !(key === 'trigger_categories' && Array.isArray(item) && !item.length)));
+    && !(key === 'trigger_categories' && Array.isArray(item) && !item.length)
+    && !(key === 'retrieval_budget' && item && !item.truncated && !item.omitted_items)));
+  for (const kind of ['facts', 'entities']) if (Array.isArray(view[kind])) view[kind] = view[kind].map(item => recallItemView(item, context));
+  for (const marker of ['sourceMarker', 'noMatchSourceMarker']) if (view[marker]) view[marker] = markerView(view[marker]);
+  if (view.pending_fallback?.note) view.pending_fallback = { slots: view.pending_fallback.slots };
+  return view;
+}
+
+// A content-hash key (remember-…, experience-…) names nothing a reader can use.
+const HASH_KEY = /^[a-z]+-[0-9a-f]{16,}$/u;
+function recallItemView(item, context) {
+  const same = (field, value) => value !== undefined && value !== null && item[field] === value;
+  const skip = new Set([
+    ...(same('space_id', context?.personal_space_id) ? ['space_id'] : []),
+    ...(item.scope === 'personal' ? ['scope'] : []),
+    ...(typeof item.key === 'string' && HASH_KEY.test(item.key) ? ['key'] : []),
+    ...(same('defined_project_id', context?.personal_project_id) ? ['defined_project_id'] : []),
+    ...(item.inherited_from_project_id == null ? ['inherited_from_project_id'] : []),
+    ...(item.scope_distance === 0 ? ['scope_distance'] : []),
+    ...(Array.isArray(item.source_uris) && !item.source_uris.length ? ['source_uris'] : []),
+    'score',
+    ...(typeof item.name === 'string' && typeof item.summary === 'string' && item.summary.startsWith(item.name) ? ['name'] : [])
+  ]);
+  return Object.fromEntries(Object.entries(item).filter(([key]) => !skip.has(key)));
+}
+
+function markerView({ label: _label, count: _count, ...marker }) {
+  return marker;
 }
 
 // When the selected lead also executes, the execution pair repeats the
 // selection and match_basis only explains it; any other execution decision
 // keeps both, since its match_basis then says how to staff the work.
+// A team gap (nobody else fits, so the lead works itself) keeps its reason
+// code; how to staff it is read on demand (details_guidance, get_project_team).
+const TEAM_GAPS = new Set(['project_team_gap', 'project_sub_team_gap']);
 function selectionView(continuity, share) {
   const selfExecuting = share && typeof continuity.execution_reason === 'string'
     && continuity.execution_agent_id === continuity.project_agent_id
     && continuity.execution_reason === continuity.selection_reason;
-  return selfExecuting ? { match_basis: undefined, execution_reason: undefined, execution_agent_id: undefined } : {};
+  if (selfExecuting) return { match_basis: undefined, execution_reason: undefined, execution_agent_id: undefined };
+  const gap = share && TEAM_GAPS.has(continuity.execution_reason) && !continuity.execution_agent_id;
+  return gap ? { match_basis: undefined } : {};
 }
 
-// A snapshot whose files are all as the Agent's folder already holds them
-// says only where the folder is and how many files it holds.
-function snapshotView(snapshot) {
-  if (!Array.isArray(snapshot.files) || !snapshot.files.length
-    || snapshot.files.some(file => file.state !== 'unchanged')) return snapshot;
+// A snapshot whose files share one state (all just written, or all as the
+// Agent's folder already holds them) says where the folder is and how many.
+// A task entry leaves out a settled snapshot altogether (rec#88): its folder
+// path is relative to the data directory, so there is nothing to act on.
+function snapshotView(snapshot, { task = false } = {}) {
+  const state = snapshot.files?.[0]?.state;
+  if (!Array.isArray(snapshot.files) || !snapshot.files.length || !['unchanged', 'written'].includes(state)
+    || snapshot.files.some(file => file.state !== state)) return snapshot;
+  if (task && snapshot.status === 'current') return undefined;
   const { files, ...rest } = snapshot;
-  return { ...rest, files_unchanged: files.length };
+  return { ...rest, [`files_${state}`]: files.length };
 }
 
 function ruleOrReference(section, share) {
@@ -226,8 +302,9 @@ function ruleOrReference(section, share) {
 function memoryPreview(memory, guidance) {
   const current = memory.current;
   // A layer never written has nothing to preview, cut or read in full first:
-  // its scope, revision 0 (the first write's expectedRevision) and rules.
-  if (!current && memory.revision === 0 && !memory.scrubbedGuidance) return { scope: memory.scope, revision: 0, current: null, guidance };
+  // revision 0 (the first write's expectedRevision) and its rules; the field
+  // names the layer.
+  if (!current && memory.revision === 0 && !memory.scrubbedGuidance) return { revision: 0, guidance };
   const notes = current?.memory;
   let notesTruncated = false;
   const text = (value, limit) => {
@@ -272,4 +349,13 @@ function compactTeamRoster(team, deliveredGuidance) {
   }
   return view(count);
 
+}
+
+// The resolution names the project the context already names; it keeps how it was matched.
+// The current scope filter is how every entry is read now; only another one is news (rec#88).
+function contextView(context) {
+  const resolution = context.project_resolution;
+  const view = resolution?.personal_project_id && resolution.personal_project_id === context.personal_project_id
+    ? { ...context, project_resolution: { ...resolution, personal_project_id: undefined } } : context;
+  return view.task_scope_filter === 'provider_before_conflicts' ? { ...view, task_scope_filter: undefined } : view;
 }

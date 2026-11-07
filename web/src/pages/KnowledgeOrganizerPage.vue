@@ -35,6 +35,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { UiIconButton, UiSegmented, UiStatRow, UiToolbar, type UiStat } from '@/ui'
 import type { KnowledgeGraph, KnowledgeItem } from '@/types'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 const store = useConsoleStore()
 const graph = ref<KnowledgeGraph | null>(null)
@@ -297,7 +298,8 @@ async function openReplacement(item: KnowledgeItem) {
     replacing = false
   }
 }
-
+// The top bar's 刷新 reads the knowledge again, except while an item is being edited.
+usePageRefresh(() => (editingItem.value ? undefined : load()))
 </script>
 
 <template>

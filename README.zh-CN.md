@@ -62,9 +62,15 @@ Agent 团队，用得越久越懂行。
 
 | 系统 | 文件 | 怎么装 |
 | --- | --- | --- |
-| Windows | `FULI-Setup-<版本>.exe` | 双击安装，不用终端，也不用管理员权限。Node.js、Java 和图数据库都已内置。安装包还没有代码签名，Windows 提示“已保护你的电脑”时，点“更多信息 → 仍要运行”。装过 FULI 的直接覆盖更新，数据保留 |
+| Windows | `FULI-Setup-<版本>.exe` | 双击安装，第一次可以选安装位置，不用终端，也不用管理员权限。Node.js、Java 和图数据库都已内置。安装包还没有代码签名，Windows 提示“已保护你的电脑”时，点“更多信息 → 仍要运行”。装过 FULI 的直接覆盖更新，数据保留 |
 | Windows 离线更新 | `fuli-windows-tray-<版本>.zip` | 给已安装的 FULI 用。核对同名 `.sha256`，解压后运行 `Update-Fuli.cmd`。平时在控制台点「更新到 vX」就行 |
-| macOS（Apple 芯片） | `fuli-macos-arm64-<版本>.dmg` | 把 FULI.app 拖进「应用程序」，需要 macOS 13.5 以上。安装包还没签名，第一次打开被拦下时，到「系统设置 › 隐私与安全性」点「仍要打开」。详见 [macOS 应用](docs/macos-app.md) |
+| macOS（Apple 芯片） | `fuli-macos-arm64-<版本>.dmg` | 照窗口里的箭头把 FULI.app 拖进「应用程序」，打开 FULI 时它会自己推出安装盘。需要 macOS 13.5 以上。安装包还没签名，第一次打开被拦下时，到「系统设置 › 隐私与安全性」点「仍要打开」。详见 [macOS 应用](docs/macos-app.md) |
+
+还没签名，两个系统第一次都会拦一下：
+
+| Windows | macOS |
+| --- | --- |
+| ![更多信息，然后仍要运行](docs/images/install/windows-smartscreen.png) | ![被拦下一次，然后系统设置 › 隐私与安全性 › 仍要打开](docs/images/install/macos-first-open.png) |
 
 第一次打开时，FULI 会找出这台电脑上的 AI 客户端，点一下就能接入（Codex、Claude Code、Cursor、
 Claude 桌面版等）。接入后重启客户端，在项目目录里提个需求就开始了。其他 MCP 客户端运行

@@ -233,7 +233,9 @@ const BASELINE = Object.freeze({
   // rec#46: the shared rules version is stated once as rules_version instead of on each
   // reference, a complete recall drops its zero failures and empty categories, and a fresh
   // task its two off-flags: 1,818 -> 1,673 chars, measured.
-  projectEntryChars: 1673,
+  // rec#88: the label says each thing once (closing step, receipt, rules on demand): 1,673 -> 1,578.
+  // ...and the same cuts in the project entry: 1,578 -> 1,451.
+  projectEntryChars: 1451,
   // rec#46: an ordinary small coding task of a working lead (team, Jefa's empty board, Tonborg,
   // both memory layers never written, the directory snapshot current) when nothing in the store
   // matches, through the Claude Code hook with its label (test-support/synthetic-large-entry.js).
@@ -244,7 +246,15 @@ const BASELINE = Object.freeze({
   // null fields (-55), default flags and counts (-100), and the rules version is stated once
   // (-295): 5,939 -> 4,645 chars (about 1,650 -> 1,290 tokens). Role, preferences, receipt,
   // token, team, manager and judgment are unchanged.
-  noMatchEntryChars: 4645,
+  // rec#88 (compounding eval): an empty board's manager is its reader, a team gap its reason code, a
+  // solo team carries no team rules, an empty memory layer is its revision and rules, Tonborg is named
+  // without its policy, the brief without its authors, and repeated IDs are stated once: 4,645 -> 4,081.
+  // Its no-match marker drops label and count (the rules say how to show it): 4,081 -> 4,053.
+  // rec#88 again: the shorter label, a settled snapshot left out, the role without its starting
+  // preferences and the resolution without the project id: 4,053 -> 3,632.
+  // rec#88 phase 4: routine state (ready, task_entry wake, no worker), the current scope filter and the
+  // recall's repeated rules pointer are left out of a task entry: 3,632 -> 3,465.
+  noMatchEntryChars: 3465,
   // rec#51 D-59: a coding task (a change request naming a distinctive term) whose exact project
   // holds matching knowledge gets a title-only knowledge_index in its recall: [id, title] pairs, the
   // count that one bounded search kept and one read line, never a body. Measured over the same
@@ -279,7 +289,8 @@ const BASELINE = Object.freeze({
   // context" and "Follow checkpoint_guidance: …" (Claude Code -144, Codex -132 chars), so a
   // turn's label grows by about 190 chars, about 50 tokens; a longer token or agent name adds
   // its own length.
-  entryClosingChars: 326,
+  // rec#88: the closing step and receipt sentence say it in fewer words: 326 -> 186.
+  entryClosingChars: 186,
   // rec#47 F1b, rec#11 D-54: Claude Code keeps only a preview of a hook context over about
   // 10,000 chars, so its entry is bounded to 9,000 and stays a confirmable frame. Measured on the
   // synthetic 60-preference entry (test-support/synthetic-large-entry.js, about 430 chars each,

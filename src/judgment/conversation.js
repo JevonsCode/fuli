@@ -62,8 +62,19 @@ export function settledQuestionIds(records) {
   return new Set(records.filter(record => snoozed.has(record.id) || answered.has(subject(record))).map(record => record.id));
 }
 
+// Each listed question names its item (Jevons 11-07: 「你不跟我说什么事儿」): a
+// question that quotes nothing leads with a short excerpt of the item's title.
+const EXCERPT_LIMIT = 24;
+const QUOTED = /[「“"]/;
+function excerpt(text) {
+  const flat = String(text).replace(/\s+/g, ' ').trim();
+  return flat.length > EXCERPT_LIMIT ? `${flat.slice(0, EXCERPT_LIMIT - 1).trimEnd()}…` : flat;
+}
+const namedQuestion = record => record.title && !QUOTED.test(record.question)
+  ? `「${excerpt(record.title)}」${record.question}` : record.question;
+
 function batchInteraction(batch, personalSpaceId) {
-  const words = batch.filter(record => record.question && !record.content_withheld).map(record => record.question);
+  const words = batch.filter(record => record.question && !record.content_withheld).map(namedQuestion);
   const listed = words.slice(0, BATCH_LINES).map((question, index) => `${index + 1}. ${question}`);
   const more = batch.length - listed.length;
   const question = listed.length

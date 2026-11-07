@@ -90,6 +90,25 @@ test('the build refuses a tray without a file the setup runs, before ISCC starts
   assert.equal(existsSync(join(f.root, 'setup')), false);
 });
 
+test('the setup asks where to install only the first time and passes that place to both scripts', () => {
+  // The location page follows the first page and is skipped once FULI is installed.
+  assert.match(script, /LocationPage := CreateInputDirPage\(wpWelcome,/);
+  assert.match(script, /Result := \(PageID = LocationPage\.ID\) and Installed;/);
+  // Default: the per-user Programs folder; silent installs take /INSTALLROOT=.
+  assert.match(script, /ExpandConstant\('\{localappdata\}\\Programs\\Fuli'\)/);
+  assert.match(script, /\{param:INSTALLROOT\|' \+ DefaultRoot \+ '\}/);
+  // An update finds the place again from the Installed apps entry the setup writes.
+  assert.match(script, /RegQueryStringValue\(HKCU, InstalledAppsKey, 'InstallLocation', Location\)/);
+  assert.match(script, /RegWriteStringValue\(HKCU, Key, 'InstallLocation', InstallRoot\)/);
+  assert.match(script, /Key := InstalledAppsKey;/);
+  // Both node entry points get it; the installer refuses an existing folder, so an empty pick is removed first.
+  assert.match(script, /Root := '--install-root "' \+ InstallRoot \+ '"';/);
+  assert.equal([...script.matchAll(/RunTrayScript\('\{#Tray(Install|Update)\}', [^)]*\+ Root\)/g)].length, 3);
+  assert.match(script, /RemoveDir\(InstallRoot\);\s+\/\/ Data left/);
+  // A chosen folder is checked before installing.
+  assert.match(script, /Result := UsableLocation\(LocationPage\.Values\[0\]\);/);
+});
+
 test('no [Code] line starts with "[", which Inno Setup reads as a section tag', () => {
   const script = readFileSync(SETUP_SCRIPT, 'utf8');
   const code = script.slice(script.indexOf('[Code]') + '[Code]'.length);

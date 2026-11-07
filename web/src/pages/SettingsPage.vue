@@ -52,6 +52,7 @@ import type {
   SystemSettingsResult,
 } from '@/types'
 import { OptionSelect } from '@/components/ui/select'
+import { usePageRefresh } from '@/layouts/page-refresh'
 
 const store = useConsoleStore()
 const route = useRoute()
@@ -383,6 +384,8 @@ function checkFields(): ValidatedField[] {
   fieldErrors.value = Object.fromEntries(invalid.map(field => [field.dataset.settingsField ?? '', fieldErrorMessage(field)]))
   return invalid
 }
+// The top bar's 刷新 reads the machine's resources and the clients again; the form is the saved settings already.
+usePageRefresh(() => Promise.all([loadResources(), detectClients()]))
 </script>
 
 <template>
