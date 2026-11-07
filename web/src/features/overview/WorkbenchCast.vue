@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
 import { Button } from '@/components/ui/button'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
 import type { ProjectAgentTaskParticipant } from '@/types'
@@ -37,7 +37,7 @@ const pick = (id: string) => { only.value = only.value === id ? null : id }
             :aria-label="only === fla.agentId ? t('overview.cast.all') : t('overview.cast.only', { name: agentName(fla.agentId) })"
             :data-cast-fla="fla.agentId" @click="pick(fla.agentId)">
             <span class="cast-face" :style="agentIdentityStyle(fla.agentId)" aria-hidden="true">
-              <img :src="agentAvatarUrl(fla.agentId)" :data-agent-portrait="fla.agentId" alt="" />
+              <AgentAvatar :agent-id="fla.agentId" />
               <span v-if="fla.status === 'completed'" class="cast-done"><UiIcon name="check" :size="8" /></span>
             </span>
             <span class="cast-who">

@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Badge } from '@/components/ui/badge'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { overviewOwnerId, overviewTaskHref } from '@/features/overview/overview-data'
 import { taskStatusTone } from '@/features/project-agents/task-labels'
@@ -26,7 +26,7 @@ const lead = computed(() => overviewOwnerId(props.task))
   <RouterLink :to="overviewTaskHref(task)" class="workbench-row task-list-row" data-task-row>
     <span v-if="done" class="workbench-done-mark" aria-hidden="true"><UiIcon name="check" :size="16" /></span>
     <span v-else class="workbench-face" :style="agentIdentityStyle(lead)" aria-hidden="true">
-      <img v-if="lead" :src="agentAvatarUrl(lead)" alt="" />
+      <AgentAvatar v-if="lead" :agent-id="lead" />
       <UiIcon v-else name="agents" class="workbench-face-none" />
     </span>
     <span class="workbench-row-text">

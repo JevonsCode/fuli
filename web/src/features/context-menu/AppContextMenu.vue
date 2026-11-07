@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { t } from '@/i18n'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { agentPinsText } from '@/features/agent-profile/agent-pins'
@@ -14,6 +14,9 @@ import { personalProjectsPath } from '@/router/paths'
 import { useConsoleStore } from '@/stores/console'
 import { apiErrorReason, getJson } from '@/api/client'
 import { agentDisplayName } from '@/features/agent-profile/profile-model'
+import { copyFlaMention } from '@/features/agent-profile/copy-mention'
+import { mentionKind } from '@/features/agent-profile/fla-mention'
+import { builtInRole, roleName } from '@/features/agent-profile/role-names'
 import { projectAgentShape } from '@/features/agent-profile/agent-record-shape'
 import type { ProjectAgentRecord } from '@/types'
 import { readContextTarget, type ContextTarget } from './context-target'
@@ -24,8 +27,9 @@ import { replaceFieldRange, selectAllInField } from './field-edit'
 // this glass menu with what makes sense there; anywhere else, nothing opens.
 // A component with its own right-click menu (the dock's pins) or the glossary
 // mode claims the event first and keeps it. Every FLA portrait in the console
-// (`data-agent-portrait`) gets the dock pins' menu here, and a click on one
-// gives it a short shake (Jevons 11-02).
+// (`data-agent-portrait`, drawn by AgentAvatar) gets the dock pins' menu here plus
+// the FLAs list's 复制 #FLA, and a click on one gives it a short shake (Jevons 11-02).
+// A face that is the FLA's own link (`data-agent-link`) opens its page on click.
 type MenuAction = 'cut' | 'copy' | 'paste' | 'selectAll' | 'open' | 'copyLink'
 
 const router = useRouter()
@@ -62,7 +66,14 @@ async function exportDebugTurn(id: string) {
 // A portrait names only its FLA's id: the menu reads that FLA's record for its name and,
 // with it, where its workbench and workflows are. Records read once stay for the visit.
 const agents = ref<Record<string, ProjectAgentRecord | 'missing'>>({})
-const agentName = (agentId: string) => { const record = agents.value[agentId]; return record && record !== 'missing' ? agentDisplayName(record) : agentId }
+function agentName(agentId: string) {
+  const record = agents.value[agentId]
+  if (record && record !== 'missing') return agentDisplayName(record)
+  const role = builtInRole(agentId)
+  return role ? roleName(role) : agentId
+}
+// 复制 #FLA, as on the FLAs list: only for an Agent a person can call by name.
+const mentionable = (agentId: string) => { const record = agents.value[agentId]; return Boolean(record && record !== 'missing' && mentionKind(record)) }
 async function readAgent(agentId: string) {
   if (!agents.value[agentId]) {
     try {
@@ -81,6 +92,13 @@ function onPortraitClick(event: MouseEvent) {
   // The face around the picture (its only child) shakes, so a round, clipped portrait moves as one.
   const face = portrait?.parentElement?.childElementCount === 1 ? portrait.parentElement : portrait
   if (face) shake(face)
+}
+// Bubbling, so a long press that only opened the menu (stopped at the face) opens no page.
+function onPortraitOpen(event: MouseEvent) {
+  const face = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-agent-link][data-agent-portrait]') : null
+  const agentId = face?.dataset.agentPortrait
+  if (!agentId || event.defaultPrevented || !spaceId.value || route.params.agentId === agentId) return
+  goAgent({ path: agentProfilePath(spaceId.value, agentId), query: { tab: 'overview' } })
 }
 const open = ref(false)
 const point = ref({ x: 0, y: 0 })
@@ -210,6 +228,7 @@ onMounted(() => {
   void watchClipboardRead()
   window.addEventListener('contextmenu', onContextMenu)
   window.addEventListener('click', onPortraitClick, true)
+  window.addEventListener('click', onPortraitOpen)
   window.addEventListener('scroll', onScroll, true)
   window.addEventListener('blur', onBlur)
   window.addEventListener('resize', close)
@@ -217,6 +236,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('contextmenu', onContextMenu)
   window.removeEventListener('click', onPortraitClick, true)
+  window.removeEventListener('click', onPortraitOpen)
   window.removeEventListener('scroll', onScroll, true)
   window.removeEventListener('blur', onBlur)
   clearTimeout(blurTimer)
@@ -258,6 +278,10 @@ onBeforeUnmount(() => {
         <ContextMenuItem v-if="work.ready(agentTarget.agentId)?.workflow" data-portrait-action="workflow" @select="goAgent(work.ready(agentTarget.agentId)!.workflow!)">
           {{ agentPinsText('menu.workflow', 'Open Workflow') }}
         </ContextMenuItem>
+        <template v-if="mentionable(agentTarget.agentId)">
+          <ContextMenuSeparator />
+          <ContextMenuItem data-portrait-action="copy-mention" @select="copyFlaMention(agentName(agentTarget.agentId), store)">{{ t('flas.menu.copy') }}</ContextMenuItem>
+        </template>
       </template>
       <ContextMenuItem v-for="action in actions" v-else :key="action" :data-context-action="action" @select="run(action)">
         {{ t(`contextMenu.${action}`) }}

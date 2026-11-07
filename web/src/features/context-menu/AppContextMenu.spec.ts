@@ -4,6 +4,7 @@ import { defineComponent, h } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { useConsoleStore } from '@/stores/console'
 import AppContextMenu from './AppContextMenu.vue'
 
 const { getJson } = vi.hoisted(() => ({ getJson: vi.fn() }))
@@ -148,9 +149,40 @@ describe('AppContextMenu', () => {
     await rightClick('#portrait')
     await flushPromises()
     expect(document.querySelector('[data-app-context-menu]')?.textContent).toContain('Ada Vale')
-    expect([...document.querySelectorAll('[data-app-context-menu] [data-portrait-action]')].map(item => item.getAttribute('data-portrait-action'))).toEqual(['home', 'workbench'])
+    expect([...document.querySelectorAll('[data-app-context-menu] [data-portrait-action]')].map(item => item.getAttribute('data-portrait-action'))).toEqual(['home', 'workbench', 'copy-mention'])
     expect(actions()).toEqual([])
     expect(document.querySelector('[data-app-context-menu]')?.textContent).not.toContain('取消置顶')
+    // 复制 #FLA, as on the FLAs list.
+    document.querySelector<HTMLElement>('[data-app-context-menu] [data-portrait-action="copy-mention"]')!.click()
+    await flushPromises()
+    expect(clipboard.writeText).toHaveBeenCalledWith('#FLA Ada Vale ')
+  })
+
+  it('names a built-in role it cannot read by its current name, with nothing to copy', async () => {
+    await setup()
+    getJson.mockRejectedValue(new Error('not found'))
+    document.querySelector('#portrait')!.setAttribute('data-agent-portrait', 'employee.tonborg')
+    await rightClick('#portrait')
+    await flushPromises()
+    expect(menu()?.querySelector('[role="group"], [data-slot="context-menu-label"]')?.textContent ?? menu()?.textContent).toContain('Tonborg')
+    expect(menu()?.querySelector('[data-portrait-action="copy-mention"]')).toBeNull()
+  })
+
+  it("opens the FLA's page from a face that is its own link, never from its own page", async () => {
+    const { router } = await setup()
+    useConsoleStore().state = { mode: 'personal_only', personalSpaces: [{ id: 'space', name: 'Synthetic' }], activePersonalSpaceId: 'space' } as never
+    const face = document.querySelector<HTMLElement>('#peek-portrait')!
+    face.click()
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/')
+    face.setAttribute('data-agent-link', 'true')
+    face.click()
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/agents/space/agent-1?tab=overview')
+    await router.push('/agents/space/agent-1?tab=workbench')
+    face.click()
+    await flushPromises()
+    expect(router.currentRoute.value.query.tab).toBe('workbench')
   })
 
   it('opens a portrait menu inside the dialog it was opened from', async () => {

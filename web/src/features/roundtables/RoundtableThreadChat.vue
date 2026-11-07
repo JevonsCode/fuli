@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
 import { postMessage, setThreadMode, type RoundtableDelivery, type RoundtablePerson, type RoundtableThread } from './roundtable-api'
@@ -97,8 +97,8 @@ watch(() => props.thread.messages.length, async (length, previous) => {
             <p v-if="marks[index]!.separator" class="rt-sep"><time :datetime="bubble.createdAt">{{ time(bubble.createdAt) }}</time></p>
             <div class="rt-msg-row">
               <template v-if="!bubble.mine">
-                <span v-if="marks[index]!.runStart" class="rt-face roundtable-avatar" :style="agentIdentityStyle(bubble.from.agentId)" aria-hidden="true"><img
-                  v-if="bubble.from.agentId" :src="agentAvatarUrl(bubble.from.agentId)" :data-agent-portrait="bubble.from.agentId" alt="" /><template v-else>{{ initial(bubble) }}</template></span>
+                <span v-if="marks[index]!.runStart" class="rt-face roundtable-avatar" :style="agentIdentityStyle(bubble.from.agentId)" aria-hidden="true"><AgentAvatar
+                  v-if="bubble.from.agentId" :agent-id="bubble.from.agentId" /><template v-else>{{ initial(bubble) }}</template></span>
                 <span v-else class="rt-face-gap" aria-hidden="true" />
               </template>
               <div class="rt-msg-col">

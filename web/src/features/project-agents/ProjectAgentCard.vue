@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { agentDisplayName, agentResponsibility } from '@/features/agent-profile/profile-model'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import AgentMentionCopy from '@/features/agent-profile/AgentMentionCopy.vue'
 import { mentionKind } from '@/features/agent-profile/fla-mention'
 import { t } from '@/i18n'
@@ -62,7 +62,7 @@ function surfaceClick(event: MouseEvent) {
         :style="agentIdentityStyle(agent.agentId)"
         aria-hidden="true"
       >
-        <img :src="agentAvatarUrl(agent.agentId)" :data-agent-portrait="agent.agentId" alt="" />
+        <AgentAvatar :agent-id="agent.agentId" :link="false" />
       </span>
       <div class="min-w-0 flex-1">
         <div class="flex min-w-0 items-start gap-1.5">

@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentDisplayName, agentProfilePath } from '@/features/agent-profile/profile-model'
 import { Badge } from '@/components/ui/badge'
 import { formatRelativeTime } from '@/lib/relative-time'
@@ -90,7 +90,7 @@ const people = computed(() => [...new Set((props.task.participants ?? []).map(pe
       <div class="task-card-side">
         <span v-if="people.length" class="task-card-people" data-task-people>
           <RouterLink v-for="person in people" :key="person.id" :to="agentProfilePath(personalSpaceId ?? '', person.id)" :title="person.name" :aria-label="person.name">
-            <img :src="agentAvatarUrl(person.id)" alt="" />
+            <AgentAvatar :agent-id="person.id" />
           </RouterLink>
         </span>
         <Badge :variant="taskStatusTone(task.status)" data-task-status>{{ taskStatusLabel(task.status) }}</Badge>

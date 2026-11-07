@@ -8,6 +8,7 @@ export const contextMenuMessages = {
     copyLink: '复制链接',
     copyProjectName: '复制项目名称',
     editProject: '修改项目信息',
+    openAgent: '打开 {name} 的主页',
   },
   'en-US': {
     cut: 'Cut',
@@ -18,5 +19,6 @@ export const contextMenuMessages = {
     copyLink: 'Copy link',
     copyProjectName: 'Copy project name',
     editProject: 'Edit project details',
+    openAgent: "Open {name}'s page",
   },
 } as const

@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
 import { UiIcon } from '@/ui'
@@ -42,7 +42,7 @@ const foldedName = computed(() => [props.title, props.waiting].filter(Boolean).j
       :aria-label="collapsed ? foldedName : undefined" :title="collapsed ? foldedName : undefined" :data-delivery="delivery">
       <span class="rt-faces" :class="`has-${faces.length}`" aria-hidden="true">
         <span v-for="face in faces" :key="face.key" class="rt-face" :style="face.agentId ? agentIdentityStyle(face.agentId) : undefined">
-          <img v-if="face.agentId" :src="agentAvatarUrl(face.agentId)" :data-agent-portrait="face.agentId" alt="" />
+          <AgentAvatar v-if="face.agentId" :agent-id="face.agentId" />
           <template v-else>{{ face.initial }}</template>
         </span>
         <span class="rt-mode" data-roundtable-mode><UiIcon :name="delivery" :size="10" /></span>

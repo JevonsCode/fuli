@@ -13,7 +13,7 @@ import { occupationLabels, saveAgentOccupation } from '@/features/agent-profile/
 import { useAgentPinsState } from '@/features/agent-profile/agent-pins'
 import { agentWorkbenchEntry, compareWorkbenchRows, type AgentWorkbenchEntry } from '@/features/agent-profile/agent-workbench'
 import { groupAgentsByProject } from '@/features/agent-profile/directory-project-groups'
-import { clipboardText, flaMention } from '@/features/agent-profile/fla-mention'
+import { copyFlaMention } from '@/features/agent-profile/copy-mention'
 import { agentDisplayName, agentProfilePath, agentResponsibility, fuzzyMatch, profileProjectIds } from '@/features/agent-profile/profile-model'
 import { useAgentRosterPages } from '@/features/agent-profile/useAgentRosterPages'
 import { useAgentWorkSummary } from '@/features/agent-profile/useAgentWorkSummary'
@@ -212,17 +212,7 @@ function lastUpdate(agent: ProjectAgentRecord) {
 }
 const profilePath = (agent: ProjectAgentRecord) => agentProfilePath(space.value, agent.agentId)
 
-async function copyMention(agent: ProjectAgentRecord) {
-  const mention = flaMention(agentDisplayName(agent))
-  try {
-    const clipboard = globalThis.navigator?.clipboard
-    if (!clipboard?.writeText) throw new Error('clipboard unavailable')
-    await clipboard.writeText(clipboardText(mention))
-    store.notify(t('flas.menu.copied', { mention }))
-  } catch {
-    store.reportError(new Error(t('flas.menu.copyFailed')))
-  }
-}
+const copyMention = (agent: ProjectAgentRecord) => copyFlaMention(agentDisplayName(agent), store)
 
 // Reading: the whole list arrives in pages; the next page is read as the end comes into view.
 const scroller = ref<HTMLElement | null>(null)

@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
 import PinIcon from '@/components/PinIcon.vue'
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import { t } from '@/i18n'
 import { UiIcon } from '@/ui'
@@ -31,7 +31,7 @@ const emit = defineEmits<{ 'toggle-pin': [pinned: boolean]; copy: []; open: [] }
     <ContextMenu>
       <ContextMenuTrigger as-child>
         <RouterLink :to="to" class="fla-row" :data-layout="layout" :data-fla="agentId" :data-return-focus="agentId">
-          <span class="fla-face" :style="agentIdentityStyle(agentId)" aria-hidden="true"><img :src="agentAvatarUrl(agentId)" :data-agent-portrait="agentId" alt="" /></span>
+          <span class="fla-face" :style="agentIdentityStyle(agentId)" aria-hidden="true"><AgentAvatar :agent-id="agentId" /></span>
           <span class="fla-who">
             <span class="fla-name">{{ name }}</span>
             <span v-if="meta" class="fla-meta">{{ meta }}</span>

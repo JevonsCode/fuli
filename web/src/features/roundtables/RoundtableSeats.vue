@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import MeLink from '@/components/MeLink.vue'
-import { agentAvatarUrl } from '@/features/agent-profile/agent-avatar'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
 import MeAvatar from '@/features/person-home/MeAvatar.vue'
 import { t } from '@/i18n'
@@ -18,7 +18,7 @@ const initial = (seat: RoundtableSeat) => (seat.person.name ?? '?').trim().slice
     <li v-for="seat in seats" :key="seat.key" class="roundtable-seat" :class="{ 'is-awaited': seat.awaited, 'is-me': isPerson(seat.person) }"
       :style="isPerson(seat.person) ? undefined : agentIdentityStyle(seat.person.agentId)" data-roundtable-seat :data-roundtable-seat-me="isPerson(seat.person) || undefined">
       <MeAvatar v-if="isPerson(seat.person)" class="roundtable-seat-face" :size="20" />
-      <span v-else class="roundtable-seat-face" aria-hidden="true"><img v-if="seat.person.agentId" :src="agentAvatarUrl(seat.person.agentId)" :data-agent-portrait="seat.person.agentId" alt="" /><template v-else>{{ initial(seat) }}</template></span>
+      <span v-else class="roundtable-seat-face" aria-hidden="true"><AgentAvatar v-if="seat.person.agentId" :agent-id="seat.person.agentId" :name="seat.person.name" /><template v-else>{{ initial(seat) }}</template></span>
       <MeLink v-if="isPerson(seat.person)" class="roundtable-seat-name" />
       <span v-else class="roundtable-seat-name">{{ seat.person.name ?? t('roundtable.unknownAgent') }}</span>
       <small class="roundtable-seat-state">{{ seat.awaited ? t('roundtable.seatAwaited') : t('roundtable.seatSpoke', { count: seat.spoke }) }}</small>
