@@ -35,6 +35,7 @@ const NAMES = [
   'submit_agent_app_version',
   'list_agent_apps',
   'get_judgment_policy', 'list_judgments', 'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'get_agent_pins', 'pin_agent',
+  'list_tonborg_questions', 'answer_tonborg_question',
   'get_model_usage', 'role_work',
   'get_agent_score_card',
   'control_project_agent_task_run', 'register_standing_assignment', 'report_agent_service',
@@ -343,7 +344,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
   const app = {
     judgment: { ...Object.fromEntries(['policy', 'pins', 'pin'].map(name => [name, async input => calls.push([`judgment-${name}`, input])])),
       // Records and Tonborg's answers reach Agents through the Agent view only (rec#50).
-      agent: Object.fromEntries(['records', 'review', 'assess', 'accept'].map(name => [name, async input => calls.push([`judgment-${name}`, input])])) },
+      agent: Object.fromEntries(['records', 'review', 'assess', 'accept', 'questions', 'answerQuestion'].map(name => [name, async input => calls.push([`judgment-${name}`, input])])) },
     modelBackends: { usage: input => calls.push(['model-usage', input]) },
     roleWork: { claim: input => calls.push(['role-work-claim', input]), submit: input => calls.push(['role-work-submit', input]) },
     registerStandingAssignment: async input => calls.push(['standing-assignment', input]),
@@ -564,7 +565,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'external-targets', 'external-delete', 'external-conflict-policy',
     'external-update-default-policy', 'defer-preference-conflict', 'delete-public-project',
     'employee-list', 'employee-recruit', 'employee-tools', 'employee-call', 'app-submit', 'app-list',
-    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'model-usage', 'role-work-claim', 'agent-score-card', 'task-run-control', 'standing-assignment', 'service-register',
+    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'judgment-questions', 'judgment-answerQuestion', 'model-usage', 'role-work-claim', 'agent-score-card', 'task-run-control', 'standing-assignment', 'service-register',
     'workflow-propose', 'workflow-index', 'workflow-read', 'workflow-recordRun',
     'surfaces-list', 'surfaces-pause', 'surfaces-resume',
     'delegated-send',

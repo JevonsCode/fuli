@@ -83,7 +83,7 @@ test('delegated: Tonborg confirms the clear item as its own and asks about the r
   assert.deepEqual(hint.source.batch, [unsure.id]);
   // The question names its item: one that quotes nothing leads with the item's title.
   assert.equal(hint.question, '1. 「Deploy on Fridays」I think you drop this: deploy on Fridays. Right?');
-  assert.match(hint.guidance, /do not confirm, drop or edit these knowledge items yourself/);
+  assert.match(hint.guidance, /do not confirm, drop or edit these knowledge items on your own judgment/);
 });
 
 test('without delegation nothing becomes an agent confirmation and the manual policy still holds', async t => {

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { EmployeeError } from '../employees/manifest.js';
 import { TONBORG_OPERATIONS } from './backend.js';
-import { isOpenQuestion } from './conversation.js';
+import { DELEGATED_LIST_LIMIT, latestDelegatedReviews } from './delegated-reviews.js';
 import { parse } from './service.js';
 import { visibleKnowledgeKeys } from './visible-items.js';
 
@@ -24,8 +24,6 @@ const readInput = z.object({ personalSpaceId: id }).strict();
 export const PERSON_LANGUAGES = Object.freeze(['zh-CN', 'en-US']);
 const writeInput = readInput.extend({ enabled: z.boolean(), expectedRevision: z.number().int().min(0),
   language: z.enum(PERSON_LANGUAGES).optional() }).strict();
-// The newest delegated reviews the list reads; older ones stay on Tonborg's page.
-const LIST_LIMIT = 200;
 const ROLE = 'tonborg';
 
 // Whether Tonborg has a model of its own for knowledge review, and whether its
@@ -73,19 +71,11 @@ export async function setReviewDelegation({ judgment, modelTrust, input }) {
 export async function delegatedReviewList({ judgment, personal = null, input }) {
   const { personalSpaceId } = parse(readInput, input);
   await judgment.scope({ personalSpaceId });
-  const seen = new Set();
-  const confirmed = [], questions = [];
-  for (const record of judgment.store().delegatedReviews(personalSpaceId, LIST_LIMIT)) {
-    const subject = `${record.personalProjectId ?? ''}\u0000${record.target}`;
-    if (seen.has(subject)) continue;
-    seen.add(subject);
-    if (record.feedback.vote !== null || record.hard_deleted) continue;
-    const entry = { id: record.id, createdAt: record.createdAt, personalProjectId: record.personalProjectId ?? null,
-      target: record.target, title: record.title ?? null, summary: record.summary, confidence: record.confidence ?? null,
-      guess: record.guess ?? null, question: record.question ?? null, feedbackRevision: record.feedback.revision };
-    if (record.execution.status === 'applied') confirmed.push(entry);
-    else if (isOpenQuestion(record)) questions.push(entry);
-  }
+  const latest = latestDelegatedReviews(judgment.store(), personalSpaceId, DELEGATED_LIST_LIMIT);
+  const entry = record => ({ id: record.id, createdAt: record.createdAt, personalProjectId: record.personalProjectId ?? null,
+    target: record.target, title: record.title ?? null, summary: record.summary, confidence: record.confidence ?? null,
+    guess: record.guess ?? null, question: record.question ?? null, feedbackRevision: record.feedback.revision });
+  const confirmed = latest.confirmed.map(entry), questions = latest.questions.map(entry);
   if (!personal) return { confirmed, questions };
   // A failed read keeps every entry: the console joins them with the items it shows.
   const { states } = await visibleKnowledgeKeys(personal, { personalSpaceId, reader: null },

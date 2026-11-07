@@ -10,6 +10,7 @@ import { WORK_SURFACE_DEFINITIONS } from './work-surface-definitions.js';
 import { DELEGATION_DEFINITIONS } from './delegation-definitions.js';
 import { DIAGNOSTIC_DEFINITIONS } from './diagnostic-definitions.js';
 import { OLD_DATA_DEFINITIONS } from './old-data-definitions.js';
+import { TONBORG_QUESTION_DEFINITIONS } from './tonborg-question-definitions.js';
 import { OCCUPATION_KIT_DEFINITIONS } from './occupation-kit-definitions.js';
 import { TASK_RUN_DEFINITIONS } from './task-run-definitions.js';
 import { TASK_PREFERENCE_DEFINITIONS } from './task-preference-definitions.js';
@@ -31,6 +32,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...EMPLOYEE_TOOL_DEFINITIONS,
   ...AGENT_APP_TOOL_DEFINITIONS,
   ...JUDGMENT_TOOL_DEFINITIONS,
+  ...TONBORG_QUESTION_DEFINITIONS,
   ...MODEL_BACKEND_DEFINITIONS,
   ...AGENT_SCORE_CARD_DEFINITIONS,
   ...TASK_RUN_DEFINITIONS,

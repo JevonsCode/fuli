@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { createJudgmentService } from './service.js';
 import { JudgmentStore } from './store.js';
 import { createJudgmentEngine } from './engine.js';
+import { createQuestionTools } from './question-tools.js';
 import { createJudgmentBackend } from './backend.js';
 import { tonborgSessionEvidence } from './session-package.js';
 import { openRoleWorkRuntime } from '../model-backends/runtime.js';
@@ -22,5 +23,6 @@ export function attachJudgmentRuntime(app, paths) {
     packageViews: { tonborg: (evidence, work, session) => tonborgSessionEvidence(app, evidence, work, session) } });
   app.judgment = createJudgmentService({ app, prepareStore: spaceId => recoveryGate.refresh(spaceId),
     openStore: () => new JudgmentStore(join(paths.dataDir, 'judgment.sqlite'), { recoveryGate }),
-    engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge: app.roleWork }), trust: app.modelTrust }) });
+    engine: createJudgmentEngine({ app, judge: createJudgmentBackend({ bridge: app.roleWork }), trust: app.modelTrust }),
+    questionTools: createQuestionTools });
 }

@@ -15,6 +15,7 @@ import UiNotice from '@/ui/UiNotice.vue'
 
 import { guessedAction, oneLine, type ReviewAction, type ReviewLine } from './review-list'
 import ReviewRows from './ReviewRows.vue'
+import TonborgExplain from './TonborgExplain.vue'
 import { useReviewList } from './review-store'
 
 // The knowledge part of 待决策 (rec#96): Tonborg's questions, every pending
@@ -86,6 +87,7 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
           <img v-if="tonborgAvatar" class="review-group__avatar" :src="tonborgAvatar" alt="" />
           <span class="review-group__name" :title="t('reviewList.groups.questions')">{{ t('reviewList.groups.questions') }}</span>
           <span class="review-group__count">· {{ review.list.questions.length }}</span>
+          <TonborgExplain :count="review.list.questions.length" />
         </CardTitle>
         <CardAction v-if="editableQuestions" class="review-group__action">
           <span class="review-busy review-busy--progress"><GrowthLoading v-if="busy('questions')" variant="inline" :label="progressLabel('questions')" /></span>

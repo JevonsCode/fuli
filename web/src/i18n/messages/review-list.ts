@@ -32,6 +32,11 @@ export const reviewListMessages = {
     details: {
       title: '详情', content: '内容', project: '项目', proposer: '谁提的', reason: '为什么还等着', tonborg: "@:{'roleNames.tonborg'} 的理由", guess: "@:{'roleNames.tonborg'} 的猜测",
     },
+    explain: {
+      title: "让 @:{'roleNames.tonborg'} 给你解释", lead: '在你的 AI 里新开一个会话，逐条讲清楚',
+      copy: '复制给其他 AI', copyOnly: '复制给你的 AI', opened: "已在 {client} 打开 @:{'roleNames.tonborg'} 的解释",
+      copied: "已复制 @:{'roleNames.tonborg'} 的解释，粘贴给你的 AI 即可", copyFailed: '没能复制，请手动复制下面这段',
+    },
     delegation: {
       label: "交给 @:{'roleNames.tonborg'} 确认", saving: "正在保存「交给 @:{'roleNames.tonborg'} 确认」…",
       needsModel: "需要先给 @:{'roleNames.tonborg'} 接一个模型，会用掉它的 token。", connect: '去接模型',
@@ -72,6 +77,11 @@ export const reviewListMessages = {
     },
     details: {
       title: 'Details', content: 'Content', project: 'Project', proposer: 'Proposed by', reason: 'Why it waits', tonborg: "@:{'roleNames.tonborg'}’s reason", guess: "@:{'roleNames.tonborg'}’s guess",
+    },
+    explain: {
+      title: "Let @:{'roleNames.tonborg'} explain", lead: 'Opens a new chat in your AI and goes through them one by one',
+      copy: 'Copy for another AI', copyOnly: 'Copy for your AI', opened: "Opened @:{'roleNames.tonborg'}’s explanation in {client}",
+      copied: "Copied @:{'roleNames.tonborg'}’s explanation; paste it into your AI", copyFailed: 'Could not copy; copy the text below',
     },
     delegation: {
       label: "Let @:{'roleNames.tonborg'} confirm", saving: "Saving “Let @:{'roleNames.tonborg'} confirm”…",

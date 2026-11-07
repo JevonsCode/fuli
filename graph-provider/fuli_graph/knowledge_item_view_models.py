@@ -189,6 +189,9 @@ class KnowledgeVisibleItemsRead(AgentReaderRef):
     # Also each visible item's review state (11-06): a Tonborg question about an
     # item the person already decided elsewhere is not asked again.
     with_state: bool = False
+    # With with_state, also each item's edit revision (knowledge_item_version):
+    # an answer to Tonborg changes the item only at the version it read (11-07).
+    with_version: bool = False
 
 
 # pending: still waits for a person (an AI review included); agent_confirmed:
@@ -199,6 +202,7 @@ KnowledgeItemReviewState = Literal['pending', 'agent_confirmed', 'confirmed', 'h
 
 class KnowledgeVisibleItemState(KnowledgeItemKey):
     state: KnowledgeItemReviewState
+    version: int | None = Field(default=None, ge=0)
 
 
 class KnowledgeVisibleItems(StrictModel):
