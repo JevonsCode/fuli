@@ -1,9 +1,20 @@
 <p align="center">
   <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/svg/lockup/fuli-lockup-bilingual-horizontal-dark.svg" />
+    <img src="brand/svg/lockup/fuli-lockup-bilingual-horizontal.svg" alt="FULI 复利 logo" width="200" />
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/readme/hero-en-dark.webp" />
     <img src="docs/readme/hero-en.webp" alt="FULI 复利: your AI tools share one memory of you and your projects" width="800" />
   </picture>
 </p>
+
+<h3 align="center">Automate everything that can be automated, and hand the execution to your FLAs. You make the calls and lead the way: take your FLA crew through the hard parts, or go grab a coffee and enjoy the compound interest of your own experience.</h3>
+
+<p align="center"><sub>Project profiles and FLA hiring run on their own if you'd rather not think about them; your only job is to set the direction. FLAs carry context and tools across every Agent client, and both top-tier and lighter models pull their weight here.</sub></p>
 
 <p align="center">
   English · <a href="README.zh-CN.md">简体中文</a> · <a href="https://有点.意思.com/fuli/">Website</a> · <a href="https://github.com/JevonsCode/fuli/releases/latest">Download</a>
@@ -12,6 +23,8 @@
 <p align="center">
   <a href="https://github.com/JevonsCode/fuli/releases/latest"><img src="https://img.shields.io/github/v/release/JevonsCode/fuli?style=flat&label=desktop" alt="latest release" /></a>
   <a href="https://www.npmjs.com/package/fuli-context"><img src="https://img.shields.io/npm/v/fuli-context?style=flat&logo=npm&label=fuli-context" alt="npm version" /></a>
+  <a href="https://github.com/JevonsCode/fuli/releases"><img src="https://img.shields.io/github/downloads/JevonsCode/fuli/total?style=flat&label=desktop%20downloads" alt="desktop downloads" /></a>
+  <a href="https://www.npmjs.com/package/fuli-context"><img src="https://img.shields.io/npm/dm/fuli-context?style=flat&label=npm%20downloads" alt="npm downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="license" /></a>
 </p>
 

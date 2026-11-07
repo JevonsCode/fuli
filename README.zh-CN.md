@@ -1,9 +1,20 @@
 <p align="center">
   <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/svg/lockup/fuli-lockup-bilingual-horizontal-dark.svg" />
+    <img src="brand/svg/lockup/fuli-lockup-bilingual-horizontal.svg" alt="FULI 复利 标志" width="200" />
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/readme/hero-zh-dark.webp" />
     <img src="docs/readme/hero-zh.webp" alt="FULI 复利：你的 AI 工具共用一份记忆，记着你和你的项目" width="800" />
   </picture>
 </p>
+
+<h3 align="center">一切都是能自动则自动，一切执行就交给 FLAs 吧。你做好判断，做好领头羊，领着你的 FLAs 大军披荆斩棘，或者去喝杯咖啡休息休息～享受你自己经验带给你自己的复利吧。</h3>
+
+<p align="center"><sub>项目的简历、FLAs 的招募，如果你不想关心，它们都是自动的，你唯一要做的就是把握方向。FLAs 可以自动带着上下文和各种工具穿梭在各个 Agent 客户端，无论是高等级模型还是低等级模型，在这里都可以发挥作用。</sub></p>
 
 <p align="center">
   <a href="README.md">English</a> · 简体中文 · <a href="https://有点.意思.com/fuli/">产品网站</a> · <a href="https://github.com/JevonsCode/fuli/releases/latest">下载</a>
@@ -12,6 +23,8 @@
 <p align="center">
   <a href="https://github.com/JevonsCode/fuli/releases/latest"><img src="https://img.shields.io/github/v/release/JevonsCode/fuli?style=flat&label=desktop" alt="最新版本" /></a>
   <a href="https://www.npmjs.com/package/fuli-context"><img src="https://img.shields.io/npm/v/fuli-context?style=flat&logo=npm&label=fuli-context" alt="npm 版本" /></a>
+  <a href="https://github.com/JevonsCode/fuli/releases"><img src="https://img.shields.io/github/downloads/JevonsCode/fuli/total?style=flat&label=desktop%20downloads" alt="客户端下载量" /></a>
+  <a href="https://www.npmjs.com/package/fuli-context"><img src="https://img.shields.io/npm/dm/fuli-context?style=flat&label=npm%20downloads" alt="npm 下载量" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="许可证" /></a>
 </p>
 
