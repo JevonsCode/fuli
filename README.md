@@ -14,11 +14,6 @@
 
 <p align="center">FULI is a plugin that lets your tasks move across all your Agent clients: Claude Code, Codex, OpenCode… They share one memory, one taste and one FLA team, so you use whichever fits and switch without explaining everything again. It doesn't replace your clients or change what you set up: your models, subscriptions, sessions and settings stay as they are. FULI plugs in as its own entries only, and removing it from a client in the console, or uninstalling FULI, takes those entries out again.</p>
 
-<p align="center"><sub>If you think in harnesses: each client is a harness, and FULI is the layer above them.</sub></p>
-
-<h3 align="center">Automate everything that can be automated, and hand the execution to your FLAs. You make the calls and lead the way: take your FLA crew through the hard parts, or go grab a coffee and enjoy the compound interest of your own experience.</h3>
-
-<p align="center"><sub>Project profiles and FLA hiring run on their own if you'd rather not think about them; your only job is to set the direction. FLAs carry context and tools across every Agent client, and both top-tier and lighter models pull their weight here.</sub></p>
 
 <p align="center">
   English · <a href="README.zh-CN.md">简体中文</a> · <a href="https://有点.意思.com/fuli/">Website</a> · <a href="https://github.com/JevonsCode/fuli/releases/latest">Download</a>
@@ -31,6 +26,12 @@
   <a href="https://www.npmjs.com/package/fuli-context"><img src="https://img.shields.io/npm/dm/fuli-context?style=flat&label=npm%20downloads" alt="npm downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/fuli-context?style=flat" alt="license" /></a>
 </p>
+
+<h3 align="left">Automate everything that can be automated, and hand the execution to your FLAs. You make the calls and lead the way: take your FLA crew through the hard parts, or go grab a coffee and enjoy the compound interest of your own experience.</h3>
+
+<p align="left">Project profiles and FLA hiring run on their own if you'd rather not think about them; your only job is to set the direction. FLAs carry context and tools across every Agent client, and both top-tier and lighter models pull their weight here.</p>
+
+
 
 Each task gets only the small slice it needs. Your judgment and experience keep adding up, so FULI
 knows you better the more you use it. That is the compound interest. Little by little, what your
