@@ -12,7 +12,8 @@ import { secretReference } from './secret-store.js';
 // (rec#11 D-70). No MCP or Agent tool reaches it.
 const KEYS_ROUTE = '/api/model-backends/keys';
 const KEY_ROUTE = /^\/api\/model-backends\/keys\/([^/]+)$/;
-const KEY_BODY = z.object({ key: z.string() }).strict();
+// endpoint: the address the key is for; the store ties the key to its origin.
+const KEY_BODY = z.object({ key: z.string(), endpoint: z.string() }).strict();
 
 export async function handleModelKeyRequest({ request, response, url, secrets }) {
   const reference = KEY_ROUTE.exec(url.pathname)?.[1] ?? null;
@@ -29,13 +30,13 @@ export async function handleModelKeyRequest({ request, response, url, secrets })
   }
   try {
     if (reference === null) {
-      sendJson(response, 200, { saved: secrets.references() });
+      sendJson(response, 200, { saved: secrets.references(), origins: secrets.origins() });
       return true;
     }
     secretReference(reference, 'Key reference');
     const parsed = KEY_BODY.safeParse(await readJson(request));
-    if (!parsed.success) throw new TypeError('Send the key as { "key": "…" }');
-    await secrets.set(reference, parsed.data.key);
+    if (!parsed.success) throw new TypeError('Send the key as { "key": "…", "endpoint": "https://…" }');
+    await secrets.set(reference, parsed.data.key, parsed.data.endpoint);
     sendJson(response, 200, { reference, saved: true });
   } catch (error) {
     // The store's own refusals name the reference, never the key.

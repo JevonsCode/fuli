@@ -10,7 +10,7 @@ export const aiHelpMessages = {
       copy: '复制提示词',
       copied: '已复制',
       copyFailed: '没能复制，请选中上面的文字手动复制。',
-      webmcp: '浏览器里的 AI 也能直接用这一页的工具；涉及密钥和你的决定时，会先请你点一下。',
+      webmcp: '浏览器里的 AI 也能直接用这一页的工具；密钥和你的决定仍由你自己点。',
     },
     topics: {
       models: '内置 Agent 和语义搜索用哪个模型、发哪些内容、花多少。让你的 Agent 去找接口和 Key 并接好。',
@@ -40,20 +40,7 @@ export const aiHelpMessages = {
     webmcp: {
       actor: '浏览器 AI',
       defaultReason: '浏览器 AI 通过页面工具 {tool} 操作',
-      declined: '你没有在页面上允许这一步，什么都没改。',
-      confirm: {
-        asks: '浏览器里的 AI 想替你做这一步，需要你点一下。',
-        allow: '允许',
-        deny: '不允许',
-        waiting: '还有 {count} 个请求在等你',
-        more: '还有 {count} 条',
-        listModels: { title: '把已存的密钥发给 {host}，列出它的模型', key: '使用的密钥：{key}' },
-        saveKey: { title: '在这台电脑上保存模型密钥「{key}」', ending: '密钥结尾：…{ending}' },
-        configure: { title: '修改 {role} 的模型', model: '{model} · {host}' },
-        test: { title: '测试 {role} 的模型' },
-        settings: { title: '修改 FULI 设置', field: '改动：{field}' },
-        decide: { title: '按 AI 的建议处理 {count} 件待决策' },
-      },
+      personsOwn: '这一步只能由本人在页面上操作；请告诉本人在哪里点。',
     },
   },
   'en-US': {
@@ -64,7 +51,7 @@ export const aiHelpMessages = {
       copy: 'Copy prompt',
       copied: 'Copied',
       copyFailed: 'Could not copy; select the text above and copy it.',
-      webmcp: 'The AI in your browser can also use this page\'s tools; for keys and your own decisions it asks you to click first.',
+      webmcp: 'The AI in your browser can also use this page\'s tools; keys and your own decisions stay your clicks.',
     },
     topics: {
       models: 'Which model the built-in Agents and semantic search use, what they send and spend. Your Agent can find an endpoint and key and connect it.',
@@ -94,20 +81,7 @@ export const aiHelpMessages = {
     webmcp: {
       actor: 'Browser AI',
       defaultReason: 'The browser AI used the page tool {tool}',
-      declined: 'You did not allow this step on the page; nothing changed.',
-      confirm: {
-        asks: 'The AI in your browser wants to do this for you and needs your click.',
-        allow: 'Allow',
-        deny: 'Don\'t allow',
-        waiting: '{count} more requests are waiting',
-        more: '{count} more',
-        listModels: { title: 'Send your saved key to {host} to list its models', key: 'Key: {key}' },
-        saveKey: { title: 'Save the model key "{key}" on this computer', ending: 'Key ends with …{ending}' },
-        configure: { title: 'Change the model of {role}', model: '{model} · {host}' },
-        test: { title: 'Test the model of {role}' },
-        settings: { title: 'Change FULI settings', field: 'Change: {field}' },
-        decide: { title: 'Handle {count} waiting decisions as the AI suggests' },
-      },
+      personsOwn: 'Only the person makes this change on the page; tell them where to click.',
     },
   },
 }

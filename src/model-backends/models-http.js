@@ -38,7 +38,8 @@ export async function handleModelListRequest({ request, response, url, secrets, 
     return true;
   }
   try {
-    const secret = reference ? await secrets.read(reference) : null;
+    // A saved key goes only to the origin it was saved for; another typed host is refused first.
+    const secret = reference ? await secrets.read(reference, endpoint) : null;
     if (reference && !secret) throw new ModelListError('missing_key');
     sendJson(response, 200, await listEndpointModels({ protocol, endpoint, secret, fetchImpl, timeoutMs }));
   } catch (error) {

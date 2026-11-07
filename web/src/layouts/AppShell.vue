@@ -15,7 +15,6 @@ import ModelPowerButton from '@/features/model-settings/ModelPowerButton.vue'
 import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
-import PersonConfirmSheet from '@/features/webmcp/PersonConfirmSheet.vue'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { shellPageTools } from '@/features/webmcp/shell-page-tools'
 import { usePageTools } from '@/features/webmcp/usePageTools'
@@ -218,7 +217,6 @@ watchEffect(() => {
       <FeedbackToast />
       <RouterView v-slot="{ Component }"><component :is="Component" /></RouterView>
       <GlossaryLayer />
-      <PersonConfirmSheet />
       <CaptureOnboardingDialog />
     </main>
     <WidgetSlot place="shell.aboveDock" />

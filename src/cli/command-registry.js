@@ -29,7 +29,7 @@ Install and Agent connection:
   employee install BUILT_PACKAGE_DIRECTORY [--replace] [--runtime-config FILE]
   app list [--agent AGENT_ID] | show APP_ID | approve APP_ID VERSION | disable APP_ID | rollback APP_ID VERSION  (Agent apps; approve and rollback ask in this terminal, then Windows Hello)
   app delete APP_ID [--data [--output DIR]] | export APP_ID --output DIR  (delete code first, data second) [--runtime-config FILE]
-  models set-key SECRET_REF [--data-dir DIR]  (built-in Agent model API key; hidden entry or stdin, never echoed)
+  models set-key SECRET_REF --endpoint URL [--data-dir DIR]  (built-in Agent model API key for that endpoint only; hidden entry or stdin, never echoed)
   models check assistant|bole|jefa|tonborg [--data-dir DIR]  (synthetic connection check of one role's model backend)
   session start|stop|restart|status [--client claude_code|codex] [--json]  (FULI for the client session this runs in, e.g. "!fuli session stop" in Claude Code or Codex)
   session default on|off|status [--json]  (whether new sessions start with FULI on; open sessions keep theirs)

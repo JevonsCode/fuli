@@ -85,7 +85,7 @@ test('an OpenAI-compatible endpoint gets the saved key, which no answer or log c
     const missing = await list(url, { protocol: 'openai_chat', endpoint: `${model.base}/compatible-mode/v1`, secretRef: 'synthetic' });
     assert.equal(missing.status, 409);
     assert.equal((await missing.json()).code, 'missing_key');
-    await secrets.set('synthetic', SYNTHETIC_KEY);
+    await secrets.set('synthetic', SYNTHETIC_KEY, model.base);
     const answer = await list(url, { protocol: 'openai_chat', endpoint: `${model.base}/compatible-mode/v1`, secretRef: 'synthetic' });
     const text = await answer.text();
     assert.equal(answer.status, 200);
@@ -94,6 +94,13 @@ test('an OpenAI-compatible endpoint gets the saved key, which no answer or log c
     const refused = await list(url, { protocol: 'openai_chat', endpoint: `${model.base}/compatible-mode/v1` });
     assert.equal(refused.status, 502);
     assert.deepEqual(await refused.json(), { error: 'The endpoint\'s models could not be listed (auth_failed)', code: 'auth_failed' });
+    // The same key for another origin (rec#10 on fuli#784) is refused before any request leaves.
+    const seen = model.seen.length;
+    const elsewhere = await list(url, { protocol: 'openai_chat',
+      endpoint: `${model.base.replace('127.0.0.1', 'localhost')}/compatible-mode/v1`, secretRef: 'synthetic' });
+    assert.equal(elsewhere.status, 409);
+    assert.equal((await elsewhere.json()).code, 'secret_endpoint_mismatch');
+    assert.equal(model.seen.length, seen);
   });
   assert.equal(logged.filter((line) => line.includes('NEVER-ECHO')).length, 0);
 });
@@ -104,7 +111,7 @@ test('Anthropic lists its models with the key in x-api-key and refuses to ask wi
     const keyless = await list(url, { protocol: 'anthropic_messages', endpoint: `${model.base}/v1` });
     assert.equal(keyless.status, 409);
     assert.equal((await keyless.json()).code, 'missing_key');
-    await secrets.set('anthropic', SYNTHETIC_KEY);
+    await secrets.set('anthropic', SYNTHETIC_KEY, model.base);
     const answer = await list(url, { protocol: 'anthropic_messages', endpoint: `${model.base}/v1`, secretRef: 'anthropic' });
     assert.deepEqual(await answer.json(), { models: [{ id: 'synthetic-claude' }], source: 'models' });
     const unsupported = await list(url, { protocol: 'typesafe_systemone', endpoint: `${model.base}/v1`, secretRef: 'anthropic' });

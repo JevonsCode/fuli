@@ -2,6 +2,7 @@ import { rmSync, statSync } from 'node:fs';
 
 import { readJsonFile } from '../storage/json-file.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { endpointUrl } from './config.js';
 import { createDpapiProtector } from './windows-dpapi.js';
 
 // Model API keys, stored under the FULI data directory and named by a
@@ -9,6 +10,15 @@ import { createDpapiProtector } from './windows-dpapi.js';
 // systems keep the file readable by its owner only and refuse it otherwise.
 // A failed protection never falls back to a plaintext copy, and no message
 // carries the key. The file is not part of config export, sync or backup.
+//
+// Each key is tied to the endpoint origin (scheme, host, port) it was saved
+// for, and is read only for that origin (rec#10 on fuli#784): a connection
+// pointed at another host, by a delegated role edit or anything else, cannot
+// take an existing key there. Using it elsewhere means saving it again for
+// the new endpoint. Keys saved before origins were recorded are tied once,
+// when a runtime first opens the store, to the one origin the configured
+// connections naming them use (bindLegacyKeys); a key named by none or by
+// several stays untied and is refused until it is saved again.
 
 const STORE_VERSION = 1;
 export const MODEL_SECRETS_FORMAT = jsonFormat({ store: 'model-secrets', versions: [STORE_VERSION] });
@@ -28,6 +38,11 @@ class ModelSecretError extends Error {
     this.name = 'ModelSecretError';
     this.code = code;
   }
+}
+
+// The origin a key is tied to, from an endpoint URL.
+export function keyOrigin(endpoint, label = 'endpoint') {
+  return new URL(endpointUrl(endpoint, label)).origin;
 }
 
 export function secretReference(value, label) {
@@ -51,23 +66,31 @@ export function createModelSecretStore({
         'The model key store can be read by other users. Restrict it to the current user and try again.');
     }
   }
-  function records() {
-    const stored = readJsonFile(path, null);
-    if (stored === null) return {};
-    if (stored?.version !== STORE_VERSION || !stored.secrets || typeof stored.secrets !== 'object') {
+  function stored() {
+    const value = readJsonFile(path, null);
+    if (value === null) return { version: STORE_VERSION, secrets: {} };
+    if (value?.version !== STORE_VERSION || !value.secrets || typeof value.secrets !== 'object') {
       throw new ModelSecretError('secret_unreadable', 'The model key store is not in a supported format.');
     }
-    return stored.secrets;
+    return value;
   }
+  const records = () => stored().secrets;
+  const write = next => writeVersionedJsonFileAtomic(path, { version: STORE_VERSION, ...next }, MODEL_SECRETS_FORMAT);
   return {
     // The references that have a key, never the keys.
     references() {
       assertPrivate();
       return Object.keys(records()).sort();
     },
-    async set(ref, secret) {
+    // Each reference's tied origin (null while untied); origins are no secret.
+    origins() {
+      assertPrivate();
+      return Object.fromEntries(Object.entries(records()).map(([ref, record]) => [ref, record.endpoint ?? null]).sort());
+    },
+    async set(ref, secret, endpoint) {
       secretReference(ref, 'Key reference');
       const value = secretValue(secret);
+      const origin = keyOrigin(endpoint, 'The endpoint this key is for');
       assertPrivate();
       const existed = fileMode(path) !== null;
       let data;
@@ -76,9 +99,9 @@ export function createModelSecretStore({
       } catch {
         throw new ModelSecretError('secret_protection_failed', `The key for ${ref} could not be protected. Nothing was saved.`);
       }
-      writeVersionedJsonFileAtomic(path, { version: STORE_VERSION,
-        secrets: { ...records(), [ref]: { scheme: protector.scheme, data, updatedAt: new Date().toISOString() } } },
-        MODEL_SECRETS_FORMAT);
+      const current = stored();
+      write({ ...current, secrets: { ...current.secrets,
+        [ref]: { scheme: protector.scheme, data, endpoint: origin, updatedAt: new Date().toISOString() } } });
       try {
         assertPrivate();
       } catch (error) {
@@ -86,21 +109,47 @@ export function createModelSecretStore({
         throw error;
       }
     },
-    async read(ref) {
+    // The key for a request to endpoint; refused before decrypting when the key is tied elsewhere or untied.
+    async read(ref, endpoint) {
       secretReference(ref, 'Key reference');
+      const origin = keyOrigin(endpoint);
       assertPrivate();
       const record = records()[ref];
       if (!record) return null;
+      if (!record.endpoint) {
+        throw new ModelSecretError('secret_endpoint_unbound',
+          `The key for ${ref} is not tied to an endpoint yet. Save it again on the model page for ${origin}.`);
+      }
+      if (record.endpoint !== origin) {
+        throw new ModelSecretError('secret_endpoint_mismatch',
+          `The key for ${ref} was saved for ${record.endpoint}, not ${origin}. Save it again on the model page for the new endpoint.`);
+      }
       if (record.scheme !== protector.scheme) {
         throw new ModelSecretError('secret_unreadable',
-          `The key for ${ref} was saved with another protection scheme. Save it again with: fuli models set-key ${ref}`);
+          `The key for ${ref} was saved with another protection scheme. Save it again on the model page or with: fuli models set-key ${ref} --endpoint <its endpoint>`);
       }
       try {
         return (await protector.unprotect(record.data)).toString('utf8');
       } catch {
         throw new ModelSecretError('secret_unreadable',
-          `The key for ${ref} could not be decrypted. Save it again with: fuli models set-key ${ref}`);
+          `The key for ${ref} could not be decrypted. Save it again on the model page or with: fuli models set-key ${ref} --endpoint <its endpoint>`);
       }
+    },
+    // Once per store: ties each key saved before origins were recorded to the one origin of the
+    // configured connections that name it. Compatible with stores written before 0.25; it can go
+    // once no supported release writes untied keys and their owners have saved them again.
+    bindLegacyKeys(connections) {
+      if (fileMode(path) === null) return;
+      assertPrivate();
+      const current = stored();
+      if (current.legacyKeysBound) return;
+      const secrets = Object.fromEntries(Object.entries(current.secrets).map(([ref, record]) => {
+        if (record.endpoint) return [ref, record];
+        const origins = new Set(Object.values(connections).filter(connection => connection.secretRef === ref)
+          .map(connection => keyOrigin(connection.endpoint)));
+        return [ref, origins.size === 1 ? { ...record, endpoint: [...origins][0] } : record];
+      }));
+      write({ ...current, secrets, legacyKeysBound: true });
     }
   };
 }

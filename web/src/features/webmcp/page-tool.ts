@@ -4,21 +4,20 @@ import { apiErrorCode, apiErrorReason, getJson, sendJsonWithHeaders } from '@/ap
 import type { ResponseShape } from '@/api/response-shape'
 import { t } from '@/i18n'
 
-import { askPerson, type ConfirmationText } from './person-confirmation'
-
 // A console page tool (WebMCP) is a page action the browser's AI agent calls.
 // It reaches FULI only through catalog routes it declares (`routes`, exact
 // strings of src/agent-tools/interface-catalog.js, or GET reads); a test
 // keeps every declared route in the catalog, so no page tool exists without
 // a catalog entry.
 //
-// A change is first sent the way run_delegated_action sends it: with the
+// A change is sent only the way run_delegated_action sends it: with the
 // delegation header, so the console's own gate decides from the catalog and
-// the person's AI permissions, and records it with its undo. When the gate
-// says the change is the person's own (local_user_only, a decision in their
-// words, a category they turned off, a route with its own Agent tool), the
-// page asks the person; only after their click does it send the change as
-// the person's own request. Agent access turned off refuses outright.
+// the person's AI permissions, and records it with its undo. A page tool
+// never does more than an FLA could. When the gate says the change is the
+// person's own (local_user_only, a decision in their words, a category they
+// turned off, a route with its own Agent tool), the tool is refused with the
+// gate's reason and nothing is sent again: the page has no channel that
+// proves the person, not the calling agent, approved it (rec#10 on fuli#784).
 
 const DELEGATION_HEADER = 'x-fuli-delegation'
 const PERSON_DECIDES = new Set(['local_user_only', 'agent_tool_route', 'person_words_required', 'delegation_category_off'])
@@ -38,8 +37,6 @@ export interface PageChange<T = unknown> {
   route: string
   params?: Record<string, string>
   body?: Record<string, unknown>
-  /** What the person reads if they must allow it; never a secret. */
-  confirm: ConfirmationText
   /** The fields the tool relies on in the answer. */
   shape: ResponseShape<T>
 }
@@ -51,8 +48,6 @@ export interface PageToolContext {
   /** A declared GET route, checked against the fields the tool relies on. */
   read: <T>(path: string, shape: ResponseShape<T>) => Promise<T>
   change: <T>(change: PageChange<T>) => Promise<T>
-  /** For a tool that acts through page code (a store) rather than one request: the person allows it first. */
-  personAllows: (text: ConfirmationText) => Promise<void>
 }
 
 export interface PageTool<Input extends z.ZodType = z.ZodType> {
@@ -96,6 +91,13 @@ function refusal(cause: unknown): never {
   throw new PageToolError(apiErrorCode(cause) ?? 'request_failed', apiErrorReason(cause))
 }
 
+// The gate's refusal of a change that is the person's own, with what the agent tells them.
+function personsOwn(cause: unknown): never {
+  const code = apiErrorCode(cause) ?? 'request_failed'
+  if (!PERSON_DECIDES.has(code)) refusal(cause)
+  throw new PageToolError(code, `${apiErrorReason(cause)} ${t('aiHelp.webmcp.personsOwn')}`)
+}
+
 /** Runs one tool call: validates its input, keeps it to its declared routes, and answers with JSON text. */
 export async function runPageTool(tool: PageTool, rawInput: unknown, signal: AbortSignal): Promise<string> {
   const { reason: given, ...rest } = (rawInput ?? {}) as Record<string, unknown>
@@ -109,9 +111,6 @@ export async function runPageTool(tool: PageTool, rawInput: unknown, signal: Abo
   const declared = (route: string) => {
     if (!tool.routes.includes(route)) throw new PageToolError('route_not_declared', `${tool.name} does not reach ${route}`)
   }
-  const personAllows = async (text: ConfirmationText) => {
-    if (!await askPerson(tool.name, text, signal)) throw new PageToolError('person_declined', t('aiHelp.webmcp.declined'))
-  }
   const context: PageToolContext = {
     signal,
     reason,
@@ -119,18 +118,12 @@ export async function runPageTool(tool: PageTool, rawInput: unknown, signal: Abo
       assertDeclaredRead(tool, path)
       return getJson(path, shape, { signal }).catch(refusal)
     },
-    async change<T>({ route, params, body, confirm, shape }: PageChange<T>) {
+    async change<T>({ route, params, body, shape }: PageChange<T>) {
       declared(route)
       const { method, path } = fillRoute(route, params)
-      try {
-        return await sendJsonWithHeaders(method, path, body, { [DELEGATION_HEADER]: delegationHeader(reason, body) }, shape, { signal })
-      } catch (cause) {
-        if (!PERSON_DECIDES.has(apiErrorCode(cause) ?? '')) refusal(cause)
-      }
-      await personAllows(confirm)
-      return sendJsonWithHeaders(method, path, body, {}, shape, { signal }).catch(refusal)
+      return sendJsonWithHeaders(method, path, body, { [DELEGATION_HEADER]: delegationHeader(reason, body) }, shape, { signal })
+        .catch(personsOwn)
     },
-    personAllows,
   }
   return JSON.stringify(await tool.run(input.data, context) ?? { ok: true })
 }

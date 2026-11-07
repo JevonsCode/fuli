@@ -1,4 +1,4 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setLocale } from '@/i18n'
@@ -7,14 +7,11 @@ import { decisionPageTools } from '@/features/review-list/decision-page-tools'
 import type { PersonalProject } from '@/types'
 
 import { pageModelContext, type ModelContextTool } from './model-context'
-import PersonConfirmSheet from './PersonConfirmSheet.vue'
-import { usePersonConfirmation } from './person-confirmation'
 import { runPageTool, type PageTool } from './page-tool'
 import { registerPageTools } from './usePageTools'
 
 // Synthetic data only: a fake document.modelContext (WebMCP) and a fake
 // console behind fetch. No real key, endpoint or project.
-const SYNTHETIC_KEY = 'sk-synthetic-PAGE-TOOL-9f3c'
 const PROJECTS = [{ project_id: 'project-a', profile: { name: 'Project A' } }] as unknown as PersonalProject[]
 const ROLES = {
   state: 'ok', error: null, revision: 'a'.repeat(64), connections: {}, operations: { tonborg: ['knowledge_review'] },
@@ -99,73 +96,41 @@ describe('console page tools', () => {
       connection: { endpoint: 'https://llm.example.test/v1', model: 'model-x', secretRef: 'work-key' },
       settings: { enabled: true, allowedOperations: ['knowledge_review'], egress: { approvedProjects: [{ personalSpaceId: 'space-a', personalProjectId: 'project-a' }] } } })
     expect(result).toMatchObject({ role: 'tonborg', state: 'enabled', model: 'model-x', history: 'recorded' })
-    expect(usePersonConfirmation().current.value).toBeNull()
   })
 
-  it('a key waits for the person\'s click, which shows only its last characters, then goes as their own request', async () => {
-    answer = request => delegated(request) ? { status: 403, body: { code: 'local_user_only', error: 'synthetic refusal' } }
-      : { status: 200, body: { reference: 'work-key', saved: true } }
-    const wrapper = mount(PersonConfirmSheet, { attachTo: document.body })
-    const running = runPageTool(tool('fuli_save_model_key', models()), { secretRef: 'work-key', key: SYNTHETIC_KEY }, new AbortController().signal)
-    await flushPromises()
-    const asked = usePersonConfirmation().current.value!
-    expect(asked.title).toBe('在这台电脑上保存模型密钥「work-key」')
-    expect(asked.lines).toEqual(['密钥结尾：…9f3c'])
-    expect(document.body.innerHTML).not.toContain(SYNTHETIC_KEY)
-    await wrapper.get('[data-person-confirm-allow]').trigger('click')
-    const result = await running
-    expect(sent.map(request => [request.method, request.url, delegated(request)])).toEqual([
-      ['PUT', '/api/model-backends/keys/work-key', true], ['PUT', '/api/model-backends/keys/work-key', false]])
-    expect(result).not.toContain(SYNTHETIC_KEY)
-    expect(JSON.parse(result)).toEqual({ secretRef: 'work-key', saved: true })
-    wrapper.unmount()
-  })
-
-  it('nothing changes when the person says no, an aborted call counts as no, and Agent access off refuses outright', async () => {
-    answer = () => ({ status: 403, body: { code: 'local_user_only' } })
-    const listing = runPageTool(tool('fuli_list_endpoint_models', models()), { protocol: 'openai_chat', endpoint: 'https://llm.example.test/v1', secretRef: 'work-key' }, new AbortController().signal)
-    await flushPromises()
-    expect(usePersonConfirmation().current.value!.title).toBe('把已存的密钥发给 llm.example.test，列出它的模型')
-    usePersonConfirmation().answer(usePersonConfirmation().current.value!.id, false)
-    await expect(listing).rejects.toMatchObject({ code: 'person_declined' })
-    expect(sent).toHaveLength(1)
-
-    const controller = new AbortController()
-    const aborted = runPageTool(tool('fuli_test_model_role', models()), { role: 'tonborg' }, controller.signal)
-    await flushPromises()
-    controller.abort()
-    await expect(aborted).rejects.toMatchObject({ code: 'person_declined' })
-    expect(usePersonConfirmation().current.value).toBeNull()
-
+  it('a change the gate says is the person\'s is refused with its reason, and nothing is sent again (rec#10 on fuli#784)', async () => {
+    for (const code of ['local_user_only', 'agent_tool_route', 'person_words_required', 'delegation_category_off']) {
+      sent = []
+      answer = () => ({ status: 403, body: { code, error: 'synthetic refusal' } })
+      await expect(runPageTool(tool('fuli_test_model_role', models()), { role: 'tonborg' }, new AbortController().signal))
+        .rejects.toMatchObject({ code, message: expect.stringContaining('这一步只能由本人在页面上操作') })
+      expect(sent.map(request => [request.method, delegated(request)])).toEqual([['POST', true]])
+    }
     answer = () => ({ status: 403, body: { code: 'agent_access_disabled', error: 'Agent access is off' } })
     await expect(runPageTool(tool('fuli_test_model_role', models()), { role: 'tonborg' }, new AbortController().signal))
       .rejects.toMatchObject({ code: 'agent_access_disabled' })
-    expect(usePersonConfirmation().current.value).toBeNull()
+  })
+
+  it('no page tool takes a key, lists an endpoint with a saved key, or records the person\'s decision', () => {
+    const tools = [...models(), ...decisionPageTools({} as never)]
+    expect(tools.map(entry => entry.name)).toEqual(['fuli_read_model_settings', 'fuli_configure_model_role', 'fuli_test_model_role', 'fuli_list_decisions'])
+    const changes = tools.flatMap(entry => entry.routes.filter(route => !route.startsWith('GET ')))
+    expect(changes).toEqual(['PUT /api/model-backends/roles/:role', 'POST /api/model-backends/roles/:role/check'])
   })
 
   it('refuses input outside the tool\'s schema before any request', async () => {
     await expect(runPageTool(tool('fuli_configure_model_role', models()), { role: 'nobody' }, new AbortController().signal))
       .rejects.toMatchObject({ code: 'invalid_input' })
-    await expect(runPageTool(tool('fuli_save_model_key', models()), { secretRef: '../x', key: SYNTHETIC_KEY }, new AbortController().signal))
+    await expect(runPageTool(tool('fuli_configure_model_role', models()), { role: 'tonborg', secretRef: '../x' }, new AbortController().signal))
       .rejects.toMatchObject({ code: 'invalid_input' })
     expect(sent).toEqual([])
   })
 
-  it('待决策: one click of the person allows the whole batch, then each line is decided by the page itself', async () => {
+  it('待决策 is read only: the agent gets the lines to suggest from', async () => {
     const line = (key: string, text: string) => ({ key, text, item: { id: key }, projectId: null, proposer: 'Astro', reason: null, review: null })
-    const act = vi.fn(async (_line: { key: string }, _action: string) => true)
-    const list = { loaded: true, refresh: vi.fn(), act,
-      list: { questions: [], pending: [line('entity:a', '用 pnpm'), line('entity:b', '周五发布')], confirmed: [] } }
-    const tools = decisionPageTools(list as never)
-    const running = runPageTool(tool('fuli_decide', tools), { decisions: [{ key: 'entity:a', action: 'confirm' }, { key: 'entity:b', action: 'drop' }] }, new AbortController().signal)
-    await flushPromises()
-    const asked = usePersonConfirmation().current.value!
-    expect(asked.title).toBe('按 AI 的建议处理 2 件待决策')
-    expect(act).not.toHaveBeenCalled()
-    usePersonConfirmation().answer(asked.id, true)
-    expect(JSON.parse(await running)).toEqual({ done: ['entity:a', 'entity:b'], notDone: [] })
-    expect(act.mock.calls.map(([decided, action]) => [decided.key, action])).toEqual([['entity:a', 'confirm'], ['entity:b', 'drop']])
-    await expect(runPageTool(tool('fuli_decide', tools), { decisions: [{ key: 'entity:z', action: 'confirm' }] }, new AbortController().signal))
-      .rejects.toMatchObject({ code: 'invalid_input' })
+    const list = { loaded: true, refresh: vi.fn(), list: { questions: [], pending: [line('entity:a', '用 pnpm')], confirmed: [] } }
+    const result = JSON.parse(await runPageTool(tool('fuli_list_decisions', decisionPageTools(list as never)), {}, new AbortController().signal))
+    expect(result.pending).toEqual([{ key: 'entity:a', text: '用 pnpm', projectId: null, proposer: 'Astro', question: null, guess: null }])
+    expect(sent).toEqual([])
   })
 })

@@ -6,26 +6,34 @@ import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { t } from '@/i18n'
-import { readSavedKeys, saveModelKey, validKeyReference } from './model'
+import { endpointOrigin, readSavedKeys, saveModelKey, validKeyReference } from './model'
 
 // The API key behind one key reference, saved on this computer. The field is
 // write-only: after saving it empties, and the page shows only that a key is
-// saved under the reference, never the key.
-const props = defineProps<{ reference: string; disabled?: boolean }>()
+// saved under the reference, never the key. A key is saved for the endpoint
+// typed above it and is sent to that origin only (secret-store.js); a key
+// saved for another origin must be saved again here before the role uses it.
+const props = defineProps<{ reference: string; endpoint: string; disabled?: boolean }>()
 const emit = defineEmits<{ keys: [saved: string[]] }>()
 
 const saved = ref<Set<string> | null>(null)
+const origins = ref<Record<string, string | null>>({})
 const key = ref('')
 const saving = ref(false)
 const message = ref('')
 const error = ref('')
 const reference = computed(() => props.reference.trim())
-const usable = computed(() => validKeyReference(reference.value))
+const origin = computed(() => endpointOrigin(props.endpoint))
+const usable = computed(() => validKeyReference(reference.value) && origin.value !== null)
 const hasKey = computed(() => usable.value && Boolean(saved.value?.has(reference.value)))
+// The saved key goes to another origin than the endpoint typed now, or to none yet.
+const tiedElsewhere = computed(() => hasKey.value && origins.value[reference.value] !== origin.value)
 
 onMounted(async () => {
   try {
-    saved.value = new Set((await readSavedKeys()).saved)
+    const keys = await readSavedKeys()
+    saved.value = new Set(keys.saved)
+    origins.value = keys.origins ?? {}
     emit('keys', [...saved.value])
   } catch { saved.value = null }
 })
@@ -37,8 +45,9 @@ async function save() {
   message.value = ''
   error.value = ''
   try {
-    await saveModelKey(reference.value, key.value)
+    await saveModelKey(reference.value, key.value, props.endpoint.trim())
     saved.value = new Set([...saved.value ?? [], reference.value])
+    origins.value = { ...origins.value, [reference.value]: origin.value }
     emit('keys', [...saved.value])
     message.value = t('modelSettings.key.saved', { reference: reference.value })
   } catch (cause) {
@@ -54,8 +63,9 @@ async function save() {
   <Field class="model-key-entry" data-model-key-entry>
     <FieldLabel for="model-role-key">{{ t('modelSettings.key.label') }}</FieldLabel>
     <p class="model-key-state" data-model-key-state>
-      {{ !usable ? t('modelSettings.key.needsReference') : hasKey ? t('modelSettings.key.present', { reference })
-        : t('modelSettings.key.absent', { reference }) }}
+      {{ !validKeyReference(reference) ? t('modelSettings.key.needsReference') : !origin ? t('modelSettings.key.needsEndpoint')
+        : tiedElsewhere ? t('modelSettings.key.elsewhere', { reference, origin: origins[reference] ?? '-' })
+        : hasKey ? t('modelSettings.key.present', { reference, origin }) : t('modelSettings.key.absent', { reference }) }}
     </p>
     <div class="model-key-row">
       <Input id="model-role-key" v-model="key" type="password" autocomplete="new-password" spellcheck="false"

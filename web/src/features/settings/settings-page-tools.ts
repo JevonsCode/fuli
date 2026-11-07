@@ -1,7 +1,6 @@
 import { z } from 'zod'
 
 import { shapeFor } from '@/api/response-shape'
-import { t } from '@/i18n'
 import { definePageTool } from '@/features/webmcp/page-tool'
 import type { RuntimeSettings, SystemSettingsResult } from '@/types'
 
@@ -54,8 +53,7 @@ export function settingsPageTools(page: { saved: (result: SystemSettingsResult) 
         const { needsPersonUrl, ...rest } = input
         const next: RuntimeSettings = { ...withoutRestartChanges(current.configured, current.active), ...rest,
           ...(needsPersonUrl !== undefined ? { notifications: { ...current.configured.notifications, needsPersonUrl } } : {}) }
-        const result = await context.change({ route: 'PUT /api/system/settings', body: { ...next }, shape: SETTINGS_SHAPE,
-          confirm: { title: t('aiHelp.webmcp.confirm.settings.title'), lines: Object.keys(input).map(key => t('aiHelp.webmcp.confirm.settings.field', { field: key })) } })
+        const result = await context.change({ route: 'PUT /api/system/settings', body: { ...next }, shape: SETTINGS_SHAPE })
         page.saved(result)
         return { configured: visible(result.configured), restartRequired: result.restartRequired }
       },

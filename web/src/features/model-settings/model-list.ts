@@ -11,7 +11,7 @@ import { validKeyReference, type ModelProtocol } from './model'
 
 export interface ModelListRequest { protocol: ModelProtocol; endpoint: string; secretRef?: string }
 
-export const MODEL_LIST = shapeOf(z.looseObject({ models: z.array(z.looseObject({ id: z.string() })), source: z.string() }))
+const MODEL_LIST = shapeOf(z.looseObject({ models: z.array(z.looseObject({ id: z.string() })), source: z.string() }))
 
 export const listEndpointModels = (request: ModelListRequest, signal?: AbortSignal) =>
   postJson('/api/model-backends/models', request, MODEL_LIST, { signal })
@@ -33,7 +33,7 @@ export function orderModels(ids: readonly string[], semantic: boolean): string[]
   return [...ids.filter(id => embeds(id) === semantic), ...ids.filter(id => embeds(id) !== semantic)]
 }
 
-const LIST_REASONS = ['network', 'timeout', 'auth_failed', 'missing_key', 'model_or_endpoint_not_found', 'endpoint_redirected',
+const LIST_REASONS = ['network', 'timeout', 'auth_failed', 'missing_key', 'secret_endpoint_mismatch', 'secret_endpoint_unbound', 'model_or_endpoint_not_found', 'endpoint_redirected',
   'listing_unsupported', 'invalid_response'] as const
 
 export const modelListReason = (code: string | null) =>

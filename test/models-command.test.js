@@ -16,14 +16,15 @@ function output() {
 test('set-key stores the key under its reference without printing it', async () => {
   const stored = [];
   const out = output();
-  await runModelsCommand(['set-key', 'jev-main', '--data-dir', 'C:/fuli-test-data'], {
+  await runModelsCommand(['set-key', 'jev-main', '--endpoint', 'https://llm.example.test/v1', '--data-dir', 'C:/fuli-test-data'], {
     readSecret: async ({ prompt }) => { assert.match(prompt, /jev-main/); return SECRET; },
-    openSecretStore: path => { assert.match(path, /model-secrets\.json$/); return { set: async (ref, value) => stored.push([ref, value]) }; },
+    openSecretStore: path => { assert.match(path, /model-secrets\.json$/);
+      return { set: async (ref, value, endpoint) => stored.push([ref, value, endpoint]) }; },
     write: out.write
   });
-  assert.deepEqual(stored, [['jev-main', SECRET]]);
+  assert.deepEqual(stored, [['jev-main', SECRET, 'https://llm.example.test/v1']]);
   assert.equal(out.lines.join('\n').includes(SECRET), false);
-  assert.match(out.lines.join('\n'), /jev-main/);
+  assert.match(out.lines.join('\n'), /jev-main, for https:\/\/llm\.example\.test only/);
 });
 
 test('check runs the synthetic connection check for one role and reports a non-zero exit when it fails', async () => {
@@ -45,6 +46,8 @@ test('check runs the synthetic connection check for one role and reports a non-z
 
 test('models rejects unknown actions, roles and options', async () => {
   for (const args of [[], ['list'], ['check'], ['check', 'astro'], ['set-key'], ['set-key', 'a', '--port', '1'],
+    // A key is tied to the endpoint it is for: without one, or with one that is no URL, nothing is saved.
+    ['set-key', 'a'], ['set-key', 'a', '--endpoint'], ['set-key', 'a', '--endpoint', 'not a url'], ['check', 'bole', '--endpoint', 'https://x.test'],
     ['check', 'bole', '--data-dir']]) {
     await assert.rejects(runModelsCommand(args, { write: () => {} }), TypeError, args.join(' '));
   }

@@ -1,61 +1,98 @@
 # AI-friendly console
 
-Every console action should be doable by the person's own AI, with as little of the person's effort as the trust model allows (Jevons, 11-06). Three paths reach the same capability layer: the interface catalog (`src/agent-tools/interface-catalog.js`) and the console's own routes.
+Every console action should be doable by the person's own AI, with as little of the person's effort as the trust model allows (Jevons, 11-06). Three kinds of caller reach the same capability layer: the interface catalog (`src/agent-tools/interface-catalog.js`) and the console's own routes.
 
 | Who acts | Path | What decides |
 | --- | --- | --- |
 | An Agent with FULI's MCP connected (Claude Code, Codex, OpenCode…) | Named Agent tools; `run_delegated_action` for catalog routes | The catalog entry, the person's AI permissions, their words for `agent_relayed` |
-| The AI in the person's browser (WebMCP) | Console page tools (`fuli_*`) | The same delegation gate; the person's click on the page where the gate says the change is theirs |
+| The AI in the person's browser (WebMCP) | Console page tools (`fuli_*`) | The same delegation gate, and nothing else |
 | The person | The console | — |
 
 ## Console page tools (WebMCP)
 
-[WebMCP](https://webmachinelearning.github.io/webmcp/) lets a page offer tools to the browser's AI agent. Chrome's origin trial (149+) puts it on `document.modelContext`; older builds used `navigator.modelContext`. FULI feature-detects both (`web/src/features/webmcp/model-context.ts`), registers with `registerTool(tool, { signal })` and unregisters by aborting the signal when the page goes; an older build's `unregister()` handle is called too. Read tools carry `readOnlyHint`, changes `consequentialHint`. Where the browser offers no model context, nothing is registered.
+[WebMCP](https://webmachinelearning.github.io/webmcp/) lets a page offer tools to the browser's AI agent. Chrome's origin trial (149+) puts it on `document.modelContext`; older builds used `navigator.modelContext`. FULI feature-detects both (`web/src/features/webmcp/model-context.ts`). It registers each tool with `registerTool(tool, { signal })` and unregisters it by aborting the signal when the page goes; an older build's `unregister()` handle is called too. Read tools carry `readOnlyHint`, changes carry `consequentialHint`. Where the browser offers no model context, nothing is registered.
 
 | Page | Tools |
 | --- | --- |
 | Every page | `fuli_open_page`, `fuli_search_knowledge` |
-| 模型与用量 | `fuli_read_model_settings`, `fuli_configure_model_role`, `fuli_save_model_key`, `fuli_list_endpoint_models`, `fuli_test_model_role` |
+| 模型与用量 | `fuli_read_model_settings`, `fuli_configure_model_role`, `fuli_test_model_role` |
 | 设置 | `fuli_read_settings`, `fuli_update_settings` (settings that apply without a restart) |
-| 待决策 | `fuli_list_decisions`, `fuli_decide` |
+| 待决策 | `fuli_list_decisions` (read only) |
 
 ### One source of truth
 
-A page tool declares the catalog routes it reaches (`routes`); it cannot send a change to an undeclared route, and `test/ai-friendly-console.test.js` fails when a declared change route has no catalog entry. Tools build their bodies with the page's own builders (`roleDraft`, `roleEdit`, `withoutRestartChanges`), not a copy.
+A page tool declares the catalog routes it reaches (`routes`) and cannot send a change anywhere else. Tools build their bodies with the page's own builders (`roleDraft`, `roleEdit`, `withoutRestartChanges`), not a copy. `test/ai-friendly-console.test.js` fails in two cases: a declared change route has no catalog entry, or a page tool reaches a route the catalog does not make `agent_delegable`.
 
-### Trust model
+### Trust model (rec#10 on fuli#784)
 
-A page tool runs in the person's own page, so a change it sends would otherwise be recorded as the person's. It is therefore sent first exactly as `run_delegated_action` sends it, with the `x-fuli-delegation` header (actor client `webmcp`, the agent's reason). The console's delegation gate then decides from the catalog and the person's AI permissions, and records the change with its undo in 设置 › AI 权限 (shown as 浏览器 AI). A page tool never does more without the person than an FLA could.
+A page tool's change is sent only the way `run_delegated_action` sends it, with the `x-fuli-delegation` header (actor client `webmcp`, the agent's reason). The console's delegation gate decides from the catalog and the person's AI permissions, and records the change with its undo in 设置 › AI 权限 (shown as 浏览器 AI). A page tool never does more than an FLA could.
 
-When the gate answers that the change is the person's own (`local_user_only`, `agent_relayed` without words, a category they turned off, or a route that has its own Agent tool), the page asks the person in a confirm sheet (`PersonConfirmSheet.vue`). Only their click sends the change as their own request. Closing the sheet or aborting the call counts as no. Agent access turned off (`agent_access_disabled`) refuses outright. WebMCP defines no consent API of its own (its `consequentialHint` lets the browser add one), so FULI's sheet is the consent.
+When the gate answers that a change is the person's own, the tool is refused with the gate's reason and nothing is sent again. That covers `local_user_only`, `agent_relayed` without words, a category the person turned off, and a route that has its own Agent tool. The agent then tells the person where to click. Agent access turned off (`agent_access_disabled`) refuses too.
 
-- **A model key** (`fuli_save_model_key`) is always the person's: the sheet names the key reference and shows only its last four characters. The key goes once, in a loopback request body, into the existing local key store; it is never logged, echoed or returned.
-- **Listing an endpoint's models** sends the saved key to a typed address, so the sheet names that host.
-- **待决策 decisions** (`fuli_decide`) are recorded as the person's (人确认): the agent proposes a batch, and one click allows the whole batch.
+There is no in-page "allow" sheet. Anything that drives the page could click it, so it would not show that the person approved. Nothing in the page can tell the person's click from the agent's, so these actions stay refused instead of being downgraded to the person's own request. For the same reason there is no page tool for the following:
 
-The sheet guards against an agent's mistakes and injected instructions. It is not a boundary against something that already drives the person's browser, which could click the sheet too, as it could any console button.
+- **A model key.** The person enters it in the model dialog. Or their MCP Agent, when asked, pipes it into `fuli models set-key <secretRef> --endpoint <url>` on stdin.
+- **Listing an endpoint's models.** This sends a saved key to a typed address. The Agent that found the key lists the models itself.
+- **Confirming or dropping 待决策 items.** These are recorded as the person's decision. The agent reads the list and suggests, and the person clicks. An MCP Agent can instead relay the person's exact words through `agent_relayed`.
+
+### Keys are tied to their endpoint (rec#10 on fuli#784)
+
+Each saved key records the endpoint origin it was saved for: scheme, host and port (`src/model-backends/secret-store.js`). The store reads a key only for a request to that origin, so a connection pointed at another host never receives it:
+
+- **Saving.** The model dialog sends the endpoint typed above the key field; the CLI requires `--endpoint`.
+- **Sending.** The model port refuses a call before decrypting the key, with receipt reason `key_endpoint_mismatch`. That covers role calls and 测试连接. The endpoint listing answers `409 secret_endpoint_mismatch` before any request leaves.
+- **Editing.** A role edit (delegated, or the person's own) that points a connection naming a tied key at another origin is refused with `409 key_endpoint_mismatch` and leaves the file unchanged. Using the key elsewhere means saving it again for the new endpoint. The dialog says so when the typed address differs from the key's origin.
+- **Older keys.** Keys saved before origins were recorded are tied once, when a runtime first opens the store. Each goes to the single origin of the configured connections that name it. A key that none or several connections name stays untied, and is refused (`secret_endpoint_unbound`) until it is saved again.
 
 ## 「?」 and 「让 AI 来做」
 
-Every settings card and the main pages (模型与用量, 待决策, FLAs, 知识, 连接) have a 「?」 (`AiHelpButton.vue`). It opens the glossary's explanation card for that area (the same layer as Alt-click glossary mode). Where the person's Agent can do the job, the card offers 「让 AI 来做」: a prompt to copy, filled with this console's address (`features/ai-help/ai-task-prompts.ts`). Where only the person can act (AI permissions, Agent access, Tonborg's autonomy, data format, diagnostics, language and motion), the card says why and offers no prompt.
+Every settings card and the main pages (模型与用量, 待决策, FLAs, 知识, 连接) have a 「?」 (`AiHelpButton.vue`). It opens the glossary's explanation card for that area, the same layer as Alt-click glossary mode. Where the person's Agent can do the job, the card offers 「让 AI 来做」: a prompt to copy, filled with this console's address (`features/ai-help/ai-task-prompts.ts`). Some actions only the person can take: AI permissions, Agent access, Tonborg's autonomy, data format, diagnostics, language and motion. Their cards say why and offer no prompt.
 
-The prompts address the person's Agent, not the person, so they are kept out of the console's messages, whose rule is that the person is never sent to a terminal. `test/ai-friendly-console.test.js` checks every prompt in both languages: each quoted route must be a `run_delegated_action` route in the catalog, each read route must exist, and each snake_case word must be a FULI tool.
+The prompts address the person's Agent, not the person, so they are kept out of the console's messages, whose rule is that the person is never sent to a terminal. `test/ai-friendly-console.test.js` checks every prompt in both languages:
 
-The model prompt is the main case: find an endpoint and key the person can use, list its models with that key, pipe the key on stdin into `fuli models set-key` (or ask the person to paste it), save the role with `run_delegated_action`, test it, and approve only the projects the person named for egress.
+- each quoted route must be a `run_delegated_action` route in the catalog
+- each read route must exist
+- each snake_case word must be a FULI tool
+
+The model prompt is the main case:
+
+1. Find an endpoint and key the person can use.
+2. List the endpoint's models with that key.
+3. Pipe the key into `fuli models set-key … --endpoint …`, or ask the person to paste it.
+4. Save the role with `run_delegated_action`.
+5. Test it.
+6. Approve egress only for the projects the person named.
 
 ## Coverage audit (2026-11-06)
 
-The catalog lists 167 console mutations: 67 named Agent tools, 52 `agent_delegable`, 8 `agent_delegable_off`, 13 `agent_relayed` and 27 `local_user_only`. `test/agent-interface-parity.test.js` keeps every web mutation in the catalog. Browser-only preferences (language, reduced motion) are not FULI data and have no Agent path.
+The catalog lists 167 console mutations:
+
+| Access | Count |
+| --- | --- |
+| Named Agent tools | 67 |
+| `agent_delegable` | 52 |
+| `agent_delegable_off` | 8 |
+| `agent_relayed` | 13 |
+| `local_user_only` | 27 |
+
+`test/agent-interface-parity.test.js` keeps every web mutation in the catalog. Browser-only preferences (language, reduced motion) are not FULI data and have no Agent path.
 
 Changed here:
 
-- `POST /api/model-backends/roles/:role/check` (测试连接) moved from `local_user_only` to `agent_delegable` (model_settings). It sends one fixed request with no project content to the endpoint the role already uses, which the role's own work reaches anyway. The role edit that chooses that endpoint was already delegable.
-- Model key entry stays `local_user_only` for every Agent tool. It gains two sanctioned paths: the person's Agent pipes the key into `fuli models set-key` on stdin when the person asked, or the browser AI fills it through the page tool after the person's click.
-- Listing an endpoint's models stays `local_user_only`: the Agent that found the key lists the models itself, and the page tool asks the person first.
+- `POST /api/model-backends/roles/:role/check` (测试连接) moved from `local_user_only` to `agent_delegable` (model_settings). It sends one fixed request with no project content to the role's configured endpoint. Since keys are now tied to their origin, that endpoint can only receive the key it was saved for.
+- Model key entry stays `local_user_only` for every Agent tool and has no page tool. The sanctioned paths are the model dialog, or the Agent the person asked piping the key into `fuli models set-key --endpoint` on stdin. That Agent already holds the key, so the CLI gives it nothing new; the binding stops anyone from moving a key they do not hold.
+- Listing an endpoint's models stays `local_user_only`.
 
-Deliberately the person's (unchanged): their own roundtable messages; Agent access and AI permissions; Tonborg's autonomy policy; data format apply, rollback, prune and restore; the graph migration (it restarts FULI); permanent knowledge deletion with its preview, export and status; deleting old data now; deleting an Agent app's code or data, and the typed app confirmation; the hidden debug capture.
+Deliberately the person's (unchanged):
 
-Proposed follow-ups, not in this change:
+- their own roundtable messages
+- Agent access and AI permissions
+- Tonborg's autonomy policy
+- data format apply, rollback, prune and restore
+- the graph migration (it restarts FULI)
+- permanent knowledge deletion, with its preview, export and status
+- deleting old data now
+- deleting an Agent app's code or data, and the typed app confirmation
+- the hidden debug capture
 
-- `POST /api/retrieval-terms/trial|fill|stop` and `POST /api/dreaming/run` send project content to the person's model. The projects are already approved for that model through a delegable role edit, so these could become `model_settings` delegable; the cost is the remaining question.
-- Bind a saved key to the endpoint host it was saved for. Today a delegable role edit could point a connection that names an existing key at another host, and the role's next call would send that key there.
+Proposed follow-up, not in this change: `POST /api/retrieval-terms/trial|fill|stop` and `POST /api/dreaming/run` send project content to the person's model. The projects are already approved for that model through a delegable role edit, so these could become `model_settings` delegable; the cost is the remaining question.

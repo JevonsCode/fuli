@@ -187,7 +187,7 @@ async function save() {
         </Field>
         <template v-if="!semantic || preset !== 'ollama'">
           <ModelSecretRefField v-model="draft.secretRef" class="model-role-wide" :known="knownKeys" :disabled="inactive" />
-          <ModelKeyEntry class="model-role-wide" :reference="draft.secretRef" :disabled="inactive" @keys="keys => savedKeys = keys" />
+          <ModelKeyEntry class="model-role-wide" :reference="draft.secretRef" :endpoint="draft.endpoint" :disabled="inactive" @keys="keys => savedKeys = keys" />
         </template>
       </div>
 

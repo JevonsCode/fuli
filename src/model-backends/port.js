@@ -41,6 +41,10 @@ const USAGE_NOTES = 'One record per actual model API attempt; requests count dis
   + 'cachedInput, cacheWriteInput and reasoning are subsets of input or output as each provider defines them and are never added to totals. '
   + 'Costs are estimates from configured unit prices only; without prices the cost is unknown.';
 
+// Why a saved key was not used; anything else the store refuses is secret_unreadable.
+const KEY_REFUSALS = Object.freeze({ secret_store_insecure: 'secret_store_insecure',
+  secret_endpoint_mismatch: 'key_endpoint_mismatch', secret_endpoint_unbound: 'key_endpoint_mismatch' });
+
 export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl = modelFetch, wait = delay,
   now = () => new Date(), timeoutSignal = ms => AbortSignal.timeout(ms) }) {
   // Endpoints that rejected json_schema output, for this process.
@@ -67,9 +71,10 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     if (!call.target.secretRef) return { adapter, secret: null };
     let secret;
     try {
-      secret = await secrets.read(call.target.secretRef);
+      // Only for the origin the key was saved for (secret-store.js).
+      secret = await secrets.read(call.target.secretRef, call.target.endpoint);
     } catch (error) {
-      return { stop: call.stop('configuration', error?.code === 'secret_store_insecure' ? 'secret_store_insecure' : 'secret_unreadable') };
+      return { stop: call.stop('configuration', KEY_REFUSALS[error?.code] ?? 'secret_unreadable') };
     }
     return secret ? { adapter, secret } : { stop: call.stop('configuration', 'missing_key') };
   }

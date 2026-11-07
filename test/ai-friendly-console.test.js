@@ -50,9 +50,8 @@ function declaredRoutes(file) {
 
 test('every console page tool reaches only catalog routes or reads, and declares each route it uses', () => {
   const tools = files(WEB, (path) => /page-tools\.ts$/.test(path)).flatMap(declaredRoutes);
-  assert.deepEqual(tools.map(({ name }) => name).sort(), ['fuli_configure_model_role', 'fuli_decide', 'fuli_list_decisions',
-    'fuli_list_endpoint_models', 'fuli_open_page', 'fuli_read_model_settings', 'fuli_read_settings', 'fuli_save_model_key',
-    'fuli_search_knowledge', 'fuli_test_model_role', 'fuli_update_settings']);
+  assert.deepEqual(tools.map(({ name }) => name).sort(), ['fuli_configure_model_role', 'fuli_list_decisions', 'fuli_open_page',
+    'fuli_read_model_settings', 'fuli_read_settings', 'fuli_search_knowledge', 'fuli_test_model_role', 'fuli_update_settings']);
   for (const tool of tools) {
     for (const route of tool.routes) {
       if (route.startsWith('GET /api/')) continue;
@@ -62,9 +61,12 @@ test('every console page tool reaches only catalog routes or reads, and declares
       assert.ok(tool.routes.includes(route), `${tool.name} uses ${route} without declaring it`);
     }
   }
-  // The person keeps what is theirs: a model key and the endpoint listing never run without their click.
-  for (const route of ['PUT /api/model-backends/keys/:reference', 'POST /api/model-backends/models']) {
-    assert.equal(interfaceForRoute(route).access, 'local_user_only', route);
+  // rec#10 on fuli#784: a page tool only does what the delegation gate lets an FLA do; no page tool reaches a
+  // route that is the person's own (a key, the endpoint listing, a decision recorded as theirs).
+  for (const tool of tools) {
+    for (const route of tool.routes.filter((route) => !route.startsWith('GET '))) {
+      assert.ok(['agent_delegable', 'agent_delegable_off'].includes(interfaceForRoute(route).access), `${tool.name}: ${route}`);
+    }
   }
 });
 
@@ -106,12 +108,12 @@ test('the model prompt keeps a key out of every tool and output, and the catalog
   const { aiTaskPrompt } = await promptsModule();
   for (const locale of ['zh-CN', 'en-US']) {
     const prompt = aiTaskPrompt('models', locale, CONTEXT);
-    assert.match(prompt, /fuli models set-key/);
+    assert.match(prompt, /fuli models set-key \S+ --endpoint/);
     assert.match(prompt, /stdin|标准输入/);
     assert.match(prompt, /POST \/api\/model-backends\/roles\/:role\/check/);
     assert.match(prompt, new RegExp(CONTEXT.guide.replaceAll('.', '\\.')));
   }
   const models = agentInterfaceCatalog().readWorkflows.find(({ domain }) => domain === 'model-backends');
-  assert.match(models.guidance, /fuli models set-key <secretRef> on stdin/);
+  assert.match(models.guidance, /fuli models set-key <secretRef> --endpoint <url> on stdin/);
   assert.equal(interfaceForRoute('POST /api/model-backends/roles/:role/check').category, 'model_settings');
 });
