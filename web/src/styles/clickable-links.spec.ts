@@ -2,11 +2,7 @@ import { describe, expect, it } from 'vitest'
 import flaRow from '@/features/flas/FlaRow.vue?raw'
 import teamCard from '@/features/team-work/TeamCard.vue?raw'
 import modelSettings from '@/pages/ModelSettingsPage.vue?raw'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-
-// Vitest hands a plain stylesheet outside its css include over as an empty string, so this one is read from disk.
-const agentProfile = readFileSync(resolve(process.cwd(), 'web/src/features/agent-profile/agent-profile.css'), 'utf8')
+import agentProfile from '@/features/agent-profile/agent-profile.css?raw'
 
 // A link that reads as a control (a whole FLA row, 打开任务, a card's name or
 // current task, 查看详情) is clicked, not read: a drag across it never
