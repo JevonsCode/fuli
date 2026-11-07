@@ -6,10 +6,13 @@ import { t } from '@/i18n'
 import { motionReduced } from '@/lib/motion-preference'
 import { outlineEntries, outlineNeeded, readingIndex, scrollParent, type OutlineEntry } from '@/lib/page-outline'
 
-// A long page's 目录 (Jevons 11-04, 11-07): a few short bars in the left margin,
-// the one being read longer and darker. Moving onto them, or tabbing in, opens
-// the section names, with how many each holds, on frosted glass; a click goes
-// there. A window with room beside the page keeps the names open. It floats, so
+// A long page's 目录 (Jevons 11-04, 11-07, 11-08): a ruler by the window's right
+// edge, one short tick per section on a hairline, the one being read longer and
+// darker. Moving onto it, or tabbing in, opens the section names, with how many
+// each holds, beside their ticks on faint glass; a click goes there. The name being
+// read is darker and bolder, nothing more: no box, no fill, no bar. A window with
+// room beside the page keeps the names open. It is navigation at the page's edge,
+// not another card. It floats, so
 // the page never moves for it, and a page too short to need one shows none. The
 // sections are the page's own <h2>s, read as they change; a heading names itself
 // and its count with data-outline-label / data-outline-count.
@@ -54,11 +57,13 @@ function go(entry: OutlineEntry) {
     <nav v-if="shown" class="page-outline" :aria-label="t('common.outline')" data-page-outline>
       <!-- The way in by keyboard: the list is hidden until something here has focus. -->
       <Button variant="ghost" class="page-outline-rail" :aria-label="t('common.outline')" data-page-outline-rail>
-        <span v-for="(entry, index) in entries" :key="index" class="page-outline-bar" :class="{ 'is-reading': index === reading }" aria-hidden="true" />
+        <span v-for="(entry, index) in entries" :key="index" class="page-outline-tick" aria-hidden="true">
+          <span class="page-outline-bar" :class="{ 'is-reading': index === reading }" />
+        </span>
       </Button>
       <ol class="page-outline-list">
         <li v-for="(entry, index) in entries" :key="index">
-          <Button variant="ghost" size="sm" class="page-outline-item" :class="{ 'is-reading': index === reading }"
+          <Button variant="ghost" class="page-outline-item" :class="{ 'is-reading': index === reading }"
             :aria-current="index === reading ? 'location' : undefined" :title="entry.label" data-page-outline-item @click="go(entry)">
             <span class="page-outline-label">{{ entry.label }}</span>
             <span v-if="entry.count !== undefined" class="page-outline-count" data-page-outline-count>{{ entry.count }}</span>
@@ -70,51 +75,74 @@ function go(entry: OutlineEntry) {
 </template>
 
 <style scoped>
-/* One place on every page and window: it hangs from a fixed height in the left
-   margin, so more sections or a taller window only lengthen it downward. Only
-   the rail and the open list take the pointer: the closed list must not cover the page. */
-.page-outline { position: fixed; top: 136px; left: 4px; z-index: var(--z-nav); display: flex; align-items: flex-start; pointer-events: none; }
-.page-outline-rail { display: grid; justify-items: start; gap: 9px; width: auto; height: auto; padding: 10px 14px 10px 6px; border-radius: var(--radius-control); pointer-events: auto; }
+/* Navigation at the page's edge, not another card (Jevons 11-08). It hangs from a fixed
+   height by the window's right edge, clear of the page's scrollbar, so more sections or a
+   taller window only lengthen it downward, and it never reaches the page's content.
+   The ruler (one tick per section on a hairline, the hairline on the outer side) sits at
+   the edge; the names open leftwards from it, each on its tick's row, so a name and its
+   tick read as one line. Only the ruler and the open names take the pointer: the closed
+   names must not cover the page. */
+.page-outline {
+  --outline-row: 22px;
+  --outline-pad: 6px;
+  position: fixed; top: 136px; right: calc(max(var(--scrollbar-size), 8px) + 2px); z-index: var(--z-nav);
+  display: flex; flex-direction: row-reverse; align-items: flex-start; pointer-events: none;
+}
+/* The ticks end 14px from the window's edge on the hairline and narrow with the margin. */
+.page-outline-rail {
+  position: relative; display: grid; grid-auto-rows: var(--outline-row); justify-items: end; align-items: center; gap: 0;
+  width: auto; height: auto; padding: var(--outline-pad) 4px; border-radius: var(--radius-control); pointer-events: auto;
+}
 .page-outline-rail:hover { background: transparent; }
-.page-outline-bar { width: 14px; height: 2px; border-radius: var(--radius-pill); background: var(--color-border-strong); transform: scaleX(.6); transform-origin: left; transition: transform var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease); }
+.page-outline-rail::after {
+  content: ''; position: absolute; top: calc(var(--outline-pad) + var(--outline-row) / 2 - 4px); bottom: calc(var(--outline-pad) + var(--outline-row) / 2 - 4px); right: 4px;
+  width: 1px; background: var(--color-border); pointer-events: none;
+}
+.page-outline-tick { display: block; line-height: 0; }
+.page-outline-bar {
+  display: block; width: clamp(8px, calc(2.4vw - 10px), 14px); height: 2px; border-radius: var(--radius-pill); background: var(--color-border-strong);
+  transform: scaleX(.5); transform-origin: right; transition: transform var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease);
+}
 .page-outline-bar.is-reading { background: var(--color-ink); transform: none; }
-.page-outline:hover .page-outline-bar { transform: none; }
+.page-outline:hover .page-outline-bar:not(.is-reading) { transform: scaleX(.7); }
 
-/* Frosted like the dock: the glass on its own layer, so the list blurs the page
-   beneath it. It scales in with no fade: a fading panel cannot blur what lies
-   beneath it until it is opaque, and the blur would land with a jolt. */
+/* Faint glass, no edge or shadow: the names float over the page without becoming a card.
+   The glass lives on its own layer so it blurs the page beneath it. It scales in with no
+   fade: a fading panel cannot blur what lies beneath it until it is opaque. */
 .page-outline-list {
-  position: relative; isolation: isolate; display: grid; gap: 2px; width: 232px; max-height: calc(100dvh - 200px); margin: 0; padding: 6px; overflow-y: auto;
-  border: 1px solid var(--edge-dock); border-radius: var(--radius-card); box-shadow: var(--shadow-glass); list-style: none;
-  visibility: hidden; scale: .96; transform-origin: left top; user-select: none; -webkit-user-select: none;
+  position: relative; isolation: isolate; display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: var(--outline-row); gap: 0;
+  width: max-content; max-width: 220px; max-height: calc(100dvh - 200px); margin: 0; padding: var(--outline-pad) 2px var(--outline-pad) 12px; overflow: hidden auto;
+  border-radius: var(--radius-control); list-style: none;
+  visibility: hidden; scale: .97; transform-origin: right top; user-select: none; -webkit-user-select: none;
   transition: scale var(--motion-fast) var(--motion-ease), visibility 0s linear var(--motion-fast);
 }
 .page-outline-list::before {
   content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit;
-  background: var(--glass-sheen), var(--surface-dock); -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock);
+  background: var(--surface-dock); -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .page-outline-list::before { background: var(--color-surface); }
+  .page-outline-list::before { background: var(--color-bg); opacity: .92; }
 }
 .page-outline:hover .page-outline-list, .page-outline:has(:focus-visible) .page-outline-list {
   visibility: visible; scale: 1; pointer-events: auto; transition-delay: 0s;
 }
+/* A name is only text: muted, darker under the pointer, and the one being read in ink and
+   one weight bolder. No box, no fill, no bar. */
 .page-outline-item {
-  justify-content: flex-start; gap: 12px; width: 100%; overflow: hidden; border: 1px solid transparent;
-  color: var(--color-muted); font-weight: var(--weight-regular); white-space: nowrap; user-select: none; -webkit-user-select: none;
+  justify-content: flex-end; gap: 8px; width: 100%; min-height: 0; height: var(--outline-row); padding: 0 6px; overflow: hidden;
+  border: 0; background: transparent; color: var(--color-muted); font-size: var(--text-meta); font-weight: var(--weight-regular); line-height: 1.2;
+  white-space: nowrap; user-select: none; -webkit-user-select: none; transition: color var(--motion-fast) var(--motion-ease);
 }
+.page-outline-item:hover { background: transparent; color: var(--color-ink-soft); }
+.page-outline-item.is-reading { color: var(--color-ink); font-weight: var(--weight-strong); }
 .page-outline-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.page-outline-count { flex: none; margin-left: auto; color: var(--color-muted); font-size: var(--text-meta); font-variant-numeric: tabular-nums; }
-/* The section being read lifts as a card; never a side bar. */
-.page-outline-item.is-reading { border-color: var(--color-border); background: var(--color-surface); box-shadow: var(--shadow-sm); color: var(--color-ink); font-weight: var(--weight-medium); }
+.page-outline-count { flex: none; color: var(--color-muted); font-weight: var(--weight-regular); font-variant-numeric: tabular-nums; }
 
-/* A window with room left of the page (its margin holds the list and a gap) keeps the names open there. */
+/* A window with room right of the page keeps the names open beside the ruler. */
 @media (min-width: 2400px) {
-  .page-outline { left: calc(var(--page-inline) - 232px - 24px); }
-  .page-outline-rail { display: none; }
-  .page-outline-list { visibility: visible; scale: 1; pointer-events: auto; transition: none; }
+  .page-outline-list { max-width: min(220px, calc((100vw - var(--canvas-max)) / 2 - 2px - 24px - 30px)); visibility: visible; scale: 1; pointer-events: auto; transition: none; }
 }
 @media (max-width: 760px) { .page-outline { display: none; } }
-@media (prefers-reduced-motion: reduce) { .page-outline-bar, .page-outline-list { transition: none; } }
-:root[data-motion="reduced"] .page-outline-bar, :root[data-motion="reduced"] .page-outline-list { transition: none; }
+@media (prefers-reduced-motion: reduce) { .page-outline-bar, .page-outline-list, .page-outline-item { transition: none; } }
+:root[data-motion="reduced"] .page-outline-bar, :root[data-motion="reduced"] .page-outline-list, :root[data-motion="reduced"] .page-outline-item { transition: none; }
 </style>
