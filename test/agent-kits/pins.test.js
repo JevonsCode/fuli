@@ -19,10 +19,10 @@ test('every component pins one released version and a SHA-256 for each published
 
 test('a platform resolves to its release asset name, URL and checksum', () => {
   assert.deepEqual(agentKitAsset('agent-session-launcher', 'win32', 'x64'), {
-    component: 'agent-session-launcher', version: '0.4.0', target: 'windows-x64',
+    component: 'agent-session-launcher', version: '0.5.1', target: 'windows-x64',
     name: 'agent-session-launcher-windows-x64.exe',
     sha256: AGENT_KIT_PINS['agent-session-launcher'].sha256['windows-x64'],
-    url: 'https://github.com/JevonsCode/agent-session-launcher/releases/download/v0.4.0/agent-session-launcher-windows-x64.exe'
+    url: 'https://github.com/JevonsCode/agent-session-launcher/releases/download/v0.5.1/agent-session-launcher-windows-x64.exe'
   });
   assert.equal(agentKitAsset('agent-installer', 'darwin', 'arm64').url,
     'https://github.com/JevonsCode/agent-installer/releases/download/v0.3.1/agent-installer-macos-arm64');

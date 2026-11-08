@@ -5,6 +5,17 @@ export interface SessionTarget {
   workspacePath?: string;
 }
 
+/** A new session, optionally with a prompt the client receives as plain data. */
+export interface NewSessionTarget {
+  client: string;
+  /** 1–2000 characters; tabs and line breaks allowed; a CLI prompt may not begin with "-". */
+  prompt?: string;
+  /** Where a CLI starts; the home directory when absent. */
+  workspacePath?: string;
+  /** Windows only: the CLI is installed in the default WSL distribution. */
+  environment?: 'wsl';
+}
+
 export interface LaunchPreferences {
   macosTerminal?: 'terminal' | 'iterm';
   itermOpenMode?: 'new-window' | 'new-tab';
@@ -20,7 +31,20 @@ export interface LaunchPlan {
    * Windows CLI plans only: Windows Terminal when `wt.exe` is on PATH,
    * otherwise a new console window through Windows PowerShell.
    */
-  opener?: 'windows-terminal' | 'powershell';
+  opener?: 'windows-terminal' | 'powershell' | string;
+  /** The plan starts a new session. */
+  newSession?: true;
+  /** A new session's prompt: waits for the person (prefill) or is submitted (send). */
+  prompt?: 'prefill' | 'send';
+  /** The client runs inside WSL through wsl.exe. */
+  environment?: 'wsl';
+}
+
+export interface NewSessionInfo {
+  kind: 'cli' | 'uri';
+  /** null: this way takes no prompt. */
+  prompt: 'prefill' | 'send' | null;
+  openSupported: boolean;
 }
 
 export interface ClientInfo {
@@ -38,6 +62,8 @@ export interface ClientInfo {
   idFormat?: 'safe' | 'uuid' | 'claude-desktop' | 'cursor-background';
   requiresWorkspace: boolean;
   openSupported: boolean;
+  /** null: no verified way to open a new session. */
+  newSession: NewSessionInfo | null;
 }
 
 /** A skipped extension file; `file` is a file name, never a full path. */
@@ -78,6 +104,9 @@ export interface Launcher {
   inspect(target: SessionTarget): Promise<{ plan: LaunchPlan; openSupported: boolean }>;
   /** Only for an explicit user action; never retry automatically on `unknown_outcome`. */
   open(target: SessionTarget, preferences?: LaunchPreferences): Promise<'launch_requested'>;
+  inspectNew(target: NewSessionTarget): Promise<{ plan: LaunchPlan; openSupported: boolean }>;
+  /** Only for an explicit user action; never retry automatically on `unknown_outcome`. */
+  openNew(target: NewSessionTarget, preferences?: LaunchPreferences): Promise<'launch_requested'>;
 }
 
 export function createLauncher(options: LauncherOptions): Launcher;

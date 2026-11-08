@@ -52,7 +52,7 @@ test('the developer override comes first, then the bundle, then a verified downl
     /FULI_AGENT_SESSION_LAUNCHER does not name an executable file/);
   // A bundle built before the components were bundled, and an npm installation.
   assert.deepEqual(await resolve({ bundleRoot: bundle(join(root, 'old-bundle')), env: {} }),
-    { status: 'unavailable', reason: 'agent-session-launcher 0.4.0 has not been downloaded yet.' });
+    { status: 'unavailable', reason: 'agent-session-launcher 0.5.1 has not been downloaded yet.' });
   assert.equal((await resolve({ env: {} })).status, 'unavailable');
   assert.equal((await agentKitExecutables({ nativeRuntimeDir, env: {}, platform: 'win32', arch: 'arm64' }).resolve(LAUNCHER)).reason,
     'agent-session-launcher is not published for win32 arm64.');

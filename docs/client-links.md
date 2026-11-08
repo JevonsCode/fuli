@@ -47,7 +47,7 @@ conversation launchers); agent-session-launcher checks it, see
 | `formatVersion` | The shape of this file. A reader refuses a version it does not know. |
 | `manifestVersion` | A positive integer, raised by one for every published change. A copy is newer only when this is higher. |
 | `updatedAt` | The publication date, `YYYY-MM-DD`. |
-| `clients[].id` | The client's identifier, as FULI names source applications: `codex`, `claude`, `claude_code`, `cursor`, `kiro`, `opencode`. |
+| `clients[].id` | The client's identifier, as FULI names source applications: `codex`, `claude`, `claude_code`, `cursor`, `kiro`, `opencode`, `antigravity`. |
 | `clients[].name` | The name people see. |
 | `clients[].sessionLinks[]` | The verified links, most useful first. Empty when the client documents none. |
 | `clients[].noSessionLink` | Why there is no link; required exactly when `sessionLinks` is empty, otherwise `null`. A reader then shows the session ID with a copy button. |
@@ -75,12 +75,17 @@ link is never guessed, and a reader never tells the person to run a command.
 
 A link whose only parameter is `prompt` opens a new chat with that text in
 the client's composer, never sent by itself (Codex `codex://new?prompt=`,
-Claude Code's VS Code `vscode://anthropic.claude-code/open?prompt=`, Claude
-Desktop `claude://claude.ai/new?q=`). FULI passes `prompt` only where it hands
-the person's AI a task, such as 待决策's 「让 Tonborg 给你解释」, with the prompt
-on one line, and offers it only for a client the connection status reports as
-`connected` (matched by its `sourceApplication`); a reader that passes only
-`sessionId` never builds one. No documented new-chat link takes a model yet;
+Claude Code's VS Code `vscode://anthropic.claude-code/open?prompt=` and its
+terminal `claude-cli://open?q=`, Claude Desktop `claude://claude.ai/new?q=`,
+Cursor `cursor://anysphere.cursor-deeplink/prompt?text=`, which asks the person
+to confirm first). FULI passes `prompt` only where it hands the person's AI a
+task, such as 待决策's 「让 Tonborg 给你解释」, with the prompt on one line, and
+offers it only for a client the connection status reports as `connected`
+(matched by its `sourceApplication`); a reader that passes only `sessionId`
+never builds one. In FULI these links are read through one helper,
+`web/src/features/client-links/new-session.ts`, which falls back to opening the
+client's CLI in a terminal when it has no link (see
+[Shared client components](client-connections.md#shared-client-components)). No documented new-chat link takes a model yet;
 a `{model}` parameter would be filled from `web/src/features/review-list/explain-models.ts`.
 
 ## Validation of a fetched copy

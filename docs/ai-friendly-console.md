@@ -74,7 +74,7 @@ The catalog lists 167 console mutations:
 | `agent_delegable` | 52 |
 | `agent_delegable_off` | 8 |
 | `agent_relayed` | 13 |
-| `local_user_only` | 27 |
+| `local_user_only` | 29 |
 
 `test/agent-interface-parity.test.js` keeps every web mutation in the catalog. Browser-only preferences (language, reduced motion) are not FULI data and have no Agent path.
 

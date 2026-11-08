@@ -71,6 +71,8 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('settings', 'PUT /api/occupation-plugins/auto-update', 'Set enabled back.'),
   relayed('PUT /api/project-agents/:agentId/occupation-kit', 'Answer again with the earlier choice; every earlier answer is kept.'),
   delegable('settings', 'POST /api/system/update', 'Not undone; FULI runs the newer version.'),
+  local('POST /api/session-launch/new-session/ways', 'Finding out which Agent CLIs are installed may download the session launcher and start the person\'s login shell or WSL on this computer, so only the console on this computer asks, when the person opens a panel that offers a new session.'),
+  local('POST /api/session-launch/new-session', 'Opening a new session starts a program (a terminal window) on this computer, so it happens only on the person\'s own click in the console; an Agent that wants another client to take over gives the person the one-sentence prompt instead.'),
   delegable('settings', 'POST /api/system/client-connection/connect', 'Run it again with the opposite action for that client.'),
   delegable('settings', 'POST /api/system/client-connection/custom-clients', 'Remove it with DELETE /api/system/client-connection/custom-clients/:clientId.'),
   delegable('settings', 'DELETE /api/system/client-connection/custom-clients/:clientId', 'Describe it again with POST /api/system/client-connection/custom-clients.'),

@@ -2,8 +2,8 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getJson } = vi.hoisted(() => ({ getJson: vi.fn() }))
-vi.mock('@/api/client', async importOriginal => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson }))
+const { getJson, postJson } = vi.hoisted(() => ({ getJson: vi.fn(), postJson: vi.fn() }))
+vi.mock('@/api/client', async importOriginal => ({ ...await importOriginal<typeof import('@/api/client')>(), getJson, postJson }))
 
 import { useConsoleStore } from '@/stores/console'
 import TonborgExplain from './TonborgExplain.vue'
@@ -30,6 +30,7 @@ enableAutoUnmount(afterEach)
 beforeEach(() => {
   setActivePinia(createPinia())
   getJson.mockReset()
+  postJson.mockReset()
   writeText.mockReset()
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
   // As 设置 › 客户端接入 lists them: Claude Code is not installed; OpenCode has no prompt link.
@@ -174,5 +175,40 @@ describe('TonborgExplain', () => {
     await flushPromises()
     const text = panel().querySelector<HTMLTextAreaElement>('[data-tonborg-explain-text]')!
     expect(text.value).toContain('answer_tonborg_question')
+  })
+
+  it('opens a connected CLI in a terminal when the client has no prompt link, and copies when that fails', async () => {
+    const asked: unknown[] = []
+    let opens = true
+    postJson.mockImplementation(async (url: string, body: unknown) => {
+      if (url === '/api/session-launch/new-session/ways') {
+        asked.push(body)
+        return { launcher: 'available', ways: { opencode: { prompt: 'send', environment: 'wsl' }, codex: { prompt: 'send' } } }
+      }
+      if (url === '/api/session-launch/new-session') {
+        if (!opens) throw new Error('not installed any more')
+        return { status: 'launch_requested' }
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    await opened(3)
+    expect(asked).toEqual([{ clients: ['codex', 'claude-desktop', 'opencode'] }])
+    // Codex keeps its documented app link; OpenCode, without one, opens in a terminal.
+    expect(panel().querySelector('[data-tonborg-explain-open="codex"]')).not.toBeNull()
+    const terminal = panel().querySelector<HTMLButtonElement>('[data-tonborg-explain-terminal="opencode"]')!
+    expect(terminal.textContent).toContain('新窗口')
+    terminal.click()
+    await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/session-launch/new-session',
+      { client: 'opencode', prompt: expect.stringContaining('Tonborg') }, expect.anything())
+    expect(useConsoleStore().feedback?.message).toMatch(/已在 OpenCode 打开/)
+    expect(panel()).toBeNull()
+
+    opens = false
+    await opened(3)
+    panel().querySelector<HTMLButtonElement>('[data-tonborg-explain-terminal="opencode"]')!.click()
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Tonborg'))
+    expect(useConsoleStore().feedback?.message).toMatch(/在 OpenCode 里粘贴发送/)
   })
 })

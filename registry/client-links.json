@@ -1,8 +1,8 @@
 {
   "format": "fuli-client-links",
   "formatVersion": 1,
-  "manifestVersion": 2,
-  "updatedAt": "2026-11-07",
+  "manifestVersion": 3,
+  "updatedAt": "2026-11-08",
   "clients": [
     {
       "id": "codex",
@@ -58,6 +58,17 @@
           "platforms": ["macos", "windows", "linux"],
           "notes": "Opens a new Claude Code tab in the focused VS Code window with the prompt pre-filled; it is not submitted until the person sends it.",
           "source": "https://code.claude.com/docs/en/vs-code#launch-a-vs-code-tab-from-other-tools"
+        },
+        {
+          "id": "claude-code-cli-new-with-prompt",
+          "opens": "Terminal",
+          "template": "claude-cli://open?q={prompt}",
+          "parameters": {
+            "prompt": { "format": "any" }
+          },
+          "platforms": ["macos", "windows", "linux"],
+          "notes": "Opens Claude Code in a new terminal window with the prompt pre-filled; the person sends it (at most 5,000 characters). The link handler registers after the first interactive claude session.",
+          "source": "https://code.claude.com/docs/en/deep-links"
         }
       ],
       "noSessionLink": null
@@ -94,8 +105,20 @@
     {
       "id": "cursor",
       "name": "Cursor",
-      "sessionLinks": [],
-      "noSessionLink": "Cursor documents no link that opens a chat or Agent session by its ID."
+      "sessionLinks": [
+        {
+          "id": "cursor-new-with-prompt",
+          "opens": "Cursor",
+          "template": "cursor://anysphere.cursor-deeplink/prompt?text={prompt}",
+          "parameters": {
+            "prompt": { "format": "any" }
+          },
+          "platforms": ["macos", "windows", "linux"],
+          "notes": "Asks the person to confirm, then opens a new Cursor chat with the prompt pre-filled; never sent by itself (at most 10,000 characters). Cursor documents no link that opens an existing chat by its ID.",
+          "source": "https://cursor.com/docs/integrations/deeplinks"
+        }
+      ],
+      "noSessionLink": null
     },
     {
       "id": "opencode",
@@ -108,6 +131,12 @@
       "name": "Kiro",
       "sessionLinks": [],
       "noSessionLink": "Kiro documents no link that opens a session by its ID."
+    },
+    {
+      "id": "antigravity",
+      "name": "Antigravity",
+      "sessionLinks": [],
+      "noSessionLink": "Antigravity documents no link that opens a conversation by its ID."
     }
   ]
 }

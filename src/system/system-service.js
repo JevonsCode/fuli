@@ -26,6 +26,8 @@ import { liveMcpProcesses, sessionsAwaitingRestart } from '../mcp/process-regist
 import { agentKitPorts } from '../agent-kits/ports.js';
 import { sessionClientRecords } from '../agent-kits/session-clients.js';
 import { createSessionOffers } from '../agent-kits/session-offers.js';
+import { createNewSessions } from '../agent-kits/new-sessions.js';
+import { createCliPresence } from '../agent-kits/cli-presence.js';
 import { customClientStore } from '../agent-kits/custom-clients.js';
 import { createCustomClients } from './custom-client-connection.js';
 import { CODEX_HOOK_TRUST_CLIENT, createCodexHookTrust } from '../agents/codex/hook-trust.js';
@@ -110,6 +112,7 @@ export function createSystemService({
   versionChecker ??= createPackageVersionChecker({ channel: () => configuredSettings().updateChannel });
   const sessionOffers = createSessionOffers({ launcher: agentKits.sessionLauncher, configPath: paths.launcherHostConfigPath,
     readLaunchers: () => configuredSettings().conversationLaunchers, records: sessionClientRecords(paths.dataDir) });
+  const newSessions = createNewSessions({ launcher: agentKits.sessionLauncher, presence: createCliPresence() });
   // The launcher's host configuration follows the settings whenever they are
   // read or written; a failure to write it only leaves the launcher on the last one.
   const syncLauncherConfig = () => { try { sessionOffers.syncHostConfig(); } catch { /* next read retries */ } };
@@ -190,6 +193,9 @@ export function createSystemService({
     clientConnectionStatus: observeClients,
     // Whether the console offers to open recorded sessions (session-offers.js).
     sessionLaunchOffers: (sessions) => sessionOffers.offers(sessions),
+    // A new session in a connected client's CLI (new-sessions.js): which can open, and the click that opens one.
+    newSessionWays: (clientIds) => newSessions.ways(clientIds),
+    openNewSession: (request) => newSessions.open(request),
     connectClient: clientInstaller,
     // Clients the person describes by hand (custom-client-connection.js).
     ...createCustomClients({ installer: agentKits.clientInstaller, store: customClients }),
