@@ -1,4 +1,6 @@
 import { identityKey } from '../text/name-identity.js';
+import { singleLine } from '../text/single-line.js';
+import { utf8Preview } from '../text/utf8-preview.js';
 import { agentUnavailableReason } from './agent-availability.js';
 import { rankCandidates } from './fla-picker.js';
 
@@ -12,7 +14,11 @@ import { rankCandidates } from './fla-picker.js';
 
 export const FLA_MENU_PREFIX = 'fla-';
 const MENU_LANGUAGES = Object.freeze(['zh-CN', 'en-US']);
+// Lengths in UTF-16 code units, as agent-installer counts them (Codex
+// prompt names at most 64), cut only between whole characters.
 const SLUG_LIMIT = 40;
+const NAME_LIMIT = 60;
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/gu;
 const GLOBAL_PROJECT = Object.freeze({ 'zh-CN': '全局', 'en-US': 'Global' });
 
 // One menu name per FLA placement (a role counts once, wherever it works),
@@ -27,7 +33,8 @@ function flaMenuNames(candidates) {
   const taken = new Set();
   const names = new Map();
   for (const item of items) {
-    const wanted = shared.get(base(item)) > 1 && !item.role && item.project ? `${base(item)}-${slug(item.project)}` : base(item);
+    const wanted = trimmed(shared.get(base(item)) > 1 && !item.role && item.project
+      ? `${base(item)}-${slug(item.project)}` : base(item), NAME_LIMIT);
     let name = wanted;
     for (let number = 2; taken.has(name); number += 1) name = `${wanted}-${number}`;
     taken.add(name);
@@ -61,7 +68,8 @@ export function flaMenuEntries(candidates, { sourceApplication, language, occupa
     const name = names.get(menuKey(item));
     const project = item.role ? null : item.projectId === null ? GLOBAL_PROJECT[language] : item.project;
     return { name, title: item.name,
-      description: [item.name, project, roleText(item, language, occupationNames)].filter(Boolean).join(' — '),
+      description: singleLine([item.name, project, roleText(item, language, occupationNames)].filter(Boolean).join(' — '))
+        .replace(CONTROL, ''),
       text: `#FLA ${sharing.get(identityKey(item.name)) > 1 ? name : item.name}` };
   });
 }
@@ -88,8 +96,11 @@ function menuKey(item) {
 }
 
 function slug(text) {
-  return identityKey(text ?? '').replace(/[^\p{L}\p{M}\p{N}]+/gu, '-').replace(/^-+/u, '').slice(0, SLUG_LIMIT)
-    .replace(/-+$/u, '');
+  return trimmed(identityKey(text ?? '').replace(/[^\p{L}\p{M}\p{N}]+/gu, '-').replace(/^-+/u, ''), SLUG_LIMIT);
+}
+
+function trimmed(text, limit) {
+  return utf8Preview(text, limit, value => value.length, '').replace(/-+$/u, '');
 }
 
 function compare(a, b) {

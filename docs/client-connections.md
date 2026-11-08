@@ -176,7 +176,7 @@ so turning the setting off or disconnecting the client leaves nothing behind.
 
 | Client | /fla menu |
 | --- | --- |
-| Claude Code | Shown as `/fuli:fla-<name> (MCP)`; Tab inserts `/mcp__fuli__fla-<name>`. Type the request after it. The Claude Code hook turns the line into `#FLA fla-<name> <request>` |
+| Claude Code | Shown as `/fuli:fla-<name> (MCP)`; Tab inserts `/mcp__fuli__fla-<name>`. Type the request after it. The Claude Code hook turns the line into `#FLA fla-<name> <request>`. CJK names work end to end; the menu filters on Latin letters, so pick a CJK name with the arrow keys |
 | OpenCode 2.x, Cursor | Listed with their MCP prompts |
 | Codex | No MCP prompts. The Codex app lists prompt files from `<CODEX_HOME>/prompts` instead (JevonsCode/fuli#837); the Codex CLI reads none. Use `#FLA <name>` |
 

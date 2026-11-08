@@ -33,7 +33,12 @@ export function registerFlaMenuPrompts(server, application, { sourceApplication,
   };
   let shown = null;
   let seenSettings = null;
-  const remember = entries => { shown = JSON.stringify(entries); seenSettings = JSON.stringify(settings()); return entries; };
+  // Only what the client shows counts: a new order alone announces nothing.
+  const remember = entries => {
+    shown = JSON.stringify([...entries].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)));
+    seenSettings = JSON.stringify(settings());
+    return entries;
+  };
 
   server.server.registerCapabilities({ prompts: { listChanged: true } });
   // An unreadable roster lists nothing for now; the next check announces the real list.
@@ -57,7 +62,8 @@ export function registerFlaMenuPrompts(server, application, { sourceApplication,
     checking = true;
     try {
       const previous = shown;
-      if (JSON.stringify(remember(await read())) !== previous) await server.server.sendPromptListChanged();
+      remember(await read());
+      if (shown !== previous) await server.server.sendPromptListChanged();
     } catch (error) { onError(error); }
     finally { checking = false; }
   }, settingsEveryMs);

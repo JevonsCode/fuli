@@ -165,3 +165,35 @@ test('an unreadable roster lists nothing and announces the real list once it can
     assert.ok((await client.listPrompts()).prompts.length > 0);
   } finally { await close(); }
 });
+
+test('names and descriptions stay within agent-installer\'s limits in UTF-16 code units, never splitting a character', () => {
+  // A name of 60 non-BMP letters (2 code units each) and a role text with controls and emoji.
+  const wide = '𠀀'.repeat(60);
+  const roster = [fla('wide', wide, 'engineering', 'project-a', { label: 'Q\u0001A\u0007 🧪\n👩‍💻' }),
+    fla('wide-2', wide, 'engineering', 'project-b')];
+  const entries = flaMenuEntries(candidates(roster), { sourceApplication: 'claude_code', language: 'zh-CN' });
+  // agent-installer 0.4's own rules: a name of at most 64 code units without separators,
+  // whitespace, controls or a leading dot; a description of one line without controls.
+  const NAME = /^[^\\/:*?"<>|\s.\x00-\x1f\x7f][^\\/:*?"<>|\s\x00-\x1f\x7f]*$/u;
+  for (const entry of entries) {
+    assert.ok(entry.name.length <= 60 && NAME.test(entry.name), entry.name);
+    assert.ok(entry.name.isWellFormed(), 'no character is cut in half');
+    assert.doesNotMatch(entry.description, /[\x00-\x1f\x7f]/u);
+  }
+  assert.equal(new Set(entries.map(entry => entry.name)).size, 2);
+  assert.match(entries.find(entry => entry.description.includes('Alpha')).description, /QA 🧪 👩‍💻$/u);
+});
+
+test('a roster read in another order announces nothing; only what the client shows counts', async () => {
+  const app = application();
+  const { client, changes, close } = await connect(app, { settingsEveryMs: 5, rosterEvery: 1 });
+  try {
+    await client.listPrompts();
+    // Recency decides the menu's order: Jamie Ash in Gamma becomes the most recent.
+    app.roster = ROSTER.map(agent => agent.agent_id === 'jamie-c' ? { ...agent, updated_at: '2026-11-07T00:00:00Z' } : agent);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(changes.length, 0);
+    app.roster = [...ROSTER, fla('new', 'Nia New', 'engineering', 'project-b')];
+    await waitFor(() => changes.length === 1);
+  } finally { await close(); }
+});
