@@ -37,7 +37,6 @@ import { readTaskPreferences } from './task-preference-reader.js';
 import { resolveSetupPaths } from '../setup/paths.js';
 import { createNeedsPersonNotifier } from '../notifications/needs-person.js';
 import { createDelegatedConsoleClient } from '../agent-delegation/console-client.js';
-import { fuliLinkOrigin } from '../desktop/fuli-links.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
 import { describeSettings } from '../system/settings-guide.js';
 import {
@@ -159,7 +158,6 @@ export function openFederatedGraphApplication({
     // Read per use (briefly cached): an MCP process that starts while the console is restarting
     // (an update reconnects every client) must not keep the default port for its whole life.
     consoleUrl: liveSourceConsoleUrl(runtimeConfigPath),
-    fuliLinkOrigin: fuliLinkOrigin(),
     runtimeConfigPath,
     providerRequestTimeoutMs: providerRequestTimeoutFromEnv(env),
     refreshPersonalToken: personalTokenRefresher(runtimeConfigPath, resolved.personal)
@@ -213,8 +211,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     // The console's first-run guide (first-run-guide.js); in memory unless opened on a data directory.
     firstRunGuide = createFirstRunGuide(null),
     consoleUrl = sourceConsoleUrl(null),
-    // `fuli:/` when receipt links can be fuli:// links (src/desktop/fuli-links.js), else null.
-    fuliLinkOrigin = () => null,
     projectPathResolver = resolvePersonalProjectPath,
     taskContextRegistry = null,
     providerRequestTimeoutMs = undefined,
@@ -241,7 +237,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     this.agentAccessPolicyStore = agentAccessPolicyStore;
     this.recallPolicyStore = recallPolicyStore;
     this.consoleUrl = consoleUrl;
-    this.fuliLinkOrigin = fuliLinkOrigin;
     this.projectPathResolver = projectPathResolver;
     this.tokenUsageResolver = tokenUsageResolver;
     this.personal = new GraphitiProviderClient({

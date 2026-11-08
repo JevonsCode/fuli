@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { taskAgentReceipt } from '../src/agents/identity-receipt.js';
+import { agentProfileUrl, captureSettingsUrl, taskAgentReceipt } from '../src/agents/identity-receipt.js';
 import { taskTeam } from '../src/graphiti/task-collaboration-attribution.js';
 import { successToolResult, hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
@@ -143,4 +143,10 @@ test('execution summaries share a total budget without dropping collaborator ide
   assert.ok(receipt.collaborators.some(item => item.omitted_run_count > 0));
   for (const item of receipt.collaborators) assert.equal(item.run_count, 3);
   assert.ok(Buffer.byteLength(JSON.stringify(receipt)) <= 12 * 1024);
+});
+
+test('receipt links are plain web links every chat client opens', () => {
+  assert.equal(captureSettingsUrl(application), 'http://127.0.0.1:3999/settings');
+  assert.equal(agentProfileUrl(application, 'agent-1'), 'http://127.0.0.1:3999/agents/synthetic-space/agent-1');
+  assert.match(taskAgentReceipt(application, owner).markdown, /\]\(http:\/\/127\.0\.0\.1:3999\/agents\//);
 });

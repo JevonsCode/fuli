@@ -3,10 +3,11 @@ import { agentLabel } from './agent-label.js';
 import { flaAddress } from '../../packages/roundtable/src/roundtable/fla-address.js';
 import { markdownLink } from '../text/markdown-link.js';
 
-// The console origin every receipt link opens: `fuli:/` once the desktop
-// client opens fuli:// links for this installation (src/desktop/fuli-links.js).
+// The console origin every receipt link opens: always http. Chat clients such as
+// Claude Desktop show fuli:// links but never hand them to the system, so a
+// click did nothing; every client opens a plain web link.
 export function receiptConsoleUrl(application) {
-  return application.fuliLinkOrigin?.() ?? application.consoleUrl ?? sourceConsoleUrl(null);
+  return application.consoleUrl ?? sourceConsoleUrl(null);
 }
 
 // The settings page where the person turns recording back on (rec#5 C10-3).
