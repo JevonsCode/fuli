@@ -8,7 +8,7 @@ import { DataFormatError } from '../packages/roundtable/src/storage/data-format-
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 import { callRoundtableTool } from '../src/agent-roundtable/tools.js';
 
-// rec#55 @FLG: a group discussion where every member is really woken through
+// rec#55 #FLG: a group discussion where every member is really woken through
 // its own executor and answers for itself. The executor here is a fake at the
 // roundtable's wake port that records each call and answers as the member it
 // was asked to restore; the roundtable, chat, delegation checks and store are
@@ -49,16 +49,16 @@ function fixture({ answer = null, clientAvailable = () => true, agents = AGENTS,
   const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), openStore: () => store ?? createRoundtableStore(),
     idFactory: () => `id-${++id}`, locateCwd: () => null, clientAvailable, env, now,
     // The executor port: the woken client restores the member named by the
-    // prompt's leading @{agentId} and answers as itself.
+    // prompt's leading #FLA {agentId} and answers as itself.
     wake: async input => {
-      const member = /^@\{([^}]+)\}/u.exec(input.prompt)[1];
+      const member = /^#FLA \{([^}]+)\}/u.exec(input.prompt)[1];
       woken.push({ member, client: input.client, prompt: input.prompt, sessionId: input.sessionId, readOnly: input.readOnly });
       const body = answer ? await answer(member, input) : `${member} 的观点`;
       return { body, sessionId: `session-${member}-${woken.length}` };
     } });
   const call = (action, data = {}, token = 'token-ada') => roundtable.discuss({ taskContextToken: token,
     sourceApplication: 'claude_code', action, ...data });
-  // What the person's @FLG entry records: the confirmed members, then a follow-up.
+  // What the person's #FLG entry records: the confirmed members, then a follow-up.
   const confirm = (requestId, members, question = '这个方案的产品体验和技术风险？') =>
     roundtable.recordGroupChoice({ requestId, agentId: 'lead', projectId: 'app', question, members });
   const start = async (requestId, members, extra = {}) => {
@@ -96,7 +96,7 @@ test('every member is woken in a fresh read-only session and replies for itself;
   assert.deepEqual(woken.map(call => call.member).sort(), ['dev', 'dev', 'qa', 'qa']);
   // Fresh sessions (no resume of the member's history), read-only.
   assert.ok(woken.every(call => call.sessionId === null && call.readOnly === true));
-  assert.ok(woken.every(call => /^@\{(dev|qa)\} \[FULI 圆桌/u.test(call.prompt)));
+  assert.ok(woken.every(call => /^#FLA \{(dev|qa)\} \[FULI 圆桌/u.test(call.prompt)));
   const view = woken.find(call => call.member === 'dev').prompt;
   assert.match(view, /第 1 轮：各自观点[\s\S]*你是 Jamie Ash（开发），职责：开发的职责[\s\S]*这个方案的产品体验和技术风险/u);
   // A response round shows each member only the others' views.
@@ -192,7 +192,7 @@ test('a woken Agent cannot start or continue a discussion', async t => {
   await assert.rejects(start('flg-nested', ['dev', 'qa']), error => error.code === 'flg_delegated_wake');
 });
 
-test('follow-ups: only the person\'s own @FLG entry asks one, each once, to the confirmed members, at most five', async t => {
+test('follow-ups: only the person\'s own #FLG entry asks one, each once, to the confirmed members, at most five', async t => {
   const { roundtable, woken, start, call, ask, settle } = fixture();
   t.after(() => roundtable.close());
   const { chatId } = await start('flg-f', ['dev', 'qa'], { responseRounds: 0 });

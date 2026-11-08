@@ -23,7 +23,6 @@ test('every 常用操作 phrase parses as its move intends, in both languages', 
           assert.ok(!parsed.group.confirm && !parsed.group.choices && !parsed.group.release, label);
         } else if (CALLS_ONE.has(move.id)) {
           assert.equal(parsed?.explicit, true, label);
-          assert.equal(parsed.inline, undefined, label);
           const name = move.id === 'recruit' ? 'Bole' : NAMES[0];
           assert.ok(parsed.query.startsWith(`${name} `), label);
         } else {

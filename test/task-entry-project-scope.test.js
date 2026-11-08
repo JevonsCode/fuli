@@ -316,7 +316,7 @@ test('an explicit global FLA keeps its identity and memory without provisioning 
     return { revision: 0, scope: 'private_agent_global', personal_project_id: null,
       personal_space_id: 'synthetic-space', agent_id: agent.agent_id };
   };
-  for (const input of [{ projectAgentId: agent.agent_id }, { taskPrompt: '@{global-engineer} Continue.' }]) {
+  for (const input of [{ projectAgentId: agent.agent_id }, { taskPrompt: '#FLA {global-engineer} Continue.' }]) {
     const result = await run(input);
     assert.equal(result.context.personal_project_id, null);
     assert.equal(result.context.project_agent_id, agent.agent_id);

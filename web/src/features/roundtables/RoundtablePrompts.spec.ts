@@ -24,10 +24,10 @@ describe('RoundtablePrompts', () => {
   it('offers the entry syntax with the person\'s own FLAs, each copied with one click', async () => {
     const wrapper = await open(['Milo Reed', 'Nova Lane'])
     const texts = [...document.body.querySelectorAll('[data-roundtable-prompt] code')].map(code => code.textContent?.replace(' …', ''))
-    expect(texts).toEqual(['@FLG 讨论', '@FLG Milo Reed、Nova Lane，一起讨论', '让 #FLA Milo Reed 去问 Nova Lane', '#FLA Milo Reed 在这里继续'])
+    expect(texts).toEqual(['#FLG 讨论', '#FLG Milo Reed、Nova Lane，一起讨论', '#FLA Milo Reed 去问 Nova Lane', '#FLA Milo Reed 在这里继续'])
     prompt('relay')!.click()
     await flushPromises()
-    expect(writeText).toHaveBeenCalledWith('让 #FLA Milo Reed 去问 Nova Lane ')
+    expect(writeText).toHaveBeenCalledWith('#FLA Milo Reed 去问 Nova Lane ')
     expect(prompt('relay')!.classList).toContain('is-copied')
     wrapper.unmount()
   })

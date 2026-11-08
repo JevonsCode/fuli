@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { projectAddress, resolveProjectAddress, resolveProjectLead, verifiedProjectFolder } from './project-target.js';
 import { observeReturnedMemory, taskContextHash } from './memory-observation.js';
 import { createAgentChat } from './chat.js';
+import { flaAddress } from './fla-address.js';
 import { createGroupDiscussion } from './group-discussion.js';
 import { createPersonConversation } from './person-conversation.js';
 import { ATTENTION_REPLIES_GUIDANCE, createAttentionInbox } from './attention-inbox.js';
@@ -746,7 +747,7 @@ function inboxItem(message) {
 }
 
 function wakePrompt({ thread, target, senderName, senderClient, ask, targetProjectId = null, replyInInbox = false }) {
-  return `@{${encodeURIComponent(target.agentId)}} [FULI 圆桌 · ${thread.id}]\n`
+  return `${flaAddress(target.agentId)} [FULI 圆桌 · ${thread.id}]\n`
     + (targetProjectId ? `在目标项目上下文执行：personalProjectId=${JSON.stringify(targetProjectId)}。原项目负责人保持不变，只回传本条限定需求的结果。\n` : '')
     + `${senderName}（${CLIENT_LABELS[senderClient] ?? senderClient}）发来消息：\n\n${ask.body}\n\n`
     + (replyInInbox

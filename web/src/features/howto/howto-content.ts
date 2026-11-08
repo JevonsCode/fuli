@@ -3,7 +3,7 @@
 // its literal `@` and `#` and the text stays in one place to edit.
 //
 // Every phrase is real task-entry syntax, never an invented command:
-// `#FLA <name>` at the start and `@FLG …` only at the start are parsed by
+// `#FLA <name>` at the start and `#FLG …` only at the start are parsed by
 // src/graphiti/fla-mention.js and documented in skills/operating-fuli/SKILL.md;
 // `#FLA Bole 招一个前端` is the recruiting example in
 // docs/agent-conversations-and-collaboration.md. A phrase without a keyword is
@@ -33,13 +33,13 @@ const ZH: HowtoContent = {
       id: 'continue', term: 'concept.fla', title: '找一位 FLA 接着干',
       when: '想让某位 FLA 在当前会话里接着它原来的工作，在哪个文件夹都行。',
       phrases: ['#FLA ‹姓名› 在这里继续'],
-      note: '只写 #FLA 会列出可选的 FLA，回复编号即可；写 @FLA 结束 换回原来的归属。',
+      note: '只写 #FLA 会列出可选的 FLA，回复编号即可；写 #FLA 结束 换回原来的归属。',
     },
     {
       id: 'discuss', term: 'concept.flg', title: '几位 FLA 一起讨论',
       when: '一个问题想听几种角度，比如产品体验和技术风险。',
-      phrases: ['@FLG 讨论 ‹问题›', '@FLG ‹姓名›、‹姓名›，一起讨论 ‹问题›'],
-      note: '@FLG 只写在开头。可以点名，也可以让 FULI 按职业推荐 2–4 位；回复编号确认成员后开始。',
+      phrases: ['#FLG 讨论 ‹问题›', '#FLG ‹姓名›、‹姓名›，一起讨论 ‹问题›'],
+      note: '#FLG 只写在开头。可以点名，也可以让 FULI 按职业推荐 2–4 位；回复编号确认成员后开始。',
     },
     {
       id: 'relay', title: '让 FLA A 去问 FLA B',
@@ -110,13 +110,13 @@ const EN: HowtoContent = {
       id: 'continue', term: 'concept.fla', title: 'Have an FLA pick up its work',
       when: 'You want one FLA to continue its own work in this chat, from any folder.',
       phrases: ['#FLA ‹name› continue here'],
-      note: '#FLA alone lists the FLAs to choose from; reply with a number. @FLA end goes back to the usual owner.',
+      note: '#FLA alone lists the FLAs to choose from; reply with a number. #FLA end goes back to the usual owner.',
     },
     {
       id: 'discuss', term: 'concept.flg', title: 'Let several FLAs discuss',
       when: 'A question deserves more than one view, such as product experience and technical risk.',
-      phrases: ['@FLG discuss ‹question›', '@FLG ‹name›, ‹name›: discuss ‹question›'],
-      note: '@FLG only counts at the start. Name them, or let FULI suggest 2–4 by occupation; reply with numbers to confirm the members and begin.',
+      phrases: ['#FLG discuss ‹question›', '#FLG ‹name›, ‹name›: discuss ‹question›'],
+      note: '#FLG only counts at the start. Name them, or let FULI suggest 2–4 by occupation; reply with numbers to confirm the members and begin.',
     },
     {
       id: 'relay', title: 'Have FLA A ask FLA B',

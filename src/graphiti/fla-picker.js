@@ -10,7 +10,7 @@ import { projectDisplayName } from './task-entry-project-mention.js';
 // The person's FLAs as choices (rec#54): one candidate per FLA and project it
 // works in, so the same name in two projects is two choices. Matching a typed
 // name, narrowing a partial one and ranking are shared by every picker over
-// FLAs; rec#55's @FLG member choice reuses them with a multi-select
+// FLAs; rec#55's #FLG member choice reuses them with a multi-select
 // presentation and names found anywhere in its text. Names, projects and
 // role text only: nothing here reads memory, and the
 // Provider still decides whether a chosen FLA may work.
@@ -25,7 +25,7 @@ const SPACE_ROLES = new Set([employeeAgentId('tonborg')]);
 // Agents belong to one task: none is an FLA a person continues by name.
 const NOT_PICKABLE_TYPES = new Set(['hr', 'temporary']);
 // A name ends at the end, a space or punctuation, or where the script changes
-// (`Jamie Ash继续`). Two CJK runs never split: `@小林子` is not "小林".
+// (`Jamie Ash继续`). Two CJK runs never split: `小林子` is not "小林".
 const NAME_END = /^(?:$|[\s,，:：;；!?！？.。、(（])/u;
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 const PARTIAL_LIMIT = 64;
@@ -108,7 +108,7 @@ export function rankCandidates(candidates, { currentProjectId = null, recentAgen
 }
 
 // The candidates whose whole name opens the query, longest name first:
-// `@Jamie Ash 继续` names "Jamie Ash" even when "Jamie" exists too.
+// `#FLA Jamie Ash 继续` names "Jamie Ash" even when "Jamie" exists too.
 // A built-in role's own name (aliases) counts as one of its names.
 export function namedAtOpening(query, candidates) {
   const text = identityKey(query);
@@ -119,11 +119,11 @@ export function namedAtOpening(query, candidates) {
 }
 
 // The candidates one of whose name's words is exactly the query's first word
-// (`@Jamie` for "Jamie Ash"; rec#11 D-68a). The word has at least two
-// characters, and a Latin one is matched as written: `@test` is an ordinary
-// prompt even beside "Test Bot". A word that is also a common term, written
-// as the name writes it (`@Mock` for "Mock Li"), still matches.
-export function namedByWord(query, candidates) {
+// (`#Jamie` for "Jamie Ash" in a #FLG question). The word has at least two
+// characters, and a Latin one is matched as written: `#test` names nobody
+// even beside "Test Bot". A word that is also a common term, written
+// as the name writes it (`#Mock` for "Mock Li"), still matches.
+function namedByWord(query, candidates) {
   const word = typedWord(query);
   if ([...word].length < WORD_MINIMUM) return [];
   const words = name => ASCII.test(word) ? name.normalize('NFKC').split(/\s+/u) : identityKey(name).split(' ');
@@ -133,7 +133,7 @@ export function namedByWord(query, candidates) {
 
 // The candidates a partial name (the query's first word) fits, closest fit
 // first: names that start with it, or have a word that does (close fits);
-// only when there is none, names whose letters it follows in order (`@jsh`
+// only when there is none, names whose letters it follows in order (`jsh`
 // fits "Jamie Ash"), which only narrow a picker. Ranking order within a fit.
 export function narrowedByPartial(query, candidates) {
   const partial = identityKey(typedWord(query));
@@ -155,7 +155,7 @@ function partialFit(partial, name) {
 
 // The query's first word as typed (compatibility forms folded, case kept),
 // cut where punctuation or the script changes, at most PARTIAL_LIMIT long.
-export function typedWord(query) {
+function typedWord(query) {
   const characters = [...String(query).normalize('NFKC').trimStart().split(/\s/u)[0]];
   const end = characters.findIndex((character, index) => index > 0
     && (NAME_END.test(character) || CJK.test(character) !== CJK.test(characters[index - 1])));
@@ -170,7 +170,7 @@ function nameEnds(name, rest) {
 // The names a free text carries anywhere, as whole terms (term-match.js), each
 // with every candidate of that name: longest names first, and a name inside a
 // longer one already found does not count again ("Jamie" in "Jamie Ash"). A
-// word written `@Jamie` names whoever namedByWord finds. Order of appearance.
+// word written `#Jamie` names whoever namedByWord finds. Order of appearance.
 export function namedInText(text, candidates) {
   let rest = identityKey(text);
   const found = [];
@@ -182,7 +182,7 @@ export function namedInText(text, candidates) {
     found.push({ at, items: candidates.filter(item => identityKey(item.name) === key) });
     rest = rest.slice(0, at) + '\u0000'.repeat(key.length) + rest.slice(at + key.length);
   }
-  for (const word of String(text).matchAll(/(?:^|\s)@(\S+)/gu)) {
+  for (const word of String(text).matchAll(/(?:^|\s)#(\S+)/gu)) {
     const items = namedByWord(word[1], candidates).filter(item => !found.some(({ items: known }) => known.includes(item)));
     if (items.length) found.push({ at: Infinity, items });
   }

@@ -8,16 +8,16 @@ import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { markerField as field, markerValue as unfield } from './task-agent-assignment.js';
 import { WAKE_CLIENTS } from '../../packages/roundtable/src/agents/wake-registry.js';
 
-// `@FLG …` (Fuli Agents Group, rec#55): the person invites several of their
+// `#FLG …` (Fuli Agents Group, rec#55): the person invites several of their
 // FLAs to discuss a question in this chat. The entry only prepares it:
 //
-// 1. `@FLG <question>` offers a multi-select of 2–4 members (fla-picker.js):
+// 1. `#FLG <question>` offers a multi-select of 2–4 members (fla-picker.js):
 //    the FLAs the text names, preselected and never replaced (one name several
 //    FLAs share is offered as each of them, unchecked); when it names none,
 //    or asks for more, the FLAs that fit the question
 //    (group-member-recommendation.js), each with a short reason.
-// 2. The person confirms: numbers such as `1 3`, or `@FLG 开始` for the
-//    preselection (the host's native answer comes back as `@FLG 1 3`), and
+// 2. The person confirms: numbers such as `1 3`, or `#FLG 开始` for the
+//    preselection (the host's native answer comes back as `#FLG 1 3`), and
 //    with them how the group works; the choice preselects the mode the
 //    question asks for (`一起看`), else the roundtable.
 //    - 「在圆桌里分头回复」 (mode 2): the entry records the confirmed members
@@ -28,9 +28,9 @@ import { WAKE_CLIENTS } from '../../packages/roundtable/src/agents/wake-registry
 //    - 「在这个会话里一起看」 (mode 1): nobody is woken; the entry hands this
 //      session a small read-only index of each member's context
 //      (group-member-context.js) and remembers the members.
-// 3. Afterwards `@FLG <text>` records the person's follow-up for the same
+// 3. Afterwards `#FLG <text>` records the person's follow-up for the same
 //    members (mode 2: one follow_up each; mode 1: the index read again for
-//    that text) and `@FLG 结束` stops it at once. No extra step is asked.
+//    that text) and `#FLG 结束` stops it at once. No extra step is asked.
 //
 // The member choice and the started discussion are routing state, stored as
 // markers on the session's current task like a named FLA's choice; the
@@ -52,16 +52,16 @@ const QUESTION_LIMIT = 1500;
 const MORE = /推荐|再找|再加|再请|再邀|补充|还要|recommend|suggest|more/iu;
 const COUNT = /([1-4一二两三四])\s*(?:位|个|名)/u;
 const NUMBERS = Object.freeze({ 一: 1, 二: 2, 两: 2, 三: 3, 四: 4 });
-// Words that sound like a yes but are not the choice's confirmation (`@FLG 开始`).
-const LOOSE_YES = /^(?:好|好的|好吧|行|可以|嗯|对|是|ok|okay|yes|yep|sure)\s*[。.!！~～]?\s*$/iu;
+// Words that sound like a yes but are not the choice's confirmation (`#FLG 开始`).
+const LOOSE_YES = /^(?:好|好的|好吧|行|可以|嗯|对|是|ok|okay|yes|yep|sure)[\s。.!！~～]*$/iu;
 // A discussion in progress keeps its session where it is.
 const ACTIVE = new Set(['confirmed', 'running']);
 
 const CHOOSE_GUIDANCE = 'Ask this now with the host native multi-select UI (preselected checked, custom input last) '
   + 'and mode_choice as a second, single choice in the same UI; where there is none, show both numbered lists and let '
-  + 'the person reply such as "1 3 一起看", "1 3 圆桌", or "@FLG 开始" for the checked ones. Start nothing and speak for '
+  + 'the person reply such as "1 3 一起看", "1 3 圆桌", or "#FLG 开始" for the checked ones. Start nothing and speak for '
   + 'no member before the answer. Then call begin_task_context with projectPath=current directory and taskPrompt '
-  + '"@FLG <numbers> <一起看|圆桌>" (or "@FLG 开始 <一起看|圆桌>") and follow its flg.guidance. A choice is not a '
+  + '"#FLG <numbers> <一起看|圆桌>" (or "#FLG 开始 <一起看|圆桌>") and follow its flg.guidance. A choice is not a '
   + 'permission grant.';
 const START_GUIDANCE = 'The person confirmed these members. Call group_discussion with action start, this entry\'s '
   + 'taskContextToken and start.requestId. Each member is woken in its own client without file edits or shell and answers for itself: '
@@ -80,22 +80,22 @@ const REASONS = Object.freeze({
   moderator: '是本会话的主持，不另外唤醒', own: '就是本会话的 FLA'
 });
 const NOTICES = Object.freeze({
-  project_required: '@FLG 需要由项目里的 FLA 主持；当前会话不在项目中，没有发起讨论',
+  project_required: '#FLG 需要由项目里的 FLA 主持；当前会话不在项目中，没有发起讨论',
   roster_unavailable: '暂时读不到你的 FLA，没有发起讨论',
   too_many: `一次最多邀请 ${OPTION_LIMIT} 位 FLA，请少点几位`,
   not_enough: '能参加讨论的 FLA 不足两位，没有发起讨论',
-  no_choice: '没有待确认的 @FLG 成员列表；用「@FLG 问题」发起讨论',
-  none_running: '本会话没有进行中的 @FLG 讨论',
-  stop_unavailable: '暂时无法停止 @FLG 讨论，请稍后再说一次 @FLG 结束',
-  roundtable_unavailable: '暂时无法记录确认的成员，没有发起讨论',  not_started: '这场 @FLG 讨论还没开始，开始后再追问',
-  follow_up_limit: '这场 @FLG 讨论已追问 5 次，到了上限；再写「@FLG 问题」会重新选人',
-  question_required: '请在 @FLG 后写上要讨论的问题，例如「@FLG 讨论这个方案的产品体验和技术风险」'
+  no_choice: '没有待确认的 #FLG 成员列表；用「#FLG 问题」发起讨论',
+  none_running: '本会话没有进行中的 #FLG 讨论',
+  stop_unavailable: '暂时无法停止 #FLG 讨论，请稍后再说一次 #FLG 结束',
+  roundtable_unavailable: '暂时无法记录确认的成员，没有发起讨论',  not_started: '这场 #FLG 讨论还没开始，开始后再追问',
+  follow_up_limit: '这场 #FLG 讨论已追问 5 次，到了上限；再写「#FLG 问题」会重新选人',
+  question_required: '请在 #FLG 后写上要讨论的问题，例如「#FLG 讨论这个方案的产品体验和技术风险」'
 });
 
 // What a prompt and the session's current task ask of a group discussion, or
 // null. task: the session's current task (its markers), read once per entry.
 // holdsProject: this turn stays where the session is (no standing-assignment
-// reroute) — an `@FLG` turn, or any turn while its discussion is in progress.
+// reroute) — an `#FLG` turn, or any turn while its discussion is in progress.
 export function groupDiscussionRequest(application, input, task) {
   const mention = parseFlaMention(input.taskPrompt)?.group ?? null;
   const stored = storedGroup(task);
@@ -110,7 +110,7 @@ export function groupDiscussionRequest(application, input, task) {
   const reply = mention && (mention.choices || mention.confirm) ? mention
     : !mention && stored.choices.length ? groupChoiceReply(input.taskPrompt) : null;
   if (reply) return { state: stored.choices.length ? 'confirm' : 'no_choice', reply, stored, holdsProject: true, source };
-  // `@FLG 好` / `@FLG ok` while a choice waits is an unclear answer to it, not a new question.
+  // `#FLG 好` / `#FLG ok` while a choice waits is an unclear answer to it, not a new question.
   if (mention?.query && stored.choices.length && LOOSE_YES.test(mention.query)) {
     return { state: 'unclear', stored, holdsProject: true };
   }
@@ -130,7 +130,7 @@ export async function groupDiscussionEntry(application, request, selection, pers
   if (request.state === 'no_choice') return said('unavailable', 'no_choice', kept);
   const sameSession = !request.stored.started && request.stored.together.length > 0;
   if (request.state === 'stop' && sameSession) {
-    const notice = '已结束本会话的 @FLG 一起看';
+    const notice = '已结束本会话的 #FLG 一起看';
     return { view: { status: 'ended', notice }, notice, selection: noAgent(), markers: [] };
   }
   // Mode 1 needs no moderator: the same members' index, read for the new text.
@@ -144,14 +144,14 @@ export async function groupDiscussionEntry(application, request, selection, pers
         ? await application.roundtable?.ownerStopGroupDiscussion?.({ requestId: request.stored.started }) : null;
     } catch { return said('unavailable', 'stop_unavailable', kept); }
     if (!stopped) return said('unavailable', 'none_running', []);
-    const notice = '已停止 @FLG 讨论，未回复的成员不计入结论';
+    const notice = '已停止 #FLG 讨论，未回复的成员不计入结论';
     return { view: { status: 'stopped', chat_id: stopped.chatId, notice, guidance: STOPPED_GUIDANCE }, notice,
       selection: noAgent(), markers: kept };
   }
   const moderator = selection?.status === 'ready' && personalProjectId ? selection.agent?.agentId ?? null : null;
   if (!moderator) return said('unavailable', 'project_required', kept);
   if (request.state === 'confirm') return confirmed(application, request, moderator, personalProjectId);
-  if (request.state === 'unclear') return chooseAgain(request.stored, '请回复编号，或用「@FLG 开始」确认已勾选的');
+  if (request.state === 'unclear') return chooseAgain(request.stored, '请回复编号，或用「#FLG 开始」确认已勾选的');
   if (!request.query) return said('unavailable', 'question_required', kept);
   if (request.status?.followUps >= request.status?.maxFollowUps) return said('unavailable', 'follow_up_limit', []);
   const current = request.stored.started ? await startedDiscussion(application, request.stored.started) : null;
@@ -198,7 +198,7 @@ async function memberChoice(application, query, { moderator, personalProjectId }
     : options.some(item => item.note === '同名，请选择') ? '有同名的 FLA，请选出要邀请的那一位，再确认成员'
       : wantsMore ? '你点名的和推荐的 FLA 已勾选，要邀请哪几位？' : '你点名的 FLA 已勾选，还要加谁吗？';
   const { shown, interaction } = memberAndModeChoice(options, question, mode);
-  const notice = ['等待确认 @FLG 讨论成员', ...notices].join('；');
+  const notice = ['等待确认 #FLG 讨论成员', ...notices].join('；');
   const text = [...query].slice(0, QUESTION_LIMIT).join('');
   return { view: { status: 'choose', question: text, notice }, interaction, notice,
     selection: noAgent(), markers: [`flg_question:${text}`, `flg_mode:${mode}`, ...shown.map(choiceMarker)] };
@@ -206,7 +206,7 @@ async function memberChoice(application, query, { moderator, personalProjectId }
 
 // The member multi-select with the mode choice beside it, its mode preselected.
 function memberAndModeChoice(members, question, mode) {
-  const { shown, interaction } = flaGroupChoice(members, { title: '选择 @FLG 讨论成员', question, guidance: CHOOSE_GUIDANCE });
+  const { shown, interaction } = flaGroupChoice(members, { title: '选择 #FLG 讨论成员', question, guidance: CHOOSE_GUIDANCE });
   return { shown, interaction: { ...interaction, mode_choice: { question: '怎么一起工作？', options: Object.values(MODES),
     preselected: Object.keys(MODES).indexOf(mode) + 1 } } };
 }
@@ -214,7 +214,7 @@ function memberAndModeChoice(members, question, mode) {
 // The same member choice again, saying why the last answer did not confirm it.
 function chooseAgain({ choices, question, mode }, reason) {
   const { interaction } = memberAndModeChoice(choices, `${reason}，要邀请哪几位一起讨论？`, mode);
-  const notice = `等待确认 @FLG 讨论成员：${reason}`;
+  const notice = `等待确认 #FLG 讨论成员：${reason}`;
   return { view: { status: 'choose', question, notice }, interaction, notice,
     selection: noAgent(), markers: [`flg_question:${question}`, `flg_mode:${mode}`, ...choices.map(choiceMarker)] };
 }
@@ -242,25 +242,25 @@ function confirmed(application, request, moderator, personalProjectId) {
     application.roundtable.recordGroupChoice({ requestId, agentId: moderator, projectId: personalProjectId,
       question, members: members.map(item => item.agentId) });
   } catch { return said('unavailable', 'roundtable_unavailable', []); }
-  const notice = [`已确认 ${members.length} 位 @FLG 讨论成员：${members.map(item => item.name).join('、')}`,
+  const notice = [`已确认 ${members.length} 位 #FLG 讨论成员：${members.map(item => item.name).join('、')}`,
     ...(self ? [self] : [])].join('；');
   return { view: { status: 'confirmed', notice, start: { requestId }, guidance: START_GUIDANCE }, notice,
     markers: [startedMarker(requestId)] };
 }
 
 // Mode 1: this session reads the members' index for the person's text and
-// keeps the members, so a later `@FLG <text>` reads it again. One receipt
+// keeps the members, so a later `#FLG <text>` reads it again. One receipt
 // line says whose context was loaded and that working memory was not; a part
 // that cannot be read is said in the index itself.
 async function together(application, members, text, source, extra = null) {
   const context = await groupMemberContext(application, members, text, source);
-  const notice = [`本会话已载入 ${members.length} 位 @FLG 成员的上下文：${members.map(item => item.name).join('、')}`
+  const notice = [`本会话已载入 ${members.length} 位 #FLG 成员的上下文：${members.map(item => item.name).join('、')}`
     + '（工作记忆为各 FLA 私有，未载入）', ...(extra ? [extra] : [])].join('；');
   return { view: { status: 'together', notice, context, guidance: TOGETHER_GUIDANCE }, notice,
     markers: members.map(withMarker) };
 }
 
-// The person's `@FLG <text>` for the discussion this session started: recorded
+// The person's `#FLG <text>` for the discussion this session started: recorded
 // as the follow-up the moderator may carry out once, to everyone or to the
 // one member it names.
 function followUp(application, current, text, kept) {
@@ -273,7 +273,7 @@ function followUp(application, current, text, kept) {
   catch { return said('unavailable', 'roundtable_unavailable', kept); }
   if (recorded.refused === 'limit') return said('unavailable', 'follow_up_limit', []);
   if (!recorded.recorded) return said('unavailable', 'none_running', []);
-  const notice = to ? `追问 @FLG 讨论中的 ${named[0][0].name}` : '在同一个 @FLG 讨论里追问全部成员';
+  const notice = to ? `追问 #FLG 讨论中的 ${named[0][0].name}` : '在同一个 #FLG 讨论里追问全部成员';
   return { view: { status: 'follow_up', chat_id: current.chatId, discussion_status: current.status,
     ...(to ? { to } : {}), notice, guidance: FOLLOW_UP_GUIDANCE }, notice, markers: kept };
 }
@@ -299,7 +299,7 @@ function memberUnavailable(item, moderator, mode) {
 }
 
 // The discussion this session started, or null when there is none or it
-// cannot be read (a new `@FLG` then starts another).
+// cannot be read (a new `#FLG` then starts another).
 async function startedDiscussion(application, requestId) {
   if (!requestId || !application.roundtable?.ownerGroupDiscussion) return null;
   try { return await application.roundtable.ownerGroupDiscussion({ requestId }); } catch { return null; }

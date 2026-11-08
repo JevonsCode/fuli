@@ -2,7 +2,7 @@ import { receiptText } from '../agents/identity-receipt.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects, projectDisplayName, promptNamesProject } from './task-entry-project-mention.js';
 import { withRouteMarkers } from './task-agent-assignment.js';
-import { leadingAgentAddress } from './fla-mention.js';
+import { addressedAgentId } from './fla-mention.js';
 
 // A standing assignment routes one task (rec#29 D-41 D3, option b): when the
 // task prompt carries a term the person confirmed for a project, this task is
@@ -16,7 +16,7 @@ import { leadingAgentAddress } from './fla-mention.js';
 // (project-agent-task-entry.js), in its project or already there.
 //
 // What the person or host chose for this task outranks a standing assignment:
-// an explicit project or Agent, an @mention, or a project the prompt names.
+// an explicit project or Agent, a #FLA mention, or a project the prompt names.
 // Where the folder or the session would put the task does not. When terms of
 // several assignments match, the entry asks instead of choosing one.
 
@@ -130,7 +130,7 @@ function standingMatches(application, taskPrompt) {
 }
 
 function routable(resolution, input) {
-  if (input.projectAgentId || leadingAgentAddress(input.taskPrompt) !== null
+  if (input.projectAgentId || addressedAgentId(input.taskPrompt) !== null
     || EXPLICIT_BASES.has(resolution.basis)) return false;
   if (resolution.status === 'matched' || resolution.status === 'global') return true;
   return resolution.status === 'ambiguous' && resolution.basis === 'host_session_assignment';

@@ -55,7 +55,7 @@ Graph labels follow zoom level. Below 0.72, retain project names and reveal othe
 
 The About page sits on the light canvas like every other page: the FULI promise, then one 我们的理念 section (each principle a headline and one sentence, two or three columns on wider screens), the label system and the open-source credits. A principle states only what the product does today. Keep the closing section visible rather than collapsible, with its official-site link.
 
-常用操作 (How-to, `/howto`) is the settings section after 关于, for new people: 这样跟 AI 说 (each move a card with its title, one line on when, the exact words with a copy button, and a small looping scene that rests on its finished picture under reduced motion), then 案例 (real cases as short timelines). The words and cases live in `web/src/features/howto/howto-content.ts`; every phrase uses only task-entry syntax (`#FLA`, `@FLG`), and `test/howto-phrasings.test.js` pastes each into the real parser.
+常用操作 (How-to, `/howto`) is the settings section after 关于, for new people: 这样跟 AI 说 (each move a card with its title, one line on when, the exact words with a copy button, and a small looping scene that rests on its finished picture under reduced motion), then 案例 (real cases as short timelines). The words and cases live in `web/src/features/howto/howto-content.ts`; every phrase uses only task-entry syntax (`#FLA`, `#FLG`), and `test/howto-phrasings.test.js` pastes each into the real parser.
 
 ## Widgets
 

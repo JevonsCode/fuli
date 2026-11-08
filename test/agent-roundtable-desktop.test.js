@@ -67,7 +67,7 @@ test('an ask to a Codex FLA is queued in its Codex app inbox and the reply from 
   assert.deepEqual(desktop.calls.created, [{ cwd: process.cwd(), greeting: 'FULI 圆桌会把发给「Nova Lane」的消息排进这个对话。现在只需回复「好」。' }]);
   const [handOff] = desktop.calls.handedOff;
   assert.equal(handOff.threadId, INBOX);
-  assert.match(handOff.message, /^@\{reviewer-1\} \[FULI 圆桌 · id-1\]/);
+  assert.match(handOff.message, /^#FLA \{reviewer-1\} \[FULI 圆桌 · id-1\]/);
   assert.match(handOff.message, /帮我点一遍安装流程/);
   assert.match(handOff.message, /reply_agent_message（messageId="id-2"）/);
   const ask = f.store.getMessage('id-2');

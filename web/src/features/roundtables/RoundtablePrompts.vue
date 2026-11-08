@@ -9,7 +9,7 @@ import { UiIcon } from '@/ui'
 
 // How Agents start talking: people do not open conversations here, their
 // Agents do. The helper offers what to paste into the person's own Agent chat,
-// in the syntax task entry parses (@FLG, #FLA; rec#54, rec#55), each copied with
+// in the syntax task entry parses (#FLG, #FLA; rec#54, rec#55), each copied with
 // one click. `names` are two of the person's FLAs for the examples that name them.
 const props = defineProps<{ names: readonly string[]; compact?: boolean }>()
 

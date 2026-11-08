@@ -34,7 +34,7 @@ export const messages = {
     "nav.scroll": "往下看",
     "agents.eyebrow": "你的 FLA",
     "agents.title": "在哪个目录，<br><em>都能叫到你的 Agent。</em>",
-    "agents.description": "用 @名字 叫来你的长期 Agent（FLA）。换一个 AI 客户端，还是同一位搭档：职责、工作记忆和对话都在 FULI。",
+    "agents.description": "用 #FLA 名字 叫来你的长期 Agent（FLA）。换一个 AI 客户端，还是同一位搭档：职责、工作记忆和对话都在 FULI。",
     "agents.example": "示例：接入 Fuli 的 AI 客户端中一次任务的结尾",
     "agents.client": "AI 客户端 · 示例",
     "agents.request": "@Milo Reed 修一下登录页记住密码失效的问题",
@@ -258,7 +258,7 @@ export const messages = {
     "nav.scroll": "Explore the story",
     "agents.eyebrow": "Your FLA",
     "agents.title": "Any folder,<br><em>any of your Agents.</em>",
-    "agents.description": "Call your long-lived Agent (FLA) with @name. Switch AI clients and it is still the same partner: its duties, working memory and conversations live in FULI.",
+    "agents.description": "Call your long-lived Agent (FLA) with #FLA name. Switch AI clients and it is still the same partner: its duties, working memory and conversations live in FULI.",
     "agents.example": "Example: a task completed in a connected AI client",
     "agents.client": "AI client · Example",
     "agents.request": "@Milo Reed fix the login page forgetting “remember me”",
@@ -495,7 +495,7 @@ export const sceneMessages = {
       ["WSL","路径转换"],
     ],
     "default": [
-      ["@名字","任何目录"],
+      ["#FLA 名字","任何目录"],
       ["FLA","长期 Agent"],
       ["换客户端","同一位搭档"],
       ["职责","留在 FULI"],
@@ -539,7 +539,7 @@ export const sceneMessages = {
   },
   "en": {
     "default": [
-      ["@name","Any directory"],
+      ["#FLA name","Any directory"],
       ["FLA","Long-lived Agent"],
       ["New client","Same partner"],
       ["Duties","Stay in FULI"],

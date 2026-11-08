@@ -1,4 +1,4 @@
-// A group discussion (@FLG, rec#55) over one group chat. The row is written
+// A group discussion (#FLG, rec#55) over one group chat. The row is written
 // when the person confirms the members at task entry, keyed by that
 // confirmation's request ID: the members, the question, the moderator and
 // project, then how far the rounds have come and the follow-up the person
@@ -64,7 +64,7 @@ export function createGroupDiscussionStore(db, chat) {
     heartbeat(scope, requestId, at) {
       db.prepare('UPDATE group_discussions SET heartbeat_at=? WHERE scope=? AND request_id=?').run(at, scope, requestId);
     },
-    // The person's own `@FLG …` follow-up, waiting for the moderator; a newer one replaces it.
+    // The person's own `#FLG …` follow-up, waiting for the moderator; a newer one replaces it.
     requestFollowUp(scope, requestId, body, to) {
       db.prepare(`UPDATE group_discussions SET pending_follow_up=?, pending_to=?, updated_at=? WHERE scope=? AND request_id=?`)
         .run(body, to, now(), scope, requestId);

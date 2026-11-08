@@ -33,7 +33,7 @@ each worker only its returned isolated `context` (including `lifecycle`), role, 
 another Agent's private context. Fuli is the control plane and does not itself prove that a native
 worker started.
 
-`@FLG … 一起看` (task entry `flg.status: together`) is not coordination: no member is woken and no
+`#FLG … 一起看` (task entry `flg.status: together`) is not coordination: no member is woken and no
 worker starts. The session reads `flg.context`, a read-only index of the confirmed members (their
 projects, standing responsibilities, latest tasks and matching knowledge titles; their working memory
 is withheld). Checkpoint the task as the session's own Agent only: never list a member as a

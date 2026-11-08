@@ -12,7 +12,7 @@ const props = defineProps<{ move: HowtoMoveId }>()
 // motionReduced reads the in-app switch, so turning it on stops the loop at once.
 const animated = computed(() => !motionReduced())
 // The token the bubble types for moves that start with one.
-const TOKENS: Partial<Record<HowtoMoveId, string>> = { continue: '#FLA', discuss: '@FLG', relay: '#FLA', delegate: '#FLA', recruit: '#FLA' }
+const TOKENS: Partial<Record<HowtoMoveId, string>> = { continue: '#FLA', discuss: '#FLG', relay: '#FLA', delegate: '#FLA', recruit: '#FLA' }
 const token = computed(() => TOKENS[props.move] ?? null)
 </script>
 

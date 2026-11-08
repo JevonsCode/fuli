@@ -133,7 +133,7 @@ const BASELINE = Object.freeze({
   // Chat, instructions and entry are unchanged.
   // Task schedules removed (owner's decision, 2026-10-27): manage_project_agent_schedule leaves
   // the full profile: 191,953 -> 190,325 B (-1,628 B), measured. Chat is unchanged.
-  // rec#55 @FLG: one new roundtable tool, group_discussion, which the moderating Agent calls only
+  // rec#55 #FLG: one new roundtable tool, group_discussion, which the moderating Agent calls only
   // after the person confirms members: 190,325 -> 191,468 B (+1,143 B), measured. Chat, instructions
   // and an ordinary entry are unchanged.
   // rec#11 D-71 服务管理: one full-profile tool, report_agent_service, registers or updates a

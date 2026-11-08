@@ -414,7 +414,7 @@ async function knowledgeIndexRecall(application, { personalProjectId }, taskProm
 // distinctive terms, keeping the items that project itself defines and that
 // name one of those terms, confirmed first, as [id, title] pairs. Null when
 // the text has no such term (no search) or nothing matches; a failed search
-// throws. Task entry's index tier and the @FLG same-session member index
+// throws. Task entry's index tier and the #FLG same-session member index
 // (group-member-context.js) share it. agentToolName labels the search.
 export async function projectKnowledgeIndex(application, personalProjectId, text,
   { sourceApplication, sessionId, agentToolName }) {
