@@ -192,7 +192,7 @@ describe('TonborgExplain', () => {
       throw new Error(`Unexpected request: ${url}`)
     })
     await opened(3)
-    expect(asked).toEqual([{ clients: ['codex', 'claude-desktop', 'opencode'] }])
+    expect(asked).toEqual([{ clients: ['codex', 'claude-code', 'claude-desktop', 'opencode'] }])
     // Codex keeps its documented app link; OpenCode, without one, opens in a terminal.
     expect(panel().querySelector('[data-tonborg-explain-open="codex"]')).not.toBeNull()
     const terminal = panel().querySelector<HTMLButtonElement>('[data-tonborg-explain-terminal="opencode"]')!
@@ -210,5 +210,20 @@ describe('TonborgExplain', () => {
     await flushPromises()
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Tonborg'))
     expect(useConsoleStore().feedback?.message).toMatch(/在 OpenCode 里粘贴发送/)
+  })
+  it('lists a client whose FULI entry needs an update, and a CLI found only in WSL, but no other unconnected client', async () => {
+    clients = [client('codex', 'Codex', 'codex', 'changed'), client('cursor', 'Cursor', 'cursor', 'not_connected'),
+      client('opencode', 'OpenCode', 'opencode', 'not_connected'), client('gemini-cli', 'Gemini CLI', null, 'not_detected')]
+    postJson.mockImplementation(async (url: string) => {
+      if (url === '/api/session-launch/new-session/ways') {
+        return { launcher: 'available', ways: { opencode: { prompt: 'send', environment: 'wsl' }, cursor: { prompt: 'send' } } }
+      }
+      throw new Error('unexpected ' + url)
+    })
+    await opened(3)
+    const names = [...panel().querySelectorAll('.tonborg-explain__name')].map(item => item.textContent)
+    expect(names).toEqual(['Codex', 'OpenCode'])
+    expect(panel().querySelector('[data-tonborg-explain-open="codex"]')).not.toBeNull()
+    expect(panel().querySelector('[data-tonborg-explain-terminal="opencode"]')).not.toBeNull()
   })
 })
