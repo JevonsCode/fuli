@@ -50,6 +50,7 @@ import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
 import { CONSOLE_AUTOSTART_FILE, CONSOLE_AUTOSTART_FORMAT } from '../local-runtime/console-autostart-record.js';
 import { DESKTOP_ADOPTION_FILE, DESKTOP_ADOPTION_FORMAT } from '../desktop/npm-adoption-store.js';
 import { CLI_PATH_FILE, CLI_PATH_FORMAT } from '../desktop/cli-path.js';
+import { WHATS_NEW_FILE, WHATS_NEW_FORMAT } from '../whats-new/whats-new.js';
 import { CLIENT_LINKS_STATE_FORMAT } from '../client-links/registry.js';
 import { OCCUPATION_PLUGINS_STATE_FORMAT } from '../occupation-plugins/port.js';
 import { OCCUPATION_KIT_CHOICES_FORMAT } from '../occupation-plugins/choice-store.js';
@@ -146,6 +147,8 @@ const jsonStores = () => [
   [DESKTOP_ADOPTION_FILE, DESKTOP_ADOPTION_FORMAT],
   // Whether the person keeps the desktop app's fl and fuli on their PATH.
   [CLI_PATH_FILE, CLI_PATH_FORMAT],
+  // The last FULI version whose what's-new notice the console showed.
+  [WHATS_NEW_FILE, WHATS_NEW_FORMAT],
   // Sentence hashes of recent sessions' prompts, for the entry recall (rec#88).
   [SESSION_PROMPT_SENTENCES_FILE, SESSION_PROMPT_SENTENCES_FORMAT]
 ];

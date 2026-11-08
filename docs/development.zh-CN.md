@@ -36,3 +36,16 @@ docker compose -f compose.graphiti.yml config --quiet
 `npm run test:package` 会构建前端、生成真实 npm tarball、安装到隔离的全局前缀，并验证
 `fuli` / `fl`、版本号、帮助信息和 Web UI。测试源码、QA 截图和内部设计文档不会进入 npm
 包。
+
+## 发布
+
+每个版本都带几句「更新了什么」，更新到这个版本的人第一次打开控制台时会看到一次。打标签之前写在
+`src/whats-new/lines/<版本号>.json`：
+
+```json
+{ "version": "0.26.0", "zh": ["一两句用户会注意到的变化，轻松一点。"], "en": ["What people will notice, in a light line or two."] }
+```
+
+- 每种语言 1 到 5 句，每句不超过 100 个字符。第一句是浮层提示里的正文，「查看详情」列出全部，并链到 GitHub release。
+- 只写用户能感觉到的变化，可以有点好玩；不写测试、CI，也不逐条列清单。
+- `node scripts/whats-new-lines.js --release` 会检查；发布工作流会跑它，这个版本没有这几句就不发布。

@@ -13,8 +13,8 @@ import { loadNpmCopies, noticeCopy, npmCopies, removalReason, removeNpmCopy, set
 // A floating glass notice when the desktop app found an older npm copy of
 // FULI beside it (Jevons 11-08): it names the copy, offers 「卸载」 with no
 // second confirmation, and closes for good with ×; Settings › 客户端 still
-// lists the copy. It sits at the bottom right just above the dock, so it
-// never covers the top bar, a page's tabs or its title.
+// lists the copy. It sits at the bottom right just above the dock
+// (layouts/CornerNotices.vue), so it never covers the top bar, a page's tabs or its title.
 // The Settings card that keeps the copy, with its 卸载, after this notice is closed.
 const SETTINGS_CARD = '/settings?tab=clients#npm-copies'
 const store = useConsoleStore()
@@ -71,11 +71,7 @@ async function close() {
 </template>
 
 <style scoped>
-/* Glass, like every floating bar; bottom right above the dock (--dock-clearance), taking no height from the page. */
-.npm-copy-notice {
-  position: fixed; bottom: var(--dock-clearance); right: calc(var(--page-inline) + var(--scrollbar-size)); z-index: var(--z-popover);
-  width: min(440px, calc(100vw - 2 * var(--page-inline)));
-}
+/* Glass, like every floating bar; the corner stack places it above the dock, taking no height from the page. */
 .npm-copy-notice :deep(.npm-copy-message) {
   border: 1px solid var(--edge-dock); background: var(--glass-sheen), var(--surface-dock); box-shadow: var(--shadow-glass);
   -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock);

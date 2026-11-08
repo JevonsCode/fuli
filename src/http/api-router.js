@@ -8,6 +8,7 @@ import { handleDataFormatApiRequest } from './data-format-api-router.js';
 import { handleDoctorApiRequest } from './doctor-api-router.js';
 import { handleNpmCopiesRequest } from './npm-copies-api-router.js';
 import { handleCliPathRequest } from './cli-path-api-router.js';
+import { handleWhatsNewRequest } from './whats-new-api-router.js';
 import { handleDiagnosticsApiRequest } from './diagnostics-api-router.js';
 import { handleOldDataRequest } from './old-data-api-router.js';
 import { handleOccupationPluginsRequest } from './occupation-plugins-api-router.js';
@@ -210,6 +211,7 @@ export async function handleApiRequest({
   if (await handleDoctorApiRequest({ request, response, url, system })) return true;
   if (await handleNpmCopiesRequest({ request, response, url, system })) return true;
   if (await handleCliPathRequest({ request, response, url, system })) return true;
+  if (await handleWhatsNewRequest({ request, response, url, system })) return true;
   if (await handleDiagnosticsApiRequest({ request, response, url, app, system })) return true;
   if (await handleOldDataRequest({ request, response, url, shelf: app.oldData, restore: dataFormatMigrations?.restore ?? null })) return true;
   if (await handleOccupationPluginsRequest({ request, response, url, app })) return true;
