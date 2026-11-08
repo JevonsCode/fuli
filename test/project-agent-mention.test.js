@@ -43,13 +43,12 @@ test('portable mentions encode delimiters and keep identifier case exact', async
   const { run } = fixture([role(id, 'Alex'), role(id.toLowerCase(), 'Alex')]);
   assert.equal((await run(`#FLA {${encodeURIComponent(id)}} continue`)).agent.agentId, id);
 });
-test('a legacy @{uuid} from an older prompt still selects its Agent; other @{id} forms do not', async () => {
+test('a legacy @{agentId} from an older prompt still selects its Agent, whatever the ID looks like', async () => {
   const uuid = '3c0a8f5e-1b2d-4e6f-9a7b-8c9d0e1f2a3b';
-  const { run } = fixture([role(uuid, 'Alex Morgan'), role('engineer', 'Sam Lee')]);
-  assert.equal((await run(`@{${uuid}} continue`)).agent.agentId, uuid);
-  const { run: plain, calls } = fixture();
-  assert.equal((await plain('@{engineer} continue')).agent.agentId, 'default');
-  assert.equal(calls[0][1].agent_id, null);
+  for (const id of [uuid, 'employee.jefa', 'fuli-project-hr']) {
+    const { run } = fixture([role(id, 'Alex Morgan'), role('engineer', 'Sam Lee')]);
+    assert.equal((await run(`@{${encodeURIComponent(id)}} continue`)).agent.agentId, id, id);
+  }
 });
 test('an unknown or explicitly conflicting stable ID cannot fall back to another Agent', async () => {
   for (const [prompt, extra, status] of [['#FLA {nobody} continue', {}, 'agent_not_found'],

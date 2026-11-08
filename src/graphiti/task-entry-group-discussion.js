@@ -53,7 +53,7 @@ const MORE = /推荐|再找|再加|再请|再邀|补充|还要|recommend|suggest
 const COUNT = /([1-4一二两三四])\s*(?:位|个|名)/u;
 const NUMBERS = Object.freeze({ 一: 1, 二: 2, 两: 2, 三: 3, 四: 4 });
 // Words that sound like a yes but are not the choice's confirmation (`#FLG 开始`).
-const LOOSE_YES = /^(?:好|好的|好吧|行|可以|嗯|对|是|ok|okay|yes|yep|sure)\s*[。.!！~～]?\s*$/iu;
+const LOOSE_YES = /^(?:好|好的|好吧|行|可以|嗯|对|是|ok|okay|yes|yep|sure)[\s。.!！~～]*$/iu;
 // A discussion in progress keeps its session where it is.
 const ACTIVE = new Set(['confirmed', 'running']);
 

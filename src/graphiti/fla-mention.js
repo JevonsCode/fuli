@@ -23,10 +23,19 @@
 //   bare reply of numbers answers the choice too; a bare "好", "开始" or
 //   "一起看" does not.
 
-const KEYWORD = /^#FLA(?=$|\s)/iu;
-const GROUP = /^#FLG(?=$|[\s:：,，])/iu;
-const RELEASE = /^(?:结束|释放|解除|退出|停止|end|release|stop)\s*[。.!！]?\s*$/iu;
-const CHOICE = /^(\d{1,2})\s*[.、)）]?\s*$/u;
+// The keywords, half- or full-width `#`, any case.
+const KEYWORD = /^[#＃]FLA(?=$|\s)/iu;
+const GROUP = /^[#＃]FLG(?=$|[\s:：,，])/iu;
+// Everything below reads at most this much of a prompt, and every pattern
+// matches in linear time: a pasted prompt never stalls the entry.
+const ADDRESS_LIMIT = 2048;
+// Short replies (a number, a release, a confirmation) are first reduced to
+// words with single spaces (reply), so their patterns hold no adjacent
+// optional runs to backtrack over. Longer text is never such a reply.
+const REPLY_LIMIT = 128;
+const SEPARATORS = /[\s,，、。!！]+/gu;
+const RELEASE = /^(?:结束|释放|解除|退出|停止|end|release|stop)\.?$/iu;
+const CHOICE = /^(\d{1,2})[.)）]?$/u;
 // How a confirmed group works (rec#55): in this session, which reads every
 // member's context (mode 1), or in the roundtable, where each member is woken
 // and answers for itself (mode 2). The choice offers both labels.
@@ -36,54 +45,66 @@ const MODE = String.raw`(?:(${SESSION_MODE})|(${ROUNDTABLE_MODE}))`;
 // Several numbers answer a multi-select (`1 3`, `1,3`, `1、3`), optionally
 // followed by a confirmation word and a mode. A confirmation word or a mode
 // alone takes the preselection only after `#FLG` (`#FLG 开始`, `#FLG 一起看`).
-const CHOICES = new RegExp(String.raw`^(\d{1,2}(?:\s*[,，、\s]\s*\d{1,2})*)\s*[,，。]?\s*(?:开始|确认|go|start|ok)?`
-  + String.raw`\s*[,，]?\s*${MODE}?\s*[。.!！]?\s*$`, 'iu');
-const CONFIRM = new RegExp(String.raw`^(开始吧|开始|确认|go|start)?\s*[,，]?\s*${MODE}?\s*[。.!！]?\s*$`, 'iu');
-// Files a client attaches ahead of the person's words (Claude Code writes
-// `@"C:\…\clip.mp4"`): a quoted path, or a token with a path separator or a
-// file extension. They are skipped before deciding what the message starts with.
-const ATTACHMENT = /^@(?:"[^"\n]*"|'[^'\n]*'|(\S+))(?:\s+|$)/u;
-const FILE_LIKE = /[\\/]|[^.]\.(?=\d*[A-Za-z])[A-Za-z\d]{1,10}$/u;
-const ADDRESS_LIMIT = 2048;
+const CHOICES = new RegExp(String.raw`^(\d{1,2}(?: \d{1,2})*)(?: ?(?:开始|确认|go|start|ok))?(?: ?${MODE})?\.?$`, 'iu');
+const CONFIRM = new RegExp(String.raw`^(开始吧|开始|确认|go|start)?(?: ?${MODE})?\.?$`, 'iu');
+// What a client puts ahead of the person's words is skipped before deciding
+// what the message starts with: a quoted file (Claude Code writes
+// `@"C:\…\clip.mp4"`, possibly with `#FLA` right after it) or any other `@`
+// token without spaces (`@Makefile`, `@src/a.ts`, Cursor's `@Codebase`). A
+// leading `@{…}` is not skipped: it is a legacy address.
+const ATTACHMENT = /^@(?:"[^"\n]*"\s*|'[^'\n]*'\s*|(?!\{)\S+(?:\s+|$))/u;
 const STABLE = /^\{([^{}\s]+)\}(?=$|[\s,，:：])/u;
 // Compatibility with prompts FULI 0.23 and earlier wrote (continuation
-// prompts, roundtable wakes): `@{<uuid>}` at the start, a whole UUID only.
-// Nothing writes it any more; drop it once 0.23 prompts are out of use.
-const LEGACY_STABLE = /^@\{([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\}(?=$|[\s,，:：])/iu;
+// prompts, roundtable wakes): `@{agentId}` at the start, for any Agent ID
+// (`@{employee.jefa}`, `@{<uuid>}`). Nothing writes it any more; drop it once
+// 0.23 prompts are out of use.
+const LEGACY_STABLE = /^@(?=\{)/u;
 
 // null, { release: true }, { choice: n }, { handoff: agentId } for the stable
 // `#FLA {agentId}` form, { explicit: true, query }: the text after `#FLA`,
 // which may name an FLA and continue with the task, or { group } for `#FLG …`
 // (groupMention).
 export function parseFlaMention(prompt) {
-  const text = afterAttachments(typeof prompt === 'string' ? prompt.trimStart() : '');
+  const text = afterAttachments(prompt);
   const group = GROUP.exec(text);
   if (group) return { group: groupMention(text.slice(group[0].length)) };
-  const legacy = LEGACY_STABLE.exec(text);
-  if (legacy) return { handoff: legacy[1] };
+  if (LEGACY_STABLE.test(text)) {
+    const legacy = stableAddress(text.slice(1));
+    return legacy?.agentId ? { handoff: legacy.agentId } : null;
+  }
   const keyword = KEYWORD.exec(text);
   if (!keyword) return null;
-  const rest = text.slice(keyword[0].length).trim().slice(0, ADDRESS_LIMIT);
+  const rest = text.slice(keyword[0].length).trim();
   const stable = stableAddress(rest);
   if (stable) return stable.agentId ? { handoff: stable.agentId } : null;
-  if (RELEASE.test(rest)) return { release: true };
-  const choice = CHOICE.exec(rest);
+  const words = reply(rest);
+  if (words !== null && RELEASE.test(words)) return { release: true };
+  const choice = words === null ? null : CHOICE.exec(words);
   if (choice) return { choice: Number(choice[1]) };
   return { explicit: true, query: rest };
 }
 
 // The Agent a prompt addresses by its stable ID (`#FLA {agentId}`, or a
-// legacy `@{uuid}`), or null.
+// legacy `@{agentId}`), or null.
 export function addressedAgentId(prompt) {
   return parseFlaMention(prompt)?.handoff ?? null;
 }
 
-// The message without the files attached at its start.
-function afterAttachments(text) {
-  let rest = text;
-  for (let file = ATTACHMENT.exec(rest); file && (file[1] === undefined || FILE_LIKE.test(file[1]));
-    file = ATTACHMENT.exec(rest)) rest = rest.slice(file[0].length);
+// The prompt's first ADDRESS_LIMIT characters, without leading whitespace and
+// without what the client put ahead of the person's words. A cut prompt ends
+// in `…`, so what is left can never read as a short reply.
+function afterAttachments(prompt) {
+  const text = typeof prompt === 'string' ? prompt : '';
+  let rest = (text.length > ADDRESS_LIMIT ? `${text.slice(0, ADDRESS_LIMIT)}…` : text).trimStart();
+  for (let file = ATTACHMENT.exec(rest); file; file = ATTACHMENT.exec(rest)) rest = rest.slice(file[0].length);
   return rest;
+}
+
+// A short reply as words separated by single spaces, or null when the text is
+// too long to be one.
+function reply(text) {
+  const trimmed = text.trim();
+  return trimmed.length > REPLY_LIMIT ? null : trimmed.replace(SEPARATORS, ' ').trim();
 }
 
 // What follows `#FLG`: { release } (stop the discussion), the answer to its
@@ -91,19 +112,23 @@ function afterAttachments(text) {
 // mode when it names one), or { query }: the question, which may name
 // members and ask for recommendations.
 function groupMention(rest) {
-  const text = rest.replace(/^[\s:：,，]+/u, '').trim().slice(0, ADDRESS_LIMIT);
-  if (RELEASE.test(text)) return { release: true };
-  const confirm = CONFIRM.exec(text);
+  const text = rest.replace(/^[\s:：,，]+/u, '').trim();
+  const words = reply(text);
+  if (words !== null && RELEASE.test(words)) return { release: true };
+  const confirm = words === null ? null : CONFIRM.exec(words);
   if (confirm?.slice(1).some(Boolean)) return { confirm: true, ...namedMode(confirm) };
-  return groupChoiceReply(text) ?? { query: text };
+  return choicesIn(words) ?? { query: text };
 }
 
-// A reply of numbers to a member choice: { choices: [n…] } (distinct, as
-// typed) and the mode it names, or null for anything else.
+// A reply of numbers to a member choice, after anything the client attached:
+// { choices: [n…] } (distinct, as typed) and the mode it names, or null.
 export function groupChoiceReply(prompt) {
-  const numbers = CHOICES.exec(typeof prompt === 'string' ? prompt.trim() : '');
-  return numbers ? { choices: [...new Set(numbers[1].split(/[\s,，、]+/u).filter(Boolean).map(Number))],
-    ...namedMode(numbers) } : null;
+  return choicesIn(reply(afterAttachments(prompt)));
+}
+
+function choicesIn(words) {
+  const numbers = words === null ? null : CHOICES.exec(words);
+  return numbers ? { choices: [...new Set(numbers[1].split(' ').map(Number))], ...namedMode(numbers) } : null;
 }
 
 // The mode a question asks for, 'session' or 'roundtable', or null.
@@ -126,8 +151,10 @@ function stableAddress(address) {
   try { return { agentId: decodeURIComponent(stable[1]) }; } catch { return { agentId: null }; }
 }
 
-// A reply that is only a number, which answers a picker the session showed.
+// A reply that is only a number, which answers a picker the session showed;
+// files the client attached ahead of it do not count.
 export function choiceNumber(prompt) {
-  const choice = CHOICE.exec(typeof prompt === 'string' ? prompt.trim() : '');
+  const words = reply(afterAttachments(prompt));
+  const choice = words === null ? null : CHOICE.exec(words);
   return choice ? Number(choice[1]) : null;
 }

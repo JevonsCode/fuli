@@ -129,9 +129,24 @@ test('parsing: #FLA only at the start of the message, any case, release, choice 
   assert.deepEqual(parseFlaMention('#FLA {Team%20%2F%20x} 请接手'), { handoff: 'Team / x' });
   for (const text of ['jamie@example.com 发邮件', '@jamie@example.com', '@scope/pkg 升级', '@Override 是什么意思',
     '@Component(selector) 报错', '@app.route 怎么写', '@README.md 看看', '请让 @Jamie Ash 继续',
-    '`@Jamie Ash`', '#FLAG 不是关键词', '@Jamie Ash 继续', '@FLA', '@FLA 结束', '@FLG 讨论一下',
-    '@{Team%20%2F%20x} 请接手', '@{employee.jefa} 整理看板']) {
+    '`@Jamie Ash`', '#FLAG 不是关键词', '@Jamie Ash 继续', '@FLA', '@FLA 结束', '@FLG 讨论一下']) {
     assert.equal(parseFlaMention(text), null, text);
+  }
+  // Prompts FULI 0.23 wrote still route, for any Agent ID; nothing writes this form any more.
+  for (const [text, handoff] of [['@{Team%20%2F%20x} 请接手', 'Team / x'], ['@{employee.jefa} 整理看板', 'employee.jefa'],
+    ['@{fuli-project-hr} 招人', 'fuli-project-hr'], ['@{employee.assistant}', 'employee.assistant']]) {
+    assert.deepEqual(parseFlaMention(text), { handoff }, text);
+  }
+  assert.equal(parseFlaMention('@{%E0%A4%A} x'), null);
+  // Full-width ＃, and a choice or release ending in 。.
+  assert.deepEqual(parseFlaMention('＃FLA Jamie Ash 继续'), { explicit: true, query: 'Jamie Ash 继续' });
+  assert.deepEqual(parseFlaMention('＃fla 2。'), { choice: 2 });
+  assert.deepEqual(parseFlaMention('＃FLG 讨论一下'), { group: { query: '讨论一下' } });
+  assert.deepEqual(parseFlaMention('#FLA 结束。'), { release: true });
+  // Whatever the client puts first is skipped: any spaceless @ token, or a quoted file even with #FLA right after it.
+  for (const prompt of ['@Makefile #FLA Jamie Ash 看下', '@README @v1.2 #FLA Jamie Ash 看下', '@Codebase #FLA Jamie Ash 看下',
+    '@"C:\\a.mp4"#FLA Jamie Ash 看下', "@'D:\\资料 1\\b.pdf'\n#FLA Jamie Ash 看下"]) {
+    assert.deepEqual(parseFlaMention(prompt), { explicit: true, query: 'Jamie Ash 看下' }, prompt);
   }
   assert.deepEqual(parseFlaMention('#FLG 讨论一下'), { group: { query: '讨论一下' } });
 });
