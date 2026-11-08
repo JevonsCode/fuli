@@ -41,6 +41,7 @@ import { isDesktopAppPackage } from '../desktop/desktop-app-package.js';
 import { createNpmCopyControl } from '../desktop/npm-copy-control.js';
 import { createCliPathControl } from '../desktop/cli-path.js';
 import { readWindowsInstallation } from '../desktop/windows-installation-context.js';
+import { createWhatsNew } from '../whats-new/whats-new.js';
 
 const MCP_SCAN_CACHE_MS = 5 * 60_000;
 
@@ -74,6 +75,8 @@ export function createSystemService({
   // The desktop app's own fl and fuli in a terminal.
   cliPathControl = isDesktopAppPackage(packageRoot) ? createCliPathControl({ dataDir: paths.dataDir, packageRoot,
     installRoot: windowsInstallRoot(packageRoot) }) : null,
+  // What is new in the installed version, and whether the console has said so yet.
+  whatsNew = createWhatsNew({ dataDir: paths.dataDir }),
   // The data format plan (migration-plan.js) the doctor reads; null without a local installation.
   previewDataFormats = null,
   // Reads Codex's hook trust from its app-server (src/agents/codex/hook-trust.js).
@@ -187,6 +190,7 @@ export function createSystemService({
   return {
     npmCopies: npmCopyControl,
     cliPath: cliPathControl,
+    whatsNew,
     getSettings,
     updateSettings,
     startSettingsApply: (id) => settingsApplier.start(id),

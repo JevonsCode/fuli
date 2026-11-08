@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { createCaptureOnboarding } from '../graphiti/capture-onboarding.js';
 import { CapturePolicyStore, capturePolicyPathForRuntime } from '../graphiti/capture-policy.js';
 import { createFirstRunGuide, firstRunGuidePathForRuntime } from '../graphiti/first-run-guide.js';
+import { createWhatsNew } from '../whats-new/whats-new.js';
 
 // A new installation's question about where FULI records (rec#5 C10), for the
 // data directory setup or start uses.
@@ -18,14 +19,17 @@ export function captureOnboardingFor(paths) {
 // ever ran writes one) or a saved one for either runtime mode, capture
 // settings saved by any version, or a native graph's data. When unsure the
 // installation is treated as existing and keeps its settings. The console's
-// first-run guide opens with the question, once.
+// first-run guide opens with the question, once, and the new installation's own
+// version counts as seen, so it gets no what's-new notice.
 export function beginFirstRunCapture(paths) {
   const store = capturePolicyStoreFor(paths);
   const earlier = () => [paths.graphRuntimeConfigPath, paths.containerGraphConfigProfilePath,
     paths.nativeGraphConfigProfilePath, paths.nativePersonalDir].filter(Boolean).some(path => existsSync(path));
   const onboarding = createCaptureOnboarding(store);
   onboarding.begin(() => !earlier() && store.neverSaved());
-  if (onboarding.state().ask) createFirstRunGuide(firstRunGuidePathForRuntime(paths.graphRuntimeConfigPath)).begin();
+  if (!onboarding.state().ask) return;
+  createFirstRunGuide(firstRunGuidePathForRuntime(paths.graphRuntimeConfigPath)).begin();
+  if (paths.dataDir) createWhatsNew({ dataDir: paths.dataDir }).beginInstallation();
 }
 
 function capturePolicyStoreFor(paths) {

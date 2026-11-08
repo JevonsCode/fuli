@@ -48,6 +48,7 @@ import { captureMessages } from './messages/capture'
 import { firstRunMessages } from './messages/first-run'
 import { clientLinksMessages } from './messages/client-links'
 import { npmCopiesMessages } from './messages/npm-copies'
+import { whatsNewMessages } from './messages/whats-new'
 import { cliPathMessages } from './messages/cli-path'
 import { agentDelegationMessages } from './messages/agent-delegation'
 import { aiHelpMessages } from './messages/ai-help'
@@ -135,6 +136,7 @@ export const messages = {
     firstRun: firstRunMessages['zh-CN'],
     clientLinks: clientLinksMessages['zh-CN'],
     npmCopies: npmCopiesMessages['zh-CN'],
+    whatsNew: whatsNewMessages['zh-CN'],
     cliPath: cliPathMessages['zh-CN'],
     agentDelegation: agentDelegationMessages['zh-CN'],
     aiHelp: aiHelpMessages['zh-CN'],
@@ -194,6 +196,7 @@ export const messages = {
     firstRun: firstRunMessages['en-US'],
     clientLinks: clientLinksMessages['en-US'],
     npmCopies: npmCopiesMessages['en-US'],
+    whatsNew: whatsNewMessages['en-US'],
     cliPath: cliPathMessages['en-US'],
     agentDelegation: agentDelegationMessages['en-US'],
     aiHelp: aiHelpMessages['en-US'],

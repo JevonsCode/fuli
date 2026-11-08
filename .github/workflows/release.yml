@@ -56,6 +56,9 @@ jobs:
       # rec#17 D-11: fails until data format migration part 2 opens the gate.
       - name: Release gate
         run: node scripts/release-gate.js
+      # The console's one-time what's-new notice reads these lines (docs/development.md › Release).
+      - name: What's-new lines for this version
+        run: node scripts/whats-new-lines.js --release
       - run: npx --yes npm@11.13.0 audit --audit-level=low
       - run: npm test
       - run: npm run test:package
