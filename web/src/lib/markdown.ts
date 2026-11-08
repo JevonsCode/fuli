@@ -3,9 +3,9 @@ import MarkdownIt from 'markdown-it'
 // Text people and Agents write (an Agent's reply ends with a FULI receipt link)
 // as Markdown. Raw HTML stays text, images stay text (no request leaves the
 // console to show one), and only web, mail and fuli:// links become links; any
-// other destination is shown as written. A fuli:// link names a console page
-// (src/desktop/fuli-links.js: `fuli:/` + the page's path), so it opens inside
-// the console; web links open in a new tab.
+// other destination is shown as written. A fuli:// link (older receipts) names
+// a console page by its path, so it opens inside the console; web links open
+// in a new tab.
 const SAFE_LINK = /^(?:https?:|mailto:|fuli:)/i
 const FULI_LINK = /^fuli:\/\//i
 const WEB_LINK = /^https?:/i
