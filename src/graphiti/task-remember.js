@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { ONLY_MARKUP, withoutFuliMarkup } from './fuli-markup.js';
 import { experienceCapture } from './task-experiences.js';
 import { PREFERENCE_CONSTRAINTS, TASTE_DOMAINS, WORK_KINDS, taskWorkKind } from './task-scene.js';
 
@@ -127,7 +128,9 @@ function listedOrHinted(value, allowed, hint) {
 
 function text(value, limit, field) {
   if (typeof value !== 'string' || !value.trim()) throw invalid(`${field} must be non-empty text`);
-  return value.trim().slice(0, limit);
+  const own = withoutFuliMarkup(value);
+  if (!own) throw invalid(ONLY_MARKUP(field));
+  return own.slice(0, limit);
 }
 
 function invalid(message) {

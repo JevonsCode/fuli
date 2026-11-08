@@ -19,7 +19,7 @@ test('a script that failed alone and passed after another names that one as its 
     ...run('npm run fixtures && npm test 2>&1 | tail -20', 'wrote spec/fixtures/messages.json\n# pass 9'),
     ...run('npm run check', 'ok: 6 error codes listed')
   ];
-  const [first, checks] = turnFindings(records, 'Done. Tests pass.');
+  const [first, checks] = turnFindings(records);
   assert.equal(first.task, 'Run `npm run fixtures` before `npm test`');
   assert.match(first.solution, /failed until `npm run fixtures` had run \(first error: Error: ENOENT/);
   assert.ok(first.solution.includes("open '…/spec/fixtures/messages.json'"), first.solution);
@@ -37,12 +37,6 @@ test('refused calls, failed chains and passing-only turns name no prerequisite',
   const found = turnFindings(records);
   assert.deepEqual(found.map(item => item.task), ['Project checks: `npm run fixtures`, `npm test`']);
   assert.deepEqual(turnFindings([...run('cat a', 'x')]), []);
-});
-
-test('a rule the final reply spells out is kept; plain summaries are not', () => {
-  const [rule] = turnFindings([], 'I added the webhook channel.\nError codes follow the TW-<AREA>-<NNN> convention: every code must be listed in docs/error-codes.md.');
-  assert.match(rule.task, /convention/);
-  assert.deepEqual(turnFindings([], 'Added the endpoint and a test. All 22 tests pass.'), []);
 });
 
 test('the Stop hook closes with what the turn showed as pending experiences, and without them when refused', async () => {
@@ -63,21 +57,3 @@ test('the Stop hook closes with what the turn showed as pending experiences, and
   assert.deepEqual(sent.map(input => input.disposition), ['retain_nothing']);
 });
 
-// Synthetic: the reply relays a side session's report the host delivered.
-const RELAY = 'The side session finished. Its CI failure is fixed and the fix is on main; tidewater#42 is merged.';
-const prompt = content => ({ role: 'user', kind: 'message', content });
-
-test('a turn the host started with only its note keeps its runs, not its reply', () => {
-  const runs = run('npm test', '# pass 9');
-  const hostTurn = [prompt(`<side-sessions-event>\n${RELAY}\n</side-sessions-event>`),
-    prompt('<system-reminder>Linked sessions now: fix-ci (done)</system-reminder>'), ...runs];
-  assert.deepEqual(turnFindings(hostTurn, RELAY).map(item => item.task), ['Project checks: `npm test`']);
-  assert.deepEqual(turnFindings([prompt('<task-notification><task-id>t</task-id>done</task-notification>')], RELAY), []);
-  const personTurn = [prompt(`<system-reminder>${RELAY}</system-reminder>\nWhy did CI fail on main?`), ...runs];
-  assert.equal(turnFindings(personTurn, RELAY).length, 2);
-});
-
-test('a host note or quoted report inside the reply is not the reply\'s rule', () => {
-  assert.deepEqual(turnFindings([], `Here is what it reported:\n> ${RELAY}\nNothing else changed.`), []);
-  assert.deepEqual(turnFindings([], `<system-reminder>${RELAY}</system-reminder>\nDone.`), []);
-});

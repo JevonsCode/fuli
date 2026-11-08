@@ -4,8 +4,8 @@ import { normalizeClaudeRecord } from './conversation-transcript.js';
 // The current turn of a Claude Code transcript as normalized records
 // (turn-findings.js): the turn's prompt and everything after it. The prompt is
 // the last user message that is not only a <system-reminder> the host adds
-// mid-turn; a turn the host itself started (a <side-sessions-event>) keeps that
-// note as its prompt, so the reader can tell nobody typed it. Only the
+// mid-turn; a turn the host itself started (a <side-sessions-event>) begins at
+// that note. Only the
 // transcript's tail is read; a turn longer than that is read from where the
 // tail begins. Unreadable or unverified reads as no records.
 const TAIL_BYTES = 1 << 20;

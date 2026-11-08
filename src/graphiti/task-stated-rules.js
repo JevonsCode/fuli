@@ -4,6 +4,7 @@ import { taskCaptureScope } from './capture-decision.js';
 import { checkpointCaptureDecision } from './checkpoint-capture.js';
 import { taskStatement } from './task-prompt-statement.js';
 import { personWords } from '../conversations/person-words.js';
+import { withoutFuliMarkup } from './fuli-markup.js';
 
 // What the person states as a standing project rule in a prompt (rec#88
 // compounding eval): a policy or convention of theirs, a port, the command to
@@ -18,7 +19,7 @@ import { personWords } from '../conversations/person-words.js';
 // session's report) or a quoted paste: only the person's own words count.
 const MAX_RULES = 3;
 const MAX_RULE_CHARS = 600;
-export const STATED_RULE_PATTERNS = [
+const STATED_RULE_PATTERNS = [
   // "Our retry policy for every outbound channel: …", "our deploy command is …"
   /\bour\s+(?:[\w./-]+\s+){0,6}?(?:policy|policies|convention|conventions|rule|rules|standard|port|ports|command|commands|process|workflow|naming)\b[^.?!]*?(?::|\b(?:is|are)\b)/iu,
   // "our push provider's sandbox base URL is https://…", "our alert titles are `[x] …`": a thing of ours and
@@ -42,7 +43,7 @@ const SENTENCES = /(?<=[.!?])\s+(?=[A-Z0-9`"'(])|(?<=[。！？])|\r?\n/u;
 
 // The sentences of a prompt that state a project rule, as written, at most a few.
 export function statedProjectRules(prompt) {
-  const own = personWords(prompt);
+  const own = withoutFuliMarkup(personWords(prompt));
   if (!own) return [];
   const sentences = taskStatement(own).split(SENTENCES).map(sentence => sentence.trim()).filter(Boolean);
   const rules = sentences.filter(sentence => !QUESTION.test(sentence) && STATED_RULE_PATTERNS.some(pattern => pattern.test(sentence)))

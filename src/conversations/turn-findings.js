@@ -1,39 +1,22 @@
-import { STATED_RULE_PATTERNS } from '../graphiti/task-stated-rules.js';
-import { personWords } from './person-words.js';
-
 // What a finished turn showed by itself (rec#88 compounding eval): a task the
 // Stop hook closes has no model checkpoint, so what the Agent found out was
-// lost every time — the command a test run needs first, the project's checks,
-// a convention it spelled out. From the turn's own tool runs and final reply,
-// with no model call, this returns at most a few reusable experiences; the
-// checkpoint keeps them pending, for the usual review. Agent-agnostic: each
-// host adapter supplies its normalized transcript records
-// ({ kind: 'tool_call' | 'tool_result', content: JSON }) for the turn, with
-// the turn's prompt as { role: 'user', kind: 'message' } where it has it. A
-// turn the host started with only its own note (a <side-sessions-event>, a
-// <task-notification>) answers that note, so its reply relays someone else's
-// report: the turn's runs are still the task's own, its reply is not kept.
-const MAX_FINDINGS = 3;
+// lost every time — the command a test run needs first, the project's checks.
+// From the turn's own tool runs, with no model call, this returns at most a
+// few reusable experiences; the checkpoint keeps them pending, for the usual
+// review. Agent-agnostic: each host adapter supplies its normalized transcript
+// records ({ kind: 'tool_call' | 'tool_result', content: JSON }) for the turn.
+// The Agent's reply is never read: its prose is the Agent's own account, not
+// something the turn verified, and it carries FULI's recall markers and links
+// to other items. Kept as experiences, each turn wrapped the last one's link
+// and the review queue filled with nested echoes of earlier replies.
 const ERROR_LINE = /(?:Error|ENOENT|not found|Cannot find|No such file|failed)/u;
 // A project script, as a person would type it again.
 const PROJECT_SCRIPT = /^(?:npm (?:test|t|run [\w:.-]+)|pnpm (?:test|run [\w:.-]+|[\w:.-]+)|yarn (?:test|run [\w:.-]+|[\w:.-]+)|make [\w.-]+)\b/u;
 const DENIED = /^(?:This (?:Bash )?command|A variable in braces|Permission to use)|require[sd]? approval/u;
-const REPLY_RULES = [...STATED_RULE_PATTERNS,
-  /\bconvention\b[^.?!]*?(?::|\b(?:is|are)\b)/iu,
-  /\bmust be (?:listed|registered|added)\b/iu];
 
-export function turnFindings(records, reply = null) {
+export function turnFindings(records) {
   const runs = shellRuns(records);
-  const findings = [prerequisite(runs), projectChecks(runs), ...(personDriven(records) ? replyRules(reply) : [])].filter(Boolean);
-  const seen = new Set();
-  return findings.filter(item => !seen.has(item.task) && seen.add(item.task)).slice(0, MAX_FINDINGS);
-}
-
-// The person wrote something in the turn's prompt; records without the prompt
-// are taken as the person's turn.
-function personDriven(records = []) {
-  const prompts = records.filter(record => record?.role === 'user' && record.kind === 'message');
-  return !prompts.length || prompts.some(record => personWords(record.content));
+  return [prerequisite(runs), projectChecks(runs)].filter(Boolean);
 }
 
 // Each shell call with its project scripts and outcome, in order.
@@ -87,18 +70,6 @@ function projectChecks(runs) {
   const list = scripts.map(script => `\`${script}\``).join(', ');
   return { task: `Project checks: ${list}`, solution: `These project scripts ran clean at the end of a finished task: ${list}.`,
     searchKeys: [...scripts, 'checks'].slice(0, 8) };
-}
-
-// Sentences of the final reply that state a project rule (a convention, a port,
-// a command, a cause), outside any host note or quoted report it carries.
-function replyRules(reply) {
-  const own = personWords(reply);
-  if (!own) return [];
-  return own.split(/(?<=[.!?])\s+|(?<=[。！？])|\r?\n/u)
-    .map(sentence => sentence.replace(/^[\s>*•-]+|\*\*/gu, '').trim())
-    .filter(sentence => sentence.length >= 20 && !/[?？]$/u.test(sentence) && REPLY_RULES.some(pattern => pattern.test(sentence)))
-    .slice(0, 1)
-    .map(sentence => ({ task: sentence.slice(0, 240), solution: sentence.slice(0, 600), searchKeys: words(sentence).slice(0, 8) }));
 }
 
 function projectScripts(command) {
