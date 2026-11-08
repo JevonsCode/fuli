@@ -423,10 +423,15 @@ defineExpose({
   transform: translateY(6px);
 }
 .is-page-scroll .virtual-directory-list__position.is-awake { transform: none; }
+/* Reduced motion (the system's or the app's switch): the capsule only fades, it does not rise. */
 @media (prefers-reduced-motion: reduce) {
   .virtual-directory-list__position,
   .virtual-directory-list__position.is-awake { transition: opacity var(--motion-exit); transform: translate(-50%, 0); }
   .is-page-scroll .virtual-directory-list__position,
   .is-page-scroll .virtual-directory-list__position.is-awake { transform: none; }
 }
+:root[data-motion="reduced"] .virtual-directory-list__position,
+:root[data-motion="reduced"] .virtual-directory-list__position.is-awake { transition: opacity var(--motion-exit); transform: translate(-50%, 0); }
+:root[data-motion="reduced"] .is-page-scroll .virtual-directory-list__position,
+:root[data-motion="reduced"] .is-page-scroll .virtual-directory-list__position.is-awake { transform: none; }
 </style>
