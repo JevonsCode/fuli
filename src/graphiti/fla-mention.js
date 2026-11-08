@@ -24,7 +24,9 @@
 // A leading `@` is not an address when it is evidently something else: an
 // email (`@user@example.com`), a package scope or path (`@scope/pkg`), a code
 // decorator or annotation (`@Override`, `@dataclass`, `@app.route(...)`), or a
-// file name (`@README.md`).
+// file a client attached: a quoted path (Claude Code writes `@"C:\…\clip.mp4"`),
+// any path (`@C:\…`, `@/…`, `@./…`, `@~/…`) or a file name (`@README.md`,
+// `@录屏.mp4`). Such a prompt names nobody and keeps its normal owner.
 
 const KEYWORD = /^[#@]FLA(?=$|\s)/iu;
 const LINE_KEYWORD = /\n[ \t]*#FLA(?=$|\s)/iu;
@@ -50,6 +52,9 @@ const QUOTED = /```[\s\S]*?(?:```|$)|`[^`\n]*`|"[^"\n]*"|“[^”\n]*”|‘[^�
 // (`@pytest.mark`, `@README.md`). A trailing dot alone (`@J.R.`) is a name.
 const CALLED = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\(/u;
 const DOTTED = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/u;
+// An attached file: opens with a quote or a dot, has a path separator, or
+// carries an extension with a letter (`.mp4`, not `5.5` or the dots of `J.R.`).
+const ATTACHMENT = /^["'.]|[\\/]|[^.]\.(?=\d*[A-Za-z])[A-Za-z\d]{1,10}(?![\w.])/u;
 // Annotations and decorators people paste most often, written exactly so.
 const DECORATORS = new Set(['Override', 'Deprecated', 'SuppressWarnings', 'FunctionalInterface', 'SafeVarargs',
   'Test', 'BeforeEach', 'AfterEach', 'BeforeAll', 'AfterAll', 'Autowired', 'Component', 'Service', 'Repository',
@@ -146,6 +151,8 @@ export function leadingAgentAddress(prompt) {
   const text = typeof prompt === 'string' ? prompt.trimStart() : '';
   if (!text.startsWith('@') || KEYWORD.test(text) || GROUP.test(text)) return null;
   const token = /^@(\S*)/u.exec(text)[1];
-  if (!token || /[@/]/u.test(token) || CALLED.test(token) || DOTTED.test(token) || DECORATORS.has(token)) return null;
+  // `@{agentId}` is checked as an ID: `{employee.jefa}` is no file name.
+  const attached = !STABLE.test(token) && ATTACHMENT.test(token);
+  if (!token || token.includes('@') || attached || CALLED.test(token) || DOTTED.test(token) || DECORATORS.has(token)) return null;
   return text.slice(1, ADDRESS_LIMIT + 1);
 }

@@ -146,6 +146,40 @@ test('excluded prompts keep the folder\'s owner and never read the roster', asyn
   }
 });
 
+// Files a client attaches at the start of a prompt (Claude Code writes
+// `@"C:\…\clip.mp4"`): paths with spaces and Chinese, Windows and POSIX.
+const ATTACHED = ['@"C:\\Users\\sample\\Videos\\Recordings\\20261108-0130-26.0676773.mp4" 帮我看看这个录屏',
+  '@"C:\\Users\\示例用户\\My Videos\\录屏 一.mp4" 看一下', "@'D:\\工作 资料\\报告.pdf' summarize this",
+  '@C:\\Users\\sample\\Desktop\\notes.txt 总结', '@C:\\Program Files\\Sample App\\日志 1.log 看看',
+  '@\\\\server\\share\\clip.mov 看下', '@/Users/sample/My Movies/录屏 1.mov 看下',
+  '@"/home/sample/文档/会议 记录.txt" 总结', '@./docs/设计 稿.md 看看', '@~/Downloads/clip one.mp4 剪一下',
+  '@录屏.mp4 帮我看', '@report-final.pdf summarize', '@clip.MP4看下', '@.env 检查一下'];
+
+test('attached files are not FLA mentions; real mentions still parse', () => {
+  for (const prompt of ATTACHED) assert.equal(parseFlaMention(prompt), null, prompt);
+  assert.deepEqual(parseFlaMention('@Jamie Ash 继续'), { explicit: false, query: 'Jamie Ash 继续' });
+  assert.deepEqual(parseFlaMention('@J.R. 继续'), { explicit: false, query: 'J.R. 继续' });
+  assert.deepEqual(parseFlaMention('@GPT-5.5 继续'), { explicit: false, query: 'GPT-5.5 继续' });
+  assert.deepEqual(parseFlaMention('@{9f1e5b95-91dd-4341-8fef-e9d6820db77f} 请接手'),
+    { handoff: '9f1e5b95-91dd-4341-8fef-e9d6820db77f' });
+  assert.deepEqual(parseFlaMention('@{employee.jefa} 整理看板'), { handoff: 'employee.jefa' });
+  assert.deepEqual(parseFlaMention(`${ATTACHED[0]}\n#FLA Jamie Ash 看一下`), { explicit: true, query: 'Jamie Ash 看一下' });
+});
+
+test('a prompt that opens with an attached file keeps the folder\'s owner', async () => {
+  for (const prompt of ATTACHED) {
+    const { hook, calls } = fixture();
+    const entry = await hook(prompt);
+    assert.deepEqual(owner(entry), ['project-a', 'ada'], prompt);
+    assert.equal(entry.fla, undefined, prompt);
+    assert.doesNotMatch(entry.agent_receipt.markdown, /分配失败/u, prompt);
+    assert.equal(calls.some(([kind, project]) => kind === 'roster' && project === null), false, prompt);
+  }
+  // A named FLA after the attachment still continues.
+  const { hook } = fixture();
+  assert.deepEqual(owner(await hook(`${ATTACHED[1]}\n#FLA Jamie Ash 看一下`)), ['project-b', 'jamie']);
+});
+
 test('a unique name continues that FLA in its own project from another project\'s folder', async () => {
   const { run, tasks, calls, memoryReads } = fixture();
   const entry = await run('@Jamie Ash 继续刚才的任务');

@@ -62,6 +62,18 @@ test('unknown or explicitly conflicting mention cannot fall back to another Agen
     assert.equal(calls.some(c => c[0] === 'resolve'), false);
   }
 });
+test('an attached file path is not a mention: the normal owner is selected', async () => {
+  for (const prompt of ['@"C:\\Users\\sample\\Videos\\Recordings\\20261108-0130-26.0676773.mp4" 帮我看看',
+    '@C:\\Users\\示例\\Desktop\\a b.txt 总结', '@/home/sample/录屏 1.mov 看下', '@~/clip.mp4 剪一下',
+    '@报告-终稿.pdf 总结']) {
+    const { run, calls } = fixture();
+    const result = await run(prompt);
+    assert.equal(result.status, 'ready', prompt);
+    assert.equal(result.agent.agentId, 'default', prompt);
+    assert.deepEqual(calls.map(([name]) => name), ['resolve'], prompt);
+    assert.equal(calls[0][1].agent_id, null, prompt);
+  }
+});
 test('quoted prose and non-leading mentions do not change the current owner or read the directory', async () => {
   const { run, calls } = fixture();
   await run('请解释 “@Alex Morgan” 的用法');
