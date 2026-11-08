@@ -3,12 +3,13 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import UiNotice from '@/ui/UiNotice.vue'
-const props = defineProps<{ state: { loading: boolean; slow: boolean; error: string; data: unknown; updatedAt: string | null; status: number | null }; label: string; failed: string; testId?: string }>()
+// `quiet`: another indicator already shows this pending read, so only the slow hint and errors are drawn here.
+const props = defineProps<{ state: { loading: boolean; slow: boolean; error: string; data: unknown; updatedAt: string | null; status: number | null }; label: string; failed: string; testId?: string; quiet?: boolean }>()
 const emit = defineEmits<{ retry: [] }>()
 </script>
 <template>
-  <div v-if="state.loading || state.error" class="overview-read-status">
-    <GrowthLoading v-if="state.loading" :variant="state.data === null ? 'compact' : 'inline'" :label="label" />
+  <div v-if="(state.loading && !quiet) || state.error || (quiet && state.slow)" class="overview-read-status">
+    <GrowthLoading v-if="state.loading && !quiet" :variant="state.data === null ? 'compact' : 'inline'" :label="label" />
     <p v-if="state.slow" role="status">{{ t('overview.read.slow') }}</p>
     <UiNotice v-if="state.error" tone="error" class="overview-read-error">
       <p>{{ state.error === 'timeout' ? t('overview.read.timeout') : failed }}</p>

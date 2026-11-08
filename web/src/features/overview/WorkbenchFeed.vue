@@ -82,7 +82,8 @@ const shownDone = computed(() => props.done.slice(0, FEED_ROWS))
     <WidgetSlot place="workbench.feed" />
     <section v-if="solo.length || tasksState.loading || tasksState.error" class="workbench-card" aria-labelledby="workbench-running-heading" data-workbench-running data-list-morph="running">
       <WorkbenchListHead id="workbench-running-heading" list="running" :title="t('overview.sections.currentWork')" :more="solo.length - shownRunning.length" />
-      <OverviewReadStatus :state="tasksState" :label="t('overview.work.loading')" :failed="t('overview.work.loadFailed')" @retry="emit('retryTasks')" />
+      <!-- Until the first read lands the stage column already shows this read's indicator. -->
+      <OverviewReadStatus :state="tasksState" :quiet="!tasksState.data" :label="t('overview.work.loading')" :failed="t('overview.work.loadFailed')" @retry="emit('retryTasks')" />
       <!-- A picked task leaves with its title flying to the stage; the rest close up instead of jumping. -->
       <TransitionGroup v-if="solo.length" name="ui-list" tag="ul" class="workbench-rows">
         <li v-for="task in shownRunning" :key="taskKey(task)">

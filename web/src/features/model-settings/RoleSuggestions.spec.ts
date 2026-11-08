@@ -81,7 +81,9 @@ describe('RoleSuggestions', () => {
   it('lists records, suggestions first as cards, and says why in one line for the rest', async () => {
     const wrapper = await mountSection({ entries: SUGGESTIONS })
     expect(wrapper.get('h2').text()).toBe('建议记录')
-    expect(wrapper.get('[data-role-suggestions-note]').text()).toContain('不是待办')
+    const note = wrapper.get('[data-role-suggestions-note]').text()
+    expect(note).toContain('不会自动应用')
+    expect([...note].length).toBeLessThanOrEqual(100)
     expect(wrapper.findAll('article[data-role-suggestion]').map(card => [card.attributes('data-role-suggestion'), card.get('[data-suggestion-status]').text()]))
       .toEqual([['jefa', '当时建议'], ['assistant', '当时建议'], ['bole', '当时建议'], ['jefa', '已有更新']])
     expect(wrapper.findAll('li.role-suggestion-line').map(line => [line.attributes('data-role-suggestion'), line.get('[data-suggestion-status]').text()]))
@@ -191,7 +193,9 @@ describe('RoleSuggestions', () => {
     expect(sessionAnswer!.find('[data-suggestion-held]').exists()).toBe(false)
     expect(sessionAnswer!.get('code').text()).toBe('当前会话')
     expect(older!.attributes('data-suggestion-state')).toBe('newer')
-    expect(wrapper.get('[data-role-suggestions-note]').text()).toContain('Tonborg')
+    const note = wrapper.get('[data-role-suggestions-note]').text()
+    expect(note).toContain('Tonborg')
+    expect([...note].length).toBeLessThanOrEqual(100)
   })
 
   it('shows Tonborg\'s suggestions alone, and a permanently deleted item without its words or a link', async () => {
