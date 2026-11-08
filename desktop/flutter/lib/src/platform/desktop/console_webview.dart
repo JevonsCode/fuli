@@ -8,6 +8,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../caption_controls.dart';
 import '../console_link.dart';
+import '../console_navigation.dart';
 import '../ports.dart';
 import 'download_saver.dart';
 
@@ -22,7 +23,8 @@ import 'download_saver.dart';
 /// before it runs (`window.fuliDesktopClient`, web/src/lib/desktop-client.ts)
 /// and asks the client to move or maximise the window (`fuliWindow`). Its
 /// first-run guide reads and sets launch at login (`fuliLaunchAtLogin`), the
-/// setting behind the tray menu's 「开机时启动」.
+/// setting behind the tray menu's 「开机时启动」. A `fuli://` link to a console
+/// page ([navigate]) opens in this view, or the next one starts at it.
 /// Launch at login as the tray menu holds it: [read] is the current choice
 /// (null when reg.exe could not answer), [change] saves one and answers the
 /// choice afterwards.
@@ -37,6 +39,7 @@ class ConsoleWebView {
   final void Function(File file) _onSaved;
   final CaptionControls _caption;
   final LaunchAtLoginAccess? _launchAtLogin;
+  final _navigation = ConsoleNavigation();
 
   static const saveHandler = 'fuliSaveFile';
   static const windowHandler = 'fuliWindow';
@@ -123,12 +126,22 @@ class ConsoleWebView {
         : PermissionResponseAction.DENY;
   }
 
+  /// Shows [page], a page of the console, in the window's console view; when
+  /// no view shows that console yet, the next one starts at it.
+  Future<void> navigate(Uri page) => _navigation.open(page);
+
   /// [onLoaded] runs when the page has loaded, or could not, so the window
   /// stops waiting over it.
-  Widget build(Uri console, VoidCallback onLoaded) => InAppWebView(
-        key: ValueKey(console),
+  Widget build(Uri console, VoidCallback onLoaded) => _ShownConsole(
+      key: ValueKey(console),
+      navigation: _navigation,
+      console: console,
+      view: (start, onCreated) => _view(console, start, onLoaded, onCreated));
+
+  Widget _view(Uri console, Uri start, VoidCallback onLoaded, void Function(InAppWebViewController) onCreated) =>
+      InAppWebView(
         webViewEnvironment: _environment,
-        initialUrlRequest: URLRequest(url: WebUri.uri(console)),
+        initialUrlRequest: URLRequest(url: WebUri.uri(start)),
         initialSettings: settings(),
         initialUserScripts: UnmodifiableListView([desktopClientScript(_caption)]),
         onPermissionRequest: (_, request) async =>
@@ -141,6 +154,7 @@ class ConsoleWebView {
         },
         // Only the console page itself may move the window, or save; the answer tells it the file is on disk.
         onWebViewCreated: (controller) {
+          onCreated(controller);
           controller.addJavaScriptHandler(
               handlerName: windowHandler,
               callback: (arguments) async {
@@ -189,4 +203,44 @@ class ConsoleWebView {
           return false;
         },
       );
+}
+
+/// One console view in the window: it starts at the page asked for, if any,
+/// and takes the pages asked for while it shows.
+class _ShownConsole extends StatefulWidget {
+  const _ShownConsole({super.key, required this.navigation, required this.console, required this.view});
+
+  final ConsoleNavigation navigation;
+  final Uri console;
+  final Widget Function(Uri start, void Function(InAppWebViewController) onCreated) view;
+
+  @override
+  State<_ShownConsole> createState() => _ShownConsoleState();
+}
+
+class _ShownConsoleState extends State<_ShownConsole> {
+  late final Uri _start = widget.navigation.startPage(widget.console);
+  InAppWebViewController? _controller;
+
+  Future<void> _load(Uri page) async {
+    try {
+      await _controller?.loadUrl(urlRequest: URLRequest(url: WebUri.uri(page)));
+    } on Object {
+      // The view is closing; the page stays where it was.
+    }
+  }
+
+  void _created(InAppWebViewController controller) {
+    _controller = controller;
+    widget.navigation.attach(widget.console, _load, startedAt: _start);
+  }
+
+  @override
+  void dispose() {
+    widget.navigation.detach(_load);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.view(_start, _created);
 }

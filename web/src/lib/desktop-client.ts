@@ -40,6 +40,9 @@ function desktopClient(): DesktopClient | null {
     : { platform: client.platform, captionStart, captionEnd, captionTop }
 }
 
+/** Whether the desktop client shows this page in its window (it set `window.fuliDesktopClient`). */
+export const inDesktopClient = () => (window as { fuliDesktopClient?: unknown }).fuliDesktopClient !== undefined
+
 /** Marks the page as shown by the desktop client and keeps its top bar clear of the window's controls. */
 export function connectDesktopClient(root: HTMLElement = document.documentElement): void {
   const client = desktopClient()

@@ -40,7 +40,8 @@ import 'windows_url_scheme.dart';
 /// own start/stop entry points, the window, the tray and notifications.
 /// `--background` (Windows launch at login) starts with the tray icon only.
 /// A `fuli://` link (on Windows the launcher passes it) is followed once the
-/// client runs; the window opens only when the link asks for it.
+/// client runs; the window opens for it, unless a console page has to open
+/// in the browser (no WebView runtime).
 Future<AppServices> createServices(Strings strings, List<String> args) async {
   final background = args.contains('--background');
   final link = args.map(FuliLink.parse).nonNulls.firstOrNull;
@@ -88,9 +89,21 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
     return launchAtLogin;
   }
 
-  // A fuli:// link only navigates: to this window, or to a console page in the browser.
-  Future<void> follow(FuliLink link) async =>
-      link.opensClient ? window.show() : opener.open(link.consolePage(await controller.consolePort()));
+  final console = await ConsoleWebView.create(opener,
+      saver: DownloadSaver(),
+      onSaved: (file) => unawaited(notifier.notify(strings.fileSaved, file.path)),
+      caption: caption,
+      launchAtLogin: loginLaunch == null ? null : (read: () => launchAtLogin, change: changeLaunchAtLogin));
+
+  // A fuli:// link only navigates: to this window, or to a console page in
+  // this window's console view; without a WebView runtime, in the browser.
+  Future<void> follow(FuliLink link) async {
+    if (link.opensClient) return window.show();
+    final page = link.consolePage(await controller.consolePort());
+    if (console == null) return opener.open(page);
+    await window.show();
+    await console.navigate(page);
+  }
 
   tray = SystemTray(
     strings: strings,
@@ -103,11 +116,6 @@ Future<AppServices> createServices(Strings strings, List<String> args) async {
   );
   controller.addListener(showTray);
   showTray();
-  final console = await ConsoleWebView.create(opener,
-      saver: DownloadSaver(),
-      onSaved: (file) => unawaited(notifier.notify(strings.fileSaved, file.path)),
-      caption: caption,
-      launchAtLogin: loginLaunch == null ? null : (read: () => launchAtLogin, change: changeLaunchAtLogin));
   window.onVisibilityChanged = controller.setVisible;
   if (quiet) controller.setVisible(false);
   // A second launch asks for the window or leaves its link in the inbox.

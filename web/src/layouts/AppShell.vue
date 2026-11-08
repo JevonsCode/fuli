@@ -17,6 +17,7 @@ import { clientsNeedUpdate } from '@/features/doctor/doctor-report'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
+import OpenInAppButton from '@/features/open-in-app/OpenInAppButton.vue'
 import { shellPageTools } from '@/features/webmcp/shell-page-tools'
 import { usePageTools } from '@/features/webmcp/usePageTools'
 import { useAgentAttention } from '@/features/project-agents/attention-store'
@@ -203,6 +204,8 @@ watchEffect(() => {
         <h1 v-if="!titleInPage" class="app-title" :class="{ 'is-screen-reader-only': !recordTitle }">{{ title }}</h1>
         <SectionTabs :sections="sectionTabs" :active-key="section?.key" />
         <div class="app-actions">
+          <!-- First, so the buttons after it stay put when it appears. -->
+          <OpenInAppButton />
           <DoctorBanner />
           <!-- The page's own 「?」 keeps its place empty on pages without one, so the buttons never move. -->
           <span class="app-help-slot"><AiHelpButton v-if="route.meta.aiHelp" :term="route.meta.aiHelp" size="md" /></span>

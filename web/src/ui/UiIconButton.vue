@@ -8,7 +8,8 @@ import type { IconName } from './icons'
 // The wrapper exists for one repeated contract: the label is required and
 // becomes both the accessible name and the hover tooltip, so no icon button
 // ships unnamed; the icon comes from FULI's own set. `loading` hands the
-// shared Button its inline GrowthLoading, named by `loadingLabel`.
+// shared Button its inline GrowthLoading, named by `loadingLabel`. With
+// `href` it is a link drawn the same way (an address the browser hands on).
 withDefaults(defineProps<{
   icon: IconName
   label: string
@@ -18,11 +19,12 @@ withDefaults(defineProps<{
   disabled?: boolean
   loading?: boolean
   loadingLabel?: string
+  href?: string
 }>(), { shape: 'round', size: 'md', active: false, disabled: false, loading: false, loadingLabel: '' })
 </script>
 
 <template>
-  <Button variant="ghost" :size="`icon-${size}`"
+  <Button variant="ghost" :size="`icon-${size}`" :as="href ? 'a' : 'button'" :href="href"
     :class="[shape === 'round' ? 'rounded-full' : '',
              'transition-[color,background-color,border-color,scale] active:not-disabled:scale-94',
              'aria-pressed:bg-primary-soft aria-pressed:text-primary']"
