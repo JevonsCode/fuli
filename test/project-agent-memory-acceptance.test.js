@@ -96,7 +96,7 @@ test('real Neo4j + HTTP Provider + independent MCP hosts retain one role across 
     let tokenForTask;
     try {
       const begun = await connection.client.callTool({ name: 'begin_task_context', arguments: {
-        sessionId, turnId: 'synthetic-turn-one', projectPath, taskPrompt: '@Synthetic engineer Implement the synthetic service.',
+        sessionId, turnId: 'synthetic-turn-one', projectPath, taskPrompt: '#FLA {engineer} Implement the synthetic service.',
         workKind: 'implementation', requiredCapabilities: ['coding']
       } });
       assert.equal(begun.isError, undefined, JSON.stringify(begun));

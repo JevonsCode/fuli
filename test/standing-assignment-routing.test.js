@@ -219,7 +219,7 @@ test('an explicit project, Agent or project named in the prompt outranks the sta
   assert.equal((await unclaimed.run({ projectPath: null, taskPrompt: 'ops 的工时' })).context.personal_project_id, 'ops');
   const named = fixture({ resolution: { status: 'not_provided', basis: null, personalProjectId: null } });
   named.app.personal.getProjectAgent = async () => ({ ...lead(null), agent_id: 'global-engineer' });
-  for (const extra of [{ projectAgentId: 'global-engineer' }, { taskPrompt: '@global-engineer 填工时' }]) {
+  for (const extra of [{ projectAgentId: 'global-engineer' }, { taskPrompt: '#FLA {global-engineer} 填工时' }]) {
     const entry = await named.run({ projectPath: null, ...extra });
     assert.equal(entry.context.personal_project_id, null);
     assert.equal(entry.standing_owner, undefined);
