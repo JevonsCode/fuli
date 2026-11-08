@@ -9,7 +9,7 @@ import { messages, sceneMessages } from '../site/next/translations.js';
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 // The preview page is built only while the package version is a prerelease, so these
 // tests build a synthetic one; the stable package version gets the no-preview page.
-const version = '0.24.0-beta.1';
+const version = '0.26.0-beta.1';
 const pages = siteVersion => createSitePages({ home: read('../site/index.html'), preview: read('../site/next/index.html'), models: read('../site/models/index.html'), tech: read('../site/tech/index.html'), guide: read('../site/guide/index.html'), report: read('../site/report/index.html'), version: siteVersion });
 const files = pages(version);
 const base = 'https://xn--8ovp9s.xn--m8txu.com/fuli/';
@@ -106,13 +106,13 @@ test('the stable page links to the preview page in its own language', () => {
 });
 
 test('a stable version has no newer preview, so /next/ says so and links home in its language', () => {
-  const site = pages('0.23.0');
+  const site = pages('0.25.0');
   for (const [route, locale] of [['', 'zh-CN'], ['zh/', 'zh-CN'], ['en/', 'en']]) {
     const { document } = parseHTML(site.get(`next/${route}index.html`));
     assert.equal(document.documentElement.lang, locale);
     assert.match(document.querySelector('meta[name="robots"]').content, /noindex/);
     assert.equal(document.querySelector('link[rel="canonical"]').href, base + route);
-    assert.ok(document.querySelector('main p').textContent.includes('0.23.0'));
+    assert.ok(document.querySelector('main p').textContent.includes('0.25.0'));
     assert.deepEqual([...document.querySelectorAll('a')].map(link => link.href), [base + route]);
     assert.equal(document.querySelector('.preview-changes, [data-preview-version], .terminal'), null);
     if (locale === 'en') assert.doesNotMatch(document.documentElement.textContent, /[㐀-鿿]/);
@@ -131,15 +131,15 @@ test('the client downloads on both pages are the Windows setup and macOS image o
 
 test('every header shows the brand wordmark and the version the client shows: released on the stable pages, the preview on /next/', () => {
   const pagesWithHeader = ['', 'en/', 'models/', 'tech/', 'guide/', 'report/', 'report/en/'];
-  const stable = pages('0.23.0');
+  const stable = pages('0.25.0');
   for (const path of pagesWithHeader) {
     const { document } = parseHTML(stable.get(path + 'index.html'));
     // Both wordmarks come from brand/ copies; CSS shows the one for the page's language.
     assert.deepEqual([...document.querySelectorAll('.brand .wordmark:not(.wordmark--dark)')].map(node => node.getAttribute('src').replace(/^(\.\.\/)+|^\.\//, '')),
       ['assets/brand/fuli-wordmark-zh.svg', 'assets/brand/fuli-wordmark-en.svg'], path);
     const versionLink = document.querySelector('.brand-row .brand-version');
-    assert.equal(versionLink.textContent, 'v0.23.0', path);
-    assert.equal(versionLink.href, 'https://github.com/JevonsCode/fuli/releases/tag/v0.23.0', path);
+    assert.equal(versionLink.textContent, 'v0.25.0', path);
+    assert.equal(versionLink.href, 'https://github.com/JevonsCode/fuli/releases/tag/v0.25.0', path);
   }
   // During a prerelease cycle the stable pages name no version; the preview page names its own.
   for (const path of pagesWithHeader) assert.equal(parseHTML(files.get(path + 'index.html')).document.querySelector('.brand-version'), null, path);
