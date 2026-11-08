@@ -58,6 +58,8 @@ export interface DoctorItemView {
   since: string
   // Where the person handles it in the console, or null.
   to: string | null
+  // Shell commands the person runs themself, shown to copy (npm_copy_installed).
+  commands?: string[]
 }
 
 const text = (value: unknown) => typeof value === 'string' ? value : ''
@@ -150,6 +152,15 @@ function itemView(item: DoctorItem): Omit<DoctorItemView, 'since'> {
     case 'client_format_changed':
       return { title, subject: text(data.label), to: null,
         hint: t('doctor.hints.clientFormatChanged', { recognized: Number(data.recognized) || 0, total: Number(data.total) || 0 }) }
+    // FULI installed with npm before the desktop app (src/system/doctor.js): the person removes it.
+    case 'npm_copy_installed': {
+      const copies = Array.isArray(data.copies) ? data.copies as { version?: unknown; shellCommands?: unknown }[] : []
+      const shell = [...new Set(copies.flatMap(copy => Array.isArray(copy.shellCommands) ? copy.shellCommands.map(text).filter(Boolean) : []))]
+      const version = copies.map(copy => text(copy.version)).filter(Boolean).join(', ')
+      return { title, subject: '', to: null,
+        hint: shell.length ? t('doctor.hints.npmCopyShell', { commands: shell.join(' / '), version }) : t('doctor.hints.npmCopy', { version }),
+        commands: Array.isArray(data.commands) ? data.commands.map(text).filter(Boolean) : [] }
+    }
     default:
       return { title, subject: '', hint: '', to: null }
   }

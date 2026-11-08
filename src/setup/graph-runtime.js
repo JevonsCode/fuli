@@ -53,6 +53,7 @@ import { nonEmptyText } from '../validation/values.js';
 import { reservedPortProblem } from '../system/reserved-ports.js';
 import { recoverBlockedPorts } from '../system/blocked-port-recovery.js';
 import { backupRuntimeSettings } from '../system/console-port-switch.js';
+import { isDesktopAppPackage } from '../desktop/desktop-app-package.js';
 
 export {
   dockerInfoIndicatesDaemon,
@@ -243,6 +244,13 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
       }
       return runtimeResult('running', existing);
     }
+    // The desktop app's console is the one service of its data: another copy
+    // (npm, a checkout) never replaces it, while the app replaces any other's.
+    if (healthy && deps.desktopApp(existing.packageRoot) && !deps.desktopApp(input.paths.packageRoot)) {
+      throw new Error(`The FULI desktop app runs this data directory's console (process ${existing.pid}), so this copy `
+        + 'did not replace it. Use the desktop app, or quit it before starting this copy. / '
+        + '桌面版 FULI 正在运行这份数据的服务，这个副本没有替换它。请使用桌面版，或先退出桌面版再启动这个副本。');
+    }
     if (healthy && !await terminateConsole(existing.pid, consoleStop)) {
       throw new Error('Fuli Graphiti console did not stop before restarting');
     }
@@ -282,6 +290,8 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
     managedProviders: input.personalOnly
       ? ['personal']
       : ['personal', 'development-workspace'],
+    // Which FULI package runs this console, so the desktop app tells its own from another copy's.
+    ...(typeof input.paths.packageRoot === 'string' ? { packageRoot: input.paths.packageRoot } : {}),
     startedAt: new Date().toISOString(),
     ...reportedMoves
   };
@@ -631,6 +641,7 @@ function graphDependencies(overrides) {
     recoverPorts: recoverBlockedPorts,
     backupSettings: backupRuntimeSettings,
     consoleVersion: readLocalConsoleVersion,
+    desktopApp: (packageRoot) => isDesktopAppPackage(packageRoot),
     discoverLanAddresses,
     createLanAccessToken: secret,
     waitForExit,

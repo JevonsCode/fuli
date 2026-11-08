@@ -48,6 +48,7 @@ import { STANDING_ASSIGNMENTS_FORMAT } from '../standing-assignments/store.js';
 import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-status.js';
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
 import { CONSOLE_AUTOSTART_FILE, CONSOLE_AUTOSTART_FORMAT } from '../local-runtime/console-autostart-record.js';
+import { DESKTOP_ADOPTION_FILE, DESKTOP_ADOPTION_FORMAT } from '../desktop/npm-adoption.js';
 import { CLIENT_LINKS_STATE_FORMAT } from '../client-links/registry.js';
 import { OCCUPATION_PLUGINS_STATE_FORMAT } from '../occupation-plugins/port.js';
 import { OCCUPATION_KIT_CHOICES_FORMAT } from '../occupation-plugins/choice-store.js';
@@ -140,6 +141,8 @@ const jsonStores = () => [
   ['person-profile.json', PERSON_PROFILE_FORMAT],
   // Whether the person stopped FULI on purpose and when client sessions started it (rec#94).
   [CONSOLE_AUTOSTART_FILE, CONSOLE_AUTOSTART_FORMAT],
+  // The npm copies whose clients the desktop app already pointed at itself.
+  [DESKTOP_ADOPTION_FILE, DESKTOP_ADOPTION_FORMAT],
   // Sentence hashes of recent sessions' prompts, for the entry recall (rec#88).
   [SESSION_PROMPT_SENTENCES_FILE, SESSION_PROMPT_SENTENCES_FORMAT]
 ];

@@ -35,6 +35,8 @@ import { createModelCapture } from '../debug-turns/model-capture.js';
 import { windowsDataAcl } from './windows-data-acl.js';
 import { debugTurnStore } from '../debug-turns/store.js';
 import { runningMcpServers } from './mcp-process-scan.js';
+import { isDesktopAppPackage } from '../desktop/desktop-app-package.js';
+import { findNpmCopies } from '../desktop/npm-copies.js';
 
 const MCP_SCAN_CACHE_MS = 5 * 60_000;
 
@@ -60,6 +62,8 @@ export function createSystemService({
   executorAdapters = new Map(),
   versionChecker = null,
   update = consoleUpdate(paths.dataDir),
+  // Only the desktop app's console looks for npm copies beside it; for an npm installation the copy is FULI itself.
+  npmCopies = isDesktopAppPackage(packageRoot) ? () => findNpmCopies({ ownRoot: packageRoot }) : () => [],
   // The data format plan (migration-plan.js) the doctor reads; null without a local installation.
   previewDataFormats = null,
   // Reads Codex's hook trust from its app-server (src/agents/codex/hook-trust.js).
@@ -145,7 +149,7 @@ export function createSystemService({
     }
     return serverScan.answer;
   };
-  const doctor = createDoctor({ observeClients, previewDataFormats, runningServers,
+  const doctor = createDoctor({ observeClients, previewDataFormats, runningServers, npmCopies,
     formatOperations: () => readFormatOperations(paths.dataDir), graphStage: () => runtimeBroker.status().stage,
     hookTrust: async () => ({ [CODEX_HOOK_TRUST_CLIENT]: await codexHookTrust() }), transcriptFormat,
     liveProcesses: () => liveMcpProcesses(runtimeConfigPath), awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath), latestVersion: () => versionChecker.peek(),

@@ -106,6 +106,20 @@ Agent 使用、界面语言和资源刷新频率。端口、运行方式或局�
 无法取得运行进程数据时会明确显示为不完整，不使用模拟值。原生模式会计入 Provider 和
 Neo4j 进程；容器模式不把共享容器虚拟机开销计入 Fuli 合计。两种模式都不含浏览器标签页。
 
+### 以前用 npm 装过？
+
+桌面客户端和 npm 安装（`npm install --global fuli-context`）用的是同一个数据目录（macOS
+`~/Library/Application Support/Fuli`，Windows `%LOCALAPPDATA%\Fuli`）。先装 npm 版、再装客户端，数据不会复制也不会丢，
+只是电脑上有了两份程序。客户端会自己处理：
+
+- 客户端启动 FULI 时，会成为这份数据唯一的 FULI 服务：npm 版正在运行的服务会被停掉，换成客户端自己的。
+- FULI 连接过的每个 Agent 客户端（Claude Code、Codex、Cursor 等）都会改指向桌面客户端这一份，只做一次。已打开的 Agent 会话重开后生效。
+- npm 版不会被删掉，因为删它会改动你自己的环境。管理界面的「体检」会给出一条提醒和删掉它的命令，例如
+  `npm uninstall --global fuli-context --prefix '/opt/homebrew'`，数据不受影响。删掉之前，终端里直接敲 `fl` 或 `fuli`
+  仍会运行那个 npm 版本：客户端不会把自己的命令行加进 PATH。
+- 从 0.25.0 起，npm 版不会替换客户端正在运行的服务。更老的 npm 版如果被手动启动（`fl start`）仍可能接管服务，客户端下次启动
+  FULI 时会接回来。老版本遇到新版 FULI 升级过的数据，只读不写，不会改写它们。
+
 ## CLI
 
 全局安装提供两个等价命令：`fuli` 和短别名 `fl`。

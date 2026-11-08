@@ -4,10 +4,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { canonicalWindowsInstallPath, readWindowsInstallation } from '../desktop/windows-installation-context.js';
+import { isMacosAppPackage } from '../desktop/desktop-app-package.js';
 import { readMacosNativeBundle } from '../native-runtime/macos-assets.js';
 
 const ownRoot = fileURLToPath(new URL('../..', import.meta.url));
-const MACOS_APP_PACKAGE = /\.app\/Contents\/Resources\/fuli\/?$/;
 
 // How an MCP process starts the console of an installed FULI (rec#94), always
 // through the installed package's own Node and CLI with the data directory the
@@ -52,7 +52,7 @@ export function installedConsoleTarget({ dataDir, packageRoot, platform, execPat
         cli: join(record.packageRoot, 'src', 'cli.js'), cwd: record.packageRoot };
     };
   }
-  if (platform === 'darwin' && MACOS_APP_PACKAGE.test(packageRoot.replaceAll('\\', '/'))) {
+  if (platform === 'darwin' && isMacosAppPackage(packageRoot)) {
     try { if (!readMacosNativeBundle(packageRoot)) return null; } catch { return null; }
     return () => ({ command: join(packageRoot, 'runtime', 'node', 'bin', 'node'),
       cli: join(packageRoot, 'src', 'cli.js'), cwd: packageRoot });

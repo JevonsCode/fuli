@@ -181,6 +181,15 @@ in the console before you move FULI.app to the Trash: the Trash alone leaves tho
 </details>
 
 <details>
+<summary><b>I installed FULI with npm before. Is it installed twice now?</b></summary>
+
+The program is, your data is not: both use the same data folder. When the desktop client starts, it runs the one FULI
+service and points your connected clients at itself. The console's health check then shows the one command that
+removes the npm copy; until you run it, a bare `fl` in a terminal is still the npm version.
+[Details](docs/install.md#already-installed-with-npm)
+</details>
+
+<details>
 <summary><b>Who decides what FULI keeps?</b></summary>
 
 You do: AI looks things up and does the work, and humans retain final authority. Each task ends

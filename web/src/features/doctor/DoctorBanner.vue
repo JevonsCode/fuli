@@ -115,6 +115,7 @@ onBeforeUnmount(() => {
         <li v-for="view in views" :key="view.id" :data-doctor-item="view.id">
           <strong>{{ view.title }}</strong><template v-if="view.subject">：{{ view.subject }}</template>
           <span v-if="view.hint" class="doctor-hint">{{ view.hint }}</span>
+          <code v-for="command in view.commands ?? []" :key="command" class="doctor-command" data-doctor-command>{{ command }}</code>
           <small v-if="view.since" class="doctor-since" data-doctor-since>{{ view.since }}</small>
           <DoctorOutdatedSessions v-if="view.sessions.length" :sessions="view.sessions" />
           <Button v-if="view.to" as-child variant="link" size="sm" class="doctor-link">
@@ -151,6 +152,11 @@ onBeforeUnmount(() => {
 }
 .doctor-items { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; font-size: 13px; line-height: 1.5; }
 .doctor-hint { display: block; color: var(--color-muted); }
+/* A command the person copies into a terminal: selectable as one piece. */
+.doctor-command {
+  display: block; margin-top: 4px; padding: 6px 8px; border-radius: var(--radius-control); background: var(--color-surface-hover);
+  font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; user-select: all;
+}
 .doctor-since { display: block; color: var(--color-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
 .doctor-link { height: auto; padding: 0; }
 .doctor-failure { margin: 0; color: var(--color-danger); font-size: 13px; }

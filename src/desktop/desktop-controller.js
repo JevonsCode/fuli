@@ -5,6 +5,8 @@ import { resolveSetupPaths } from '../setup/paths.js';
 import { switchConsolePort } from '../system/console-port-switch.js';
 import { reservedPortProblem } from '../system/reserved-ports.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
+import { otherPackageConsole, reconnectAfterAdoption } from './npm-adoption.js';
+import { findNpmCopies } from './npm-copies.js';
 
 // What the desktop client asks of a packaged FULI: status, start (first-time
 // setup in native mode), stop, open and the console port change, all through
@@ -48,8 +50,10 @@ async function consolePortBlocked(context) {
     host: settings.lanAccess ? '0.0.0.0' : '127.0.0.1' }) !== null;
 }
 
+// A stubbed CLI never looks for npm copies on the machine running the test.
 export async function runTrayAction(action, context, {
-  runCli = executeCli, portBlocked = consolePortBlocked, switchPort = switchConsolePort
+  runCli = executeCli, portBlocked = consolePortBlocked, switchPort = switchConsolePort,
+  otherConsole = otherPackageConsole, findCopies = runCli === executeCli ? findNpmCopies : () => []
 } = {}) {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
   const invoke = (args) => runCli(context, [...args, '--data-dir', context.dataDir]);
@@ -68,6 +72,8 @@ export async function runTrayAction(action, context, {
   };
   let starting = false;
   let notice = null;
+  let replaced = null;
+  let adopted = null;
   try {
     if (['start', 'start-open', 'stop', 'change-port'].includes(action)) assertNativeSelection(context);
     if (action === 'change-port') {
@@ -95,10 +101,16 @@ export async function runTrayAction(action, context, {
         if (setup.code !== 0 && String(setup.stderr ?? '').trim()) throw cliError(setup);
       } else {
         const before = await inspect();
-        if (before.status !== 'running') await command(['start']);
+        // The app is the one FULI of its data: a console another FULI package
+        // runs (an npm copy) is replaced by the app's own (npm-adoption.js).
+        replaced = otherConsole(context);
+        if (replaced) await command(['restart']);
+        else if (before.status !== 'running') await command(['start']);
       }
       const ready = await inspect();
       if (ready.status !== 'running') throw new Error('Fuli did not reach its running state.');
+      // Clients still pointed at an npm copy are pointed at the app's; a failure here never fails the start.
+      adopted = await reconnectAfterAdoption(context, { replaced, invoke, findCopies }).catch(() => null);
     }
     if (['open', 'start-open', 'change-port'].includes(action)) await command(['open']);
     if (action === 'stop') await command(['stop']);
@@ -106,7 +118,8 @@ export async function runTrayAction(action, context, {
     if (action === 'stop' && !['stopped', 'not_configured'].includes(state.status)) {
       throw new Error('Fuli did not confirm that the selected runtime stopped.');
     }
-    return { ok: true, action, status: state.status, label: trayStateLabel(state), state, ...(notice ? { notice } : {}) };
+    return { ok: true, action, status: state.status, label: trayStateLabel(state), state, ...(notice ? { notice } : {}),
+      ...(replaced ? { replacedConsole: replaced.pid } : {}), ...(adopted ? { adopted } : {}) };
   } catch (error) {
     // A failed start can already own processes. Keep their CLI state and report
     // what is actually running; never kill by process name or delete the data.

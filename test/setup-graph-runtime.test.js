@@ -641,12 +641,13 @@ test('repeating LAN start restarts the console and rotates its in-memory access 
   assert.equal(result.lanAccess.accessCode, 'rotated-access-code');
 });
 
-function runningConsoleCase(runningVersion) {
+function runningConsoleCase(runningVersion, { packageRoot, paths = PATHS, desktopApp = () => false } = {}) {
   const stopped = [];
   let spawned = 0;
-  const existing = { version: 4, pid: 2727, url: 'http://127.0.0.1:2727', port: 2727 };
+  let written = null;
+  const existing = { version: 4, pid: 2727, url: 'http://127.0.0.1:2727', port: 2727, ...(packageRoot ? { packageRoot } : {}) };
   const run = ensureGraphRuntime({
-    paths: PATHS,
+    paths,
     personalSpaceName: '我',
     personalOnly: true,
     port: 2727,
@@ -669,9 +670,10 @@ function runningConsoleCase(runningVersion) {
     },
     webHealth: async (url, pid) => url === existing.url && [2727, 2728].includes(pid),
     isProcessAlive: (pid) => pid === 2727 || pid === 2728,
-    writeState() {}
+    desktopApp,
+    writeState(_path, state) { written = state; }
   }));
-  return run.then((result) => ({ result, stopped, spawned }));
+  return run.then((result) => ({ result, stopped, spawned, written }), (error) => ({ error, stopped, spawned }));
 }
 
 test('setup keeps a console that already runs this version', async () => {
@@ -688,6 +690,24 @@ test('setup replaces a console left running by an older install', async () => {
     assert.deepEqual(stopped, [2727]);
     assert.equal(spawned, 1);
   }
+});
+
+// npm then desktop app: the app's console is the one service of the shared data.
+test('another FULI copy never replaces the desktop app console; the app replaces any other copy', async () => {
+  const app = '/Applications/FULI.app/Contents/Resources/fuli';
+  const npm = '/opt/homebrew/lib/node_modules/fuli-context';
+  const desktopApp = (root) => root === app;
+  const refused = await runningConsoleCase('0.30.0', { packageRoot: app, paths: { ...PATHS, packageRoot: npm }, desktopApp });
+  assert.match(refused.error.message, /desktop app runs this data directory's console/);
+  assert.deepEqual(refused.stopped, []);
+  assert.equal(refused.spawned, 0);
+  // The same version is simply joined, whoever started it.
+  assert.equal((await runningConsoleCase(FULI_VERSION, { packageRoot: app, paths: { ...PATHS, packageRoot: npm }, desktopApp }))
+    .result.status, 'running');
+  const adopted = await runningConsoleCase('0.12.4', { packageRoot: npm, paths: { ...PATHS, packageRoot: app }, desktopApp });
+  assert.equal(adopted.result.status, 'started');
+  assert.deepEqual(adopted.stopped, [2727]);
+  assert.equal(adopted.written.packageRoot, app, 'the new console records the package that runs it');
 });
 
 // rec#94: the recorded console's process is alive but its listener is gone.
