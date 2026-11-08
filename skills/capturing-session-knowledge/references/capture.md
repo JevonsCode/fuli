@@ -175,11 +175,12 @@ project rule (a policy or convention of ours, a port, a command, why something f
 project facts in the person's words; review still decides them. Do not checkpoint only to repeat
 such a sentence. When Stop closes such a task it also keeps, as pending experiences, what the turn
 itself showed: a project script that failed until another ran first (with its first error line), the
-project scripts that ran clean at the end, and one rule your final reply spells out (a convention,
-port, command or cause). Neither reads host notes in the turn (`<system-reminder>`,
+project scripts that ran clean at the end. Your reply is never kept: a rule you found out yourself
+needs your checkpoint. Neither reads host notes in the turn (`<system-reminder>`,
 `<side-sessions-event>`, `<task-notification>` and other tagged host blocks) or quoted pastes (`> …`,
-`<pasted_content>`), and a turn the host started with only such a note keeps no reply rule: another
-session's report is not the person's words. Anything else you found out yourself still needs your checkpoint.
+`<pasted_content>`). FULI's own markup (source markers, the 「FULI 来源」 list, receipts, links to
+FULI items) is removed from anything kept, and an experience or fact that is only that markup is
+refused: describe the approach itself, never link to another item as its text.
 Assigned employees include a truthful workLog, even
 with `retain_nothing`; never claim automatic closure completed work or saved memory. A coordinated
 worker returns its result instead of checkpointing an inherited token. Do not finish a reusable

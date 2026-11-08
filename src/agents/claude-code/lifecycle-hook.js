@@ -78,7 +78,7 @@ export async function claudeLifecycleOutput(event, input, invoke, { delivery, cu
   }
   const check = await invoke('verify_task_checkpoint', { sessionId, ...source });
   return stopHookOutcome(check, invoke, source, { reply: input.last_assistant_message,
-    findings: () => turnFindings(claudeTurnRecords(input.transcript_path, sessionId), input.last_assistant_message) });
+    findings: () => turnFindings(claudeTurnRecords(input.transcript_path, sessionId)) });
 }
 
 // The last guard of the inline limit (rec#11 D-72): a context the bounded

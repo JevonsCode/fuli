@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { ONLY_MARKUP, withoutFuliMarkup } from './fuli-markup.js';
 
 // Reusable experience from a finished task (borrowed from Hy-Memory's working
 // memory: one fact per task is the workLog; experiences are the 0-N approaches
@@ -61,7 +62,9 @@ function lessonCheck(value) {
 
 function text(value, limit, field) {
   if (typeof value !== 'string' || !value.trim()) throw invalid(`${field} must be non-empty text`);
-  return value.trim().slice(0, limit);
+  const own = withoutFuliMarkup(value);
+  if (!own) throw invalid(ONLY_MARKUP(field));
+  return own.slice(0, limit);
 }
 
 function invalid(message) {
