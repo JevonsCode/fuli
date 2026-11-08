@@ -27,7 +27,7 @@ def fact(key, text, name=None):
 async def entities(client, space_id, query, project='alpha'):
     found = ok(await client.post('/v1/search', json={
         'space_ids': [space_id], 'query': query, 'limit': 20, 'personal_project_ids': [project],
-        'active_personal_project_id': project}))
+        'active_personal_project_id': project, 'include_pending': True}))
     return {entity['id'] for entity in found['entities']}, {item['id'] for item in found['facts']}
 
 

@@ -14,8 +14,8 @@ knowledge_duplicate_rules calls the same is merged into one current item:
   revision so a split takes back exactly those.
 A person's restore of the merged copy splits it back out; an item a person
 split out is never merged automatically again. Preferences (their own
-conflict review), items a person rejected and conclusions waiting for a
-review are never merged.
+conflict review), workflow steps (each occurrence is evidence), items a
+person rejected and conclusions waiting for a review are never merged.
 """
 from fastapi import HTTPException
 
@@ -31,6 +31,7 @@ from .store_transactions import query_store_transaction
 
 MERGE_REASON = 'The same knowledge was stored twice; this copy was merged into the item that stays current.'
 CANDIDATE_LIMIT = 200
+WORKFLOW_RELATION = 'RECOMMENDS_NEXT'
 SCAN_LIMIT = 50
 
 _ITEM_FIELDS = '''{
@@ -70,9 +71,11 @@ RETURN item {_fields('item')} AS item, item {_fields('item', _MEANING_FIELDS)} A
 ORDER BY old.created_at LIMIT $limit
 '''
 # A relationship's place is its two entities, whose IDs carry project and FLA.
+# Each repeated workflow step is evidence of its own (workflow_candidates
+# counts occurrences), so RECOMMENDS_NEXT is never merged.
 _RELATIONSHIP_CANDIDATES = f'''
 MATCH (source:Entity)-[item:RELATES_TO {{uuid: $item_id, group_id: $group_id}}]->(target:Entity)
-WHERE item.invalid_at IS NULL AND item.fuli_profile_aspect IS NULL
+WHERE item.invalid_at IS NULL AND item.fuli_profile_aspect IS NULL AND item.name <> $workflow_relation
 MATCH (source)-[old:RELATES_TO {{group_id: $group_id}}]->(target)
 WHERE old.uuid <> item.uuid AND old.name = item.name AND old.invalid_at IS NULL AND old.fuli_profile_aspect IS NULL
 RETURN item {_fields('item')} AS item, null AS item_meaning, old {_fields('old')} AS old, null AS old_meaning
@@ -87,7 +90,7 @@ RETURN item {_fields('item')} AS item, coalesce(item.fuli_type, 'Entity') AS kin
 '''
 _RELATIONSHIP_SCAN = f'''
 MATCH (source:Entity {{group_id: $group_id}})-[item:RELATES_TO {{group_id: $group_id}}]->(target:Entity)
-WHERE item.invalid_at IS NULL AND item.fuli_profile_aspect IS NULL
+WHERE item.invalid_at IS NULL AND item.fuli_profile_aspect IS NULL AND item.name <> $workflow_relation
 RETURN item {_fields('item')} AS item, item.name AS kind_key, [[source.uuid, target.uuid]] AS places
 '''
 _MEANING = {
@@ -145,7 +148,7 @@ async def merge_new_duplicates(scoped, actor, space, items, *, created_at) -> li
         records, _, _ = await scoped.runtime.driver.execute_query(
             '// write-time supersession: duplicate merge candidates\n' + (
                 _ENTITY_CANDIDATES if item_kind == 'entity' else _RELATIONSHIP_CANDIDATES),
-            item_id=item_id, group_id=space['group_id'], limit=CANDIDATE_LIMIT)
+            item_id=item_id, group_id=space['group_id'], limit=CANDIDATE_LIMIT, workflow_relation=WORKFLOW_RELATION)
         if not records:
             continue
         item = _record(item_kind, records[0]['item'], records[0]['item_meaning'])
@@ -181,7 +184,7 @@ async def merge_duplicates(store, actor, request: DuplicateMergeRequest) -> Dupl
         for item_kind in ('entity', 'relationship'):
             records, _, _ = await scoped.runtime.driver.execute_query(
                 '// duplicate merge: scan\n' + (_ENTITY_SCAN if item_kind == 'entity' else _RELATIONSHIP_SCAN),
-                group_id=space['group_id'], routing_='r')
+                group_id=space['group_id'], workflow_relation=WORKFLOW_RELATION, routing_='r')
             items = {record['item']['item_id']: {**_record(item_kind, record['item']), 'kind_key': record['kind_key'],
                                                  'places': [tuple(place) for place in record['places']]}
                      for record in records}

@@ -23,5 +23,6 @@ export function startDuplicateMerger({ app, withLease = (_owner, run) => run(), 
   };
   const timer = setInterval(() => { if (!active) active = pass().finally(() => { active = null; }); }, intervalMs);
   timer.unref?.();
-  return async () => { stopped = true; clearInterval(timer); await active; };
+  // The pass in flight, or nothing: stopping with none in flight closes nothing late.
+  return () => { stopped = true; clearInterval(timer); return active ?? undefined; };
 }
