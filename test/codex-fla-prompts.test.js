@@ -17,11 +17,14 @@ function installerAccepts(prompts) {
       && (p.description === undefined || (p.description.length <= 256 && !/[\x00-\x1f\x7f]/u.test(p.description))));
 }
 
-function installer({ state = 'connected', components = [{ component: 'mcp', state: 'current' },
+// agent-installer's ClientStatus as its Node binding returns it (vendor/agent-installer/index.d.ts):
+// `components` names the parts the client takes, `componentStates` says how each one is.
+function installer({ state = 'connected', componentStates = [{ component: 'mcp', state: 'current' },
   { component: 'hooks', state: 'current' }, { component: 'prompts', state: 'outdated' }], apply = null } = {}) {
   const calls = [];
   return { calls, port: {
-    status: async () => { calls.push('status'); return { status: 'available', clients: [{ id: 'codex', state, components }] }; },
+    status: async () => { calls.push('status'); return { status: 'available', clients: [{ id: 'codex', name: 'Codex', state,
+      detected: true, components: componentStates.map(item => item.component), componentStates }] }; },
     apply: async ids => { calls.push(['apply', ids]); return apply?.() ?? { status: 'available', clients: [], problems: [] }; }
   } };
 }
@@ -98,12 +101,12 @@ test('a Codex FULI is not connected to is looked at again later; one whose other
   const connected = installer();
   assert.equal(await sync.sync(connected.port), true);
 
-  const edited = installer({ state: 'update_available', components: [{ component: 'mcp', state: 'current' },
+  const edited = installer({ state: 'update_available', componentStates: [{ component: 'mcp', state: 'current' },
     { component: 'hooks', state: 'outdated' }] });
   const second = createCodexFlaPromptSync({ read: async () => [ENTRY] });
   assert.equal(await second.sync(edited.port), false);
   assert.equal(await second.sync(edited.port), false);
-  assert.deepEqual(edited.calls, ['status', 'status']);
+  assert.deepEqual(edited.calls, ['status'], 'not asked again before the retry time');
 });
 
 test('the periodic check reports a failed read and keeps running', async () => {
@@ -120,4 +123,33 @@ test('the periodic check reports a failed read and keeps running', async () => {
     assert.ok(errors.length >= 1);
     assert.deepEqual(calls.slice(0, 2), ['status', ['apply', ['codex']]]);
   } finally { stop(); }
+});
+
+test('a connected Codex whose only missing part is the prompts is written (the shape a fresh update leaves)', async () => {
+  // As the local console saw it after updating to the release with /fla: every
+  // other FULI part current, prompts missing; the earlier check read the part
+  // names as states and skipped Codex every minute.
+  const { calls, port } = installer({ state: 'update_available', componentStates: [
+    { component: 'mcp', state: 'current' }, { component: 'hooks', state: 'current' },
+    { component: 'instructions', state: 'current' }, { component: 'skills', state: 'current' },
+    { component: 'prompts', state: 'missing' }] });
+  const sync = createCodexFlaPromptSync({ read: async () => [ENTRY] });
+  assert.equal(await sync.sync(port), true);
+  assert.deepEqual(calls, ['status', ['apply', ['codex']]]);
+});
+
+test('a failed check is logged once, and a different failure again', async () => {
+  const warnings = [];
+  const original = console.warn;
+  console.warn = message => warnings.push(message);
+  try {
+    const failures = ['Provider outage', 'Provider outage', 'installer missing'];
+    const sync = createCodexFlaPromptSync({ everyMs: 5, read: async () => { throw new Error(failures.shift() ?? 'installer missing'); } });
+    const stop = sync.start(installer().port);
+    for (let waited = 0; failures.length && waited < 2000; waited += 5) await new Promise(resolve => setTimeout(resolve, 5));
+    await new Promise(resolve => setTimeout(resolve, 30));
+    stop();
+    assert.deepEqual(warnings, ['The Codex /fla prompt files were not updated: Provider outage',
+      'The Codex /fla prompt files were not updated: installer missing']);
+  } finally { console.warn = original; }
 });

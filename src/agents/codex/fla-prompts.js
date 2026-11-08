@@ -15,7 +15,8 @@ import { utf8Preview } from '../../text/utf8-preview.js';
 // says nothing, so no other caller of the installer changes the files.
 
 const CHECK_EVERY_MS = 60_000;
-// A Codex FULI is not connected to is looked at again after this long.
+// A Codex FULI is not connected to, or one whose other FULI parts the person
+// changed, is looked at again after this long.
 const RETRY_DISCONNECTED_MS = 10 * 60_000;
 // agent-installer 0.4 refuses a whole manifest with more than 256 prompts,
 // and every client's status, install and repair with it; FULI stays well below.
@@ -34,7 +35,7 @@ export function codexPromptFiles(entries) {
 
 // read(): the menu entries for Codex now (fla-menu-reader.js); [] when off.
 export function createCodexFlaPromptSync({ read, everyMs = CHECK_EVERY_MS, retryDisconnectedMs = RETRY_DISCONNECTED_MS,
-  now = Date.now, onError = () => {} }) {
+  now = Date.now, onError = warnOnce() }) {
   let current = null;
   let applied = null;
   let notBefore = 0;
@@ -50,13 +51,14 @@ export function createCodexFlaPromptSync({ read, everyMs = CHECK_EVERY_MS, retry
     const status = await installer.status();
     if (status.status !== 'available') return false;
     const codex = status.clients.find(client => client.id === 'codex');
-    // Connecting Codex later writes this list with everything else.
-    if (!codex || !['connected', 'update_available'].includes(codex.state)) {
+    // Connecting Codex later writes this list with everything else; FULI's
+    // other Codex parts the person changed are left for the doctor or a
+    // reconnect. agent-installer's ClientStatus: `componentStates` holds
+    // each part's state (`components` only names the parts).
+    const others = (codex?.componentStates ?? []).filter(item => item.component !== 'prompts');
+    if (!codex || !['connected', 'update_available'].includes(codex.state)
+      || !others.every(item => ['current', 'unsupported'].includes(item.state))) {
       notBefore = now() + retryDisconnectedMs;
-      return false;
-    }
-    // FULI's other Codex parts the person changed are left for the doctor or a reconnect.
-    if (!(codex.components ?? []).every(item => item.component === 'prompts' || ['current', 'unsupported'].includes(item.state))) {
       return false;
     }
     const result = await installer.apply(['codex']);
@@ -81,5 +83,16 @@ export function createCodexFlaPromptSync({ read, everyMs = CHECK_EVERY_MS, retry
       void tick();
       return () => clearInterval(timer);
     }
+  };
+}
+
+// A failed check is said in the console's log once, not every minute; a
+// different failure is said again.
+function warnOnce(log = message => console.warn(message)) {
+  let last = null;
+  return error => {
+    const message = `The Codex /fla prompt files were not updated: ${error?.message ?? error}`;
+    if (message !== last) log(message);
+    last = message;
   };
 }
