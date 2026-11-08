@@ -17,11 +17,14 @@ import { EXPLAIN_MODELS } from './explain-models'
 import { tonborgExplainAsk, tonborgExplainPrompt } from './tonborg-explain-prompt'
 
 // 「让 Tonborg 给你解释」 beside the Tonborg card's title (Jevons 11-07): one row
-// per connected client whose documented new-chat link takes a prompt
-// (registry/client-links.json); a click opens a new chat there with one
-// sentence naming Tonborg filled in, never sent (11-08: the client has FULI,
-// which says the rest). Copying the whole method is the fallback for any
-// other AI, and the only row when no client can open a chat.
+// per client connected to FULI, as 设置 › 客户端接入 lists them, at most
+// MAX_ROWS (11-08). A client whose documented new-chat link takes a prompt
+// (registry/client-links.json) opens a new chat with one sentence naming
+// Tonborg filled in, never sent; any other copies that sentence and says
+// where to paste it (no client documents a plain "open the app" link, so none
+// is guessed). The client has FULI, which says the rest. Copying the whole
+// method is the fallback for any other AI, and the only row when no client is
+// connected.
 // A popover, not a hover card: its rows are actions, reached with Tab, Enter
 // and Escape (focus returns to the 「?」). Hovering the 「?」 opens it too,
 // without taking focus.
@@ -29,39 +32,44 @@ const props = defineProps<{ count: number }>()
 const consoleStore = useConsoleStore()
 const links = useClientLinks()
 const open = ref(false)
-const failed = ref(false)
+// The text the clipboard refused, shown to copy by hand.
+const failed = ref<string | null>(null)
 const HOVER_DELAY_MS = 260
 let hoverTimer: ReturnType<typeof setTimeout> | null = null
 let openedByHover = false
 // A press on the 「?」 while hover opened the panel: the click that follows keeps it open (it is now the click's).
 let pressedWhileHoverOpen = false
 
-// Only what this panel reads of /api/system/client-connection/status.
-const statusShape = shapeOf(z.looseObject({
-  clients: z.array(z.looseObject({ status: z.string(), sourceApplication: z.string().nullish() })),
-}))
-const connected = ref<Set<string> | null>(null)
+// Only what this panel reads of /api/system/client-connection/status: the built-in clients in the
+// page's order, then the ones the person described by hand.
+const statusClient = z.looseObject({ id: z.string(), label: z.string(), status: z.string(), sourceApplication: z.string().nullish() })
+const statusShape = shapeOf(z.looseObject({ clients: z.array(statusClient), customClients: z.array(statusClient).optional() }))
+type StatusClient = z.infer<typeof statusClient>
+const connected = ref<StatusClient[] | null>(null)
+const MAX_ROWS = 7
 
 const prompt = computed(() => tonborgExplainPrompt(props.count, currentLocale()))
-const openers = computed(() => (links.state?.manifest.clients ?? []).filter(client => connected.value?.has(client.id)).flatMap(client => {
-  const choice = EXPLAIN_MODELS[client.id]
-  const link = client.sessionLinks.find(item => 'prompt' in item.parameters)
-  // The client has FULI: one sentence names Tonborg, and FULI says how to go through the items.
-  const [built] = sessionLinksFor(links.state?.manifest, client.id, { prompt: tonborgExplainAsk(currentLocale()), model: choice?.model })
-  if (!link || !built) return []
+const ask = computed(() => tonborgExplainAsk(currentLocale()))
+// Each row: a link when the client documents one that takes a prompt, else a copy of the sentence.
+const rows = computed(() => (connected.value ?? []).slice(0, MAX_ROWS).map((client) => {
+  const source = client.sourceApplication ?? ''
+  const manifestClient = links.state?.manifest.clients.find(item => item.id === source)
+  const link = manifestClient?.sessionLinks.find(item => 'prompt' in item.parameters)
+  const choice = EXPLAIN_MODELS[source]
+  const [built] = link ? sessionLinksFor(links.state?.manifest, source, { prompt: ask.value, model: choice?.model }) : []
   // The model's name shows only when the link really carries it.
-  return [{ id: client.id, name: client.name, href: built.href, model: choice && 'model' in link.parameters ? choice.label : '' }]
+  return { id: client.id, name: client.label, href: built?.href ?? null,
+    model: built && choice && link && 'model' in link.parameters ? choice.label : '' }
 }))
 
 watch(open, (now) => {
-  failed.value = false
+  failed.value = null
   if (!now) { openedByHover = false; return }
   // Either read may fail; copying still works without them.
   void links.load().catch(() => {})
   if (!connected.value) {
     void getJson('/api/system/client-connection/status', statusShape).then((value) => {
-      connected.value = new Set(value.clients.filter(client => client.status === 'connected' && client.sourceApplication)
-        .map(client => client.sourceApplication as string))
+      connected.value = [...value.clients, ...(value.customClients ?? [])].filter(client => client.status === 'connected')
     }).catch(() => {})
   }
 })
@@ -98,15 +106,19 @@ function opened(name: string) {
   consoleStore.notify(t('reviewList.explain.opened', { client: name }))
 }
 
-async function copy() {
+async function copyText(text: string, done: string) {
   try {
-    await navigator.clipboard.writeText(prompt.value)
+    await navigator.clipboard.writeText(text)
     open.value = false
-    consoleStore.notify(t('reviewList.explain.copied'))
+    consoleStore.notify(done)
   } catch {
-    failed.value = true
+    failed.value = text
   }
 }
+// The whole method, for an AI without FULI.
+const copy = () => copyText(prompt.value, t('reviewList.explain.copied'))
+// A connected client without a prompt link: the one sentence, pasted there.
+const copyFor = (name: string) => copyText(ask.value, t('reviewList.explain.pasteIn', { client: name }))
 </script>
 
 <template>
@@ -119,24 +131,29 @@ async function copy() {
     <PopoverContent align="start" :side-offset="8" class="tonborg-explain" data-tonborg-explain-panel @open-auto-focus="autoFocus">
       <div class="tonborg-explain__head">
         <span class="tonborg-explain__title">{{ t('reviewList.explain.title') }}</span>
-        <span v-if="openers.length" class="tonborg-explain__lead">{{ t('reviewList.explain.lead') }}</span>
+        <span v-if="rows.length" class="tonborg-explain__lead">{{ t('reviewList.explain.lead') }}</span>
       </div>
-      <ul v-if="openers.length" class="tonborg-explain__clients">
-        <li v-for="opener in openers" :key="opener.id">
-          <a class="tonborg-explain__row" :href="opener.href" :data-tonborg-explain-open="opener.id" @click="opened(opener.name)">
+      <ul v-if="rows.length" class="tonborg-explain__clients">
+        <li v-for="row in rows" :key="row.id">
+          <a v-if="row.href" class="tonborg-explain__row" :href="row.href" :data-tonborg-explain-open="row.id" @click="opened(row.name)">
             <UiIcon name="chat" :size="16" />
-            <span class="tonborg-explain__name">{{ opener.name }}</span>
-            <span v-if="opener.model" class="tonborg-explain__model">{{ opener.model }}</span>
+            <span class="tonborg-explain__name">{{ row.name }}</span>
+            <span v-if="row.model" class="tonborg-explain__tag">{{ row.model }}</span>
           </a>
+          <Button v-else variant="ghost" class="tonborg-explain__row" :data-tonborg-explain-paste="row.id" @click="copyFor(row.name)">
+            <UiIcon name="chat" :size="16" />
+            <span class="tonborg-explain__name">{{ row.name }}</span>
+            <span class="tonborg-explain__tag">{{ t('reviewList.explain.copyTag') }}</span>
+          </Button>
         </li>
       </ul>
-      <Button v-if="openers.length" variant="link" size="sm" class="tonborg-explain__copy" data-tonborg-explain-copy @click="copy">
+      <Button v-if="rows.length" variant="link" size="sm" class="tonborg-explain__copy" data-tonborg-explain-copy @click="copy">
         {{ t('reviewList.explain.copy') }}</Button>
       <Button v-else variant="ghost" class="tonborg-explain__copy-only" data-tonborg-explain-copy @click="copy">
         <UiIcon name="copy" :size="16" />{{ t('reviewList.explain.copyOnly') }}</Button>
       <template v-if="failed">
         <p class="tonborg-explain__lead" role="alert">{{ t('reviewList.explain.copyFailed') }}</p>
-        <textarea class="tonborg-explain__text" readonly :value="prompt" rows="5" data-tonborg-explain-text />
+        <textarea class="tonborg-explain__text" readonly :value="failed ?? ''" rows="5" data-tonborg-explain-text />
       </template>
     </PopoverContent>
   </Popover>
@@ -167,7 +184,9 @@ async function copy() {
 }
 .tonborg-explain__row:hover, .tonborg-explain__row:focus-visible { background: var(--color-accent-soft); outline: none; }
 .tonborg-explain__name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tonborg-explain__model { flex: none; color: var(--color-muted); font-size: var(--text-meta); }
+.tonborg-explain__tag { flex: none; color: var(--color-muted); font-size: var(--text-meta); font-weight: var(--weight-regular, 400); }
+/* A copy row is the shared Button with the same row look as a link row. */
+.tonborg-explain__clients button.tonborg-explain__row { width: 100%; justify-content: flex-start; font-weight: inherit; }
 .tonborg-explain__copy { justify-self: start; padding: 0; user-select: none; }
 .tonborg-explain__copy-only { justify-content: flex-start; gap: 8px; margin: 0 -8px; padding: 0 8px; user-select: none; }
 .tonborg-explain__text {

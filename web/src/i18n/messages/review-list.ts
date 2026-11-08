@@ -36,6 +36,7 @@ export const reviewListMessages = {
       title: "让 @:{'roleNames.tonborg'} 给你解释", lead: '在你的 AI 里新开一个会话，逐条讲清楚',
       copy: '复制给其他 AI', copyOnly: '复制给你的 AI', opened: "已在 {client} 打开 @:{'roleNames.tonborg'} 的解释",
       copied: "已复制 @:{'roleNames.tonborg'} 的解释，粘贴给你的 AI 即可", copyFailed: '没能复制，请手动复制下面这段',
+      copyTag: '复制', pasteIn: '已复制，在 {client} 里粘贴发送',
     },
     delegation: {
       label: "交给 @:{'roleNames.tonborg'} 确认", saving: "正在保存「交给 @:{'roleNames.tonborg'} 确认」…",
@@ -82,6 +83,7 @@ export const reviewListMessages = {
       title: "Let @:{'roleNames.tonborg'} explain", lead: 'Opens a new chat in your AI and goes through them one by one',
       copy: 'Copy for another AI', copyOnly: 'Copy for your AI', opened: "Opened @:{'roleNames.tonborg'}’s explanation in {client}",
       copied: "Copied @:{'roleNames.tonborg'}’s explanation; paste it into your AI", copyFailed: 'Could not copy; copy the text below',
+      copyTag: 'Copy', pasteIn: 'Copied; paste it in {client} and send',
     },
     delegation: {
       label: "Let @:{'roleNames.tonborg'} confirm", saving: "Saving “Let @:{'roleNames.tonborg'} confirm”…",
