@@ -195,7 +195,7 @@ export const settingsMessages = {
     },
     flaSlashMenu: {
       title: '在客户端里用 /fla 选择 FLA',
-      description: '在 Claude Code、OpenCode、Cursor 里输入 /fla，选一位 FLA 继续工作，和 #FLA 名字一样。',
+      description: '在 Claude Code、OpenCode、Cursor 里输入 /fla（Codex 桌面版是 /prompts:fla），选一位 FLA 继续工作。',
     },
     topicPromotion: {
       title: '话题自动升级为项目',
@@ -520,7 +520,7 @@ export const settingsMessages = {
     },
     flaSlashMenu: {
       title: 'Pick an FLA with /fla in clients',
-      description: 'In Claude Code, OpenCode or Cursor, type /fla and pick an FLA to continue, same as #FLA and a name.',
+      description: 'Type /fla in Claude Code, OpenCode or Cursor (/prompts:fla in the Codex app) and pick an FLA to continue.',
     },
     topicPromotion: {
       title: 'Topics grow into projects',

@@ -171,14 +171,15 @@ Names stay as written; project and role text follow the console language (this c
 the person picks one in Settings). The list changes when FLAs
 are recruited, renamed or archived, when the console language changes, or when the setting
 「在客户端里用 /fla 选择 FLA」 (Settings › Clients, `flaSlashMenu`, on by default) is turned off;
-FULI announces it with `notifications/prompts/list_changed`. Nothing is written into the client,
-so turning the setting off or disconnecting the client leaves nothing behind.
+FULI announces it with `notifications/prompts/list_changed`. Nothing is written into these clients.
+The Codex app is the one client that gets files (below); turning the setting off or disconnecting
+Codex removes them.
 
 | Client | /fla menu |
 | --- | --- |
 | Claude Code | Shown as `/fuli:fla-<name> (MCP)`; Tab inserts `/mcp__fuli__fla-<name>`. Type the request after it. The Claude Code hook turns the line into `#FLA fla-<name> <request>`. CJK names work end to end; the menu filters on Latin letters, so pick a CJK name with the arrow keys |
 | OpenCode 2.x, Cursor | Listed with their MCP prompts |
-| Codex | No MCP prompts. The Codex app lists prompt files from `<CODEX_HOME>/prompts` instead (JevonsCode/fuli#837); the Codex CLI reads none. Use `#FLA <name>` |
+| Codex app | Prompt files FULI keeps in `<CODEX_HOME>/prompts` through agent-installer's `prompts` component, listed as `prompts:fla-<name>` with the same description. The app reads the folder when a window starts, so a change shows after reopening the window. A pick sends `#FLA <name>`, a newline and the request. FULI rewrites the files when the list changes, only while Codex is connected and FULI's other Codex parts are current; turning the setting off or disconnecting Codex removes FULI's files and never the person's own prompts. The Codex CLI (0.167) reads no prompt files: use `#FLA <name>` there |
 
 The entries carry no avatar: MCP allows `icons` on a prompt, but no checked client shows one (Claude Code's
 menu is text and it hands hosts such as the Claude Desktop Code tab only the prompt names; Codex prompt files have no icon field).

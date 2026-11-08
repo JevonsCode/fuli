@@ -151,7 +151,7 @@ Claude Code、Codex、OpenCode、Cursor 和 Claude 桌面版都能在控制台�
 <details>
 <summary><b>怎么叫我的某位 FLA？</b></summary>
 
-消息开头写 `#FLA` 加名字。在 Claude Code、OpenCode、Cursor 里也可以输入 `/fla`，从菜单里选一位。
+消息开头写 `#FLA` 加名字。在 Claude Code、OpenCode、Cursor 里也可以输入 `/fla`，从菜单里选一位；Codex 桌面版输入 `/prompts:fla`。
 不想要这个菜单，在 设置 › 客户端 里关掉。
 </details>
 

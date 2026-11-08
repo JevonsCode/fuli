@@ -1,7 +1,6 @@
 import { ErrorCode, GetPromptRequestSchema, ListPromptsRequestSchema, McpError } from '@modelcontextprotocol/sdk/types.js';
 
-import { flaMenuEntries, menuLanguage, occupationNameMap } from '../graphiti/fla-menu.js';
-import { menuCandidates } from '../graphiti/task-entry-named-fla.js';
+import { flaMenuSettings, readFlaMenuEntries } from '../graphiti/fla-menu-reader.js';
 
 // The person's FLAs as MCP prompts (11-08), which Claude Code, OpenCode and
 // Cursor list in their / menu: typing /fla shows each as
@@ -18,19 +17,8 @@ const ROSTER_EVERY = 12;
 
 export function registerFlaMenuPrompts(server, application, { sourceApplication, settingsEveryMs = SETTINGS_EVERY_MS,
   rosterEvery = ROSTER_EVERY, withRuntimeLease = (_owner, operation) => operation(), onError = () => {} } = {}) {
-  const settings = () => {
-    try { return application.flaMenuSettings?.() ?? { enabled: true, language: '' }; }
-    catch { return { enabled: true, language: '' }; }
-  };
-  const read = async () => {
-    const { enabled, language } = settings();
-    if (!enabled) return [];
-    const [candidates, catalog] = await Promise.all([menuCandidates(application),
-      application.personal.occupationCatalog('list', { personal_space_id: application.config.personal.spaceId })
-        .catch(() => null)]);
-    return flaMenuEntries(candidates, { sourceApplication, language: menuLanguage(language),
-      occupationNames: occupationNameMap(catalog) });
-  };
+  const settings = () => flaMenuSettings(application);
+  const read = () => readFlaMenuEntries(application, sourceApplication);
   let shown = null;
   let seenSettings = null;
   // Only what the client shows counts: a new order alone announces nothing.

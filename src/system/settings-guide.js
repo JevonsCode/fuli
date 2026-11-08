@@ -48,7 +48,7 @@ export function describeSettings({ settings, capturePolicy, consoleUrl }) {
       {
         key: 'flaSlashMenu',
         value: settings.flaSlashMenu ?? true,
-        effect: 'On (the default): Agent clients that show MCP prompts (Claude Code, OpenCode, Cursor) list the person\'s FLAs when they type /fla, each as name — project — role; choosing one continues that FLA like #FLA <name>. Off removes the entries; #FLA still works. Project and role text follow consoleLanguage. Nothing is written into a client. The person\'s AI may switch it with run_delegated_action PUT /api/system/settings (settings permission) when they ask.',
+        effect: 'On (the default): Agent clients that show MCP prompts (Claude Code, OpenCode, Cursor) list the person\'s FLAs when they type /fla, each as name — project — role; choosing one continues that FLA like #FLA <name>. Off removes the entries; #FLA still works. Project and role text follow consoleLanguage. In the Codex app the same list is prompt files FULI keeps in <CODEX_HOME>/prompts (shown as prompts:fla-<name> after a Codex window starts); off, or Codex disconnected, removes them. The person\'s AI may switch it with run_delegated_action PUT /api/system/settings (settings permission) when they ask.',
         changedBy: PERSON,
         settingsUrl: link('flaSlashMenu'),
       },

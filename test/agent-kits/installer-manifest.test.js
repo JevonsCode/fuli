@@ -15,13 +15,14 @@ import { prepareInstallerManifest } from '../../src/agent-kits/installer-manifes
 // change to every connected client; review it as one.
 const SNAPSHOT = new URL('../fixtures/installer-manifest-snapshot.json', import.meta.url);
 
-function composed(t, openCodePlugin) {
+function composed(t, openCodePlugin, clientPrompts) {
   const root = mkdtempSync(join(tmpdir(), 'fuli-manifest-snapshot-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const manifestPath = join(root, 'agent-kits', 'fuli-installer.json');
   const context = { dataDir: join(root, 'data'), nodePath: join(root, 'node'), mcpServerPath: join(root, 'src', 'mcp-server.js'),
     runtimeConfigPath: join(root, 'data', 'graph-runtime.json'), skillsDir: join(root, 'skills') };
-  const variables = prepareInstallerManifest({ manifestPath, context, openCodePlugin });
+  const variables = prepareInstallerManifest({ manifestPath, context, openCodePlugin,
+    ...(clientPrompts ? { clientPrompts } : {}) });
   return { manifest: JSON.parse(readFileSync(manifestPath, 'utf8')), variables, root };
 }
 
@@ -40,4 +41,14 @@ test('the OpenCode plugin is named only where OpenCode takes it, beside its sour
   assert.match(readFileSync(join(withPlugin.variables.openCodePlugin, 'index.js'), 'utf8'), /fuliOpenCodePlugin/);
   assert.deepEqual(Object.keys(withPlugin.variables).sort(), ['claudeHook', 'codexHook', 'cursorHook', 'mcpServerPath',
     'nodePath', 'openCodePlugin', 'runtimeConfigPath', 'skillsDir']);
+});
+
+test('a client gets prompts only when its list is known; an empty list is still a list (11-08)', (t) => {
+  assert.equal(composed(t, false).manifest.clients.codex.prompts, undefined);
+  assert.equal(composed(t, false, { codex: null }).manifest.clients.codex.prompts, undefined);
+  const prompts = [{ name: 'fla-ada-lead', description: 'Ada Lead — Alpha — Lead', body: '#FLA Ada Lead' }];
+  const { manifest } = composed(t, false, { codex: prompts, nobody: prompts });
+  assert.deepEqual(manifest.clients.codex.prompts, prompts);
+  assert.equal(manifest.clients.nobody, undefined);
+  assert.deepEqual(composed(t, false, { codex: [] }).manifest.clients.codex.prompts, []);
 });
