@@ -1,27 +1,33 @@
 import { reactive } from 'vue'
+import { z } from 'zod'
 
 import { getJson, postJson, putJson } from '@/api/client'
+import { shapeOf } from '@/api/response-shape'
 import { t } from '@/i18n'
 
 // The npm copies of FULI beside the desktop app (src/desktop/npm-copy-control.js):
 // the app already runs their data and clients. The console's notice and the
 // Settings card share this one state; outside the desktop app the list is empty.
 
-export interface NpmCopy {
-  packageRoot: string
-  version: string
+const npmCopy = z.looseObject({
+  packageRoot: z.string(),
+  version: z.string(),
   // The bare commands (fl, fuli) a terminal still answers with this copy.
-  shellCommands: string[]
-  removeCommand: string
-  noticeDismissed: boolean
-}
+  shellCommands: z.array(z.string()),
+  removeCommand: z.string(),
+  noticeDismissed: z.boolean(),
+})
+const listShape = shapeOf(z.looseObject({ copies: z.array(npmCopy) }))
+const removal = z.looseObject({
+  status: z.enum(['uninstalled', 'failed']),
+  version: z.string(),
+  manualCommand: z.string().nullable(),
+  error: z.string().optional(),
+})
+const removalShape = shapeOf(removal)
 
-export interface NpmCopyRemoval {
-  status: 'uninstalled' | 'failed'
-  version: string
-  manualCommand: string | null
-  error?: string
-}
+export type NpmCopy = z.infer<typeof npmCopy>
+export type NpmCopyRemoval = z.infer<typeof removal>
 
 export const npmCopies = reactive({
   copies: [] as NpmCopy[],
@@ -32,15 +38,14 @@ export const npmCopies = reactive({
 })
 
 export async function loadNpmCopies() {
-  const answer = await getJson<{ copies: NpmCopy[] }>('/api/system/npm-copies')
-  npmCopies.copies = Array.isArray(answer?.copies) ? answer.copies : []
+  npmCopies.copies = (await getJson('/api/system/npm-copies', listShape)).copies
   npmCopies.loaded = true
 }
 
 export async function removeNpmCopy(copy: NpmCopy): Promise<NpmCopyRemoval> {
   npmCopies.removing = copy.packageRoot
   try {
-    const result = await postJson<NpmCopyRemoval>('/api/system/npm-copies/uninstall', { packageRoot: copy.packageRoot })
+    const result = await postJson('/api/system/npm-copies/uninstall', { packageRoot: copy.packageRoot }, removalShape)
     if (result.status === 'uninstalled') {
       delete npmCopies.failed[copy.packageRoot]
       npmCopies.copies = npmCopies.copies.filter(candidate => candidate.packageRoot !== copy.packageRoot)
@@ -52,8 +57,7 @@ export async function removeNpmCopy(copy: NpmCopy): Promise<NpmCopyRemoval> {
 }
 
 export async function setNpmNoticeDismissed(copy: NpmCopy, dismissed: boolean) {
-  const answer = await putJson<{ copies: NpmCopy[] }>('/api/system/npm-copies/notice', { packageRoot: copy.packageRoot, dismissed })
-  npmCopies.copies = answer.copies
+  npmCopies.copies = (await putJson('/api/system/npm-copies/notice', { packageRoot: copy.packageRoot, dismissed }, listShape)).copies
 }
 
 // Why a removal failed, in plain words; an unknown reason is npm's own last line.
