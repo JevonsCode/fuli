@@ -3,11 +3,13 @@ import { existsSync } from 'node:fs';
 import { createLauncher, defaultExtensionsDirectory } from './vendor/agent-session-launcher/index.mjs';
 
 const COMPONENT = 'agent-session-launcher';
-// classify, clients and inspect only plan; none opens a client.
+// Every call answers within a few seconds; `openNew` only starts a terminal
+// or hands a link to the system.
 const TIMEOUT_MS = 8000;
 
-// FULI's port to agent-session-launcher, read-only in this stage: it never
-// calls `open` (rec#11 D-79). Every answer is { status: 'available', ... } or
+// FULI's port to agent-session-launcher (rec#11 D-79). It never calls `open`
+// (resume); `openNew` opens a new session, only on the person's click in the
+// console on this computer (new-sessions.js). Every answer is { status: 'available', ... } or
 // { status: 'unavailable', reason }; on 'unavailable' the caller keeps FULI's
 // own behaviour. A launcher error about one request (for example an ID the
 // client does not accept) is { status: 'refused', code }.
@@ -45,7 +47,12 @@ export function createSessionLauncherPort({
     clients: ({ download } = {}) => withLauncher({ download }, async (launcher) => ({
       clients: (await launcher.clients()).clients
     })),
-    inspect: (target) => withLauncher({}, async (launcher) => await launcher.inspect(target))
+    inspect: (target) => withLauncher({}, async (launcher) => await launcher.inspect(target)),
+    // A new session's fixed plan; opens nothing.
+    inspectNew: (target) => withLauncher({}, async (launcher) => await launcher.inspectNew(target)),
+    // Opens a new session: only for the person's own click in the console on
+    // this computer (new-sessions.js), never retried.
+    openNew: (target) => withLauncher({}, async (launcher) => ({ outcome: await launcher.openNew(target) }))
   };
 }
 

@@ -183,8 +183,26 @@ native executable through its own ports (`src/agent-kits/session-launcher.js`,
   the launcher's `clients` and `inspect`. The link itself is the same href as before. Differences:
   an `any` ID format is the launcher's `safe` format (letters, digits, `.`, `_`, `:`, `-`), so a
   session ID with other characters gets no link. A template the launcher cannot express (for
-  example `https://…`), a missing launcher or a failed request keeps FULI's own rules. Nothing
-  opens a client yet: no route calls the launcher's `open`.
+  example `https://…`), a missing launcher or a failed request keeps FULI's own rules. No route
+  resumes a session through the launcher's `open`.
+- **New sessions with a prompt.** Where the console hands the person's AI a task (待决策's
+  「让 Tonborg 给你解释」, later the `/fla` picker), it asks one helper,
+  `web/src/features/client-links/new-session.ts`: a client's documented prompt link from
+  [registry/client-links.json](client-links.md) comes first; otherwise, when the client's CLI is
+  installed on this computer, the launcher's `openNew` starts it in a new terminal window with the
+  prompt sent (`src/agent-kits/new-sessions.js`). FULI maps its clients to the launcher's
+  (`claude-code`, `codex` → `codex-cli`, `cursor` → `cursor-cli`, `opencode` → `opencode-cli`,
+  `gemini-cli`, `antigravity` → `antigravity-cli`, `qwen-code`) and finds the program on its PATH,
+  through the person's login shell, or on Windows inside the default WSL distribution (then the
+  launcher runs it through `wsl.exe`); answers are kept for five minutes
+  (`src/agent-kits/cli-presence.js`). Both routes are POSTs from this computer only (a LAN console gets 403 and offers copy), both
+  `local_user_only`, so no Agent tool reaches them: `POST /api/session-launch/new-session/ways`
+  `{ clients }` answers which clients can open (finding out may download the launcher and start
+  the person's login shell or WSL, so it never runs from a GET), and
+  `POST /api/session-launch/new-session` `{ client, prompt }` opens one on the person's click. The prompt (at most 2,000
+  characters) reaches the client as one argument, never shell text; how the launcher keeps it so
+  on each platform, and every client's official source, is in agent-session-launcher's
+  `docs/protocol.md` and `docs/clients.md`.
 - **Which Claude client.** Claude Code's hooks record, once per session, the raw
   `CLAUDE_CODE_ENTRYPOINT` (`cli`, `claude-desktop`, …) and a source label in `session-clients/`
   in the data directory. A hook starts no process and never waits on the launcher. When the

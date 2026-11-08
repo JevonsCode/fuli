@@ -34,7 +34,7 @@ it('checks for an update, shows its diff by client and applies exactly that vers
   expect(wrapper.find('details').exists()).toBe(false)
   expect(wrapper.get('[data-slot="card-title"]').text()).toBe('会话链接')
   expect(fetch.mock.calls.map(([url]) => url)).toContain('/api/client-links')
-  expect(wrapper.get('[data-client-link="cursor"]').text()).toContain('没有可核实的会话链接')
+  expect(wrapper.get('[data-client-link="opencode"]').text()).toContain('没有可核实的会话链接')
   expect(wrapper.get('[data-client-link="codex"]').text()).toContain('在 Codex 中打开')
   await wrapper.get('[data-client-links-check]').trigger('click')
   await flushPromises()

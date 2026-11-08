@@ -9,13 +9,13 @@ import { deepFreeze } from '../validation/values.js';
 export const AGENT_KIT_PINS = deepFreeze({
   'agent-session-launcher': {
     repository: 'JevonsCode/agent-session-launcher',
-    version: '0.4.0',
+    version: '0.5.1',
     sha256: {
-      'macos-arm64': '9c65ed2ba10378250bf86af8f5b8874984f97cfe68018750c689cbede964ff99',
-      'macos-x64': 'a50379638576d1607934aff8c50f633c49a216de90cf74a0801cd414d376460b',
-      'linux-x64': '22918a7bbca1a09d16b2ed711195d6408995c998298a91427e5e6ddb0fd4948d',
-      'linux-arm64': '68ee8887034eba7d3e6f348baed14130650474f63739c319a3eba9cb52afdeb9',
-      'windows-x64': '1b1acddacb5bbaded1a8e13886e7a6becb62384d746a40fe1046b1562621e647'
+      'macos-arm64': '22212ebaecb0f19246eb1bd74ea41bdbc8a41f4ca7e0d8eabebd625cf6905fa9',
+      'macos-x64': 'af1dd697cebf3e4f6791d5db3ea9b6050e74bcbc6ecd7604489db5fbaecb1499',
+      'linux-x64': '8701c769a15d9b66ff2da14265a66565658d834a75c34443667528a35b716ceb',
+      'linux-arm64': 'de287bcd96b71a257aa084852b601be580bfab4adc3b57c8c026644f4ffbac5a',
+      'windows-x64': '05a5c13bac42fe7d26acdf160e7d65cc6dbc0886008dcd4d35f112eeb3abcc52'
     }
   },
   'agent-installer': {

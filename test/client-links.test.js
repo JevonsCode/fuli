@@ -24,7 +24,7 @@ function newer(change = manifest => manifest) {
 // A synthetic next version: one client added, one changed, one removed.
 const NEXT = newer(manifest => {
   manifest.clients = manifest.clients.filter(item => item.id !== 'kiro');
-  manifest.clients.find(item => item.id === 'cursor').noSessionLink = 'Still no documented session link.';
+  manifest.clients.find(item => item.id === 'opencode').noSessionLink = 'Still no documented session link.';
   manifest.clients.push({ id: 'synthetic_client', name: 'Synthetic Client', sessionLinks: [{ id: 'synthetic-web',
     opens: 'Synthetic Web', template: 'https://synthetic.example/sessions/{sessionId}',
     parameters: { sessionId: { format: 'any' } }, platforms: ['web'], notes: 'Synthetic test link.',
@@ -80,7 +80,7 @@ test('checking shows what a newer manifest adds, changes and removes, and applyi
     assert.equal(fetches[0], 'https://raw.githubusercontent.com/JevonsCode/fuli/main/registry/client-links.json');
     assert.equal(checked.status, 'update_available');
     assert.deepEqual(checked.diff.added, [{ id: 'synthetic_client', name: 'Synthetic Client' }]);
-    assert.deepEqual(checked.diff.changed, [{ id: 'cursor', name: 'Cursor', fields: ['noSessionLink'] }]);
+    assert.deepEqual(checked.diff.changed, [{ id: 'opencode', name: 'OpenCode', fields: ['noSessionLink'] }]);
     assert.deepEqual(checked.diff.removed, [{ id: 'kiro', name: 'Kiro' }]);
     assert.throws(() => registry.apply('another-digest'), { code: 'client_links_changed', status: 409 });
     const applied = registry.apply(checked.digest);

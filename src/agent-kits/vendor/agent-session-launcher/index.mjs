@@ -62,6 +62,14 @@ export function createLauncher({ executable, configPath, extensionsDir, timeoutM
     open: async (target, preferences) => (await call({
       action: 'open', target, ...(preferences === undefined ? {} : { preferences }),
     })).status,
+    inspectNew: async target => {
+      const { plan, openSupported } = await call({ action: 'inspect-new', target });
+      return { plan, openSupported };
+    },
+    /** Only for an explicit user action. Never retry automatically on `unknown_outcome`. */
+    openNew: async (target, preferences) => (await call({
+      action: 'open-new', target, ...(preferences === undefined ? {} : { preferences }),
+    })).status,
   };
 }
 

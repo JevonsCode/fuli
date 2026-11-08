@@ -7,7 +7,7 @@ import { shapeOf } from '@/api/response-shape'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useClientLinks } from '@/features/client-links/client-links-store'
-import { sessionLinksFor } from '@/features/client-links/model'
+import { loadTerminalWays, newSessionWay, openInTerminal, type NewSessionWay, type TerminalWays } from '@/features/client-links/new-session'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import UiIcon from '@/ui/UiIcon.vue'
@@ -18,11 +18,11 @@ import { tonborgExplainAsk, tonborgExplainPrompt } from './tonborg-explain-promp
 
 // 「让 Tonborg 给你解释」 beside the Tonborg card's title (Jevons 11-07): one row
 // per client connected to FULI, as 设置 › 客户端接入 lists them, at most
-// MAX_ROWS (11-08). A client whose documented new-chat link takes a prompt
-// (registry/client-links.json) opens a new chat with one sentence naming
-// Tonborg filled in, never sent; any other copies that sentence and says
-// where to paste it (no client documents a plain "open the app" link, so none
-// is guessed). The client has FULI, which says the rest. Copying the whole
+// MAX_ROWS (11-08). Each row opens a new session there with one sentence
+// naming Tonborg, the way client-links/new-session.ts says: a documented
+// new-chat link fills it in (never sent); a CLI installed here opens in a new
+// terminal and sends it. Any other row copies that sentence and says where to
+// paste it. The client has FULI, which says the rest. Copying the whole
 // method is the fallback for any other AI, and the only row when no client is
 // connected.
 // A popover, not a hover card: its rows are actions, reached with Tab, Enter
@@ -46,20 +46,19 @@ const statusClient = z.looseObject({ id: z.string(), label: z.string(), status: 
 const statusShape = shapeOf(z.looseObject({ clients: z.array(statusClient), customClients: z.array(statusClient).optional() }))
 type StatusClient = z.infer<typeof statusClient>
 const connected = ref<StatusClient[] | null>(null)
+const terminals = ref<TerminalWays>({})
+// The row whose terminal is being opened.
+const launching = ref<string | null>(null)
 const MAX_ROWS = 7
 
 const prompt = computed(() => tonborgExplainPrompt(props.count, currentLocale()))
 const ask = computed(() => tonborgExplainAsk(currentLocale()))
-// Each row: a link when the client documents one that takes a prompt, else a copy of the sentence.
+// Each row: the client's way to open a new session with the sentence, or a copy of it.
 const rows = computed(() => (connected.value ?? []).slice(0, MAX_ROWS).map((client) => {
-  const source = client.sourceApplication ?? ''
-  const manifestClient = links.state?.manifest.clients.find(item => item.id === source)
-  const link = manifestClient?.sessionLinks.find(item => 'prompt' in item.parameters)
-  const choice = EXPLAIN_MODELS[source]
-  const [built] = link ? sessionLinksFor(links.state?.manifest, source, { prompt: ask.value, model: choice?.model }) : []
+  const choice = EXPLAIN_MODELS[client.sourceApplication ?? '']
+  const way = newSessionWay(links.state?.manifest, terminals.value, client, { prompt: ask.value, model: choice?.model })
   // The model's name shows only when the link really carries it.
-  return { id: client.id, name: client.label, href: built?.href ?? null,
-    model: built && choice && link && 'model' in link.parameters ? choice.label : '' }
+  return { id: client.id, name: client.label, way, model: way?.kind === 'link' && way.carriesModel && choice ? choice.label : '' }
 }))
 
 watch(open, (now) => {
@@ -70,6 +69,7 @@ watch(open, (now) => {
   if (!connected.value) {
     void getJson('/api/system/client-connection/status', statusShape).then((value) => {
       connected.value = [...value.clients, ...(value.customClients ?? [])].filter(client => client.status === 'connected')
+      return loadTerminalWays(connected.value.map(client => client.id)).then((ways) => { terminals.value = ways })
     }).catch(() => {})
   }
 })
@@ -117,8 +117,20 @@ async function copyText(text: string, done: string) {
 }
 // The whole method, for an AI without FULI.
 const copy = () => copyText(prompt.value, t('reviewList.explain.copied'))
-// A connected client without a prompt link: the one sentence, pasted there.
+// A connected client without a way to open it: the one sentence, pasted there.
 const copyFor = (name: string) => copyText(ask.value, t('reviewList.explain.pasteIn', { client: name }))
+// The terminal opens on this computer; when FULI cannot open it, the sentence is copied instead.
+async function launch(name: string, way: Extract<NewSessionWay, { kind: 'terminal' }>) {
+  launching.value = way.clientId
+  try {
+    await openInTerminal(way, ask.value)
+    opened(name)
+  } catch {
+    await copyFor(name)
+  } finally {
+    launching.value = null
+  }
+}
 </script>
 
 <template>
@@ -135,11 +147,18 @@ const copyFor = (name: string) => copyText(ask.value, t('reviewList.explain.past
       </div>
       <ul v-if="rows.length" class="tonborg-explain__clients">
         <li v-for="row in rows" :key="row.id">
-          <a v-if="row.href" class="tonborg-explain__row" :href="row.href" :data-tonborg-explain-open="row.id" @click="opened(row.name)">
+          <a v-if="row.way?.kind === 'link'" class="tonborg-explain__row" :href="row.way.href" :data-tonborg-explain-open="row.id" @click="opened(row.name)">
             <UiIcon name="chat" :size="16" />
             <span class="tonborg-explain__name">{{ row.name }}</span>
             <span v-if="row.model" class="tonborg-explain__tag">{{ row.model }}</span>
           </a>
+          <Button v-else-if="row.way?.kind === 'terminal'" variant="ghost" class="tonborg-explain__row" :data-tonborg-explain-terminal="row.id"
+            :loading="launching === row.id" :loading-label="t('reviewList.explain.opening', { client: row.name })"
+            @click="launch(row.name, row.way)">
+            <UiIcon name="chat" :size="16" />
+            <span class="tonborg-explain__name">{{ row.name }}</span>
+            <span class="tonborg-explain__tag">{{ t('reviewList.explain.terminalTag') }}</span>
+          </Button>
           <Button v-else variant="ghost" class="tonborg-explain__row" :data-tonborg-explain-paste="row.id" @click="copyFor(row.name)">
             <UiIcon name="chat" :size="16" />
             <span class="tonborg-explain__name">{{ row.name }}</span>
