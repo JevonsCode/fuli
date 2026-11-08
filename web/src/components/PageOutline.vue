@@ -77,7 +77,8 @@ function go(entry: OutlineEntry) {
 <style scoped>
 /* Navigation at the page's edge, not another card (Jevons 11-08). By the window's right
    edge, clear of the page's scrollbar, it never reaches the page's content. Its ticks start
-   two fifths of the way down the window, away from the top bar's actions (Jevons 11-08:
+   a little over a quarter of the way down the window (28%), spaced evenly with room between
+   ticks, away from the top bar's actions (Jevons 11-08:
    贴在顶部紧挨着「设置」); a list too long to fit there rises just enough to end above the
    bottom margin, and never higher than just under the top bar.
    The ruler (one tick per section on a hairline, the hairline on the outer side) sits at
@@ -85,12 +86,12 @@ function go(entry: OutlineEntry) {
    tick read as one line. Only the ruler and the open names take the pointer: the closed
    names must not cover the page. */
 .page-outline {
-  --outline-row: 22px;
+  --outline-row: 30px;
   --outline-pad: 6px;
   --outline-top-min: calc(76px + var(--desktop-caption-top, 0px));
   --outline-bottom: 32px;
   --outline-height: calc(var(--outline-rows, 3) * var(--outline-row) + 2 * var(--outline-pad));
-  position: fixed; top: max(var(--outline-top-min), min(40dvh, calc(100dvh - var(--outline-height) - var(--outline-bottom)))); right: calc(max(var(--scrollbar-size), 8px) + 2px); z-index: var(--z-nav);
+  position: fixed; top: max(var(--outline-top-min), min(28dvh, calc(100dvh - var(--outline-height) - var(--outline-bottom)))); right: calc(max(var(--scrollbar-size), 8px) + 2px); z-index: var(--z-nav);
   display: flex; flex-direction: row-reverse; align-items: flex-start; pointer-events: none;
 }
 /* The ticks end 14px from the window's edge on the hairline and narrow with the margin. */
