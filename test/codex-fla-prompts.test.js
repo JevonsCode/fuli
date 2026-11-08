@@ -7,22 +7,48 @@ import { codexPromptFiles, createCodexFlaPromptSync } from '../src/agents/codex/
 // its /fla files there through agent-installer. Synthetic entries and a fake
 // installer port only; no client file is written.
 
-const ENTRY = { name: 'fla-ada-lead', title: 'Ada Lead', description: 'Ada Lead — Alpha — 负责人', text: '#FLA Ada Lead' };
+const ENTRY = { name: 'fla-ada-lead', title: 'Ada Lead', description: 'Ada Lead — Alpha — 负责人', text: '#FLA Ada Lead', role: false };
+
+// agent-installer 0.4's own checks on a prompt (lib/src/manifest.dart), lengths in UTF-16 code units.
+function installerAccepts(prompts) {
+  const NAME = /^[^\\/:*?"<>|\s.\x00-\x1f\x7f][^\\/:*?"<>|\s\x00-\x1f\x7f]*$/u;
+  return prompts.length <= 256 && new Set(prompts.map(p => p.name.toLowerCase())).size === prompts.length
+    && prompts.every(p => p.name.length <= 64 && NAME.test(p.name) && p.body.length <= 16384
+      && (p.description === undefined || (p.description.length <= 256 && !/[\x00-\x1f\x7f]/u.test(p.description))));
+}
 
 function installer({ state = 'connected', components = [{ component: 'mcp', state: 'current' },
-  { component: 'hooks', state: 'current' }, { component: 'prompts', state: 'outdated' }] } = {}) {
+  { component: 'hooks', state: 'current' }, { component: 'prompts', state: 'outdated' }], apply = null } = {}) {
   const calls = [];
   return { calls, port: {
     status: async () => { calls.push('status'); return { status: 'available', clients: [{ id: 'codex', state, components }] }; },
-    apply: async ids => { calls.push(['apply', ids]); return { status: 'available', clients: [] }; }
+    apply: async ids => { calls.push(['apply', ids]); return apply?.() ?? { status: 'available', clients: [], problems: [] }; }
   } };
 }
 
 test('menu entries become prompt files whose body is the #FLA line', () => {
   assert.deepEqual(codexPromptFiles([ENTRY]), [{ name: 'fla-ada-lead', description: 'Ada Lead — Alpha — 负责人',
     body: '#FLA Ada Lead' }]);
-  const long = codexPromptFiles([{ ...ENTRY, description: '长'.repeat(300) }])[0].description;
-  assert.equal([...long].length, 256);
+});
+
+test('at most 200 files: every built-in role, then the most recent FLAs; all pass the installer\'s checks', () => {
+  const flas = Array.from({ length: 300 }, (_, n) => ({ ...ENTRY, name: `fla-p${n}`, text: `#FLA P${n}` }));
+  const roles = ['jefa', 'bole', 'tonborg', 'astro'].map(name => ({ ...ENTRY, name: `fla-${name}`, role: true }));
+  const files = codexPromptFiles([...flas, ...roles]);
+  assert.equal(files.length, 200);
+  assert.deepEqual(files.slice(0, 2).map(file => file.name), ['fla-p0', 'fla-p1']);
+  assert.deepEqual(files.slice(-4).map(file => file.name), ['fla-jefa', 'fla-bole', 'fla-tonborg', 'fla-astro']);
+  assert.ok(installerAccepts(files));
+});
+
+test('a description is cut by UTF-16 code units between whole characters (emoji and other non-BMP text)', () => {
+  for (const unit of ['😀', '𠀀', '👩‍💻', '长']) {
+    const [file] = codexPromptFiles([{ ...ENTRY, description: unit.repeat(300) }]);
+    assert.ok(file.description.length <= 256, unit);
+    assert.ok(file.description.isWellFormed(), unit);
+    assert.ok(file.description.endsWith('…'), unit);
+    assert.ok(installerAccepts([file]), unit);
+  }
 });
 
 test('the list is unknown until read; a connected Codex is applied once per change, and off writes an empty list', async () => {
@@ -35,25 +61,47 @@ test('the list is unknown until read; a connected Codex is applied once per chan
   assert.deepEqual(calls, ['status', ['apply', ['codex']]]);
   assert.equal(await sync.sync(port), false);
   assert.equal(calls.length, 2, 'an unchanged list reads nothing from the installer');
+  entries = [{ ...ENTRY, name: 'fla-b', text: '#FLA B' }, ENTRY];
+  await sync.sync(port);
+  entries = [ENTRY, { ...ENTRY, name: 'fla-b', text: '#FLA B' }];
+  assert.equal(await sync.sync(port), false, 'a new order alone is no change');
   entries = [];
   assert.equal(await sync.sync(port), true);
   assert.deepEqual(sync.prompts(), []);
   assert.deepEqual(calls.at(-1), ['apply', ['codex']]);
 });
 
-test('a Codex FULI is not connected to, or whose other FULI parts changed, is never applied', async () => {
-  const notConnected = installer({ state: 'not_connected' });
+test('a write that failed or left Codex with a problem is not counted, and is tried again', async () => {
+  let attempt = 0;
+  const { calls, port } = installer({ apply: () => (++attempt === 1
+    ? { status: 'available', clients: [], problems: [{ client: 'codex', message: 'prompts: busy' }] }
+    : { status: 'available', clients: [], problems: [] }) });
   const sync = createCodexFlaPromptSync({ read: async () => [ENTRY] });
+  assert.equal(await sync.sync(port), false);
+  assert.equal(await sync.sync(port), true);
+  assert.equal(calls.filter(call => Array.isArray(call)).length, 2);
+  const thrown = createCodexFlaPromptSync({ read: async () => [ENTRY] });
+  const failing = { status: port.status, apply: async () => { throw new Error('Synthetic installer failure'); } };
+  await assert.rejects(thrown.sync(failing), /Synthetic installer failure/);
+  assert.equal(await thrown.sync(port), true, 'tried again after the failure');
+});
+
+test('a Codex FULI is not connected to is looked at again later; one whose other FULI parts changed is never applied', async () => {
+  let clock = 0;
+  const notConnected = installer({ state: 'not_connected' });
+  const sync = createCodexFlaPromptSync({ read: async () => [ENTRY], now: () => clock, retryDisconnectedMs: 1000 });
   assert.equal(await sync.sync(notConnected.port), false);
-  assert.deepEqual(notConnected.calls, ['status']);
   assert.deepEqual(sync.prompts(), codexPromptFiles([ENTRY]), 'connecting it later writes this list');
+  assert.equal(await sync.sync(notConnected.port), false);
+  assert.deepEqual(notConnected.calls, ['status'], 'not asked again before the retry time');
+  clock = 1000;
+  const connected = installer();
+  assert.equal(await sync.sync(connected.port), true);
 
   const edited = installer({ state: 'update_available', components: [{ component: 'mcp', state: 'current' },
     { component: 'hooks', state: 'outdated' }] });
   const second = createCodexFlaPromptSync({ read: async () => [ENTRY] });
   assert.equal(await second.sync(edited.port), false);
-  assert.deepEqual(edited.calls, ['status']);
-  // It is tried again on the next change check.
   assert.equal(await second.sync(edited.port), false);
   assert.deepEqual(edited.calls, ['status', 'status']);
 });
