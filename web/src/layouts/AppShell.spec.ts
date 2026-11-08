@@ -304,6 +304,8 @@ describe('AppShell', () => {
       { path: '/agents/:spaceId/:agentId', component: profile, meta: { title: 'agentProfiles.profile', layout: 'canvas' } },
     ])
     expect(wrapper.findAll('h1').map(heading => heading.text())).toEqual(['Ada Lovelace'])
+    // One line in the bar; a long name ends in … and its full text is the tooltip.
+    expect(wrapper.get('.app-title').attributes('title')).toBe('Ada Lovelace')
     expect(document.title).toBe('Ada Lovelace · 复利')
     // The app's router writes the route title after every navigation; a
     // query change (an in-page tab) must not leave the tab named after it.
