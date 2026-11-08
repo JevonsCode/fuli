@@ -180,6 +180,9 @@ so turning the setting off or disconnecting the client leaves nothing behind.
 | OpenCode 2.x, Cursor | Listed with their MCP prompts |
 | Codex | Not available: Codex (0.167) shows neither MCP prompts nor custom prompt files in its / menu. Use `#FLA <name>` |
 
+The entries carry no avatar: MCP allows `icons` on a prompt, but no checked client shows one (Claude Code's
+menu is text and it hands hosts such as the Claude Desktop Code tab only the prompt names; Codex has no prompt menu).
+
 New dedicated adapters belong behind the shared client ports. They should add only host-specific
 configuration, hooks, transcript parsing, or execution, never a second version of Fuli's knowledge
 and role rules. Missing enhancements must remain explicit; a generic connection must not claim
