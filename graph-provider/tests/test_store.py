@@ -45,9 +45,9 @@ async def test_structured_supersession_stores_the_exact_replacement_relationship
     # C9) and no captured entity has later versions; then, in one
     # transaction, the space lock, the same checks again, the write, and the
     # write-time supersession reads: two entities and the relationship (no
-    # preference and no keyed value) find nothing older. Before and inside it,
+    # copy to merge, no preference and no keyed value) find nothing older. Before and inside it,
     # the relationship is checked for an ended item of the same words.
-    driver = SequentialDriver([[]] * 22)
+    driver = SequentialDriver([[]] * 25)
     store = StoreKnowledge()
     store.runtime = RuntimeStub(driver)
     store._group_locks = {}

@@ -951,6 +951,13 @@ export class GraphitiProviderClient {
       method: 'POST', body: { personal_space_id: personalSpaceId, model, items }
     });
   }
+  // rec#88: one bounded pass that merges duplicate current knowledge; the
+  // console host runs it periodically (src/knowledge-duplicates).
+  mergeDuplicates({ personalSpaceId, limit }) {
+    return this.#request('/v1/knowledge/duplicates/merge', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, ...(limit ? { limit } : {}) }
+    });
+  }
   semanticStatus({ personalSpaceId, model }) {
     return this.#request('/v1/semantic/status', {
       method: 'POST', body: { personal_space_id: personalSpaceId, model }

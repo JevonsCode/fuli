@@ -80,6 +80,8 @@ export interface ItemVersion {
   invalid_at?: string | null
   /** Bases out of date when this version re-asserted its words, which it no longer rests on. */
   released_bases?: string[]
+  /** An automatic duplicate merge ended this copy; a person's restore splits it back out. */
+  merged_duplicate?: boolean
 }
 
 /** Knowledge this item was concluded from (C8-4). */

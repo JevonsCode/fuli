@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 from .knowledge_audit import _item_match, _record_one_knowledge_feedback, record_human_change
 from .knowledge_dependencies import end_dependents
+from .knowledge_duplicates import merge_new_duplicates
 from .knowledge_feedback_models import KnowledgeFeedbackCreate
 from .knowledge_item_version import lock_version
 from .knowledge_management import _read_item, _snapshot
@@ -37,14 +38,20 @@ POSSIBLY_OUTDATED_REASON = 'Newer knowledge may replace this; it stays current u
 
 async def settle_older_knowledge(scoped, actor, space, items, *, created_at) -> dict[str, list[dict]]:
     """What newly written or confirmed knowledge does to older knowledge,
-    inside the caller's transaction. A confirmed value of a keyed relation
+    inside the caller's transaction. A duplicate of a current item merges
+    into one current item (knowledge_duplicates). A confirmed value of a keyed relation
     ends the other values of its subject and relation, and a confirmed
     preference the other preferences of its key and scope; any other new item
     queues the older items it may silently replace for a person (flagged, not
     ended). Nothing is deleted."""
-    superseded, flagged = [], []
+    # The same knowledge stored twice becomes one current item first (no person).
+    superseded = await merge_new_duplicates(scoped, actor, space, items, created_at=created_at)
+    merged = {item['item_id'] for item in superseded}
+    flagged = []
     scopes = {}  # each preference scope is read once for all the items
     for item_kind, item_id in items:
+        if item_id in merged:
+            continue
         # A confirmed preference ends the older one of its key and scope.
         ended = await end_older_preferences(scoped, actor, space, item_kind, item_id, changed_by='user',
                                             created_at=created_at, scopes=scopes)

@@ -565,3 +565,16 @@ test('a 401 is reported unchanged when no different token is available', async (
   await assert.rejects(unauthenticated.health());
   assert.equal(refreshed, false);
 });
+
+test('the duplicate-merge pass sends the space, and a limit only when given, with ordinary auth', async () => {
+  const calls = [];
+  const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
+    fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonResponse(200, { merged: [] }); } });
+  await client.mergeDuplicates({ personalSpaceId: 'synthetic-space' });
+  await client.mergeDuplicates({ personalSpaceId: 'synthetic-space', limit: 5 });
+  assert.deepEqual(calls.map(({ url }) => url.replace('http://provider.test', '')),
+    ['/v1/knowledge/duplicates/merge', '/v1/knowledge/duplicates/merge']);
+  assert.deepEqual(calls.map(({ options }) => JSON.parse(options.body)), [
+    { personal_space_id: 'synthetic-space' }, { personal_space_id: 'synthetic-space', limit: 5 }]);
+  assert.equal(calls[0].options.headers.authorization, 'Bearer synthetic-token');
+});

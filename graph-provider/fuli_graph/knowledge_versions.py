@@ -464,7 +464,7 @@ async def version_chain(store, space, item_kind, item_id) -> list[dict]:
     revisions = await item_revisions(store, space, item_kind, ids)
     created_by = {revision.current.get('replacedByItemId'): revision
                   for revisions_of_item in revisions.values() for revision in revisions_of_item
-                  if revision.action in ('supersede', 'reassert')}
+                  if revision.action in ('supersede', 'reassert') and not revision.current.get('duplicateMerge')}
     versions = []
     for record in records:
         made = created_by.get(record['item_id'])
@@ -478,11 +478,22 @@ async def version_chain(store, space, item_kind, item_id) -> list[dict]:
             'changed_by': made.changed_by if made else _first_author(record['content_source']),
             'reason': made.reason if made else None,
             'released_bases': list(made.current.get('releasedBases') or []) if made else [],
+            'merged_duplicate': _merged_duplicate(record, revisions.get(record['item_id'], [])),
             'created_at': native_datetime(record['created_at']),
             'invalid_at': native_datetime(record['invalid_at']),
         })
     return sorted(versions, key=lambda version: version['created_at'].timestamp() if version['created_at'] else 0,
                   reverse=True)
+
+
+def _merged_duplicate(record, revisions) -> bool:
+    """Whether an automatic duplicate merge ended this version and still holds
+    (knowledge_duplicates): the copy a person can split back out."""
+    ended = ending_action(revisions)
+    merge = max((revision for revision in revisions if revision.action == 'supersede'),
+                key=lambda revision: revision.created_at, default=None)
+    return bool(ended == 'supersede' and record['invalid_at'] and merge and merge.current.get('duplicateMerge')
+                and record['replaced_by_item_id'] == merge.current.get('replacedByItemId'))
 
 
 async def current_version_id(store, space, item_kind, item_id) -> str | None:
