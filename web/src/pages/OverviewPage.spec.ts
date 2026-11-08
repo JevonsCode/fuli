@@ -283,6 +283,21 @@ describe('OverviewPage', () => {
     wrapper.unmount()
   })
 
+  it('shows one loading indicator for the first read of the current work', async () => {
+    let finish!: (value: unknown) => void
+    const { wrapper } = await setup({ getJsonImplementation: url => {
+      if (url.startsWith('/api/project-agent-tasks?')) return new Promise(done => { finish = done })
+      if (url.startsWith('/api/agent-attention?')) return { items: [], total: 0 }
+      throw new Error('Unexpected request')
+    } })
+    const work = () => wrapper.findAll('.growth-loading').filter(item => item.attributes('aria-label') === '正在读取当前工作…')
+    expect(work()).toHaveLength(1)
+    expect(wrapper.find('.workbench-loading').exists()).toBe(true)
+    finish({ items: [task('first', 'running', '2026-09-12T00:00:00Z', 'project-a')] }); await flushPromises()
+    expect(work()).toHaveLength(0)
+    wrapper.unmount()
+  })
+
   it('shows a slow scope and times out without accepting a late bootstrap result', async () => {
     vi.useFakeTimers()
     let finish!: (value: unknown) => void

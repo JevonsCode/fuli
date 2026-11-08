@@ -266,7 +266,7 @@ export const modelSettingsMessages = {
     },
     suggestions: {
       title: '建议记录',
-      note: '@:{\'roleNames.astro\'}、@:{\'roleNames.bole\'} 和 @:{\'roleNames.jefa\'} 问自己模型的结果，以及 @:{\'roleNames.tonborg\'} 留给你的知识审核。建议在前，其余按时间，前三位只留最近 90 天或 300 条。这里不是待办，不会自动应用，处理请到对应页面。',
+      note: '@:{\'roleNames.astro\'}、@:{\'roleNames.bole\'}、@:{\'roleNames.jefa\'} 的模型建议和 @:{\'roleNames.tonborg\'} 留给你的审核，建议在前。不会自动应用，处理请到对应页面。',
       cleared: '内容已因彻底删除清除',
       showAll: '显示全部 {count} 条',
       loading: '正在读取 @:{\'roleNames.astro\'}、@:{\'roleNames.bole\'} 和 @:{\'roleNames.jefa\'} 的建议…',
@@ -603,7 +603,7 @@ export const modelSettingsMessages = {
     },
     suggestions: {
       title: 'Suggestion records',
-      note: 'What @:{\'roleNames.astro\'}, @:{\'roleNames.bole\'} and @:{\'roleNames.jefa\'} got from their own model, and the knowledge reviews @:{\'roleNames.tonborg\'} left to you. Suggestions first, the rest by time; the first three keep the last 90 days or 300 entries. Not a to-do and never applied automatically: act on the page each one opens.',
+      note: 'Suggestions from @:{\'roleNames.astro\'}, @:{\'roleNames.bole\'} and @:{\'roleNames.jefa\'}, and @:{\'roleNames.tonborg\'}\'s reviews. Never auto-applied: act on each page.',
       cleared: 'Content cleared by a permanent delete',
       showAll: 'Show all {count}',
       loading: 'Reading the suggestions of @:{\'roleNames.astro\'}, @:{\'roleNames.bole\'} and @:{\'roleNames.jefa\'}…',
