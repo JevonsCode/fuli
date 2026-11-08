@@ -64,6 +64,7 @@ const SETTING_LABELS: Record<string, string> = {
   capture: 'settings.behavior.capture',
   notifications: 'settings.notifications.title',
   topicPromotion: 'settings.topicPromotion.title',
+  flaSlashMenu: 'settings.flaSlashMenu.title',
   refresh: 'settings.resources.refresh',
   launchers: 'settings.conversationLaunchers.title',
   lanAccess: 'settings.behavior.lanAccess',

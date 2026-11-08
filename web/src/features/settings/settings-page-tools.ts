@@ -16,6 +16,7 @@ const SETTINGS_SHAPE = shapeFor<SystemSettingsResult>(z.looseObject({ restartReq
 
 const CHANGES = z.object({
   topicPromotion: z.enum(['auto', 'ask']).optional(),
+  flaSlashMenu: z.boolean().optional().describe('Whether Agent clients list the FLAs under /fla.'),
   agentNamingStyle: z.string().max(500).optional(),
   resourceRefreshSeconds: z.union([z.literal(5), z.literal(10), z.literal(30), z.literal(60)]).optional(),
   updateChannel: z.enum(['stable', 'beta']).optional(),
@@ -23,7 +24,7 @@ const CHANGES = z.object({
 }).refine(changes => Object.keys(changes).length > 0, 'Name at least one setting')
 
 const visible = (settings: RuntimeSettings) => ({
-  topicPromotion: settings.topicPromotion, agentNamingStyle: settings.agentNamingStyle,
+  topicPromotion: settings.topicPromotion, flaSlashMenu: settings.flaSlashMenu, agentNamingStyle: settings.agentNamingStyle,
   resourceRefreshSeconds: settings.resourceRefreshSeconds, updateChannel: settings.updateChannel,
   needsPersonUrl: settings.notifications.needsPersonUrl, lanAccess: settings.lanAccess, ports: settings.ports,
 })
@@ -45,7 +46,7 @@ export function settingsPageTools(page: { saved: (result: SystemSettingsResult) 
     definePageTool({
       name: 'fuli_update_settings',
       title: 'Change FULI settings',
-      description: 'Change settings that apply without a restart: topicPromotion, agentNamingStyle, resourceRefreshSeconds, updateChannel, needsPersonUrl. Other settings stay as they are.',
+      description: 'Change settings that apply without a restart: topicPromotion, flaSlashMenu, agentNamingStyle, resourceRefreshSeconds, updateChannel, needsPersonUrl. Other settings stay as they are.',
       input: CHANGES,
       routes: ['GET /api/system/settings', 'PUT /api/system/settings'],
       async run(input, context) {

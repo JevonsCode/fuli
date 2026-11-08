@@ -2,6 +2,7 @@ import { receiptText } from '../agents/identity-receipt.js';
 import { choiceNumber, parseFlaMention } from './fla-mention.js';
 import { flaCandidates, flaChoice, namedAtOpening, narrowedByPartial, rankCandidates, roleCandidates,
   unavailableReason } from './fla-picker.js';
+import { withMenuNames } from './fla-menu.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects } from './task-entry-project-mention.js';
 import { sessionMarkers, sessionTaskContext } from './task-entry-standing-owner.js';
@@ -207,11 +208,12 @@ function unavailable(target, reason, markers) {
     selection: { status: 'agent_unavailable', reason, worker_started: false }, markers };
 }
 
-// `#FLA …`: an exact name of an FLA or of one of FULI's roles
-// (rec#58), else the picker over FLAs, narrowed by a partial name; a single
-// close fit continues directly, letters in order only narrow (D-68).
+// `#FLA …`: an exact name of an FLA or of one of FULI's roles (rec#58), or
+// a client menu's name for one (fla-menu.js), else the picker over FLAs,
+// narrowed by a partial name; a single close fit continues directly,
+// letters in order only narrow (D-68).
 function explicitRequest({ query }, ranked, roles, resolution, input) {
-  const exact = query ? exactRequest(namedAtOpening(query, [...ranked, ...roles]), resolution, input) : null;
+  const exact = query ? exactRequest(namedAtOpening(query, withMenuNames([...ranked, ...roles])), resolution, input) : null;
   if (exact) return exact;
   const available = open(ranked, input);
   if (!query) return choose(available, 'list');
@@ -263,6 +265,13 @@ function target(candidate) {
 export async function personCandidates(application) {
   const { agents, projects, spaceId } = await spaceRoster(application);
   return flaCandidates(agents, projects, spaceId);
+}
+
+// Every FLA placement and built-in role a client's /fla menu lists
+// (fla-menu.js), from the same roster read task entry resolves picks with.
+export async function menuCandidates(application) {
+  const { agents, projects, spaceId } = await spaceRoster(application);
+  return [...flaCandidates(agents, projects, spaceId), ...roleCandidates(agents, projects, spaceId, null)];
 }
 
 // One read of the person's whole roster and nameable projects.

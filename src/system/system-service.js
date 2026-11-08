@@ -290,7 +290,9 @@ function settingsResult(configured, active) {
         notifications: active.notifications,
         agentNamingStyle: active.agentNamingStyle,
         topicPromotion: active.topicPromotion,
-        updateChannel: active.updateChannel
+        updateChannel: active.updateChannel,
+        flaSlashMenu: active.flaSlashMenu,
+        consoleLanguage: active.consoleLanguage
       },
       active
     )

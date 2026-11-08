@@ -4,6 +4,7 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import { i18n } from './i18n'
 import { connectDesktopClient } from './lib/desktop-client'
+import { rememberConsoleLanguage } from './features/settings/console-language'
 import { installPageTransitions } from './lib/motion'
 import { initMotionPreference } from './lib/motion-preference'
 import { router } from './router'
@@ -35,3 +36,4 @@ installPageTransitions(router)
 // Mount the recovery UI even when the initial route's assets could not load.
 await router.isReady().catch(() => undefined)
 app.mount('#app')
+void rememberConsoleLanguage()

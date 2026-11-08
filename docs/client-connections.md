@@ -162,6 +162,27 @@ Capture can be turned off per client (`disabledSources` in the capture policy, o
 
 For compatibility (rec#11 D-64), a stored list containing `other` also covers `opencode` and `antigravity`, which previously used that source. Without this, every Agent hired before Antigravity had its own source refused it, so a task in a project with a lead started with no owner. Turning OpenCode capture on keeps `other` in `disabledSources` and adds `opencode` to the optional `capturedSources` list: this overrides the legacy alias for OpenCode alone, leaving Gemini CLI, Qwen Code and generic MCP clients off. Turning OpenCode off removes that override and lists it in `disabledSources`; an explicit disabled entry always wins. Allowed-client profiles use the same legacy coverage rule. Capture policy files remain at format version 1 (or 2 for project modes): older readers build the policy field by field and ignore unknown fields, so they ignore `capturedSources` and keep the legacy capture restriction.
 
+### Pick an FLA with /fla
+
+FULI's MCP server offers the person's FLAs as MCP prompts named `fla-<name>` (a shared name adds
+its project, such as `fla-jamie-ash-beta`). Typing `/fla` in the client's / menu lists them, each
+as "name — project — role"; choosing one continues that FLA exactly like typing `#FLA <name>`.
+Names stay as written; project and role text follow the console language (this computer's language until
+the person picks one in Settings). The list changes when FLAs
+are recruited, renamed or archived, when the console language changes, or when the setting
+「在客户端里用 /fla 选择 FLA」 (Settings › Clients, `flaSlashMenu`, on by default) is turned off;
+FULI announces it with `notifications/prompts/list_changed`. Nothing is written into the client,
+so turning the setting off or disconnecting the client leaves nothing behind.
+
+| Client | /fla menu |
+| --- | --- |
+| Claude Code | Shown as `/fuli:fla-<name> (MCP)`; Tab inserts `/mcp__fuli__fla-<name>`. Type the request after it. The Claude Code hook turns the line into `#FLA fla-<name> <request>`. CJK names work end to end; the menu filters on Latin letters, so pick a CJK name with the arrow keys |
+| OpenCode 2.x, Cursor | Listed with their MCP prompts |
+| Codex | No MCP prompts. The Codex app lists prompt files from `<CODEX_HOME>/prompts` instead (JevonsCode/fuli#837); the Codex CLI reads none. Use `#FLA <name>` |
+
+The entries carry no avatar: MCP allows `icons` on a prompt, but no checked client shows one (Claude Code's
+menu is text and it hands hosts such as the Claude Desktop Code tab only the prompt names; Codex prompt files have no icon field).
+
 New dedicated adapters belong behind the shared client ports. They should add only host-specific
 configuration, hooks, transcript parsing, or execution, never a second version of Fuli's knowledge
 and role rules. Missing enhancements must remain explicit; a generic connection must not claim

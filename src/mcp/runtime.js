@@ -29,6 +29,7 @@ export async function runStdio({ runtimeConfigPath, sourceApplication, toolNames
     nativeRequestContext: nativeMcpRequestContextResolver(sourceApplication),
     toolNames,
     toolProfile,
+    flaMenu: true,
     withRuntimeLease: leaseClient.withGraphLease,
     onSession: sessionId => registration?.recordSession(sessionId)
   });

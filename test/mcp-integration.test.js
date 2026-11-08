@@ -821,7 +821,9 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   });
   assert.match(tasteResource.contents[0].text, /FULI global taste selection/);
   assert.match(tasteResource.contents[0].text, /writing\.direct/);
-  await assert.rejects(connection.client.listPrompts(), /Method not found/);
+  // The person's FLAs for the client's /fla menu (fla-menu-prompts.js); this synthetic roster has none.
+  assert.equal(connection.client.getServerCapabilities().prompts?.listChanged, true);
+  assert.ok(Array.isArray((await connection.client.listPrompts()).prompts));
 });
 
 test('Agent 项目写入必须使用匹配且一次性的预览授权', async (t) => {

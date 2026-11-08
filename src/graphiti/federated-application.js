@@ -176,6 +176,11 @@ export function openFederatedGraphApplication({
     app.delegatedConsole = createDelegatedConsoleClient({ consoleUrl: () => sourceConsoleUrl(runtimeConfigPath), fetchImpl });
     app.agentNamingStyle = () => readRuntimeSettings(paths.runtimeSettingsPath).agentNamingStyle;
     app.topicPromotion = () => readRuntimeSettings(paths.runtimeSettingsPath).topicPromotion;
+    // Whether clients list the FLAs in their / menu, and in which language (fla-menu.js).
+    app.flaMenuSettings = () => {
+      const settings = readRuntimeSettings(paths.runtimeSettingsPath);
+      return { enabled: settings.flaSlashMenu, language: settings.consoleLanguage };
+    };
   }
   return app;
 }

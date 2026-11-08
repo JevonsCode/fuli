@@ -817,6 +817,10 @@ export interface RuntimeSettings {
   topicPromotion: 'auto' | 'ask'
   // Which releases the console offers (设置 › 版本).
   updateChannel: 'stable' | 'beta'
+  // Agent clients list the person's FLAs under /fla (设置 › 客户端).
+  flaSlashMenu: boolean
+  // The console language FULI's server uses for clients; '' until the person picks one.
+  consoleLanguage: '' | 'zh-CN' | 'en-US'
 }
 
 export interface SystemSettingsResult {

@@ -376,6 +376,18 @@ test('the same name in several projects asks among exactly those; one FLA in thi
   assert.deepEqual(outside.human_interaction.options, ['1. Ada Lead — Alpha — 负责人', '2. Ada Lead — Beta — 负责人']);
 });
 
+test('a pick from the client\'s /fla menu names exactly that FLA and project, even when the name is shared (11-08)', async () => {
+  const { hook, memoryReads } = fixture({ roster: [ADA, JAMIE, JAMIE_C, JADE, JEFA] });
+  // What the Claude Code adapter sends for /mcp__fuli__fla-jamie-ash-gamma (fla-menu-command.js).
+  const entry = await hook('#FLA fla-jamie-ash-gamma 看一下构建');
+  assert.deepEqual(owner(entry), ['project-c', 'jamie-c']);
+  assert.equal(entry.human_interaction, undefined);
+  assert.ok(memoryReads().length && memoryReads().every(read => read.startsWith('jamie-c@')), 'nobody else is loaded');
+  // A built-in role's menu name finds its project from the folder, as #FLA Bole does.
+  const role = await withScope(fixture({ roster: [ADA, BOLE] })).run('#FLA fla-bole 招一个前端');
+  assert.deepEqual(owner(role), ['project-a', 'employee.bole']);
+});
+
 test('the binding holds for later turns, in hooks and MCP alike, until another FLA is named or it is released', async () => {
   const { run, hook, tasks } = fixture();
   await hook('#FLA Jamie Ash 继续刚才的任务');
