@@ -4,11 +4,16 @@
  * zeroed by the reduced-motion rules in primitives.css like every other
  * animation.
  *
- * Page changes (lib/motion.ts installPageTransitions): the top bar and the
- * dock keep their place while the page fades out and the next one rises in
- * on the shared spring.
+ * Page changes (lib/motion.ts installPageTransitions): the old page leaves at
+ * once and the next one rises in on the shared spring, on its own root
+ * elements, with opacity and transform only. It holds its final width and place
+ * from the first frame: no View Transition wraps it, because the layers rebuilt
+ * when one ends were painted a tile at a time (the right half blank for a few
+ * frames, Jevons 11-08). The top bar and dock are outside the page and stay put.
  */
-/* Named only while a page changes (lib/motion.ts): a named element is a backdrop
+.page-enter { animation: page-in var(--motion-enter) both; }
+/* The one View Transition left: a workbench card growing into its list page.
+   Named only while it runs (lib/motion.ts): a named element is a backdrop
    root, so a permanent name stopped the dock's glass from blurring the page. */
 .is-page-changing .app-topbar { view-transition-name: app-topbar; }
 .is-page-changing .app-dock { view-transition-name: app-dock; }
