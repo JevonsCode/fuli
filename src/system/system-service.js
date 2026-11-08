@@ -42,6 +42,7 @@ import { createNpmCopyControl } from '../desktop/npm-copy-control.js';
 import { createCliPathControl } from '../desktop/cli-path.js';
 import { readWindowsInstallation } from '../desktop/windows-installation-context.js';
 import { createWhatsNew } from '../whats-new/whats-new.js';
+import { desktopClientOpensLinks } from '../desktop/desktop-client-links.js';
 
 const MCP_SCAN_CACHE_MS = 5 * 60_000;
 
@@ -77,6 +78,8 @@ export function createSystemService({
     installRoot: windowsInstallRoot(packageRoot) }) : null,
   // What is new in the installed version, and whether the console has said so yet.
   whatsNew = createWhatsNew({ dataDir: paths.dataDir }),
+  // Whether this installation's desktop client opens fuli:// links (the console's 「在客户端打开」).
+  desktopClientOpens = desktopClientOpensLinks({ packageRoot }),
   // The data format plan (migration-plan.js) the doctor reads; null without a local installation.
   previewDataFormats = null,
   // Reads Codex's hook trust from its app-server (src/agents/codex/hook-trust.js).
@@ -191,6 +194,7 @@ export function createSystemService({
     npmCopies: npmCopyControl,
     cliPath: cliPathControl,
     whatsNew,
+    desktopClientOpensLinks: desktopClientOpens,
     getSettings,
     updateSettings,
     startSettingsApply: (id) => settingsApplier.start(id),

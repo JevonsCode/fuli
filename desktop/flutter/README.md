@@ -44,10 +44,15 @@ A Windows and macOS app for people who do not use a terminal: one window and a t
 - The console port is `ports.console` in the data directory's `runtime-settings.json` (default 2727).
 - `fuli://` links (`lib/src/platform/fuli_link.dart`) only navigate, so they keep working when the
   port changes or a chat app drops `http://127.0.0.1` links: `fuli://status` (or `fuli://`) shows
-  this window; `fuli://<path>?<query>` opens `http://127.0.0.1:<console port>/<path>?<query>` in the
-  browser. Only plain console paths pass: no other host, port, user info or fragment, no `.`/`..`
-  segments or encoded slashes, printable ASCII only (percent-encode the rest), at most 2048
-  characters. Anything else is ignored. A start for a console link keeps the window hidden.
+  this window; `fuli://<path>?<query>` opens `http://127.0.0.1:<console port>/<path>?<query>` in
+  this window's console view and shows the window (`console_navigation.dart`: the view that shows
+  loads it; while FULI is not up yet the next view starts at it). Only console pages ever load
+  there. Without a WebView runtime the page opens in the browser. Only plain console paths pass: no
+  other host, port, user info or fragment, no `.`/`..` segments or encoded slashes, printable ASCII
+  only (percent-encode the rest), at most 2048 characters. Anything else is ignored.
+- The console in a browser offers 「在客户端打开」 in its top bar while this computer's client opens
+  `fuli://` links (`GET /api/system/desktop-client`, `src/desktop/desktop-client-links.js`): the
+  link of the page it shows, without its hash (`web/src/features/open-in-app`).
 - 「导出诊断包…」 in the tray menu follows `fuli://settings?tab=system&setting=diagnostics`: the
   settings page's 诊断包 card, where the person previews the redacted bundle and exports it.
 - Checks every 15 s while the window is visible and every 120 s while hidden, backing off when the

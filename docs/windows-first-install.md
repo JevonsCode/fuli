@@ -50,7 +50,10 @@ FuliTray.exe is no longer built.
   points it at its own version; updates and rollbacks follow it like the launch-at-login
   entry, and uninstall removes the key when it opens this installation. A rollback to a
   version whose client predates `fuli://` keeps the key on that launcher, which refuses
-  the link with its message until a newer client registers again.
+  the link with its message until a newer client registers again. A console page link opens
+  in the client's own window; the console in a browser offers 「在客户端打开」 while this key
+  opens this installation's launcher (`GET /api/system/desktop-client`, read at most once a
+  minute).
 - Windows notifications use the identity `HKCU\Software\Classes\AppUserModelId\FULI`
   (`DisplayName` FULI, `IconUri` the installed client's `fuli.png`), which each start of
   the installed client writes where it is missing or differs. Never a Start-menu shortcut:

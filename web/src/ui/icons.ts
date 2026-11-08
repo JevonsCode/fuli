@@ -50,6 +50,8 @@ export const ICONS = {
   trayFull: '<g class="tray-rice"><path class="tray-rice-mound" d="M3.2 14.2c-.9-2.2.4-4.3 2.5-4.4-.1-2.5 2.1-4.4 4.6-3.8.9-2.1 3.6-2.9 5.5-1.6 2.2-.4 4 1.4 3.8 3.5 2 .6 2.9 2.7 2 4.6.6.5.7 1.2.4 1.7z"/><ellipse class="tray-rice-spill" cx="2.4" cy="16.6" rx="1" ry=".75"/><ellipse class="tray-rice-spill" cx="21.7" cy="17.5" rx="1" ry=".75"/><circle class="tray-grain tray-grain--1" cx="7" cy="11.4" r=".95"/><circle class="tray-grain tray-grain--2" cx="9.6" cy="8.4" r=".95"/><circle class="tray-grain tray-grain--3" cx="12.2" cy="11.2" r=".95"/><circle class="tray-grain tray-grain--4" cx="13.6" cy="7" r=".95"/><circle class="tray-grain tray-grain--5" cx="16.4" cy="9.6" r=".95"/><circle class="tray-grain tray-grain--2" cx="18.3" cy="12.4" r=".95"/><circle class="tray-grain tray-grain--4" cx="9.5" cy="12.9" r=".8"/><circle class="tray-grain tray-grain--1" cx="15" cy="12.8" r=".8"/></g><path class="tray-front" d="M3.6 14.4h16.8l-1.1 5.2a1.5 1.5 0 0 1-1.5 1.2H6.2a1.5 1.5 0 0 1-1.5-1.2z"/><path class="tray-slot" d="M7.4 16.8h2.7l.7 1.3h2.4l.7-1.3h2.7"/>',
   refresh: '<path d="M19.5 9A7.8 7.8 0 1 0 20 14"/><path d="M20 4v5h-5"/>',
   external: '<path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v4.5A1.5 1.5 0 0 1 16.5 20h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"/>',
+  // 在客户端打开: the client's window, with the page going into it.
+  openInApp: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 8.5h17"/><path d="M9 16.5 14 11.5"/><path d="M10 11.5h4v4"/>',
 } as const
 
 export type IconName = keyof typeof ICONS
