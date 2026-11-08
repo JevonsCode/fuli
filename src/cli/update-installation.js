@@ -68,7 +68,8 @@ export function formatShadowedLaunchers(installation, { target = installation.cl
 
 // The one command that removes an npm global installation of FULI, or null
 // for a folder that is not one. npm keeps a global package at
-// <prefix>/lib/node_modules/<name> (macOS, Linux) or <prefix>\node_modules\<name> (Windows).
+// <prefix>/lib/node_modules/<name> (macOS, Linux, a Unix-style prefix on
+// Windows) or <prefix>\node_modules\<name> (Windows).
 export function npmUninstallCommand(packageRoot, platform = process.platform) {
   const prefix = npmGlobalPrefix(packageRoot, platform);
   return prefix ? `npm uninstall --global ${FULI_PACKAGE_NAME} --prefix ${quoteShellArgument(prefix, platform)}` : null;
@@ -80,7 +81,8 @@ export function npmGlobalPrefix(packageRoot, platform = process.platform) {
   const nodeModules = path.dirname(packageRoot);
   if (path.basename(packageRoot) !== FULI_PACKAGE_NAME || path.basename(nodeModules) !== 'node_modules') return null;
   const parent = path.dirname(nodeModules);
-  return platform === 'win32' ? parent : path.basename(parent) === 'lib' ? path.dirname(parent) : null;
+  if (path.basename(parent) === 'lib') return path.dirname(parent);
+  return platform === 'win32' ? parent : null;
 }
 
 // A shell skips a launcher it cannot execute, so only runnable ones can shadow another.
