@@ -345,6 +345,8 @@ service. See the [remote connector setup](agent-tools.md#remote-claude--cowork-c
 
 在设置 → 客户端接入的“本机客户端”中，点击 agent-installer 检测到的客户端的“接入”；没有自动接入的客户端（例如公司内部的 Agent 客户端）在右侧“手动接入”里添加，按显示的位置粘贴通用 MCP 配置。操作只在运行控制台的本机可用：由 agent-installer 先把要改的配置备份到数据目录的 `backups/agents/`，再安装并自检，成功后需重启客户端。客户端自己的信任/启用步骤仍由客户端提示；配置自检不代表 MCP 已成功运行。失败或部分完成时，可重试或运行 `fuli setup` 查看详细原因。agent-installer 无法下载时（离线，或这个平台没有它的发布版本）不会写入任何客户端，提示“无法下载客户端组件，请检查网络后重试”。
 
+“一键接入”逐个写入还没接好的客户端（包括“需要更新”的），每写完一个就重新读一次状态，摘要行显示正在接入的客户端和进度。接过 FULI 的客户端需要更新时（体检的 `client_outdated`），右上角“设置”按钮有个小红点，点它直接打开“客户端”；都更新后红点消失。
+
 | 客户端 | 全局配置 | 官方格式 |
 | --- | --- | --- |
 | Gemini CLI | `~/.gemini/settings.json` | [`mcpServers`，command + args](https://geminicli.com/docs/tools/mcp-server/) |

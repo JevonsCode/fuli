@@ -11,6 +11,7 @@ import { currentLocale, t } from '@/i18n'
 import { formatDateTime } from '@/lib/date-time'
 import UiIcon from '@/ui/UiIcon.vue'
 import UiNotice from '@/ui/UiNotice.vue'
+import { refreshDoctorReport } from '@/features/doctor/doctor-report'
 import { useConsoleStore } from '@/stores/console'
 
 import { CUSTOM_CLIENT_FORMATS, canConnect, connectActionKey, connectionSummary, shownClients, type ClientObservation, type ClientStatus,
@@ -50,7 +51,10 @@ const formatOptions = computed(() => CUSTOM_CLIENT_FORMATS.map((value) => ({ val
 const clients = computed(() => shownClients(observation.value))
 const customClients = computed<CustomClient[]>(() => observation.value?.customClients ?? [])
 const summary = computed(() => connectionSummary(observation.value))
-const busy = computed(() => Boolean(connecting.value) || connectingAll.value || addPending.value || Boolean(removing.value))
+// A write in flight: no status read starts until it ends. Between the clients of 一键接入 nothing is in flight,
+// so each client's new status is read as soon as it is written.
+const writePending = computed(() => Boolean(connecting.value) || addPending.value || Boolean(removing.value))
+const busy = computed(() => writePending.value || connectingAll.value)
 // 一键接入 (Jevons 11-02): every client FULI can write that is not connected yet, one after another.
 const connectable = computed(() => clients.value.filter(client => canConnect(client) && client.status !== 'connected'))
 // A connected client gets the shared check icon; the other states keep their plain marks.
@@ -69,7 +73,7 @@ const watching = () => active && !unmounted && document.visibilityState === 'vis
 // One request at a time; a response older than the shown one, or requested
 // before the view hid or a write began, never replaces it.
 async function check() {
-  if (checking.value || busy.value || !watching()) return
+  if (checking.value || writePending.value || !watching()) return
   clearTimeout(timer)
   checking.value = true
   const requested = generation
@@ -89,13 +93,15 @@ async function check() {
     else void check()
   }
 }
-// A write invalidates any observation in flight and rechecks when it ends.
+// A write invalidates any observation in flight and reads the status again when it ends, before the
+// next write starts; the top bar's 设置 dot reads the doctor again too.
 async function writing(run: () => Promise<void>) {
   generation += 1
   clearTimeout(timer)
   try { await run() } finally {
     generation += 1
-    void check()
+    await check()
+    void refreshDoctorReport()
   }
 }
 // One client's write, shared by its own 接入 and 一键接入; its result shows on its tile.
@@ -117,12 +123,21 @@ async function connect(client: ClientObservation) {
   await connectOne(client)
 }
 const connectingAll = ref(false)
+// 一键接入's one indicator names the client being written and how far it is.
+const bulk = ref<{ client: string, index: number, count: number } | null>(null)
 async function connectAll() {
   if (busy.value || !connectable.value.length) return
   connectingAll.value = true
+  const queue = [...connectable.value]
   try {
-    for (const client of [...connectable.value]) await connectOne(client)
-  } finally { connectingAll.value = false }
+    for (const [index, client] of queue.entries()) {
+      bulk.value = { client: client.label, index: index + 1, count: queue.length }
+      await connectOne(client)
+    }
+  } finally {
+    connectingAll.value = false
+    bulk.value = null
+  }
 }
 async function addClient() {
   if (busy.value || !draft.name.trim() || !draft.mcpFile.trim()) return
@@ -209,11 +224,12 @@ async function copy() {
       <CardTitle id="client-connection-title" as="h2">{{ t('settings.connection.title') }}<AiHelpButton term="task.clients" /></CardTitle>
       <!-- Reserved height: the summary appears without moving anything below it. -->
       <CardDescription class="connection-summary" data-connection-summary>
-        <template v-if="observation?.available !== false && summary.total">{{ t('settings.connection.summary', summary) }}</template>
+        <GrowthLoading v-if="bulk" variant="inline" data-connecting-all :label="t('settings.connection.clients.connectingAll', bulk)" />
+        <template v-else-if="observation?.available !== false && summary.total">{{ t('settings.connection.summary', summary) }}</template>
       </CardDescription>
       <CardAction class="connection-actions">
-        <Button size="sm" data-connect-all :disabled="busy || !connectable.length" :loading="connectingAll"
-          :loading-label="t('settings.connection.clients.connectingAll')" @click="connectAll">
+        <!-- Its progress shows once, in the summary line; the button only waits. -->
+        <Button size="sm" data-connect-all :disabled="busy || !connectable.length" @click="connectAll">
           {{ t('settings.connection.clients.connectAll') }}
         </Button>
         <Button variant="outline" size="icon-sm" class="connection-refresh" data-refresh-clients :disabled="checking"
@@ -256,7 +272,7 @@ async function copy() {
               </p>
               <!-- The tile's action sits at its foot, so tiles of one row line up their buttons. -->
               <Button v-if="canConnect(client) && client.status !== 'connected'" size="sm" variant="outline" class="client-row__action"
-                :data-connect-client="client.id" :disabled="busy" :loading="connecting === client.id"
+                :data-connect-client="client.id" :disabled="busy" :loading="connecting === client.id && !connectingAll"
                 :loading-label="t('settings.connection.clients.connecting', { client: client.label })" @click="connect(client)">
                 {{ t(`settings.connection.clients.${connectActionKey(client.status)}`) }}
               </Button>
@@ -347,6 +363,9 @@ async function copy() {
 .connection-settings a { font-size: 13px; }
 /* One line is always reserved so the summary never pushes the sections down. */
 .connection-summary { min-height: 1.5em; }
+/* 一键接入's progress stays on that one line, cut short in a narrow window rather than wrapping. */
+.connection-summary :deep(.growth-loading__content) { max-width: 100%; }
+.connection-summary :deep(.growth-loading__label) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .connection-refresh svg { width: 18px; height: 18px; }
 .connection-actions { display: flex; gap: 8px; }
 /* Detected clients first, connecting by hand below, both full width. */

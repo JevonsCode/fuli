@@ -10,6 +10,7 @@ import { setLocale } from '@/i18n'
 import { fuliWordmarkUrl } from '@/lib/brand'
 import { useConsoleStore } from '@/stores/console'
 import AppShell from './AppShell.vue'
+import { doctorReport, refreshDoctorReport } from '@/features/doctor/doctor-report'
 import { usePageTitle } from './page-title'
 import { usePageRefresh } from './page-refresh'
 import { updateDocumentTitle } from '@/router/meta'
@@ -26,8 +27,12 @@ vi.mock('@/api/client', () => ({
 let attentionTotal = 0
 let pinnedIds: string[] = []
 
+let doctorItems: unknown[] = []
+
 beforeEach(() => {
   attentionTotal = 0
+  doctorItems = []
+  doctorReport.value = null
   pinnedIds = []
   vi.mocked(getJson).mockReset()
   vi.mocked(getJson).mockImplementation(async (url: string) => {
@@ -38,7 +43,7 @@ beforeEach(() => {
     if (url === '/api/project-agent-tasks?personalSpaceId=personal-1&agentId=agent-a&limit=200')
       return { tasks: [{ taskId: 't-1', personalSpaceId: 'personal-1', status: 'running', ownerAgentId: 'agent-a', participants: [] }] }
     if (url === '/api/agent-workflows?personalSpaceId=personal-1&agentId=agent-a') return { workflows: [] }
-    if (url === '/api/system/doctor') return { checkedAt: '', version: '0.20.0', overall: 'ok', items: [], unchecked: [] }
+    if (url === '/api/system/doctor') return { checkedAt: '', version: '0.20.0', overall: doctorItems.length ? 'needs_person' : 'ok', items: doctorItems, unchecked: [] }
     if (url === '/api/system/version') return { status: 'unavailable', currentVersion: '0.20.0', latestVersion: null, updateAvailable: false, packageUrl: '', checkedAt: '' }
     throw new Error(`Unexpected request: ${url}`)
   })
@@ -239,6 +244,25 @@ describe('AppShell', () => {
     expect(wrapper.find('[data-app-version] [data-update-dot]').exists()).toBe(true)
     expect(wrapper.get('[data-app-version]').attributes('aria-label')).toContain('0.21.0')
     expect(wrapper.find('.brand-compact-update').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  // Jevons 0.25.0: a client that needs its FULI update is a dot on 设置, which then opens 客户端.
+  it('marks 设置 with a dot while a client needs an update and opens 客户端 from it', async () => {
+    doctorItems = [{ id: 'client_outdated:codex', kind: 'client_outdated', severity: 'warning', fix: 'auto',
+      data: { clientId: 'codex', label: 'Codex', status: 'changed' } }]
+    const { wrapper } = await setup('/')
+    const settings = wrapper.get('[data-destination="settings"]')
+    expect(settings.find('[data-clients-update-dot]').exists()).toBe(true)
+    expect(settings.get('[data-clients-update-dot]').attributes('aria-hidden')).toBe('true')
+    expect(settings.attributes('aria-label')).toBe('设置：有客户端要更新接入')
+    expect(settings.attributes('href')).toBe('/settings?tab=clients')
+    doctorItems = []
+    await refreshDoctorReport()
+    await flushPromises()
+    expect(settings.find('[data-clients-update-dot]').exists()).toBe(false)
+    expect(settings.attributes('aria-label')).toBe('设置')
+    expect(settings.attributes('href')).toBe('/settings')
     wrapper.unmount()
   })
 

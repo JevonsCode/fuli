@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import { apiErrorReason } from '@/api/client'
@@ -7,9 +7,10 @@ import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import {
-  attentionItems, canRepair, doctorItemView, outdatedSessions, portsMovedNotice, readDoctor, repairDoctor, repairingLabel,
+  attentionItems, canRepair, doctorItemView, outdatedSessions, portsMovedNotice, repairDoctor, repairingLabel,
   type DoctorReport, type DoctorRepairResult,
 } from './model'
+import { doctorReport, refreshDoctorReport } from './doctor-report'
 import DoctorOutdatedSessions from './DoctorOutdatedSessions.vue'
 
 // The shell's chip when FULI's 体检 finds something that needs the person:
@@ -21,27 +22,24 @@ const POLL_MS = 60_000
 const PORT_MOVE_STORAGE_KEY = 'fuli.doctor.port-move'
 
 const store = useConsoleStore()
-const report = ref<DoctorReport | null>(null)
+// Shared with the 设置 button's dot (doctor-report.ts).
+const report = doctorReport
 const open = ref(false)
 const root = ref<HTMLElement | null>(null)
 const repairing = ref(false)
 const failure = ref('')
-let reading = false
 let announcedPortMove = ''
 let timer: ReturnType<typeof setInterval> | undefined
 
 const items = computed(() => attentionItems(report.value))
 const views = computed(() => items.value.map(item => ({ id: item.id, ...doctorItemView(item), sessions: outdatedSessions(item) })))
 const shown = computed(() => report.value !== null && report.value.overall !== 'ok' && items.value.length > 0)
+// Every answer, whoever asked for it, may carry a port move to say.
+watch(report, answer => { if (answer) announcePortMove(answer) })
 
 async function refresh() {
-  if (reading || repairing.value || document.visibilityState === 'hidden') return
-  reading = true
-  try {
-    report.value = await readDoctor()
-    announcePortMove(report.value)
-  } catch { /* keep the last answer; the next read tries again */ }
-  finally { reading = false }
+  if (repairing.value || document.visibilityState === 'hidden') return
+  await refreshDoctorReport()
 }
 
 // FULI moved a port by itself when it started: said once in the shell's
