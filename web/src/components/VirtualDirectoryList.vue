@@ -2,6 +2,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { t } from '@/i18n'
+import { listPositionText } from '@/lib/list-position'
+
+// The position capsule shows while the list moves, when a pointer enters it or focus
+// moves into it, and fades this long after the last of those.
+const POSITION_AWAKE_MS = 1400
+// The reader hears where they are once the scrolling has settled, never on every frame.
+const POSITION_SETTLE_MS = 400
 
 const props = withDefaults(defineProps<{
   items: readonly T[]
@@ -32,7 +39,7 @@ const emit = defineEmits<{ nearEnd: [] }>()
 
 defineSlots<{
   header?: () => unknown
-  default: (props: { item: T; index: number; formattedIndex: string }) => unknown
+  default: (props: { item: T; index: number }) => unknown
   empty?: () => unknown
   footer?: () => unknown
 }>()
@@ -52,14 +59,14 @@ const pageScroll = computed(() => props.scrollsWith === 'page')
 const scrollElement = computed(() => (pageScroll.value ? page.value : scroller.value))
 
 const itemCount = computed(() => props.items.length)
-const indexWidth = computed(() => Math.max(3, String(itemCount.value).length))
 // Where you are only matters once the rows are taller than what shows at once;
-// a short list shows no 001/001.
+// a short list shows no 1 / 1.
 const showsPosition = computed(() => itemCount.value * props.rowHeight > viewportHeight.value)
 const currentIndex = computed(() => {
   if (!itemCount.value) return 0
   return Math.min(itemCount.value, Math.floor(scrollTop.value / props.rowHeight) + 1)
 })
+const positionText = computed(() => listPositionText(currentIndex.value, itemCount.value))
 const visibleRange = computed(() => {
   const start = Math.max(
     0,
@@ -134,11 +141,36 @@ watch([scrollElement, () => props.activeIndex], async ([element, activeIndex]) =
   scrollIndexIntoView(activeIndex)
 }, { flush: 'post' })
 
-onBeforeUnmount(() => resizeObserver?.disconnect())
+const positionAwake = ref(false)
+const positionAnnouncement = ref('')
+let awakeTimer: ReturnType<typeof setTimeout> | undefined
+let settleTimer: ReturnType<typeof setTimeout> | undefined
 
-function formatIndex(index: number) {
-  return String(index).padStart(indexWidth.value, '0')
+function wakePosition() {
+  positionAwake.value = true
+  clearTimeout(awakeTimer)
+  awakeTimer = setTimeout(() => { positionAwake.value = false }, POSITION_AWAKE_MS)
 }
+
+function announcePosition() {
+  positionAnnouncement.value = t('common.counts.listPosition', {
+    current: positionText.value.current,
+    total: positionText.value.widest,
+  })
+}
+
+// Any movement of the rows shows the capsule; the live region is written only once it stops.
+watch(scrollTop, () => {
+  wakePosition()
+  clearTimeout(settleTimer)
+  settleTimer = setTimeout(announcePosition, POSITION_SETTLE_MS)
+})
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  clearTimeout(awakeTimer)
+  clearTimeout(settleTimer)
+})
 
 // Where the first row sits in the scrolling element's content: 0 in the
 // list's own box (the header scrolls with it), the rows' offset in the page.
@@ -192,7 +224,14 @@ defineExpose({
 </script>
 
 <template>
-  <section ref="root" class="virtual-directory-list" :class="{ 'is-page-scroll': pageScroll }" :aria-label="label">
+  <section
+    ref="root"
+    class="virtual-directory-list"
+    :class="{ 'is-page-scroll': pageScroll }"
+    :aria-label="label"
+    @pointerenter="wakePosition"
+    @focusin="wakePosition"
+  >
     <div
       ref="scroller"
       class="virtual-directory-list__scroller"
@@ -220,11 +259,7 @@ defineExpose({
           }"
         >
           <div class="virtual-directory-list__content">
-            <slot
-              :item="items[index] as T"
-              :index="index"
-              :formatted-index="formatIndex(index + 1)"
-            />
+            <slot :item="items[index] as T" :index="index" />
           </div>
         </div>
       </div>
@@ -245,17 +280,18 @@ defineExpose({
       </div>
     </div>
 
-    <output
-      v-if="showsPosition"
-      class="virtual-directory-list__position"
-      :aria-label="t('common.counts.listPosition', {
-        current: currentIndex,
-        total: itemCount,
-      })"
-    >
-      <strong>{{ formatIndex(currentIndex) }}</strong>
-      <span>{{ formatIndex(itemCount) }}</span>
-    </output>
+    <template v-if="showsPosition">
+      <!-- For the eye only: the live region below says it, and only once the list settles. -->
+      <div
+        class="virtual-directory-list__position"
+        :class="{ 'is-awake': positionAwake }"
+        aria-hidden="true"
+      >
+        <span class="virtual-directory-list__current" :data-widest="positionText.widest"><span>{{ positionText.current }}</span></span>
+        <span>/ {{ positionText.total }}</span>
+      </div>
+      <span class="ui-sr-only" role="status" aria-live="polite">{{ positionAnnouncement }}</span>
+    </template>
   </section>
 </template>
 
@@ -315,50 +351,87 @@ defineExpose({
   z-index: 2;
 }
 
-/* Where you are in the list, standing up along the right edge (Jevons 11-06): a narrow
-   glass capsule, current over total, that takes no room from the rows. */
+/* Where you are in the list (Jevons 11-08): one line of glass, `1,284 / 25,000`, current in ink
+   and the total muted, in the console's own font with tabular numerals. It shows only while the
+   list moves or is touched and fades after. It sits at the bottom centre, clear of the row
+   actions at the right edge and of the page outline (目录) in the right margin. Opacity and
+   transform only, so nothing is laid out again and no row moves for it. */
 .virtual-directory-list__position {
+  --position-height: 28px;
   position: absolute;
   z-index: 4;
-  right: 4px;
   bottom: 12px;
+  left: 50%;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 3px;
-  padding: 8px 4px;
-  border-radius: 999px;
+  justify-content: center;
+  gap: 4px;
+  box-sizing: border-box;
+  height: var(--position-height);
+  padding-inline: 12px;
+  border-radius: var(--radius-pill);
   color: var(--color-muted);
   background: var(--glass-sheen), var(--surface-dock);
   box-shadow: var(--shadow-glass);
   -webkit-backdrop-filter: var(--filter-dock);
   backdrop-filter: var(--filter-dock);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
+  font-family: var(--font-ui);
+  font-size: var(--text-meta);
+  font-weight: var(--weight-medium);
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 6px);
+  transition: opacity var(--motion-exit), transform var(--motion-exit);
   pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.virtual-directory-list__position.is-awake {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  transition: opacity var(--motion-medium) var(--motion-ease-out), transform var(--motion-enter);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .virtual-directory-list__position { background: var(--color-surface); }
 }
-.virtual-directory-list__position span::before {
-  display: block;
-  width: 12px;
-  height: 1px;
-  margin: 0 auto 3px;
-  background: var(--color-border-strong);
-  content: "";
+/* The current number is as wide as the total written in full and set right, so the slash and
+   the capsule stay where they are from the first row to the last. */
+.virtual-directory-list__current {
+  display: inline-grid;
+  justify-items: end;
+  color: var(--color-ink);
+  font-weight: var(--weight-strong);
 }
+.virtual-directory-list__current::before,
+.virtual-directory-list__current > span {
+  grid-area: 1 / 1;
+}
+.virtual-directory-list__current::before {
+  content: attr(data-widest);
+  visibility: hidden;
+}
+/* In the page the capsule sticks to the bottom of the page's scrollport. The page keeps 112px
+   free there for the floating dock (centred on a phone too), so it never meets the dock. */
 .is-page-scroll .virtual-directory-list__position {
   position: sticky;
-  right: auto;
+  bottom: 0;
+  left: auto;
   width: fit-content;
-  margin: -64px 4px 0 auto;
+  margin: calc(-1 * var(--position-height)) auto 0;
+  transform: translateY(6px);
 }
-.virtual-directory-list__position strong {
-  color: var(--color-ink);
-  font-size: 12px;
-  font-weight: 720;
+.is-page-scroll .virtual-directory-list__position.is-awake { transform: none; }
+/* Reduced motion (the system's or the app's switch): the capsule only fades, it does not rise. */
+@media (prefers-reduced-motion: reduce) {
+  .virtual-directory-list__position,
+  .virtual-directory-list__position.is-awake { transition: opacity var(--motion-exit); transform: translate(-50%, 0); }
+  .is-page-scroll .virtual-directory-list__position,
+  .is-page-scroll .virtual-directory-list__position.is-awake { transform: none; }
 }
+:root[data-motion="reduced"] .virtual-directory-list__position,
+:root[data-motion="reduced"] .virtual-directory-list__position.is-awake { transition: opacity var(--motion-exit); transform: translate(-50%, 0); }
+:root[data-motion="reduced"] .is-page-scroll .virtual-directory-list__position,
+:root[data-motion="reduced"] .is-page-scroll .virtual-directory-list__position.is-awake { transform: none; }
 </style>

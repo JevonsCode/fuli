@@ -234,8 +234,8 @@ const statusLabel = (status: string) => taskStatusLabel(status, { unrecognized: 
 .workbench-list-filters { display: flex; flex-wrap: wrap; gap: 8px 10px; }
 .workbench-list-filter { width: 168px; }
 .workbench-list-rows { flex: 1; min-height: 0; margin: 0 -10px; }
-/* Rows keep their right edge clear of the list's position capsule. */
-.workbench-list-rows :deep(.virtual-directory-list__content) { padding-right: 28px; border-bottom: 1px solid var(--color-border); }
+/* Rows keep the card's own inset on the right, as the -10px margin above gives it back. */
+.workbench-list-rows :deep(.virtual-directory-list__content) { padding-right: 10px; border-bottom: 1px solid var(--color-border); }
 .workbench-list-notice { height: 100%; padding: 0 10px; }
 .workbench-list-more { padding: 10px; }
 .workbench-list-none { display: flex; align-items: center; gap: 8px; margin: 4px 0; color: var(--color-muted); font-size: var(--text-body); }
