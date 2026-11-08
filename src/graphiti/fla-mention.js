@@ -6,12 +6,11 @@
 // attaches files with `@"C:\…\clip.mp4"`, Cursor and Codex reference with it),
 // so `@` never addresses an FLA: `@Name`, `@FLA` and `@FLG` are plain text.
 //
-// - `#FLA <name>` at the very start names one of the person's FLAs or one of
-//   FULI's own roles (Bole, Jefa, Tonborg, Astro; rec#58). `#FLA` also counts
-//   at the start of a line, and right after a request word (`请让 #FLA Jamie
-//   Ash 看一下`, `帮我 #FLA 小林 …`, `please #FLA …`), where it takes only an
-//   exact name (`inline`) and never opens the picker. Anywhere else, in quotes
-//   or in code it is text, such as a question about the syntax.
+// - `#FLA <name>` names one of the person's FLAs or one of FULI's own roles
+//   (Bole, Jefa, Tonborg, Astro; rec#58), only at the very start of the
+//   message, after any whitespace and any files the client attached first.
+//   Case does not matter (`#fla`, `#Fla`). Anywhere else (mid-sentence, a
+//   later line, quotes, code) `#FLA` is text, such as a remark about the syntax.
 // - `#FLA {agentId}` (percent-encoded) is the stable form FULI writes into
 //   continuation prompts and roundtable wakes (flaAddress).
 // - A bare `#FLA` asks for the picker; `#FLA 2` answers it;
@@ -25,8 +24,6 @@
 //   "一起看" does not.
 
 const KEYWORD = /^#FLA(?=$|\s)/iu;
-const LINE_KEYWORD = /\n[ \t]*#FLA(?=$|\s)/iu;
-const REQUEST_KEYWORD = /(?:请|让|帮我|麻烦|交给|(?<![\p{L}\p{N}_])(?:please|ask|let))[ \t,，:：]*#FLA(?=$|\s)/iu;
 const GROUP = /^#FLG(?=$|[\s:：,，])/iu;
 const RELEASE = /^(?:结束|释放|解除|退出|停止|end|release|stop)\s*[。.!！]?\s*$/iu;
 const CHOICE = /^(\d{1,2})\s*[.、)）]?\s*$/u;
@@ -42,8 +39,11 @@ const MODE = String.raw`(?:(${SESSION_MODE})|(${ROUNDTABLE_MODE}))`;
 const CHOICES = new RegExp(String.raw`^(\d{1,2}(?:\s*[,，、\s]\s*\d{1,2})*)\s*[,，。]?\s*(?:开始|确认|go|start|ok)?`
   + String.raw`\s*[,，]?\s*${MODE}?\s*[。.!！]?\s*$`, 'iu');
 const CONFIRM = new RegExp(String.raw`^(开始吧|开始|确认|go|start)?\s*[,，]?\s*${MODE}?\s*[。.!！]?\s*$`, 'iu');
-// Inline code, fenced blocks and quotes are quoted text, never an address.
-const QUOTED = /```[\s\S]*?(?:```|$)|`[^`\n]*`|"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」|『[^』\n]*』/gu;
+// Files a client attaches ahead of the person's words (Claude Code writes
+// `@"C:\…\clip.mp4"`): a quoted path, or a token with a path separator or a
+// file extension. They are skipped before deciding what the message starts with.
+const ATTACHMENT = /^@(?:"[^"\n]*"|'[^'\n]*'|(\S+))(?:\s+|$)/u;
+const FILE_LIKE = /[\\/]|[^.]\.(?=\d*[A-Za-z])[A-Za-z\d]{1,10}$/u;
 const ADDRESS_LIMIT = 2048;
 const STABLE = /^\{([^{}\s]+)\}(?=$|[\s,，:：])/u;
 // Compatibility with prompts FULI 0.23 and earlier wrote (continuation
@@ -53,18 +53,17 @@ const LEGACY_STABLE = /^@\{([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
 
 // null, { release: true }, { choice: n }, { handoff: agentId } for the stable
 // `#FLA {agentId}` form, { explicit: true, query }: the text after `#FLA`,
-// which may name an FLA and continue with the task (`inline: true` after a
-// request word), or { group } for `#FLG …` (groupMention).
+// which may name an FLA and continue with the task, or { group } for `#FLG …`
+// (groupMention).
 export function parseFlaMention(prompt) {
-  const text = typeof prompt === 'string' ? prompt.trimStart() : '';
+  const text = afterAttachments(typeof prompt === 'string' ? prompt.trimStart() : '');
   const group = GROUP.exec(text);
   if (group) return { group: groupMention(text.slice(group[0].length)) };
   const legacy = LEGACY_STABLE.exec(text);
   if (legacy) return { handoff: legacy[1] };
-  const keyword = KEYWORD.exec(text) ?? laterKeyword(text);
+  const keyword = KEYWORD.exec(text);
   if (!keyword) return null;
-  const rest = text.slice(keyword.index + keyword[0].length).trim().slice(0, ADDRESS_LIMIT);
-  if (keyword.inline) return { explicit: true, query: rest, inline: true };
+  const rest = text.slice(keyword[0].length).trim().slice(0, ADDRESS_LIMIT);
   const stable = stableAddress(rest);
   if (stable) return stable.agentId ? { handoff: stable.agentId } : null;
   if (RELEASE.test(rest)) return { release: true };
@@ -79,14 +78,12 @@ export function addressedAgentId(prompt) {
   return parseFlaMention(prompt)?.handoff ?? null;
 }
 
-// `#FLA` after the start, outside code and quotes (blanking keeps positions):
-// at a line start, or inline after a request word, whichever comes first.
-function laterKeyword(text) {
-  const plain = text.replace(QUOTED, quoted => ' '.repeat(quoted.length));
-  const line = LINE_KEYWORD.exec(plain);
-  const request = REQUEST_KEYWORD.exec(plain);
-  if (line && (!request || line.index < request.index)) return line;
-  return request ? Object.assign(request, { inline: true }) : null;
+// The message without the files attached at its start.
+function afterAttachments(text) {
+  let rest = text;
+  for (let file = ATTACHMENT.exec(rest); file && (file[1] === undefined || FILE_LIKE.test(file[1]));
+    file = ATTACHMENT.exec(rest)) rest = rest.slice(file[0].length);
+  return rest;
 }
 
 // What follows `#FLG`: { release } (stop the discussion), the answer to its

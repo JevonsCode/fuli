@@ -15,7 +15,7 @@ const LOCALES = ['zh-CN', 'en-US'] as const
 
 // Every FULI keyword a phrase or note uses, and where FULI documents it.
 const DOCUMENTED: Record<string, [source: string, snippet: string]> = {
-  '#FLA': [operatingSkill, '`#FLA Name` (at the start of the prompt or of a line'],
+  '#FLA': [operatingSkill, '`#FLA Name` (at the start of the message'],
   '#FLG': [operatingSkill, '`#FLG <question>` (only at the start of the prompt)'],
   '#FLA 结束': [operatingSkill, '`#FLA 结束`'],
   '#FLA end': [mentionParser, '`#FLA 结束` (end, release)'],

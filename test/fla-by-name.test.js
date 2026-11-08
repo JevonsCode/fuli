@@ -107,18 +107,18 @@ function fixture({ roster = [ADA, JAMIE, JADE, JEFA, TEMP], leads = LEADS, holdB
 const owner = entry => [entry.context.personal_project_id, entry.context.project_agent_id];
 const bytes = value => Buffer.byteLength(JSON.stringify(compactTaskContext(value)));
 
-test('parsing: #FLA at a start or after a request word, release, choice and the stable ID; @ never addresses an FLA; #FLG is a group', () => {
+test('parsing: #FLA only at the start of the message, any case, release, choice and the stable ID; @ never addresses an FLA; #FLG is a group', () => {
   assert.deepEqual(parseFlaMention('#FLA Jamie Ash 继续刚才的任务'), { explicit: true, query: 'Jamie Ash 继续刚才的任务' });
   assert.deepEqual(parseFlaMention('  #FLA 小林 测试 继续'), { explicit: true, query: '小林 测试 继续' });
-  assert.deepEqual(parseFlaMention('背景在上面\n  #FLA Jamie Ash 继续'), { explicit: true, query: 'Jamie Ash 继续' });
-  // After a request word `#FLA` takes an exact name only (inline): it never opens the picker.
-  for (const [prompt, query] of [['请让 #FLA Jamie Ash 看一下', 'Jamie Ash 看一下'], ['帮我 #FLA 小林 看下数据', '小林 看下数据'],
-    ['麻烦，#FLA Bole 招一个前端', 'Bole 招一个前端'], ['please #FLA Jamie Ash review this', 'Jamie Ash review this'],
-    ['Could you ask #FLA Jamie Ash', 'Jamie Ash']]) {
-    assert.deepEqual(parseFlaMention(prompt), { explicit: true, query, inline: true }, prompt);
+  for (const prompt of ['#fla Jamie Ash 继续', '#Fla Jamie Ash 继续', '\n\t #fLa Jamie Ash 继续']) {
+    assert.deepEqual(parseFlaMention(prompt), { explicit: true, query: 'Jamie Ash 继续' }, prompt);
   }
-  // rec#58: prose, quotes, code and questions about the syntax are text.
-  for (const text of ['希望内置角色也可以用 #FLA Bole，解释一下这些写法', '`#FLA Bole` 是什么意思？',
+  // Anywhere but the start it is text: a later line, after a request word, prose about the syntax,
+  // quotes and code. The live repro (2026-11-08) is the first.
+  for (const text of ['…这种得多语言吧…\n\n#fla 不用区分大小写', '背景在上面\n  #FLA Jamie Ash 继续',
+    '请让 #FLA Jamie Ash 看一下', '帮我 #FLA 小林 看下数据', '麻烦，#FLA Bole 招一个前端', 'please #FLA Jamie Ash review this',
+    'Could you ask #FLA Jamie Ash', '用 #FLA 写法要不要区分大小写？',
+    '希望内置角色也可以用 #FLA Bole，解释一下这些写法', '`#FLA Bole` 是什么意思？',
     '“#FLA Bole” 和 @Bole 有什么区别？', '请让 "#FLA Jamie Ash" 看一下', '请让「#FLA Jamie Ash」看一下',
     'fix the parser for #FLA', 'the outlet #FLA Jamie', '改一下\n```\n#FLA Jamie Ash\n```']) {
     assert.equal(parseFlaMention(text), null, text);
@@ -163,7 +163,8 @@ test('attached files are not FLA mentions; #FLA and the stable forms still parse
   // Continuation prompts FULI 0.23 wrote still route: a whole UUID only.
   assert.deepEqual(parseFlaMention('@{9f1e5b95-91dd-4341-8fef-e9d6820db77f} 请接手'),
     { handoff: '9f1e5b95-91dd-4341-8fef-e9d6820db77f' });
-  assert.deepEqual(parseFlaMention(`${ATTACHED[0]}\n#FLA Jamie Ash 看一下`), { explicit: true, query: 'Jamie Ash 看一下' });
+  assert.deepEqual(parseFlaMention('@"C:\\Users\\sample\\a b.mp4"\n#fla Jamie Ash 看一下'), { explicit: true, query: 'Jamie Ash 看一下' });
+  assert.equal(parseFlaMention(`${ATTACHED[0]}\n#FLA Jamie Ash 看一下`), null);
 });
 
 test('a prompt that opens with an attached file keeps the folder\'s owner', async () => {
@@ -175,9 +176,14 @@ test('a prompt that opens with an attached file keeps the folder\'s owner', asyn
     assert.doesNotMatch(entry.agent_receipt.markdown, /分配失败/u, prompt);
     assert.equal(calls.some(([kind, project]) => kind === 'roster' && project === null), false, prompt);
   }
-  // A named FLA after the attachment still continues.
-  const { hook } = fixture();
-  assert.deepEqual(owner(await hook(`${ATTACHED[1]}\n#FLA Jamie Ash 看一下`)), ['project-b', 'jamie']);
+  // Attachments are skipped first: #FLA right after them is still the start.
+  for (const prompt of ['@"C:\\Users\\示例用户\\My Videos\\录屏 一.mp4"\n#FLA Jamie Ash 看一下',
+    '@"C:\\Users\\sample\\a.mp4" @/Users/sample/My/b.mov #fla Jamie Ash 看一下',
+    '@C:\\Users\\sample\\Desktop\\notes.txt\n\n#FLA Jamie Ash 看一下']) {
+    assert.deepEqual(owner(await fixture().hook(prompt)), ['project-b', 'jamie'], prompt);
+  }
+  // After the person's own words it is text again.
+  assert.deepEqual(owner(await fixture().hook(`${ATTACHED[0]}\n#FLA Jamie Ash 看一下`)), ['project-a', 'ada']);
 });
 
 test('a unique name continues that FLA in its own project from another project\'s folder', async () => {
@@ -204,7 +210,7 @@ test('#FLA, case-insensitive names, Chinese names and the longest name match the
   const roster = [ADA, JAMIE, fla('lin', '小林', '运营', 'project-b'), fla('lin-qa', '小林 测试', '测试', 'project-c')];
   for (const [prompt, expected] of [['#FLA jAmIe aSh continue', ['project-b', 'jamie']],
     ['#FLA 小林 测试 跑一下回归', ['project-c', 'lin-qa']], ['#FLA 小林 继续写周报', ['project-b', 'lin']],
-    ['帮我 #FLA 小林 看下数据', ['project-b', 'lin']]]) {
+    ['#fla 小林 看下数据', ['project-b', 'lin']]]) {
     assert.deepEqual(owner(await fixture({ roster }).run(prompt)), expected, prompt);
   }
   // A Latin name may run into Chinese text; the longer name still wins over "Jamie".
@@ -223,8 +229,8 @@ test('the console\'s copied #FLA and its "continue here" phrasing continue that 
   for (const locale of CONSOLE_LOCALES) {
     for (const [name, expected] of [['Jamie Ash', ['project-b', 'jamie']], ['小林', ['project-b', 'lin']]]) {
       const copied = consolePhrasings(locale, name, null);
-      // Pasted alone, typed on directly after, or pasted mid-sentence.
-      for (const prompt of [copied.continue, `${copied.mention}看下进度`, `帮我 ${copied.mention}看下进度`]) {
+      // Pasted alone, or typed on directly after.
+      for (const prompt of [copied.continue, `${copied.mention}看下进度`]) {
         assert.deepEqual(owner(await fixture({ roster }).run(prompt)), expected, `${locale}: ${prompt}`);
       }
     }
@@ -283,6 +289,19 @@ test('@ never names an FLA: a whole name, a name word or part of one after @ rou
     assert.equal(entry.fla, undefined, prompt);
     assert.equal(entry.human_interaction, undefined, prompt);
     assert.ok(!memoryReads().some(read => read.startsWith('jamie@') || read.startsWith('mock@')), prompt);
+    assert.ok(!tasks.some(task => task.agentAssignment?.match_basis?.some(item => item.startsWith('fla_'))), prompt);
+  }
+});
+
+test('#FLA mentioned in prose, quotes or code opens no picker and binds nothing (live repro 2026-11-08)', async () => {
+  for (const prompt of ['…这种得多语言吧…\n\n#fla 不用区分大小写', '说一下 #FLA 的写法',
+    '引用一下：“#FLA Jamie Ash 继续”', '改一下\n```\n#FLA Jamie\n```', '请让 #FLA Jamie Ash 看一下', '第一行\n#FLA']) {
+    const { run, tasks, calls } = fixture();
+    const entry = await run(prompt);
+    assert.deepEqual(owner(entry), ['project-a', 'ada'], prompt);
+    assert.equal(entry.fla, undefined, prompt);
+    assert.equal(entry.human_interaction, undefined, prompt);
+    assert.equal(calls.some(([kind, project]) => kind === 'roster' && project === null), false, prompt);
     assert.ok(!tasks.some(task => task.agentAssignment?.match_basis?.some(item => item.startsWith('fla_'))), prompt);
   }
 });
@@ -518,7 +537,7 @@ function withScope(setup, allowed = () => true) {
 }
 
 test('#FLA names a built-in role in this folder\'s project, through its own scope check; the picker never lists roles', async () => {
-  for (const prompt of ['#FLA Bole 招一个前端', '#FLA bole 招一个前端', '帮我 #FLA Bole 招一个前端']) {
+  for (const prompt of ['#FLA Bole 招一个前端', '#FLA bole 招一个前端', '#fla Bole 招一个前端']) {
     const { run, authorized } = withScope(fixture({ roster: [ADA, JAMIE, BOLE, ASTRO] }));
     const entry = await run(prompt);
     assert.deepEqual(owner(entry), ['project-a', 'employee.bole'], prompt);
@@ -603,7 +622,7 @@ test('prose about the syntax stays an ordinary prompt; @Bole is text; #FLA {empl
     assert.deepEqual(owner(entry), ['project-a', 'ada'], prompt);
     assert.equal(entry.fla, undefined, prompt);
     assert.equal(entry.human_interaction, undefined, prompt);
-    assert.equal(calls.some(([kind, project]) => kind === 'roster' && project === null), prompt.startsWith('让'), prompt);
+    assert.equal(calls.some(([kind, project]) => kind === 'roster' && project === null), false, prompt);
   }
   const { run } = withScope(fixture({ roster: [ADA, BOLE] }));
   assert.deepEqual(owner(await run('@Bole 看下人员分布')), ['project-a', 'ada']);

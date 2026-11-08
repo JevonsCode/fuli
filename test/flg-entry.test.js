@@ -132,8 +132,8 @@ test('parsing: #FLG only at the start shares the FLA parser; numbers or #FLG 开
   assert.equal(parseFlaMention('@Jamie 帮我看看 #FLG 的解析'), null);
   assert.equal(parseFlaMention('fix the parser for #FLG and #FLA'), null);
   assert.equal(parseFlaMention('see code: #FLG: x'), null);
-  // `#FLA` after a request word still names an FLA (rec#58), but not inside code.
-  assert.deepEqual(parseFlaMention('请让 #FLA x 看下'), { explicit: true, query: 'x 看下', inline: true });
+  // `#FLA` counts only at the start of the message, never after a request word or inside code.
+  assert.equal(parseFlaMention('请让 #FLA x 看下'), null);
   assert.equal(parseFlaMention('改一下 `#FLA` 的解析'), null);
   assert.equal(parseFlaMention('改一下\n```\n#FLA x\n```'), null);
   for (const [reply, expected] of [['1 3', [1, 3]], ['1,3', [1, 3]], ['1、3', [1, 3]], ['2 3 开始', [2, 3]],

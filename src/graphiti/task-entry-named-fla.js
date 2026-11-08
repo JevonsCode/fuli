@@ -100,7 +100,7 @@ export async function namedFlaRequest(application, resolution, input, readSessio
     const currentProjectId = resolution.personalProjectId ?? null;
     let roster = null;
     try { roster = await spaceRoster(application); }
-    catch { if (!mention?.inline) return { state: 'unavailable', reason: 'unavailable', ...asked }; }
+    catch { return { state: 'unavailable', reason: 'unavailable', ...asked }; }
     if (roster) {
       const ranked = rankCandidates(flaCandidates(roster.agents, roster.projects, roster.spaceId),
         { currentProjectId, recentAgentId: previous?.agentId ?? null });
@@ -209,11 +209,10 @@ function unavailable(target, reason, markers) {
 
 // `#FLA …`: an exact name of an FLA or of one of FULI's roles
 // (rec#58), else the picker over FLAs, narrowed by a partial name; a single
-// close fit continues directly, letters in order only narrow (D-68). An
-// inline `#FLA` takes an exact name only: anything else is ordinary text.
-function explicitRequest({ query, inline }, ranked, roles, resolution, input) {
+// close fit continues directly, letters in order only narrow (D-68).
+function explicitRequest({ query }, ranked, roles, resolution, input) {
   const exact = query ? exactRequest(namedAtOpening(query, [...ranked, ...roles]), resolution, input) : null;
-  if (exact || inline) return exact;
+  if (exact) return exact;
   const available = open(ranked, input);
   if (!query) return choose(available, 'list');
   const { close, items } = narrowedByPartial(query, available);
