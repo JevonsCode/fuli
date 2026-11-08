@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
 
+import { Button } from '@/components/ui/button'
 import CopyFixPrompt from '@/features/problem/CopyFixPrompt.vue'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
@@ -25,6 +26,13 @@ function hold(value: boolean) {
 }
 
 watch(() => store.feedback, schedule)
+
+// The toast's own button (撤销): the toast leaves first, so it runs once.
+function act() {
+  const action = store.feedback?.action
+  store.clearFeedback()
+  void action?.run()
+}
 onBeforeUnmount(() => clearTimeout(timer))
 </script>
 
@@ -35,6 +43,8 @@ onBeforeUnmount(() => clearTimeout(timer))
       <UiNotice class="feedback-message" :tone="store.feedback.tone">
         {{ store.feedback.message }}
         <template #actions>
+          <Button v-if="store.feedback.action" variant="link" size="sm" class="feedback-link" data-feedback-action
+            @click="act">{{ store.feedback.action.label }}</Button>
           <RouterLink v-if="store.feedback.link" class="feedback-link" :to="store.feedback.link.to" data-feedback-link
             @click="store.clearFeedback">{{ store.feedback.link.label ?? t('common.actions.view') }}</RouterLink>
           <CopyFixPrompt v-if="store.feedback.tone === 'error'" :what="store.feedback.message" />

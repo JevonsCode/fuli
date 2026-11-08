@@ -13,6 +13,7 @@ import { WORK_SURFACE_HANDLERS } from '../work-surfaces/agent-tools.js';
 import { DELEGATION_HANDLERS } from '../agent-delegation/agent-tool.js';
 import { DIAGNOSTIC_HANDLERS } from '../diagnostics/agent-tool.js';
 import { OLD_DATA_HANDLERS } from '../old-data/agent-tools.js';
+import { REPLY_ECHO_HANDLERS } from '../graphiti/reply-echo-agent-tool.js';
 import { OCCUPATION_KIT_HANDLERS } from '../occupation-plugins/agent-tools.js';
 import { agentNamingStyleAnswer } from '../agent-naming/naming-style.js';
 
@@ -38,6 +39,7 @@ const HANDLERS = Object.freeze({
   ...DELEGATION_HANDLERS,
   ...DIAGNOSTIC_HANDLERS,
   ...OLD_DATA_HANDLERS,
+  ...REPLY_ECHO_HANDLERS,
   ...OCCUPATION_KIT_HANDLERS,
   control_project_agent_task_run: (app, input) => app.controlProjectAgentTaskRun({ ...input, agentInvocation: true }),
   // An Agent reads Tonborg's records without their words (rec#50, judgment/agent-view.js).

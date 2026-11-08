@@ -39,6 +39,7 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'register_standing_assignment', 'report_agent_service', 'record_fla_lesson',
   'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
   'pause_work_surfaces', 'resume_work_surfaces', 'run_delegated_action', 'list_tonborg_questions', 'answer_tonborg_question',
+  'list_reply_echoes',
   'record_project_agent_task_activity',
   'preflight_executor',
   'report_executor_health',

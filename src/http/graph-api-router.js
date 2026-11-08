@@ -9,6 +9,7 @@ import { handleAgentScoreCardRequest } from './agent-score-card-api-router.js';
 import { handleAgentGrowthRequest } from './agent-growth-api-router.js';
 import { handleTaskVerificationRequest } from './task-verification-api-router.js';
 import { handleKnowledgeItemRequest } from './knowledge-item-api-router.js';
+import { handleReplyEchoRequest } from './reply-echo-api-router.js';
 import { handleSessionRecordsRequest } from './session-records-api-router.js';
 import { handleCaptureChangeRequest } from './capture-change-api-router.js';
 import { handleCaptureOnboardingRequest, handleFirstRunGuideRequest } from './capture-onboarding-api-router.js';
@@ -34,6 +35,7 @@ export async function handleGraphApiRequest({
   if (await handleAgentScoreCardRequest({ request, response, url, app })) return true;
   if (await handleAgentGrowthRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleTaskVerificationRequest({ request, response, url, app })) return true;
+  if (await handleReplyEchoRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleKnowledgeItemRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleSessionRecordsRequest({ request, response, url, app, ownerReads })) return true;
   if (await handleCaptureChangeRequest({ request, response, url, app })) return true;

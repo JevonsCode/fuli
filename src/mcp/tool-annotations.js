@@ -12,6 +12,7 @@ const READ_TOOLS = new Set([
   'read_diagnostic_events',
   'read_old_data',
   'list_tonborg_questions',
+  'list_reply_echoes',
   'read_occupation_kit',
   'list_preference_conflicts',
   'list_agent_interfaces',

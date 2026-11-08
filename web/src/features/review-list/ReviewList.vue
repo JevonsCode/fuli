@@ -18,8 +18,9 @@ import ReviewRows from './ReviewRows.vue'
 import TonborgExplain from './TonborgExplain.vue'
 import { useReviewList } from './review-store'
 
-// The knowledge part of 待决策 (rec#96): Tonborg's questions, every pending
-// item, and what Tonborg confirmed for the person. Each line is one item in
+// The knowledge part of 待决策 (rec#96): earlier Agent replies kept by mistake
+// (11-08, dropped together), Tonborg's questions, every pending item, and what
+// Tonborg confirmed for the person. Each line is one item in
 // plain words with the same actions in the same places; the whole text,
 // source and Tonborg's reason are in 查看详情. A group with nothing in it is
 // not shown at all.
@@ -57,6 +58,9 @@ const pendingLabel = (key: string) => t(`reviewList.pending.${busy(key) ?? 'conf
 // A whole group's progress counts the requests that came back, never invented stages.
 const progressLabel = (group: 'pending' | 'questions') => t(`reviewList.pending.${group === 'pending' ? 'all' : 'guesses'}`,
   review.progress[group] ?? { done: 0, total: review.list[group].length })
+// 全部丢掉 counts the batches that came back; 撤销 names how many go back.
+const echoesLabel = () => busy('echoes') === 'undo' ? t('reviewList.pending.restore', { count: review.restoring })
+  : t('reviewList.pending.echoes', review.progress.echoes ?? { done: 0, total: review.list.echoes.length })
 const editableQuestions = computed(() => review.list.questions.some(line => {
   const action = guessedAction(line.review?.guess ?? null)
   return action === 'confirm' || action === 'drop'
@@ -78,6 +82,30 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
     <UiNotice v-if="review.error" tone="error">{{ t('reviewList.loadError') }}
       <template #actions><Button variant="outline" size="sm" :disabled="review.loading" @click="review.refresh()">{{ t('attention.refresh') }}</Button></template>
     </UiNotice>
+
+    <Card v-if="review.list.echoes.length || busy('echoes')" as="section" class="review-group" aria-labelledby="review-echoes-title" data-review-group="echoes">
+      <CardHeader class="review-group__header">
+        <CardTitle id="review-echoes-title" as="h2" class="review-group__title" :title="t('reviewList.echoesHint')"
+          :data-outline-label="t('reviewList.groups.echoes')" :data-outline-count="review.list.echoes.length">{{ t('reviewList.groups.echoes') }} · {{ review.list.echoes.length }}</CardTitle>
+        <CardAction class="review-group__action">
+          <span class="review-busy review-busy--progress"><GrowthLoading v-if="busy('echoes')" variant="inline" :label="echoesLabel()" /></span>
+          <Button size="sm" variant="outline" :disabled="Boolean(busy('echoes')) || !review.list.echoes.length" data-review-drop-echoes
+            @click="review.dropEchoes()">{{ t('reviewList.actions.dropAll') }}</Button>
+        </CardAction>
+      </CardHeader>
+      <ReviewRows v-if="review.list.echoes.length" v-slot="{ line }" :lines="review.list.echoes" :label="t('reviewList.groups.echoes')">
+        <span class="review-row__body">
+          <span class="review-row__meta">{{ meta(line) }}</span>
+          <span class="review-row__text" :title="line.text">{{ line.text }}</span>
+        </span>
+        <span class="review-row__actions">
+          <span class="review-busy"><GrowthLoading v-if="busy(line.key)" variant="inline" :label="pendingLabel(line.key)" /></span>
+          <Button size="sm" variant="ghost" :disabled="Boolean(busy(line.key) || busy('echoes'))" @click="review.act(line, 'confirm')">{{ t('reviewList.actions.confirm') }}</Button>
+          <Button size="sm" variant="ghost" :disabled="Boolean(busy(line.key) || busy('echoes'))" @click="review.act(line, 'drop')">{{ t('reviewList.actions.drop') }}</Button>
+          <UiIconButton icon="info" size="sm" :label="t('reviewList.actions.details')" @click="detail = line" />
+        </span>
+      </ReviewRows>
+    </Card>
 
     <Card v-if="review.list.questions.length" as="section" class="review-group review-group--asks" aria-labelledby="review-questions-title" data-review-group="questions">
       <CardHeader class="review-group__header">

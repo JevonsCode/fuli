@@ -21,6 +21,8 @@ import type {
 
 export type RuntimeStatus = 'idle' | 'loading' | 'ready' | 'error'
 export type FeedbackTone = 'success' | 'error'
+/** A success toast's one button, such as 撤销: it runs once and the toast leaves. */
+export interface FeedbackAction { label: string; run: () => unknown }
 
 // The console state as the API answers it: the spaces and projects every page
 // reads first. Policies and provider status pass through as ConsoleState.
@@ -78,7 +80,7 @@ export const useConsoleStore = defineStore('console', () => {
   let refreshVersion = 0
   let refreshController: AbortController | undefined
   // link: where the change can be seen and changed again (a route).
-  const feedback = ref<{ message: string; tone: FeedbackTone; link?: { to: string; label?: string } } | null>(null)
+  const feedback = ref<{ message: string; tone: FeedbackTone; link?: { to: string; label?: string }; action?: FeedbackAction } | null>(null)
 
   const activePersonalSpace = computed(() => {
     const value = state.value
@@ -276,8 +278,8 @@ export const useConsoleStore = defineStore('console', () => {
     return state.value?.capabilities?.[name] === true
   }
 
-  function notify(message: string, link?: { to: string; label?: string }) {
-    feedback.value = { message, tone: 'success', ...(link ? { link } : {}) }
+  function notify(message: string, link?: { to: string; label?: string }, action?: FeedbackAction) {
+    feedback.value = { message, tone: 'success', ...(link ? { link } : {}), ...(action ? { action } : {}) }
   }
 
   function reportError(error: unknown) {

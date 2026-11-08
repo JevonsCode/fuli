@@ -35,7 +35,7 @@ const NAMES = [
   'submit_agent_app_version',
   'list_agent_apps',
   'get_judgment_policy', 'list_judgments', 'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'get_agent_pins', 'pin_agent',
-  'list_tonborg_questions', 'answer_tonborg_question',
+  'list_tonborg_questions', 'answer_tonborg_question', 'list_reply_echoes',
   'get_model_usage', 'role_work',
   'get_agent_score_card',
   'control_project_agent_task_run', 'register_standing_assignment', 'report_agent_service',
@@ -359,6 +359,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     diagnosticEvents: { read: () => { calls.push(['diagnostics-read']);
       return { events: [], sourcesUnavailable: [], skippedLines: 0, stored: false, mayHaveDropped: false }; } },
     oldData: { list: async () => calls.push(['old-data-list']), read: async (input) => calls.push(['old-data-read', input]) },
+    personal: { graph: async (...args) => { calls.push(['reply-echoes-graph', args]); return { nodes: [], edges: [] }; } },
     occupationPlugins: { kit: (input) => { calls.push(['occupation-kit', input]); return { occupation: input.occupation, plugin: null }; } },
     controlProjectAgentTaskRun: async input => calls.push(['task-run-control', input]),
     queryAgentConversations: async input => calls.push(['conversations-' + input.mode, input]),
@@ -552,6 +553,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
         record_fla_lesson: { taskContextToken: 'fuli-task-probe', origin: 'correction', correctionScope: 'this_task' },
         run_delegated_action: { taskContextToken: 'fuli-task-probe', route: 'PATCH /api/recall-policy', reason: 'probe' },
         read_occupation_kit: { personalSpaceId: 'space-a', occupation: 'testing' },
+        list_reply_echoes: { personalSpaceId: 'space-a', taskContextToken: 'fuli-task-probe' },
         ...Object.fromEntries(['propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
           'pause_work_surfaces', 'resume_work_surfaces'].map(tool => [tool, { taskContextToken: 'fuli-task-probe' }])) }[name];
       await callAgentTool(app, name, { probe: name, ...probe });
@@ -565,7 +567,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'external-targets', 'external-delete', 'external-conflict-policy',
     'external-update-default-policy', 'defer-preference-conflict', 'delete-public-project',
     'employee-list', 'employee-recruit', 'employee-tools', 'employee-call', 'app-submit', 'app-list',
-    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'judgment-questions', 'judgment-answerQuestion', 'model-usage', 'role-work-claim', 'agent-score-card', 'task-run-control', 'standing-assignment', 'service-register',
+    'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'judgment-questions', 'judgment-answerQuestion', 'reply-echoes-graph', 'model-usage', 'role-work-claim', 'agent-score-card', 'task-run-control', 'standing-assignment', 'service-register',
     'workflow-propose', 'workflow-index', 'workflow-read', 'workflow-recordRun',
     'surfaces-list', 'surfaces-pause', 'surfaces-resume',
     'delegated-send',
