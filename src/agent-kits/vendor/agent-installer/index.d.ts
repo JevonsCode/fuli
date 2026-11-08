@@ -1,4 +1,4 @@
-export type Component = 'mcp' | 'hooks' | 'permissions' | 'instructions' | 'skills' | 'plugin';
+export type Component = 'mcp' | 'hooks' | 'permissions' | 'instructions' | 'skills' | 'plugin' | 'prompts';
 
 export interface ExtensionProblem {
   file?: string;

@@ -7,7 +7,7 @@ import { writeTextFileAtomic } from '../storage/json-file.js';
 // Codex (rec#11 #11). FULI before its lifecycle command hooks registered
 // `mcp_tool` hooks that call FULI's `begin_task_context` and
 // `verify_task_checkpoint` over MCP. agent-installer recognizes FULI's hooks
-// by their command text only (0.3.1 has no marker for an `mcp_tool` handler),
+// by their command text only (0.4.0 has no marker for an `mcp_tool` handler),
 // so it would leave these beside the new ones. This removes exactly those
 // handlers, after copying the file into the backups directory, and touches
 // nothing when none is there. FULI wrote them up to 0.22.1. It goes once

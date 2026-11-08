@@ -9,7 +9,7 @@ import { isFuliOpenCodePlugin } from '../agents/opencode/plugin-file.js';
 // (rec#11 D-63): OpenCode 2.x loads it; 1.x plugins use another, incompatible
 // API, so there FULI connects only the MCP entry. An OpenCode whose version
 // cannot be read keeps a FULI plugin that is already there (an update or a
-// rollback reads no version) and gets no new one. agent-installer 0.3.1
+// rollback reads no version) and gets no new one. agent-installer 0.4.0
 // cannot gate a component on the client's version; this goes once it can
 // (JevonsCode/agent-installer#8).
 const SUPPORTED_MAJOR = 2;
