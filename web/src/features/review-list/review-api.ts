@@ -56,6 +56,24 @@ export const dropKnowledgeItem = (spaceId: string, projectId: string | null, ite
     personalSpaceId: spaceId, personalProjectId: projectId, action: 'invalidate', reason: t('reviewList.dropReason'),
   })
 
+const echoKey = z.looseObject({ itemKind: z.enum(['entity', 'relationship']), itemId: z.string() })
+const echoesShape = shapeOf(z.looseObject({ total: z.number(), items: z.array(echoKey.extend({ signals: z.array(z.string()) })) }))
+const echoDropShape = shapeOf(z.looseObject({ dropped: z.array(echoKey), failed: z.array(echoKey) }))
+const echoRestoreShape = shapeOf(z.looseObject({ restored: z.array(echoKey), failed: z.array(echoKey) }))
+export type EchoItem = Pick<KnowledgeItem, 'itemKind' | 'id'>
+const echoBody = (spaceId: string, items: EchoItem[]) => ({ personalSpaceId: spaceId, items: items.map(item => ({ itemKind: item.itemKind, itemId: item.id })) })
+
+/** 之前误存的 Agent 回复 (11-08): the pending items the server finds are earlier Agent replies. */
+export const readReplyEchoes = (spaceId: string) =>
+  getJson(`/api/knowledge/reply-echoes?${new URLSearchParams({ personalSpaceId: spaceId })}`, echoesShape)
+
+/** 全部丢掉: the same drop as 不要, for the items the server still finds; 撤销 makes them current again. */
+export const dropReplyEchoes = (spaceId: string, items: EchoItem[]) =>
+  postJson('/api/knowledge/reply-echoes/drop', echoBody(spaceId, items), echoDropShape)
+
+export const restoreReplyEchoes = (spaceId: string, items: EchoItem[]) =>
+  postJson('/api/knowledge/reply-echoes/restore', echoBody(spaceId, items), echoRestoreShape)
+
 /** The person's vote on one of Tonborg's decisions: what Tonborg reads next time it judges. */
 export const voteOnReview = (spaceId: string, decisionId: string, vote: 'up' | 'down', reason: string, expectedRevision: number) =>
   postJson('/api/judgment/feedback', { personalSpaceId: spaceId, decisionId, vote, reason, expectedRevision })

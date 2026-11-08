@@ -33,6 +33,17 @@ describe('the 待决策 list', () => {
     expect(list.pending[0]).toMatchObject({ projectId: 'project-a', proposer: 'Synthetic Agent', reason: 'unreviewed' })
   })
 
+  it('puts the earlier Agent replies the server found in their own group, ahead of a Tonborg question', () => {
+    const items = knowledgeItems(graph(node('one'), node('echo'), node('asked-echo'),
+      node('gone-echo', { invalid_at: '2026-11-02T00:00:00Z' })))
+    const list = buildReviewList(items, { confirmed: [], questions: [review('entity:asked-echo')] },
+      new Set(['entity:echo', 'entity:asked-echo', 'entity:gone-echo']))
+    expect(list.echoes.map(line => line.key).sort()).toEqual(['entity:asked-echo', 'entity:echo'])
+    expect(list.questions).toEqual([])
+    expect(list.pending.map(line => line.key)).toEqual(['entity:one'])
+    expect(reviewTotal(list)).toBe(3)
+  })
+
   it('names who proposed an item in words, never by an internal id', () => {
     const byId = { ...proposed, proposed_by: { kind: 'agent', label: 'ca14b735-2331-51c9-8565-6e192eaeefb0' } }
     const items = knowledgeItems(graph(node('one', { confirmation_basis: byId })))

@@ -144,6 +144,7 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   get_judgment_policy: UNSCOPED,
   list_judgments: UNSCOPED,
   list_tonborg_questions: UNSCOPED,
+  list_reply_echoes: UNSCOPED,
   get_agent_pins: UNSCOPED,
   pin_agent: UNSCOPED,
   get_model_usage: UNSCOPED,

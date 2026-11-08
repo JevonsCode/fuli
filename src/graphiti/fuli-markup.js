@@ -31,14 +31,23 @@ const MARKUP_LINES = [
 
 export function withoutFuliMarkup(text) {
   if (typeof text !== 'string') return '';
-  return text.split(/\r?\n/u)
+  return tidy(text.split(/\r?\n/u)
     .filter(line => !MARKUP_LINES.some(pattern => pattern.test(line)) && !ONLY_LINKS.test(line))
     .map(line => line
       .replace(SOURCE_MARKER, (marker, label) => (MARKER_LABEL.test(label) ? '' : marker))
       .replace(FULI_LINK, (link, label) => plainLabel(label))
-      .replace(BARE_FULI_URL, '')
-      .replace(/[ \t]+$/u, ''))
-    .join('\n').replace(/\n{3,}/gu, '\n\n').trim();
+      .replace(BARE_FULI_URL, ''))
+    .join('\n'));
+}
+
+// Whether text carries any of that markup. Knowledge kept before #839 still
+// can (reply-echo.js); anything captured since has none.
+export function hasFuliMarkup(text) {
+  return typeof text === 'string' && Boolean(text.trim()) && withoutFuliMarkup(text) !== tidy(text);
+}
+
+function tidy(text) {
+  return text.split(/\r?\n/u).map(line => line.replace(/[ \t]+$/u, '')).join('\n').replace(/\n{3,}/gu, '\n\n').trim();
 }
 
 // Why a captured field that held nothing but FULI's markup is refused.

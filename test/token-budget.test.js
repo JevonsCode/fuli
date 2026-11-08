@@ -194,7 +194,9 @@ const BASELINE = Object.freeze({
   // question on demand) and answer_tonborg_question (relayed in the person's words, newText for edit): 205,767 -> 207,516 B
   // (+1,749 B), measured. Full profile only; chat reaches them through list_agent_interfaces/fuli_call.
   // 11-08: list_tonborg_questions says its answer carries how to go through them (+12 B), measured.
-  fullToolSchemaBytes: 207528,
+  // 11-08 之前误存的 Agent 回复: one full-profile read, list_reply_echoes, lists the earlier Agent replies
+  // kept as pending knowledge; dropping them is relayed (run_delegated_action): 207,528 -> 208,242 B (+714 B), measured.
+  fullToolSchemaBytes: 208242,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.

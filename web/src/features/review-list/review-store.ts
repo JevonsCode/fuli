@@ -9,10 +9,11 @@ import { useConsoleStore } from '@/stores/console'
 import type { KnowledgeItem } from '@/types'
 
 import {
-  CONFIRM_BATCH, confirmReviewBatch, dropKnowledgeItem, readDelegatedReviews, readSpaceKnowledge, undoTonborgReview, voteOnReview,
+  CONFIRM_BATCH, confirmReviewBatch, dropKnowledgeItem, dropReplyEchoes, readDelegatedReviews, readReplyEchoes, readSpaceKnowledge,
+  restoreReplyEchoes, undoTonborgReview, voteOnReview, type EchoItem,
 } from './review-api'
 import {
-  agreesWithGuess, buildReviewList, guessedAction, oneLine, reviewTotal,
+  agreesWithGuess, buildReviewList, guessedAction, itemKey, oneLine, reviewTotal,
   type DelegatedReviews, type ReviewAction, type ReviewLine,
 } from './review-list'
 
@@ -20,6 +21,8 @@ const EMPTY: DelegatedReviews = { confirmed: [], questions: [] }
 const TOAST_TEXT = 24
 /** Votes on Tonborg's guesses sent at once after a whole group is handled. */
 const VOTES_AT_ONCE = 4
+/** Earlier Agent replies dropped in one request; the progress moves once per batch. */
+const ECHO_BATCH = 100
 
 /**
  * What waits for the person in the active space (rec#96), read once for the
@@ -31,22 +34,26 @@ export const useReviewList = defineStore('review-list', () => {
   const spaceId = ref('')
   const items = ref<KnowledgeItem[]>([])
   const delegated = ref<DelegatedReviews>(EMPTY)
+  /** The pending items the server finds are earlier Agent replies (itemKey). */
+  const echoKeys = ref<ReadonlySet<string>>(new Set())
   const loaded = ref(false)
   const loading = ref(false)
   const error = ref('')
   /** The line key (or a whole group's name) whose action is pending, and which action. */
   const pending = ref<Record<string, ReviewAction | 'undo' | 'ack'>>({})
+  /** How many dropped replies 撤销 is putting back. */
+  const restoring = ref(0)
   /** How far a whole group's action got, counted from the requests that came back. */
   const progress = ref<Record<string, { done: number; total: number }>>({})
   let version = 0
 
-  const list = computed(() => buildReviewList(items.value, delegated.value))
+  const list = computed(() => buildReviewList(items.value, delegated.value, echoKeys.value))
   const total = computed(() => reviewTotal(list.value))
 
   function setSpace(id: string) {
     if (spaceId.value === id) return
     version++
-    spaceId.value = id; items.value = []; delegated.value = EMPTY
+    spaceId.value = id; items.value = []; delegated.value = EMPTY; echoKeys.value = new Set()
     loaded.value = false; error.value = ''; pending.value = {}; progress.value = {}
     if (id) void refresh()
   }
@@ -57,14 +64,16 @@ export const useReviewList = defineStore('review-list', () => {
     const current = ++version
     loading.value = true
     try {
-      // Tonborg's side is optional: without it the list still shows every pending item.
-      const [graph, reviews] = await Promise.all([
+      // Tonborg's side and the replies kept by mistake are optional: without them the list still shows every pending item.
+      const [graph, reviews, echoes] = await Promise.all([
         readSpaceKnowledge(space, () => current !== version),
         readDelegatedReviews(space).catch(() => EMPTY),
+        readReplyEchoes(space).catch(() => null),
       ])
       if (current !== version || !graph) return
       items.value = knowledgeItems(graph)
       delegated.value = reviews
+      echoKeys.value = new Set((echoes?.items ?? []).map(echo => itemKey({ itemKind: echo.itemKind, id: echo.itemId })))
       loaded.value = true
       error.value = ''
     } catch (cause) {
@@ -210,6 +219,49 @@ export const useReviewList = defineStore('review-list', () => {
     } else consoleStore.notify(t(`reviewList.done.${group === 'pending' ? 'confirmedAll' : 'all'}`, { count: handled.length }), { to: '/knowledge' })
   }
 
+  /**
+   * 全部丢掉 (11-08): the earlier Agent replies go with the same drop as 不要,
+   * in batches the server checks again, and the toast offers 撤销. Reversible,
+   * so nothing asks first.
+   */
+  async function dropEchoes() {
+    const lines = list.value.echoes.filter(line => line.item)
+    if (!lines.length) return
+    const dropped: EchoItem[] = []
+    let failed = 0
+    progress.value = { ...progress.value, echoes: { done: 0, total: lines.length } }
+    const finished = await guarded('echoes', 'drop', async () => {
+      for (let start = 0; start < lines.length; start += ECHO_BATCH) {
+        const batch = lines.slice(start, start + ECHO_BATCH)
+        const result = await dropReplyEchoes(spaceId.value, batch.map(line => line.item!))
+        const gone = new Set(result.dropped.map(item => `${item.itemKind}:${item.itemId}`))
+        const left = batch.filter(line => gone.has(line.key))
+        dropped.push(...left.map(line => line.item!))
+        failed += batch.length - left.length
+        progress.value = { ...progress.value, echoes: { done: start + batch.length, total: lines.length } }
+        leave(left)
+      }
+    })
+    const { echoes: _finished, ...rest } = progress.value
+    progress.value = rest
+    if (!finished || failed) await refresh()
+    if (!dropped.length) return
+    consoleStore.notify(t('reviewList.done.echoes', { count: dropped.length }), undefined,
+      { label: t('reviewList.actions.undo'), run: () => restoreEchoes(dropped) })
+  }
+
+  /** 撤销 of 全部丢掉: the dropped replies are current again and back in the list. */
+  async function restoreEchoes(dropped: EchoItem[]) {
+    restoring.value = dropped.length
+    const done = await guarded('echoes', 'undo', async () => {
+      const result = await restoreReplyEchoes(spaceId.value, dropped)
+      await refresh()
+      consoleStore.notify(t('reviewList.done.restored', { count: result.restored.length }))
+    })
+    restoring.value = 0
+    if (!done) await refresh()
+  }
+
   async function undo(line: ReviewLine) {
     const review = line.review
     if (!review) return
@@ -232,6 +284,6 @@ export const useReviewList = defineStore('review-list', () => {
     if (done) delegated.value = { ...delegated.value, confirmed: [] }
   }
 
-  return { spaceId, items, delegated, loaded, loading, error, pending, progress, list, total,
-    setSpace, refresh, refreshIfTonborgMoved, act, edit, actAll, undo, acknowledgeConfirmed }
+  return { spaceId, items, delegated, loaded, loading, error, pending, progress, restoring, list, total,
+    setSpace, refresh, refreshIfTonborgMoved, act, edit, actAll, dropEchoes, undo, acknowledgeConfirmed }
 })

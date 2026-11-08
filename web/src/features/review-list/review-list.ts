@@ -37,7 +37,8 @@ export interface ReviewLine {
   /** Tonborg's review behind this line: its question, or the confirmation it made. */
   review: DelegatedReview | null
 }
-export interface ReviewList { questions: ReviewLine[]; pending: ReviewLine[]; confirmed: ReviewLine[] }
+/** echoes: earlier Agent replies FULI kept by mistake (the server finds them), in their own group. */
+export interface ReviewList { echoes: ReviewLine[]; questions: ReviewLine[]; pending: ReviewLine[]; confirmed: ReviewLine[] }
 
 /** The cap on one line of visible copy; the whole text is in 查看详情. */
 export const LINE_LIMIT = 100
@@ -90,13 +91,18 @@ function line(item: KnowledgeItem, review: DelegatedReview | null, reason: WaitR
 }
 
 /**
- * Tonborg's questions about items still pending (one it asked about an item
- * the person handled elsewhere is not asked again), every other pending item,
- * and the items Tonborg confirmed that the person has not looked at yet.
+ * The earlier Agent replies among the pending items (echoKeys, as itemKey
+ * names them), Tonborg's questions about the other items still pending (one it
+ * asked about an item the person handled elsewhere is not asked again), every
+ * other pending item, and the items Tonborg confirmed that the person has not
+ * looked at yet.
  */
-export function buildReviewList(items: KnowledgeItem[], delegated: DelegatedReviews = { confirmed: [], questions: [] }): ReviewList {
+export function buildReviewList(items: KnowledgeItem[], delegated: DelegatedReviews = { confirmed: [], questions: [] },
+  echoKeys: ReadonlySet<string> = new Set()): ReviewList {
   const byKey = new Map(items.map(item => [itemKey(item), item]))
-  const waiting = items.filter(waitsForPerson)
+  const pendingNow = items.filter(waitsForPerson)
+  const echoes = pendingNow.filter(item => echoKeys.has(itemKey(item))).map(item => line(item, null))
+  const waiting = pendingNow.filter(item => !echoKeys.has(itemKey(item)))
   const asked = new Map(delegated.questions.map(review => [review.target, review]))
   const questions = waiting.filter(item => asked.has(itemKey(item))).map(item => line(item, asked.get(itemKey(item)) ?? null, 'tonborg_unsure'))
   const pending = waiting.filter(item => !asked.has(itemKey(item))).map(item => line(item, null))
@@ -107,10 +113,10 @@ export function buildReviewList(items: KnowledgeItem[], delegated: DelegatedRevi
     return [item ? line(item, review, null) : { key: review.target, item: null, text: oneLine(review.title ?? review.target),
       projectId: review.personalProjectId, proposer: 'Tonborg', reason: null, review }]
   })
-  return { questions, pending, confirmed }
+  return { echoes, questions, pending, confirmed }
 }
 
-export const reviewTotal = (list: ReviewList) => list.questions.length + list.pending.length
+export const reviewTotal = (list: ReviewList) => list.echoes.length + list.questions.length + list.pending.length
 
 /** The person's answer to a line, as the vote on Tonborg's guess it is. */
 export type ReviewAction = 'confirm' | 'drop' | 'edit'

@@ -114,6 +114,38 @@ describe('ReviewList', () => {
       vote: 'down', reason: '你选了「确认」', expectedRevision: 0 })
   })
 
+  it('drops the earlier Agent replies together without asking, and 撤销 in the toast brings them back', async () => {
+    nodes = [...nodes, node('echo', { name: 'I moved the notice', summary: 'I moved the notice; PR #842 is not merged yet.' })]
+    const graphRead = getJson.getMockImplementation()!
+    getJson.mockImplementation(async (url: string) => url.startsWith('/api/knowledge/reply-echoes?')
+      ? { total: 1, items: [{ itemKind: 'entity', itemId: 'echo', signals: ['progress_narration', 'status_report'] }] } : graphRead(url))
+    postJson.mockImplementation(async (url: string) => url.endsWith('/drop')
+      ? { dropped: [{ itemKind: 'entity', itemId: 'echo' }], failed: [], skipped: [] }
+      : { restored: [{ itemKind: 'entity', itemId: 'echo' }], failed: [] })
+    const wrapper = await mountList()
+    expect(wrapper.findAll('[data-review-group]').map(group => group.attributes('data-review-group')))
+      .toEqual(['echoes', 'questions', 'pending', 'confirmed'])
+    const echoes = wrapper.get('[data-review-group=echoes]')
+    expect(echoes.get('h2').text()).toBe('之前误存的 Agent 回复 · 1')
+    // Each row still shows the item itself.
+    expect(row(wrapper, 'entity:echo').get('.review-row__text').text()).toBe('I moved the notice：I moved the notice; PR #842 is not merged yet.')
+    expect(wrapper.find('[data-review-group=pending] [data-review-line="entity:echo"]').exists()).toBe(false)
+
+    await echoes.get('[data-review-drop-echoes]').trigger('click'); await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/knowledge/reply-echoes/drop',
+      { personalSpaceId: 'space-a', items: [{ itemKind: 'entity', itemId: 'echo' }] }, expect.anything())
+    expect(wrapper.find('[data-review-group=echoes]').exists()).toBe(false)
+    const store = useConsoleStore()
+    expect(store.feedback?.message).toBe('已丢掉 1 条误存的 Agent 回复')
+    expect(store.feedback?.action?.label).toBe('撤销')
+
+    await store.feedback!.action!.run(); await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/knowledge/reply-echoes/restore',
+      { personalSpaceId: 'space-a', items: [{ itemKind: 'entity', itemId: 'echo' }] }, expect.anything())
+    expect(store.feedback?.message).toBe('已恢复 1 条，回到待决策')
+    expect(wrapper.find('[data-review-group=echoes]').exists()).toBe(true)
+  })
+
   it('drops without a second question, and accepting all guesses applies them', async () => {
     const wrapper = await mountList()
     await button(wrapper.get('[data-review-group=questions]'), '全按猜的办').trigger('click'); await flushPromises()
