@@ -37,6 +37,8 @@ import { debugTurnStore } from '../debug-turns/store.js';
 import { runningMcpServers } from './mcp-process-scan.js';
 import { isDesktopAppPackage } from '../desktop/desktop-app-package.js';
 import { createNpmCopyControl } from '../desktop/npm-copy-control.js';
+import { createCliPathControl } from '../desktop/cli-path.js';
+import { readWindowsInstallation } from '../desktop/windows-installation-context.js';
 
 const MCP_SCAN_CACHE_MS = 5 * 60_000;
 
@@ -64,6 +66,9 @@ export function createSystemService({
   update = consoleUpdate(paths.dataDir),
   // Only the desktop app's console looks after npm copies beside it; for an npm installation the copy is FULI itself.
   npmCopyControl = isDesktopAppPackage(packageRoot) ? createNpmCopyControl({ dataDir: paths.dataDir, ownRoot: packageRoot }) : null,
+  // The desktop app's own fl and fuli in a terminal.
+  cliPathControl = isDesktopAppPackage(packageRoot) ? createCliPathControl({ dataDir: paths.dataDir, packageRoot,
+    installRoot: windowsInstallRoot(packageRoot) }) : null,
   // The data format plan (migration-plan.js) the doctor reads; null without a local installation.
   previewDataFormats = null,
   // Reads Codex's hook trust from its app-server (src/agents/codex/hook-trust.js).
@@ -174,6 +179,7 @@ export function createSystemService({
   const modelCapture = createModelCapture({ store: turnRecords });
   return {
     npmCopies: npmCopyControl,
+    cliPath: cliPathControl,
     getSettings,
     updateSettings,
     startSettingsApply: (id) => settingsApplier.start(id),
@@ -309,4 +315,10 @@ function isLoopbackProvider(value) {
   } catch {
     return false;
   }
+}
+
+// An installed Windows app's installation root, or null (macOS, a portable tray).
+function windowsInstallRoot(packageRoot) {
+  if (process.platform !== 'win32') return null;
+  try { return readWindowsInstallation(packageRoot)?.installRoot ?? null; } catch { return null; }
 }

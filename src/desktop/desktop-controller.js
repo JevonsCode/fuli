@@ -5,6 +5,7 @@ import { resolveSetupPaths } from '../setup/paths.js';
 import { switchConsolePort } from '../system/console-port-switch.js';
 import { reservedPortProblem } from '../system/reserved-ports.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
+import { ensureCliPath } from './cli-path.js';
 import { otherPackageConsole, reconnectAfterAdoption } from './npm-adoption.js';
 import { findNpmCopies } from './npm-copies.js';
 
@@ -53,7 +54,8 @@ async function consolePortBlocked(context) {
 // A stubbed CLI never looks for npm copies on the machine running the test.
 export async function runTrayAction(action, context, {
   runCli = executeCli, portBlocked = consolePortBlocked, switchPort = switchConsolePort,
-  otherConsole = otherPackageConsole, findCopies = runCli === executeCli ? findNpmCopies : () => []
+  otherConsole = otherPackageConsole, findCopies = runCli === executeCli ? findNpmCopies : () => [],
+  cliPath = runCli === executeCli ? ensureCliPath : () => null
 } = {}) {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
   const invoke = (args) => runCli(context, [...args, '--data-dir', context.dataDir]);
@@ -111,6 +113,8 @@ export async function runTrayAction(action, context, {
       if (ready.status !== 'running') throw new Error('Fuli did not reach its running state.');
       // Clients still pointed at an npm copy are pointed at the app's; a failure here never fails the start.
       adopted = await reconnectAfterAdoption(context, { replaced, invoke, findCopies }).catch(() => null);
+      // The app's own fl and fuli in a terminal (cli-path.js), unless the person turned them off.
+      try { cliPath(context); } catch { /* a terminal keeps what it had; Settings shows the state */ }
     }
     if (['open', 'start-open', 'change-port'].includes(action)) await command(['open']);
     if (action === 'stop') await command(['stop']);

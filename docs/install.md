@@ -157,7 +157,13 @@ nothing and loses nothing, but the program is then on the computer twice. The cl
   runs the npm that installed it (`npm uninstall --global fuli-context` for that prefix, without package scripts) and
   your data stays. If that npm cannot remove it (for example without permission), the notice shows the command to run
   yourself. Closing the notice keeps it closed; **Settings › Clients** still lists the copy. An Agent removes it only
-  with your own words. Until it is removed, a bare `fl` or `fuli` in a terminal still runs that npm version.
+  with your own words.
+- The client puts its own `fl` and `fuli` on your PATH. On macOS they are scripts in `~/.fuli/bin`, and a marked
+  block at the end of `~/.zshrc` (and `~/.bash_profile` if you have one) puts that folder first. On Windows they are
+  in the installation's `bin` folder, first in your user PATH; the system PATH still comes first there, so an npm
+  folder in the system PATH (such as nvm-windows) wins until that copy is removed. New terminals pick it up.
+  **Settings › Clients › fl / fuli in a terminal** turns this off and takes out exactly what was added; the Windows
+  uninstaller removes it too.
 - From 0.25.0 on, an npm copy never replaces the client's running service. An older npm copy started by hand
   (`fl start`) can still take it over; the client takes it back the next time it starts FULI. An older copy that meets
   data a newer FULI upgraded leaves those stores read-only instead of rewriting them.
