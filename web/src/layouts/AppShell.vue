@@ -13,6 +13,7 @@ import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pin
 import CaptureOnboardingDialog from '@/features/capture/CaptureOnboardingDialog.vue'
 import ModelPowerButton from '@/features/model-settings/ModelPowerButton.vue'
 import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
+import { clientsNeedUpdate } from '@/features/doctor/doctor-report'
 import GlossaryLayer from '@/features/glossary/GlossaryLayer.vue'
 import GlossaryToggle from '@/features/glossary/GlossaryToggle.vue'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
@@ -73,6 +74,10 @@ function pressBrand() {
   else void router.push('/')
 }
 const settingsHold = useHold(() => { void router.push('/debug') })
+// A client whose FULI integration needs an update is a dot on 设置 (from the doctor DoctorBanner
+// already reads), and 设置 then opens on 客户端, where 「更新」 is.
+const settingsTo = computed(() => clientsNeedUpdate.value ? '/settings?tab=clients' : '/settings')
+const settingsLabel = computed(() => t(clientsNeedUpdate.value ? 'shell.settingsClientsUpdate' : 'shell.destinations.settings'))
 // The dock stays open on the workbench and folds to the current destination
 // elsewhere. A page outside the dock (settings) has nothing to fold to, so the
 // dock stays open there instead of shrinking to an empty capsule.
@@ -216,10 +221,11 @@ watchEffect(() => {
             <InboxPeek />
           </HeaderPeek>
           <ModelPowerButton />
-          <RouterLink to="/settings" class="app-round" :class="{ 'is-active': settingsActive, 'is-shaking': settingsHold.shaking.value }" :aria-current="settingsActive ? 'page' : undefined"
+          <RouterLink :to="settingsTo" class="app-round" :class="{ 'is-active': settingsActive, 'is-shaking': settingsHold.shaking.value }" :aria-current="settingsActive ? 'page' : undefined"
             draggable="false" v-bind="settingsHold.handlers"
-            :aria-label="t('shell.destinations.settings')" :title="t('shell.destinations.settings')" data-destination="settings" data-term="destination.settings">
+            :aria-label="settingsLabel" :title="settingsLabel" data-destination="settings" data-term="destination.settings">
             <UiIcon name="settings" :size="18" />
+            <span v-if="clientsNeedUpdate" class="app-round-dot" aria-hidden="true" data-clients-update-dot />
           </RouterLink>
         </div>
       </div>
@@ -290,6 +296,11 @@ watchEffect(() => {
 .app-version-dot {
   position: absolute; top: -2px; right: -6px; width: 6px; height: 6px; border-radius: 50%;
   background: var(--color-danger); box-shadow: 0 1px 4px color-mix(in srgb, var(--color-danger) 28%, transparent);
+}
+/* The same dot on a round button's corner: an overlay, so the button never moves. */
+.app-round-dot {
+  position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; pointer-events: none;
+  background: var(--color-danger); box-shadow: 0 0 0 2px var(--color-bg), 0 1px 4px color-mix(in srgb, var(--color-danger) 28%, transparent);
 }
 .app-runtime-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--runtime); }
 .app-runtime-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

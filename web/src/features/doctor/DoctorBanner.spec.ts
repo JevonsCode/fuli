@@ -1,4 +1,4 @@
-import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,6 +9,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import { setLocale } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import DoctorBanner from './DoctorBanner.vue'
+import { doctorReport } from './doctor-report'
 import type { DoctorItem, DoctorReport } from './model'
 
 const item = (id: string, kind: string, severity: DoctorItem['severity'], fix: DoctorItem['fix'], data = {}): DoctorItem =>
@@ -35,9 +36,13 @@ beforeEach(() => {
   setLocale('zh-CN', { persist: false })
   api.getJson.mockReset()
   api.postJson.mockReset()
+  // The report is shared across the shell; each test starts with none.
+  doctorReport.value = null
   vi.useFakeTimers()
 })
 afterEach(() => vi.useRealTimers())
+// Banners share one report, so a banner left mounted would answer the next test's reads.
+enableAutoUnmount(afterEach)
 
 describe('DoctorBanner', () => {
   it('says nothing while FULI is ok, info items included', async () => {

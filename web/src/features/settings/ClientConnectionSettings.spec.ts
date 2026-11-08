@@ -319,3 +319,46 @@ it('connects every client FULI can write with 一键接入, one after another, a
   expect(posted).toEqual(['codex', 'cursor'])
   wrapper.unmount()
 })
+
+it('reads every status again as each client of 一键接入 is written and when it ends, naming the client being written', async () => {
+  // Jevons 0.25.0: after 一键接入 the tiles kept 「需要更新」 until one client's own 更新 was clicked.
+  const server: Record<string, string> = { codex: 'changed', cursor: 'changed' }
+  const pending: (() => void)[] = []
+  const calls = routed(() => Response.json(statusOf([{ id: 'codex', status: server.codex },
+    { id: 'cursor', label: 'Cursor', status: server.cursor }])), (url, init) => {
+    if (url.endsWith('/doctor')) return Response.json({ checkedAt: '', version: '', overall: 'ok', items: [], unchecked: [] })
+    if (!url.endsWith('/connect')) return Response.json(configuration)
+    const id = JSON.parse(String(init?.body)).clientId as string
+    return new Promise<Response>((resolve) => pending.push(() => {
+      server[id] = 'connected'
+      resolve(Response.json({ id, status: 'connected', restartRequired: true }))
+    }))
+  })
+  const wrapper = mount(ClientConnectionSettings)
+  await flushPromises()
+  const rows = () => wrapper.findAll('[data-client-status]').map(row => row.attributes('data-client-status'))
+  expect(rows()).toEqual(['changed', 'changed'])
+  const before = statusCalls(calls)
+
+  await wrapper.get('[data-connect-all]').trigger('click')
+  await flushPromises()
+  // One indicator, in the summary line, naming the real request; the button keeps its words and place.
+  expect(wrapper.get('[data-connecting-all]').attributes('aria-label')).toBe('正在接入 2 个客户端：Codex（1/2）')
+  expect(wrapper.findAll('[role="status"][aria-busy], .button-loading')).toHaveLength(0)
+  expect(wrapper.get('[data-connect-all]').text()).toBe('一键接入')
+
+  pending.shift()!()
+  await flushPromises()
+  expect(rows()).toEqual(['connected', 'changed'])
+  expect(wrapper.get('[data-connecting-all]').attributes('aria-label')).toBe('正在接入 2 个客户端：Cursor（2/2）')
+
+  pending.shift()!()
+  await flushPromises()
+  expect(rows()).toEqual(['connected', 'connected'])
+  expect(wrapper.find('[data-connecting-all]').exists()).toBe(false)
+  expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 2/2 个客户端')
+  expect(statusCalls(calls) - before).toBe(2)
+  // The 设置 dot's source is read again too.
+  expect(calls.some(([url]) => url.endsWith('/api/system/doctor'))).toBe(true)
+  wrapper.unmount()
+})
