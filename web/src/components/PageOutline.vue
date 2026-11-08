@@ -54,7 +54,7 @@ function go(entry: OutlineEntry) {
 
 <template>
   <Teleport to="body">
-    <nav v-if="shown" class="page-outline" :aria-label="t('common.outline')" data-page-outline>
+    <nav v-if="shown" class="page-outline" :style="{ '--outline-rows': entries.length }" :aria-label="t('common.outline')" data-page-outline>
       <!-- The way in by keyboard: the list is hidden until something here has focus. -->
       <Button variant="ghost" class="page-outline-rail" :aria-label="t('common.outline')" data-page-outline-rail>
         <span v-for="(entry, index) in entries" :key="index" class="page-outline-tick" aria-hidden="true">
@@ -75,23 +75,30 @@ function go(entry: OutlineEntry) {
 </template>
 
 <style scoped>
-/* Navigation at the page's edge, not another card (Jevons 11-08). It hangs from a fixed
-   height by the window's right edge, clear of the page's scrollbar, so more sections or a
-   taller window only lengthen it downward, and it never reaches the page's content.
+/* Navigation at the page's edge, not another card (Jevons 11-08). By the window's right
+   edge, clear of the page's scrollbar, it never reaches the page's content. Its ticks start
+   a little over a quarter of the way down the window (28%), spaced evenly with room between
+   ticks, away from the top bar's actions (Jevons 11-08:
+   贴在顶部紧挨着「设置」); a list too long to fit there rises just enough to end above the
+   bottom margin, and never higher than just under the top bar.
    The ruler (one tick per section on a hairline, the hairline on the outer side) sits at
    the edge; the names open leftwards from it, each on its tick's row, so a name and its
    tick read as one line. Only the ruler and the open names take the pointer: the closed
    names must not cover the page. */
 .page-outline {
-  --outline-row: 22px;
+  --outline-row: 30px;
   --outline-pad: 6px;
-  position: fixed; top: 136px; right: calc(max(var(--scrollbar-size), 8px) + 2px); z-index: var(--z-nav);
+  --outline-top-min: calc(76px + var(--desktop-caption-top, 0px));
+  --outline-bottom: 32px;
+  --outline-height: calc(var(--outline-rows, 3) * var(--outline-row) + 2 * var(--outline-pad));
+  position: fixed; top: max(var(--outline-top-min), min(28dvh, calc(100dvh - var(--outline-height) - var(--outline-bottom)))); right: calc(max(var(--scrollbar-size), 8px) + 2px); z-index: var(--z-nav);
   display: flex; flex-direction: row-reverse; align-items: flex-start; pointer-events: none;
 }
 /* The ticks end 14px from the window's edge on the hairline and narrow with the margin. */
 .page-outline-rail {
   position: relative; display: grid; grid-auto-rows: var(--outline-row); justify-items: end; align-items: center; gap: 0;
-  width: auto; height: auto; padding: var(--outline-pad) 4px; border-radius: var(--radius-control); pointer-events: auto;
+  width: auto; height: auto; max-height: calc(100dvh - var(--outline-top-min) - var(--outline-bottom)); overflow: hidden;
+  padding: var(--outline-pad) 4px; border-radius: var(--radius-control); pointer-events: auto;
 }
 .page-outline-rail:hover { background: transparent; }
 .page-outline-rail::after {
@@ -111,7 +118,7 @@ function go(entry: OutlineEntry) {
    fade: a fading panel cannot blur what lies beneath it until it is opaque. */
 .page-outline-list {
   position: relative; isolation: isolate; display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: var(--outline-row); gap: 0;
-  width: max-content; max-width: 220px; max-height: calc(100dvh - 200px); margin: 0; padding: var(--outline-pad) 2px var(--outline-pad) 12px; overflow: hidden auto;
+  width: max-content; max-width: 220px; max-height: calc(100dvh - var(--outline-top-min) - var(--outline-bottom)); margin: 0; padding: var(--outline-pad) 2px var(--outline-pad) 12px; overflow: hidden auto;
   border-radius: var(--radius-control); list-style: none;
   visibility: hidden; scale: .97; transform-origin: right top; user-select: none; -webkit-user-select: none;
   transition: scale var(--motion-fast) var(--motion-ease), visibility 0s linear var(--motion-fast);

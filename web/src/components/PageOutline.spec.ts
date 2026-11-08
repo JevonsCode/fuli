@@ -15,6 +15,15 @@ describe('the page outline', () => {
     expect(outline).not.toMatch(/\bleft:/)
   })
 
+  it('starts a little over a quarter down the window (28%), rising only as far as a long list needs, never under the top bar', () => {
+    const outline = rule('.page-outline')
+    expect(outline).toMatch(/--outline-row: 30px/)
+    expect(outline).toMatch(/top: max\(var\(--outline-top-min\), min\(28dvh, calc\(100dvh - var\(--outline-height\) - var\(--outline-bottom\)\)\)\)/)
+    expect(outline).toMatch(/--outline-top-min: calc\(76px \+ var\(--desktop-caption-top, 0px\)\)/)
+    expect(outline).toMatch(/--outline-height: calc\(var\(--outline-rows, 3\) \* var\(--outline-row\) \+ 2 \* var\(--outline-pad\)\)/)
+    expect(source).toMatch(/:style="\{ '--outline-rows': entries\.length \}"/)
+  })
+
   it('is a ruler of ticks on a hairline, and the names open leftwards on the ticks\' rows', () => {
     expect(rule('.page-outline-rail::after')).toMatch(/width: 1px/)
     expect(rule('.page-outline-bar')).toMatch(/transform-origin: right/)
