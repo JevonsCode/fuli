@@ -17,7 +17,8 @@ import { samePackageRoot } from './desktop-app-package.js';
 // into are read too. The app's own CLI is not on PATH, so a `fl` found here
 // is what a terminal runs.
 //
-// Answers [{ packageRoot, version, launchers: [path], removeCommand }].
+// Answers [{ packageRoot, version, launchers: [path], shellCommands, removeCommand }];
+// shellCommands: the bare commands (fl, fuli) a terminal answers with this copy.
 // extraRoots: package roots known from elsewhere, such as the one a running
 // console recorded; only an npm global package among them counts.
 export function findNpmCopies({ ownRoot, extraRoots = [], env = process.env, platform = process.platform,
@@ -43,7 +44,8 @@ export function findNpmCopies({ ownRoot, extraRoots = [], env = process.env, pla
     const version = packageVersion(path.join(root, 'package.json'), readText);
     if (version) add(root, version);
   }
-  return [...copies.values()];
+  return [...copies.values()].map((copy) => ({ ...copy,
+    shellCommands: [...new Set(copy.launchers.map((launcher) => path.basename(launcher).replace(/\.cmd$/i, '')))] }));
 }
 
 // Where npm links global commands when its own folder is not on the app's PATH.

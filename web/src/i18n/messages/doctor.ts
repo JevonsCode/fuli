@@ -26,7 +26,6 @@ export const doctorMessages = {
       hook_trust_untrusted: '有客户端的 FULI hooks 还没被信任',
       client_format_changed: '客户端的记录格式变了，FULI 可能记不全',
       data_dir_shared: '数据目录其他账户也能读',
-      npm_copy_installed: '用 npm 装的 FULI 还在',
       other: '还有一件事需要你看看',
     },
     hints: {
@@ -44,8 +43,6 @@ export const doctorMessages = {
       hookTrustUntrusted: '请在 {client} 里打开 /hooks，审阅并信任 FULI 的 hooks。',
       clientFormatChanged: '这个客户端更新后，FULI 只读懂了 {recognized}/{total} 行记录。更新 FULI 通常能解决。',
       dataDirShared: '自动修复会只留给你自己和系统。',
-      npmCopyShell: '桌面版已接管同一份数据和客户端；终端里的 {commands} 仍是旧的 npm 版 v{version}。运行下面的命令删掉它，数据不动。',
-      npmCopy: '桌面版已接管同一份数据和客户端，npm 版 v{version} 已用不到。运行下面的命令删掉它，数据不动。',
     },
     otherClient: '其他 Agent',
     sessionLinks: {
@@ -83,7 +80,6 @@ export const doctorMessages = {
       hook_trust_untrusted: 'A client’s FULI hooks are not trusted yet',
       client_format_changed: 'A client changed its record format; FULI may miss some',
       data_dir_shared: 'Other accounts can read the data folder',
-      npm_copy_installed: 'A copy of FULI installed with npm is still here',
       other: 'Something else needs a look',
     },
     hints: {
@@ -101,8 +97,6 @@ export const doctorMessages = {
       hookTrustUntrusted: 'Open /hooks in {client} and trust FULI’s hooks there.',
       clientFormatChanged: 'After this client updated, FULI read {recognized} of {total} lines. Updating FULI usually fixes it.',
       dataDirShared: 'Fixing automatically limits it to you and the system.',
-      npmCopyShell: 'The app now runs your data and clients; terminal {commands} still runs old npm v{version}. Remove it below; data stays.',
-      npmCopy: 'The app now runs your data and clients; npm v{version} is unused. Remove it below; data stays.',
     },
     otherClient: 'Other Agent',
     sessionLinks: {

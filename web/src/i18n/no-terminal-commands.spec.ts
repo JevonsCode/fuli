@@ -21,11 +21,11 @@ const ALLOWED = new Map<string, string>([
   // entries when that branch lands.
   ['employees.ts:zh-CN.installHelp', 'removed by JVS/jefa-builtin-board'],
   ['employees.ts:en-US.installHelp', 'removed by JVS/jefa-builtin-board'],
-  // An npm copy beside the desktop app is outside FULI: the app takes over its
-  // data and clients, but removing it changes the person's own environment, so
-  // the 体检 says the terminal still runs it and shows npm's one remove command.
-  ['doctor.ts:zh-CN.hints.npmCopyShell', 'the npm copy is the person\'s to remove'],
-  ['doctor.ts:en-US.hints.npmCopyShell', 'the npm copy is the person\'s to remove'],
+  // An older npm copy beside the desktop app: the notice says a terminal still
+  // runs it, which is why the person may remove it; the step itself is a button.
+  ['npm-copies.ts:zh-CN.notice', 'names why the npm copy matters; removing it is a button'],
+  ['npm-copies.ts:zh-CN.shell', 'names why the npm copy matters; removing it is a button'],
+  ['npm-copies.ts:en-US.shell', 'names why the npm copy matters; removing it is a button'],
 ])
 
 const files = import.meta.glob<Record<string, unknown>>('./messages/*.ts', { eager: true })

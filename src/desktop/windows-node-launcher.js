@@ -59,8 +59,9 @@ export function removeWindowsNodeLauncher(installRoot) {
   return held;
 }
 
-// A leftover a client still runs stays; a later placement or removal tries again.
-function removeLauncherLeftovers(installRoot) {
+// A leftover a client still runs stays; a later placement, removal or tray
+// start tries again. Returns the paths still held.
+export function removeLauncherLeftovers(installRoot) {
   const held = [];
   for (const name of readdirSync(installRoot).filter(entry => LAUNCHER_LEFTOVER.test(entry))) {
     try { unlinkSync(join(installRoot, name)); } catch { held.push(join(installRoot, name)); }

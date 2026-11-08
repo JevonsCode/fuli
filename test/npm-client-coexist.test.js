@@ -8,7 +8,12 @@ import { npmUninstallCommand } from '../src/cli/update-installation.js';
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
 import { DESKTOP_ADOPTION_FILE, otherPackageConsole, reconnectAfterAdoption } from '../src/desktop/npm-adoption.js';
 import { findNpmCopies } from '../src/desktop/npm-copies.js';
+import { createNpmCopyControl } from '../src/desktop/npm-copy-control.js';
+import { uninstallNpmCopy } from '../src/desktop/npm-copy-uninstall.js';
+import { tidyInstallation } from '../src/desktop/windows-controller.js';
+import { removeLauncherLeftovers } from '../src/desktop/windows-node-launcher.js';
 import { createDoctor } from '../src/system/doctor.js';
+import { handleNpmCopiesRequest } from '../src/http/npm-copies-api-router.js';
 
 // FULI installed with npm first, then the desktop app (same data directory).
 // Synthetic temporary folders only: no real data directory, PATH, client
@@ -58,6 +63,7 @@ test('an npm copy on PATH is found with its version and remove command; the app 
   assert.equal(copies[0].version, '0.12.4');
   assert.equal(realpathSync(copies[0].packageRoot), realpathSync(npm.packageRoot));
   assert.equal(copies[0].launchers.length, 1);
+  assert.deepEqual(copies[0].shellCommands, ['fl']);
   assert.match(copies[0].removeCommand, /^npm uninstall --global fuli-context --prefix /);
   // The desktop app never reports itself, and nothing on PATH means nothing found.
   assert.deepEqual(findNpmCopies({ ownRoot: npm.packageRoot, env, homeDir: home, listDirectory: () => [] }), []);
@@ -103,7 +109,7 @@ test('clients are pointed at the app once per npm copy, and again whenever anoth
     { clients: 'reconnected', npmCopies: 1 });
   assert.deepEqual(calls, [['setup', '--yes', '--connected-only']]);
   assert.deepEqual(JSON.parse(readFileSync(join(dataDir, DESKTOP_ADOPTION_FILE), 'utf8')),
-    { version: 1, adoptedAt: '2026-11-08T08:00:00.000Z', npmCopies: [copy.packageRoot], clients: 'reconnected' });
+    { version: 1, adoptedAt: '2026-11-08T08:00:00.000Z', npmCopies: [copy.packageRoot], clients: 'reconnected', dismissed: [] });
   assert.equal(await reconnectAfterAdoption(context, { replaced: null, invoke, findCopies: () => [copy], now }), null,
     'an adopted copy is not reconnected at every start');
   const failing = async (args) => { calls.push(args); return { code: 1, stdout: '', stderr: 'partial' }; };
@@ -152,11 +158,107 @@ test('the 体检 names an npm copy beside the app, the shell commands it still a
   const none = await doctor(() => []).check();
   assert.equal(none.items.some(item => item.kind === 'npm_copy_installed'), false);
   const found = await doctor(() => [{ packageRoot: '/opt/homebrew/lib/node_modules/fuli-context', version: '0.12.4',
-    launchers: ['/opt/homebrew/bin/fl', '/opt/homebrew/bin/fuli'],
+    launchers: ['/opt/homebrew/bin/fl', '/opt/homebrew/bin/fuli'], shellCommands: ['fl', 'fuli'],
     removeCommand: 'npm uninstall --global fuli-context --prefix /opt/homebrew' }]).check();
   const item = found.items.find(candidate => candidate.kind === 'npm_copy_installed');
-  assert.deepEqual(item, { id: 'npm_copy_installed', kind: 'npm_copy_installed', severity: 'warning', fix: 'person',
+  // The console's own notice speaks to the person; the 体检 keeps it as info for Agents.
+  assert.deepEqual(item, { id: 'npm_copy_installed', kind: 'npm_copy_installed', severity: 'info', fix: 'person',
     data: { copies: [{ version: '0.12.4', shellCommands: ['fl', 'fuli'] }],
       commands: ['npm uninstall --global fuli-context --prefix /opt/homebrew'] } });
-  assert.equal(found.overall, 'needs_person');
+  assert.equal(found.overall, 'ok');
+});
+
+test('removing an npm copy runs the npm of its own prefix, without lifecycle scripts, and checks it is gone', async t => {
+  const root = temporary(t);
+  const npm = npmPrefix(root);
+  const windows = process.platform === 'win32';
+  const npmCli = windows ? join(npm.prefix, 'node_modules', 'npm', 'bin', 'npm-cli.js') : join(npm.prefix, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  const node = windows ? join(npm.prefix, 'node.exe') : join(npm.prefix, 'bin', 'node');
+  mkdirSync(join(npmCli, '..'), { recursive: true });
+  writeFileSync(npmCli, '');
+  writeFileSync(node, '');
+  const copy = { packageRoot: npm.packageRoot, version: '0.12.4' };
+  const runs = [];
+  const removed = await uninstallNpmCopy(copy, { env: { PATH: '' }, execPath: 'app-node', run: async (command, args) => {
+    runs.push([command, ...args]);
+    rmSync(npm.packageRoot, { recursive: true, force: true });
+    return { code: 0, stdout: '', stderr: '' };
+  } });
+  assert.equal(removed.status, 'uninstalled');
+  assert.deepEqual(runs, [[node, npmCli, 'uninstall', '--global', 'fuli-context', '--prefix', npm.prefix, '--ignore-scripts']]);
+  assert.equal(existsSync(join(root, 'npm prefix')), true, 'only the package goes; npm does the rest');
+});
+
+test('a removal that cannot run or does not finish names the command the person runs', async t => {
+  const root = temporary(t);
+  const npm = npmPrefix(root);
+  const copy = { packageRoot: npm.packageRoot, version: '0.12.4' };
+  const notFound = await uninstallNpmCopy(copy, { env: { PATH: '' }, run: async () => assert.fail('no npm to run') });
+  assert.equal(notFound.status, 'failed');
+  assert.equal(notFound.error, 'npm_not_found');
+  assert.match(notFound.manualCommand, /^npm uninstall --global fuli-context --prefix /);
+  const npmCli = process.platform === 'win32' ? join(npm.prefix, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+    : join(npm.prefix, 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  mkdirSync(join(npmCli, '..'), { recursive: true });
+  writeFileSync(npmCli, '');
+  const denied = await uninstallNpmCopy(copy, { env: { PATH: '' }, execPath: 'app-node',
+    run: async () => ({ code: 243, stdout: '', stderr: 'npm error code EACCES\nnpm error permission denied' }) });
+  assert.deepEqual([denied.status, denied.error], ['failed', 'npm error permission denied']);
+  assert.equal(existsSync(npm.packageRoot), true);
+});
+
+test('only a copy found right now can be removed; a closed notice stays closed', async t => {
+  const dataDir = temporary(t);
+  const copy = { packageRoot: '/synthetic/lib/node_modules/fuli-context', version: '0.12.4', launchers: [], shellCommands: [],
+    removeCommand: 'x' };
+  const removed = [];
+  const control = createNpmCopyControl({ dataDir, ownRoot: '/app', find: () => [copy],
+    uninstall: async (target) => { removed.push(target.packageRoot); return { status: 'uninstalled', version: target.version } } });
+  await assert.rejects(control.uninstall({ packageRoot: '/elsewhere/node_modules/fuli-context' }), /No npm copy of FULI is installed there/);
+  await assert.rejects(control.uninstall({ packageRoot: copy.packageRoot, extra: true }), /Send only packageRoot/);
+  assert.deepEqual(removed, []);
+  assert.equal((await control.uninstall({ packageRoot: copy.packageRoot })).status, 'uninstalled');
+  assert.deepEqual(removed, [copy.packageRoot]);
+  assert.equal(control.list().copies[0].noticeDismissed, false);
+  assert.equal(control.setNotice({ packageRoot: copy.packageRoot, dismissed: true }).copies[0].noticeDismissed, true);
+  assert.equal(createNpmCopyControl({ dataDir, ownRoot: '/app', find: () => [copy] }).list().copies[0].noticeDismissed, true);
+  assert.equal(control.setNotice({ packageRoot: copy.packageRoot, dismissed: false }).copies[0].noticeDismissed, false);
+});
+
+test('a Windows tray start clears launchers an update set aside, and keeps one still in use', t => {
+  const installRoot = temporary(t);
+  const old = 'FuliNode.exe.0b8a3c1e-1111-4222-8333-444455556666.old';
+  writeFileSync(join(installRoot, old), '');
+  writeFileSync(join(installRoot, 'FuliNode.exe'), '');
+  assert.deepEqual(tidyInstallation({ installRoot }, 'status'), [], 'status never touches files');
+  assert.equal(existsSync(join(installRoot, old)), true);
+  assert.deepEqual(tidyInstallation({ installRoot }, 'start'), []);
+  assert.equal(existsSync(join(installRoot, old)), false);
+  assert.equal(existsSync(join(installRoot, 'FuliNode.exe')), true, 'the current launcher stays');
+  assert.deepEqual(tidyInstallation({ installRoot: null }, 'start'), [], 'a portable tray has no installation');
+  assert.deepEqual(tidyInstallation({ installRoot }, 'start-open', { removeLeftovers: () => ['held'] }), ['held']);
+  assert.deepEqual(removeLauncherLeftovers(installRoot), []);
+});
+
+test('only this computer removes an npm copy or closes its notice; anyone may read the list', async () => {
+  const answer = () => {
+    const sent = { headers: {} };
+    return { sent, response: { setHeader: (key, value) => { sent.headers[key] = value; },
+      writeHead: (status) => { sent.status = status; }, end: (body) => { sent.body = JSON.parse(body); } } };
+  };
+  const call = async (method, path, address, system) => {
+    const { sent, response } = answer();
+    const handled = await handleNpmCopiesRequest({ request: { method, socket: { remoteAddress: address } }, response,
+      url: new URL(`http://127.0.0.1${path}`), system });
+    return { handled, ...sent };
+  };
+  const system = { npmCopies: { list: () => ({ copies: [{ version: '0.12.4' }] }),
+    uninstall: async () => assert.fail('a remote request never removes'), setNotice: () => assert.fail('nor closes') } };
+  assert.deepEqual((await call('GET', '/api/system/npm-copies', '192.168.1.20', system)).body, { copies: [{ version: '0.12.4' }] });
+  const remote = await call('POST', '/api/system/npm-copies/uninstall', '192.168.1.20', system);
+  assert.deepEqual([remote.status, remote.body.code], [403, 'local_user_only']);
+  assert.equal((await call('PUT', '/api/system/npm-copies/notice', '192.168.1.20', system)).status, 403);
+  assert.equal((await call('DELETE', '/api/system/npm-copies/uninstall', '127.0.0.1', system)).status, 405);
+  assert.deepEqual((await call('GET', '/api/system/npm-copies', '127.0.0.1', {})).body, { copies: [] }, 'no desktop app, nothing listed');
+  assert.equal((await call('GET', '/api/system/doctor', '127.0.0.1', system)).handled, false);
 });

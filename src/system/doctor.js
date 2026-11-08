@@ -303,9 +303,8 @@ function dataDirItems(shared) {
 // CLI is not on PATH.
 function npmCopyItems(copies) {
   if (!copies?.length) return [];
-  return [item('npm_copy_installed', 'npm_copy_installed', 'warning', 'person', {
-    copies: copies.map(({ version, launchers }) => ({ version,
-      shellCommands: [...new Set(launchers.map((launcher) => launcher.split(/[\\/]/).pop().replace(/\.cmd$/i, '')))] })),
+  return [item('npm_copy_installed', 'npm_copy_installed', 'info', 'person', {
+    copies: copies.map(({ version, shellCommands }) => ({ version, shellCommands })),
     commands: copies.map(({ removeCommand }) => removeCommand)
   })];
 }

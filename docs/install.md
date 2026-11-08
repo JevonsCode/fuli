@@ -153,10 +153,11 @@ nothing and loses nothing, but the program is then on the computer twice. The cl
   and the client's own is started.
 - Every Agent client FULI was connected to (Claude Code, Codex, Cursor, …) is pointed at the desktop client's copy,
   once. Open Agent sessions pick it up when they restart.
-- The npm copy stays installed, because removing it changes your own environment. The console's health check shows
-  one notice with the command that removes it, for example
-  `npm uninstall --global fuli-context --prefix '/opt/homebrew'`. Your data stays. Until you remove it, a bare `fl` or
-  `fuli` in a terminal still runs that npm version: the client does not put its own CLI on PATH.
+- The npm copy stays installed until you choose. The console shows one floating notice naming it, with **Remove**: FULI
+  runs the npm that installed it (`npm uninstall --global fuli-context` for that prefix, without package scripts) and
+  your data stays. If that npm cannot remove it (for example without permission), the notice shows the command to run
+  yourself. Closing the notice keeps it closed; **Settings › Clients** still lists the copy. An Agent removes it only
+  with your own words. Until it is removed, a bare `fl` or `fuli` in a terminal still runs that npm version.
 - From 0.25.0 on, an npm copy never replaces the client's running service. An older npm copy started by hand
   (`fl start`) can still take it over; the client takes it back the next time it starts FULI. An older copy that meets
   data a newer FULI upgraded leaves those stores read-only instead of rewriting them.

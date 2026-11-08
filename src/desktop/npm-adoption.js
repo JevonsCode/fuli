@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { isProcessAlive } from '../local-runtime/processes.js';
 import { readJsonFile } from '../storage/json-file.js';
-import { jsonFormat, readJsonRecord, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { jsonFormat, readJsonRecord, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 import { samePackageRoot } from './desktop-app-package.js';
 import { findNpmCopies } from './npm-copies.js';
 
@@ -51,11 +51,29 @@ export async function reconnectAfterAdoption(context, { replaced, invoke, findCo
   const result = await invoke(['setup', '--yes', '--connected-only']);
   const clients = result.code === 0 ? 'reconnected' : 'not_reconnected';
   if (record?.status !== 'unreadable') {
-    writeVersionedJsonFileAtomic(path, { version: 1, adoptedAt: now().toISOString(),
-      npmCopies: [...known, ...fresh.map((copy) => copy.packageRoot)], clients }, DESKTOP_ADOPTION_FORMAT);
+    updateVersionedJsonFileAtomic(path, DESKTOP_ADOPTION_FORMAT, (current) => ({ ...emptyRecord(), ...current,
+      adoptedAt: now().toISOString(), npmCopies: [...known, ...fresh.map((copy) => copy.packageRoot)], clients }));
   }
   return { clients, npmCopies: copies.length };
 }
+
+// The npm copies whose console notice the person closed; a closed notice
+// stays closed, and Settings still lists the copy.
+export function dismissedNpmNotices(dataDir) {
+  const record = readJsonRecord(join(dataDir, DESKTOP_ADOPTION_FILE), DESKTOP_ADOPTION_FORMAT);
+  return new Set(Array.isArray(record?.dismissed) ? record.dismissed : []);
+}
+
+export function setNpmNoticeDismissed(dataDir, packageRoot, dismissed) {
+  updateVersionedJsonFileAtomic(join(dataDir, DESKTOP_ADOPTION_FILE), DESKTOP_ADOPTION_FORMAT, (current) => {
+    const next = { ...emptyRecord(), ...current };
+    const roots = new Set(next.dismissed);
+    if (dismissed) roots.add(packageRoot); else roots.delete(packageRoot);
+    return { ...next, dismissed: [...roots] };
+  });
+}
+
+const emptyRecord = () => ({ version: 1, adoptedAt: null, npmCopies: [], clients: null, dismissed: [] });
 
 function readRuntimeState(path) {
   try { return readJsonFile(path, null); } catch { return null; }

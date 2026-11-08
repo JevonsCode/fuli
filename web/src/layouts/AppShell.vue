@@ -31,6 +31,7 @@ import { routeMetaText, updateDocumentTitle } from '@/router/meta'
 import { useConsoleStore } from '@/stores/console'
 import { UiIcon, UiIconButton } from '@/ui'
 import FeedbackToast from './FeedbackToast.vue'
+import NpmCopyNotice from '@/features/npm-copies/NpmCopyNotice.vue'
 import InboxPeek from './InboxPeek.vue'
 import { FULI_VERSION } from '@/version'
 import AppDock from './AppDock.vue'
@@ -226,6 +227,7 @@ watchEffect(() => {
     <main class="app-main">
       <NavigationRecovery />
       <FeedbackToast />
+      <NpmCopyNotice />
       <RouterView v-slot="{ Component }"><component :is="Component" /></RouterView>
       <GlossaryLayer />
       <CaptureOnboardingDialog />

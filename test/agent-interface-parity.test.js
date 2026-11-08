@@ -112,6 +112,7 @@ const RELAYED_DECISIONS = new Set([
   'POST /api/knowledge/batch-confirmation',
   'PATCH /employee-workspaces/:templateId/:projectId/api/work-items/:itemId/status',
   'PUT /api/person-profile',
+  'POST /api/system/npm-copies/uninstall',
   'POST /api/first-run-guide',
   'POST /api/capture-onboarding',
   'POST /api/data-format/dismiss-notices',
@@ -168,7 +169,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [52, 8, 13, 27]);
+    catalog.coverage.localUserOnly], [53, 8, 14, 27]);
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
   for (const entry of relayed) {
