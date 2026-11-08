@@ -43,6 +43,7 @@ async function remind(copy: NpmCopy, value: boolean) {
       <li v-for="copy in npmCopies.copies" :key="copy.packageRoot" :data-npm-copy="copy.version">
         <span class="npm-copy-text">
           <strong>{{ t('npmCopies.version', { version: copy.version }) }}</strong>
+          <small class="npm-copy-path" data-npm-copy-path>{{ t('npmCopies.path', { path: copy.packageRoot }) }}</small>
           <small v-if="copy.otherDataDir">{{ t('npmCopies.otherData', { version: copy.version, dataDir: copy.otherDataDir }) }}</small>
           <small v-else-if="copy.newer">{{ t('npmCopies.newer', { version: copy.version }) }}</small>
           <small v-if="copy.shellCommands.length">{{ t('npmCopies.shell', { commands: copy.shellCommands.join(' / ') }) }}</small>
@@ -72,6 +73,7 @@ async function remind(copy: NpmCopy, value: boolean) {
 .npm-copies li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
 .npm-copy-text { display: grid; gap: 2px; min-width: 0; }
 .npm-copy-text small { color: var(--color-muted); }
+.npm-copy-path { font-family: var(--font-mono); overflow-wrap: anywhere; }
 .npm-copy-failed { color: var(--color-danger) !important; }
 .npm-copy-command {
   padding: 6px 8px; border-radius: var(--radius-control); background: var(--color-surface-hover);

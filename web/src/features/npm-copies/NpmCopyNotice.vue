@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import { RouterLink } from 'vue-router'
 
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -12,13 +13,15 @@ import { loadNpmCopies, noticeCopy, npmCopies, removalReason, removeNpmCopy, set
 // A floating glass notice when the desktop app found an older npm copy of
 // FULI beside it (Jevons 11-08): it names the copy, offers 「卸载」 with no
 // second confirmation, and closes for good with ×; Settings › 客户端 still
-// lists the copy. It waits while the shell's own feedback line is showing,
-// so the two never overlap.
+// lists the copy. It sits at the bottom right just above the dock, so it
+// never covers the top bar, a page's tabs or its title.
+// The Settings card that keeps the copy, with its 卸载, after this notice is closed.
+const SETTINGS_CARD = '/settings?tab=clients#npm-copies'
 const store = useConsoleStore()
 const copy = computed(() => noticeCopy())
 const failure = computed(() => copy.value ? npmCopies.failed[copy.value.packageRoot] ?? null : null)
 const removing = computed(() => copy.value !== null && npmCopies.removing === copy.value.packageRoot)
-const shown = computed(() => copy.value !== null && (!store.feedback || removing.value))
+const shown = computed(() => copy.value !== null)
 // A copy on other data, or newer than the app, is only named: removing it is not what the app suggests.
 const removable = computed(() => copy.value !== null && !copy.value.otherDataDir && !copy.value.newer)
 const message = computed(() => {
@@ -52,6 +55,7 @@ async function close() {
     <div v-if="shown && copy" class="npm-copy-notice" data-npm-copy-notice>
       <UiNotice class="npm-copy-message" tone="info">
         {{ message }}
+        <RouterLink class="npm-copy-later" :to="SETTINGS_CARD" data-npm-copy-later>{{ t('npmCopies.later') }}</RouterLink>
         <template v-if="failure">
           <p class="npm-copy-failed" role="alert">{{ t('npmCopies.failed', { reason: removalReason(failure.error) }) }}</p>
           <code v-if="failure.manualCommand" class="npm-copy-command" data-npm-copy-command>{{ failure.manualCommand }}</code>
@@ -67,15 +71,19 @@ async function close() {
 </template>
 
 <style scoped>
-/* Glass, like every floating bar; it sits where the feedback line does and takes no height from the page. */
+/* Glass, like every floating bar; bottom right above the dock (--dock-clearance), taking no height from the page. */
 .npm-copy-notice {
-  position: fixed; top: 64px; right: calc(var(--page-inline) + var(--scrollbar-size)); z-index: var(--z-popover);
+  position: fixed; bottom: var(--dock-clearance); right: calc(var(--page-inline) + var(--scrollbar-size)); z-index: var(--z-popover);
   width: min(440px, calc(100vw - 2 * var(--page-inline)));
 }
 .npm-copy-notice :deep(.npm-copy-message) {
   border: 1px solid var(--edge-dock); background: var(--glass-sheen), var(--surface-dock); box-shadow: var(--shadow-glass);
   -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock);
 }
+/* The actions get a row of their own, clearly apart from the sentence. */
+.npm-copy-notice :deep(.ui-notice__actions) { flex-basis: 100%; justify-content: flex-end; gap: 8px; margin: 12px 0 0; }
+.npm-copy-later { display: block; margin-top: 6px; color: var(--color-ink); font-size: 12px; text-decoration: underline;
+  text-underline-offset: 2px; user-select: none; }
 .npm-copy-failed { margin: 6px 0 0; color: var(--color-danger); }
 .npm-copy-command {
   display: block; margin-top: 4px; padding: 6px 8px; border-radius: var(--radius-control); background: var(--color-surface-hover);
@@ -83,5 +91,5 @@ async function close() {
 }
 .npm-copy-notice :deep(button) { user-select: none; }
 .npm-copy-notice-enter-active, .npm-copy-notice-leave-active { transition: opacity var(--motion-medium) var(--motion-ease), transform var(--motion-medium) var(--motion-ease); }
-.npm-copy-notice-enter-from, .npm-copy-notice-leave-to { opacity: 0; transform: translateY(-6px); }
+.npm-copy-notice-enter-from, .npm-copy-notice-leave-to { opacity: 0; transform: translateY(6px); }
 </style>
