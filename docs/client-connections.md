@@ -178,10 +178,10 @@ so turning the setting off or disconnecting the client leaves nothing behind.
 | --- | --- |
 | Claude Code | Shown as `/fuli:fla-<name> (MCP)`; Tab inserts `/mcp__fuli__fla-<name>`. Type the request after it. The Claude Code hook turns the line into `#FLA fla-<name> <request>` |
 | OpenCode 2.x, Cursor | Listed with their MCP prompts |
-| Codex | Not available: Codex (0.167) shows neither MCP prompts nor custom prompt files in its / menu. Use `#FLA <name>` |
+| Codex | No MCP prompts. The Codex app lists prompt files from `<CODEX_HOME>/prompts` instead (JevonsCode/fuli#837); the Codex CLI reads none. Use `#FLA <name>` |
 
 The entries carry no avatar: MCP allows `icons` on a prompt, but no checked client shows one (Claude Code's
-menu is text and it hands hosts such as the Claude Desktop Code tab only the prompt names; Codex has no prompt menu).
+menu is text and it hands hosts such as the Claude Desktop Code tab only the prompt names; Codex prompt files have no icon field).
 
 New dedicated adapters belong behind the shared client ports. They should add only host-specific
 configuration, hooks, transcript parsing, or execution, never a second version of Fuli's knowledge
