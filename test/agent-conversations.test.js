@@ -129,7 +129,7 @@ test('saved checkpoint returns a named profile and a portable same-Agent continu
   assert.equal(result.receipt.owner.profile_url, 'http://127.0.0.1:3999/agents/personal/engineer');
   assert.equal(result.receipt.work_status, 'completed');
   assert.equal(result.receipt.continuation.conversation_id, 'conversation-one');
-  assert.match(result.receipt.continuation.prompt, /^@\{engineer\}/);
+  assert.match(result.receipt.continuation.prompt, /^#FLA \{engineer\}/);
   assert.match(result.receipt.continuation.prompt, /sample/);
   assert.match(result.receipt.continuation.prompt, /conversation-one/);
   assert.equal(JSON.stringify(result.receipt).includes(task.token), false, 'never export an old task token as a continuation credential');

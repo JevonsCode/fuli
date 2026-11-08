@@ -1,37 +1,19 @@
-import { leadingAgentAddress, stableAddress } from './fla-mention.js';
+import { addressedAgentId } from './fla-mention.js';
 
-// Only an explicit leading mention selects a role. Matching uses the current scope's
-// directory, never fuzzy search or another Agent's memory. Provider authorization
-// still runs after matching, including for inactive or client-restricted names.
-// The person's own FLAs named anywhere in their space are found before this
-// (task-entry-named-fla.js); this keeps the portable `@{agentId}` form and the
-// names of FULI's own roles in the current scope.
+// The stable `#FLA {agentId}` a hand-off or roundtable wake opens with (or a
+// legacy `@{uuid}`) selects that Agent in the current scope's directory, never
+// another one. Names are matched before this, across the person's whole space
+// (task-entry-named-fla.js). Provider authorization still runs after matching,
+// including for inactive or client-restricted Agents.
 export async function resolveTaskAgentMention(application, projectId, input) {
-  const raw = leadingAgentAddress(input.taskPrompt);
-  if (raw === null) return null;
+  const agentId = addressedAgentId(input.taskPrompt);
+  if (agentId === null) return null;
   const directory = await application.personal.listProjectAgents(
     application.config.personal.spaceId, projectId);
   const agents = Array.isArray(directory) ? directory : directory.agents ?? directory.items ?? [];
-  const text = normalize(raw);
-  const stable = stableAddress(raw);
-  const stableId = stable?.agentId ?? null;
-  const matches = agents.flatMap(agent => {
-    const aliases = stable ? [agent.agent_id] : [agent.profile?.display_name, agent.profile?.name, agent.agent_id];
-    const lengths = aliases.filter(Boolean).map(name => stable ? name : normalize(name)).filter(name => stable
-      ? name === stableId : text.startsWith(name) && /^(?:$|[\s,，:：!?！？])/u.test(text.slice(name.length))).map(name => name.length);
-    return lengths.length ? [{ agent, length: Math.max(...lengths) }] : [];
-  });
-  const longest = Math.max(0, ...matches.map(match => match.length));
-  const exact = matches.filter(match => match.length === longest);
   const failure = status => ({ status, worker_started: false,
-    required_action: 'Select an exact Agent in the current scope with @{agentId}; use list_project_agents to resolve names. Do not load a different Agent as fallback.' });
-  if (!exact.length) return failure('agent_not_found');
-  if (exact.length > 1) return { ...failure('ambiguous_agent'),
-    candidates: exact.slice(0, 8).map(({ agent }) => ({ agent_id: agent.agent_id,
-      name: agent.profile?.display_name || agent.profile?.name })) };
-  const agentId = exact[0].agent.agent_id;
+    required_action: 'Select an exact Agent in the current scope with #FLA {agentId}; use list_project_agents to resolve names. Do not load a different Agent as fallback.' });
+  if (!agents.some(agent => agent.agent_id === agentId)) return failure('agent_not_found');
   if (input.projectAgentId && input.projectAgentId !== agentId) return failure('agent_selection_conflict');
   return { agentId };
 }
-
-function normalize(value) { return String(value).normalize('NFKC').toLowerCase(); }

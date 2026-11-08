@@ -9,7 +9,7 @@ import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 const policy = { compact_after_kb: 64, context_budget: 2000, enabled: true }
 const conversation = { id: 'conversation-a', summary: 'Prepare a new page', status: 'completed', revision: 2,
   last_activity: '2026-09-20T10:00:00Z', compacted_through: 12, raw_retained: true, policy,
-  continuation_prompt: 'Continue @{agent} in project project-a using conversation conversation-a with a fresh task token.' }
+  continuation_prompt: 'Continue #FLA {agent} in project project-a using conversation conversation-a with a fresh task token.' }
 const scope = { personalSpaceId: 'space', agentId: 'agent', personalProjectId: 'project-a' }
 function render() {
   return mount(AgentConversations, { props: { personalSpaceId: 'space', agentId: 'agent',

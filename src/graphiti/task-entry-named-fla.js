@@ -1,8 +1,7 @@
 import { receiptText } from '../agents/identity-receipt.js';
 import { choiceNumber, parseFlaMention } from './fla-mention.js';
-import { flaCandidates, flaChoice, namedAtOpening, namedByWord, narrowedByPartial, rankCandidates, roleCandidates,
-  typedWord, unavailableReason } from './fla-picker.js';
-import { resolveTaskAgentMention } from './project-agent-mention.js';
+import { flaCandidates, flaChoice, namedAtOpening, narrowedByPartial, rankCandidates, roleCandidates,
+  unavailableReason } from './fla-picker.js';
 import { hostInternalActivity } from './task-entry-activity-origin.js';
 import { nameableProjects } from './task-entry-project-mention.js';
 import { sessionMarkers, sessionTaskContext } from './task-entry-standing-owner.js';
@@ -11,15 +10,14 @@ import { employeeAgentId } from '../employees/manifest.js';
 import { TONBORG_EXPLAIN_METHOD } from '../judgment/explain-method.js';
 import { markerField as field, markerValue as unfield } from './task-agent-assignment.js';
 
-// Continue a named FLA in this host session (rec#54). `@Jamie Ash …` or
-// `#FLA Jamie Ash …` names one of the person's FLAs in any of their projects;
-// the entry then runs as that FLA in its own project, whatever folder the
-// session is in, like a project the person names. A bare `@word` continues
-// only an exact name (rec#11 D-68): a partial one stays an ordinary prompt.
-// `@FLA` / `#FLA`, alone or with part of a name, and a name several FLAs
-// share offer the native choice instead (fla-picker.js); its number answers
-// it. The binding holds for the session's later turns until another FLA is
-// named, a hand-off names another Agent, or `@FLA 结束` ends it.
+// Continue a named FLA in this host session (rec#54). `#FLA Jamie Ash …`
+// names one of the person's FLAs in any of their projects; the entry then
+// runs as that FLA in its own project, whatever folder the session is in,
+// like a project the person names. `@` never names one (fla-mention.js).
+// `#FLA`, alone or with part of a name, and a name several FLAs share offer
+// the native choice instead (fla-picker.js); its number answers it. The
+// binding holds for the session's later turns until another FLA is named, a
+// hand-off names another Agent, or `#FLA 结束` ends it.
 //
 // The binding is routing state, stored like a standing assignment's route:
 // markers on the session's current task (withRouteMarkers), read back on the
@@ -32,20 +30,18 @@ import { markerField as field, markerValue as unfield } from './task-agent-assig
 const BINDING = /^fla_binding:(\S+) (\S+) (\S+) (\S+)(?: (.+))?$/su;
 const CHOICE = /^fla_choice:(\S+) (\S+) (\S+) (\S+)$/u;
 const MARKER_LIMIT = 2048;
-// The hint repeats at most this much of what was typed.
-const HINT_WORD_LIMIT = 32;
-// Markers (this binding's, and an @FLG member choice's) travel with the entry under a symbol: JSON never serializes it, so
+// Markers (this binding's, and an #FLG member choice's) travel with the entry under a symbol: JSON never serializes it, so
 // no client receives them; beginTaskFromPreferences stores them on the task.
 export const FLA_ROUTE = Symbol('fla_route');
 
 const CONTINUE_GUIDANCE = 'The person named this FLA to continue its own work in this session; this outranks the '
   + 'folder. Work as it with the restored memory. If conversation.recent_conversation is present, resume it with '
   + 'resume_agent_conversation before acting; otherwise find its conversation with list_agent_conversations. If the '
-  + 'task to continue is unclear, ask. Later turns stay with this FLA until the person names another or says @FLA 结束.';
+  + 'task to continue is unclear, ask. Later turns stay with this FLA until the person names another or says #FLA 结束.';
 // What a built-in role does when named, beyond continuing: Tonborg goes through its questions (explain-method.js).
 const ROLE_GUIDANCE = Object.freeze({ [employeeAgentId('tonborg')]: TONBORG_EXPLAIN_METHOD });
 const UNAVAILABLE_GUIDANCE = 'Tell the person this notice and do no task work: do not act as, or claim the context '
-  + 'of, another FLA. They can name another FLA, pick one with @FLA, or end the binding with @FLA 结束.';
+  + 'of, another FLA. They can name another FLA, pick one with #FLA, or end the binding with #FLA 结束.';
 const CHOOSE_GUIDANCE = 'Ask this now with the host native single-choice UI (a numbered list where there is none), '
   + 'custom input last, and do no task work as any FLA before the answer. When the person picks option N, call '
   + 'begin_task_context with projectPath=current directory and taskPrompt "#FLA N", then continue as the FLA that '
@@ -77,7 +73,7 @@ const QUESTIONS = Object.freeze({
 // readSessionTask: the session's current task, read once per entry.
 export async function namedFlaRequest(application, resolution, input, readSessionTask) {
   const parsed = parseFlaMention(input.taskPrompt);
-  // `@FLG` addresses a group (task-entry-group-discussion.js), not one FLA.
+  // `#FLG` addresses a group (task-entry-group-discussion.js), not one FLA.
   const mention = parsed?.group ? null : parsed;
   let task = null;
   try { task = await readSessionTask(); } catch { /* the binding cannot be proven; route as before */ }
@@ -86,7 +82,7 @@ export async function namedFlaRequest(application, resolution, input, readSessio
   // Internal Agent activity (a roundtable wake) neither starts nor ends one.
   if (hostInternalActivity(application, input)) return previous ? { state: 'carried', previous } : null;
   if (mention?.release) return { state: 'released', previous };
-  // A hand-off's `@{agentId}` names its Agent and routes as before; reaching
+  // A hand-off's `#FLA {agentId}` names its Agent and routes as before; reaching
   // another Agent ends the binding, a failed one keeps it.
   if (mention?.handoff) {
     if (!previous) return null;
@@ -100,33 +96,21 @@ export async function namedFlaRequest(application, resolution, input, readSessio
   const home = namedFlaTask(task) ? {} : sessionTaskContext(task) ?? {};
   const asked = { previous, home: { personalProjectId: home.personalProjectId ?? null,
     projectAgentId: home.projectAgentId ?? null } };
-  let hint = null;
   if (mention || number !== null) {
     const currentProjectId = resolution.personalProjectId ?? null;
     let roster = null;
     try { roster = await spaceRoster(application); }
-    catch { if ((mention?.explicit && !mention.inline) || number !== null) return { state: 'unavailable', reason: 'unavailable', ...asked }; }
+    catch { if (!mention?.inline) return { state: 'unavailable', reason: 'unavailable', ...asked }; }
     if (roster) {
       const ranked = rankCandidates(flaCandidates(roster.agents, roster.projects, roster.spaceId),
         { currentProjectId, recentAgentId: previous?.agentId ?? null });
       const request = number !== null ? choose(open(ranked, input), 'choice_unknown')
-        : mention.explicit ? explicitRequest(mention, ranked,
-          roleCandidates(roster.agents, roster.projects, roster.spaceId, currentProjectId), resolution, input)
-          : bareRequest(mention.query, ranked, resolution, input);
+        : explicitRequest(mention, ranked,
+          roleCandidates(roster.agents, roster.projects, roster.spaceId, currentProjectId), resolution, input);
       if (request) return { ...request, ...asked };
-      // D-68: a bare `@word` that only starts a name stays an ordinary
-      // prompt; at most it says how to choose one.
-      const word = [...typedWord(mention.query)].slice(0, HINT_WORD_LIMIT).join('');
-      if (!mention.explicit && [...word].length >= 2 && narrowedByPartial(word, open(ranked, input)).close) hint = word;
     }
   }
-  if (!previous) return hint ? { state: 'hint', query: hint } : null;
-  // While bound, an `@word` that is none of the person's FLAs but that the
-  // folder's own `@name` rule resolves (a project Agent, one of FULI's roles)
-  // goes there this turn; one that resolves nowhere stays with the bound FLA.
-  if (mention && !mention.explicit && await resolvesInFolder(application, resolution, input)) {
-    return { state: 'carried', previous };
-  }
+  if (!previous) return null;
   // An explicit argument of the caller for another Agent or project decides
   // this call; the binding is kept.
   if ((input.projectAgentId && input.projectAgentId !== previous.agentId)
@@ -168,9 +152,6 @@ export function namedFlaTask(task) {
 export async function namedFlaEntry(application, request, selection, sourceApplication = 'other') {
   const kept = request.previous ? [bindingMarker(request.previous)] : [];
   if (request.state === 'carried') return { view: null, notice: null, markers: kept };
-  if (request.state === 'hint') {
-    return { view: { status: 'hint', hint: `想找 FLA？用 #FLA ${request.query} 选一位，或用 @FLG 邀请几位一起讨论` }, notice: null, markers: [] };
-  }
   if (request.state === 'handoff') {
     const reached = selection?.status === 'ready' && [selection.agent?.agentId, selection.requested_agent_id]
       .includes(request.agentId);
@@ -226,7 +207,7 @@ function unavailable(target, reason, markers) {
     selection: { status: 'agent_unavailable', reason, worker_started: false }, markers };
 }
 
-// `#FLA …` / `@FLA …`: an exact name of an FLA or of one of FULI's roles
+// `#FLA …`: an exact name of an FLA or of one of FULI's roles
 // (rec#58), else the picker over FLAs, narrowed by a partial name; a single
 // close fit continues directly, letters in order only narrow (D-68). An
 // inline `#FLA` takes an exact name only: anything else is ordinary text.
@@ -238,19 +219,6 @@ function explicitRequest({ query, inline }, ranked, roles, resolution, input) {
   const { close, items } = narrowedByPartial(query, available);
   if (close && items.length === 1) return { state: 'continue', target: target(items[0]), origin: 'named' };
   return items.length ? choose(items, 'partial') : choose(available, 'no_match');
-}
-
-// A bare `@word` continues only an exact name: the whole display name, or one
-// of its words when that is exactly one FLA's (D-68). Anything else is null:
-// an ordinary prompt.
-// Only a whole name may answer with a refusal; a name word counts only for
-// FLAs that can continue now (D-68a), so a dismissed "Data Wu" leaves
-// `@Data 注解报错` an ordinary prompt.
-function bareRequest(query, ranked, resolution, input) {
-  const exact = exactRequest(namedAtOpening(query, ranked), resolution, input);
-  if (exact) return exact;
-  const worded = namedByWord(query, open(ranked, input));
-  return new Set(worded.map(item => item.agentId)).size === 1 ? exactRequest(worded, resolution, input) : null;
 }
 
 function exactRequest(exact, resolution, input) {
@@ -289,17 +257,6 @@ function source(input) {
 function target(candidate) {
   return { agentId: candidate.agentId, projectId: candidate.projectId ?? null, name: candidate.name,
     project: candidate.project };
-}
-
-// Whether the folder's existing `@name` rule (project-agent-mention.js) finds
-// an Agent for this prompt, in the folder's project or, outside one, the space.
-async function resolvesInFolder(application, resolution, input) {
-  try {
-    return Boolean((await resolveTaskAgentMention(application, resolution.personalProjectId ?? null,
-      { taskPrompt: input.taskPrompt }))?.agentId);
-  } catch {
-    return false;
-  }
 }
 
 // Every FLA of the person's own space as candidates (fla-picker.js); the

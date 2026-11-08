@@ -25,47 +25,45 @@ test('roundtable capability and receiving session reach Provider authorization',
     assert.equal(input.sessionId, 'receiving-session');
     return { token: 'synthetic-capability-1234567890123456', sessionId: input.sessionId };
   } };
-  await run('@{engineer} [FULI 圆桌 · synthetic-thread]\nReview this work', { receivingSessionId: 'receiving-session' });
+  await run('#FLA {engineer} [FULI 圆桌 · synthetic-thread]\nReview this work', { receivingSessionId: 'receiving-session' });
   const request = calls.find(([name]) => name === 'resolve')[1];
   assert.equal(request.delegation_token, 'synthetic-capability-1234567890123456');
   assert.equal(request.delegation_session_id, 'receiving-session');
   assert.equal(request.report_to_agent_id, undefined);
 });
-test('leading @display name selects the exact current-project Agent before loading memory', async () => {
-  const { run, calls } = fixture();
-  const result = await run('@Alex Morgan 继续刚才的设计');
+test('stable #FLA {id} selects that current-project Agent before loading memory, whatever its name', async () => {
+  const { run, calls } = fixture([role('engineer', 'New Name')]);
+  const result = await run('#FLA {engineer} continue');
   assert.equal(result.agent.agentId, 'engineer');
   assert.deepEqual(calls[0].slice(0, 3), ['directory', 'space', 'sample']);
   assert.equal(calls[1][1].agent_id, 'engineer');
 });
-test('stable @{id} works even when the display name changes', async () => {
-  const { run } = fixture([role('engineer', 'New Name')]);
-  assert.equal((await run('@{engineer} continue')).agent.agentId, 'engineer');
-});
 test('portable mentions encode delimiters and keep identifier case exact', async () => {
   const id = 'Team / 编号}';
   const { run } = fixture([role(id, 'Alex'), role(id.toLowerCase(), 'Alex')]);
-  assert.equal((await run(`@{${encodeURIComponent(id)}} continue`)).agent.agentId, id);
+  assert.equal((await run(`#FLA {${encodeURIComponent(id)}} continue`)).agent.agentId, id);
 });
-test('duplicate exact names require a choice and never select a default owner', async () => {
-  const { run, calls } = fixture([role('a', 'Alex'), role('b', 'Alex')]);
-  const result = await run('@Alex 继续');
-  assert.equal(result.status, 'ambiguous_agent');
-  assert.deepEqual(result.candidates.map(a => a.agent_id), ['a', 'b']);
-  assert.equal(calls.some(c => c[0] === 'resolve'), false);
+test('a legacy @{uuid} from an older prompt still selects its Agent; other @{id} forms do not', async () => {
+  const uuid = '3c0a8f5e-1b2d-4e6f-9a7b-8c9d0e1f2a3b';
+  const { run } = fixture([role(uuid, 'Alex Morgan'), role('engineer', 'Sam Lee')]);
+  assert.equal((await run(`@{${uuid}} continue`)).agent.agentId, uuid);
+  const { run: plain, calls } = fixture();
+  assert.equal((await plain('@{engineer} continue')).agent.agentId, 'default');
+  assert.equal(calls[0][1].agent_id, null);
 });
-test('unknown or explicitly conflicting mention cannot fall back to another Agent', async () => {
-  for (const [prompt, extra, status] of [['@Nobody continue', {}, 'agent_not_found'],
-    ['@Alex Morgan continue', { projectAgentId: 'another' }, 'agent_selection_conflict']]) {
+test('an unknown or explicitly conflicting stable ID cannot fall back to another Agent', async () => {
+  for (const [prompt, extra, status] of [['#FLA {nobody} continue', {}, 'agent_not_found'],
+    ['#FLA {engineer} continue', { projectAgentId: 'another' }, 'agent_selection_conflict']]) {
     const { run, calls } = fixture();
     assert.equal((await run(prompt, extra)).status, status);
     assert.equal(calls.some(c => c[0] === 'resolve'), false);
   }
 });
-test('an attached file path is not a mention: the normal owner is selected', async () => {
-  for (const prompt of ['@"C:\\Users\\sample\\Videos\\Recordings\\20261108-0130-26.0676773.mp4" 帮我看看',
+test('@ addresses nobody: names, attached files and quoted prose keep the normal owner without reading the directory', async () => {
+  for (const prompt of ['@Alex Morgan 继续刚才的设计', '@Nobody continue', '@engineer continue',
+    '@"C:\\Users\\sample\\Videos\\Recordings\\20261108-0130-26.0676773.mp4" 帮我看看',
     '@C:\\Users\\示例\\Desktop\\a b.txt 总结', '@/home/sample/录屏 1.mov 看下', '@~/clip.mp4 剪一下',
-    '@报告-终稿.pdf 总结']) {
+    '@报告-终稿.pdf 总结', '请解释 “#FLA {engineer}” 的用法']) {
     const { run, calls } = fixture();
     const result = await run(prompt);
     assert.equal(result.status, 'ready', prompt);
@@ -74,15 +72,9 @@ test('an attached file path is not a mention: the normal owner is selected', asy
     assert.equal(calls[0][1].agent_id, null, prompt);
   }
 });
-test('quoted prose and non-leading mentions do not change the current owner or read the directory', async () => {
-  const { run, calls } = fixture();
-  await run('请解释 “@Alex Morgan” 的用法');
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], 'resolve');
-});
-test('exact longest name wins over its prefix, with authorization still applied', async () => {
-  const { run } = fixture([role('short', 'Alex'), role('long', 'Alex Morgan', 'inactive')]);
-  const result = await run('@Alex Morgan continue');
+test('a stable ID still goes through authorization', async () => {
+  const { run } = fixture([role('long', 'Alex Morgan', 'inactive')]);
+  const result = await run('#FLA {long} continue');
   assert.equal(result.status, 'agent_unavailable');
   assert.equal(result.agent, undefined);
 });
@@ -101,7 +93,7 @@ test('an older Provider cannot implicitly make the project manager the developer
   assert.equal(result.status, 'unassigned');
   assert.equal(result.reason, 'specialist_required');
   assert.equal(result.agent, undefined);
-  assert.equal((await run('@Jefa 整理看板')).agent.agentId, 'employee.jefa');
+  assert.equal((await run('#FLA {employee.jefa} 整理看板')).agent.agentId, 'employee.jefa');
 });
 
 test('a project with nobody to own the task has AR staff its default lead', async () => {
@@ -186,7 +178,7 @@ test('a built-in role outside its project scope says so; a client refusal is che
       calls.push(input);
       throw Object.assign(new Error('Synthetic refusal'), { status: 403, code: refusal });
     } };
-    const result = await run('@Bole 看下人员分布');
+    const result = await run('#FLA {employee.bole} 看下人员分布');
     assert.equal(result.status, 'agent_unavailable');
     assert.equal(result.reason, reason);
     assert.equal(result.agent, undefined);

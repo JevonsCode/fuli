@@ -2,36 +2,32 @@
 // (rec#55). Parsing only: which FLA a name means is decided against the
 // person's roster (fla-picker.js), and whether it may work by the Provider.
 //
-// - `#FLA <name>` or `@FLA <name>` at the very start: the explicit form. It
-//   names one of the person's FLAs or one of FULI's own roles (Bole, Jefa,
-//   Tonborg, Astro; rec#58). `#FLA` also counts at the start of a line, and
-//   right after a request word (`请让 #FLA Jamie Ash 看一下`, `帮我 #FLA 小林 …`,
-//   `please #FLA …`), where it takes only an exact name (`inline`) and never
-//   opens the picker. Anywhere else, in quotes or in code it is text, such as
-//   a question about the syntax.
-// - `@<name>` at the very start of the prompt. An `@` later in the prompt,
-//   inside quotes or code, never addresses an FLA.
-// - A bare `#FLA` / `@FLA` asks for the picker; `#FLA 2` answers it;
-//   `@FLA 结束` (end, release) ends this session's binding.
-// - `@FLG …` or `#FLG …` (Fuli Agents Group) only at the very start: a
-//   discussion among several FLAs. Its text may name members and ask for
-//   more to be recommended (task-entry-group-discussion.js); `@FLG 1 3` or
-//   `@FLG 开始` answers its member choice, optionally with how the group
-//   works (`一起看` in this session, `圆桌` in the roundtable), and `@FLG 结束`
-//   stops it. A bare reply of numbers answers the choice too; a bare "好",
-//   "开始" or "一起看" does not.
+// Every FULI address starts with `#`. `@` belongs to the clients (Claude Code
+// attaches files with `@"C:\…\clip.mp4"`, Cursor and Codex reference with it),
+// so `@` never addresses an FLA: `@Name`, `@FLA` and `@FLG` are plain text.
 //
-// A leading `@` is not an address when it is evidently something else: an
-// email (`@user@example.com`), a package scope or path (`@scope/pkg`), a code
-// decorator or annotation (`@Override`, `@dataclass`, `@app.route(...)`), or a
-// file a client attached: a quoted path (Claude Code writes `@"C:\…\clip.mp4"`),
-// any path (`@C:\…`, `@/…`, `@./…`, `@~/…`) or a file name (`@README.md`,
-// `@录屏.mp4`). Such a prompt names nobody and keeps its normal owner.
+// - `#FLA <name>` at the very start names one of the person's FLAs or one of
+//   FULI's own roles (Bole, Jefa, Tonborg, Astro; rec#58). `#FLA` also counts
+//   at the start of a line, and right after a request word (`请让 #FLA Jamie
+//   Ash 看一下`, `帮我 #FLA 小林 …`, `please #FLA …`), where it takes only an
+//   exact name (`inline`) and never opens the picker. Anywhere else, in quotes
+//   or in code it is text, such as a question about the syntax.
+// - `#FLA {agentId}` (percent-encoded) is the stable form FULI writes into
+//   continuation prompts and roundtable wakes (flaAddress).
+// - A bare `#FLA` asks for the picker; `#FLA 2` answers it;
+//   `#FLA 结束` (end, release) ends this session's binding.
+// - `#FLG …` (Fuli Agents Group) only at the very start: a discussion among
+//   several FLAs. Its text may name members and ask for more to be
+//   recommended (task-entry-group-discussion.js); `#FLG 1 3` or `#FLG 开始`
+//   answers its member choice, optionally with how the group works (`一起看`
+//   in this session, `圆桌` in the roundtable), and `#FLG 结束` stops it. A
+//   bare reply of numbers answers the choice too; a bare "好", "开始" or
+//   "一起看" does not.
 
-const KEYWORD = /^[#@]FLA(?=$|\s)/iu;
+const KEYWORD = /^#FLA(?=$|\s)/iu;
 const LINE_KEYWORD = /\n[ \t]*#FLA(?=$|\s)/iu;
 const REQUEST_KEYWORD = /(?:请|让|帮我|麻烦|交给|(?<![\p{L}\p{N}_])(?:please|ask|let))[ \t,，:：]*#FLA(?=$|\s)/iu;
-const GROUP = /^[#@]FLG(?=$|[\s:：,，])/iu;
+const GROUP = /^#FLG(?=$|[\s:：,，])/iu;
 const RELEASE = /^(?:结束|释放|解除|退出|停止|end|release|stop)\s*[。.!！]?\s*$/iu;
 const CHOICE = /^(\d{1,2})\s*[.、)）]?\s*$/u;
 // How a confirmed group works (rec#55): in this session, which reads every
@@ -42,52 +38,45 @@ const ROUNDTABLE_MODE = String.raw`在?圆桌里?分头回复|圆桌|分头回�
 const MODE = String.raw`(?:(${SESSION_MODE})|(${ROUNDTABLE_MODE}))`;
 // Several numbers answer a multi-select (`1 3`, `1,3`, `1、3`), optionally
 // followed by a confirmation word and a mode. A confirmation word or a mode
-// alone takes the preselection only after `@FLG` (`@FLG 开始`, `@FLG 一起看`).
+// alone takes the preselection only after `#FLG` (`#FLG 开始`, `#FLG 一起看`).
 const CHOICES = new RegExp(String.raw`^(\d{1,2}(?:\s*[,，、\s]\s*\d{1,2})*)\s*[,，。]?\s*(?:开始|确认|go|start|ok)?`
   + String.raw`\s*[,，]?\s*${MODE}?\s*[。.!！]?\s*$`, 'iu');
 const CONFIRM = new RegExp(String.raw`^(开始吧|开始|确认|go|start)?\s*[,，]?\s*${MODE}?\s*[。.!！]?\s*$`, 'iu');
 // Inline code, fenced blocks and quotes are quoted text, never an address.
 const QUOTED = /```[\s\S]*?(?:```|$)|`[^`\n]*`|"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」|『[^』\n]*』/gu;
-// An identifier called like a function (`@Component(`) or a dotted name
-// (`@pytest.mark`, `@README.md`). A trailing dot alone (`@J.R.`) is a name.
-const CALLED = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\(/u;
-const DOTTED = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/u;
-// An attached file: opens with a quote or a dot, has a path separator, or
-// carries an extension with a letter (`.mp4`, not `5.5` or the dots of `J.R.`).
-const ATTACHMENT = /^["'.]|[\\/]|[^.]\.(?=\d*[A-Za-z])[A-Za-z\d]{1,10}(?![\w.])/u;
-// Annotations and decorators people paste most often, written exactly so.
-const DECORATORS = new Set(['Override', 'Deprecated', 'SuppressWarnings', 'FunctionalInterface', 'SafeVarargs',
-  'Test', 'BeforeEach', 'AfterEach', 'BeforeAll', 'AfterAll', 'Autowired', 'Component', 'Service', 'Repository',
-  'Controller', 'RestController', 'Bean', 'Configuration', 'Entity', 'Injectable', 'Input', 'Output', 'NgModule',
-  'Nullable', 'NonNull', 'Transactional', 'dataclass', 'property', 'staticmethod', 'classmethod',
-  'abstractmethod', 'override', 'cached_property']);
 const ADDRESS_LIMIT = 2048;
 const STABLE = /^\{([^{}\s]+)\}(?=$|[\s,，:：])/u;
+// Compatibility with prompts FULI 0.23 and earlier wrote (continuation
+// prompts, roundtable wakes): `@{<uuid>}` at the start, a whole UUID only.
+// Nothing writes it any more; drop it once 0.23 prompts are out of use.
+const LEGACY_STABLE = /^@\{([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\}(?=$|[\s,，:：])/iu;
 
-// null, { release: true }, { choice: n }, { handoff: agentId } for the
-// portable `@{agentId}` form (a hand-off's continuation prompt),
-// { explicit, query }: the text after the keyword or `@`, which may name an
-// FLA and continue with the task (`inline: true` after a request word), or
-// { group } for `@FLG …` (groupMention).
+// null, { release: true }, { choice: n }, { handoff: agentId } for the stable
+// `#FLA {agentId}` form, { explicit: true, query }: the text after `#FLA`,
+// which may name an FLA and continue with the task (`inline: true` after a
+// request word), or { group } for `#FLG …` (groupMention).
 export function parseFlaMention(prompt) {
   const text = typeof prompt === 'string' ? prompt.trimStart() : '';
   const group = GROUP.exec(text);
   if (group) return { group: groupMention(text.slice(group[0].length)) };
+  const legacy = LEGACY_STABLE.exec(text);
+  if (legacy) return { handoff: legacy[1] };
   const keyword = KEYWORD.exec(text) ?? laterKeyword(text);
-  if (keyword) {
-    const rest = text.slice(keyword.index + keyword[0].length).trim().slice(0, ADDRESS_LIMIT);
-    if (keyword.inline) return { explicit: true, query: rest, inline: true };
-    if (RELEASE.test(rest)) return { release: true };
-    const choice = CHOICE.exec(rest);
-    if (choice) return { choice: Number(choice[1]) };
-    return { explicit: true, query: rest };
-  }
-  const address = leadingAgentAddress(text);
-  if (address === null) return null;
-  // `@{agentId}` is the portable form, resolved in its project's scope.
-  const stable = stableAddress(address);
+  if (!keyword) return null;
+  const rest = text.slice(keyword.index + keyword[0].length).trim().slice(0, ADDRESS_LIMIT);
+  if (keyword.inline) return { explicit: true, query: rest, inline: true };
+  const stable = stableAddress(rest);
   if (stable) return stable.agentId ? { handoff: stable.agentId } : null;
-  return address.startsWith('{') ? null : { explicit: false, query: address };
+  if (RELEASE.test(rest)) return { release: true };
+  const choice = CHOICE.exec(rest);
+  if (choice) return { choice: Number(choice[1]) };
+  return { explicit: true, query: rest };
+}
+
+// The Agent a prompt addresses by its stable ID (`#FLA {agentId}`, or a
+// legacy `@{uuid}`), or null.
+export function addressedAgentId(prompt) {
+  return parseFlaMention(prompt)?.handoff ?? null;
 }
 
 // `#FLA` after the start, outside code and quotes (blanking keeps positions):
@@ -100,7 +89,7 @@ function laterKeyword(text) {
   return request ? Object.assign(request, { inline: true }) : null;
 }
 
-// What follows `@FLG`: { release } (stop the discussion), the answer to its
+// What follows `#FLG`: { release } (stop the discussion), the answer to its
 // member choice (numbers, or { confirm } for the preselection, each with the
 // mode when it names one), or { query }: the question, which may name
 // members and ask for recommendations.
@@ -132,9 +121,9 @@ function namedMode(match) {
   return session ? { mode: 'session' } : roundtable ? { mode: 'roundtable' } : {};
 }
 
-// The portable `{agentId}` form (percent-encoded) an address opens with:
-// null when it does not, { agentId: null } when it is malformed.
-export function stableAddress(address) {
+// The `{agentId}` form (percent-encoded) an address opens with: null when it
+// does not, { agentId: null } when it is malformed.
+function stableAddress(address) {
   const stable = STABLE.exec(address);
   if (!stable) return null;
   try { return { agentId: decodeURIComponent(stable[1]) }; } catch { return { agentId: null }; }
@@ -144,15 +133,4 @@ export function stableAddress(address) {
 export function choiceNumber(prompt) {
   const choice = CHOICE.exec(typeof prompt === 'string' ? prompt.trim() : '');
   return choice ? Number(choice[1]) : null;
-}
-
-// The text after a leading `@` that may address an Agent, or null.
-export function leadingAgentAddress(prompt) {
-  const text = typeof prompt === 'string' ? prompt.trimStart() : '';
-  if (!text.startsWith('@') || KEYWORD.test(text) || GROUP.test(text)) return null;
-  const token = /^@(\S*)/u.exec(text)[1];
-  // `@{agentId}` is checked as an ID: `{employee.jefa}` is no file name.
-  const attached = !STABLE.test(token) && ATTACHMENT.test(token);
-  if (!token || token.includes('@') || attached || CALLED.test(token) || DOTTED.test(token) || DECORATORS.has(token)) return null;
-  return text.slice(1, ADDRESS_LIMIT + 1);
 }

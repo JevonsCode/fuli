@@ -78,7 +78,7 @@ export const agentProfileMessages = {
       discuss: "讨论",
       relay: "让 {mention} 去问 {partner}",
       copyPhrasing: "复制：{text}",
-      hint: "#FLA 姓名：叫一位接着做，写在开头或「请、让、帮我」后面；{'@'}FLG 问题：请几位一起讨论，只写在开头；{'@'}姓名 仍可用。",
+      hint: "#FLA 姓名：叫一位接着做，写在开头或「请、让、帮我」后面；#FLG 问题：请几位一起讨论，只写在开头。{'@'} 留给客户端引用文件。",
     },
     rename: {
       title: "建议改个名字",
@@ -196,7 +196,7 @@ export const agentProfileMessages = {
       discuss: "discuss",
       relay: "ask {mention} to ask {partner} about",
       copyPhrasing: "Copy: {text}",
-      hint: "#FLA name: one Agent continues, at the start or after please/ask/let; {'@'}FLG question: several discuss, only at the start; {'@'}name still works.",
+      hint: "#FLA name: one Agent continues, at the start or after please/ask/let; #FLG question: several discuss, only at the start. {'@'} stays the client's, for files.",
     },
     rename: {
       title: "Consider a name of its own",

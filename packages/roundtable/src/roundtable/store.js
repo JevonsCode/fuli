@@ -37,7 +37,7 @@ export const ROUNDTABLE_FORMAT = sqliteFormat({
       .map((name) => [name, 'TEXT']))
   }, {
     id: 'roundtable/3-group-discussions', to: 3, kind: 'add-table', table: 'group_discussions',
-    summary: 'group discussions (@FLG) and each member\'s turn in their rounds', create: GROUP_DISCUSSION_TABLES
+    summary: 'group discussions (#FLG) and each member\'s turn in their rounds', create: GROUP_DISCUSSION_TABLES
   }, {
     id: 'roundtable/4-thread-subscriptions', to: 4, kind: 'add-table', table: 'thread_subscriptions',
     summary: 'who is subscribed to each thread and whether a post wakes them at once', create: THREAD_SUBSCRIPTION_TABLES

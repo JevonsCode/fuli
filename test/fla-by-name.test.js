@@ -107,8 +107,8 @@ function fixture({ roster = [ADA, JAMIE, JADE, JEFA, TEMP], leads = LEADS, holdB
 const owner = entry => [entry.context.personal_project_id, entry.context.project_agent_id];
 const bytes = value => Buffer.byteLength(JSON.stringify(compactTaskContext(value)));
 
-test('parsing: leading @name, #FLA at a start or after a request word, release and choice; emails, decorators and scopes are not FLAs, @FLG is a group', () => {
-  assert.deepEqual(parseFlaMention('@Jamie Ash 继续刚才的任务'), { explicit: false, query: 'Jamie Ash 继续刚才的任务' });
+test('parsing: #FLA at a start or after a request word, release, choice and the stable ID; @ never addresses an FLA; #FLG is a group', () => {
+  assert.deepEqual(parseFlaMention('#FLA Jamie Ash 继续刚才的任务'), { explicit: true, query: 'Jamie Ash 继续刚才的任务' });
   assert.deepEqual(parseFlaMention('  #FLA 小林 测试 继续'), { explicit: true, query: '小林 测试 继续' });
   assert.deepEqual(parseFlaMention('背景在上面\n  #FLA Jamie Ash 继续'), { explicit: true, query: 'Jamie Ash 继续' });
   // After a request word `#FLA` takes an exact name only (inline): it never opens the picker.
@@ -123,16 +123,17 @@ test('parsing: leading @name, #FLA at a start or after a request word, release a
     'fix the parser for #FLA', 'the outlet #FLA Jamie', '改一下\n```\n#FLA Jamie Ash\n```']) {
     assert.equal(parseFlaMention(text), null, text);
   }
-  assert.deepEqual(parseFlaMention('@FLA'), { explicit: true, query: '' });
+  assert.deepEqual(parseFlaMention('#FLA'), { explicit: true, query: '' });
   assert.deepEqual(parseFlaMention('#fla 2'), { choice: 2 });
-  for (const release of ['@FLA 结束', '#FLA end', '@fla release。']) assert.deepEqual(parseFlaMention(release), { release: true });
-  assert.deepEqual(parseFlaMention('@{Team%20%2F%20x} 请接手'), { handoff: 'Team / x' });
+  for (const release of ['#FLA 结束', '#FLA end', '#fla release。']) assert.deepEqual(parseFlaMention(release), { release: true });
+  assert.deepEqual(parseFlaMention('#FLA {Team%20%2F%20x} 请接手'), { handoff: 'Team / x' });
   for (const text of ['jamie@example.com 发邮件', '@jamie@example.com', '@scope/pkg 升级', '@Override 是什么意思',
     '@Component(selector) 报错', '@app.route 怎么写', '@README.md 看看', '请让 @Jamie Ash 继续',
-    '`@Jamie Ash`', '#FLAG 不是关键词']) {
+    '`@Jamie Ash`', '#FLAG 不是关键词', '@Jamie Ash 继续', '@FLA', '@FLA 结束', '@FLG 讨论一下',
+    '@{Team%20%2F%20x} 请接手', '@{employee.jefa} 整理看板']) {
     assert.equal(parseFlaMention(text), null, text);
   }
-  assert.deepEqual(parseFlaMention('@FLG 讨论一下'), { group: { query: '讨论一下' } });
+  assert.deepEqual(parseFlaMention('#FLG 讨论一下'), { group: { query: '讨论一下' } });
 });
 
 test('excluded prompts keep the folder\'s owner and never read the roster', async () => {
@@ -155,14 +156,13 @@ const ATTACHED = ['@"C:\\Users\\sample\\Videos\\Recordings\\20261108-0130-26.067
   '@"/home/sample/文档/会议 记录.txt" 总结', '@./docs/设计 稿.md 看看', '@~/Downloads/clip one.mp4 剪一下',
   '@录屏.mp4 帮我看', '@report-final.pdf summarize', '@clip.MP4看下', '@.env 检查一下'];
 
-test('attached files are not FLA mentions; real mentions still parse', () => {
+test('attached files are not FLA mentions; #FLA and the stable forms still parse', () => {
   for (const prompt of ATTACHED) assert.equal(parseFlaMention(prompt), null, prompt);
-  assert.deepEqual(parseFlaMention('@Jamie Ash 继续'), { explicit: false, query: 'Jamie Ash 继续' });
-  assert.deepEqual(parseFlaMention('@J.R. 继续'), { explicit: false, query: 'J.R. 继续' });
-  assert.deepEqual(parseFlaMention('@GPT-5.5 继续'), { explicit: false, query: 'GPT-5.5 继续' });
+  assert.deepEqual(parseFlaMention('#FLA Jamie Ash 继续'), { explicit: true, query: 'Jamie Ash 继续' });
+  assert.deepEqual(parseFlaMention('#FLA {employee.jefa} 整理看板'), { handoff: 'employee.jefa' });
+  // Continuation prompts FULI 0.23 wrote still route: a whole UUID only.
   assert.deepEqual(parseFlaMention('@{9f1e5b95-91dd-4341-8fef-e9d6820db77f} 请接手'),
     { handoff: '9f1e5b95-91dd-4341-8fef-e9d6820db77f' });
-  assert.deepEqual(parseFlaMention('@{employee.jefa} 整理看板'), { handoff: 'employee.jefa' });
   assert.deepEqual(parseFlaMention(`${ATTACHED[0]}\n#FLA Jamie Ash 看一下`), { explicit: true, query: 'Jamie Ash 看一下' });
 });
 
@@ -182,7 +182,7 @@ test('a prompt that opens with an attached file keeps the folder\'s owner', asyn
 
 test('a unique name continues that FLA in its own project from another project\'s folder', async () => {
   const { run, tasks, calls, memoryReads } = fixture();
-  const entry = await run('@Jamie Ash 继续刚才的任务');
+  const entry = await run('#FLA Jamie Ash 继续刚才的任务');
   assert.deepEqual(owner(entry), ['project-b', 'jamie']);
   assert.equal(entry.context.project_resolution.basis, 'explicit_fla');
   assert.equal(entry.project_agent_context.project_agent_id, 'jamie');
@@ -203,18 +203,18 @@ test('a unique name continues that FLA in its own project from another project\'
 test('#FLA, case-insensitive names, Chinese names and the longest name match the same way', async () => {
   const roster = [ADA, JAMIE, fla('lin', '小林', '运营', 'project-b'), fla('lin-qa', '小林 测试', '测试', 'project-c')];
   for (const [prompt, expected] of [['#FLA jAmIe aSh continue', ['project-b', 'jamie']],
-    ['@小林 测试 跑一下回归', ['project-c', 'lin-qa']], ['@小林 继续写周报', ['project-b', 'lin']],
+    ['#FLA 小林 测试 跑一下回归', ['project-c', 'lin-qa']], ['#FLA 小林 继续写周报', ['project-b', 'lin']],
     ['帮我 #FLA 小林 看下数据', ['project-b', 'lin']]]) {
     assert.deepEqual(owner(await fixture({ roster }).run(prompt)), expected, prompt);
   }
   // A Latin name may run into Chinese text; the longer name still wins over "Jamie".
   const jamies = [ADA, JAMIE, fla('jamie-s', 'Jamie', '运维', 'project-c')];
-  assert.deepEqual(owner(await fixture({ roster: jamies }).run('@Jamie Ash继续')), ['project-b', 'jamie']);
+  assert.deepEqual(owner(await fixture({ roster: jamies }).run('#FLA Jamie Ash继续')), ['project-b', 'jamie']);
   // Two Chinese runs never split: "小林子" is not "小林".
-  for (const prompt of ['@小林子 帮我看下', '@小林继续写周报']) {
+  for (const prompt of ['#FLA 小林子 帮我看下', '#FLA 小林继续写周报']) {
     const other = await fixture({ roster }).run(prompt);
-    assert.equal(other.context.project_resolution.basis, 'repository_root', prompt);
-    assert.equal(other.fla, undefined, prompt);
+    assert.equal(other.fla.status, 'choose', prompt);
+    assert.equal(other.context.project_agent_id, null, prompt);
   }
 });
 
@@ -243,9 +243,9 @@ test('the roundtable page\'s "ask one FLA to ask another" and "continue here" ex
   }
 });
 
-test('a bare @FLA offers the person\'s FLAs as a native choice, recent first, without loading any of them', async () => {
+test('a bare #FLA offers the person\'s FLAs as a native choice, recent first, without loading any of them', async () => {
   const { run, memoryReads } = fixture();
-  const entry = await run('@FLA');
+  const entry = await run('#FLA');
   assert.equal(entry.fla.status, 'choose');
   assert.equal(entry.human_interaction.presentation, 'host_native_single_choice');
   // Jefa (a FULI management role) and the temporary Agent are not FLAs a person continues.
@@ -267,57 +267,24 @@ test('#FLA with part of a name narrows the choice, and a single close fit contin
   assert.deepEqual(narrowed.human_interaction.options, ['1. Jamie Ash — Beta — 开发', '2. Jade Lin — Gamma — 设计']);
   assert.equal(narrowed.fla.reason, 'partial');
   assert.deepEqual(owner(await fixture().run('#FLA Jad 看下设计稿')), ['project-c', 'jade']);
-  assert.deepEqual(owner(await fixture().run('@FLA Ash 继续')), ['project-b', 'jamie']);
+  assert.deepEqual(owner(await fixture().run('#FLA Ash 继续')), ['project-b', 'jamie']);
   // Letters in order only narrow the picker; they never continue.
   const fuzzy = await fixture().run('#FLA jsh 继续');
   assert.deepEqual(fuzzy.human_interaction.options, ['1. Jamie Ash — Beta — 开发']);
   assert.equal(fuzzy.context.project_agent_id, null);
 });
 
-test('a bare @word continues only an exact name or name word of exactly one FLA (D-68)', async () => {
-  assert.deepEqual(owner(await fixture().run('@Jamie 继续')), ['project-b', 'jamie']);
-  assert.deepEqual(owner(await fixture().run('@Ash 继续')), ['project-b', 'jamie']);
-  // A name word is matched as written (D-68a); a whole name is not.
-  assert.equal((await fixture().run('@ash 继续')).context.project_resolution.basis, 'repository_root');
-  assert.deepEqual(owner(await fixture().run('@jamie ash 继续')), ['project-b', 'jamie']);
-  // "Jamie" is a word of two FLAs: no guess, no picker, ordinary routing.
-  const two = await fixture({ roster: [ADA, JAMIE, fla('jamie-l', 'Jamie Lee', '测试', 'project-c')] }).run('@Jamie 继续');
-  assert.equal(two.context.project_resolution.basis, 'repository_root');
-  assert.equal(two.human_interaction, undefined);
-  // Part of a name: ordinary routing with one line on how to choose.
-  const partial = await fixture().run('@Ja 继续');
-  assert.equal(partial.context.project_resolution.basis, 'repository_root');
-  assert.equal(partial.human_interaction, undefined);
-  assert.deepEqual(partial.fla, { status: 'hint', hint: '想找 FLA？用 #FLA Ja 选一位，或用 @FLG 邀请几位一起讨论' });
-});
-
-test('a name word needs two characters, a Latin one as written, and an FLA that can continue (D-68a)', async () => {
-  const ordinary = async (roster, prompt) => {
-    const { run, tasks } = fixture({ roster: [ADA, ...roster] });
+test('@ never names an FLA: a whole name, a name word or part of one after @ routes as usual, with no hint', async () => {
+  for (const prompt of ['@Jamie Ash 继续', '@Jamie 继续', '@Ash 继续', '@Ja 继续', '@Mock 怎么用', '@FLA Jamie Ash 继续']) {
+    const { run, tasks, memoryReads } = fixture({ roster: [ADA, JAMIE, JADE, fla('mock', 'Mock Li', '测试', 'project-b')] });
     const entry = await run(prompt);
+    assert.deepEqual(owner(entry), ['project-a', 'ada'], prompt);
     assert.equal(entry.context.project_resolution.basis, 'repository_root', prompt);
-    assert.notEqual(entry.fla?.status, 'unavailable', prompt);
+    assert.equal(entry.fla, undefined, prompt);
+    assert.equal(entry.human_interaction, undefined, prompt);
+    assert.ok(!memoryReads().some(read => read.startsWith('jamie@') || read.startsWith('mock@')), prompt);
     assert.ok(!tasks.some(task => task.agentAssignment?.match_basis?.some(item => item.startsWith('fla_'))), prompt);
-  };
-  await ordinary([fla('jw', 'J Wu', '开发', 'project-b')], '@j 你好');
-  await ordinary([fla('bot', 'Test Bot', '测试', 'project-b')], '@test 跑一下');
-  await ordinary([fla('data', 'Data Wu', '开发', 'project-b', { status: 'archived' })], '@Data 注解报错');
-  // As written, the word still names its FLA; a whole name may still say why it cannot.
-  assert.deepEqual(owner(await fixture({ roster: [ADA, fla('data', 'Data Wu', '开发', 'project-b')] })
-    .run('@Data 继续')), ['project-b', 'data']);
-  const dismissed = await fixture({ roster: [ADA, fla('data', 'Data Wu', '开发', 'project-b', { status: 'archived' })] })
-    .run('@Data Wu 继续');
-  assert.equal(dismissed.fla.reason, 'dismissed');
-});
-
-test('accepted residual: a common word written exactly as an FLA\'s name word names that FLA', async () => {
-  assert.deepEqual(owner(await fixture({ roster: [ADA, fla('mock', 'Mock Li', '测试', 'project-b')] })
-    .run('@Mock 怎么用')), ['project-b', 'mock']);
-});
-
-test('the hint repeats only the typed word, never the rest of the prompt', async () => {
-  const entry = await fixture().run(`@Ja，${'很长的说明'.repeat(300)}`);
-  assert.deepEqual(entry.fla, { status: 'hint', hint: '想找 FLA？用 #FLA Ja 选一位，或用 @FLG 邀请几位一起讨论' });
+  }
 });
 
 test('ordinary prompts that start with @ never bind the session (review of #385)', async () => {
@@ -347,7 +314,7 @@ test('a roster outage leaves a bare @word to ordinary routing; #FLA says the pic
 
 test('picking by number binds the choice, by reply or by the host calling #FLA N', async () => {
   const { run, hook } = fixture({ roster: [ADA, JAMIE, JAMIE_C, JADE] });
-  const ambiguous = await run('@Jamie Ash 继续');
+  const ambiguous = await run('#FLA Jamie Ash 继续');
   assert.equal(ambiguous.fla.reason, 'same_name');
   assert.deepEqual(ambiguous.human_interaction.options, ['1. Jamie Ash — Beta — 开发', '2. Jamie Ash — Gamma — 测试']);
   assert.match(ambiguous.human_interaction.question, /有多位「Jamie Ash」/);
@@ -355,7 +322,7 @@ test('picking by number binds the choice, by reply or by the host calling #FLA N
   assert.deepEqual(owner(picked), ['project-c', 'jamie-c']);
   assert.equal(picked.fla.notice, '本会话由 Jamie Ash 继续项目 Gamma 的工作');
   // A host that showed clickable options calls the entry with the chosen number.
-  await hook('@FLA');
+  await hook('#FLA');
   assert.deepEqual(owner(await hook('#FLA 3')), ['project-c', 'jade']);
   // A number nobody was offered asks again instead of guessing.
   const unknown = await run('#FLA 9');
@@ -369,15 +336,15 @@ test('the same name in several projects asks among exactly those; one FLA in thi
   assert.equal(entry.context.project_agent_id, null);
   const twoProjects = fla('ada', 'Ada Lead', '负责人', 'project-a');
   twoProjects.assignments.push({ personal_project_id: 'project-b', status: 'active', updated_at: '2026-10-01T00:00:00Z' });
-  assert.deepEqual(owner(await fixture({ roster: [twoProjects, JAMIE] }).run('@Ada Lead 继续')), ['project-a', 'ada']);
+  assert.deepEqual(owner(await fixture({ roster: [twoProjects, JAMIE] }).run('#FLA Ada Lead 继续')), ['project-a', 'ada']);
   // From outside both projects, its two projects are asked.
-  const outside = await fixture({ roster: [twoProjects, JAMIE] }).run('@Ada Lead 继续', { projectPath: null });
+  const outside = await fixture({ roster: [twoProjects, JAMIE] }).run('#FLA Ada Lead 继续', { projectPath: null });
   assert.deepEqual(outside.human_interaction.options, ['1. Ada Lead — Alpha — 负责人', '2. Ada Lead — Beta — 负责人']);
 });
 
 test('the binding holds for later turns, in hooks and MCP alike, until another FLA is named or it is released', async () => {
   const { run, hook, tasks } = fixture();
-  await hook('@Jamie Ash 继续刚才的任务');
+  await hook('#FLA Jamie Ash 继续刚才的任务');
   const next = await hook('再跑一遍测试');
   assert.deepEqual(owner(next), ['project-b', 'jamie']);
   assert.equal(next.fla, undefined, 'a plain bound turn repeats no guidance');
@@ -385,28 +352,28 @@ test('the binding holds for later turns, in hooks and MCP alike, until another F
   assert.ok(tasks.at(-1).agentAssignment.match_basis.some(item => item.startsWith('fla_binding:jamie project-b ')));
   // Another session is not bound.
   assert.deepEqual(owner(await run('再跑一遍测试')), ['project-a', 'ada']);
-  assert.deepEqual(owner(await hook('@Jade Lin 看下设计稿')), ['project-c', 'jade']);
+  assert.deepEqual(owner(await hook('#FLA Jade Lin 看下设计稿')), ['project-c', 'jade']);
   assert.deepEqual(owner(await hook('继续')), ['project-c', 'jade']);
-  const released = await hook('@FLA 结束');
+  const released = await hook('#FLA 结束');
   assert.deepEqual(owner(released), ['project-a', 'ada']);
   assert.equal(released.fla.notice, '已结束本会话与 Jade Lin 的绑定，回到常规项目归属');
   assert.deepEqual(owner(await hook('继续')), ['project-a', 'ada']);
 });
 
-test('while bound, an @word the folder resolves goes there this turn; one that resolves nowhere stays bound', async () => {
+test('while bound, an @word is text and stays with the bound FLA', async () => {
   const jefa = fla('employee.jefa', 'Jefa', '项目经理', 'project-a');
   const { run } = fixture({ roster: [ADA, JAMIE, JADE, jefa] });
-  await run('@Jamie Ash 继续');
-  assert.deepEqual(owner(await run('@src 里的代码有问题')), ['project-b', 'jamie']);
-  assert.deepEqual(owner(await run('@Jefa 看下进度')), ['project-a', 'employee.jefa']);
-  assert.deepEqual(owner(await run('继续')), ['project-b', 'jamie']);
+  await run('#FLA Jamie Ash 继续');
+  for (const prompt of ['@src 里的代码有问题', '@Jefa 看下进度', '继续']) {
+    assert.deepEqual(owner(await run(prompt)), ['project-b', 'jamie'], prompt);
+  }
 });
 
-test('a hand-off\'s @{agentId} goes to that Agent and ends the binding; the bound one\'s own keeps it', async () => {
+test('a hand-off\'s #FLA {agentId} goes to that Agent and ends the binding; the bound one\'s own keeps it', async () => {
   const { run } = fixture();
-  await run('@Jamie Ash 继续');
-  assert.deepEqual(owner(await run('@{jamie} 继续')), ['project-b', 'jamie']);
-  const handoff = await run('@{ada} 请接手');
+  await run('#FLA Jamie Ash 继续');
+  assert.deepEqual(owner(await run('#FLA {jamie} 继续')), ['project-b', 'jamie']);
+  const handoff = await run('#FLA {ada} 请接手');
   assert.deepEqual(owner(handoff), ['project-a', 'ada']);
   assert.match(handoff.agent_receipt.markdown, /已结束本会话与 Jamie Ash 的绑定/);
   assert.deepEqual(owner(await run('继续')), ['project-a', 'ada']);
@@ -414,9 +381,9 @@ test('a hand-off\'s @{agentId} goes to that Agent and ends the binding; the boun
 
 test('a hand-off that reaches nobody keeps the binding', async () => {
   const { run } = fixture();
-  await run('@Jamie Ash 继续');
+  await run('#FLA Jamie Ash 继续');
   // Jade works in project-c, outside this folder's scope.
-  const failed = await run('@{jade} 请接手');
+  const failed = await run('#FLA {jade} 请接手');
   assert.equal(failed.context.project_agent_id, null);
   assert.doesNotMatch(failed.agent_receipt.markdown, /已结束/);
   assert.deepEqual(owner(await run('继续')), ['project-b', 'jamie']);
@@ -424,20 +391,20 @@ test('a hand-off that reaches nobody keeps the binding', async () => {
 
 test('a roundtable wake in a bound session carries the binding unchanged', async () => {
   const { app, hook, tasks } = fixture();
-  await hook('@Jamie Ash 继续');
+  await hook('#FLA Jamie Ash 继续');
   let waking = true;
   app.roundtable = { pending: () => [], attentionReplies: () => [],
     taskEntryDelegation: ({ sessionId }) => (waking && sessionId === 'synthetic-hook-session'
       ? { token: 'synthetic-delegation', sessionId } : null) };
-  await hook('@{ada} [FULI 圆桌 · synthetic-thread]\n请看一下');
+  await hook('#FLA {ada} [FULI 圆桌 · synthetic-thread]\n请看一下');
   assert.ok(tasks.at(-1).agentAssignment.match_basis.some(item => item.startsWith('fla_binding:jamie project-b ')));
   waking = false;
   assert.deepEqual(owner(await hook('继续')), ['project-b', 'jamie']);
 });
 
 test('an abandoned picker or refusal keeps the session where it was', async () => {
-  for (const asking of ['@FLA', '#FLA Nobody', '@Jamie Ash 继续']) {
-    const roster = asking.startsWith('@Jamie') ? [ADA, JADE, { ...JAMIE, profile: { ...JAMIE.profile, status: 'archived' } }]
+  for (const asking of ['#FLA', '#FLA Nobody', '#FLA Jamie Ash 继续']) {
+    const roster = asking.startsWith('#FLA Jamie') ? [ADA, JADE, { ...JAMIE, profile: { ...JAMIE.profile, status: 'archived' } }]
       : undefined;
     const { app, hook } = fixture(roster ? { roster } : {});
     app.projectPathResolver = () => ({ status: 'not_provided', basis: null, personalProjectId: null });
@@ -453,10 +420,10 @@ test('an abandoned picker or refusal keeps the session where it was', async () =
 test('ranking: this session\'s FLA, then the current project, then recent activity', async () => {
   const roster = [ADA, JAMIE, JADE, fla('ann', 'Ann Alpha', '测试', 'project-a', { updated: '2026-09-01T00:00:00Z' })];
   const { run } = fixture({ roster });
-  assert.deepEqual((await run('@FLA')).human_interaction.options.map(option => option.split(' — ')[0]),
+  assert.deepEqual((await run('#FLA')).human_interaction.options.map(option => option.split(' — ')[0]),
     ['1. Ada Lead', '2. Ann Alpha', '3. Jamie Ash', '4. Jade Lin']);
-  await run('@Jade Lin 继续');
-  assert.deepEqual((await run('@FLA')).human_interaction.options.map(option => option.split(' — ')[0]),
+  await run('#FLA Jade Lin 继续');
+  assert.deepEqual((await run('#FLA')).human_interaction.options.map(option => option.split(' — ')[0]),
     ['1. Jade Lin', '2. Ada Lead', '3. Ann Alpha', '4. Jamie Ash']);
 });
 
@@ -475,9 +442,9 @@ test('an entry that already read the session\'s task does not read it again', as
 test('a release outside any project does not leave the session in the FLA\'s project', async () => {
   const { app, hook } = fixture();
   app.projectPathResolver = () => ({ status: 'not_provided', basis: null, personalProjectId: null });
-  await hook('@Jamie Ash 继续', { projectPath: null });
+  await hook('#FLA Jamie Ash 继续', { projectPath: null });
   assert.deepEqual(owner(await hook('继续', { projectPath: null })), ['project-b', 'jamie']);
-  await hook('@FLA 结束', { projectPath: null });
+  await hook('#FLA 结束', { projectPath: null });
   const after = await hook('随便问个问题', { projectPath: null });
   assert.equal(after.context.personal_project_id, null);
   assert.equal(after.context.project_resolution.basis, 'pending_assignment');
@@ -490,7 +457,7 @@ test('a dismissed or client-restricted FLA is reported with its reason; nobody e
     [{ ...JAMIE, profile: { ...JAMIE.profile, allowed_clients: ['cursor'] } }, 'client_not_allowed',
       '不允许在当前客户端使用，未改用其他 FLA；可在控制台为 Jamie Ash 允许当前客户端']]) {
     const { run, memoryReads } = fixture({ roster: [ADA, agent] });
-    const entry = await run('@Jamie Ash 继续');
+    const entry = await run('#FLA Jamie Ash 继续');
     assert.equal(entry.fla.status, 'unavailable');
     assert.equal(entry.fla.reason, reason);
     assert.equal(entry.fla.notice, `Jamie Ash（Beta）无法继续：${text}`);
@@ -501,14 +468,14 @@ test('a dismissed or client-restricted FLA is reported with its reason; nobody e
 
 test('a client list stored with `other` covers OpenCode', async () => {
   const legacy = { ...JAMIE, profile: { ...JAMIE.profile, allowed_clients: ['other'] } };
-  const entry = await fixture({ roster: [ADA, legacy] }).run('@Jamie Ash 继续', { sourceApplication: 'opencode' });
+  const entry = await fixture({ roster: [ADA, legacy] }).run('#FLA Jamie Ash 继续', { sourceApplication: 'opencode' });
   assert.deepEqual(owner(entry), ['project-b', 'jamie']);
 });
 
 test('an FLA dismissed while bound stays the binding and says why, never falling back to the folder', async () => {
   const roster = [ADA, structuredClone(JAMIE)];
   const { run, memoryReads, calls } = fixture({ roster });
-  await run('@Jamie Ash 继续');
+  await run('#FLA Jamie Ash 继续');
   roster[1].profile.status = 'archived';
   calls.length = 0;
   const next = await run('继续');
@@ -520,7 +487,7 @@ test('an FLA dismissed while bound stays the binding and says why, never falling
 
 test('an FLA the Provider will not let this reader reach is reported as such, with no private context loaded', async () => {
   const { run, memoryReads, calls } = fixture({ refuse: id => id === 'jamie' });
-  const entry = await run('@Jamie Ash 继续');
+  const entry = await run('#FLA Jamie Ash 继续');
   assert.equal(entry.fla.reason, 'access_denied');
   assert.match(entry.fla.notice, /无权访问该 FLA 或其项目/);
   assert.equal(entry.project_agent_context.status, 'agent_unavailable');
@@ -551,7 +518,7 @@ function withScope(setup, allowed = () => true) {
 }
 
 test('#FLA names a built-in role in this folder\'s project, through its own scope check; the picker never lists roles', async () => {
-  for (const prompt of ['#FLA Bole 招一个前端', '@FLA bole 招一个前端', '帮我 #FLA Bole 招一个前端']) {
+  for (const prompt of ['#FLA Bole 招一个前端', '#FLA bole 招一个前端', '帮我 #FLA Bole 招一个前端']) {
     const { run, authorized } = withScope(fixture({ roster: [ADA, JAMIE, BOLE, ASTRO] }));
     const entry = await run(prompt);
     assert.deepEqual(owner(entry), ['project-a', 'employee.bole'], prompt);
@@ -629,7 +596,7 @@ test('an FLA sharing a built-in role\'s name is asked about, never guessed', asy
   assert.equal(entry.context.project_agent_id, null);
 });
 
-test('prose about the syntax stays an ordinary prompt; a leading @Bole keeps the folder\'s rule and binds nothing', async () => {
+test('prose about the syntax stays an ordinary prompt; @Bole is text; #FLA {employee.bole} uses the folder\'s rule and binds nothing', async () => {
   for (const prompt of ['希望内置角色也可以用 #FLA Bole，解释一下这些写法', '让 #FLA 支持内置角色', '`#FLA Bole` 怎么用？']) {
     const { run, calls } = withScope(fixture({ roster: [ADA, BOLE] }));
     const entry = await run(prompt);
@@ -639,16 +606,17 @@ test('prose about the syntax stays an ordinary prompt; a leading @Bole keeps the
     assert.equal(calls.some(([kind, project]) => kind === 'roster' && project === null), prompt.startsWith('让'), prompt);
   }
   const { run } = withScope(fixture({ roster: [ADA, BOLE] }));
-  const bare = await run('@Bole 看下人员分布');
-  assert.deepEqual(owner(bare), ['project-a', 'employee.bole']);
-  assert.equal(bare.fla, undefined);
+  assert.deepEqual(owner(await run('@Bole 看下人员分布')), ['project-a', 'ada']);
+  const stable = await run('#FLA {employee.bole} 看下人员分布');
+  assert.deepEqual(owner(stable), ['project-a', 'employee.bole']);
+  assert.equal(stable.fla, undefined);
   assert.deepEqual(owner(await run('继续')), ['project-a', 'ada']);
 });
 
 test('a member is held by its project lead as the requested Agent, and the sentence says so', async () => {
   const { run, memoryReads } = fixture({ holdBy: { 'project-b': 'ada' },
     roster: [{ ...ADA, assignments: [...ADA.assignments, { personal_project_id: 'project-b', status: 'active' }] }, JAMIE] });
-  const entry = await run('@Jamie Ash 继续');
+  const entry = await run('#FLA Jamie Ash 继续');
   assert.deepEqual(owner(entry), ['project-b', 'ada']);
   assert.equal(entry.project_agent_context.requested_agent_id, 'jamie');
   assert.equal(entry.fla.notice, 'Jamie Ash 是项目 Beta 的成员，本会话由负责人 Ada Lead 持有并请 Jamie Ash 处理');
@@ -657,7 +625,7 @@ test('a member is held by its project lead as the requested Agent, and the sente
 
 test('the checkpoint receipt names the same FLA and project as the entry', async () => {
   const { run, tasks } = fixture();
-  await run('@Jamie Ash 继续');
+  await run('#FLA Jamie Ash 继续');
   const begun = tasks[0];
   let checkpoint = null;
   const task = () => ({ token: begun.token, sessionId: begun.sessionId, personalProjectId: begun.personalProjectId,
@@ -676,7 +644,7 @@ test('the checkpoint receipt names the same FLA and project as the entry', async
   assert.doesNotMatch(result.agent_receipt.markdown, /fla_binding|project-b/);
 });
 
-test('token budget: no @FLA adds nothing; naming, binding and choosing add a bounded, measured amount', async (t) => {
+test('token budget: no #FLA adds nothing; naming, binding and choosing add a bounded, measured amount', async (t) => {
   const plain = fixture();
   const ordinary = await plain.run('继续看一下构建');
   assert.equal(ordinary.fla, undefined);
@@ -685,12 +653,12 @@ test('token budget: no @FLA adds nothing; naming, binding and choosing add a bou
   // The same FLA reached without a name (the folder's lead) against reached by name.
   const folderLead = bytes(ordinary);
   const named = fixture();
-  const first = bytes(await named.run('@Ada Lead 继续看一下构建'));
+  const first = bytes(await named.run('#FLA Ada Lead 继续看一下构建'));
   const later = bytes(await named.run('继续看一下构建'));
-  const picker = await fixture().run('@FLA');
+  const picker = await fixture().run('#FLA');
   const choice = Buffer.byteLength(JSON.stringify({ fla: picker.fla, human_interaction: picker.human_interaction }));
   t.diagnostic(`entry bytes (compact JSON): folder lead ${folderLead}, named first turn ${first} (+${first - folderLead}), `
-    + `bound later turn ${later} (+${later - folderLead}); bare @FLA picker ${bytes(picker)} in all, `
+    + `bound later turn ${later} (+${later - folderLead}); bare #FLA picker ${bytes(picker)} in all, `
     + `${choice} of them the choice (no Agent context)`);
   assert.ok(first - folderLead <= 700, `the first named turn adds ${first - folderLead} bytes`);
   assert.ok(later - folderLead <= 100, `a bound later turn adds ${later - folderLead} bytes`);

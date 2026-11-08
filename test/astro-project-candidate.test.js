@@ -541,7 +541,7 @@ test('only a pending_assignment entry asks Astro; deterministic attribution and 
   assert.deepEqual(named.modelCalls, []);
 
   const explicit = harness({ role: astroRole(), replies: [answer()] });
-  assert.equal((await explicit.entry({ taskPrompt: '@assistant 浇水提醒' })).project_candidate, undefined);
+  assert.equal((await explicit.entry({ taskPrompt: '#FLA {assistant} 浇水提醒' })).project_candidate, undefined);
   assert.deepEqual(explicit.modelCalls, []);
 });
 

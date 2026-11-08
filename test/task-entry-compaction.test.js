@@ -11,7 +11,7 @@ const receipt = {
   markdown: 'FULI Agent：负责人 [Lead](<http://127.0.0.1:2727/agents/space/lead>)',
   owner: { agent_id: 'lead', name: 'Lead', profile_url: 'http://127.0.0.1:2727/agents/space/lead', source_application: 'codex' },
   collaborators: [], personal_project_id: 'sample', work_status: null, persistence: null,
-  continuation: { personal_project_id: 'sample', agent_id: 'lead', prompt: '@{lead} continue', guidance: 'x' },
+  continuation: { personal_project_id: 'sample', agent_id: 'lead', prompt: '#FLA {lead} continue', guidance: 'x' },
   guidance: RECEIPT_GUIDANCE
 };
 

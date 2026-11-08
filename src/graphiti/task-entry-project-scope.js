@@ -4,7 +4,7 @@ import { projectNamedInPrompt } from './task-entry-project-mention.js';
 import { sessionTaskContext, withStandingOwner } from './task-entry-standing-owner.js';
 import { namedFlaRequest, namedFlaResolution, namedFlaTask } from './task-entry-named-fla.js';
 import { groupDiscussionRequest } from './task-entry-group-discussion.js';
-import { leadingAgentAddress } from './fla-mention.js';
+import { addressedAgentId } from './fla-mention.js';
 import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 
 // Restore only exact session provenance; a normal folder name is not a role binding.
@@ -12,9 +12,9 @@ import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 // pending in the assistant's global scope until it is assigned to a project.
 // A standing assignment the prompt names then scopes this task alone
 // (task-entry-standing-owner.js). An FLA the person names, or this session is
-// bound to, comes first (task-entry-named-fla.js). An `@FLG` group discussion
+// bound to, comes first (task-entry-named-fla.js). An `#FLG` group discussion
 // (task-entry-group-discussion.js) keeps wherever the session is on its own
-// `@FLG` turns and while it is in progress: its moderator is the session's own
+// `#FLG` turns and while it is in progress: its moderator is the session's own
 // Agent, so no standing assignment reroutes it then. Other turns route as usual.
 export async function resolveTaskEntryProject(application, resolution, input) {
   if (!input.agentInvocation || !TASK_ENTRY_TOOLS.has(input.agentToolName)) return resolution;
@@ -48,7 +48,7 @@ async function sessionEntryProject(application, resolution, input, readSessionTa
   if (resolution.personalProjectId
     || !['unmatched', 'not_provided'].includes(resolution.status)) return resolution;
   // An explicit FLA outside a project uses its independent global context.
-  if (input.projectAgentId || leadingAgentAddress(input.taskPrompt) !== null) {
+  if (input.projectAgentId || addressedAgentId(input.taskPrompt) !== null) {
     return { status: 'global', basis: 'explicit_agent', personalProjectId: null };
   }
   // A known native session is stronger than an MCP process ID. Never use an

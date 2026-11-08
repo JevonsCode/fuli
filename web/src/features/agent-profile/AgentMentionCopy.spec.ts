@@ -70,15 +70,15 @@ describe('AgentMentionCopy', () => {
     expect(rows.map((row) => row.dataset.mentionPhrasing)).toEqual(['continue', 'pair', 'recommend'])
     expect(rows.map((row) => row.querySelector('.agent-mention-text')?.textContent)).toEqual([
       '#FLA Jamie Ash 在这里继续',
-      '@FLG Jamie Ash、Nova Lane，一起讨论 …',
-      '@FLG 让 Jamie Ash 参加，再推荐一位 …',
+      '#FLG Jamie Ash、Nova Lane，一起讨论 …',
+      '#FLG 让 Jamie Ash 参加，再推荐一位 …',
     ])
     rows[1]!.click()
     await flushPromises()
-    expect(writeText).toHaveBeenCalledWith('@FLG Jamie Ash、Nova Lane，一起讨论 ')
+    expect(writeText).toHaveBeenCalledWith('#FLG Jamie Ash、Nova Lane，一起讨论 ')
     expect(rows[1]!.textContent).toContain('已复制')
-    expect(card()?.textContent).toContain('@FLG 问题：请几位一起讨论，只写在开头')
-    expect(card()?.textContent).toContain('@姓名 仍可用')
+    expect(card()?.textContent).toContain('#FLG 问题：请几位一起讨论，只写在开头')
+    expect(card()?.textContent).toContain('@ 留给客户端引用文件')
     wrapper.unmount()
   })
 
@@ -96,7 +96,7 @@ describe('AgentMentionCopy', () => {
     expect(wrapper.get('[data-agent-mention-copy] [data-agent-mention-label] .is-shown').text()).toBe('Copy #FLA')
     await hover(wrapper)
     const rows = [...document.body.querySelectorAll('[data-mention-phrasing] .agent-mention-text')].map((row) => row.textContent)
-    expect(rows).toEqual(['#FLA Jamie Ash continue here', '@FLG with Jamie Ash, recommend one more for …'])
+    expect(rows).toEqual(['#FLA Jamie Ash continue here', '#FLG with Jamie Ash, recommend one more for …'])
     wrapper.unmount()
   })
 })

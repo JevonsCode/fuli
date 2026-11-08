@@ -48,7 +48,7 @@ capability. Members send their results through the project lead.
    conversation only after one finished turn). The ask is queued there with the
    app's own `codex queue` and the app is opened with `codex://threads/wake/<id>`,
    so the person sees the Agent work in the app with their own Codex settings. The
-   queued text starts with `@{agent}`, so task entry loads that Agent, and asks it
+   queued text starts with `#FLA {agent}`, so task entry loads that Agent, and asks it
    to answer with `reply_agent_message`. The caller waits up to its timeout for that
    reply; after it the ask stays queued and the reply still lands in the thread. A
    failed hand-off leaves the ask queued with the reason; it never falls back to a
@@ -63,7 +63,7 @@ capability. Members send their results through the project lead.
      opened. Codex refuses while the conversation is open in the app; Fuli then asks
      the same Agent in a new session instead.
    - Without a resumable conversation, Fuli starts a new session in the caller's
-     project directory with `@{agent}`, which loads that Agent's memory and role.
+     project directory with `#FLA {agent}`, which loads that Agent's memory and role.
    - If that client is not installed or not logged in on this machine, Fuli tries the
      Agent's next allowed client. A timeout stops there instead of starting another run.
 2. **Inbox.** If no allowed client can answer (none installed or logged in, or the
@@ -96,7 +96,7 @@ groups **即时对话** (threads whose posts wake the FLA, plus Agent chat rooms
 portraits. A narrow window shows list and conversation as two steps with a back link.
 People do not open conversations here; their Agents do. The list head's
 「Agent 怎么开始对话」 offers the entry phrasings to paste into the person's own Agent
-chat (`@FLG 讨论`, `#FLA` relays and continues, using two of their FLAs), each copied
+chat (`#FLG 讨论`, `#FLA` relays and continues, using two of their FLAs), each copied
 in one click.
 
 An open thread reads as a chat:
@@ -119,7 +119,7 @@ The person can message their own FLAs from the console in a conversation an Agen
 opened, one FLA or several at once (the console no longer starts new threads; the
 server route stays).
 Each thread is a small publish/subscribe channel, and this is the contract later
-group work (`@FLG`, rec#55) builds on:
+group work (`#FLG`, rec#55) builds on:
 
 - **Subscribers.** The FLAs the person addressed in a thread are its subscribers
   (`thread_subscriptions`, roundtable store version 4). A thread belongs to one
@@ -226,7 +226,7 @@ older unread history it was not allowed to see. Durable execution claims keep
 one wake active per Agent; subsequent rooms wait for completion notifications.
 Unknown execution or unconfirmed cleanup keeps its safety hold.
 
-## Group discussions (@FLG, rec#55)
+## Group discussions (#FLG, rec#55)
 
 This section is mode 2 (「在圆桌里分头回复」). Mode 1 (「在这个会话里一起看」, chosen at
 the same confirmation) never reaches the roundtable: task entry hands the session a
@@ -235,7 +235,7 @@ and nobody is woken (docs/agent-conversations-and-collaboration.md).
 
 `group_discussion` runs a moderated discussion on top of a `kind=group` chat. It
 only carries out what the person typed in their chat: task entry records the
-confirmed members and question (`recordGroupChoice`) and each `@FLG …`
+confirmed members and question (`recordGroupChoice`) and each `#FLG …`
 follow-up (`requestGroupFollowUp`). `start` takes that confirmation's request ID
 and runs it once; an unknown ID, another moderator or project, or a stopped
 confirmation is refused, and members and question come from the record.
@@ -264,7 +264,7 @@ with `unavailable`, one woken elsewhere at that moment with `busy`; when no memb
 can be woken, nothing is created (`flg_no_executor`). An unanswered ask is
 withdrawn so it does not wait in the member's inbox.
 
-`stop` (or the person's `@FLG 结束` from any process) ends unsettled turns as not
+`stop` (or the person's `#FLG 结束` from any process) ends unsettled turns as not
 replied and cancels wakes running in the runner's process. `summary` records the
 moderator's summary, and FULI appends the members that did not reply so they are
 never counted. Turn states (`invited`, `waiting`, `replied`, `failed`, `ended`) are

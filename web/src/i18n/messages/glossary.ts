@@ -24,7 +24,7 @@ export const glossaryMessages = {
     concept: {
       fla: { label: 'FLA', body: 'FuLi Agent：你在 FULI 里的一位 Agent，有名字、头像、职业和自己的记忆。它在 Claude Code、Codex 等客户端里替你干活，换个会话也接得上之前的工作。' },
       flas: { label: 'FLAs', body: '多位 FLA，也就是你的 Agent 团队。底部导航的 FLAs 页能看到每一位在做什么，悬停可以打开置顶的几位。' },
-      flg: { label: 'FLG', body: 'FuLi Agents Group：在聊天里写「@FLG 问题」，邀请 2–4 位 FLA 一起讨论。可以点名，也可以让 FULI 按职业推荐，确认成员后开始。' },
+      flg: { label: 'FLG', body: 'FuLi Agents Group：在聊天里写「#FLG 问题」，邀请 2–4 位 FLA 一起讨论。可以点名，也可以让 FULI 按职业推荐，确认成员后开始。' },
       workbench: { label: 'Workbench', body: "内置角色自带的工作区，在它页面的第一个标签：@:{'roleNames.jefa'} 的任务看板、@:{'roleNames.bole'} 的人员管理、@:{'roleNames.tonborg'} 的判断记录。" },
       workflow: { label: 'Workflow', body: '一套反复执行的固定步骤。FLA 发现自己总在做同样的事时提出，你确认后才生效。' },
       receipt: { label: '回执', body: 'Agent 每次回复末尾的一行：这一轮由哪位 FLA 负责、记下了什么。点开链接能看到原话和记下的知识，记错了可以直接改。' },
@@ -150,7 +150,7 @@ export const glossaryMessages = {
     concept: {
       fla: { label: 'FLA', body: 'FuLi Agent: one of your Agents in FULI, with a name, portrait, occupation and memory of its own. It works for you in clients such as Claude Code and Codex, and picks up earlier work in a new session.' },
       flas: { label: 'FLAs', body: 'Several FLAs: your Agent team. The FLAs page in the dock shows what each one is doing; hover it to open the ones you pinned.' },
-      flg: { label: 'FLG', body: 'FuLi Agents Group: write “@FLG question” in a chat to invite 2–4 FLAs to discuss it. Name them, or let FULI suggest some by occupation, then confirm the members to begin.' },
+      flg: { label: 'FLG', body: 'FuLi Agents Group: write “#FLG question” in a chat to invite 2–4 FLAs to discuss it. Name them, or let FULI suggest some by occupation, then confirm the members to begin.' },
       workbench: { label: 'Workbench', body: "A built-in role's own work area, the first tab of its page: @:{'roleNames.jefa'}'s board, @:{'roleNames.bole'}'s people, @:{'roleNames.tonborg'}'s judgments." },
       workflow: { label: 'Workflow', body: 'A fixed set of steps run again and again. An FLA proposes one when it keeps doing the same thing; it takes effect once you confirm it.' },
       receipt: { label: 'Receipt', body: 'The line at the end of each Agent reply: which FLA owns this turn and what it recorded. Open its link to see the words and the knowledge kept, and fix anything recorded wrong.' },

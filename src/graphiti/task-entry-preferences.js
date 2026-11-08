@@ -145,7 +145,7 @@ async function entryPreferences(application, projectResolution, {
   // FLA may work this turn, no Agent is selected at all.
   const fla = projectResolution.fla
     ? await namedFlaEntry(application, projectResolution.fla, selected, sourceApplication) : null;
-  // An `@FLG` member choice loads no Agent either; its moderator is the one selected.
+  // An `#FLG` member choice loads no Agent either; its moderator is the one selected.
   const group = projectResolution.group ? await groupDiscussionEntry(application, projectResolution.group,
     fla?.selection ?? selected, projectResolution.personalProjectId ?? null) : null;
   const selection = group?.selection ?? fla?.selection ?? selected;

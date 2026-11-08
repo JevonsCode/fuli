@@ -1,5 +1,6 @@
 import { sourceConsoleUrl } from '../graphiti/source-marker.js';
 import { agentLabel } from './agent-label.js';
+import { flaAddress } from '../../packages/roundtable/src/roundtable/fla-address.js';
 
 // The console origin every receipt link opens: `fuli:/` once the desktop
 // client opens fuli:// links for this installation (src/desktop/fuli-links.js).
@@ -33,7 +34,7 @@ export const CONTINUATION_GUIDANCE = 'Use a connected client and the same author
 export function agentContinuation(projectId, agentId, conversationId = null) {
   return { personal_project_id: projectId, agent_id: agentId,
     ...(conversationId ? { conversation_id: conversationId } : {}),
-    prompt: `@{${encodeURIComponent(agentId)}} ` + (projectId
+    prompt: `${flaAddress(agentId)} ` + (projectId
       ? `请在 FULI 项目 ${JSON.stringify(projectId)} 对应的工作目录继续工作。`
       : '请在未绑定项目的会话中，以这个全局 FLA 继续工作。')
       + (conversationId ? `先用当前任务的 taskContextToken 调用 resume_agent_conversation，conversationId=${JSON.stringify(conversationId)}，再按需读取上下文。` : '先恢复这个 Agent 在当前范围的记忆和最近会话。'),
@@ -160,7 +161,6 @@ function unassignedReceipt(status, reason) {
     unavailable: '分配失败（服务或身份恢复不可用）',
     agent_unavailable: '分配失败（指定 FLA 不可用）',
     agent_not_found: '分配失败（指定 FLA 不存在）',
-    ambiguous_agent: '分配待确认（存在同名 FLA）',
     agent_selection_conflict: '分配待确认（FLA 选择冲突）',
     manual_selection: '分配待确认（需要选择负责人）'
   };

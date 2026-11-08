@@ -1,4 +1,5 @@
 import { RoundtableError } from '../errors.js';
+import { flaAddress } from './fla-address.js';
 import { DELIVERY_MODES } from './thread-subscriptions.js';
 
 // The person (the owner of this device's space) talking with their own FLAs in
@@ -122,7 +123,7 @@ export function createPersonConversation({ host, store, spaceId, agents, idFacto
   function personPrompt(thread, ask, agent) {
     const earlier = store.messages(thread.id).filter(message => message.seq < ask.seq).slice(-HISTORY_MESSAGES)
       .map(message => `- ${message.from_client === PERSON_CLIENT ? '本人' : message.from_name}：${message.body.slice(0, HISTORY_CHARS)}`);
-    return `@{${encodeURIComponent(agent.agentId)}} [FULI 圆桌 · ${thread.id}]\n`
+    return `${flaAddress(agent.agentId)} [FULI 圆桌 · ${thread.id}]\n`
       + (earlier.length ? `这段对话最近的消息：\n${earlier.join('\n')}\n\n` : '')
       + `本人在 FULI 控制台发来消息：\n\n${ask.body}\n\n请直接回答本人，你的最终回复会原样显示在这段对话里。`;
   }

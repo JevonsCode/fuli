@@ -57,7 +57,7 @@ test('an Agent asks another Agent, which answers from its latest conversation', 
   assert.equal(woken[0].client, 'codex');
   assert.equal(woken[0].sessionId, 'cx-9');
   assert.equal(woken[0].cwd, '/work/codex/cx-9');
-  assert.match(woken[0].prompt, /^@\{reviewer-1\} \[FULI 圆桌 · id-1\]/);
+  assert.match(woken[0].prompt, /^#FLA \{reviewer-1\} \[FULI 圆桌 · id-1\]/);
   assert.match(woken[0].prompt, /Milo Reed（Claude Code）发来消息/);
   const thread = roundtable.thread({ threadId: result.threadId });
   assert.deepEqual(thread.messages.map(({ kind, status, from, to }) => [kind, status, from.name, to.name]), [
@@ -78,7 +78,7 @@ test('employee numbers find and address the same identity across clients', async
   assert.equal(result.agents[0].employeeNumber, '000002');
   assert.equal(result.agents[0].agentId, 'reviewer-1');
   await roundtable.messageAgent({ taskContextToken: 'token-milo', to: 'FLA 000002', body: 'Synthetic review', sourceApplication: 'claude_code' });
-  assert.match(woken[0].prompt, /^@\{reviewer-1\}/);
+  assert.match(woken[0].prompt, /^#FLA \{reviewer-1\}/);
 });
 
 test('a public in-flight thread header never authorizes member delegation', async () => {
@@ -89,12 +89,12 @@ test('a public in-flight thread header never authorizes member delegation', asyn
     assert.equal(roundtable.taskEntryDelegation({ ...context, personalProjectId: 'elsewhere' }), null);
     assert.equal(roundtable.taskEntryDelegation({ ...context, sourceApplication: 'claude_code' }), null);
     assert.equal(roundtable.taskEntryDelegation({ ...context, sessionId: 'unrelated-user-session' }), null);
-    assert.equal(roundtable.taskEntryDelegation({ ...context, taskPrompt: '@{reviewer-1} [FULI 圆桌 · invented]' }), null);
+    assert.equal(roundtable.taskEntryDelegation({ ...context, taskPrompt: '#FLA {reviewer-1} [FULI 圆桌 · invented]' }), null);
     return { body: 'Member report', sessionId: 'member-run' };
   } }));
   const result = await roundtable.messageAgent({ taskContextToken: 'token-milo', to: 'reviewer-1', body: 'Review this work' });
   assert.equal(result.status, 'answered');
-  assert.equal(roundtable.taskEntryDelegation({ taskPrompt: '@{reviewer-1} [FULI 圆桌 · id-1]',
+  assert.equal(roundtable.taskEntryDelegation({ taskPrompt: '#FLA {reviewer-1} [FULI 圆桌 · id-1]',
     agentId: 'reviewer-1', personalProjectId: 'app', sourceApplication: 'codex' }), null);
 });
 

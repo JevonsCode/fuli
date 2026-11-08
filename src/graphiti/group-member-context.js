@@ -3,7 +3,7 @@ import { projectKnowledgeIndex } from './task-knowledge-recall.js';
 import { singleLine } from '../text/single-line.js';
 import { utf8Preview } from '../text/utf8-preview.js';
 
-// `@FLG … 一起看` (rec#55 mode 1): the session works with the confirmed
+// `#FLG … 一起看` (rec#55 mode 1): the session works with the confirmed
 // members in mind instead of waking them. This is the one read it gets: a
 // small index of each member, built from the reads the Agent tools already
 // make (the person's FLA roster with each FLA's projects, list_project_agent_tasks,

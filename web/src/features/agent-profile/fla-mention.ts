@@ -4,7 +4,7 @@ import type { ProjectAgentRecord } from '@/types'
 // rec#55, rec#58). Every phrasing is exactly what task entry parses
 // (src/graphiti/fla-mention.js), checked in both locales by
 // test/fla-by-name.test.js and test/flg-entry.test.js: `#FLA <name>` at the
-// start (or right after a request word such as 请/让/帮我), `@FLG …` only at
+// start (or right after a request word such as 请/让/帮我), `#FLG …` only at
 // its start. This module imports nothing at run time so that Node test can load it.
 
 // FULI's built-in roles: called alone by name with `#FLA <name>` (rec#58),
@@ -52,8 +52,8 @@ export function mentionPhrasings(name: string, partner: string | null, translate
   if (kind === 'role') return [alone]
   return [
     alone,
-    ...(partner ? [{ key: 'pair' as const, text: `@FLG ${translate('pair', { name, partner })}`, open: true }] : []),
-    { key: 'recommend', text: `@FLG ${translate('recommend', { name })}`, open: true },
+    ...(partner ? [{ key: 'pair' as const, text: `#FLG ${translate('pair', { name, partner })}`, open: true }] : []),
+    { key: 'recommend', text: `#FLG ${translate('recommend', { name })}`, open: true },
   ]
 }
 
@@ -66,9 +66,9 @@ export function mentionPhrasings(name: string, partner: string | null, translate
 export function conversationPhrasings(names: readonly string[], translate: Translate): MentionPhrasing[] {
   const [name, partner] = names
   return [
-    { key: 'discuss', text: `@FLG ${translate('discuss', {})}`, open: true },
+    { key: 'discuss', text: `#FLG ${translate('discuss', {})}`, open: true },
     ...(name && partner ? [
-      { key: 'pair' as const, text: `@FLG ${translate('pair', { name, partner })}`, open: true },
+      { key: 'pair' as const, text: `#FLG ${translate('pair', { name, partner })}`, open: true },
       { key: 'relay' as const, text: translate('relay', { mention: flaMention(name), partner }), open: true },
     ] : []),
     ...(name ? [{ key: 'continue' as const, text: `${flaMention(name)} ${translate('continue', { name })}`, open: false }] : []),
