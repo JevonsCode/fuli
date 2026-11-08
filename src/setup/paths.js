@@ -81,6 +81,8 @@ export function resolveSetupPaths({
     agentDirectoryRoot: join(resolvedDataDir, 'agents'),
     graphBackupDir: graphBackupDirectory(resolvedDataDir),
     logPath: join(resolvedDataDir, 'logs', 'runtime.log'),
+    // The FULI package these paths run; its console records it (graph-runtime.js).
+    packageRoot: root,
     serverPath: join(root, 'src', 'server.js'),
     // What client configurations run: the MCP entry and lifecycle hooks name this
     // command and scripts beside mcpServerPath.

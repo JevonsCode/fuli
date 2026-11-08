@@ -9,6 +9,7 @@ import { removeWindowsNodeLauncher } from './windows-node-launcher.js';
 import { assertInstallationUnchanged, requireInstalledCli, runInstalledCli } from './windows-installation-switch.js';
 import { readCurrentWindowsInstallation } from './windows-update.js';
 import { acquireWindowsUpdateLock } from './windows-update-lock.js';
+import { removeCliPath } from './cli-path.js';
 
 const SLOT = /^[a-f0-9-]{36}$/;
 
@@ -63,6 +64,8 @@ export async function uninstallWindowsInstallation(options, {
     const registrations = await desktopClient.unregister(plan.installRoot);
     // A client session still open runs the launcher; it is removed once that ends.
     const heldFiles = removeWindowsNodeLauncher(plan.installRoot);
+    // The fl and fuli commands and their user PATH entry go with the installation.
+    try { removeCliPath({ installRoot: plan.installRoot }, { platform: 'win32' }); } catch { /* the folder goes with the installation root */ }
     const pending = [];
     for (const slot of plan.slots) {
       // The running node.exe locks its own slot; it is removed once this process exits.

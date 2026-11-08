@@ -25,6 +25,9 @@ export function inspectUpdateInstallation({ env = process.env, platform = proces
       let target = launcher;
       try {
         target = realpathSync(launcher);
+        // npm on Windows writes a fl.cmd wrapper beside <prefix>\node_modules, not a link.
+        const npmCli = path.join(directory, 'node_modules', FULI_PACKAGE_NAME, 'src', 'cli.js');
+        if (platform === 'win32' && /\.cmd$/i.test(name) && existsSync(npmCli)) target = realpathSync(npmCli);
         // Read only the manifest for a recognized Fuli entry point; never execute PATH candidates.
         if (path.basename(target) === 'cli.js' && path.basename(path.dirname(target)) === 'src') {
           const manifest = JSON.parse(readFileSync(path.join(path.dirname(target), '..', 'package.json'), 'utf8'));
@@ -54,18 +57,32 @@ export function formatShadowedLaunchers(installation, { target = installation.cl
     if (first?.version && first.target !== realTarget) shadowing.push({ command, ...first });
   }
   if (!shadowing.length) return null;
-  // An npm global package lives at <prefix>/lib/node_modules/<name>/src/cli.js.
-  const nodeModules = path.dirname(path.dirname(path.dirname(shadowing[0].target)));
-  const lib = path.dirname(nodeModules);
-  const fix = path.basename(nodeModules) === 'node_modules' && path.basename(lib) === 'lib'
-    ? `npm uninstall --global ${FULI_PACKAGE_NAME} --prefix ${quoteShellArgument(path.dirname(lib), platform)}`
-    : 'remove that installation';
+  const fix = npmUninstallCommand(path.dirname(path.dirname(shadowing[0].target)), platform) ?? 'remove that installation';
   return [
     ...shadowing.map(({ command, path: launcher, version, target: other }) =>
       `Warning: \`${command}\` on PATH is another Fuli installation: ${launcher} -> ${version} (${other}).`),
     'Shells that run the bare command get that version; client hooks and MCP use absolute paths and are not affected.',
     `To fix: ${fix}${own ? `, or put ${path.dirname(own.path)} first in PATH` : ''}.`
   ].join('\n');
+}
+
+// The one command that removes an npm global installation of FULI, or null
+// for a folder that is not one. npm keeps a global package at
+// <prefix>/lib/node_modules/<name> (macOS, Linux, a Unix-style prefix on
+// Windows) or <prefix>\node_modules\<name> (Windows).
+export function npmUninstallCommand(packageRoot, platform = process.platform) {
+  const prefix = npmGlobalPrefix(packageRoot, platform);
+  return prefix ? `npm uninstall --global ${FULI_PACKAGE_NAME} --prefix ${quoteShellArgument(prefix, platform)}` : null;
+}
+
+// The npm prefix a global FULI package was installed under, or null.
+export function npmGlobalPrefix(packageRoot, platform = process.platform) {
+  const path = platformPath(platform);
+  const nodeModules = path.dirname(packageRoot);
+  if (path.basename(packageRoot) !== FULI_PACKAGE_NAME || path.basename(nodeModules) !== 'node_modules') return null;
+  const parent = path.dirname(nodeModules);
+  if (path.basename(parent) === 'lib') return path.dirname(parent);
+  return platform === 'win32' ? parent : null;
 }
 
 // A shell skips a launcher it cannot execute, so only runnable ones can shadow another.

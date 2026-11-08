@@ -47,6 +47,8 @@ import { knowledgeTagsMessages } from './messages/knowledge-tags'
 import { captureMessages } from './messages/capture'
 import { firstRunMessages } from './messages/first-run'
 import { clientLinksMessages } from './messages/client-links'
+import { npmCopiesMessages } from './messages/npm-copies'
+import { cliPathMessages } from './messages/cli-path'
 import { agentDelegationMessages } from './messages/agent-delegation'
 import { aiHelpMessages } from './messages/ai-help'
 import { taskBlockerMessages } from './messages/task-blocker'
@@ -132,6 +134,8 @@ export const messages = {
     capture: captureMessages['zh-CN'],
     firstRun: firstRunMessages['zh-CN'],
     clientLinks: clientLinksMessages['zh-CN'],
+    npmCopies: npmCopiesMessages['zh-CN'],
+    cliPath: cliPathMessages['zh-CN'],
     agentDelegation: agentDelegationMessages['zh-CN'],
     aiHelp: aiHelpMessages['zh-CN'],
     taskBlocker: taskBlockerMessages['zh-CN'],
@@ -189,6 +193,8 @@ export const messages = {
     capture: captureMessages['en-US'],
     firstRun: firstRunMessages['en-US'],
     clientLinks: clientLinksMessages['en-US'],
+    npmCopies: npmCopiesMessages['en-US'],
+    cliPath: cliPathMessages['en-US'],
     agentDelegation: agentDelegationMessages['en-US'],
     aiHelp: aiHelpMessages['en-US'],
     taskBlocker: taskBlockerMessages['en-US'],

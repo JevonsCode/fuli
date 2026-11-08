@@ -15,6 +15,8 @@ import { normalizedConfiguration, setConversationLauncherConfiguration } from '@
 import PageColumns from '@/components/PageColumns.vue'
 import ClientConnectionSettings from '@/features/settings/ClientConnectionSettings.vue'
 import ClientLinksSettings from '@/features/settings/ClientLinksSettings.vue'
+import NpmCopiesSettings from '@/features/npm-copies/NpmCopiesSettings.vue'
+import CliPathSettings from '@/features/cli-path/CliPathSettings.vue'
 import AgentDelegationSettings from '@/features/settings/AgentDelegationSettings.vue'
 import PeerSettings from '@/features/settings/PeerSettings.vue'
 import DiagnosticsSettings from '@/features/settings/DiagnosticsSettings.vue'
@@ -492,6 +494,8 @@ usePageRefresh(() => Promise.all([loadResources(), detectClients()]))
             <TabsContent value="clients" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="clients">
               <PageColumns>
               <ClientConnectionSettings data-span="wide" />
+              <NpmCopiesSettings />
+              <CliPathSettings />
               <Card v-if="form.notifications" as="section" id="notifications" class="settings-card notifications-card" aria-labelledby="settings-notifications-title">
                 <CardHeader><CardTitle id="settings-notifications-title" as="h2">{{ t('settings.notifications.title') }}<AiHelpButton term="task.notifications" /></CardTitle></CardHeader>
                 <div class="setting-list">

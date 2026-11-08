@@ -65,11 +65,13 @@ const canInstall = (client) => client.detected && !client.manualOnly;
 // runningServers: this installation's MCP servers the OS shows running
 // ([{ pid, parentPid, startedAt }], mcp-process-scan.js), or null when the
 // list could not be read.
+// npmCopies: the npm installations of FULI beside the desktop app's own
+// (src/desktop/npm-copies.js); none when this console is not the app's.
 export function createDoctor({ observeClients, previewDataFormats = null, formatOperations = () => [],
   graphStage = () => null, liveProcesses, awaitingRestart = () => [], latestVersion, lastUpdate, hookTrust = async () => ({}),
   transcriptFormat = async () => ({}),
   portMoves = () => null, graphRuntime = () => null, dataDirShared = async () => [], runningServers = () => [],
-  version = FULI_VERSION, now = () => new Date() }) {
+  npmCopies = () => [], version = FULI_VERSION, now = () => new Date() }) {
   // The personal graph's last answer while its provider answered: the step it
   // waited on, or null, and when that was seen.
   let lastGraph = null;
@@ -129,6 +131,7 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
     const moved = await read('runtime', portMoves);
     const runtime = await read('runtime', graphRuntime);
     const shared = await read('data_dir', dataDirShared);
+    const copies = await read('install', npmCopies);
     const items = [
       ...graphRuntimeItems(runtime),
       ...clientItems(clients?.clients ?? []),
@@ -141,7 +144,8 @@ export function createDoctor({ observeClients, previewDataFormats = null, format
       ...restartItems(waiting ?? []),
       ...updateItems(latest, update, version),
       ...portItems(moved),
-      ...dataDirItems(shared)
+      ...dataDirItems(shared),
+      ...npmCopyItems(copies)
     ].sort((left, right) => SEVERITY_ORDER[left.severity] - SEVERITY_ORDER[right.severity]);
     return { checkedAt, version, overall: overallOf(items), items, unchecked: [...new Set(unchecked)], uncheckedReasons };
   }
@@ -290,6 +294,19 @@ function portItems(moved) {
 function dataDirItems(shared) {
   if (!shared?.length) return [];
   return [item('data_dir_shared', 'data_dir_shared', 'warning', 'auto', { principals: shared })];
+}
+
+// FULI installed with npm before the desktop app: the app now runs the
+// shared data and every connected client, and the person removes the npm
+// copy when they choose (one command each). shellCommands: the bare
+// commands a terminal still answers with that copy, since the app's own
+// CLI is not on PATH.
+function npmCopyItems(copies) {
+  if (!copies?.length) return [];
+  return [item('npm_copy_installed', 'npm_copy_installed', 'info', 'person', {
+    copies: copies.map(({ version, shellCommands }) => ({ version, shellCommands })),
+    commands: copies.map(({ removeCommand }) => removeCommand)
+  })];
 }
 
 function updateItems(latest, update, version) {

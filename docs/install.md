@@ -143,6 +143,34 @@ poll; disk usage is sampled at most once per minute, with separate timestamps. M
 are shown as partial instead of being replaced with mock values. Native Provider and Neo4j processes
 are included. Browser-tab memory is excluded; shared container-VM overhead is excluded in container mode.
 
+### Already installed with npm?
+
+The desktop client and an npm installation (`npm install --global fuli-context`) use the same data folder
+(macOS `~/Library/Application Support/Fuli`, Windows `%LOCALAPPDATA%\Fuli`). Installing the client after npm copies
+nothing and loses nothing, but the program is then on the computer twice. The client settles that by itself:
+
+- When the client starts FULI, it becomes the one FULI service of that data: a console the npm copy runs is stopped
+  and the client's own is started.
+- Every Agent client FULI was connected to (Claude Code, Codex, Cursor, …) is pointed at the desktop client's copy,
+  once. Open Agent sessions pick it up when they restart.
+- The client leaves the npm copy and its clients alone when that copy's clients use another data folder, or when the
+  npm copy is newer than the client (update the client first); it says which. While a data format step or restore is
+  under way, it waits until its next start.
+- The npm copy stays installed until you choose. The console shows one floating notice naming it, with **Remove**: FULI
+  runs the npm that installed it (`npm uninstall --global fuli-context` for that prefix, without package scripts) and
+  your data stays. If that npm cannot remove it (for example without permission), the notice shows the command to run
+  yourself. Closing the notice keeps it closed; **Settings › Clients** still lists the copy. An Agent removes it only
+  with your own words.
+- The client puts its own `fl` and `fuli` on your PATH. On macOS they are scripts in `~/.fuli/bin`, and a marked
+  block at the end of `~/.zshrc` (and `~/.bash_profile` if you have one) puts that folder first. On Windows they are
+  in the installation's `bin` folder, first in your user PATH; the system PATH still comes first there, so an npm
+  folder in the system PATH (such as nvm-windows) wins until that copy is removed. New terminals pick it up.
+  **Settings › Clients › fl / fuli in a terminal** (or an Agent with your own words) turns this off and takes out exactly what was added; the Windows
+  uninstaller removes it too.
+- From 0.25.0 on, an npm copy never replaces the client's running service. An older npm copy started by hand
+  (`fl start`) can still take it over; the client takes it back the next time it starts FULI. An older copy that meets
+  data a newer FULI upgraded leaves those stores read-only instead of rewriting them.
+
 ## CLI
 
 The global package provides two equivalent commands: `fuli` and the short alias `fl`.

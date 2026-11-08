@@ -21,6 +21,17 @@ const ALLOWED = new Map<string, string>([
   // entries when that branch lands.
   ['employees.ts:zh-CN.installHelp', 'removed by JVS/jefa-builtin-board'],
   ['employees.ts:en-US.installHelp', 'removed by JVS/jefa-builtin-board'],
+  // An older npm copy beside the desktop app: the notice says a terminal still
+  // runs it, which is why the person may remove it; the step itself is a button.
+  ['npm-copies.ts:zh-CN.notice', 'names why the npm copy matters; removing it is a button'],
+  ['npm-copies.ts:zh-CN.shell', 'names why the npm copy matters; removing it is a button'],
+  ['npm-copies.ts:en-US.shell', 'names why the npm copy matters; removing it is a button'],
+  // The switch that puts the desktop app's own commands on PATH names where they are used.
+  ['cli-path.ts:zh-CN.title', 'names the setting; the step is a switch'],
+  ['cli-path.ts:zh-CN.description', 'names the setting; the step is a switch'],
+  ['cli-path.ts:zh-CN.switch', 'names the setting; the step is a switch'],
+  ['cli-path.ts:zh-CN.saved', 'names the setting; the step is a switch'],
+  ['cli-path.ts:en-US.title', 'names the setting; the step is a switch'],
 ])
 
 const files = import.meta.glob<Record<string, unknown>>('./messages/*.ts', { eager: true })

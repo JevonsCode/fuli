@@ -6,6 +6,7 @@ import { readWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { isMainModule } from '../system/main-module.js';
 import { runTrayAction } from './desktop-controller.js';
 import { readWindowsInstallation } from './windows-installation-context.js';
+import { removeRetiredLaunchers } from './windows-node-launcher.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -52,16 +53,27 @@ export function loadTrayContext({ packageRoot = PACKAGE_ROOT, env = process.env 
   }
   const installed = readWindowsInstallation(root);
   const dataDir = installed?.dataDir ?? validateTrayDataDir(root, config.dataDir, env);
-  return { packageRoot: root, dataDir,
+  return { packageRoot: root, dataDir, installRoot: installed?.installRoot ?? null,
     instanceKey: createHash('sha256').update(dataDir.toLowerCase()).digest('hex').slice(0, 32),
     nodePath: join(root, 'runtime', 'node', 'node.exe'), cliPath: join(root, 'src', 'cli.js'),
     logDir: join(dataDir, 'logs'), nativeLogDir: join(dataDir, 'native-runtime', 'personal', 'logs') };
+}
+
+// What a tray start tidies first: launchers an update set aside while a
+// client still ran them (FuliNode.exe.<id>.old), once nothing holds them.
+// Only the running tray starts FULI, and it holds the tray mutex every
+// updater must take first (windows-update-lock.js), so no update places a
+// launcher meanwhile. Best effort: a held one stays for the next start.
+export function tidyInstallation(context, action, { removeLeftovers = removeRetiredLaunchers } = {}) {
+  if (!context.installRoot || !['start', 'start-open'].includes(action)) return [];
+  try { return removeLeftovers(context.installRoot); } catch { return []; }
 }
 
 if (isMainModule(import.meta.url)) {
   try {
     if (process.argv.length !== 3) throw new Error('Expected exactly one tray action.');
     const context = loadTrayContext();
+    tidyInstallation(context, process.argv[2]);
     const result = process.argv[2] === 'context'
       ? { ok: true, dataDir: context.dataDir, logDir: context.logDir,
         nativeLogDir: context.nativeLogDir, instanceKey: context.instanceKey }

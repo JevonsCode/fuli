@@ -1,0 +1,37 @@
+// An npm copy of FULI beside the desktop app (features/npm-copies): the
+// console's floating notice and the card in Settings › 客户端.
+export const npmCopiesMessages = {
+  'zh-CN': {
+    notice: '电脑上还有一份旧的 npm 版 FULI（v{version}），已经停用。建议卸载，免得终端里用到旧版。',
+    otherData: '这份 npm 版 FULI（v{version}）用的是另一份数据（{dataDir}），桌面版没有动它。',
+    newer: 'npm 版 FULI（v{version}）比桌面版新，桌面版没有替换它。请先更新桌面版。',
+    remove: '卸载',
+    removing: '正在卸载 npm 版 FULI v{version}…',
+    removed: '已卸载 npm 版 FULI v{version}，数据没动。',
+    failed: '没能自动卸载（{reason}）。请自己运行这条命令：',
+    reasons: { npm_not_found: '找不到装它的 npm', still_installed: '卸载后它还在', not_npm_global: '它不是 npm 全局安装的' },
+    title: 'npm 版 FULI',
+    description: '桌面版已接管它的数据和客户端。卸载只删程序，数据不动。',
+    version: 'v{version}',
+    shell: '终端里的 {commands} 仍是它',
+    remind: '在控制台提醒',
+    loadError: '没能读到 npm 版 FULI 的情况',
+  },
+  'en-US': {
+    notice: 'An old npm copy of FULI (v{version}) is still here, unused. Remove it so terminals stop running it.',
+    otherData: 'This npm copy of FULI (v{version}) uses other data ({dataDir}); the desktop app left it alone.',
+    newer: 'The npm copy of FULI (v{version}) is newer than the desktop app, which left it running. Update the app first.',
+    remove: 'Remove',
+    removing: 'Removing the npm copy of FULI v{version}…',
+    removed: 'Removed the npm copy of FULI v{version}; your data is untouched.',
+    failed: 'It could not be removed ({reason}). Run this command yourself:',
+    reasons: { npm_not_found: 'the npm that installed it was not found', still_installed: 'it is still there after npm ran',
+      not_npm_global: 'it is not an npm global install' },
+    title: 'npm copy of FULI',
+    description: 'The desktop app runs its data and clients now. Removing it deletes only the program, not your data.',
+    version: 'v{version}',
+    shell: '{commands} in a terminal still runs it',
+    remind: 'Remind me in the console',
+    loadError: 'Could not read the npm copies of FULI',
+  },
+}
