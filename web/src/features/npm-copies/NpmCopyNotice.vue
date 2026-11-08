@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import { RouterLink } from 'vue-router'
 
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
@@ -14,6 +15,8 @@ import { loadNpmCopies, noticeCopy, npmCopies, removalReason, removeNpmCopy, set
 // second confirmation, and closes for good with ×; Settings › 客户端 still
 // lists the copy. It sits at the bottom right just above the dock, so it
 // never covers the top bar, a page's tabs or its title.
+// The Settings card that keeps the copy, with its 卸载, after this notice is closed.
+const SETTINGS_CARD = '/settings?tab=clients#npm-copies'
 const store = useConsoleStore()
 const copy = computed(() => noticeCopy())
 const failure = computed(() => copy.value ? npmCopies.failed[copy.value.packageRoot] ?? null : null)
@@ -52,6 +55,7 @@ async function close() {
     <div v-if="shown && copy" class="npm-copy-notice" data-npm-copy-notice>
       <UiNotice class="npm-copy-message" tone="info">
         {{ message }}
+        <RouterLink class="npm-copy-later" :to="SETTINGS_CARD" data-npm-copy-later>{{ t('npmCopies.later') }}</RouterLink>
         <template v-if="failure">
           <p class="npm-copy-failed" role="alert">{{ t('npmCopies.failed', { reason: removalReason(failure.error) }) }}</p>
           <code v-if="failure.manualCommand" class="npm-copy-command" data-npm-copy-command>{{ failure.manualCommand }}</code>
@@ -76,6 +80,10 @@ async function close() {
   border: 1px solid var(--edge-dock); background: var(--glass-sheen), var(--surface-dock); box-shadow: var(--shadow-glass);
   -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock);
 }
+/* The actions get a row of their own, clearly apart from the sentence. */
+.npm-copy-notice :deep(.ui-notice__actions) { flex-basis: 100%; justify-content: flex-end; gap: 8px; margin: 12px 0 0; }
+.npm-copy-later { display: block; margin-top: 6px; color: var(--color-ink); font-size: 12px; text-decoration: underline;
+  text-underline-offset: 2px; user-select: none; }
 .npm-copy-failed { margin: 6px 0 0; color: var(--color-danger); }
 .npm-copy-command {
   display: block; margin-top: 4px; padding: 6px 8px; border-radius: var(--radius-control); background: var(--color-surface-hover);

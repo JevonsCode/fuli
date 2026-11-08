@@ -1,9 +1,10 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount as mountWith, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { useConsoleStore } from '@/stores/console'
 import NpmCopyNotice from './NpmCopyNotice.vue'
+import NpmCopiesSettings from './NpmCopiesSettings.vue'
 import { npmCopies } from './npm-copies'
 
 // Synthetic copies only: no npm is run, nothing on this computer is read.
@@ -16,6 +17,8 @@ function server(routes: Record<string, unknown>) {
   vi.stubGlobal('fetch', fetch)
   return fetch
 }
+
+const mount = (component: typeof NpmCopyNotice) => mountWith(component, { global: { stubs: { RouterLink: RouterLinkStub } } })
 
 beforeEach(() => {
   setActivePinia(createPinia())
@@ -81,4 +84,24 @@ it('asks to update the app first when the npm copy is newer', async () => {
   await flushPromises()
   expect(wrapper.get('[data-npm-copy-notice]').text()).toContain('请先更新桌面版')
   expect(wrapper.find('[data-npm-copy-remove]').exists()).toBe(false)
+})
+
+it('always says where to remove it later, linking the Settings card', async () => {
+  server({ 'GET /api/system/npm-copies': { copies: [copy] } })
+  const wrapper = mount(NpmCopyNotice)
+  await flushPromises()
+  expect(wrapper.get('[data-npm-copy-later]').text()).toBe('之后也可以在「设置 › 客户端」卸载')
+  expect(wrapper.getComponent(RouterLinkStub).props('to')).toBe('/settings?tab=clients#npm-copies')
+})
+
+it('the Settings card keeps the copy with its path and 卸载, and says nothing once it is gone', async () => {
+  const fetch = server({ 'GET /api/system/npm-copies': { copies: [{ ...copy, noticeDismissed: true }] },
+    'POST /api/system/npm-copies/uninstall': { status: 'uninstalled', version: copy.version, manualCommand: copy.removeCommand } })
+  const wrapper = mount(NpmCopiesSettings)
+  await flushPromises()
+  expect(wrapper.get('[data-npm-copy-path]').text()).toBe('位置：/synthetic/lib/node_modules/fuli-context')
+  await wrapper.get('[data-npm-copy-remove]').trigger('click')
+  await flushPromises()
+  expect(fetch.mock.calls.some(([url]) => url === '/api/system/npm-copies/uninstall')).toBe(true)
+  expect(wrapper.find('[data-npm-copies-settings]').exists()).toBe(false)
 })
