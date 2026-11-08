@@ -1,5 +1,6 @@
 import { receiptConsoleUrl, receiptSummary, receiptText, sessionRecordsUrl } from './identity-receipt.js';
 import { providerReaderFields } from '../graphiti/knowledge-reader.js';
+import { markdownLink } from '../text/markdown-link.js';
 
 // The per-turn receipt (rec#20): after a turn's checkpoint saved knowledge, the
 // reply tail lists every item that turn actually created or replaced, read back
@@ -103,27 +104,27 @@ function boundedReceipt(application, heading, lines, episodeIds, session) {
   const listUrl = episodeIds.length ? turnReceiptListUrl(application, episodeIds) : null;
   return {
     lines: [`FULI ${heading} ${lines.length} 条${sessionLink(application, session)}：`, ...shown,
-      ...(omitted ? [`另 ${omitted} 条未列出：${listUrl ? `[查看全部](<${listUrl}>)` : '见控制台知识页'}`] : [])],
+      ...(omitted ? [`另 ${omitted} 条未列出：${listUrl ? markdownLink('查看全部', listUrl) : '见控制台知识页'}`] : [])],
     summary: { status: 'saved', total: lines.length, shown: shown.length, ...(listUrl ? { list_url: listUrl } : {}) }
   };
 }
 
 function sessionLink(application, session) {
-  return session?.sessionId ? `（[本会话已记录](<${sessionRecordsUrl(application, session)}>)）` : '';
+  return session?.sessionId ? `（${markdownLink('本会话已记录', sessionRecordsUrl(application, session))}）` : '';
 }
 
 function entryLine(application, entry) {
   return `- ${entry.change === 'updated' ? '更新' : '新增'} ${CATEGORY[entry.category] ?? '知识'}「${receiptSummary(entry.content || entry.title)}」`
     + `｜${scopeLabel(entry.scope)}｜${weightLabel(entry.weight)}｜${tagLabel(entry.tags)}`
     + `｜${SOURCE[entry.content_source] ?? '来源未记录'}·${CONFIRMATION[entry.confirmation_status] ?? '待确认'}`
-    + `｜[修改](<${knowledgeItemEditUrl(application, entry.item_kind, entry.item_id)}>)`;
+    + `｜${markdownLink('修改', knowledgeItemEditUrl(application, entry.item_kind, entry.item_id))}`;
 }
 
 // FLA working notes carry no per-item weight and are never rules to apply.
 function memoryLine(application, memory, agentName) {
   const url = `${receiptConsoleUrl(application)}/agents/${encodeURIComponent(application.config.personal.spaceId)}/${encodeURIComponent(memory.agentId)}`;
   return `- ${memory.revision > 1 ? '更新' : '新增'} FLA笔记「${receiptSummary(memory.memory.summary)}」`
-    + `｜FLA ${receiptText(agentName || memory.agentId)}｜暂无权重｜无标签｜Agent笔记·不作为规则｜[查看](<${url}>)`;
+    + `｜FLA ${receiptText(agentName || memory.agentId)}｜暂无权重｜无标签｜Agent笔记·不作为规则｜${markdownLink('查看', url)}`;
 }
 
 function scopeLabel(scope) {

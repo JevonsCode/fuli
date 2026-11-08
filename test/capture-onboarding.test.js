@@ -17,7 +17,7 @@ import { codexEntry, finishTask, fixture, receiptOf } from './fixtures/capture-p
 
 const PROJECT_OFF = '此项目未开启记忆；你明确提交的修改仍会保存';
 const RECORDING_OFF = '自动记录已关闭；你明确提交的修改仍会保存';
-const TURN_ON = '[在 FULI 设置里打开](<http://127.0.0.1:2727/settings>)';
+const TURN_ON = '[在 FULI 设置里打开](http://127.0.0.1:2727/settings)';
 
 // The data directory paths setup and start use, rooted where the fixture keeps its settings.
 function setupPaths(f) {

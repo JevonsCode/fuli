@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { markdownLink } from '../text/markdown-link.js';
 
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { receiptConsoleUrl } from '../agents/identity-receipt.js';
@@ -155,7 +156,7 @@ function noticeSession(providerInput) {
 // checkpoint: this turn itself left items there while in the formal project.
 export function sessionMigrationLine(application, task, { heldCount = null } = {}) {
   const held = heldCount === null ? '本轮有条目暂存在本会话临时项目' : `本会话临时项目有 ${heldCount} 条范围待确定`;
-  return `FULI 待迁移：${held}，迁入当前项目需你确认：[确认迁移](<${migrationUrl(application, task)}>)`;
+  return `FULI 待迁移：${held}，迁入当前项目需你确认：${markdownLink('确认迁移', migrationUrl(application, task))}`;
 }
 
 // The entry's offer once a session links to a formal project; never blocks the entry.

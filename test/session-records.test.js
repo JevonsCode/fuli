@@ -126,12 +126,12 @@ test('C6-2: the Agent lists the same numbered items, types, summaries and links 
   assert.equal(numbered.length, page.total);
   page.entries.forEach((entry, index) => {
     assert.ok(numbered[index].startsWith(`${entry.number}. ${entry.type}`), numbered[index]);
-    assert.ok(numbered[index].includes(`「${entry.summary}」`) && numbered[index].endsWith(`[查看](<${entry.link}>)`));
+    assert.ok(numbered[index].includes(`「${entry.summary}」`) && numbered[index].endsWith(`[查看](${entry.link})`));
   });
   assert.deepEqual(Object.keys(answer).sort(), ['markdown', 'total', 'truncated', 'url'],
     'the Agent gets the numbered list, not every saved word');
-  assert.equal(lines[0], `FULI 本会话已记录 9 项（[查看清单](<${LIST}>)）：`);
-  assert.ok(answer.markdown.includes(`\n7. 新增 事实·待确认｜10:02｜项目 毕业论文｜「Synthetic fact-a」｜[查看](<${LIST}?client=codex&item=space/entity%3Afact-a>)`));
+  assert.equal(lines[0], `FULI 本会话已记录 9 项（[查看清单](${LIST})）：`);
+  assert.ok(answer.markdown.includes(`\n7. 新增 事实·待确认｜10:02｜项目 毕业论文｜「Synthetic fact-a」｜[查看](${LIST}?client=codex&item=space/entity%3Afact-a)`));
   assert.match(answer.markdown, /\n9\. 偏好证据·待确认｜10:04｜项目 毕业论文｜「以后引用都按 GB\/T 7714」｜/);
 });
 
@@ -210,7 +210,7 @@ test('an empty session says so and still links its list; a long one says it is c
   const read = { ...sessionRead(), turns: [], items: [], truncated: true };
   const { markdown } = await callAgentTool(app(read).app, 'read_session_records', { taskContextToken: 'fuli-task-b',
     sourceApplication: 'codex' });
-  assert.equal(markdown, `FULI 本会话还没有记录任何内容（[查看清单](<${LIST}>)）：\n会话较长，只列出了最近的记录；更早的记录没有列出。`);
+  assert.equal(markdown, `FULI 本会话还没有记录任何内容（[查看清单](${LIST})）：\n会话较长，只列出了最近的记录；更早的记录没有列出。`);
 });
 
 test('the page reads only the active personal space', async () => {

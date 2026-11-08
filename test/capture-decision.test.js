@@ -36,7 +36,7 @@ const PRIVATE = 'synthetic-private-words';
 // rec#11 D-01 receipts: automatic recording stops, explicit edits still save.
 const RECORDING_OFF = '自动记录已关闭；你明确提交的修改仍会保存';
 // A receipt also names the page that turns the switch on again (rec#5 C10-3).
-const TURN_ON = '[在 FULI 设置里打开](<http://127.0.0.1:2727/settings>)';
+const TURN_ON = '[在 FULI 设置里打开](http://127.0.0.1:2727/settings)';
 const SETTINGS_UNREADABLE = '记录设置读取失败，本次未自动记录；你明确提交的修改仍会保存';
 // rec#51: a refused Agent write says it was not saved instead of "explicit edits still save".
 const AGENT_WRITE_NOT_SAVED = '这次由 Agent 提交的修改没有保存，你在 FULI 控制台里亲自做的修改仍会保存';

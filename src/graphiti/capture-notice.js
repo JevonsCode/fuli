@@ -1,4 +1,5 @@
 import { localClockTime } from '../text/clock-time.js';
+import { markdownLink } from '../text/markdown-link.js';
 
 // What a person is told when automatic recording did not run (rec#11 D-01,
 // rec#5 C5). Edits the person submits explicitly are not automatic recording
@@ -80,6 +81,6 @@ const SWITCHED_OFF = new Set(['global_off', 'client_off']);
 export function receiptNotices(decision, explicitOperations = [], { settingsUrl = null } = {}) {
   const notice = captureNotice(decision.reason, decision.since);
   if (!notice) return [];
-  const entry = settingsUrl && SWITCHED_OFF.has(decision.reason) ? [`[在 FULI 设置里打开](<${settingsUrl}>)`] : [];
+  const entry = settingsUrl && SWITCHED_OFF.has(decision.reason) ? [markdownLink('在 FULI 设置里打开', settingsUrl)] : [];
   return [notice, ...entry, ...explicitOperations.map(operation => EXPLICIT_OPERATION_RESULTS[operation])];
 }
