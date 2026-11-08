@@ -226,6 +226,7 @@ async def _version_lifecycle(
     restore that would erase history; None leaves the in-place revision."""
     # Deferred: the version and outdated modules build on this one.
     from .knowledge_basis_review import apply_meaning, basis_review, settle_review
+    from .knowledge_duplicates import merged_duplicate, split_duplicate
     from .knowledge_outdated import mark_item_outdated, report_outdated_to_person
     from .knowledge_versions import (
         creates_version, current_version_id, item_revisions, keyed_replacement, lock_knowledge,
@@ -244,11 +245,15 @@ async def _version_lifecycle(
                 'message': 'this version was replaced or went out of date; its end stays as it was'})
         return None
     if request.action == 'restore':
-        # A keyed replacement is the one end a person can take back.
+        # A keyed replacement and a duplicate merge are the ends a person can take back.
         if (request.operation_actor == 'human' and request.item_kind == 'relationship'
                 and keyed_replacement(current, revisions)):
             return await restore_keyed_value(store, actor, space, item_id, previous, reason=request.reason,
                                              created_at=created_at, revision_id=revision_id)
+        merge = merged_duplicate(current, revisions) if request.operation_actor == 'human' else None
+        if merge:
+            return await split_duplicate(store, actor, space, request.item_kind, item_id, merge, previous,
+                                         reason=request.reason, created_at=created_at, revision_id=revision_id)
         if terminal(current, revisions):
             raise HTTPException(status_code=409, detail={
                 'code': 'reassert_as_new_version',

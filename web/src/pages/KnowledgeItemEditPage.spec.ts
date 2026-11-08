@@ -361,6 +361,26 @@ describe('KnowledgeItemEditPage', () => {
     wrapper.unmount()
   })
 
+  it('rec#88: a merged duplicate is one short line on the current item, and 拆开 restores that copy', async () => {
+    const copy = { item_kind: 'entity', item_id: 'item-0', content: 'Project checks: `npm test`', status: 'superseded',
+      confirmation_status: 'pending', merged_duplicate: true, created_at: '2026-10-20T00:00:00Z' }
+    const versions = [{ item_kind: 'entity', item_id: 'item-1', content: 'Prefer short status lines', status: 'current',
+      confirmation_status: 'pending', created_at: '2026-10-21T00:00:00Z' }, copy]
+    const wrapper = await open(view({ versions }))
+    expect(wrapper.get('[data-merged-count]').text()).toBe('合并了 1 条重复')
+    patchJson.mockResolvedValue({ id: 'r9', action: 'restore' })
+    await wrapper.get('[data-split-duplicate]').trigger('click')
+    await flushPromises()
+    expect(patchJson).toHaveBeenCalledWith('/api/knowledge/entity/item-0', { personalSpaceId: 'space', action: 'restore',
+      reason: '在控制台把合并的重复拆开' }, expect.objectContaining({ schema: expect.anything() }))
+    expect(getJson.mock.calls.filter(([url]) => url === '/api/knowledge/entity/item-1?personalSpaceId=space')).toHaveLength(2)
+    wrapper.unmount()
+
+    const plain = await open(view({ versions: versions.slice(0, 1) }))
+    expect(plain.find('[data-merged-duplicates]').exists()).toBe(false)
+    plain.unmount()
+  })
+
   it('removes a project tag of the second project of an item from that project, not the first', async () => {
     const wrapper = await open(view({ scope: { kind: 'projects', projects: [{ id: 'alpha', name: 'Alpha' },
       { id: 'beta', name: 'Beta' }], status: 'set' },

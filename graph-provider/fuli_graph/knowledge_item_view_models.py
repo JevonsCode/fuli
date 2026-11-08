@@ -117,6 +117,8 @@ class KnowledgeVersion(StrictModel):
     # Bases that were out of date when this version re-asserted its words and
     # that it no longer rests on (依据已过时，重新确认时解除).
     released_bases: list[str] = Field(default_factory=list)
+    # An automatic duplicate merge ended it (合并了 N 条重复); a person's restore splits it back out.
+    merged_duplicate: bool = False
 
 
 class KnowledgeBasis(StrictModel):

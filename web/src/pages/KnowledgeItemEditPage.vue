@@ -15,6 +15,7 @@ import { useRoutePeek } from '@/composables/useRoutePeek'
 import KnowledgeBasisReview from '@/features/knowledge-quick-edit/KnowledgeBasisReview.vue'
 import KnowledgeContentEditor from '@/features/knowledge-quick-edit/KnowledgeContentEditor.vue'
 import KnowledgeItemDependents from '@/features/knowledge-quick-edit/KnowledgeItemDependents.vue'
+import KnowledgeMergedDuplicates from '@/features/knowledge-quick-edit/KnowledgeMergedDuplicates.vue'
 import KnowledgeItemHistory from '@/features/knowledge-quick-edit/KnowledgeItemHistory.vue'
 import KnowledgeItemSummaryCard from '@/features/knowledge-quick-edit/KnowledgeItemSummaryCard.vue'
 import KnowledgeScopeEditor from '@/features/knowledge-quick-edit/KnowledgeScopeEditor.vue'
@@ -189,6 +190,7 @@ watch([spaceId, kind, itemId], () => {
     </div>
     <template v-else-if="item">
       <KnowledgeItemSummaryCard :item="item" :heading="item.title" />
+      <KnowledgeMergedDuplicates v-if="active" :item="item" :space-id="spaceId" @split="saved" @failed="failed" />
       <GrowthLoading v-if="loading" variant="inline" :label="t('knowledgeQuickEdit.loading')" />
       <p v-if="notice" role="status" class="m-0 text-sm" data-edit-notice>{{ notice }}</p>
       <div v-if="!active" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground" data-item-historical>

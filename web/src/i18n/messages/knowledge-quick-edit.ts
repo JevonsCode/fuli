@@ -89,6 +89,10 @@ export const knowledgeQuickEditMessages = {
       reason: '为什么过时', action: '标记过时', running: '正在标记过时', done: '已标记过时',
       dependents: '{count} 条依据它推出的结论已标为“依据已过时”。',
     },
+    duplicates: {
+      merged: '合并了 {count} 条重复', split: '拆开', splitting: '正在拆开重复',
+      splitReason: '在控制台把合并的重复拆开', done: '已拆开，两条各自保留',
+    },
     reassert: {
       title: '重新确认为新版本', help: '再次确认会生成一个新版本，旧版本保留“{status}”的那段时间。',
       save: '确认为新版本', saving: '正在生成新版本', done: '已生成新版本',
@@ -208,6 +212,10 @@ export const knowledgeQuickEditMessages = {
       title: 'Mark outdated', help: 'It was true once and no longer is. Agents stop using it and it moves to history; saying it again later writes a new version without erasing the gap.',
       reason: 'Why it is outdated', action: 'Mark outdated', running: 'Marking it outdated', done: 'Marked outdated',
       dependents: '{count} conclusions drawn from it are now marked “basis outdated”.',
+    },
+    duplicates: {
+      merged: 'Merged {count} duplicate | Merged {count} duplicates', split: 'Split', splitting: 'Splitting the duplicate',
+      splitReason: 'Split a merged duplicate back out in the console', done: 'Split: both are kept on their own',
     },
     reassert: {
       title: 'Confirm again as a new version', help: 'Confirming it again writes a new version; the old one keeps the time it was “{status}”.',
