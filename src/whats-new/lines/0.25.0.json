@@ -1,0 +1,17 @@
+{
+  "version": "0.25.0",
+  "zh": [
+    "这一版 FULI 学会了省钱：你说过一次的事它就记住了，用得越久，AI 花的 token 越少。",
+    "有了桌面安装包，Windows 和 Mac 双击就能装，从此和终端互不打扰。",
+    "Tonborg 拿不准的事，点一下「?」就能让你的 AI 一条条讲给你听，你答一句它就记下。",
+    "控制台里的事也能交给 AI 操作，页面顺手从头到脚打磨了一遍。",
+    "更新完重启一下你的 AI 客户端，它们也该喝杯咖啡了 ☕"
+  ],
+  "en": [
+    "FULI learned to save money: say it once and it remembers, so your AI spends fewer tokens over time.",
+    "Desktop installers: double-click to install on Windows and Mac, no terminal required.",
+    "When Tonborg is unsure, click 「?」 and your AI walks you through each item; one answer records it.",
+    "Your AI can now run the console for you, and every page got a polish.",
+    "Restart your AI clients after updating. They deserve a coffee too ☕"
+  ]
+}
