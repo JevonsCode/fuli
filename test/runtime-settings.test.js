@@ -149,3 +149,17 @@ test('topic promotion defaults to auto and accepts only auto or ask (rec#11 D-86
   assert.equal(normalizeRuntimeSettings(legacy, { base: legacy }).topicPromotion, 'auto');
   assert.throws(() => normalizeRuntimeSettings({ ...DEFAULT_RUNTIME_SETTINGS, topicPromotion: 'never' }), /auto or ask/);
 });
+
+test('the /fla menu is on by default; the console language is empty until the person picks one (11-08)', () => {
+  const settings = normalizeRuntimeSettings(DEFAULT_RUNTIME_SETTINGS);
+  assert.equal(settings.flaSlashMenu, true);
+  assert.equal(settings.consoleLanguage, '');
+  const legacy = { ...DEFAULT_RUNTIME_SETTINGS };
+  delete legacy.flaSlashMenu;
+  delete legacy.consoleLanguage;
+  assert.deepEqual(normalizeRuntimeSettings(legacy, { base: legacy }), settings);
+  assert.equal(normalizeRuntimeSettings({ ...DEFAULT_RUNTIME_SETTINGS, flaSlashMenu: false }).flaSlashMenu, false);
+  assert.equal(normalizeRuntimeSettings({ ...DEFAULT_RUNTIME_SETTINGS, consoleLanguage: 'en-US' }).consoleLanguage, 'en-US');
+  assert.throws(() => normalizeRuntimeSettings({ ...DEFAULT_RUNTIME_SETTINGS, flaSlashMenu: 'yes' }), /flaSlashMenu/);
+  assert.throws(() => normalizeRuntimeSettings({ ...DEFAULT_RUNTIME_SETTINGS, consoleLanguage: 'fr-FR' }), /consoleLanguage/);
+});

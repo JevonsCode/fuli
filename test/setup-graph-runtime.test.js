@@ -287,7 +287,9 @@ test('setup applies every configured service port to Provider URLs and Compose e
     notifications: { needsPersonUrl: '' },
     agentNamingStyle: '',
     topicPromotion: 'auto',
-    updateChannel: DEFAULT_RUNTIME_SETTINGS.updateChannel
+    updateChannel: DEFAULT_RUNTIME_SETTINGS.updateChannel,
+    flaSlashMenu: true,
+    consoleLanguage: ''
   };
   let environment = '';
   let savedSettings = null;

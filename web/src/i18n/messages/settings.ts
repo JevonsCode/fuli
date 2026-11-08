@@ -193,6 +193,10 @@ export const settingsMessages = {
       needsPersonUrl: '需要你时通知',
       needsPersonUrlMeta: 'Agent 举手等你决定时，FULI 把事件发到这个本机地址（例如 DingDong）。只接受 127.0.0.1、localhost 或 [::1]；留空就关闭。',
     },
+    flaSlashMenu: {
+      title: '在客户端里用 /fla 选择 FLA',
+      description: '在 Claude Code、OpenCode、Cursor 里输入 /fla，选一位 FLA 继续工作，和 #FLA 名字一样。',
+    },
     topicPromotion: {
       title: '话题自动升级为项目',
       description: '同一个话题 2 天里聊了 3 次以上，@:{\'roleNames.astro\'} 直接建项目并在回执里告诉你，可以改名或撤销。关掉后只提建议。',
@@ -513,6 +517,10 @@ export const settingsMessages = {
       title: 'Notifications',
       needsPersonUrl: 'Notify when you are needed',
       needsPersonUrlMeta: 'When an Agent raises a hand for your decision, FULI posts the event to this address on this machine (for example DingDong). Only 127.0.0.1, localhost or [::1]; leave empty to turn it off.',
+    },
+    flaSlashMenu: {
+      title: 'Pick an FLA with /fla in clients',
+      description: 'In Claude Code, OpenCode or Cursor, type /fla and pick an FLA to continue, same as #FLA and a name.',
     },
     topicPromotion: {
       title: 'Topics grow into projects',

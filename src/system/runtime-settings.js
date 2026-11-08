@@ -19,6 +19,9 @@ const TOPIC_PROMOTION_MODES = Object.freeze(['auto', 'ask']);
 const DEFAULT_UPDATE_CHANNEL = parseSemanticVersion(FULI_VERSION).prerelease.length ? 'beta' : 'stable';
 const RESOURCE_REFRESH_OPTIONS = Object.freeze([5, 10, 30, 60]);
 const GRAPH_RUNTIME_MODES = Object.freeze(['container', 'native']);
+// The console language the person picked (web/src/i18n); '' until they pick
+// one, when clients follow this computer's language (fla-menu.js).
+const CONSOLE_LANGUAGES = Object.freeze(['', 'zh-CN', 'en-US']);
 export const CONVERSATION_LAUNCHER_APPLICATIONS = Object.freeze([
   'codex',
   'claude',
@@ -102,7 +105,10 @@ export const DEFAULT_RUNTIME_SETTINGS = deepFreeze({
   notifications: { needsPersonUrl: '' },
   agentNamingStyle: '',
   topicPromotion: 'auto',
-  updateChannel: DEFAULT_UPDATE_CHANNEL
+  updateChannel: DEFAULT_UPDATE_CHANNEL,
+  // Agent clients list the person's FLAs in their / menu (/fla; fla-menu.js).
+  flaSlashMenu: true,
+  consoleLanguage: ''
 });
 
 export function readRuntimeSettings(path, {
@@ -170,6 +176,10 @@ export function normalizeRuntimeSettings(input, {
   if (!TOPIC_PROMOTION_MODES.includes(topicPromotion)) throw new TypeError('topicPromotion must be auto or ask');
   const updateChannel = input.updateChannel ?? base.updateChannel ?? DEFAULT_UPDATE_CHANNEL;
   if (!UPDATE_CHANNELS.includes(updateChannel)) throw new TypeError('updateChannel must be stable or beta');
+  const flaSlashMenu = input.flaSlashMenu ?? base.flaSlashMenu ?? true;
+  if (typeof flaSlashMenu !== 'boolean') throw new TypeError('flaSlashMenu must be a boolean');
+  const consoleLanguage = input.consoleLanguage ?? base.consoleLanguage ?? '';
+  if (!CONSOLE_LANGUAGES.includes(consoleLanguage)) throw new TypeError('consoleLanguage must be zh-CN, en-US or empty');
   return {
     version: RUNTIME_SETTINGS_VERSION,
     graphRuntimeMode,
@@ -180,7 +190,9 @@ export function normalizeRuntimeSettings(input, {
     notifications,
     agentNamingStyle,
     topicPromotion,
-    updateChannel
+    updateChannel,
+    flaSlashMenu,
+    consoleLanguage
   };
 }
 

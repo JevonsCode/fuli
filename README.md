@@ -155,6 +155,13 @@ Other MCP clients run `fuli connect` for a standard configuration.
 </details>
 
 <details>
+<summary><b>How do I call one of my FLAs?</b></summary>
+
+Start a message with `#FLA` and its name. In Claude Code, OpenCode and Cursor you can also type
+`/fla` and pick one from the menu. Turn the menu off in Settings › Clients.
+</details>
+
+<details>
 <summary><b>How does FULI save tokens?</b></summary>
 
 A session starts with only the preferences in effect and a few related facts; the Agent looks up

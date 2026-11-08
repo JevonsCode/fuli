@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
+import { setLocale } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConsoleState } from '@/types'
 import { DEFAULT_CONVERSATION_LAUNCHERS } from '@/features/knowledge/source-adapters'
@@ -160,6 +161,35 @@ describe('SettingsPage', () => {
     expect(puts).toHaveLength(1)
     expect(puts[0]!.conversationLaunchers.codex.enabled).toBe(false)
     wrapper.unmount()
+  })
+
+  it('turns the clients\' /fla menu off at once, and saves the console language for it', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    const current = { ...configured, flaSlashMenu: true, consoleLanguage: '' as const }
+    const puts: Array<typeof current> = []
+    vi.stubGlobal('fetch', vi.fn(async (input, init?: RequestInit) => {
+      if (String(input) === '/api/system/settings' && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body))
+        puts.push(body)
+        return Response.json({ configured: body, active: body, restartRequired: false })
+      }
+      if (String(input) === '/api/system/settings') return Response.json({ configured: current, active: current, restartRequired: false })
+      return Response.json({}, { status: 503 })
+    }))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
+    await flushPromises()
+    const card = wrapper.get('[data-fla-slash-menu-card]')
+    expect(card.text()).toContain('/fla')
+    await card.get('[role="switch"]').trigger('click')
+    await flushPromises()
+    expect(puts.at(-1)!.flaSlashMenu).toBe(false)
+    await chooseOption(wrapper, 'settings-language', 'English')
+    await flushPromises()
+    expect(puts.at(-1)!.consoleLanguage).toBe('en-US')
+    wrapper.unmount()
+    setLocale('zh-CN', { persist: false })
   })
 
   it('leaves the FLA naming preference to the person\'s home page', async () => {

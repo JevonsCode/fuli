@@ -46,6 +46,13 @@ export function describeSettings({ settings, capturePolicy, consoleUrl }) {
         settingsUrl: link('topicPromotion'),
       },
       {
+        key: 'flaSlashMenu',
+        value: settings.flaSlashMenu ?? true,
+        effect: 'On (the default): Agent clients that show MCP prompts (Claude Code, OpenCode, Cursor) list the person\'s FLAs when they type /fla, each as name — project — role; choosing one continues that FLA like #FLA <name>. Off removes the entries; #FLA still works. Project and role text follow consoleLanguage. Nothing is written into a client. The person\'s AI may switch it with run_delegated_action PUT /api/system/settings (settings permission) when they ask.',
+        changedBy: PERSON,
+        settingsUrl: link('flaSlashMenu'),
+      },
+      {
         key: 'resourceRefreshSeconds',
         value: settings.resourceRefreshSeconds,
         options: [5, 10, 30, 60],

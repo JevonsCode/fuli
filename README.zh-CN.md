@@ -149,6 +149,13 @@ Claude Code、Codex、OpenCode、Cursor 和 Claude 桌面版都能在控制台�
 </details>
 
 <details>
+<summary><b>怎么叫我的某位 FLA？</b></summary>
+
+消息开头写 `#FLA` 加名字。在 Claude Code、OpenCode、Cursor 里也可以输入 `/fla`，从菜单里选一位。
+不想要这个菜单，在 设置 › 客户端 里关掉。
+</details>
+
+<details>
 <summary><b>FULI 怎么省 token？</b></summary>
 
 会话开始时只带生效的偏好和几条相关事实，其余的 Agent 需要时再查。只有你知道的事实，比如你顺口提过一次的沙箱地址，

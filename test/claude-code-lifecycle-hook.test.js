@@ -32,6 +32,13 @@ test('Claude command entry restores context without any host MCP connection', as
   assert.doesNotMatch(JSON.stringify(calls), /DO_NOT/);
 });
 
+test('a pick from Claude Code\'s /fla menu enters as #FLA with that menu name and the typed request (11-08)', async () => {
+  const calls = [];
+  await claudeLifecycleOutput('UserPromptSubmit', { ...input, prompt: '/mcp__fuli__fla-jamie-ash-beta 看一下构建' },
+    async (name, args) => { calls.push([name, args]); return { taskContextToken: 'fuli-task-synthetic' }; });
+  assert.equal(calls[0][1].taskPrompt, '#FLA fla-jamie-ash-beta 看一下构建');
+});
+
 test('Claude Stop verifies the same session and provides an advisory without another model turn', async () => {
   const calls = [];
   const invoke = async (name, args) => {

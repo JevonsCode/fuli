@@ -329,8 +329,12 @@ function toggleAnswerFromConfirmed(enabled: boolean) {
   void store.updateRecallPolicy(enabled)
 }
 
+// The language also goes to FULI's settings, so clients' /fla menu says
+// project and role in it (src/graphiti/fla-menu.js).
 function updateLocale(value: string) {
-  if (value === 'zh-CN' || value === 'en-US') setLocale(value)
+  if (value !== 'zh-CN' && value !== 'en-US') return
+  setLocale(value)
+  if (form.value && form.value.consoleLanguage !== undefined) form.value.consoleLanguage = value
 }
 
 function toggleReducedMotion(reduced: boolean) {
@@ -496,6 +500,14 @@ usePageRefresh(() => Promise.all([loadResources(), detectClients()]))
               <ClientConnectionSettings data-span="wide" />
               <NpmCopiesSettings />
               <CliPathSettings />
+              <Card v-if="form.flaSlashMenu !== undefined" as="section" class="settings-card" aria-labelledby="settings-fla-slash-menu-title" data-fla-slash-menu-card>
+                <div class="setting-list">
+                  <label class="setting-row">
+                    <span><strong id="settings-fla-slash-menu-title">{{ t('settings.flaSlashMenu.title') }}</strong><small>{{ t('settings.flaSlashMenu.description') }}</small></span>
+                    <Switch v-model="form.flaSlashMenu" :aria-label="t('settings.flaSlashMenu.title')" data-settings-field="flaSlashMenu" />
+                  </label>
+                </div>
+              </Card>
               <Card v-if="form.notifications" as="section" id="notifications" class="settings-card notifications-card" aria-labelledby="settings-notifications-title">
                 <CardHeader><CardTitle id="settings-notifications-title" as="h2">{{ t('settings.notifications.title') }}<AiHelpButton term="task.notifications" /></CardTitle></CardHeader>
                 <div class="setting-list">

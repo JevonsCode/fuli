@@ -165,7 +165,9 @@ test('fl restart applies persisted ports and LAN settings when CLI overrides are
     notifications: { needsPersonUrl: '' },
     agentNamingStyle: '',
     topicPromotion: 'auto',
-    updateChannel: DEFAULT_RUNTIME_SETTINGS.updateChannel
+    updateChannel: DEFAULT_RUNTIME_SETTINGS.updateChannel,
+    flaSlashMenu: true,
+    consoleLanguage: ''
   };
   await runLocalRuntimeCommand('restart', [], {
     resolvePaths: () => ({

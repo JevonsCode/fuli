@@ -21,6 +21,7 @@ import { createCommonKnowledgePreviewTokens } from './common-knowledge-preview-t
 import { auditLifecycleTool } from './lifecycle-audit.js';
 import { recordToolFailure } from '../diagnostics/failure-records.js';
 import { registerFuliContextResources } from './context-resources.js';
+import { registerFlaMenuPrompts } from './fla-menu-prompts.js';
 import { annotationsFor } from './tool-annotations.js';
 import { isTestOnlyToolName, testToolsEnabled } from '../app/test-tools.js';
 import {
@@ -140,6 +141,8 @@ export function createMcpServer(
     registerResources = true,
     workerTaskContext = null,
     nativeRequestContext = null,
+    // The person's FLAs as prompts for the client's / menu (fla-menu-prompts.js); a client session only.
+    flaMenu = false,
     // Receives the calling session of each call, when one is known (process-registry.js).
     onSession = () => {}
   } = {}
@@ -182,6 +185,7 @@ export function createMcpServer(
   for (const tool of tools.values()) registerTool(server, tool, isChatProfile);
   if (!tools.size) registerEmptyToolList(server);
   if (registerResources && !workerTaskContext) registerFuliContextResources(server, app, { withRuntimeLease });
+  if (flaMenu && !workerTaskContext) registerFlaMenuPrompts(server, app, { sourceApplication: authoritativeSourceApplication, withRuntimeLease });
   const onDemandTools = isChatProfile ? createToolMap(app,
     projectActionPreviews, nativeThreadId, effectiveHostSessionId,
     clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env, null, onSession) : null;

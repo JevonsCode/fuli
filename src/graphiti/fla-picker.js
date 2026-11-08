@@ -86,6 +86,7 @@ function candidate(agent, { project, assignment }) {
   return { agentId: agent.agent_id, projectId: project === undefined ? undefined : project?.project_id ?? null,
     name, project: project ? projectDisplayName(project) : project === null ? GLOBAL_PROJECT : null,
     occupation: profile.display_name && profile.name !== name ? profile.name : '',
+    occupationKey: agent.occupation?.role ?? null,
     responsibility: profile.responsibility ?? '', capabilities: profile.capabilities ?? [],
     status: profile.status ?? 'active', allowedClients: profile.allowed_clients ?? [],
     recency: Math.max(0, ...[assignment?.updated_at, agent.current_task_running_since, agent.updated_at]
