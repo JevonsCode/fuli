@@ -3,7 +3,7 @@
    row 14/500, meta 11 muted above it. */
 .review-group { gap: 8px; padding-block: 14px 8px; }
 /* The group's button ends where the rows' buttons end (see .review-row). */
-.review-group__header { align-items: center; padding-inline-end: calc(var(--space-5, 20px) + 20px); }
+.review-group__header { align-items: center; padding-inline-end: var(--space-5, 20px); }
 .review-group__title {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   margin: 0; color: var(--color-muted); font-size: var(--text-meta); font-weight: var(--weight-medium);
@@ -34,9 +34,7 @@
 .review-row {
   display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: center;
   column-gap: 16px; min-height: 56px; border-top: 1px solid var(--color-border);
-  /* The right side leaves room for a long group's 001/080 capsule (VirtualDirectoryList),
-     in every group, so the buttons stand in one column down the page. */
-  padding: 8px calc(var(--space-5, 20px) + 20px) 8px var(--space-5, 20px);
+  padding: 8px var(--space-5, 20px);
   transition: background-color var(--motion-move);
 }
 .review-row:first-child, .review-rows--virtual .review-row.is-first { border-top: 0; }
