@@ -504,16 +504,19 @@ usePageRefresh(refreshExternalKnowledge)
   <section class="view connections-view">
     <div class="flex w-full flex-col gap-4">
     <PageColumns role="group" :aria-label="t('pages.connections.statusAria')">
-      <article class="service-connection-card" :data-status="personalReady ? 'ready' : 'error'">
+      <article class="service-connection-card" data-span="wide" :data-status="personalReady ? 'ready' : 'error'">
         <header>
           <span class="service-connection-icon local" aria-hidden="true"><span class="nav-icon nav-icon-personal-project" /></span>
           <div><h2>{{ t('pages.connections.localGraphiti') }}</h2></div>
           <span class="service-state">{{ personalReady ? t('common.status.connected') : t('common.status.connectionError') }}</span>
         </header>
-        <UiDisclosure :title="t('ui.connectionDetails')"><dl><div><dt>{{ t('pages.connections.storage') }}</dt><dd>Neo4j</dd></div><div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ t('pages.connections.localPurpose') }}</dd></div></dl></UiDisclosure>
+        <dl>
+          <div><dt>{{ t('pages.connections.storage') }}</dt><dd>Neo4j</dd></div>
+          <div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ t('pages.connections.localPurpose') }}</dd></div>
+        </dl>
       </article>
 
-      <article class="service-connection-card" :data-status="store.publicRuntimeStatus">
+      <article class="service-connection-card" data-span="wide" :data-status="store.publicRuntimeStatus">
         <header>
           <span class="service-connection-icon public" aria-hidden="true"><span class="nav-icon nav-icon-public-project" /></span>
           <div class="flex min-w-0 items-center gap-2"><h2>{{ t('pages.connections.publicService') }}</h2><Badge variant="warning">BETA</Badge></div>
