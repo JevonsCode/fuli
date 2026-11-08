@@ -50,8 +50,9 @@ _MEANING_FIELDS = '''{
 }'''
 
 
-def _fields(name: str, template: str = _ITEM_FIELDS) -> str:
-    return template.replace('{item}', name)
+def _fields(name: str, template: str = _ITEM_FIELDS, said_at: str | None = None) -> str:
+    fields = template.replace('{item}', name)
+    return fields[:fields.rindex('}')] + f', said_at: {said_at}}}' if said_at else fields
 
 
 # Same type, current, not a preference; an entity's place is the [project,
@@ -66,8 +67,14 @@ WHERE old.uuid <> item.uuid AND old.fuli_invalid_at IS NULL AND old.fuli_profile
   AND coalesce(old.fuli_type, 'Entity') = coalesce(item.fuli_type, 'Entity')
   AND [coalesce(old_episode.fuli_personal_project_id, ''), coalesce(old_episode.fuli_project_agent_id, '')] IN places
 WITH DISTINCT item, old
-RETURN item {_fields('item')} AS item, item {_fields('item', _MEANING_FIELDS)} AS item_meaning,
-       old {_fields('old')} AS old, old {_fields('old', _MEANING_FIELDS)} AS old_meaning
+CALL {{
+  WITH old MATCH (said:Episodic {{group_id: $group_id}})-[:MENTIONS]->(old) RETURN max(said.created_at) AS old_said_at
+}}
+CALL {{
+  WITH item MATCH (said:Episodic {{group_id: $group_id}})-[:MENTIONS]->(item) RETURN max(said.created_at) AS item_said_at
+}}
+RETURN item {_fields('item', said_at='item_said_at')} AS item, item {_fields('item', _MEANING_FIELDS)} AS item_meaning,
+       old {_fields('old', said_at='old_said_at')} AS old, old {_fields('old', _MEANING_FIELDS)} AS old_meaning
 ORDER BY old.created_at LIMIT $limit
 '''
 # A relationship's place is its two entities, whose IDs carry project and FLA.
@@ -84,9 +91,10 @@ ORDER BY old.created_at LIMIT $limit
 _ENTITY_SCAN = f'''
 MATCH (episode:Episodic {{group_id: $group_id}})-[:MENTIONS]->(item:Entity {{group_id: $group_id}})
 WHERE item.fuli_invalid_at IS NULL AND item.fuli_profile_aspect IS NULL
-WITH item, collect(DISTINCT [coalesce(episode.fuli_personal_project_id, ''),
-                             coalesce(episode.fuli_project_agent_id, '')]) AS places
-RETURN item {_fields('item')} AS item, coalesce(item.fuli_type, 'Entity') AS kind_key, places
+WITH item, max(episode.created_at) AS said_at,
+     collect(DISTINCT [coalesce(episode.fuli_personal_project_id, ''),
+                       coalesce(episode.fuli_project_agent_id, '')]) AS places
+RETURN item {_fields('item', said_at='said_at')} AS item, coalesce(item.fuli_type, 'Entity') AS kind_key, places
 '''
 _RELATIONSHIP_SCAN = f'''
 MATCH (source:Entity {{group_id: $group_id}})-[item:RELATES_TO {{group_id: $group_id}}]->(target:Entity)

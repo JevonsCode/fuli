@@ -76,6 +76,20 @@ async def test_a_longer_list_of_checks_absorbs_the_older_one_and_a_person_can_sp
 
 
 @pytest.mark.asyncio
+async def test_a_longer_list_said_again_after_a_shorter_one_absorbs_it():
+    async with provider_client(fixture_settings()) as (client, _):
+        space_id = await space_with_projects(client, 'alpha')
+        longer = checks('c2', 'npm run check', 'npm run fixtures', 'npm test')
+        [long_id] = (await commit(client, space_id, [longer], project='alpha'))['entity_ids']
+        later = await commit(client, space_id, [checks('c1', 'npm run check', 'npm test')], project='alpha')
+        [short_id] = later['entity_ids']
+        assert later['superseded'] == [], 'a shorter list said last may mean something was removed'
+        again = await commit(client, space_id, [longer], project='alpha')
+        assert again['superseded'] == [{'item_kind': 'entity', 'item_id': short_id}]
+        assert merged_into(await view(client, space_id, short_id)) == (long_id, 'covers')
+
+
+@pytest.mark.asyncio
 async def test_a_copy_goes_into_the_confirmed_item_and_other_projects_or_conflicts_stay_apart():
     async with provider_client(fixture_settings()) as (client, _):
         space_id = await space_with_projects(client, 'alpha', 'beta')

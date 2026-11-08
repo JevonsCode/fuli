@@ -41,6 +41,17 @@ def test_a_newer_shorter_list_may_say_something_was_removed_and_is_not_merged():
     assert duplicate_merge(older, newer) is None
 
 
+def test_an_older_longer_list_said_again_after_the_shorter_one_covers_it():
+    # capecho2 r2: the longer list came first, a turn later listed fewer, and
+    # the longer one was said again after that.
+    older = item('a', checks('npm run check', 'npm run fixtures', 'npm test'),
+                 said_at=T0 + timedelta(minutes=8))
+    newer = item('b', checks('npm run check', 'npm test'), minutes=6, said_at=T0 + timedelta(minutes=7))
+    assert ids(duplicate_merge(older, newer)) == ('covers', 'a', 'b')
+    newer['said_at'] = T0 + timedelta(minutes=9)
+    assert duplicate_merge(older, newer) is None, 'the shorter list was said last'
+
+
 def test_a_pending_longer_list_never_absorbs_a_confirmed_shorter_one():
     older = item('a', checks('npm run check', 'npm test'), status='confirmed')
     newer = item('b', checks('npm run check', 'npm run fixtures', 'npm test'), minutes=5)

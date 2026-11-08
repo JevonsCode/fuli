@@ -5,10 +5,12 @@ A false merge hides knowledge, a missed one only costs a recall slot, so
 every rule is strict:
 - same_text: the same words once case, spacing and the order inside a list of
   code literals are ignored;
-- covers: the same sentence whose newer copy lists every code literal
-  (`npm test`, a URL) of the older copy and more, as checks that ran clean
-  grow from `a`, `b` to `a`, `b`, `c`. A newer copy that lists fewer may say
-  something was removed, so that pair is left to the staleness check;
+- covers: the same sentence whose longer copy lists every code literal
+  (`npm test`, a URL) of the shorter copy and more, as checks that ran clean
+  grow from `a`, `b` to `a`, `b`, `c`, while the longer copy is the one said
+  last (its latest source is not older than the shorter's). A shorter list
+  said last may say something was removed, so that pair is left to the
+  staleness check;
 - same_meaning: different wording under the same name, with the same
   literals, numbers and negations, whose stored meaning vectors of one model
   are nearly identical.
@@ -67,8 +69,9 @@ def shape(text: str) -> Shape:
 def duplicate_merge(first: dict, second: dict) -> Merge | None:
     """The merge of two current items of one kind, type and scope, or None.
     Each is {'item_id', 'text', 'created_at', 'confirmation_status', ...}
-    (with 'name' and the stored meaning fields for same_meaning). The one
-    kept is the stronger confirmed, then the older; for covers, the newer."""
+    (with 'name' and the stored meaning fields for same_meaning, and
+    'said_at', its latest source, for covers). The one kept is the stronger
+    confirmed, then the older; for covers, the longer list."""
     if first['item_id'] == second['item_id'] or _blocked(first) or _blocked(second):
         return None
     older, newer = sorted((first, second), key=_age)
@@ -78,8 +81,14 @@ def duplicate_merge(first: dict, second: dict) -> Merge | None:
     if old_shape.template == new_shape.template:
         if old_shape.runs == new_shape.runs:
             return _by_confirmation('same_text', older, newer)
-        if _covers(new_shape, old_shape) and _rank(newer) >= _rank(older):
-            return Merge('covers', newer, older)
+        if _covers(new_shape, old_shape):
+            longer, shorter = newer, older
+        elif _covers(old_shape, new_shape):
+            longer, shorter = older, newer
+        else:
+            return None
+        if _said(longer) >= _said(shorter) and _rank(longer) >= _rank(shorter):
+            return Merge('covers', longer, shorter)
         return None
     if _same_meaning(older, newer, old_shape, new_shape):
         return _by_confirmation('same_meaning', older, newer)
@@ -135,6 +144,12 @@ def _rank(item: dict) -> int:
 def _blocked(item: dict) -> bool:
     """A person's rejection or an open conflict is theirs to settle."""
     return bool(item.get('blocked'))
+
+
+def _said(item: dict) -> float:
+    """When the item was last said: its newest source, else its creation."""
+    said = native_datetime(item.get('said_at')) or native_datetime(item.get('created_at'))
+    return said.timestamp() if said else float('-inf')
 
 
 def _age(item: dict):
