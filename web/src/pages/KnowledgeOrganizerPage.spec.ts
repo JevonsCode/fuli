@@ -146,7 +146,7 @@ describe('KnowledgeOrganizerPage', () => {
     expect(wrapper.text()).not.toContain('本页统计只覆盖')
     expect(wrapper.get('.virtual-directory-list__canvas').attributes('style')).toContain('height: 6868px')
     expect(wrapper.findAll('.organizer-row').length).toBeLessThan(101)
-    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('001101')
+    expect(wrapper.get('.virtual-directory-list__position').text().split('/').map(part => part.trim()).join(' / ')).toBe('1 / 101')
 
     // The page is the one scroll container: the table follows the page's scroll.
     expect(wrapper.get('.virtual-directory-list').classes()).toContain('is-page-scroll')
@@ -156,7 +156,7 @@ describe('KnowledgeOrganizerPage', () => {
     page.scrollTop = 68 * 50
     page.dispatchEvent(new Event('scroll'))
     await flushPromises()
-    expect(wrapper.get('.virtual-directory-list__position').text()).toBe('051101')
+    expect(wrapper.get('.virtual-directory-list__position').text().split('/').map(part => part.trim()).join(' / ')).toBe('51 / 101')
 
     await wrapper.get('.organizer-search input').setValue('最后一页')
     await flushPromises()
