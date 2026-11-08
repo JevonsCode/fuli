@@ -10,16 +10,21 @@ import { packManifestClient } from './pack-manifest.js';
 // FULI's product manifest for agent-installer (docs/manifest.schema.json):
 // what FULI installs into each client. The MCP-only clients are data in
 // fuli-installer-manifest.json; filled here are the FULI version, each
-// descriptor pack client from the active pack (pack-manifest.js) and
-// OpenCode's plugin. The rest of the `{placeholders}` are the installer's
-// variables.
+// descriptor pack client from the active pack (pack-manifest.js),
+// OpenCode's plugin and a client's prompt files (clientPrompts: client ID to
+// a list, e.g. Codex's /fla menu, src/agents/codex/fla-prompts.js; a client
+// without a list here gets no `prompts`, so the installer leaves its files
+// alone). The rest of the `{placeholders}` are the installer's variables.
 const TEMPLATE = new URL('./fuli-installer-manifest.json', import.meta.url);
 
-function fuliInstallerManifest({ packs, openCodePlugin }) {
+function fuliInstallerManifest({ packs, openCodePlugin, clientPrompts }) {
   const manifest = JSON.parse(readFileSync(TEMPLATE, 'utf8'));
   manifest.version = FULI_VERSION;
   for (const pack of packs) manifest.clients[pack.id] = packManifestClient(pack);
   if (openCodePlugin) manifest.clients.opencode.plugin = { source: '{openCodePlugin}' };
+  for (const [id, prompts] of Object.entries(clientPrompts)) {
+    if (Array.isArray(prompts) && manifest.clients[id]) manifest.clients[id].prompts = prompts;
+  }
   return manifest;
 }
 
@@ -29,13 +34,13 @@ function fuliInstallerManifest({ packs, openCodePlugin }) {
 // `opencode-plugin/index.js`; agent-installer puts it at
 // `<OpenCode config>/plugins/fuli/index.js`.
 export function prepareInstallerManifest({ manifestPath, context, openCodePlugin: plugin,
-  packs = installedClientPacks(context.dataDir) }) {
+  packs = installedClientPacks(context.dataDir), clientPrompts = {} }) {
   const pluginDir = join(dirname(manifestPath), 'opencode-plugin');
   if (plugin) {
     const pack = packs.find((candidate) => candidate.id === 'opencode');
     writeDerivedText(join(pluginDir, 'index.js'), openCodePluginSource(context, pack.lifecycleHooks));
   }
-  writeDerivedJson(manifestPath, fuliInstallerManifest({ packs, openCodePlugin: plugin }));
+  writeDerivedJson(manifestPath, fuliInstallerManifest({ packs, openCodePlugin: plugin, clientPrompts }));
   return installerVariables(context, plugin ? pluginDir : null);
 }
 

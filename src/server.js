@@ -52,6 +52,8 @@ import { createModelSecretStore } from './model-backends/secret-store.js';
 import { latestEvaluation } from './model-backends/evaluation-record.js';
 import { createClientLinksRegistry } from './client-links/registry.js';
 import { createAgentDelegation } from './agent-delegation/port.js';
+import { createCodexFlaPromptSync } from './agents/codex/fla-prompts.js';
+import { readFlaMenuEntries } from './graphiti/fla-menu-reader.js';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -211,6 +213,8 @@ export async function createServer(options = {}) {
           activePort: port,
           activeLan: lanEnabled,
           executorAdapters: options.executorAdapters,
+          // The Codex app's /fla menu: prompt files from the roster (src/agents/codex/fla-prompts.js).
+          codexFlaPrompts: createCodexFlaPromptSync({ read: () => readFlaMenuEntries(application, 'codex') }),
           previewDataFormats: dataFormatMigrations ? () => dataFormatMigrations.preview() : null
         })
       : null);

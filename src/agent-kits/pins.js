@@ -20,13 +20,13 @@ export const AGENT_KIT_PINS = deepFreeze({
   },
   'agent-installer': {
     repository: 'JevonsCode/agent-installer',
-    version: '0.3.1',
+    version: '0.4.1',
     sha256: {
-      'macos-arm64': '0d8dfc0860bc56ad3758edee541e15ccd33d74f5e64723f76e6b5ff1da5f2f81',
-      'macos-x64': 'd9d9d6e73f49807ebf9af6f2252afa256e1dd289b71ac3ca131fb40610c3fd63',
-      'linux-x64': 'a908c7987b29a923bb8c64b0f59170ad8d616269cc4fa74524c88fade4b0b7f1',
-      'linux-arm64': 'be39fe2a3aa0cbd8c9372da8316114c555860a5d2037f178d3383e0851d0fc43',
-      'windows-x64': '9aa49744e78393c47d54330dad24c198122663fe7780087da7ed4e4df72d94c7'
+      'macos-arm64': 'c54f2591b02bcad837afc6c7fdfa547e6c0035288606ba5d4516f4f55ccb4109',
+      'macos-x64': 'ebcbe53ddb5a07c06d3d7de4d546d19431b7a373dc651d341cc1f0dd49dd4b79',
+      'linux-x64': '53c6c31af4bed04108694dfc64d0eb2ee64ddfe0de32ca783712251c0942c418',
+      'linux-arm64': '185e1e9345d356d865010b24494df702a81f7ed753c14c53a8f96d89f932792b',
+      'windows-x64': '51bbb9a3a0eab8d9b47eaa7979ee07d133388cae1290da8dbc50af36bf816567'
     }
   }
 });

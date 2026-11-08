@@ -67,7 +67,7 @@ export function flaMenuEntries(candidates, { sourceApplication, language, occupa
   return [...rankCandidates(shown.filter(item => !item.role)), ...roles].map(item => {
     const name = names.get(menuKey(item));
     const project = item.role ? null : item.projectId === null ? GLOBAL_PROJECT[language] : item.project;
-    return { name, title: item.name,
+    return { name, title: item.name, role: Boolean(item.role),
       description: singleLine([item.name, project, roleText(item, language, occupationNames)].filter(Boolean).join(' — '))
         .replace(CONTROL, ''),
       text: `#FLA ${sharing.get(identityKey(item.name)) > 1 ? name : item.name}` };

@@ -54,7 +54,10 @@ export function createSystemService({
   readSettings = readRuntimeSettings,
   writeSettings = writeRuntimeSettings,
   settingsApplier = createSettingsApplier({ paths, writeSettings }),
-  agentKits = agentKitPorts(paths, { runtimeConfigPath }),
+  // Codex's /fla prompt files (src/agents/codex/fla-prompts.js), kept while the console runs.
+  codexFlaPrompts = null,
+  agentKits = agentKitPorts(paths, { runtimeConfigPath,
+    ...(codexFlaPrompts ? { clientPrompts: () => ({ codex: codexFlaPrompts.prompts() }) } : {}) }),
   customClients = customClientStore({ extensionsDir: agentKits.clientInstaller.extensionsDir }),
   clientObserver = createClientConnectionObserver({
     installer: agentKits.clientInstaller,
@@ -178,6 +181,7 @@ export function createSystemService({
     settings: () => ({ configured: configuredSettings(), active: activeSettings() }) });
   const logRetention = createLogRetention({ paths });
 
+  const stopCodexFlaPrompts = codexFlaPrompts?.start(agentKits.clientInstaller) ?? (() => {});
   const turnRecords = debugTurnStore(paths.dataDir);
   const modelCapture = createModelCapture({ store: turnRecords });
   return {
@@ -237,6 +241,7 @@ export function createSystemService({
       operation
     ),
     close: () => {
+      stopCodexFlaPrompts();
       logRetention.close();
       void modelCapture.close();
       return runtimeBroker.close();

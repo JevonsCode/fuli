@@ -40,14 +40,16 @@ export const CLIENT_COMPONENT_UNAVAILABLE = '无法下载客户端组件 agent-i
 // before a change (setup paths' backupDir). openCode: answers whether
 // OpenCode gets FULI's plugin (opencode-plugin-gate.js). retireLegacy(ids):
 // legacy-hook-cleanup.js for these clients. extensionsDir: the shared
-// extension directory, where custom clients are described.
+// extension directory, where custom clients are described. clientPrompts():
+// the prompt files each client keeps now (installer-manifest.js).
 export function createClientInstallerPort({ executables, manifestPath, context, backupsDir, openCode, retireLegacy,
-  extensionsDir = defaultExtensionsDirectory() }) {
+  extensionsDir = defaultExtensionsDirectory(), clientPrompts = () => ({}) }) {
   async function installer(timeoutMs, packs) {
     const executable = await executables.ensure(COMPONENT);
     if (executable.status !== 'available') return { unavailable: executable.reason };
     const gate = openCode();
-    const variables = prepareInstallerManifest({ manifestPath, context, openCodePlugin: gate.plugin, ...(packs ? { packs } : {}) });
+    const variables = prepareInstallerManifest({ manifestPath, context, openCodePlugin: gate.plugin, clientPrompts: clientPrompts(),
+      ...(packs ? { packs } : {}) });
     return { gate, installer: createInstaller({ executable: executable.path, manifestPath, variables, timeoutMs,
       ...(backupsDir ? { backupsDir } : {}), ...(extensionsDir ? { extensionsDir } : {}) }) };
   }
@@ -89,13 +91,15 @@ export function createClientInstallerPort({ executables, manifestPath, context, 
 }
 
 const unavailable = (reason) => ({ status: 'unavailable', reason });
+const SESSION_FREE = new Set(['mcp', 'prompts']);
 
 // Open sessions don't reread what this write changed; the MCP entry alone they
-// don't need to, since the relay follows the installed version.
+// don't need to, since the relay follows the installed version, and prompt
+// files are read by the client's app, not its sessions.
 export function noteChanged(clients, runtimeConfigPath) {
   for (const client of clients) {
     const source = clientSourceApplication(client.id);
-    if (!source || !client.changes?.some(change => change.components?.some(component => component !== 'mcp'))) continue;
+    if (!source || !client.changes?.some(change => change.components?.some(component => !SESSION_FREE.has(component)))) continue;
     try { noteClientChanged(runtimeConfigPath, source); } catch { /* only the prompt is missing */ }
   }
 }

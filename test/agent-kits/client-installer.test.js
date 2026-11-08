@@ -38,7 +38,9 @@ test('only a change an open session would not reread leaves a note, and only for
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const config = join(root, 'runtime.json');
   noteChanged([
-    { id: 'codex', changes: [{ path: '~/.codex/config.toml', components: ['mcp'] }] },
+    { id: 'codex', changes: [{ path: '~/.codex/config.toml', components: ['mcp'] },
+      // The Codex app reads its /fla prompt files itself; no session needs a restart.
+      { path: '~/.codex/prompts/fla-ada.md', components: ['prompts'] }] },
     { id: 'claude-code', changes: [{ path: '~/.claude/skills/fuli', components: ['skills'] }] },
     { id: 'cursor', changes: [] },
     { id: 'gemini', changes: [{ path: '~/.gemini/settings.json', components: ['hooks'] }] }
