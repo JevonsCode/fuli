@@ -176,7 +176,7 @@ function entryApp(pending) {
 }
 
 const task = { sessionId: SESSION, sourceApplication: 'claude_code', personalProjectId: 'alpha', token: 'fuli-task-x' };
-const LINK = `[确认迁移](<${CONSOLE}/s/${SESSION}/migrate?client=claude_code&project=alpha>)`;
+const LINK = `[确认迁移](${CONSOLE}/s/${SESSION}/migrate?client=claude_code&project=alpha)`;
 
 test('the session\'s first task in a formal project links the person to the migration while items wait', async () => {
   const { app, asked } = entryApp({ held_count: 3, linked_task_count: 1 });

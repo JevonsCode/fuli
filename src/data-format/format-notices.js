@@ -1,4 +1,5 @@
 import { dirname } from 'node:path';
+import { markdownLink } from '../text/markdown-link.js';
 
 import { receiptConsoleUrl } from '../agents/identity-receipt.js';
 import { externalWritersLines } from './external-writers.js';
@@ -85,7 +86,7 @@ export function dataFormatReceiptNotice(dataDir, { notices = dataFormatNotices(d
       pending.length ? `数据格式待确认：${several(pending)}（fuli migrate preview）` : null,
       ...appliedNoticeLines(applied),
       // Some clients show a link's text without the link, so the text names the place.
-      closeUrl && applied.some((item) => item.remaining > 0) ? `关闭提醒：[设置 → 数据格式迁移](<${closeUrl}>)` : null
+      closeUrl && applied.some((item) => item.remaining > 0) ? `关闭提醒：${markdownLink('设置 → 数据格式迁移', closeUrl)}` : null
     ].filter(Boolean).join(' · ') || null;
   };
 }

@@ -17,7 +17,7 @@ import { TaskContextRegistry } from './fixtures/in-memory-task-context-registry.
 const CONSOLE = 'http://127.0.0.1:3999';
 const CONFIG = { personal: { spaceId: 'synthetic-space' } };
 const SESSION_LIST = `${CONSOLE}/s/native-session`;
-const ITEM_LINK = /\[修改\]\(<http:\/\/127\.0\.0\.1:3999\/knowledge\/item\/synthetic-space\/(entity|relationship)\/[^>]+>\)$/;
+const ITEM_LINK = /\[修改\]\(http:\/\/127\.0\.0\.1:3999\/knowledge\/item\/synthetic-space\/(entity|relationship)\/[^)\s]+\)$/;
 
 function entry(overrides = {}) {
   return { item_kind: 'entity', item_id: 'item-1', version: 3, title: 'Synthetic title', content: 'Lead with the conclusion',
@@ -61,7 +61,7 @@ test('each entry is one line with its real content, scope, weight basis, tags, s
   assert.equal(receipt.summary.total, 5);
   assert.equal(receipt.summary.shown, 5);
   assert.equal(lines[0], '- 新增 品味「Lead with the conclusion」｜个人全局｜权重12%（用0次·1个来源）｜无标签｜Agent推断·待确认'
-    + `｜[修改](<${CONSOLE}/knowledge/item/synthetic-space/entity/item-1>)`);
+    + `｜[修改](${CONSOLE}/knowledge/item/synthetic-space/entity/item-1)`);
   assert.match(lines[1], /^- 更新 经验「Retry the flaky import once」｜项目 Alpha、Beta｜.*｜#imports｜/);
   assert.match(lines[2], /判断.*｜FLA Nova（Alpha）｜.*｜你明确说的·待确认｜/);
   assert.match(lines[3], /规则类.*｜权重100%（你已确认）｜.*｜Agent推断·你已确认｜/);
@@ -108,7 +108,7 @@ test('past the receipt budget the rest is counted and linked to the full list, n
   const last = receipt.lines.at(-1);
   assert.equal(receipt.summary.total, 30);
   assert.ok(receipt.summary.shown < 30);
-  assert.equal(last, `另 ${30 - receipt.summary.shown} 条未列出：[查看全部](<${CONSOLE}/knowledge/turn/synthetic-space?episodes=episode-1>)`);
+  assert.equal(last, `另 ${30 - receipt.summary.shown} 条未列出：[查看全部](${CONSOLE}/knowledge/turn/synthetic-space?episodes=episode-1)`);
   assert.equal(receipt.summary.list_url, `${CONSOLE}/knowledge/turn/synthetic-space?episodes=episode-1`);
 });
 
@@ -129,7 +129,7 @@ test('an Agent note change says it has no weight instead of a made-up percentage
   const receipt = await readTurnReceipt(app, [], { agentName: 'Alex', memory: { agentId: 'lead', revision: 4,
     memory: { summary: 'Synthetic working notes' } } });
   assert.equal(receipt.lines[1], '- 更新 FLA笔记「Synthetic working notes」｜FLA Alex｜暂无权重｜无标签｜Agent笔记·不作为规则'
-    + `｜[查看](<${CONSOLE}/agents/synthetic-space/lead>)`);
+    + `｜[查看](${CONSOLE}/agents/synthetic-space/lead)`);
   assert.doesNotMatch(receipt.lines[1], /\d+%/);
 });
 
@@ -199,12 +199,12 @@ test('a saved turn shows every item read back from the Provider after the identi
   const [identity, heading, ...rest] = result.agent_receipt.markdown.split('\n');
   assert.match(identity, /^FULI Agent：/);
   // rec#5 C6: the heading links everything this session recorded, compactly.
-  assert.equal(heading, `FULI 本轮沉淀 3 条（[本会话已记录](<${SESSION_LIST}>)）：`);
+  assert.equal(heading, `FULI 本轮沉淀 3 条（[本会话已记录](${SESSION_LIST})）：`);
   // rec#20 part 2: the unsure item waits in the session's temporary project
   // although the task is in project-a, so the person gets the migration link.
   const lines = rest.slice(0, -1);
   assert.equal(rest.at(-1), 'FULI 待迁移：本轮有条目暂存在本会话临时项目，迁入当前项目需你确认：'
-    + `[确认迁移](<${CONSOLE}/s/native-session/migrate?client=codex&project=project-a>)`);
+    + `[确认迁移](${CONSOLE}/s/native-session/migrate?client=codex&project=project-a)`);
   const byContent = Object.fromEntries(lines.map(line => [line.match(/「(.+?)」/)[1], line]));
   assert.deepEqual(Object.keys(byContent).sort(), ['stored: Deploys go through the staging gate',
     'stored: Lead with the conclusion', 'stored: Prefer short status lines']);
@@ -254,7 +254,7 @@ test('a receipt that could not be read stays unread and the next entry delivers 
   assert.equal(next.unreadTurnReceipts.length, 1);
   const delivered = await entry(next);
   assert.ok(delivered.agent_receipt.markdown.startsWith(
-    `FULI Agent：负责人 X\nFULI 上轮沉淀（补发） 3 条（[本会话已记录](<${SESSION_LIST}>)）：\n- 新增`));
+    `FULI Agent：负责人 X\nFULI 上轮沉淀（补发） 3 条（[本会话已记录](${SESSION_LIST})）：\n- 新增`));
   assert.equal((await entry(next)).agent_receipt.markdown, delivered.agent_receipt.markdown, 'a retried entry shows the same');
   assert.deepEqual(begin().unreadTurnReceipts, [], 'a later entry never delivers it again');
 });
@@ -307,7 +307,7 @@ test('rec#20 part 2 (dot P2-2): the first task\'s migration link survives into t
     asked.push(input);
     return { held_count: 2, linked_task_count: 1 };
   };
-  const link = `[确认迁移](<${CONSOLE}/s/native-session/migrate?client=codex&project=project-a>)`;
+  const link = `[确认迁移](${CONSOLE}/s/native-session/migrate?client=codex&project=project-a)`;
   // A routine turn that saves nothing still carries the session's offer.
   const quiet = await checkpointTaskKnowledge(app, { taskContextToken: begin().token, sourceApplication: 'codex',
     disposition: 'retain_nothing', reason: 'Small talk.' });
@@ -349,7 +349,7 @@ test('a capture sent without routing is kept with the checkpoint and gets its re
   const task = begin();
   const result = await checkpointTaskKnowledge(app, { taskContextToken: task.token, sourceApplication: 'codex',
     disposition: 'capture_candidates', reason: 'Keep the fact.', capture: graphCapture() });
-  assert.ok(result.agent_receipt.markdown.includes(`\nFULI 本轮沉淀 1 条（[本会话已记录](<${SESSION_LIST}>)）：`
+  assert.ok(result.agent_receipt.markdown.includes(`\nFULI 本轮沉淀 1 条（[本会话已记录](${SESSION_LIST})）：`
     + '\n- 新增 事实「stored: Synthetic project fact」｜项目 project-a｜'));
   const [saved] = registry.context(task.token, 'codex').checkpoint.captureResults;
   assert.deepEqual([saved.scope, saved.personal_project_id, saved.status], ['current_project', 'project-a', 'committed']);
@@ -413,7 +413,7 @@ test('a long late backlog goes in batches that fit one working full-list link', 
   const { app, state, task } = lateEntry(backlog, backlog.map(item => item.receipt_id), { failAfterClaim: true });
   const receipt = await entryAgentReceipt(app, task, { markdown: 'FULI Agent：负责人 X' });
   assert.equal(state.claimRequest.length, 21, '21 receipts × 3 episodes = 63, the most one link can name');
-  const link = receipt.markdown.split('\n').at(-1).match(/episodes=([^>]+)>/)[1].split(',');
+  const link = receipt.markdown.split('\n').at(-1).match(/episodes=([^)]+)\)/)[1].split(',');
   assert.equal(link.length, 63);
   assert.ok(link.length <= MAX_LIST_EPISODES);
 });

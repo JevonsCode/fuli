@@ -5,6 +5,7 @@ import { notRecordedReason } from '../conversations/transcript-capture-gap.js';
 import { localClockTime } from '../text/clock-time.js';
 import { providerReaderFields, taskKnowledgeReader } from './knowledge-reader.js';
 import { requiredBinding, requiredString } from '../validation/values.js';
+import { markdownLink } from '../text/markdown-link.js';
 
 // "本会话记了什么" (rec#5 C6): one host session's records in three groups,
 // numbered once here so the console page and the Agent's answer list the same
@@ -194,7 +195,7 @@ function notRecordedStretches(turns) {
 // The Agent's answer: the same numbered entries as the page, one line each.
 function sessionRecordsMarkdown(view) {
   const heading = view.total ? `FULI 本会话已记录 ${view.total} 项` : 'FULI 本会话还没有记录任何内容';
-  const lines = [`${heading}（[查看清单](<${view.session.url}>)）：`];
+  const lines = [`${heading}（${markdownLink('查看清单', view.session.url)}）：`];
   const stretches = [...view.stretches];
   for (const entry of view.entries) {
     while (entry.group === 'transcript' && stretches.length && time(stretches[0].from) <= time(entry.at)) {
@@ -202,7 +203,7 @@ function sessionRecordsMarkdown(view) {
     }
     const status = entry.status ? `·${CONFIRMATION[entry.status] ?? '待确认'}` : '';
     lines.push(`${entry.number}. ${entry.type}${status}｜${clock(entry.at)}｜${projectLabel(entry.project)}`
-      + `｜「${receiptSummary(entry.summary)}」｜[查看](<${entry.link}>)`);
+      + `｜「${receiptSummary(entry.summary)}」｜${markdownLink('查看', entry.link)}`);
   }
   lines.push(...stretches.map(stretchLine));
   // The list is bounded on the console too, so this never promises more there.

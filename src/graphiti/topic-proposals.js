@@ -3,6 +3,7 @@ import { createProjectNamed, projectByName } from './task-entry-project-mention.
 import { PERSON_WRITER, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
 import { sourceConsoleUrl } from './source-marker.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
+import { markdownLink } from '../text/markdown-link.js';
 
 // A topic that keeps coming back over several days grows into its own project.
 // With the setting topicPromotion 'auto' (rec#11 D-86, the default) Astro forms
@@ -62,7 +63,7 @@ async function promoteTopic(application, topic, { sourceApplication = 'other' } 
     promoted: formed.personal_project_id, topic: stats.topic })}`;
   return { ...formed, status: 'promoted', proposed_by: 'employee.assistant',
     notice: `FULI：话题「${stats.topic}」聊了 ${stats.count} 次、跨 ${stats.days} 天，已升级为项目「${stats.topic}」`
-      + `${formed.knowledge_moved ? `，搬了 ${formed.knowledge_moved} 条知识` : ''}。[改名、换上级或撤销](<${link}>)`,
+      + `${formed.knowledge_moved ? `，搬了 ${formed.knowledge_moved} 条知识` : ''}。${markdownLink('改名、换上级或撤销', link)}`,
     guidance: 'Add notice to the end of your reply, unchanged. The person can rename, move or undo it at its link.' };
 }
 

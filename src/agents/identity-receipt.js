@@ -1,6 +1,7 @@
 import { sourceConsoleUrl } from '../graphiti/source-marker.js';
 import { agentLabel } from './agent-label.js';
 import { flaAddress } from '../../packages/roundtable/src/roundtable/fla-address.js';
+import { markdownLink } from '../text/markdown-link.js';
 
 // The console origin every receipt link opens: `fuli:/` once the desktop
 // client opens fuli:// links for this installation (src/desktop/fuli-links.js).
@@ -42,7 +43,7 @@ export function agentContinuation(projectId, agentId, conversationId = null) {
 }
 
 function agentLink(application, agentId, name, role = null) {
-  return `[${receiptText(agentLabel(name, role) || agentId)}](<${agentProfileUrl(application, agentId).replace(/[<>\s]/g, encodeURIComponent)}>)`;
+  return markdownLink(receiptText(agentLabel(name, role) || agentId), agentProfileUrl(application, agentId));
 }
 
 // One line of literal text in a Markdown receipt.
@@ -116,7 +117,7 @@ function collaboratorLink(application, item) {
   for (const run of item.runs ?? []) {
     const url = receiptSessionUrl(run.session_url);
     const status = { completed: '完成', failed: '失败', cancelled: '取消', blocked: '阻塞', awaiting_review: '待验收' }[run.status];
-    if (url) sessions.set(`${run.application}:${run.session_id}`, `[会话${status ? `·${status}` : ''}](<${url}>)`);
+    if (url) sessions.set(`${run.application}:${run.session_id}`, markdownLink(`会话${status ? `·${status}` : ''}`, url));
   }
   const omitted = item.runCount - (item.runs?.length ?? 0);
   const detail = [...duties.map(receiptText), ...sessions.values(), ...(omitted > 0 ? [`另${omitted}次`] : [])].join('，');

@@ -83,7 +83,7 @@ test('with topicPromotion auto a grown topic is formed at once and announced wit
   assert.equal(promoted.personal_project_id, 'garden');
   assert.equal(promoted.created, true);
   assert.equal(promoted.notice, 'FULI：话题「Garden」聊了 3 次、跨 2 天，已升级为项目「Garden」。'
-    + '[改名、换上级或撤销](<http://127.0.0.1:2797/employees/assistant?promoted=garden&topic=Garden>)');
+    + '[改名、换上级或撤销](http://127.0.0.1:2797/employees/assistant?promoted=garden&topic=Garden)');
   assert.match(promoted.guidance, /unchanged/);
   assert.match(app.calls.find(([kind]) => kind === 'create')[1].profile.purpose, /^Astro 自动升级：/);
   assert.equal(app.calls.find(([kind]) => kind === 'staff')[1].source_application, 'codex');
