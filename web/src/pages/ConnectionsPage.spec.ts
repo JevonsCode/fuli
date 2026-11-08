@@ -77,6 +77,11 @@ describe('ConnectionsPage', () => {
     const cards = wrapper.findAll('.service-connection-card')
     expect(cards[0].text()).toContain('本地 Graphiti')
     expect(cards[0].text()).toContain('已连接')
+    // Storage cards stack one per row, and the local details show openly.
+    expect(cards.map((card) => card.attributes('data-span'))).toEqual(['wide', 'wide'])
+    expect(cards[0].find('.ui-disclosure').exists()).toBe(false)
+    expect(cards[0].get('dl').text()).toContain('Neo4j')
+    expect(cards[0].text()).toContain('个人项目与协作偏好')
     expect(cards[1].text()).toContain('公共服务')
     expect(cards[1].text()).toContain('1 个共享服务可用')
     expect(cards[1].text()).toContain('发现和订阅')
