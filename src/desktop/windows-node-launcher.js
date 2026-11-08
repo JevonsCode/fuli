@@ -59,9 +59,19 @@ export function removeWindowsNodeLauncher(installRoot) {
   return held;
 }
 
-// A leftover a client still runs stays; a later placement, removal or tray
-// start tries again. Returns the paths still held.
-export function removeLauncherLeftovers(installRoot) {
+// Launchers an update set aside (never a .new one an update may be placing):
+// one a client still runs stays for the next try. Returns the paths still held.
+const RETIRED_LAUNCHER = /^FuliNode.exe.[a-f0-9-]{36}.old$/;
+export function removeRetiredLaunchers(installRoot) {
+  const held = [];
+  for (const name of readdirSync(installRoot).filter(entry => RETIRED_LAUNCHER.test(entry))) {
+    try { unlinkSync(join(installRoot, name)); } catch { held.push(join(installRoot, name)); }
+  }
+  return held;
+}
+
+// A leftover a client still runs stays; a later placement or removal tries again.
+function removeLauncherLeftovers(installRoot) {
   const held = [];
   for (const name of readdirSync(installRoot).filter(entry => LAUNCHER_LEFTOVER.test(entry))) {
     try { unlinkSync(join(installRoot, name)); } catch { held.push(join(installRoot, name)); }

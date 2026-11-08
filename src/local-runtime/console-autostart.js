@@ -131,7 +131,9 @@ async function recordedConsoleState(dataDir) {
 
 // A whole-store restore holding the data directory, or a local store whose
 // format step waits for the person: the console stays for the person to start.
-function dataWaitsForPerson(dataDir) {
+// Whether a whole-store restore holds the data or a format step waits for the person;
+// the desktop app also waits before taking it over (npm-adoption.js).
+export function dataWaitsForPerson(dataDir) {
   try { holdDataDirectory(dataDir)(); } catch { return true; }
   try {
     return inspectLocalStores(dataDir).some(store => WAITING_STORE_STATES.has(store.state));

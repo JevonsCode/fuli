@@ -48,7 +48,7 @@ import { STANDING_ASSIGNMENTS_FORMAT } from '../standing-assignments/store.js';
 import { CLIENT_CONNECTION_HISTORY_FORMAT } from '../system/client-connection-status.js';
 import { RUNTIME_SETTINGS_FORMAT } from '../system/runtime-settings.js';
 import { CONSOLE_AUTOSTART_FILE, CONSOLE_AUTOSTART_FORMAT } from '../local-runtime/console-autostart-record.js';
-import { DESKTOP_ADOPTION_FILE, DESKTOP_ADOPTION_FORMAT } from '../desktop/npm-adoption.js';
+import { DESKTOP_ADOPTION_FILE, DESKTOP_ADOPTION_FORMAT } from '../desktop/npm-adoption-store.js';
 import { CLI_PATH_FILE, CLI_PATH_FORMAT } from '../desktop/cli-path.js';
 import { CLIENT_LINKS_STATE_FORMAT } from '../client-links/registry.js';
 import { OCCUPATION_PLUGINS_STATE_FORMAT } from '../occupation-plugins/port.js';

@@ -79,7 +79,8 @@ const UI_MUTATION_PARITY = Object.freeze([
   // An npm copy beside the desktop app: removing it changes the person's own computer, so it takes their words.
   relayed('POST /api/system/npm-copies/uninstall', 'Not undone from FULI; the person installs it again with npm if they want it.'),
   delegable('settings', 'PUT /api/system/npm-copies/notice', 'Send dismissed back.'),
-  delegable('settings', 'PUT /api/system/cli-path', 'Switch it back; turning it off takes out exactly what turning it on added.'),
+  // It edits the person's shell profile or user PATH, so it takes their words like removing a copy.
+  relayed('PUT /api/system/cli-path', 'Switch it back; turning it off takes out exactly what turning it on added.'),
   local('PUT /api/debug-turns/capture', 'The local person turns on the hidden model request capture, which routes their own client through this computer.'),
   local('POST /api/dreaming/run', 'The local person starts a Dreaming run (fromStart reads every session again), which sends a project\'s sessions to their own model.'),
   local('POST /api/retrieval-terms/trial', 'The local person tests retrieval terms on a sample, which sends project knowledge to their own model.'),

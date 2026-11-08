@@ -83,6 +83,17 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
   const lan = requestedSettings.lanAccess;
   const runtimeMode = input.runtimeMode ?? requestedSettings.graphRuntimeMode;
   const activeRuntimeState = deps.readState(input.paths.graphRuntimeStatePath);
+  // The desktop app's console is the one service of its data: another copy
+  // (npm, a checkout) joins it at the same version and otherwise leaves it
+  // alone, before anything is written or started. The app replaces any other's.
+  if (await desktopAppRunsIt(activeRuntimeState, input.paths, deps)) {
+    if (activeRuntimeState.lan !== true && await deps.consoleVersion(activeRuntimeState.url) === FULI_VERSION) {
+      return runtimeResult('running', activeRuntimeState);
+    }
+    throw new Error(`The FULI desktop app runs this data directory's console (process ${activeRuntimeState.pid}), so this copy `
+      + 'did not replace it and changed nothing. Use the desktop app, or quit it before starting this copy. / '
+      + '桌面版 FULI 正在运行这份数据的服务，这个副本没有替换它，也没有改动任何东西。请使用桌面版，或先退出桌面版再启动这个副本。');
+  }
   // `fuli stop` removes the runtime state, so the saved settings are the record of
   // the mode a stopped installation last used. Without it a mode switch would
   // reuse the old mode's credentials against the new, empty graph.
@@ -243,13 +254,6 @@ export async function ensureGraphRuntime(input, dependencies = {}) {
         await notifyAdaptiveRuntime(existing.url, deps.fetch);
       }
       return runtimeResult('running', existing);
-    }
-    // The desktop app's console is the one service of its data: another copy
-    // (npm, a checkout) never replaces it, while the app replaces any other's.
-    if (healthy && deps.desktopApp(existing.packageRoot) && !deps.desktopApp(input.paths.packageRoot)) {
-      throw new Error(`The FULI desktop app runs this data directory's console (process ${existing.pid}), so this copy `
-        + 'did not replace it. Use the desktop app, or quit it before starting this copy. / '
-        + '桌面版 FULI 正在运行这份数据的服务，这个副本没有替换它。请使用桌面版，或先退出桌面版再启动这个副本。');
     }
     if (healthy && !await terminateConsole(existing.pid, consoleStop)) {
       throw new Error('Fuli Graphiti console did not stop before restarting');
@@ -684,6 +688,12 @@ async function readLocalConsoleVersion(url) {
   } catch {
     return null;
   }
+}
+
+// Whether a healthy console the desktop app started serves this data while another copy starts.
+async function desktopAppRunsIt(state, paths, deps) {
+  return isGraphRuntimeState(state) && deps.desktopApp(state.packageRoot) && !deps.desktopApp(paths.packageRoot)
+    && deps.isProcessAlive(state.pid) && await deps.webHealth(state.url, state.pid, state.version);
 }
 
 function isGraphRuntimeState(state) {

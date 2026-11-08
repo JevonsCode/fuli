@@ -6,12 +6,14 @@ import test from 'node:test';
 
 import { npmUninstallCommand } from '../src/cli/update-installation.js';
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
-import { DESKTOP_ADOPTION_FILE, otherPackageConsole, reconnectAfterAdoption } from '../src/desktop/npm-adoption.js';
+import { adoptionHold, otherPackageConsole, reconnectAfterAdoption } from '../src/desktop/npm-adoption.js';
+import { DESKTOP_ADOPTION_FILE } from '../src/desktop/npm-adoption-store.js';
+import { npmCopyDataUse } from '../src/desktop/npm-copy-data.js';
 import { findNpmCopies } from '../src/desktop/npm-copies.js';
 import { createNpmCopyControl } from '../src/desktop/npm-copy-control.js';
 import { uninstallNpmCopy } from '../src/desktop/npm-copy-uninstall.js';
 import { tidyInstallation } from '../src/desktop/windows-controller.js';
-import { removeLauncherLeftovers } from '../src/desktop/windows-node-launcher.js';
+import { removeRetiredLaunchers } from '../src/desktop/windows-node-launcher.js';
 import { createDoctor } from '../src/system/doctor.js';
 import { handleNpmCopiesRequest } from '../src/http/npm-copies-api-router.js';
 
@@ -79,6 +81,18 @@ test('an npm copy a running console recorded counts even when no fl is on PATH',
   assert.deepEqual(copies.map(copy => [copy.version, copy.launchers.length]), [['0.20.1', 0]]);
 });
 
+test('a project folder node_modules is never taken for an npm global install', t => {
+  const root = temporary(t);
+  const windows = process.platform === 'win32';
+  const project = join(root, 'project');
+  const packageRoot = windows ? join(project, 'node_modules', 'fuli-context') : join(project, 'lib', 'node_modules', 'fuli-context');
+  mkdirSync(packageRoot, { recursive: true });
+  writeFileSync(join(packageRoot, 'package.json'), JSON.stringify({ name: 'fuli-context', version: '0.12.4' }));
+  writeFileSync(join(project, 'package.json'), JSON.stringify({ name: 'some-project', version: '1.0.0' }));
+  assert.deepEqual(findNpmCopies({ ownRoot: join(root, 'app'), extraRoots: [packageRoot], env: { PATH: '' },
+    homeDir: join(root, 'home'), listDirectory: () => [], inspect: () => ({ launchers: [] }) }), []);
+});
+
 test('only a live console of another FULI package counts as another copy\'s', t => {
   const dataDir = temporary(t);
   const context = { dataDir, packageRoot: join(dataDir, 'app') };
@@ -96,26 +110,102 @@ test('only a live console of another FULI package counts as another copy\'s', t 
   assert.equal(otherPackageConsole(context, { isAlive: () => true }), null, 'the app\'s own console');
 });
 
-test('clients are pointed at the app once per npm copy, and again whenever another copy\'s console was replaced', async t => {
+test('clients are pointed at the app once per npm copy whose clients use this data, and again when a console was replaced', async t => {
   const dataDir = temporary(t);
   const context = { dataDir, packageRoot: join(dataDir, 'app') };
   const copy = { packageRoot: '/opt/homebrew/lib/node_modules/fuli-context', version: '0.12.4', launchers: [], removeCommand: 'x' };
   const calls = [];
   const invoke = async (args) => { calls.push(args); return { code: 0, stdout: '', stderr: '' }; };
   const now = () => new Date('2026-11-08T08:00:00.000Z');
-  assert.equal(await reconnectAfterAdoption(context, { replaced: null, invoke, findCopies: () => [], now }), null);
+  const uses = (shares, dataDir = null) => async () => new Map([[copy.packageRoot, { shares, dataDir }]]);
+  const run = (options) => reconnectAfterAdoption(context, { replaced: null, invoke, findCopies: () => [copy], now,
+    appVersion: '0.25.0', ...options });
+  assert.equal(await run({ findCopies: () => [], dataUse: uses(true) }), null);
   assert.equal(existsSync(join(dataDir, DESKTOP_ADOPTION_FILE)), false, 'nothing found, nothing written');
-  assert.deepEqual(await reconnectAfterAdoption(context, { replaced: null, invoke, findCopies: () => [copy], now }),
-    { clients: 'reconnected', npmCopies: 1 });
+  assert.equal(await run({ dataUse: uses(null) }), null, 'no client names the copy: nothing to point anywhere');
+  assert.deepEqual(calls, []);
+  assert.deepEqual(await run({ dataUse: uses(true) }), { clients: 'reconnected', npmCopies: 1 });
   assert.deepEqual(calls, [['setup', '--yes', '--connected-only']]);
-  assert.deepEqual(JSON.parse(readFileSync(join(dataDir, DESKTOP_ADOPTION_FILE), 'utf8')),
-    { version: 1, adoptedAt: '2026-11-08T08:00:00.000Z', npmCopies: [copy.packageRoot], clients: 'reconnected', dismissed: [] });
-  assert.equal(await reconnectAfterAdoption(context, { replaced: null, invoke, findCopies: () => [copy], now }), null,
-    'an adopted copy is not reconnected at every start');
+  const record = JSON.parse(readFileSync(join(dataDir, DESKTOP_ADOPTION_FILE), 'utf8'));
+  assert.deepEqual([record.adoptedAt, record.npmCopies, record.clients], ['2026-11-08T08:00:00.000Z', [copy.packageRoot], 'reconnected']);
+  assert.equal(await run({ dataUse: uses(true) }), null, 'an adopted copy is not reconnected at every start');
   const failing = async (args) => { calls.push(args); return { code: 1, stdout: '', stderr: 'partial' }; };
-  assert.deepEqual(await reconnectAfterAdoption(context, { replaced: { pid: 1, packageRoot: null }, invoke: failing,
-    findCopies: () => [copy], now }), { clients: 'not_reconnected', npmCopies: 1 });
+  assert.deepEqual(await run({ replaced: { pid: 1, packageRoot: null }, invoke: failing, dataUse: uses(true) }),
+    { clients: 'not_reconnected', npmCopies: 1 });
   assert.equal(calls.length, 2);
+});
+
+test('an npm copy on other data, or newer than the app, keeps its clients: nothing is reconnected', async t => {
+  const dataDir = temporary(t);
+  const context = { dataDir, packageRoot: join(dataDir, 'app') };
+  const copy = { packageRoot: '/opt/homebrew/lib/node_modules/fuli-context', version: '0.12.4', launchers: [], removeCommand: 'x' };
+  const invoke = async () => assert.fail('no client is rewritten');
+  const other = await reconnectAfterAdoption(context, { replaced: { pid: 1, packageRoot: copy.packageRoot }, invoke,
+    findCopies: () => [copy], appVersion: '0.25.0',
+    dataUse: async () => new Map([[copy.packageRoot, { shares: false, dataDir: '/Users/synthetic/other-fuli' }]]) });
+  assert.deepEqual(other, { clients: 'kept', npmCopies: 1 });
+  assert.deepEqual(JSON.parse(readFileSync(join(dataDir, DESKTOP_ADOPTION_FILE), 'utf8')).copies,
+    { [copy.packageRoot]: { shares: false, dataDir: '/Users/synthetic/other-fuli' } });
+  const newer = await reconnectAfterAdoption(context, { replaced: null, invoke, findCopies: () => [{ ...copy, version: '0.30.0' }],
+    appVersion: '0.25.0', dataUse: async () => new Map([[copy.packageRoot, { shares: true, dataDir: null }]]) });
+  assert.deepEqual(newer, { clients: 'kept', npmCopies: 1 });
+});
+
+test('a client entry tells which data an npm copy serves', () => {
+  const copy = { packageRoot: '/opt/homebrew/lib/node_modules/fuli-context' };
+  const file = (runtimeConfig) => JSON.stringify({ mcpServers: { fuli: { command: '/opt/homebrew/bin/node',
+    args: [copy.packageRoot + '/src/mcp-server.js', '--runtime-config', runtimeConfig] } } });
+  const files = { '/home/s/.claude.json': file('/home/s/Library/Application Support/Fuli/graph-runtime.json'),
+    '/home/s/.codex/config.toml': 'other = 1' };
+  const clients = [{ components: { mcp: 'outdated' }, mcpPaths: ['~/.claude.json'] },
+    { components: { mcp: 'missing' }, mcpPaths: ['~/.codex/config.toml'] }];
+  const use = (runtimeConfigPath, text = files) => npmCopyDataUse([copy], { runtimeConfigPath, clients, homeDir: '/home/s',
+    platform: 'darwin', readText: (path) => { if (!(path in text)) throw new Error('missing'); return text[path]; } }).get(copy.packageRoot);
+  assert.deepEqual(use('/home/s/Library/Application Support/Fuli/graph-runtime.json'), { shares: true, dataDir: null });
+  assert.deepEqual(use('/home/s/Library/Application Support/Fuli-app/graph-runtime.json'),
+    { shares: false, dataDir: '/home/s/Library/Application Support/Fuli' });
+  assert.deepEqual(use('/x/graph-runtime.json', { '/home/s/.claude.json': 'no fuli here' }), { shares: null, dataDir: null });
+  // Windows: JSON-escaped backslashes, compared without case, shown as written.
+  const win = { packageRoot: 'C:\\nvm4w\\nodejs\\node_modules\\fuli-context' };
+  const winFile = JSON.stringify({ args: ['C:\\NVM4W\\nodejs\\node_modules\\fuli-context\\src\\mcp-server.js', '--runtime-config',
+    'D:\\数据\\Fuli\\graph-runtime.json'] });
+  assert.deepEqual(npmCopyDataUse([win], { runtimeConfigPath: 'C:\\Users\\s\\AppData\\Local\\Fuli\\graph-runtime.json',
+    clients: [{ components: { mcp: 'current' }, mcpPaths: ['~/.claude.json'] }], homeDir: 'C:\\Users\\s', platform: 'win32',
+    readText: () => winFile }).get(win.packageRoot), { shares: false, dataDir: 'D:\\数据\\Fuli' });
+});
+
+test('the app waits while the data is busy, and leaves a newer npm copy running', t => {
+  const root = temporary(t);
+  const npmRoot = join(root, 'npm', 'lib', 'node_modules', 'fuli-context');
+  mkdirSync(npmRoot, { recursive: true });
+  writeFileSync(join(npmRoot, 'package.json'), JSON.stringify({ name: 'fuli-context', version: '0.30.0' }));
+  const context = { dataDir: join(root, 'data'), packageRoot: join(root, 'app') };
+  assert.deepEqual(adoptionHold(context, null, { busy: () => true }), { reason: 'data_busy' });
+  assert.deepEqual(adoptionHold(context, { pid: 1, packageRoot: npmRoot }, { busy: () => false, appVersion: '0.25.0' }),
+    { reason: 'npm_newer', version: '0.30.0' });
+  assert.equal(adoptionHold(context, { pid: 1, packageRoot: npmRoot }, { busy: () => false, appVersion: '0.31.0' }), null);
+  assert.equal(adoptionHold(context, { pid: 1, packageRoot: null }, { busy: () => false }), null,
+    'a console from before consoles recorded their package is older than this app');
+});
+
+test('the desktop app leaves a newer npm console running and says to update the app first', async t => {
+  const root = temporary(t);
+  const context = { dataDir: join(root, 'data'), packageRoot: join(root, 'app'), nodePath: 'node', cliPath: 'cli.js' };
+  mkdirSync(context.dataDir);
+  writeFileSync(join(context.dataDir, 'graph-runtime.json'), '{}');
+  writeFileSync(join(context.dataDir, 'runtime-settings.json'), JSON.stringify({ graphRuntimeMode: 'native' }));
+  writeFileSync(join(context.dataDir, 'graph-runtime-state.json'),
+    JSON.stringify({ version: 4, pid: process.pid, url: 'http://127.0.0.1:2727', packageRoot: '/synthetic/node_modules/fuli-context' }));
+  const calls = [];
+  const runCli = async (_context, args) => { calls.push(args[0]);
+    return args[0] === 'status' ? { code: 0, stdout: JSON.stringify({ status: 'running' }), stderr: '' } : { code: 0, stdout: '', stderr: '' }; };
+  const result = await runTrayAction('start', context, { runCli,
+    holdAdoption: () => ({ reason: 'npm_newer', version: '0.30.0' }) });
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, ['status', 'status', 'status'], 'nothing restarted, no client reconnected');
+  assert.match(result.notice, /v0\.30\.0 比桌面版新/);
+  const busy = await runTrayAction('start', context, { runCli, holdAdoption: () => ({ reason: 'data_busy' }) });
+  assert.match(busy.notice, /下次启动再试/);
 });
 
 test('the desktop app restarts a console an npm copy runs, then reconnects the clients', async t => {
@@ -230,14 +320,17 @@ test('a Windows tray start clears launchers an update set aside, and keeps one s
   const old = 'FuliNode.exe.0b8a3c1e-1111-4222-8333-444455556666.old';
   writeFileSync(join(installRoot, old), '');
   writeFileSync(join(installRoot, 'FuliNode.exe'), '');
+  const staged = 'FuliNode.exe.0b8a3c1e-1111-4222-8333-777788889999.new';
+  writeFileSync(join(installRoot, staged), '');
   assert.deepEqual(tidyInstallation({ installRoot }, 'status'), [], 'status never touches files');
   assert.equal(existsSync(join(installRoot, old)), true);
   assert.deepEqual(tidyInstallation({ installRoot }, 'start'), []);
   assert.equal(existsSync(join(installRoot, old)), false);
   assert.equal(existsSync(join(installRoot, 'FuliNode.exe')), true, 'the current launcher stays');
+  assert.equal(existsSync(join(installRoot, staged)), true, 'a launcher an update is placing is never touched');
   assert.deepEqual(tidyInstallation({ installRoot: null }, 'start'), [], 'a portable tray has no installation');
   assert.deepEqual(tidyInstallation({ installRoot }, 'start-open', { removeLeftovers: () => ['held'] }), ['held']);
-  assert.deepEqual(removeLauncherLeftovers(installRoot), []);
+  assert.deepEqual(removeRetiredLaunchers(installRoot), []);
 });
 
 test('only this computer removes an npm copy or closes its notice; anyone may read the list', async () => {

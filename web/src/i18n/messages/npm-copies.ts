@@ -3,6 +3,8 @@
 export const npmCopiesMessages = {
   'zh-CN': {
     notice: '电脑上还有一份旧的 npm 版 FULI（v{version}），已经停用。建议卸载，免得终端里用到旧版。',
+    otherData: '这份 npm 版 FULI（v{version}）用的是另一份数据（{dataDir}），桌面版没有动它。',
+    newer: 'npm 版 FULI（v{version}）比桌面版新，桌面版没有替换它。请先更新桌面版。',
     remove: '卸载',
     removing: '正在卸载 npm 版 FULI v{version}…',
     removed: '已卸载 npm 版 FULI v{version}，数据没动。',
@@ -17,6 +19,8 @@ export const npmCopiesMessages = {
   },
   'en-US': {
     notice: 'An old npm copy of FULI (v{version}) is still here, unused. Remove it so terminals stop running it.',
+    otherData: 'This npm copy of FULI (v{version}) uses other data ({dataDir}); the desktop app left it alone.',
+    newer: 'The npm copy of FULI (v{version}) is newer than the desktop app, which left it running. Update the app first.',
     remove: 'Remove',
     removing: 'Removing the npm copy of FULI v{version}…',
     removed: 'Removed the npm copy of FULI v{version}; your data is untouched.',

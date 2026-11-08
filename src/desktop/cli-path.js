@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { jsonFormat, readJsonRecord, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
+import { jsonFormat, readJsonRecord, updateVersionedJsonFileAtomic } from '../storage/json-format.js';
 
 // The desktop app's own `fl` and `fuli` in a terminal (Jevons 11-08): the app
 // does not live on PATH, so a terminal kept finding an older npm copy (rec#41).
@@ -55,16 +55,24 @@ exec ${shellQuote(node)} ${shellQuote(`${plan.packageRoot}/src/cli.js`)} "$@"
 `]));
 }
 
-// A shell profile with FULI's block at its end (moved there if it was elsewhere).
-export function withProfileBlock(text) {
-  const rest = withoutProfileBlock(text).replace(/\n*$/, '');
-  return `${rest}${rest ? '\n\n' : ''}${BLOCK_START}\nexport PATH="$HOME/.fuli/bin:$PATH"\n${BLOCK_END}\n`;
+const PROFILE_BLOCK = `${BLOCK_START}\nexport PATH="$HOME/.fuli/bin:$PATH"\n${BLOCK_END}\n`;
+
+// What FULI appends to a shell profile that lacks its block: the separator
+// (nothing in an empty file, a blank line otherwise) and the block. A profile
+// that has the block anywhere is left as it is: answers null.
+export function profileAddition(text) {
+  if (text.includes(BLOCK_START)) return null;
+  const separator = text === '' ? '' : text.endsWith('\n') ? '\n' : '\n\n';
+  return { separator, text: text + separator + PROFILE_BLOCK };
 }
 
-// The profile without FULI's block; nothing else changes.
-export function withoutProfileBlock(text) {
-  const pattern = new RegExp(`\\n*${escape(BLOCK_START)}\\n[\\s\\S]*?${escape(BLOCK_END)}\\n?`, 'g');
-  return text.replace(pattern, (match, offset) => offset === 0 ? '' : '\n');
+// The profile as it was before FULI's addition, byte for byte while the
+// separator FULI recorded still ends it; a block the person moved is taken
+// out alone. Without a block the text is unchanged.
+export function withoutProfileBlock(text, separator = null) {
+  if (separator !== null && text.endsWith(separator + PROFILE_BLOCK)) return text.slice(0, text.length - (separator + PROFILE_BLOCK).length);
+  const at = text.indexOf(PROFILE_BLOCK);
+  return at < 0 ? text : text.slice(0, at) + text.slice(at + PROFILE_BLOCK.length);
 }
 
 // A Windows PATH value with binDir first and nowhere else (case-insensitive).
@@ -91,13 +99,18 @@ export function ensureCliPath(context, { platform = process.platform, homeDir = 
     if (files.read(file) !== text) { files.write(file, text, platform === 'win32' ? undefined : 0o755); changed.push(file); }
   }
   if (platform === 'darwin') {
+    const added = {};
     for (const profile of plan.profiles) {
       const current = files.read(profile);
       // ~/.zshrc is made when missing; another shell's profile only when the person has one.
       if (current === null && !profile.endsWith('.zshrc')) continue;
-      const next = withProfileBlock(current ?? '');
-      if (next !== current) { files.write(profile, next); changed.push(profile); }
+      const addition = profileAddition(current ?? '');
+      if (!addition) continue;
+      files.writeAtomic(profile, addition.text);
+      added[profile] = { separator: addition.separator, created: current === null };
+      changed.push(profile);
     }
+    if (Object.keys(added).length) recordProfiles(context.dataDir, added);
   } else {
     // A user PATH that could not be read is never written: it would lose what is there.
     const current = userPath.read();
@@ -114,12 +127,18 @@ export function removeCliPath(context, { platform = process.platform, homeDir = 
   if (!plan) return { status: 'unsupported', changed: [] };
   const changed = [];
   if (platform === 'darwin') {
+    const added = readCliPathRecord(context.dataDir)?.profiles ?? {};
     for (const profile of plan.profiles) {
       const current = files.read(profile);
       if (current === null) continue;
-      const next = withoutProfileBlock(current);
-      if (next !== current) { files.write(profile, next); changed.push(profile); }
+      const separator = typeof added[profile]?.separator === 'string' ? added[profile].separator : null;
+      const next = withoutProfileBlock(current, separator);
+      if (next === current) continue;
+      // A profile FULI made, and nothing else wrote to, goes away again.
+      if (next === '' && added[profile]?.created === true) files.unlink(profile); else files.writeAtomic(profile, next);
+      changed.push(profile);
     }
+    if (Object.keys(added).length) recordProfiles(context.dataDir, null);
   } else if (files.exists(plan.binDir)) {
     // Only an installation that has the commands has a PATH entry to take out.
     const current = userPath.read();
@@ -134,17 +153,43 @@ export function removeCliPath(context, { platform = process.platform, homeDir = 
 
 // The person's choice, kept in the data directory: { enabled: true | false | null }.
 export function readCliPathSetting(dataDir) {
-  const record = dataDir ? readJsonRecord(join(dataDir, CLI_PATH_FILE), CLI_PATH_FORMAT) : null;
+  const record = readCliPathRecord(dataDir);
   return { enabled: typeof record?.enabled === 'boolean' ? record.enabled : null };
 }
 
 export function writeCliPathSetting(dataDir, enabled, now = new Date()) {
-  writeVersionedJsonFileAtomic(join(dataDir, CLI_PATH_FILE), { version: 1, enabled, changedAt: now.toISOString() }, CLI_PATH_FORMAT);
+  updateCliPathRecord(dataDir, (record) => ({ ...record, enabled, changedAt: now.toISOString() }));
+}
+
+// The record also keeps what FULI added to each shell profile, so turning the
+// commands off restores each one exactly; null forgets it.
+function recordProfiles(dataDir, added) {
+  if (!dataDir) return;
+  updateCliPathRecord(dataDir, (record) => ({ ...record, profiles: added === null ? {} : { ...record.profiles, ...added } }));
+}
+
+function readCliPathRecord(dataDir) {
+  const record = dataDir ? readJsonRecord(join(dataDir, CLI_PATH_FILE), CLI_PATH_FORMAT) : null;
+  return record?.status === 'unreadable' ? null : record;
+}
+
+function updateCliPathRecord(dataDir, mutate) {
+  updateVersionedJsonFileAtomic(join(dataDir, CLI_PATH_FILE), CLI_PATH_FORMAT,
+    (current) => mutate({ version: 1, enabled: null, changedAt: null, profiles: {}, ...current }));
 }
 
 const fileSystem = {
   read: (path) => { try { return readFileSync(path, 'utf8'); } catch (error) { if (error.code === 'ENOENT') return null; throw error; } },
   write: (path, text, mode) => writeFileSync(path, text, mode === undefined ? 'utf8' : { encoding: 'utf8', mode }),
+  // A shell profile is replaced in one step, keeping its permissions, so a terminal never reads half of it.
+  writeAtomic: (path, text) => {
+    let mode = 0o644;
+    try { mode = statSync(path).mode & 0o777; } catch { /* a new profile */ }
+    const temporary = `${path}.fuli-${process.pid}.tmp`;
+    writeFileSync(temporary, text, { encoding: 'utf8', mode });
+    try { renameSync(temporary, path); } catch (error) { rmSync(temporary, { force: true }); throw error; }
+  },
+  unlink: (path) => rmSync(path, { force: true }),
   mkdir: (path) => mkdirSync(path, { recursive: true }),
   exists: existsSync,
   remove: (path) => rmSync(path, { recursive: true, force: true })
@@ -152,30 +197,46 @@ const fileSystem = {
 
 // The user PATH as the registry keeps it (unexpanded), written back as
 // REG_EXPAND_SZ and announced so new terminals see it without signing out.
+// Both directions carry the value as base64 of its UTF-8 bytes, so a folder
+// name in any language survives the console code page (GBK on Chinese Windows).
 const windowsUserPath = {
   read() {
+    const script = '$ErrorActionPreference="Stop"; $ProgressPreference="SilentlyContinue"; '
+      + '$v=(Get-Item HKCU:\\Environment).GetValue("Path", $null, "DoNotExpandEnvironmentNames"); '
+      + 'if ($null -eq $v) { "NONE" } else { [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$v)) }';
     try {
-      const output = execFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'reg.exe'),
-        ['query', 'HKCU\\Environment', '/v', 'Path'], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
-      return /^\s*Path\s+REG_(?:EXPAND_)?SZ\s+(.*)$/mi.exec(output)?.[1]?.trim() ?? '';
+      return decodeUserPathOutput(execFileSync(powershellPath(), ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+        Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'ascii', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }));
     } catch {
       return null;
     }
   },
   write(value) {
-    const script = '$ErrorActionPreference="Stop"; '
+    const script = '$ErrorActionPreference="Stop"; $ProgressPreference="SilentlyContinue"; '
       + '$v=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:FULI_USER_PATH)); '
       + 'New-ItemProperty -Path HKCU:\\Environment -Name Path -PropertyType ExpandString -Value $v -Force | Out-Null; '
       + 'Add-Type -Namespace Fuli -Name Env -MemberDefinition \'[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr h, uint m, UIntPtr w, string l, uint f, uint t, out UIntPtr r);\'; '
       + '$r=[UIntPtr]::Zero; [Fuli.Env]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, "Environment", 2, 5000, [ref]$r) | Out-Null';
-    execFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
-      ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
-      { windowsHide: true, stdio: 'ignore', env: { ...process.env, FULI_USER_PATH: Buffer.from(value, 'utf8').toString('base64') } });
+    execFileSync(powershellPath(), ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
+      { windowsHide: true, stdio: 'ignore', env: { ...process.env, FULI_USER_PATH: encodeUserPath(value) } });
   }
 };
 
+const powershellPath = () => join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+
+// The value as the write script receives it.
+export const encodeUserPath = (value) => Buffer.from(value, 'utf8').toString('base64');
+
+// The read script's answer: "NONE" for no user PATH (an empty one), base64 of
+// the UTF-8 value, or null for anything else, which is never written over.
+export function decodeUserPathOutput(output) {
+  const text = String(output ?? '').trim();
+  if (text === 'NONE') return '';
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(text)) return null;
+  return Buffer.from(text, 'base64').toString('utf8');
+}
+
 const shellQuote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
-const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // The console's switch (Settings › 客户端): context { dataDir, packageRoot, installRoot }.
 export function createCliPathControl(context, options = {}) {

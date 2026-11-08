@@ -43,6 +43,8 @@ async function remind(copy: NpmCopy, value: boolean) {
       <li v-for="copy in npmCopies.copies" :key="copy.packageRoot" :data-npm-copy="copy.version">
         <span class="npm-copy-text">
           <strong>{{ t('npmCopies.version', { version: copy.version }) }}</strong>
+          <small v-if="copy.otherDataDir">{{ t('npmCopies.otherData', { version: copy.version, dataDir: copy.otherDataDir }) }}</small>
+          <small v-else-if="copy.newer">{{ t('npmCopies.newer', { version: copy.version }) }}</small>
           <small v-if="copy.shellCommands.length">{{ t('npmCopies.shell', { commands: copy.shellCommands.join(' / ') }) }}</small>
           <template v-if="npmCopies.failed[copy.packageRoot]">
             <small class="npm-copy-failed" role="alert">{{ t('npmCopies.failed', { reason: removalReason(npmCopies.failed[copy.packageRoot].error) }) }}</small>
@@ -56,7 +58,7 @@ async function remind(copy: NpmCopy, value: boolean) {
             <small>{{ t('npmCopies.remind') }}</small>
           </label>
           <GrowthLoading v-if="npmCopies.removing === copy.packageRoot" variant="inline" :label="t('npmCopies.removing', { version: copy.version })" />
-          <Button v-else type="button" size="sm" variant="outline" :disabled="npmCopies.removing !== null" data-npm-copy-remove
+          <Button v-else-if="!copy.otherDataDir && !copy.newer" type="button" size="sm" variant="outline" :disabled="npmCopies.removing !== null" data-npm-copy-remove
             @click="remove(copy)">{{ t('npmCopies.remove') }}</Button>
         </span>
       </li>

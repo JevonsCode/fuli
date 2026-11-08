@@ -6,7 +6,8 @@ import { switchConsolePort } from '../system/console-port-switch.js';
 import { reservedPortProblem } from '../system/reserved-ports.js';
 import { readRuntimeSettings } from '../system/runtime-settings.js';
 import { ensureCliPath } from './cli-path.js';
-import { otherPackageConsole, reconnectAfterAdoption } from './npm-adoption.js';
+import { adoptionHold, otherPackageConsole, reconnectAfterAdoption } from './npm-adoption.js';
+import { clientDataUse } from './npm-copy-data.js';
 import { findNpmCopies } from './npm-copies.js';
 
 // What the desktop client asks of a packaged FULI: status, start (first-time
@@ -55,7 +56,8 @@ async function consolePortBlocked(context) {
 export async function runTrayAction(action, context, {
   runCli = executeCli, portBlocked = consolePortBlocked, switchPort = switchConsolePort,
   otherConsole = otherPackageConsole, findCopies = runCli === executeCli ? findNpmCopies : () => [],
-  cliPath = runCli === executeCli ? ensureCliPath : () => null
+  cliPath = runCli === executeCli ? ensureCliPath : () => null,
+  dataUse = runCli === executeCli ? clientDataUse : async () => new Map(), holdAdoption = adoptionHold
 } = {}) {
   if (!ACTIONS.has(action)) throw new Error('Unsupported tray action: ' + action);
   const invoke = (args) => runCli(context, [...args, '--data-dir', context.dataDir]);
@@ -75,6 +77,7 @@ export async function runTrayAction(action, context, {
   let starting = false;
   let notice = null;
   let replaced = null;
+  let hold = null;
   let adopted = null;
   try {
     if (['start', 'start-open', 'stop', 'change-port'].includes(action)) assertNativeSelection(context);
@@ -104,15 +107,18 @@ export async function runTrayAction(action, context, {
       } else {
         const before = await inspect();
         // The app is the one FULI of its data: a console another FULI package
-        // runs (an npm copy) is replaced by the app's own (npm-adoption.js).
-        replaced = otherConsole(context);
-        if (replaced) await command(['restart']);
+        // runs (an npm copy) is replaced by the app's own (npm-adoption.js),
+        // unless the data is busy or that copy is newer than the app.
+        const other = otherConsole(context);
+        hold = holdAdoption(context, other);
+        if (other && !hold) { replaced = other; await command(['restart']); }
         else if (before.status !== 'running') await command(['start']);
       }
       const ready = await inspect();
       if (ready.status !== 'running') throw new Error('Fuli did not reach its running state.');
       // Clients still pointed at an npm copy are pointed at the app's; a failure here never fails the start.
-      adopted = await reconnectAfterAdoption(context, { replaced, invoke, findCopies }).catch(() => null);
+      if (hold) notice = adoptionHoldNotice(hold);
+      else adopted = await reconnectAfterAdoption(context, { replaced, invoke, findCopies, dataUse }).catch(() => null);
       // The app's own fl and fuli in a terminal (cli-path.js), unless the person turned them off.
       try { cliPath(context); } catch { /* a terminal keeps what it had; Settings shows the state */ }
     }
@@ -135,6 +141,15 @@ export async function runTrayAction(action, context, {
       state, error: notice ? `${error.message}\n\n${notice}` : error.message,
       ...(blocked ? { portBlocked: true } : {}) };
   }
+}
+
+// What the app says when it did not take over this time.
+function adoptionHoldNotice(hold) {
+  return hold.reason === 'npm_newer'
+    ? `npm 装的 FULI v${hold.version} 比桌面版新，桌面版没有替换它。请先更新桌面版。`
+      + ` / The npm copy of FULI (v${hold.version}) is newer than the desktop app, which left it running. Update the desktop app first.`
+    : '数据正在做格式更新或恢复，桌面版这次没有接管 npm 版，下次启动再试。'
+      + ' / A data format step or restore is under way, so the desktop app did not take over the npm copy this time; it tries again at the next start.';
 }
 
 function cliError(result) {

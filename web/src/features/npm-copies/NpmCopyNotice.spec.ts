@@ -8,7 +8,7 @@ import { npmCopies } from './npm-copies'
 
 // Synthetic copies only: no npm is run, nothing on this computer is read.
 const copy = { packageRoot: '/synthetic/lib/node_modules/fuli-context', version: '0.20.0-beta.6', shellCommands: ['fl'],
-  removeCommand: "npm uninstall --global fuli-context --prefix '/synthetic'", noticeDismissed: false }
+  removeCommand: "npm uninstall --global fuli-context --prefix '/synthetic'", noticeDismissed: false, otherDataDir: null, newer: false }
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
 
 function server(routes: Record<string, unknown>) {
@@ -65,4 +65,20 @@ it('says nothing when there is no npm copy', async () => {
   const wrapper = mount(NpmCopyNotice)
   await flushPromises()
   expect(wrapper.find('[data-npm-copy-notice]').exists()).toBe(false)
+})
+
+it('names a copy on other data without offering to remove it', async () => {
+  server({ 'GET /api/system/npm-copies': { copies: [{ ...copy, otherDataDir: '/synthetic/other-fuli' }] } })
+  const wrapper = mount(NpmCopyNotice)
+  await flushPromises()
+  expect(wrapper.get('[data-npm-copy-notice]').text()).toContain('用的是另一份数据（/synthetic/other-fuli），桌面版没有动它')
+  expect(wrapper.find('[data-npm-copy-remove]').exists()).toBe(false)
+})
+
+it('asks to update the app first when the npm copy is newer', async () => {
+  server({ 'GET /api/system/npm-copies': { copies: [{ ...copy, version: '0.30.0', newer: true }] } })
+  const wrapper = mount(NpmCopyNotice)
+  await flushPromises()
+  expect(wrapper.get('[data-npm-copy-notice]').text()).toContain('请先更新桌面版')
+  expect(wrapper.find('[data-npm-copy-remove]').exists()).toBe(false)
 })

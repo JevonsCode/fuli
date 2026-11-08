@@ -6,7 +6,7 @@ import { readWindowsNativeBundle } from '../native-runtime/windows-assets.js';
 import { isMainModule } from '../system/main-module.js';
 import { runTrayAction } from './desktop-controller.js';
 import { readWindowsInstallation } from './windows-installation-context.js';
-import { removeLauncherLeftovers } from './windows-node-launcher.js';
+import { removeRetiredLaunchers } from './windows-node-launcher.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -61,8 +61,10 @@ export function loadTrayContext({ packageRoot = PACKAGE_ROOT, env = process.env 
 
 // What a tray start tidies first: launchers an update set aside while a
 // client still ran them (FuliNode.exe.<id>.old), once nothing holds them.
-// Best effort: a held one stays for the next start.
-export function tidyInstallation(context, action, { removeLeftovers = removeLauncherLeftovers } = {}) {
+// Only the running tray starts FULI, and it holds the tray mutex every
+// updater must take first (windows-update-lock.js), so no update places a
+// launcher meanwhile. Best effort: a held one stays for the next start.
+export function tidyInstallation(context, action, { removeLeftovers = removeRetiredLaunchers } = {}) {
   if (!context.installRoot || !['start', 'start-open'].includes(action)) return [];
   try { return removeLeftovers(context.installRoot); } catch { return []; }
 }

@@ -16,6 +16,10 @@ const npmCopy = z.looseObject({
   shellCommands: z.array(z.string()),
   removeCommand: z.string(),
   noticeDismissed: z.boolean(),
+  // Its clients use other data, so the app left it and them alone.
+  otherDataDir: z.string().nullable(),
+  // Newer than the desktop app: the person updates the app first.
+  newer: z.boolean(),
 })
 const listShape = shapeOf(z.looseObject({ copies: z.array(npmCopy) }))
 const removal = z.looseObject({

@@ -710,6 +710,28 @@ test('another FULI copy never replaces the desktop app console; the app replaces
   assert.equal(adopted.written.packageRoot, app, 'the new console records the package that runs it');
 });
 
+test('a copy refused beside the desktop app console writes nothing and starts nothing', async () => {
+  const app = '/Applications/FULI.app/Contents/Resources/fuli';
+  const touched = [];
+  const never = (name) => (...args) => { touched.push(name); return undefined; };
+  const existing = { version: 4, pid: 2727, url: 'http://127.0.0.1:2727', port: 2727, packageRoot: app };
+  const deps = dependencies({
+    readState: () => existing,
+    desktopApp: (root) => root === app,
+    isProcessAlive: (pid) => pid === 2727,
+    webHealth: async () => true,
+    consoleVersion: async () => '0.30.0',
+    ...Object.fromEntries(['ensureDirectory', 'writeText', 'secureFile', 'ensureContainerRuntime', 'ensureNativeRuntime',
+      'startProviders', 'startNativeProviders', 'writeConfig', 'writeRuntimeSettings', 'writeAdaptiveSettings',
+      'writeAdaptiveState', 'writeState', 'spawnWebRuntime', 'stopProcess', 'recoverPorts', 'backupSettings']
+      .map((name) => [name, never(name)]))
+  });
+  await assert.rejects(ensureGraphRuntime({ paths: { ...PATHS, packageRoot: '/opt/homebrew/lib/node_modules/fuli-context' },
+    personalSpaceName: '我', personalOnly: true, port: 2727, lan: false, noStart: false }, deps),
+  /changed nothing/);
+  assert.deepEqual(touched, []);
+});
+
 // rec#94: the recorded console's process is alive but its listener is gone.
 function unansweringConsoleCase(owner) {
   const signals = [];

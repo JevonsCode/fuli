@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 
-import { inspectUpdateInstallation, npmUninstallCommand } from '../cli/update-installation.js';
+import { inspectUpdateInstallation, npmGlobalPrefix, npmUninstallCommand } from '../cli/update-installation.js';
 import { FULI_PACKAGE_NAME } from '../package-metadata.js';
 import { platformPath } from '../system/platform-path.js';
 import { samePackageRoot } from './desktop-app-package.js';
@@ -31,6 +31,8 @@ export function findNpmCopies({ ownRoot, extraRoots = [], env = process.env, pla
   const copies = new Map();
   const add = (packageRoot, version, launcher = null) => {
     if (!npmUninstallCommand(packageRoot, platform) || samePackageRoot(packageRoot, ownRoot, { platform })) return;
+    // A project's own node_modules (its folder has a package.json) is never an npm global install.
+    if (packageVersion(path.join(npmGlobalPrefix(packageRoot, platform), 'package.json'), readText, { anyName: true })) return;
     const key = platform === 'win32' ? packageRoot.toLowerCase() : packageRoot;
     const copy = copies.get(key) ?? { packageRoot, version, launchers: [], removeCommand: npmUninstallCommand(packageRoot, platform) };
     if (launcher && !copy.launchers.includes(launcher)) copy.launchers.push(launcher);
@@ -61,10 +63,10 @@ function usualNpmBinDirectories({ env, platform, homeDir, listDirectory }) {
     path.join(homeDir, '.volta', 'bin'), ...nvmVersions];
 }
 
-function packageVersion(file, readText) {
+function packageVersion(file, readText, { anyName = false } = {}) {
   try {
     const manifest = JSON.parse(readText(file, 'utf8'));
-    return manifest.name === FULI_PACKAGE_NAME && typeof manifest.version === 'string' ? manifest.version : null;
+    return (anyName || manifest.name === FULI_PACKAGE_NAME) && typeof manifest.version === 'string' ? manifest.version : null;
   } catch {
     return null;
   }

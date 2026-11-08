@@ -153,6 +153,9 @@ nothing and loses nothing, but the program is then on the computer twice. The cl
   and the client's own is started.
 - Every Agent client FULI was connected to (Claude Code, Codex, Cursor, …) is pointed at the desktop client's copy,
   once. Open Agent sessions pick it up when they restart.
+- The client leaves the npm copy and its clients alone when that copy's clients use another data folder, or when the
+  npm copy is newer than the client (update the client first); it says which. While a data format step or restore is
+  under way, it waits until its next start.
 - The npm copy stays installed until you choose. The console shows one floating notice naming it, with **Remove**: FULI
   runs the npm that installed it (`npm uninstall --global fuli-context` for that prefix, without package scripts) and
   your data stays. If that npm cannot remove it (for example without permission), the notice shows the command to run
@@ -162,7 +165,7 @@ nothing and loses nothing, but the program is then on the computer twice. The cl
   block at the end of `~/.zshrc` (and `~/.bash_profile` if you have one) puts that folder first. On Windows they are
   in the installation's `bin` folder, first in your user PATH; the system PATH still comes first there, so an npm
   folder in the system PATH (such as nvm-windows) wins until that copy is removed. New terminals pick it up.
-  **Settings › Clients › fl / fuli in a terminal** turns this off and takes out exactly what was added; the Windows
+  **Settings › Clients › fl / fuli in a terminal** (or an Agent with your own words) turns this off and takes out exactly what was added; the Windows
   uninstaller removes it too.
 - From 0.25.0 on, an npm copy never replaces the client's running service. An older npm copy started by hand
   (`fl start`) can still take it over; the client takes it back the next time it starts FULI. An older copy that meets
