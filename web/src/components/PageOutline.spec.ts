@@ -45,7 +45,7 @@ describe('the page outline', () => {
   it('marks the section being read by its text alone: no box, no fill, no bar', () => {
     const reading = rule('.page-outline-item.is-reading')
     expect(reading).toMatch(/color: var\(--color-ink\)/)
-    expect(reading).toMatch(/font-weight: var\(--weight-strong\)/)
+    expect(reading).not.toMatch(/font-weight/)
     expect(reading).not.toMatch(/border|background|box-shadow|inset/)
     expect(rule('.page-outline-item')).toMatch(/color: var\(--color-muted\)/)
     expect(rule('.page-outline-item:hover')).toMatch(/color: var\(--color-ink-soft\)/)

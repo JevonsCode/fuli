@@ -134,15 +134,15 @@ function go(entry: OutlineEntry) {
 .page-outline:hover .page-outline-list, .page-outline:has(:focus-visible) .page-outline-list {
   visibility: visible; scale: 1; pointer-events: auto; transition-delay: 0s;
 }
-/* A name is only text: muted, darker under the pointer, and the one being read in ink and
-   one weight bolder. No box, no fill, no bar. */
+/* A name is only text: muted, darker under the pointer, and the one being read in ink. Only the
+   colour changes (Jevons 11-07): no bolder weight, which would also shift the line width. No box, no fill, no bar. */
 .page-outline-item {
   justify-content: flex-end; gap: 8px; width: 100%; min-height: 0; height: var(--outline-row); padding: 0 6px; overflow: hidden;
   border: 0; background: transparent; color: var(--color-muted); font-size: var(--text-meta); font-weight: var(--weight-regular); line-height: 1.2;
   white-space: nowrap; user-select: none; -webkit-user-select: none; transition: color var(--motion-fast) var(--motion-ease);
 }
 .page-outline-item:hover { background: transparent; color: var(--color-ink-soft); }
-.page-outline-item.is-reading { color: var(--color-ink); font-weight: var(--weight-strong); }
+.page-outline-item.is-reading { color: var(--color-ink); }
 .page-outline-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .page-outline-count { flex: none; color: var(--color-muted); font-weight: var(--weight-regular); font-variant-numeric: tabular-nums; }
 
