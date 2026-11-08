@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 
+import { z } from 'zod'
+
 import { apiErrorReason, getJson, putJson } from '@/api/client'
+import { shapeOf } from '@/api/response-shape'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { t } from '@/i18n'
@@ -9,21 +12,22 @@ import { useConsoleStore } from '@/stores/console'
 
 // Settings › 客户端: whether terminals run the desktop app's own fl and fuli
 // (src/desktop/cli-path.js). Shown only on the desktop app.
-interface CliPathState { supported: boolean; enabled: boolean }
+const stateShape = shapeOf(z.looseObject({ supported: z.boolean(), enabled: z.boolean() }))
+type CliPathState = { supported: boolean; enabled: boolean }
 const store = useConsoleStore()
 const state = ref<CliPathState | null>(null)
 const saving = ref(false)
 const error = ref('')
 
 onMounted(async () => {
-  try { state.value = await getJson<CliPathState>('/api/system/cli-path') } catch (failure) { error.value = apiErrorReason(failure, t('cliPath.loadError')) }
+  try { state.value = await getJson('/api/system/cli-path', stateShape) } catch (failure) { error.value = apiErrorReason(failure, t('cliPath.loadError')) }
 })
 
 async function set(enabled: boolean) {
   saving.value = true
   error.value = ''
   try {
-    state.value = await putJson<CliPathState>('/api/system/cli-path', { enabled })
+    state.value = await putJson('/api/system/cli-path', { enabled }, stateShape)
     store.notify(t('cliPath.saved'))
   } catch (failure) { error.value = apiErrorReason(failure) } finally { saving.value = false }
 }
