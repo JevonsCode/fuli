@@ -33,10 +33,13 @@ describe('the page outline', () => {
     expect(rule('.page-outline-rail')).toMatch(/grid-auto-rows: var\(--outline-row\)/)
   })
 
-  it('floats on faint glass with no edge or shadow, so it never reads as another card', () => {
+  it('floats on faint glass with the shared glass edge, but no card fill or border', () => {
     const list = rule('.page-outline-list')
-    expect(list).not.toMatch(/border:|box-shadow/)
-    expect(rule('.page-outline-list::before')).toMatch(/backdrop-filter: var\(--filter-dock\)/)
+    expect(list).not.toMatch(/border:|background/)
+    expect(list).toMatch(/box-shadow: var\(--shadow-glass\)/)
+    const glass = rule('.page-outline-list::before')
+    expect(glass).toMatch(/backdrop-filter: var\(--filter-dock\)/)
+    expect(glass).toMatch(/background: var\(--surface-dock\)/)
   })
 
   it('marks the section being read by its text alone: no box, no fill, no bar', () => {

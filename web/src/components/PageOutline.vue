@@ -113,13 +113,14 @@ function go(entry: OutlineEntry) {
 .page-outline-bar.is-reading { background: var(--color-ink); transform: none; }
 .page-outline:hover .page-outline-bar:not(.is-reading) { transform: scaleX(.7); }
 
-/* Faint glass, no edge or shadow: the names float over the page without becoming a card.
+/* Faint glass with the shared glass edge (Jevons 11-08: a clear boundary from the page). The edge sits on
+   the list, since its scroll clip would cut a shadow on the glass layer. No card fill: the names float.
    The glass lives on its own layer so it blurs the page beneath it. It scales in with no
    fade: a fading panel cannot blur what lies beneath it until it is opaque. */
 .page-outline-list {
   position: relative; isolation: isolate; display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: var(--outline-row); gap: 0;
   width: max-content; max-width: 220px; max-height: calc(100dvh - var(--outline-top-min) - var(--outline-bottom)); margin: 0; padding: var(--outline-pad) 2px var(--outline-pad) 12px; overflow: hidden auto;
-  border-radius: var(--radius-control); list-style: none;
+  border-radius: var(--radius-control); box-shadow: var(--shadow-glass); list-style: none;
   visibility: hidden; scale: .97; transform-origin: right top; user-select: none; -webkit-user-select: none;
   transition: scale var(--motion-fast) var(--motion-ease), visibility 0s linear var(--motion-fast);
 }
