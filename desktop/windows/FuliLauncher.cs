@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 // Fuli.exe at the package root. Shortcuts, the launch-at-login entry, fuli://
@@ -13,6 +14,11 @@ internal static class FuliLauncher
     // The client reads the link itself (desktop/flutter/lib/src/platform/fuli_link.dart)
     // and refuses longer ones too.
     private const int MaxLinkLength = 2048;
+    // Any process may bring its window forward (AllowSetForegroundWindow).
+    private const int AnyProcess = -1;
+
+    [DllImport("user32.dll")]
+    private static extern bool AllowSetForegroundWindow(int processId);
 
     [STAThread]
     private static int Main(string[] args)
@@ -27,6 +33,9 @@ internal static class FuliLauncher
                 throw new Exception("Fuli.exe 只接受 --background 或一个 fuli:// 链接。 / Fuli.exe accepts only --background or one fuli:// link.");
             if (!File.Exists(client))
                 throw new Exception("没有找到 FULI 桌面客户端，请重新安装或更新 FULI。 / The FULI desktop client is missing; reinstall or update FULI.\n\n" + client);
+            // The browser (or Explorer) that opened this launcher may hand the foreground on; the
+            // client already running must take it, or the page it opens stays behind that window.
+            AllowSetForegroundWindow(AnyProcess);
             Process.Start(new ProcessStartInfo(client)
             {
                 // A link holds no quote, backslash or space (IsLink), so quoting it keeps it one argument.

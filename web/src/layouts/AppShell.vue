@@ -201,7 +201,7 @@ watchEffect(() => {
         </div>
         <!-- Only a record's own name is shown; a destination is already named by the dock
              (or the settings button), so its heading stays for screen readers only. -->
-        <h1 v-if="!titleInPage" class="app-title" :class="{ 'is-screen-reader-only': !recordTitle }">{{ title }}</h1>
+        <h1 v-if="!titleInPage" class="app-title" :class="{ 'is-screen-reader-only': !recordTitle }" :title="recordTitle || undefined">{{ title }}</h1>
         <SectionTabs :sections="sectionTabs" :active-key="section?.key" />
         <div class="app-actions">
           <!-- First, so the buttons after it stay put when it appears. -->
@@ -308,7 +308,7 @@ watchEffect(() => {
 .app-runtime-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--runtime); }
 .app-runtime-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .app-runtime-text.is-visible { position: static; width: auto; height: auto; overflow: visible; clip-path: none; color: var(--runtime); font-size: var(--text-meta); font-weight: var(--weight-medium); }
-.app-title { min-width: 0; margin: 0; font-size: var(--text-title); font-weight: var(--weight-strong); line-height: var(--leading-title); letter-spacing: -.02em; overflow-wrap: anywhere; }
+.app-title { min-width: 0; margin: 0; font-size: var(--text-section); font-weight: var(--weight-strong); line-height: var(--leading-title); letter-spacing: -.02em; overflow-wrap: anywhere; }
 .app-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 /* Quiet round buttons for the top-right destinations; only the current one is ink. */
 .app-round {
@@ -363,9 +363,9 @@ watchEffect(() => {
 @keyframes app-round-shake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-7deg); } 75% { transform: rotate(7deg); } }
 .app-round :deep(.tray-rice) { transform-box: fill-box; animation: tray-rice-in var(--motion-enter); }
 @keyframes tray-rice-in { from { opacity: 0; transform: translateY(-5px); } }
-/* A long record name takes at most two lines. */
+/* A record's name in the bar is a section-size line; a long one ends in … and its full text is the tooltip. */
 .app-title.is-screen-reader-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-.app-title:not(.is-screen-reader-only) { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.app-title:not(.is-screen-reader-only) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 @media (min-width: 721px) {
   .app-topbar-inner { flex-wrap: nowrap; }
   .app-title { flex: 0 1 auto; min-width: 0; }
@@ -373,7 +373,6 @@ watchEffect(() => {
 }
 @media (max-width: 720px) {
   .app-topbar-inner { min-height: 36px; }
-  .app-title { font-size: 19px; }
   .app-wordmark { display: none; }
   /* Brand, title and actions share the first row; the section tabs take their own. */
   .app-topbar-inner > .section-tabs { order: 3; flex-basis: 100%; }
