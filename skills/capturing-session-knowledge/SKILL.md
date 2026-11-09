@@ -27,9 +27,9 @@ directory. It also uses the submitted prompt transiently for bounded automatic p
 recall and never returns that prompt; it keeps it on this computer only so `run_delegated_action`
 can check words relayed as the person's decision in the same turn, until the task checkpoints. Apply the returned `task_knowledge_recall` and
 preferences, then retain the opaque task token for any required checkpoint;
-do not redundantly call `get_collaboration_preferences`. If a FULI call refuses that token as
-begun in another client (for example a `claude_code` hook token through a FULI connection that
-runs as `claude`), call `get_collaboration_preferences` through that connection once and pass
+do not redundantly call `get_collaboration_preferences`. Claude Desktop's FULI connection
+(`claude`) accepts its Code tab's `claude_code` hook tokens. If a FULI call refuses that token as
+begun in another client, call `get_collaboration_preferences` through that connection once and pass
 its token to every call made through it, checkpoint included; never retry the refused token.
 
 After a FULI update an open session can still have a FULI MCP connection on the older version.

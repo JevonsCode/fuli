@@ -35,6 +35,7 @@ import {
 import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
 import { assertToolInputWithinBudget, createToolInputValidator } from './tool-input-budget.js';
 import { nativeSessionFromEnv } from '../agents/native-session-env.js';
+import { callSourceApplication } from '../agents/call-source.js';
 import {
   isFuliProcessSession,
   mcpHostSessionId,
@@ -285,12 +286,14 @@ function createToolMap(
         requestContext
       );
 
-      function invokeAsHost() {
-        const normalized = normalizeAgentSessionInput(definition.name, prepareToolInput(definition.name, input),
-          requestNative, requestHost, clock, sourceApplication);
+      async function invokeAsHost() {
+        const prepared = prepareToolInput(definition.name, input);
+        const callSource = await callSourceApplication(app, sourceApplication, prepared);
+        const normalized = normalizeAgentSessionInput(definition.name, prepared,
+          requestNative, requestHost, clock, callSource);
         onSession(callingSession(definition.name, normalized, requestNative));
         return invokeAgentTool(app, definition.name, normalized, projectActionPreviews, commonKnowledgePreviews,
-          agentHostRequestContext({ ...requestContext, testToolsEnabled: includeTestTools }, requestHost, sourceApplication));
+          agentHostRequestContext({ ...requestContext, testToolsEnabled: includeTestTools }, requestHost, callSource));
       }
     }
   }]));
