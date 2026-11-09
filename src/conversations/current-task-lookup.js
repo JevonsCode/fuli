@@ -1,4 +1,5 @@
 import { ProviderRequestError } from '../graphiti/provider-client.js';
+import { isProviderOutage } from '../graphiti/provider-outage.js';
 
 // Only this first, read-only lookup can be deferred before a scope is known.
 // Each real HTTP attempt is bounded; writes and later handoff operations are
@@ -30,9 +31,7 @@ export async function lookupTranscriptTask(application, input, sourceApplication
           code: 'current_task_endpoint_unavailable',
           reason: 'Visible transcript synchronization is not available on this Fuli provider version' } };
       }
-      const transient = ['provider_unavailable', 'provider_timeout'].includes(error.code)
-        || (error.code === 'provider_http_5xx' && [502, 503, 504].includes(error.status));
-      if (!transient) throw error;
+      if (!isProviderOutage(error)) throw error;
       if (attempt === 1) return { failure: { status: 'unsaved', entryBlocked: true,
         code: 'current_task_lookup_unavailable',
         reason: 'Visible transcript synchronization is temporarily unavailable after bounded retries; native history remains available for a later verified task entry' } };

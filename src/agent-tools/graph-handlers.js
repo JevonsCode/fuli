@@ -16,6 +16,7 @@ import { OLD_DATA_HANDLERS } from '../old-data/agent-tools.js';
 import { REPLY_ECHO_HANDLERS } from '../graphiti/reply-echo-agent-tool.js';
 import { OCCUPATION_KIT_HANDLERS } from '../occupation-plugins/agent-tools.js';
 import { agentNamingStyleAnswer } from '../agent-naming/naming-style.js';
+import { withProviderOutageEntry } from '../graphiti/task-entry-provider-outage.js';
 
 // These tools read or change the two local stores that can retain deleted
 // knowledge. Provider-only reads and unrelated tools remain available.
@@ -119,11 +120,11 @@ const HANDLERS = Object.freeze({
   checkpoint_task_knowledge: (app, input) =>
     app.checkpointTaskKnowledge(input),
   verify_task_checkpoint: (app, input) => app.verifyTaskCheckpoint(input),
-  get_collaboration_preferences: (app, input) => app.getCollaborationPreferences({
+  get_collaboration_preferences: (app, input) => withProviderOutageEntry(app.getCollaborationPreferences({
     ...input,
     agentInvocation: true,
     agentToolName: 'get_collaboration_preferences'
-  }),
+  })),
   get_user_taste_skill: (app, input) => app.getUserTasteSkill(input),
   resolve_deferred_preference_conflict: (app, input) =>
     app.resolveDeferredPreferenceConflict({
