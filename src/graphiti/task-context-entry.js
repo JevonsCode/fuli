@@ -23,6 +23,7 @@ export async function beginTaskContext(application, {
   sourceSessionId = null,
   projectAgentId = null,
   workKind,
+  promptScene,
   workflow,
   requiredCapabilities = []
 }) {
@@ -40,8 +41,14 @@ export async function beginTaskContext(application, {
   if (existingTask && personalProjectId && existingTask.personalProjectId !== personalProjectId) {
     throw validationError('Task context belongs to another project');
   }
+  // A scene a hook read from the prompt (task-scene.js) is a hint: it scopes a
+  // new task only. Codex runs the prompt hook again, with the same turn_id, for
+  // input that arrives while the turn runs (an async question's reply, a
+  // steering message: codex-rs/core/src/hook_runtime.rs inspect_pending_input);
+  // that input keeps the scene its turn entered with (rec#85). An explicit
+  // workKind is still refused when it differs.
   const preferenceScope = existingTask ? taskPreferenceScope(existingTask.preferenceScope)
-    : taskPreferenceScope({ version: 1, work_kind: workKind ?? null, workflow: workflow ?? null });
+    : taskPreferenceScope({ version: 1, work_kind: workKind ?? promptScene ?? null, workflow: workflow ?? null });
   if (!preferenceScope) throw validationError('Task preference scope is unknown; legacy recovery cannot guess preference dimensions');
   if (existingTask && ((workKind !== undefined && workKind !== preferenceScope.work_kind) ||
       (workflow !== undefined && workflow !== preferenceScope.workflow))) {

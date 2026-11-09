@@ -10,7 +10,7 @@ export const TASK_ENTRY_DEFINITIONS = [
   {
     name: 'begin_task_context',
     title: 'LIFECYCLE · Begin a Fuli-aware task',
-    description: 'Supported Agent hooks call before the model processes a user prompt. Resolves the exact local project from projectPath and loads effective collaboration preferences. Uses taskPrompt transiently for bounded automatic recall of signaled stable prior facts, runbooks, URLs, decisions, releases, deployments, or authentication methods. Never returns projectPath/taskPrompt; a hook entry keeps taskPrompt locally to checkpoint, for relay checks. Inspect task_knowledge_recall before reasking stable context. Returns opaque taskContextToken and required agent_receipt; include agent_receipt.markdown unchanged exactly once in every final user-visible reply, including greetings/capture-disabled tasks. Fuli setup generates Claude Code/Codex UserPromptSubmit hook configuration and a Cursor task-entry adapter; configuration proves neither host loading, trust, nor execution. Use supplied hook context without repeating preference fallback. Cursor retrieves context through the Agent if its hook cannot inject it.',
+    description: 'Supported Agent hooks call before the model processes a user prompt. Resolves the exact local project from projectPath and loads effective collaboration preferences. Uses taskPrompt transiently for bounded automatic recall of signaled stable prior facts, runbooks, URLs, decisions, releases, deployments, or authentication methods. Never returns projectPath/taskPrompt; a hook entry keeps taskPrompt locally to checkpoint, for relay checks. Inspect task_knowledge_recall before reasking stable context. Returns opaque taskContextToken and required agent_receipt; include agent_receipt.markdown unchanged exactly once in every final user-visible reply, including greetings/capture-disabled tasks. Fuli setup generates Claude Code/Codex UserPromptSubmit hook configuration and a Cursor task-entry adapter; configuration proves neither host loading, trust, nor execution. Use supplied hook context without repeating preference fallback. Cursor retrieves context through the Agent if its hook cannot inject it. promptScene, a scene read from the prompt, scopes only a new task; a different workKind for a task is refused.',
     inputSchema: objectSchema({
       sessionId: id,
       turnId: id,
@@ -19,6 +19,7 @@ export const TASK_ENTRY_DEFINITIONS = [
       personalProjectId: nullableStringSchema(),
       projectAgentId: nullableStringSchema(),
       workKind: boundedString(128),
+      promptScene: boundedString(128),
       requiredCapabilities: arraySchema(boundedString(512), { maxItems: 16 }),
       taskPrompt: boundedString(8192)
     }, ['sessionId', 'projectPath'])

@@ -49,7 +49,7 @@ export function beginTaskEntry(application, input) {
       entry = await beginTaskContext(application, input);
     } catch (error) {
       if (!isReadOnlyRefusal(error)) throw error;
-      return readOnlyTaskEntry(application, input);
+      return readOnlyTaskEntry(application, { ...input, workKind: input.workKind ?? input.promptScene });
     }
     keepEntryPrompt(application, entry, input, input.taskPrompt);
     // Its task and opening writes are done: a hook deadline from here on
