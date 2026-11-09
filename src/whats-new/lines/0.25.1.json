@@ -1,0 +1,13 @@
+{
+  "version": "0.25.1",
+  "zh": [
+    "一个小修版：FLA 之间喊人更靠谱了，喊不醒的不会再一直占着位子。",
+    "图谱服务打个盹时，任务照常开始，记录也能原样补存。",
+    "Claude 桌面版的 Code 标签页里，圆桌回复和记录不再报错。"
+  ],
+  "en": [
+    "A small fix release: FLAs reach each other, and a stuck wake no longer blocks one forever.",
+    "When the graph service naps, tasks still start and a checkpoint can be finished by sending it again.",
+    "In Claude Desktop's Code tab, roundtable replies and checkpoints work again."
+  ]
+}
