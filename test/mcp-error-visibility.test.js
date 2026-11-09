@@ -160,8 +160,8 @@ test('checkpoint workflow preserves actionable fingerprint-conflict guidance', a
 
   assert.ok(thrown instanceof ApplicationError);
   assert.equal(thrown.code, 'validation');
-  assert.match(thrown.message, /resume the original review|begin a new task context/i);
-  assert.match(errorToolResult(thrown).content[0].text, /resume the original review/i);
+  assert.match(thrown.message, /resend the exact arguments|begin a new task context/i);
+  assert.match(errorToolResult(thrown).content[0].text, /resend the exact arguments of the first checkpoint call/i);
 });
 
 test('checkpoint continuation mismatches are controlled validation errors', async () => {

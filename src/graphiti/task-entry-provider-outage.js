@@ -1,4 +1,4 @@
-import { isProviderOutage } from './provider-outage.js';
+import { recoverProviderOutage } from './provider-outage.js';
 
 // rec#105: preferences live in the Graph Provider, so while it does not answer
 // the entry cannot deliver them. The Agent gets a bounded status that says so
@@ -20,11 +20,6 @@ export function preferencesUnavailableEntry(error) {
   };
 }
 
-export async function withProviderOutageEntry(entry) {
-  try {
-    return await entry;
-  } catch (error) {
-    if (isProviderOutage(error)) return preferencesUnavailableEntry(error);
-    throw error;
-  }
+export function withProviderOutageEntry(entry) {
+  return recoverProviderOutage(entry, preferencesUnavailableEntry);
 }

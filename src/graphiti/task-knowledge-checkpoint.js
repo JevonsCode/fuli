@@ -87,7 +87,7 @@ export async function checkpointTaskKnowledge(application, {
   )).digest('hex');
   if (task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
     throw validationError(
-      'Task checkpoint already has different input; resume the original review or begin a new task context'
+      'Task checkpoint already has different input; resend the exact arguments of the first checkpoint call to finish it, or begin a new task context'
     );
   }
   const finish = async (result, checkpointTask = task, memory = null) => {
