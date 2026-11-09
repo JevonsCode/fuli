@@ -46,7 +46,8 @@ export async function beginTaskContext(application, {
   // input that arrives while the turn runs (an async question's reply, a
   // steering message: codex-rs/core/src/hook_runtime.rs inspect_pending_input);
   // that input keeps the scene its turn entered with (rec#85). An explicit
-  // workKind is still refused when it differs.
+  // workKind is still refused when it differs. Only the hooks send promptScene,
+  // in-process; it is not part of the MCP tool schema.
   const preferenceScope = existingTask ? taskPreferenceScope(existingTask.preferenceScope)
     : taskPreferenceScope({ version: 1, work_kind: workKind ?? promptScene ?? null, workflow: workflow ?? null });
   if (!preferenceScope) throw validationError('Task preference scope is unknown; legacy recovery cannot guess preference dimensions');

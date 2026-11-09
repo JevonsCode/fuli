@@ -135,7 +135,7 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
   // the Provider's preferences filtered for the persisted scene.
   const beginTask = async args => {
     const token = `task-${String(tasks.size + 1).padStart(4, '0')}`;
-    const task = { token, sessionId: args.sessionId, sourceApplication: args.sourceApplication, workKind: args.workKind ?? null,
+    const task = { token, sessionId: args.sessionId, sourceApplication: args.sourceApplication, workKind: args.workKind ?? args.promptScene ?? null,
       projectAgentId: args.taskPrompt?.startsWith(`#FLA ${OTHER_AGENT}`) ? OTHER_AGENT : AGENT,
       personalProjectId: args.projectPath?.endsWith(OTHER_PROJECT_FOLDER) ? `${PROJECT}-b` : PROJECT };
     tasks.set(token, task);
@@ -229,7 +229,7 @@ export async function replayWorld(fn, { items = [], fixture } = {}) {
           return context;
         }
         if (name !== 'begin_task_context') throw new Error(`Unexpected tool ${name}`);
-        scene = args.workKind ?? null;
+        scene = args.workKind ?? args.promptScene ?? null;
         context = await beginTask(args);
         session.token = context.taskContextToken;
         return context;
