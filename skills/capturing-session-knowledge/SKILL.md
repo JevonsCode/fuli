@@ -66,7 +66,7 @@ remains unverified even if the preference fallback and task-summary checkpoint s
 
 ## Mandatory reply identity
 
-Every final user-visible reply MUST include the current task’s `agent_receipt.markdown` unchanged exactly once. This includes greetings, status-only replies, failures, `retain_nothing`, and capture-disabled tasks. The receipt is independent of whether a memory checkpoint was saved. Never substitute a client name, configured peer, or an earlier task’s owner. If a legacy/unavailable entry supplies no receipt, explicitly state that the FULI Agent identity is unavailable. A receipt with no authorized owner already supplies the correct neutral text.
+Every final user-visible reply MUST include the current task’s `agent_receipt.markdown` unchanged exactly once. This includes greetings, status-only replies, failures, `retain_nothing`, and capture-disabled tasks. The receipt is independent of whether a memory checkpoint was saved. Never substitute a client name, configured peer, or an earlier task’s owner. If a legacy/unavailable entry supplies no receipt, explicitly state that the FULI Agent identity is unavailable. When `get_collaboration_preferences` returns `status: preferences_unavailable` (FULI's graph service did not answer), follow its `guidance`: continue without FULI preferences, retry it once before any FULI write or the final reply, and never reuse an earlier token. A receipt with no authorized owner already supplies the correct neutral text.
 
 Apply only `effective_preferences`. Personal-global preferences apply in every user task;
 project-scoped preferences layer on only for the exact selected project. Do not apply items
