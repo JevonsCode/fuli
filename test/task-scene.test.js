@@ -37,6 +37,6 @@ test('prompt hints: frontend, design and chat; small talk only when the whole me
     ['你好，帮我修复登录 bug', 'implementation'], ['实现闲聊功能', 'implementation'],
     ['今天天气怎么样', null], ['', null], [null, null]
   ]) assert.equal(taskWorkKind(prompt), kind, String(prompt));
-  assert.deepEqual(taskSceneInput('你好'), { workKind: 'chat' });
+  assert.deepEqual(taskSceneInput('你好'), { promptScene: 'chat' });
   assert.deepEqual(taskSceneInput('今天天气怎么样'), {});
 });

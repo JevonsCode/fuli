@@ -67,7 +67,7 @@ export function taskWorkKind(prompt) {
 // begin_task_context arguments from a hook: an unclassified prompt sends none.
 export function taskSceneInput(prompt) {
   const workKind = taskWorkKind(prompt);
-  return workKind ? { workKind } : {};
+  return workKind ? { promptScene: workKind } : {};
 }
 
 // The work kinds an item's tasteDomain names: undefined when it states none,
