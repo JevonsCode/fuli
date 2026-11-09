@@ -184,6 +184,27 @@ test('an ask refused by an earlier wake says no client has it and which ask hold
   assert.equal((await first).status, 'answered');
 });
 
+test('a wake claim left by a console that stopped mid-wake expires after an hour (rec#97)', async () => {
+  let time = Date.parse('2026-11-09T10:00:00Z'), release;
+  const store = createRoundtableStore(':memory:', { clock: () => new Date(time) });
+  const gate = new Promise((resolve) => { release = resolve; });
+  const crashed = fixture({ openStore: () => store, wake: async () => { await gate; return { body: 'late', sessionId: 'fork-1' }; } });
+  const first = crashed.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'first' });
+  while (!crashed.woken.length) await new Promise((resolve) => setImmediate(resolve));
+  let n = 0;
+  const restarted = fixture({ openStore: () => store, idFactory: () => `after-${++n}` });
+  time += 30 * 60 * 1000;
+  const blocked = await restarted.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'too soon' });
+  assert.equal(blocked.reason, 'execution_claimed', 'a claim younger than an hour still holds the Agent');
+  time += 31 * 60 * 1000;
+  const cancelled = await restarted.roundtable.ownerCancelMessage({ messageId: 'id-2' });
+  assert.equal(cancelled.status, 'cancelled', 'the stuck ask is back in the inbox and can be cancelled');
+  const answered = await restarted.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'now' });
+  assert.deepEqual([answered.status, restarted.woken.length], ['answered', 1]);
+  release();
+  await first;
+});
+
 test('an Agent with no client this computer can start is named plainly (rec#97)', async () => {
   const { roundtable, woken } = fixture({ clientAvailable: () => false });
   const sent = await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'hello' });

@@ -224,7 +224,8 @@ honors both sender and recipient admission boundaries. Per-message delivery
 receipts advance only a contiguous target cursor, so a newer member cannot erase
 older unread history it was not allowed to see. Durable execution claims keep
 one wake active per Agent; subsequent rooms wait for completion notifications.
-Unknown execution or unconfirmed cleanup keeps its safety hold.
+A claim nothing ended within an hour (the console stopped mid-wake) expires, and
+its ask returns to the inbox. Unconfirmed cleanup keeps its safety hold.
 
 ## Group discussions (#FLG, rec#55)
 

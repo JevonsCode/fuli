@@ -12,7 +12,7 @@ const INBOX = 'sees it in its inbox when its next task starts (task-entry agent_
 const NOT_STARTED = {
   execution_claimed: ({ name, blockedBy }) => `FULI started no session: an earlier message to ${name}`
     + (blockedBy?.messageId ? ` (${blockedBy.messageId}${blockedBy.since ? `, since ${blockedBy.since}` : ''})` : '')
-    + ' still owns its one wake, and FULI never runs two at once.',
+    + ' still owns its one wake, and FULI never runs two at once. A wake that nothing ends stops holding an hour after it began; send again then.',
   cleanup_unconfirmed: ({ name }) => `FULI started no session: ${name}'s previously woken process has not been confirmed to end.`,
   chat_waiting: ({ name }) => `FULI started no session: ${name} is already waiting in this chat.`,
   no_client: ({ name, clients }) => clients.length
