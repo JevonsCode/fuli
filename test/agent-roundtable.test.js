@@ -4,6 +4,10 @@ import test from 'node:test';
 
 import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
 import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
+import { createWakeClaimRelease } from '../packages/roundtable/src/roundtable/wake-claim-release.js';
+import { createProcessInspector } from '../src/agent-services/process-identity.js';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { parseFinalAnswer, sessionWorkingDirectory, wakeArguments, wakeAgent } from '../packages/roundtable/src/roundtable/wake.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 import { createStandingAssignments } from '../src/standing-assignments/port.js';
@@ -13,7 +17,7 @@ const agent = (agentId, name, allowedClients = ['claude_code', 'codex']) => ({ a
   profile: { name, displayName: name, status: 'active', responsibility: `${name} 的职责`, capabilities: [], allowedClients } });
 
 function fixture({ wake, sessions = {}, redeemed = true, env = {}, openStore = () => createRoundtableStore(), idFactory = null, peer = undefined,
-  clientAvailable = () => true } = {}) {
+  clientAvailable = () => true, now = undefined, inspectProcess = undefined } = {}) {
   const agents = [agent('lead-1', 'Milo Reed'), agent('reviewer-1', 'Nova Lane', ['codex'])];
   const tasks = {
     'token-milo': { token: 'token-milo', projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: 'cc-1', sourceApplication: 'claude_code' },
@@ -41,7 +45,7 @@ function fixture({ wake, sessions = {}, redeemed = true, env = {}, openStore = (
   let id = 0;
   if (peer) app.peer = peer;
   const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, env, openStore, idFactory: idFactory ?? (() => `id-${++id}`),
-    locateCwd: (client, sessionId) => `/work/${client}/${sessionId}`, clientAvailable,
+    locateCwd: (client, sessionId) => `/work/${client}/${sessionId}`, clientAvailable, now, inspectProcess,
     wake: async (input) => { woken.push(input); return wake ? wake(input) : { body: 'Nova 的回答', sessionId: 'fork-1' }; } });
   return { app, roundtable, woken, grants, revoked, verified };
 }
@@ -184,25 +188,55 @@ test('an ask refused by an earlier wake says no client has it and which ask hold
   assert.equal((await first).status, 'answered');
 });
 
-test('a wake claim left by a console that stopped mid-wake expires after an hour (rec#97)', async () => {
-  let time = Date.parse('2026-11-09T10:00:00Z'), release;
+// A console that stopped mid-wake leaves its claim active; the woken process may
+// still run (rec#97). The fixture's wake never settles, like a lost console.
+function lostWake({ spawn = 4242, inspect }) {
+  let time = Date.parse('2026-11-09T10:00:00Z');
   const store = createRoundtableStore(':memory:', { clock: () => new Date(time) });
-  const gate = new Promise((resolve) => { release = resolve; });
-  const crashed = fixture({ openStore: () => store, wake: async () => { await gate; return { body: 'late', sessionId: 'fork-1' }; } });
-  const first = crashed.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'first' });
-  while (!crashed.woken.length) await new Promise((resolve) => setImmediate(resolve));
+  const lost = fixture({ openStore: () => store, now: () => time, inspectProcess: inspect,
+    wake: (input) => { if (spawn) input.onSpawn?.(spawn); return new Promise(() => {}); } });
+  void lost.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'first' });
   let n = 0;
-  const restarted = fixture({ openStore: () => store, idFactory: () => `after-${++n}` });
-  time += 30 * 60 * 1000;
-  const blocked = await restarted.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'too soon' });
-  assert.equal(blocked.reason, 'execution_claimed', 'a claim younger than an hour still holds the Agent');
-  time += 31 * 60 * 1000;
-  const cancelled = await restarted.roundtable.ownerCancelMessage({ messageId: 'id-2' });
-  assert.equal(cancelled.status, 'cancelled', 'the stuck ask is back in the inbox and can be cancelled');
-  const answered = await restarted.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'now' });
+  const restarted = fixture({ openStore: () => store, now: () => time, inspectProcess: inspect, idFactory: () => `after-${++n}` });
+  const ask = body => restarted.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body });
+  return { lost, restarted, ask, store, advance: minutes => { time += minutes * 60 * 1000; } };
+}
+const settle = async (woken) => { while (!woken.length) await new Promise((resolve) => setImmediate(resolve)); await new Promise((resolve) => setImmediate(resolve)); };
+
+test('a lost wake whose process still runs keeps holding the Agent, past an hour too (rec#97)', async () => {
+  const running = new Map([[4242, { identity: 'start-1' }]]);
+  const { lost, restarted, ask, advance } = lostWake({ inspect: async pids => new Map(pids.filter(pid => running.has(pid)).map(pid => [pid, running.get(pid)])) });
+  await settle(lost.woken);
+  advance(30);
+  assert.equal((await ask('too soon')).reason, 'execution_claimed');
+  advance(150);
+  assert.equal((await ask('still running')).reason, 'execution_claimed', 'a live woken process is never joined by a second wake');
+  running.delete(4242);
+  advance(2);
+  assert.equal((await restarted.roundtable.ownerCancelMessage({ messageId: 'id-2' })).status, 'cancelled',
+    'once it ended, the stuck ask is back in the inbox');
+  const answered = await ask('now');
   assert.deepEqual([answered.status, restarted.woken.length], ['answered', 1]);
-  release();
-  await first;
+});
+
+test('a lost wake whose PID now belongs to another process is released (rec#97)', async () => {
+  let identity = 'start-1';
+  const { lost, ask, advance } = lostWake({ inspect: async pids => new Map(pids.map(pid => [pid, { identity }])) });
+  await settle(lost.woken);
+  identity = 'start-2';
+  advance(61);
+  assert.equal((await ask('now')).status, 'answered');
+});
+
+test('a lost wake is held while the OS cannot be asked, and released when it never started a process (rec#97)', async () => {
+  const unknown = lostWake({ inspect: async () => null });
+  await settle(unknown.lost.woken);
+  unknown.advance(24 * 60);
+  assert.equal((await unknown.ask('cannot tell')).reason, 'execution_claimed');
+  const never = lostWake({ spawn: null, inspect: async () => null });
+  await settle(never.lost.woken);
+  never.advance(61);
+  assert.equal((await never.ask('now')).status, 'answered');
 });
 
 test('an Agent with no client this computer can start is named plainly (rec#97)', async () => {
@@ -506,4 +540,43 @@ test('task entry tells the lead which project the person asked about and how to 
   const asked = await entry('去看看 Other Shop 项目是怎么做导出的');
   assert.deepEqual(asked.roundtable_ask.projects, [{ projectId: 'other', name: 'Other Shop', address: 'project:other' }]);
   assert.equal((await entry('verify the export')).roundtable_ask, undefined);
+});
+
+test('a real woken process that outlives its console blocks a second wake until it ends (rec#97)', async () => {
+  // A synthetic stand-in for the woken client: it keeps running after the "console" is gone.
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  await once(child, 'spawn');
+  const exited = once(child, 'exit');
+  try {
+    const { lost, ask, advance, store } = lostWake({ spawn: child.pid, inspect: createProcessInspector().inspect });
+    await settle(lost.woken);
+    // The identity is read right after spawn, as a console that lived a moment longer would.
+    for (let tries = 0; tries < 150 && !store.getMessage('id-2')?.wake_pid_identity; tries += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.ok(store.getMessage('id-2').wake_pid_identity, 'the OS identity of the woken process was recorded');
+    advance(90);
+    assert.equal((await ask('while it runs')).reason, 'execution_claimed');
+    child.kill();
+    await exited;
+    advance(2);
+    assert.equal((await ask('after it ended')).status, 'answered');
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill();
+  }
+});
+
+test('a claim from before processes were recorded is released a day after it began (rec#97)', async () => {
+  let time = Date.parse('2026-11-09T10:00:00Z');
+  const claim = { id: 'old-1', execution_claimed_at: new Date(time).toISOString(), wake_process_evidence: null };
+  const expired = [];
+  const store = { claimsBefore: (_space, _agent, cutoff) => (claim.execution_claimed_at < cutoff && !expired.length ? [claim] : []),
+    expireClaim: id => { expired.push(id); return true; } };
+  const release = createWakeClaimRelease({ store, now: () => time });
+  time += 2 * 60 * 60 * 1000;
+  assert.equal(await release.release('space', 'reviewer-1'), 0, 'no evidence is no proof yet');
+  time += 23 * 60 * 60 * 1000;
+  assert.equal(await release.release('space', 'reviewer-1'), 1);
+  assert.deepEqual(expired, ['old-1']);
+  assert.equal(await release.release('space', 'peer:abc:reviewer-1'), 0, 'a remote run is ended only by its own device');
 });

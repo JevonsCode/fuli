@@ -224,8 +224,11 @@ honors both sender and recipient admission boundaries. Per-message delivery
 receipts advance only a contiguous target cursor, so a newer member cannot erase
 older unread history it was not allowed to see. Durable execution claims keep
 one wake active per Agent; subsequent rooms wait for completion notifications.
-A claim nothing ended within an hour (the console stopped mid-wake) expires, and
-its ask returns to the inbox. Unconfirmed cleanup keeps its safety hold.
+A claim its console lost (nothing ended it within an hour) is released only on
+evidence: it started no process, or the process recorded at spawn has ended or its
+PID now names another process. A running or unknown process keeps the hold; claims
+from before processes were recorded are released a day after they began. Its ask
+returns to the inbox. Unconfirmed cleanup keeps its safety hold.
 
 ## Group discussions (#FLG, rec#55)
 

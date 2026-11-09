@@ -96,7 +96,7 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
     const child = spawn(command, args, { cwd, env, shell: false, windowsHide: true,
       detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'ignore'] });
     const closed = new Promise((resolve) => child.once('close', resolve));
-    child.once('spawn', () => onSpawn?.());
+    child.once('spawn', () => onSpawn?.(child.pid));
     let output = '', pending = '', bytes = 0, settled = false, childClosed = false;
     const decoder = new StringDecoder('utf8');
     const callbacks = new Set();

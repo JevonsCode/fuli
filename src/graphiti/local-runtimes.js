@@ -36,6 +36,7 @@ import { createSessionPreferenceDelivery } from '../conversations/preference-ses
 import { createSessionPromptSentences } from './session-prompt-sentences.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { nativeChoiceAnswers } from '../agents/choice-answers.js';
+import { createProcessInspector } from '../agent-services/process-identity.js';
 
 // The local stores and runtimes an application opened from a runtime
 // directory owns. Adding one means opening it here and closing it below.
@@ -116,7 +117,9 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
     env,
     // Asks to a Codex FLA go to its inbox conversation in the Codex app when that app is installed.
     desktopApp: createDesktopApps({ env }),
-    openStore: () => createRoundtableStore(join(dataDir, 'agent-roundtable.sqlite'))
+    openStore: () => createRoundtableStore(join(dataDir, 'agent-roundtable.sqlite')),
+    // A wake claim its console lost is released only once its process has ended.
+    inspectProcess: createProcessInspector().inspect
   });
 }
 
