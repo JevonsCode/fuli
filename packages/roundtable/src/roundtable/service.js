@@ -1,4 +1,5 @@
 import { waitForChatChange } from './chat-wait.js';
+import { createWakeClaimRelease } from './wake-claim-release.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { projectAddress, resolveProjectAddress, resolveProjectLead, verifiedProjectFolder } from './project-target.js';
 import { observeReturnedMemory, taskContextHash } from './memory-observation.js';
@@ -29,6 +30,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // Boot-anchor evidence recorded with a cleanup hold. Production records none
   // (null) until a separately verified proof exists; release stays disabled.
   bootEvidence = async () => null, now = Date.now,
+  // Which recorded wake processes still run (wake-claim-release.js); null = cannot tell.
+  inspectProcess = async () => null,
   // The installed desktop app of a client, or null. Runtimes pass
   // createDesktopApps (agents/desktop-registry.js); without it every ask wakes headlessly.
   desktopApp = () => null }) {
@@ -39,6 +42,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   const refreshes = new Map();
   let refreshOffset = 0;
   const store = new Proxy({}, { get: (_target, property) => (opened ??= openStore())[property] });
+  const wakeClaims = createWakeClaimRelease({ store, inspectProcess, now });
 
   async function sender({ taskContextToken, sourceApplication }) {
     if (!taskContextToken) return { agent: null, client: sourceApplication ?? 'other', session: null, projectId: null };
@@ -196,7 +200,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       try {
         grant = await issueGrant(delivery, timeoutMs / 1000);
         answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd,
-          timeoutMs, prompt, delegationToken: grant.token, peerDepth, signal, onSpawn, readOnly,
+          timeoutMs, prompt, delegationToken: grant.token, peerDepth, signal, readOnly,
+          onSpawn: (pid) => { wakeClaims.recordSpawn(ask.id, pid); onSpawn?.(pid); },
           onSession: session => host.sealDelegation({ token: grant.token, sessionId: session }) });
         const verified = answer.sessionId && await host.verifyDelegation({ token: grant.token, sessionId: answer.sessionId });
         if (!verified?.redeemed) throw Object.assign(new Error('The receiving session did not restore the Agent'),
@@ -294,6 +299,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // with the reason, so the recipient still sees it when it next works.
   async function wakeAsk({ thread, ask, target, targets, noTargets, prompt, timeoutMs, signal, issueGrant, replyTo,
     chatWakeChatId = null, readOnly = false }) {
+    await wakeClaims.release(spaceId(), target.agentId);
     const claim = store.claimExecution(spaceId(), target.agentId, ask.id, { chatWakeChatId });
     if (!claim.claimed) {
       // Recorded so the thread and get_agent_message_status say why no client has it.
@@ -451,6 +457,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       from: { agentId: `peer:${device.nodeId.slice(0, 16)}:${assertion.from.agentId}`, name: `${assertion.from.name} · ${device.name}`,
         client: assertion.from.client ?? 'other' },
       to: { agentId: target.agentId, name: label(target) } });
+    await wakeClaims.release(share.spaceId, target.agentId);
     const execution = store.claimExecution(share.spaceId, target.agentId, ask.id);
     if (!execution.claimed) {
       store.updateMessage(ask.id, { status: 'failed', error: execution.reason });
@@ -538,8 +545,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   }
 
   async function cancelAsk(ask) {
-    // A wake that outlived its console no longer answers it; its ask is back in the inbox.
-    if (ask.status === 'delivering' && !peer?.hasSent(ask.id) && store.expireStaleClaims(spaceId(), ask.to_agent)) ask = store.getMessage(ask.id);
+    // A wake its console lost, whose process has ended, no longer answers; its ask is back in the inbox.
+    if (ask.status === 'delivering' && !peer?.hasSent(ask.id) && await wakeClaims.release(spaceId(), ask.to_agent)) ask = store.getMessage(ask.id);
     if (peer?.hasSent(ask.id)) {
       if (!REMOTE_PENDING.has(ask.status)) return remoteView(ask);
       return remoteView(applyRemote(ask.id, await peer.cancel(ask.id)));
@@ -668,7 +675,10 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   };
   // False when an earlier run of this Agent may still be running (a cleanup hold).
   const waitUntilIdle = async (agentId, signal) => {
-    const state = await waitForChatChange(() => store.executionState(spaceId(), agentId),
+    const state = await waitForChatChange(async () => {
+      await wakeClaims.release(spaceId(), agentId);
+      return store.executionState(spaceId(), agentId);
+    },
       { store: store.chat, signal, ready: state => state.held || !state.busy });
     return !state.held;
   };
