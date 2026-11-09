@@ -538,6 +538,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   }
 
   async function cancelAsk(ask) {
+    // A wake that outlived its console no longer answers it; its ask is back in the inbox.
+    if (ask.status === 'delivering' && !peer?.hasSent(ask.id) && store.expireStaleClaims(spaceId(), ask.to_agent)) ask = store.getMessage(ask.id);
     if (peer?.hasSent(ask.id)) {
       if (!REMOTE_PENDING.has(ask.status)) return remoteView(ask);
       return remoteView(applyRemote(ask.id, await peer.cancel(ask.id)));

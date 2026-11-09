@@ -54,12 +54,18 @@ export const ROUNDTABLE_FORMAT = sqliteFormat({
   pragmas: 'PRAGMA journal_mode = WAL;'
 });
 
+// The longest wake waits 15 minutes for its answer. A claim still active an hour
+// later has no wake behind it: the console restarted or crashed mid-wake. It
+// stops blocking the Agent; a run whose exit is unconfirmed stays held.
+export const WAKE_CLAIM_TTL_MS = 60 * 60 * 1000;
+
 // Every Agent-to-Agent exchange is kept as a thread of messages so people can
 // see who talked to whom, through which client, and what was said. The file
 // is shared by the console and every client's MCP process.
-export function createRoundtableStore(path = ':memory:') {
+export function createRoundtableStore(path = ':memory:', { clock = () => new Date() } = {}) {
   const database = openFormattedDatabase(path, ROUNDTABLE_FORMAT);
-  const now = () => new Date().toISOString();
+  const now = () => clock().toISOString();
+  const claimCutoff = () => new Date(clock().getTime() - WAKE_CLAIM_TTL_MS).toISOString();
   const chat = createChatStore(database, path);
   const attention = createAttentionInboxStore(database, chat);
   const discussions = createGroupDiscussionStore(database, chat);
@@ -156,6 +162,7 @@ export function createRoundtableStore(path = ':memory:') {
     claimExecution(spaceId, agentId, askId, { chatWakeChatId = null } = {}) {
       return transaction(() => {
         if (chatWakeChatId && chat.waiting(spaceId, `local:${agentId}`, chatWakeChatId)) return { claimed: false, reason: 'chat_waiting' };
+        this.expireStaleClaims(spaceId, agentId);
         const state = this.executionState(spaceId, agentId, askId);
         if (state.held) return { claimed: false, reason: 'cleanup_unconfirmed' };
         if (state.busy) return { claimed: false, reason: 'execution_claimed', blockedBy: state.claim };
@@ -171,10 +178,23 @@ export function createRoundtableStore(path = ':memory:') {
           (m.execution_claim='active' OR (m.cleanup_status='unconfirmed' AND m.cleanup_released_at IS NULL))
         ORDER BY m.execution_claimed_at`)
         .all(spaceId, agentId, exceptAskId);
-      const active = blocking.find(row => row.execution_claim === 'active');
+      const cutoff = claimCutoff();
+      const active = blocking.find(row => row.execution_claim === 'active' && row.execution_claimed_at >= cutoff);
       // The earlier ask that holds the Agent, so a refused sender can name what it waits on.
       return { busy: Boolean(active), claim: active ? { messageId: active.id, since: active.execution_claimed_at } : null,
         held: blocking.some(row => row.cleanup_status === 'unconfirmed' && row.cleanup_released_at === null) };
+    },
+    // A stale claim's ask goes back to the inbox, so it can be read or cancelled.
+    expireStaleClaims(spaceId, agentId) {
+      const expired = database.prepare(`UPDATE messages SET execution_claim = 'expired',
+          status = CASE WHEN status = 'delivering' THEN 'queued' ELSE status END,
+          error = CASE WHEN status = 'delivering' THEN 'wake_expired' ELSE error END, updated_at = ?
+        WHERE to_agent = ? AND kind = 'ask' AND execution_claim = 'active' AND execution_claimed_at < ?
+          AND (cleanup_status IS NULL OR cleanup_status != 'unconfirmed')
+          AND thread_id IN (SELECT id FROM threads WHERE space_id = ?)`)
+        .run(now(), agentId, claimCutoff(), spaceId).changes;
+      if (expired) chat.publishChanges();
+      return expired;
     },
     // Only after the owned process was observed to end, or never started. An
     // unconfirmed cleanup leaves the claim active until a proof releases it.
