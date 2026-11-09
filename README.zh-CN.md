@@ -59,7 +59,7 @@
     <td width="50%" valign="top">
       <img src="docs/readme/card-tokens-zh.webp" alt="每个成功任务的 token：用 FULI 是 0.81 倍" width="460" />
       <h3 align="center">越用越省 token</h3>
-      即将发布的 0.25.0 实测：同样的任务，用 FULI 每个成功任务花的 token 是不用时的 0.81 倍，72 个任务通过 70 个。省下的来自代码里没有、只在你话里的事实。
+      0.25.0 实测：同样的任务，用 FULI 每个成功任务花的 token 是不用时的 0.81 倍，72 个任务通过 70 个。省下的来自代码里没有、只在你话里的事实。
     </td>
   </tr>
 </table>

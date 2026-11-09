@@ -61,7 +61,7 @@ AI makes starts to carry your taste.
     <td width="50%" valign="top">
       <img src="docs/readme/card-tokens-en.webp" alt="Tokens per successful task: 0.81 times with FULI" width="460" />
       <h3 align="center">Fewer tokens per finished task</h3>
-      Measured for the upcoming 0.25.0: a successful task with FULI takes 0.81× the tokens of the same task without it, and 70 of 72 tasks pass. The saving comes from facts that live in your words, not in the code.
+      Measured on 0.25.0: a successful task with FULI takes 0.81× the tokens of the same task without it, and 70 of 72 tasks pass. The saving comes from facts that live in your words, not in the code.
     </td>
   </tr>
 </table>
