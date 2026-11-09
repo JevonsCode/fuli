@@ -8,3 +8,13 @@ export function isProviderOutage(error) {
   return ['provider_unavailable', 'provider_timeout'].includes(error.code)
     || (error.code === 'provider_http_5xx' && [502, 503, 504].includes(error.status));
 }
+
+// Runs work; an outage becomes recover(error)'s bounded answer, anything else fails as before.
+export async function recoverProviderOutage(work, recover) {
+  try {
+    return await work;
+  } catch (error) {
+    if (isProviderOutage(error)) return recover(error);
+    throw error;
+  }
+}

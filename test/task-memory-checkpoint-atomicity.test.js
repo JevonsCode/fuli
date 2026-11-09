@@ -256,8 +256,11 @@ test('a lost atomic prepare response retries in another application without dupl
   const input = { taskContextToken: fixture.context.token, sourceApplication: 'codex',
     disposition: 'retain_nothing', reason: 'Remember this synthetic milestone.',
     agentMemory: { expectedRevision: 0, memory: { summary: 'One committed milestone.' } } };
-  await assert.rejects(callAgentTool(app, 'checkpoint_task_knowledge', input),
-    error => error.code === 'provider_unavailable');
+  // rec#39: the Agent is told to resend the same input, not given a bare error.
+  const incomplete = await callAgentTool(app, 'checkpoint_task_knowledge', input);
+  assert.equal(incomplete.status, 'checkpoint_incomplete');
+  assert.equal(incomplete.reason, 'provider_unavailable');
+  assert.deepEqual(incomplete.retry, { tool: 'checkpoint_task_knowledge', same_input: true, attempts: 1 });
   assert.equal(lost, true);
   const prepared = await taskRecord(fixture);
   assert.equal(prepared.checkpoint.phase, 'prepare');
