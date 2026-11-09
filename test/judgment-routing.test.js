@@ -26,7 +26,7 @@ test('routing respects locked executor, available models and scoped feedback; ne
   assert.match(prompt, /Use relevant verification/);
 });
 
-function routingFixture(t, { rules = [], executors, allowedClients = ['codex'], answer, strategy } = {}) {
+function routingFixture(t, { rules = [], executors, allowedClients = ['codex'], answer, strategy, judgeError = null } = {}) {
   let prompt;
   const app = { config: { personal: { spaceId: 's' } }, listPersonalProjects: async () => [{ project_id: 'p' }],
     listProjectAgents: async () => [{ agentId: 'employee.tonborg', profile: { status: 'active', allowedClients: ['codex'], capabilities: ['fuli.employee:tonborg'] } }],
@@ -34,7 +34,7 @@ function routingFixture(t, { rules = [], executors, allowedClients = ['codex'], 
     inspectProjectAgentMemory: async () => ({ revision: 0 }),
     getProjectAgent: async () => ({ profile: { allowedClients, executorPolicy: { mode: 'flexible' }, defaultModelStrategy: strategy } }),
     listExecutors: async () => executors, listExecutorRoutingRules: async () => rules };
-  const judge = async input => { prompt = input.prompt; return { client: 'codex', body: JSON.stringify(answer ?? { executorId: 'space', model: 'model', disposition: 'delegate', conversationId: null, summary: 'Follow explicit scope rule', evidence: ['Space rule'] }) }; };
+  const judge = async input => { prompt = input.prompt; if (judgeError) throw judgeError(); return { client: 'codex', body: JSON.stringify(answer ?? { executorId: 'space', model: 'model', disposition: 'delegate', conversationId: null, summary: 'Follow explicit scope rule', evidence: ['Space rule'] }) }; };
   const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge }) });
   t.after(() => service.close());
   return { service, app, prompt: () => prompt };
@@ -150,4 +150,23 @@ test('a global read that names an FLA says what to do, and one without it reads'
   await assert.rejects(service.agent.records({ personalSpaceId: 's', personalProjectId: null, projectAgentId: 'a', limit: 3 }),
     { code: 'invalid_input', message: /leave projectAgentId out/ });
   assert.ok(Array.isArray((await service.agent.records({ personalSpaceId: 's', personalProjectId: null, limit: 3 })).records));
+});
+
+// rec#10: a refused model call said retryable and "try again", against the refusal stop.
+test('a refused or paused Tonborg model call says stop, not try again; a transient failure stays retryable', async t => {
+  const failing = (status, failureClass, reason) => () => Object.assign(new Error('synthetic model words'), { code: reason,
+    modelReceipt: { backend: 'model_api', status, reason, failureClass, requestedModel: 'synthetic-model', actualModel: null, attempts: 0, usage: null } });
+  const cases = [['stopped', 'refusal', 'egress_not_approved', 'model_stopped', false], ['stopped', 'refusal', 'permission_denied', 'model_stopped', false],
+    ['paused', 'budget_exhausted', 'per_call_input', 'model_paused', false], ['failed', 'transient', 'server_error', 'model', true]];
+  for (const [status, failureClass, reason, category, retryable] of cases) {
+    const { service } = routingFixture(t, { executors: [availableExecutor('space')], judgeError: failing(status, failureClass, reason) });
+    const record = await service.assess({ ...routingInput, action: 'client', workKind: 'test_validation', requestId: reason });
+    assert.equal(record.outcome, 'failed', reason);
+    assert.deepEqual([record.error, record.failure.category, record.failure.retryable, record.selection], [reason, category, retryable, null], reason);
+    assert.equal(record.modelReceipt.status, status, reason);
+    assert.equal(Object.hasOwn(record, 'workPackage'), false, reason);
+    assert.match(record.guidance, /no execution receipt. Do not make this judgment in its place/);
+    if (retryable) assert.match(record.failure.recovery, /try again/);
+    else assert.doesNotMatch(record.failure.recovery, /try again/i);
+  }
 });

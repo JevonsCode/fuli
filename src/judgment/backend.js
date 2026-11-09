@@ -69,6 +69,7 @@ export function failureProvenance(error) {
 // Why a judgment failed, for the Agent that asked (rec#83): the step, a fixed
 // category and what to do next. Only fixed words and the HTTP status, never
 // the error's own message, which may carry Provider or model text.
+const MODEL_STOP = Object.freeze({ stopped: 'model_stopped', paused: 'model_paused' });
 const UNREACHABLE = new Set(['provider_unavailable', 'provider_timeout', 'provider_http_5xx']);
 const FAILURE_RECOVERY = Object.freeze({
   provider_unreachable: 'The graph service did not answer; try again once it is back.',
@@ -76,14 +77,19 @@ const FAILURE_RECOVERY = Object.freeze({
   not_allowed: 'This Agent may not read what the judgment needs; ask from the project of the task.',
   provider_refused: 'The graph service refused the read; check the input and ask again.',
   model: 'The Tonborg model failed; see modelReceipt, then try again or check the model settings.',
+  // A refusal, permission or egress stop (model-backends/failures.js) is not retried anywhere.
+  model_stopped: 'The model call was stopped (modelReceipt.reason, e.g. egress not approved or permission denied). '
+    + 'Do not retry it or judge it again with another model, endpoint or session; ask again only after the person grants what was refused.',
+  model_paused: 'The Tonborg budget is used up; ask again after it resets or the person raises it.',
   invalid_answer: 'The answer did not match the eligible executors or conversations; ask again.',
   unknown: 'Try again; if it repeats, report the error code and step.'
 });
 export const FAILED_JUDGMENT_GUIDANCE = 'The judgment failed: nothing was selected or run, and this is no execution receipt. '
-  + 'What the person already chose stands; continue on their word, or ask them.';
+  + 'Do not make this judgment in its place. What the person already chose stands for the work it covers; '
+  + 'record that work with its own run evidence, or ask them.';
 
 function failureCategory(error) {
-  if (error.modelReceipt) return 'model';
+  if (error.modelReceipt) return MODEL_STOP[error.modelReceipt.status] ?? 'model';
   if (error instanceof TypeError || error.name === 'ZodError') return 'invalid_answer';
   if (UNREACHABLE.has(error.code)) return 'provider_unreachable';
   if (error.code !== 'provider_error') return 'unknown';
