@@ -1,4 +1,5 @@
 import { judgmentHumanInteraction, settledQuestionIds } from './conversation.js';
+import { DOUBTS, GUESSES } from './question-options.js';
 import { INJECTION_SIGNALS } from './review-injection-precheck.js';
 import { KNOWLEDGE_KEY, visibleKnowledgeKeys } from './visible-items.js';
 
@@ -30,8 +31,8 @@ const KEPT = Object.freeze({
   executionRequired: true, agentId: true, workKind: true, taskRevision: true, artifactRevision: true,
   evaluationId: true, requestFingerprint: true, evidenceFingerprint: true, policy: true, policyVersion: true,
   memoryRevision: true, client: true, model: true, sessionId: true, judgedBy: true, modelReceipt: true,
-  // rec#96: a delegated review and Tonborg's guess are fixed values; its question is its own words.
-  delegated: true, guess: new Set(['keep', 'drop', 'edit']),
+  // rec#96: a delegated review, Tonborg's guess and its doubt are fixed values; its question is its own words.
+  delegated: true, guess: new Set(GUESSES), doubt: new Set(DOUBTS),
   error: true, failure: ['stage', 'category', 'status', 'retryable', 'recovery'], guidance: true, workPackage: true, hard_deleted: true,
   // State and counts; the preference keys stay out.
   preferenceDelivery: ['version', 'status', 'reason', 'scope', 'selected', 'truncated'],
@@ -43,8 +44,9 @@ const PLAIN_TARGETS = Object.freeze({ routing: () => true, acceptance: () => tru
 
 // result: a judgment service answer (one record, or { records, ... } with
 // its human_interaction). reader: the FLA reading in its project, or null
-// for a plain session.
-export async function agentJudgmentView(personal, result, { personalSpaceId, reader = null }) {
+// for a plain session. language: the one the person reads FULI in; announced:
+// the questions a card already told them about (conversation.js).
+export async function agentJudgmentView(personal, result, { personalSpaceId, reader = null, language = null, announced }) {
   const listed = Array.isArray(result?.records);
   const records = listed ? result.records : [result];
   const targets = await visibleKnowledgeKeys(personal, { personalSpaceId, reader },
@@ -53,15 +55,13 @@ export async function agentJudgmentView(personal, result, { personalSpaceId, rea
   if (!listed) return shown[0];
   // The question is asked again from what this reader may see; whether the person
   // answered it reads the full records, since the view withholds the feedback reason.
-  // Tonborg's options (rec#99) are its words for the question only: asked with a
-  // review whose item this reader may see, never shown in a record.
+  // Its sentence is written from the title and fixed values this view keeps (question-options.js).
   const rest = { ...result };
   delete rest.human_interaction;
-  const options = new Map(records.map(record => [record.id, record.options]));
   // A question about an item the person already confirmed, dropped or replaced elsewhere is settled too.
   const settled = settledQuestionIds(records);
   for (const record of records) if (decidedElsewhere(record, targets.states)) settled.add(record.id);
-  return { ...rest, ...judgmentHumanInteraction(shown, personalSpaceId, settled, id => options.get(id)),
+  return { ...rest, ...judgmentHumanInteraction(shown, personalSpaceId, { settled, language, announced }),
     records: shown };
 }
 
