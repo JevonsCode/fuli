@@ -62,8 +62,6 @@ const health = computed(() => healthLine(props.view.health, currentLocale()))
 
 <style scoped>
 .model-role-waiting { color: var(--color-warning); }
-.model-role-health { overflow: hidden; color: var(--color-muted); text-overflow: ellipsis; white-space: nowrap; }
-/* The whole recommendation shows in two lines; a longer one keeps its full text in a title. */
-.model-role-advice { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.model-role-health { color: var(--color-muted); }
 .model-role-label { margin-inline-end: 8px; color: var(--color-muted); font-size: var(--text-meta); }
 </style>

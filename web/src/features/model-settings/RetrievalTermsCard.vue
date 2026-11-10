@@ -47,7 +47,7 @@ function openAstro() {
 
     <p v-if="terms.error" role="alert" class="terms-note is-failed" :title="terms.error" data-terms-error>{{ terms.error }}</p>
     <GrowthLoading v-else-if="!terms.state && terms.projectId" variant="inline" :label="t('modelSettings.retrievalTerms.loading')" />
-    <p v-else-if="terms.note" class="terms-note terms-note--wrap" data-terms-note>{{ terms.note }}</p>
+    <p v-else-if="terms.note" class="terms-note" data-terms-note>{{ terms.note }}</p>
     <ModelFailureNote v-else-if="terms.failed" :text="summary" role="assistant" :model="model ?? ''" data-terms-failed @checked="emit('checked')" />
     <p v-else-if="summary" class="terms-note" :role="terms.filling ? 'status' : undefined" :title="summary" data-terms-summary>{{ summary }}</p>
     <template #actions>
@@ -74,7 +74,6 @@ function openAstro() {
 </template>
 
 <style scoped>
-.terms-note { overflow: hidden; color: var(--color-muted); text-overflow: ellipsis; white-space: nowrap; }
-.terms-note--wrap { white-space: normal; }
+.terms-note { color: var(--color-muted); }
 .terms-note.is-failed { color: var(--color-danger); }
 </style>

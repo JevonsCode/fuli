@@ -77,7 +77,7 @@ function openAstro() {
 </template>
 
 <style scoped>
-.dreaming-note { overflow: hidden; color: var(--color-muted); text-overflow: ellipsis; white-space: nowrap; }
+.dreaming-note { color: var(--color-muted); }
 .dreaming-note.is-failed { color: var(--color-danger); }
 .dreaming-confirm { margin-inline-start: var(--space-2); color: var(--color-link); font-weight: var(--weight-medium); text-decoration: none; user-select: none; }
 .dreaming-confirm:hover { text-decoration: underline; }

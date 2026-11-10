@@ -24,9 +24,10 @@ const { checking, result, check } = useRoleCheck(() => props, ok => emit('checke
 </template>
 
 <style scoped>
-/* One line of text and its link share a centre line; the text gives way, the link never wraps or moves. */
-.model-failure { display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin: 0; color: var(--color-danger); font-size: var(--text-control); line-height: 20px; }
+/* The sentence takes up to two lines and gives way; its link stays on the first line and never wraps. */
+.model-failure { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; margin: 0; color: var(--color-danger); font-size: var(--text-control); line-height: 20px; }
 .model-failure.is-ok { color: var(--color-success); }
-.model-failure-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.model-failure-check { flex: none; height: 20px; padding: 0; user-select: none; }
+.model-failure-text { display: -webkit-box; flex: 0 1 auto; min-width: 0; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+/* A text link inside the sentence: one line high, like the text beside it. */
+.model-failure-check { flex: none; height: 20px; min-height: 0; padding: 0; user-select: none; }
 </style>

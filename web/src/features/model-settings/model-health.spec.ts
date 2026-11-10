@@ -22,7 +22,8 @@ describe('model health', () => {
   it('puts a failure of any role before an answer, and the latest of each first', () => {
     const failing = { status: 'failing' as const, at: ago(5), reason: 'network' }
     expect(latestHealth([{ status: 'ok', at: ago(1), reason: null }, failing, null])).toEqual(failing)
-    expect(latestHealth([{ status: 'ok', at: ago(4), reason: null }, { status: 'ok', at: ago(1), reason: null }])?.at).toBe(ago(1))
+    const latest = { status: 'ok' as const, at: ago(1), reason: null }
+    expect(latestHealth([{ status: 'ok', at: ago(4), reason: null }, latest])).toEqual(latest)
     expect(latestHealth([null, undefined])).toBeNull()
   })
 })

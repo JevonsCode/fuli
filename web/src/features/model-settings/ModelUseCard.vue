@@ -40,11 +40,14 @@ defineProps<{
 .model-use-main { display: grid; align-content: start; gap: 6px; min-width: 0; }
 .model-use-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-width: 0; min-height: 24px; }
 .model-use-name { min-width: 0; margin: 0; overflow: hidden; color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
-.model-use-model { min-width: 0; margin: 0; overflow: hidden; color: var(--color-muted); font-size: var(--text-control); line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+/* One fixed line, so a model name in the mono font does not push the line below it. */
+.model-use-model { min-width: 0; height: 20px; margin: 0; overflow: hidden; color: var(--color-muted); font-size: var(--text-control); line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
 .model-use-model :deep(code) { margin-inline-end: 8px; color: var(--color-ink); font-family: var(--font-mono); font-size: var(--text-control); }
 /* How the use stands now: two lines' room, always, so every card of a row is one height and the actions stay level. */
 .model-use-note { display: grid; align-content: start; min-width: 0; height: 40px; overflow: hidden; color: var(--color-ink-soft); font-size: var(--text-control); line-height: 20px; }
+/* A sentence may take both lines; a longer one keeps its full text in a title. */
 .model-use-note :deep(p) { margin: 0; }
+.model-use-note :deep(p:not(.model-failure)) { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
 /* The quick action sits at the card's foot, on the right, at the same place in every card of a row. */
 .model-use-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); margin-top: auto; min-width: 0; }
 .model-use-actions :deep(button) { user-select: none; }
@@ -53,5 +56,6 @@ defineProps<{
   .model-use--wide .model-use-main { flex: 1; }
   .model-use--wide .model-use-actions { margin-top: 0; }
   .model-use--wide .model-use-note { height: 20px; }
+  .model-use--wide .model-use-note :deep(p:not(.model-failure)) { -webkit-line-clamp: 1; line-clamp: 1; }
 }
 </style>
