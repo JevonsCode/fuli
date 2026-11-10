@@ -710,3 +710,23 @@ test('token budget: no #FLA adds nothing; naming, binding and choosing add a bou
   assert.ok(later - folderLead <= 100, `a bound later turn adds ${later - folderLead} bytes`);
   assert.ok(choice <= 1800, `the choice takes ${choice} bytes`);
 });
+
+// rec#110 item 9: the folder moves to another project mid-session, so its
+// lead takes over; the entry says so once and how to keep the earlier FLA.
+test('a session whose FLA changes with its folder says who takes over and how to keep the earlier one', async () => {
+  const { app, hook } = fixture();
+  const first = await hook('先看看 Alpha');
+  assert.deepEqual(owner(first), ['project-a', 'ada']);
+  assert.equal(first.owner_change, undefined);
+  app.projectPathResolver = () => ({ status: 'matched', basis: 'repository_root', personalProjectId: 'project-b' });
+  const moved = await hook('继续实现');
+  assert.deepEqual(owner(moved), ['project-b', 'jamie']);
+  assert.deepEqual({ ...moved.owner_change, guidance: undefined }, { from_agent_id: 'ada', from_project_id: 'project-a',
+    to_agent_id: 'jamie', to_project_id: 'project-b', guidance: undefined });
+  assert.match(moved.owner_change.guidance, /not copied/);
+  assert.match(moved.agent_receipt.markdown, /上一个任务由 Ada Lead 负责，这次起由 .+ 负责；要继续由 Ada Lead 负责，消息开头写 \#FLA Ada Lead/);
+  // Once: the next task in the same folder keeps its owner and says nothing.
+  assert.equal((await hook('再改一处')).owner_change, undefined);
+  // A named FLA explains itself; no change notice is added.
+  assert.equal((await hook('#FLA Ada Lead 回来看看')).owner_change, undefined);
+});

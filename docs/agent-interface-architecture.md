@@ -134,7 +134,10 @@ capture onboarding, dismissing finished-migration reminders and showing an app e
 The person decides in chat; an FLA passes their exact words as `personWords` to
 `run_delegated_action`, which runs the change only when the words are in the prompt that began the calling
 task (kept locally by a hook entry until its checkpoint, `entry-prompts/`) or in one of the
-person's newest 5 saved messages of the calling session (session records, the task's own reader). The
+person's newest 5 saved messages of the calling session (session records, the task's own reader), or in an
+answer given since that prompt in the client's own question card, read from the client's transcript
+(Claude Code's `AskUserQuestion`; Codex's `request_user_input` output, or for `request_user_input_async`
+the next message the person sends). The
 delegation record keeps the words and the message they were found in; judgment feedback and
 Jefa revisions also keep `relayedBy` and `personWords`, and a relayed batch confirmation's
 confirmer is the person (`user`, labelled with the relaying FLA). Other task updates remain

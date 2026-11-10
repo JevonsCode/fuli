@@ -18,6 +18,7 @@ import { noteEntryTask } from '../conversations/entry-budget.js';
 import { withSharedProjectList } from './shared-project-list.js';
 import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 import { standingOwnerEntry } from './task-entry-standing-owner.js';
+import { ownerChangeEntry } from './task-entry-owner-change.js';
 import { roundtableAskEntry } from './task-entry-roundtable-ask.js';
 import { isReadOnlyRefusal, readOnlyLifecycle, readOnlyTaskEntry } from './task-entry-read-only.js';
 
@@ -198,6 +199,7 @@ async function entryPreferences(application, projectResolution, {
   ]);
   const managedPreferences = management ? { ...preferences, project_management_context: management } : preferences;
   if (context) applyAgentAssignment(context, selection);
+  const ownerChange = await ownerChangeEntry(application, projectResolution, selection, context?.role?.name);
   // Questions other Agents left for this Agent while it was not running.
   const waiting = includeMessages && selection?.agent && application.roundtable
     ? application.roundtable.pending(selection.agent.agentId, projectResolution.personalProjectId) : [];
@@ -212,11 +214,13 @@ async function entryPreferences(application, projectResolution, {
     ? application.roundtable.standInHandbacks(selection.agent.agentId, projectResolution.personalProjectId) : [];
   const notices = [...[fla?.notice, group?.notice].filter(Boolean).map(receiptText),
     ...(standing?.notice ? [standing.receiptNotice] : []),
+    ...(ownerChange ? [ownerChange.receiptNotice] : []),
     ...receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : [],
       { settingsUrl: captureSettingsUrl(application) }), ...formatNotices];
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
     ...(triage ? { triage_candidates: triage } : {}),
     ...(standing ? { standing_owner: standing.field } : {}),
+    ...(ownerChange ? { owner_change: ownerChange.field } : {}),
     ...(fla?.view ? { fla: fla.view } : {}), ...(group?.view ? { flg: group.view } : {}),
     ...(group?.interaction ?? fla?.interaction ? { human_interaction: group?.interaction ?? fla.interaction } : {}),
     ...(routeMarkers.length ? { [FLA_ROUTE]: routeMarkers } : {}),
