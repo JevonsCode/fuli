@@ -73,8 +73,10 @@ A frame blocked for `delivery_budget` (the whole result past its 128 KiB
 budget) is short but delivers nothing, so it counts as too long; every other
 blocked reason (`source_window`, `unsafe_projection`) is about the data and is
 delivered as blocked. A blocked frame keeps its `taskContextToken`, and
-`preference_delivery.token_use` names the only tools it is for:
-`read_task_preferences` and `checkpoint_task_knowledge` (rec#110 item 6).
+`preference_delivery.token_use` names what it is for:
+`read_task_preferences` and `checkpoint_task_knowledge`. Reads and searches may
+carry it (the session gate needs it), but no roundtable, team or write call
+until the preferences are complete (rec#110 item 6).
 
 1. `task_knowledge_recall` keeps its status and counts and becomes a pointer
    (`items_omitted`, `read: { tool: 'search_current_project_knowledge' }`);

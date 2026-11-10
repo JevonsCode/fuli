@@ -13,5 +13,5 @@ test('a blocked preference entry names the only tools its token is for', () => {
   assert.equal(delivery.reason, 'source_window');
   assert.equal(structuredContent.taskContextToken, 'fuli-task-synthetic');
   assert.deepEqual(delivery.token_use, ['read_task_preferences', 'checkpoint_task_knowledge']);
-  assert.match(delivery.guidance, /only for token_use: pass it to no other FULI tool/);
+  assert.match(delivery.guidance, /for token_use; FULI reads and searches may carry it, but no roundtable, team or write call/);
 });
