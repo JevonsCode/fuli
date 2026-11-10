@@ -2,12 +2,16 @@
 // console restarts or crashes mid-wake nothing ends it, and the Agent could
 // never be woken again (rec#97). A claim old enough that no live console still
 // waits on it is released only on evidence that no process of it is running:
-// - it never started one (claimed with evidence, no process recorded);
-// - the recorded process is gone, or its PID now belongs to another process.
-// A process still running, or one the OS cannot be asked about, keeps the hold:
-// a woken client can outlive its console (it runs in its own process group).
-// Claims written before processes were recorded carry no evidence; they are
-// released a day after they began, long after their delegation expired.
+// the recorded process is gone, or its PID now belongs to another process, and
+// on POSIX no member of its process group is left (the woken client leads its
+// own group, wake.js; descendants outlive their leader). A process still
+// running, a group that still answers, or an OS that cannot be asked keeps the
+// hold: a woken client can outlive its console. Windows keeps no group, so the
+// recorded process alone is checked there.
+// A claim with no PID (its console was lost between the claim and the spawn),
+// a claim written before processes were recorded, and a reused PID whose group
+// still answers cannot be proven either way; they are released a day after
+// they began, long after their delegation expired.
 
 // The longest wake waits 15 minutes and is then stopped; an hour leaves margin.
 export const WAKE_CLAIM_TTL_MS = 60 * 60 * 1000;
@@ -17,19 +21,28 @@ const RECHECK_MS = 60 * 1000;
 
 // inspectProcess(pids) -> Map<pid, { identity }> of the PIDs that exist, or null
 // when the OS could not be asked (agent-services/process-identity.js).
-export function createWakeClaimRelease({ store, inspectProcess = async () => null, now = Date.now }) {
+// groupAlive(pgid) -> true while any process of the group exists, false when
+// none does, null when the OS could not tell.
+export function createWakeClaimRelease({ store, inspectProcess = async () => null, groupAlive = processGroupAlive,
+  now = Date.now }) {
   const checked = new Map();
 
   async function released(claim) {
     const age = now() - Date.parse(claim.execution_claimed_at);
-    if (claim.wake_process_evidence !== '1') return age >= LEGACY_CLAIM_TTL_MS;
-    if (!claim.wake_pid) return true;
+    const unproven = age >= LEGACY_CLAIM_TTL_MS;
+    if (claim.wake_process_evidence !== '1' || !claim.wake_pid) return unproven;
     const pid = Number(claim.wake_pid);
     const running = await inspectProcess([pid]).catch(() => null);
     if (!running) return false;
     const current = running.get(pid);
-    if (!current) return true;
-    return Boolean(claim.wake_pid_identity && current.identity && String(current.identity) !== claim.wake_pid_identity);
+    const reused = Boolean(current && claim.wake_pid_identity && current.identity
+      && String(current.identity) !== claim.wake_pid_identity);
+    if (current && !reused) return false;
+    const group = groupAlive(pid);
+    if (group === false) return true;
+    // A group that still answers may be the woken client's descendants, or the
+    // reused PID's own group: only the second is left to the day's limit.
+    return group === true && reused && unproven;
   }
 
   // Releases what the evidence allows; the number of claims released.
@@ -59,4 +72,17 @@ export function createWakeClaimRelease({ store, inspectProcess = async () => nul
   }
 
   return { release, recordSpawn };
+}
+
+// The woken client leads its own process group on POSIX (detached, wake.js).
+// Signal 0 only asks whether any member exists.
+export function processGroupAlive(pgid, { platform = process.platform, kill = process.kill } = {}) {
+  if (platform === 'win32') return false;
+  try {
+    kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    return error?.code === 'EPERM' ? true : null;
+  }
 }

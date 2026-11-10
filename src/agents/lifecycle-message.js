@@ -11,10 +11,16 @@ import { singleLineExcerpt } from '../text/single-line.js';
 // which names the refused rule without the values it was given; and the
 // version the hook ran, so a report tells an old install from a regression.
 // Never another error's message, which may carry a prompt, path or credential.
+// A Provider refusal is controlled too, but its message relays the Provider's
+// own detail, which may echo what was sent: it says only its HTTP status.
 export function hookFailureCause(error) {
   const code = errorCode(error);
-  const rule = failureReason(error, null);
+  const rule = error?.name === 'ProviderRequestError' ? providerStatus(error) : failureReason(error, null);
   return `${code ? `the hook failed: ${code}` : 'the hook failed'}${rule ? ` (${singleLineExcerpt(rule, 160)})` : ''} in FULI ${FULI_VERSION}`;
+}
+
+function providerStatus(error) {
+  return Number.isInteger(error.status) && error.status >= 100 && error.status <= 599 ? `HTTP ${error.status}` : null;
 }
 
 export const PASS_TASK_TOKEN = 'Pass taskContextToken to every FULI call. ';
