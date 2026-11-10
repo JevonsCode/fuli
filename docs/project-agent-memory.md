@@ -54,7 +54,8 @@ Provider 重新检查任职、客户端权限与任务状态，不能覆盖已�
 `unsaved-checkpoints/`，返回 `unsaved_checkpoint_id`（rec#110 item 8）。拒绝时返回
 `checkpoint_not_saved` 和服务给的原因；没响应时仍是 `checkpoint_incomplete`。Agent 要告诉人这次的知识还没存进
 FULI。解决原因后，用能用的 token 加 `unsavedCheckpointId` 再调一次，FULI 发出留下的内容，存好后删掉本机这份；
-原样重试成功也会删掉。这里的文件只有补交会读。
+原样重试成功也会删掉。这里的文件只有补交会读。留下的更正（`amend: true`，rec#85）原样保留这个标记，只能在它的任务
+还是本会话当前任务时补交（之后返回 404），每个任务最多 5 条（409）。
 
 材料实际影响了回答或完成的行动时，可显式附 `knowledgeUsage`（`itemId`、`itemKind`、
 `useKind: cited/applied`）。它与 prepare 的检查点声明、工作记录及所附记忆在同一事务记账；
