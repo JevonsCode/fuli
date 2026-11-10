@@ -45,7 +45,7 @@ const MAX_INSTALL_KEY = 1024;
 export function createClientConnectionObserver({ installer, customClients, historyPath, now = () => new Date(), awaitingRestart = () => [],
   consoleInstall = null, apps = {}, homeDir = homedir(), platform = process.platform }) {
   const own = consoleInstall ? installOf([consoleInstall.nodePath, consoleInstall.mcpServerPath], { platform }) : null;
-  const ownInstall = own ? { path: displayPath(own.root, homeDir), version: consoleInstall.version } : null;
+  const ownInstall = own ? { path: displayPath(own.root, homeDir, platform), version: consoleInstall.version } : null;
   // History that could not be written stays reliable for this observer.
   let retained = null;
 
@@ -73,10 +73,13 @@ export function createClientConnectionObserver({ installer, customClients, histo
       const status = statusOf(client, previouslyConnected);
       // Only an entry that differs from this console's is read for what it names.
       const configured = status === 'changed' ? configuredInstall(client.mcpPaths, { homeDir, platform }) : null;
-      const replacedInstall = configured && configured.key.length <= MAX_INSTALL_KEY ? configured.key : record.replacedInstall;
+      // Only another installation can be written back: an entry naming the console's own (its Skills or hooks
+      // outdated, or a FULI that upgrades in place) is an ordinary update.
+      const foreign = configured && configured.key !== own?.key && configured.key.length <= MAX_INSTALL_KEY ? configured.key : null;
+      const replacedInstall = foreign ?? record.replacedInstall;
       if (status !== record.status || previouslyConnected !== record.previouslyConnected || replacedInstall !== record.replacedInstall) {
         const change = { from: record.status, to: status, detectedAt: observedAt,
-          ...(overwrittenBy(record, status, configured, observedAt) ? { overwritten: true } : {}) };
+          ...(overwrittenBy(record, status, foreign, observedAt) ? { overwritten: true } : {}) };
         const changes = record.status && status !== record.status ? [...record.changes, change].slice(-MAX_CHANGES) : record.changes;
         history.clients[client.id] = { status, previouslyConnected,
           since: status === record.status ? record.since : observedAt, changes, ...(replacedInstall ? { replacedInstall } : {}) };
@@ -89,7 +92,7 @@ export function createClientConnectionObserver({ installer, customClients, histo
       const app = record.status === 'changed' ? apps[client.id] : null;
       const running = app ? await app.running().catch(() => null) : null;
       return view(client, record, { ...extra, components: client.components,
-        ...(configured ? { configuredInstall: { path: displayPath(configured.root, homeDir), version: configured.version,
+        ...(configured ? { configuredInstall: { path: displayPath(configured.root, homeDir, platform), version: configured.version,
           exists: configured.exists, sameAsConsole: configured.key === own?.key } } : {}),
         ...(app ? { restart: { running } } : {}) });
     }));
@@ -102,7 +105,7 @@ export function createClientConnectionObserver({ installer, customClients, histo
     }
     const removable = customClients.removable();
     return { scope: 'configuration', observedAt, available: true, historySaved, clients: views,
-      ...(ownInstall ? { installs: installsOf(ownInstall, views) } : {}),
+      ...(ownInstall ? { installs: installsOf(ownInstall, views, platform) } : {}),
       customClients: answer.clients.filter((client) => !client.builtin).map((client) => ({
         id: client.id, label: client.label, detected: client.detected,
         status: client.components.mcp === 'conflict' ? 'unknown' : statusOf(client, false),
@@ -122,30 +125,33 @@ function statusOf(client, previouslyConnected) {
 }
 
 // Whether this change back to an outdated entry restores what the last update replaced, soon after it.
-function overwrittenBy(record, status, configured, observedAt) {
+function overwrittenBy(record, status, foreignKey, observedAt) {
   const updated = record.changes.at(-1);
-  return status === 'changed' && record.status === 'connected' && Boolean(configured) && configured.key === record.replacedInstall
+  return status === 'changed' && record.status === 'connected' && Boolean(foreignKey) && foreignKey === record.replacedInstall
     && updated?.to === 'connected' && Date.parse(observedAt) - Date.parse(updated.detectedAt) <= OVERWRITE_WINDOW_MS;
 }
 
 // The console's installation and every other one a client entry names (rec#106: two FULIs on one machine).
-function installsOf(own, views) {
+function installsOf(own, views, platform) {
   const others = new Map();
   for (const client of views) {
     const install = client.configuredInstall;
     if (!install || install.sameAsConsole || !install.exists) continue;
-    const entry = others.get(install.path) ?? { path: install.path, version: install.version, clients: [] };
+    const key = platform === 'win32' ? install.path.toLowerCase() : install.path;
+    const entry = others.get(key) ?? { path: install.path, version: install.version, clients: [] };
     entry.clients.push(client.label);
-    others.set(install.path, entry);
+    others.set(key, entry);
   }
   return { console: own, others: [...others.values()] };
 }
 
-// Home shown as ~, and a macOS app bundle by its .app folder.
-function displayPath(root, homeDir) {
+// Home shown as ~ (case-insensitive on Windows), and on macOS an app bundle by its .app folder.
+function displayPath(root, homeDir, platform) {
   const home = homeDir.endsWith(sep) ? homeDir.slice(0, -1) : homeDir;
-  const shown = root === home || root.startsWith(home + sep) ? `~${root.slice(home.length)}` : root;
-  return /^(.*?\.app)(?=[\\/]|$)/.exec(shown)?.[1] ?? shown;
+  const fold = (value) => (platform === 'win32' ? value.toLowerCase() : value);
+  const inHome = fold(root) === fold(home) || fold(root).startsWith(fold(home) + sep);
+  const shown = inHome ? `~${root.slice(home.length)}` : root;
+  return platform === 'darwin' ? /^(.*?\.app)(?=[\\/]|$)/.exec(shown)?.[1] ?? shown : shown;
 }
 
 // Bounded fields leave this module; the only paths are FULI's own installations, home shown as ~.

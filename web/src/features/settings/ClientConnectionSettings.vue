@@ -38,7 +38,7 @@ const connectionFeedback = ref<Record<string, 'restart' | 'connectError' | 'comp
 // 「重启并更新」 (rec#106): the client being confirmed, the one restarting, and each one's last outcome.
 const confirming = ref<ClientObservation | null>(null)
 const restarting = ref('')
-const restartFeedback = ref<Record<string, RestartStatus | 'error'>>({})
+const restartFeedback = ref<Record<string, RestartStatus | 'connect_failed_closed' | 'error'>>({})
 // 查看详情: a client's id, or 'installs' for the 「本机有两份 FULI」 notice.
 const details = ref<string | null>(null)
 const adding = ref(false)
@@ -146,7 +146,8 @@ async function restart() {
   await writing(async () => {
     try {
       const result = await postJson('/api/system/client-connection/restart', { clientId: client.id }, restartResultShape)
-      if (!unmounted) restartFeedback.value[client.id] = result.status
+      if (!unmounted) restartFeedback.value[client.id] = result.status === 'connect_failed' && result.reopened === false
+        ? 'connect_failed_closed' : result.status
     } catch {
       if (!unmounted) restartFeedback.value[client.id] = 'error'
     } finally { restarting.value = '' }

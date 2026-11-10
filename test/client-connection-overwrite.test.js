@@ -43,6 +43,9 @@ test('the installation a client entry names is read from JSON, Codex TOML and Op
   const toml = `[mcp_servers.other]\ncommand = "x"\n\n[mcp_servers.fuli]\ncommand = ${JSON.stringify(old.node)}\nargs = [${JSON.stringify(old.script)}, "--runtime-config", "/d"]\n\n[profile]\nx = 1\n`;
   writeConfig(dir, 'codex/config.toml', toml);
   assert.equal(configuredInstall(['~/codex/config.toml'], { homeDir: dir }).version, '0.23.0');
+  // A ] inside a string does not end the array.
+  writeConfig(dir, 'codex2/config.toml', `[mcp_servers.fuli]\ncommand = ${JSON.stringify(old.node)}\nargs = ["/x]/y", ${JSON.stringify(old.script)}]\n`);
+  assert.equal(configuredInstall(['~/codex2/config.toml'], { homeDir: dir }).version, '0.23.0');
 
   writeConfig(dir, 'opencode/opencode.json', { mcp: { fuli: { type: 'local', command: [old.node, old.script, '--runtime-config', '/d'] } } });
   assert.equal(configuredInstall(['~/opencode/opencode.json'], { homeDir: dir }).version, '0.23.0');
@@ -81,7 +84,8 @@ function observerFixture(t) {
   return {
     make, current, old,
     // What the client's file names now, and agent-installer's verdict on it.
-    names: (install) => { writeConfig(dir, 'claude/claude_desktop_config.json', desktopEntry(install)); mcp = install === current ? 'current' : 'outdated'; },
+    names: (install, state = install === current ? 'current' : 'outdated') => {
+      writeConfig(dir, 'claude/claude_desktop_config.json', desktopEntry(install)); mcp = state; },
     after: (minutes) => { clock += minutes * 60_000; },
     stopApp: () => { running = false; }
   };
@@ -136,6 +140,22 @@ test('a change to a different installation, or long after the update, is not an 
   assert.equal((await second.observe()).clients[0].overwritten, false);
 });
 
+test('an entry naming the console\'s own installation is an ordinary update, never an overwrite', async (t) => {
+  // Skills outdated while the MCP entry is current, then the same in-place installation upgrades again.
+  const { make, current, names, after } = observerFixture(t);
+  const observer = make();
+  names(current);
+  await observer.observe();
+  names(current, 'outdated');
+  const changed = (await observer.observe()).clients[0];
+  assert.equal(changed.configuredInstall.sameAsConsole, true);
+  after(1); names(current); await observer.observe();
+  after(30); names(current, 'outdated');
+  const result = await observer.observe();
+  assert.equal(result.clients[0].overwritten, false);
+  assert.deepEqual(result.installs.others, []);
+});
+
 function fakeApp({ running = true, quits = true, opens = true } = {}) {
   const calls = [];
   const state = { running };
@@ -178,11 +198,28 @@ test('an app that will not quit is left open and nothing is written', async () =
   assert.equal((await restart({ clientId: 'claude-desktop' })).status, 'quit_failed');
   assert.deepEqual(log, []);
   assert.equal(calls.includes('open'), false);
-  // An app that cannot say whether it runs counts as running.
-  const unknown = { running: async () => { throw new Error('osascript failed'); }, quit: async () => {}, open: async () => {} };
+  // While it cannot be told whether the app runs, nothing is quit, written or opened.
+  const touched = [];
+  const unknown = { running: async () => { throw new Error('osascript failed'); }, quit: async () => { touched.push('quit'); },
+    open: async () => { touched.push('open'); } };
   const second = restartWith(unknown);
   assert.equal((await second.restart({ clientId: 'claude-desktop' })).status, 'quit_failed');
-  assert.deepEqual(second.log, []);
+  assert.deepEqual([second.log, touched], [[], []]);
+});
+
+test('a quit that outlasts its command still counts once the app closed; an app that was not running stays closed', async () => {
+  const { app, calls, state } = fakeApp();
+  app.quit = async () => { calls.push('quit'); state.running = false; throw new Error('osascript timed out'); };
+  const slow = restartWith(app);
+  const answer = slow.restart({ clientId: 'claude-desktop' });
+  assert.equal((await answer).status, 'connected');
+  assert.equal(calls.at(-1), 'open');
+
+  const closed = fakeApp({ running: false });
+  const quiet = restartWith(closed.app);
+  assert.equal((await quiet.restart({ clientId: 'claude-desktop' })).status, 'connected');
+  assert.deepEqual(closed.calls, ['running']);
+  assert.equal(closed.state.running, false);
 });
 
 test('a failed write or check still reopens the app and says which step failed', async () => {
@@ -195,6 +232,9 @@ test('a failed write or check still reopens the app and says which step failed',
   }
   const { app } = fakeApp({ opens: false });
   assert.equal((await restartWith(app).restart({ clientId: 'claude-desktop' })).status, 'reopen_failed');
+  const both = fakeApp({ opens: false });
+  assert.deepEqual(await restartWith(both.app, { connected: false }).restart({ clientId: 'claude-desktop' }),
+    { id: 'claude-desktop', status: 'connect_failed', reopened: false });
 });
 
 test('only a client FULI can restart here is accepted, with only its id', async () => {

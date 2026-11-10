@@ -27,7 +27,8 @@ export type ConnectionResult = { id: string, status: 'connected' | 'partial' | '
 // 「重启并更新」's answer: which step ended it (src/system/client-restart.js).
 const RESTART_STATUSES = ['connected', 'quit_failed', 'connect_failed', 'reopen_failed', 'check_failed'] as const
 export type RestartStatus = typeof RESTART_STATUSES[number]
-export const restartResultShape = shapeOf(z.looseObject({ id: z.string(), status: z.enum(RESTART_STATUSES) }))
+// reopened: false when a failed write also left the app closed.
+export const restartResultShape = shapeOf(z.looseObject({ id: z.string(), status: z.enum(RESTART_STATUSES), reopened: z.boolean().optional() }))
 // The MCP file formats a custom client can name (agent-installer's write formats).
 export const CUSTOM_CLIENT_FORMATS = ['mcp-servers-json', 'opencode-json', 'codex-toml'] as const
 export type CustomClientFormat = typeof CUSTOM_CLIENT_FORMATS[number]

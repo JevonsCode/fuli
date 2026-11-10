@@ -77,7 +77,8 @@ function tomlCommandLine(text) {
   const section = new RegExp(`^\\[mcp_servers\\.(?:${SERVER_NAME}|"${SERVER_NAME}")\\]\\s*$([\\s\\S]*?)(?=^\\[|(?![\\s\\S]))`, 'm').exec(text);
   if (!section) return null;
   const command = /^\s*command\s*=\s*("(?:[^"\\]|\\.)*"|'[^']*')/m.exec(section[1]);
-  const args = /^\s*args\s*=\s*\[([\s\S]*?)\]/m.exec(section[1]);
+  // The array ends at the first ] outside a string.
+  const args = /^\s*args\s*=\s*\[((?:"(?:[^"\\]|\\.)*"|'[^']*'|[^\]"'])*)\]/m.exec(section[1]);
   if (!command) return null;
   const strings = args ? [...args[1].matchAll(/"(?:[^"\\]|\\.)*"|'[^']*'/g)].map(([value]) => tomlString(value)) : [];
   return [tomlString(command[1]), ...strings];

@@ -6,16 +6,18 @@ import { execute } from '../../local-runtime/windows-process-handle.js';
 // the app's own quit, never a kill: an app that refuses stays open.
 const BUNDLE_ID = 'com.anthropic.claudefordesktop';
 const APPLESCRIPT_TIMEOUT_MS = 10_000;
+// The app may save open work before it quits; the restart also waits for it to close.
+const QUIT_TIMEOUT_MS = 30_000;
 
 // run(command, args, options) → { stdout }: execute() in production, a fake in tests.
 // Answers null where FULI cannot quit and reopen it.
 export function claudeDesktopApp({ platform = process.platform, run = execute } = {}) {
   if (platform !== 'darwin') return null;
-  const script = (line) => run('osascript', ['-e', line], { timeout: APPLESCRIPT_TIMEOUT_MS });
+  const script = (line, timeout = APPLESCRIPT_TIMEOUT_MS) => run('osascript', ['-e', line], { timeout });
   return {
     // `is running` never launches the app.
     running: async () => (await script(`application id "${BUNDLE_ID}" is running`)).stdout.trim() === 'true',
-    quit: () => script(`tell application id "${BUNDLE_ID}" to quit`),
+    quit: () => script(`tell application id "${BUNDLE_ID}" to quit`, QUIT_TIMEOUT_MS),
     open: () => run('open', ['-b', BUNDLE_ID], { timeout: APPLESCRIPT_TIMEOUT_MS })
   };
 }
