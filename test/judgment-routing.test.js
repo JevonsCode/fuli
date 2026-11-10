@@ -185,3 +185,14 @@ test('an unusable assess_agent_action request is invalid_input naming the field,
   assert.equal(reused.structuredContent.error.code, 'invalid_input');
   assert.match(reused.structuredContent.error.message, /pass a new requestId/);
 });
+
+test('an unknown request field is named only as unknown field; its caller-chosen key is never echoed', async t => {
+  const { errorToolResult } = await import('../src/mcp/tool-result.js');
+  const { service } = routingFixture(t, { executors: [availableExecutor('space')] });
+  const key = 'sk-synthetic-0123456789abcdef/C:\synthetic\path';
+  const error = await service.assess({ ...routingInput, [key]: 'x' }).then(() => assert.fail('accepted'), value => value);
+  const { structuredContent, content } = errorToolResult(error);
+  assert.equal(structuredContent.error.code, 'invalid_input');
+  assert.match(structuredContent.error.message, /request: unknown field/);
+  assert.equal(JSON.stringify({ structuredContent, content }).includes('sk-synthetic'), false);
+});
