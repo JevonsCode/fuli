@@ -105,7 +105,7 @@ describe('语义搜索 on the model page', () => {
     const card = wrapper.get('[data-semantic-search]')
     expect(wrapper.get('.model-use-grid > *').attributes('data-model-role')).toBe('semantic')
     expect(card.findAll('h3').map(heading => heading.text())).toEqual(['语义搜索'])
-    expect(card.get('[data-model-use-model]').text()).toBe('没接模型，只按字面找')
+    expect(card.get('[data-model-use-model]').text()).toBe('没接模型：只按字面找，换个说法就找不到')
     expect(card.get('[data-model-use-advice]').text()).toContain('qwen3-embedding:0.6b')
     expect(card.get('[data-model-use-state]').text()).toBe('未接')
     expect(card.get('[data-model-role-edit]').text()).toBe('接入')

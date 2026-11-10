@@ -14,11 +14,20 @@ const mountCard = (view: ModelRoleView) => mount(ModelRoleCard, { props: { view,
 describe('ModelRoleCard', () => {
   beforeEach(() => { vi.mocked(checkModelRole).mockReset() })
 
-  it('without a model says what model is enough, and its action is 接入', () => {
+  it('an Agent without its own model is not shown as unconnected: the current session answers; its action is 接入', () => {
     const wrapper = mountCard({ role: 'jefa', state: 'not_configured', answeredBy: 'current_session' })
+    expect(wrapper.get('[data-model-use-state]').text()).toBe('用当前会话')
+    expect(wrapper.get('[data-model-use-state]').attributes('data-variant')).toBe('secondary')
+    expect(wrapper.get('[data-model-role-unconnected]').text()).toBe('没接独立模型；用到时由当前会话的模型回答')
     expect(wrapper.get('[data-model-use-advice]').text()).toBe('推荐小型聊天模型就够。')
     expect(wrapper.find('[data-model-role-health]').exists()).toBe(false)
     expect(wrapper.get('[data-model-role-edit]').text()).toBe('接入')
+  })
+
+  it('语义搜索 has no session to fall back to: it stays 未接 and says what that costs', () => {
+    const wrapper = mountCard({ role: 'semantic', state: 'not_configured', answeredBy: null })
+    expect(wrapper.get('[data-model-use-state]').text()).toBe('未接')
+    expect(wrapper.get('[data-model-role-unconnected]').text()).toBe('没接模型：只按字面找，换个说法就找不到')
   })
 
   it('with a model says when it last answered instead of the recommendation', () => {

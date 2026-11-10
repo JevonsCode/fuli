@@ -11,6 +11,9 @@ import { healthLine, isFailing } from './model-health'
 import { stateTone, useAdvice } from './model-uses'
 import { needsPerson } from './role-details'
 
+// An Agent without a model of its own is not broken: the current session's
+// model answers when it is needed, so its state says 「用当前会话」, never 「未接」.
+// 语义搜索 has no such fallback and stays 「未接」, with what that costs.
 // A role as a use card: a built-in Agent, or 语义搜索 (rec#88), the person's
 // own model that finds knowledge by meaning, shown wide with its index
 // progress. Its one line says how it stands now: without a model, what model
@@ -27,10 +30,13 @@ const waiting = computed(() => needsPerson(props.view))
 // Only a use that is on can fail: one that is off makes no calls.
 const failing = computed(() => props.view.state === 'enabled' && isFailing(props.view.health))
 const health = computed(() => healthLine(props.view.health, currentLocale()))
+const state = computed(() => (failing.value ? t('modelSettings.health.failingState')
+  : props.view.state === 'not_configured' && !semantic.value ? t('modelSettings.uses.sessionState')
+    : t(`modelSettings.states.${props.view.state}`)))
 </script>
 
 <template>
-  <ModelUseCard :name="name" :state="failing ? t('modelSettings.health.failingState') : t(`modelSettings.states.${view.state}`)"
+  <ModelUseCard :name="name" :state="state"
     :tone="failing ? 'destructive' : stateTone(view.state)" :lifted="editing || waiting || failing" :wide="semantic"
     :data-model-role="view.role" :data-semantic-search="semantic || undefined" :data-model-needs-person="waiting || undefined"
     :data-model-failing="failing || undefined">

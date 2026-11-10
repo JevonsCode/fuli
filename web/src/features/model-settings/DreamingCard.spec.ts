@@ -36,7 +36,7 @@ describe('DreamingCard', () => {
     vi.mocked(readDreaming).mockResolvedValue({ readiness: 'needs_model', projects: [] })
     const wrapper = await mountCard({ model: null, status: 'not_configured' })
     // Astro has no model: the model line says so once, and the action opens Astro's settings.
-    expect(wrapper.get('[data-model-use-model]').text()).toBe('Astro 还没接模型')
+    expect(wrapper.get('[data-model-use-model]').text()).toBe('Astro 还没接独立模型，这项不运行')
     expect(wrapper.get('[data-dreaming-needs-model]').isVisible()).toBe(false)
     expect(wrapper.find('[data-dreaming-run-all]').exists()).toBe(false)
     expect(wrapper.find('[data-dreaming-details]').exists()).toBe(false)
