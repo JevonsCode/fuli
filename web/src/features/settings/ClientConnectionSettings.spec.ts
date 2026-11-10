@@ -362,3 +362,74 @@ it('reads every status again as each client of 一键接入 is written and when 
   expect(calls.some(([url]) => url.endsWith('/api/system/doctor'))).toBe(true)
   wrapper.unmount()
 })
+
+// rec#106: Claude Desktop writes its cached entry back; the tile says so, shows the difference and the full history.
+const installs = { console: { path: '~/fuli-prerelease/FULI.app', version: '0.25.0' },
+  others: [{ path: '/Applications/FULI.app', version: '0.23.0', clients: ['Claude Desktop'] }] }
+const overwritten = (extra: Record<string, unknown> = {}) => ({ id: 'claude-desktop', label: 'Claude Desktop', status: 'changed', overwritten: true,
+  configuredInstall: { path: '/Applications/FULI.app', version: '0.23.0', exists: true, sameAsConsole: false },
+  changes: [{ from: 'connected', to: 'changed', detectedAt: '2026-11-10T10:56:04.000Z' },
+    { from: 'changed', to: 'connected', detectedAt: '2026-11-10T13:15:42.000Z' },
+    { from: 'connected', to: 'changed', detectedAt: '2026-11-10T13:18:31.000Z', overwritten: true }], ...extra })
+const withInstalls = (clients: Partial<Client>[]) => ({ ...statusOf(clients), installs })
+
+it('says the client wrote its old entry back, which FULI each side runs, and two installations', async () => {
+  routed(() => Response.json(withInstalls([overwritten() as Partial<Client>])))
+  const wrapper = mount(ClientConnectionSettings, { attachTo: document.body })
+  await flushPromises()
+  const tile = wrapper.get('[data-client-status="changed"]')
+  expect(tile.text()).toContain('Claude Desktop 把旧配置写回了。先完全退出它，再点「更新接入」，然后重新打开。')
+  expect(tile.get('[data-connect-client="claude-desktop"]').text()).toBe('更新接入')
+  expect(wrapper.get('[data-two-installs]').text()).toContain('本机有 2 份 FULI。控制台用 0.25.0，Claude Desktop 还指向另一份。')
+
+  // The one-line history opens 查看详情 with every change, full times and both installations.
+  await tile.get('[data-client-details="claude-desktop"]').trigger('click')
+  await flushPromises()
+  const dialog = document.querySelector('[data-client-details-dialog]')!
+  expect(dialog.textContent).toContain('/Applications/FULI.app')
+  expect(dialog.querySelector('[data-detail-configured]')!.textContent).toContain('0.23.0')
+  expect(dialog.querySelector('[data-detail-console]')!.textContent).toContain('0.25.0')
+  const changes = [...dialog.querySelectorAll('[data-detail-change]')].map(item => item.textContent ?? '')
+  expect(changes).toHaveLength(3)
+  expect(changes[0]).toContain('被客户端写回')
+  expect(changes[0]).toMatch(/2026/)
+  expect(document.body.textContent).toContain('保存设置或退出时写回文件')
+  wrapper.unmount()
+})
+
+it('names the version difference of an outdated entry instead of a generic sentence', async () => {
+  routed(() => Response.json(withInstalls([{ ...overwritten({ overwritten: false, changes: [] }) } as Partial<Client>])))
+  const wrapper = mount(ClientConnectionSettings)
+  await flushPromises()
+  expect(wrapper.get('[data-client-status="changed"]').text()).toContain('配置里是 FULI 0.23.0，控制台是 0.25.0。点「更新接入」改成控制台这份。')
+  wrapper.unmount()
+})
+
+it('restarts a running client only after the person confirms, in the same place as 更新接入', async () => {
+  let finish: ((value: Response) => void) | undefined
+  const calls = routed(() => Response.json(withInstalls([overwritten({ restart: { running: true } }) as Partial<Client>])),
+    (url) => url.endsWith('/restart') ? new Promise<Response>((resolve) => { finish = resolve }) : Response.json(configuration))
+  const wrapper = mount(ClientConnectionSettings, { attachTo: document.body })
+  await flushPromises()
+  expect(wrapper.find('[data-connect-client="claude-desktop"]').exists()).toBe(false)
+  const button = wrapper.get('[data-restart-client="claude-desktop"]')
+  expect(button.text()).toBe('重启并更新')
+  expect(button.classes()).toContain('client-row__action')
+  // 一键接入 would only be written back while it runs.
+  expect(wrapper.get('[data-connect-all]').attributes('disabled')).toBeDefined()
+  expect(wrapper.text()).toContain('Claude Desktop 把旧配置写回了。点「重启并更新」：退出、更新、再打开。')
+  await button.trigger('click')
+  await flushPromises()
+  expect(calls.some(([url]) => url.endsWith('/restart'))).toBe(false)
+  expect(document.querySelector('[data-restart-confirm]')!.textContent).toContain('正在进行的任务和会话会中断')
+  ;(document.querySelector('[data-restart-confirmed]') as HTMLButtonElement).click()
+  await flushPromises()
+  const call = calls.find(([url]) => url.endsWith('/restart'))!
+  expect(call[1]?.method).toBe('POST')
+  expect(JSON.parse(call[1]?.body as string)).toEqual({ clientId: 'claude-desktop' })
+  expect(wrapper.text()).toContain('正在重启 Claude Desktop 并更新接入')
+  finish!(Response.json({ id: 'claude-desktop', status: 'quit_failed' }))
+  await flushPromises()
+  expect(wrapper.get('[data-restart-result]').text()).toBe('Claude Desktop 没有退出，配置没改。请手动退出后再试。')
+  wrapper.unmount()
+})

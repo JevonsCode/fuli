@@ -1,17 +1,33 @@
+import { z } from 'zod'
+
+import { shapeOf } from '@/api/response-shape'
+
 export type Format = 'standard' | 'vscode' | 'server'
 export type ClientStatus = 'connected' | 'changed' | 'skills_left' | 'removed' | 'not_connected' | 'not_detected' | 'unknown'
-export type ClientChange = { from: ClientStatus, to: ClientStatus, detectedAt: string }
+// overwritten: the client wrote back the entry an update had just replaced (rec#106).
+export type ClientChange = { from: ClientStatus, to: ClientStatus, detectedAt: string, overwritten?: boolean }
+// A FULI installation: its folder (home as ~) and package version, when it has one.
+export type FuliInstall = { path: string, version: string | null }
+// What an outdated entry runs, against the console's own installation.
+export type ConfiguredInstall = FuliInstall & { exists: boolean, sameAsConsole: boolean }
 export type ClientObservation = { id: string, label: string, status: ClientStatus, detected: boolean, manualOnly?: boolean, manualUrl?: string, previouslyConnected: boolean,
   restartSessions?: number,
-  changes: ClientChange[], lastKnownStatus?: ClientStatus | null }
+  changes: ClientChange[], lastKnownStatus?: ClientStatus | null,
+  overwritten?: boolean, configuredInstall?: ConfiguredInstall,
+  // Present for a client FULI can quit and reopen here; running is null when that could not be read.
+  restart?: { running: boolean | null } }
 // A client the person described by hand (an agent-clients extension file).
 export type CustomClient = { id: string, label: string, detected: boolean, status: ClientStatus, mcpPaths: string[], removable: boolean }
 // `available` is false when agent-installer could not be run: nothing is known about any client then.
 export type ConnectionStatus = { observedAt: string, historySaved: boolean, available?: boolean, clients: ClientObservation[],
-  customClients?: CustomClient[] }
+  customClients?: CustomClient[], installs?: { console: FuliInstall, others: (FuliInstall & { clients: string[] })[] } }
 // `reason` names a failure the person can act on: agent-installer could not be downloaded here.
 export type ConnectionResult = { id: string, status: 'connected' | 'partial' | 'failed', restartRequired: boolean,
   reason?: 'client_component_unavailable' }
+// 「重启并更新」's answer: which step ended it (src/system/client-restart.js).
+const RESTART_STATUSES = ['connected', 'quit_failed', 'connect_failed', 'reopen_failed', 'check_failed'] as const
+export type RestartStatus = typeof RESTART_STATUSES[number]
+export const restartResultShape = shapeOf(z.looseObject({ id: z.string(), status: z.enum(RESTART_STATUSES) }))
 // The MCP file formats a custom client can name (agent-installer's write formats).
 export const CUSTOM_CLIENT_FORMATS = ['mcp-servers-json', 'opencode-json', 'codex-toml'] as const
 export type CustomClientFormat = typeof CUSTOM_CLIENT_FORMATS[number]
@@ -36,4 +52,30 @@ export function canConnect(client: ClientObservation): boolean {
 export function connectionSummary(observation: ConnectionStatus | null): { connected: number, total: number } {
   const clients = [...shownClients(observation), ...(observation?.customClients ?? [])]
   return { connected: clients.filter((client) => client.status === 'connected').length, total: clients.length }
+}
+
+// 「重启并更新」 replaces 「更新接入」 while the client runs and would write its old entry back (rec#106).
+export function offersRestart(client: ClientObservation): boolean {
+  return client.status === 'changed' && client.restart?.running === true
+}
+
+// An outdated entry's explanation: what differs, then the one way to fix it (rec#106).
+export function changedExplanation(client: ClientObservation, own: FuliInstall | undefined):
+  { difference: string, params: Record<string, string>, step: 'restart' | 'restartRunning' | 'quitFirst' | 'update' } {
+  const install = client.configuredInstall
+  const params: Record<string, string> = { client: client.label }
+  let difference = 'generic'
+  if (client.overwritten) difference = 'overwritten'
+  else if (install?.version && own?.version && install.version !== own.version) {
+    difference = 'olderVersion'
+    Object.assign(params, { configured: install.version, console: own.version })
+  } else if (install && !install.sameAsConsole) difference = 'otherInstall'
+  // An overwrite already says why the app must close; otherwise the restart says it.
+  const step = offersRestart(client) ? (client.overwritten ? 'restart' : 'restartRunning') : client.overwritten ? 'quitFirst' : 'update'
+  return { difference, params, step }
+}
+
+// The details dialog lists the newest change first.
+export function changesNewestFirst(client: ClientObservation): ClientChange[] {
+  return [...client.changes].reverse()
 }

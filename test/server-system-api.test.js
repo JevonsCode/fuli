@@ -851,3 +851,24 @@ test('custom clients are added and removed on this computer only, through the sy
     assert.deepEqual(calls, [['add', { name: 'Acme', mcpFile: '~/.acme/mcp.json', format: 'mcp-servers-json' }], ['remove', 'acme-agent']]);
   } finally { await closeServer(server); }
 });
+
+test('rec#106: restarting a client is a loopback-only POST that passes only the request body', async () => {
+  const inputs = [];
+  const system = { restartClient: async (input) => { inputs.push(input); return { id: input.clientId, status: 'connected' }; } };
+  const { server, url } = await createServer({ app: { graphiti: true, close() {} }, system, port: 0 });
+  try {
+    const target = `${url}/api/system/client-connection/restart`;
+    const foreign = await new Promise((resolve, reject) => {
+      const request = httpRequest(target, { method: 'POST', headers: { Origin: 'https://foreign.example', 'Content-Type': 'application/json' } },
+        (response) => { response.resume(); response.on('end', () => resolve(response.statusCode)); });
+      request.on('error', reject); request.end('{"clientId":"claude-desktop"}');
+    });
+    assert.equal(foreign, 403);
+    assert.deepEqual(inputs, []);
+    const response = await fetch(target, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"clientId":"claude-desktop"}' });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal((await response.json()).status, 'connected');
+    assert.deepEqual(inputs, [{ clientId: 'claude-desktop' }]);
+  } finally { await closeServer(server); }
+});

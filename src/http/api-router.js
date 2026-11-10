@@ -128,6 +128,17 @@ export async function handleApiRequest({
     return true;
   }
 
+  // Quitting and reopening a client app ends its open sessions: only the person on this computer starts it.
+  if (system && url.pathname === '/api/system/client-connection/restart' && request.method === 'POST') {
+    response.setHeader('Cache-Control', 'no-store');
+    if (!isLoopbackAddress(request.socket?.remoteAddress)) {
+      sendJson(response, 403, { error: 'Restarting a client is only available on this computer' });
+      return true;
+    }
+    sendJson(response, 200, await system.restartClient(await readJson(request)));
+    return true;
+  }
+
   if (system && url.pathname === '/api/system/client-connection/status' && request.method === 'GET') {
     response.setHeader('Cache-Control', 'no-store');
     sendJson(response, 200, await system.clientConnectionStatus());

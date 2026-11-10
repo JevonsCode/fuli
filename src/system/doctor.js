@@ -34,7 +34,8 @@ export function reconnectableClients(clients) {
   return clients.filter((client) => PRESENT_CLIENT.has(client.status) && client.previouslyConnected && canInstall(client));
 }
 
-const canInstall = (client) => client.detected && !client.manualOnly;
+// A running client that writes its cached configuration back (rec#106) is the person's to quit and restart first.
+const canInstall = (client) => client.detected && !client.manualOnly && !client.overwritten && client.restart?.running !== true;
 
 // observeClients: the client connection observation (client-connection-status.js).
 // previewDataFormats: the data format plan (migration-plan.js), or null without a local installation.

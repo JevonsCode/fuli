@@ -8,7 +8,7 @@ import { previewMigrations } from '../src/data-format/migration-plan.js';
 import { handleApiRequest } from '../src/http/api-router.js';
 import { rejectRequestOutsidePolicy } from '../src/http/request-policy.js';
 import { liveMcpProcesses, registerMcpProcess } from '../src/mcp/process-registry.js';
-import { createDoctor } from '../src/system/doctor.js';
+import { createDoctor, reconnectableClients } from '../src/system/doctor.js';
 import { createDoctorRepair } from '../src/system/doctor-repair.js';
 import { createSystemService } from '../src/system/system-service.js';
 import { FULI_VERSION } from '../src/package-metadata.js';
@@ -575,4 +575,17 @@ test('open sessions waiting for a restart are named with their links, and nothin
     data: { client: 'codex', count: 2, since: '2026-10-28T01:00:00.000Z', sessions: [{ sourceApplication: 'codex', sessionId: 'thread-a' }] } }]);
   const none = doctor(t, { observeClients: () => ({ clients: [] }), liveProcesses: () => [], latestVersion: () => null, lastUpdate: () => null });
   assert.deepEqual((await none.check()).items, []);
+});
+
+test('rec#106: a running client that writes its configuration back is the person\'s to restart, never auto-reconnected', async (t) => {
+  const checkup = doctor(t, { observeClients: () => ({ clients: [
+    client('claude-desktop', 'changed', { restart: { running: true } }),
+    client('cursor', 'changed', { overwritten: true }),
+    client('codex', 'changed', { restart: { running: false } })
+  ] }) });
+  const items = (await checkup.check()).items.filter(({ kind }) => kind === 'client_outdated');
+  assert.deepEqual(items.map(({ id, fix }) => [id, fix]), [['client_outdated:claude-desktop', 'person'],
+    ['client_outdated:cursor', 'person'], ['client_outdated:codex', 'auto']]);
+  assert.deepEqual(reconnectableClients([client('claude-desktop', 'changed', { restart: { running: true } }), client('codex', 'connected')])
+    .map(({ id }) => id), ['codex']);
 });
