@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { parse } from './service.js';
+import { parse, parseAnswer } from './service.js';
 import { createJudgmentBackend, failureProvenance, judgmentAnswer, judgmentProvenance, pendingRecord,
   TONBORG_OPERATIONS } from './backend.js';
 import { assessRouting } from './routing.js';
@@ -292,7 +292,7 @@ function reviewDecisions(value, candidates, delegated) {
     if (!decision || typeof decision !== 'object' || Array.isArray(decision)) return decision;
     const { options, ...verdict } = decision; return verdict;
   }) } : value;
-  const parsed = parse(jsonSchemaToZod(reviewSchema(candidates, delegated, { options: false })), verdicts);
+  const parsed = parseAnswer(jsonSchemaToZod(reviewSchema(candidates, delegated, { options: false })), verdicts);
   const decisions = parsed.decisions.map((decision, index) => {
     const options = delegated ? null : sanitizeQuestionOptions(raw[index]?.options);
     return options ? { ...decision, options } : decision;

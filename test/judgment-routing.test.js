@@ -170,3 +170,18 @@ test('a refused or paused Tonborg model call says stop, not try again; a transie
     else assert.doesNotMatch(record.failure.recovery, /try again/i);
   }
 });
+
+// rec#110 item 7: a request Tonborg cannot use names its field; it never
+// surfaces as a bare internal_error.
+test('an unusable assess_agent_action request is invalid_input naming the field, not internal_error', async t => {
+  const { errorToolResult } = await import('../src/mcp/tool-result.js');
+  const { service } = routingFixture(t, { executors: [availableExecutor('space')] });
+  const refused = async input => errorToolResult(await service.assess(input).then(() => assert.fail('accepted'), error => error));
+  const global = await refused({ ...routingInput, personalProjectId: null });
+  assert.equal(global.structuredContent.error.code, 'invalid_input');
+  assert.match(global.structuredContent.error.message, /personalProjectId/);
+  await service.assess(routingInput);
+  const reused = await refused({ ...routingInput, objective: 'Different synthetic objective' });
+  assert.equal(reused.structuredContent.error.code, 'invalid_input');
+  assert.match(reused.structuredContent.error.message, /pass a new requestId/);
+});

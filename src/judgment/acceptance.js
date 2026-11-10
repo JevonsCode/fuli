@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { EmployeeError } from '../employees/manifest.js';
-import { parse } from './service.js';
+import { parse, parseAnswer } from './service.js';
 import { fingerprint } from './engine.js';
 import { VERDICT_FIELDS, verdictProperties } from './verdict-schema.js';
 import { objectSchema } from '../agent-tools/schema.js';
@@ -69,7 +69,7 @@ export async function assessAcceptance({ app, decide, context, service, input: r
         title: task.title, ...pendingRecord(answer), artifactRevision: input.artifactRevision, taskRevision: input.expectedRevision,
         requestFingerprint, policy }, `pending:${answer.pending.packageId}`);
     }
-    const decision = answer ? parse(jsonSchemaToZod(verdictSchema), answer.value) : !eligible ? {
+    const decision = answer ? parseAnswer(jsonSchemaToZod(verdictSchema), answer.value) : !eligible ? {
       outcome: 'escalate', summary: 'This artifact needs a passed verification from another Agent before automatic acceptance.',
       evidence: [gate.status], confidence: 0 } : { outcome: 'escalate', summary: hold.summary, evidence: hold.evidence, confidence: 0 };
     // C13: the lead's session judging its own task is not an independent

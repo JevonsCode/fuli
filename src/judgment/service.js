@@ -180,8 +180,21 @@ function agentReader(input, projectAgentId) {
   return taskKnowledgeReader(parse(agentReaderSchema, { personalProjectId: input.personalProjectId, projectAgentId }));
 }
 
+// A caller's request Tonborg cannot use: invalid_input naming each field and
+// what is wrong, never its value (rec#110 item 7: a plain TypeError surfaced
+// as a bare internal_error).
 export function parse(schema, input) {
   const result = schema.safeParse(input);
-  if (!result.success) throw new TypeError(`Invalid judgment request: ${result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+  if (!result.success) throw new InvalidInputError(`Invalid judgment request: ${issuesOf(result.error)}`);
   return result.data;
 }
+
+// A model's answer that does not fit its schema: a judgment failure its record
+// keeps, not the caller's argument.
+export function parseAnswer(schema, answer) {
+  const result = schema.safeParse(answer);
+  if (!result.success) throw new TypeError(`Invalid judgment answer: ${issuesOf(result.error)}`);
+  return result.data;
+}
+
+const issuesOf = error => error.issues.map(i => `${i.path.join('.') || 'request'}: ${i.message}`).join('; ');

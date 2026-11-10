@@ -1,11 +1,12 @@
 import { z } from 'zod';
-import { parse } from './service.js';
+import { parse, parseAnswer } from './service.js';
 import { fingerprint } from './engine.js';
 import { arraySchema, boundedString, enumSchema, nullableStringSchema, objectSchema } from '../agent-tools/schema.js';
 import { jsonSchemaToZod } from '../mcp/tool-schema.js';
 import { FAILED_JUDGMENT_GUIDANCE, failureProvenance, judgmentFailure, judgmentProvenance, pendingRecord, TONBORG_OPERATIONS } from './backend.js';
 import { PREFERENCE_RECEIPT_RULES, preferenceDeliveryRecord, preferenceHold } from './preference-receipt.js';
 import { coversClient } from '../agents/source-applications.js';
+import { InvalidInputError } from '../app/application-error.js';
 
 const inputSchema = z.object({ personalSpaceId: z.string().min(1).max(256), personalProjectId: z.string().min(1).max(256),
   requestId: z.string().min(1).max(256), objective: z.string().min(1).max(8000),
@@ -27,7 +28,7 @@ export async function assessRouting({ app, decide, context, service, input: raw 
   const saved = store.setting(input.personalSpaceId, key).value;
   if (saved) {
     const record = store.get(input.personalSpaceId, saved);
-    if (record.requestFingerprint !== fingerprint(input)) throw new TypeError('requestId already belongs to different judgment evidence');
+    if (record.requestFingerprint !== fingerprint(input)) throw new InvalidInputError('requestId already belongs to a different assess_agent_action request: pass a new requestId');
     return record;
   }
   const token = store.claim(input.personalSpaceId, input.personalProjectId);
@@ -90,7 +91,7 @@ export async function assessRouting({ app, decide, context, service, input: raw 
         requestFingerprint: fingerprint(input), policy, selection: null }, `pending:${answer.pending.packageId}`);
     }
     stage = 'answer';
-    const selected = answer ? parse(jsonSchemaToZod(selectionSchema), answer.value)
+    const selected = answer ? parseAnswer(jsonSchemaToZod(selectionSchema), answer.value)
       : hold ? { executorId: null, model: null, disposition: 'ask_user', conversationId: null, summary: hold.summary, evidence: hold.evidence }
         : { executorId: null, model: null, disposition: 'ask_user', conversationId: null, summary: 'No authorized, available executor matches this task.', evidence: ['Executor preflight and permission checks'] };
     const executor = eligible.find(e => e.executorId === selected.executorId);
