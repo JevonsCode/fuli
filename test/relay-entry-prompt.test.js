@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import { callAgentTool } from '../src/agent-tools.js';
 import { entryPromptRecords } from '../src/agent-delegation/entry-prompts.js';
+import { nativeChoiceAnswers } from '../src/agents/choice-answers.js';
 import { agentHostRequestContext } from '../src/app/agent-request-context.js';
 import { codexEntry, finishTask, fixture } from './fixtures/capture-project-fixture.js';
 
@@ -89,4 +90,32 @@ test('a choice the person picked in the client\'s own question card is relayed, 
   assert.equal(sent[0].call.relayed.messageRef.at, later);
   await assert.rejects(callAgentTool(f.app, 'run_delegated_action', { ...RELAY,
     taskContextToken: entry.context.taskContextToken, personWords: '先别验收 synthetic-old-choice' }), { code: 'person_words_not_found' });
+});
+
+test('a choice picked in the Codex question card is read from its rollout and relayed; a card that was not shown counts for nothing (rec#93)', async (t) => {
+  const { f } = await relayFixture(t);
+  const home = mkdtempSync(join(tmpdir(), 'fuli-relay-codex-home-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const entry = await codexEntry(f, f.dirs.thesis, { prompt: 'Synthetic question turn' });
+  const at = minutes => new Date(Date.now() + minutes * 60_000).toISOString();
+  const line = (when, type, payload) => JSON.stringify({ timestamp: when, type, payload });
+  const call = (when, name, id) => line(when, 'response_item', { type: 'function_call', name, call_id: id, arguments: '{}' });
+  const output = (when, id, value) => line(when, 'response_item', { type: 'function_call_output', call_id: id, output: value });
+  const said = (when, message) => line(when, 'event_msg', { type: 'user_message', message, images: [] });
+  const dir = join(home, 'sessions', '2026', '11', '10');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'rollout-2026-11-10T00-00-00-synthetic-codex-session.jsonl'), [
+    line(at(-120), 'session_meta', { id: 'synthetic-codex-session' }),
+    call(at(-61), 'request_user_input_async', 'old'), output(at(-61), 'old', '{"accepted":true}'),
+    said(at(-60), '先别验收 synthetic-old-choice'),
+    call(at(1), 'request_user_input_async', 'failed'), output(at(1), 'failed', '{"accepted":false}'),
+    said(at(2), '验收通过 synthetic-no-card'),
+    call(at(3), 'request_user_input_async', 'shown'), output(at(3), 'shown', '{"accepted":true}'),
+    said(at(4), '验收通过 synthetic-card-choice')].join('\n'));
+  f.app.nativeChoiceAnswers = task => nativeChoiceAnswers(task, { env: { CODEX_HOME: home } });
+  const relay = personWords => callAgentTool(f.app, 'run_delegated_action', { ...RELAY,
+    taskContextToken: entry.context.taskContextToken, personWords });
+  await assert.rejects(relay('先别验收 synthetic-old-choice'), { code: 'person_words_not_found' }, 'answered before this task began');
+  await assert.rejects(relay('验收通过 synthetic-no-card'), { code: 'person_words_not_found' }, 'no card was shown');
+  assert.equal((await relay('验收通过 synthetic-card-choice')).relayed.messageRef.source, 'native_choice');
 });
