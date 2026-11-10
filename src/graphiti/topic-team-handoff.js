@@ -1,4 +1,5 @@
 import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
+import { sha256Bytes } from '../security/digest.js';
 import { singleLine } from '../text/single-line.js';
 
 // When a topic grows into a project (topic-proposals.js), Astro has Bole hire
@@ -33,11 +34,14 @@ export async function staffTopicTeam(application, { topic, projectId, lead, crea
   const name = topic.slice(0, TOPIC_CHARS);
   const conversations = await topicConversations(application, conversationIds);
   const brief = handoffBrief(name, conversations, conversationIds.length, knowledgeMoved);
+  // One handover per set of conversations: the same formation repeated is the
+  // same tasks, and a topic that grows into the project again is a new handover.
+  const formation = sha256Bytes(JSON.stringify([...conversationIds].sort())).slice(0, 16);
   const submit = async (position, body) => {
     try {
       return handed(position, await application.personal.submitProjectAgentTask({
         personal_space_id: spaceId, personal_project_id: projectId, duration: 'ongoing', start: false,
-        source_application: sourceApplication, idempotency_key: `topic-handoff:${projectId}:${position}`, ...body }));
+        source_application: sourceApplication, idempotency_key: `topic-handoff:${projectId}:${formation}:${position}`, ...body }));
     } catch { return { position, status: 'unavailable', agent_id: null, name: null, task_id: null }; }
   };
 
@@ -91,7 +95,7 @@ async function topicConversations(application, conversationIds) {
   } catch { return []; }
 }
 
-export function handoffBrief(topic, conversations, conversationCount, knowledgeMoved) {
+function handoffBrief(topic, conversations, conversationCount, knowledgeMoved) {
   const shown = conversations.slice(0, BRIEF_CONVERSATIONS);
   const days = conversations.map(conversation => conversation.day).filter(Boolean).sort();
   const span = days.length ? `（${days[0]} 至 ${days.at(-1)}）` : '';

@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { acceptTopicProposal, topicOutcome } from '../src/graphiti/topic-proposals.js';
-import { handoffBrief, staffTopicTeam, teamNotice } from '../src/graphiti/topic-team-handoff.js';
+import { staffTopicTeam, teamNotice } from '../src/graphiti/topic-team-handoff.js';
 
 // Synthetic Provider boundary: a grown topic, three conversations Astro
 // holds, and a staffing route that hires whoever a task asks for.
-function application({ existingProject = false, refuse = [], policyFails = false, conversationsFail = false } = {}) {
+function application({ existingProject = false, refuse = [], policyFails = false, conversationsFail = false, held = null } = {}) {
   const calls = [];
   const registered = new Map(existingProject
     ? [['garden', { project_id: 'garden', profile: { name: 'Garden', purpose: 'Mine', lifecycle: 'active' } }]] : []);
@@ -27,7 +27,7 @@ function application({ existingProject = false, refuse = [], policyFails = false
       conversation: async (operation, input) => {
         calls.push(['conversations', input]);
         if (conversationsFail) throw new Error('synthetic read failure');
-        return { conversations: [
+        return { conversations: held ?? [
           { id: 'c1', summary: 'Picked raised beds\nand a drip line.', last_activity: '2026-11-03T09:00:00Z' },
           { id: 'other', summary: 'Another topic', last_activity: '2026-11-04T09:00:00Z' },
           { id: 'c2', summary: '', last_activity: '2026-11-05T09:00:00Z' }] };
@@ -58,10 +58,10 @@ test('a grown topic gets a team from Bole and each person a handover task of the
   const tasks = app.calls.filter(([kind]) => kind === 'task').map(([, input]) => input);
   assert.ok(tasks.every(task => task.start === false && task.duration === 'ongoing' && task.personal_project_id === 'garden'
     && task.source_application === 'claude_code'));
-  assert.deepEqual(tasks.map(task => [task.title, task.staffing_intent, task.idempotency_key]), [
-    ['接手「Garden」', 'reuse_preferred', 'topic-handoff:garden:lead'],
-    ['接手「Garden」：开发', 'new_durable', 'topic-handoff:garden:engineering'],
-    ['接手「Garden」：独立验收', 'new_durable', 'topic-handoff:garden:verification']]);
+  assert.deepEqual(tasks.map(task => [task.title, task.staffing_intent, task.idempotency_key.replace(/:[0-9a-f]{16}:/, ':<formation>:')]), [
+    ['接手「Garden」', 'reuse_preferred', 'topic-handoff:garden:<formation>:lead'],
+    ['接手「Garden」：开发', 'new_durable', 'topic-handoff:garden:<formation>:engineering'],
+    ['接手「Garden」：独立验收', 'new_durable', 'topic-handoff:garden:<formation>:verification']]);
   assert.equal(tasks[0].lead_agent_id, 'lead-1');
   assert.equal(tasks[1].coordinator_agent_id, 'lead-1');
   assert.deepEqual([tasks[1].recruitment_profile.name, tasks[1].recruitment_profile.work_kinds], ['Garden 开发', ['implementation']]);
@@ -84,7 +84,7 @@ test('a grown topic gets a team from Bole and each person a handover task of the
     + '[改名、换上级或撤销](http://127.0.0.1:2797/employees/assistant?promoted=garden&topic=Garden)');
   // Whether they start now is the person's one click.
   assert.deepEqual(promoted.start_question, { ask: '「Garden」的团队现在就开工吗？', options: ['马上开工', '先不'], allow_other: true,
-    on_yes: { tool: 'record_project_agent_task_activity', status: 'queued', personal_project_id: 'garden',
+    on_yes: { tool: 'record_project_agent_task_activity', status: 'queued', summary: '你说马上开工', personal_project_id: 'garden',
       task_ids: ['task-project_context', 'task-implementation', 'task-verification'] } });
   assert.match(promoted.guidance, /start_question.*only the person answers/);
 });
@@ -115,16 +115,36 @@ test('a step that fails is reported and never undoes the formation', async () =>
 });
 
 test('the brief lists at most eight conversations and every handover text fits a task', async () => {
-  const many = Array.from({ length: 12 }, (_, index) => ({ id: `c${index}`, day: `2026-11-${String(index + 1).padStart(2, '0')}`,
-    outcome: 'x'.repeat(120) }));
-  const brief = handoffBrief('T', many, 12, 0);
-  assert.equal(brief.split('\n').filter(line => line.startsWith('- ')).length, 8);
-  assert.match(brief, /另有 4 个会话没有列出。/);
-  const app = application();
-  await staffTopicTeam(app, { topic: 'T'.repeat(200), projectId: 'garden', created: true, conversationIds: ['c1'],
+  const ids = Array.from({ length: 12 }, (_, index) => `c${index}`);
+  const app = application({ held: ids.map((id, index) => ({ id, summary: 'x'.repeat(300),
+    last_activity: `2026-11-${String(index + 1).padStart(2, '0')}T09:00:00Z` })) });
+  await staffTopicTeam(app, { topic: 'T'.repeat(200), projectId: 'garden', created: true, conversationIds: ids,
     knowledgeMoved: 0, lead: { agent_id: 'lead-1', profile: { name: 'L' } } });
-  for (const [, task] of app.calls.filter(([kind]) => kind === 'task')) {
-    assert.ok(task.title.length <= 160 && task.objective.length <= 4096);
-  }
+  const tasks = app.calls.filter(([kind]) => kind === 'task').map(([, task]) => task);
+  assert.equal(tasks[0].objective.split('\n').filter(line => line.startsWith('- ')).length, 8);
+  assert.match(tasks[0].objective, /另有 4 个会话没有列出。/);
+  assert.ok(tasks.every(task => task.title.length <= 160 && task.objective.length <= 4096));
   assert.equal(teamNotice(null), '');
+});
+
+test('the same formation repeats the same tasks; a topic that grows into the project again is a new handover', async () => {
+  const keys = async conversationIds => {
+    const app = application();
+    await staffTopicTeam(app, { topic: 'Garden', projectId: 'garden', created: false, conversationIds, knowledgeMoved: 0,
+      lead: { agent_id: 'lead-1', profile: { name: 'L' } } });
+    return app.calls.filter(([kind]) => kind === 'task').map(([, task]) => task.idempotency_key);
+  };
+  assert.deepEqual(await keys(['c2', 'c1']), await keys(['c1', 'c2']));
+  assert.notDeepEqual(await keys(['c1', 'c2']), await keys(['c3', 'c4', 'c5']));
+});
+
+test('only a handover waiting in the backlog is offered to start', async () => {
+  const app = application();
+  const submit = app.personal.submitProjectAgentTask;
+  app.personal.submitProjectAgentTask = async input => {
+    const route = await submit(input);
+    return input.work_kind === 'verification' ? { ...route, task: { ...route.task, status: 'blocked' } } : route;
+  };
+  const promoted = await topicOutcome(app, 'garden');
+  assert.deepEqual(promoted.start_question.on_yes.task_ids, ['task-project_context', 'task-implementation']);
 });

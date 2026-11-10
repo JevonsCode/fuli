@@ -78,11 +78,12 @@ async function promoteTopic(application, topic, { sourceApplication = 'other' } 
 // 11-11): one click, with 其他 for their own words. Each handover is a
 // backlog task, so "yes" is setting those tasks to queued.
 function startQuestion(formed) {
-  const tasks = (formed.team?.handoffs ?? []).filter(item => item.task_id).map(item => item.task_id);
+  // Only a task waiting in the backlog can be started; a blocked one says why in the task itself.
+  const tasks = (formed.team?.handoffs ?? []).filter(item => item.task_id && item.status === 'backlog').map(item => item.task_id);
   if (!tasks.length) return {};
   return { start_question: { ask: `「${formed.topic}」的团队现在就开工吗？`, options: ['马上开工', '先不'], allow_other: true,
-    on_yes: { tool: 'record_project_agent_task_activity', status: 'queued', personal_project_id: formed.personal_project_id,
-      task_ids: tasks } } };
+    on_yes: { tool: 'record_project_agent_task_activity', status: 'queued', summary: '你说马上开工',
+      personal_project_id: formed.personal_project_id, task_ids: tasks } } };
 }
 
 // The person said yes: an AI-draft brief, a lead staffed through AR, every
