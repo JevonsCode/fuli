@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { positiveInteger, requiredResponseString, requiredString } from '../../validation/values.js';
-import { jsonObject, onlineUrl } from './response-values.js';
+import { isLoopbackUrl, jsonObject, onlineUrl } from './response-values.js';
 
 const DEFAULT_SCORE_THRESHOLD = 0.5;
 const MAX_KNOWLEDGE_BASES = 32;
@@ -45,9 +45,9 @@ export function createRetrievalApiConnector({ fetchImpl = globalThis.fetch } = {
     name: 'RAG Retrieval API',
     capabilities: ['retrieve'],
 
-    // The credential goes to an endpoint the caller chose: only the person
-    // names it (连接 page).
-    personOnlyFields: (config) => (config.tokenEnv ? ['tokenEnv'] : []),
+    // The credential goes to an endpoint the caller chose, and a loopback URL
+    // reaches a local service: only the person names these (连接 page).
+    personOnlyFields: (config) => [config.tokenEnv && 'tokenEnv', isLoopbackUrl(config.url) && 'url'].filter(Boolean),
 
     async check(context) {
       await retrieve(context, { checking: true });

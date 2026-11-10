@@ -676,6 +676,14 @@ test('an Agent tool cannot name a local command or send a credential to an endpo
   await assert.rejects(async () => dispatchGraphTool(app, 'create_external_knowledge_binding', {
     name: 'RAG', connectorType: 'retrieval_api', source: { knowledgeIds: ['kb'] }, targets,
     connectorConfig: { url: 'https://rag.example.test/retrieval', tokenEnv: 'SECRET_TOKEN' } }), refused);
+  // A local service, and local code with the environment it names, are the person's too.
+  for (const [connectorType, connectorConfig] of [
+    ['mcp', { url: 'http://127.0.0.1:2737/api/peer/disable' }],
+    ['retrieval_api', { url: 'http://localhost:9000/retrieval' }],
+    ['custom', { module: 'synthetic.mjs', environmentNames: ['SECRET_TOKEN'] }]]) {
+    await assert.rejects(async () => dispatchGraphTool(app, 'create_external_knowledge_binding',
+      { name: 'Local', connectorType, connectorConfig, source: { knowledgeIds: ['kb'] }, targets }), refused);
+  }
   assert.deepEqual(opened, []);
   assert.deepEqual(fetched, []);
   assert.deepEqual(await service.listBindings(), []);
