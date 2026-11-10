@@ -6,14 +6,20 @@ export const CHAT_LISTING = Object.freeze({
   get_collaboration_preferences: {
     description: 'Without Hook context call this first: projectPath=current directory, taskPrompt=current request; native sessionId only from the host. Apply effective_preferences, including write payloads. Returns recall and a fresh taskContextToken; never reuse old tokens. Follow checkpoint_required/guidance: routine empty finishes may skip checkpoint. Rules: fuli://rules/task-entry.'
   },
+  // omit: rare arguments left out of the listing (a search's continuation
+  // cursor goes through the listed fuli_call); the call still takes them.
   search_knowledge_graph: {
+    omit: ['cursor'],
     description: 'Search remembered facts, decisions, URLs, runbooks and preferences before saying you do not know. Scope is your profile, the active project and its authorized PART_OF/USES_KNOWLEDGE_FROM parents; RELATED_TO never expands it, and all_local_confirmed needs explicit user consent. Results carry sourceMarker or noMatchSourceMarker and retrievalGuidance for the next step.'
   },
   search_current_project_knowledge: {
+    omit: ['cursor'],
     description: 'Project recall for normal work: projectPath plus 1-4 focused queries (an action, artifact, system or ID, not the whole request). Searches this project, then its authorized parents; never guesses an ambiguous project. related_project_suggestions need the user\'s OK before any expansion.'
   },
   checkpoint_task_knowledge: {
     description: 'Record capture candidates or meaningful workLog once per task; routine empty finishes follow entry checkpoint_guidance. Use retain_nothing or capture_candidates and reason; employees add truthful workLog. Optional agentMemory (loaded revision), remember, experiences, knowledgeUsage, actual collaborators. No transcripts or secrets; proposals stay pending. Copy returned agent_receipt.markdown.',
+    // Only a checkpoint_not_saved result asks for it, and says how; the full definition still takes it.
+    omit: ['unsavedCheckpointId'],
     // A graph capture is rare at checkpoint; experiences covers reusable approaches.
     properties: {
       capture: { type: 'object', description: 'Rare graph capture; exact shape via list_agent_interfaces(toolName). Prefer remember or experiences.' },
@@ -27,13 +33,10 @@ export const CHAT_LISTING = Object.freeze({
 
 // The schema a chat client sees for a definition: compact properties swapped in.
 export function chatListedSchema(definition) {
-  const properties = CHAT_LISTING[definition.name]?.properties;
-  const schema = withoutBounds(properties ? { ...definition.inputSchema, properties: { ...definition.inputSchema.properties, ...properties } } : definition.inputSchema);
-  if (!['search_knowledge_graph', 'search_current_project_knowledge'].includes(definition.name)) return schema;
-  // Rare continuation arguments use the already-listed fuli_call dispatcher;
-  // the default tools/list cost stays unchanged. Full discovery keeps cursor.
-  const { cursor, ...listed } = schema.properties;
-  return { ...schema, properties: listed };
+  const { properties, omit = [] } = CHAT_LISTING[definition.name] ?? {};
+  const listed = Object.fromEntries(Object.entries({ ...definition.inputSchema.properties, ...properties })
+    .filter(([key]) => !omit.includes(key)));
+  return withoutBounds(properties || omit.length ? { ...definition.inputSchema, properties: listed } : definition.inputSchema);
 }
 
 // Length and item-count bounds stay out of the chat listing: OpenCode code

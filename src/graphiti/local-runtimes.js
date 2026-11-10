@@ -36,6 +36,7 @@ import { createSessionPreferenceDelivery } from '../conversations/preference-ses
 import { createSessionPromptSentences } from './session-prompt-sentences.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { nativeChoiceAnswers } from '../agents/choice-answers.js';
+import { unsavedCheckpointRecords } from './unsaved-checkpoints.js';
 import { createProcessInspector } from '../agent-services/process-identity.js';
 
 // The local stores and runtimes an application opened from a runtime
@@ -99,6 +100,8 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   app.personProfile = createPersonProfile({ path: join(dataDir, 'person-profile.json') });
   // The prompt of each session's current hook-entered task, kept only for the relay check (rec#80).
   app.entryPrompts = entryPromptRecords(dataDir);
+  // A checkpoint FULI could not save, kept until it is resubmitted (rec#110 item 8).
+  app.unsavedCheckpoints = unsavedCheckpointRecords(dataDir);
   // What the person answered in the client's own question card, for the same check.
   app.nativeChoiceAnswers = task => nativeChoiceAnswers(task);
   // Every FLA's work surfaces in one table, with 全部暂停 and 恢复 (rec#11 D-85); the file is created by the first pause.

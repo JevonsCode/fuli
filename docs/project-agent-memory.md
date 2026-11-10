@@ -50,6 +50,12 @@ Provider 重新检查任职、客户端权限与任务状态，不能覆盖已�
 凭据或临时日志。任务检查点只更新任务所在层；更新全局层须显式使用 `personalProjectId: null`，
 不自动复制项目内容。重复相同提交不重复写入，版本冲突明确返回；中断任务保留未完成状态。
 
+图谱服务没有保存检查点时（没响应，或拒绝，例如 token 来自另一个客户端），提交的内容留在本机
+`unsaved-checkpoints/`，返回 `unsaved_checkpoint_id`（rec#110 item 8）。拒绝时返回
+`checkpoint_not_saved` 和服务给的原因；没响应时仍是 `checkpoint_incomplete`。Agent 要告诉人这次的知识还没存进
+FULI。解决原因后，用能用的 token 加 `unsavedCheckpointId` 再调一次，FULI 发出留下的内容，存好后删掉本机这份；
+原样重试成功也会删掉。这里的文件只有补交会读。
+
 材料实际影响了回答或完成的行动时，可显式附 `knowledgeUsage`（`itemId`、`itemKind`、
 `useKind: cited/applied`）。它与 prepare 的检查点声明、工作记录及所附记忆在同一事务记账；
 失败全部回滚，重试及重启重放原始回执，内容代次变化后也不重记。`retain_nothing` 仍可携带

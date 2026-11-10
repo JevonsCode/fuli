@@ -56,6 +56,7 @@ import { OCCUPATION_PLUGINS_STATE_FORMAT } from '../occupation-plugins/port.js';
 import { OCCUPATION_KIT_CHOICES_FORMAT } from '../occupation-plugins/choice-store.js';
 import { SESSION_CLIENT_FORMAT } from '../agent-kits/session-clients.js';
 import { ENTRY_PROMPT_FORMAT } from '../agent-delegation/entry-prompts.js';
+import { UNSAVED_CHECKPOINT_DIRECTORY, UNSAVED_CHECKPOINT_FORMAT } from '../graphiti/unsaved-checkpoints.js';
 import { PERSON_PROFILE_FORMAT } from '../person-profile/port.js';
 import { AGENT_DELEGATION_FORMAT } from '../agent-delegation/operation-log.js';
 import { AGENT_DELEGATION_POLICY_FORMAT } from '../agent-delegation/policy-store.js';
@@ -167,6 +168,8 @@ const jsonDirectories = () => [
   ['session-clients', SESSION_CLIENT_FORMAT],
   // The prompt of the session's current hook-entered task, until its checkpoint (rec#80 relay check).
   ['entry-prompts', ENTRY_PROMPT_FORMAT],
+  // A checkpoint FULI's graph service did not save, until it is resubmitted (rec#110 item 8).
+  [UNSAVED_CHECKPOINT_DIRECTORY, UNSAVED_CHECKPOINT_FORMAT],
   // The #fulidebug turn records the person reads in Settings › 系统, newest 20 within 50 MB; local only.
   ['debug-turns', DEBUG_TURN_FORMAT],
   // The turn a #fulidebug prompt began, until its Stop records it.

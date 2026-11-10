@@ -1,5 +1,3 @@
-import { recoverProviderOutage } from './provider-outage.js';
-
 // rec#39: the first checkpoint call binds its input, so a call the Graph
 // Provider never answered finishes only when resent unchanged. Say so instead
 // of a bare timeout, which led Agents to retry with new wording and be refused.
@@ -16,8 +14,4 @@ export function checkpointIncomplete(error) {
     retry: { tool: 'checkpoint_task_knowledge', same_input: true, attempts: 1 },
     guidance: GUIDANCE
   };
-}
-
-export function withCheckpointOutageStatus(checkpoint) {
-  return recoverProviderOutage(checkpoint, checkpointIncomplete);
 }

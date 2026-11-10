@@ -15,7 +15,7 @@ const checkpointExperiencesSchema = { ...arraySchema(objectSchema({
   solution: boundedString(2000),
   boundary: boundedString(600)
 }, ['task', 'searchKeys', 'solution']), { minItems: 1, maxItems: 3 }),
-description: 'Instead of capture: reusable approaches; saved pending in this project.' };
+description: 'Instead of capture: reusable approaches, pending in this project.' };
 
 const checkpointRememberSchema = { ...arraySchema(objectSchema({
   kind: enumSchema(['preference', 'project_fact']),
@@ -29,8 +29,10 @@ const checkpointRememberSchema = { ...arraySchema(objectSchema({
   workKind: stringSchema(),
   tasteDomain: stringSchema()
 }, ['kind', 'text']), { minItems: 1, maxItems: 8 }),
-description: "Instead of capture: what the user asked to keep. preference: global (quote = their words), project, or unsure (held until the user places it); project_fact: this project. Pending; skip small talk. Qualifiers only as stated." };
+description: "Instead of capture: what the user asked to keep. preference: global (quote = their words), project, or unsure (held until placed); project_fact: this project. Pending; skip small talk; qualifiers only as stated." };
 // The compact checkpoint inputs FULI expands itself, listed together.
+// unsavedCheckpointId: a checkpoint FULI kept after it could not save it (rec#110 item 8).
 export const checkpointCompactFields = Object.freeze({
-  experiences: checkpointExperiencesSchema, remember: checkpointRememberSchema, triage: checkpointTriageSchema
+  experiences: checkpointExperiencesSchema, remember: checkpointRememberSchema, triage: checkpointTriageSchema,
+  unsavedCheckpointId: { ...stringSchema(), description: 'A kept unsaved checkpoint to resend instead.' }
 });
