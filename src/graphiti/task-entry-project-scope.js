@@ -6,6 +6,7 @@ import { namedFlaRequest, namedFlaResolution, namedFlaTask } from './task-entry-
 import { groupDiscussionRequest } from './task-entry-group-discussion.js';
 import { addressedAgentId } from './fla-mention.js';
 import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
+import { sessionOwnerOf } from './task-entry-owner-change.js';
 
 // Restore only exact session provenance; a normal folder name is not a role binding.
 // An unclaimed conversation never creates a project or hires a lead: it stays
@@ -27,7 +28,10 @@ export async function resolveTaskEntryProject(application, resolution, input) {
   if (named) return group ? { ...named, group } : named;
   const home = await sessionEntryProject(application, resolution, input, readSessionTask);
   const routed = group?.holdsProject ? home : await withStandingOwner(application, home, input);
-  return fla || group ? { ...routed, ...(fla ? { fla } : {}), ...(group ? { group } : {}) } : routed;
+  // Whose the session's last task was, so the entry can say when that changes (task-entry-owner-change.js).
+  const sessionOwner = sessionOwnerOf(sessionTask);
+  return fla || group || sessionOwner ? { ...routed, ...(fla ? { fla } : {}), ...(group ? { group } : {}),
+    ...(sessionOwner ? { sessionOwner } : {}) } : routed;
 }
 
 // The session's current task, read at most once per entry, and not at all
