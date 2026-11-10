@@ -30,14 +30,19 @@ export function firstField(file, pick) {
   return null;
 }
 
-// The JSON lines near the end of the log, oldest first, and whether they are the whole log.
+// The JSON lines near the end of the log, oldest first; whether they are the
+// whole log; and whether any line could not be read (`unreadable`): one still
+// being written, or damaged. Only the first line of a cut tail is expected to be
+// partial and does not count.
 export function lastEntries(file) {
   const { lines, whole } = readWindow(file, 'end');
   const entries = [];
-  for (const line of lines) {
-    try { entries.push(JSON.parse(line)); } catch { /* partial line */ }
-  }
-  return { entries, whole };
+  let unreadable = false;
+  lines.forEach((line, index) => {
+    if (!line.trim()) return;
+    try { entries.push(JSON.parse(line)); } catch { if (whole || index > 0) unreadable = true; }
+  });
+  return { entries, whole, unreadable };
 }
 
 function readWindow(file, edge) {

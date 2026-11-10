@@ -78,5 +78,16 @@ test('a Codex session is idle only when its log shows the last turn ended; unkno
   // A cut last line (the end still being written) is not evidence of an end.
   write(meta, event('task_started'), event('task_complete').slice(0, 20));
   assert.equal(running(), true);
+  // A new start still being written, after a finished turn or as the very first turn.
+  write(meta, event('task_started'), event('task_complete'), event('task_started').slice(0, 20));
+  assert.equal(running(), true, 'a partial new start after an ended turn');
+  write(meta, event('task_started').slice(0, 20));
+  assert.equal(running(), true, 'a partial first start');
+  // A damaged line in the middle is no evidence either.
+  write(meta, event('task_started'), '{"type":"event_msg",', event('task_complete'), '');
+  assert.equal(running(), true, 'an unreadable middle line');
+  // Only the cut first line of a long tail is expected to be partial.
+  write(meta, event('task_started'), ...Array(100).fill(filler), event('task_complete'), '');
+  assert.equal(running(), false, 'the cut first line of the tail window is not counted');
   assert.equal(codexWake.turnRunning('missing-session', { home, env: {} }), false);
 });

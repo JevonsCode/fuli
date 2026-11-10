@@ -39,12 +39,14 @@ export const codexWake = Object.freeze({
   // `codex exec resume` writes into the conversation in place, so a turn that
   // may still be running there is never joined (rec#109): the ask goes elsewhere.
   // Only evidence counts as idle: the last turn event read is an end, or the
-  // whole log was read and no turn ever started. A quiet log (a long tool wait)
-  // or a start outside the read tail proves nothing, so it may still be running.
+  // whole log was read and no turn ever started. A quiet log (a long tool wait),
+  // a start outside the read tail or a line that cannot be read (an event still
+  // being written, maybe a new start) proves nothing, so it may still be running.
   turnRunning(sessionId, { home, env }) {
     const file = sessionFile(sessionId, { home, env });
     if (!file) return false;
-    const { entries, whole } = lastEntries(file);
+    const { entries, whole, unreadable } = lastEntries(file);
+    if (unreadable) return true;
     const last = entries.filter(entry => entry.type === 'event_msg').map(entry => entry.payload?.type)
       .filter(type => type === TURN_START || TURN_ENDS.has(type)).at(-1);
     return last === undefined ? !whole : !TURN_ENDS.has(last);
