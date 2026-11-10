@@ -669,6 +669,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     // itself can still answer its own ask first.
     if (ask?.kind === 'ask' && ask.status === 'stand_in' && me.session && ask.from_session === me.session
         && (ask.from_agent ?? null) === (me.agent?.agentId ?? null) && ask.to_client === me.client && ask.to_session === me.session) {
+      if (!standInInScope(ask, me)) throw validation('No such message for this Agent in the current project');
       return recordStandInReply({ store, ask, executor: { client: me.client, session: me.session }, body, idFactory });
     }
     if (!ask || ask.kind !== 'ask' || !me.agent || ask.to_agent !== me.agent.agentId
@@ -684,6 +685,16 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       via: `${me.client}:inbox`, from: { agentId: me.agent.agentId, name: label(me.agent), client: me.client, session: me.session },
       to, delivery: replyInbox.pendingFor(to) });
     return { status: 'sent', threadId: ask.thread_id };
+  }
+
+  // A stand-in answers only inside the space and project its ask was sent from,
+  // and a stand-in is never cross-project (messageAgent), so the ask's target
+  // project is that same project. A task outside every project matches only null.
+  function standInInScope(ask, me) {
+    const thread = store.getThread(ask.thread_id);
+    if (!thread || thread.space_id !== spaceId()) return false;
+    const project = thread.project_id ?? null;
+    return project === (me.projectId ?? null) && (ask.target_project_id ?? project) === project;
   }
 
   function refreshRemote({ threadId = null } = {}) {

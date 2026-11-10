@@ -15,10 +15,12 @@ const agent = (agentId, name, allowedClients) => ({ agentId, profile: { name, di
   responsibility: `${name} 的职责`, capabilities: [], allowedClients } });
 
 function fixture({ wake = null, sessions = {}, clientAvailable = () => true, turnRunning = () => false,
-  locateCwd = (client, sessionId) => `/work/${client}/${sessionId}`, grant = null } = {}) {
+  locateCwd = (client, sessionId) => `/work/${client}/${sessionId}`, grant = null, spaceId = 'space', store = createRoundtableStore() } = {}) {
   const agents = [agent('lead-1', 'Milo Reed', ['claude_code', 'codex']), agent('jamie-1', 'Jamie Ash', ['claude_code', 'codex'])];
   const tasks = {
     'token-milo': { projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: 'cc-milo', sourceApplication: 'claude_code' },
+    // The same Milo session, now working in another project.
+    'token-milo-elsewhere': { projectAgentId: 'lead-1', personalProjectId: 'other-app', sessionId: 'cc-milo', sourceApplication: 'claude_code' },
     'token-milo-codex': { projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: 'cx-milo', sourceApplication: 'codex' },
     'token-jamie': { projectAgentId: 'jamie-1', personalProjectId: 'app', sessionId: 'cx-jamie-next', sourceApplication: 'codex' },
     // A task outside every project (a global assistant's), as in the 11-10 session.
@@ -26,7 +28,7 @@ function fixture({ wake = null, sessions = {}, clientAvailable = () => true, tur
   };
   const woken = [], grants = [];
   const app = {
-    config: { personal: { spaceId: 'space' } },
+    config: { personal: { spaceId } },
     listProjectAgents: async () => agents,
     taskContextRegistry: { context: async token => tasks[token] },
     standingAssignments: createStandingAssignments(),
@@ -39,10 +41,10 @@ function fixture({ wake = null, sessions = {}, clientAvailable = () => true, tur
       verifyAgentDelegation: async () => ({ redeemed: true }), revokeAgentDelegation: async () => {} }
   };
   let id = 0;
-  const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), env: {}, openStore: () => createRoundtableStore(),
+  const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), env: {}, openStore: () => store,
     idFactory: () => `id-${++id}`, locateCwd, turnRunning, clientAvailable,
     wake: async input => { woken.push(input); return wake ? wake(input) : { body: 'Jamie 的结论', sessionId: input.sessionId ?? 'fresh-1' }; } });
-  return { roundtable, woken, grants };
+  return { roundtable, woken, grants, store };
 }
 
 const steps = ladder => ladder.steps.map(({ tier, client, session, outcome, reason }) => [tier, client, session, outcome, reason]);
@@ -171,4 +173,25 @@ test('every failure says why and moves on; wait never ends in a bare queued', as
   const late = await ask(slow.roundtable);
   assert.deepEqual([late.status, late.reason, late.delivery], ['queued', 'wake_timeout', 'unconfirmed']);
   assert.deepEqual(steps(late.ladder), [['resume', 'codex', 'cx-jamie', 'failed', 'wake_timeout']]);
+});
+
+test('a stand-in reply is refused with no writes outside the space and project its ask was sent from', async () => {
+  const here = fixture({ clientAvailable: () => false });
+  const result = await ask(here.roundtable);
+  const before = here.roundtable.thread({ threadId: result.threadId }).messages;
+  const unchanged = label => {
+    assert.deepEqual(here.roundtable.thread({ threadId: result.threadId }).messages, before, label);
+    assert.equal(here.store.getMessage(result.messageId).status, 'stand_in', label);
+    assert.deepEqual(here.roundtable.standInHandbacks('jamie-1', 'app'), [], label);
+  };
+  const standIn = (roundtable, taskContextToken) => roundtable.replyMessage({ taskContextToken, sourceApplication: 'claude_code',
+    messageId: result.messageId, body: 'stand-in answer' });
+  // The same Agent, client and session, now in another project's task.
+  await assert.rejects(standIn(here.roundtable, 'token-milo-elsewhere'), /No such message/);
+  unchanged('another project');
+  // The same store served for another space.
+  const elsewhere = fixture({ clientAvailable: () => false, spaceId: 'other-space', store: here.store });
+  await assert.rejects(standIn(elsewhere.roundtable, 'token-milo'), /No such message/);
+  unchanged('another space');
+  assert.equal((await standIn(here.roundtable, 'token-milo')).standIn, true, 'its own space and project still answer');
 });

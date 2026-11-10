@@ -30,22 +30,22 @@ export function firstField(file, pick) {
   return null;
 }
 
-// The JSON lines near the end of the log, oldest first, and when it was last written.
+// The JSON lines near the end of the log, oldest first, and whether they are the whole log.
 export function lastEntries(file) {
-  const { lines, modifiedMs } = readWindow(file, 'end');
+  const { lines, whole } = readWindow(file, 'end');
   const entries = [];
   for (const line of lines) {
     try { entries.push(JSON.parse(line)); } catch { /* partial line */ }
   }
-  return { entries, modifiedMs };
+  return { entries, whole };
 }
 
 function readWindow(file, edge) {
   const handle = openSync(file, 'r');
   try {
-    const { size, mtimeMs } = fstatSync(handle);
+    const { size } = fstatSync(handle);
     const buffer = Buffer.alloc(Math.min(WINDOW_BYTES, size));
     const length = readSync(handle, buffer, 0, buffer.length, edge === 'end' ? size - buffer.length : 0);
-    return { lines: buffer.subarray(0, length).toString('utf8').split('\n'), modifiedMs: mtimeMs };
+    return { lines: buffer.subarray(0, length).toString('utf8').split('\n'), whole: length === size };
   } finally { closeSync(handle); }
 }

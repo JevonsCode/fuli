@@ -4,9 +4,7 @@ import { join } from 'node:path';
 
 import { findFile, firstField, lastEntries, listDirectory } from '../session-log.js';
 
-// A turn the log shows started but not finished is running, unless the log has
-// not moved for this long (a client that crashed mid-turn never finishes it).
-const RUNNING_TURN_STALE_MS = 15 * 60_000;
+const TURN_START = 'task_started';
 const TURN_ENDS = new Set(['task_complete', 'turn_aborted']);
 
 // Wakes Codex headlessly with a read-only sandbox. Resuming records the exchange in
@@ -39,15 +37,17 @@ export const codexWake = Object.freeze({
   },
 
   // `codex exec resume` writes into the conversation in place, so a turn that
-  // is still running there is never joined (rec#109): the ask goes elsewhere.
-  turnRunning(sessionId, { home, env, now = Date.now() }) {
+  // may still be running there is never joined (rec#109): the ask goes elsewhere.
+  // Only evidence counts as idle: the last turn event read is an end, or the
+  // whole log was read and no turn ever started. A quiet log (a long tool wait)
+  // or a start outside the read tail proves nothing, so it may still be running.
+  turnRunning(sessionId, { home, env }) {
     const file = sessionFile(sessionId, { home, env });
     if (!file) return false;
-    const { entries, modifiedMs } = lastEntries(file);
-    if (now - modifiedMs > RUNNING_TURN_STALE_MS) return false;
-    const turns = entries.filter(entry => entry.type === 'event_msg').map(entry => entry.payload?.type);
-    const started = turns.lastIndexOf('task_started');
-    return started >= 0 && !turns.slice(started + 1).some(type => TURN_ENDS.has(type));
+    const { entries, whole } = lastEntries(file);
+    const last = entries.filter(entry => entry.type === 'event_msg').map(entry => entry.payload?.type)
+      .filter(type => type === TURN_START || TURN_ENDS.has(type)).at(-1);
+    return last === undefined ? !whole : !TURN_ENDS.has(last);
   },
 
   // `codex exec --json` streams items; the last agent message before turn.completed is the answer.
