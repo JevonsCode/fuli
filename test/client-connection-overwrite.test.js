@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { configuredInstall } from '../src/agent-kits/configured-install.js';
+import { configuredInstall } from '../src/system/configured-install.js';
 import { claudeDesktopApp } from '../src/agents/claude-desktop/app-control.js';
 import { clientApps } from '../src/agents/client-apps.js';
 import { createClientConnectionObserver } from '../src/system/client-connection-status.js';

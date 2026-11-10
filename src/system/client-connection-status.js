@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { sep } from 'node:path';
 
 import { clientSourceApplication, detectClients } from '../agent-kits/client-detection.js';
-import { configuredInstall, installOf } from '../agent-kits/configured-install.js';
+import { configuredInstall, installOf } from './configured-install.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 
 // Kept per client so a long-lived console cannot grow this file without bound.
