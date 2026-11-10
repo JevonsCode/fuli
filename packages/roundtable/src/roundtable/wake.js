@@ -96,7 +96,9 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
     const child = spawn(command, args, { cwd, env, shell: false, windowsHide: true,
       detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'ignore'] });
     const closed = new Promise((resolve) => child.once('close', resolve));
-    child.once('spawn', () => onSpawn?.(child.pid));
+    // The PID is known as soon as spawn() returns: record it before anything can
+    // lose the console, not on the later spawn event (rec#97).
+    if (Number.isSafeInteger(child.pid)) onSpawn?.(child.pid);
     let output = '', pending = '', bytes = 0, settled = false, childClosed = false;
     const decoder = new StringDecoder('utf8');
     const callbacks = new Set();

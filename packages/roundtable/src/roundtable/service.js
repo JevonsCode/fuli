@@ -32,6 +32,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   bootEvidence = async () => null, now = Date.now,
   // Which recorded wake processes still run (wake-claim-release.js); null = cannot tell.
   inspectProcess = async () => null,
+  groupAlive = undefined,
   // The installed desktop app of a client, or null. Runtimes pass
   // createDesktopApps (agents/desktop-registry.js); without it every ask wakes headlessly.
   desktopApp = () => null }) {
@@ -42,7 +43,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   const refreshes = new Map();
   let refreshOffset = 0;
   const store = new Proxy({}, { get: (_target, property) => (opened ??= openStore())[property] });
-  const wakeClaims = createWakeClaimRelease({ store, inspectProcess, now });
+  const wakeClaims = createWakeClaimRelease({ store, inspectProcess, groupAlive, now });
 
   async function sender({ taskContextToken, sourceApplication }) {
     if (!taskContextToken) return { agent: null, client: sourceApplication ?? 'other', session: null, projectId: null };
