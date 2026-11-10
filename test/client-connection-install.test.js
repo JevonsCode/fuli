@@ -45,3 +45,20 @@ test('manual or absent clients never write, and simultaneous requests cannot ove
   release({ status: 'partial', message: '/private/config' });
   assert.deepEqual(await first, { id: 'gemini', status: 'partial', restartRequired: false });
 });
+
+test('rec#106: a client app that writes its configuration back is written only when it is known to be closed', async () => {
+  for (const running of [async () => true, async () => { throw new Error('osascript timed out'); }]) {
+    const installer = fakeClientInstaller([{ id: 'claude-desktop' }]);
+    const connect = createClientInstaller({ installer, apps: { 'claude-desktop': { running } }, install: () => assert.fail('no writes') });
+    const result = await connect({ clientId: 'claude-desktop' });
+    assert.deepEqual({ ...result, message: undefined }, { id: 'claude-desktop', status: 'failed', restartRequired: false,
+      reason: 'client_running', message: undefined });
+    assert.match(result.message, /重启并更新/);
+    assert.deepEqual(installer.calls, []);
+  }
+  const installer = fakeClientInstaller([{ id: 'claude-desktop' }, { id: 'gemini' }]);
+  const connect = createClientInstaller({ installer, apps: { 'claude-desktop': { running: async () => false } } });
+  assert.equal((await connect({ clientId: 'claude-desktop' })).status, 'connected');
+  assert.equal((await connect({ clientId: 'gemini' })).status, 'connected');
+  assert.deepEqual(installer.calls, [['apply', ['claude-desktop']], ['apply', ['gemini']]]);
+});

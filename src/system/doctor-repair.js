@@ -65,7 +65,9 @@ async function restrictDataDirectory(restrictDataDir) {
 async function reconnectClient(connectClient, clientId) {
   try {
     const result = await connectClient({ clientId });
-    return result.status === 'connected' ? { outcome: 'fixed' } : { outcome: 'failed', error: NOT_RECONNECTED };
+    if (result.status === 'connected') return { outcome: 'fixed' };
+    // A running client that would write its old entry back is left to the person's 重启并更新 (rec#106).
+    return result.reason === 'client_running' ? { outcome: 'skipped', error: result.message } : { outcome: 'failed', error: NOT_RECONNECTED };
   } catch (error) {
     // The installer's own refusals name no path; anything else may, so it is not relayed.
     return { outcome: 'failed', error: error instanceof TypeError ? error.message : NOT_RECONNECTED };

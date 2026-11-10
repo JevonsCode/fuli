@@ -26,6 +26,7 @@ export const settingsMessages = {
         restart: '需要重启客户端，配置才会生效。',
         connectError: '接入未完成，客户端配置没有全部写好。确认它的配置文件可以写入，然后再试一次。',
         componentUnavailable: '无法下载客户端组件 agent-installer，请检查网络后重试。',
+        clientRunning: '它正在运行，会把旧配置写回，所以没写。先完全退出它，或点「重启并更新」。',
         reconnect: '重新接入',
         update: '更新接入',
         manualConnect: '配置存在覆盖规则，请按官方说明手动接入',
@@ -61,7 +62,7 @@ export const settingsMessages = {
         },
         restartResult: {
           connected: '已重启并更新，配置检查通过。',
-          quit_failed: '{client} 没有退出，配置没改。请手动退出后再试。',
+          quit_failed: '没能确认 {client} 已退出，配置没改。请手动退出后再试。',
           connect_failed: '更新没写好，已重新打开 {client}。',
           connect_failed_closed: '更新没写好，也没能重新打开 {client}，请手动打开。',
           reopen_failed: '已更新，但没能重新打开 {client}，请手动打开。',
@@ -393,6 +394,7 @@ export const settingsMessages = {
         restart: 'Restart the client to apply this configuration.',
         connectError: 'Connection incomplete: the client configuration was not fully written. Make sure its configuration file can be written, then try again.',
         componentUnavailable: 'The client component agent-installer could not be downloaded. Check your network connection and try again.',
+        clientRunning: 'Not written: it is running and would write its old entry back. Quit it fully, or use Restart and update.',
         reconnect: 'Reconnect',
         update: 'Update connection',
         manualConnect: 'Configuration overrides detected. Follow the official manual setup guide',
@@ -430,7 +432,7 @@ export const settingsMessages = {
         },
         restartResult: {
           connected: 'Restarted and updated; the entry checks out.',
-          quit_failed: '{client} did not quit, so nothing changed. Quit it yourself and try again.',
+          quit_failed: '{client} was not confirmed closed, so nothing changed. Quit it yourself and try again.',
           connect_failed: 'The update was not written; {client} was reopened.',
           connect_failed_closed: 'The update was not written, and {client} could not be reopened. Open it yourself.',
           reopen_failed: 'Updated, but {client} could not be reopened. Open it yourself.',

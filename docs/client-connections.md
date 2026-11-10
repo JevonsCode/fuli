@@ -71,7 +71,8 @@ the console's that still exists, a notice says the computer has two FULIs and po
 console runs. An entry that goes back, within two hours of an update, to the very installation that
 update replaced was written back by the client (rec#106): the tile says so and that the client must be
 quit fully, updated, then reopened. On macOS, while Claude Desktop runs, its tile offers **Restart and
-update** instead of **Update connection** (and **Connect all** skips it): after the person confirms, FULI
+update** instead of **Update connection** (and **Connect all** skips it). While it runs, or FULI cannot tell, a
+plain connection, **Connect all** and the doctor's repair write nothing (`client_running`): after the person confirms, FULI
 asks Claude Desktop to quit (never kills it), writes the entry once it has closed, reopens it and checks
 the entry again. If it does not quit, nothing is written. This restart is the person's click on this
 computer only (`local_user_only`); the doctor's automatic repair leaves such a client to them.
@@ -365,7 +366,7 @@ service. See the [remote connector setup](agent-tools.md#remote-claude--cowork-c
 
 “一键接入”逐个写入还没接好的客户端（包括“需要更新”的），每写完一个就重新读一次状态，摘要行显示正在接入的客户端和进度。接过 FULI 的客户端需要更新时（体检的 `client_outdated`），右上角“设置”按钮有个小红点，点它直接打开“客户端”；都更新后红点消失。
 
-“需要更新”的卡片写明哪里不一致：配置里的 FULI 版本（或安装位置）对比控制台这份。“最近变化”一行点开“查看详情”，列出保存的每次变化和完整时间，以及两边的安装目录。本机有另一份仍存在的 FULI 被客户端配置指着时，卡片上方提示“本机有 2 份 FULI”，指向控制台在用的那份。更新后两小时内配置又回到被替换的那份安装，说明是客户端自己写回的（rec#106）：卡片直接说明，要先完全退出客户端，再更新接入，然后重新打开。macOS 上 Claude Desktop 运行时，它的卡片把“更新接入”换成“重启并更新”（“一键接入”跳过它）：确认后 FULI 请它自己退出（不强杀），关闭后写入，再打开并重新检查。没退出就不写。重启只能由本机的人点（`local_user_only`），体检的自动修复也不会替人做。
+“需要更新”的卡片写明哪里不一致：配置里的 FULI 版本（或安装位置）对比控制台这份。“最近变化”一行点开“查看详情”，列出保存的每次变化和完整时间，以及两边的安装目录。本机有另一份仍存在的 FULI 被客户端配置指着时，卡片上方提示“本机有 2 份 FULI”，指向控制台在用的那份。更新后两小时内配置又回到被替换的那份安装，说明是客户端自己写回的（rec#106）：卡片直接说明，要先完全退出客户端，再更新接入，然后重新打开。macOS 上 Claude Desktop 运行时（或无法确认是否在运行），它的卡片把“更新接入”换成“重启并更新”，普通接入、“一键接入”和体检修复都不写（`client_running`）：确认后 FULI 请它自己退出（不强杀），关闭后写入，再打开并重新检查。没退出就不写。重启只能由本机的人点（`local_user_only`），体检的自动修复也不会替人做。
 
 | 客户端 | 全局配置 | 官方格式 |
 | --- | --- | --- |

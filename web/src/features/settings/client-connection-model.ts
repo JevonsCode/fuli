@@ -22,8 +22,9 @@ export type CustomClient = { id: string, label: string, detected: boolean, statu
 export type ConnectionStatus = { observedAt: string, historySaved: boolean, available?: boolean, clients: ClientObservation[],
   customClients?: CustomClient[], installs?: { console: FuliInstall, others: (FuliInstall & { clients: string[] })[] } }
 // `reason` names a failure the person can act on: agent-installer could not be downloaded here.
+// client_running: a client that writes its cached configuration back is, or may be, running (rec#106).
 export type ConnectionResult = { id: string, status: 'connected' | 'partial' | 'failed', restartRequired: boolean,
-  reason?: 'client_component_unavailable' }
+  reason?: 'client_component_unavailable' | 'client_running' }
 // 「重启并更新」's answer: which step ended it (src/system/client-restart.js).
 const RESTART_STATUSES = ['connected', 'quit_failed', 'connect_failed', 'reopen_failed', 'check_failed'] as const
 export type RestartStatus = typeof RESTART_STATUSES[number]
@@ -55,9 +56,9 @@ export function connectionSummary(observation: ConnectionStatus | null): { conne
   return { connected: clients.filter((client) => client.status === 'connected').length, total: clients.length }
 }
 
-// 「重启并更新」 replaces 「更新接入」 while the client runs and would write its old entry back (rec#106).
+// 「重启并更新」 replaces 「更新接入」 while the client runs, or FULI cannot tell, since it would write its old entry back (rec#106).
 export function offersRestart(client: ClientObservation): boolean {
-  return client.status === 'changed' && client.restart?.running === true
+  return client.status === 'changed' && client.restart !== undefined && client.restart.running !== false
 }
 
 // An outdated entry's explanation: what differs, then the one way to fix it (rec#106).

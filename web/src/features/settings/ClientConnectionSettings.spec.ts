@@ -430,6 +430,6 @@ it('restarts a running client only after the person confirms, in the same place 
   expect(wrapper.text()).toContain('正在重启 Claude Desktop 并更新接入')
   finish!(Response.json({ id: 'claude-desktop', status: 'quit_failed' }))
   await flushPromises()
-  expect(wrapper.get('[data-restart-result]').text()).toBe('Claude Desktop 没有退出，配置没改。请手动退出后再试。')
+  expect(wrapper.get('[data-restart-result]').text()).toBe('没能确认 Claude Desktop 已退出，配置没改。请手动退出后再试。')
   wrapper.unmount()
 })

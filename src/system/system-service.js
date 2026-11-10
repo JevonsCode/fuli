@@ -75,7 +75,7 @@ export function createSystemService({
     consoleInstall: { nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, version: FULI_VERSION },
     apps
   }),
-  clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller }),
+  clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller, apps }),
   clientRestart = createClientRestart({ apps, connect: clientInstaller,
     inspect: (id) => inspectAgent(agentKits.clientInstaller, id) }),
   executorAdapters = new Map(),

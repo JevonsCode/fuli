@@ -39,7 +39,8 @@ describe('an outdated entry explained (rec#106)', () => {
     expect(offersRestart(running)).toBe(true)
     expect(changedExplanation(outdated({ restart: { running: true } }), console).step).toBe('restartRunning')
     expect(offersRestart(outdated({ restart: { running: false } }))).toBe(false)
-    expect(offersRestart(outdated({ restart: { running: null } }))).toBe(false)
+    // Not knowing whether it runs is treated as running: a plain write could be written back.
+    expect(offersRestart(outdated({ restart: { running: null } }))).toBe(true)
     expect(offersRestart({ ...running, status: 'connected' })).toBe(false)
   })
 

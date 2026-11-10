@@ -34,7 +34,7 @@ const observation = ref<ConnectionStatus | null>(null)
 const checking = ref(false)
 const checkError = ref(false)
 const connecting = ref('')
-const connectionFeedback = ref<Record<string, 'restart' | 'connectError' | 'componentUnavailable'>>({})
+const connectionFeedback = ref<Record<string, 'restart' | 'connectError' | 'componentUnavailable' | 'clientRunning'>>({})
 // 「重启并更新」 (rec#106): the client being confirmed, the one restarting, and each one's last outcome.
 const confirming = ref<ClientObservation | null>(null)
 const restarting = ref('')
@@ -125,7 +125,8 @@ async function connectOne(client: ClientObservation) {
     try {
       const result = await postJson<ConnectionResult>('/api/system/client-connection/connect', { clientId: client.id })
       if (!unmounted) connectionFeedback.value[client.id] = result.status === 'connected' ? 'restart'
-        : result.reason === 'client_component_unavailable' ? 'componentUnavailable' : 'connectError'
+        : result.reason === 'client_component_unavailable' ? 'componentUnavailable'
+          : result.reason === 'client_running' ? 'clientRunning' : 'connectError'
     } catch {
       if (!unmounted) connectionFeedback.value[client.id] = 'connectError'
     } finally { connecting.value = '' }
