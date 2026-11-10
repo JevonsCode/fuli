@@ -1,3 +1,4 @@
+import math
 import re
 from datetime import datetime
 
@@ -27,6 +28,18 @@ from .knowledge_tag_ranking import TagRanking
 from .knowledge_visibility import AgentReader, fla_endpoints_visible_cypher, fla_visible, reader_parameter
 
 MIN_TERM_COVERAGE = 0.25
+# With the query's terms weighed by how few candidates carry them
+# (_term_weights), a record must carry this share of the query's weight.
+MIN_WEIGHTED_COVERAGE = 0.33
+# ...and one of the terms it carries must be distinctive: carried by fewer
+# than about one candidate in eight. Carrying nearly the whole query needs no
+# distinctive term.
+DISTINCTIVE_TERM_WEIGHT = math.log(8)
+WHOLE_QUERY_COVERAGE = 0.75
+# A term no candidate carries is either a word nobody wrote down or two
+# characters that only meet across a word boundary (按钮设计 -> 钮设): it
+# counts against a match, at half the weight of the rarest real term.
+UNSEEN_TERM_FACTOR = 0.5
 # How many items with a vector of the query's model one search compares (rec#88).
 SEMANTIC_CANDIDATE_LIMIT = 5000
 # A preference key's separators, so `reply-language` is also the words "reply language".
@@ -343,12 +356,13 @@ async def _personal_entities(
     if not project_scopes and not request.include_personal_global:
         return []
     scoped_records = await _scoped_entity_records(store, space, request, project_scopes)
+    term_weights = _term_weights(request.query, scoped_records)
     ranked = sorted(
         (
             (
                 record,
                 _ranked_relevance(
-                    _relevance(request.query, record),
+                    _relevance(request.query, record, term_weights),
                     record,
                 ),
             )
@@ -912,20 +926,53 @@ async def _entity_names(store, edges: list[EntityEdge]) -> dict[str, str]:
     return {record['uuid']: record['name'] for record in records}
 
 
-def _relevance(query: str, record) -> float:
-    needle = _normalized(query)
-    haystack = _normalized(' '.join(filter(None, [
+def _haystack(record) -> str:
+    return _normalized(' '.join(filter(None, [
         record.get('name'), record.get('type'), record.get('summary'),
         record.get('reasoning_summary'), record.get('profile_aspect'), record.get('retrieval_context'),
     ])))
+
+
+def _term_weights(query: str, records) -> dict[str, float]:
+    """How much each term of the query tells apart the records this search
+    may return: a word most of them carry (the product's name, 控制台, fla)
+    says little, one few carry says a lot. Sharing only common words with the
+    query is then not a match (rec#111). The usual inverse document frequency,
+    over the search's own candidates."""
+    terms = _terms(_normalized(query))
+    if not terms or not records:
+        return {}
+    carried = dict.fromkeys(terms, 0)
+    for record in records:
+        for term in terms & _terms(_haystack(record)):
+            carried[term] += 1
+    total = len(records)
+    return {term: math.log((total - count + 0.5) / (count + 0.5) + 1) * (1.0 if count else UNSEEN_TERM_FACTOR)
+            for term, count in carried.items()}
+
+
+def _too_common(matched, coverage: float, term_weights: dict[str, float]) -> bool:
+    """Not a match: too little of the query's weight, or only words most candidates carry."""
+    if coverage < MIN_WEIGHTED_COVERAGE:
+        return True
+    return (coverage < WHOLE_QUERY_COVERAGE
+            and max((term_weights.get(term, 0.0) for term in matched), default=0.0) < DISTINCTIVE_TERM_WEIGHT)
+
+
+def _relevance(query: str, record, term_weights: dict[str, float] | None = None) -> float:
+    needle = _normalized(query)
+    haystack = _haystack(record)
     if not needle:
         return 0.0
     score = 8.0 if needle in haystack else 0.0
     score = max(score, _alias_relevance(needle, _retrieval_aliases(record)))
     terms = _terms(needle)
     if terms:
-        coverage = len(terms & _terms(haystack)) / len(terms)
-        if not score and coverage < MIN_TERM_COVERAGE:
+        matched = terms & _terms(haystack)
+        whole = sum(term_weights.get(term, 1.0) for term in terms) if term_weights else len(terms)
+        coverage = (sum(term_weights.get(term, 1.0) for term in matched) if term_weights else len(matched)) / whole
+        if not score and (_too_common(matched, coverage, term_weights) if term_weights
+                          else coverage < MIN_TERM_COVERAGE):
             return 0.0
         score += coverage * 4.0
     if score and record.get('profile_aspect'):

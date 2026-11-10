@@ -48,3 +48,10 @@ real-world recall. Judgments are intentionally small and synthetic, so a pass
 is a regression signal, not proof of production recall quality. If the source
 function structure changes, update the extraction list and review its semantics
 instead of silently substituting a benchmark implementation.
+
+On 2026-11-11 the query's terms are weighed by how few of the search's own
+candidates carry them (`_term_weights`), and a record must carry a third of
+that weight and one distinctive term (rec#111: records that only shared the
+project's common words, such as 控制台 or FLA, were returned as matches). The
+working tree then scored nDCG@5 0.9020, MRR 1.0 and irrelevant@5 0.2550
+against 0.8671, 1.0 and 0.3633 just before it, with no trusted-first violations.
