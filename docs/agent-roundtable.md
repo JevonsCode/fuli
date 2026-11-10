@@ -225,10 +225,13 @@ receipts advance only a contiguous target cursor, so a newer member cannot erase
 older unread history it was not allowed to see. Durable execution claims keep
 one wake active per Agent; subsequent rooms wait for completion notifications.
 A claim its console lost (nothing ended it within an hour) is released only on
-evidence: it started no process, or the process recorded at spawn has ended or its
-PID now names another process. A running or unknown process keeps the hold; claims
-from before processes were recorded are released a day after they began. Its ask
-returns to the inbox. Unconfirmed cleanup keeps its safety hold.
+evidence: the process recorded when spawn() returned has ended or its PID now names
+another process, and on POSIX no member of its process group is left (the woken
+client leads its own group; Windows has none, so only that process is checked). A
+running or unknown process, or a group that still answers, keeps the hold. A claim
+with no recorded PID, a claim from before processes were recorded, and a reused PID
+whose group still answers are released a day after they began. Its ask returns to
+the inbox. Unconfirmed cleanup keeps its safety hold.
 
 ## Group discussions (#FLG, rec#55)
 
