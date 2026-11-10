@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { hookFailureCause } from '../src/agents/lifecycle-message.js';
 import { validationError } from '../src/app/application-error.js';
+import { ProviderRequestError } from '../src/graphiti/provider-client.js';
 import { FULI_VERSION } from '../src/package-metadata.js';
 
 const IN = ` in FULI ${FULI_VERSION}`;
@@ -25,4 +26,14 @@ test('a controlled refusal names its rule and the version the hook ran', () => {
   const long = hookFailureCause(validationError(`Rule ${'x'.repeat(400)}\nsecond line`));
   assert.ok(long.length < 220);
   assert.doesNotMatch(long, /\n/);
+});
+
+// A Provider refusal relays the Provider's own detail, which may echo what
+// was sent (rec#85, DOT 11-10): the hook says only its HTTP status.
+test('a Provider refusal says its HTTP status, never its detail', () => {
+  const detail = 'Value error at C:\Users\someone\secret.txt token=synthetic-secret \\server\share';
+  assert.equal(hookFailureCause(new ProviderRequestError(detail, { status: 422 })), `the hook failed: provider_error (HTTP 422)${IN}`);
+  assert.equal(hookFailureCause(new ProviderRequestError(detail)), `the hook failed: provider_error${IN}`);
+  assert.equal(hookFailureCause(new ProviderRequestError(detail, { status: 503, code: 'provider_http_5xx' })),
+    `the hook failed: provider_http_5xx (HTTP 503)${IN}`);
 });
