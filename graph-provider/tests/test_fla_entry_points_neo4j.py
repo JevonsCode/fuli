@@ -120,7 +120,7 @@ async def test_a_conflict_naming_an_flas_item_is_missing_to_another_agents_resol
             assert await stored_conflict(settings, new_id) is None, 'nothing was written'
             assert (await defer(reader, pending, left='plain-fact')).status_code == 404
         assert (await complete(pending, actor='agent')).status_code == 404, 'no proof: read as a plain session'
-        assert (await complete(pending)).status_code == 403, 'no proof: not recorded as the person's'
+        assert (await complete(pending)).status_code == 403, 'no proof: not recorded as the person'
         for conflict_id, stored in before.items():
             assert await stored_conflict(settings, conflict_id) == stored, 'nothing changed'
         # G reads its own conflict's retry; the person completes it with the console's proof.
