@@ -220,6 +220,11 @@ test('a quit that outlasts its command still counts once the app closed; an app 
   assert.equal((await quiet.restart({ clientId: 'claude-desktop' })).status, 'connected');
   assert.deepEqual(closed.calls, ['running']);
   assert.equal(closed.state.running, false);
+  // A failed write to an app that was never closed says nothing about reopening it.
+  const idle = fakeApp({ running: false });
+  assert.deepEqual(await restartWith(idle.app, { connected: false }).restart({ clientId: 'claude-desktop' }),
+    { id: 'claude-desktop', status: 'connect_failed' });
+  assert.deepEqual(idle.calls, ['running']);
 });
 
 test('a failed write or check still reopens the app and says which step failed', async () => {

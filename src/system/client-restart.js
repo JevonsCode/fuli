@@ -19,7 +19,7 @@ const SETTLE_MS = 5_000;
  * client as agent-installer finds it now (client-detection.js inspectAgent).
  *
  * Answers { id, status }: `connected`; `quit_failed` (still running, or not
- * known to be closed: nothing written); `connect_failed` (with `reopened`);
+ * known to be closed: nothing written); `connect_failed` (with `reopened` when FULI had closed it);
  * `reopen_failed` (updated, the person opens it); `check_failed` (reopened,
  * but the entry is not current).
  */
@@ -46,11 +46,17 @@ export function createClientRestart({ apps, connect, inspect, wait = delay, now 
       if (!await closed(running)) return { status: 'quit_failed' };
     }
     const written = await connect({ clientId }).catch(() => ({ status: 'failed' }));
-    // An app FULI closed is reopened whatever the write did; one that was not running stays closed.
-    let reopened = true;
-    if (wasRunning) { try { await app.open(); } catch { reopened = false; } }
-    if (written.status !== 'connected') return { status: 'connect_failed', reopened, ...(written.reason ? { reason: written.reason } : {}) };
-    if (!reopened) return { status: 'reopen_failed' };
+    // An app FULI closed is reopened whatever the write did; one that was not running stays closed,
+    // and its answer says nothing about reopening.
+    let reopened = null;
+    if (wasRunning) {
+      reopened = true;
+      try { await app.open(); } catch { reopened = false; }
+    }
+    if (written.status !== 'connected') {
+      return { status: 'connect_failed', ...(reopened === null ? {} : { reopened }), ...(written.reason ? { reason: written.reason } : {}) };
+    }
+    if (reopened === false) return { status: 'reopen_failed' };
     await wait(SETTLE_MS);
     return { status: (await inspect(clientId))?.integrationStatus === 'connected' ? 'connected' : 'check_failed' };
   }

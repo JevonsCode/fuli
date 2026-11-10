@@ -147,8 +147,9 @@ async function restart() {
   await writing(async () => {
     try {
       const result = await postJson('/api/system/client-connection/restart', { clientId: client.id }, restartResultShape)
-      if (!unmounted) restartFeedback.value[client.id] = result.status === 'connect_failed' && result.reopened === false
-        ? 'connect_failed_closed' : result.status
+      // A failed write says whether the app FULI closed was reopened; without that it was never closed.
+      if (!unmounted) restartFeedback.value[client.id] = result.status !== 'connect_failed' ? result.status
+        : result.reopened === false ? 'connect_failed_closed' : result.reopened === true ? 'connect_failed' : 'error'
     } catch {
       if (!unmounted) restartFeedback.value[client.id] = 'error'
     } finally { restarting.value = '' }
