@@ -701,6 +701,6 @@ def test_term_weights_follow_how_few_candidates_carry_a_term():
     weights = _term_weights('圆桌 叫醒 FLA 按钮', records)
     assert weights['按钮'] > weights['圆桌'] > weights['fla']
     assert weights['叫醒'] < weights['按钮'], 'a term nobody carries counts for less than the rarest real one'
-    assert _term_weights('圆桌', []) == {} and _term_weights('', records) == {}
+    assert _term_weights('圆桌', records[:7]) == {} and _term_weights('', records) == {}, 'too few candidates to weigh'
     # Without weights every term counts the same, as before.
     assert _relevance('按钮设计', records[8]) > 0

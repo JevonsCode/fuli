@@ -32,10 +32,13 @@ MIN_TERM_COVERAGE = 0.25
 # (_term_weights), a record must carry this share of the query's weight.
 MIN_WEIGHTED_COVERAGE = 0.33
 # ...and one of the terms it carries must be distinctive: carried by fewer
-# than about one candidate in eight. Carrying nearly the whole query needs no
+# than about one candidate in six. Carrying nearly the whole query needs no
 # distinctive term.
-DISTINCTIVE_TERM_WEIGHT = math.log(8)
+DISTINCTIVE_TERM_WEIGHT = math.log(6)
 WHOLE_QUERY_COVERAGE = 0.75
+# Below this many candidates, how many carry a term says nothing about the
+# term: every term counts the same, as without weights.
+MIN_WEIGHED_CANDIDATES = 8
 # A term no candidate carries is either a word nobody wrote down or two
 # characters that only meet across a word boundary (按钮设计 -> 钮设): it
 # counts against a match, at half the weight of the rarest real term.
@@ -938,9 +941,9 @@ def _term_weights(query: str, records) -> dict[str, float]:
     may return: a word most of them carry (the product's name, 控制台, fla)
     says little, one few carry says a lot. Sharing only common words with the
     query is then not a match (rec#111). The usual inverse document frequency,
-    over the search's own candidates."""
+    over the search's own candidates; empty (no weighing) for a handful of them."""
     terms = _terms(_normalized(query))
-    if not terms or not records:
+    if not terms or len(records) < MIN_WEIGHED_CANDIDATES:
         return {}
     carried = dict.fromkeys(terms, 0)
     for record in records:

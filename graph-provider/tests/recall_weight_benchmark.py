@@ -125,7 +125,7 @@ def load_ranker(ref):
         names.add('_word_stem')
     if 'def _term_weights(' in search:
         names.update({'_term_weights', '_haystack', 'MIN_WEIGHTED_COVERAGE', 'UNSEEN_TERM_FACTOR',
-                      'DISTINCTIVE_TERM_WEIGHT', 'WHOLE_QUERY_COVERAGE', '_too_common'})
+                      'DISTINCTIVE_TERM_WEIGHT', 'WHOLE_QUERY_COVERAGE', 'MIN_WEIGHED_CANDIDATES', '_too_common'})
     definitions(search, names, search_ns)
     return search_ns
 
