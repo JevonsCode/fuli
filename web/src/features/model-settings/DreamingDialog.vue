@@ -34,7 +34,7 @@ const runLabel = (project: DreamingProject, fromStart: boolean) =>
         <ul v-if="rows.length" class="dreaming-list" :class="`dreaming-list--${group}`" :data-dreaming-list="group">
           <li v-for="project in rows" :key="project.personalProjectId" class="dreaming-row" :data-dreaming-row="project.personalProjectId">
             <span class="dreaming-name" :title="project.name">{{ project.name }}</span>
-            <span class="dreaming-meta" :class="{ 'is-failed': dreaming.failureOf(project) }" :title="dreaming.meta(project)" data-dreaming-meta>{{ dreaming.meta(project) }}</span>
+            <span class="dreaming-meta" :class="{ 'is-error': dreaming.failureOf(project) }" :title="dreaming.meta(project)" data-dreaming-meta>{{ dreaming.meta(project) }}</span>
             <RouterLink v-if="queuedCount(dreaming.results[project.personalProjectId]) > 0" to="/inbox" class="dreaming-confirm" data-dreaming-confirm>
               {{ t('modelSettings.dreaming.confirm') }}
             </RouterLink>
@@ -72,7 +72,7 @@ const runLabel = (project: DreamingProject, fromStart: boolean) =>
 .dreaming-name { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--color-ink); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
 .dreaming-list--quiet .dreaming-name { font-weight: var(--weight-regular); }
 .dreaming-meta { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--color-muted); text-overflow: ellipsis; white-space: nowrap; }
-.dreaming-meta.is-failed { color: var(--color-danger); }
+.dreaming-meta.is-error { color: var(--color-danger); }
 .dreaming-confirm { flex: none; color: var(--color-link); font-weight: var(--weight-medium); text-decoration: none; user-select: none; }
 .dreaming-confirm:hover { text-decoration: underline; }
 .dreaming-row :deep(button) { flex: none; margin-inline-start: auto; user-select: none; }

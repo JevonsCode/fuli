@@ -45,7 +45,7 @@ function openAstro() {
     <GrowthLoading v-if="dreaming.readiness === null" variant="inline" :label="t('modelSettings.dreaming.loading')" />
     <!-- Without Astro's model the model line already says so. -->
     <p v-else-if="dreaming.readiness === 'needs_model'" v-show="model" class="dreaming-note" data-dreaming-needs-model>{{ t('modelSettings.dreaming.needsModel') }}</p>
-    <p v-else-if="dreaming.readiness === 'unavailable'" class="dreaming-note is-failed" role="alert" data-dreaming-unavailable>{{ t('modelSettings.dreaming.unavailable') }}</p>
+    <p v-else-if="dreaming.readiness === 'unavailable'" class="dreaming-note is-error" role="alert" data-dreaming-unavailable>{{ t('modelSettings.dreaming.unavailable') }}</p>
     <ModelFailureNote v-else-if="dreaming.summary.kind === 'failed'" :text="dreaming.summary.text" role="assistant" :model="model ?? ''"
       data-dreaming-failed @checked="emit('checked')" />
     <p v-else class="dreaming-note" :title="dreaming.summary.text" data-dreaming-summary>
@@ -78,7 +78,7 @@ function openAstro() {
 
 <style scoped>
 .dreaming-note { color: var(--color-muted); }
-.dreaming-note.is-failed { color: var(--color-danger); }
+.dreaming-note.is-error { color: var(--color-danger); }
 .dreaming-confirm { margin-inline-start: var(--space-2); color: var(--color-link); font-weight: var(--weight-medium); text-decoration: none; user-select: none; }
 .dreaming-confirm:hover { text-decoration: underline; }
 </style>

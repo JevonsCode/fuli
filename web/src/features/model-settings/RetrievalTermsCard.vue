@@ -45,7 +45,7 @@ function openAstro() {
       <span v-else>{{ t('modelSettings.uses.astroNoModel') }}</span>
     </template>
 
-    <p v-if="terms.error" role="alert" class="terms-note is-failed" :title="terms.error" data-terms-error>{{ terms.error }}</p>
+    <p v-if="terms.error" role="alert" class="terms-note is-error" :title="terms.error" data-terms-error>{{ terms.error }}</p>
     <GrowthLoading v-else-if="!terms.state && terms.projectId" variant="inline" :label="t('modelSettings.retrievalTerms.loading')" />
     <p v-else-if="terms.note" class="terms-note" data-terms-note>{{ terms.note }}</p>
     <ModelFailureNote v-else-if="terms.failed" :text="summary" role="assistant" :model="model ?? ''" data-terms-failed @checked="emit('checked')" />
@@ -75,5 +75,5 @@ function openAstro() {
 
 <style scoped>
 .terms-note { color: var(--color-muted); }
-.terms-note.is-failed { color: var(--color-danger); }
+.terms-note.is-error { color: var(--color-danger); }
 </style>

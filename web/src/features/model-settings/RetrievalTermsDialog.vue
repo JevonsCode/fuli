@@ -20,7 +20,7 @@ const emit = defineEmits<{ close: []; checked: [] }>()
     <div class="terms-dialog">
       <p class="terms-line" data-terms-advice><span class="terms-label">{{ t('modelSettings.uses.advicePrefix') }}</span>{{ useAdvice('retrieval_terms') }}</p>
       <OptionCombobox :model-value="terms.projectId" :options="terms.choices" :label="t('modelSettings.retrievalTerms.project')" data-terms-project @update:model-value="terms.choose(String($event))" />
-      <p v-if="terms.error" role="alert" class="terms-line is-failed" data-terms-error>{{ terms.error }}</p>
+      <p v-if="terms.error" role="alert" class="terms-line is-error" data-terms-error>{{ terms.error }}</p>
       <p v-else-if="terms.note" class="terms-line" data-terms-note>{{ terms.note }}</p>
       <template v-else-if="terms.state?.stats">
         <ModelFailureNote v-if="terms.failed" :text="terms.line" role="assistant" :model="model ?? ''" @checked="emit('checked')" />
@@ -58,7 +58,7 @@ const emit = defineEmits<{ close: []; checked: [] }>()
 .terms-dialog { display: grid; gap: var(--space-3); min-width: 0; }
 .terms-line { margin: 0; color: var(--color-muted); font-size: var(--text-control); }
 .terms-label { margin-inline-end: 8px; font-size: var(--text-meta); }
-.terms-line.is-failed { color: var(--color-danger); }
+.terms-line.is-error { color: var(--color-danger); }
 .terms-trial { display: grid; gap: 8px; }
 .terms-result { margin: 0; font-size: var(--text-body); font-variant-numeric: tabular-nums; }
 .terms-result strong { margin-left: 8px; color: var(--color-muted); font-weight: var(--weight-strong); }
