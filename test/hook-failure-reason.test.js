@@ -19,6 +19,6 @@ test('a failed hook records the controlled reason, never an uncontrolled message
   const events = readFileSync(join(dataDir, 'diagnostics', 'events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(events[0].code, 'validation');
   assert.match(events[0].reason, /preference scope is immutable/);
-  assert.equal(events[1].reason, 'the hook failed: TypeError');
+  assert.match(events[1].reason, /^the hook failed: TypeError in FULI /);
   assert.doesNotMatch(JSON.stringify(events), /synthetic prompt text/);
 });

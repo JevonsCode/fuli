@@ -1,15 +1,20 @@
-import { errorCode } from '../diagnostics/safe-event.js';
+import { errorCode, failureReason } from '../diagnostics/safe-event.js';
+import { FULI_VERSION } from '../package-metadata.js';
+import { singleLineExcerpt } from '../text/single-line.js';
 
 // Every listed rule fetch is a model round trip (Codex re-sends its whole
 // prompt each time), so ordinary tasks must not read the shared rules at all.
 // A call that carries its task token is decided by that session; without one
 // it may be refused while another session of the client is off (rec#5 C3b).
 // Why a lifecycle hook failed, as far as it is safe to say (rec#85): an error's
-// code or class, which are fixed identifiers. Never its message, which may carry
-// a prompt, path or credential.
+// code or class, which are fixed identifiers; a controlled error's message,
+// which names the refused rule without the values it was given; and the
+// version the hook ran, so a report tells an old install from a regression.
+// Never another error's message, which may carry a prompt, path or credential.
 export function hookFailureCause(error) {
   const code = errorCode(error);
-  return code ? `the hook failed: ${code}` : 'the hook failed';
+  const rule = failureReason(error, null);
+  return `${code ? `the hook failed: ${code}` : 'the hook failed'}${rule ? ` (${singleLineExcerpt(rule, 160)})` : ''} in FULI ${FULI_VERSION}`;
 }
 
 export const PASS_TASK_TOKEN = 'Pass taskContextToken to every FULI call. ';
