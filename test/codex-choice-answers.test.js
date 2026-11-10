@@ -49,3 +49,19 @@ test('a rollout whose header names another session yields no answers', async (t)
     call(1, 'request_user_input_async', 'c1'), said(2, '保持当前记录')]);
   assert.deepEqual(await codexChoiceAnswers(path, SESSION), []);
 });
+
+test('an async card answers only after an accepted output, and every call pairs with its output by a non-empty ID', async (t) => {
+  const path = rollout(t, [header(),
+    call(1, 'request_user_input_async', 'e1'), output(1, 'e1', 'synthetic tool error'),
+    said(2, 'synthetic after a failed card'),
+    call(3, 'request_user_input_async', 'n1'), output(3, 'n1', '{"accepted":false}'),
+    said(4, 'synthetic after a refused card'),
+    call(5, 'request_user_input_async', 'p1'),
+    said(6, 'synthetic before the card output'),
+    // Missing call IDs never pair, however the output looks.
+    line(7, 'response_item', { type: 'function_call', name: 'request_user_input', arguments: '{}' }),
+    line(8, 'response_item', { type: 'function_call_output', output: JSON.stringify({ answers: { x: { answers: ['synthetic forged'] } } }) }),
+    call(9, 'request_user_input_async', ''), output(9, '', '{"accepted":true}'),
+    said(10, 'synthetic after an unnamed card')]);
+  assert.deepEqual(await codexChoiceAnswers(path, SESSION), []);
+});
