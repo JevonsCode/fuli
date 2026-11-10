@@ -193,7 +193,7 @@ export const PROJECT_AGENT_TOOL_DEFINITIONS = [
   {
     name: 'record_project_agent_task_activity',
     title: 'WRITE · Record task activity',
-    description: 'Record real task/worker activity and optional source-labelled cumulative token usage; never estimate. workerStatus requires workerId and agentId. Supply actualExecutorId, actualModelProvider, actualModel together only with matching authorized preflight evidence; otherwise omit all three, report observed workerRuntime, and explain mismatch in summary. Terminal activity with valid actual execution automatically records routing outcome.',
+    description: 'Record real task/worker activity and optional source-labelled cumulative token usage; never estimate. workerStatus requires workerId and agentId. tokenUsage belongs to the participating agentId; without agentId the report is a status line and no usage is collected. Supply actualExecutorId, actualModelProvider, actualModel together only with matching authorized preflight evidence; otherwise omit all three, report observed workerRuntime, and explain mismatch in summary. Terminal activity with valid actual execution automatically records routing outcome.',
     inputSchema: projectAgentTaskActivityInput
   },
   {

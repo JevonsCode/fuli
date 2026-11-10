@@ -80,6 +80,10 @@ export async function enrichProjectAgentTaskActivity(input = {}, resolver = DEFA
   const explicitTokenUsage = (Object.hasOwn(input, 'tokenUsage') && input.tokenUsage !== undefined) ||
     (Object.hasOwn(input, 'token_usage') && input.token_usage !== undefined);
   if (explicitTokenUsage) return input;
+  // Usage belongs to a participating Agent. A report without one (a
+  // coordinator's status line) collects none: the Provider refuses usage
+  // without its Agent, and the reporter's own session is not the task's (rec#85).
+  if (!nonEmptyText(input.agentId ?? input.agent_id)) return input;
 
   const resolve = typeof resolver === 'function' ? resolver : resolver?.resolve;
   if (typeof resolve !== 'function') return input;
@@ -144,4 +148,8 @@ function safeSessionId(value) {
   if (!normalized || normalized.length > 256 || normalized.includes('..') ||
       !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(normalized)) return null;
   return normalized;
+}
+
+function nonEmptyText(value) {
+  return typeof value === 'string' && value.trim() !== '';
 }
