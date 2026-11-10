@@ -92,20 +92,22 @@ export async function checkpointTaskKnowledge(application, {
   if (!amend && task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
     throw validationError(checkpointConflictMessage(task.checkpoint));
   }
-  const finish = async (result, checkpointTask = task, memory = null, summaryEventId = null) => {
+  // An amendment finishes from its stored entry: its log, decision and event (rec#85).
+  const finish = async (result, checkpointTask = task, memory = null, amendment = null) => {
+    const decision = amendment?.decision ?? captureCheck;
     // The turn is finished: the prompt kept for the relay check goes (rec#80).
     try { application.entryPrompts?.checkpointed(task); } catch { /* the next entry replaces it */ }
     const team = await taskTeam(application, checkpointTask, collaborators);
-    const effectiveLog = workLog ?? { status: 'reported', summary: reason };
-    const conversation = captureCheck.allowed ? await checkpointConversation(application, task, effectiveLog, team, summaryEventId)
-      : captureDisabled(captureCheck);
+    const effectiveLog = amendment?.log ?? workLog ?? { status: 'reported', summary: reason };
+    const conversation = decision.allowed ? await checkpointConversation(application, task, effectiveLog, team, amendment?.eventId)
+      : captureDisabled(decision);
     const triaged = await recordTriage(application, task, conversation, triageLabel);
     // This session went on, so a block it reported has ended and leaves the person's queue.
     await clearSessionTaskBlockers(application, { sourceApplication: task.sourceApplication,
-      sessionIds: [task.sessionId], cause: 'session_activity', captureAllowed: captureCheck.allowed });
+      sessionIds: [task.sessionId], cause: 'session_activity', captureAllowed: decision.allowed });
     // Its Agent's blocks reported in other sessions may be solved here too: probably resolved.
     await noteBlockerProgress(application, { sourceApplication: task.sourceApplication, sessionId: task.sessionId,
-      personalProjectId: task.personalProjectId, agentId: task.projectAgentId, captureAllowed: captureCheck.allowed });
+      personalProjectId: task.personalProjectId, agentId: task.projectAgentId, captureAllowed: decision.allowed });
     const interaction = activeSealedWorkerRequest() ? {} : await checkpointHumanInteraction(application, task);
     // A task without an owner says why, as its entry did.
     const unassigned = task.projectAgentId ? null : storedUnassignment(task);
@@ -115,16 +117,16 @@ export async function checkpointTaskKnowledge(application, {
         assignmentStatus: unassigned?.status ?? null, assignmentReason: unassigned?.reason ?? null,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
         persistence: conversation?.status ?? null, collaborators: team.collaborators,
-        notices: [...namedFlaReceiptNotices(task), ...standingReceiptNotices(task), ...receiptNotices(captureCheck, [], { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application, { taskId: task.token })],
+        notices: [...namedFlaReceiptNotices(task), ...standingReceiptNotices(task), ...receiptNotices(decision, [], { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application, { taskId: task.token })],
         turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }) }),
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
   };
-  if (amend) {
+  if (amend && fingerprint !== task.checkpoint.fingerprint) {
     const amended = await amendCheckpoint(application, task, { disposition, reason, workLog, fingerprint }, captureCheck);
     return finish({ status: 'amended', disposition, reason, personal_project_id: task.personalProjectId,
-      project_agent_id: task.projectAgentId ?? null, amendments: amended.amendments,
+      project_agent_id: task.projectAgentId ?? null, amendment: amended.sequence,
       ...(amended.replayed ? { replayed: true } : {}) }, amended.task, null,
-    `${task.token}:amendment:${amended.amendments}`);
+    { ...amended, eventId: `${task.token}:amendment:${amended.sequence}` });
   }
   if (task.checkpoint?.phase === 'complete') {
     return finish({ status: 'checkpointed', disposition, reason,

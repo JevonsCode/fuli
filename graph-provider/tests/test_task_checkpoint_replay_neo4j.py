@@ -4,6 +4,7 @@ All identities are synthetic. Removing one new metadata property explicitly
 simulates a pre-upgrade record; no daily database or model is used.
 """
 
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -373,6 +374,7 @@ async def test_amendment_appends_a_correction_and_keeps_the_original_checkpoint(
         assert changed.status_code == 409, changed.text
         amended = await client.post(amend_url, json=correction)
         assert amended.status_code == 200, amended.text
+        assert (amended.json()['amendment']['sequence'], amended.json()['amendment']['replayed']) == (1, False)
         saved = amended.json()['checkpoint']
         assert saved['work_log'] == early['work_log'] and saved['fingerprint'] == 'a' * 64
         assert [item['work_log'] for item in saved['amendments']] == [correction['work_log']]
@@ -381,6 +383,14 @@ async def test_amendment_appends_a_correction_and_keeps_the_original_checkpoint(
         assert (await record(client, context))['checkpoint'] == saved
         log = (await memory(client, context))['work_log'][0]
         assert (log['status'], log['summary']) == ('completed', 'Answered the late synthetic question.')
+        # A -> B -> A: the retry names A's own stored entry, not the newest.
+        later = {**correction, 'fingerprint': 'f' * 64, 'reason': 'A second synthetic correction.',
+                 'work_log': {'status': 'failed', 'summary': 'The synthetic reply bounced.'}}
+        assert (await client.post(amend_url, json=later)).json()['amendment']['sequence'] == 2
+        again = (await client.post(amend_url, json={**correction, 'reason': 'Resent other words.'})).json()
+        assert again['amendment']['sequence'] == 1 and again['amendment']['replayed'] is True
+        assert again['amendment']['reason'] == correction['reason']
+        assert len(again['checkpoint']['amendments']) == 2
         # Another client's or a superseded task's token is never amended.
         foreign = await client.post(amend_url, json={**correction, 'source_application': 'cursor',
                                                      'fingerprint': 'd' * 64})
@@ -389,3 +399,27 @@ async def test_amendment_appends_a_correction_and_keeps_the_original_checkpoint(
         assert (await client.put('/v1/task-contexts', json=newer)).status_code == 200
         stale = await client.post(amend_url, json={**correction, 'fingerprint': 'e' * 64})
         assert stale.status_code == 404, stale.text
+
+
+@pytest.mark.asyncio
+async def test_concurrent_amendments_each_keep_one_entry_and_sequence():
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        context = await context_fixture(client)
+        endpoint = f'/v1/task-contexts/{context["token"]}/checkpoint'
+        assert (await client.put(endpoint, json=checkpoint(context, phase='complete'))).status_code == 200
+
+        def correction(fingerprint):
+            return {'personal_space_id': context['personal_space_id'], 'source_application': 'codex',
+                    'disposition': 'retain_nothing', 'reason': f'Synthetic correction {fingerprint[0]}.',
+                    'fingerprint': fingerprint}
+
+        responses = await asyncio.gather(*[client.post(f'{endpoint}/amendments', json=correction(value))
+                                           for value in ['b' * 64, 'c' * 64, 'b' * 64, 'c' * 64]])
+        assert all(response.status_code == 200 for response in responses), [r.text for r in responses]
+        stored = (await record(client, context))['checkpoint']['amendments']
+        assert sorted(item['fingerprint'] for item in stored) == ['b' * 64, 'c' * 64]
+        assert [item['sequence'] for item in stored] == [1, 2]
+        named = {response.json()['amendment']['fingerprint']: response.json()['amendment']['sequence']
+                 for response in responses}
+        assert named == {item['fingerprint']: item['sequence'] for item in stored}

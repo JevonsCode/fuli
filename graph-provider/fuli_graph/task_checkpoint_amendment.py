@@ -4,7 +4,9 @@ A checkpoint stays immutable: a retry with other input is still refused. An
 amendment is the one supported correction of a checkpoint sent too early. It
 names only a new reason and work log, is appended under the original, and is
 accepted only while the task is still its session's current task. Capture
-decisions, receipts and memory writes of the original are never touched.
+decisions, receipts and memory writes of the original are never touched. The
+session lock taken before the read serializes appends, so each entry keeps the
+sequence it was given; the response names the entry the request matched.
 """
 
 from fastapi import HTTPException
@@ -17,24 +19,30 @@ MAX_AMENDMENTS = 5
 
 
 def checkpoint_amendment(checkpoint, request):
-    """The amendment entry to append, or None when this one is already kept (a retry)."""
+    """The amendment this request names: (entry, replayed).
+
+    A retry returns the entry already kept, never a new one, so its caller
+    reads the stored words, capture decision and sequence rather than its own.
+    """
     if checkpoint.get('phase') != 'complete':
         raise HTTPException(409, 'Only a completed checkpoint can be amended; '
                                  'finish it first by resending its exact first arguments')
     if request.disposition != checkpoint.get('disposition'):
         raise HTTPException(409, 'An amendment keeps the checkpoint disposition; capture decisions cannot change')
+    if request.fingerprint == checkpoint.get('fingerprint'):
+        raise HTTPException(409, 'This is the original checkpoint input; resend it without amend')
     amendments = checkpoint.get('amendments') or []
-    if request.fingerprint == checkpoint.get('fingerprint') or any(
-            item.get('fingerprint') == request.fingerprint for item in amendments):
-        return None
+    for item in amendments:
+        if item['fingerprint'] == request.fingerprint:
+            return item, True
     if len(amendments) >= MAX_AMENDMENTS:
         raise HTTPException(409, f'This checkpoint already has {MAX_AMENDMENTS} amendments; '
                                  'record further work in a new task context')
-    entry = {'fingerprint': request.fingerprint, 'reason': request.reason,
-             'amended_at': now_utc().isoformat()}
+    entry = {'sequence': len(amendments) + 1, 'fingerprint': request.fingerprint,
+             'reason': request.reason, 'amended_at': now_utc().isoformat()}
     if request.work_log is not None:
         entry['work_log'] = request.work_log.model_dump()
-    return entry
+    return entry, False
 
 
 async def amend_task_checkpoint(store, actor, token, request):
@@ -46,9 +54,9 @@ async def amend_task_checkpoint(store, actor, token, request):
     if record.get('work_log_required') and request.work_log is None:
         raise HTTPException(422, 'Employee work summary is required before amending')
     checkpoint = dict(record.get('checkpoint') or {})
-    entry = checkpoint_amendment(checkpoint, request)
-    if entry is None:
-        return record
+    entry, replayed = checkpoint_amendment(checkpoint, request)
+    if replayed:
+        return {**record, 'amendment': {**entry, 'replayed': True}}
     checkpoint['amendments'] = [*(checkpoint.get('amendments') or []), entry]
     record['checkpoint'] = checkpoint
     rows, _, _ = await store.runtime.driver.execute_query(
@@ -66,4 +74,4 @@ async def amend_task_checkpoint(store, actor, token, request):
     )
     if not rows:
         raise HTTPException(409, 'Task checkpoint was superseded before the amendment')
-    return task_context_record(rows[0])
+    return {**task_context_record(rows[0]), 'amendment': {**entry, 'replayed': False}}

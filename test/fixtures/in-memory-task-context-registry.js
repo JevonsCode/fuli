@@ -88,11 +88,13 @@ export class TaskContextRegistry {
     if (task.checkpoint?.phase !== 'complete' || task.checkpoint.disposition !== disposition) {
       throw checkpointConflict('Only a completed checkpoint can be amended, keeping its disposition');
     }
-    if (fingerprint !== task.checkpoint.fingerprint && !amendments.some(item => item.fingerprint === fingerprint)) {
-      task.checkpoint = Object.freeze({ ...task.checkpoint, amendments: [...amendments,
-        { fingerprint, reason, ...(workLog ? { work_log: workLog } : {}), amended_at: new Date().toISOString() }] });
-    }
-    return snapshot(task);
+    if (fingerprint === task.checkpoint.fingerprint) throw checkpointConflict('This is the original checkpoint input');
+    const kept = amendments.find(item => item.fingerprint === fingerprint);
+    if (kept) return { task: snapshot(task), amendment: { ...structuredClone(kept), replayed: true } };
+    const entry = { sequence: amendments.length + 1, fingerprint, reason,
+      ...(workLog ? { work_log: workLog } : {}), amended_at: new Date().toISOString() };
+    task.checkpoint = Object.freeze({ ...task.checkpoint, amendments: [...amendments, entry] });
+    return { task: snapshot(task), amendment: { ...structuredClone(entry), replayed: false } };
   }
 
   claimUnreadTurnReceipts(token, receiptIds) {

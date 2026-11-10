@@ -39,13 +39,20 @@ def test_amendment_model_takes_only_reason_and_work_log():
 
 
 def test_amendment_appends_beside_the_original_and_replays_by_fingerprint():
-    entry = checkpoint_amendment(completed(), amendment())
-    assert entry['fingerprint'] == 'b' * 64
+    entry, replayed = checkpoint_amendment(completed(), amendment())
+    assert not replayed and entry['sequence'] == 1 and entry['fingerprint'] == 'b' * 64
     assert entry['work_log'] == {'status': 'completed', 'summary': 'Replied after the late message.'}
     assert entry['reason'] == 'Corrected synthetic outcome.' and entry['amended_at']
-    # The same amendment again, or the original's own input, adds nothing.
-    assert checkpoint_amendment(completed(amendments=[entry]), amendment()) is None
-    assert checkpoint_amendment(completed(), amendment(fingerprint='a' * 64)) is None
+    second, _ = checkpoint_amendment(completed(amendments=[entry]), amendment(fingerprint='c' * 64,
+                                                                            reason='Second synthetic outcome.'))
+    assert second['sequence'] == 2
+    # A retry of the older amendment names its own stored entry, never the newest.
+    kept, replayed = checkpoint_amendment(completed(amendments=[entry, second]),
+                                          amendment(reason='Resent words are not the stored ones.'))
+    assert replayed and kept == entry
+    with pytest.raises(HTTPException) as original:
+        checkpoint_amendment(completed(), amendment(fingerprint='a' * 64))
+    assert 'without amend' in original.value.detail
 
 
 def test_amendment_needs_a_completed_checkpoint_with_its_disposition():
@@ -61,7 +68,7 @@ def test_amendment_needs_a_completed_checkpoint_with_its_disposition():
 
 
 def test_amendments_are_bounded():
-    kept = [{'fingerprint': str(index) * 64} for index in range(MAX_AMENDMENTS)]
+    kept = [{'sequence': index + 1, 'fingerprint': str(index) * 64} for index in range(MAX_AMENDMENTS)]
     with pytest.raises(HTTPException) as full:
         checkpoint_amendment(completed(amendments=kept), amendment())
     assert full.value.status_code == 409 and 'new task context' in full.value.detail
