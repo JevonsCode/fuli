@@ -592,7 +592,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   async function replyMessage({ taskContextToken, sourceApplication, messageId, body }) {
     const me = await sender({ taskContextToken, sourceApplication });
     const ask = store.getMessage(messageId);
+    // The store reads by ID only: an ask of another space is never this task's to answer.
     if (!ask || ask.kind !== 'ask' || !me.agent || ask.to_agent !== me.agent.agentId
+        || store.getThread(ask.thread_id)?.space_id !== spaceId()
         || !sameProject(messageProject(ask), me.projectId)) throw validation('No such message for this Agent');
     if (ask.target_project_id && ask.target_project_id !== store.getThread(ask.thread_id)?.project_id) {
       if (await host.projectLeadId(ask.target_project_id) !== me.agent.agentId) throw validation('The target project lead changed');

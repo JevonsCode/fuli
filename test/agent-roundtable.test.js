@@ -23,7 +23,8 @@ function fixture({ wake, sessions = {}, redeemed = true, env = {}, openStore = (
     'token-milo': { token: 'token-milo', projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: 'cc-1', sourceApplication: 'claude_code' },
     'token-nova': { token: 'token-nova', projectAgentId: 'reviewer-1', personalProjectId: 'app', sessionId: 'cx-9', sourceApplication: 'codex' },
     'token-foreign': { token: 'token-foreign', projectAgentId: 'lead-1', personalProjectId: 'other-app', sessionId: 'cc-2', sourceApplication: 'claude_code' },
-    'token-global': { token: 'token-global', projectAgentId: 'lead-1', personalProjectId: null, sessionId: 'cc-3', sourceApplication: 'claude_code' }
+    'token-global': { token: 'token-global', projectAgentId: 'lead-1', personalProjectId: null, sessionId: 'cc-3', sourceApplication: 'claude_code' },
+    'token-nova-global': { token: 'token-nova-global', projectAgentId: 'reviewer-1', personalProjectId: null, sessionId: 'cx-3', sourceApplication: 'codex' }
   };
   const woken = [];
   const grants = [], revoked = [], verified = [];
@@ -659,4 +660,21 @@ test('an Agent working with no project reads the status of the message it sent (
   await assert.rejects(roundtable.messageStatus({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', messageId: sent.messageId }), /current project/);
   const projectSent = await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: '另一条' });
   await assert.rejects(roundtable.messageStatus({ taskContextToken: 'token-global', sourceApplication: 'claude_code', messageId: projectSent.messageId }), /current project/);
+});
+
+test('an Agent with no project answers only an ask of its own space (rec#110 review)', async () => {
+  const { app, roundtable } = fixture({ wake: async () => { throw Object.assign(new Error('offline'), { code: 'client_unavailable' }); } });
+  const reply = (messageId, body) => roundtable.replyMessage({ taskContextToken: 'token-nova-global', sourceApplication: 'codex', messageId, body });
+  const foreign = await roundtable.messageAgent({ taskContextToken: 'token-global', sourceApplication: 'claude_code', to: 'reviewer-1', body: '另一个空间' });
+  const before = roundtable.thread({ threadId: foreign.threadId });
+  app.config.personal.spaceId = 'other-space';
+  await assert.rejects(reply(foreign.messageId, 'synthetic cross-space reply'), /No such message for this Agent/);
+  app.config.personal.spaceId = 'space';
+  assert.deepEqual(roundtable.thread({ threadId: foreign.threadId }).messages.map(m => [m.kind, m.status]),
+    before.messages.map(m => [m.kind, m.status]), 'nothing was written to the thread of the other space');
+  // In its own space the same reply goes through; a project task still does not answer it.
+  await assert.rejects(roundtable.replyMessage({ taskContextToken: 'token-nova', sourceApplication: 'codex', messageId: foreign.messageId, body: 'x' }),
+    /No such message for this Agent/);
+  await reply(foreign.messageId, '同空间回复');
+  assert.equal((await roundtable.messageStatus({ taskContextToken: 'token-global', sourceApplication: 'claude_code', messageId: foreign.messageId })).status, 'answered');
 });
