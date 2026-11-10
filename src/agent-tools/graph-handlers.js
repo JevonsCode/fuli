@@ -18,6 +18,12 @@ import { OCCUPATION_KIT_HANDLERS } from '../occupation-plugins/agent-tools.js';
 import { agentNamingStyleAnswer } from '../agent-naming/naming-style.js';
 import { withProviderOutageEntry } from '../graphiti/task-entry-provider-outage.js';
 import { checkpointKeepingUnsaved } from '../graphiti/unsaved-checkpoints.js';
+import { TASK_ENTRY_DEFINITIONS } from './task-entry-definitions.js';
+
+// What a kept unsaved checkpoint holds: the tool's own arguments except its token and the resubmission ID.
+const CHECKPOINT_CONTENT_FIELDS = Object.freeze(Object.keys(TASK_ENTRY_DEFINITIONS
+  .find(({ name }) => name === 'checkpoint_task_knowledge').inputSchema.properties)
+  .filter(field => !['taskContextToken', 'unsavedCheckpointId'].includes(field)));
 
 // These tools read or change the two local stores that can retain deleted
 // knowledge. Provider-only reads and unrelated tools remain available.
@@ -119,7 +125,7 @@ const HANDLERS = Object.freeze({
   begin_task_context: (app, input) => app.beginTaskContext(input),
   read_task_preferences: (app, input) => app.readTaskPreferences(input),
   checkpoint_task_knowledge: (app, input) =>
-    checkpointKeepingUnsaved(app.unsavedCheckpoints, input, sent => app.checkpointTaskKnowledge(sent)),
+    checkpointKeepingUnsaved(app.unsavedCheckpoints, input, sent => app.checkpointTaskKnowledge(sent), CHECKPOINT_CONTENT_FIELDS),
   verify_task_checkpoint: (app, input) => app.verifyTaskCheckpoint(input),
   get_collaboration_preferences: (app, input) => withProviderOutageEntry(app.getCollaborationPreferences({
     ...input,

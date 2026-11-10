@@ -11,7 +11,10 @@ import { ProviderRequestError } from '../src/graphiti/provider-client.js';
 import { unsavedCheckpointRecords } from '../src/graphiti/unsaved-checkpoints.js';
 
 const INPUT = { taskContextToken: 'fuli-task-synthetic-refused', disposition: 'capture_candidates', reason: 'Synthetic fact',
-  remember: [{ kind: 'project_fact', text: 'The sample service lives in packages/sample' }] };
+  remember: [{ kind: 'project_fact', text: 'The sample service lives in packages/sample' }],
+  // What the MCP layer adds for its host session (src/mcp/session-id.js), never kept.
+  sourceApplication: 'sample_b', sourceSessionId: 'synthetic-session-b' };
+const { sourceApplication, sourceSessionId, ...CONTENT } = INPUT;
 const foreign = () => new ProviderRequestError('Task context not found for this client: it was begun in sample_a, not sample_b.',
   { code: 'provider_error', status: 404 });
 
@@ -23,7 +26,7 @@ function fixture(t, answers) {
     checkpointTaskKnowledge: async input => { calls.push(input); const next = answers.shift();
       if (next instanceof Error) throw next; return next; } };
   // The kept records, not the directory's format marker.
-  const kept = () => readdirSync(join(dataDir, 'unsaved-checkpoints')).filter(name => /^[0-9a-f]{32}\.json$/u.test(name));
+  const kept = () => (existsSync(join(dataDir, 'unsaved-checkpoints')) ? readdirSync(join(dataDir, 'unsaved-checkpoints')) : []).filter(name => /^[0-9a-f]{32}\.json$/u.test(name));
   const call = input => dispatchGraphTool(app, 'checkpoint_task_knowledge', input);
   return { dataDir, calls, kept, call };
 }
@@ -38,14 +41,16 @@ test('a refused checkpoint is kept without its token, says it was not saved, and
   assert.match(refused.unsaved_checkpoint_id, /^[0-9a-f]{32}$/);
   const record = JSON.parse(readFileSync(join(dataDir, 'unsaved-checkpoints', `${refused.unsaved_checkpoint_id}.json`), 'utf8'));
   assert.equal(record.input.remember[0].text, INPUT.remember[0].text);
-  assert.equal(JSON.stringify(record).includes(INPUT.taskContextToken), false);
+  assert.deepEqual(record.input, (({ taskContextToken, ...content }) => content)(CONTENT));
 
   // The resubmission's own disposition and reason give way to the kept input.
   const saved = await call({ taskContextToken: 'fuli-task-synthetic-fresh', disposition: 'retain_nothing', reason: 'resend',
-    unsavedCheckpointId: refused.unsaved_checkpoint_id });
+    sourceApplication: 'sample_a', sourceSessionId: 'synthetic-session-a', unsavedCheckpointId: refused.unsaved_checkpoint_id });
   assert.equal(saved.status, 'checkpointed');
   assert.equal(saved.resubmitted_unsaved_checkpoint_id, refused.unsaved_checkpoint_id);
-  assert.deepEqual(calls[1], { ...INPUT, taskContextToken: 'fuli-task-synthetic-fresh' });
+  // The resubmitting call's host client and session, never the kept ones.
+  assert.deepEqual(calls[1], { ...CONTENT, taskContextToken: 'fuli-task-synthetic-fresh',
+    sourceApplication: 'sample_a', sourceSessionId: 'synthetic-session-a' });
   assert.equal(kept().length, 0);
 });
 
@@ -71,4 +76,22 @@ test('a resubmission that fails again keeps the same record; an unknown ID and a
   assert.equal(calls.length, 3);
   assert.deepEqual(kept(), [`${id}.json`]);
   assert.equal(existsSync(join(dataDir, 'unsaved-checkpoints', `${'f'.repeat(32)}.json`)), false);
+});
+
+test('a content refusal is not kept, since a resubmission would send the same content', async t => {
+  const conflict = new ProviderRequestError('Agent memory revision changed', { code: 'provider_error', status: 409 });
+  const { kept, call } = fixture(t, [conflict]);
+  await assert.rejects(call(INPUT), conflict);
+  assert.deepEqual(kept(), []);
+});
+
+test('a kept copy that cannot be written leaves the outage answer as it was', async t => {
+  const outage = new ProviderRequestError('timed out', { code: 'provider_timeout', status: 504 });
+  const records = { idOf: () => 'x', keep: () => { throw new Error('disk full'); }, remove: () => { throw new Error('busy'); } };
+  const app = { unsavedCheckpoints: records, checkpointTaskKnowledge: async () => { throw outage; } };
+  const result = await dispatchGraphTool(app, 'checkpoint_task_knowledge', INPUT);
+  assert.equal(result.status, 'checkpoint_incomplete');
+  assert.equal(result.unsaved_checkpoint_id, undefined);
+  const saving = { unsavedCheckpoints: records, checkpointTaskKnowledge: async () => ({ status: 'checkpointed' }) };
+  assert.equal((await dispatchGraphTool(saving, 'checkpoint_task_knowledge', INPUT)).status, 'checkpointed');
 });
