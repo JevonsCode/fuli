@@ -1,15 +1,16 @@
-/* The quick-start guide (/guide/): its own pieces over guide-page.css and the :root tokens in style.css. */
+/* The quick-start guide (/guide/): its own pieces over guide-page.css, screens.css (the client's
+   window) and the :root tokens in style.css. Motion is opacity and transform only. */
 .guide-hero .guide-links { margin-top: 30px; }
 
 /* Each step: its number sits in a jade disc before the step's name. */
 .guide-step h2 { display: flex; align-items: center; gap: 16px; }
 .step-index { display: inline-grid; flex: none; width: 1.4em; height: 1.4em; place-items: center; border-radius: 50%;
   background: var(--jade-soft); color: var(--jade); font-size: .7em; font-weight: 650; letter-spacing: 0; }
+.guide-section > h2 + p { margin: -8px 0 clamp(22px, 3.5vh, 32px); }
 
 .platform-grid, .model-grid { display: grid; gap: clamp(14px, 2vw, 22px); align-items: start; }
-.platform-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 960px; }
-.model-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); }
-.guide-section > p + .model-grid { margin-top: clamp(20px, 3vh, 28px); }
+.platform-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 1080px; }
+.model-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 1080px; margin-top: clamp(24px, 4vh, 36px); }
 
 /* Steps inside a card: numbered, plain, no boxes of their own. */
 .step-list { display: grid; gap: 8px; margin: 12px 0 0; padding-left: 1.3em; color: var(--ink-soft); }
@@ -18,11 +19,89 @@ ol.guide-list li { color: var(--ink-soft); }
 .card-note { margin-top: 12px; color: var(--muted); font-size: 14px; }
 .step-note { max-width: 640px; margin-top: clamp(18px, 3vh, 24px); color: var(--ink-soft); }
 .guide-page code { overflow-wrap: anywhere; }
+.install-picture { display: block; width: 100%; height: auto; margin-top: 18px; border-radius: 12px; }
+.guide-notes { margin-top: clamp(22px, 3.5vh, 30px); }
+.guide-notes li { color: var(--ink-soft); font-size: 15px; }
 
 @media (max-width: 880px) {
-  .platform-grid { grid-template-columns: minmax(0, 1fr); }
+  .platform-grid, .model-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* The headline reads as two lines: the setup, then the point. */
 #guide-title em { display: block; }
 #guide-title { text-wrap: balance; }
+
+/* A screen tour: the client's window, then its numbered steps in a row under it, sized so both fit
+   on one screen and the current step's words stay in view while its mark moves. */
+.tour { width: min(100%, 1080px, max(640px, calc((100svh - 300px) * 1.6))); }
+.tour-window .app-screen { container-type: inline-size; }
+.tour-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 10px; margin: clamp(18px, 3vh, 26px) 0 0; padding: 0; list-style: none; }
+.tour-step { position: relative; display: flex; gap: 10px; align-items: flex-start; width: 100%; height: 100%; padding: 12px 14px 14px; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink-soft); font: inherit; font-size: 14px; line-height: 1.6; text-align: left;
+  cursor: pointer; user-select: none; transition: transform .25s cubic-bezier(.2, .8, .2, 1), box-shadow .25s ease, border-color .25s ease, color .25s ease; }
+.tour-step:hover { border-color: var(--jade-line); }
+.tour-n { display: inline-grid; flex: none; width: 22px; height: 22px; margin-top: 1px; place-items: center; border-radius: 50%; background: var(--jade-soft); color: var(--jade); font-size: 12px; font-weight: 650; }
+/* The current step lifts as a card; its bar along the bottom fills while it plays. */
+.is-current > .tour-step { transform: translateY(-3px); border-color: var(--jade-line); box-shadow: 0 14px 34px rgb(27 31 29 / 10%); color: var(--ink); }
+.is-current > .tour-step .tour-n { background: var(--jade); color: #fff; }
+.tour-bar { position: absolute; right: 0; bottom: 0; left: 0; height: 3px; background: var(--jade); opacity: 0; transform: scaleX(0); transform-origin: left; }
+.tour.is-autoplay.is-playing .is-current > .tour-step .tour-bar { opacity: .55; animation: tour-fill 5.2s linear forwards; }
+.tour:hover .tour-bar, .tour:focus-within .tour-bar { animation-play-state: paused !important; }
+@keyframes tour-fill { to { transform: scaleX(1); } }
+
+/* The mark on the screen: a jade ring around the place to look, the rest dimmed, its number on the corner. */
+.tour-spot { position: absolute; left: var(--x); top: var(--y); width: var(--w); height: var(--h); border: 2px solid var(--jade); border-radius: 10px;
+  box-shadow: 0 0 0 200vmax rgb(27 31 29 / 16%); opacity: 0; transform: scale(1.04); pointer-events: none;
+  transition: opacity .35s ease, transform .5s cubic-bezier(.2, .8, .2, 1); }
+.tour-spot.is-current { opacity: 1; transform: none; }
+.tour-spot b { position: absolute; top: 0; left: 0; display: grid; width: 24px; height: 24px; place-items: center; border-radius: 50%;
+  background: var(--jade); color: #fff; font-size: 12px; font-weight: 650; translate: -50% -50%; }
+.tour-spot::after { content: ""; position: absolute; inset: -2px; border: 2px solid var(--jade); border-radius: inherit; opacity: 0; }
+.tour.is-playing .tour-spot.is-current::after { animation: tour-ping 1.8s ease-out .3s infinite; }
+@keyframes tour-ping { from { opacity: .7; transform: scale(1); } to { opacity: 0; transform: scale(1.06); } }
+
+/* The caption beside the mark: frosted glass like the site's bar, the current step's words faded in. */
+.tour-caption { position: absolute; top: 0; left: 0; z-index: 2; display: grid; width: min(340px, 46%); margin: 0; padding: 10px 14px;
+  border: 1px solid rgb(255 255 255 / 70%); border-radius: 12px; background: rgb(255 254 251 / 88%); -webkit-backdrop-filter: saturate(1.4) blur(12px); backdrop-filter: saturate(1.4) blur(12px);
+  box-shadow: 0 16px 40px rgb(27 31 29 / 18%); color: var(--ink); font-size: 14px; line-height: 1.6; pointer-events: none; user-select: none;
+  transition: transform .55s cubic-bezier(.2, .8, .2, 1); }
+.tour-caption > span { display: flex; gap: 9px; grid-area: 1 / 1; opacity: 0; transition: opacity .3s ease; }
+.tour-caption > span.is-current { opacity: 1; }
+.tour-caption b { display: inline-grid; flex: none; width: 20px; height: 20px; margin-top: 2px; place-items: center; border-radius: 50%; background: var(--jade); color: #fff; font-size: 11px; font-weight: 650; }
+
+/* A session in the client: lines appear as their step comes, the current ones lit. */
+.tour-terminal { background: #1b1f1d; }
+.term { display: grid; align-content: start; gap: .7em; height: 100%; padding: 4.5cqi 5cqi; color: #d7ddd8; font: 2.15cqi/1.55 ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; }
+.term p { margin: 0; }
+.term-head { display: flex; justify-content: space-between; gap: 2em; margin-bottom: .6em !important; color: #8a948d; }
+.term-line { padding: .25em .6em; border-radius: 6px; transition: opacity .4s ease, transform .4s cubic-bezier(.2, .8, .2, 1), background-color .3s ease; }
+.term-ask { color: #fff; }
+.term-ask b { margin-right: .6em; color: #6fd3ae; }
+.term-fuli { color: #9fe0c7; }
+.term-line.is-current { background: rgb(111 211 174 / 14%); }
+.term-line.is-ahead { opacity: 0; transform: translateY(6px); }
+
+/* Without the script every screen of a tour reads in turn, and the marks stay hidden. */
+html:not(.js) .tour .app-screen { aspect-ratio: auto; }
+html:not(.js) .tour .app-frame { position: relative; opacity: 1; transform: none; aspect-ratio: 1280 / 800; }
+html:not(.js) .tour-spot { display: none; }
+
+/* The FLAs every space has, with the console's own portraits. */
+.fla-title { margin-top: clamp(32px, 5vh, 44px); font-size: 18px; font-weight: 600; }
+.fla-row { display: flex; flex-wrap: wrap; gap: 10px 14px; margin: 14px 0 0; padding: 0; list-style: none; }
+.fla-row li { display: flex; align-items: center; gap: 10px; padding: 6px 16px 6px 6px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-soft); font-size: 14px; }
+.fla-row img { width: 40px; height: 40px; border-radius: 50%; background: var(--jade-soft); }
+
+@media (max-width: 700px) {
+  /* On a phone the screen is small: the current step's card right under it is the caption. */
+  .tour-caption { display: none; }
+  .tour-steps { gap: 8px; }
+  .tour-step { padding: 10px 12px 12px; }
+  .tour-spot b { width: 18px; height: 18px; font-size: 10px; }
+  .term { font-size: 2.9cqi; gap: .45em; padding: 4cqi; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-step, .tour-spot, .term-line, .tour-caption, .tour-caption > span { transition: none; }
+  .is-current > .tour-step { transform: none; }
+  .tour-spot { transform: none; }
+}
