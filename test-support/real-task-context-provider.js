@@ -7,6 +7,8 @@ import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
+const REVIEW_TOKEN = 'synthetic-task-context-review-token-0123456789';
+
 export const realTaskContextEnabled = process.env.FULI_TEST_NEO4J_EPHEMERAL === '1'
   && Boolean(process.env.FULI_TEST_NEO4J_URI);
 
@@ -24,7 +26,7 @@ export async function realTaskContextProvider(t) {
   ], { cwd: resolve('graph-provider'), env: {
     PATH: process.env.PATH, PYTHONUNBUFFERED: '1', GRAPHITI_TELEMETRY_ENABLED: 'false',
     FULI_PROVIDER_ID: 'task-memory-atomicity-acceptance', FULI_PROVIDER_MODE: 'personal',
-    FULI_BOOTSTRAP_TOKEN: bootstrap, FULI_NEO4J_URI: process.env.FULI_TEST_NEO4J_URI,
+    FULI_BOOTSTRAP_TOKEN: bootstrap, FULI_HUMAN_REVIEW_TOKEN: REVIEW_TOKEN, FULI_NEO4J_URI: process.env.FULI_TEST_NEO4J_URI,
     FULI_NEO4J_PASSWORD: process.env.FULI_TEST_NEO4J_PASSWORD ?? 'fixture-pass'
   }, stdio: ['ignore', 'ignore', 'pipe'] });
   const closed = once(provider, 'close');
@@ -47,7 +49,9 @@ export async function realTaskContextProvider(t) {
   async function request(path, body, method = 'POST') {
     const response = await fetch(`${url}${path}`, { method,
       headers: { 'content-type': 'application/json', ...(token
-        ? { authorization: `Bearer ${token}` } : { 'x-fuli-bootstrap-token': bootstrap }) },
+        ? { authorization: `Bearer ${token}` } : { 'x-fuli-bootstrap-token': bootstrap }),
+        // As the console does: a change sent as the person's own carries its proof.
+        ...(body?.operation_actor === 'human' ? { 'x-fuli-human-review-token': REVIEW_TOKEN } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(30_000) });
     assert.equal(response.ok, true, `Fixture HTTP ${response.status}: ${path}`);
     return response.json();

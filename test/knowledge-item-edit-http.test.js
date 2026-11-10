@@ -231,3 +231,25 @@ test('D-20.7 trusted entry: only the console route speaks as the person; an Agen
   assert.deepEqual([calls[1].body.operation_actor, calls[1].body.basis_meaning], ['agent', 'wording_only'],
     'the Provider sees an Agent claiming wording-only and refuses it (Neo4j suite)');
 });
+
+test('the person\'s revision, batch confirmation and move leave on the human-review channel; an Agent\'s on its access token', async () => {
+  const { app, calls } = application(() => ({ status: 200, body: { id: 'revision' } }));
+  const item = { itemKind: 'entity', itemId: 'item-1', existenceReason: 'Synthetic.', quadrantReason: 'Synthetic.', proposedBy: { kind: 'agent' } };
+  await api(app, 'PATCH', '/api/knowledge/entity/item%2F1', { personalSpaceId: 'personal-space', action: 'invalidate', reason: 'r' });
+  await api(app, 'POST', '/api/knowledge/batch-confirmation', { personalSpaceId: 'personal-space', groupKind: 'session',
+    groupValue: 'synthetic-session', reason: 'r', confirmer: { kind: 'user' }, items: [item] });
+  await api(app, 'POST', '/api/knowledge/entity/item%2F1/assignment', { personalSpaceId: 'personal-space',
+    targetProjectId: 'project-b', reason: 'r' });
+  assert.deepEqual(calls.map(call => [call.method, call.path, call.review, call.body.operation_actor]), [
+    ['PATCH', '/v1/knowledge/items/item%2F1', true, 'human'],
+    ['POST', '/v1/knowledge/batch-confirmations', true, 'human'],
+    ['POST', '/v1/knowledge/items/item%2F1/assignment', true, 'human']]);
+
+  calls.length = 0;
+  await app.reviseKnowledgeItem({ personalSpaceId: 'personal-space', itemKind: 'entity', itemId: 'item-1',
+    action: 'invalidate', reason: 'r', operationActor: 'agent' }, app.ownerReads);
+  await app.reassignKnowledgeItem({ personalSpaceId: 'personal-space', itemKind: 'entity', itemId: 'item-1',
+    targetProjectId: 'project-b', reason: 'r' }, app.ownerReads);
+  assert.deepEqual(calls.map(call => [call.review, call.body.operation_actor]), [[undefined, 'agent'], [undefined, 'agent']],
+    'an Agent\'s change never takes the console\'s proof, even where the port is at hand');
+});

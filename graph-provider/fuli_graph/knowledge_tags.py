@@ -16,6 +16,8 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException
 
+from .auth import require_human_proof
+
 from .knowledge_tag_models import (
     DISTINCT_FROM_MAX,
     KnowledgeTagAliasCreate,
@@ -56,7 +58,6 @@ _ALIAS_HELD = 'Another visible tag already holds this word: attach that tag inst
 _ALIAS_PROPOSED = 'Saved as a proposal; resolve ignores it until a person adds the same alias.'
 _SHARED_REFUSED = 'shared vocabulary changes need governance and are not available yet'
 _NO_CURRENT_PROJECT = 'with no current project, set namespace personal explicitly'
-_HUMAN_PROOF = 'independent human review proof required'
 _RETIRED = 'A person retired this tag; only they can bring it back, from the FULI console.'
 _REVIVE_PREVIEW = ('Bringing this retired tag back would drop relations or aliases that no longer fit; '
                    'nothing changed. Confirm the revival preview in the FULI console.')
@@ -64,12 +65,6 @@ _REVIVE_PREVIEW = ('Bringing this retired tag back would drop relations or alias
 
 def project_namespace(project_id: str) -> str:
     return f'project:{project_id}'
-
-
-def _require_human_proof(actor: dict, operation_actor: str) -> None:
-    """A change recorded as the person's own needs the console's human-review proof."""
-    if operation_actor == 'human' and actor.get('_human_review_verified') is not True:
-        raise HTTPException(status_code=403, detail=_HUMAN_PROOF)
 
 
 async def resolve_tags(store, actor: dict, request: KnowledgeTagResolve) -> KnowledgeTagResolveResult:
@@ -83,7 +78,7 @@ async def resolve_tags(store, actor: dict, request: KnowledgeTagResolve) -> Know
 
 
 async def create_tag(store, actor: dict, request: KnowledgeTagCreate) -> KnowledgeTagCreateResult:
-    _require_human_proof(actor, request.operation_actor)
+    require_human_proof(actor, request.operation_actor)
     namespace = _new_tag_namespace(request)
     space, visible = await visible_tag_scope(store, actor, request, 'maintainer')
     key = identity_key(request.name)
@@ -147,7 +142,7 @@ async def _reuse_earlier_identity(vocabulary, space: dict, actor: dict, earlier:
 
 
 async def add_tag_alias(store, actor: dict, request: KnowledgeTagAliasCreate) -> KnowledgeTagAliasResult:
-    _require_human_proof(actor, request.operation_actor)
+    require_human_proof(actor, request.operation_actor)
     space, namespaces = await visible_tag_scope(store, actor, request, 'maintainer')
     key = identity_key(request.alias)
     async with store.knowledge_tag_vocabulary().locked(space['id']) as vocabulary:
@@ -201,7 +196,7 @@ async def _change_link(store, actor: dict, request: KnowledgeTagLinkChange, *, a
     race to a hard delete finds no item (no orphan link), and one that loses a
     race to a merge lands on the merged-into tag, never on a tag that no longer
     resolves. A hard delete and a merge take the same space lock."""
-    _require_human_proof(actor, request.operation_actor)
+    require_human_proof(actor, request.operation_actor)
     space, namespaces = await visible_tag_scope(store, actor, request, 'maintainer')
     port = store.knowledge_tag_vocabulary()
     await visible_tag(port.reader(space['id']), namespaces, request.tag_id)

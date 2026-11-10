@@ -5,12 +5,15 @@ explicitly set FULI_TEST_NEO4J_EPHEMERAL=1; no existing graph is cleared.
 """
 
 import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
 import httpx
 import pytest
+
+FIXTURE_REVIEW_TOKEN = 'synthetic-fixture-review-token-0123456789abcdef'
 
 
 def fixture_settings():
@@ -23,8 +26,25 @@ def fixture_settings():
     return Settings(
         provider_id='agent-memory-acceptance', provider_mode='personal',
         bootstrap_token='memory-fixture-bootstrap-1234',
+        # Setup gives every installed provider a human-review token.
+        human_review_token=FIXTURE_REVIEW_TOKEN,
         neo4j_uri=uri, neo4j_password=os.getenv('FULI_TEST_NEO4J_PASSWORD', 'fixture-pass'),
     )
+
+
+def _person_proof(token):
+    """The console sends its human-review proof with a change it records as the
+    person's own (operation_actor 'human'); a fixture client does the same."""
+    async def add(request):
+        if not token or 'x-fuli-human-review-token' in request.headers or not request.content:
+            return
+        try:
+            body = json.loads(request.content)
+        except ValueError:
+            return
+        if isinstance(body, dict) and body.get('operation_actor') == 'human':
+            request.headers['x-fuli-human-review-token'] = token
+    return add
 
 
 @asynccontextmanager
@@ -39,6 +59,7 @@ async def provider_client(settings, access_token=None, *, raise_app_exceptions=T
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app, raise_app_exceptions=raise_app_exceptions),
             base_url='http://fixture',
+            event_hooks={'request': [_person_proof(settings.human_review_token)]},
         ) as client:
             if access_token is None:
                 response = await client.post('/v1/bootstrap',
