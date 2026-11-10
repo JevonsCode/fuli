@@ -36,7 +36,7 @@ export const reviewListMessages = {
       title: '详情', content: '内容', project: '项目', proposer: '谁提的', reason: '为什么还等着', tonborg: "@:{'roleNames.tonborg'} 的理由", guess: "@:{'roleNames.tonborg'} 的猜测",
     },
     explain: {
-      title: "让 @:{'roleNames.tonborg'} 给你解释", lead: '在你的 AI 里新开一个会话，逐条讲清楚',
+      area: "@:{'roleNames.tonborg'} 给你解释这些问题", title: "让 @:{'roleNames.tonborg'} 给你解释", lead: '在你的 AI 里新开一个会话，逐条讲清楚',
       copy: '复制给其他 AI', copyOnly: '复制给你的 AI', opened: "已在 {client} 打开 @:{'roleNames.tonborg'} 的解释",
       copied: "已复制 @:{'roleNames.tonborg'} 的解释，粘贴给你的 AI 即可", copyFailed: '没能复制，请手动复制下面这段',
       copyTag: '复制', pasteIn: '已复制，在 {client} 里粘贴发送',
@@ -87,7 +87,7 @@ export const reviewListMessages = {
       title: 'Details', content: 'Content', project: 'Project', proposer: 'Proposed by', reason: 'Why it waits', tonborg: "@:{'roleNames.tonborg'}’s reason", guess: "@:{'roleNames.tonborg'}’s guess",
     },
     explain: {
-      title: "Let @:{'roleNames.tonborg'} explain", lead: 'Opens a new chat in your AI and goes through them one by one',
+      area: "@:{'roleNames.tonborg'} explains these questions", title: "Let @:{'roleNames.tonborg'} explain", lead: 'Opens a new chat in your AI and goes through them one by one',
       copy: 'Copy for another AI', copyOnly: 'Copy for your AI', opened: "Opened @:{'roleNames.tonborg'}’s explanation in {client}",
       copied: "Copied @:{'roleNames.tonborg'}’s explanation; paste it into your AI", copyFailed: 'Could not copy; copy the text below',
       copyTag: 'Copy', pasteIn: 'Copied; paste it in {client} and send',
