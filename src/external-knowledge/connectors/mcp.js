@@ -15,6 +15,16 @@ export function createMcpConnector({ openSession = defaultOpenSession } = {}) {
     name: 'MCP',
     capabilities: ['discover', 'sync', 'retrieve'],
 
+    // A local command runs as the person, and a credential here goes to an
+    // endpoint the caller chose: only the person sets these up (连接 page).
+    personOnlyFields(config) {
+      return [
+        config.transport === 'stdio' && 'transport',
+        config.tokenEnv && 'tokenEnv',
+        Object.keys(plainObject(config.headerEnv) ?? {}).length > 0 && 'headerEnv'
+      ].filter(Boolean);
+    },
+
     async check(context) {
       return withSession(openSession, context, async (client) => {
         const capabilities = client.getServerCapabilities?.() ?? {};

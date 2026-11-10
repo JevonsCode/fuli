@@ -45,6 +45,10 @@ export function createRetrievalApiConnector({ fetchImpl = globalThis.fetch } = {
     name: 'RAG Retrieval API',
     capabilities: ['retrieve'],
 
+    // The credential goes to an endpoint the caller chose: only the person
+    // names it (连接 page).
+    personOnlyFields: (config) => (config.tokenEnv ? ['tokenEnv'] : []),
+
     async check(context) {
       await retrieve(context, { checking: true });
       return {

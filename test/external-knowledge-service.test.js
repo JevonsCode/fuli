@@ -637,3 +637,55 @@ test('project graph projection exposes connection nodes and per-project binding 
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('an Agent tool cannot name a local command or send a credential to an endpoint it chose; the person can', async (t) => {
+  const { dispatchGraphTool } = await import('../src/agent-tools/graph-handlers.js');
+  const { createConnectorCatalog } = await import('../src/external-knowledge/catalog.js');
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-external-agent-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const opened = [];
+  const fetched = [];
+  const service = new ExternalKnowledgeService({
+    app: { listPersonalProjects: async () => [{ project_id: 'a' }] },
+    registry: new ExternalKnowledgeRegistry(join(directory, 'bindings.json')),
+    connectors: createConnectorCatalog({
+      customConnectorDirectory: directory,
+      fetchImpl: async (url) => { fetched.push(String(url)); return Response.json({ records: [] }); },
+      mcpOpenSession: async ({ config }) => {
+        opened.push(config);
+        return { client: { getServerCapabilities: () => ({ resources: {} }), listResources: async () => ({ resources: [] }) },
+          close: async () => {} };
+      }
+    }),
+    env: { SECRET_TOKEN: 'synthetic-value' },
+  });
+  const app = { externalKnowledge: service };
+  const targets = [{ personalSpaceId: 'space-a', personalProjectId: 'a', mode: 'live' }];
+  const refused = { code: 'local_user_only', status: 403 };
+
+  for (const connectorConfig of [
+    { transport: 'stdio', command: 'synthetic-command', args: ['--flag'] },
+    { url: 'https://mcp.example.test/mcp', tokenEnv: 'SECRET_TOKEN' },
+    { url: 'https://mcp.example.test/mcp', headerEnv: { 'X-Key': 'SECRET_TOKEN' } },
+  ]) {
+    await assert.rejects(async () => dispatchGraphTool(app, 'discover_external_knowledge_sources',
+      { connectorType: 'mcp', connectorConfig }), refused);
+    await assert.rejects(async () => dispatchGraphTool(app, 'create_external_knowledge_binding',
+      { name: 'Docs', connectorType: 'mcp', connectorConfig, source: {}, targets }), refused);
+  }
+  await assert.rejects(async () => dispatchGraphTool(app, 'create_external_knowledge_binding', {
+    name: 'RAG', connectorType: 'retrieval_api', source: { knowledgeIds: ['kb'] }, targets,
+    connectorConfig: { url: 'https://rag.example.test/retrieval', tokenEnv: 'SECRET_TOKEN' } }), refused);
+  assert.deepEqual(opened, []);
+  assert.deepEqual(fetched, []);
+  assert.deepEqual(await service.listBindings(), []);
+
+  // An Agent still discovers through an endpoint that takes no credential.
+  await dispatchGraphTool(app, 'discover_external_knowledge_sources',
+    { connectorType: 'mcp', connectorConfig: { url: 'https://mcp.example.test/mcp' } });
+  assert.equal(opened.length, 1);
+  // The person's own request (the console's 连接 page) keeps both.
+  await service.discover({ connectorType: 'mcp', connectorConfig: { transport: 'stdio', command: 'synthetic-command' } });
+  await service.discover({ connectorType: 'mcp', connectorConfig: { url: 'https://mcp.example.test/mcp', tokenEnv: 'SECRET_TOKEN' } });
+  assert.equal(opened.length, 3);
+});

@@ -249,6 +249,11 @@ Agent 使用 `search_connected_knowledge`。运行时只选择与当前 `persona
 完全匹配且允许实时检索的目标，不会因为同一来源绑定了其他项目而跨项目返回。它属于开放世界
 读取：会访问外部网络，同时图谱检索会
 记录 Agent 查看事件，因此 MCP 注解不会把它伪标成纯本地、无副作用读取。
+Agent 工具（`discover_external_knowledge_sources`、`create_external_knowledge_binding`）不能指定 MCP 的 stdio 命令，
+也不能为自己填写的 MCP / Retrieval API 端点指定凭据环境变量（`tokenEnv`、`headerEnv`）：本地命令以用户身份运行，
+凭据会被发往调用方选择的地址，所以这两类连接只由用户在连接页创建（`local_user_only`）。已创建的绑定，
+Agent 照常检查、同步和检索；Notion、飞书的凭据只发往各自的官方接口，Agent 仍可创建。
+
 外部错误只返回有界诊断；疑似包含凭据的错误文本会替换为保护性说明，不写入注册表或返回给
 Agent。
 

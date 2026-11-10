@@ -64,15 +64,19 @@ export class ExternalKnowledgeService {
     return this.registry.list().map(publicBinding);
   }
 
-  async discover(input) {
+  // caller 'agent': an Agent tool made the call, so the connector's
+  // person-only configuration is refused (discover and createBinding).
+  async discover(input, { caller } = {}) {
     const connectorType = requiredString(input?.connectorType, 'connectorType', 64);
     const connector = this.#connector(connectorType);
     if (typeof connector.discover !== 'function') {
       throw new TypeError(`${connectorType} does not support discovery`);
     }
+    const connectorConfig = safeConfiguration(input.connectorConfig ?? {});
+    if (caller === 'agent') assertAgentConfiguration(connector, connectorConfig);
     return connector.discover({
       ...this.#context({
-        connectorConfig: safeConfiguration(input.connectorConfig ?? {}),
+        connectorConfig,
         source: safeConfiguration(input.source ?? {})
       }),
       query: typeof input.query === 'string' ? input.query : null,
@@ -81,14 +85,15 @@ export class ExternalKnowledgeService {
     });
   }
 
-  async createBinding(input) {
-    return this.registry.withMutation(() => this.#createBinding(input));
+  async createBinding(input, { caller } = {}) {
+    return this.registry.withMutation(() => this.#createBinding(input, caller));
   }
 
-  async #createBinding(input) {
+  async #createBinding(input, caller) {
     const connectorType = requiredString(input?.connectorType, 'connectorType', 64);
     const connector = this.#connector(connectorType);
     const connectorConfig = safeConfiguration(input.connectorConfig ?? {});
+    if (caller === 'agent') assertAgentConfiguration(connector, connectorConfig);
     const source = safeConfiguration(input.source ?? {});
     const id = this.createId();
     const targets = bindingTargets(input, { bindingId: id });
@@ -719,6 +724,18 @@ function bindingForTarget(binding, target) {
     mode: target.mode,
     sync: target.sync
   };
+}
+
+function assertAgentConfiguration(connector, connectorConfig) {
+  const fields = connector.personOnlyFields?.(connectorConfig) ?? [];
+  if (fields.length === 0) return;
+  throw new ApplicationError(
+    'local_user_only',
+    `connectorConfig.${fields.join(', connectorConfig.')} is set up by the person on the console's 连接 page: `
+      + 'it runs a local command or sends a credential to an endpoint the caller chose. '
+      + 'Ask the person to add this connection there, then use the binding it creates.',
+    { status: 403 }
+  );
 }
 
 function safeConfiguration(value, path = 'configuration') {
