@@ -186,6 +186,8 @@ export async function seedDemo(origin, { write }) {
     { name: 'connections', path: '/settings?tab=clients', prepare: connectAll },
     { name: 'workbench', path: '/' },
     { name: 'inbox', path: '/inbox' },
+    // The FLAs page: the project FLAs and the built-in ones (Astro, Bole, Jefa, Tonborg) with their portraits.
+    { name: 'team', path: '/project-agents' },
     { name: 'agent', path: `/agents/${space}/${agents.get('Milo Reed')}` },
     { name: 'models', path: '/models' },
     { name: 'knowledge', path: project('orbit-ledger', 'directory') },
