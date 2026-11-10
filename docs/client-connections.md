@@ -327,7 +327,8 @@ It does not start FULI:
 In those cases the hooks' "Fuli context is unavailable" text says which one applies.
 When a hook itself fails, the same text names the error code, the rule that refused the call (never
 the values it was given) and the FULI version the hook ran, for example
-`the hook failed: validation (Task preference scope is immutable; …) in FULI 0.25.2`.
+`the hook failed: validation (Task preference scope is immutable; …) in FULI 0.25.2`;
+a refusal from the graph service shows only its HTTP status.
 `FULI_CONSOLE_AUTOSTART=off` in a client's environment turns it off for that client's sessions.
 
 ## Remote clients
