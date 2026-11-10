@@ -730,3 +730,34 @@ test('a session whose FLA changes with its folder says who takes over and how to
   // A named FLA explains itself; no change notice is added.
   assert.equal((await hook('#FLA Ada Lead 回来看看')).owner_change, undefined);
 });
+
+// DOT on #875: the earlier FLA's name is display only, so a lookup that hangs
+// leaves its ID; and the checkpoint receipt that replaces the entry's keeps the notice.
+test('an owner change survives a hanging name lookup and reaches the checkpoint receipt', async () => {
+  const { app, hook, tasks } = fixture();
+  await hook('先看看 Alpha');
+  app.projectPathResolver = () => ({ status: 'matched', basis: 'repository_root', personalProjectId: 'project-b' });
+  const lookup = app.getProjectAgent.bind(app);
+  app.getProjectAgent = input => (input.agentId === 'ada' ? new Promise(() => {}) : lookup(input));
+  const started = Date.now();
+  const moved = await hook('继续实现');
+  assert.ok(Date.now() - started < 5_000, 'the entry does not wait for the name');
+  assert.equal(moved.owner_change.from_agent_id, 'ada');
+  assert.match(moved.agent_receipt.markdown, /上一个任务由 ada 负责/);
+
+  const begun = tasks.at(-1);
+  let checkpoint = null;
+  const task = () => ({ token: begun.token, sessionId: begun.sessionId, personalProjectId: begun.personalProjectId,
+    projectAgentId: begun.projectAgentId, sourceApplication: 'claude_code', agentAssignment: begun.agentAssignment,
+    projectScope: null, workLogRequired: false, checkpoint });
+  const finishing = { config: { personal: { spaceId: SPACE } }, getCapturePolicy: () => ({ enabled: true }),
+    taskContextRegistry: { context: async () => task(),
+      prepare: async (_token, value) => { checkpoint = { ...value, phase: 'prepare' }; return task(); },
+      checkpoint: async (_token, value) => { checkpoint = { ...checkpoint, ...value, phase: 'complete' }; return task(); } },
+    personal: { conversation: async () => ({ status: 'saved', conversation_id: 'synthetic-conversation' }),
+      getProjectAgent: async () => JAMIE } };
+  const result = await checkpointTaskKnowledge(finishing, { taskContextToken: begun.token, sourceApplication: 'claude_code',
+    disposition: 'retain_nothing', reason: 'Synthetic work continued' });
+  assert.match(result.agent_receipt.markdown, /上一个任务由 ada 负责，这次起由 .+ 负责；要继续由 ada 负责/);
+  assert.doesNotMatch(result.agent_receipt.markdown, /owner_change:/);
+});
