@@ -321,6 +321,12 @@ export class GraphitiProviderClient {
       method: 'PUT', body: input
     });
   }
+  // rec#85: a correction appended under a completed checkpoint.
+  amendTaskCheckpoint(token, input) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/checkpoint/amendments`, {
+      method: 'POST', body: input
+    });
+  }
   // rec#20: the checkpoint's reply claims its own turn receipt exactly once.
   claimTurnReceipt(token, input) {
     return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/turn-receipt/claim`, {

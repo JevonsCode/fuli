@@ -170,6 +170,12 @@ fallback tasks are closed as `retain_nothing` / `reported` at the next entry in 
 session, and hook-delivered tasks by Stop. Capture candidates, experiences, memory changes,
 explicit knowledge usage, collaborators and meaningful work logs (including failures/blockers)
 still require `checkpoint_task_knowledge` with `capture_candidates` or `retain_nothing`.
+A checkpoint is recorded once: a retry with different input is refused and never overwrites it.
+If you checkpointed too early and the outcome changed later in the same task, call it again with
+the same token and `disposition`, `amend: true`, and only the corrected `reason` and `workLog`.
+FULI appends the correction and keeps the first record as history. Capture, `remember`,
+`experiences`, `agentMemory`, `knowledgeUsage`, `triage` and collaborators already applied cannot
+change. Amend only while the task is still its session's current task; a later turn is a new task.
 A hook-delivered task that Stop closes keeps, at entry, the prompt's own sentences that state a
 project rule (a policy or convention of ours, a port, a command, why something fails, a thing of ours and its concrete value such as a URL) as pending
 project facts in the person's words; review still decides them. Do not checkpoint only to repeat
