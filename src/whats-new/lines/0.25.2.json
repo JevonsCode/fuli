@@ -1,0 +1,13 @@
+{
+  "version": "0.25.2",
+  "zh": [
+    "又一个小修版：叫不醒的同事，FULI 先看看它的进程还在不在，再决定让不让位。",
+    "Tonborg 的模型被拒或没额度时，直接说停下，不再劝你重试。",
+    "钩子出错时会说是哪条规则拦的、自己是哪个版本，排查快多了。"
+  ],
+  "en": [
+    "Another small fix: before freeing a stuck wake, FULI checks whether its process still runs.",
+    "When Tonborg's model is refused or out of budget, it says stop, not try again.",
+    "A failed hook now names the rule that stopped it and its own version."
+  ]
+}
