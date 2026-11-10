@@ -186,7 +186,8 @@ Code、Codex 和 Cursor 生命周期适配器。已加载、获信任的入口 H
 ```
 
 任务结束时，Hook 模式调用 `checkpoint_task_knowledge`：只有少量、可复用且有证据的内容才用
-`capture_candidates`；否则使用 `retain_nothing`。Prompt fallback Agent 遵守相同判断标准，并
+`capture_candidates`；否则使用 `retain_nothing`。收尾写早了，用 `amend: true` 更正（只改 reason 和
+workLog），原记录作为历史保留。Prompt fallback Agent 遵守相同判断标准，并
 通过 `capture_session_knowledge` 写入。写个人偏好时设置正确的 `profileAspect` 和稳定的
 `attributes.preferenceKey`；写项目事实时不设置 `profileAspect`。如果“设置”中的自动沉淀已
 关闭，自动写入会返回 `capture_disabled`，不会产生任何类别的条目：会话原文、checkpoint、知识和

@@ -96,6 +96,15 @@ export class ProviderTaskContextRegistry {
     return this.#write(token, checkpoint, 'complete', sourceApplication);
   }
 
+  // Appends a correction under the completed checkpoint; the original stays (rec#85).
+  async amend(token, value, sourceApplication = 'other') {
+    return taskRecord(await this.provider.amendTaskCheckpoint(token, {
+      personal_space_id: this.personalSpaceId, source_application: sourceApplication,
+      disposition: value.disposition, reason: value.reason, fingerprint: value.fingerprint,
+      ...(value.workLog ? { work_log: value.workLog } : {})
+    }));
+  }
+
   // True when this checkpoint's reply should carry its turn receipt: it was
   // unread, or this same task already claimed it (a retry).
   async claimTurnReceipt(token, sourceApplication = 'other') {

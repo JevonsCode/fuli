@@ -46,6 +46,12 @@ Provider 重新检查任职、客户端权限与任务状态，不能覆盖已�
 `checkpoint_task_knowledge` 保存知识保留判断和真实 `workLog`。没有新知识用
 `retain_nothing`，仍记录结果；状态支持 `reported`、`completed`、`incomplete`、`failed` 和 `no_change`。
 
+检查点只记一次：换了内容的重试会被拒绝，不会覆盖第一次的记录。收尾写早了、同一任务后来结果变了，
+就用同一个 token 和相同的 `disposition` 再调一次，带 `amend: true`，只给更正后的 `reason` 和 `workLog`。
+FULI 把更正追加在原记录下（最多 5 条），原记录作为历史保留；员工工作记录显示最新的更正。
+已经生效的 capture、`remember`、`experiences`、`agentMemory`、`knowledgeUsage`、`triage` 和协作者
+都不能通过更正改动。只有这个任务仍是其会话当前任务时才能更正，下一轮就是新任务。
+
 长期记忆变化时附 `agentMemory`、已读 revision 和合并内容；每份最多 32 KiB，不保存原始聊天、
 凭据或临时日志。任务检查点只更新任务所在层；更新全局层须显式使用 `personalProjectId: null`，
 不自动复制项目内容。重复相同提交不重复写入，版本冲突明确返回；中断任务保留未完成状态。

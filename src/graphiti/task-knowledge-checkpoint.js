@@ -20,6 +20,7 @@ import { activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
 import { clearSessionTaskBlockers, noteBlockerProgress } from './task-blocker-progress.js';
 import { storedUnassignment } from './task-agent-assignment.js';
+import { amendCheckpoint, assertAmendmentInput, checkpointConflictMessage } from './checkpoint-amendment.js';
 
 export async function checkpointTaskKnowledge(application, {
   taskContextToken,
@@ -36,13 +37,16 @@ export async function checkpointTaskKnowledge(application, {
   collaborators = [],
   triage = null,
   experiences = null,
-  remember = null
+  remember = null,
+  amend = false
 }) {
   if (!['capture_candidates', 'retain_nothing'].includes(disposition)) {
     throw validationError('Unknown task knowledge checkpoint disposition');
   }
   const triageLabel = validateTriage(triage);
   const task = await application.taskContextRegistry.context(taskContextToken, sourceApplication);
+  if (amend) assertAmendmentInput(task, { disposition, capture, captureRouting, agentMemory, knowledgeUsage,
+    triage, experiences, remember, collaborators });
   if (personalProjectId && task.personalProjectId !== personalProjectId) {
     throw validationError('Task checkpoint belongs to another project');
   }
@@ -70,7 +74,7 @@ export async function checkpointTaskKnowledge(application, {
   const scopedCaptures = captureRouting === null || internalActivity
     ? null : normalizeTaskCaptures(task, capture, captureRouting);
   if (disposition === 'capture_candidates') {
-    if (!capture && !scopedCaptures) {
+    if (!capture && !scopedCaptures && !amend) {
       throw validationError('capture_candidates requires a bounded capture payload');
     }
   } else if (capture || scopedCaptures) {
@@ -85,17 +89,15 @@ export async function checkpointTaskKnowledge(application, {
       ...(internalActivity && captureRouting !== null ? { captureRouting } : {}), agentMemory, ...(workLog ? { workLog } : {}),
       ...(knowledgeUsage ? { knowledgeUsage } : {}) })
   )).digest('hex');
-  if (task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
-    throw validationError(
-      'Task checkpoint already has different input; resend the exact arguments of the first checkpoint call to finish it, or begin a new task context'
-    );
+  if (!amend && task.checkpoint && task.checkpoint.fingerprint !== fingerprint) {
+    throw validationError(checkpointConflictMessage(task.checkpoint));
   }
-  const finish = async (result, checkpointTask = task, memory = null) => {
+  const finish = async (result, checkpointTask = task, memory = null, summaryEventId = null) => {
     // The turn is finished: the prompt kept for the relay check goes (rec#80).
     try { application.entryPrompts?.checkpointed(task); } catch { /* the next entry replaces it */ }
     const team = await taskTeam(application, checkpointTask, collaborators);
     const effectiveLog = workLog ?? { status: 'reported', summary: reason };
-    const conversation = captureCheck.allowed ? await checkpointConversation(application, task, effectiveLog, team)
+    const conversation = captureCheck.allowed ? await checkpointConversation(application, task, effectiveLog, team, summaryEventId)
       : captureDisabled(captureCheck);
     const triaged = await recordTriage(application, task, conversation, triageLabel);
     // This session went on, so a block it reported has ended and leaves the person's queue.
@@ -117,6 +119,13 @@ export async function checkpointTaskKnowledge(application, {
         turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }) }),
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };
   };
+  if (amend) {
+    const amended = await amendCheckpoint(application, task, { disposition, reason, workLog, fingerprint }, captureCheck);
+    return finish({ status: 'amended', disposition, reason, personal_project_id: task.personalProjectId,
+      project_agent_id: task.projectAgentId ?? null, amendments: amended.amendments,
+      ...(amended.replayed ? { replayed: true } : {}) }, amended.task, null,
+    `${task.token}:amendment:${amended.amendments}`);
+  }
   if (task.checkpoint?.phase === 'complete') {
     return finish({ status: 'checkpointed', disposition, reason,
       personal_project_id: task.personalProjectId, project_agent_id: task.projectAgentId,

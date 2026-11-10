@@ -81,6 +81,20 @@ export class TaskContextRegistry {
     return snapshot(task);
   }
 
+  // As the Provider: appended under a completed checkpoint, replayed by fingerprint.
+  amend(token, { disposition, reason, fingerprint, workLog = null }, sourceApplication = 'other') {
+    const task = this.#task(token, sourceApplication);
+    const amendments = task.checkpoint?.amendments ?? [];
+    if (task.checkpoint?.phase !== 'complete' || task.checkpoint.disposition !== disposition) {
+      throw checkpointConflict('Only a completed checkpoint can be amended, keeping its disposition');
+    }
+    if (fingerprint !== task.checkpoint.fingerprint && !amendments.some(item => item.fingerprint === fingerprint)) {
+      task.checkpoint = Object.freeze({ ...task.checkpoint, amendments: [...amendments,
+        { fingerprint, reason, ...(workLog ? { work_log: workLog } : {}), amended_at: new Date().toISOString() }] });
+    }
+    return snapshot(task);
+  }
+
   claimUnreadTurnReceipts(token, receiptIds) {
     const claimed = [];
     for (const id of receiptIds) {

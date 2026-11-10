@@ -348,3 +348,44 @@ async def test_the_stop_hook_learns_whether_the_lifecycle_hook_delivered_the_ope
             assert response.status_code == 200, response.text
             assert response.json()['status'] == 'checkpoint_required'
             assert response.json()['entry_via'] == entry_via
+
+
+@pytest.mark.asyncio
+async def test_amendment_appends_a_correction_and_keeps_the_original_checkpoint():
+    """rec#85: a checkpoint sent too early is corrected without overwriting it."""
+    settings = fixture_settings()
+    async with provider_client(settings) as (client, _):
+        context = await context_fixture(client)
+        endpoint = f'/v1/task-contexts/{context["token"]}/checkpoint'
+        amend_url = f'{endpoint}/amendments'
+        early = checkpoint(context, phase='complete',
+                           work_log={'status': 'no_change', 'summary': 'Nothing new to handle.'})
+        correction = {'personal_space_id': context['personal_space_id'], 'source_application': 'codex',
+                      'disposition': 'retain_nothing', 'reason': 'Handled the late synthetic question.',
+                      'fingerprint': 'b' * 64,
+                      'work_log': {'status': 'completed', 'summary': 'Answered the late synthetic question.'}}
+        not_yet = await client.post(amend_url, json=correction)
+        assert not_yet.status_code == 409, not_yet.text
+        assert (await client.put(endpoint, json=early)).status_code == 200
+        # The idempotency guard stays: other input on the checkpoint itself is refused.
+        assert (await client.put(endpoint, json={**early, 'fingerprint': 'c' * 64})).status_code == 409
+        changed = await client.post(amend_url, json={**correction, 'disposition': 'capture_candidates'})
+        assert changed.status_code == 409, changed.text
+        amended = await client.post(amend_url, json=correction)
+        assert amended.status_code == 200, amended.text
+        saved = amended.json()['checkpoint']
+        assert saved['work_log'] == early['work_log'] and saved['fingerprint'] == 'a' * 64
+        assert [item['work_log'] for item in saved['amendments']] == [correction['work_log']]
+        replay = await client.post(amend_url, json=correction)
+        assert replay.status_code == 200 and len(replay.json()['checkpoint']['amendments']) == 1
+        assert (await record(client, context))['checkpoint'] == saved
+        log = (await memory(client, context))['work_log'][0]
+        assert (log['status'], log['summary']) == ('completed', 'Answered the late synthetic question.')
+        # Another client's or a superseded task's token is never amended.
+        foreign = await client.post(amend_url, json={**correction, 'source_application': 'cursor',
+                                                     'fingerprint': 'd' * 64})
+        assert foreign.status_code == 404, foreign.text
+        newer = {**context, 'token': f'fuli-task-{uuid4()}', 'turn_id': 'second-turn'}
+        assert (await client.put('/v1/task-contexts', json=newer)).status_code == 200
+        stale = await client.post(amend_url, json={**correction, 'fingerprint': 'e' * 64})
+        assert stale.status_code == 404, stale.text

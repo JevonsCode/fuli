@@ -97,6 +97,7 @@ Read each returned worker's `context.agent.profile.allowedClients` and `executor
 ## Handling conflicts and failures
 
 - On revision or timestamp conflict, re-read, explain what changed, and recompute the intended patch. Do not blindly retry stale input.
+- On `Task checkpoint already has different input`, do not reword the retry. If the first checkpoint was sent too early, call `checkpoint_task_knowledge` again with `amend: true`, the same token and `disposition`, and only the corrected `reason` and `workLog`; the first record stays as history and its capture decisions do not change.
 - On permission or `local_user_only` errors, identify the exact local UI action required. Do not bypass the boundary.
 - On `delegation_category_off`, show the returned message: the person took that category back and turns it on in 设置 › AI 权限 (Settings › AI permissions). Do not retry through another route.
 - On partial external sync, preserve the binding, report per-target/source failures, and let the user choose whether to retry.
