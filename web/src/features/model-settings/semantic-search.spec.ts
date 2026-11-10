@@ -155,7 +155,7 @@ describe('语义搜索 on the model page', () => {
     expect(url).toBe('/api/model-backends/roles/semantic')
     expect(body.connection).toMatchObject({ protocol: 'openai_embeddings', endpoint: OLLAMA, model: 'synthetic-embed', secretRef: null })
     expect(body.settings.egress.approvedProjects).toEqual([{ personalSpaceId: 'space-1', personalProjectId: 'alpha' }])
-    expect(wrapper.text()).toContain('已保存 语义搜索 的模型设置。')
+    expect(useConsoleStore().feedback?.message).toContain('已保存 语义搜索 的模型设置。')
   })
 
   it('tests the connection and shows how many dimensions the model gives', async () => {
