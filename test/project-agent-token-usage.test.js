@@ -211,6 +211,35 @@ test('task activity auto-enriches missing usage while explicit zero and null rem
   assert.equal(captured.length, 1);
 });
 
+// rec#85 (11-10): a coordinator's status line names no participating Agent.
+// The Provider refuses usage without one, so none is collected for it; an
+// explicit report still goes as given and is validated by the Provider.
+test('a report without a participating Agent collects no usage', async () => {
+  const sent = [];
+  let resolved = 0;
+  const application = {
+    tokenUsageResolver: { resolve: async () => { resolved += 1; return { source: 'host', totalTokens: 42 }; } },
+    personal: { recordProjectAgentTaskActivity: async (input) => { sent.push(input); return { task: { task_id: 'task-1' } }; } }
+  };
+  const status = { personalSpaceId: 'space-1', personalProjectId: 'project-1', taskId: 'task-1',
+    idempotencyKey: 'status-1', status: 'running', summary: 'coordinating',
+    sourceApplication: 'codex', sourceSessionId: 'coordinator-session' };
+  for (const agentId of [undefined, null, '', '  ']) {
+    await recordProjectAgentTaskActivity(application, { ...status, agentId });
+  }
+  assert.equal(resolved, 0);
+  assert.ok(sent.every(input => !Object.hasOwn(input, 'token_usage') || input.token_usage === undefined));
+
+  sent.length = 0;
+  await recordProjectAgentTaskActivity(application, { ...status, tokenUsage: { source: 'host', totalTokens: 5 } });
+  assert.equal(sent[0].token_usage.total_tokens, 5);
+  assert.equal(resolved, 0);
+
+  await recordProjectAgentTaskActivity(application, { ...status, agentId: 'agent-1' });
+  assert.equal(resolved, 1);
+  assert.equal(sent[1].token_usage.total_tokens, 42);
+});
+
 test('automatic token usage failure leaves task activity reportable', async () => {
   const captured = [];
   const enriched = await enrichProjectAgentTaskActivity({
