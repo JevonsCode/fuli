@@ -1,7 +1,9 @@
-import { closeSync, openSync, readSync, readdirSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Read-only helpers for locating a client's JSONL session log on disk.
+
+const WINDOW_BYTES = 256 * 1024;
 
 export function listDirectory(directory) {
   try { return readdirSync(directory); } catch { return []; }
@@ -22,13 +24,28 @@ export function findFile(directory, suffix, depth) {
 
 // The first non-empty string `pick` returns for a JSON line near the start of the log.
 export function firstField(file, pick) {
+  for (const line of readWindow(file, 'start').lines) {
+    try { const value = pick(JSON.parse(line)); if (typeof value === 'string' && value) return value; } catch { /* partial line */ }
+  }
+  return null;
+}
+
+// The JSON lines near the end of the log, oldest first, and when it was last written.
+export function lastEntries(file) {
+  const { lines, modifiedMs } = readWindow(file, 'end');
+  const entries = [];
+  for (const line of lines) {
+    try { entries.push(JSON.parse(line)); } catch { /* partial line */ }
+  }
+  return { entries, modifiedMs };
+}
+
+function readWindow(file, edge) {
   const handle = openSync(file, 'r');
   try {
-    const buffer = Buffer.alloc(256 * 1024);
-    const length = readSync(handle, buffer, 0, buffer.length, 0);
-    for (const line of buffer.subarray(0, length).toString('utf8').split('\n')) {
-      try { const value = pick(JSON.parse(line)); if (typeof value === 'string' && value) return value; } catch { /* partial line */ }
-    }
-    return null;
+    const { size, mtimeMs } = fstatSync(handle);
+    const buffer = Buffer.alloc(Math.min(WINDOW_BYTES, size));
+    const length = readSync(handle, buffer, 0, buffer.length, edge === 'end' ? size - buffer.length : 0);
+    return { lines: buffer.subarray(0, length).toString('utf8').split('\n'), modifiedMs: mtimeMs };
   } finally { closeSync(handle); }
 }

@@ -49,6 +49,8 @@ export function chatBubbles(thread: Pick<RoundtableThread, 'messages' | 'subscri
   const instant = new Set((thread.subscribers ?? []).filter(item => item.delivery === 'instant').map(item => item.agentId))
   const bubbles: ChatBubble[] = []
   for (const message of thread.messages) {
+    // A handback repeats the stand-in's reply for the Agent's own inbox.
+    if (message.kind === 'handback') continue
     const mine = isPerson(message.from)
     const delivery = message.kind === 'ask'
       ? [{ messageId: message.id, to: message.to, state: deliveryState(message, mine && instant.has(message.to.agentId ?? '')) }] : []
@@ -77,6 +79,7 @@ const keyOf = (person: RoundtablePerson) => isPerson(person) ? PERSON_CLIENT : p
 export function tableSeats(messages: RoundtableMessage[]): RoundtableSeat[] {
   const seats = new Map<string, RoundtableSeat>()
   for (const message of messages) {
+    if (message.kind === 'handback') continue
     for (const person of [message.from, message.to]) {
       const key = keyOf(person)
       if (key && !seats.has(key)) seats.set(key, { key, person, spoke: 0, awaited: false })

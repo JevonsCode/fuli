@@ -32,7 +32,7 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
   {
     name: 'message_agent',
     title: 'ROUNDTABLE · Ask another Agent',
-    description: 'Ask an Agent, or project:<id|name> for that project\'s lead. Needs the current taskContextToken. Cross-project asks keep the source lead, run read-only in the target\'s verified folder/session, and return a bounded reply. projectPath may supply that verified folder; threadId continues the source thread. Missing leads use existing Bole staffing; unavailable clients never trigger replacement hiring. Undelivered asks wait in the target inbox. peer:<device>:<binding> addresses a shared lead on a paired device (LAN Beta). Exchanges are recorded.',
+    description: 'Ask an Agent, or project:<id|name> for that project\'s lead. Needs the current taskContextToken. Cross-project asks keep the source lead, run read-only in the target\'s verified folder/session, and return a bounded reply. projectPath may supply that verified folder; threadId continues the source thread. Missing leads use existing Bole staffing; unavailable clients never trigger replacement hiring. wait tries in order: the Agent\'s latest session (forked or queued, never into a running turn), a new session as it (your client first), then this session stands in (status stand_in, 代入: follow standIn); ladder says each step and why. conversation: a recentConversations sessionId reaches that instance, incl. another session of your own FLA. Asks not answered stay in the target inbox. peer:<device>:<binding> addresses a shared lead on a paired device (LAN Beta). Exchanges are recorded.',
     inputSchema: objectSchema({
       taskContextToken: text(160),
       to: text(160),
@@ -53,7 +53,7 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
   {
     name: 'reply_agent_message',
     title: 'ROUNDTABLE · Reply to an Agent',
-    description: 'Answer a message from read_agent_messages or task-entry agent_messages. The reply is delivered to the asking Agent and recorded in the thread.',
+    description: 'Answer a message from read_agent_messages or task-entry agent_messages, or, from the session that stood in, give a stand_in ask the stand-in increment. The reply is delivered and recorded in the thread.',
     inputSchema: objectSchema({ taskContextToken: text(160), messageId: text(128), body: text(16_000) },
       ['taskContextToken', 'messageId', 'body'])
   },

@@ -96,7 +96,7 @@ test('a hand-off that fails leaves the ask queued with the reason and wakes noth
   const f = fixture({ desktop: fakeDesktop({ createFails: true }) });
   const result = await f.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code',
     to: 'Nova Lane', body: '在吗', timeoutSeconds: 30 });
-  assert.equal(result.status, 'queued');
+  assert.equal(result.status, 'stand_in');
   assert.equal(result.reason, 'client_unavailable');
   assert.deepEqual(f.woken, []);
   assert.equal(f.store.desktopInboxes.find({ spaceId: 'space', agentId: 'reviewer-1', projectId: 'app', client: 'codex' }), null);
@@ -109,4 +109,36 @@ test('without the Codex app an ask wakes Codex headlessly as before', async () =
   assert.equal(result.status, 'answered');
   assert.equal(result.reply, 'headless answer');
   assert.equal(f.woken[0].client, 'codex');
+});
+
+// rec#109 tier 1: the Agent's own latest Codex conversation, where the app queues
+// the ask behind any running turn; its inbox conversation only when that fails.
+const LAST = '01a19859-0cb0-73b3-890f-e47e1c7e8dc9';
+const lastSession = { 'reviewer-1': [{ source_application: 'codex', session_id: LAST, personal_project_id: 'app' }] };
+
+test('an ask goes into the Agent\'s latest Codex conversation before its inbox conversation', async () => {
+  const desktop = fakeDesktop();
+  const f = fixture({ desktop, sessions: lastSession });
+  const result = await f.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code',
+    to: 'Nova Lane', body: '续上次的评审', timeoutSeconds: 30, signal: AbortSignal.timeout(200) });
+  assert.deepEqual([result.status, result.reason], ['queued', 'waiting_in_desktop_app']);
+  assert.deepEqual(desktop.calls.handedOff.map(call => call.threadId), [LAST]);
+  assert.deepEqual(desktop.calls.created, []);
+  assert.equal(result.ladder.reached, 'resume');
+  assert.deepEqual(result.ladder.steps.map(({ tier, session, outcome }) => [tier, session, outcome]), [['resume', LAST, 'handed_off']]);
+});
+
+test('when the latest Codex conversation refuses, the ask goes to the inbox conversation and the ladder says why', async () => {
+  const desktop = fakeDesktop({ onHandOff: ({ threadId }) => {
+    if (threadId === LAST) throw Object.assign(new Error('no such thread'), { code: 'codex_app_failed' });
+  } });
+  const f = fixture({ desktop, sessions: lastSession });
+  const result = await f.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code',
+    to: 'Nova Lane', body: '续上次的评审', timeoutSeconds: 30, signal: AbortSignal.timeout(200) });
+  assert.deepEqual(desktop.calls.handedOff.map(call => call.threadId), [LAST, INBOX]);
+  assert.equal(result.ladder.reached, 'new_session');
+  assert.deepEqual(result.ladder.steps.map(({ tier, outcome, reason }) => [tier, outcome, reason]),
+    // Nova may not run in the sender's Claude Code, so its new session is its own Codex inbox.
+    [['resume', 'failed', 'codex_app_failed'], ['new_session', 'skipped', 'client_not_allowed'], ['new_session', 'handed_off', null]]);
+  assert.match(result.ladder.steps[0].why, /Codex 桌面端/);
 });

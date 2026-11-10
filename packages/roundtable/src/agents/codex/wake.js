@@ -2,7 +2,12 @@ import { existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { findFile, firstField, listDirectory } from '../session-log.js';
+import { findFile, firstField, lastEntries, listDirectory } from '../session-log.js';
+
+// A turn the log shows started but not finished is running, unless the log has
+// not moved for this long (a client that crashed mid-turn never finishes it).
+const RUNNING_TURN_STALE_MS = 15 * 60_000;
+const TURN_ENDS = new Set(['task_complete', 'turn_aborted']);
 
 // Wakes Codex headlessly with a read-only sandbox. Resuming records the exchange in
 // that conversation; Codex refuses while the conversation is open in the app.
@@ -29,8 +34,20 @@ export const codexWake = Object.freeze({
 
   // A session resumes only from the directory it started in.
   sessionDirectory(sessionId, { home, env }) {
-    const file = findFile(join(env.CODEX_HOME || join(home, '.codex'), 'sessions'), `${sessionId}.jsonl`, 4);
+    const file = sessionFile(sessionId, { home, env });
     return file ? firstField(file, (line) => line.type === 'session_meta' ? line.payload?.cwd : null) : null;
+  },
+
+  // `codex exec resume` writes into the conversation in place, so a turn that
+  // is still running there is never joined (rec#109): the ask goes elsewhere.
+  turnRunning(sessionId, { home, env, now = Date.now() }) {
+    const file = sessionFile(sessionId, { home, env });
+    if (!file) return false;
+    const { entries, modifiedMs } = lastEntries(file);
+    if (now - modifiedMs > RUNNING_TURN_STALE_MS) return false;
+    const turns = entries.filter(entry => entry.type === 'event_msg').map(entry => entry.payload?.type);
+    const started = turns.lastIndexOf('task_started');
+    return started >= 0 && !turns.slice(started + 1).some(type => TURN_ENDS.has(type));
   },
 
   // `codex exec --json` streams items; the last agent message before turn.completed is the answer.
@@ -42,6 +59,10 @@ export const codexWake = Object.freeze({
     if (event.type === 'turn.failed' || event.type === 'error') state.failed = true;
   },
 });
+
+function sessionFile(sessionId, { home, env }) {
+  return findFile(join(env.CODEX_HOME || join(home, '.codex'), 'sessions'), `${sessionId}.jsonl`, 4);
+}
 
 // The Codex app keeps each CLI version in its own folder; the newest is current.
 export function newestBundledCodex(root) {

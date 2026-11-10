@@ -10,7 +10,7 @@ import { withProjectCandidate } from './assistant-project-candidate.js';
 import { withBoardMatch } from './jefa-board-match.js';
 import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 import { ATTENTION_REPLIES_GUIDANCE } from '../../packages/roundtable/src/roundtable/attention-inbox.js';
-import { AGENT_REPLIES_GUIDANCE } from '../../packages/roundtable/src/roundtable/reply-inbox.js';
+import { AGENT_REPLIES_GUIDANCE, STAND_IN_HANDBACKS_GUIDANCE } from '../../packages/roundtable/src/roundtable/reply-inbox.js';
 import { captureDecision } from './capture-decision.js';
 import { receiptNotices } from './capture-notice.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
@@ -207,6 +207,9 @@ async function entryPreferences(application, projectResolution, {
   // Other Agents' replies to asks this Agent sent, announced once; the body comes from read_agent_messages.
   const replied = includeMessages && selection?.agent && projectResolution.personalProjectId && application.roundtable?.agentReplies
     ? application.roundtable.agentReplies(selection.agent.agentId, projectResolution.personalProjectId) : [];
+  // What another session did as this Agent while it stood in (代入), announced once the same way.
+  const handedBack = includeMessages && selection?.agent && projectResolution.personalProjectId && application.roundtable?.standInHandbacks
+    ? application.roundtable.standInHandbacks(selection.agent.agentId, projectResolution.personalProjectId) : [];
   const notices = [...[fla?.notice, group?.notice].filter(Boolean).map(receiptText),
     ...(standing?.notice ? [standing.receiptNotice] : []),
     ...receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : [],
@@ -223,6 +226,7 @@ async function entryPreferences(application, projectResolution, {
     ...(answered.length ? { attention_replies: answered, attention_replies_guidance: ATTENTION_REPLIES_GUIDANCE } : {}),
     ...(roundtableAsk ? { roundtable_ask: roundtableAsk } : {}),
     ...(replied.length ? { agent_replies: replied, agent_replies_guidance: AGENT_REPLIES_GUIDANCE } : {}),
+    ...(handedBack.length ? { stand_in_handbacks: handedBack, stand_in_handbacks_guidance: STAND_IN_HANDBACKS_GUIDANCE } : {}),
     agent_receipt: taskAgentReceipt(application, {
       projectId: projectResolution.personalProjectId, agentId: selection?.agent?.agentId ?? null,
       name: context?.role?.name, role: selection?.agent?.profile?.name, sourceApplication,

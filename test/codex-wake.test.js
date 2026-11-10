@@ -48,3 +48,22 @@ test('On Windows the newest bundled Codex CLI is used when PATH has none', () =>
   const command = codexWake.resolveCommand({ env: { LOCALAPPDATA: local }, which: () => null, platform: 'win32' });
   assert.equal(command, join(bin, 'new', 'codex.exe'));
 });
+
+test('a Codex session whose last turn started and has not ended is running; a stale one is not', () => {
+  const home = mkdtempSync(join(tmpdir(), 'fuli-codex-turn-'));
+  const day = join(home, '.codex', 'sessions', '2026', '11', '11');
+  mkdirSync(day, { recursive: true });
+  const file = join(day, 'rollout-2026-11-11T00-00-00-cx-session-2.jsonl');
+  const event = type => JSON.stringify({ type: 'event_msg', payload: { type } });
+  const write = (...types) => writeFileSync(file, `${JSON.stringify({ type: 'session_meta', payload: { cwd: '/work/app' } })}\n${types.map(event).join('\n')}\n`);
+  const running = (now = Date.now()) => codexWake.turnRunning('cx-session-2', { home, env: {}, now });
+  write('task_started', 'task_complete', 'task_started');
+  assert.equal(running(), true);
+  write('task_started', 'task_complete');
+  assert.equal(running(), false);
+  write('task_started', 'turn_aborted');
+  assert.equal(running(), false);
+  write('task_started');
+  assert.equal(running(Date.now() + 16 * 60_000), false, 'a turn the log stopped moving on long ago is not running');
+  assert.equal(codexWake.turnRunning('missing-session', { home, env: {} }), false);
+});

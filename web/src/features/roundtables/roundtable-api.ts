@@ -21,7 +21,8 @@ export interface RoundtableThreadSummary {
 }
 export interface RoundtableMessage {
   id: string
-  kind: 'ask' | 'reply'
+  /** handback: what a stand-in did, handed to the Agent it stood in for; same body as its reply. */
+  kind: 'ask' | 'reply' | 'handback'
   status: string
   body: string
   inReplyTo: string | null
