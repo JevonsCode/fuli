@@ -7,6 +7,7 @@ explicitly set FULI_TEST_NEO4J_EPHEMERAL=1; no existing graph is cleared.
 import asyncio
 import json
 import os
+import re
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
@@ -32,11 +33,18 @@ def fixture_settings():
     )
 
 
+# The person's changes the console sends on its human-review port
+# (src/knowledge-owner-reads): a revision, a batch confirmation, a move.
+_PERSON_CHANGE = re.compile(r'^/v1/knowledge/(items/[^/]+(/assignment)?|batch-confirmations)$')
+
+
 def _person_proof(token):
-    """The console sends its human-review proof with a change it records as the
-    person's own (operation_actor 'human'); a fixture client does the same."""
+    """The console sends its human-review proof with those changes when it
+    records them as the person's own (operation_actor 'human'); a fixture
+    client does the same. Every other route's proof is the test's to send."""
     async def add(request):
-        if not token or 'x-fuli-human-review-token' in request.headers or not request.content:
+        if (not token or 'x-fuli-human-review-token' in request.headers or not request.content
+                or not _PERSON_CHANGE.match(request.url.path)):
             return
         try:
             body = json.loads(request.content)
