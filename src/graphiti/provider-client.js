@@ -1163,6 +1163,12 @@ function providerErrorDiagnostic(status, payload) {
   };
 }
 
+// What a refusal says, for the human-review channel too (human-review-channel.js):
+// validation failures name the field and reason, and paths, URLs and tokens are removed.
+export function providerRefusalMessage(payload) {
+  return sanitizeProviderDetail(providerErrorMessage(payload));
+}
+
 function providerErrorMessage(payload, validationErrors = providerValidationErrors(payload)) {
   if (typeof payload?.detail === 'string') return payload.detail;
   if (typeof payload?.detail?.message === 'string') return payload.detail.message;
