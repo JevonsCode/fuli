@@ -31,9 +31,19 @@ test('a controlled refusal names its rule and the version the hook ran', () => {
 // A Provider refusal relays the Provider's own detail, which may echo what
 // was sent (rec#85, DOT 11-10): the hook says only its HTTP status.
 test('a Provider refusal says its HTTP status, never its detail', () => {
-  const detail = 'Value error at C:\Users\someone\secret.txt token=synthetic-secret \\server\share';
-  assert.equal(hookFailureCause(new ProviderRequestError(detail, { status: 422 })), `the hook failed: provider_error (HTTP 422)${IN}`);
-  assert.equal(hookFailureCause(new ProviderRequestError(detail)), `the hook failed: provider_error${IN}`);
-  assert.equal(hookFailureCause(new ProviderRequestError(detail, { status: 503, code: 'provider_http_5xx' })),
-    `the hook failed: provider_http_5xx (HTTP 503)${IN}`);
+  const windows = String.raw`C:\Users\someone\secret.txt`;
+  const unc = String.raw`\\server\share\notes.md`;
+  const opaque = 'sk-synthetic-' + 'a1b2c3d4'.repeat(6);
+  const detail = `Value error at ${windows} token=${opaque} ${unc}`;
+  // The fixture really carries a Windows path, a UNC path and a long opaque value.
+  assert.ok(detail.includes('C:\\Users\\someone') && detail.includes('\\\\server\\share') && opaque.length > 40);
+  const causes = [
+    [hookFailureCause(new ProviderRequestError(detail, { status: 422 })), `the hook failed: provider_error (HTTP 422)${IN}`],
+    [hookFailureCause(new ProviderRequestError(detail)), `the hook failed: provider_error${IN}`],
+    [hookFailureCause(new ProviderRequestError(detail, { status: 503, code: 'provider_http_5xx' })), `the hook failed: provider_http_5xx (HTTP 503)${IN}`]
+  ];
+  for (const [cause, expected] of causes) {
+    assert.equal(cause, expected);
+    for (const secret of [windows, unc, opaque, 'someone', 'server']) assert.ok(!cause.includes(secret), secret);
+  }
 });
