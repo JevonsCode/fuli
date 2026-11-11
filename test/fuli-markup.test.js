@@ -25,7 +25,7 @@ test('source markers, the source list and every receipt are removed; the prose s
     '',
     `- [Run fixtures first](${itemUrl('item-a')})`,
     '- 另有 2 条命中，可在 Fuli 中查看',
-    `FULI Agent：[Lyn \\[synthetic 负责人\\]](<fuli://agents/space-1/agent-1>) · 协作 [Rio](<fuli://agents/space-1/agent-2>)`,
+    `FULI Agents：[Lyn \\[synthetic 负责人\\]](<fuli://agents/space-1/agent-1>) & [Rio](<fuli://agents/space-1/agent-2>)`,
     `FULI 本轮沉淀 1 条（[本会话已记录](<${CONSOLE}/knowledge/turn/space-1?episodes=e1>)）：`,
     `- 新增 经验「Run fixtures first」｜项目 synthetic｜暂无权重｜无标签｜Agent推断·待确认｜[修改](<${CONSOLE}/knowledge/item/space-1/entity/item-a>)`,
     `另 2 条未列出：[查看全部](<${CONSOLE}/knowledge/turn/space-1?episodes=e1,e2>)`,
