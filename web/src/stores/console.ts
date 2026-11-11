@@ -36,6 +36,7 @@ const consoleStateShape = shapeFor<ConsoleState>(z.looseObject({
   })).optional(),
   projects: z.array(z.looseObject({})),
   subscriptions: z.array(z.looseObject({})),
+  firstRunGuide: z.looseObject({ open: z.boolean(), tourSeen: z.number().int().nullish() }).optional(),
 }))
 
 // The capture settings as the server answers them: only `enabled` is always
@@ -60,7 +61,7 @@ const captureOnboardingShape = shapeFor<CaptureOnboardingState>(z.looseObject({
   ask: z.boolean(),
   capturePolicy: z.looseObject(capturePolicyFields),
 }))
-const firstRunGuideShape = shapeOf(z.looseObject({ open: z.boolean() }))
+const firstRunGuideShape = shapeOf(z.looseObject({ open: z.boolean(), tourSeen: z.number().int().nullish() }))
 const recallPolicyShape = shapeFor<RecallPolicy>(z.looseObject({
   answerFromConfirmed: z.boolean(),
   updatedAt: z.string().nullish(),
@@ -201,8 +202,21 @@ export const useConsoleStore = defineStore('console', () => {
   // Closed here at once; a close the server did not record leaves the guide for the next visit.
   async function closeFirstRunGuide(outcome: FirstRunGuideOutcome) {
     if (state.value?.firstRunGuide?.open !== true) return
-    state.value = { ...state.value, firstRunGuide: { open: false } }
+    state.value = { ...state.value, firstRunGuide: { ...state.value.firstRunGuide, open: false } }
     await postJson('/api/first-run-guide', { outcome }, firstRunGuideShape).catch(() => undefined)
+  }
+  // The capture question closed with 「稍后」: asked again on the next console open, not in this one.
+  const captureQuestionDismissed = ref(false)
+  // The first-run dialog (CaptureOnboardingDialog) is on screen; anything else that opens on its own waits for it.
+  const firstRunDialogOpen = computed(() => firstRunGuideShown.value
+    || (state.value?.captureOnboarding?.ask === true && !captureQuestionDismissed.value))
+  // The beginner's guide (features/onboarding-tour) showed this version. Like
+  // the first-run guide, a mark the server did not record shows it again next visit.
+  async function markTourSeen(version: number) {
+    const guide = state.value?.firstRunGuide
+    if (!state.value || (guide?.tourSeen ?? 0) >= version) return
+    state.value = { ...state.value, firstRunGuide: { open: guide?.open === true, tourSeen: version } }
+    await postJson('/api/first-run-guide/tour', { version }, firstRunGuideShape).catch(() => undefined)
   }
 
   async function queueCaptureSave<T>(send: () => Promise<T>, savedPolicy: (answer: T) => CapturePolicy | null) {
@@ -305,6 +319,9 @@ export const useConsoleStore = defineStore('console', () => {
     readCaptureOnboarding,
     firstRunGuideShown,
     closeFirstRunGuide,
+    captureQuestionDismissed,
+    firstRunDialogOpen,
+    markTourSeen,
     rememberCapturePolicy,
     updateAgentAccessPolicy,
     updateRecallPolicy,

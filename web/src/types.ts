@@ -678,8 +678,9 @@ export interface ConsoleState {
   subscriptions: Subscription[]
   capturePolicy?: CapturePolicy
   captureOnboarding?: { ask: boolean }
-  // The console's first-run guide: open once for a new installation until finished or skipped.
-  firstRunGuide?: { open: boolean }
+  // The console's first-run guide: open once for a new installation until finished or skipped;
+  // tourSeen: the newest beginner's guide version the console has shown (null: none yet).
+  firstRunGuide?: { open: boolean; tourSeen?: number | null }
   agentAccessPolicy?: AgentAccessPolicy
   recallPolicy?: RecallPolicy
   providers?: {
