@@ -89,6 +89,11 @@ class Strings {
   String get updateNotBack =>
       _t('FULI 还没有重新应答，稍后会再检查。', 'FULI has not answered again yet; it is checked again shortly.');
   String startFailed(String reason) => _t('没有启动成功：$reason', 'FULI did not start: $reason');
+  // The graph service here was set up by a newer FULI (runtime/provider_conflict.dart); nothing was changed.
+  String startFailedNewerData(String installed, String current) => _t(
+      '没有启动：这台电脑的数据由更新的 FULI（$installed）建立，当前是 $current。数据没有改动，更新 FULI 后再启动。',
+      'FULI did not start: a newer FULI ($installed) set up the data on this computer; this one is $current. '
+          'Nothing was changed. Update FULI, then start again.');
   String stopFailed(String reason) => _t('没有停止成功：$reason', 'FULI did not stop: $reason');
   // Windows reserves some ports; the controller can move FULI to a free one.
   String startFailedPortBlocked(String reason) => _t('没有启动成功：Windows 保留了 FULI 的端口。在托盘菜单选「换一个端口」再试。$reason',

@@ -309,6 +309,27 @@ void main() {
     expect(controller.pending, isNull);
   });
 
+  test('a start refused because a newer FULI set up the data says so with both versions', () async {
+    const refusal = 'provider_downgrade_refused installed=9.9.1+native.2 required=9.9.0+native.2: '
+        'A newer native Graph Provider (9.9.1+native.2) is already installed; this Fuli package brings 9.9.0+native.2. '
+        'Refusing an implicit downgrade: use the matching or newer Fuli package, or back up the data folder and run setup with --allow-provider-downgrade.';
+    // An older package, and the same package with an older runtime repair number.
+    for (final (error, installed, current) in [
+      (refusal, '9.9.1', '9.9.0'),
+      ('Error: provider_downgrade_refused installed=9.9.0+native.3 required=9.9.0+native.2: older repair', '9.9.0+native.3', '9.9.0+native.2'),
+    ]) {
+      final controller = controllerFor(DemoFuliApi()..reachable = false, FixedRuntime(RuntimeReport(RuntimeState.stopped, error: error)));
+      await controller.start();
+      expect(controller.notice!.error, isTrue);
+      expect(controller.notice!.text, '没有启动：这台电脑的数据由更新的 FULI（$installed）建立，当前是 $current。数据没有改动，更新 FULI 后再启动。');
+      expect(controller.notice!.text, isNot(contains('downgrade')));
+    }
+    // A matching package starts; no notice.
+    final started = controllerFor(DemoFuliApi(), FixedRuntime(const RuntimeReport(RuntimeState.running)));
+    await started.start();
+    expect(started.notice, isNull);
+  });
+
   test('a start on a port Windows reserves points to the port change', () async {
     final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped, error: 'EACCES 127.0.0.1:2727', portBlocked: true));
     final controller = controllerFor(DemoFuliApi()..reachable = false, runtime);

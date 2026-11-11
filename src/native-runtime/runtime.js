@@ -857,6 +857,11 @@ function withoutStarted(entries, started) {
 
 // A lower version is refused unless the person asked for it explicitly, for
 // example when moving from a local rc build to a public beta of the same release.
+// The message starts with the code and both versions: it crosses a process
+// boundary as text, and the desktop client reads them from it
+// (desktop/flutter/lib/src/runtime/provider_conflict.dart).
+export const PROVIDER_DOWNGRADE_REFUSED = 'provider_downgrade_refused';
+
 function assertProviderUpgrade(installed, requested, allowDowngrade = false) {
   if (allowDowngrade) return;
   let comparison;
@@ -864,7 +869,10 @@ function assertProviderUpgrade(installed, requested, allowDowngrade = false) {
   // SemVer ignores build metadata; Fuli's native revision orders runtime repairs.
   const revision = value => BigInt(/\+native\.(\d+)$/.exec(value)?.[1] ?? '0');
   if (comparison > 0 || (comparison === 0 && revision(installed) > revision(requested))) {
-    throw new Error('A newer native Graph Provider is already installed. Refusing an implicit downgrade; use the matching or newer Fuli package, or back up the data folder and run setup with --allow-provider-downgrade.');
+    throw Object.assign(new Error(`${PROVIDER_DOWNGRADE_REFUSED} installed=${installed} required=${requested}: `
+      + `A newer native Graph Provider (${installed}) is already installed; this Fuli package brings ${requested}. `
+      + 'Refusing an implicit downgrade: use the matching or newer Fuli package, or back up the data folder and run setup with --allow-provider-downgrade.'),
+    { code: PROVIDER_DOWNGRADE_REFUSED, installedProviderVersion: installed, requiredProviderVersion: requested });
   }
 }
 
