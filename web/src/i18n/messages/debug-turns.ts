@@ -1,8 +1,6 @@
 export const debugTurnsMessages = {
   'zh-CN': {
     title: '调试记录',
-    settingsEntry: '以 #fulidebug 开头的提问会保存这一轮的完整上下文，用颜色标出 FULI 加了哪些内容。',
-    open: '查看',
     back: '设置',
     loading: '正在读取调试记录…',
     loadingRecord: '正在读取这条调试记录…',
@@ -61,8 +59,6 @@ export const debugTurnsMessages = {
   },
   'en-US': {
     title: 'Debug records',
-    settingsEntry: 'A prompt starting with #fulidebug saves that turn’s full context, coloured by what FULI added.',
-    open: 'View',
     back: 'Settings',
     loading: 'Reading debug records…',
     loadingRecord: 'Reading this debug record…',

@@ -7,11 +7,6 @@ export const commonMessages = {
     breadcrumb: '页面位置',
     outline: '本页目录',
     dayField: { none: '未设置', clear: '清除日期', previous: '上个月', next: '下个月' },
-    language: {
-      label: '界面语言',
-      chinese: '中文',
-      english: 'English',
-    },
     actions: {
       retry: '重试',
       view: '查看',
@@ -19,7 +14,6 @@ export const commonMessages = {
       refresh: '刷新',
       close: '关闭',
       cancel: '取消',
-      remove: '移除',
       viewDetails: '查看详情',
     },
     errors: {
@@ -61,11 +55,6 @@ export const commonMessages = {
     breadcrumb: 'Breadcrumb',
     outline: 'On this page',
     dayField: { none: 'Not set', clear: 'Clear date', previous: 'Previous month', next: 'Next month' },
-    language: {
-      label: 'Interface language',
-      chinese: '中文',
-      english: 'English',
-    },
     actions: {
       retry: 'Retry',
       view: 'View',
@@ -73,7 +62,6 @@ export const commonMessages = {
       refresh: 'Refresh',
       close: 'Close',
       cancel: 'Cancel',
-      remove: 'Remove',
       viewDetails: 'View details',
     },
     errors: {

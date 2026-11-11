@@ -61,7 +61,6 @@ export const sessionMigrationResultSchema = z.looseObject({
   held_count: z.number().int().nullable(),
   delivery: migrationDeliverySchema,
 })
-export type SessionMigrationResult = z.infer<typeof sessionMigrationResultSchema>
 
 /** The page's sentence for a delivery state, and whether it may still change. */
 export function migrationDeliveryNotice(delivery: MigrationDelivery) {

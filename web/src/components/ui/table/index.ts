@@ -10,12 +10,10 @@
 //   hover surface for rows. Cells may wrap (no forced nowrap), so a long
 //   Chinese name grows the row instead of widening the page; a page sets
 //   `whitespace-nowrap` on short columns.
-// - TableEmpty is kept for "nothing matches" rows inside a loaded table.
-// - Not copied (nothing uses them yet): TableCaption, TableFooter.
+// - Not copied (nothing uses them yet): TableCaption, TableFooter, TableEmpty.
 export { default as Table } from "./Table.vue"
 export { default as TableBody } from "./TableBody.vue"
 export { default as TableCell } from "./TableCell.vue"
-export { default as TableEmpty } from "./TableEmpty.vue"
 export { default as TableHead } from "./TableHead.vue"
 export { default as TableHeader } from "./TableHeader.vue"
 export { default as TableRow } from "./TableRow.vue"

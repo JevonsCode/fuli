@@ -103,12 +103,6 @@ export function detectPreferenceConflicts(
   })
 }
 
-export function preferenceConflictRecordItemIds(
-  record: PreferenceConflictRecord,
-) {
-  return [record.left_item_id, record.right_item_id]
-}
-
 function preferenceConflictRecordMatches(
   record: PreferenceConflictRecord,
   left: KnowledgeItem,

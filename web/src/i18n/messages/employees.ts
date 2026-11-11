@@ -1,7 +1,7 @@
 export const employeeMessages = {
   'zh-CN': {
     fullscreen: '铺满窗口', fullscreenClose: '关闭全屏',
-    workbench: 'Agent Workbench', unassigned: '暂不分配', permissions: '项目权限',
+    workbench: 'Agent Workbench', permissions: '项目权限',
     boardRead: '读取所选项目的看板', boardWrite: '创建、修改任务与状态',
     installRequired: '这个 Agent 的 Workbench 没有安装，目前只能作为 Agent 身份使用。',
     assign: '保存负责范围', recruiting: '正在保存负责范围…',
@@ -48,7 +48,6 @@ export const employeeMessages = {
     assignedCount: '负责 {count} 个项目', noAssignedProjects: '尚未分配项目',
     manageHint: '可同时负责多个项目。',
     filterLabel: '筛选项目', filterHint: '仅筛选 Agent 列表，不改变任何负责范围。', filterEmpty: '未选择项目',
-    success: '{name} 已加入',
     successUnassigned: '可以稍后为 Agent 分配项目。',
     successMultiple: '现在负责 {count} 个项目。', scopeSaved: '负责范围已保存',
     scopeRemoved: '将移出 {count} 个项目，项目和任务数据会保留。', reloadScope: '重新读取负责范围',
@@ -146,7 +145,7 @@ export const employeeMessages = {
   },
   'en-US': {
     fullscreen: 'Fill the window', fullscreenClose: 'Close full view',
-    workbench: 'Agent workspace', unassigned: 'Assign later', permissions: 'Project permissions',
+    workbench: 'Agent workspace', permissions: 'Project permissions',
     boardRead: 'Read the selected project board', boardWrite: 'Create and update tasks and status',
     installRequired: 'The workspace of this Agent is not installed, so it works as an Agent identity only.',
     assign: 'Save project selection', recruiting: 'Saving project scope…',
@@ -192,7 +191,6 @@ export const employeeMessages = {
     assignedCount: 'Assigned to {count} projects', noAssignedProjects: 'No projects assigned',
     manageHint: 'Can manage several projects.',
     filterLabel: 'Filter projects', filterHint: 'Filters the Agent list only. Assignments stay unchanged.', filterEmpty: 'No projects selected',
-    success: '{name} has joined',
     successUnassigned: 'You can assign this Agent to a project later.',
     successMultiple: 'Now assigned to {count} projects.', scopeSaved: 'Project selection saved',
     scopeRemoved: 'Will leave {count} projects. Their projects and tasks will be kept.', reloadScope: 'Reload project selection',

@@ -210,10 +210,6 @@ export class GraphitiProviderClient {
     if (!Object.hasOwn(paths, operation)) throw new TypeError('Unknown attention operation');
     return this.#request(paths[operation], { method: 'POST', body: input });
   }
-  ensureSystemProjectHr(personalSpaceId) {
-    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
-    return this.#request(`/v1/project-agents/system-hr?${query}`, { method: 'POST' });
-  }
   listProjectAgents(
     personalSpaceId,
     personalProjectId = null,
@@ -715,14 +711,6 @@ export class GraphitiProviderClient {
       `/v1/publication-drafts/${encodeURIComponent(draftId)}/decision?${query}`,
       { ...options, method: 'POST', body: input }
     );
-  }
-  createPrincipal(input) {
-    return this.#request('/v1/principals', { method: 'POST', body: input });
-  }
-  addMember(projectId, input) {
-    return this.#request(`/v1/projects/${encodeURIComponent(projectId)}/members`, {
-      method: 'POST', body: input
-    });
   }
   createProjectRelation(projectId, input) {
     return this.#request(`/v1/projects/${encodeURIComponent(projectId)}/relations`, {
