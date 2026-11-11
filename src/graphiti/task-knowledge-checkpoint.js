@@ -22,6 +22,7 @@ import { checkpointHumanInteraction } from './checkpoint-human-interaction.js';
 import { clearSessionTaskBlockers, noteBlockerProgress } from './task-blocker-progress.js';
 import { storedUnassignment } from './task-agent-assignment.js';
 import { amendCheckpoint, assertAmendmentInput, checkpointConflictMessage } from './checkpoint-amendment.js';
+import { admittedTask } from './checkpoint-save-status.js';
 
 export async function checkpointTaskKnowledge(application, {
   taskContextToken,
@@ -45,7 +46,8 @@ export async function checkpointTaskKnowledge(application, {
     throw validationError('Unknown task knowledge checkpoint disposition');
   }
   const triageLabel = validateTriage(triage);
-  const task = await application.taskContextRegistry.context(taskContextToken, sourceApplication);
+  // Before any write: a refused token here means this call saved nothing (checkpoint-save-status.js).
+  const task = await admittedTask(application.taskContextRegistry.context(taskContextToken, sourceApplication));
   if (amend) assertAmendmentInput(task, { disposition, capture, captureRouting, agentMemory, knowledgeUsage,
     triage, experiences, remember, collaborators });
   if (personalProjectId && task.personalProjectId !== personalProjectId) {
