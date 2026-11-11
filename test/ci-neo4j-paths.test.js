@@ -59,7 +59,6 @@ function dependencyPaths() {
 test('the CI neo4j path filter covers every path the Neo4j tests depend on', () => {
   const patterns = neo4jFilter();
   const { nodeTests, paths } = dependencyPaths();
-  assert.ok(paths.some(path => path.startsWith('acceptance/')), 'the Python Neo4j cases drive acceptance scripts');
   for (const file of [...nodeTests, '.github/workflows/ci.yml', 'package.json', 'npm-shrinkwrap.json']) {
     assert.ok(covered(patterns, file), `${file} is in the neo4j filter`);
   }

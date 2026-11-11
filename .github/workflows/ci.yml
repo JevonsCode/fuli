@@ -75,7 +75,6 @@ jobs:
               - 'test/conversation-hook-neo4j-acceptance.test.js'
               - 'test/project-agent-memory-acceptance.test.js'
               - 'test/task-memory-checkpoint-atomicity.test.js'
-              - 'acceptance/public-submission-no-delivery-live.js'
               - 'package.json'
               - 'npm-shrinkwrap.json'
               - 'compose.graphiti.yml'
