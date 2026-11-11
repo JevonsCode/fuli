@@ -5,7 +5,7 @@
 enum RuntimeState { running, stopped, degraded, notConfigured, unknown, notFound }
 
 class RuntimeReport {
-  const RuntimeReport(this.state, {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false});
+  const RuntimeReport(this.state, {this.consolePort, this.error, this.notice, this.portBlocked = false, this.crashed = false, this.consoleStopped = false});
 
   final RuntimeState state;
   // The console port the runtime reported, when it did.
@@ -17,6 +17,8 @@ class RuntimeReport {
   final bool portBlocked;
   // The console went away without anyone stopping it.
   final bool crashed;
+  // No console process runs, whatever the graph does (rec issue 70).
+  final bool consoleStopped;
 
   bool get running => state == RuntimeState.running || state == RuntimeState.degraded;
 }

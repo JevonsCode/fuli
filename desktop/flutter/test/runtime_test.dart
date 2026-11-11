@@ -108,6 +108,10 @@ void main() {
       expect(parseCliStatus('fuli: command not found').state, RuntimeState.unknown);
       expect(parseCliStatus('{"status":"stopped","console":{"status":"stopped","crashed":true}}').crashed, isTrue);
       expect(parseCliStatus('{"status":"stopped","console":{"status":"stopped"}}').crashed, isFalse);
+      // The graph runs, the console does not: told apart from a console that runs but is not verified.
+      expect(parseCliStatus('{"status":"degraded","console":{"status":"stopped"}}').consoleStopped, isTrue);
+      expect(parseCliStatus('{"status":"degraded","console":{"status":"unverified"}}').consoleStopped, isFalse);
+      expect(parseControllerReply(jsonEncode({'ok': true, 'status': 'degraded', 'state': {'console': {'status': 'stopped'}}})).consoleStopped, isTrue);
     });
   });
 
