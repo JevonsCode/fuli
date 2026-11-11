@@ -737,3 +737,11 @@ def test_at_the_same_score_and_weight_the_closer_match_comes_first():
     assert [record['id'] for record, _ in ranked] == ['closer', 'weaker', 'pending']
     assert ranked[0][1] == ranked[1][1] > ranked[2][1], 'closeness only orders a tie; the weight still decides inside a band'
 
+
+def test_a_bare_question_word_is_not_a_match():
+    """「明天吃什么」 shares only 什么 with a record that says 做什么."""
+    record = {'name': '宣传要先做视频', 'type': 'PersonalPreference', 'summary': '视频必须展示产品真正在做什么。'}
+    assert _relevance('明天吃什么', record) == 0.0
+    assert _relevance('如何报销', record) == 0.0
+    assert _relevance('视频展示什么', record) > 0.0, 'the words that name something still match'
+
