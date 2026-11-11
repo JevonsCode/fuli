@@ -1,5 +1,5 @@
 import { t } from '@/i18n'
-import { formatCount, localBuildText, SEMANTIC_ROLE, trustStatusText, type ModelRoleView, type ModelRolesPayload } from './model'
+import { connectionService, formatCount, localBuildText, SEMANTIC_ROLE, trustStatusText, type ModelRoleView, type ModelRolesPayload } from './model'
 
 // What a use's 「查看详情」 dialog lists of its role (rec#8, rec#38): who
 // answers, the service, model, key reference, egress, limits and fallback,
@@ -28,7 +28,7 @@ export function roleFacts(view: ModelRoleView, payload: ModelRolesPayload, local
     + (budget.maxCostPerWindow === null ? '' : ` · ${t('modelSettings.costCap', { amount: budget.maxCostPerWindow, currency })}`) : t('modelSettings.none')
   const facts: RoleFact[] = [
     answer,
-    { key: 'provider', label: t('modelSettings.provider'), value: `${t(`modelSettings.protocols.${connection.protocol}`)} · ${connection.endpointHost}` },
+    { key: 'provider', label: t('modelSettings.provider'), value: connectionService(connection) },
     { key: 'model', label: t('modelSettings.model'), value: connection.model, code: true },
     ...localBuildFact(view, locale),
     { key: 'secretRef', label: t('modelSettings.secretRef'), value: connection.secretRef ?? t('modelSettings.none'), code: Boolean(connection.secretRef) },

@@ -1,5 +1,5 @@
 import { t } from '@/i18n'
-import { modelGuideUrl, roleName, type ModelRoleHealth, type ModelRoleId, type ModelRoleView, type ModelRolesPayload } from './model'
+import { connectionService, modelGuideUrl, roleName, type ModelRoleHealth, type ModelRoleId, type ModelRoleView, type ModelRolesPayload } from './model'
 import { latestHealth } from './model-health'
 
 // The model center (11-06): every connected model once with who uses
@@ -55,7 +55,7 @@ export function modelsInUse(payload: ModelRolesPayload): ModelInUse[] {
     const connection = view.connection
     if (!connection) continue
     const entry = models.get(connection.id) ?? { id: connection.id, model: connection.model,
-      service: `${t(`modelSettings.protocols.${connection.protocol}`)} · ${connection.endpointHost}`, uses: [], health: null, checkRole: null }
+      service: connectionService(connection), uses: [], health: null, checkRole: null }
     const on = view.state === 'enabled'
     entry.uses.push({ use: view.role, on })
     if (on) {

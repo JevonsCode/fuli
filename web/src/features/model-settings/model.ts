@@ -22,6 +22,10 @@ const EMBEDDING_PROTOCOL = 'openai_embeddings'
 export const BUILTIN_EMBEDDING_PROTOCOL = 'builtin_embeddings'
 export const MODEL_PROTOCOLS = ['openai_chat', 'anthropic_messages', 'typesafe_systemone'] as const
 export type ModelProtocol = typeof MODEL_PROTOCOLS[number] | typeof EMBEDDING_PROTOCOL | typeof BUILTIN_EMBEDDING_PROTOCOL
+// What serves a connection, in one line: its kind and where it is. A built-in model has no address worth showing.
+export const connectionService = (connection: { protocol: ModelProtocol; endpointHost: string }) =>
+  (connection.protocol === BUILTIN_EMBEDDING_PROTOCOL ? t('modelSettings.protocols.builtin_embeddings')
+    : `${t(`modelSettings.protocols.${connection.protocol}`)} · ${connection.endpointHost}`)
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high'] as const
 
 // A role by the name it goes by now; Astro's stable id is assistant.
