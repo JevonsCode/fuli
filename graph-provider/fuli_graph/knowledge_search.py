@@ -119,28 +119,18 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
     tag_ranking = await TagRanking.for_search(store, personal_space, request, project_scopes)
     in_scope_vectors = {edge.uuid: meaning_vectors[edge.uuid] for edge in edges if edge.uuid in meaning_vectors}
     edges = [edge for edge in edges if edge.uuid in lexical_ids]
-    ranked_edges = sorted(
-        (
-            (
-                _ranked_relevance(
-                    _edge_relevance(
-                        request.query,
-                        edge,
-                        names,
-                        position,
-                        len(edges),
-                        edge_terms.get(edge.uuid),
-                    ),
-                    epistemic.get(edge.uuid, {}),
-                ),
-                edge,
-            )
-            for position, edge in enumerate(edges)
-        ),
-        key=lambda item: (item[0], _tie_weight(epistemic.get(item[1].uuid, {}))),
-        reverse=True,
-    )
-    ranked_edges = [item for item in ranked_edges if item[0] > 0]
+    matched_edges = [
+        (_edge_relevance(request.query, edge, names, position, len(edges), edge_terms.get(edge.uuid)), edge)
+        for position, edge in enumerate(edges)
+    ]
+    # Same score and weight: the closer match first (a band holds unequal matches).
+    ranked_edges = [
+        (score, edge) for score, _, edge in sorted(
+            ((_ranked_relevance(matched, epistemic.get(edge.uuid, {})), matched, edge) for matched, edge in matched_edges),
+            key=lambda item: (item[0], _tie_weight(epistemic.get(item[2].uuid, {})), item[1]),
+            reverse=True,
+        ) if score > 0
+    ]
     meaning_edges = {edge.uuid: edge for edge in meaning_edges}
     ranked_edges, edge_matches = _fused_with_meaning(
         ranked_edges, [meaning_edges[edge_id] for edge_id in _meaning_order(request, in_scope_vectors)],
@@ -365,21 +355,7 @@ async def _personal_entities(
         return []
     scoped_records = await _scoped_entity_records(store, space, request, project_scopes)
     term_weights = _term_weights(request.query, scoped_records)
-    ranked = sorted(
-        (
-            (
-                record,
-                _ranked_relevance(
-                    _relevance(request.query, record, term_weights),
-                    record,
-                ),
-            )
-            for record in scoped_records
-        ),
-        key=lambda item: (item[1], _tie_weight(item[0]), _timestamp(item[0].get('created_at'))),
-        reverse=True,
-    )
-    ranked = [item for item in ranked if item[1] > 0]
+    ranked = _ranked_records([(record, _relevance(request.query, record, term_weights)) for record in scoped_records])
     meaning = await _semantic_entities(store, space, request, project_scopes)
     fused, entity_matches = _fused_with_meaning(
         [(score, record) for record, score in ranked], meaning, lambda record: record['id'])
@@ -780,6 +756,19 @@ def _agent_scope_metadata(project_id: str, scope: dict, agent_id: str) -> dict:
         'scope_path': [project_id],
         'inherited': False,
     }
+
+
+def _ranked_records(matched_records):
+    """Records with how well each matched, best first as (record, score). At
+    the same score and weight the closer match comes first, then the newer: a
+    band holds unequal matches, and the newer one is not the better answer."""
+    return [
+        (record, score) for record, score, _ in sorted(
+            ((record, _ranked_relevance(matched, record), matched) for record, matched in matched_records),
+            key=lambda item: (item[1], _tie_weight(item[0]), item[2], _timestamp(item[0].get('created_at'))),
+            reverse=True,
+        ) if score > 0
+    ]
 
 
 def _ranked_relevance(base_score: float, metadata) -> float:
