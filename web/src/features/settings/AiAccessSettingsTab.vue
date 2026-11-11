@@ -39,7 +39,7 @@ const answerFromConfirmed = computed(() => store.state?.recallPolicy?.answerFrom
         </label>
       </div>
     </Card>
-    <Card as="section" class="settings-card" :aria-label="t('settings.elsewhere')" data-settings-elsewhere>
+    <Card as="section" class="settings-card" :aria-label="t('settings.elsewhere')" data-settings-elsewhere data-span="wide">
       <div class="setting-list">
         <RouterLink class="setting-row" to="/employees/tonborg?view=standards" data-open-judgment-standards>
           <span><strong>{{ t('judgment.settings.link') }}</strong></span>

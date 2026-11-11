@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue'
-import { useEventListener, useMutationObserver, useTimeoutFn } from '@vueuse/core'
+import { useEventListener, useMutationObserver } from '@vueuse/core'
 import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import { motionReduced } from '@/lib/motion-preference'
@@ -8,9 +8,9 @@ import { outlineEntries, outlineNeeded, readingIndex, scrollParent, type Outline
 
 // A long page's 目录 (Jevons 11-04, 11-07, 11-08, 11-12 「那个锚点现在好丑啊」): a slim glass
 // capsule by the window's right edge holding one dot per section, the section being read drawn
-// as a longer ink pill that glides from dot to dot. When the reading moves to another section,
-// that section's name shows beside its dot for a moment, so the page says where you are without
-// covering it for good. Moving onto the capsule, or tabbing in, opens it leftwards into the
+// as a longer ink pill that glides from dot to dot. No name shows at rest: the page's margin is
+// too narrow for one, and a name there sat over the cards' own actions. Moving onto the capsule,
+// or tabbing in, opens it leftwards into the
 // names, with how many each holds, each on its dot's row; a click goes there. The name being read
 // is darker, nothing more: no box, no fill, no bar. A window with room beside the page keeps the
 // names open. It is navigation at the page's edge, not another card. It floats, so the page never
@@ -19,19 +19,11 @@ import { outlineEntries, outlineNeeded, readingIndex, scrollParent, type Outline
 // data-outline-count.
 const props = defineProps<{ content?: HTMLElement | null }>()
 
-// How long the name of the section just reached stays beside its dot.
-const HERE_SHOWN_MS = 1600
-
 const entries = shallowRef<OutlineEntry[]>([])
 const scroller = shallowRef<HTMLElement | null>(null)
 const reading = ref(0)
 const needed = ref(false)
 const shown = computed(() => needed.value && Boolean(scroller.value))
-const here = computed(() => entries.value[reading.value]?.label ?? '')
-
-const announcing = ref(false)
-const { start: holdHere } = useTimeoutFn(() => { announcing.value = false }, HERE_SHOWN_MS, { immediate: false })
-watch(reading, () => { announcing.value = true; holdHere() })
 
 function updateReading() {
   if (scroller.value) reading.value = readingIndex(entries.value, scroller.value)
@@ -63,7 +55,7 @@ function go(entry: OutlineEntry) {
 
 <template>
   <Teleport to="body">
-    <nav v-if="shown" class="page-outline" :class="{ 'is-announcing': announcing }"
+    <nav v-if="shown" class="page-outline"
       :style="{ '--outline-rows': entries.length, '--outline-reading': reading }" :aria-label="t('common.outline')" data-page-outline>
       <span class="page-outline-glass" aria-hidden="true" />
       <span class="page-outline-capsule" aria-hidden="true" data-page-outline-capsule />
@@ -80,7 +72,6 @@ function go(entry: OutlineEntry) {
         </li>
       </ol>
       <span class="page-outline-marker" aria-hidden="true" data-page-outline-marker />
-      <span class="page-outline-here" aria-hidden="true" data-page-outline-here>{{ here }}</span>
     </nav>
   </Teleport>
 </template>
@@ -115,11 +106,11 @@ function go(entry: OutlineEntry) {
 /* The dock's frosted glass with the shared glass edge (Jevons 11-08: a clear boundary from the
    page), drawn on the element itself so a fade still blurs what lies beneath. The capsule and
    the open panel share their corner, so opening reads as the capsule widening. */
-.page-outline-glass, .page-outline-capsule, .page-outline-here {
+.page-outline-glass, .page-outline-capsule {
   background: var(--surface-dock); -webkit-backdrop-filter: var(--filter-dock); backdrop-filter: var(--filter-dock); box-shadow: var(--shadow-glass);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .page-outline-glass, .page-outline-capsule, .page-outline-here { background: var(--surface-glass-strong); }
+  .page-outline-glass, .page-outline-capsule { background: var(--surface-glass-strong); }
 }
 .page-outline-capsule {
   position: absolute; top: 0; right: 0; bottom: 0; width: var(--outline-capsule); border-radius: calc(var(--outline-capsule) / 2);
@@ -168,22 +159,7 @@ function go(entry: OutlineEntry) {
   border-radius: var(--radius-pill); background: var(--color-ink); pointer-events: none;
   translate: 0 calc(var(--outline-reading, 0) * var(--outline-row)); transition: translate var(--motion-move);
 }
-/* The name of the section just reached, beside its dot for a moment (script: HERE_SHOWN_MS). */
-.page-outline-here {
-  position: absolute; top: calc(var(--outline-pad) + var(--outline-row) / 2); right: calc(var(--outline-capsule) + 6px);
-  max-width: var(--outline-name-max); padding: 4px 10px; overflow: hidden; border-radius: var(--radius-pill);
-  color: var(--color-ink); font-size: var(--text-meta); line-height: 1.2; white-space: nowrap; text-overflow: ellipsis; pointer-events: none;
-  translate: 4px calc(var(--outline-reading, 0) * var(--outline-row) - 50%); opacity: 0; visibility: hidden;
-  transition: opacity var(--motion-exit), translate var(--motion-move), visibility 0s linear var(--motion-fast);
-}
-@media (max-width: 2399.98px) {
-  .page-outline.is-announcing .page-outline-here {
-    translate: 0 calc(var(--outline-reading, 0) * var(--outline-row) - 50%); opacity: 1; visibility: visible;
-    transition: opacity var(--motion-fast) var(--motion-ease), translate var(--motion-move), visibility 0s;
-  }
-}
-
-/* Open: the glass widens leftwards behind every row and the names come in; the moment-long name goes. */
+/* Open: the glass widens leftwards behind every row and the names come in. */
 .page-outline:is(:hover, :has(:focus-visible)) .page-outline-glass {
   opacity: 1; visibility: visible; scale: 1; pointer-events: auto;
   transition: opacity var(--motion-move) var(--outline-open-delay), scale var(--motion-move) var(--outline-open-delay), visibility 0s linear var(--outline-open-delay);
@@ -193,14 +169,11 @@ function go(entry: OutlineEntry) {
 .page-outline:is(:hover, :has(:focus-visible)) .page-outline-name {
   opacity: 1; translate: none; transition: opacity var(--motion-move) var(--outline-open-delay), translate var(--motion-move) var(--outline-open-delay);
 }
-.page-outline:is(:hover, :has(:focus-visible)) .page-outline-here {
-  opacity: 0; visibility: hidden; transition: opacity 0s linear var(--outline-open-delay), visibility 0s linear var(--outline-open-delay);
-}
 
 /* A window with room right of the page keeps the names open beside the dots. */
 @media (min-width: 2400px) {
   .page-outline-glass { opacity: 1; visibility: visible; scale: 1; pointer-events: auto; transition: none; }
-  .page-outline-capsule, .page-outline-here { display: none; }
+  .page-outline-capsule { display: none; }
   .page-outline-item { pointer-events: auto; }
   .page-outline-name {
     max-width: min(var(--outline-name-max), calc((100vw - var(--canvas-max)) / 2 - var(--outline-capsule) - 40px));

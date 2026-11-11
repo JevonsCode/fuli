@@ -38,7 +38,7 @@ describe('the page outline look', () => {
   })
 
   it('floats on the dock\'s frosted glass with the shared glass edge, the backdrop declared -webkit- first', () => {
-    const glass = rule('.page-outline-glass, .page-outline-capsule, .page-outline-here')
+    const glass = rule('.page-outline-glass, .page-outline-capsule')
     expect(glass).toMatch(/background: var\(--surface-dock\)/)
     expect(glass).toMatch(/-webkit-backdrop-filter: var\(--filter-dock\); backdrop-filter: var\(--filter-dock\)/)
     expect(glass).toMatch(/box-shadow: var\(--shadow-glass\)/)
@@ -126,7 +126,7 @@ describe('the page outline', () => {
     expect(nav?.style.getPropertyValue('--outline-reading')).toBe('0')
   })
 
-  it('moves the mark as the page scrolls and names the section just reached for a moment', async () => {
+  it('moves the mark as the page scrolls, and puts no name over the page', async () => {
     const page = longPage(['模型', '连接', '数据'])
     const nav = await outlineOf(page)
     page.scroller.scrollTop = 1000
@@ -135,11 +135,8 @@ describe('the page outline', () => {
     expect(items().map(item => item.getAttribute('aria-current'))).toEqual([null, 'location', null])
     expect(items()[0]!.classList).toContain('is-read')
     expect(nav?.style.getPropertyValue('--outline-reading')).toBe('1')
-    expect(nav?.classList).toContain('is-announcing')
-    expect(document.querySelector('[data-page-outline-here]')?.textContent).toBe('连接')
-    vi.advanceTimersByTime(1600)
-    await nextTick()
-    expect(nav?.classList).not.toContain('is-announcing')
+    // Nothing but the capsule shows at rest: a name beside it would sit over the cards' own actions.
+    expect(document.querySelector('[data-page-outline-here]')).toBeNull()
   })
 
   it('scrolls to a section when its name is chosen', async () => {

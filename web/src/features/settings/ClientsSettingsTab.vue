@@ -44,7 +44,7 @@ function conversationApplicationLabel(application: ConversationSourceApplication
   <div class="clients-tab">
     <PageColumns>
       <ClientConnectionSettings data-span="wide" />
-      <Card as="section" id="conversation-launchers" class="settings-card conversation-launcher-card" aria-labelledby="settings-launchers-title">
+      <Card as="section" id="conversation-launchers" class="settings-card conversation-launcher-card" aria-labelledby="settings-launchers-title" data-span="wide">
         <CardHeader><CardTitle id="settings-launchers-title" as="h2">{{ t('settings.conversationLaunchers.title') }}<AiHelpButton term="task.launchers" /></CardTitle></CardHeader>
         <div class="setting-list conversation-launcher-list">
           <article v-for="application in conversationApplications" :key="application" class="conversation-launcher-row">
@@ -95,7 +95,7 @@ function conversationApplicationLabel(application: ConversationSourceApplication
           </article>
         </div>
       </Card>
-      <Card v-if="form.notifications" as="section" id="notifications" class="settings-card notifications-card" aria-labelledby="settings-notifications-title">
+      <Card v-if="form.notifications" as="section" id="notifications" class="settings-card notifications-card" aria-labelledby="settings-notifications-title" data-span="wide">
         <CardHeader><CardTitle id="settings-notifications-title" as="h2">{{ t('settings.notifications.title') }}<AiHelpButton term="task.notifications" /></CardTitle></CardHeader>
         <div class="setting-list">
           <label class="notification-url">
@@ -124,8 +124,8 @@ function conversationApplicationLabel(application: ConversationSourceApplication
             </label>
           </div>
         </Card>
-        <CliPathSettings />
         <ClientLinksSettings />
+        <CliPathSettings />
       </PageColumns>
     </section>
   </div>
@@ -136,10 +136,9 @@ function conversationApplicationLabel(application: ConversationSourceApplication
 .clients-more { display: grid; gap: var(--space-3); min-width: 0; }
 .clients-more > h2 { margin: 0; }
 
-.conversation-launcher-list { display: grid; }
-.conversation-launcher-row { padding: 16px 0; border-top: 1px solid var(--color-border); }
-.conversation-launcher-row:first-child { border-top: 0; padding-top: 0; }
-.conversation-launcher-row:last-child { padding-bottom: 0; }
+/* Full width, its clients in two columns: a tall list beside the short 通知 card left half the row empty. */
+.conversation-launcher-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); column-gap: var(--space-8, 32px); align-items: start; }
+.conversation-launcher-row { padding: 16px 0; border-bottom: 1px solid var(--color-border); }
 .conversation-launcher-heading { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .conversation-launcher-heading > span { display: grid; min-width: 0; gap: 4px; overflow-wrap: anywhere; }
 .conversation-launcher-heading strong { color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); }
