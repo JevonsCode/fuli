@@ -42,7 +42,7 @@
     <td width="50%" valign="top">
       <img src="docs/readme/card-memory-zh.webp" alt="Claude Code、Codex 和 OpenCode 接入同一个 FULI" width="460" />
       <h3 align="center">所有客户端共用一份记忆</h3>
-      点一下就接入 Claude Code、Codex、OpenCode 或 Cursor。在一个客户端里说过的规矩，换到另一个也还在。
+      点一下就接入 Claude Code、Codex、OpenCode、Cursor、DeepSeek Harness 等客户端。在一个客户端里说过的规矩，换到另一个也还在。
     </td>
     <td width="50%" valign="top">
       <img src="docs/readme/card-team-zh.webp" alt="三位 FLA 在圆桌里一起评审一个修复" width="460" />
@@ -144,8 +144,9 @@ fuli open
 <details>
 <summary><b>支持哪些客户端？</b></summary>
 
-Claude Code、Codex、OpenCode、Cursor 和 Claude 桌面版都能在控制台里一键接入。其他 MCP 客户端运行
-`fuli connect` 拿一份标准配置。
+Claude Code、Codex、OpenCode、Cursor、DeepSeek Harness、Claude 桌面版、Gemini CLI、Qwen Code、Kiro 和
+Antigravity 都能在控制台（设置 › 客户端）里一键接入。其他 MCP 客户端运行 `fuli connect` 拿一份标准配置。
+各客户端能做到哪一步，比如能不能自动记录对话，见[客户端接入（英文）](docs/client-connections.md)。
 </details>
 
 <details>
@@ -169,9 +170,23 @@ Claude Code、Codex、OpenCode、Cursor 和 Claude 桌面版都能在控制台�
 </details>
 
 <details>
+<summary><b>一定要接模型吗？</b></summary>
+
+不用。不接模型时，FULI 按字面、检索词和关系找知识。想按意思找，打开「模型与用量」，在「语义搜索」点「内置模型」：
+FULI 下载一个小模型（推荐 GTE Small 中文）在这台电脑上跑，不用接口地址和密钥，知识不出本机。
+</details>
+
+<details>
+<summary><b>已经做了一半的项目，怎么让 FULI 了解它？</b></summary>
+
+在项目页的「整理」里点「整理」，选一个已接入的 AI 客户端。Astro 用这个客户端自己的模型读项目，补上缺的知识。
+已有资料在哪（文件夹、文件或链接）可以一起写上。几个项目都有的偏好，它会问你要不要改成全局的。
+</details>
+
+<details>
 <summary><b>怎么把 FULI 从客户端里拿掉？</b></summary>
 
-在控制台的「设置 › 客户端接入」里，对那个客户端点「移除」。`fuli uninstall` 和 Windows 卸载程序会对每个接入过的
+在控制台的「设置 › 客户端」里，对那个客户端点「移除」。`fuli uninstall` 和 Windows 卸载程序会对每个接入过的
 客户端做同样的事。FULI 只拿掉自己加的那几项（MCP 服务、Hook、Skills 和它的权限条目），改之前先备份每个文件，
 你自己改过的 Skill 会留着。FULI 的数据会一直保留，你自己删才会删。在 macOS 上，先在控制台移除客户端，再把
 FULI.app 移到废纸篓：只移到废纸篓的话，这些配置还留在客户端里。
