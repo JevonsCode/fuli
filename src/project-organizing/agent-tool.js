@@ -8,6 +8,7 @@ import { CONSENT_SOURCES } from './port.js';
 // is in skills/operating-fuli (Organising a project).
 
 const GUIDANCE = 'Follow skills/operating-fuli (Organising a project). Work by yourself; do not interview the person. '
+  + 'Material the person named (a folder, documents, links, another knowledge base) is read with your own tools and recorded as named_material. '
   + `Ask once before reading ${CONSENT_SOURCES.join(', ')} and record the answer in sources (read or declined). `
   + 'Save what you add as pending knowledge with checkpoint_task_knowledge. What you are unsure of goes in one short list '
   + 'at the end, each answerable 是 / 否 / 其他; the person may skip it. End with update: the areas settled and run with your counts.';

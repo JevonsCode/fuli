@@ -44,7 +44,7 @@ test('a run records what it settled, the sources it read and its counts; the nex
   const app = application(t);
   const saved = await call(app, { action: 'update',
     areas: { purpose: { status: 'known', note: ' From the README\n' }, stack: { status: 'unsure' }, people: { status: 'not_applicable' } },
-    sources: { project_files: 'read', client_memories: 'declined' },
+    sources: { project_files: 'read', named_material: 'read', client_memories: 'declined' },
     run: { model: 'synthetic-sonnet', scope: 'release steps', added: 12, merged: 2, stale: 1, unsure: 3 } });
   assert.deepEqual(saved.progress, { settled: 2, total: 9, complete: false });
   assert.equal(saved.guidance, undefined, 'an update answers ids and states only');
@@ -55,7 +55,7 @@ test('a run records what it settled, the sources it read and its counts; the nex
     added: 12, merged: 2, stale: 1, unsure: 3 });
   const again = await call(app, { action: 'read' });
   assert.equal(again.first_run, false);
-  assert.deepEqual(again.sources, { project_files: 'read', client_memories: 'declined' });
+  assert.deepEqual(again.sources, { project_files: 'read', named_material: 'read', client_memories: 'declined' });
   // A later run changes only what it names and keeps the earlier report behind it.
   await call(app, { action: 'update', areas: { stack: { status: 'known' } }, run: { added: 1 } });
   const view = app.projectOrganizing.view('synthetic-space', 'synthetic-project');

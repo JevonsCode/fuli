@@ -59,3 +59,18 @@ When the person has other projects, a run checks once whether a preference of
 this project also exists in another one. Each match is one line on the closing
 list: 「偏好『…』在项目 A、B 里都有，升级成全局吗？」. Only a 是 makes it a
 personal preference for every project; the project copies stay.
+
+## Knowledge you already have elsewhere
+
+Documents you wrote, or notes kept in another knowledge base, come in through
+the same run: name them in the request.
+
+```text
+#FLA Astro 整理当前项目，资料在 D:\docs\alpha 和这个 Notion 页面：<链接>
+```
+
+The Agent reads what you named with the tools your AI client has (its file
+tools and its own connectors), keeps what belongs to this project, and saves it
+as pending knowledge like everything else in a run. What it cannot open it
+names. With many projects, run it once in each project folder; nothing is
+searched for across the computer by itself.

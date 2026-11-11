@@ -35,7 +35,10 @@ export const ORGANIZING_AREAS = Object.freeze([
 export const AREA_STATUSES = Object.freeze(['known', 'unsure', 'missing', 'not_applicable']);
 // What a run may read. The last three hold more than the project's own files,
 // so each needs the person's yes before it is read.
-export const ORGANIZING_SOURCES = Object.freeze(['project_files', 'history', 'client_memories', 'past_sessions', 'external']);
+// named_material is what the person pointed at in their request: a folder of
+// documents, files, links, or another knowledge base this client can open.
+// Naming it is the consent.
+export const ORGANIZING_SOURCES = Object.freeze(['project_files', 'history', 'named_material', 'client_memories', 'past_sessions', 'external']);
 export const CONSENT_SOURCES = Object.freeze(['client_memories', 'past_sessions', 'external']);
 export const SOURCE_STATUSES = Object.freeze(['read', 'declined', 'unavailable']);
 // What one run did, as counts: added (new pending knowledge), merged
