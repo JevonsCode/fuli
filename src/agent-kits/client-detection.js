@@ -9,7 +9,7 @@ const PRESENT = new Set(['current', 'outdated', 'conflict']);
 // fuli-installer-manifest.json). The clients that say 'other' can't be told
 // apart, so nothing about their open sessions can be said.
 const SOURCES = Object.freeze({ codex: 'codex', 'claude-code': 'claude_code', cursor: 'cursor', opencode: 'opencode',
-  'claude-desktop': 'claude', kiro: 'kiro', antigravity: 'antigravity' });
+  'claude-desktop': 'claude', kiro: 'kiro', antigravity: 'antigravity', dsh: 'dsh' });
 export const clientSourceApplication = id => SOURCES[id] ?? null;
 
 // installer: the client installer port (client-installer.js). Answers

@@ -448,6 +448,39 @@
       "plugin": {
         "source": "{openCodePlugin}"
       }
+    },
+    "dsh": {
+      "mcp": null,
+      "plugin": {
+        "name": "fuli",
+        "source": "{dshBundle}"
+      },
+      "skills": [
+        {
+          "name": "capturing-session-knowledge",
+          "source": "{skillsDir}/capturing-session-knowledge",
+          "adopt": {
+            "file": "SKILL.md",
+            "contains": "name: capturing-session-knowledge"
+          }
+        },
+        {
+          "name": "grilling-project",
+          "source": "{skillsDir}/grilling-project",
+          "adopt": {
+            "file": "SKILL.md",
+            "contains": "name: grilling-project"
+          }
+        },
+        {
+          "name": "operating-fuli",
+          "source": "{skillsDir}/operating-fuli",
+          "adopt": {
+            "file": "SKILL.md",
+            "contains": "name: operating-fuli"
+          }
+        }
+      ]
     }
   }
 }

@@ -57,6 +57,20 @@ test('installer states map to FULI\'s client statuses', async (t) => {
   assert.equal(result.scope, 'configuration');
 });
 
+test('DeepSeek Harness, which has no MCP file, is told apart by its plugin bundle', async (t) => {
+  const { make, answer } = fixture(t);
+  const dsh = (pluginState, skillsState, clientState) => installerClient('dsh', { name: 'DeepSeek Harness', state: clientState,
+    components: [state('mcp', 'unsupported'), state('skills', skillsState), state('plugin', pluginState)] });
+  answer([dsh('outdated', 'current', 'update_available')]);
+  const outdated = byId(await make().observe(), 'dsh');
+  assert.equal(outdated.status, 'changed');
+  assert.equal(outdated.sourceApplication, 'dsh');
+  answer([dsh('current', 'current', 'connected')]);
+  assert.equal(byId(await make().observe(), 'dsh').status, 'connected');
+  answer([dsh('missing', 'missing', 'not_connected')]);
+  assert.equal(byId(await make().observe(), 'dsh').status, 'removed');
+});
+
 test('every built-in client agent-installer writes is FULI\'s to connect; only its manual ones are the person\'s', async (t) => {
   const { make, answer } = fixture(t);
   answer([installerClient('kiro'), installerClient('qwen-code', { state: 'manual' })]);

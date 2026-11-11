@@ -116,7 +116,8 @@ export function createClientConnectionObserver({ installer, customClients, histo
 }
 
 function statusOf(client, previouslyConnected) {
-  const { mcp, skills } = client.components;
+  // DeepSeek Harness has no MCP file: its plugin bundle carries FULI's entry.
+  const { mcp = client.components.plugin, skills } = client.components;
   if (client.connected) return 'connected';
   if (LEFT.has(mcp)) return 'changed';
   if (LEFT.has(skills)) return 'skills_left';
