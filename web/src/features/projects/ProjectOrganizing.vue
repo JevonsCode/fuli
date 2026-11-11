@@ -23,8 +23,9 @@ const copyFailed = ref(false)
 let reading: AbortController | null = null
 let copiedTimer: ReturnType<typeof setTimeout> | undefined
 
-const lastRun = computed(() => state.value?.runs[0] ?? null)
-const headline = computed(() => (state.value?.started
+// A reply without the lists (a stub, an older server) reads as nothing recorded.
+const lastRun = computed(() => state.value?.runs?.[0] ?? null)
+const headline = computed(() => (state.value?.started && state.value.progress
   ? t('projects.organizing.progress', { settled: state.value.progress.settled, total: state.value.progress.total })
   : t('projects.organizing.never')))
 const line = computed(() => (lastRun.value
@@ -78,13 +79,13 @@ onBeforeUnmount(() => { reading?.abort(); clearTimeout(copiedTimer) })
       </Button>
     </div>
     <UiDialog :open="details" :title="t('projects.organizing.detailsTitle')" :description="headline" size="md" data-organizing-dialog @close="details = false">
-      <ul v-if="state" class="project-organizing-areas">
+      <ul v-if="state?.areas" class="project-organizing-areas">
         <li v-for="area in state.areas" :key="area.id" class="project-organizing-area" :data-organizing-area="area.id">
           <span class="project-organizing-area-name" :title="area.note ?? areaName(area)">{{ areaName(area) }}</span>
           <Badge :variant="tone(area.status)">{{ t(`projects.organizing.statuses.${area.status}`) }}</Badge>
         </li>
       </ul>
-      <ul v-if="state?.runs.length" class="project-organizing-runs" data-organizing-runs>
+      <ul v-if="state?.runs?.length" class="project-organizing-runs" data-organizing-runs>
         <li v-for="run in state.runs" :key="run.at" class="project-organizing-run">
           <span>{{ formatDateTime(run.at, currentLocale(), DATE_ONLY, { missing: '' }) }}</span>
           <span class="project-organizing-run-counts" :title="runCounts(run)">{{ runCounts(run) }}</span>
