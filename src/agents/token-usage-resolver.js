@@ -95,12 +95,6 @@ export async function enrichProjectAgentTaskActivity(input = {}, resolver = DEFA
   }
 }
 
-export async function resolveProjectAgentTaskActivityTokenUsage(input, resolver = DEFAULT_RESOLVER) {
-  const enriched = await enrichProjectAgentTaskActivity(input, resolver);
-  if (!enriched || typeof enriched !== 'object') return null;
-  return enriched.tokenUsage !== undefined ? enriched.tokenUsage : enriched.token_usage ?? null;
-}
-
 function normalizeTokenUsage(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const source = value.source;

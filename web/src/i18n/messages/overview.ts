@@ -107,7 +107,7 @@ export const overviewMessages = {
       loadFailed: '部分工作记录暂不可用。',
     },
     read: {
-      scope: '正在读取工作台范围…', scopeFailed: '工作台范围暂不可用。', slow: '读取时间较长。', timeout: '读取超时。',
+      scope: '正在读取工作台范围…', slow: '读取时间较长。', timeout: '读取超时。',
       reload: '重新读取', stale: '更新失败，显示上次结果。', lastRead: '上次读取 {date}', diagnostics: '诊断信息',
       denied: '访问权限已变化，请重新读取当前范围。', partial: '部分记录',
     },
@@ -223,7 +223,7 @@ export const overviewMessages = {
       loadFailed: 'Current tasks are temporarily unavailable.',
     },
     read: {
-      scope: 'Reading workspace scope…', scopeFailed: 'Workspace scope is unavailable.', slow: 'Taking longer than usual.', timeout: 'Read timed out.',
+      scope: 'Reading workspace scope…', slow: 'Taking longer than usual.', timeout: 'Read timed out.',
       reload: 'Reload', stale: 'Update failed. Showing previous results.', lastRead: 'Last read {date}', diagnostics: 'Diagnostics',
       denied: 'Access has changed. Reload the current scope.', partial: 'Partial records',
     },

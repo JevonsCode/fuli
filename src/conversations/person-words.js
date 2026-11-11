@@ -22,8 +22,3 @@ export function personWords(text) {
   return rest.replace(STRAY_TAG, '\n').replace(QUOTED_LINE, '')
     .replace(/[ \t]+$/gmu, '').replace(/\n{3,}/gu, '\n\n').trim();
 }
-
-// A message with nothing of the person's own: only host notes and quotes.
-export function onlyHostText(text) {
-  return typeof text === 'string' && Boolean(text.trim()) && !personWords(text);
-}

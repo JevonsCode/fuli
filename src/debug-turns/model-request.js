@@ -1,7 +1,6 @@
-// What one model request is made of, by source. Sizes are exact bytes; tokens
-// come from the answer's own usage, so only their total is what was counted.
+// What one model request is made of, by source. Tokens come from the answer's
+// own usage, so only their total is what was counted.
 
-const size = (value) => Buffer.byteLength(typeof value === 'string' ? value : JSON.stringify(value ?? ''), 'utf8');
 const textBlocks = (content) => (typeof content === 'string' ? [content]
   : (Array.isArray(content) ? content : []).filter(block => block?.type === 'text').map(block => block.text ?? ''));
 // FULI's task entry and rules, however a host wraps them in the turn.
@@ -13,18 +12,6 @@ const PERSON_FILES = /Contents of .*(CLAUDE|AGENTS|MEMORY)\.md/;
 // hook's context one after another. FULI's share is counted per piece, so a
 // block that merely mentions FULI next to other hooks' text is not FULI's.
 const pieces = (text) => text.split(/(?=<system-reminder>)|(?<=<\/system-reminder>)|(?=\b[A-Za-z]+ hook additional context:)|(?=<EXTREMELY_IMPORTANT>)|(?<=<\/EXTREMELY_IMPORTANT>)/);
-
-function messageSections(messages = []) {
-  let fuliContext = 0;
-  let total = 0;
-  for (const message of messages) {
-    total += size(message.content);
-    for (const text of textBlocks(message.content)) {
-      for (const piece of pieces(text)) if (isFuliPiece(piece)) fuliContext += size(piece);
-    }
-  }
-  return { fuliContext, conversation: total - fuliContext };
-}
 
 const systemText = (system) => textBlocks(system).join('\n\n');
 const blockText = (block) => (block?.type === 'text' ? block.text ?? '' : JSON.stringify(block));
@@ -73,18 +60,6 @@ export function requestParts(body, usage) {
   }
   if (usage) parts.push({ source: 'host', kind: 'model_usage', text: JSON.stringify(usage, null, 2) });
   return { prompt: prompt || 'Model request', parts };
-}
-
-export function requestSections(body) {
-  const tools = Array.isArray(body?.tools) ? body.tools : [];
-  const fuliTools = tools.filter(tool => /^mcp__fuli__/.test(tool?.name ?? ''));
-  const otherTools = tools.filter(tool => !fuliTools.includes(tool));
-  return {
-    system: size(body?.system),
-    clientTools: size(otherTools),
-    fuliTools: size(fuliTools),
-    ...messageSections(body?.messages),
-  };
 }
 
 /** Token counts from a streamed or plain response, null when it reported none. */

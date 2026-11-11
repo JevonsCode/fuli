@@ -585,16 +585,6 @@ export async function handleGraphApiRequest({
     }));
     return true;
   }
-  if (url.pathname === '/api/project-agent-routing-learning' && request.method === 'GET') {
-    sendJson(response, 200, await app.listProjectAgentRoutingLearning({
-      personalSpaceId: url.searchParams.get('personalSpaceId'),
-      personalProjectId: url.searchParams.get('personalProjectId'),
-      workKind: url.searchParams.get('workKind'),
-      agentId: url.searchParams.get('agentId'),
-      executorId: url.searchParams.get('executorId')
-    }));
-    return true;
-  }
   const projectAgentLearningPath = url.pathname.match(
     /^\/api\/project-agent-learning\/([^/]+)$/
   );
@@ -637,18 +627,6 @@ export async function handleGraphApiRequest({
       );
     }
     sendJson(response, 200, await app.resetProjectAgentRoutingLearning(input));
-    return true;
-  }
-  if (url.pathname === '/api/project-agent-routing-learning/ignore' && request.method === 'POST') {
-    sendJson(response, 200, await app.ignoreProjectAgentRoutingLearning(await readJson(request)));
-    return true;
-  }
-  if (url.pathname === '/api/project-agent-routing-learning/reset' && request.method === 'POST') {
-    sendJson(response, 200, await app.resetProjectAgentRoutingLearning(await readJson(request)));
-    return true;
-  }
-  if (url.pathname === '/api/project-agent-routing-outcomes' && request.method === 'POST') {
-    sendJson(response, 200, await app.recordProjectAgentTaskOutcome(await readJson(request)));
     return true;
   }
   if (url.pathname === '/api/projects/publish' && request.method === 'POST') {

@@ -3,8 +3,6 @@
 export const doctorMessages = {
   'zh-CN': {
     summary: '有 {count} 件事需要你',
-    show: '查看',
-    hide: '收起',
     repair: '自动修复',
     repairing: '正在自动修复：重新连接客户端…',
     repairingDataDir: '正在自动修复：数据目录只留给你自己和系统…',
@@ -57,8 +55,6 @@ export const doctorMessages = {
   },
   'en-US': {
     summary: '{count} thing needs you | {count} things need you',
-    show: 'View',
-    hide: 'Hide',
     repair: 'Fix automatically',
     repairing: 'Fixing automatically: reconnecting clients…',
     repairingDataDir: 'Fixing automatically: limiting the data folder to you and the system…',

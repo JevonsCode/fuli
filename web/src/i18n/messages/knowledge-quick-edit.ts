@@ -95,7 +95,7 @@ export const knowledgeQuickEditMessages = {
     },
     reassert: {
       title: '重新确认为新版本', help: '再次确认会生成一个新版本，旧版本保留“{status}”的那段时间。',
-      save: '确认为新版本', saving: '正在生成新版本', done: '已生成新版本',
+      save: '确认为新版本', saving: '正在生成新版本',
     },
     history: {
       title: '来源和修改历史', sources: '来源', revisions: '修改记录', noSources: '没有记录来源',
@@ -120,7 +120,7 @@ export const knowledgeQuickEditMessages = {
     forbidden: '你没有权限修改这条知识。',
     reasonRequired: '请写下原因',
     turn: {
-      title: '本轮沉淀', count: '共 {count} 条', empty: '这一轮没有新增或更新的知识。',
+      count: '共 {count} 条', empty: '这一轮没有新增或更新的知识。',
       changed: { created: '新增', updated: '更新' }, open: '打开并修改',
     },
   },
@@ -219,7 +219,7 @@ export const knowledgeQuickEditMessages = {
     },
     reassert: {
       title: 'Confirm again as a new version', help: 'Confirming it again writes a new version; the old one keeps the time it was “{status}”.',
-      save: 'Confirm as a new version', saving: 'Writing the new version', done: 'New version written',
+      save: 'Confirm as a new version', saving: 'Writing the new version',
     },
     history: {
       title: 'Sources and history', sources: 'Sources', revisions: 'Changes', noSources: 'No sources recorded',
@@ -245,7 +245,7 @@ export const knowledgeQuickEditMessages = {
     forbidden: 'You are not allowed to change this item.',
     reasonRequired: 'Write down why',
     turn: {
-      title: 'Saved this turn', count: '{count} items', empty: 'This turn added or updated no knowledge.',
+      count: '{count} items', empty: 'This turn added or updated no knowledge.',
       changed: { created: 'New', updated: 'Updated' }, open: 'Open and edit',
     },
   },

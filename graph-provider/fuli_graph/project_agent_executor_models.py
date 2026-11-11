@@ -377,32 +377,6 @@ class ProjectAgentExecutorRoutingRuleUpdate(StrictModel):
         return self
 
 
-class ProjectAgentExecutorSelectionRequest(StrictModel):
-    personal_space_id: str = Field(min_length=1, max_length=128)
-    personal_project_id: str = Field(min_length=1, max_length=128)
-    task_id: str = Field(min_length=1, max_length=128)
-    agent_id: str = Field(min_length=1, max_length=128)
-    work_kind: str = Field(min_length=1, max_length=128)
-    required_capabilities: list[str] = Field(default_factory=list, max_length=32)
-    model_strategy: ProjectAgentModelStrategy = Field(
-        default_factory=ProjectAgentModelStrategy
-    )
-    executor_policy: ProjectAgentExecutorPolicy | None = None
-    idempotency_key: str = Field(min_length=8, max_length=256)
-    source_application: SourceApplication | None = None
-    source_session_id: str | None = Field(default=None, min_length=1, max_length=256)
-
-    @field_validator('required_capabilities')
-    @classmethod
-    def validate_capabilities(cls, value: list[str]) -> list[str]:
-        return unique_text_list(value, 'required executor capabilities')
-
-    @model_validator(mode='after')
-    def reject_sensitive_values(self):
-        reject_credentials(self, 'executor selection request')
-        return self
-
-
 class ProjectAgentExecutorSelection(StrictModel):
     selection_id: str
     task_id: str

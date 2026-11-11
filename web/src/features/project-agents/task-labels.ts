@@ -50,10 +50,6 @@ export function recruitmentPositionLabel(positionKind: string) {
   return projectAgentLabel('recruitmentPosition', positionKind)
 }
 
-export function memoryScopeLabel(scope: string | null | undefined) {
-  return scope ? projectAgentLabel('memoryScopes', scope) : t('projectAgents.notReported')
-}
-
 export type StatusTone = 'danger' | 'warning' | 'active' | 'success' | 'neutral'
 
 const DANGER_STATUSES = new Set(['blocked', 'failed', 'unavailable'])

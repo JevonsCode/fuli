@@ -85,6 +85,5 @@ export function orchestrationResponse(url: string): Promise<unknown> {
   if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
   if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
   if (url.includes('/api/executor-routing-rules?')) return Promise.resolve({ rules: [] })
-  if (url.includes('/api/project-agent-routing-learning?')) return Promise.resolve([])
   return Promise.resolve([])
 }

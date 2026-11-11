@@ -33,7 +33,6 @@ const sheetSchema = z.looseObject({
 const sheetsShape = shapeOf(z.looseObject({ partial: z.boolean(), workbenches: z.array(sheetSchema) }))
 
 export type TeamProgress = z.infer<typeof progressSchema>
-export type TeamStep = z.infer<typeof stepSchema>
 export type TeamShare = z.infer<typeof shareSchema>
 export type TeamSheet = z.infer<typeof sheetSchema>
 

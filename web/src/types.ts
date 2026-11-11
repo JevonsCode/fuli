@@ -564,38 +564,6 @@ export interface ProjectAgentCoordinationPolicy {
 
 export interface ProjectSubTeamPolicy { id: string; name: string; leadAgentId: string; memberAgentIds: string[] }
 
-export interface ProjectAgentLearningEvidence {
-  learningKey?: string
-  evidenceId?: string
-  personalProjectId?: string | null
-  workKind?: string | null
-  executor?: string | null
-  model?: string | null
-  modelStrategy?: ProjectAgentModelStrategy | null
-  modelStrategyKey?: string | null
-  sampleCount: number
-  recentWeightedSamples?: number | null
-  decayBasis?: string | null
-  updatedAt?: string | null
-  outcomes?: {
-    success?: number
-    rework?: number
-    failure?: number
-    explicitPraise?: number
-    testOrAcceptance?: number
-    scoreCount?: number
-  }
-  evidence?: Array<{
-    evidenceId?: string
-    kind: 'rework' | 'negative' | 'praise' | 'test' | 'acceptance' | 'score' | string
-    count?: number
-    summary?: string | null
-    occurredAt?: string | null
-  }>
-  score?: number | null
-  neutral?: boolean
-}
-
 /** A key from the space's occupation catalog (built-in or custom). */
 export type AgentOccupationKey = string
 
@@ -639,7 +607,6 @@ export interface ProjectAgentRecord {
   activity?: ProjectAgentActivityResult | null
   clientEvidence?: ProjectAgentClientEvidence[]
   routingRules?: ProjectAgentRoutingRule[]
-  learningEvidence?: Record<string, ProjectAgentLearningEvidence>
   isTestRole?: boolean
   executorDirectory?: ProjectAgentExecutorRef[]
 }

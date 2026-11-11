@@ -6,7 +6,6 @@ import { isAgentTaskDataComplete, taskHasAgent } from '@/features/agent-profile/
 import { t } from '@/i18n'
 import type {
   ProjectAgentExecutorRef,
-  ProjectAgentLearningEvidence,
   ProjectAgentRecord,
   ProjectAgentRecruitmentRecord,
   ProjectAgentRoutingRule,
@@ -62,7 +61,7 @@ function assertReportedCollection(value: unknown, keys: string[], allowRecord = 
 /**
  * One Agent's management workspace: seven sources read on their own, each
  * with its own loading or error state, and the human decisions taken there
- * (learning evidence, recruitments, executor authorization, routing rules,
+ * (recruitments, executor authorization, routing rules,
  * test-role cleanup). Every write re-reads the sources it can change.
  */
 export function useProjectAgentDetails(

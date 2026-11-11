@@ -919,10 +919,3 @@ class StoreProjectAgentExecutorLearning:
         if item.evidence_kind in {'rework_requested'}:
             return 'rework', 1.0
         return 'failure', 1.0
-
-    record_executor_outcome_evidence = record_project_agent_executor_outcome_evidence
-    list_executor_outcome_evidence = list_project_agent_executor_outcome_evidence
-    list_executor_outcome_aggregates = list_project_agent_executor_outcome_aggregates
-    ignore_executor_outcome_evidence = ignore_project_agent_executor_outcome_evidence
-    reset_executor_outcomes = reset_project_agent_executor_outcomes
-    aggregate_executor_outcomes = aggregate_project_agent_executor_outcomes

@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import {
   localServerAuthority,
-  rejectDisallowedRequest
+  rejectRequestOutsidePolicy
 } from '../src/http/request-policy.js';
 import { createServer } from '../src/server.js';
 import { closeServer } from '../test-support/server.js';
@@ -93,7 +93,7 @@ test('HTTP port 80 uses browser-normalized URL and request authority', () => {
 
   assert.equal(authority, '127.0.0.1');
   assert.equal(`http://${authority}`, 'http://127.0.0.1');
-  assert.equal(rejectDisallowedRequest({
+  assert.equal(rejectRequestOutsidePolicy({
     request: {
       method: 'GET',
       url: '/api/state',

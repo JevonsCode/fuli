@@ -43,7 +43,6 @@ export const knowledgeDialogMessages = {
         alreadyAssigned: '这条知识已经属于该项目',
         preferenceProjectRequired: '请选择生效的个人项目',
         preferenceReasonRequired: '请说明为什么调整生效范围',
-        saveFailed: '保存失败',
       },
       notices: {
         corrected: '知识已纠正：修改写成了新版本，旧版本和原始证据都留在历史里。',
@@ -90,8 +89,6 @@ export const knowledgeDialogMessages = {
       invalidate: '标记为失效',
       restore: '恢复为有效',
       saveReplacement: '保存替代关联',
-      savingConfirmed: '正在保存并确认知识…',
-      savingPending: '正在保存待确认知识…',
       invalidating: '正在标记知识失效…',
       restoring: '正在恢复知识…',
       savingReplacement: '正在保存替代关联…',
@@ -195,7 +192,6 @@ export const knowledgeDialogMessages = {
         alreadyAssigned: 'This knowledge already belongs to that project',
         preferenceProjectRequired: 'Choose the personal project where this preference applies',
         preferenceReasonRequired: 'Explain why the effective scope is changing',
-        saveFailed: 'Save failed',
       },
       notices: {
         corrected: 'Knowledge corrected as a new version; the old version and its evidence stay in the history.',
@@ -242,8 +238,6 @@ export const knowledgeDialogMessages = {
       invalidate: 'Mark inactive',
       restore: 'Restore as active',
       saveReplacement: 'Save replacement link',
-      savingConfirmed: 'Saving and confirming knowledge…',
-      savingPending: 'Saving knowledge as pending…',
       invalidating: 'Marking knowledge inactive…',
       restoring: 'Restoring knowledge…',
       savingReplacement: 'Saving replacement link…',
