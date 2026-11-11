@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "opencode",
   "version": "1.0.0",
-  "digest": "sha256:d76499a886b301d29cb481feeef7a8e1bd6b61e482cd9fc517b98ffc760ece45",
+  "digest": "sha256:2853a86bc6ab3488b9d8f7b61d76a7918ff56a9f9d917c923aa57dd09656b31a",
   "label": "OpenCode",
   "command": "opencode",
   "detection": {
@@ -47,10 +47,6 @@
     ]
   },
   "commandSkills": {
-    "review": {
-      "userCommand": "fuli review",
-      "nativeInvocation": "the flreview skill"
-    },
     "sessionCommand": false
   },
   "configWriter": "opencode-plugin",

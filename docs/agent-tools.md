@@ -6,13 +6,9 @@ Skills and hooks FULI installs per client, the remote Claude upstream, and the M
 
 ## Agent integrations and primary tools
 
-Fuli installs the `capturing-session-knowledge`, `grilling-project`, `operating-fuli`, and `flreview` Skills for
-supported agents. `/flreview` asks FULI for ranked candidates, then the invoking Agent generates a
-fresh interactive review artifact. Codex rejects custom slash commands before any hook runs, so there the person
-types `fuli review` (or `flreview`) on its own line; the Codex prompt hook passes that exact line to the model with
-the installed Skill named, and in a session where FULI is off it answers the line itself without starting a review. FULI remains the durable source of truth and write surface; no
-permanent review tab or one-question-at-a-time chat flow is required.
-`operating-fuli` makes Agents inspect the structured interface-parity catalog before changing data,
+Fuli installs the `capturing-session-knowledge`, `grilling-project`, and `operating-fuli` Skills for
+supported agents. The `/flreview` knowledge review was retired (11-11): its four tools are no longer listed, and
+for one release a client that still calls one gets `tool_retired`. `operating-fuli` makes Agents inspect the structured interface-parity catalog before changing data,
 verify writes through matching read tools, and treat browser automation as visual verification only.
 See the [Agent interface architecture](agent-interface-architecture.md).
 Fuli setup generates Claude Code `UserPromptSubmit`/`Stop` MCP hooks, a Codex
@@ -90,7 +86,3 @@ the durable graph remains the source of truth.
 | `preview_common_knowledge_promotion` | Preview a human-confirmed promotion |
 | `apply_common_knowledge_promotion` | Apply the preview atomically with a one-time token |
 | `resolve_deferred_preference_conflict` | Resolve an AI-deferred conflict only when a task needs it |
-| `start_knowledge_review` | Start or resume an exact personal review scope |
-| `list_knowledge_review_candidates` | Rank candidates by time, conflicts, weight, and cross-session repetition |
-| `record_knowledge_review_progress` | Save keep, update, invalidate, skip, or defer outcomes |
-| `finish_knowledge_review` | Pause, or complete and advance the next-review watermark |
