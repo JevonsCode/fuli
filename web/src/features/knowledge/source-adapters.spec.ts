@@ -54,6 +54,15 @@ describe('knowledge source adapters', () => {
     expect(sourceLinkForEvidence(antigravity)).toBeNull()
   })
 
+  it('names DeepSeek Harness as its own client, with no launcher', () => {
+    const dsh = { source_application: 'dsh', session_id: 'session-synthetic-dsh' }
+    expect(sourceApplicationLabel(dsh)).toBe('DeepSeek Harness')
+    expect(sourceApplicationLabel({ source_kind: 'DeepSeek Harness session' })).toBe('DeepSeek Harness')
+    expect(sessionLaunchKey(dsh)).toBe('dsh:session-synthetic-dsh')
+    expect(sourceLauncherStatus(dsh)).toBe('disabled')
+    expect(sourceLinkForEvidence(dsh)).toBeNull()
+  })
+
   it('keeps copying available independently from opening', async () => {
     const cursor = { source_kind: 'Cursor conversation', session_id: 'cursor-session-7' }
     const writeText = vi.fn().mockResolvedValue(undefined)

@@ -12,6 +12,7 @@ import { openFederatedGraphApplication } from '../graphiti/federated-application
 import { resolveGraphRuntimeOptions } from '../graphiti/runtime-config.js';
 import { platformPath, wslCallerPath } from '../system/platform-path.js';
 import { readHookInput } from './lifecycle-input.js';
+import { unavailableNotice } from './plugin-hook-process.js';
 
 // The FULI side of a client plugin that runs inside the client's own process
 // (OpenCode V2, DeepSeek Harness): the plugin (plugin-hook-process.js) starts
@@ -97,11 +98,6 @@ export async function runPluginLifecycleHook(client, args, dependencies = {}) {
   }
 }
 
-// One line, so the plugin adds no more than that when FULI cannot answer.
-function unavailableContext(cause) {
-  return `Fuli context is unavailable (${cause}). Continue with the user request; FULI memory and preferences were not loaded for this turn.`;
-}
-
 function hookTimeoutMs(args) {
   const event = args[args.indexOf('--event') + 1];
   const limit = event === 'prompt' ? DEFAULT_PROMPT_TIMEOUT_MS : STOP_TIMEOUT_MS;
@@ -114,7 +110,7 @@ function hookTimeoutMs(args) {
 // what is missing (entry-budget.js); otherwise one line says FULI did not answer.
 function deadlineOutput(event, budget, cause) {
   if (event !== 'prompt') return {};
-  return { context: partialEntryText(budget) ?? `${unavailableContext(cause)}${NO_TASK_AT_DEADLINE}` };
+  return { context: partialEntryText(budget) ?? `${unavailableNotice(cause)}${NO_TASK_AT_DEADLINE}` };
 }
 
 // The process entry: always answers one JSON line within its deadline and
@@ -158,7 +154,7 @@ export async function runPluginLifecycleCommand(client, args, dependencies = {})
       signal: controller.signal, onCleanup: close => { cleanup = close; } }))
       .then(output => { write(output); return { timedOut: false }; },
         (error) => {
-          write(event === 'prompt' ? { context: unavailableContext(hookFailureCause(error))
+          write(event === 'prompt' ? { context: unavailableNotice(hookFailureCause(error))
             + consoleRecoveryNotice(runtimeConfigPath) } : {});
           recordHookFailure({ runtimeConfigPath, client: client.id, event, error, sessionId, startedAt });
           return { timedOut: false };

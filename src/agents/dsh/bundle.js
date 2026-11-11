@@ -5,13 +5,14 @@ import { pluginModuleImport } from '../plugin-module-source.js';
 import { DSH_LIFECYCLE_MARKER } from './plugin.js';
 
 // The DeepSeek Harness bundle FULI setup writes beside its installer manifest
-// (installer-manifest.js): a package a DSH profile adds by link
-// (`dsh plugin --profile <name> add link:<directory>`). DSH loads a bundle
+// (installer-manifest.js). agent-installer copies it to
+// `<DSH home>/plugins/fuli` and links that copy into every DSH profile, as
+// `dsh plugin --profile <name> add link:<directory>` does. DSH loads a bundle
 // through its package.json `dsh.bundle.patch`, whose rows here start FULI's
 // lifecycle plugin (plugin.js) and FULI's MCP server, run as the `dsh`
-// source. The files bind this installation's paths and name FULI's version;
-// the profile links the directory, so a rewrite after a FULI update needs no
-// reinstall.
+// source. The files bind this installation's paths and name FULI's version,
+// so the copy is outdated after each FULI update until the update's
+// reconnect (`fuli setup --connected-only`) copies it again.
 const DSH_BUNDLE_PACKAGE = 'fuli-dsh';
 const HEADER = `// FULI managed DeepSeek Harness plugin (${DSH_LIFECYCLE_MARKER}): fuli setup rewrites this file.`;
 // The hook's own prompt deadline (plugin-lifecycle-hook.js caps it at 15 s).

@@ -28,7 +28,8 @@ test('installer clients become FULI\'s: component states and where the MCP entry
       state: 'unsupported', componentStates: [] }
   ]));
   assert.deepEqual(answer, { status: 'available', clients: [{ id: 'gemini', label: 'Gemini CLI', builtin: true, detected: true,
-    manual: false, connected: true, components: { mcp: 'current' }, mcpPaths: ['~/.gemini/settings.json'] }] });
+    manual: false, connected: true, components: { mcp: 'current' }, mcpPaths: ['~/.gemini/settings.json'],
+    entryPaths: ['~/.gemini/settings.json'] }] });
   assert.deepEqual(await detectClients({ status: async () => ({ status: 'unavailable', reason: 'offline' }) }),
     { status: 'unavailable', reason: 'offline' });
 });

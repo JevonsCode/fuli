@@ -34,23 +34,25 @@ const SAVED_RUNTIME_SETTINGS = Object.freeze({
   resourceRefreshSeconds: 10
 });
 
-test('connected-only setup refreshes existing MCP clients, not newly detected or skill-only clients', async () => {
+test('connected-only setup refreshes clients with the FULI entry, not newly detected or skill-only clients', async () => {
   const output = [];
   const agents = [
     { id: 'codex', available: true, integrationDetails: { mcp: 'current' } },
     { id: 'cursor', available: true, integrationDetails: { mcp: 'outdated' } },
     { id: 'claude-code', label: 'Claude Code', available: true, integrationStatus: 'update_available', integrationDetails: { mcp: 'missing', skills: 'outdated' } },
-    { id: 'claude-desktop', label: 'Claude Desktop', available: true, integrationStatus: 'not_connected', integrationDetails: { mcp: 'missing' } }
+    { id: 'claude-desktop', label: 'Claude Desktop', available: true, integrationStatus: 'not_connected', integrationDetails: { mcp: 'missing' } },
+    // DeepSeek Harness has no MCP file: its plugin bundle is the entry, and it is refreshed by its plugin.
+    { id: 'dsh', label: 'DeepSeek Harness', available: true, integrationDetails: { skills: 'current', plugin: 'outdated' } }
   ];
   await runSetupCommand(['--yes', '--connected-only'], {
     planSetup: () => ({ ...samplePlan(), agents }),
     applySetup: async (plan) => {
-      assert.deepEqual(plan.agents.filter(({ selected }) => selected).map(({ id }) => id), ['codex', 'cursor']);
+      assert.deepEqual(plan.agents.filter(({ selected }) => selected).map(({ id }) => id), ['codex', 'cursor', 'dsh']);
       return { status: 'ready', runtime: {}, agents: [] };
     },
     write: (line) => output.push(line)
   });
-  assert.match(output.join('\n'), /Claude Code: skipped.*no Fuli MCP entry/);
+  assert.match(output.join('\n'), /Claude Code: skipped.*no Fuli entry/);
   assert.doesNotMatch(output.join('\n'), /Claude Desktop: skipped/);
 });
 

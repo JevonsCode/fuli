@@ -69,6 +69,9 @@ test('DeepSeek Harness, which has no MCP file, is told apart by its plugin bundl
   assert.equal(byId(await make().observe(), 'dsh').status, 'connected');
   answer([dsh('missing', 'missing', 'not_connected')]);
   assert.equal(byId(await make().observe(), 'dsh').status, 'removed');
+  // Another product's plugins/fuli: FULI cannot call it its own, so it is unknown, not an update to retry.
+  answer([dsh('conflict', 'current', 'conflict')]);
+  assert.equal(byId(await make().observe(), 'dsh').status, 'unknown');
 });
 
 test('every built-in client agent-installer writes is FULI\'s to connect; only its manual ones are the person\'s', async (t) => {
