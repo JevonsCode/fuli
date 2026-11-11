@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { EmployeeError } from '../employees/manifest.js';
 import { TONBORG_OPERATIONS } from './backend.js';
 import { DELEGATED_LIST_LIMIT, latestDelegatedReviews } from './delegated-reviews.js';
+import { plainQuestion } from './question-options.js';
 import { parse } from './service.js';
 import { visibleKnowledgeKeys } from './visible-items.js';
 
@@ -22,6 +23,10 @@ const id = z.string().trim().min(1).max(256);
 const readInput = z.object({ personalSpaceId: id }).strict();
 // The console's language goes with each save, so Tonborg asks the person in it.
 export const PERSON_LANGUAGES = Object.freeze(['zh-CN', 'en-US']);
+// language: the one the console shows now, for the sentence each question asks.
+const listInput = readInput.extend({ language: z.enum(PERSON_LANGUAGES).optional() }).strict();
+// A row of 待决策 has room to quote more of the item than a chat card.
+const ROW_EXCERPT = 48;
 const writeInput = readInput.extend({ enabled: z.boolean(), expectedRevision: z.number().int().min(0),
   language: z.enum(PERSON_LANGUAGES).optional() }).strict();
 const ROLE = 'tonborg';
@@ -67,15 +72,23 @@ export async function setReviewDelegation({ judgment, modelTrust, input }) {
 // One the person already voted on, undid, or that went stale is done, and so
 // is one whose item they confirmed, dropped or replaced elsewhere (11-06: after
 // 全部确认 the list still named them, and the Agents kept asking); a
-// confirmation stays listed only while the item is still Tonborg's.
+// confirmation stays listed only while the item is still Tonborg's. Each
+// question carries what its row asks (question-options.js): the one sentence
+// (ask) and its two choices, the guess first.
 export async function delegatedReviewList({ judgment, personal = null, input }) {
-  const { personalSpaceId } = parse(readInput, input);
+  const { personalSpaceId, language } = parse(listInput, input);
   await judgment.scope({ personalSpaceId });
   const latest = latestDelegatedReviews(judgment.store(), personalSpaceId, DELEGATED_LIST_LIMIT);
+  // A reader that names no language (the notices) is answered in the one saved with the switch.
+  const spoken = language ?? (latest.questions.length ? judgment.store().delegation(personalSpaceId).language : null);
   const entry = record => ({ id: record.id, createdAt: record.createdAt, personalProjectId: record.personalProjectId ?? null,
     target: record.target, title: record.title ?? null, summary: record.summary, confidence: record.confidence ?? null,
     guess: record.guess ?? null, question: record.question ?? null, feedbackRevision: record.feedback.revision });
-  const confirmed = latest.confirmed.map(entry), questions = latest.questions.map(entry);
+  const asking = record => {
+    const { question, doubt, answers } = plainQuestion(record, spoken, { excerpt: ROW_EXCERPT });
+    return { ...entry(record), doubt, ask: question, answers: answers.map(choice => choice.answer) };
+  };
+  const confirmed = latest.confirmed.map(entry), questions = latest.questions.map(asking);
   if (!personal) return { confirmed, questions };
   // A failed read keeps every entry: the console joins them with the items it shows.
   const { states } = await visibleKnowledgeKeys(personal, { personalSpaceId, reader: null },

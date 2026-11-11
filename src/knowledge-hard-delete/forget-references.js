@@ -10,7 +10,7 @@ const TEXT_FIELDS = ['title', 'name', 'summary', 'content', 'fact', 'instruction
   'note', 'text', 'objective', 'resultSummary',
   // A delegated review's question to the person, phrased as Tonborg's guess (rec#96).
   'question'];
-// options: the choices Tonborg's question offered about the item (rec#99).
+// options: the choices a question offered about the item in records stored before 11-11 (rec#99); newer records keep none.
 const LIST_FIELDS = ['evidence', 'options'];
 
 // references: { itemIds, candidateKeys } of what the delete removed.

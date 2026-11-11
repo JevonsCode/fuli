@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ApplicationError } from '../app/application-error.js';
 import { validateWorkerDescriptor } from './worker-descriptor.js';
+import { currentCheckpointWorkLog } from './checkpoint-amendment.js';
 
 const failure = code => new ApplicationError(`worker_${code}`, `Worker ${code.replaceAll('_', ' ')}.`);
 const bounded = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
@@ -84,7 +85,8 @@ export function createWorkerRunAttempt({ provider, leases, adapter, request, pro
         { personal_space_id: scope.personal_space_id, source_application: adapter.application }, { signal: requestSignal }), ownToken);
       const value = context.checkpoint;
       if (!value || value.phase !== 'complete') return null;
-      const log = value.work_log;
+      // A worker that amended its early checkpoint is judged by the correction (rec#85).
+      const log = currentCheckpointWorkLog(value);
       if (!['completed', 'no_change', 'incomplete', 'failed', 'reported', 'unreported'].includes(log?.status) ||
           !bounded(log.summary, 2000)) throw failure('result_mismatch');
       return { phase: 'complete', workLog: { status: log.status, summary: redact(log.summary) } };

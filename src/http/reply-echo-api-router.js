@@ -26,7 +26,7 @@ export async function handleReplyEchoRequest({ request, response, url, app, owne
   if (url.pathname === RESTORE_PATH) {
     const body = await readJson(request);
     sendJson(response, 200, await restoreReplyEchoes(app, { personalSpaceId: space(app, body.personalSpaceId), items: body.items },
-      relayedDecision(request)));
+      relayedDecision(request), ownerReads));
     return true;
   }
   if (!ownerReads) return ownerReadsUnavailable(response);
@@ -39,7 +39,7 @@ export async function handleReplyEchoRequest({ request, response, url, app, owne
   const body = await readJson(request);
   const personalSpaceId = space(app, body.personalSpaceId);
   sendJson(response, 200, await dropReplyEchoes(app, pageReader(ownerReads, personalSpaceId),
-    { personalSpaceId, items: body.items }, relayedDecision(request)));
+    { personalSpaceId, items: body.items }, relayedDecision(request), ownerReads));
   return true;
 }
 

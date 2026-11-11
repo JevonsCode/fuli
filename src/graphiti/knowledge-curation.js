@@ -44,7 +44,13 @@ export async function recordKnowledgeUsage(application, {
   });
 }
 
-export async function reviseKnowledgeItem(application, input) {
+// A change the console sends as the person's own goes on its human-review
+// port (ownerReads, src/knowledge-owner-reads): the provider refuses
+// operation_actor 'human' on the access token alone.
+const changeChannel = (application, input, ownerReads) =>
+  (input.operationActor === 'human' && ownerReads ? ownerReads : application.personal);
+
+export async function reviseKnowledgeItem(application, input, ownerReads = null) {
   assertActivePersonalSpace(application, input.personalSpaceId);
   assertSafeKnowledgeMutation(input);
   const body = {
@@ -94,13 +100,13 @@ export async function reviseKnowledgeItem(application, input) {
   if (input.replacementItemKind !== undefined) {
     body.replacement_item_kind = input.replacementItemKind;
   }
-  return application.personal.reviseKnowledgeItem(input.itemId, body);
+  return changeChannel(application, input, ownerReads).reviseKnowledgeItem(input.itemId, body);
 }
 
-export async function confirmKnowledgeBatch(application, input) {
+export async function confirmKnowledgeBatch(application, input, ownerReads = null) {
   assertActivePersonalSpace(application, input.personalSpaceId);
   assertSafeKnowledgeMutation(input);
-  return application.personal.confirmKnowledgeBatch({
+  return changeChannel(application, input, ownerReads).confirmKnowledgeBatch({
     personal_space_id: input.personalSpaceId,
     group_kind: input.groupKind,
     group_value: input.groupValue,
@@ -117,9 +123,9 @@ export async function confirmKnowledgeBatch(application, input) {
   });
 }
 
-export async function reassignKnowledgeItem(application, input) {
+export async function reassignKnowledgeItem(application, input, ownerReads = null) {
   assertActivePersonalSpace(application, input.personalSpaceId);
-  return application.personal.reassignKnowledgeItem(input.itemId, {
+  return changeChannel(application, input, ownerReads).reassignKnowledgeItem(input.itemId, {
     personal_space_id: input.personalSpaceId,
     item_kind: input.itemKind,
     target_project_id: input.targetProjectId,

@@ -145,6 +145,25 @@ class TaskContextCheckpoint(StrictModel):
         return self
 
 
+class TaskCheckpointAmendment(StrictModel):
+    """A later correction of a completed checkpoint's outcome (rec#85).
+
+    It carries only the reason and work log; the original checkpoint and its
+    capture decisions stay as they were, and the amendment is appended beside them.
+    """
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    source_application: SourceApplication
+    disposition: Literal['capture_candidates', 'retain_nothing']
+    reason: str = Field(min_length=1, max_length=2000)
+    fingerprint: str = Field(pattern=r'^[a-f0-9]{64}$')
+    work_log: TaskWorkLog | None = None
+
+    @model_validator(mode='after')
+    def reject_sensitive_values(self):
+        reject_credentials(self, 'task checkpoint amendment')
+        return self
+
+
 class TurnReceiptClaim(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     source_application: SourceApplication

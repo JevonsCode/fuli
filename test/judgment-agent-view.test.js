@@ -125,11 +125,13 @@ test('FLA-A still sees its own item named, without the words', async t => {
   assert.equal(shown.title, 'Synthetic preference');
   assert.equal(shown.target_withheld, undefined);
   assertNoWords(result);
-  // The person is still asked in the conversation; the reason is read in the console.
+  // The person is still asked in the conversation, in one plain sentence written from the
+  // title and fixed values; the model's outcome is a fixed value beside it, its reason stays in the console.
   const question = result.human_interaction;
   assert.ok([f.one.id, f.two.id].includes(question.source.id));
-  assert.match(question.question, /^AI 建议，待你确认 \/ AI suggestion, awaiting your decision \(model: approve\)\. /);
-  assert.match(question.question, /FULI 控制台/);
+  assert.match(question.question, /^「Synthetic .+」我拿不准，保留吗？$/);
+  assert.equal(question.source.modelOutcome, 'approve');
+  assert.deepEqual([question.options, question.source.actions], [['保留', '不要'], ['keep', 'drop']]);
 });
 
 test('an unreadable visibility withholds every reviewed item', async t => {
@@ -164,7 +166,9 @@ test('a plain item that is still plain stays named for every reader; its words s
   assert.equal(record.feedback.reason, FEEDBACK);
   assert.equal(record.target, 'entity:one');
   assert.equal(record.content_withheld, undefined);
-  assert.match(full.human_interaction.question, new RegExp(SUMMARY));
+  // The card asks one plain question; the reason is read in the record, never pasted into the question.
+  assert.match(full.human_interaction.question, /我拿不准，保留吗？$/);
+  assert.doesNotMatch(full.human_interaction.question, new RegExp(SUMMARY));
 });
 
 test('an injection-flagged review keeps its signal names, never a later aiReview field, and asks only a reader who sees it', async t => {
@@ -195,7 +199,8 @@ test('an injection-flagged review keeps its signal names, never a later aiReview
   // FLA-A sees the item: it is asked, with the known signals only.
   const own = await f.list(FLA_A);
   assert.equal(own.human_interaction.source.id, flagged.id);
-  assert.match(own.human_interaction.question, /\(reviewer_instruction, hidden_characters\)\. /);
+  assert.match(own.human_interaction.question, /^注意：这条的文字像是在对 AI 下指令。 /);
+  assert.deepEqual(own.human_interaction.source.injectionSignals, ['reviewer_instruction', 'hidden_characters']);
   // FLA-B may not see it: no question about it, and its target stays out.
   const other = await f.list(FLA_B);
   const hidden = byId(other, flagged);

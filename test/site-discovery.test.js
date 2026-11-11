@@ -64,7 +64,7 @@ test('sitemap and machine-readable summaries describe the same public product', 
 // A guide page (/models/, /tech/, /guide/) in each language: complete without JavaScript, with its
 // own canonical and alternates, one H1, one H2 per section, no repeated titles and no
 // Chinese on the English page. `check` adds the page's own assertions.
-function assertGuidePages(name, check) {
+function assertGuidePages(name, check, { styles = [] } = {}) {
   const files = pages();
   for (const [route, locale, prefix] of [['', 'zh-CN', '../'], ['zh/', 'zh-CN', '../../'], ['en/', 'en', '../../']]) {
     const { document } = parseHTML(files.get(name + '/' + route + 'index.html'));
@@ -75,7 +75,7 @@ function assertGuidePages(name, check) {
     assert.equal(document.querySelector('meta[name="robots"]').content.includes('noindex'), false);
     const alternates = [...document.querySelectorAll('link[hreflang]')].map(node => [node.hreflang, node.href]);
     assert.deepEqual(alternates, [['zh-Hans', url + 'zh/'], ['en', url + 'en/'], ['x-default', url]]);
-    assert.deepEqual([...document.querySelectorAll('link[rel="stylesheet"]')].map(node => node.href), [prefix + 'style.css', prefix + 'guide-page.css', (route ? '../' : './') + name + '.css']);
+    assert.deepEqual([...document.querySelectorAll('link[rel="stylesheet"]')].map(node => node.href), [prefix + 'style.css', prefix + 'guide-page.css', ...styles.map(style => prefix + style), (route ? '../' : './') + name + '.css']);
     assert.equal(document.querySelector('script[type="module"]').src, prefix + name + '.js');
     if (route) assert.equal(document.documentElement.dataset.pageLocale, locale);
     assert.equal(document.querySelectorAll('h1').length, 1);
@@ -116,17 +116,18 @@ test('the technology page covers the architecture, every shipped Skill, the data
   });
 });
 
-test('the quick start walks through install, connect, use, an optional model and help, with exact console labels', () => {
+test('the quick start walks through install, connect, a first task, the console, an optional model and help, with exact console labels', () => {
   assertGuidePages('guide', (document, locale) => {
-    assert.deepEqual([...document.querySelectorAll('main > section[id]')].map(node => node.id), ['install', 'connect', 'use', 'model', 'help']);
-    assert.deepEqual([...document.querySelectorAll('.step-index')].map(node => node.textContent), ['1', '2', '3', '4', '5']);
+    assert.deepEqual([...document.querySelectorAll('main > section[id]')].map(node => node.id), ['install', 'connect', 'use', 'console', 'model', 'help']);
+    assert.deepEqual([...document.querySelectorAll('.step-index')].map(node => node.textContent), ['1', '2', '3', '4', '5', '6']);
+    assert.match(document.querySelector('#install').textContent, /npm install --global fuli-context/);
     assert.equal(document.querySelector('.guide-hero .button').href, 'https://github.com/JevonsCode/fuli/releases/latest');
     assert.match(document.querySelector('#install').textContent, /FULI-Setup-<.+>.exe/);
     assert.match(document.querySelector('#install').textContent, /fuli-macos-arm64-<.+>.dmg/);
     assert.ok(document.querySelector('#model').textContent.includes('qwen3-embedding:0.6b'));
     const models = document.querySelector('#model [data-i18n="guide.model.guide"]').href;
     assert.equal(models, base + 'models/' + (locale === 'en' ? 'en/' : ''));
-  });
+  }, { styles: ['screens.css'] });
 });
 
 test('the report leads with one number, draws the nine sessions, and folds its method', () => {

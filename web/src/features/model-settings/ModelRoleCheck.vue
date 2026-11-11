@@ -1,40 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-
-import { apiErrorReason } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
-import { checkModelRole, roleName, type ModelRoleId } from './model'
+import { roleName, type ModelRoleId } from './model'
+import { useRoleCheck } from './useRoleCheck'
 
-// One real request with the saved settings, so "configured" means it answered.
-// 语义搜索's check also says how many numbers its model gives each text.
+// 测试连接 with its answer beside it, in a use's details.
 const props = defineProps<{ role: ModelRoleId; model: string }>()
-
-const checking = ref(false)
-const result = ref<{ ok: boolean; text: string } | null>(null)
-
-// A reason FULI knows reads as words; any other stays as the provider gave it.
-function readableReason(reason: string) {
-  const key = `modelSettings.check.reasons.${reason}`
-  const text = t(key)
-  return text === key ? reason : text
-}
-
-async function check() {
-  checking.value = true
-  result.value = null
-  try {
-    const { ok, receipt, dimensions } = await checkModelRole(props.role)
-    const model = receipt.actualModel ?? props.model
-    result.value = ok
-      ? { ok, text: dimensions ? t('modelSettings.semantic.passed', { model, dimensions }) : t('modelSettings.check.passed', { model }) }
-      : { ok, text: t('modelSettings.check.failed', { reason: readableReason(receipt.reason ?? receipt.status) }) }
-  } catch (cause) {
-    result.value = { ok: false, text: t('modelSettings.check.failed', { reason: apiErrorReason(cause) }) }
-  } finally {
-    checking.value = false
-  }
-}
+const { checking, result, check } = useRoleCheck(() => props)
 </script>
 
 <template>

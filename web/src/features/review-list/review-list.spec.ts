@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { isManagementKnowledgeItem, knowledgeItemFromEdge, knowledgeItems, managementKnowledgeItems } from '@/features/knowledge/model'
 import type { KnowledgeEdge, KnowledgeGraph, KnowledgeNode } from '@/types'
 
-import { agreesWithGuess, buildReviewList, oneLine, reviewTotal, type DelegatedReview } from './review-list'
+import { agreesWithGuess, buildReviewList, oneLine, reviewTotal, rowChoices, type DelegatedReview } from './review-list'
 
 // Synthetic items only: no real FULI data.
 const proposed = { existence_reason: 'Synthetic.', quadrant_reason: 'Synthetic.', proposed_by: { kind: 'agent', label: 'Synthetic Agent' } }
@@ -97,5 +97,21 @@ describe('the 待决策 list', () => {
     // Not project material either, and read-only if the graph canvas opens one.
     expect(managementKnowledgeItems(projectGraph).filter(item => item.itemKind === 'relationship')).toEqual([])
     expect(isManagementKnowledgeItem(knowledgeItemFromEdge(structure[0], new Map()))).toBe(true)
+  })
+})
+
+describe('rowChoices', () => {
+  const asked = (guess: DelegatedReview['guess'], answers?: DelegatedReview['answers']) => rowChoices({ guess, answers } as DelegatedReview)
+  const words = (row: ReturnType<typeof rowChoices>) => [...row.choices.map(choice => `${choice.label}:${choice.action}${choice.guessed ? '*' : ''}`), `rest ${row.rest.answer}`]
+
+  it('offers the guess first and its opposite second, and keeps the third way to answer for 其他', () => {
+    expect(words(asked('keep', ['keep', 'drop']))).toEqual(['keep:confirm*', 'drop:drop', 'rest edit'])
+    expect(words(asked('drop', ['drop', 'keep']))).toEqual(['drop:drop*', 'keep:confirm', 'rest edit'])
+    // The opposite of 改一下 is keeping it as it is; dropping it sits under 其他.
+    expect(words(asked('edit', ['edit', 'keep']))).toEqual(['edit:edit*', 'keepAsIs:confirm', 'rest drop'])
+  })
+
+  it('asks keep or drop with neither marked when the review has no guess or choices', () => {
+    expect(words(asked(null))).toEqual(['keep:confirm', 'drop:drop', 'rest edit'])
   })
 })

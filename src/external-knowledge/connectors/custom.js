@@ -35,6 +35,10 @@ export function createCustomConnector({ directory }) {
     name: '自定义代码',
     capabilities: ['discover', 'sync', 'retrieve'],
 
+    // The module is local code and reads the environment variables its
+    // configuration names: only the person connects one (连接 page).
+    personOnlyFields: () => ['module'],
+
     async check(context) {
       const implementation = await load(context);
       const capabilities = ['discover', 'sync', 'retrieve']

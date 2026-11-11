@@ -398,8 +398,8 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return recordKnowledgeFeedbackWorkflow(this, input);
   }
 
-  async reviseKnowledgeItem(input) {
-    return reviseKnowledgeItem(this, input);
+  async reviseKnowledgeItem(input, ownerReads) {
+    return reviseKnowledgeItem(this, input, ownerReads);
   }
 
   async knowledgeTags(operation, input) {
@@ -423,12 +423,12 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return completePreferenceConflict(this, input, ownerReads);
   }
 
-  async confirmKnowledgeBatch(input) {
-    return confirmKnowledgeBatch(this, input);
+  async confirmKnowledgeBatch(input, ownerReads) {
+    return confirmKnowledgeBatch(this, input, ownerReads);
   }
 
-  async reassignKnowledgeItem(input) {
-    return reassignKnowledgeItem(this, input);
+  async reassignKnowledgeItem(input, ownerReads) {
+    return reassignKnowledgeItem(this, input, ownerReads);
   }
 
   async setPersonalPreferenceScope(input) {

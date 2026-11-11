@@ -213,7 +213,8 @@ user request verbatim as the only query:
 ```
 
 At task end, hook mode calls `checkpoint_task_knowledge`: use `capture_candidates` only for a small,
-durable, evidence-backed batch; otherwise use `retain_nothing`. A prompt-fallback Agent applies the
+durable, evidence-backed batch; otherwise use `retain_nothing`. A checkpoint sent too early is
+corrected with `amend: true` (reason and work log only); the first record stays as history. A prompt-fallback Agent applies the
 same rule and writes through `capture_session_knowledge`. Personal preferences set the correct
 `profileAspect` and stable `attributes.preferenceKey`; project facts omit `profileAspect`. If
 automatic capture is disabled under Settings, automatic writes return `capture_disabled` and no

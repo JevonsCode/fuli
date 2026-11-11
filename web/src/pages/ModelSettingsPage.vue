@@ -22,18 +22,22 @@ import {
 } from '@/features/model-settings/model'
 import { modelPageTools } from '@/features/model-settings/model-page-tools'
 import { taskState, useRole, type ModelUseId } from '@/features/model-settings/model-uses'
+import { runRoleCheck } from '@/features/model-settings/useRoleCheck'
 import { usePageTools } from '@/features/webmcp/usePageTools'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import { usePageRefresh } from '@/layouts/page-refresh'
 import { UiNotice } from '@/ui'
 
-// 模型与用量 as one flat model center (rec#8, rec#38, 11-06): first
-// every connected model once with who uses it, then every use as a card with
-// its state, its model, the one line of what is enough and its quick action
-// (接入 or 编辑); its facts, trust and history open in 「查看详情」. Then what
-// the roles suggested and their usage. A save is accepted only at the local
-// process boundary (a loopback request).
+// 模型与用量 as one flat model center (rec#8, rec#38, 11-06; compact cards and
+// failure paths 11-11): first every connected model once with whether it
+// works now, who uses it and 「测试连接」; then every use as a card of one
+// height with its state, its model, one line of how it stands and its quick
+// action. Lists, facts, trust and history open in 「查看详情」. A model that did
+// not answer says why where it shows, with 「测试连接」 and, where something
+// can run again, 「重试」; a test reads the settings again so every place
+// agrees. Then what the roles suggested and their usage. A save is accepted
+// only at the local process boundary (a loopback request).
 const store = useConsoleStore()
 const route = useRoute()
 const router = useRouter()
@@ -43,8 +47,9 @@ const loading = ref(true)
 const loadError = ref('')
 const editing = ref<ModelRoleId | null>(null)
 const details = ref<ModelRoleId | null>(null)
-const notice = ref('')
 const stale = ref(false)
+// The role whose just-saved model is being tested.
+const testing = ref<ModelRoleId | null>(null)
 let reading: AbortController | null = null
 // Read together with the role settings, so the section never appears and then goes;
 // Tonborg's read follows the active space (useRoleSuggestions).
@@ -93,7 +98,6 @@ async function load() {
 }
 
 function edit(role: ModelRoleId) {
-  notice.value = ''
   stale.value = false
   closeDetails()
   editing.value = role
@@ -114,10 +118,21 @@ async function settingsChanged(next?: ModelRolesPayload) {
   historyVersion.value += 1
 }
 
-function saved(next: ModelRolesPayload) {
-  notice.value = [t('modelSettings.saved', { name: roleName(editing.value!) }), historyNote(next)].filter(Boolean).join(' ')
+// A saved model that is on is tested at once, so 「已保存」 also says whether it
+// answers; the failure stays on its card with 「测试连接」.
+async function saved(next: ModelRolesPayload) {
+  const role = editing.value!
   editing.value = null
-  void settingsChanged(next)
+  await settingsChanged(next)
+  const message = [t('modelSettings.saved', { name: roleName(role) }), historyNote(next)].filter(Boolean).join(' ')
+  const connection = next.roles.find(entry => entry.role === role && entry.state === 'enabled')?.connection
+  if (!connection) return store.notify(message)
+  testing.value = role
+  const result = await runRoleCheck(role, connection.model)
+  testing.value = null
+  await load()
+  if (result.ok) store.notify(`${message} ${result.text}`)
+  else store.reportError(new Error(`${message} ${result.text}`))
 }
 
 // A changed file closes the form; one that stopped validating keeps it open,
@@ -134,7 +149,8 @@ async function conflict(code: ConfigConflict) {
 usePageTools(() => modelPageTools({ changed: () => void settingsChanged() }))
 
 function trustSaved(next: ModelRolesPayload) {
-  notice.value = historyNote(next)
+  const note = historyNote(next)
+  if (note) store.notify(note)
   void settingsChanged(next)
 }
 
@@ -165,14 +181,14 @@ onBeforeUnmount(() => {
         <section class="ui-section" aria-labelledby="model-list-title">
           <div class="ui-section-label">
             <h2 id="model-list-title" class="list-title">{{ t('modelSettings.models.title') }}</h2>
-            <GrowthLoading v-if="loading" variant="inline" :label="t('modelSettings.loading')" />
+            <GrowthLoading v-if="testing" variant="inline" :label="t('modelSettings.savedChecking', { name: roleName(testing) })" />
+            <GrowthLoading v-else-if="loading" variant="inline" :label="t('modelSettings.loading')" />
           </div>
           <UiNotice v-if="payload.state === 'invalid'" tone="error" data-model-config-invalid>
             {{ t('modelSettings.invalid', { error: payload.error ?? '' }) }}
           </UiNotice>
           <UiNotice v-if="stale" tone="error" data-model-stale>{{ t('modelSettings.changed') }}</UiNotice>
-          <UiNotice v-if="notice" tone="success">{{ notice }}</UiNotice>
-          <ModelList :payload="payload" @open="openUse" />
+          <ModelList :payload="payload" @open="openUse" @checked="load()" />
         </section>
 
         <section class="ui-section model-uses" aria-labelledby="model-uses-title">
@@ -183,13 +199,13 @@ onBeforeUnmount(() => {
           </div>
           <div class="model-use-grid">
             <ModelRoleCard :view="view(SEMANTIC_ROLE)" :locked="locked" :editing="editing === SEMANTIC_ROLE"
-              @edit="edit(SEMANTIC_ROLE)" @details="details = SEMANTIC_ROLE" />
+              @edit="edit(SEMANTIC_ROLE)" @details="details = SEMANTIC_ROLE" @checked="load()" />
             <ModelRoleCard :view="view('assistant')" :locked="locked" :editing="editing === 'assistant'"
-              @edit="edit('assistant')" @details="details = 'assistant'" />
-            <DreamingCard :status="taskState(payload, 'dreaming')" :model="astroModel" @edit="edit('assistant')" />
-            <RetrievalTermsCard :projects="projects" :status="taskState(payload, 'retrieval_terms')" :model="astroModel" @edit="edit('assistant')" />
+              @edit="edit('assistant')" @details="details = 'assistant'" @checked="load()" />
+            <DreamingCard :status="taskState(payload, 'dreaming')" :model="astroModel" @edit="edit('assistant')" @checked="load()" />
+            <RetrievalTermsCard :projects="projects" :status="taskState(payload, 'retrieval_terms')" :model="astroModel" @edit="edit('assistant')" @checked="load()" />
             <ModelRoleCard v-for="role in (['jefa', 'tonborg', 'bole'] as const)" :key="role" :view="view(role)" :locked="locked"
-              :editing="editing === role" @edit="edit(role)" @details="details = role" />
+              :editing="editing === role" @edit="edit(role)" @details="details = role" @checked="load()" />
           </div>
         </section>
 

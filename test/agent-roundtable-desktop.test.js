@@ -16,7 +16,10 @@ function fixture({ desktop = null, sessions = {} } = {}) {
   const agents = [agent('lead-1', 'Milo Reed', ['claude_code']), agent('reviewer-1', 'Nova Lane', ['codex'])];
   const tasks = {
     'token-milo': { projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: 'cc-1', sourceApplication: 'claude_code' },
-    'token-nova': { projectAgentId: 'reviewer-1', personalProjectId: 'app', sessionId: INBOX, sourceApplication: 'codex' }
+    'token-nova': { projectAgentId: 'reviewer-1', personalProjectId: 'app', sessionId: INBOX, sourceApplication: 'codex' },
+    // The same inbox conversation, entered as the project lead its member reports to.
+    'token-inbox-as-lead': { projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: INBOX, sourceApplication: 'codex' },
+    'token-milo-elsewhere': { projectAgentId: 'lead-1', personalProjectId: 'app', sessionId: 'codex-other', sourceApplication: 'codex' }
   };
   const app = {
     config: { personal: { spaceId: 'space' } },
@@ -141,4 +144,24 @@ test('when the latest Codex conversation refuses, the ask goes to the inbox conv
     // Nova may not run in the sender's Claude Code, so its new session is its own Codex inbox.
     [['resume', 'failed', 'codex_app_failed'], ['new_session', 'skipped', 'client_not_allowed'], ['new_session', 'handed_off', null]]);
   assert.match(result.ladder.steps[0].why, /Codex 桌面端/);
+});
+
+test('the conversation an ask was handed to answers for its recipient, whichever FLA its task was entered as', async () => {
+  let handed;
+  const desktop = fakeDesktop({ onHandOff: ({ message }) => { handed = /messageId="([^"]+)"/.exec(message)[1]; } });
+  const f = fixture({ desktop });
+  const pending = f.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code',
+    to: 'Nova Lane', body: '看一下顶栏版本号', timeoutSeconds: 30 });
+  while (!handed) await new Promise(resolve => setTimeout(resolve, 5));
+  // Another conversation of the lead is not where the ask went.
+  await assert.rejects(f.roundtable.replyMessage({ taskContextToken: 'token-milo-elsewhere', sourceApplication: 'codex',
+    messageId: handed, body: '不该送达' }), /No such message for this Agent/);
+  const sent = await f.roundtable.replyMessage({ taskContextToken: 'token-inbox-as-lead', sourceApplication: 'codex',
+    messageId: handed, body: '顶栏显示 v0.25.2，没有红点' });
+  assert.equal(sent.status, 'sent');
+  const result = await pending;
+  assert.deepEqual([result.status, result.reply, result.via], ['answered', '顶栏显示 v0.25.2，没有红点', 'codex:inbox']);
+  const reply = f.store.messages(result.threadId).find(message => message.kind === 'reply');
+  assert.deepEqual([reply.from_agent, reply.from_name, reply.from_session], ['reviewer-1', 'Nova Lane', INBOX],
+    'the answer is recorded as the recipient, from the conversation it was handed to');
 });

@@ -21,7 +21,9 @@ async def read_employee_work_log(store, space_id, project_id, agent_id):
     for row in rows:
         record = json.loads(row['record_json'])
         checkpoint = record.get('checkpoint') or {}
-        log = checkpoint.get('work_log') or {}
+        # The latest amendment is the current outcome; the original stays in the record (rec#85).
+        current = (checkpoint.get('amendments') or [checkpoint])[-1]
+        log = current.get('work_log') or {}
         result.append({
             'task_context_token': record['token'],
             'source_application': record['source_application'],
@@ -29,7 +31,7 @@ async def read_employee_work_log(store, space_id, project_id, agent_id):
             'created_at': record['created_at'],
             'status': (log.get('status', 'unreported') if row['completed']
                        else 'running' if row.get('current') else 'incomplete'),
-            'summary': log.get('summary') or checkpoint.get('reason')
+            'summary': log.get('summary') or current.get('reason')
                 or 'The employee has not submitted a work summary for this task.',
             'memory_updated': bool(row.get('memory_updated')),
         })

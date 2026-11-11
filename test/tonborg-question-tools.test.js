@@ -145,20 +145,20 @@ test('an item that changed since the AI explained it is refused before anything 
 });
 
 test('an option counts as agreeing with Tonborg only when it is the guessed action, and must mean the same answer', async t => {
-  const f = fixture(t, { said: '保持当前记录' });
+  const f = fixture(t, { said: '保留' });
   const asked = f.ask('entity:fridays', 'Deploy on Fridays', 'drop');
-  await assert.rejects(answer(f.app, { ...call, decisionId: asked.id, answer: 'drop', personWords: '保持当前记录' }),
+  await assert.rejects(answer(f.app, { ...call, decisionId: asked.id, answer: 'drop', personWords: '保留' }),
     /is the answer keep, not drop/);
   assert.equal(changes(f), 0);
   // Tonborg guessed drop; keeping it is a down vote, and the real check agrees.
-  const kept = await answer(f.app, { ...call, decisionId: asked.id, answer: 'keep', personWords: '保持当前记录' });
+  const kept = await answer(f.app, { ...call, decisionId: asked.id, answer: 'keep', personWords: '保留' });
   assert.equal(kept.vote, 'down');
   assert.equal(f.service.store().get('s', asked.id).feedback.vote, 'down');
 
   // An edit option on an edit guess is up, and the answered question does not come back.
-  const g = fixture(t, { said: '补充或纠正信息：只在周一到周四部署' });
+  const g = fixture(t, { said: '改一下：只在周一到周四部署' });
   const edited = g.ask('relationship:deploy', 'Deploy on Fridays', 'edit');
-  const result = await answer(g.app, { ...call, decisionId: edited.id, answer: 'edit', personWords: '补充或纠正信息',
+  const result = await answer(g.app, { ...call, decisionId: edited.id, answer: 'edit', personWords: '改一下',
     newText: '只在周一到周四部署' });
   assert.equal(result.vote, 'up');
   assert.deepEqual(await listed(g), []);
@@ -244,4 +244,37 @@ test('Tonborg named without a project goes through every question the person see
   g.ask('entity:p-item', 'Project P item', 'keep');
   g.ask('entity:q-item', 'Project Q item', 'drop', { project: 'q' });
   assert.deepEqual(await listed(g), ['Project P item']);
+});
+
+test('each question comes as one plain sentence with two choices, the guess first, written without Tonborg\'s words', async t => {
+  const f = fixture(t);
+  f.ask('entity:fridays', 'Deploy on Fridays', 'drop');
+  const edit = f.ask('entity:vague', '那个之前说的方案', 'edit');
+  const { questions } = await list(f.app, call);
+  assert.deepEqual(questions.map(({ question, options, answers }) => ({ question, options, answers })), [
+    { question: '「那个之前说的方案」我拿不准，先改一下再留吗？', options: ['改一下', '原样保留'], answers: ['edit', 'keep'] },
+    { question: '「Deploy on Fridays」我拿不准，丢掉吗？', options: ['不要', '保留'], answers: ['drop', 'keep'] }]);
+  const one = await list(f.app, { ...call, decisionId: edit.id });
+  assert.deepEqual([one.question, one.options, one.answers], ['「那个之前说的方案」我拿不准，先改一下再留吗？', ['改一下', '原样保留'], ['edit', 'keep']]);
+  assert.match(one.next, /custom input last \(其他\)/);
+  assert.ok(!JSON.stringify({ questions, one }).includes(SECRET));
+});
+
+test('其他: the person\'s own words are recorded as said, the item is not touched and the question is not asked again', async t => {
+  const f = fixture(t, { said: '这条先放着，等下周发版再说' });
+  const asked = f.ask('entity:fridays', 'Deploy on Fridays', 'drop');
+  const result = await answer(f.app, { ...call, decisionId: asked.id, answer: 'other', personWords: '这条先放着，等下周发版再说' });
+  assert.deepEqual([result.status, result.answer, result.vote], ['done', 'other', 'down']);
+  // One relayed vote and nothing else: no confirmation, no change of the item.
+  assert.deepEqual(f.sent.map(sent => sent.path), ['/api/judgment/feedback']);
+  assert.equal(f.revisions.length, 0);
+  const feedback = f.service.store().get('s', asked.id).feedback;
+  assert.deepEqual([feedback.vote, feedback.reason], ['down', '你说：「这条先放着，等下周发版再说」']);
+  assert.deepEqual(await listed(f), []);
+  // Words that are one of the two choices are that choice, never other.
+  const g = fixture(t, { said: '保留' });
+  const again = g.ask('entity:fridays', 'Deploy on Fridays', 'drop');
+  await assert.rejects(answer(g.app, { ...call, decisionId: again.id, answer: 'other', personWords: '保留' }), /is the answer keep, not other/);
+  // newText is only for edit.
+  await assert.rejects(answer(g.app, { ...call, decisionId: again.id, answer: 'other', personWords: '保留', newText: 'x' }), /newText is only for edit/);
 });

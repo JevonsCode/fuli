@@ -14,6 +14,7 @@ import { CLIENT_LABELS, deliveryState } from './delivery-state.js';
 
 import { RoundtableError } from '../errors.js';
 import { assertRoundtableHost } from '../host.js';
+import { nearNames } from './near-names.js';
 import { WAKE_CLIENTS, resolveClientCommand, sessionTurnRunning, sessionWorkingDirectory, wakeAgent } from './wake.js';
 import { createWakeLadder, standInAllowed } from './wake-ladder.js';
 import { enterStandIn, recordStandInReply, standInState } from './stand-in.js';
@@ -61,8 +62,14 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   async function agentById(agentId) {
     return (await agents()).find((agent) => agent.agentId === agentId) ?? null;
   }
+  const agentNames = agent => [agent.profile.displayName, agent.profile.name];
+  function didYouMean(needle, all) {
+    const near = nearNames(needle, all, agentNames);
+    return near.length ? ` Did you mean ${near.map(agent => `${label(agent)} (${agent.agentId})`).join(', ')}? Ask the person before using it.` : '';
+  }
   async function recipient(to) {
-    const needle = String(to ?? '').trim().replace(/^@\{?|\}$/g, '');
+    // find_agents' address (local:<agentId>) is accepted as it is (rec#110).
+    const needle = String(to ?? '').trim().replace(/^@\{?|\}$/g, '').replace(/^local:/, '');
     const all = await agents();
     const exact = all.find((agent) => agent.agentId === needle || agent.agentId === decodeURIComponent(needle));
     if (exact) return exact;
@@ -74,7 +81,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     if (named.length === 1) return named[0];
     throw validation(named.length
       ? `More than one Agent is named "${needle}"; use its agentId: ${named.map((agent) => agent.agentId).join(', ')}`
-      : `No active Agent matches "${needle}". Call find_agents first.`);
+      : `No active Agent matches "${needle}".${didYouMean(needle, all)} Call find_agents first.`);
   }
 
   // An Agent addressed by ID who works only in another project is a cross-project
@@ -138,7 +145,11 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       recentConversations: await conversations(agent, personalProjectId)
     })));
     const remote = peer ? await peer.remoteAgents({ query: needle, occupation, capability, projectId }).catch(() => null) : null;
+    // Nothing matched what the person typed: the closest names, as a question to them (rec#110).
+    const near = !local.length && needle && !project ? nearNames(needle, await agents(), agentNames) : [];
     return { agents: local, ...(workUnavailable ? { workUnavailable } : {}),
+      ...(near.length ? { didYouMean: near.map(agent => ({ agentId: agent.agentId, name: label(agent) })),
+        didYouMeanGuidance: 'No Agent has that name; ask the person whether they meant one of these before messaging it.' } : {}),
       ...(project ? { project: { projectId: personalProjectId, address: `project:${personalProjectId}`, reason: project.reason } } : {}),
       ...(remote ? { remoteAgents: remote.agents, ...(remote.unavailable ? { remoteUnavailable: remote.unavailable } : {}) } : {}),
       guidance: remote
@@ -619,9 +630,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   function taskScopedAsk(me, messageId) {
     const ask = store.getMessage(messageId);
     const thread = ask && store.getThread(ask.thread_id);
-    if (!ask || ask.kind !== 'ask' || !me.agent || !me.projectId || thread?.space_id !== spaceId()
-      || !((ask.from_agent === me.agent.agentId && thread.project_id === me.projectId)
-        || (ask.to_agent === me.agent.agentId && messageProject(ask) === me.projectId))) {
+    if (!ask || ask.kind !== 'ask' || !me.agent || thread?.space_id !== spaceId()
+      || !((ask.from_agent === me.agent.agentId && sameProject(thread.project_id, me.projectId))
+        || (ask.to_agent === me.agent.agentId && sameProject(messageProject(ask), me.projectId)))) {
       throw validation('No such message for this Agent in the current project');
     }
     return ask;
@@ -672,17 +683,26 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       if (!standInInScope(ask, me)) throw validation('No such message for this Agent in the current project');
       return recordStandInReply({ store, ask, executor: { client: me.client, session: me.session }, body, idFactory });
     }
-    if (!ask || ask.kind !== 'ask' || !me.agent || ask.to_agent !== me.agent.agentId
-        || messageProject(ask) !== me.projectId) throw validation('No such message for this Agent');
+    // The conversation FULI handed the ask to answers for its recipient, whichever
+    // FLA its task was entered as: a member's desktop conversation enters as the
+    // project lead it reports to, and its answer was refused (rec#111).
+    const handedHere = ask?.kind === 'ask' && Boolean(me.session) && ask.to_client === me.client && ask.to_session === me.session
+      && ask.from_session !== me.session;
+    // The store reads by ID only: an ask of another space is never this task's to answer.
+    if (!ask || ask.kind !== 'ask' || !(handedHere || (me.agent && ask.to_agent === me.agent.agentId))
+        || store.getThread(ask.thread_id)?.space_id !== spaceId()
+        || !sameProject(messageProject(ask), me.projectId)) throw validation('No such message for this Agent');
+    const answering = me.agent && ask.to_agent === me.agent.agentId
+      ? { agentId: me.agent.agentId, name: label(me.agent) } : { agentId: ask.to_agent, name: ask.to_name };
     if (ask.target_project_id && ask.target_project_id !== store.getThread(ask.thread_id)?.project_id) {
-      if (await host.projectLeadId(ask.target_project_id) !== me.agent.agentId) throw validation('The target project lead changed');
+      if (await host.projectLeadId(ask.target_project_id) !== answering.agentId) throw validation('The target project lead changed');
     }
     if (ask.status === 'answered') throw validation('This message was already answered');
     if (ask.from_agent?.startsWith('peer:')) throw validation('A remote device message is answered by its delivery, not from the inbox');
     store.updateMessage(ask.id, { status: 'answered', via: `${me.client}:inbox` });
     const to = { agentId: ask.from_agent, name: ask.from_name, client: ask.from_client, session: ask.from_session };
     store.appendMessage(ask.thread_id, { id: idFactory(), kind: 'reply', body, status: 'sent', inReplyTo: ask.id,
-      via: `${me.client}:inbox`, from: { agentId: me.agent.agentId, name: label(me.agent), client: me.client, session: me.session },
+      via: `${me.client}:inbox`, from: { ...answering, client: me.client, session: me.session },
       to, delivery: replyInbox.pendingFor(to) });
     return { status: 'sent', threadId: ask.thread_id };
   }
@@ -767,6 +787,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       ? { token: env.FULI_ROUNDTABLE_DELEGATION, sessionId: sessionId ?? null } : null;
   }
 
+  // A task with no project (a global assistant) reaches the messages of no project.
+  const sameProject = (left, right) => (left ?? null) === (right ?? null);
   const messageProject = message => message.target_project_id ?? store.getThread(message.thread_id)?.project_id ?? null;
   const attentionInbox = createAttentionInbox({ store, spaceId });
   const replyInbox = createReplyInbox({ store, spaceId });

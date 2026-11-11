@@ -16,7 +16,7 @@ type ReviewList = ReturnType<typeof useReviewList>
 
 const group = (list: ReviewList, name: 'questions' | 'pending' | 'confirmed') => list.list[name].map((line: ReviewLine) => ({
   key: line.key, text: oneLine(line.text, LINE_TEXT * 2), projectId: line.projectId, proposer: line.proposer,
-  question: line.review?.question ?? null, guess: line.review?.guess ?? null,
+  question: line.review?.ask ?? null, guess: line.review?.guess ?? null,
 }))
 
 export function decisionPageTools(list: ReviewList) {
@@ -24,7 +24,7 @@ export function decisionPageTools(list: ReviewList) {
     definePageTool({
       name: 'fuli_list_decisions',
       title: 'List what waits for the person',
-      description: 'The 待决策 list: Tonborg\'s questions with its guess, pending knowledge, and what Tonborg confirmed. Suggest; the person decides each line on this page.',
+      description: 'The 待决策 list: Tonborg\'s questions (one yes/no sentence each, its guess first), pending knowledge, and what Tonborg confirmed. Suggest; the person decides each line on this page.',
       input: z.object({}),
       routes: [],
       readOnly: true,
