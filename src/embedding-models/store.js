@@ -21,6 +21,8 @@ const RETIRED_PREFIX = '.retired-';
 // Windows refuses to move or delete a file something still maps or scans; it lets go within moments.
 const HELD = { maxRetries: 20, retryDelay: 100 };
 const HELD_CODES = new Set(['EPERM', 'EBUSY', 'EACCES', 'ENOTEMPTY']);
+// What the file system says when it will not take a file.
+const LOCAL_WRITE_CODES = new Set(['EACCES', 'EPERM', 'EROFS', 'ENOSPC', 'EDQUOT', 'EBUSY', 'ENOTEMPTY', 'EMFILE', 'ENFILE']);
 // A download that sends nothing for this long is given up.
 const IDLE_TIMEOUT_MS = 60_000;
 
@@ -67,6 +69,8 @@ export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fe
         return;
       } catch (error) {
         if (signal?.aborted) throw error;
+        const local = notWritten(error);
+        if (local) throw local;
         state.receivedBytes = before;
         last = error?.code === 'embedding_model_altered' ? error.code : (error?.message ?? String(error));
         if (error?.code === 'embedding_model_altered') continue;
@@ -130,6 +134,12 @@ export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fe
     }
   }
 
+  // This computer refused the file: a full disk, or a folder FULI may not write. Trying another
+  // source cannot help, and the person is told it is the disk, not the network (rec#117).
+  const notWritten = error => (LOCAL_WRITE_CODES.has(error?.code)
+    ? new ApplicationError('embedding_model_not_written', `The model could not be written on this computer (${error.code}).`, { status: 507 })
+    : null);
+
   const altered = () => Object.assign(new Error('digest mismatch'), { code: 'embedding_model_altered' });
 
   // Downloads a catalog model whole. Answers when it is on disk; one download per model at a time.
@@ -170,7 +180,8 @@ export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fe
       discard(retired);
       downloads.delete(model.id);
       return { id: model.id, bytes: state.totalBytes };
-    } catch (error) {
+    } catch (cause) {
+      const error = notWritten(cause) ?? cause;
       discard(partial);
       downloads.set(model.id, { ...state, status: 'failed', reason: error?.code ?? 'embedding_model_unavailable' });
       throw error;
