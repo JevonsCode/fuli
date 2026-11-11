@@ -108,34 +108,6 @@ export class GraphitiProviderClient {
     const query = new URLSearchParams({ personal_space_id, personal_project_id });
     return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}?${query}`, { capability, signal });
   }
-  prepareProjectAgentWorkerRun(input, { signal } = {}) {
-    return this.#workerHostRequest('/v1/project-agent-worker-runs', { method: 'PUT', body: input, signal });
-  }
-  claimProjectAgentWorkerStart(runId, scope, { capability, signal } = {}) {
-    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/start-claim`, {
-      capability, signal, method: 'POST', body: scope
-    });
-  }
-  sealProjectAgentWorkerSession(runId, input, { capability, signal } = {}) {
-    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/session`, {
-      capability, signal, method: 'PUT', body: input
-    });
-  }
-  closeProjectAgentWorkerRun(runId, input, { capability, signal } = {}) {
-    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/close`, {
-      capability, signal, method: 'POST', body: input
-    });
-  }
-  dispatchProjectAgentWorkerPrompt(runId, input, { capability, signal } = {}) {
-    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/dispatch`, {
-      capability, signal, method: 'POST', body: input
-    });
-  }
-  recordProjectAgentWorkerResult(runId, input, { capability, signal } = {}) {
-    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/result`, {
-      capability, signal, method: 'POST', body: input
-    });
-  }
   listProjectAgentTaskRuns({ personalSpaceId, personalProjectId, taskId, limit = 50, cursor }) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId, personal_project_id: personalProjectId,
       limit: String(limit) });

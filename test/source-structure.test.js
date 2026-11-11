@@ -76,10 +76,6 @@ const CAPTURE_SETTINGS_CALL_SITES = new Map([
   ['src/setup/first-run-capture.js', ["import { CapturePolicyStore, capturePolicyPathForRuntime } from '../graphiti/capture-policy.js';",
     'return createCaptureOnboarding(capturePolicyStoreFor(paths));', 'const store = capturePolicyStoreFor(paths);',
     'function capturePolicyStoreFor(paths) {', 'return new CapturePolicyStore(capturePolicyPathForRuntime(paths.graphRuntimeConfigPath));']],
-  // The worker host only links a worker's session to the session that started it.
-  ['src/server/worker-plan-runtime.js', [
-    "import { SessionCapturePauseStore, sessionCapturePausePathForRuntime } from '../graphiti/capture-session-pause.js';",
-    'const sessionPauses = new SessionCapturePauseStore(sessionCapturePausePathForRuntime(runtimeConfigPath));']],
   ['src/graphiti/federated-application.js', [
     'CapturePolicyStore,', "} from './capture-policy.js';", 'capturePolicyStore,',
     'const policyStore = capturePolicyStore ?? new CapturePolicyStore(', 'capturePolicyStore: policyStore,',

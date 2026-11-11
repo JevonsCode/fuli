@@ -24,7 +24,6 @@ import {
   lanServerAuthorities
 } from './server/lan-access.js';
 import { createServerApplication } from './server/application-lifecycle.js';
-import { createWorkerPlanRuntime } from './server/worker-plan-runtime.js';
 import { listenFetchableServer } from './server/listen.js';
 import { resolveSetupPaths } from './setup/paths.js';
 import { createSystemService } from './system/system-service.js';
@@ -174,11 +173,10 @@ export async function createServer(options = {}) {
   let stopClientLinkUpdates = () => {};
   let stopOccupationPluginUpdates = () => {};
   let peer = null;
-  let workerRuntime = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => stopToolSuggestions(), () => stopDuplicateMerger(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => workerRuntime?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
+      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => stopToolSuggestions(), () => stopDuplicateMerger(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
         () => releaseDataDirectory()]) {
         try {
           const pending = close();
@@ -220,13 +218,6 @@ export async function createServer(options = {}) {
           previewDataFormats: dataFormatMigrations ? () => dataFormatMigrations.preview() : null
         })
       : null);
-    if (options.workerRuntimeBindings !== undefined) {
-      workerRuntime = await createWorkerPlanRuntime({
-        runtimeConfigPath: options.runtimeConfigPath ?? localOptions.runtimeConfigPath,
-        workerRuntimeBindings: options.workerRuntimeBindings, provider: application.personal,
-        leases: options.workerRuntimeLeases, env: options.env ?? process.env
-      });
-    }
   } catch (error) {
     // The owned application can already hold local databases before system
     // construction or configuration validation fails, even without a listener.
@@ -349,7 +340,6 @@ export async function createServer(options = {}) {
     url: `http://${authority}`,
     lanUrls: lanEnabled ? lanConsoleUrls(lanAddresses, address.port) : [],
     app: application,
-    ...(workerRuntime ? { workerPlanHost: workerRuntime.host } : {})
   };
 }
 
