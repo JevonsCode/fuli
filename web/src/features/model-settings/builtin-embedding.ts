@@ -44,5 +44,9 @@ export const downloadPercent = (state: BuiltinDownload) =>
   (state.totalBytes > 0 ? Math.min(100, Math.floor((state.receivedBytes / state.totalBytes) * 100)) : 0)
 
 // Why a download was not kept, in the person's words.
-export const downloadFailure = (reason: string | null) =>
-  t(reason === 'embedding_model_altered' ? 'modelSettings.builtin.failedAltered' : 'modelSettings.builtin.failedUnavailable')
+const FAILURES: Record<string, string> = {
+  embedding_model_altered: 'modelSettings.builtin.failedAltered',
+  // The disk refused the file (src/embedding-models/store.js); not the network.
+  embedding_model_not_written: 'modelSettings.builtin.failedNotWritten',
+}
+export const downloadFailure = (reason: string | null) => t(FAILURES[reason ?? ''] ?? 'modelSettings.builtin.failedUnavailable')

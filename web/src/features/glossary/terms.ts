@@ -35,7 +35,7 @@ const AI_HELP_TOPICS: readonly (readonly [string, string, AiTaskId | null])[] = 
   ['storage', 'settings.storage.title', 'storage'],
   ['diagnostics', 'settings.diagnostics.title', null],
   ['peer', 'settings.peer.title', 'lan'],
-  ['connections', 'shell.sections.connections', 'connections'],
+  ['connections', 'pages.connections.externalTitle', 'connections'],
   ['decisions', 'shell.sections.askedYou', 'decisions'],
   ['workbench', 'shell.destinations.agents', 'workbench'],
   ['knowledge', 'shell.sections.knowledge', 'knowledge'],

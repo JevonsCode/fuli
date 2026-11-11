@@ -138,7 +138,7 @@ async function refreshConsole() {
   } finally { refreshing.value = false }
 }
 // A newer release is a dot at the version's top-right (Jevons 11-04: not on the mark);
-// the version opens 设置 › 版本, where it installs.
+// the version opens 设置 › 系统 › 版本与更新, where it installs.
 const latestVersion = ref<string | null>(null)
 const versionRequest = new AbortController()
 onMounted(() => {
@@ -189,8 +189,8 @@ watchEffect(() => {
               <span class="app-runtime-dot" aria-hidden="true" />
               <span class="app-runtime-text" :class="{ 'is-visible': !runtimeReady }">{{ t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline') }}</span>
             </span>
-            <!-- The version beside the dot opens 设置 › 版本 (update channel and updates). -->
-            <RouterLink class="app-version" to="/settings?tab=version" draggable="false" data-app-version
+            <!-- The version beside the dot opens 设置 › 系统 › 版本与更新 (update channel and updates). -->
+            <RouterLink class="app-version" to="/settings?tab=system#version" draggable="false" data-app-version
               :aria-label="latestVersion ? t('shell.versionUpdate', { version: FULI_VERSION, latest: latestVersion })
                 : t('shell.versionLink', { version: FULI_VERSION })">v{{ FULI_VERSION }}<span
                 v-if="latestVersion" class="app-version-dot" aria-hidden="true" data-update-dot /></RouterLink>

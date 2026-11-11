@@ -61,7 +61,7 @@ export function useSettingsSearch(root: Ref<HTMLElement | null>, query: Ref<stri
 // Setting keys used in links (the Agent's explain_settings) mapped to the label
 // the page shows, so a link filters the page in the person's own language.
 const SETTING_LABELS: Record<string, string> = {
-  capture: 'settings.behavior.capture',
+  capture: 'settings.groups.capture',
   notifications: 'settings.notifications.title',
   topicPromotion: 'settings.topicPromotion.title',
   flaSlashMenu: 'settings.flaSlashMenu.title',
