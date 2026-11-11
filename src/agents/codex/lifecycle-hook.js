@@ -13,7 +13,6 @@ import { endTurnsObservedAtEntry, refreshCurrentTaskInPlace, settleHeldTurns, ST
 import { transcriptCaptureLedger } from '../../conversations/transcript-capture-gap.js';
 import { transcriptDigest } from '../../conversations/transcript-guard.js';
 import { normalizeCodexRecord, verifyCodexTranscript } from './conversation-transcript.js';
-import { CODEX_REVIEW_OFF_REASON, CODEX_REVIEW_UNVERIFIED_REASON, isCodexReviewCommand, withCodexReviewGuidance } from './review-command.js';
 import { sessionFuliCommandResult, sessionFuliEntryRefusal, sessionFuliOffContext, sessionFuliSessionBegan }
   from '../../conversations/session-fuli-entry.js';
 
@@ -65,10 +64,8 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
   if (!input?.session_id || typeof input.cwd !== 'string' || typeof input.prompt !== 'string') {
     throw new TypeError('Codex task entry requires session, cwd and prompt');
   }
-  const review = isCodexReviewCommand(input.prompt);
-  // A session FULI is off for (rec#5 C3b) gets no task entry, no refresh and no review.
+  // A session FULI is off for (rec#5 C3b) gets no task entry and no refresh.
   const off = await entryRefusal?.();
-  if (off && review) return { decision: 'block', reason: CODEX_REVIEW_OFF_REASON };
   if (off) return { hookSpecificOutput: { hookEventName: event, additionalContext: sessionFuliOffContext(off) } };
   if (codexRefreshTurn(event, input)) return refreshCurrentTaskInPlace(event, input, invoke, CODEX_UNRESOLVED_TURNS,
     { delivery, currentTask, onCurrentTask });
@@ -76,9 +73,8 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: withoutDebugMark(input.prompt).slice(0, 8192),
     sourceApplication: 'codex', sourceSessionId: input.session_id, ...taskSceneInput(withoutDebugMark(input.prompt)) });
   const entry = compactTaskContext(context);
-  const output = await preferenceHookOutput(entry, event, input, delivery, 'codex',
+  return preferenceHookOutput(entry, event, input, delivery, 'codex',
     'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);
-  return review ? withCodexReviewGuidance(output) : output;
 }
 
 export async function runCodexLifecycleHook(args, dependencies = {}) {
@@ -243,10 +239,6 @@ async function closeQuietly(resource) {
 // The cause says whether the hook ran out of time or failed, so a report can
 // tell a slow first start from a broken install without exposing details.
 function codexLifecycleUnavailable(event, input, cause, incomplete = '', recovery = '') {
-  // The person's review line never reaches the model unverified (rec#22).
-  if (event === 'UserPromptSubmit' && isCodexReviewCommand(input?.prompt)) {
-    return { decision: 'block', reason: CODEX_REVIEW_UNVERIFIED_REASON };
-  }
   const warning = `Fuli context is unavailable (${cause}). Continue with the user request; saved context and checkpoint were not verified.${recovery}`;
   // A refresh turn is never told to begin a task for "the current user request".
   if (codexRefreshTurn(event, input)) return { systemMessage: warning, hookSpecificOutput: {
@@ -266,7 +258,7 @@ function codexLifecycleUnavailable(event, input, cause, incomplete = '', recover
 // At the deadline an entry that already wrote its task delivers its token and
 // what is missing (entry-budget.js); otherwise the fallback says what to fetch.
 function codexEntryDeadlineOutput(event, input, budget, cause, recovery = '') {
-  const partial = event === 'UserPromptSubmit' && !isCodexReviewCommand(input?.prompt) ? partialEntryText(budget) : null;
+  const partial = event === 'UserPromptSubmit' ? partialEntryText(budget) : null;
   const output = partial ? { systemMessage: `Fuli task context is partial (${cause}).`,
     hookSpecificOutput: { hookEventName: event, additionalContext: partial } }
     : codexLifecycleUnavailable(event, input, cause, NO_TASK_AT_DEADLINE, recovery);

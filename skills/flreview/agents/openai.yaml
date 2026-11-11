@@ -1,6 +1,0 @@
-interface:
-  display_name: "Fuli Knowledge Review"
-  short_description: "Generate an interactive FULI knowledge review"
-  default_prompt: "Use $flreview to generate my interactive FULI knowledge review."
-policy:
-  allow_implicit_invocation: true

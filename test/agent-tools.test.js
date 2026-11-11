@@ -124,10 +124,6 @@ const NAMES = [
   'list_project_agent_routing_learning',
   'ignore_project_agent_routing_learning',
   'reset_project_agent_routing_learning',
-  'start_knowledge_review',
-  'list_knowledge_review_candidates',
-  'record_knowledge_review_progress',
-  'finish_knowledge_review',
   'list_workflow_candidates',
   'recommend_next_workflow_steps',
   'revise_personal_knowledge',
@@ -171,14 +167,6 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
   assert.match(preferenceEntry.description, /task_knowledge_recall/);
   assert.match(preferenceEntry.description, /never use the full conversational request/i);
 
-  const reviewProgress = tools.find(({ name }) =>
-    name === 'record_knowledge_review_progress'
-  );
-  assert.deepEqual(reviewProgress.inputSchema.properties.outcome.enum, [
-    'confirmed', 'updated', 'invalidated', 'deferred', 'delegated_to_ai'
-  ]);
-  assert.match(reviewProgress.description, /delegated_to_ai.*unknown_unknown/i);
-  assert.doesNotMatch(reviewProgress.description, /skipped/i);
   const reviseKnowledge = tools.find(({ name }) =>
     name === 'revise_personal_knowledge'
   );
@@ -515,12 +503,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       calls.push(['ignore-project-agent-routing-learning', input]),
     resetProjectAgentRoutingLearning: async (input) =>
       calls.push(['reset-project-agent-routing-learning', input]),
-    startKnowledgeReview: async (input) => calls.push(['start-knowledge-review', input]),
-    listKnowledgeReviewCandidates: async (input) =>
-      calls.push(['knowledge-review-candidates', input]),
-    recordKnowledgeReviewProgress: async (input) =>
-      calls.push(['knowledge-review-progress', input]),
-    finishKnowledgeReview: async (input) => calls.push(['finish-knowledge-review', input]),
     listWorkflowCandidates: async (input) => calls.push(['workflow-candidates', input]),
     recommendNextWorkflowSteps: async (input) =>
       calls.push(['workflow-recommendations', input]),
@@ -607,8 +589,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'delete-executor-routing-rule', 'record-project-agent-task-outcome',
     'list-project-agent-routing-learning', 'ignore-project-agent-routing-learning',
     'reset-project-agent-routing-learning',
-    'start-knowledge-review', 'knowledge-review-candidates',
-    'knowledge-review-progress', 'finish-knowledge-review',
     'workflow-candidates', 'workflow-recommendations',
     'get-capture-policy', 'revise-knowledge', 'reassign-knowledge', 'preview-project-action',
     'apply-project-action',

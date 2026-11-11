@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "cursor",
   "version": "1.0.0",
-  "digest": "sha256:a4010856f31ea9f3bea192010945dfd392dabc031ef5bcd81c84ec60d1900d59",
+  "digest": "sha256:779ff6864de5f1519962d34b01df0a9135f909c2929f4e16effd68f081063483",
   "label": "Cursor",
   "command": "cursor",
   "detection": {
@@ -47,10 +47,6 @@
     ]
   },
   "commandSkills": {
-    "review": {
-      "userCommand": "/flreview",
-      "nativeInvocation": "/flreview"
-    },
     "sessionCommand": true
   },
   "configWriter": "cursor-hooks",
