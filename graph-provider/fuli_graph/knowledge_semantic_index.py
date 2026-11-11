@@ -4,7 +4,9 @@ storing the vectors Node computed, and how far the index is.
 A vector is derived data, an index: storing one writes no history and no
 human-change record, and changes no version, lock_version or timestamp. It
 lives on the item, so a permanent delete takes it along. Only the items
-knowledge_index_scan covers are indexed. The text embedded includes the
+knowledge_index_scan covers are indexed, here including those still waiting
+for confirmation, so a search that asks for pending items finds them by
+meaning as well. The text embedded includes the
 item's retrieval terms (rec#92), so storing terms leaves the item pending
 until it is embedded again.
 """
@@ -32,7 +34,7 @@ def _indexed(item_kind: str, record, model: str) -> tuple[bool, str, str]:
 async def pending_semantic_items(store, actor, request: SemanticPendingRequest) -> SemanticPendingPage:
     space = await personal_reader_space(store, actor, request.personal_space_id)
     items = []
-    async for item_kind, record in indexable_from(store, space, request.after):
+    async for item_kind, record in indexable_from(store, space, request.after, include_pending=True):
         indexed, text, text_hash = _indexed(item_kind, record, request.model)
         if indexed:
             continue
@@ -49,7 +51,7 @@ async def semantic_status(store, actor, request: SemanticStatusRequest) -> Seman
     space = await personal_reader_space(store, actor, request.personal_space_id)
     total = done = 0
     for item_kind in ITEM_KINDS:
-        async for record in indexable_items(store, space, item_kind):
+        async for record in indexable_items(store, space, item_kind, include_pending=True):
             total += 1
             done += _indexed(item_kind, record, request.model)[0]
     return SemanticStatus(total=total, done=done)

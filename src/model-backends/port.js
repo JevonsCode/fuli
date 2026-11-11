@@ -46,8 +46,10 @@ const USAGE_NOTES = 'One record per actual model API attempt; requests count dis
 const KEY_REFUSALS = Object.freeze({ secret_store_insecure: 'secret_store_insecure',
   secret_endpoint_mismatch: 'key_endpoint_mismatch', secret_endpoint_unbound: 'key_endpoint_mismatch' });
 
+// builtinEmbed({ model, texts, signal }): the local graph service's own model
+// (adapters/builtin-embeddings.js); null where there is none.
 export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl = modelFetch, wait = delay,
-  now = () => new Date(), timeoutSignal = ms => AbortSignal.timeout(ms) }) {
+  now = () => new Date(), timeoutSignal = ms => AbortSignal.timeout(ms), builtinEmbed = null }) {
   // Endpoints that rejected json_schema output, for this process.
   const promptOnly = new Set();
 
@@ -68,7 +70,8 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     call.target = { id: call.roleConfig.connection, ...loaded.config.connections[call.roleConfig.connection] };
     const adapter = MODEL_ADAPTERS[call.target.protocol];
     if (!approved.supports(adapter)) return { stop: call.stop('configuration', 'unsupported_output') };
-    if (!approved.egress(call.roleConfig.egress)) return { stop: call.stop('refusal', 'egress_not_approved') };
+    // A model on this computer sends nothing out, so no project needs approving for it.
+    if (!adapter.local && !approved.egress(call.roleConfig.egress)) return { stop: call.stop('refusal', 'egress_not_approved') };
     if (!call.target.secretRef) return { adapter, secret: null };
     let secret;
     try {
@@ -255,7 +258,8 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       if (blocked) return stop('budget_exhausted', blocked);
       let result;
       try {
-        result = await adapter.embed({ connection: target, secret, texts: request.texts, signal: timeoutSignal(remainingMs), fetchImpl });
+        result = await adapter.embed({ connection: target, secret, texts: request.texts, signal: timeoutSignal(remainingMs), fetchImpl,
+          builtinEmbed });
       } catch (error) {
         ledger.settleUnknown(pending, { durationMs: now().getTime() - attemptStarted.getTime(), failureReason: 'attempt_error' });
         throw error;
@@ -347,7 +351,9 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     // disabled or no longer allowed the operation allows nothing.
     allowsEgress(request) {
       const settings = this.operationSettings(request.role, request.operation);
-      return Boolean(settings) && egressAllowed(request.texts ? embeddingEgress(request) : request, settings.egress);
+      if (!settings) return false;
+      return MODEL_ADAPTERS[settings.connection.protocol].local === true
+        || egressAllowed(request.texts ? embeddingEgress(request) : request, settings.egress);
     },
     // What Settings shows of the local build behind a role's latest answer
     // on its configured endpoint and model (rec#10 D-32). An observation of

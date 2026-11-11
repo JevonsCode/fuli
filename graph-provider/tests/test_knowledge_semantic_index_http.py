@@ -124,12 +124,16 @@ async def test_pending_lists_unindexed_and_changed_items_with_their_text_and_has
          'hash': semantic_hash('Retro notes\nEdited since')}], 'next': 'entity:e-3'}
     second = (await post(app, '/v1/semantic/pending', {'personal_space_id': SPACE, 'model': MODEL, 'limit': 2,
                                                        'after': 'entity:e-3'})).json()
-    assert [(row['item_kind'], row['item_id']) for row in second['items']] == [
-        ('entity', 'e-4'), ('relationship', 'r-1')]
-    assert second['items'][1]['text'] == 'Ships stop the week before a quarter closes'
-    assert second['next'] is None
+    # An item still waiting for confirmation is indexed too, so a search that asks for pending items finds it by meaning.
+    assert [(row['item_kind'], row['item_id']) for row in second['items']] == [('entity', 'e-4'), ('entity', 'e-5')]
+    assert second['next'] == 'entity:e-5'
+    third = (await post(app, '/v1/semantic/pending', {'personal_space_id': SPACE, 'model': MODEL, 'limit': 2,
+                                                      'after': 'entity:e-5'})).json()
+    assert [(row['item_kind'], row['item_id'], row['text']) for row in third['items']] == [
+        ('relationship', 'r-1', 'Ships stop the week before a quarter closes')]
+    assert third['next'] is None
     status = await post(app, '/v1/semantic/status', {'personal_space_id': SPACE, 'model': MODEL})
-    assert status.json() == {'total': 5, 'done': 1}
+    assert status.json() == {'total': 6, 'done': 1}
 
 
 def test_the_index_reads_only_what_default_search_could_return():

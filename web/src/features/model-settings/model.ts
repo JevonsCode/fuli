@@ -18,8 +18,17 @@ export const SEMANTIC_ROLE = 'semantic'
 export const MODEL_ROLES = ['assistant', 'bole', 'jefa', 'tonborg', SEMANTIC_ROLE] as const
 export type ModelRoleId = typeof MODEL_ROLES[number]
 const EMBEDDING_PROTOCOL = 'openai_embeddings'
+// A model FULI downloaded and runs on this computer (builtin-embedding.ts): chosen in 「内置模型」, never typed in the form.
+export const BUILTIN_EMBEDDING_PROTOCOL = 'builtin_embeddings'
 export const MODEL_PROTOCOLS = ['openai_chat', 'anthropic_messages', 'typesafe_systemone'] as const
-export type ModelProtocol = typeof MODEL_PROTOCOLS[number] | typeof EMBEDDING_PROTOCOL
+export type ModelProtocol = typeof MODEL_PROTOCOLS[number] | typeof EMBEDDING_PROTOCOL | typeof BUILTIN_EMBEDDING_PROTOCOL
+// A built-in model is saved as `id@revision` so new weights rebuild the index; people see the id.
+export const modelName = (connection: { protocol: ModelProtocol; model: string }) =>
+  (connection.protocol === BUILTIN_EMBEDDING_PROTOCOL ? connection.model.split('@')[0]! : connection.model)
+// What serves a connection, in one line: its kind and where it is. A built-in model has no address worth showing.
+export const connectionService = (connection: { protocol: ModelProtocol; endpointHost: string }) =>
+  (connection.protocol === BUILTIN_EMBEDDING_PROTOCOL ? t('modelSettings.protocols.builtin_embeddings')
+    : `${t(`modelSettings.protocols.${connection.protocol}`)} · ${connection.endpointHost}`)
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high'] as const
 
 // A role by the name it goes by now; Astro's stable id is assistant.
@@ -238,7 +247,8 @@ const text = (value: number | null | undefined) => (value === null || value === 
 
 export function roleDraft(payload: ModelRolesPayload, role: ModelRoleId): RoleDraft {
   const view = payload.roles.find(entry => entry.role === role)
-  const connectionId = view?.connection?.id ?? role
+  // The form connects the person's own model service: from a built-in model it starts a connection of its own.
+  const connectionId = view?.connection && view.connection.protocol !== BUILTIN_EMBEDDING_PROTOCOL ? view.connection.id : role
   const budget = view?.budget ?? NEW_ROLE_BUDGET
   const semantic = role === SEMANTIC_ROLE
   return {

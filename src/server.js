@@ -51,6 +51,10 @@ import { createModelRoleSettings } from './model-backends/role-settings.js';
 import { createModelSecretStore } from './model-backends/secret-store.js';
 import { latestEvaluation } from './model-backends/evaluation-record.js';
 import { createClientLinksRegistry } from './client-links/registry.js';
+import { createEmbeddingModels } from './embedding-models/port.js';
+import { isLoopbackUrl } from './external-knowledge/connectors/response-values.js';
+import { createEmbeddingModelRegistry } from './embedding-models/registry.js';
+import { createEmbeddingModelStore, embeddingModelsDirectory } from './embedding-models/store.js';
 import { createAgentDelegation } from './agent-delegation/port.js';
 import { createCodexFlaPromptSync } from './agents/codex/fla-prompts.js';
 import { readFlaMenuEntries } from './graphiti/fla-menu-reader.js';
@@ -171,12 +175,13 @@ export async function createServer(options = {}) {
   let semanticIndexer = null;
   let retrievalTerms = null;
   let stopClientLinkUpdates = () => {};
+  let stopEmbeddingModelUpdates = () => {};
   let stopOccupationPluginUpdates = () => {};
   let peer = null;
   function closeResources() {
     resourcesClosing ??= (async () => {
       const failures = [];
-      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => stopToolSuggestions(), () => stopDuplicateMerger(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
+      for (const close of [() => stopJudgment(), () => stopDreaming(), () => stopRetrospectives(), () => stopToolSuggestions(), () => stopDuplicateMerger(), () => semanticIndexer?.stop(), () => retrievalTerms?.close(), () => stopClientLinkUpdates(), () => stopEmbeddingModelUpdates(), () => stopOccupationPluginUpdates(), () => peer?.close(), () => system?.close?.(), () => agentDelegation?.close(), () => runtime.close(),
         () => releaseDataDirectory()]) {
         try {
           const pending = close();
@@ -301,6 +306,21 @@ export async function createServer(options = {}) {
   semanticIndexer = startSemanticIndexer({ app: application,
     ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
   application.semanticIndexer = semanticIndexer;
+  // Built-in embedding models: the catalog, the downloads and which one search uses.
+  // Offered only with a graph service on this computer (local-runtimes.js): elsewhere it cannot read the files.
+  const embeddingModelRegistry = options.embeddingModelRegistry ?? (localOptions.runtimeConfigPath && modelRoleSettings
+    && isLoopbackUrl(application.config.personal.providerUrl)
+    ? createEmbeddingModelRegistry({ statePath: resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).embeddingModelsPath })
+    : null);
+  application.embeddingModels = embeddingModelRegistry && createEmbeddingModels({
+    registry: embeddingModelRegistry,
+    store: options.embeddingModelStore
+      ?? createEmbeddingModelStore({ directory: embeddingModelsDirectory(dirname(localOptions.runtimeConfigPath)) }),
+    modelBackends: application.modelBackends, roleSettings: modelRoleSettings,
+    unload: () => application.personal.unloadBuiltinEmbeddings(), fillIndex: () => { void semanticIndexer.runNow(); } });
+  stopEmbeddingModelUpdates = embeddingModelRegistry?.startAutoUpdate({
+    onError: (error) => console.warn(`The embedding model catalog was not updated: ${error?.message ?? error}`)
+  }) ?? (() => {});
   retrievalTerms = createTermsRunner({ app: application,
     ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
   application.retrievalTerms = retrievalTerms;

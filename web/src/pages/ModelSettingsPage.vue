@@ -6,6 +6,7 @@ import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import PageOutline from '@/components/PageOutline.vue'
 import { Button } from '@/components/ui/button'
+import BuiltinEmbeddingDialog from '@/features/model-settings/BuiltinEmbeddingDialog.vue'
 import DreamingCard from '@/features/model-settings/DreamingCard.vue'
 import { linkedModelDetails, type ModelDetailsPart } from '@/features/model-settings/details-link'
 import ModelList from '@/features/model-settings/ModelList.vue'
@@ -47,6 +48,8 @@ const loading = ref(true)
 const loadError = ref('')
 const editing = ref<ModelRoleId | null>(null)
 const details = ref<ModelRoleId | null>(null)
+// 「内置模型」 of 语义搜索: the models FULI downloads and runs on this computer.
+const builtinOpen = ref(false)
 const stale = ref(false)
 // The role whose just-saved model is being tested.
 const testing = ref<ModelRoleId | null>(null)
@@ -199,7 +202,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="model-use-grid">
             <ModelRoleCard :view="view(SEMANTIC_ROLE)" :locked="locked" :editing="editing === SEMANTIC_ROLE"
-              @edit="edit(SEMANTIC_ROLE)" @details="details = SEMANTIC_ROLE" @checked="load()" />
+              @edit="edit(SEMANTIC_ROLE)" @details="details = SEMANTIC_ROLE" @checked="load()" @builtin="builtinOpen = true" />
             <ModelRoleCard :view="view('assistant')" :locked="locked" :editing="editing === 'assistant'"
               @edit="edit('assistant')" @details="details = 'assistant'" @checked="load()" />
             <DreamingCard :status="taskState(payload, 'dreaming')" :model="astroModel" @edit="edit('assistant')" @checked="load()" />
@@ -216,6 +219,8 @@ onBeforeUnmount(() => {
 
         <ModelUseDetails :view="detailsView" :payload="payload" :history-version="historyVersion" :linked-part="linkedPart"
           @close="closeDetails()" @edit="edit(details!)" @trust-saved="trustSaved" @changed="settingsChanged()" />
+        <BuiltinEmbeddingDialog :open="builtinOpen" @close="builtinOpen = false" @changed="settingsChanged()"
+          @own="builtinOpen = false; edit(SEMANTIC_ROLE)" />
         <ModelRoleDialog :role="editing" :payload="payload" :projects="projects"
           @close="editing = null" @saved="saved" @conflict="conflict" />
       </template>

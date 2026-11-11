@@ -18,7 +18,16 @@ export const MODEL_BACKEND_ROLES = Object.freeze(['assistant', 'bole', 'jefa', '
 export const SEMANTIC_ROLE = 'semantic';
 export const KNOWLEDGE_EMBEDDING_OPERATION = 'knowledge_embedding';
 const EMBEDDING_PROTOCOL = 'openai_embeddings';
-export const MODEL_BACKEND_PROTOCOLS = Object.freeze(['openai_chat', 'anthropic_messages', 'typesafe_systemone', EMBEDDING_PROTOCOL]);
+// A model from FULI's catalog, downloaded and run by the graph service on this
+// computer (src/embedding-models): no endpoint of the person's, no key, no
+// price, and nothing leaves the computer. Its connection names the model by
+// its catalog id; the endpoint is this fixed name for the local graph
+// service and is never fetched.
+export const BUILTIN_EMBEDDING_PROTOCOL = 'builtin_embeddings';
+export const BUILTIN_EMBEDDING_ENDPOINT = 'http://127.0.0.1/builtin-embeddings';
+const EMBEDDING_PROTOCOLS = new Set([EMBEDDING_PROTOCOL, BUILTIN_EMBEDDING_PROTOCOL]);
+export const MODEL_BACKEND_PROTOCOLS = Object.freeze(['openai_chat', 'anthropic_messages', 'typesafe_systemone', EMBEDDING_PROTOCOL,
+  BUILTIN_EMBEDDING_PROTOCOL]);
 export const OPERATION_PATTERN = /^[a-z][a-z0-9_.-]{0,63}$/;
 
 const CONFIG_VERSION = 1;
@@ -114,6 +123,10 @@ function normalizeConnection(value, label) {
   if (!secretRef && KEYED_PROTOCOLS.has(value.protocol)) {
     throw new TypeError(`${label}.secretRef is required for ${value.protocol}`);
   }
+  if (value.protocol === BUILTIN_EMBEDDING_PROTOCOL && (value.endpoint !== BUILTIN_EMBEDDING_ENDPOINT || secretRef
+    || value.headers != null || value.pricing != null)) {
+    throw new TypeError(`${label} is a built-in model: its endpoint is ${BUILTIN_EMBEDDING_ENDPOINT} and it takes no key, headers or prices`);
+  }
   const reasoningEffort = value.reasoningEffort ?? null;
   if (reasoningEffort !== null && (value.protocol !== 'openai_chat' || !REASONING_EFFORTS.includes(reasoningEffort))) {
     throw new TypeError(`${label}.reasoningEffort is only for openai_chat and must be one of ${REASONING_EFFORTS.join(', ')}`);
@@ -180,12 +193,12 @@ function normalizeRole(value, label, connections, role) {
   if (!Object.hasOwn(connections, connection)) {
     throw new TypeError(`${label}.connection names a missing connection: ${connection}`);
   }
-  const embeds = connections[connection].protocol === EMBEDDING_PROTOCOL;
+  const embeds = EMBEDDING_PROTOCOLS.has(connections[connection].protocol);
   if (role === SEMANTIC_ROLE && !embeds) {
-    throw new TypeError(`${label}.connection must use ${EMBEDDING_PROTOCOL}: semantic search turns text into vectors and cannot use a chat model`);
+    throw new TypeError(`${label}.connection must use ${EMBEDDING_PROTOCOL} or ${BUILTIN_EMBEDDING_PROTOCOL}: semantic search turns text into vectors and cannot use a chat model`);
   }
   if (role !== SEMANTIC_ROLE && embeds) {
-    throw new TypeError(`${label}.connection uses ${EMBEDDING_PROTOCOL}, which only semantic search takes; a built-in Agent needs a chat model`);
+    throw new TypeError(`${label}.connection uses ${connections[connection].protocol}, which only semantic search takes; a built-in Agent needs a chat model`);
   }
   const allowedOperations = uniqueTextArray(value.allowedOperations, `${label}.allowedOperations`, MAX_OPERATIONS);
   if (allowedOperations.some(operation => !OPERATION_PATTERN.test(operation))) {

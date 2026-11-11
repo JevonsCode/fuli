@@ -1,5 +1,5 @@
 import { t } from '@/i18n'
-import { modelGuideUrl, roleName, type ModelRoleHealth, type ModelRoleId, type ModelRoleView, type ModelRolesPayload } from './model'
+import { connectionService, modelGuideUrl, modelName, roleName, type ModelRoleHealth, type ModelRoleId, type ModelRoleView, type ModelRolesPayload } from './model'
 import { latestHealth } from './model-health'
 
 // The model center (11-06): every connected model once with who uses
@@ -41,6 +41,8 @@ export interface ModelInUse {
   id: string
   model: string
   service: string
+  // The name people read (a built-in model without its revision); `model` is what is saved and tested.
+  label: string
   uses: { use: ModelUseId; on: boolean }[]
   // Whether it works now, from the roles that are on; null when none of them has a record.
   health: ModelRoleHealth | null
@@ -54,8 +56,8 @@ export function modelsInUse(payload: ModelRolesPayload): ModelInUse[] {
   for (const view of payload.roles) {
     const connection = view.connection
     if (!connection) continue
-    const entry = models.get(connection.id) ?? { id: connection.id, model: connection.model,
-      service: `${t(`modelSettings.protocols.${connection.protocol}`)} · ${connection.endpointHost}`, uses: [], health: null, checkRole: null }
+    const entry = models.get(connection.id) ?? { id: connection.id, model: connection.model, label: modelName(connection),
+      service: connectionService(connection), uses: [], health: null, checkRole: null }
     const on = view.state === 'enabled'
     entry.uses.push({ use: view.role, on })
     if (on) {

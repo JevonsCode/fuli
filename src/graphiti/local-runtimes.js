@@ -26,6 +26,7 @@ import { createAgentAvatars } from '../agent-avatars/port.js';
 import { createProjectChangeLog } from '../project-change-log/port.js';
 import { createPersonProfile } from '../person-profile/port.js';
 import { createProjectOrganizing } from '../project-organizing/port.js';
+import { isLoopbackUrl } from '../external-knowledge/connectors/response-values.js';
 import { entryPromptRecords } from '../agent-delegation/entry-prompts.js';
 import { createWorkSurfaces } from '../work-surfaces/port.js';
 import { createOldDataShelf } from '../old-data/port.js';
@@ -82,7 +83,11 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
     openTerminal: openTerminalWindow,
     reveal: revealPath
   });
-  app.modelBackends = openModelBackendRuntime(paths);
+  // A built-in embedding model runs in the local graph service (src/embedding-models).
+  // Only a graph service on this computer: one elsewhere would receive the texts, and the
+  // built-in protocol asks for no project approval because nothing is meant to leave.
+  app.modelBackends = openModelBackendRuntime(paths, {
+    builtinEmbed: isLoopbackUrl(providerIdentity) ? input => app.personal.builtinEmbed(input) : null });
   ({ trust: app.modelTrust, history: app.modelSettingsHistory } = openRoleTrustAndHistory(paths, app.modelBackends));
   attachJudgmentRuntime(app, paths);
   app.roleSuggestions = openRoleSuggestionLog(paths, { recoveryGate: app.knowledgeRecoveryGate });

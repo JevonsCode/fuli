@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     neo4j_password: str = Field(min_length=8)
     neo4j_database: str = 'neo4j'
     embedding_dim: int = 384
+    # Where Node keeps the embedding models a person downloaded (builtin_embedding.py);
+    # unset where the provider cannot read this computer's files.
+    embedding_models_dir: str | None = None
     # Cosine of the local lexical-hash embedding at which a tag is proposed as a
     # similar candidate; it is never merged. Unrelated random names stay below it
     # (measured in test_knowledge_tags_http.py).
