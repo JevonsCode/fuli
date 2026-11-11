@@ -517,15 +517,6 @@ export class GraphitiProviderClient {
       method: 'PUT', body: input
     });
   }
-  getProjectAgentRecruitmentPolicy(personalSpaceId) {
-    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
-    return this.#request(`/v1/project-agent-recruitment-policy?${query}`);
-  }
-  updateProjectAgentRecruitmentPolicy(input) {
-    return this.#request('/v1/project-agent-recruitment-policy', {
-      method: 'PUT', body: input
-    });
-  }
   listProjectAgentRecruitments({
     personalSpaceId,
     personalProjectId = null,

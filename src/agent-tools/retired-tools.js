@@ -12,7 +12,10 @@ const RETIRED_TOOLS = new Map([
     'finish_knowledge_review'].map((name) => [name, KNOWLEDGE_REVIEW_RETIRED]),
   // The personal-global preference decision, which could never be applied.
   ['preview_personal_global_preference_decision',
-    'Personal-global preference decisions were removed; discover_personal_global_preference_candidates still lists candidates.']
+    'Personal-global preference decisions were removed; discover_personal_global_preference_candidates still lists candidates.'],
+  // The space-wide recruitment policy, which no longer controlled recruitment.
+  ...['get_project_agent_recruitment_policy', 'update_project_agent_recruitment_policy'].map((name) => [name,
+    'The space recruitment policy was removed; use get_project_agent_coordination_policy or update_project_agent_coordination_policy.'])
 ]);
 
 // The refusal a retired tool name answers, or null for any other name.

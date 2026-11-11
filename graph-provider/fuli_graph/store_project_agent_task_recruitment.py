@@ -21,12 +21,10 @@ from .project_agent_recruitment_occupation import (
 from .project_agent_recruitment_values import project_agent_recruitment_profile, project_agent_recruitment_record
 from .project_agent_task_models import (
     ProjectAgentRecruitmentDecision,
-    ProjectAgentRecruitmentPolicyRecord,
-    ProjectAgentRecruitmentPolicyUpdate,
     ProjectAgentRecruitmentRecord,
     ProjectAgentRoutingDecisionRecord,
 )
-from .provider_values import native_datetime, now_utc, stable_uuid
+from .provider_values import now_utc, stable_uuid
 from .store_project_agents import SYSTEM_HR_AGENT_ID
 from .store_transactions import query_store_transaction
 from .occupation_catalog import BUILTIN_OCCUPATION_KEYS
@@ -43,64 +41,6 @@ class StoreProjectAgentTaskRecruitment(StoreRecruitmentFulfillment):
     """Own the audited AR lifecycle independently from task routing mechanics."""
 
     _normalized_recruitment_profile = staticmethod(normalized_recruitment_profile)
-
-    async def get_project_agent_recruitment_policy(
-        self,
-        actor: dict,
-        personal_space_id: str,
-    ) -> ProjectAgentRecruitmentPolicyRecord:
-        self._require_personal()
-        await self.authorize(actor, personal_space_id, 'reader')
-        records, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (:FuliSpace {id: $personal_space_id, kind: 'personal'})-
-                  [:HAS_PROJECT_AGENT_RECRUITMENT_POLICY]->
-                  (policy:FuliProjectAgentRecruitmentPolicy)
-            RETURN policy
-            ''',
-            personal_space_id=personal_space_id,
-            routing_='r',
-        )
-        if not records:
-            return ProjectAgentRecruitmentPolicyRecord(
-                personal_space_id=personal_space_id,
-                confirmation_mode='automatic',
-                updated_at=None,
-            )
-        raw = dict(records[0]['policy'])
-        return ProjectAgentRecruitmentPolicyRecord(
-            personal_space_id=personal_space_id,
-            confirmation_mode=raw.get('confirmation_mode') or 'automatic',
-            updated_at=native_datetime(raw.get('updated_at')),
-        )
-
-    async def update_project_agent_recruitment_policy(
-        self,
-        actor: dict,
-        request: ProjectAgentRecruitmentPolicyUpdate,
-    ) -> ProjectAgentRecruitmentPolicyRecord:
-        self._require_personal()
-        await self.authorize(actor, request.personal_space_id, 'maintainer')
-        updated_at = now_utc()
-        await self.runtime.driver.execute_query(
-            '''
-            MATCH (space:FuliSpace {id: $personal_space_id, kind: 'personal'})
-            MERGE (policy:FuliProjectAgentRecruitmentPolicy {
-              personal_space_id: $personal_space_id
-            })
-            SET policy.confirmation_mode = $confirmation_mode,
-                policy.updated_at = $updated_at
-            MERGE (space)-[:HAS_PROJECT_AGENT_RECRUITMENT_POLICY]->(policy)
-            ''',
-            personal_space_id=request.personal_space_id,
-            confirmation_mode=request.confirmation_mode,
-            updated_at=updated_at,
-        )
-        return ProjectAgentRecruitmentPolicyRecord(
-            personal_space_id=request.personal_space_id,
-            confirmation_mode=request.confirmation_mode,
-            updated_at=updated_at,
-        )
 
     async def decide_project_agent_recruitment(
         self,

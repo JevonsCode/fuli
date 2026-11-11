@@ -15,7 +15,9 @@ const RETIRED = new Map([
   ...['start_knowledge_review', 'list_knowledge_review_candidates', 'record_knowledge_review_progress',
     'finish_knowledge_review'].map((name) => [name, KNOWLEDGE_REVIEW]),
   ['preview_personal_global_preference_decision',
-    'Personal-global preference decisions were removed; discover_personal_global_preference_candidates still lists candidates.']
+    'Personal-global preference decisions were removed; discover_personal_global_preference_candidates still lists candidates.'],
+  ...['get_project_agent_recruitment_policy', 'update_project_agent_recruitment_policy'].map((name) => [name,
+    'The space recruitment policy was removed; use get_project_agent_coordination_policy or update_project_agent_coordination_policy.'])
 ]);
 
 async function connect(t, toolProfile) {

@@ -83,7 +83,6 @@ export function orchestrationResponse(url: string): Promise<unknown> {
   if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [] })
   if (url.includes('/api/project-agent-activity?')) return Promise.resolve({ agent_id: 'shared-agent', personal_space_id: 'personal-1', days: [] })
   if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
-  if (url.includes('/api/project-agent-recruitment-policy?')) return Promise.resolve({ personal_space_id: 'personal-1', confirmation_mode: 'automatic' })
   if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
   if (url.includes('/api/executor-routing-rules?')) return Promise.resolve({ rules: [] })
   if (url.includes('/api/project-agent-routing-learning?')) return Promise.resolve([])

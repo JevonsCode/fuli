@@ -196,8 +196,6 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   get_project_agent_coordination_policy: UNSCOPED,
   get_project_team: UNSCOPED,
   update_project_agent_coordination_policy: UNSCOPED,
-  get_project_agent_recruitment_policy: UNSCOPED,
-  update_project_agent_recruitment_policy: UNSCOPED,
   list_project_agent_recruitments: UNSCOPED,
   decide_project_agent_recruitment: UNSCOPED,
   upsert_executor: UNSCOPED,

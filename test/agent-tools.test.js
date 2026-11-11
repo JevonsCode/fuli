@@ -102,8 +102,6 @@ const NAMES = [
   'get_project_agent_coordination_policy',
   'get_project_team',
   'update_project_agent_coordination_policy',
-  'get_project_agent_recruitment_policy',
-  'update_project_agent_recruitment_policy',
   'list_project_agent_recruitments',
   'decide_project_agent_recruitment',
   'upsert_executor',
@@ -469,10 +467,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     getProjectTeam: async (input) => calls.push(['get-project-team', input]),
     updateProjectAgentCoordinationPolicy: async (input) =>
       calls.push(['update-project-agent-coordination-policy', input]),
-    getProjectAgentRecruitmentPolicy: async (input) =>
-      calls.push(['get-project-agent-recruitment-policy', input]),
-    updateProjectAgentRecruitmentPolicy: async (input) =>
-      calls.push(['update-project-agent-recruitment-policy', input]),
     listProjectAgentRecruitments: async (input) =>
       calls.push(['list-project-agent-recruitments', input]),
     decideProjectAgentRecruitment: async (input) =>
@@ -575,7 +569,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'get-project-agent-coordination-policy',
     'get-project-team',
     'update-project-agent-coordination-policy',
-    'get-project-agent-recruitment-policy', 'update-project-agent-recruitment-policy',
     'list-project-agent-recruitments', 'decide-project-agent-recruitment',
     'upsert-executor', 'list-executors', 'get-executor', 'delete-executor',
     'preflight-executor', 'authorize-executor', 'report-executor-health',

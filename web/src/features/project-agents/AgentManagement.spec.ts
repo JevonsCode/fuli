@@ -424,7 +424,6 @@ describe('AgentManagement', () => {
       if (url.includes('/api/project-agent-activity?')) return Promise.resolve({ agent_id: 'shared-agent', personal_space_id: 'personal-1', days: [] })
       if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
-      if (url.includes('/api/project-agent-recruitment-policy?')) return Promise.resolve({ personal_space_id: 'personal-1', confirmation_mode: 'automatic' })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
       if (url.includes('/api/executor-routing-rules?')) return Promise.resolve({ rules: [] })
       if (url.includes('/api/project-agent-routing-learning?')) return Promise.resolve([])
@@ -514,7 +513,6 @@ describe('AgentManagement', () => {
       if (url.includes('/api/project-agent-activity?')) return Promise.resolve({ agent_id: 'shared-agent', personal_space_id: 'personal-1', days: [] })
       if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
-      if (url.includes('/api/project-agent-recruitment-policy?')) return Promise.resolve({ personal_space_id: 'personal-1', confirmation_mode: 'automatic' })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
       if (url.includes('/api/executor-routing-rules?')) return Promise.resolve({ rules: [] })
       if (url.includes('/api/project-agent-routing-learning?')) return Promise.resolve([])
@@ -532,7 +530,6 @@ describe('AgentManagement', () => {
       if (url.includes('/api/project-agent-activity?')) return Promise.resolve({ agent_id: 'shared-agent', personal_space_id: 'personal-1', days: [] })
       if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
-      if (url.includes('/api/project-agent-recruitment-policy?')) return Promise.resolve({ personal_space_id: 'personal-1', confirmation_mode: 'automatic' })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
       if (url.includes('/api/executor-routing-rules?')) return Promise.resolve({ rules: [] })
       if (url.includes('/api/project-agent-routing-learning?')) return Promise.resolve([])
@@ -696,7 +693,6 @@ describe('AgentManagement', () => {
         recruited_agent_id: 'shared-agent', trigger_source_application: 'codex', test_source: 'e2e-roster',
         cleanup_eligible: true, revision: 1, created_at: '2026-08-16T00:00:00Z', updated_at: '2026-08-16T00:00:00Z', fulfilled_at: '2026-08-16T01:00:00Z',
       }] })
-      if (url.includes('/api/project-agent-recruitment-policy?')) return Promise.resolve({ personal_space_id: 'personal-1', confirmation_mode: 'automatic' })
       return Promise.resolve([])
     })
     const { wrapper, router } = await mountPage()
@@ -729,7 +725,6 @@ describe('AgentManagement', () => {
       if (url.includes('/api/project-agents?')) return Promise.resolve(agents)
       if (url.includes('/api/project-agent-tasks?')) return Promise.resolve({ tasks: [] })
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [recruitment] })
-      if (url.includes('/api/project-agent-recruitment-policy?')) return Promise.resolve({ personal_space_id: 'personal-1', confirmation_mode: 'automatic' })
       return Promise.resolve([])
     })
     postJson.mockResolvedValue({})
@@ -740,7 +735,6 @@ describe('AgentManagement', () => {
 
     expect(wrapper.find('.project-agent-policy-control').exists()).toBe(false)
     // A decision waiting on the person shows on its tab.
-    expect(patchJson).not.toHaveBeenCalledWith('/api/project-agent-recruitment-policy', expect.anything())
     await wrapper.get('[data-recruitment-approve]').trigger('click')
     await flushPromises()
     expect(postJson).toHaveBeenCalledWith('/api/project-agent-recruitments/decision', expect.objectContaining({
@@ -764,7 +758,6 @@ describe('AgentManagement', () => {
         return Promise.resolve({ agent_id: agentId, personal_space_id: 'personal-1', days: [] })
       }
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
-      if (url.includes('/api/project-agent-recruitment-policy?')) return Promise.resolve({ personal_space_id: 'personal-1', confirmation_mode: 'automatic' })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
       if (url.includes('/api/executor-routing-rules?')) return Promise.resolve({ rules: [] })
       if (url.includes('/api/project-agent-routing-learning?')) return Promise.resolve([])
@@ -791,7 +784,6 @@ describe('AgentManagement', () => {
       if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
       if (url.includes('/api/project-agent-activity?')) return activity
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
-      if (url.includes('/api/project-agent-recruitment-policy?')) return Promise.resolve({ personal_space_id: 'personal-1', confirmation_mode: 'automatic' })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
       if (url.includes('/api/executor-routing-rules?')) return Promise.resolve({ rules: [] })
       if (url.includes('/api/project-agent-routing-learning?')) return Promise.resolve([])
@@ -817,7 +809,6 @@ describe('AgentManagement', () => {
       if (url.includes('/api/project-agent-assignments?')) return Promise.resolve({ assignments: [] })
       if (url.includes('/api/project-agent-activity?')) return Promise.reject(new Error('activity unavailable'))
       if (url.includes('/api/project-agent-recruitments?')) return Promise.resolve({ recruitments: [] })
-      if (url.includes('/api/project-agent-recruitment-policy?')) return Promise.resolve({ personal_space_id: 'personal-1', confirmation_mode: 'automatic' })
       if (url.includes('/api/executors?')) return Promise.resolve({ executors: [] })
       if (url.includes('/api/executor-routing-rules?')) return Promise.resolve({ rules: [] })
       if (url.includes('/api/project-agent-routing-learning?')) return Promise.resolve([])

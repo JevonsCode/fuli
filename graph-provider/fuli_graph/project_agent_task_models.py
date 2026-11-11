@@ -832,24 +832,6 @@ class ProjectAgentTaskRouteResult(StrictModel):
     client_notice: str | None = None
 
 
-class ProjectAgentRecruitmentPolicyRecord(StrictModel):
-    personal_space_id: str
-    confirmation_mode: ProjectAgentRecruitmentConfirmationMode = 'automatic'
-    updated_at: datetime | None = None
-    policy_status: Literal['superseded'] = 'superseded'
-    applies_to_recruitment: Literal[False] = False
-    warning: str = (
-        'Legacy storage only; this setting does not control recruitment. '
-        'Use update_project_agent_coordination_policy with the exact project '
-        'and askBeforeRecruitment to change effective authorization.'
-    )
-
-
-class ProjectAgentRecruitmentPolicyUpdate(StrictModel):
-    personal_space_id: str = Field(min_length=1, max_length=128)
-    confirmation_mode: ProjectAgentRecruitmentConfirmationMode
-
-
 class ProjectAgentRecruitmentDecision(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str = Field(min_length=1, max_length=128)
