@@ -704,3 +704,19 @@ def test_term_weights_follow_how_few_candidates_carry_a_term():
     assert _term_weights('圆桌', records[:7]) == {} and _term_weights('', records) == {}, 'too few candidates to weigh'
     # Without weights every term counts the same, as before.
     assert _relevance('按钮设计', records[8]) > 0
+
+
+def test_a_linking_particle_does_not_break_a_phrase():
+    """rec#111: the fact said 控制台的端口; the question asked 控制台端口."""
+    fact = {'name': '本机控制台端口', 'type': 'ProjectFact', 'summary': '这台机器上本机控制台的端口是 2828。',
+            'reasoning_summary': None, 'profile_aspect': None}
+    named = {**fact, 'name': '端口说明'}
+    preference = {'name': 'AI 替人操作', 'type': 'PersonalPreference', 'summary': '不要让人总去控制台里做。',
+                  'reasoning_summary': None, 'profile_aspect': 'judgment_preference'}
+    assert _relevance('控制台端口', named) >= 8.0, 'the whole phrase, with 的 between its words'
+    assert _relevance('控制台端口', named) > 3 * _relevance('控制台端口', preference)
+    assert _relevance('圆桌之外', {**fact, 'name': 'x', 'summary': '圆桌外的事'}) >= 8.0, '之 links the same way'
+    assert _relevance('的端口', {**fact, 'name': 'x', 'summary': '端口'}) < 8.0, 'a leading 的 is not between two characters'
+    # The same on both sides: a word that contains 的 still matches itself.
+    assert _relevance('目的', {**fact, 'name': '目的', 'summary': '这个项目的目的是省事。'}) >= 8.0
+    assert _relevance('reply language', {**fact, 'name': 'x', 'summary': 'the reply language of this project'}) >= 8.0
