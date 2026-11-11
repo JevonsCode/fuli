@@ -5,10 +5,14 @@ derived value is written.
 
 Only current items of the space count, resting on no unresolved basis,
 confirmed by a person or an Agent, and reachable through a scope (a
-preference, an assignment, a source episode or a project reference). Derived
+preference, an assignment, a source episode or a project reference). The
+meaning index also covers items still waiting for confirmation: a search that
+asks for pending items finds them by meaning too, and default search still
+never returns them. Derived
 values (a meaning vector, retrieval terms) are an index: storing one writes no
 history and changes no version, lock_version or timestamp.
 """
+from .knowledge_weight import effective_confirmation_status
 from .search_projection import is_default_retrievable
 
 # Items read per query while looking through them.
@@ -66,26 +70,29 @@ def scan_query(item_kind: str) -> str:
         '''
 
 
-async def indexable_items(store, space, item_kind: str, after: str = ''):
-    """The indexable items of one kind after `after`, in id order."""
+async def indexable_items(store, space, item_kind: str, after: str = '', *, include_pending: bool = False):
+    """The indexable items of one kind after `after`, in id order; with
+    include_pending, also those waiting for confirmation."""
     while True:
         records, _, _ = await store.runtime.driver.execute_query(
             scan_query(item_kind), group_id=space['group_id'], space_id=space['id'], item_kind=item_kind,
             after=after, chunk=SCAN_CHUNK, routing_='r')
         for record in records:
-            if is_default_retrievable(record):
+            if is_default_retrievable(record) or (
+                    include_pending and effective_confirmation_status(record) == 'pending'):
                 yield record
         if len(records) < SCAN_CHUNK:
             return
         after = records[-1]['id']
 
 
-async def indexable_from(store, space, after: str | None):
+async def indexable_from(store, space, after: str | None, *, include_pending: bool = False):
     """Every indexable item of every kind from a page cursor on, as (kind, record)."""
     start, item_id = page_cursor(after)
     for kind_index in range(start, len(ITEM_KINDS)):
         item_kind = ITEM_KINDS[kind_index]
-        async for record in indexable_items(store, space, item_kind, item_id if kind_index == start else ''):
+        async for record in indexable_items(store, space, item_kind, item_id if kind_index == start else '',
+                                            include_pending=include_pending):
             yield item_kind, record
 
 

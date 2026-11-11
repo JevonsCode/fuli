@@ -46,7 +46,7 @@ const line = (entry: ModelInUse) => results.value[entry.id]?.text ?? healthLine(
     <ul v-else class="model-list-rows">
       <li v-for="entry in models" :key="entry.id" class="model-list-row" :data-model-connection-id="entry.id">
         <div class="model-list-name">
-          <code :title="entry.model">{{ entry.model }}</code>
+          <code :title="entry.label">{{ entry.label }}</code>
           <span :title="entry.service">{{ entry.service }}</span>
         </div>
         <p class="model-list-health" :class="`is-${tone(entry)}`" :role="tone(entry) === 'failing' ? 'alert' : 'status'" :title="line(entry)"

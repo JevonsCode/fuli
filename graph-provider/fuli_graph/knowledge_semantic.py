@@ -19,6 +19,11 @@ MIN_IN_SCOPE_ITEMS = 12
 # Kept: a cosine at least this many standard deviations above the mean of
 # every in-scope item for this query. No model-specific number is needed.
 FLOOR_STANDARD_DEVIATIONS = 3
+# The single closest item needs to stand out less: a question in other words
+# than the knowledge often leaves its one answer between 2.5 and 3 (measured
+# with a built-in model on paraphrased questions; questions with no answer
+# stayed under 2.4), and one item costs the reader little.
+BEST_FLOOR_STANDARD_DEVIATIONS = 2.5
 
 
 def item_text(item_kind: str, record: dict) -> str:
@@ -70,6 +75,10 @@ def meaning_matches(candidates: dict, query_vector: list[float], limit: int) -> 
     floor = mean + FLOOR_STANDARD_DEVIATIONS * deviation
     kept = sorted((key for key, score in scores.items() if score >= floor),
                   key=lambda key: (-scores[key], key))[:limit]
+    if not kept and limit > 0:
+        best = min(scores, key=lambda key: (-scores[key], key))
+        if scores[best] >= mean + BEST_FLOOR_STANDARD_DEVIATIONS * deviation:
+            kept = [best]
     return {key: scores[key] for key in kept}
 
 

@@ -21,6 +21,7 @@ RuntimeReport parseControllerReply(String stdout) {
     error: reply['ok'] == true ? null : (error is String ? error : null),
     notice: notice is String && notice.isNotEmpty ? notice : null,
     portBlocked: reply['portBlocked'] == true,
+    consoleStopped: state is Map && _consoleStopped(state),
   );
 }
 
@@ -57,7 +58,13 @@ RuntimeReport parseCliStatus(String stdout) {
   if (status is! Map) return const RuntimeReport(RuntimeState.unknown, error: 'fuli status printed invalid JSON.');
   final console = status['console'];
   return RuntimeReport(_state(status['status']), consolePort: _consolePort(status),
-      crashed: console is Map && console['crashed'] == true);
+      crashed: console is Map && console['crashed'] == true, consoleStopped: _consoleStopped(status));
+}
+
+// `console.status` of the status report (src/local-runtime/lifecycle.js): ready, unverified or stopped.
+bool _consoleStopped(Map status) {
+  final console = status['console'];
+  return console is Map && console['status'] == 'stopped';
 }
 
 Map? _lastJsonLine(String stdout) {

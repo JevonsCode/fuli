@@ -62,6 +62,8 @@ CHINESE_QUERY_FILLERS = (
     '请问', '麻烦', '帮忙', '帮我', '告诉我', '查找', '查询', '是什么', '在哪里',
     '在哪儿', '为什么', '怎么样', '怎样', '怎么', '哪里', '哪个', '多少', '有没有',
     '是否', '一下',
+    # After the longer forms above: the bare question words name nothing either.
+    '什么', '如何', '哪些',
 )
 
 
