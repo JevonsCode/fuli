@@ -19,6 +19,9 @@ const topicFormationSchema = z.looseObject({
   lead_agent_id: z.string().nullish(),
   lead_status: z.string(),
   conversations: z.number(),
+  // Who Bole hired and what Astro handed over (topic-team-handoff.js).
+  team: z.looseObject({ handoffs: z.array(z.looseObject({ position: z.string(), label: z.string().nullish(),
+    name: z.string().nullish(), agent_id: z.string().nullish(), task_id: z.string().nullish() })) }).nullish(),
 })
 export type TopicFormation = z.infer<typeof topicFormationSchema>
 const topicFormationShape = shapeOf(topicFormationSchema)
@@ -54,4 +57,10 @@ export function undoTopicPromotion(personalSpaceId: string, topic: string, perso
 
 export function declineTopicProposal(personalSpaceId: string, topic: string) {
   return postJson('/api/topic-proposals/decline', { personalSpaceId, topic }, topicDeclineShape)
+}
+
+/** The people hired beside the lead, as 「开发 Robin Stone」. */
+export function hiredTeam(formation: TopicFormation): string[] {
+  return (formation.team?.handoffs ?? []).filter(item => item.position !== 'lead' && item.agent_id)
+    .map(item => `${item.label ?? item.position} ${item.name ?? item.agent_id}`)
 }

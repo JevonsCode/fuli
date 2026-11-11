@@ -1,5 +1,6 @@
 import { t } from '@/i18n'
-import { modelGuideUrl, roleName, type ModelRoleId, type ModelRoleView, type ModelRolesPayload } from './model'
+import { modelGuideUrl, roleName, type ModelRoleHealth, type ModelRoleId, type ModelRoleView, type ModelRolesPayload } from './model'
+import { latestHealth } from './model-health'
 
 // The model center (11-06): every connected model once with who uses
 // it, and every use with the capability that is enough for it. A use is a
@@ -41,6 +42,10 @@ export interface ModelInUse {
   model: string
   service: string
   uses: { use: ModelUseId; on: boolean }[]
+  // Whether it works now, from the roles that are on; null when none of them has a record.
+  health: ModelRoleHealth | null
+  // The role 「测试连接」 tests it through: the first that is on, else none.
+  checkRole: ModelRoleId | null
 }
 
 /** Each connection a role names, once, with the uses on it; a use that is off stays listed, marked off. */
@@ -50,8 +55,13 @@ export function modelsInUse(payload: ModelRolesPayload): ModelInUse[] {
     const connection = view.connection
     if (!connection) continue
     const entry = models.get(connection.id) ?? { id: connection.id, model: connection.model,
-      service: `${t(`modelSettings.protocols.${connection.protocol}`)} · ${connection.endpointHost}`, uses: [] }
-    entry.uses.push({ use: view.role, on: view.state === 'enabled' })
+      service: `${t(`modelSettings.protocols.${connection.protocol}`)} · ${connection.endpointHost}`, uses: [], health: null, checkRole: null }
+    const on = view.state === 'enabled'
+    entry.uses.push({ use: view.role, on })
+    if (on) {
+      entry.health = latestHealth([entry.health, view.health])
+      entry.checkRole ??= view.role
+    }
     if (view.role === 'assistant') {
       for (const task of ASTRO_TASKS) if (view.allowedOperations?.includes(task)) entry.uses.push({ use: task, on: view.state === 'enabled' })
     }

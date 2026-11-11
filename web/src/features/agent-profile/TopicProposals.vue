@@ -7,6 +7,7 @@ import { t } from '@/i18n'
 import type { UnassignedConversationItem } from './unassigned-conversations'
 import {
   acceptTopicProposal,
+  hiredTeam,
   declineTopicProposal,
   readTopicProposals,
   undoTopicPromotion,
@@ -174,6 +175,9 @@ const busy = (proposal: TopicProposal, action: 'accept' | 'decline') =>
     <p v-if="formed" class="ui-meta" role="status" data-topic-formed>
       {{ t(formed.lead_status === 'ready' ? 'agentRedesign.topicProposal.formed' : 'agentRedesign.topicProposal.formedAwaitingLead',
            { topic: formed.topic, count: formed.conversations }) }}
+      <template v-if="hiredTeam(formed).length">
+        {{ t('agentRedesign.topicProposal.team', { count: hiredTeam(formed).length, people: hiredTeam(formed).join('、') }) }}
+      </template>
       <RouterLink :to="{ path: '/project-agents', query: { project: formed.personal_project_id } }">
         {{ t('agentRedesign.topicProposal.openProject') }}
       </RouterLink>

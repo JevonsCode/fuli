@@ -155,12 +155,12 @@ describe('TonborgExplain', () => {
 
   it('copies the prompt and names what was copied in a toast', async () => {
     await opened(3)
-    expect(panel().textContent).not.toContain('先听几条')
+    expect(panel().textContent).not.toContain('先过几条')
     panel().querySelector<HTMLButtonElement>('[data-tonborg-explain-copy]')!.click()
     await flushPromises()
     expect(writeText).toHaveBeenCalledTimes(1)
     expect(writeText.mock.calls[0][0]).toContain('list_tonborg_questions')
-    expect(writeText.mock.calls[0][0]).not.toContain('想先听几条')
+    expect(writeText.mock.calls[0][0]).not.toContain('先过几条')
     expect(useConsoleStore().feedback?.message).toMatch(/已复制 Tonborg 的解释/)
     expect(panel()).toBeNull()
   })

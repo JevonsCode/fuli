@@ -16,4 +16,6 @@ export { default as Card } from "./Card.vue"
 export { default as CardAction } from "./CardAction.vue"
 export { default as CardDescription } from "./CardDescription.vue"
 export { default as CardHeader } from "./CardHeader.vue"
+// - CardTitle is a flex row (items-center, gap-1): a control after the title (the AI mark, a 「?」) sits on the
+//   title's centre line instead of the text baseline.
 export { default as CardTitle } from "./CardTitle.vue"

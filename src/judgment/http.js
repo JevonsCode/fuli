@@ -77,7 +77,9 @@ export async function handleJudgmentApiRequest({ request, response, url, app, un
       input: { personalSpaceId: query.personalSpaceId } }) }),
     [`GET ${DELEGATION_PATH}`]: () => reviewDelegation({ judgment: app.judgment, modelTrust: app.modelTrust ?? null,
       input: { personalSpaceId: query.personalSpaceId } }),
-    [`GET ${DELEGATED_PATH}`]: () => delegatedReviewList({ judgment: app.judgment, personal: app.personal, input: { personalSpaceId: query.personalSpaceId } }),
+    // language: the one the console shows now, so each question is asked in it.
+    [`GET ${DELEGATED_PATH}`]: () => delegatedReviewList({ judgment: app.judgment, personal: app.personal,
+      input: { personalSpaceId: query.personalSpaceId, ...(query.language ? { language: query.language } : {}) } }),
   };
   const action = actions[route];
   if (!action) sendJson(response, 405, { error: 'Method not allowed' });

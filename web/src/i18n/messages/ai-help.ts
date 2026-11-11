@@ -3,7 +3,8 @@
 // here: they address the person's Agent (features/ai-help/ai-task-prompts.ts).
 export const aiHelpMessages = {
   'zh-CN': {
-    button: '「{area}」是做什么的，怎么让 AI 来做',
+    entry: '让 AI 来做：{area}',
+    explain: '「{area}」是做什么的',
     prompt: {
       title: '让 AI 来做',
       lead: '复制给你接了 FULI 的 Agent（Claude Code、Codex、OpenCode 等），它会自己做完，改动都有记录。',
@@ -44,7 +45,8 @@ export const aiHelpMessages = {
     },
   },
   'en-US': {
-    button: 'What "{area}" is for, and how AI can do it',
+    entry: 'Let AI do it: {area}',
+    explain: 'What "{area}" is for',
     prompt: {
       title: 'Let AI do it',
       lead: 'Copy this to your Agent with FULI connected (Claude Code, Codex, OpenCode…); it does the whole job, and every change is recorded.',

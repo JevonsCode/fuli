@@ -272,3 +272,17 @@ test('a console graph read while the provider is down is provider_unavailable, n
   assert.deepEqual(await read(new DOMException('The operation was aborted due to timeout', 'TimeoutError')), { status: 504,
     body: { error: 'Graphiti provider request timed out.', code: 'provider_timeout' } });
 });
+
+test('a validation refusal on the human-review channel keeps its fields and reasons, without paths or URLs', async () => {
+  const { providerRefusal } = await import('../src/graphiti/human-review-channel.js');
+  const refusal = providerRefusal(422, { detail: [
+    { loc: ['body', 'summary'], msg: 'String should have at most 4096 characters', input: 'synthetic input never echoed' },
+    { loc: ['body', 'items', 0, 'item_kind'], msg: 'Input should be entity or relationship; see https://example.test/docs' }] });
+  assert.equal(refusal.status, 422);
+  assert.equal(refusal.message, 'Graphiti provider rejected the request — summary — String should have at most 4096 characters; '
+    + 'items[0].item_kind — Input should be entity or relationship; see <url>');
+  assert.doesNotMatch(refusal.message, /synthetic input/);
+  // A conflict keeps its own code and words, as before.
+  const conflict = providerRefusal(409, { detail: { code: 'stale_version', message: 'knowledge changed since it was read' } });
+  assert.deepEqual([conflict.code, conflict.message], ['stale_version', 'knowledge changed since it was read']);
+});

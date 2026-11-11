@@ -9,12 +9,12 @@ import { recoverInterruptedWrites } from './review-recovery.js';
 import { EmployeeError } from '../employees/manifest.js';
 import { judgmentHumanInteraction } from './conversation.js';
 import { arraySchema, enumSchema, objectSchema } from '../agent-tools/schema.js';
-import { DELEGATION_FIELDS, delegationProperties, VERDICT_FIELDS, verdictProperties } from './verdict-schema.js';
+import { VERDICT_FIELDS, verdictProperties } from './verdict-schema.js';
 import { jsonSchemaToZod } from '../mcp/tool-schema.js';
 import { PREFERENCE_RECEIPT_VERSION, preferenceDeliveryRecord, preferenceHold,
   readJudgmentPreferences } from './preference-receipt.js';
-import { reviewExample, reviewInstructions } from './review-prompt.js';
-import { optionsProperty, sanitizeQuestionOptions } from './question-options.js';
+import { REVIEW_EXAMPLE, reviewInstructions } from './review-prompt.js';
+import { ASK_FIELDS, askProperties, guessProperty, softAsk } from './question-options.js';
 import { injectionSignals } from './review-injection-precheck.js';
 import { automaticWriteDecision } from '../graphiti/capture-decision.js';
 import { coversClient } from '../agents/source-applications.js';
@@ -22,14 +22,14 @@ import { coversClient } from '../agents/source-applications.js';
 const id = z.string().min(1).max(256);
 const reviewInput = z.object({ personalSpaceId: id, personalProjectId: id.nullable().optional(), requestId: id,
   limit: z.number().int().min(1).max(10).default(10) }).strict();
-// A delegated review (rec#96) also answers, for each candidate, its best
-// guess of what the person would do and the short question that asks them.
-// Any other review answers the choices its question offers the person (rec#99);
-// options: false is the schema a verdict is checked with, its options apart.
-const reviewSchema = (candidates, delegated = false, { options = !delegated } = {}) => objectSchema({ decisions: arraySchema(objectSchema({
-  target: enumSchema(candidates.map(candidate => candidate.candidate_key)), ...verdictProperties,
-  ...(delegated ? delegationProperties : {}), ...(options ? optionsProperty : {}) },
-['target', ...VERDICT_FIELDS, ...(delegated ? DELEGATION_FIELDS : []), ...(options ? ['options'] : [])]),
+// Every review is asked, for each candidate, its best guess of what the
+// person would do, why it is unsure, and the one question that asks them
+// (question-options.js). asked: false is the schema an answer's verdict is
+// checked with: the guess, which a delegated review (rec#96) must give, and
+// its doubt and question apart.
+const reviewSchema = (candidates, { delegated = false, asked = true } = {}) => objectSchema({ decisions: arraySchema(objectSchema({
+  target: enumSchema(candidates.map(candidate => candidate.candidate_key)), ...verdictProperties, ...(asked ? askProperties : guessProperty) },
+['target', ...VERDICT_FIELDS, ...(asked ? ASK_FIELDS : delegated ? ['guess'] : [])]),
 { minItems: candidates.length, maxItems: candidates.length }) }, ['decisions']);
 export const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 // A record of this request whose execution is final is never applied again.
@@ -43,8 +43,8 @@ const policyVersion = p => `${PREFERENCE_RECEIPT_VERSION}:${p.revision}:${p.glob
 const reviewPolicy = (store, space, project) => {
   const policy = store.policy(space, project);
   const delegation = store.delegation(space);
-  // The language is how Tonborg words its questions, not how it judges: it stays out of policyVersion.
-  return delegation.enabled ? { ...policy, delegated: true, language: delegation.language } : policy;
+  // The language is how Tonborg words its reason and question, not how it judges: it stays out of policyVersion.
+  return { ...policy, language: delegation.language, ...(delegation.enabled ? { delegated: true } : {}) };
 };
 
 // trust: whether Tonborg's configured model may apply a review by itself
@@ -105,7 +105,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     const saved = store.setting(space, cacheKey).value;
     if (saved) {
       const records = saved.recordIds.map(id => store.get(space, id));
-      return { ...judgmentHumanInteraction(records, space), ...saved, records };
+      return { ...asked(store, records, space), ...saved, records };
     }
     const token = store.claim(space, project), lease = { project, token };
     const records = [];
@@ -132,10 +132,10 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
         && !store.reviewed(space, project, candidate.candidate_key, fingerprint(candidate), policyVersion(policy), { exceptRequest: cacheKey })).slice(0, input.limit));
       records.push(...recovered.filter(record => !candidates.some(candidate => candidate.candidate_key === record.target)));
       if (candidates.length) {
-        const schema = reviewSchema(candidates, policy.delegated);
+        const schema = reviewSchema(candidates);
         const answer = await decide({ policy, operation: TONBORG_OPERATIONS.review, requestId: cacheKey, resume: input,
           scope: { personalSpaceId: space, personalProjectId: project || null }, instructions: reviewInstructions(policy),
-          example: reviewExample(policy), schema, data: { policy, ...evidenceContext, candidates }, execution });
+          example: REVIEW_EXAMPLE, schema, data: { policy, ...evidenceContext, candidates }, execution });
         // A handed-off review leaves its candidates unvisited for the session's answer.
         if (answer.pending) {
           handedOff = true;
@@ -159,9 +159,10 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
           let record = store.record(space, { personalProjectId: project || null, kind: 'review', target: decision.target,
             title: candidate.title, summary: decision.summary, evidence: decision.evidence, confidence: decision.confidence,
             outcome, aiReview, policy, policyVersion: policyVersion(policy), evidenceFingerprint: fingerprint(candidate),
-            ...(policy.delegated ? { delegated: true, guess: decision.guess, question: decision.question } : {}),
-            // Options of an answer injected text may have steered are not offered; the default choices are asked.
-            ...(decision.options && !batchInjected ? { options: decision.options } : {}),
+            ...(decision.guess ? { guess: decision.guess } : {}), ...(decision.doubt ? { doubt: decision.doubt } : {}),
+            ...(policy.delegated ? { delegated: true } : {}),
+            // The sentence of an answer injected text may have steered is not shown: FULI writes the question itself.
+            ...(decision.question && !batchInjected ? { question: decision.question } : {}),
             memoryRevision: evidenceContext.memoryRevision, preferenceDelivery: preferenceDeliveryRecord(evidenceContext.preferences),
             ...judgmentProvenance(answer) }, `${cacheKey}:${decision.target}`);
           // Already settled by an interrupted run of this request: never apply twice.
@@ -210,7 +211,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
       const remaining = Math.max(0, (page.total_candidate_count ?? 0) - records.filter(r => r.execution.status === 'applied').length);
       const result = { recordIds: records.map(r => r.id), remaining };
       if (!handedOff) store.writeSetting(space, cacheKey, result, 0);
-      return { ...judgmentHumanInteraction(records, space), records, remaining };
+      return { ...asked(store, records, space), records, remaining };
     } catch (error) {
       // A run that lost its scope to a newer one records nothing, so the
       // owner's result stands; an unconfirmed interrupted write waits for a retry.
@@ -219,7 +220,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
         summary: hold?.summary ?? 'Tonborg could not complete this review.', evidence: [], error: error.code ?? 'judgment_failed',
         ...(evidenceContext ? { preferenceDelivery: preferenceDeliveryRecord(evidenceContext.preferences) } : {}),
         ...failureProvenance(error), policy: store.policy(space, project) }, `${cacheKey}:failure`);
-      return { ...judgmentHumanInteraction(records, space), records: [...records, record], remaining: null };
+      return { ...asked(store, records, space), records: [...records, record], remaining: null };
     } finally {
       // Only the run that still holds the scope moves the queue and closes the Provider run.
       const owner = store.owns(space, project, token);
@@ -244,7 +245,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     const key = `review-all:${input.requestId}`, cached = store.setting(space, key).value;
     if (cached) {
       const records = cached.map(id => store.get(space, id));
-      return { ...judgmentHumanInteraction(records, space), records, remaining: null };
+      return { ...asked(store, records, space), records, remaining: null };
     }
     const projects = await app.listPersonalProjects({ personalSpaceId: space });
     const scopes = [null, ...projects.filter(p => p.profile?.lifecycle !== 'archived').map(p => p.project_id)];
@@ -263,7 +264,7 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     try { store.writeSetting(space, 'review-cursor', ((cursor.value ?? 0) + checked) % scopes.length, cursor.revision); }
     catch (error) { if (error.status !== 409) throw error; }
     store.writeSetting(space, key, records.map(r => r.id), 0);
-    return { ...judgmentHumanInteraction(records, space), records, remaining: null, scopesChecked: checked };
+    return { ...asked(store, records, space), records, remaining: null, scopesChecked: checked };
   }
   return { review, reviewAutomatic: async (service, raw) => {
     const input = parse(reviewInput, raw); await service.scope(input);
@@ -284,19 +285,15 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
   } };
 }
 
-// A verdict is checked whole; its options apart, so invalid or missing ones
-// fall back to the default choices and never fail the verdict (rec#99).
+// What a review's records ask the person now, in the language they read FULI in.
+const asked = (store, records, space) => judgmentHumanInteraction(records, space, { language: store.delegation(space).language });
+
+// A verdict is checked whole; its doubt and question apart, so a missing or
+// odd one falls back to FULI's own wording and never fails the verdict.
 function reviewDecisions(value, candidates, delegated) {
-  const raw = Array.isArray(value?.decisions) ? value.decisions : null;
-  const verdicts = raw ? { ...value, decisions: raw.map(decision => {
-    if (!decision || typeof decision !== 'object' || Array.isArray(decision)) return decision;
-    const { options, ...verdict } = decision; return verdict;
-  }) } : value;
-  const parsed = parse(jsonSchemaToZod(reviewSchema(candidates, delegated, { options: false })), verdicts);
-  const decisions = parsed.decisions.map((decision, index) => {
-    const options = delegated ? null : sanitizeQuestionOptions(raw[index]?.options);
-    return options ? { ...decision, options } : decision;
-  });
+  const raw = Array.isArray(value?.decisions) ? value.decisions.map(softAsk) : null;
+  const parsed = parse(jsonSchemaToZod(reviewSchema(candidates, { delegated, asked: false })), raw ? { ...value, decisions: raw.map(part => part.verdict) } : value);
+  const decisions = parsed.decisions.map((decision, index) => ({ ...decision, ...raw[index].ask }));
   if (decisions.length !== candidates.length || new Set(decisions.map(d => d.target)).size !== candidates.length
     || decisions.some(d => !candidates.some(c => c.candidate_key === d.target))) throw new TypeError('Judgment targets do not match evidence');
   return decisions;

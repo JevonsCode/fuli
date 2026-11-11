@@ -24,6 +24,10 @@ export interface DelegatedReview {
   guess: ReviewGuess | null
   question: string | null
   feedbackRevision: number
+  /** A question's one plain sentence, as the server words it for the console's language. */
+  ask?: string
+  /** Its two choices: Tonborg's guess first, the opposite second. */
+  answers?: ReviewGuess[]
 }
 export interface DelegatedReviews { confirmed: DelegatedReview[]; questions: DelegatedReview[] }
 
@@ -124,3 +128,27 @@ const GUESSED: Record<ReviewGuess, ReviewAction> = { keep: 'confirm', drop: 'dro
 export const guessedAction = (guess: ReviewGuess | null): ReviewAction | null => guess ? GUESSED[guess] : null
 export const agreesWithGuess = (review: DelegatedReview | null, action: ReviewAction) =>
   Boolean(review?.guess && GUESSED[review.guess] === action)
+
+/** What a question's row offers. */
+export interface RowChoice {
+  answer: ReviewGuess
+  action: ReviewAction
+  /** Which word names it: 原样保留 is the opposite of 改一下. */
+  label: ReviewGuess | 'keepAsIs'
+  /** Tonborg's guess: the filled button. */
+  guessed: boolean
+}
+const EVERY_ANSWER: ReviewGuess[] = ['keep', 'drop', 'edit']
+const choice = (answer: ReviewGuess, review: DelegatedReview, label: RowChoice['label'] = answer): RowChoice =>
+  ({ answer, action: GUESSED[answer], label, guessed: review.guess === answer })
+
+/**
+ * A question's row (Jevons 11-11): two buttons, Tonborg's guess first and its
+ * opposite second, in the same places on every row; the third way to answer
+ * (rest) sits under 其他 with the person's own words.
+ */
+export function rowChoices(review: DelegatedReview): { choices: RowChoice[]; rest: RowChoice } {
+  const [yes = 'keep', no = 'drop'] = review.answers ?? []
+  const rest = EVERY_ANSWER.find(answer => answer !== yes && answer !== no) ?? 'edit'
+  return { choices: [choice(yes, review), choice(no, review, yes === 'edit' && no === 'keep' ? 'keepAsIs' : no)], rest: choice(rest, review) }
+}

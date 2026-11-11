@@ -111,7 +111,7 @@ def load_ranker(ref):
         definitions(weight, weight_names, weight_ns)
         weight_ns['knowledge_weight'] = partial(weight_ns['knowledge_weight'], now=NOW)
 
-    search_ns = {'re': re, '_normalized': values_ns['normalized_text'], 'json_object': values_ns['json_object']}
+    search_ns = {'re': re, 'math': math, '_normalized': values_ns['normalized_text'], 'json_object': values_ns['json_object']}
     if 'def ranking_weight(' in weight:
         search_ns['ranking_weight'] = weight_ns['ranking_weight']
     names = {'_ranked_relevance', '_scope_precedence', '_dedupe_ranked_entities', '_relevance',
@@ -123,14 +123,19 @@ def load_ranker(ref):
         names.add('_dedupe_key')
     if 'def _word_stem(' in search:
         names.add('_word_stem')
+    if 'def _term_weights(' in search:
+        names.update({'_term_weights', '_haystack', 'MIN_WEIGHTED_COVERAGE', 'UNSEEN_TERM_FACTOR',
+                      'DISTINCTIVE_TERM_WEIGHT', 'WHOLE_QUERY_COVERAGE', 'MIN_WEIGHED_CANDIDATES', '_too_common'})
     definitions(search, names, search_ns)
     return search_ns
 
 
 def ranked_items(ranker, items, query):
     ranked = []
+    # Production weighs the query's terms over the records one search may return.
+    weights = ranker['_term_weights'](query, items) if '_term_weights' in ranker else None
     for record in items:
-        base = ranker['_relevance'](query, record)
+        base = ranker['_relevance'](query, record, weights) if weights is not None else ranker['_relevance'](query, record)
         score = ranker['_ranked_relevance'](base, record)
         if score > 0:
             ranked.append((record, score))

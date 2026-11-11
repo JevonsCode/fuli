@@ -143,7 +143,8 @@ async def apply_knowledge_project_action(
                 item_kind=request.item_kind,
                 target_project_id=target_project_id,
                 reason=request.reason,
-                operation_actor=request.operation_actor,
+                # The person's own move only with the proof, never by claim.
+                operation_actor='human' if _human_action(actor, request) else 'agent',
             ),
         )
         status = 'created' if project_created else 'linked'

@@ -1,7 +1,9 @@
-import { closeSync, openSync, readSync, readdirSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Read-only helpers for locating a client's JSONL session log on disk.
+
+const WINDOW_BYTES = 256 * 1024;
 
 export function listDirectory(directory) {
   try { return readdirSync(directory); } catch { return []; }
@@ -22,13 +24,33 @@ export function findFile(directory, suffix, depth) {
 
 // The first non-empty string `pick` returns for a JSON line near the start of the log.
 export function firstField(file, pick) {
+  for (const line of readWindow(file, 'start').lines) {
+    try { const value = pick(JSON.parse(line)); if (typeof value === 'string' && value) return value; } catch { /* partial line */ }
+  }
+  return null;
+}
+
+// The JSON lines near the end of the log, oldest first; whether they are the
+// whole log; and whether any line could not be read (`unreadable`): one still
+// being written, or damaged. Only the first line of a cut tail is expected to be
+// partial and does not count.
+export function lastEntries(file) {
+  const { lines, whole } = readWindow(file, 'end');
+  const entries = [];
+  let unreadable = false;
+  lines.forEach((line, index) => {
+    if (!line.trim()) return;
+    try { entries.push(JSON.parse(line)); } catch { if (whole || index > 0) unreadable = true; }
+  });
+  return { entries, whole, unreadable };
+}
+
+function readWindow(file, edge) {
   const handle = openSync(file, 'r');
   try {
-    const buffer = Buffer.alloc(256 * 1024);
-    const length = readSync(handle, buffer, 0, buffer.length, 0);
-    for (const line of buffer.subarray(0, length).toString('utf8').split('\n')) {
-      try { const value = pick(JSON.parse(line)); if (typeof value === 'string' && value) return value; } catch { /* partial line */ }
-    }
-    return null;
+    const { size } = fstatSync(handle);
+    const buffer = Buffer.alloc(Math.min(WINDOW_BYTES, size));
+    const length = readSync(handle, buffer, 0, buffer.length, edge === 'end' ? size - buffer.length : 0);
+    return { lines: buffer.subarray(0, length).toString('utf8').split('\n'), whole: length === size };
   } finally { closeSync(handle); }
 }

@@ -11,7 +11,7 @@ import { loadTerminalWays, newSessionWay, openInTerminal, type NewSessionWay, ty
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import UiIcon from '@/ui/UiIcon.vue'
-import UiIconButton from '@/ui/UiIconButton.vue'
+import UiAiButton from '@/ui/UiAiButton.vue'
 
 import { EXPLAIN_MODELS } from './explain-models'
 import { tonborgExplainAsk, tonborgExplainPrompt } from './tonborg-explain-prompt'
@@ -28,7 +28,7 @@ import { tonborgExplainAsk, tonborgExplainPrompt } from './tonborg-explain-promp
 // method is the fallback for any other AI, and the only row when no client is
 // connected.
 // A popover, not a hover card: its rows are actions, reached with Tab, Enter
-// and Escape (focus returns to the 「?」). Hovering the 「?」 opens it too,
+// and Escape (focus returns to the AI mark). Hovering the mark opens it too,
 // without taking focus.
 const props = defineProps<{ count: number }>()
 const consoleStore = useConsoleStore()
@@ -143,7 +143,7 @@ async function launch(name: string, way: Extract<NewSessionWay, { kind: 'termina
 <template>
   <Popover :open="open" @update:open="setOpen">
     <PopoverTrigger as-child>
-      <UiIconButton icon="help" size="sm" class="tonborg-explain__trigger" :label="t('reviewList.explain.title')" :active="open"
+      <UiAiButton size="sm" class="tonborg-explain__trigger" :area="t('reviewList.explain.area')" :active="open"
         data-tonborg-explain @pointerenter="hoverStart" @pointerleave="hoverEnd" @pointerdown="pressTrigger"
         @keydown.enter="pressTrigger" @keydown.space="pressTrigger" @click="hoverEnd" />
     </PopoverTrigger>
@@ -187,7 +187,7 @@ async function launch(name: string, way: Extract<NewSessionWay, { kind: 'termina
 
 <style scoped>
 /* Inside the title's own 30px line, as every card 「?」: opening the panel moves nothing. */
-.tonborg-explain__trigger { margin-block: -3px; color: var(--color-muted); }
+.tonborg-explain__trigger { margin-block: -3px; }
 </style>
 
 <style>

@@ -4,12 +4,24 @@ import { chatBubbles, deliveryInFlight, postRecipients, tableSeats } from './rou
 
 const agent = (agentId: string): RoundtablePerson => ({ agentId, name: agentId.toUpperCase(), client: 'codex' })
 const you: RoundtablePerson = { agentId: null, name: null, client: 'person' }
-const message = (id: string, kind: 'ask' | 'reply', from: RoundtablePerson, to: RoundtablePerson, extra: Partial<RoundtableMessage> = {}): RoundtableMessage => ({
+const message = (id: string, kind: RoundtableMessage['kind'], from: RoundtablePerson, to: RoundtablePerson, extra: Partial<RoundtableMessage> = {}): RoundtableMessage => ({
   id, kind, status: kind === 'ask' ? 'queued' : 'sent', body: id, inReplyTo: null, via: null, error: null,
   createdAt: '2026-10-17T00:00:00Z', from, to, ...extra,
 })
 
 describe('roundtable model', () => {
+  it('shows a stand-in (代入) answer once: its handback to the Agent is not a second bubble or seat', () => {
+    const milo = agent('milo'), jamie = agent('jamie')
+    const messages = [
+      message('a1', 'ask', milo, jamie, { status: 'answered', via: 'claude_code:stand_in' }),
+      message('r1', 'reply', jamie, milo, { inReplyTo: 'a1', via: 'claude_code:stand_in', body: 'increment' }),
+      message('h1', 'handback', milo, jamie, { inReplyTo: 'a1', via: 'claude_code:stand_in', body: 'increment' }),
+    ]
+    expect(chatBubbles({ messages }).map(bubble => [bubble.id, bubble.via])).toEqual([['a1', 'claude_code:stand_in'], ['r1', 'claude_code:stand_in']])
+    expect(tableSeats(messages).map(seat => [seat.key, seat.spoke])).toEqual([['milo', 1], ['jamie', 1]])
+  })
+
+
   it('shows a group post as one bubble with each recipient\'s own recorded state', () => {
     const bubbles = chatBubbles({ subscribers: [
       { agentId: 'a', name: 'A', delivery: 'instant', instantBlocked: null },

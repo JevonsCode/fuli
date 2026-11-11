@@ -10,7 +10,9 @@ function judgment(t) {
   const service = createJudgmentService({ app }); t.after(() => service.close());
   const escalate = (key, evidenceFingerprint = key) => service.store().record('s', { personalProjectId: 'p', kind: 'review',
     outcome: 'escalate', target: 'entity:item', title: 'Item', summary: 'Keep or correct?', evidenceFingerprint }, key);
-  const ask = () => service.agent.conversationQuestions({ personalSpaceId: 's', personalProjectId: 'p' });
+  // The question as an Agent's list of records asks it (a checkpoint's card names it only once).
+  const ask = () => service.agent.records({ personalSpaceId: 's', personalProjectId: 'p' })
+    .then(({ human_interaction }) => (human_interaction ? { human_interaction } : {}));
   return { service, escalate, ask };
 }
 
@@ -69,7 +71,9 @@ test('an escalation whose item the person already confirmed elsewhere is not ask
   const service = createJudgmentService({ app }); t.after(() => service.close());
   const record = service.store().record('s', { personalProjectId: 'p', kind: 'review', outcome: 'escalate',
     target: 'entity:item', title: 'Synthetic brand colour preference', summary: 'Keep or correct?', evidenceFingerprint: 'e' }, 'k');
-  const ask = () => service.agent.conversationQuestions({ personalSpaceId: 's', personalProjectId: 'p' });
+  // The question as an Agent's list of records asks it (a checkpoint's card names it only once).
+  const ask = () => service.agent.records({ personalSpaceId: 's', personalProjectId: 'p' })
+    .then(({ human_interaction }) => (human_interaction ? { human_interaction } : {}));
   assert.equal((await ask()).human_interaction.source.id, record.id);
   assert.equal(record.feedback.vote, null);
   for (const state of ['confirmed', 'historical']) {
