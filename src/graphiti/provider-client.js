@@ -957,6 +957,16 @@ export class GraphitiProviderClient {
       method: 'POST', body: { personal_space_id: personalSpaceId, model, items }
     });
   }
+  // A catalog model the graph service runs on this computer (src/embedding-models):
+  // texts in, vectors out. A long page of long texts takes a while on a slow CPU.
+  builtinEmbed({ model, texts, signal }) {
+    return this.#request('/v1/builtin-embeddings', { method: 'POST', body: { model, texts }, timeoutMs: 120_000,
+      ...(signal ? { signal } : {}) });
+  }
+  // Lets go of the loaded model's files before they are removed or replaced.
+  unloadBuiltinEmbeddings() {
+    return this.#request('/v1/builtin-embeddings/unload', { method: 'POST' });
+  }
   // rec#88: one bounded pass that merges duplicate current knowledge; the
   // console host runs it periodically (src/knowledge-duplicates).
   mergeDuplicates({ personalSpaceId, limit }) {

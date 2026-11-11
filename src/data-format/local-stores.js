@@ -53,6 +53,7 @@ import { CLI_PATH_FILE, CLI_PATH_FORMAT } from '../desktop/cli-path.js';
 import { WHATS_NEW_FILE, WHATS_NEW_FORMAT } from '../whats-new/whats-new.js';
 import { CLIENT_LINKS_STATE_FORMAT } from '../client-links/registry.js';
 import { OCCUPATION_PLUGINS_STATE_FORMAT } from '../occupation-plugins/port.js';
+import { EMBEDDING_MODELS_STATE_FORMAT } from '../embedding-models/registry.js';
 import { OCCUPATION_KIT_CHOICES_FORMAT } from '../occupation-plugins/choice-store.js';
 import { SESSION_CLIENT_FORMAT } from '../agent-kits/session-clients.js';
 import { ENTRY_PROMPT_FORMAT } from '../agent-delegation/entry-prompts.js';
@@ -139,6 +140,8 @@ const jsonStores = () => [
   ['client-links.json', CLIENT_LINKS_STATE_FORMAT],
   // The applied occupation plugin manifest, its auto-update switch and what each update changed.
   ['occupation-plugins.json', OCCUPATION_PLUGINS_STATE_FORMAT],
+  // The applied embedding model catalog, its auto-update switch and what each update changed.
+  ['embedding-models.json', EMBEDDING_MODELS_STATE_FORMAT],
   // The person's own name and picture (「我」), changed only in the console on this computer.
   ['person-profile.json', PERSON_PROFILE_FORMAT],
   // Whether the person stopped FULI on purpose and when client sessions started it (rec#94).

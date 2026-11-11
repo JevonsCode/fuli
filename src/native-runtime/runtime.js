@@ -44,6 +44,7 @@ import { isProcessAlive } from '../local-runtime/processes.js';
 import { diagnosticEventLog } from '../diagnostics/event-log.js';
 import { errorCode } from '../diagnostics/safe-event.js';
 import { parseProviderEnv } from '../setup/provider-env.js';
+import { embeddingModelsDirectory } from '../embedding-models/store.js';
 import { nativeInstanceLogPaths } from '../setup/paths.js';
 import { providerServerArguments } from './provider-arguments.js';
 
@@ -296,7 +297,9 @@ export function createNativeGraphServices({
         FULI_NEO4J_URI: `bolt://127.0.0.1:${spec.boltPort}`,
         FULI_NEO4J_USER: 'neo4j',
         FULI_NEO4J_PASSWORD: spec.password,
-        FULI_EMBEDDING_DIM: '384'
+        FULI_EMBEDDING_DIM: '384',
+        // Where a person's downloaded embedding models are (src/embedding-models).
+        ...(paths.dataDir ? { FULI_EMBEDDING_MODELS_DIR: embeddingModelsDirectory(paths.dataDir) } : {})
       }
     };
   }

@@ -6,7 +6,7 @@ import { currentLocale, t } from '@/i18n'
 import ModelFailureNote from './ModelFailureNote.vue'
 import ModelUseCard from './ModelUseCard.vue'
 import SemanticIndexProgress from './SemanticIndexProgress.vue'
-import { roleName, SEMANTIC_ROLE, type ModelRoleView } from './model'
+import { BUILTIN_EMBEDDING_PROTOCOL, roleName, SEMANTIC_ROLE, type ModelRoleView } from './model'
 import { healthLine, isFailing } from './model-health'
 import { stateTone, useAdvice } from './model-uses'
 import { needsPerson } from './role-details'
@@ -21,11 +21,13 @@ import { needsPerson } from './role-details'
 // answered. A model that did not answer says why, with 「测试连接」 in the line.
 // The long facts, trust and history open in 「查看详情」.
 const props = defineProps<{ view: ModelRoleView; locked: boolean; editing: boolean }>()
-const emit = defineEmits<{ edit: []; details: []; checked: [] }>()
+const emit = defineEmits<{ edit: []; details: []; checked: []; builtin: [] }>()
 
 const semantic = computed(() => props.view.role === SEMANTIC_ROLE)
 const name = computed(() => roleName(props.view.role))
 const connection = computed(() => props.view.connection ?? null)
+// A model FULI runs on this computer has no address worth showing; it is changed in 「内置模型」.
+const builtin = computed(() => connection.value?.protocol === BUILTIN_EMBEDDING_PROTOCOL)
 const waiting = computed(() => needsPerson(props.view))
 // Only a use that is on can fail: one that is off makes no calls.
 const failing = computed(() => props.view.state === 'enabled' && isFailing(props.view.health))
@@ -43,7 +45,8 @@ const state = computed(() => (failing.value ? t('modelSettings.health.failingSta
     <template #model>
       <template v-if="connection">
         <code data-model-role-model>{{ connection.model }}</code>
-        <span :title="connection.endpointHost">{{ connection.endpointHost }}</span>
+        <span v-if="builtin" data-model-role-builtin>{{ t('modelSettings.builtin.local') }}</span>
+        <span v-else :title="connection.endpointHost">{{ connection.endpointHost }}</span>
       </template>
       <span v-else data-model-role-unconnected>{{ t(semantic ? 'modelSettings.uses.noModelSemantic' : 'modelSettings.uses.noModel') }}</span>
     </template>
@@ -58,9 +61,13 @@ const state = computed(() => (failing.value ? t('modelSettings.health.failingSta
       <Button variant="ghost" size="sm" :aria-label="`${t('modelSettings.uses.details')} ${name}`" data-model-role-details @click="emit('details')">
         {{ t('modelSettings.uses.details') }}
       </Button>
-      <Button :variant="connection ? 'outline' : 'default'" size="sm" :disabled="locked" data-model-role-edit
+      <Button v-if="!builtin" :variant="connection || semantic ? 'outline' : 'default'" size="sm" :disabled="locked" data-model-role-edit
         :aria-label="`${t(connection ? 'modelSettings.edit' : 'modelSettings.uses.connect')} ${name}`" @click="emit('edit')">
         {{ t(connection ? 'modelSettings.edit' : 'modelSettings.uses.connect') }}
+      </Button>
+      <Button v-if="semantic" :variant="connection ? 'outline' : 'default'" size="sm" :disabled="locked" data-model-role-builtin-open
+        @click="emit('builtin')">
+        {{ t('modelSettings.builtin.open') }}
       </Button>
     </template>
   </ModelUseCard>

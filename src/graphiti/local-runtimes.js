@@ -81,7 +81,8 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
     openTerminal: openTerminalWindow,
     reveal: revealPath
   });
-  app.modelBackends = openModelBackendRuntime(paths);
+  // A built-in embedding model runs in the local graph service (src/embedding-models).
+  app.modelBackends = openModelBackendRuntime(paths, { builtinEmbed: input => app.personal.builtinEmbed(input) });
   ({ trust: app.modelTrust, history: app.modelSettingsHistory } = openRoleTrustAndHistory(paths, app.modelBackends));
   attachJudgmentRuntime(app, paths);
   app.roleSuggestions = openRoleSuggestionLog(paths, { recoveryGate: app.knowledgeRecoveryGate });

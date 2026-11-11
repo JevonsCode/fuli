@@ -1,0 +1,208 @@
+{
+  "format": "fuli-embedding-models",
+  "formatVersion": 1,
+  "manifestVersion": 1,
+  "updatedAt": "2026-11-11",
+  "models": [
+    {
+      "id": "bge-small-zh-v1.5",
+      "name": "BGE Small 中文 v1.5",
+      "license": "MIT",
+      "languages": [
+        "zh"
+      ],
+      "dimensions": 512,
+      "maxTokens": 512,
+      "pooling": "cls",
+      "lowercase": true,
+      "stripAccents": false,
+      "recommended": true,
+      "memoryMb": 200,
+      "summary": {
+        "zh": "中文为主的知识库首选。中英混排也能用。",
+        "en": "First choice for knowledge mostly in Chinese; mixed Chinese and English works too."
+      },
+      "source": "https://huggingface.co/BAAI/bge-small-zh-v1.5",
+      "revision": "7999e1d3359715c523056ef9478215996d62a620",
+      "files": [
+        {
+          "path": "config.json",
+          "bytes": 776,
+          "sha256": "3853a7979202c348751b753e36f579c41d8da7d36af617d3d907e1fc9b441f2a",
+          "urls": [
+            "https://huggingface.co/BAAI/bge-small-zh-v1.5/resolve/7999e1d3359715c523056ef9478215996d62a620/config.json",
+            "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/7999e1d3359715c523056ef9478215996d62a620/config.json"
+          ]
+        },
+        {
+          "path": "vocab.txt",
+          "bytes": 109540,
+          "sha256": "45bbac6b341c319adc98a532532882e91a9cefc0329aa57bac9ae761c27b291c",
+          "urls": [
+            "https://huggingface.co/BAAI/bge-small-zh-v1.5/resolve/7999e1d3359715c523056ef9478215996d62a620/vocab.txt",
+            "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/7999e1d3359715c523056ef9478215996d62a620/vocab.txt"
+          ]
+        },
+        {
+          "path": "model.safetensors",
+          "bytes": 95827648,
+          "sha256": "354763b9b1357bc9c44f62c6be2276321081ed2567773608c0d0785b61d5a026",
+          "urls": [
+            "https://huggingface.co/BAAI/bge-small-zh-v1.5/resolve/7999e1d3359715c523056ef9478215996d62a620/model.safetensors",
+            "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/7999e1d3359715c523056ef9478215996d62a620/model.safetensors"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gte-small-zh",
+      "name": "GTE Small 中文",
+      "license": "MIT",
+      "languages": [
+        "zh"
+      ],
+      "dimensions": 512,
+      "maxTokens": 512,
+      "pooling": "cls",
+      "lowercase": true,
+      "stripAccents": true,
+      "recommended": false,
+      "memoryMb": 240,
+      "summary": {
+        "zh": "下载最小的中文模型。",
+        "en": "The smallest download for Chinese."
+      },
+      "source": "https://huggingface.co/thenlper/gte-small-zh",
+      "revision": "af7bd46fbb00b3a6963c8dd7f1786ddfbfbe973a",
+      "files": [
+        {
+          "path": "config.json",
+          "bytes": 772,
+          "sha256": "a0ee9be96d6ef1cf5af255705b52590212ef834aa9547e17d93399c438b63fe4",
+          "urls": [
+            "https://huggingface.co/thenlper/gte-small-zh/resolve/af7bd46fbb00b3a6963c8dd7f1786ddfbfbe973a/config.json",
+            "https://hf-mirror.com/thenlper/gte-small-zh/resolve/af7bd46fbb00b3a6963c8dd7f1786ddfbfbe973a/config.json"
+          ]
+        },
+        {
+          "path": "vocab.txt",
+          "bytes": 69998,
+          "sha256": "fc4b55153cc8633a75d9142e721f05e26c833b186b356b1b9251f3f789ed75e4",
+          "urls": [
+            "https://huggingface.co/thenlper/gte-small-zh/resolve/af7bd46fbb00b3a6963c8dd7f1786ddfbfbe973a/vocab.txt",
+            "https://hf-mirror.com/thenlper/gte-small-zh/resolve/af7bd46fbb00b3a6963c8dd7f1786ddfbfbe973a/vocab.txt"
+          ]
+        },
+        {
+          "path": "model.safetensors",
+          "bytes": 60532888,
+          "sha256": "08045028316ab4071f5e2b2926acdb36a8c21ffc4fe709991e1171650ec61281",
+          "urls": [
+            "https://huggingface.co/thenlper/gte-small-zh/resolve/af7bd46fbb00b3a6963c8dd7f1786ddfbfbe973a/model.safetensors",
+            "https://hf-mirror.com/thenlper/gte-small-zh/resolve/af7bd46fbb00b3a6963c8dd7f1786ddfbfbe973a/model.safetensors"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bge-small-en-v1.5",
+      "name": "BGE Small English v1.5",
+      "license": "MIT",
+      "languages": [
+        "en"
+      ],
+      "dimensions": 384,
+      "maxTokens": 512,
+      "pooling": "cls",
+      "lowercase": true,
+      "stripAccents": true,
+      "recommended": false,
+      "memoryMb": 260,
+      "summary": {
+        "zh": "英文为主的知识库首选。不认识中文。",
+        "en": "First choice for knowledge mostly in English. It does not read Chinese."
+      },
+      "source": "https://huggingface.co/BAAI/bge-small-en-v1.5",
+      "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+      "files": [
+        {
+          "path": "config.json",
+          "bytes": 743,
+          "sha256": "094f8e891b932f2000c92cfc663bac4c62069f5d8af5b5278c4306aef3084750",
+          "urls": [
+            "https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/config.json",
+            "https://hf-mirror.com/BAAI/bge-small-en-v1.5/resolve/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/config.json"
+          ]
+        },
+        {
+          "path": "vocab.txt",
+          "bytes": 231508,
+          "sha256": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
+          "urls": [
+            "https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/vocab.txt",
+            "https://hf-mirror.com/BAAI/bge-small-en-v1.5/resolve/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/vocab.txt"
+          ]
+        },
+        {
+          "path": "model.safetensors",
+          "bytes": 133466304,
+          "sha256": "3c9f31665447c8911517620762200d2245a2518d6e7208acc78cd9db317e21ad",
+          "urls": [
+            "https://huggingface.co/BAAI/bge-small-en-v1.5/resolve/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/model.safetensors",
+            "https://hf-mirror.com/BAAI/bge-small-en-v1.5/resolve/5c38ec7c405ec4b44b94cc5a9bb96e735b38267a/model.safetensors"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "all-minilm-l6-v2",
+      "name": "MiniLM L6 v2 (English)",
+      "license": "Apache-2.0",
+      "languages": [
+        "en"
+      ],
+      "dimensions": 384,
+      "maxTokens": 256,
+      "pooling": "mean",
+      "lowercase": true,
+      "stripAccents": true,
+      "recommended": false,
+      "memoryMb": 180,
+      "summary": {
+        "zh": "最快的英文模型。不认识中文。",
+        "en": "The fastest for English. It does not read Chinese."
+      },
+      "source": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
+      "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
+      "files": [
+        {
+          "path": "config.json",
+          "bytes": 612,
+          "sha256": "953f9c0d463486b10a6871cc2fd59f223b2c70184f49815e7efbcab5d8908b41",
+          "urls": [
+            "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/config.json",
+            "https://hf-mirror.com/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/config.json"
+          ]
+        },
+        {
+          "path": "vocab.txt",
+          "bytes": 231508,
+          "sha256": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
+          "urls": [
+            "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/vocab.txt",
+            "https://hf-mirror.com/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/vocab.txt"
+          ]
+        },
+        {
+          "path": "model.safetensors",
+          "bytes": 90868376,
+          "sha256": "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db",
+          "urls": [
+            "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/model.safetensors",
+            "https://hf-mirror.com/sentence-transformers/all-MiniLM-L6-v2/resolve/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/model.safetensors"
+          ]
+        }
+      ]
+    }
+  ]
+}

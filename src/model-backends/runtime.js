@@ -11,7 +11,8 @@ import { ModelUsageLedger } from './usage-ledger.js';
 // Composition of the model port for one FULI data directory. The config is
 // read on every call, so a saved change applies without a restart.
 // Keys saved before they were tied to an endpoint are tied once here (secret-store.js bindLegacyKeys).
-export function openModelBackendRuntime(paths) {
+// builtinEmbed reaches the local graph service's own embedding model (port.js).
+export function openModelBackendRuntime(paths, { builtinEmbed = null } = {}) {
   const readConfig = () => readModelBackendConfig(paths.modelBackendConfigPath);
   const secrets = createModelSecretStore({ path: paths.modelSecretStorePath });
   const loaded = readConfig();
@@ -23,7 +24,8 @@ export function openModelBackendRuntime(paths) {
   return createModelBackendPort({
     readConfig,
     secrets,
-    ledger: new ModelUsageLedger(paths.modelUsageLedgerPath)
+    ledger: new ModelUsageLedger(paths.modelUsageLedgerPath),
+    builtinEmbed
   });
 }
 
