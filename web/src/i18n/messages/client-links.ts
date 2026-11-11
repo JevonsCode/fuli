@@ -32,6 +32,11 @@ export const clientLinksMessages = {
     clients: '客户端',
     noLink: '没有可核实的会话链接',
     opens: '在 {app} 中打开',
+    // NewSessionPanel.vue: the rows that open a new session in the person's AI client.
+    newSession: {
+      copyTag: '复制', terminalTag: '新窗口', opening: '正在打开 {client}…', pasteIn: '已复制，在 {client} 里粘贴发送',
+      copyForOther: '复制给其他 AI', copyOnly: '复制给你的 AI', copyFailed: '没能复制，请手动复制下面这段',
+    },
   },
   'en-US': {
     title: 'Session links',
@@ -66,5 +71,9 @@ export const clientLinksMessages = {
     clients: 'Clients',
     noLink: 'No verifiable session link',
     opens: 'Open in {app}',
+    newSession: {
+      copyTag: 'Copy', terminalTag: 'New window', opening: 'Opening {client}…', pasteIn: 'Copied; paste it in {client} and send',
+      copyForOther: 'Copy for another AI', copyOnly: 'Copy for your AI', copyFailed: 'Could not copy; copy the text below',
+    },
   },
 }

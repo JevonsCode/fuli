@@ -61,7 +61,7 @@ describe('TonborgExplain', () => {
     trigger().click()
     await flushPromises()
     const actions = [...panel().querySelectorAll<HTMLElement>('a, button')]
-    expect(actions.map(item => item.dataset.tonborgExplainOpen ?? item.dataset.tonborgExplainPaste ?? 'copy'))
+    expect(actions.map(item => item.dataset.newSessionOpen ?? item.dataset.newSessionPaste ?? 'copy'))
       .toEqual(['codex', 'claude-desktop', 'opencode', 'copy'])
     // A hover card would set tabindex=-1 on these; a popover keeps them in the Tab order.
     for (const action of actions) expect(action.getAttribute('tabindex')).not.toBe('-1')
@@ -99,15 +99,15 @@ describe('TonborgExplain', () => {
 
   it('lists each connected client whose new-chat link takes a prompt; a click opens it and says where', async () => {
     await opened(7)
-    const openers = [...panel().querySelectorAll<HTMLAnchorElement>('[data-tonborg-explain-open]')]
+    const openers = [...panel().querySelectorAll<HTMLAnchorElement>('[data-new-session-open]')]
     // Codex and Claude Desktop are connected with prompt links; Claude Code is not installed; OpenCode documents no link.
-    expect(openers.map(item => item.dataset.tonborgExplainOpen)).toEqual(['codex', 'claude-desktop'])
+    expect(openers.map(item => item.dataset.newSessionOpen)).toEqual(['codex', 'claude-desktop'])
     expect(openers[0].href.startsWith('codex://new?prompt=')).toBe(true)
     // The client has FULI: one sentence naming Tonborg, nothing about tools.
     expect(decodeURIComponent(openers[0].href.split('prompt=')[1])).toBe('#FLA Tonborg 给我讲讲待决策里你拿不准的事')
     expect(decodeURIComponent(openers[1].href.split('q=')[1])).toBe('#FLA Tonborg 给我讲讲待决策里你拿不准的事')
     // No link takes a model, so no model name is shown.
-    expect(panel().querySelector('.tonborg-explain__model')).toBeNull()
+    expect(panel().querySelector('[data-new-session-open] .new-session-panel__tag')).toBeNull()
     expect(panel().textContent).toContain('复制给其他 AI')
     openers[1].addEventListener('click', event => event.preventDefault())
     openers[1].click()
@@ -118,10 +118,10 @@ describe('TonborgExplain', () => {
 
   it('a connected client without a prompt link copies the one sentence and says where to paste it', async () => {
     await opened(3)
-    const row = panel().querySelector<HTMLButtonElement>('[data-tonborg-explain-paste="opencode"]')!
+    const row = panel().querySelector<HTMLButtonElement>('[data-new-session-paste="opencode"]')!
     // The same row as the others, with only a small 复制 on the right.
-    expect(row.classList.contains('tonborg-explain__row')).toBe(true)
-    expect(row.querySelector('.tonborg-explain__tag')?.textContent).toBe('复制')
+    expect(row.classList.contains('new-session-panel__row')).toBe(true)
+    expect(row.querySelector('.new-session-panel__tag')?.textContent).toBe('复制')
     row.click()
     await flushPromises()
     expect(writeText).toHaveBeenCalledWith('#FLA Tonborg 给我讲讲待决策里你拿不准的事')
@@ -135,7 +135,7 @@ describe('TonborgExplain', () => {
       client('gemini', 'Gemini CLI', null), client('qwen-code', 'Qwen Code', null)]
     customClients = [client('mine', 'My Agent', null), client('second', 'Second Agent', null), client('third', 'Third Agent', null)]
     await opened(3)
-    const names = [...panel().querySelectorAll('.tonborg-explain__clients .tonborg-explain__name')].map(item => item.textContent)
+    const names = [...panel().querySelectorAll('.new-session-panel__clients .new-session-panel__name')].map(item => item.textContent)
     expect(names).toEqual(['Codex', 'OpenCode', 'Cursor', 'Claude Desktop', 'Gemini CLI', 'Qwen Code', 'My Agent'])
     expect(panel().textContent).toContain('复制给其他 AI')
   })
@@ -145,7 +145,7 @@ describe('TonborgExplain', () => {
     manifest.clients[0].sessionLinks[1].parameters.model = { format: 'any' }
     try {
       await opened(2)
-      const codex = panel().querySelector<HTMLAnchorElement>('[data-tonborg-explain-open="codex"]')!
+      const codex = panel().querySelector<HTMLAnchorElement>('[data-new-session-open="codex"]')!
       expect(codex.href).toContain('&model=medium')
       expect(codex.textContent).toContain('medium')
     } finally {
@@ -156,7 +156,7 @@ describe('TonborgExplain', () => {
   it('copies the prompt and names what was copied in a toast', async () => {
     await opened(3)
     expect(panel().textContent).not.toContain('先过几条')
-    panel().querySelector<HTMLButtonElement>('[data-tonborg-explain-copy]')!.click()
+    panel().querySelector<HTMLButtonElement>('[data-new-session-copy]')!.click()
     await flushPromises()
     expect(writeText).toHaveBeenCalledTimes(1)
     expect(writeText.mock.calls[0][0]).toContain('list_tonborg_questions')
@@ -169,11 +169,11 @@ describe('TonborgExplain', () => {
     clients = []
     writeText.mockRejectedValueOnce(new Error('denied'))
     await opened(2)
-    expect(panel().querySelectorAll('[data-tonborg-explain-open]')).toHaveLength(0)
+    expect(panel().querySelectorAll('[data-new-session-open]')).toHaveLength(0)
     expect(panel().textContent).toContain('复制给你的 AI')
-    panel().querySelector<HTMLButtonElement>('[data-tonborg-explain-copy]')!.click()
+    panel().querySelector<HTMLButtonElement>('[data-new-session-copy]')!.click()
     await flushPromises()
-    const text = panel().querySelector<HTMLTextAreaElement>('[data-tonborg-explain-text]')!
+    const text = panel().querySelector<HTMLTextAreaElement>('[data-new-session-text]')!
     expect(text.value).toContain('answer_tonborg_question')
   })
 
@@ -194,8 +194,8 @@ describe('TonborgExplain', () => {
     await opened(3)
     expect(asked).toEqual([{ clients: ['codex', 'claude-code', 'claude-desktop', 'opencode'] }])
     // Codex keeps its documented app link; OpenCode, without one, opens in a terminal.
-    expect(panel().querySelector('[data-tonborg-explain-open="codex"]')).not.toBeNull()
-    const terminal = panel().querySelector<HTMLButtonElement>('[data-tonborg-explain-terminal="opencode"]')!
+    expect(panel().querySelector('[data-new-session-open="codex"]')).not.toBeNull()
+    const terminal = panel().querySelector<HTMLButtonElement>('[data-new-session-terminal="opencode"]')!
     expect(terminal.textContent).toContain('新窗口')
     terminal.click()
     await flushPromises()
@@ -206,7 +206,7 @@ describe('TonborgExplain', () => {
 
     opens = false
     await opened(3)
-    panel().querySelector<HTMLButtonElement>('[data-tonborg-explain-terminal="opencode"]')!.click()
+    panel().querySelector<HTMLButtonElement>('[data-new-session-terminal="opencode"]')!.click()
     await flushPromises()
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Tonborg'))
     expect(useConsoleStore().feedback?.message).toMatch(/在 OpenCode 里粘贴发送/)
@@ -221,9 +221,9 @@ describe('TonborgExplain', () => {
       throw new Error('unexpected ' + url)
     })
     await opened(3)
-    const names = [...panel().querySelectorAll('.tonborg-explain__name')].map(item => item.textContent)
+    const names = [...panel().querySelectorAll('.new-session-panel__name')].map(item => item.textContent)
     expect(names).toEqual(['Codex', 'OpenCode'])
-    expect(panel().querySelector('[data-tonborg-explain-open="codex"]')).not.toBeNull()
-    expect(panel().querySelector('[data-tonborg-explain-terminal="opencode"]')).not.toBeNull()
+    expect(panel().querySelector('[data-new-session-open="codex"]')).not.toBeNull()
+    expect(panel().querySelector('[data-new-session-terminal="opencode"]')).not.toBeNull()
   })
 })
