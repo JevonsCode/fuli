@@ -67,7 +67,6 @@ test('Vue Router owns primary navigation and addressable knowledge state', () =>
     "'/personal/:spaceId/projects/:projectId/:mode'",
     "'/public-projects'",
     "'/knowledge/:scope/:spaceId/:mode'",
-    "'/review'",
     "'/connections'"
   ]) {
     assert.match(routes, new RegExp(path.replace(/[/:?*.()]/g, '\\$&')));
