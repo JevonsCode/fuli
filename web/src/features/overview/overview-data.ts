@@ -41,6 +41,20 @@ export function overviewOwnerId(task: ProjectAgentTaskRecord) {
   return task.leadAgentId?.trim() || task.ownerAgentId?.trim() || null
 }
 
+// How many FLAs one page reads names for; the ones past it say the name is not available.
+const OVERVIEW_NAME_LIMIT = 240
+
+/** Every FLA the workbench can name, most visible first: requests, then each task's lead, participants and history. */
+export function overviewAgentIds(requests: readonly { agentId: string }[], tasks: readonly ProjectAgentTaskRecord[]) {
+  const ids = [
+    ...requests.map(item => item.agentId),
+    ...tasks.map(overviewOwnerId),
+    ...tasks.flatMap(task => [...(task.participants ?? []).map(participant => participant.agentId),
+      ...(task.events ?? []).map(event => event.agentId)]),
+  ].map(id => id?.trim()).filter((id): id is string => Boolean(id))
+  return [...new Set(ids)].slice(0, OVERVIEW_NAME_LIMIT)
+}
+
 export function overviewOpenRequest(task: ProjectAgentTaskRecord, items: readonly AgentAttention[], spaceId: string) {
   return items.find(item => item.status === 'open' && item.personalSpaceId === spaceId
     && task.personalSpaceId === spaceId

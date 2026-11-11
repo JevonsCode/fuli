@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeOverviewTasks, currentWork, overviewTaskTitle, overviewOwnerId, overviewOpenRequest, overviewTaskHref } from './overview-data'
+import { normalizeOverviewTasks, currentWork, overviewAgentIds, overviewTaskTitle, overviewOwnerId, overviewOpenRequest, overviewTaskHref } from './overview-data'
 import type { AgentAttention } from '@/features/project-agents/attention-store'
 
 // Synthetic records exercise the public page contract; no personal-space writes.
@@ -9,6 +9,14 @@ const task = (id: string, status: string, extra = {}) => normalizeOverviewTasks(
 }] }, 's')[0]!
 
 describe('workbench field projection', () => {
+  it('lists every FLA the page can name once: requests, then leads, then participants and history', () => {
+    const rows = [task('a', 'running', { lead_agent_id: 'lead-a', participants: [{ agent_id: 'lead-a' }, { agent_id: 'helper' }],
+      events: [{ event_id: 'e1', task_id: 'a', agent_id: 'past', status: 'running', created_at: '2026-10-18T00:00:00Z' }] }),
+      task('b', 'running', { lead_agent_id: 'lead-b' })]
+    expect(overviewAgentIds([{ agentId: 'asker' }, { agentId: 'lead-b' }], rows)).toEqual(['asker', 'lead-b', 'lead-a', 'helper', 'past'])
+    const many = Array.from({ length: 300 }, (_, index) => task('t' + index, 'running', { lead_agent_id: 'lead-' + index }))
+    expect(overviewAgentIds([], many)).toHaveLength(240)
+  })
   it('keeps failed work before ordinary work with stable grouping and no input mutation', () => {
     const rows = [task('running', 'running'), task('failed', 'failed'), task('review', 'awaiting_review'), task('blocked', 'blocked'), task('done', 'completed')]
     expect(currentWork(rows).map(row => row.taskId)).toEqual(['failed', 'blocked', 'review', 'running'])

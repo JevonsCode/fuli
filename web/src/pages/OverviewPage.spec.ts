@@ -240,6 +240,43 @@ describe('OverviewPage', () => {
   })
 
 
+  it('names every FLA it shows, past the fortieth lead, and tells an unnamed one from one it could not read (rec#112)', async () => {
+    const agent = (agentId: string, displayName: string, extra = {}) => ({ agentId, personalSpaceId: 'space-a',
+      profile: { name: displayName, displayName, status: 'active', capabilities: [] }, ...extra })
+    // Fifty other leads come first; the staged task's lead, participants and aliases are read too.
+    const others = Array.from({ length: 50 }, (_, index) => ({ ...task('other-' + index, 'completed', '2026-09-01T00:00:00Z', 'project-a'),
+      lead_agent_id: 'lead-' + index }))
+    const staged = { ...task('staged', 'running', '2026-09-12T00:00:00Z', 'project-a'), lead_agent_id: 'late-lead',
+      participants: [{ agent_id: 'late-lead', role: 'lead', status: 'running' }, { agent_id: 'helper', role: 'collaborator', status: 'running' },
+        { agent_id: 'old-id', role: 'collaborator', status: 'running' }, { agent_id: 'gone', role: 'collaborator', status: 'running' },
+        { agent_id: 'broken', role: 'collaborator', status: 'running' }] }
+    const roster = [agent('late-lead', 'Robin Stone'), agent('helper', 'Jamie Ash'), agent('renamed', 'Nova Lane', { legacyAgentIds: ['old-id'] })]
+    const reads: string[] = []
+    const { wrapper } = await setup({ getJsonImplementation: url => {
+      if (url.startsWith('/api/project-agent-tasks?')) return { items: [...others, staged] }
+      if (url.startsWith('/api/agent-attention?')) return { items: [], total: 0, counts: {} }
+      const id = decodeURIComponent(new URL(url, 'http://fixture').pathname.split('/')[3] ?? '')
+      if (!url.startsWith('/api/project-agents/')) return {}
+      reads.push(id)
+      if (id === 'broken') return Promise.reject(Object.assign(new Error('synthetic failure'), { status: 500 }))
+      // An FLA read by an earlier ID of its own answers with its current one.
+      const found = roster.find(record => record.agentId === id || (record as { legacyAgentIds?: string[] }).legacyAgentIds?.includes(id))
+      return found ? Promise.resolve(found) : Promise.reject(Object.assign(new Error('project Agent not found'), { status: 404 }))
+    } })
+    await flushPromises()
+    // An answer (a record, or none) is read once; only a read that failed is tried again.
+    const answered = reads.filter(id => id !== 'broken')
+    expect(answered.filter((id, index) => answered.indexOf(id) !== index)).toEqual([])
+    expect(reads).toEqual(expect.arrayContaining(['lead-49', 'late-lead', 'helper', 'old-id', 'gone', 'broken']))
+    const cast = wrapper.get('[data-workbench-cast]').text()
+    expect(cast).toContain('Robin Stone')
+    expect(cast).toContain('Jamie Ash')
+    expect(cast).toContain('Nova Lane')
+    expect(cast).toContain('姓名未提供')
+    expect(cast).toContain('负责人姓名暂不可用')
+    wrapper.unmount()
+  })
+
   it('keeps task content usable while owner names time out', async () => {
     vi.useFakeTimers()
     const { wrapper } = await setup({ getJsonImplementation: url => {

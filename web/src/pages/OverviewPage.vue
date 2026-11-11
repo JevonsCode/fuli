@@ -76,7 +76,10 @@ function projectName(id?: string | null) { return (id && projectNames.value.get(
 function agentName(id?: string | null) {
   const record = id ? names.data?.records[id] : undefined
   if (record) { const name = agentDisplayName(record).trim(); if (name && name !== id && !record.legacyAgentIds?.includes(name)) return name }
-  return names.loading ? t('overview.missing.nameLoading') : names.error || names.data?.partial ? t('overview.missing.nameUnavailable') : t('overview.missing.name')
+  if (names.loading) return t('overview.missing.nameLoading')
+  // 「姓名未提供」 only for an FLA that was read and has no name; one that was not read, or whose read failed, says so.
+  const answered = Boolean(id && names.data?.asked.includes(id) && !names.data.failed.includes(id))
+  return names.error || !answered ? t('overview.missing.nameUnavailable') : t('overview.missing.name')
 }
 function owner(task: ProjectAgentTaskRecord) { const id = overviewOwnerId(task); return id ? agentName(id) : t('overview.missing.owner') }
 function taskTitle(task: ProjectAgentTaskRecord) { return overviewTaskTitle(task) || t('overview.missing.taskTitle') }

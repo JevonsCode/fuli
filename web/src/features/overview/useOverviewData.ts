@@ -3,7 +3,7 @@ import { getJson } from '@/api/client'
 import type { PersonalProject, ProjectAgentRecord, ProjectAgentTaskRecord } from '@/types'
 import type { AgentAttention } from '@/features/project-agents/attention-store'
 import { isAgentTaskDataComplete } from '@/features/agent-profile/agent-work-summary'
-import { overviewOwnerId, normalizeOverviewTasks } from './overview-data'
+import { overviewAgentIds, normalizeOverviewTasks } from './overview-data'
 import { overviewResource } from './overview-resource'
 
 /** Page-local cache: never writes business state, never survives a space/authority change. */
@@ -11,18 +11,21 @@ export function useOverviewData(spaceId: Ref<string>, projects: Ref<PersonalProj
   const revoked = overviewResource<boolean>()
   const tasks = overviewResource<{ items: ProjectAgentTaskRecord[]; partial: boolean }>(deny)
   const requests = overviewResource<{ items: AgentAttention[]; total: number; partial: boolean }>(deny)
-  const names = overviewResource<{ records: Record<string, ProjectAgentRecord>; partial: boolean }>(deny)
+  // asked: every ID this round answered for (a record, or none); failed: the ones whose read failed.
+  const names = overviewResource<{ records: Record<string, ProjectAgentRecord>; partial: boolean; asked: string[]; failed: string[] }>(deny)
+  // What this space already answered: a later round reads only the IDs it has not seen.
+  const known = new Map<string, ProjectAgentRecord | null>()
   const denied = computed(() => revoked.state.data === true)
   const allowed = computed(() => new Set(projects.value.map(project => project.project_id)))
   const allowedProject = (id?: string | null) => !id || allowed.value.has(id)
   const taskItems = computed(() => denied.value ? [] : (tasks.state.data?.items ?? []).filter(task => allowedProject(task.personalProjectId)))
   const requestItems = computed(() => denied.value ? [] : (requests.state.data?.items ?? []).filter(item => allowedProject(item.personalProjectId)))
-  const agentIds = computed(() => [...new Set([
-    ...requestItems.value.map(item => item.agentId),
-    ...taskItems.value.map(overviewOwnerId).filter((id): id is string => Boolean(id)),
-  ])].slice(0, 40))
+  // Everyone the page can show: who is waiting on the person, then each task's
+  // lead, participants and the FLAs in its history (rec issue 112: only the first 40
+  // leads were read, and the rest read as 「姓名未提供」).
+  const agentIds = computed(() => overviewAgentIds(requestItems.value, taskItems.value))
   let currentSpace = ''
-  function reset() { tasks.reset(); requests.reset(); names.reset() }
+  function reset() { tasks.reset(); requests.reset(); names.reset(); known.clear() }
   function deny() {
     reset()
     revoked.state.data = true
@@ -48,25 +51,32 @@ export function useOverviewData(spaceId: Ref<string>, projects: Ref<PersonalProj
     const id = spaceId.value, ids = [...agentIds.value]
     if (!id || denied.value || !ids.length) return
     await names.load(async signal => {
-      const records: Record<string, ProjectAgentRecord> = {}
-      let partial = false
-      for (let index = 0; index < ids.length; index += 6) {
+      const failed: string[] = []
+      const unread = ids.filter(agentId => !known.has(agentId))
+      for (let index = 0; index < unread.length; index += 6) {
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-        const results = await Promise.allSettled(ids.slice(index, index + 6).map(async agentId => {
+        const batch = unread.slice(index, index + 6)
+        const results = await Promise.allSettled(batch.map(async agentId => {
           const record = await getJson<ProjectAgentRecord>(`/api/project-agents/${encodeURIComponent(agentId)}?${new URLSearchParams({ personalSpaceId: id })}`, { signal }).catch(cause => {
             // Permission loss must not wait for a different name's hung read.
             if (!signal.aborted && (cause?.status === 401 || cause?.status === 403)) deny()
             throw cause
           })
-          if (record.personalSpaceId === id && record.agentId === agentId && record.profile) records[agentId] = record
+          // An FLA read by an earlier ID of its own answers with its current one.
+          const same = record.agentId === agentId || record.legacyAgentIds?.includes(agentId)
+          known.set(agentId, record.personalSpaceId === id && same && record.profile ? record : null)
         }))
-        for (const result of results) if (result.status === 'rejected') {
+        results.forEach((result, position) => {
+          if (result.status !== 'rejected') return
           const status = result.reason?.status
           if (status === 401 || status === 403) throw result.reason
-          if (status !== 404) partial = true
-        }
+          if (status === 404) known.set(batch[position]!, null)
+          else failed.push(batch[position]!)
+        })
       }
-      return { records, partial }
+      const records: Record<string, ProjectAgentRecord> = {}
+      for (const agentId of ids) { const record = known.get(agentId); if (record) records[agentId] = record }
+      return { records, partial: failed.length > 0, asked: ids.filter(agentId => known.has(agentId)), failed }
     })
   }
   watch(spaceId, id => {
