@@ -205,9 +205,6 @@ export const settingsMessages = {
     ports: {
       title: '服务端口',
       personal: '个人服务',
-      development: '公共服务',
-      developing: '开发中',
-      developmentMeta: 'fuli-server 发布后，可配置已部署服务的域名。',
       console: '管理界面',
       personalProvider: '个人 Provider',
       personalNeo4jHttp: '个人 Neo4j Browser',
@@ -577,9 +574,6 @@ export const settingsMessages = {
     ports: {
       title: 'Service ports',
       personal: 'Personal services',
-      development: 'Public service',
-      developing: 'In development',
-      developmentMeta: 'Configure the deployed server domain after fuli-server is published.',
       console: 'Management UI',
       personalProvider: 'Personal Provider',
       personalNeo4jHttp: 'Personal Neo4j Browser',

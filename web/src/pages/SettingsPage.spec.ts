@@ -413,8 +413,9 @@ describe('SettingsPage', () => {
     expect(warnings).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('硬盘更新于')
     expect(wrapper.findAll('.port-grid input')).toHaveLength(4)
-    expect(wrapper.get('.development-section').text()).toContain('开发中')
-    expect(wrapper.get('.development-section').text()).toContain('fuli-server')
+    // No placeholder for a public service: public projects were removed.
+    expect(wrapper.find('.development-section').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('公共服务')
     expect(wrapper.findAll('.select-row > select')).toHaveLength(0)
     expect(wrapper.findAll('.settings-select [role="combobox"]')).toHaveLength(2)
     expect(wrapper.findAll('.conversation-launcher-row')).toHaveLength(7)
