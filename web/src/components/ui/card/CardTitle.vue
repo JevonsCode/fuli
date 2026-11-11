@@ -13,7 +13,7 @@ const props = withDefaults(defineProps<{
   <component
     :is="as"
     data-slot="card-title"
-    :class="cn('text-lg leading-snug font-semibold', props.class)"
+    :class="cn('flex min-w-0 items-center gap-1 text-lg leading-snug font-semibold', props.class)"
   >
     <slot />
   </component>
