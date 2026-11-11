@@ -7,7 +7,8 @@
 .settings-card [data-slot="card-header"] { padding-inline: 24px; }
 .setting-list { display: grid; padding-inline: 24px; }
 /* A card a link opened (#conversation-launchers, ?setting=…) is marked until the person moves on. */
-.settings-card[data-settings-linked] { box-shadow: 0 0 0 2px var(--ring); }
+/* The card a link led to: a quiet edge, not a focus ring (the card is not focused). */
+.settings-card[data-settings-linked] { box-shadow: 0 0 0 2px var(--color-border-strong); }
 
 /* A divider between rows has the card's own rhythm on each side (16px, like the
    title-to-content gap), so the middle of a card is as roomy as its edges

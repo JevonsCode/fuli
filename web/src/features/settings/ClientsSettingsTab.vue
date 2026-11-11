@@ -136,9 +136,10 @@ function conversationApplicationLabel(application: ConversationSourceApplication
 .clients-more { display: grid; gap: var(--space-3); min-width: 0; }
 .clients-more > h2 { margin: 0; }
 
-/* Full width, its clients in two columns: a tall list beside the short 通知 card left half the row empty. */
-.conversation-launcher-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); column-gap: var(--space-8, 32px); align-items: start; }
-.conversation-launcher-row { padding: 16px 0; border-bottom: 1px solid var(--color-border); }
+/* Full width, its clients flowing down two columns: a tall list beside the short 通知 card left half
+   the row empty, and rows paired across would leave a gap beside a client whose fields are open. */
+.conversation-launcher-list { display: block; columns: 440px 2; column-gap: var(--space-8, 32px); }
+.conversation-launcher-row { break-inside: avoid; padding: 16px 0; border-bottom: 1px solid var(--color-border); }
 .conversation-launcher-heading { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .conversation-launcher-heading > span { display: grid; min-width: 0; gap: 4px; overflow-wrap: anywhere; }
 .conversation-launcher-heading strong { color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); }
