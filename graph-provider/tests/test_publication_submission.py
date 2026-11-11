@@ -120,8 +120,5 @@ def test_delivery_assertion_requires_a_boolean(value):
 
 
 def test_delivery_assertion_is_internal_and_only_valid_for_release():
-    from fuli_graph.models import PublicationDraftDecision
     with pytest.raises(ValueError):
         PublicationSubmissionDecision(decision='mark_submission_unknown', submission_id='attempt', delivery_not_started=False)
-    with pytest.raises(ValueError):
-        PublicationDraftDecision(decision='release_submit_public', submission_id='attempt', delivery_not_started=True)

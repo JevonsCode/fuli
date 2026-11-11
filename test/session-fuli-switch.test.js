@@ -220,7 +220,7 @@ const MEMORY_READS = [['search_knowledge_graph', { query: 'chapter' }], ['search
   ['get_project_agent_context', {}], ['get_project_agent_memory', {}], ['export_project_agent_memory', {}],
   ['read_agent_conversation', {}], ['list_agent_conversations', {}], ['list_preference_conflicts', {}],
   ['discover_personal_global_preference_candidates', {}],
-  ['recommend_next_workflow_steps', {}], ['get_agent_handoff', {}], ['read_agent_messages', {}], ['list_personal_projects', {}]];
+  ['get_agent_handoff', {}], ['read_agent_messages', {}], ['list_personal_projects', {}]];
 
 test('C3b-3 every memory read a model starts is refused for a stopped session, and only for it', async (t) => {
   const f = await fixture(t);
@@ -883,8 +883,8 @@ test('the attribution token is an optional field of the tools whose schema names
   for (const name of ['get_collaboration_preferences', 'get_user_taste_skill', 'search_current_project_knowledge', 'search_knowledge_graph',
     'search_connected_knowledge', 'list_project_agents', 'get_project_agent_context', 'get_project_agent_memory',
     'list_preference_conflicts', 'resolve_deferred_preference_conflict', 'request_agent_attention', 'assess_agent_action',
-    'review_with_tonborg', 'get_agent_quality_gate', 'get_project_team', 'recommend_next_workflow_steps', 'find_agents',
-    'capture_session_knowledge', 'record_decision_trace', 'record_workflow_transition_observation',
+    'review_with_tonborg', 'get_agent_quality_gate', 'get_project_team', 'find_agents',
+    'capture_session_knowledge', 'record_decision_trace',
     'checkpoint_project_agent_memory', 'record_project_agent_task_activity', 'record_project_agent_executor_actual',
     'record_project_agent_task_outcome']) {
     assert.deepEqual(byName.get(name).properties.taskContextToken, { type: 'string' }, name);

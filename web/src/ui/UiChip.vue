@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// A tag. Fixed height and its own ellipsis keep wrapped rows aligned; put
-// chips in a UiChipRow so wrapping uses one gap in both directions.
+// A tag. Fixed height and its own ellipsis keep wrapped rows aligned.
 withDefaults(defineProps<{ tone?: 'neutral' | 'accent' | 'warning' | 'danger'; title?: string }>(), { tone: 'neutral', title: undefined })
 </script>
 

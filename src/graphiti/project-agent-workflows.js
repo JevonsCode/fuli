@@ -14,7 +14,6 @@ import {
   projectAgentActivityRecord,
   projectAgentAssignmentRecord,
   projectAgentCoordinationPolicyRecord,
-  projectAgentRecruitmentPolicyRecord,
   projectAgentRecruitmentRecord,
   projectAgentTaskRecord,
   projectAgentTaskOutcomeRecord,
@@ -455,21 +454,6 @@ export async function updateProjectAgentCoordinationPolicy(application, input) {
     await application.personal.updateProjectAgentCoordinationPolicy(
       providerProjectAgentCoordinationPolicy(input)
     )
-  );
-}
-
-export async function getProjectAgentRecruitmentPolicy(application, input) {
-  return projectAgentRecruitmentPolicyRecord(
-    await application.personal.getProjectAgentRecruitmentPolicy(input.personalSpaceId)
-  );
-}
-
-export async function updateProjectAgentRecruitmentPolicy(application, input) {
-  return projectAgentRecruitmentPolicyRecord(
-    await application.personal.updateProjectAgentRecruitmentPolicy({
-      personal_space_id: input.personalSpaceId,
-      confirmation_mode: input.confirmationMode
-    })
   );
 }
 

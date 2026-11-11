@@ -131,22 +131,6 @@ export async function discoverPersonalGlobalPreferenceCandidates(application, {
   };
 }
 
-export async function previewPersonalGlobalPreferenceDecision(application, input) {
-  return application.personal.inspectPersonalGlobalPreferenceDecision(
-    input.candidateId,
-    providerPersonalGlobalPreferenceDecision(input)
-  );
-}
-
-export async function applyPersonalGlobalPreferenceDecision(application, input) {
-  return application.personal.applyPersonalGlobalPreferenceDecision(
-    input.candidateId,
-    providerPersonalGlobalPreferenceDecision(input, {
-      approvalToken: input.previewToken
-    })
-  );
-}
-
 function clusterPersonalGlobalPreferenceItems(
   items,
   minProjects,
@@ -393,34 +377,6 @@ function personalGlobalCandidateWithDecisionState(candidate, revision) {
     prior_decision_candidate_version: sourceDrift ? previousVersion : null,
     fresh_human_review_required: true
   };
-}
-
-function providerPersonalGlobalPreferenceDecision(input, {
-  approvalToken = null
-} = {}) {
-  const result = {
-    personal_space_id: input.personalSpaceId,
-    candidate_version: input.candidateVersion,
-    decision_revision: input.decisionRevision,
-    source_items: input.sourceItems.map((item) => ({
-      item_id: item.itemId,
-      item_kind: item.itemKind,
-      project_id: item.projectId
-    })),
-    preference_key: input.preferenceKey,
-    target_scope: input.targetScope,
-    target_project_id: input.targetProjectId ?? null,
-    decision: input.decision,
-    global_title: input.globalTitle ?? null,
-    global_instruction: input.globalInstruction ?? null,
-    profile_aspect: input.profileAspect ?? null,
-    human_confirmation_reason: input.humanConfirmationReason,
-    confirmed_at: input.confirmedAt,
-    session_id: input.sessionId,
-    idempotency_key: input.idempotencyKey
-  };
-  if (approvalToken) result.approval_token = approvalToken;
-  return result;
 }
 
 function personalGlobalPreferenceCandidateId(itemIds) {

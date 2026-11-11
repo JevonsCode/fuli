@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
@@ -92,8 +91,4 @@ export function createStandaloneMcp({ roundtable, host, store, client, cwd, woke
       });
   }
   return { server, tools };
-}
-
-export function standalonePaths(home) {
-  return { standalone: join(home, 'standalone.sqlite'), roundtable: join(home, 'roundtable.sqlite') };
 }

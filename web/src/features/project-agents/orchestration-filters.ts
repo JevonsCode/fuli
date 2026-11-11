@@ -76,9 +76,3 @@ export function projectChipGroups(projects: Array<{ name: string }>) {
 export function agentManagementPath(spaceId: string, agentId: string) {
   return `/agents/${encodeURIComponent(spaceId)}/${encodeURIComponent(agentId)}`
 }
-
-/** Where a link to the former management page lands: its work is the work record, the rest 设置. */
-export function formerManagementQuery({ tab, ...query }: LocationQuery): LocationQuery {
-  const work = !tab || tab === 'work' || tab === 'activity'
-  return { ...query, tab: work ? 'overview' : 'settings' }
-}

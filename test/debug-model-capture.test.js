@@ -7,34 +7,13 @@ import test from 'node:test';
 
 import { request as httpRequest } from 'node:http';
 import { createModelCapture } from '../src/debug-turns/model-capture.js';
-import { opensTurn, requestParts, requestSections, usageFrom } from '../src/debug-turns/model-request.js';
+import { opensTurn, requestParts, usageFrom } from '../src/debug-turns/model-request.js';
 import { buildModelRequestRecord } from '../src/debug-turns/record.js';
 import { debugTurnStore } from '../src/debug-turns/store.js';
 
 const body = { model: 'synthetic-model', system: [{ type: 'text', text: 'Synthetic system.' }],
   tools: [{ name: 'Read', description: 'x' }, { name: 'mcp__fuli__fuli_call', description: 'y' }],
   messages: [{ role: 'user', content: [{ type: 'text', text: 'Fuli task context. Synthetic.' }, { type: 'text', text: 'Hello.' }] }] };
-
-test('a request is split by source, FULI\'s tools and context apart from the client\'s', () => {
-  const sections = requestSections(body);
-  assert.ok(sections.fuliTools > 0 && sections.clientTools > 0);
-  assert.equal(sections.fuliContext, Buffer.byteLength('Fuli task context. Synthetic.'));
-  assert.ok(sections.conversation > 0);
-});
-
-test('only FULI\'s own piece of a shared block counts as FULI\'s', () => {
-  const entry = '<system-reminder>Fuli task context. Synthetic.</system-reminder>';
-  const files = '<system-reminder>Contents of CLAUDE.md: mentions taskContextToken</system-reminder>';
-  const sections = requestSections({ messages: [{ role: 'user', content: `${files}${entry}Hello.` }] });
-  assert.equal(sections.fuliContext, Buffer.byteLength(entry));
-});
-
-test('one hook\'s context is told from another\'s in the same block', () => {
-  const fuli = 'UserPromptSubmit hook additional context: Fuli task context. Synthetic.';
-  const other = 'SessionStart hook additional context: another plugin, long text.';
-  const sections = requestSections({ messages: [{ role: 'system', content: `${other}\n${fuli}` }] });
-  assert.equal(sections.fuliContext, Buffer.byteLength(fuli));
-});
 
 test('tokens come from the answer, across streamed events', () => {
   const usage = usageFrom('data: {"message":{"usage":{"input_tokens":10,"cache_read_input_tokens":90}}}\n\ndata: {"usage":{"output_tokens":5}}\n');

@@ -119,7 +119,7 @@ test('an Agent asking for governance gets its own-scope preview and the console 
 test('the MCP process names the client, and recording-off stops every tag write', async () => {
   const input = normalizeAgentSessionInput('change_knowledge_tags',
     { ...space, action: 'create', name: 'x', reason: 'y', sourceApplication: 'cursor' }, null, null,
-    () => new Date(), 'claude_code');
+    'claude_code');
   assert.equal(input.sourceApplication, 'claude_code');
 
   const { app, calls } = application();

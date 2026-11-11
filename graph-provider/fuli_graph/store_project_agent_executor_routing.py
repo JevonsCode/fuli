@@ -620,5 +620,3 @@ class StoreProjectAgentExecutorRouting:
             if mode_ok and effort_ok and hints_ok:
                 return model
         return None
-
-    route_task_executor = resolve_project_agent_executor

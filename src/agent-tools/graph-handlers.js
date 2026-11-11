@@ -134,8 +134,6 @@ const HANDLERS = Object.freeze({
       operationActor: 'agent'
     }),
   capture_session_knowledge: (app, input) => app.captureSessionKnowledge(input),
-  record_workflow_transition_observation: (app, input) =>
-    app.recordWorkflowTransitionObservation(input),
   record_decision_trace: (app, input) => app.recordDecisionTrace(input),
   search_knowledge_graph: (app, input) => app.searchKnowledge({
     ...input,
@@ -168,8 +166,6 @@ const HANDLERS = Object.freeze({
     app.discoverCommonKnowledgeCandidates(input),
   discover_personal_global_preference_candidates: (app, input) =>
     app.discoverPersonalGlobalPreferenceCandidates(input),
-  preview_personal_global_preference_decision: (app, input) =>
-    app.previewPersonalGlobalPreferenceDecision(input),
   preview_common_knowledge_promotion: (app, input) =>
     app.previewCommonKnowledgePromotion(input),
   apply_common_knowledge_promotion: (app, input) => {
@@ -238,10 +234,6 @@ const HANDLERS = Object.freeze({
   get_project_team: (app, input) => app.getProjectTeam(input),
   update_project_agent_coordination_policy: (app, input) =>
     app.updateProjectAgentCoordinationPolicy(input),
-  get_project_agent_recruitment_policy: (app, input) =>
-    app.getProjectAgentRecruitmentPolicy(input),
-  update_project_agent_recruitment_policy: (app, input) =>
-    app.updateProjectAgentRecruitmentPolicy(input),
   list_project_agent_recruitments: (app, input) =>
     app.listProjectAgentRecruitments(input),
   decide_project_agent_recruitment: (app, input) =>
@@ -276,8 +268,6 @@ const HANDLERS = Object.freeze({
   reset_project_agent_routing_learning: (app, input) =>
     app.resetProjectAgentRoutingLearning(input),
   list_workflow_candidates: (app, input) => app.listWorkflowCandidates(input),
-  recommend_next_workflow_steps: (app, input) =>
-    app.recommendNextWorkflowSteps(input),
   // The console's own edits reach reviseKnowledgeItem as the person; this Agent
   // path is not verifiably the person, so it stops with automatic recording.
   revise_personal_knowledge: (app, input) => captureGuard(app, sessionCaptureScope(input),

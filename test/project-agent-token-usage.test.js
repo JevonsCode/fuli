@@ -7,8 +7,7 @@ import { join } from 'node:path';
 import { recordProjectAgentTaskActivity } from '../src/graphiti/project-agent-workflows.js';
 import {
   createAgentTokenUsageResolver,
-  enrichProjectAgentTaskActivity,
-  resolveProjectAgentTaskActivityTokenUsage
+  enrichProjectAgentTaskActivity
 } from '../src/agents/token-usage-resolver.js';
 import {
   createCodexTokenUsageResolver,
@@ -203,7 +202,6 @@ test('task activity auto-enriches missing usage while explicit zero and null rem
   const explicitAbsent = { ...base, tokenUsage: null, token_usage: { source: 'host', totalTokens: 7 } };
   await recordProjectAgentTaskActivity(application, explicitAbsent);
   assert.equal(captured[0].token_usage, null);
-  assert.equal(await resolveProjectAgentTaskActivityTokenUsage(explicitAbsent, resolver), null);
 
   captured.length = 0;
   await recordProjectAgentTaskActivity(application, { ...base, idempotencyKey: 'activity-key-4', actorKind: 'human' });

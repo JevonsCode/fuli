@@ -149,12 +149,6 @@ class PersonalGlobalPreferenceDecisionIntent(StrictModel):
         return self
 
 
-class PersonalGlobalPreferenceDecisionApply(
-    PersonalGlobalPreferenceDecisionIntent
-):
-    approval_token: str = Field(min_length=32, max_length=512)
-
-
 class PersonalGlobalPreferenceDecisionInspection(StrictModel):
     status: Literal['human_review_required']
     personal_space_id: str
@@ -173,23 +167,6 @@ class PersonalGlobalPreferenceDecisionInspection(StrictModel):
     scope_apply_performed: bool = False
     approval_token_issued: bool = False
     required_action: str
-
-
-class PersonalGlobalPreferenceDecisionPreview(StrictModel):
-    preview_id: str
-    candidate_id: str
-    candidate_version: str
-    decision_revision: int = Field(ge=0)
-    target_scope: PersonalGlobalPreferenceTargetScope
-    target_project_id: str | None = None
-    eligible_target_scopes: list[PersonalGlobalPreferenceEligibleTargetScope]
-    payload_fingerprint: str
-    approval_token: str
-    expires_at: datetime
-    source_snapshots: list[PersonalGlobalPreferenceSourceSnapshot]
-    candidate_binding_verified: bool = True
-    original_sources_will_remain_unchanged: bool = True
-    scope_apply_performed: bool = False
 
 
 class PersonalGlobalPreferenceCandidateVersionRef(StrictModel):

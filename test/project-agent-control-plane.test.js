@@ -6,7 +6,6 @@ import {
   executorRecord,
   projectAgentActivityRecord,
   projectAgentCoordinationPolicyRecord,
-  projectAgentRecruitmentPolicyRecord,
   projectAgentProfileRecord,
   projectAgentTaskRouteResult,
   projectAgentTaskRecord,
@@ -36,20 +35,6 @@ import {
   viewProjectAgentActivity,
   viewProjectAgentTask
 } from '../src/graphiti/project-agent-workflows.js';
-
-test('legacy recruitment policy warnings survive the Node mapping', () => {
-  const warning = 'Use update_project_agent_coordination_policy for the exact project.';
-  const mapped = projectAgentRecruitmentPolicyRecord({
-    personal_space_id: 'space-1', confirmation_mode: 'automatic',
-    policy_status: 'superseded', applies_to_recruitment: false, warning
-  });
-  assert.equal(mapped.policyStatus, 'superseded');
-  assert.equal(mapped.appliesToRecruitment, false);
-  assert.equal(mapped.warning, warning);
-  assert.equal('policyStatus' in projectAgentRecruitmentPolicyRecord({
-    personal_space_id: 'legacy-provider'
-  }), false, 'old Provider metadata is unknown, not fabricated');
-});
 
 test('max effort and all five executor capabilities survive MCP validation and Provider mapping', () => {
   const efforts = ['default', 'low', 'medium', 'high', 'max'];

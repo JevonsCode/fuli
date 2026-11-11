@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ICONS } from './icons'
-import { UiAvatar, UiChipRow, UiEmpty, UiIcon, UiIconButton, UiNotice, UiSegmented, UiWeight, weightBand } from './index'
+import { UiAvatar, UiEmpty, UiIcon, UiIconButton, UiNotice, UiSegmented, UiWeight, weightBand } from './index'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -44,9 +44,7 @@ describe('design system', () => {
     expect(mount(UiWeight, { props: { percent: 100, label: '权重' } }).find('svg').exists()).toBe(true)
   })
 
-  it('keeps chips one height in a shared row and shows empty states in place', () => {
-    const row = mount(UiChipRow, { slots: { default: '<span class="ui-chip">a</span><span class="ui-chip">b</span>' } })
-    expect(row.classes()).toContain('ui-chip-row')
+  it('shows empty states in place', () => {
     expect(mount(UiEmpty, { props: { text: '还没有对话' } }).get('[role="status"]').text()).toContain('还没有对话')
   })
 

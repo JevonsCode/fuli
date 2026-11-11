@@ -51,8 +51,6 @@ from .project_agent_coordination_models import (
 from .project_agent_task_models import (
     ProjectAgentActivityResult,
     ProjectAgentRecruitmentDecision,
-    ProjectAgentRecruitmentPolicyRecord,
-    ProjectAgentRecruitmentPolicyUpdate,
     ProjectAgentRecruitmentRecord,
     ProjectAgentTaskActivityCreate,
     ProjectAgentTaskBlockerClear,
@@ -472,31 +470,6 @@ def register_project_agent_routes(
         actor: Actor,
     ) -> ProjectAgentCoordinationPolicyRecord:
         return await store.update_project_agent_coordination_policy(actor, request)
-
-    @application.get(
-        '/v1/project-agent-recruitment-policy',
-        response_model=ProjectAgentRecruitmentPolicyRecord,
-        deprecated=True,
-    )
-    async def get_project_agent_recruitment_policy(
-        actor: Actor,
-        personal_space_id: Annotated[str, Query(min_length=1, max_length=128)],
-    ) -> ProjectAgentRecruitmentPolicyRecord:
-        return await store.get_project_agent_recruitment_policy(
-            actor,
-            personal_space_id,
-        )
-
-    @application.put(
-        '/v1/project-agent-recruitment-policy',
-        response_model=ProjectAgentRecruitmentPolicyRecord,
-        deprecated=True,
-    )
-    async def update_project_agent_recruitment_policy(
-        request: ProjectAgentRecruitmentPolicyUpdate,
-        actor: Actor,
-    ) -> ProjectAgentRecruitmentPolicyRecord:
-        return await store.update_project_agent_recruitment_policy(actor, request)
 
     @application.get(
         '/v1/project-agent-recruitments',

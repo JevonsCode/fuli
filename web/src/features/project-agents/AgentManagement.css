@@ -14,7 +14,7 @@
 .project-agent-card-section { gap: 0; padding-inline: var(--space-6, 24px); }
 .project-agent-execution-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4, 16px); }
 
-.project-agent-section-heading, .project-agent-section-tools, .project-agent-assignment-card header, .project-agent-learning-card header, .project-agent-recruitment-card header, .project-agent-day-detail header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.project-agent-section-heading, .project-agent-section-tools, .project-agent-assignment-card header, .project-agent-recruitment-card header, .project-agent-day-detail header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .project-agent-section-heading { flex-wrap: wrap; margin-bottom: 4px; }
 .project-agent-section-heading h2, .employee-project-overview-heading h2 { margin: 0; color: var(--color-ink); font-size: var(--text-section); font-weight: var(--weight-strong); }
 .project-agent-section-heading > span, .project-agent-section-tools > span { color: var(--color-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -40,13 +40,13 @@
 @container (min-width: 960px) { .employee-assigned-projects { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
 /* Rows inside a section: hairline-separated, no nested cards. */
-.project-agent-assignment-list, .project-agent-task-list, .project-agent-learning-list, .project-agent-recruitment-list { display: grid; gap: 12px; margin-top: 12px; }
+.project-agent-assignment-list, .project-agent-task-list, .project-agent-recruitment-list { display: grid; gap: 12px; margin-top: 12px; }
 .project-agent-task-list { min-width: 0; grid-template-columns: minmax(0, 1fr); }
-.project-agent-assignment-card, .project-agent-learning-card, .project-agent-recruitment-card { min-width: 0; padding: 14px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); }
-.project-agent-assignment-card header strong, .project-agent-learning-card header strong, .project-agent-recruitment-card header strong { min-width: 0; color: var(--color-ink); font-size: 14px; overflow-wrap: anywhere; }
+.project-agent-assignment-card, .project-agent-recruitment-card { min-width: 0; padding: 14px 16px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); }
+.project-agent-assignment-card header strong, .project-agent-recruitment-card header strong { min-width: 0; color: var(--color-ink); font-size: 14px; overflow-wrap: anywhere; }
 .project-agent-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
-.project-agent-assignment-card p, .project-agent-learning-card p { margin: 8px 0 0; font-size: 14px; line-height: 1.55; }
-.project-agent-assignment-card small, .project-agent-learning-card small, .project-agent-recruitment-card > small { display: block; margin-top: 8px; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
+.project-agent-assignment-card p { margin: 8px 0 0; font-size: 14px; line-height: 1.55; }
+.project-agent-assignment-card small, .project-agent-recruitment-card > small { display: block; margin-top: 8px; color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 .project-agent-strategy-note { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin-top: 8px; color: var(--color-muted); font-size: 12px; }
 .project-agent-strategy-note strong { color: var(--color-muted); font-size: 12px; }
 .project-agent-strategy-note small { flex-basis: 100%; color: var(--color-danger); }
@@ -94,17 +94,14 @@
 .project-agent-day-detail li :is(span, small) { color: var(--color-muted); font-size: 12px; }
 
 /* Execution: executors, clients, rules. */
-.project-agent-client-list, .project-agent-rule-list, .project-agent-executor-list { display: grid; gap: 6px; margin-top: 10px; }
-.project-agent-client-row, .project-agent-rule-row, .project-agent-executor-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-muted); font-size: 12px; }
-.project-agent-client-row strong, .project-agent-rule-row strong, .project-agent-executor-row strong { min-width: 0; color: var(--color-ink); font-size: 13px; overflow-wrap: anywhere; }
-.project-agent-client-row small, .project-agent-executor-row small, .project-agent-executor-row .project-agent-card-actions { grid-column: 1 / -1; color: var(--color-muted); }
+.project-agent-rule-list, .project-agent-executor-list { display: grid; gap: 6px; margin-top: 10px; }
+.project-agent-rule-row, .project-agent-executor-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-muted); font-size: 12px; }
+.project-agent-rule-row strong, .project-agent-executor-row strong { min-width: 0; color: var(--color-ink); font-size: 13px; overflow-wrap: anywhere; }
+.project-agent-executor-row small, .project-agent-executor-row .project-agent-card-actions { grid-column: 1 / -1; color: var(--color-muted); }
 .project-agent-executor-row .project-agent-card-actions { justify-content: flex-start; }
-.project-agent-learning-actions { display: flex; gap: 6px; margin-top: 8px; }
-.project-agent-evidence-list { margin: 8px 0 0; padding-left: 17px; }
-.project-agent-evidence-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--color-muted); font-size: 12px; }
 
 @media (max-width: 760px) {
   .project-agent-card-section { padding-inline: var(--space-4, 16px); }
-  .project-agent-client-row, .project-agent-rule-row, .project-agent-executor-row { grid-template-columns: minmax(0, 1fr); align-items: start; }
+  .project-agent-rule-row, .project-agent-executor-row { grid-template-columns: minmax(0, 1fr); align-items: start; }
   .project-agent-section-heading, .project-agent-assignment-card header { align-items: flex-start; }
 }

@@ -16,7 +16,6 @@ import type {
   ProjectAgentAssignmentRecord,
   ProjectAgentClientEvidence,
   ProjectAgentExecutorRef,
-  ProjectAgentLearningEvidence,
   ProjectAgentRecord,
   ProjectAgentRecruitmentRecord,
   ProjectAgentRoutingRule,
@@ -115,7 +114,7 @@ export function normalizeAgent(value: unknown, spaceId: string): ProjectAgentRec
     isTestRole: Boolean(profile.testSource) || profile.cleanupEligible || record.isTestRole === true || record.is_test_role === true,
     tasks: arrayOf(record.tasks ?? record.taskHistory).map(normalizeTask).filter(Boolean) as ProjectAgentTaskRecord[],
     activity: normalizeActivity(record.activity, { agentId, personalSpaceId: spaceId }),
-    clientEvidence: clientValues(record.clientEvidence ?? record.client_evidence), routingRules: routingValues(record.routingRules ?? record.routing_rules), learningEvidence: normalizeLearningMap(record.learningEvidence ?? record.learning_evidence),
+    clientEvidence: clientValues(record.clientEvidence ?? record.client_evidence), routingRules: routingValues(record.routingRules ?? record.routing_rules),
   }
 }
 
@@ -190,69 +189,6 @@ function normalizeRule(value: unknown): ProjectAgentRoutingRule | null {
   const status = stringOf(record, 'status', 'status')
   return { ruleId, scope: (stringOf(record, 'scope', 'scope') ?? 'global') as ProjectAgentRoutingRule['scope'], priority: typeof record.priority === 'number' ? record.priority : 0, personalProjectId: stringOf(record, 'personalProjectId', 'personal_project_id'), taskId: stringOf(record, 'taskId', 'task_id'), workKind: stringOf(record, 'workKind', 'work_kind'), agentId: stringOf(record, 'agentId', 'agent_id'), enabled: record.enabled !== false && (!status || status === 'active'), executorIds: arrayOf(valueOf(record, 'executorIds', 'executor_ids')).filter((item): item is string => typeof item === 'string'), requiredCapabilities: arrayOf(valueOf(record, 'requiredCapabilities', 'required_capabilities')).filter((item): item is string => typeof item === 'string'), modelStrategy: normalizeStrategy(valueOf(record, 'modelStrategy', 'model_strategy')), reason: stringOf(record, 'reason', 'reason'), revision: typeof record.revision === 'number' ? record.revision : undefined, status: status ?? undefined, createdAt: stringOf(record, 'createdAt', 'created_at'), updatedAt: stringOf(record, 'updatedAt', 'updated_at') }
 }
-function normalizeLearningMap(value: unknown): Record<string, ProjectAgentLearningEvidence> {
-  const container = unknownRecord(value)
-  const rawRows = Array.isArray(value)
-    ? value
-    : container.learningEvidence ?? container.learning_evidence ?? container.items
-  const rows = Array.isArray(rawRows)
-    ? rawRows
-    : Object.values(unknownRecord(rawRows))
-  const entries = rows.map((raw, index) => {
-    const record = unknownRecord(raw)
-    const personalProjectId = stringOf(record, 'personalProjectId', 'personal_project_id')
-    const workKind = stringOf(record, 'workKind', 'work_kind')
-    const executor = stringOf(record, 'executorId', 'executor_id') ?? stringOf(record, 'executor', 'executor')
-    const modelStrategy = normalizeStrategy(valueOf(record, 'modelStrategy', 'model_strategy'))
-    const modelStrategyKey = stringOf(record, 'modelStrategyKey', 'model_strategy_key')
-    const learningKey = modelStrategyKey
-      ?? [personalProjectId, workKind, executor, String(index)].filter(Boolean).join(':')
-    const contributions = arrayOf(valueOf(record, 'evidenceContributions', 'evidence_contributions'))
-    const evidence = contributions.map((item) => {
-      const row = unknownRecord(item)
-      const signal = stringOf(row, 'signal', 'signal')
-      const kind = stringOf(row, 'evidenceKind', 'evidence_kind') ?? 'evidence'
-      const weight = typeof valueOf(row, 'decayWeight', 'decay_weight') === 'number'
-        ? valueOf(row, 'decayWeight', 'decay_weight') as number
-        : null
-      return {
-        evidenceId: stringOf(row, 'evidenceId', 'evidence_id') ?? undefined,
-        kind,
-        count: typeof row.value === 'number' ? row.value : undefined,
-        summary: signal ? `${signal}${weight === null ? '' : ` · ${weight.toFixed(3)}`}` : null,
-        occurredAt: stringOf(row, 'occurredAt', 'occurred_at'),
-      }
-    })
-    const weightedSuccess = typeof valueOf(record, 'weightedSuccess', 'weighted_success') === 'number'
-      ? valueOf(record, 'weightedSuccess', 'weighted_success') as number : 0
-    const weightedFailure = typeof valueOf(record, 'weightedFailure', 'weighted_failure') === 'number'
-      ? valueOf(record, 'weightedFailure', 'weighted_failure') as number : 0
-    const halfLife = valueOf(record, 'halfLife', 'decay_half_life_days')
-    const result: ProjectAgentLearningEvidence = {
-      learningKey,
-      personalProjectId,
-      workKind,
-      executor,
-      modelStrategy,
-      modelStrategyKey,
-      sampleCount: typeof valueOf(record, 'sampleCount', 'sample_count') === 'number' ? valueOf(record, 'sampleCount', 'sample_count') as number : 0,
-      recentWeightedSamples: typeof valueOf(record, 'recentCount', 'recent_count') === 'number' ? valueOf(record, 'recentCount', 'recent_count') as number : null,
-      decayBasis: typeof halfLife === 'number' ? `half-life ${halfLife}d` : null,
-      updatedAt: stringOf(record, 'asOf', 'as_of') ?? stringOf(record, 'updatedAt', 'updated_at'),
-      outcomes: {
-        success: typeof valueOf(record, 'successCount', 'success_count') === 'number' ? valueOf(record, 'successCount', 'success_count') as number : undefined,
-        rework: typeof valueOf(record, 'reworkCount', 'rework_count') === 'number' ? valueOf(record, 'reworkCount', 'rework_count') as number : undefined,
-        failure: typeof valueOf(record, 'failureCount', 'failure_count') === 'number' ? valueOf(record, 'failureCount', 'failure_count') as number : undefined,
-        scoreCount: typeof valueOf(record, 'ratingCount', 'rating_count') === 'number' ? valueOf(record, 'ratingCount', 'rating_count') as number : undefined,
-      },
-      evidence,
-      score: weightedSuccess - weightedFailure,
-      neutral: valueOf(record, 'neutralDueToInsufficientEvidence', 'neutral_due_to_insufficient_evidence') === true,
-    }
-    return [learningKey, result] as const
-  })
-  return Object.fromEntries(entries)
-}
 export function taskValues(value: unknown) { const record = unknownRecord(value); return arrayOf(Array.isArray(value) ? value : record.tasks ?? record.items).map(normalizeTask).filter(Boolean) as ProjectAgentTaskRecord[] }
 function normalizeRecruitment(value: unknown, spaceId: string): ProjectAgentRecruitmentRecord | null {
   const record = unknownRecord(value)
@@ -297,7 +233,6 @@ export function recruitmentBelongsTo(recruitment: ProjectAgentRecruitmentRecord,
 }
 export function clientValues(value: unknown) { const record = unknownRecord(value); return arrayOf(Array.isArray(value) ? value : record.clients ?? record.executors ?? record.items).map(normalizeClient).filter(Boolean) as ProjectAgentClientEvidence[] }
 export function routingValues(value: unknown) { const record = unknownRecord(value); return arrayOf(Array.isArray(value) ? value : record.rules ?? record.items).map(normalizeRule).filter(Boolean) as ProjectAgentRoutingRule[] }
-export function learningValues(value: unknown) { const record = unknownRecord(value); return normalizeLearningMap(record.learningEvidence ?? record.learning_evidence ?? value) }
 
 export function mergeAgents(values: unknown[], spaceId: string) {
   const merged = new Map<string, ProjectAgentRecord>()
@@ -311,7 +246,7 @@ export function mergeAgents(values: unknown[], spaceId: string) {
       profile: { ...current.profile, occupationEmoji: current.profile.occupationEmoji ?? agent.profile.occupationEmoji, capabilities: unique([...current.profile.capabilities, ...agent.profile.capabilities]), workKinds: unique([...(current.profile.workKinds ?? []), ...(agent.profile.workKinds ?? [])]), defaultModelStrategy: current.profile.defaultModelStrategy ?? agent.profile.defaultModelStrategy, executorPolicy: current.profile.executorPolicy ?? agent.profile.executorPolicy, allowedClients: unique([...(current.profile.allowedClients ?? []), ...(agent.profile.allowedClients ?? [])]) as ConversationSourceApplication[] },
       assignments: dedupeById(assignments, ({ assignmentId }) => assignmentId), recruitments: dedupeById([...(current.recruitments ?? []), ...(agent.recruitments ?? [])], ({ recruitmentId }) => recruitmentId), tasks: dedupeById(tasks, ({ taskId }) => taskId), activity: current.activity ?? agent.activity,
       clientEvidence: current.clientEvidence?.length ? current.clientEvidence : agent.clientEvidence, routingRules: current.routingRules?.length ? current.routingRules : agent.routingRules,
-      learningEvidence: { ...(agent.learningEvidence ?? {}), ...(current.learningEvidence ?? {}) }, observedClients: unique([...(current.observedClients ?? []), ...(agent.observedClients ?? [])]) as ConversationSourceApplication[], openTaskCount: Math.max(current.openTaskCount ?? 0, agent.openTaskCount ?? 0) || undefined, currentTaskId: current.currentTaskId ?? agent.currentTaskId, workStatus: current.workStatus ?? agent.workStatus,
+      observedClients: unique([...(current.observedClients ?? []), ...(agent.observedClients ?? [])]) as ConversationSourceApplication[], openTaskCount: Math.max(current.openTaskCount ?? 0, agent.openTaskCount ?? 0) || undefined, currentTaskId: current.currentTaskId ?? agent.currentTaskId, workStatus: current.workStatus ?? agent.workStatus,
     })
   })
   return [...merged.values()]

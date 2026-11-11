@@ -848,19 +848,6 @@ export function projectAgentActivityRecord(value = {}) {
   };
 }
 
-export function projectAgentRecruitmentPolicyRecord(value = {}) {
-  return {
-    personalSpaceId: value.personal_space_id,
-    confirmationMode: value.confirmation_mode ?? 'automatic',
-    updatedAt: value.updated_at ?? null,
-    ...(value.policy_status ? {
-      policyStatus: value.policy_status,
-      appliesToRecruitment: value.applies_to_recruitment,
-      warning: value.warning
-    } : {})
-  };
-}
-
 export function projectAgentCoordinationPolicyRecord(value = {}) {
   return {
     personalSpaceId: value.personal_space_id,

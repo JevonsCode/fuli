@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from .models import StrictModel
 
@@ -25,61 +25,6 @@ class WorkflowCandidateSearch(StrictModel):
     personal_project_id: str | None = Field(default=None, min_length=1, max_length=128)
     after_step_key: str | None = Field(default=None, min_length=1, max_length=256)
     limit: int = Field(default=20, ge=1, le=100)
-
-
-class WorkflowDecisionAuthority(StrictModel):
-    kind: Literal['user', 'authoritative_source']
-    label: str | None = Field(default=None, min_length=1, max_length=160)
-
-
-class WorkflowCandidateReviewIntent(StrictModel):
-    personal_space_id: str = Field(min_length=1, max_length=128)
-    candidate_version: int = Field(ge=1)
-    evidence_revision: int = Field(ge=1)
-    decision_revision: int = Field(ge=0)
-    idempotency_key: str = Field(min_length=8, max_length=256)
-    decision: Literal['approve', 'reject']
-    reason: str = Field(min_length=1, max_length=2000)
-    authority: WorkflowDecisionAuthority
-    decision_source: Literal[
-        'direct_user_confirmation',
-        'authoritative_source_record',
-    ]
-    durable_authorization_confirmed: bool = False
-
-    @model_validator(mode='after')
-    def validate_decision_authority(self):
-        expected_source = (
-            'direct_user_confirmation'
-            if self.authority.kind == 'user'
-            else 'authoritative_source_record'
-        )
-        if self.decision_source != expected_source:
-            raise ValueError(
-                'decision_source must match the human or authoritative authority'
-            )
-        if self.decision == 'approve' and not self.durable_authorization_confirmed:
-            raise ValueError(
-                'approve requires explicit durable authorization confirmation'
-            )
-        if self.decision == 'reject' and self.durable_authorization_confirmed:
-            raise ValueError('reject cannot grant durable authorization')
-        return self
-
-
-class WorkflowCandidateReview(WorkflowCandidateReviewIntent):
-    approval_token: str = Field(min_length=32, max_length=512)
-
-
-class WorkflowCandidateReviewPreview(StrictModel):
-    preview_id: str
-    candidate_id: str
-    candidate_version: int = Field(ge=1)
-    evidence_revision: int = Field(ge=1)
-    decision_revision: int = Field(ge=0)
-    payload_fingerprint: str
-    approval_token: str
-    expires_at: datetime
 
 
 class WorkflowRecommendationWeights(StrictModel):
@@ -156,11 +101,6 @@ class WorkflowCandidate(StrictModel):
     recommendation: WorkflowRecommendation
     execution_authorized: bool
     authorization: WorkflowAuthorization | None = None
-
-
-class WorkflowRecommendationPage(StrictModel):
-    policy: WorkflowRecommendationPolicy
-    candidates: list[WorkflowCandidate]
 
 
 class WorkflowCandidatePage(StrictModel):

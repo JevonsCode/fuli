@@ -32,7 +32,6 @@ from .store_transactions import query_store_transaction
 MERGE_REASON = 'The same knowledge was stored twice; this copy was merged into the item that stays current.'
 CANDIDATE_LIMIT = 200
 WORKFLOW_RELATION = 'RECOMMENDS_NEXT'
-SCAN_LIMIT = 50
 
 _ITEM_FIELDS = '''{
   item_id: {item}.uuid, name: {item}.name, summary: {item}.summary, fact: {item}.fact,

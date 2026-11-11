@@ -62,7 +62,6 @@ export const agentAppsMessages = {
       tamper_detected: '发现安装包被改动',
     },
     sheet: {
-      details: 'Agent App 详情',
       loading: '正在读取 {name} 的详情',
       loadFailed: '{name} 的详情没有读到。',
       version: '版本',
@@ -188,7 +187,6 @@ export const agentAppsMessages = {
       tamper_detected: 'Found the package changed',
     },
     sheet: {
-      details: 'App details',
       loading: 'Reading {name}’s details',
       loadFailed: '{name}’s details could not be read.',
       version: 'Version',
