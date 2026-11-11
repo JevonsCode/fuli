@@ -84,6 +84,27 @@ test('what is not an area, a source or a count is refused, and so is a task outs
     error => error.code === 'project_organizing_unavailable');
 });
 
+test('a read names the check for preferences shared with other projects, only when there are other projects', async (t) => {
+  const app = application(t);
+  // Without the person's project list, and with this project alone, there is nothing to compare.
+  assert.equal((await call(app, { action: 'read' })).repeated_preference_check, undefined);
+  app.personal = { listPersonalProjects: async () => [{ project_id: 'synthetic-project' }] };
+  const alone = await call(app, { action: 'read' });
+  assert.equal(alone.repeated_preference_check, undefined);
+  assert.doesNotMatch(alone.guidance, /repeated_preference_check/);
+
+  app.personal = { listPersonalProjects: async space => (space === 'synthetic-space'
+    ? [{ project_id: 'beta' }, { project_id: 'synthetic-project' }, { project_id: 'gamma' }] : []) };
+  const read = await call(app, { action: 'read' });
+  assert.deepEqual(read.repeated_preference_check, { tool: 'discover_personal_global_preference_candidates',
+    arguments: { personalSpaceId: 'synthetic-space', personalProjectIds: ['synthetic-project', 'beta', 'gamma'] } });
+  assert.match(read.guidance, /升级成全局吗/);
+  // An update answers states only, and a project list that cannot be read never fails the run.
+  assert.equal((await call(app, { action: 'update', areas: { purpose: { status: 'known' } } })).repeated_preference_check, undefined);
+  app.personal = { listPersonalProjects: async () => { throw new Error('synthetic: graph service down'); } };
+  assert.equal((await call(app, { action: 'read' })).repeated_preference_check, undefined);
+});
+
 test('a model is placed only when its family leaves no doubt', () => {
   assert.deepEqual(['synthetic-opus-9', 'claude-fable-5-2', 'synthetic-sonnet-9', 'synthetic-haiku-9', 'synthetic-opus-mini',
     'local-model:4b', 'gpt-9-preview', '', null].map(modelTier),

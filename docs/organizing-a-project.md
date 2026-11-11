@@ -52,3 +52,10 @@ is stale. FULI places a model only when its family leaves no doubt and says
 `skills/operating-fuli` (Organising a project). The console reads
 `GET /api/project-organizing`. The store keeps coverage and run counts only;
 knowledge is saved through `checkpoint_task_knowledge`.
+
+## Preferences shared with other projects
+
+When the person has other projects, a run checks once whether a preference of
+this project also exists in another one. Each match is one line on the closing
+list: 「偏好『…』在项目 A、B 里都有，升级成全局吗？」. Only a 是 makes it a
+personal preference for every project; the project copies stay.
