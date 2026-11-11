@@ -10,6 +10,7 @@ from fuli_graph.knowledge_search import (
     _edge_relevance,
     _entity_search_result,
     _item_scope_metadata,
+    _ranked_records,
     _ranked_relevance,
     _relevance,
     _term_weights,
@@ -720,3 +721,19 @@ def test_a_linking_particle_does_not_break_a_phrase():
     # The same on both sides: a word that contains 的 still matches itself.
     assert _relevance('目的', {**fact, 'name': '目的', 'summary': '这个项目的目的是省事。'}) >= 8.0
     assert _relevance('reply language', {**fact, 'name': 'x', 'summary': 'the reply language of this project'}) >= 8.0
+
+
+def test_at_the_same_score_and_weight_the_closer_match_comes_first():
+    """Three of the question's words beat one, though both round to the same band and the weaker is newer."""
+    confirmed = {'confirmation_status': 'confirmed', 'origin_quadrant': 'known_known', 'scope_distance': 0,
+                 'confirmation_basis_json': json.dumps({
+                     'existence_reason': 'Synthetic.', 'quadrant_reason': 'Synthetic.', 'proposed_by': {'kind': 'agent'},
+                     'confirmed_by': {'kind': 'user'}, 'confirmed_at': '2026-10-18T00:00:00Z'})}
+    closer = {**confirmed, 'id': 'closer', 'created_at': '2026-10-01T00:00:00Z'}
+    weaker = {**confirmed, 'id': 'weaker', 'created_at': '2026-11-01T00:00:00Z'}
+    pending = {'confirmation_status': 'pending', 'origin_quadrant': 'known_known', 'scope_distance': 0, 'id': 'pending',
+               'created_at': '2026-11-02T00:00:00Z'}
+    ranked = _ranked_records([(weaker, 1.58), (pending, 1.9), (closer, 1.8), ({**confirmed, 'id': 'none'}, 0.0)])
+    assert [record['id'] for record, _ in ranked] == ['closer', 'weaker', 'pending']
+    assert ranked[0][1] == ranked[1][1] > ranked[2][1], 'closeness only orders a tie; the weight still decides inside a band'
+
