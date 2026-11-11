@@ -255,3 +255,27 @@ def test_meaning_matches_floor_and_fusion():
     fused = fused_ranking(['a', 'b'], ['b', 'c'])
     assert fused == {'a': (round(1 / 61, 6), 'lexical'), 'b': (round(1 / 62 + 1 / 61, 6), 'both'),
                      'c': (round(1 / 62, 6), 'semantic')}
+
+
+def test_the_single_closest_item_needs_to_stand_out_less_than_the_rest():
+    """Cosines of one question against 30 items: the answer in other words sits 2.7 deviations out."""
+    def scored(values):
+        # One axis each: an item's cosine with the query is its own value.
+        query = [1.0] + [0.0] * len(values)
+        return {f'item-{index}': [value] + [0.0] * index + [(1 - value * value) ** 0.5] + [0.0] * (len(values) - index - 1)
+                for index, value in enumerate(values)}, query
+
+    spread = [0.36 + 0.004 * (index % 11) for index in range(29)]
+    candidates, query = scored([*spread, 0.42])
+    cosines = [*spread, 0.42]
+    mean = sum(cosines) / len(cosines)
+    deviation = (sum((value - mean) ** 2 for value in cosines) / len(cosines)) ** 0.5
+    assert 2.5 < (0.42 - mean) / deviation < 3, 'the fixture sits between the two floors'
+    assert list(meaning_matches(candidates, query, 5)) == ['item-29']
+    # Only the closest is added this way: a second item just behind it is not.
+    pair, query = scored([*spread[:28], 0.4195, 0.42])
+    assert len(meaning_matches(pair, query, 5)) <= 1
+    # Nothing stands out: nothing is kept.
+    flat, query = scored([*spread, 0.40])
+    assert meaning_matches(flat, query, 5) == {}
+
