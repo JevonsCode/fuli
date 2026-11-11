@@ -10,10 +10,9 @@ instruction packages, not separate paid product editions.
 | `capturing-session-knowledge` | Recall scoped knowledge, apply collaboration preferences, and capture durable task outcomes with provenance. | [SKILL.md](../skills/capturing-session-knowledge/SKILL.md) |
 | `operating-fuli` | Operate projects, knowledge, Agents, recruitment, workbenches, and review through structured Fuli tools. | [SKILL.md](../skills/operating-fuli/SKILL.md) |
 | `grilling-project` | Establish or clarify a project profile from requirements and evidence, including publication boundaries. | [SKILL.md](../skills/grilling-project/SKILL.md) |
-| `flreview` | Run the explicitly requested personal knowledge review workflow. | [SKILL.md](../skills/flreview/SKILL.md) |
 
 `user-taste` is a dynamic read-time projection of applicable preferences and
-confirmed taste/personality signals. It is not a fifth bundled `SKILL.md` and does
+confirmed taste/personality signals. It is not a fourth bundled `SKILL.md` and does
 not replace a user's own Skill. See [user-taste-skill.js](../src/graphiti/user-taste-skill.js).
 
 ## Prompt surfaces

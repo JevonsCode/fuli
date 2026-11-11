@@ -48,9 +48,9 @@ test('the receipt names the lead and each collaborator once, never the lead twic
     { agentId: 'employee.jefa', name: 'Jefa' }, { agentId: 'engineer', name: 'Alex Morgan' },
     { agentId: 'reviewer', name: 'Nova Reed' }
   ] });
-  assert.equal(receipt.markdown, 'FULI Agent：[Alex Morgan](http://127.0.0.1:3999/agents/synthetic-space/engineer)'
-    + ' · 协作 [Jefa](http://127.0.0.1:3999/agents/synthetic-space/employee.jefa)、'
-    + '[Nova Reed](http://127.0.0.1:3999/agents/synthetic-space/reviewer)');
+  assert.equal(receipt.markdown, 'FULI Agents：[Alex Morgan](http://127.0.0.1:3999/agents/synthetic-space/engineer)'
+    + ' & [Jefa](http://127.0.0.1:3999/agents/synthetic-space/employee.jefa)'
+    + ' & [Nova Reed](http://127.0.0.1:3999/agents/synthetic-space/reviewer)');
   assert.deepEqual(receipt.collaborators.map(item => item.agent_id), ['employee.jefa', 'reviewer']);
 });
 
@@ -67,7 +67,27 @@ test('members the lead session ran itself reach the final receipt from the froze
   assert.deepEqual(team.ignored, []);
   const receipt = taskAgentReceipt(application, { ...owner, name: team.name, collaborators: team.collaborators });
   assert.deepEqual(receipt.collaborators.map(item => item.agent_id), ['member-b', 'member-c']);
-  assert.match(receipt.markdown, /协作 \[Bea\].*（subagent-1 slice）、\[Cy\].*（subagent-2 slice）/);
+  assert.match(receipt.markdown, /^FULI Agents：\[Alex Morgan\].* & \[Bea\].*（subagent-1 slice） & \[Cy\].*（subagent-2 slice）/);
+});
+
+test('a turn that used the roundtable signs with who took part and links the conversation', () => {
+  const link = id => `[圆桌对话详情](http://127.0.0.1:3999/roundtables/${id})`;
+  const lead = '[Alex Morgan](http://127.0.0.1:3999/agents/synthetic-space/engineer)';
+  const nova = '[Nova Reed](http://127.0.0.1:3999/agents/synthetic-space/reviewer)';
+  // Another FLA answered: both sign, then the conversation.
+  assert.equal(taskAgentReceipt(application, { ...owner, roundtable: { threads: ['thread-1'],
+    peers: [{ agentId: 'reviewer', name: 'Nova Reed' }] } }).markdown, `FULI Agents：${lead} & ${nova} · ${link('thread-1')}`);
+  // A message still waiting: one FLA signs, and the conversation is still linked.
+  assert.equal(taskAgentReceipt(application, { ...owner, roundtable: { threads: ['thread-1'], peers: [] } }).markdown,
+    `FULI Agent：${lead} · ${link('thread-1')}`);
+  // The lead itself and a helper already listed are not named twice; a second conversation is numbered.
+  const both = taskAgentReceipt(application, { ...owner, collaborators: [{ agentId: 'reviewer', name: 'Nova Reed' }],
+    roundtable: { threads: ['thread-1', 'thread 2'], peers: [{ agentId: 'engineer', name: 'Alex Morgan' },
+      { agentId: 'reviewer', name: 'Nova Reed' }] } }).markdown;
+  assert.equal(both, `FULI Agents：${lead} & ${nova} · ${link('thread-1')}`
+    + ' · [圆桌对话详情 2](http://127.0.0.1:3999/roundtables/thread%202)');
+  // No roundtable this turn: the line is the single-Agent one it always was.
+  assert.equal(taskAgentReceipt(application, { ...owner }).markdown, `FULI Agent：${lead}`);
 });
 
 test('an unavailable owner is explicit and never fabricated', () => {

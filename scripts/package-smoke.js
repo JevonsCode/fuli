@@ -102,8 +102,6 @@ try {
     'skills/operating-fuli/SKILL.md',
     'skills/operating-fuli/agents/openai.yaml',
     'skills/operating-fuli/references/workflow-recipes.md',
-    'skills/flreview/SKILL.md',
-    'skills/flreview/agents/openai.yaml',
     'skills/fuli/SKILL.md'
   ]) {
     assert.ok(files.has(required), `published package is missing ${required}`);

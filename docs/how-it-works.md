@@ -117,7 +117,7 @@ Personality filter on `/preferences` therefore usually means there is no qualify
 selected scope, not that capture failed. “Keep copy concise” is more likely taste, while “do not
 push without authorization” is more likely a judgment preference. To make the intent explicit,
 say: `This is a long-term collaboration trait; save it as a personal-global personality preference: I communicate directly.` An Agent-inferred candidate can be confirmed, corrected, or invalidated
-by the user from `/preferences` or `/flreview`.
+by the user from `/preferences`.
 
 ### Personal-global, project-scoped, and shared
 
