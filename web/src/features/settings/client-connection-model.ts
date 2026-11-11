@@ -4,7 +4,7 @@ import { shapeOf } from '@/api/response-shape'
 
 export type Format = 'standard' | 'vscode' | 'server'
 export type ClientStatus = 'connected' | 'changed' | 'skills_left' | 'removed' | 'not_connected' | 'not_detected' | 'unknown'
-// overwritten: the client wrote back the entry an update had just replaced (rec#106).
+// overwritten: the client wrote back the entry an update had just replaced (rec issue 106).
 export type ClientChange = { from: ClientStatus, to: ClientStatus, detectedAt: string, overwritten?: boolean }
 // A FULI installation: its folder (home as ~) and package version, when it has one.
 export type FuliInstall = { path: string, version: string | null }
@@ -22,7 +22,7 @@ export type CustomClient = { id: string, label: string, detected: boolean, statu
 export type ConnectionStatus = { observedAt: string, historySaved: boolean, available?: boolean, clients: ClientObservation[],
   customClients?: CustomClient[], installs?: { console: FuliInstall, others: (FuliInstall & { clients: string[] })[] } }
 // `reason` names a failure the person can act on: agent-installer could not be downloaded here.
-// client_running: a client that writes its cached configuration back is, or may be, running (rec#106).
+// client_running: a client that writes its cached configuration back is, or may be, running (rec issue 106).
 export type ConnectionResult = { id: string, status: 'connected' | 'partial' | 'failed', restartRequired: boolean,
   reason?: 'client_component_unavailable' | 'client_running' }
 // 「重启并更新」's answer: which step ended it (src/system/client-restart.js).
@@ -56,12 +56,12 @@ export function connectionSummary(observation: ConnectionStatus | null): { conne
   return { connected: clients.filter((client) => client.status === 'connected').length, total: clients.length }
 }
 
-// 「重启并更新」 replaces 「更新接入」 while the client runs, or FULI cannot tell, since it would write its old entry back (rec#106).
+// 「重启并更新」 replaces 「更新接入」 while the client runs, or FULI cannot tell, since it would write its old entry back (rec issue 106).
 export function offersRestart(client: ClientObservation): boolean {
   return client.status === 'changed' && client.restart !== undefined && client.restart.running !== false
 }
 
-// An outdated entry's explanation: what differs, then the one way to fix it (rec#106).
+// An outdated entry's explanation: what differs, then the one way to fix it (rec issue 106).
 export function changedExplanation(client: ClientObservation, own: FuliInstall | undefined):
   { difference: string, params: Record<string, string>, step: 'restart' | 'restartRunning' | 'quitFirst' | 'update' } {
   const install = client.configuredInstall

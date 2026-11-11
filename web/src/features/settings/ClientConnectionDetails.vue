@@ -6,7 +6,7 @@ import { formatDateTime } from '@/lib/date-time'
 
 import { changesNewestFirst, type ClientObservation, type ConnectionStatus, type FuliInstall } from './client-connection-model'
 
-// 查看详情 of one client's tile, or of the 「本机有两份 FULI」 notice (rec#106):
+// 查看详情 of one client's tile, or of the 「本机有两份 FULI」 notice (rec issue 106):
 // what the entry runs against the console's own installation, and the full change history.
 const props = defineProps<{ client?: ClientObservation, installs?: ConnectionStatus['installs'] }>()
 

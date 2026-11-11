@@ -35,7 +35,7 @@ const checking = ref(false)
 const checkError = ref(false)
 const connecting = ref('')
 const connectionFeedback = ref<Record<string, 'restart' | 'connectError' | 'componentUnavailable' | 'clientRunning'>>({})
-// 「重启并更新」 (rec#106): the client being confirmed, the one restarting, and each one's last outcome.
+// 「重启并更新」 (rec issue 106): the client being confirmed, the one restarting, and each one's last outcome.
 const confirming = ref<ClientObservation | null>(null)
 const restarting = ref('')
 const restartFeedback = ref<Record<string, RestartStatus | 'connect_failed_closed' | 'error'>>({})
@@ -68,7 +68,7 @@ const detailClient = computed(() => clients.value.find(client => client.id === d
 const writePending = computed(() => Boolean(connecting.value) || addPending.value || Boolean(removing.value) || Boolean(restarting.value))
 const busy = computed(() => writePending.value || connectingAll.value)
 // 一键接入 (Jevons 11-02): every client FULI can write that is not connected yet, one after another.
-// A running client that writes its old entry back waits for its own 重启并更新 (rec#106).
+// A running client that writes its old entry back waits for its own 重启并更新 (rec issue 106).
 const connectable = computed(() => clients.value.filter(client => canConnect(client) && client.status !== 'connected' && !offersRestart(client)))
 // A connected client gets the shared check icon; the other states keep their plain marks.
 const icons: Record<Exclude<ClientStatus, 'connected'>, string> = { changed: '!', skills_left: '!', removed: '×',
@@ -320,11 +320,11 @@ async function copy() {
               </a>
               <p v-else-if="client.manualOnly && client.status !== 'connected'">{{ t('settings.connection.clients.manualSnippet') }}</p>
               <!-- One line on the tile; the whole history, full times and both installations open in 查看详情. -->
-              <button v-if="client.changes.length || client.configuredInstall" type="button" class="client-row__meta client-row__history"
+              <Button v-if="client.changes.length || client.configuredInstall" variant="link" class="client-row__meta client-row__history"
                 :data-client-details="client.id" :title="`${lastChange(client)} · ${t('settings.connection.clients.details')}`"
                 @click="details = client.id">
                 {{ lastChange(client) }}
-              </button>
+              </Button>
               <!-- The tile's action sits at its foot, so tiles of one row line up their buttons. -->
               <Button v-if="canConnect(client) && offersRestart(client)" size="sm" variant="outline" class="client-row__action"
                 :data-restart-client="client.id" :disabled="busy" :loading="restarting === client.id"
@@ -482,7 +482,7 @@ async function copy() {
 .client-row .client-row__meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The one-line history opens 查看详情; it reads as text, underlined on hover. */
 .client-row__history {
-  display: block; max-width: 100%; padding: 0; border: 0; background: none; color: var(--color-muted); font: inherit; font-size: 12px;
+  display: block; max-width: 100%; height: auto; min-height: 0; padding: 0; border: 0; background: none; font-weight: 400; color: var(--color-muted); font: inherit; font-size: 12px;
   line-height: 1.6; text-align: start; cursor: pointer; user-select: none;
 }
 .client-row__history:hover, .client-row__history:focus-visible { color: var(--color-ink); text-decoration: underline; }
