@@ -32,3 +32,11 @@ export function timeoutMilliseconds(value, label, fallback = 30_000) {
   }
   return value;
 }
+
+// Whether a connector URL points at this computer. An Agent may not send
+// FULI's own requests to a local service the person did not connect.
+export function isLoopbackUrl(value) {
+  try {
+    return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(String(value)).hostname);
+  } catch { return false; }
+}
