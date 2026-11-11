@@ -279,3 +279,14 @@ def test_the_single_closest_item_needs_to_stand_out_less_than_the_rest():
     flat, query = scored([*spread, 0.40])
     assert meaning_matches(flat, query, 5) == {}
 
+
+@pytest.mark.asyncio
+async def test_a_search_that_asks_for_pending_items_finds_one_by_meaning():
+    graph = SemanticGraph([
+        entity('pending', 'Release freeze', 'No deploys in the last week of a quarter', CLOSE,
+               confirmation_status='pending', confirmation_basis_json=None),
+        *noise_entities(15)])
+    assert (await run(graph, 'when may we ship')).entities == [], 'default search never returns a pending item'
+    [found] = (await run(graph, 'when may we ship', include_pending=True)).entities
+    assert (found.id, found.matched_by, found.confirmation_status) == ('pending', 'semantic', 'pending')
+
