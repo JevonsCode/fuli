@@ -76,7 +76,6 @@ const REQUIRED_AGENT_MUTATIONS = new Map([
   ['DELETE /api/external-knowledge/bindings/:bindingId', 'delete_external_knowledge_binding'],
   ['PATCH /api/external-knowledge/conflict-policy', 'update_external_knowledge_conflict_policy'],
   ['PATCH /api/external-knowledge/conflict-policy/default', 'update_external_knowledge_conflict_policy'],
-  ['DELETE /api/projects/:projectId', 'delete_public_project'],
   ['POST /api/project-agents/:agentId/dismissal', 'dismiss_project_agent'],
 ]);
 
@@ -222,7 +221,6 @@ test('external knowledge configuration is controllable through explicit Agent to
     },
     getCapturePolicy: () => ({ enabled: true, updatedAt: null }),
     captureChanges: { propose: (input) => calls.push(['capture-policy', input]) },
-    deletePublicProject: async (input) => calls.push(['delete-public-project', input]),
   };
 
   await callAgentTool(app, 'list_external_knowledge_connectors', {});
@@ -248,14 +246,11 @@ test('external knowledge configuration is controllable through explicit Agent to
   await callAgentTool(app, 'update_external_knowledge_conflict_policy', { mode: 'agent_decide' });
   await callAgentTool(app, 'get_capture_policy', {});
   await callAgentTool(app, 'update_capture_policy', { enabled: false });
-  await callAgentTool(app, 'delete_public_project', {
-    projectId: 'public-a', providerUrl: 'https://provider.example.test',
-  });
 
   assert.deepEqual(calls.map(([name]) => name), [
     'discover', 'list-bindings', 'create-binding', 'check-binding', 'sync-binding',
     'retrieve-binding', 'targets', 'delete-binding', 'get-policy', 'update-policy', 'update-default-policy',
-    'capture-policy', 'delete-public-project',
+    'capture-policy',
   ]);
 });
 

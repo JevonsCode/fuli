@@ -328,8 +328,6 @@ async function executeBenchmark() {
       });
     }
 
-    stage('验证显式、可审计的公共知识上收流程');
-    await runCuratedConvergenceCase(state.app, personalSpace.id, fixture);
   } catch (error) {
     infrastructureError = sanitizeError(error);
     addCase({
@@ -793,11 +791,6 @@ async function seedFixture(app, personalSpaceId, humanReviewContext) {
       oldDecision,
       currentDecision
     },
-    commonCandidates: {
-      hotel: hotel.ids['alignment:hotel:retry-candidate'],
-      flight: flight.ids['alignment:flight:retry-candidate'],
-      travel: travel.ids['alignment:travel:retry-candidate']
-    },
     reviewedProjectRelations
   };
 }
@@ -1206,75 +1199,6 @@ async function runDeterministicCases(
         && JSON.stringify(replay.entity_ids) === JSON.stringify(originalIds),
       observed: `重放状态=${replay.status}；实体数量=${replay.entity_ids.length}。`,
       evidence: ['idempotency_key stable']
-    };
-  });
-
-  await evaluateCase({
-    id: 'CONVERGE-01',
-    title: '直接子项目公共候选只读发现',
-    domain: 'common-candidate-discovery',
-    expected: '发现 B/C/D 的共同候选，不把继承或个人全局知识混入，也不自动写入 A。'
-  }, async () => {
-    const before = await search(
-      app,
-      personalSpaceId,
-      PROJECTS.parent,
-      COMMON_RETRY_MARKER
-    );
-    const result = await app.discoverCommonKnowledgeCandidates({
-      personalSpaceId,
-      parentProjectId: PROJECTS.parent,
-      query: `${COMMON_RETRY_MARKER} 2 attempts 140ms jitter`,
-      minChildProjects: 3,
-      similarityThreshold: 0.4,
-      limitPerProject: 20
-    });
-    const after = await search(
-      app,
-      personalSpaceId,
-      PROJECTS.parent,
-      COMMON_RETRY_MARKER
-    );
-    const candidate = result.candidates[0];
-    return {
-      pass: result.status === 'candidates_found'
-        && candidate?.requires_human_confirmation === true
-        && candidate?.promotion_performed === false
-        && [PROJECTS.hotel, PROJECTS.flight, PROJECTS.travel]
-          .every((projectId) => candidate.child_project_ids.includes(projectId))
-        && !findItem(before, COMMON_RETRY_MARKER)
-        && !findItem(after, COMMON_RETRY_MARKER),
-      observed: `状态=${result.status}；候选=${result.candidates.length}；` +
-        `来源=${candidate?.child_project_ids.join(', ') ?? '无'}；` +
-        `父项目写入=${Boolean(findItem(after, COMMON_RETRY_MARKER))}。`,
-      evidence: candidate
-        ? ['read_only', 'direct PART_OF children', 'human confirmation required']
-        : []
-    };
-  });
-
-  await evaluateCase({
-    id: 'CONVERGE-READ-01',
-    title: '候选发现排除继承结果与个人全局知识',
-    domain: 'candidate-isolation',
-    expected: '候选策略明确关闭继承和个人全局注入。'
-  }, async () => {
-    const result = await app.discoverCommonKnowledgeCandidates({
-      personalSpaceId,
-      parentProjectId: PROJECTS.parent,
-      query: `${COMMON_RETRY_MARKER} retry`,
-      minChildProjects: 3,
-      similarityThreshold: 0.4,
-      limitPerProject: 20
-    });
-    return {
-      pass: result.policy.inherited_knowledge_excluded === true
-        && result.policy.personal_global_excluded === true
-        && result.policy.automatic_promotion === false,
-      observed: `inherit_excluded=${result.policy.inherited_knowledge_excluded}；` +
-        `global_excluded=${result.policy.personal_global_excluded}；` +
-        `automatic=${result.policy.automatic_promotion}。`,
-      evidence: ['candidate policy']
     };
   });
 }
@@ -2183,51 +2107,6 @@ async function runClaudeCases({
     evidence: unrelatedRun.toolCalls.map(({ name }) => name)
   });
 
-  const convergencePrompt = [
-    '这是一次只读的公共知识候选分析，不授权任何写入。',
-    '必须实际调用 discover_common_knowledge_candidates：parentProjectId=platform-a，',
-    'query=“2 attempts 140ms jitter”，minChildProjects=3，similarityThreshold=0.4。',
-    '指出共同标记、来源项目、相似度只是推断，以及为什么仍需人工确认。',
-    '结束前使用 retain_nothing checkpoint；只返回证据支持的结论。'
-  ].join('\n');
-  const convergenceRun = await runClaude({
-    prompt: convergencePrompt,
-    cwd: join(emptyWorkspaces, PROJECTS.parent),
-    mcpConfigPath,
-    settingsPath: claudeSettingsPath,
-    lifecycleAuditPath,
-    enforceFuliStart: true,
-    builtInTools: [],
-    allowedTools: [
-      'mcp__fuli__discover_common_knowledge_candidates',
-      'mcp__fuli__checkpoint_task_knowledge'
-    ]
-  });
-  recordClaudeMetrics('AGENT-06.convergence', convergenceRun);
-  const convergenceSearch = convergenceRun.toolCalls.find(
-    ({ name }) => name === 'mcp__fuli__discover_common_knowledge_candidates'
-  );
-  const answerHasProjects = [PROJECTS.hotel, PROJECTS.flight, PROJECTS.travel]
-    .every((projectId) => convergenceRun.answer.includes(projectId));
-  addCase({
-    id: 'AGENT-06',
-    title: 'Claude 显式跨子项目识别公共候选',
-    domain: 'cross-project-analysis',
-    status: classifyClaudeCaseStatus({
-      errors: claudeRunErrors(convergenceRun),
-      passed: !convergenceRun.error
-      && convergenceRun.answer.includes(COMMON_RETRY_MARKER)
-      && answerHasProjects
-      && convergenceSearch?.input?.parentProjectId === PROJECTS.parent
-    }),
-    expected: 'Claude 只读选择 B/C/D，识别共同重试规则，并说明尚未自动归属 A。',
-    observed: convergenceRun.error
-      ? `Claude 调用失败：${convergenceRun.error}`
-      : `回答含共同标记=${convergenceRun.answer.includes(COMMON_RETRY_MARKER)}；` +
-        `回答含三项目=${answerHasProjects}；` +
-        `父项目=${convergenceSearch?.input?.parentProjectId ?? '无'}。`,
-    evidence: convergenceRun.toolCalls.map(({ name }) => name)
-  });
 }
 
 function parentCapturePrompt({
@@ -2378,99 +2257,6 @@ function relatedBoundaryPrompt(agentName) {
     `${prefix}_RELATED_AUTO_EXPANDED=no`,
     `${prefix}_EXPANSION_OFFER=yes`
   ].join('\n');
-}
-
-async function runCuratedConvergenceCase(app, personalSpaceId, fixture) {
-  await evaluateCase({
-    id: 'CONVERGE-02',
-    title: '人工确认预览绑定公共知识上收意图',
-    domain: 'common-promotion-preview',
-    expected: '预览校验不同直接子项目、规范项、重复项和两类理由，不产生写入。'
-  }, async () => {
-    const canonicalId = fixture.commonCandidates.hotel;
-    const preview = await app.previewCommonKnowledgePromotion({
-      personalSpaceId,
-      parentProjectId: PROJECTS.parent,
-      itemKind: 'entity',
-      canonicalItemId: canonicalId,
-      duplicateItemIds: [
-        fixture.commonCandidates.flight,
-        fixture.commonCandidates.travel
-      ],
-      reason: '三个子项目的合成证据一致，将公共重试规则显式归属父项目。',
-      humanConfirmationReason: '合成 Benchmark 明确授权本次精确的上收预览。'
-    });
-    const parentBefore = await search(
-      app,
-      personalSpaceId,
-      PROJECTS.parent,
-      COMMON_RETRY_MARKER
-    );
-    return {
-      pass: preview.status === 'ready'
-        && preview.atomic === true
-        && preview.requires_human_confirmation === true
-        && preview.source_project_ids.length === 3
-        && !findItem(parentBefore, COMMON_RETRY_MARKER),
-      observed: `状态=${preview.status}；atomic=${preview.atomic}；` +
-        `来源=${preview.source_project_ids.join(', ')}；写入=false。`,
-      evidence: ['preview only', 'human confirmation reason bound']
-    };
-  });
-
-  await evaluateCase({
-    id: 'CONVERGE-03',
-    title: '一次 Provider 原子操作完成父项目上收',
-    domain: 'atomic-common-promotion',
-    expected: '规范项归属 A 并允许后代继承，C/D 重复项失效且指向规范项。'
-  }, async () => {
-    const canonicalId = fixture.commonCandidates.hotel;
-    const promotion = await app.applyCommonKnowledgePromotion({
-      personalSpaceId,
-      parentProjectId: PROJECTS.parent,
-      itemKind: 'entity',
-      canonicalItemId: canonicalId,
-      duplicateItemIds: [
-        fixture.commonCandidates.flight,
-        fixture.commonCandidates.travel
-      ],
-      reason: '三个子项目的合成证据一致，将公共重试规则显式归属父项目。',
-      humanConfirmationReason: '合成 Benchmark 明确授权本次精确的原子上收。',
-      operationActor: 'agent'
-    });
-    const projectIds = [
-      PROJECTS.parent,
-      PROJECTS.hotel,
-      PROJECTS.flight,
-      PROJECTS.travel
-    ];
-    const results = await Promise.all(
-      projectIds.map((projectId) =>
-        search(app, personalSpaceId, projectId, COMMON_RETRY_MARKER)
-      )
-    );
-    const activeItems = results.map((result) => findItem(result, COMMON_RETRY_MARKER));
-    const uniqueIds = new Set(activeItems.filter(Boolean).map(({ id }) => id));
-    const allDefinedAtParent = activeItems.every(
-      (item) => item?.defined_project_id === PROJECTS.parent
-    );
-    return {
-      pass: promotion.status === 'promoted'
-        && promotion.invalidated_item_ids.length === 2
-        && promotion.inheritance_mode === 'descendants'
-        && activeItems.every(Boolean)
-        && uniqueIds.size === 1
-        && allDefinedAtParent,
-      observed: `四个项目命中=${activeItems.filter(Boolean).length}/4；` +
-        `活动知识项数量=${uniqueIds.size}；统一归属 A=${allDefinedAtParent}；` +
-        `promotion=${promotion.promotion_id}。`,
-      evidence: [
-        'one Provider mutation',
-        'assignment → descendants → invalidate/link replacement',
-        'reason and human confirmation reason retained'
-      ]
-    };
-  });
 }
 
 function captureInput({
@@ -2804,8 +2590,7 @@ function addSkippedClaudeCases() {
     ['AGENT-02', 'Claude Code 通过 Fuli 沉淀源文档事实', 'claude-capture'],
     ['AGENT-03', '全新 Claude 会话检索已沉淀知识', 'fresh-session-retrieval'],
     ['AGENT-04', '无 Fuli / 有 Fuli 冷启动对照', 'cold-start-ab'],
-    ['AGENT-05', 'Claude 对无关项目保持拒答与作用域边界', 'agent-negative-control'],
-    ['AGENT-06', 'Claude 显式跨子项目识别公共候选', 'cross-project-analysis']
+    ['AGENT-05', 'Claude 对无关项目保持拒答与作用域边界', 'agent-negative-control']
   ]) {
     addCase({
       id,
@@ -2823,8 +2608,7 @@ function addClaudeInfrastructureBlockedCases(error) {
   for (const [id, title, domain] of [
     ['AGENT-03', '全新 Claude 会话检索已沉淀知识', 'fresh-session-retrieval'],
     ['AGENT-04', '无 Fuli / 有 Fuli 冷启动对照', 'cold-start-ab'],
-    ['AGENT-05', 'Claude 对无关项目保持拒答与作用域边界', 'agent-negative-control'],
-    ['AGENT-06', 'Claude 显式跨子项目识别公共候选', 'cross-project-analysis']
+    ['AGENT-05', 'Claude 对无关项目保持拒答与作用域边界', 'agent-negative-control']
   ]) {
     addCase({
       id,
@@ -3530,9 +3314,6 @@ function renderReport(result) {
   const counts = result.summary.counts;
   const infrastructure = result.cases.find(({ id }) => id === 'INFRA-01');
   const hookSmoke = readOptionalJson(HOOK_SMOKE_RESULT_PATH);
-  const candidate = result.cases.find(({ id }) => id === 'CONVERGE-01');
-  const preview = result.cases.find(({ id }) => id === 'CONVERGE-02');
-  const atomic = result.cases.find(({ id }) => id === 'CONVERGE-03');
   const inheritance = result.cases.find(({ id }) => id === 'SCOPE-01');
   const lifecycle = result.cases.find(({ id }) => id === 'AGENT-01');
   const negative = result.cases.find(({ id }) => id === 'FEEDBACK-01');
@@ -3598,11 +3379,6 @@ ${(counts.ERROR ?? 0) > 0 && (counts.FAIL ?? 0) === 0
 - **B/C/D 能否拿到 A 的知识：${inheritance?.status ?? 'UNKNOWN'}。**
   当前可以，但只限 \`PART_OF\` / \`USES_KNOWLEDGE_FROM\` 路径上、知识项显式授权为
   \`descendants\` 或 \`selected_projects\` 的内容。本地同稳定键规则优先。
-- **公共候选是否只读发现：${candidate?.status ?? 'UNKNOWN'}。**
-  相似内容只生成候选，不自动把“重复”推断成“公共规则”。
-- **人工预览是否绑定精确意图：${preview?.status ?? 'UNKNOWN'}。**
-- **是否可以原子上收：${atomic?.status ?? 'UNKNOWN'}。**
-  规范项归属、向下继承、重复项失效、替代链接和理由在一个 Provider 事务内完成。
 - **Claude Code 生命周期 Hook：${lifecycleStatus}。**
 - **负面证据是否保持人工权威边界：${negative?.status ?? 'UNKNOWN'}。**
 - **Claude Code 沉淀：${capture?.status ?? 'SKIP'}；全新会话复用：${freshRetrieval?.status ?? 'SKIP'}。**
@@ -3839,8 +3615,8 @@ function summarize(cases, infrastructureError) {
   return {
     overall,
     counts,
-    keyFinding: cases.find(({ id }) => id === 'CONVERGE-03')?.status === 'PASS'
-      ? 'Child-first parent inheritance and human-confirmed atomic common promotion both work.'
+    keyFinding: cases.find(({ id }) => id === 'SCOPE-01')?.status === 'PASS'
+      ? 'Child-first parent inheritance works.'
       : 'See per-case results.'
   };
 }

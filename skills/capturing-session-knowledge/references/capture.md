@@ -34,8 +34,8 @@ An Agent may propose and explain knowledge. A user or authoritative source creat
 `confirmed`. Only two things create `agent_confirmed`, with an Agent confirmer, timestamp, and
 policy version: a deterministic Fuli usage policy, and Tonborg while the person has 「交给 Tonborg
 确认」 on (confirmer `Tonborg`, policy `tonborg-review-v1`; the person sees and undoes it in the
-console's 待决策 list). Your own tools never do, and neither counts as the person's confirmation. Agent confirmation is lower-authority, never
-public-eligible, and must not be produced by retrieval alone. Confirmation covers the content
+console's 待决策 list). Your own tools never do, and neither counts as the person's confirmation. Agent confirmation is lower-authority and must
+not be produced by retrieval alone. Confirmation covers the content
 and its classification. If either changes, return the item to `pending` and start a new usage
 generation unless the same revision explicitly records a new valid human/source confirmer and
 confirmation time. Legacy items without that audit record are `pending`, even if an old
@@ -45,11 +45,7 @@ confirmation time. Legacy items without that audit record are `pending`, even if
 for new product logic and do not treat them as confirmation evidence.
 
 Agent retrieval includes pending items on demand and returns their status so the caller can
-calibrate claims. Only project knowledge whose immutable discovery-time `originQuadrant` is
-`known_known` and whose status is user or authoritative-source `confirmed` may enter public
-review. Knowledge first discovered as `known_unknown`, `unknown_known`, or `unknown_unknown`
-remains in the personal graph even if it is later confirmed; normal personal preview and
-Maintainer review gates still apply.
+calibrate claims.
 
 ## Grow The Personal Profile Separately
 
@@ -64,12 +60,10 @@ the personal-global graph without `personalProjectId`:
   and conditions that change how the user chooses.
 
 When the user explicitly limits one preference to a project, keep `profileAspect` and capture
-it with that exact `personalProjectId`; this makes the preference project-scoped without
-turning it into public project knowledge. The Agent has no direct scope-write tool. Safe
+it with that exact `personalProjectId`; this makes the preference project-scoped. The Agent has no direct scope-write tool. Safe
 narrowing from global to one exact project belongs to a trusted local UI; any broader parent or
 personal global scope must use preference convergence, with an explicit target and a Provider
-`HumanReviewer` channel behind trusted local user-presence. Never put any personal-profile item
-into a public proposal.
+`HumanReviewer` channel behind trusted local user-presence.
 For a preference that may have both global and project-specific forms, store a stable
 `attributes.preferenceKey` on each form so the project value can explicitly override the same
 global decision without hiding unrelated preferences. Once a person confirms a preference whose
@@ -99,29 +93,10 @@ file or the host's own memory files does not put it in FULI.
 ## Route by Ownership
 
 - Route global personal knowledge to `targetKind: personal` without `personalProjectId`; it is written directly to the local personal graph.
-- Route knowledge for a local personal project, including an explicitly project-scoped personal preference, to `targetKind: personal` with that project's exact `personalProjectId`. This is private local knowledge, not a public submission.
-- Route knowledge to `targetKind: project` only when the target is an explicitly selected subscribed public project. It becomes a team-shared Provider Proposal and must remain pending until a Maintainer reviews it.
-- Never treat a project as public merely because the current repository or conversation has a project name. Only an active subscription makes it eligible for public project routing.
+- Route knowledge for a local personal project, including an explicitly project-scoped personal preference, to `targetKind: personal` with that project's exact `personalProjectId`. This is private local knowledge.
 - Never omit `personalProjectId` when the current repository or conversation has already resolved one local personal project; doing so would leak project-specific facts into the personal-global scope.
 - Never add another personal project to `contextPersonalProjectIds` merely because it is related, similarly named, or referenced by the active project. Automatic borrowing is limited to item-level inheritable knowledge reached through `PART_OF` or `USES_KNOWLEDGE_FROM`; all other cross-project borrowing requires an explicit user request or selection and applies only to the current search context.
-- Never route project facts through the personal graph to bypass review.
-- Never auto-approve a project Proposal.
 - If ownership is genuinely ambiguous and changes who can see the knowledge, ask one concise question instead of guessing.
-
-## Converge Shared Child Knowledge
-
-When multiple direct children of one parent independently contain substantially equivalent
-runbooks, conventions, or architecture facts, call `discover_common_knowledge_candidates`.
-Discovery is read-only and must compare child-local knowledge with inheritance disabled so a
-parent item cannot manufacture its own promotion candidate.
-
-Never promote automatically. Preview a candidate with
-`preview_common_knowledge_promotion`, show the proposed parent ownership, descendants inheritance
-mode, selected duplicates, and scope rationale, then require a human confirmation reason. Apply
-with `apply_common_knowledge_promotion` only using the one-time intent-bound preview token. The
-Provider must atomically create or move the canonical parent item, mark descendants inheritance,
-supersede child duplicates, and record the promotion audit. Child-specific exceptions stay in
-their child projects.
 
 ## Resolve Or Create The Local Project
 
@@ -133,12 +108,12 @@ any reusable project candidates remain in the returned temporary scope, subject 
 Before the first project-scoped capture in a repository:
 
 1. Call `list_knowledge_spaces`, then `list_personal_projects` for the active personal space.
-2. Resolve the repository root from the current working directory and repo-local manifests. Use a stable, human-readable project ID derived from the repository or manifest name. Never store an absolute path, local username, hostname, credential, or private remote URL as the project ID or public profile evidence.
-3. Match an existing personal project by exact project ID, publication mapping, or confirmed repository identity. Do not merge projects from similar names.
+2. Resolve the repository root from the current working directory and repo-local manifests. Use a stable, human-readable project ID derived from the repository or manifest name. Never store an absolute path, local username, hostname, credential, or private remote URL as the project ID or profile evidence.
+3. Match an existing personal project by exact project ID or confirmed repository identity. Do not merge projects from similar names.
 4. When one previously unseen repository has an unambiguous identity, immediately create a minimal private personal project with `upsert_personal_project`. Use lifecycle `active`, a private repository source with no URI, and an evidence-coverage summary containing only facts visible in the current repository. Do not generate a generic list of information the project supposedly lacks.
 5. Ask one project-identity question only when the working directory contains multiple plausible projects or the repository identity conflicts with an existing project.
 
-Creating a personal project is local classification, not public publication. Never create or subscribe to a public project automatically.
+Creating a personal project is local classification.
 
 ## Structure and Flush
 

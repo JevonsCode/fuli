@@ -82,15 +82,6 @@ export const router = createRouter({
       meta: { title: 'routes.employeeWorkbench.title', detail: true },
     },
     {
-      path: '/public-projects',
-      name: 'public-projects',
-      component: () => import('@/pages/PublicProjectsPage.vue'),
-      meta: {
-        title: 'routes.publicProjects.title',
-        description: 'routes.publicProjects.description',
-      },
-    },
-    {
       path: '/knowledge',
       name: 'knowledge-default',
       component: () => import('@/pages/KnowledgePage.vue'),

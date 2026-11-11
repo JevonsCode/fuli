@@ -74,7 +74,4 @@ checkpoint，但只有真实连接后的 Claude 会话才能证明该行为。
 | `record_decision_trace` | 保存选择、被拒方案、理由和可选初始验证 |
 | `capture_session_knowledge` | 批量写入少量、结构化的候选知识 |
 | `checkpoint_task_knowledge` | 以 `capture_candidates` 或 `retain_nothing` 结束知识检查 |
-| `discover_common_knowledge_candidates` | 只读发现可能属于上级项目的公共候选 |
-| `preview_common_knowledge_promotion` | 预览人类确认的公共知识提升 |
-| `apply_common_knowledge_promotion` | 使用一次性令牌原子执行提升 |
 | `resolve_deferred_preference_conflict` | 在实际需要时处理已授权给 AI 的冲突 |

@@ -10,7 +10,6 @@ import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 
 const id = { ...stringSchema(), minLength: 1, maxLength: 256 };
 const label = { ...stringSchema(), minLength: 1, maxLength: 512 };
-const url = { ...stringSchema(), minLength: 1, maxLength: 2048, pattern: '^https?://\\S+$' };
 const freeObject = { type: 'object', additionalProperties: true };
 const target = objectSchema({
   personalSpaceId: id,
@@ -203,11 +202,5 @@ export const AGENT_INTERFACE_DEFINITIONS = [
       reason: { ...stringSchema(), minLength: 1, maxLength: 2000 },
     }, ['personalSpaceId', 'conflictId', 'preferenceKey', 'preferenceScope',
       'leftItemId', 'leftItemKind', 'rightItemId', 'rightItemKind', 'reason']),
-  },
-  {
-    name: 'delete_public_project',
-    title: 'WRITE · Delete public project',
-    description: 'Delete one explicitly identified public project from its Provider after an explicit user request. This is not the same as unsubscribing and may require Provider ownership.',
-    inputSchema: objectSchema({ projectId: id, providerUrl: url }, ['projectId', 'providerUrl']),
   },
 ];

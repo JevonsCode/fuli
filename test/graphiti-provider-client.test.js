@@ -194,13 +194,13 @@ test('provider client maps controlled provider errors', async () => {
   const client = new GraphitiProviderClient({
     baseUrl: 'https://provider.example',
     accessToken: 'test-token',
-    fetchImpl: async () => jsonResponse(403, { detail: 'maintainer role required' })
+    fetchImpl: async () => jsonResponse(403, { detail: 'space access required' })
   });
 
   await assert.rejects(
-    client.listProposals('project-1'),
+    client.listSpaces(),
     (error) => error instanceof ProviderRequestError &&
-      error.status === 403 && error.message === 'maintainer role required'
+      error.status === 403 && error.message === 'space access required'
   );
 });
 
@@ -214,7 +214,7 @@ test('provider client classifies HTTP 5xx with a bounded diagnostic', async () =
   });
 
   await assert.rejects(
-    client.listProposals('project-1'),
+    client.listSpaces(),
     (error) => error instanceof ProviderRequestError &&
       error.status === 500 &&
       error.code === 'provider_http_5xx' &&

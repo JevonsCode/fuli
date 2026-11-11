@@ -2,7 +2,6 @@
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import PageColumns from '@/components/PageColumns.vue'
 import UiDisclosure from '@/components/UiDisclosure.vue'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardTitle } from '@/components/ui/card'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -10,7 +9,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { deleteJson, getJson, patchJson, postJson } from '@/api/client'
 import type { SelectOption } from '@/components/ui/select'
 import TextField from '@/components/TextField.vue'
-import { currentLocale, t } from '@/i18n'
+import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
 import ConflictPolicyCard from '@/features/connections/ConflictPolicyCard.vue'
@@ -20,17 +19,12 @@ import type {
   ExternalKnowledgeBindingTarget,
   ExternalKnowledgeConnector,
   ExternalKnowledgeMode,
-  PublicProject,
-  Subscription,
 } from '@/types'
 import { OptionSelect } from '@/components/ui/select'
 import { OptionCombobox } from '@/components/ui/combobox'
 import { usePageRefresh } from '@/layouts/page-refresh'
 
 const store = useConsoleStore()
-const selectedProjectKey = ref('')
-const subscriptionBusy = ref(false)
-const subscriptionAction = ref('')
 const connectors = ref<ExternalKnowledgeConnector[]>([])
 const bindings = ref<ExternalKnowledgeBinding[]>([])
 const externalBusy = ref(false)
@@ -69,38 +63,8 @@ const form = reactive({
 })
 
 const personalReady = computed(() => store.state?.providers?.personal?.status === 'ready')
-const workspaces = computed(() => store.state?.providers?.workspaces ?? [])
-const readyWorkspaces = computed(() => workspaces.value.filter(({ status }) => status === 'ready').length)
-const publicPurpose = computed(() => {
-  const capabilities = store.state?.capabilities
-  const labels = [
-    capabilities?.browsePublicProjects ? t('pages.connections.publicCapability.discovery') : null,
-    capabilities?.subscribeProject ? t('pages.connections.publicCapability.subscription') : null,
-    capabilities?.publishProject ? t('pages.connections.publicCapability.publishing') : null,
-    capabilities?.submitKnowledge ? t('pages.connections.publicCapability.contribution') : null,
-    capabilities?.reviewProposals ? t('pages.connections.publicCapability.review') : null,
-  ].filter((label): label is string => Boolean(label))
-  return labels.length
-    ? new Intl.ListFormat(currentLocale(), { style: 'long', type: 'conjunction' }).format(labels)
-    : t('pages.connections.notAvailable')
-})
-const subscriptions = computed(() => store.state?.subscriptions ?? [])
 const personalProjects = computed(() => store.state?.personalProjects ?? [])
 const externalKnowledgeHelpUrl = computed(() => docsHelpUrl('external-knowledge', 'connect-external-knowledge'))
-const subscribedKeys = computed(
-  () => new Set(subscriptions.value.map(({ provider_url, project_id }) => `${provider_url}::${project_id}`)),
-)
-const availableProjects = computed(() =>
-  (store.state?.projects ?? []).filter((project) => !subscribedKeys.value.has(projectKey(project))),
-)
-const availableProjectOptions = computed(() =>
-  availableProjects.value.map((project) => ({
-    value: projectKey(project),
-    label: project.name,
-    meta: `#${compactIdentity(project.id, 26)}`,
-    search: identitySearchText(project.id),
-  })),
-)
 const connectorOptions = computed<SelectOption[]>(() =>
   connectors.value.map((connector) => ({
     value: connector.type,
@@ -144,57 +108,6 @@ watch(() => form.connectorType, (type) => {
 })
 
 onMounted(() => void refreshExternalKnowledge())
-
-function projectKey(project: PublicProject) {
-  return `${project.providerUrl}::${project.id}`
-}
-
-async function subscribe() {
-  const personalSpaceId = store.activePersonalSpace?.id
-  const project = availableProjects.value.find((item) => projectKey(item) === selectedProjectKey.value)
-  if (!personalSpaceId || !project || subscriptionBusy.value) return
-  subscriptionBusy.value = true
-  subscriptionAction.value = 'pages.connections.subscribing'
-  try {
-    await postJson('/api/subscriptions', {
-      personalSpaceId,
-      projectId: project.id,
-      providerUrl: project.providerUrl,
-      projectName: project.name,
-    })
-    selectedProjectKey.value = ''
-    store.notify(t('pages.connections.subscribed', { name: project.name }))
-    subscriptionAction.value = 'pages.connections.loadingSubscriptions'
-    await store.refresh()
-  } catch (error) {
-    store.reportError(error)
-  } finally {
-    subscriptionBusy.value = false
-  }
-}
-
-async function unsubscribe(subscription: Subscription) {
-  const personalSpaceId = store.activePersonalSpace?.id
-  if (!personalSpaceId || subscriptionBusy.value) return
-  subscriptionBusy.value = true
-  subscriptionAction.value = 'pages.connections.unsubscribing'
-  try {
-    const query = new URLSearchParams({
-      personalSpaceId,
-      providerUrl: subscription.provider_url,
-    })
-    await deleteJson(`/api/subscriptions/${encodeURIComponent(subscription.project_id)}?${query}`)
-    store.notify(t('pages.connections.unsubscribed', {
-      name: subscription.project_name ?? subscription.project_id,
-    }))
-    subscriptionAction.value = 'pages.connections.loadingSubscriptions'
-    await store.refresh()
-  } catch (error) {
-    store.reportError(error)
-  } finally {
-    subscriptionBusy.value = false
-  }
-}
 
 async function refreshExternalKnowledge() {
   externalLoading.value = true
@@ -515,18 +428,6 @@ usePageRefresh(refreshExternalKnowledge)
           <div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ t('pages.connections.localPurpose') }}</dd></div>
         </dl>
       </article>
-
-      <article class="service-connection-card" data-span="wide" :data-status="store.publicRuntimeStatus">
-        <header>
-          <span class="service-connection-icon public" aria-hidden="true"><span class="nav-icon nav-icon-public-project" /></span>
-          <div class="flex min-w-0 items-center gap-2"><h2>{{ t('pages.connections.publicService') }}</h2><Badge variant="warning">BETA</Badge></div>
-          <span class="service-state">{{ store.publicRuntimeStatus === 'ready' ? t('common.status.connected') : store.publicRuntimeStatus === 'error' ? t('common.status.connectionError') : t('common.status.notConnected') }}</span>
-        </header>
-        <dl>
-          <div><dt>{{ t('pages.connections.currentStatus') }}</dt><dd>{{ store.publicRuntimeStatus === 'ready' ? t('pages.connections.sharedServicesReady', { count: readyWorkspaces || workspaces.length }) : t('pages.connections.notAvailable') }}</dd></div>
-          <div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ publicPurpose }}</dd></div>
-        </dl>
-      </article>
     </PageColumns>
 
     <Card as="section" class="external-knowledge-section" aria-labelledby="external-knowledge-title">
@@ -718,34 +619,6 @@ usePageRefresh(refreshExternalKnowledge)
     </Card>
 
     <ConflictPolicyCard v-if="personalProjects.length" />
-
-    <Card v-if="store.state?.capabilities?.subscribeProject" as="section" class="connection-subscriptions" aria-labelledby="connection-subscriptions-title">
-      <div class="flex items-center gap-2 px-5">
-        <CardTitle id="connection-subscriptions-title" as="h2" class="text-base">{{ t('pages.connections.subscriptionsTitle') }}</CardTitle><Badge variant="warning">BETA</Badge>
-      </div>
-      <div class="grid gap-2 px-5">
-      <GrowthLoading v-if="subscriptionBusy" variant="inline" :label="t(subscriptionAction)" />
-      <div class="subscription-list">
-        <div v-for="subscription in subscriptions" :key="`${subscription.provider_url}:${subscription.project_id}`" class="subscription-row">
-          <span>↗</span>
-          <div><strong>{{ subscription.project_name ?? subscription.project_id }}</strong><span>{{ t('pages.connections.sharedProject') }}</span></div>
-          <Button variant="outline" size="sm" class="subscription-action" :disabled="subscriptionBusy" @click="unsubscribe(subscription)">{{ t('pages.connections.unsubscribe') }}</Button>
-        </div>
-        <div v-if="!subscriptions.length" class="py-4 text-xs text-muted-foreground">{{ t('pages.connections.noSubscriptions') }}</div>
-      </div>
-      <form class="subscription-form" @submit.prevent="subscribe">
-        <OptionCombobox
-          v-model="selectedProjectKey"
-          :options="availableProjectOptions"
-          :label="t('pages.connections.sharedProjectLabel')"
-          :placeholder="t('pages.connections.choosePublicProject')"
-          required
-          :disabled="subscriptionBusy"
- />
-        <Button type="submit" :disabled="subscriptionBusy || !selectedProjectKey || !store.activePersonalSpace">{{ t('pages.connections.subscribe') }}</Button>
-      </form>
-      </div>
-    </Card>
     </div>
   </section>
 </template>

@@ -24,33 +24,21 @@ test('capture guards expose controlled validation errors', async () => {
     fetchImpl: providerFetch()
   });
 
-  await assert.rejects(
-    app.captureSessionKnowledge({
-      ...episodeInput('project'),
-      spaceId: 'project-1',
-      sensitivity: 'restricted'
-    }),
-    (error) => error instanceof ApplicationError &&
-      error.code === 'validation' &&
-      /cannot enter a team-shared project queue/.test(error.message)
-  );
-
-  await assert.rejects(
-    app.captureSessionKnowledge({
-      ...episodeInput('personal'),
-      spaceId: 'other-personal-space'
-    }),
-    (error) => error instanceof ApplicationError &&
-      error.code === 'validation' &&
-      /active personal space/.test(error.message)
-  );
+  // A capture names the active personal space; a team project's id is refused like any other space.
+  for (const spaceId of ['other-personal-space', 'project-1']) {
+    await assert.rejects(
+      app.captureSessionKnowledge({ ...episodeInput(), spaceId }),
+      (error) => error instanceof ApplicationError &&
+        error.code === 'validation' &&
+        /active personal space/.test(error.message)
+    );
+  }
 });
 
-function episodeInput(targetKind) {
+function episodeInput() {
   return {
-    targetKind,
+    targetKind: 'personal',
     spaceId: 'personal-space',
-    providerUrl: targetKind === 'project' ? 'https://workspace.example' : null,
     idempotencyKey: 'session-1-batch-1',
     sessionId: 'session-1',
     name: 'Session knowledge',

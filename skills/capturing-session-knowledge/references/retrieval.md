@@ -8,13 +8,12 @@ For facts about the current local project, call `search_current_project_knowledg
 current working directory. It resolves the exact active project without requiring the Agent to
 copy an ID, searches that child project first, and then includes only inheritable knowledge from
 authorized parents or shared-source projects. Use `search_knowledge_graph` for personal-global
-context, explicitly named extra projects, subscribed public projects, or advanced scoped queries.
+context, explicitly named extra projects, or advanced scoped queries.
 An already resolved temporary project is an active private scope for this task. Pass its exact
 returned `personalProjectId` alongside the directory; without a directory, use
 `search_knowledge_graph` with that exact project and personal space. Do not re-resolve it from
 a repository name, and never omit its `personalProjectId` or move its facts to personal-global.
-Use `search_connected_knowledge` for a project-bound third-party source or explicitly selected
-public project. Keep its source sets separate and obey the project's conflict policy;
+Use `search_connected_knowledge` for a project-bound third-party source. Keep its source sets separate and obey the project's conflict policy;
 `agent_decide` affects only the current response and never mutates or confirms a source.
 
 Every search and the automatic recall answer with current versions only. Pass
@@ -74,12 +73,11 @@ URL, route, deployment, document, file, or where a durable artifact is located.
    evidence even if the tool labels it matched.
 2. If there is no supporting result, ask whether to widen this one read-only lookup to all
    registered local personal projects and, if still unresolved, the current repository or
-   workspace files. Explain that it applies only to this lookup, excludes public projects and
-   paths outside the current workspace, then stop and wait for the user's answer.
+   workspace files. Explain that it applies only to this lookup, excludes paths outside the
+   current workspace, then stop and wait for the user's answer.
 3. Only after explicit confirmation, call `search_knowledge_graph` again with
    `personalProjectScope: all_local_confirmed`. Never infer consent from the lookup intent itself.
-4. This expanded scope does not expand any public project or subscription and must not become a
-   persistent default. If it still has no supporting result, continue with a local file fallback:
+4. This expanded scope must not become a persistent default. If it still has no supporting result, continue with a local file fallback:
    - When the current directory is inside one repository, search only that repository.
    - When it is an intentional multi-repository workspace root, search only that workspace.
    - When it is the user home, filesystem root, or otherwise too broad or ambiguous, ask for an
@@ -95,8 +93,7 @@ Personal retrieval always includes the bounded personal-global profile. For a lo
 project, pass its exact `personalProjectId`; if the user explicitly names another personal
 project, resolve it with `list_personal_projects` and add only that exact ID through
 `contextPersonalProjectIds`. Without an active local or resolved temporary project, search only the personal-global
-profile. For public context, pass only the active or explicitly named subscribed public project
-IDs; never search every personal project, every subscription, or the whole graph by default.
+profile. Never search every personal project or the whole graph by default.
 Use the current repository, the user's wording, and `list_knowledge_spaces` to resolve scope.
 Ask if the active project remains ambiguous.
 
@@ -125,8 +122,7 @@ automatic `task_knowledge_recall` delivered, report the same material use in
 `checkpoint_task_knowledge` `knowledgeUsage`: the entry recall orders later candidates partly by
 how often a recalled item was used once shown. That order shift is bounded, never hides or drops an
 item, and never changes confirmation; so do not report use you did not make. Usage evidence can
-promote only to `agent_confirmed`; it never substitutes for human confirmation or makes an item
-eligible for public publication. Use the current user task's caller-stable identifier as
+promote only to `agent_confirmed`; it never substitutes for human confirmation. Use the current user task's caller-stable identifier as
 `taskId` and reuse it on retries; never generate another ID to recount the same task.
 
 A task the Stop hook closes needs no report: a FULI source link in your final reply is recorded as `cited` for that item, so keep `sourceMarker` links exact. Only cite what supported the answer.
@@ -189,7 +185,7 @@ or tool that can read it:
    fabricate a link, or put credentials in the URI.
 3. Route confidential or internal sources to personal knowledge with `private` or `restricted`
    sensitivity. The runtime may retain the source URI; never copy a real internal URI into Git
-   project files, fixtures, examples, logs, or public project evidence.
+   project files, fixtures, examples, or logs.
 4. When the user later asks to refresh the knowledge, search the relevant scope, use the returned
    `source_uris` from supporting facts or entities, re-read the source with the current Agent,
    and revise or supersede the corresponding Fuli knowledge while preserving history.

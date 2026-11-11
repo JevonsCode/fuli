@@ -110,7 +110,6 @@ const HANDLERS = Object.freeze({
     ...input,
     operationActor: 'agent'
   }),
-  delete_public_project: (app, input) => app.deletePublicProject(input),
   list_employee_templates: (app, input) => employeeService(app).list(input),
   recruit_employee: (app, input) => employeeService(app).recruit(input),
   list_employee_tools: (app, input) => employeeService(app).describeTools(input),
@@ -162,19 +161,8 @@ const HANDLERS = Object.freeze({
       () => app.knowledgeTags(knowledgeTagChange(input?.action), { ...input, operationActor: 'agent' })),
   search_current_project_knowledge: (app, input) =>
     app.searchCurrentProjectKnowledge(input),
-  discover_common_knowledge_candidates: (app, input) =>
-    app.discoverCommonKnowledgeCandidates(input),
   discover_personal_global_preference_candidates: (app, input) =>
     app.discoverPersonalGlobalPreferenceCandidates(input),
-  preview_common_knowledge_promotion: (app, input) =>
-    app.previewCommonKnowledgePromotion(input),
-  apply_common_knowledge_promotion: (app, input) => {
-    const { previewToken: _previewToken, ...promotion } = input;
-    return app.applyCommonKnowledgePromotion({
-      ...promotion,
-      operationActor: 'agent'
-    });
-  },
   get_knowledge_graph: (app, input) => app.getKnowledgeGraph({
     ...input,
     agentInvocation: true,
@@ -285,17 +273,6 @@ const HANDLERS = Object.freeze({
       operationActor: 'agent'
     });
   },
-  publish_personal_project: (app, input) => app.publishPersonalProject(input),
-  list_project_releases: (app, input) => app.listProjectReleases(input),
-  create_project_relation: (app, input) => app.createProjectRelation(input),
-  list_project_relations: (app, input) => app.listProjectRelations(input),
-  review_project_relation: (app, input) => app.reviewProjectRelation(input),
-  list_personal_review_queue: (app, input) => app.listPersonalReviewQueue(input),
-  review_personal_draft: (app, input) => app.reviewPersonalDraft(input),
-  subscribe_public_project: (app, input) => app.subscribePublicProject(input),
-  unsubscribe_public_project: (app, input) => app.unsubscribePublicProject(input),
-  list_project_review_queue: (app, input) => app.listReviewQueue(input),
-  review_project_proposal: (app, input) => app.reviewProposal(input),
   get_graphiti_status: (app) => app.getGraphitiStatus()
 });
 

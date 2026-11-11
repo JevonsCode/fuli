@@ -879,7 +879,7 @@ async function upsertProject(application, personalSpaceId, projectId, name) {
       technicalSummary: '通过公开的个人项目接口创建。',
       lifecycle: 'maintenance',
       sources: [],
-      boundaries: ['不得将该验收模拟项目发布为公共项目。']
+      boundaries: ['该验收模拟项目只用于合成验收。']
     }
   });
 }

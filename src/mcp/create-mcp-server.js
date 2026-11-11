@@ -18,7 +18,6 @@ import { agentHostRequestContext, runWithAgentRequestContext, sealedWorkerReques
 import { FULI_VERSION } from '../package-metadata.js';
 import { MCP_CHAT_INSTRUCTIONS, MCP_INSTRUCTIONS } from './instructions.js';
 import { createProjectActionPreviewTokens } from './project-action-preview-tokens.js';
-import { createCommonKnowledgePreviewTokens } from './common-knowledge-preview-tokens.js';
 import { auditLifecycleTool } from './lifecycle-audit.js';
 import { recordToolFailure } from '../diagnostics/failure-records.js';
 import { registerFuliContextResources } from './context-resources.js';
@@ -76,7 +75,6 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   search_knowledge_graph: 32 * 1024,
   search_connected_knowledge: 64 * 1024,
   search_current_project_knowledge: 64 * 1024,
-  discover_common_knowledge_candidates: 32 * 1024,
   discover_personal_global_preference_candidates: 32 * 1024,
   list_personal_projects: 32 * 1024,
   list_project_agents: 32 * 1024,
@@ -226,7 +224,6 @@ function createToolMap(
   workerTaskContext = null,
   onSession
 ) {
-  const commonKnowledgePreviews = createCommonKnowledgePreviewTokens();
   if (toolNames !== null && !Array.isArray(toolNames)) {
     throw new TypeError('MCP toolNames must be an array or null');
   }
@@ -265,7 +262,7 @@ function createToolMap(
             if (typeof workerTaskContext.recover !== 'function') throw new TypeError('Worker preference recovery is unavailable');
             return invokeAgentTool(app, definition.name,
               await workerTaskContext.recover(prepareToolInput(definition.name, input), requestContext ?? {}),
-              projectActionPreviews, commonKnowledgePreviews, requestContext);
+              projectActionPreviews, requestContext);
           }
           const admitted = await workerTaskContext.admit(requestContext ?? {});
           requestContext?.signal?.throwIfAborted?.();
@@ -276,7 +273,7 @@ function createToolMap(
           }
           // Provenance follows the Provider-admitted run, never the payload.
           return invokeAgentTool(app, definition.name, prepared, projectActionPreviews,
-            commonKnowledgePreviews, sealedWorkerRequestContext(requestContext));
+            sealedWorkerRequestContext(requestContext));
         }) : invokeAsHost(),
         requestContext
       );
@@ -287,7 +284,7 @@ function createToolMap(
         const normalized = normalizeAgentSessionInput(definition.name, prepared,
           requestNative, requestHost, callSource);
         onSession(callingSession(definition.name, normalized, requestNative));
-        return invokeAgentTool(app, definition.name, normalized, projectActionPreviews, commonKnowledgePreviews,
+        return invokeAgentTool(app, definition.name, normalized, projectActionPreviews,
           agentHostRequestContext({ ...requestContext, testToolsEnabled: includeTestTools }, requestHost, callSource));
       }
     }
@@ -431,7 +428,6 @@ async function invokeAgentTool(
   name,
   input,
   projectActionPreviews,
-  commonKnowledgePreviews,
   requestContext = null
 ) {
   if (name === 'preview_personal_project_action') {
@@ -443,16 +439,6 @@ async function invokeAgentTool(
   }
   if (name === 'apply_personal_project_action') {
     projectActionPreviews.consume(input.previewToken, input);
-  }
-  if (name === 'preview_common_knowledge_promotion') {
-    const result = await callAgentTool(app, name, input, requestContext);
-    return {
-      ...result,
-      previewToken: commonKnowledgePreviews.issue(input)
-    };
-  }
-  if (name === 'apply_common_knowledge_promotion') {
-    commonKnowledgePreviews.consume(input.previewToken, input);
   }
   return callAgentTool(app, name, input, requestContext);
 }

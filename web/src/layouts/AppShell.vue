@@ -51,10 +51,7 @@ import { measureScrollbarSize } from './scrollbar-size'
 const store = useConsoleStore()
 const route = useRoute()
 const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? '')
-const destinations = computed(() => navDestinations({
-  spaceId: activeSpaceId.value || 'current',
-  publicProjects: store.state?.capabilities?.browsePublicProjects !== false,
-}))
+const destinations = computed(() => navDestinations({ spaceId: activeSpaceId.value || 'current' }))
 const destination = computed(() => activeDestination(destinations.value, route.path))
 const section = computed(() => activeSection(destination.value, route.path))
 const dockDestinations = computed(() => destinations.value.filter(item => item.placement === 'dock'))

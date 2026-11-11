@@ -70,6 +70,6 @@ Agent 上下文。
 `search_connected_knowledge` 分开返回个人图谱、每个外部绑定和调用方明确选择的公共项目，
 不会先压成无来源正文。公共项目聚合目前是 **Beta**。Agent 发现实质冲突时，默认在对话中
 展示并询问用户；可选的“Agent 判断”只对本次回答生效，不能确认、失效或改写任何来源。
-外部知识直接绑定到公共空间或经审核提升到公共空间、后台定时同步、Webhook 和完整删除对账仍是 **TODO**。
+后台定时同步、Webhook 和完整删除对账仍是 **TODO**。
 
-完整边界见[外部知识库只读接入架构](external-knowledge-architecture.md)，公共空间与个人图谱的联动见[公共空间与个人图谱联动架构](public-personal-architecture.md)。
+完整边界见[外部知识库只读接入架构](external-knowledge-architecture.md)。

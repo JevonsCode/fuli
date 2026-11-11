@@ -24,7 +24,6 @@ export function createEmployeeFixture({ runtimeConfigPath }) {
       personalSpaces: [{ id: 'employee-test-space', name: '隔离验收 · 合成数据' }],
       personalProjects: projects, projects: [], subscriptions: [],
       capturePolicy: { enabled: false }, agentAccessPolicy: { enabled: true },
-      capabilities: { browsePublicProjects: false, submitKnowledge: false, reviewProposals: false }
     }; },
     async listPersonalProjects() { return structuredClone(projects); },
     async listCurrentProjectAgents({ projectPath }) { return { personal_project_id: projectPath === '/synthetic/employee-qa' ? 'employee-qa' : null }; },

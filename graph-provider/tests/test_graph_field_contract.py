@@ -334,7 +334,7 @@ ENUM_SOURCES = {
     'project_agent_status': project_agent_models.ProjectAgentStatus,
     'project_agent_type': project_agent_models.ProjectAgentType,
     'project_reference_status': project_action_models.KnowledgeProjectReferenceStatus,
-    'project_relation_status': models.ProjectRelationStatus,
+    'project_relation_status': project_action_models.PersonalProjectRelationStatus,
     'project_relation_type': models.ProjectRelationType,
     'quadrant': models.EpistemicQuadrant,
     'recruitment_status': project_agent_task_models.ProjectAgentRecruitmentStatus,

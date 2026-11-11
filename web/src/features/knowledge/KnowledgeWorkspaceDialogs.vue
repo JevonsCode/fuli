@@ -2,13 +2,11 @@
 import type { KnowledgeItem, PersonalProject } from '@/types'
 import KnowledgeProjectDialog from '@/features/projects/KnowledgeProjectDialog.vue'
 import PersonalProjectProfileDialog from '@/features/projects/PersonalProjectProfileDialog.vue'
-import PublishProjectDialog from '@/features/projects/PublishProjectDialog.vue'
 import KnowledgeEditDialog from './KnowledgeEditDialog.vue'
 
 defineProps<{
   editingItem: KnowledgeItem | null
   projectActionItem: KnowledgeItem | null
-  publishingProject: PersonalProject | null
   managingProject: PersonalProject | null
   managingMaterialType: string | null
   personalSpaceId: string
@@ -21,7 +19,6 @@ defineProps<{
 const emit = defineEmits<{
   'close-edit': []
   'close-project-action': []
-  'close-publish': []
   'close-profile': []
   'refresh': []
   'access-denied': []
@@ -57,11 +54,6 @@ function profileSaved(project: PersonalProject) {
     :projects="projects"
     @close="emit('close-project-action')"
     @saved="projectSaved"
-  />
-  <PublishProjectDialog
-    :project="publishingProject"
-    @close="emit('close-publish')"
-    @published="emit('refresh')"
   />
   <PersonalProjectProfileDialog
     :project="managingProject"

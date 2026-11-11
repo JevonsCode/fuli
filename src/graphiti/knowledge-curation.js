@@ -1,27 +1,9 @@
-import { providerCommonKnowledgePromotion } from './agent-knowledge-workflows.js';
 import {
   providerConfirmationActor,
   providerConfirmationBasis
 } from './knowledge-provider-mapping.js';
 import { assertActivePersonalSpace } from './active-personal-space.js';
 import { assertSafeKnowledgeMutation } from './knowledge-credential-guard.js';
-
-export async function previewCommonKnowledgePromotion(application, input) {
-  assertActivePersonalSpace(application, input.personalSpaceId);
-  assertSafeKnowledgeMutation(input);
-  return application.personal.previewCommonKnowledgePromotion(
-    providerCommonKnowledgePromotion(input)
-  );
-}
-
-export async function applyCommonKnowledgePromotion(application, input) {
-  assertActivePersonalSpace(application, input.personalSpaceId);
-  assertSafeKnowledgeMutation(input);
-  return application.personal.applyCommonKnowledgePromotion({
-    ...providerCommonKnowledgePromotion(input),
-    operation_actor: input.operationActor ?? 'agent'
-  });
-}
 
 export async function recordKnowledgeUsage(application, {
   personalSpaceId,

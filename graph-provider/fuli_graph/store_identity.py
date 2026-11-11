@@ -4,7 +4,6 @@ from fastapi import HTTPException, status
 
 from .auth import issue_access_token, token_hash
 from .models import PrincipalResult, SpaceCreate, SpaceRecord
-from .project_management import publish_project
 from .provider_values import graphiti_group_id, now_utc
 
 
@@ -107,20 +106,13 @@ class StoreIdentity:
         return PrincipalResult(principal_id=principal_id, access_token=access_token)
 
     async def create_space(self, actor: dict, request: SpaceCreate) -> SpaceRecord:
-        expected_kind = 'personal' if self.settings.provider_mode == 'personal' else 'project'
-        if request.kind != expected_kind:
+        # Public projects were removed: a workspace provider serves what it already
+        # holds and takes no new project or release; only a personal space is created.
+        if self.settings.provider_mode != 'personal' or request.kind != 'personal':
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f'{self.settings.provider_mode} provider only accepts {expected_kind} spaces',
+                detail='Public projects were removed; only a personal provider creates a personal space',
             )
-        if request.kind == 'project' and request.profile:
-            if any(source.sensitivity != 'normal' for source in request.profile.sources):
-                raise HTTPException(
-                    status_code=422,
-                    detail='private or restricted project sources cannot be published',
-                )
-        if request.kind == 'project':
-            return await publish_project(self, actor, request)
         space_id = str(uuid4())
         group_id = graphiti_group_id(self.settings.provider_id, request.kind, space_id)
         created_at = now_utc()
@@ -233,7 +225,3 @@ class StoreIdentity:
     def _require_personal(self) -> None:
         if self.settings.provider_mode != 'personal':
             raise HTTPException(status_code=404, detail='personal provider endpoint')
-
-    def _require_workspace(self) -> None:
-        if self.settings.provider_mode != 'workspace':
-            raise HTTPException(status_code=404, detail='workspace provider endpoint')

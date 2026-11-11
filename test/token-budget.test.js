@@ -208,7 +208,11 @@ const BASELINE = Object.freeze({
   // 203,082 -> 200,079 B (-3,003 B), measured.
   // 11-11: organize_project sources gained named_material (what the person pointed at): 200,079 -> 200,095 B (+16 B), measured.
   // 11-11: organize_project gained personalProjectId (the project a console-started request names): 200,095 -> 200,259 B (+164 B), measured.
-  fullToolSchemaBytes: 200259,
+  // 11-11: public projects were removed: their twelve tools (publishing, releases, relations,
+  // subscriptions, both review queues, deleting) and the three common-knowledge promotion tools
+  // leave the full profile, and capture_session_knowledge keeps only its personal target:
+  // 200,259 -> 189,116 B, measured. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 189116,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.

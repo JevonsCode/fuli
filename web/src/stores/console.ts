@@ -7,7 +7,6 @@ import { getJson, patchJson, postJson } from '@/api/client'
 import { t } from '@/i18n'
 import type {
   AgentAccessPolicy,
-  CapabilityName,
   CapturePolicy,
   CapturePolicyChange,
   CaptureOnboardingState,
@@ -88,12 +87,6 @@ export const useConsoleStore = defineStore('console', () => {
     return value.personalSpaces.find(({ id }) => id === value.activePersonalSpaceId)
       ?? value.personalSpaces[0]
       ?? null
-  })
-
-  const publicRuntimeStatus = computed(() => {
-    if (state.value?.mode === 'connected') return 'ready'
-    if (state.value?.mode === 'degraded') return 'error'
-    return 'disconnected'
   })
 
   async function refresh() {
@@ -274,10 +267,6 @@ export const useConsoleStore = defineStore('console', () => {
     }
   }
 
-  function hasCapability(name: CapabilityName) {
-    return state.value?.capabilities?.[name] === true
-  }
-
   function notify(message: string, link?: { to: string; label?: string }, action?: FeedbackAction) {
     feedback.value = { message, tone: 'success', ...(link ? { link } : {}), ...(action ? { action } : {}) }
   }
@@ -307,7 +296,6 @@ export const useConsoleStore = defineStore('console', () => {
     refreshError,
     feedback,
     activePersonalSpace,
-    publicRuntimeStatus,
     refresh,
     updateCapturePolicy,
     loadCapturePolicy,
@@ -320,7 +308,6 @@ export const useConsoleStore = defineStore('console', () => {
     rememberCapturePolicy,
     updateAgentAccessPolicy,
     updateRecallPolicy,
-    hasCapability,
     notify,
     reportError,
     clearFeedback,

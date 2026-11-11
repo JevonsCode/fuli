@@ -76,25 +76,3 @@ async def test_real_reservation_unknown_reconciliation_and_source_scrub():
                                     'lookup_result': {'id': 'remote-receipt', 'status': 'pending'}}))
         assert recovered['status'] == 'source_deleted' and recovered['episode'] is None
         assert recovered['shared_proposal_id'] == 'remote-receipt'
-
-
-@pytest.mark.asyncio
-async def test_real_workspace_lookup_is_owner_scoped_and_payload_free():
-    settings = reviewed().model_copy(update={'provider_mode': 'workspace'})
-    async with provider_client(settings) as (client, _):
-        project = ok(await client.post('/v1/spaces', json={'name': 'Synthetic lookup project', 'kind': 'project'}))['id']
-        episode = StructuredEpisode.model_validate(confirmed_episode(idempotency_key=str(uuid4()))).model_dump(mode='json')
-        proposal = ok(await client.post(f'/v1/projects/{project}/proposals', json={'episode': episode}))
-        endpoint = f'/v1/projects/{project}/proposals/lookup'
-        result = ok(await client.get(endpoint, params={'idempotency_key': episode['idempotency_key']}))
-        assert result == {'id': proposal['id'], 'status': 'pending'}
-        for role in ('contributor', 'reader'):
-            principal = ok(await client.post('/v1/principals', json={'name': 'Synthetic ' + role}))
-            ok(await client.post(f'/v1/projects/{project}/members',
-                                 json={'principal_id': principal['principal_id'], 'role': role}))
-            other = await client.get(endpoint, params={'idempotency_key': episode['idempotency_key']},
-                headers={'authorization': 'Bearer ' + principal['access_token']})
-            if role == 'contributor':
-                assert other.status_code == 200 and other.json() is None
-            else:
-                assert other.status_code == 403

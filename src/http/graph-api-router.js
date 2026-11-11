@@ -13,7 +13,6 @@ import { handleReplyEchoRequest } from './reply-echo-api-router.js';
 import { handleSessionRecordsRequest } from './session-records-api-router.js';
 import { handleCaptureChangeRequest } from './capture-change-api-router.js';
 import { handleCaptureOnboardingRequest, handleFirstRunGuideRequest } from './capture-onboarding-api-router.js';
-import { parsePersonalDraftDecision } from '../graphiti/publication-draft-input.js';
 import { PERSON_WRITER } from '../graphiti/project-profile-authors.js';
 
 // The Provider keeps a confirmer's label of at most this many characters.
@@ -204,19 +203,6 @@ export async function handleGraphApiRequest({
       itemId: decodeURIComponent(knowledgeItem[2]),
       operationActor: 'human'
     }, ownerReads));
-    return true;
-  }
-  if (url.pathname === '/api/subscriptions' && request.method === 'POST') {
-    sendJson(response, 200, await app.subscribePublicProject(await readJson(request)));
-    return true;
-  }
-  const subscription = url.pathname.match(/^\/api\/subscriptions\/([^/]+)$/);
-  if (subscription && request.method === 'DELETE') {
-    sendJson(response, 200, await app.unsubscribePublicProject({
-      personalSpaceId: url.searchParams.get('personalSpaceId'),
-      projectId: decodeURIComponent(subscription[1]),
-      providerUrl: url.searchParams.get('providerUrl')
-    }));
     return true;
   }
   if (url.pathname === '/api/personal-projects' && request.method === 'GET') {
@@ -627,81 +613,6 @@ export async function handleGraphApiRequest({
       );
     }
     sendJson(response, 200, await app.resetProjectAgentRoutingLearning(input));
-    return true;
-  }
-  if (url.pathname === '/api/projects/publish' && request.method === 'POST') {
-    sendJson(response, 200, await app.publishPersonalProject(await readJson(request)));
-    return true;
-  }
-  const projectReleases = url.pathname.match(/^\/api\/projects\/([^/]+)\/releases$/);
-  if (projectReleases && request.method === 'GET') {
-    sendJson(response, 200, await app.listProjectReleases({
-      projectId: decodeURIComponent(projectReleases[1]),
-      providerUrl: url.searchParams.get('providerUrl')
-    }));
-    return true;
-  }
-  const publicProject = url.pathname.match(/^\/api\/projects\/([^/]+)$/);
-  if (publicProject && request.method === 'DELETE') {
-    sendJson(response, 200, await app.deletePublicProject({
-      projectId: decodeURIComponent(publicProject[1]),
-      providerUrl: url.searchParams.get('providerUrl')
-    }));
-    return true;
-  }
-  if (url.pathname === '/api/project-relations' && request.method === 'GET') {
-    sendJson(response, 200, await app.listProjectRelations({
-      projectId: url.searchParams.get('projectId'),
-      providerUrl: url.searchParams.get('providerUrl')
-    }));
-    return true;
-  }
-  if (url.pathname === '/api/project-relations' && request.method === 'POST') {
-    sendJson(response, 200, await app.createProjectRelation(await readJson(request)));
-    return true;
-  }
-  const relationDecision = url.pathname.match(
-    /^\/api\/project-relations\/([^/]+)\/decision$/
-  );
-  if (relationDecision && request.method === 'POST') {
-    const body = await readJson(request);
-    sendJson(response, 200, await app.reviewProjectRelation({
-      ...body,
-      relationId: decodeURIComponent(relationDecision[1])
-    }));
-    return true;
-  }
-  if (url.pathname === '/api/personal-review' && request.method === 'GET') {
-    sendJson(response, 200, await app.listPersonalReviewQueue({
-      personalSpaceId: url.searchParams.get('personalSpaceId'),
-      status: url.searchParams.get('status') ?? 'pending'
-    }, ownerReads));
-    return true;
-  }
-  const personalDecision = url.pathname.match(/^\/api\/personal-review\/([^/]+)\/decision$/);
-  if (personalDecision && request.method === 'POST') {
-    const body = await readJson(request);
-    sendJson(response, 200, await app.reviewPersonalDraft(parsePersonalDraftDecision({
-      decision: body?.decision,
-      draftId: decodeURIComponent(personalDecision[1])
-    }), ownerReads));
-    return true;
-  }
-  if (url.pathname === '/api/review' && request.method === 'GET') {
-    sendJson(response, 200, await app.listReviewQueue({
-      projectId: url.searchParams.get('projectId'),
-      providerUrl: url.searchParams.get('providerUrl'),
-      status: url.searchParams.get('status') ?? 'pending'
-    }));
-    return true;
-  }
-  const decision = url.pathname.match(/^\/api\/review\/([^/]+)\/decision$/);
-  if (decision && request.method === 'POST') {
-    const body = await readJson(request);
-    sendJson(response, 200, await app.reviewProposal({
-      ...body,
-      proposalId: decodeURIComponent(decision[1])
-    }));
     return true;
   }
   if (url.pathname === '/api/graphiti/status' && request.method === 'GET') {

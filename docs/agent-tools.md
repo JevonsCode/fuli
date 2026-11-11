@@ -82,7 +82,4 @@ the durable graph remains the source of truth.
 | `record_decision_trace` | Store options, rejected alternatives, rationale, and optional initial validation |
 | `capture_session_knowledge` | Store a small structured batch of durable candidates |
 | `checkpoint_task_knowledge` | Complete review with `capture_candidates` or `retain_nothing` |
-| `discover_common_knowledge_candidates` | Read-only discovery of possible parent-project knowledge |
-| `preview_common_knowledge_promotion` | Preview a human-confirmed promotion |
-| `apply_common_knowledge_promotion` | Apply the preview atomically with a one-time token |
 | `resolve_deferred_preference_conflict` | Resolve an AI-deferred conflict only when a task needs it |
