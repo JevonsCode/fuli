@@ -200,8 +200,30 @@ function agentReader(input, projectAgentId) {
   return taskKnowledgeReader(parse(agentReaderSchema, { personalProjectId: input.personalProjectId, projectAgentId }));
 }
 
+// A caller's request Tonborg cannot use: invalid_input naming each field and
+// what is wrong, never its value (rec#110 item 7: a plain TypeError surfaced
+// as a bare internal_error).
 export function parse(schema, input) {
   const result = schema.safeParse(input);
-  if (!result.success) throw new TypeError(`Invalid judgment request: ${result.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+  if (!result.success) throw new InvalidInputError(`Invalid judgment request: ${result.error.issues.map(requestIssue).join('; ')}`);
   return result.data;
 }
+
+// A model's answer that does not fit its schema: a judgment failure its record
+// keeps, not the caller's argument.
+export function parseAnswer(schema, answer) {
+  const result = schema.safeParse(answer);
+  if (!result.success) throw new TypeError(`Invalid judgment answer: ${issuesOf(result.error)}`);
+  return result.data;
+}
+
+const issuesOf = error => error.issues.map(i => `${i.path.join('.') || 'request'}: ${i.message}`).join('; ');
+
+// What a caller reads: the schema's own field path and a fixed phrase per
+// issue code, never Zod's message, which names a caller's unknown key.
+// No request schema here has caller-named keys (no record or catchall), so a
+// path holds only schema fields and array positions.
+const REQUEST_ISSUES = Object.freeze({ invalid_type: 'wrong type or missing', unrecognized_keys: 'unknown field',
+  too_small: 'too short or too small', too_big: 'too long or too large', invalid_value: 'not an allowed value',
+  invalid_format: 'wrong format' });
+const requestIssue = issue => `${issue.path.join('.') || 'request'}: ${REQUEST_ISSUES[issue.code] ?? 'invalid'}`;

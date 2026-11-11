@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { parse } from './service.js';
+import { parse, parseAnswer } from './service.js';
 import { createJudgmentBackend, failureProvenance, judgmentAnswer, judgmentProvenance, pendingRecord,
   TONBORG_OPERATIONS } from './backend.js';
 import { assessRouting } from './routing.js';
@@ -292,7 +292,7 @@ const asked = (store, records, space) => judgmentHumanInteraction(records, space
 // odd one falls back to FULI's own wording and never fails the verdict.
 function reviewDecisions(value, candidates, delegated) {
   const raw = Array.isArray(value?.decisions) ? value.decisions.map(softAsk) : null;
-  const parsed = parse(jsonSchemaToZod(reviewSchema(candidates, { delegated, asked: false })), raw ? { ...value, decisions: raw.map(part => part.verdict) } : value);
+  const parsed = parseAnswer(jsonSchemaToZod(reviewSchema(candidates, { delegated, asked: false })), raw ? { ...value, decisions: raw.map(part => part.verdict) } : value);
   const decisions = parsed.decisions.map((decision, index) => ({ ...decision, ...raw[index].ask }));
   if (decisions.length !== candidates.length || new Set(decisions.map(d => d.target)).size !== candidates.length
     || decisions.some(d => !candidates.some(c => c.candidate_key === d.target))) throw new TypeError('Judgment targets do not match evidence');
