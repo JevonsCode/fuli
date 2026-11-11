@@ -33,8 +33,8 @@ export const onboardingTourMessages = {
         go: '去沉淀',
       },
       projects: {
-        title: '每个项目有一位组长',
-        text: '每个项目由一个 FLA 当组长。在项目上点「整理」，你的 AI 会读一遍项目，补上 FULI 还缺的。',
+        title: '每个项目有一位负责人',
+        text: '每个项目由一位 FLA 负责。在项目上点「整理」，你的 AI 会读一遍项目，补上 FULI 还缺的。',
         go: '去项目',
       },
       roundtable: {
