@@ -41,6 +41,13 @@ export async function organizeProject(application, input = {}) {
   if (!task?.personalProjectId) {
     throw new ApplicationError('project_unresolved', 'This task belongs to no project; run it from the project folder.', { status: 409 });
   }
+  // A sentence started from the console names its project. A session opened in another
+  // project's folder must not organise that one under this name.
+  if (input.personalProjectId && input.personalProjectId !== task.personalProjectId) {
+    throw new ApplicationError('project_mismatch',
+      `This session works in project ${task.personalProjectId}, not ${input.personalProjectId}. Open the AI client in that project's folder and say it again.`,
+      { status: 409 });
+  }
   const spaceId = application.config.personal.spaceId;
   const updating = input.action === 'update';
   const state = updating

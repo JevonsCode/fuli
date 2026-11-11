@@ -78,6 +78,12 @@ test('what is not an area, a source or a count is refused, and so is a task outs
   await assert.rejects(call(app, { action: 'update', sources: { browser_history: 'read' } }), /Unknown source/);
   await assert.rejects(call(app, { action: 'update', run: { added: -1 } }), /run\.added is a whole number/);
   await assert.rejects(call(app, { action: 'update' }), /Send areas, sources, run or several/);
+  // The request named a project: the same one goes on, another one is refused before anything is read or written.
+  assert.equal((await call(app, { action: 'read', personalProjectId: 'synthetic-project' })).personal_project_id, 'synthetic-project');
+  for (const action of ['read', 'update']) {
+    await assert.rejects(call(app, { action, personalProjectId: 'another-project', areas: { purpose: { status: 'known' } } }),
+      error => error.code === 'project_mismatch' && /another-project/.test(error.message));
+  }
   await assert.rejects(organizeProject(application(t, { project: null }), { action: 'read', taskContextToken: 'turn-1' }),
     error => error.code === 'project_unresolved');
   await assert.rejects(organizeProject({ config: app.config }, { action: 'read', taskContextToken: 'turn-1' }),

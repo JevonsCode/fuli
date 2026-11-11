@@ -18,6 +18,7 @@ export const PROJECT_ORGANIZING_DEFINITIONS = [
       action: enumSchema(['read', 'update']),
       taskContextToken: boundedString(256),
       model: { ...boundedString(120), description: 'The model you run on, as its id.' },
+      personalProjectId: { ...boundedString(128), description: 'The project the request named, if any; refused when this session is in another.' },
       // Keyed by area id and by source id; the store checks the keys, so nine areas cost one schema.
       areas: { type: 'object', additionalProperties: area,
         description: `Keys: ${ORGANIZING_AREAS.map(({ id }) => id).join(', ')}.` },
