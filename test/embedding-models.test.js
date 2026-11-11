@@ -88,6 +88,8 @@ test('a catalog copy is refused whole when it names anything FULI does not run o
   refused(item => { item.license = 'CC-BY-NC-4.0'; return item; }, /license must be one of MIT, Apache-2\.0/);
   refused(item => { item.script = 'run.sh'; return item; }, /unknown fields: script/);
   refused(item => { item.id = '../escape'; return item; }, /id must be/);
+  // Windows drops a trailing dot from a folder name: `tiny.` would be read from the folder `tiny`.
+  for (const id of ['tiny.', 'tiny-', '.tiny']) refused(item => { item.id = id; return item; }, /id must be/);
   assert.throws(() => parseEmbeddingModelsManifest(manifest([model('a'), model('b')])), /exactly one model must be recommended/);
   assert.throws(() => parseEmbeddingModelsManifest(manifest([model(), model()])), /repeats an id/);
   assert.deepEqual(diffEmbeddingModels(parseEmbeddingModelsManifest(manifest([model('a')])),
@@ -142,7 +144,9 @@ function installation(t, { fetchImpl = transport().fetchImpl } = {}) {
   const embedded = [];
   const modelBackends = createModelBackendPort({
     readConfig: () => readModelBackendConfig(configPath), secrets: { read: async () => null }, ledger: new ModelUsageLedger(':memory:'),
-    builtinEmbed: async ({ model: id, texts }) => {
+    builtinEmbed: async ({ model: id, revision, texts }) => {
+      // The graph service is told which revision the index was built with.
+      assert.equal(revision, id === 'gone' ? null : 'aaaaaaaaaaaa');
       embedded.push({ id, texts });
       if (id === 'gone') throw Object.assign(new Error('missing'), { status: 404 });
       return { model: id, dimensions: 2, vectors: texts.map((_, index) => [index, 1]), tokens: 7 };
@@ -303,5 +307,42 @@ test('a graph service on another computer is never sent texts under the local ex
   assert.deepEqual(['http://127.0.0.1:2829', 'http://localhost:2829', 'https://remote-provider.example'].map(isLoopbackUrl), [true, true, false]);
   const source = readFileSync(new URL('../src/graphiti/local-runtimes.js', import.meta.url), 'utf8');
   assert.match(source, /builtinEmbed: isLoopbackUrl\(providerIdentity\) \? input => app\.personal\.builtinEmbed\(input\) : null/);
+});
+
+test('a newer download that cannot take the old one\'s place leaves the old one working', async (t) => {
+  const directory = workspace(t);
+  const { renameSync } = await import('node:fs');
+  const held = (code, when) => (from, to) => {
+    if (when(from, to)) throw Object.assign(new Error(`synthetic ${code}`), { code });
+    return renameSync(from, to);
+  };
+  const first = createEmbeddingModelStore({ directory, fetchImpl: transport().fetchImpl });
+  await first.download(model());
+  const before = readFileSync(join(directory, 'tiny-zh', 'fuli-model.json'), 'utf8');
+
+  // The graph service mapped the old file again after it was asked to let go: the old folder will not move.
+  const mapped = createEmbeddingModelStore({ directory, fetchImpl: transport().fetchImpl,
+    rename: held('EPERM', from => from.endsWith('tiny-zh') && !from.includes('.partial')) });
+  let asked = 0;
+  await assert.rejects(mapped.download(model(), { beforeReplace: async () => { asked += 1; } }), error => error.code === 'EPERM');
+  assert.equal(asked, 1);
+  // A scanner holds the new files just written: the new folder will not move in, so the old one goes back.
+  const scanned = createEmbeddingModelStore({ directory, fetchImpl: transport().fetchImpl,
+    rename: held('EBUSY', from => from.includes('.partial')) });
+  await assert.rejects(scanned.download(model()), error => error.code === 'EBUSY');
+
+  for (const store of [mapped, scanned]) {
+    assert.equal(store.progress('tiny-zh').status, 'failed');
+    assert.deepEqual(store.installed().map(item => [item.id, item.revision]), [['tiny-zh', REVISION]]);
+  }
+  assert.equal(readFileSync(join(directory, 'tiny-zh', 'fuli-model.json'), 'utf8'), before);
+  assert.deepEqual(readdirSync(directory), ['tiny-zh']);
+
+  // A removal that cannot move the folder removes nothing.
+  assert.throws(() => mapped.remove('tiny-zh'), error => error.code === 'EPERM');
+  assert.deepEqual(readdirSync(join(directory, 'tiny-zh')).sort(), ['config.json', 'fuli-model.json', 'model.safetensors', 'vocab.txt']);
+  // Once nothing holds it, the next download replaces it and leaves nothing behind.
+  await first.download(model());
+  assert.deepEqual(readdirSync(directory), ['tiny-zh']);
 });
 

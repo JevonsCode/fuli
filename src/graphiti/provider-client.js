@@ -884,8 +884,8 @@ export class GraphitiProviderClient {
   }
   // A catalog model the graph service runs on this computer (src/embedding-models):
   // texts in, vectors out. A long page of long texts takes a while on a slow CPU.
-  builtinEmbed({ model, texts, signal }) {
-    return this.#request('/v1/builtin-embeddings', { method: 'POST', body: { model, texts }, timeoutMs: 120_000,
+  builtinEmbed({ model, revision = null, texts, signal }) {
+    return this.#request('/v1/builtin-embeddings', { method: 'POST', body: { model, texts, ...(revision ? { revision } : {}) }, timeoutMs: 120_000,
       ...(signal ? { signal } : {}) });
   }
   // Lets go of the loaded model's files before they are removed or replaced.

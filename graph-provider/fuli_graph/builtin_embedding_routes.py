@@ -18,6 +18,8 @@ MAX_TEXT_CHARS = 32_000
 
 class BuiltinEmbeddingRequest(StrictModel):
     model: str = Field(min_length=1, max_length=64)
+    # The start of the revision the caller indexed with; files of another revision are refused.
+    revision: str | None = Field(default=None, min_length=1, max_length=64)
     texts: list[Annotated[str, Field(max_length=MAX_TEXT_CHARS)]] = Field(min_length=1, max_length=MAX_TEXTS)
 
 
@@ -39,7 +41,7 @@ def register_builtin_embedding_routes(application, settings, Actor) -> None:
     async def builtin_embeddings(request: BuiltinEmbeddingRequest, actor: Actor):
         try:
             # The forward pass is CPU work: off the event loop, so other requests go on.
-            return await asyncio.to_thread(models.embed, request.model, request.texts)
+            return await asyncio.to_thread(models.embed, request.model, request.texts, request.revision)
         except BuiltinEmbeddingError as error:
             raise HTTPException(status_code=_STATUS.get(error.code, 422),
                                 detail={'code': error.code, 'message': str(error)}) from error

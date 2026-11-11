@@ -8,7 +8,8 @@
 
 const FORMAT_ID = 'fuli-embedding-models';
 const FORMAT_VERSION = 1;
-export const EMBEDDING_MODEL_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+// Ends in a letter or digit: Windows drops a trailing dot from a folder name.
+export const EMBEDDING_MODEL_ID = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/;
 // The three files the graph service runs (graph-provider/fuli_graph/builtin_embedding.py).
 export const EMBEDDING_MODEL_FILES = Object.freeze(['config.json', 'vocab.txt', 'model.safetensors']);
 const DOWNLOAD_HOSTS = new Set(['huggingface.co', 'hf-mirror.com']);

@@ -16,13 +16,19 @@ import { EMBEDDING_MODEL_ID, embeddingModelBytes } from './manifest.js';
 // What the graph service reads beside the files (graph-provider/fuli_graph/builtin_embedding.py).
 export const MODEL_SPEC_FILE = 'fuli-model.json';
 const PARTIAL_PREFIX = '.partial-';
+// The copy a newer download replaces waits here until the new one is in place.
+const RETIRED_PREFIX = '.retired-';
+// Windows refuses to move or delete a file something still maps or scans; it lets go within moments.
+const HELD = { maxRetries: 20, retryDelay: 100 };
+const HELD_CODES = new Set(['EPERM', 'EBUSY', 'EACCES', 'ENOTEMPTY']);
 // A download that sends nothing for this long is given up.
 const IDLE_TIMEOUT_MS = 60_000;
 
 export const embeddingModelsDirectory = dataDir => join(dataDir, 'models', 'embedding');
 
+// rename(from, to) moves a folder; a test makes it fail the way a held file does.
 export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fetch, idleTimeoutMs = IDLE_TIMEOUT_MS,
-  openFile = createWriteStream }) {
+  openFile = createWriteStream, rename = renameSync }) {
   // id -> { status: 'downloading' | 'failed', receivedBytes, totalBytes, reason }
   const downloads = new Map();
 
@@ -101,8 +107,20 @@ export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fe
   // the failure that brought us here is the one the person hears about.
   function discard(folder) {
     try {
-      rmSync(folder, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      rmSync(folder, { recursive: true, force: true, ...HELD });
     } catch { /* The next download of this model removes it first. */ }
+  }
+
+  // A folder moves whole or not at all; one that is held for a moment is tried again.
+  async function move(from, to) {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return rename(from, to);
+      } catch (error) {
+        if (!HELD_CODES.has(error?.code) || attempt >= HELD.maxRetries) throw error;
+        await new Promise(resolve => setTimeout(resolve, HELD.retryDelay));
+      }
+    }
   }
 
   const altered = () => Object.assign(new Error('digest mismatch'), { code: 'embedding_model_altered' });
@@ -127,9 +145,22 @@ export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fe
         files: Object.fromEntries(model.files.map(file => [file.path, file.sha256]))
       }, null, 2)}\n`);
       const final = join(directory, model.id);
-      if (existsSync(final)) await beforeReplace();
-      rmSync(final, { recursive: true, force: true });
-      renameSync(partial, final);
+      const retired = join(directory, `${RETIRED_PREFIX}${model.id}`);
+      discard(retired);
+      // The installed copy is moved aside, never deleted first: if anything fails from here on it
+      // goes back, so a model in use is the old one or the new one and never half of either.
+      const replacing = existsSync(final);
+      if (replacing) {
+        await beforeReplace();
+        await move(final, retired);
+      }
+      try {
+        await move(partial, final);
+      } catch (error) {
+        if (replacing) await move(retired, final).catch(() => {});
+        throw error;
+      }
+      discard(retired);
       downloads.delete(model.id);
       return { id: model.id, bytes: state.totalBytes };
     } catch (error) {
@@ -146,7 +177,12 @@ export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fe
     }
     downloads.delete(id);
     const existed = existsSync(join(directory, id));
-    rmSync(join(directory, id), { recursive: true, force: true });
+    // Whole or not at all: the folder leaves its name first, so a file Windows still holds
+    // never leaves half a model under the id.
+    const retired = join(directory, `${RETIRED_PREFIX}${id}`);
+    discard(retired);
+    if (existed) rename(join(directory, id), retired);
+    discard(retired);
     return { id, removed: existed };
   }
 

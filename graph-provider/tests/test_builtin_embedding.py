@@ -168,3 +168,43 @@ def test_unloading_waits_for_a_running_embed_without_holding_the_event_loop(tmp_
     beats = asyncio.run(scenario())
     assert max(beats) < 0.2, 'the event loop kept answering while the unload waited'
 
+
+def test_files_of_another_revision_are_not_the_model_the_caller_indexed_with(tmp_path):
+    """New weights under the same id never answer for the revision an index was built with."""
+    folder = write_model(tmp_path / 'tiny')
+    spec = json.loads((folder / 'fuli-model.json').read_text(encoding='utf-8'))
+    (folder / 'fuli-model.json').write_text(json.dumps({**spec, 'revision': 'b' * 40}), encoding='utf-8')
+    models = BuiltinEmbeddings(str(tmp_path))
+    assert models.embed('tiny', ['你好'], 'bbbbbbbbbbbb')['dimensions'] > 0
+    assert models.embed('tiny', ['你好'])['dimensions'] > 0
+    with pytest.raises(BuiltinEmbeddingError) as refused:
+        models.embed('tiny', ['你好'], 'aaaaaaaaaaaa')
+    assert refused.value.code == 'model_missing'
+
+
+@pytest.mark.parametrize('epsilon', [0, -1e-12, float('nan'), float('inf')])
+def test_an_epsilon_no_layer_norm_has_is_refused_instead_of_answering_vectors_that_are_not_numbers(tmp_path, epsilon):
+    folder = write_model(tmp_path / 'tiny')
+    (folder / 'config.json').write_text(json.dumps({**CONFIG, 'layer_norm_eps': epsilon}), encoding='utf-8')
+    with pytest.raises(BuiltinEmbeddingError) as refused:
+        BuiltinEmbeddings(str(tmp_path)).embed('tiny', ['你好'])
+    assert refused.value.code == 'model_invalid'
+
+
+def test_an_id_windows_would_read_from_another_folder_is_no_model(tmp_path):
+    write_model(tmp_path / 'tiny')
+    for model_id in ('tiny.', 'tiny\n', 'tiny-'):
+        with pytest.raises(BuiltinEmbeddingError) as refused:
+            BuiltinEmbeddings(str(tmp_path)).embed(model_id, ['你好'])
+        assert refused.value.code == 'model_missing'
+
+
+def test_a_refused_model_file_is_let_go_so_it_can_be_replaced(tmp_path):
+    """Windows keeps a mapped file from being replaced: a file that was refused must not stay mapped."""
+    folder = write_model(tmp_path / 'tiny')
+    (folder / 'model.safetensors').write_bytes((2).to_bytes(8, 'little') + b'[]')
+    with pytest.raises(BuiltinEmbeddingError):
+        BuiltinEmbeddings(str(tmp_path)).embed('tiny', ['你好'])
+    (folder / 'model.safetensors').unlink()
+    assert not (folder / 'model.safetensors').exists()
+
