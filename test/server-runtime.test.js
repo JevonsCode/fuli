@@ -246,19 +246,9 @@ test('Web server exposes the Graphiti facade and graph console', async () => {
       'healthy'
     );
 
-    const unsubscribe = await fetch(
-      `${url}/api/subscriptions/project-1?` + new URLSearchParams({
-        personalSpaceId: 'personal-1',
-        providerUrl: 'https://workspace.example'
-      }),
-      { method: 'DELETE' }
-    );
-    assert.equal(unsubscribe.status, 200);
-    assert.deepEqual(calls.find(([name]) => name === 'unsubscribe')[1], {
-      personalSpaceId: 'personal-1',
-      projectId: 'project-1',
-      providerUrl: 'https://workspace.example'
-    });
+    // Public projects were removed (11-11): their subscription route is gone.
+    const unsubscribe = await fetch(`${url}/api/subscriptions/project-1`, { method: 'DELETE' });
+    assert.equal(unsubscribe.status, 404);
 
     const batchInput = {
       personalSpaceId: 'personal-1',
@@ -431,13 +421,6 @@ function graphApp(calls) {
       agentAccessPolicy = { enabled, updatedAt: '2026-07-28T10:00:00.000Z' };
       return agentAccessPolicy;
     },
-    subscribePublicProject: async () => ({}),
-    unsubscribePublicProject: async (input) => {
-      calls.push(['unsubscribe', input]);
-      return { project_id: input.projectId, deleted: true };
-    },
-    listReviewQueue: async () => ({ proposals: [] }),
-    reviewProposal: async () => ({}),
     getGraphitiStatus: async () => ({ personal: {}, workspaces: [] }),
     close: () => calls.push(['close'])
   };

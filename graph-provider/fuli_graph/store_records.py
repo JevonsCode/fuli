@@ -2,8 +2,6 @@ from .models import (
     PersonalProjectRecord,
     ProjectProfile,
     ProjectReleaseRecord,
-    ProjectRelationRecord,
-    ProposalRecord,
     PublicationDraftRecord,
     SpaceRecord,
     StructuredEpisode,
@@ -56,18 +54,6 @@ class StoreRecords:
             created_at=native_datetime(value['created_at']),
         )
 
-    def _project_release(self, raw) -> ProjectReleaseRecord:
-        value = dict(raw)
-        return ProjectReleaseRecord(
-            id=value['id'],
-            project_id=value['project_id'],
-            version=value['version'],
-            summary=value['summary'],
-            publisher_id=value['publisher_id'],
-            publisher_name=value.get('publisher_name') or value['publisher_id'],
-            published_at=native_datetime(value['published_at']),
-        )
-
     def _personal_project(self, raw, personal_space_id: str) -> PersonalProjectRecord:
         value = dict(raw)
         return PersonalProjectRecord(
@@ -78,21 +64,6 @@ class StoreRecords:
             profile=ProjectProfile.model_validate_json(value['profile_json']),
             created_at=native_datetime(value['created_at']),
             updated_at=native_datetime(value['updated_at']),
-        )
-
-    def _project_relation(self, raw) -> ProjectRelationRecord:
-        value = dict(raw)
-        return ProjectRelationRecord(
-            id=value['id'],
-            source_project_id=value['source_project_id'],
-            target_project_id=value['target_project_id'],
-            relation_type=value['relation_type'],
-            status=value['status'],
-            note=value.get('note'),
-            created_by=value['created_by'],
-            created_at=native_datetime(value['created_at']),
-            decided_by=value.get('decided_by'),
-            decided_at=native_datetime(value.get('decided_at')),
         )
 
     def _publication_draft(self, raw, *, metadata_only=False) -> PublicationDraftRecord:
@@ -127,18 +98,4 @@ class StoreRecords:
             provider_url=value['provider_url'],
             project_name=value['project_name'],
             created_at=native_datetime(value['created_at']),
-        )
-
-    def _proposal(self, raw) -> ProposalRecord:
-        value = dict(raw)
-        return ProposalRecord(
-            id=value['id'],
-            project_id=value['project_id'],
-            submitted_by=value['submitted_by'],
-            status=value['status'],
-            episode=StructuredEpisode.model_validate_json(value['payload']),
-            created_at=native_datetime(value['created_at']),
-            decided_at=native_datetime(value.get('decided_at')),
-            decided_by=value.get('decided_by'),
-            decision_note=value.get('decision_note'),
         )

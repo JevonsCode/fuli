@@ -84,7 +84,6 @@ From the project directory, an Agent can be asked: `Search the current project a
 selected public projects as separate source sets. Public-project aggregation is **Beta**. When an
 Agent finds a material conflict, the default policy is to show it in the conversation and ask the
 user; the optional Agent-decision policy applies to the current response only and cannot confirm,
-invalidate, or rewrite any source. Direct external-to-public binding, reviewed public promotion,
-scheduled sync, webhooks, and full deletion reconciliation remain **TODO**.
+invalidate, or rewrite any source. Scheduled sync, webhooks, and full deletion reconciliation remain **TODO**.
 
-See the [external-knowledge architecture and connector contract](external-knowledge-architecture.md), and the [public-workspace and personal-graph architecture](public-personal-architecture.md).
+See the [external-knowledge architecture and connector contract](external-knowledge-architecture.md).

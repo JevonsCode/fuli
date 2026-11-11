@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { activeDestination, activeSection, navDestinations } from './nav-destinations'
 
-const all = navDestinations({ spaceId: 'personal-1', publicProjects: true })
+const all = navDestinations({ spaceId: 'personal-1' })
 
 describe('nav destinations', () => {
-  it('puts five destinations in the dock in sketch order, settings in the top bar, and hides sections the capabilities do not allow', () => {
+  it('puts five destinations in the dock in sketch order and settings in the top bar', () => {
     expect(all.filter(d => d.placement === 'dock').map(d => d.key)).toEqual(['constellation', 'agents', 'chat', 'memory', 'projects'])
     expect(all.filter(d => d.placement === 'top').map(d => d.key)).toEqual(['settings'])
-    const limited = navDestinations({ spaceId: 'personal-1', publicProjects: false })
-    expect(limited.find(d => d.key === 'projects')?.sections.map(s => s.key)).toEqual(['myProjects'])
+    expect(all.find(d => d.key === 'projects')?.sections.map(s => s.key)).toEqual(['myProjects'])
     expect(all.find(d => d.key === 'memory')?.sections.map(s => s.key)).toEqual(['knowledge', 'preferences', 'organize', 'tags'])
     expect(all.find(d => d.key === 'settings')?.sections.map(s => s.key)).toEqual(['settings', 'connections', 'about', 'howto'])
   })
@@ -23,7 +22,6 @@ describe('nav destinations', () => {
     ['/inbox', 'chat', 'askedYou'],
     ['/roundtables/abc', 'chat', 'roundtables'],
     ['/personal/personal-1/projects/graph', 'projects', 'myProjects'],
-    ['/public-projects', 'projects', 'publicProjects'],
     ['/preferences', 'memory', 'preferences'],
     ['/organize', 'memory', 'organize'],
     ['/tags', 'memory', 'tags'],

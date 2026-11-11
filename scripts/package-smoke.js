@@ -83,7 +83,6 @@ try {
     'src/agent-kits/fuli-installer-manifest.json',
     'dist/web/index.html',
     'docs/external-knowledge-architecture.md',
-    'docs/public-personal-architecture.md',
     'docs/project-agent-memory.md',
     'docs/agent-conversations-and-collaboration.md',
     'docs/employee-agents.md',
@@ -111,7 +110,6 @@ try {
     if (path.startsWith('docs/')) {
       assert.ok([
         'docs/external-knowledge-architecture.md',
-        'docs/public-personal-architecture.md',
         'docs/project-agent-memory.md',
         'docs/agent-conversations-and-collaboration.md',
         'docs/employee-agents.md',

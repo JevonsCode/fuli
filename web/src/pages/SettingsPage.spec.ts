@@ -541,8 +541,7 @@ describe('SettingsPage', () => {
     store.runtimeStatus = 'ready'
     store.state = { mode: 'personal_only', activePersonalSpaceId: 'personal-1',
       personalSpaces: [{ id: 'personal-1', name: '我' }], personalProjects: [], projects: [], subscriptions: [],
-      capturePolicy: { enabled: true, disabledSources: ['codex'] }, agentAccessPolicy: { enabled: true },
-      capabilities: { browsePublicProjects: false, submitKnowledge: false, reviewProposals: false } } as never
+      capturePolicy: { enabled: true, disabledSources: ['codex'] }, agentAccessPolicy: { enabled: true } } as never
     const update = vi.spyOn(store, 'updateCapturePolicy').mockResolvedValue(undefined)
     vi.stubGlobal('fetch', vi.fn(async (input) => {
       if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
@@ -579,8 +578,7 @@ describe('SettingsPage', () => {
     store.runtimeStatus = 'ready'
     store.state = { mode: 'personal_only', activePersonalSpaceId: 'personal-1',
       personalSpaces: [{ id: 'personal-1', name: '我' }], personalProjects: [], projects: [], subscriptions: [],
-      capturePolicy: { enabled: true, disabledSources: ['cursor'] }, agentAccessPolicy: { enabled: true },
-      capabilities: { browsePublicProjects: false, submitKnowledge: false, reviewProposals: false } } as never
+      capturePolicy: { enabled: true, disabledSources: ['cursor'] }, agentAccessPolicy: { enabled: true } } as never
     const answers: Array<(response: Response) => void> = []
     vi.stubGlobal('fetch', vi.fn(async (input) => {
       if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
@@ -610,8 +608,7 @@ describe('SettingsPage', () => {
     store.runtimeStatus = 'ready'
     store.state = { mode: 'personal_only', activePersonalSpaceId: 'personal-1',
       personalSpaces: [{ id: 'personal-1', name: '我' }], personalProjects: [], projects: [], subscriptions: [],
-      capturePolicy: { enabled: true }, agentAccessPolicy: { enabled: true },
-      capabilities: { browsePublicProjects: false, submitKnowledge: false, reviewProposals: false } } as never
+      capturePolicy: { enabled: true }, agentAccessPolicy: { enabled: true } } as never
     vi.stubGlobal('fetch', vi.fn(async (input) => {
       if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })
       return Response.json({}, { status: 503 })
@@ -633,8 +630,7 @@ describe('SettingsPage', () => {
     store.runtimeStatus = 'ready'
     store.state = { mode: 'personal_only', activePersonalSpaceId: 'personal-1',
       personalSpaces: [{ id: 'personal-1', name: '我' }], personalProjects: [], projects: [], subscriptions: [],
-      capturePolicy: { enabled: true }, agentAccessPolicy: { enabled: true },
-      capabilities: { browsePublicProjects: false, submitKnowledge: false, reviewProposals: false } } as never
+      capturePolicy: { enabled: true }, agentAccessPolicy: { enabled: true } } as never
     const update = vi.spyOn(store, 'updateRecallPolicy').mockResolvedValue(undefined)
     vi.stubGlobal('fetch', vi.fn(async (input) => {
       if (String(input) === '/api/system/settings') return Response.json({ configured, active: configured, restartRequired: false })

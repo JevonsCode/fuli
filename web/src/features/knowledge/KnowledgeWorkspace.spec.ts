@@ -234,7 +234,6 @@ describe('KnowledgeWorkspace', () => {
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
-          PublishProjectDialog: true,
         },
       },
     })
@@ -291,7 +290,6 @@ describe('KnowledgeWorkspace', () => {
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
-          PublishProjectDialog: true,
           RouterLink: true,
         },
       },
@@ -366,7 +364,6 @@ describe('KnowledgeWorkspace', () => {
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
-          PublishProjectDialog: true,
           RouterLink: true,
         },
       },
@@ -443,7 +440,6 @@ describe('KnowledgeWorkspace', () => {
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
-          PublishProjectDialog: true,
         },
       },
     })
@@ -567,7 +563,6 @@ describe('KnowledgeWorkspace', () => {
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
-          PublishProjectDialog: true,
         },
       },
     })
@@ -629,7 +624,6 @@ describe('KnowledgeWorkspace', () => {
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
-          PublishProjectDialog: true,
         },
       },
     })
@@ -720,7 +714,6 @@ describe('KnowledgeWorkspace', () => {
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
-          PublishProjectDialog: true,
         },
       },
     })
@@ -826,7 +819,6 @@ describe('KnowledgeWorkspace', () => {
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
-          PublishProjectDialog: true,
         },
       },
     })
@@ -887,7 +879,6 @@ describe('KnowledgeWorkspace', () => {
           KnowledgeEditDialog: true,
           KnowledgeProjectDialog: true,
           PersonalProjectProfileDialog: true,
-          PublishProjectDialog: true,
         },
       },
     })

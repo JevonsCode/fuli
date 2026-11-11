@@ -11,7 +11,7 @@ import { definePageTool } from './page-tool'
 const PAGES = {
   home: 'overview', inbox: 'inbox', knowledge: 'knowledge-default', organize: 'knowledge-organizer', tags: 'tags',
   workbench: 'project-agents', agents: 'agent-management', occupations: 'occupations', services: 'agent-services',
-  apps: 'agent-apps', roundtables: 'roundtables', public_projects: 'public-projects', connections: 'connections',
+  apps: 'agent-apps', roundtables: 'roundtables', connections: 'connections',
   models: 'model-settings', settings: 'settings', me: 'personal-profile', howto: 'howto', about: 'about',
 } as const
 const SEARCH_LIMIT = 12
@@ -28,7 +28,7 @@ export function shellPageTools(shell: { router: Router; spaceId: () => string })
     definePageTool({
       name: 'fuli_open_page',
       title: 'Open a FULI console page',
-      description: 'Go to a console page: home, inbox (待决策), knowledge, organize, tags, workbench (FLAs), agents, occupations, services, apps, roundtables, public_projects, connections, models, settings, me, howto, about. Each page offers its own tools once open.',
+      description: 'Go to a console page: home, inbox (待决策), knowledge, organize, tags, workbench (FLAs), agents, occupations, services, apps, roundtables, connections, models, settings, me, howto, about. Each page offers its own tools once open.',
       input: z.object({ page: z.enum(Object.keys(PAGES) as [keyof typeof PAGES, ...(keyof typeof PAGES)[]]) }),
       routes: [],
       async run(input) {

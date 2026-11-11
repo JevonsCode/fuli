@@ -26,7 +26,7 @@ const graph: KnowledgeGraph = {
   ],
 }
 const record: PersonalProject = {
-  project_id: 'open', personal_space_id: 'space-a', publication_key: 'synthetic-publication-key',
+  project_id: 'open', personal_space_id: 'space-a',
   profile: { name: 'open', purpose: 'A synthetic project for the quick look.' },
   created_at: '2026-10-01T08:00:00.000Z', updated_at: '2026-10-30T08:00:00.000Z',
 }
@@ -64,7 +64,6 @@ describe('ProjectPeek', () => {
     expect(people.map(row => row.find('strong').text())).toEqual(['Lead A', 'Member B'])
     expect(people[0].text()).toContain('组长')
     expect(people[1].find('[data-project-working]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('synthetic-publication-key')
     await wrapper.get('[data-project-ids-toggle]').trigger('click')
     expect(wrapper.get('[data-project-ids]').text()).toContain('open')
   })

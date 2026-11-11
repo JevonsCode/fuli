@@ -13,23 +13,8 @@ const MAX_LIST_PAGES = 100;
 const FULI_WORKSPACE_PROTOCOL = 'fuli-workspace-v1';
 const GRAPHITI_PROTOCOL = 'graphiti-v1';
 
-const GRAPHITI_CAPABILITIES = Object.freeze({
-  browsePublicProjects: true,
-  publishProject: true,
-  submitKnowledge: true,
-  subscribeProject: true,
-  reviewProposals: true,
-  query: true
-});
-
-export const FULI_WORKSPACE_CAPABILITIES = Object.freeze({
-  browsePublicProjects: true,
-  publishProject: false,
-  submitKnowledge: false,
-  subscribeProject: true,
-  reviewProposals: false,
-  query: true
-});
+// What every configured workspace provider offers: its spaces can be read and searched.
+const WORKSPACE_CAPABILITIES = Object.freeze({ query: true });
 
 export function createWorkspaceProvider(workspace, {
   fetchImpl = globalThis.fetch,
@@ -55,7 +40,7 @@ export function createWorkspaceProvider(workspace, {
     ...workspace,
     providerUrl,
     protocol,
-    capabilities: fuliWorkspace ? FULI_WORKSPACE_CAPABILITIES : GRAPHITI_CAPABILITIES,
+    capabilities: WORKSPACE_CAPABILITIES,
     client
   };
 }
@@ -66,25 +51,8 @@ export function configuredWorkspace(workspaces, providerUrl) {
     ? canonicalProviderUrl(providerUrl)
     : (workspaces.size === 1 ? [...workspaces.keys()][0] : null);
   const workspace = requested ? workspaces.get(requested) : null;
-  if (!workspace) throw new TypeError('Public project provider is not configured');
+  if (!workspace) throw new TypeError('Workspace provider is not configured');
   return { ...workspace, providerUrl: requested };
-}
-
-export function aggregatePublicCapabilities(workspaces, providerStatuses, projects) {
-  const ready = new Set(providerStatuses
-    .filter(({ status }) => status === 'ready')
-    .map(({ providerUrl }) => providerUrl));
-  const supports = (capability) => [...workspaces.values()].some((workspace) =>
-    ready.has(workspace.providerUrl) && workspace.capabilities[capability] === true
-  );
-  return {
-    browsePublicProjects: supports('browsePublicProjects'),
-    publishProject: supports('publishProject'),
-    submitKnowledge: supports('submitKnowledge'),
-    subscribeProject: supports('subscribeProject'),
-    reviewProposals: supports('reviewProposals') &&
-      projects.some(({ role }) => role === 'maintainer')
-  };
 }
 
 export class FuliWorkspaceProviderClient {
@@ -206,16 +174,6 @@ export class FuliWorkspaceProviderClient {
       next_offset: truncated ? pageOffset + selected.length : null
     };
   }
-
-  createSpace() { return unsupported(); }
-  listProjectReleases() { return unsupported(); }
-  deleteProject() { return unsupported(); }
-  createProjectRelation() { return unsupported(); }
-  listProjectRelations() { return unsupported(); }
-  decideProjectRelation() { return unsupported(); }
-  createProposal() { return unsupported(); }
-  listProposals() { return unsupported(); }
-  decideProposal() { return unsupported(); }
 
   async #request(path, { method = 'GET', body, authenticated = true } = {}) {
     const url = new URL(path, `${this.baseUrl}/`);
@@ -414,8 +372,4 @@ async function safeJson(response) {
 
 function invalidResponse(message) {
   return new ProviderRequestError(message, { code: 'provider_invalid_response' });
-}
-
-function unsupported() {
-  throw new TypeError('Operation is not supported by fuli-workspace-v1');
 }

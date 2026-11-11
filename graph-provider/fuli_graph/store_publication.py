@@ -3,18 +3,13 @@ import json
 from fastapi import HTTPException
 
 from .models import (
-    MembershipCreate,
-    MembershipRecord,
-    ProposalCreate,
-    ProposalDecision,
-    ProposalRecord,
     PublicationDraftCreate,
     PublicationDraftRecord,
     SubscriptionCreate,
     SubscriptionDeleteResult,
     SubscriptionRecord,
 )
-from .provider_values import json_object, native_datetime, now_utc, stable_uuid
+from .provider_values import json_object, now_utc, stable_uuid
 from .publication_source_copies import PLAIN, PROJECT_AGENT, draft_sources, publication_source_identity
 from .knowledge_source_fence import require_source_available
 from .knowledge_versions import lock_knowledge
@@ -243,39 +238,6 @@ class StorePublication:
                 'code': 'publication_draft_not_pending', 'message': 'publication draft is not pending'})
         return self._publication_draft(updated[0]['draft'])
 
-    async def add_membership(
-        self,
-        actor: dict,
-        project_id: str,
-        request: MembershipCreate,
-    ) -> MembershipRecord:
-        self._require_workspace()
-        await self.authorize(actor, project_id, 'maintainer')
-        created_at = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (principal:FuliPrincipal {id: $principal_id})
-            MATCH (project:FuliSpace {id: $project_id, kind: 'project'})
-            MERGE (principal)-[membership:MEMBER_OF]->(project)
-            SET membership.role = $role,
-                membership.created_at = coalesce(membership.created_at, $created_at),
-                membership.updated_at = $created_at
-            RETURN membership.created_at AS created_at
-            ''',
-            principal_id=request.principal_id,
-            project_id=project_id,
-            role=request.role,
-            created_at=created_at,
-        )
-        if not records:
-            raise HTTPException(status_code=404, detail='principal or project not found')
-        return MembershipRecord(
-            project_id=project_id,
-            principal_id=request.principal_id,
-            role=request.role,
-            created_at=native_datetime(records[0]['created_at']),
-        )
-
     async def subscribe(
         self,
         actor: dict,
@@ -359,124 +321,3 @@ class StorePublication:
             deleted_at=now_utc(),
         )
         return SubscriptionDeleteResult(project_id=project_id, deleted=bool(records))
-
-    async def create_proposal(
-        self,
-        actor: dict,
-        project_id: str,
-        request: ProposalCreate,
-    ) -> ProposalRecord:
-        self._require_workspace()
-        await self.authorize(actor, project_id, 'contributor')
-        proposal_id = stable_uuid(
-            self.settings.provider_id,
-            project_id,
-            actor['id'],
-            request.episode.idempotency_key,
-        )
-        payload = request.episode.model_dump_json()
-        created_at = now_utc()
-        records, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (project:FuliSpace {id: $project_id, kind: 'project'})
-            MERGE (proposal:FuliProposal {id: $id})
-            ON CREATE SET proposal.project_id = $project_id,
-                          proposal.submitted_by = $submitted_by,
-                          proposal.status = 'pending',
-                          proposal.payload = $payload,
-                          proposal.created_at = $created_at
-            MERGE (proposal)-[:TARGETS]->(project)
-            RETURN proposal
-            ''',
-            project_id=project_id,
-            id=proposal_id,
-            submitted_by=actor['id'],
-            payload=payload,
-            created_at=created_at,
-        )
-        return self._proposal(records[0]['proposal'])
-
-    async def list_proposals(
-        self,
-        actor: dict,
-        project_id: str,
-        proposal_status: str = 'pending',
-    ) -> list[ProposalRecord]:
-        self._require_workspace()
-        await self.authorize(actor, project_id, 'maintainer')
-        records, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (proposal:FuliProposal {project_id: $project_id, status: $status})
-            RETURN proposal ORDER BY proposal.created_at
-            ''',
-            project_id=project_id,
-            status=proposal_status,
-            routing_='r',
-        )
-        return [self._proposal(record['proposal']) for record in records]
-
-    async def lookup_proposal(self, actor: dict, project_id: str, idempotency_key: str) -> dict | None:
-        """A contributor can reconcile only their own submission, without reading its body."""
-        self._require_workspace()
-        await self.authorize(actor, project_id, 'contributor')
-        proposal_id = stable_uuid(self.settings.provider_id, project_id, actor['id'], idempotency_key)
-        rows, _, _ = await self.runtime.driver.execute_query(
-            '''MATCH (proposal:FuliProposal {id: $id, project_id: $project_id, submitted_by: $actor_id})
-               RETURN proposal.id AS id, proposal.status AS status''',
-            id=proposal_id, project_id=project_id, actor_id=actor['id'], routing_='r')
-        return dict(rows[0]) if rows else None
-
-    async def decide_proposal(
-        self,
-        actor: dict,
-        project_id: str,
-        proposal_id: str,
-        decision: ProposalDecision,
-    ) -> ProposalRecord:
-        self._require_workspace()
-        space = await self.authorize(actor, project_id, 'maintainer')
-        records, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (proposal:FuliProposal {
-              id: $proposal_id,
-              project_id: $project_id,
-              status: 'pending'
-            })
-            SET proposal.status = 'processing'
-            RETURN proposal
-            ''',
-            proposal_id=proposal_id,
-            project_id=project_id,
-        )
-        if not records:
-            raise HTTPException(status_code=409, detail='proposal is not pending')
-        proposal = self._proposal(records[0]['proposal'])
-        decided_at = now_utc()
-        if decision.decision == 'approve':
-            try:
-                await self._commit_episode(space, proposal.episode)
-            except Exception:
-                await self.runtime.driver.execute_query(
-                    "MATCH (p:FuliProposal {id: $id, status: 'processing'}) SET p.status = 'pending'",
-                    id=proposal_id,
-                )
-                raise
-            final_status = 'approved'
-        else:
-            final_status = 'rejected'
-        updated, _, _ = await self.runtime.driver.execute_query(
-            '''
-            MATCH (proposal:FuliProposal {id: $id, status: 'processing'})
-            SET proposal.status = $status,
-                proposal.decided_at = $decided_at,
-                proposal.decided_by = $decided_by,
-                proposal.decision_note = $note
-            RETURN proposal
-            ''',
-            id=proposal_id,
-            status=final_status,
-            decided_at=decided_at,
-            decided_by=actor['id'],
-            note=decision.note,
-        )
-        return self._proposal(updated[0]['proposal'])

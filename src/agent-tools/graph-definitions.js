@@ -21,7 +21,7 @@ import { AGENT_ATTENTION_DEFINITIONS } from './agent-attention-definitions.js';
 import { AGENT_SCORE_CARD_DEFINITIONS } from './agent-score-card-definitions.js';
 import { TASK_ENTRY_DEFINITIONS } from './task-entry-definitions.js';
 import { KNOWLEDGE_DEFINITIONS } from './knowledge-definitions.js';
-import { KNOWLEDGE_SPACE_DEFINITIONS, PUBLIC_PROJECT_DEFINITIONS } from './project-space-definitions.js';
+import { KNOWLEDGE_SPACE_DEFINITIONS, PROVIDER_STATUS_DEFINITIONS } from './project-space-definitions.js';
 import { PROJECT_AGENT_TOOL_DEFINITIONS } from './project-agent-tool-definitions.js';
 import { EXECUTOR_ROUTING_DEFINITIONS } from './executor-routing-definitions.js';
 import { KNOWLEDGE_CURATION_DEFINITIONS } from './knowledge-curation-definitions.js';
@@ -56,5 +56,5 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...PROJECT_AGENT_TOOL_DEFINITIONS,
   ...EXECUTOR_ROUTING_DEFINITIONS,
   ...KNOWLEDGE_CURATION_DEFINITIONS,
-  ...PUBLIC_PROJECT_DEFINITIONS
+  ...PROVIDER_STATUS_DEFINITIONS
 ];

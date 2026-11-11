@@ -103,7 +103,6 @@ const searchMessage = ref('')
 const searching = ref(false)
 const editingItem = ref<KnowledgeItem | null>(null)
 const projectActionItem = ref<KnowledgeItem | null>(null)
-const publishingProject = ref<PersonalProject | null>(null)
 const managingProject = ref<PersonalProject | null>(null)
 const managingMaterialType = ref<string | null>(null)
 const projectDiscovery = ref<{
@@ -322,8 +321,7 @@ const activePersonalProject = computed(() =>
 )
 // A form opened from the quick look takes its place until it closes.
 const peekSuspended = computed(() => Boolean(
-  editingItem.value || projectActionItem.value
-  || publishingProject.value || managingProject.value,
+  editingItem.value || projectActionItem.value || managingProject.value,
 ))
 const manageableSelectedProject = computed(() =>
   projectForMaterial(selectedItem.value),
@@ -442,7 +440,6 @@ function revokeKnowledgeAccess() {
   selectedItem.value = null
   editingItem.value = null
   projectActionItem.value = null
-  publishingProject.value = null
   managingProject.value = null
   loading.value = false
   resetGraphSearchState()
@@ -937,13 +934,6 @@ async function completeProjectProfileUpdate(project: PersonalProject) {
   }))
 }
 
-function publishPersonalProject(nextProjectId: string) {
-  const project = personalProjects.value.find(
-    ({ project_id }) => project_id === nextProjectId,
-  )
-  if (project) publishingProject.value = project
-}
-
 async function completeProjectAction(
   result: { status: string },
   targetName: string,
@@ -1026,9 +1016,7 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
         :space-id="spaceId"
         :project="activePersonalProject"
         :frequent-projects="activeFrequentProjects"
-        :can-publish="Boolean(store.state?.capabilities?.publishProject)"
         @edit-profile="editActiveProjectProfile"
-        @publish="publishingProject = activePersonalProject"
       />
       <GrowthLoading
         v-else-if="!store.state && store.runtimeStatus !== 'error' || store.runtimeStatus === 'loading'"
@@ -1097,16 +1085,6 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
         />
       </form>
       <div class="graph-view-actions">
-        <Button variant="ghost"
-          v-if="
-            personalProjectsOnly
-              && activePersonalProject
-              && store.state?.capabilities?.publishProject
-          "
-          @click="publishingProject = activePersonalProject"
-        >
-          {{ t('knowledge.workspace.workspace.view.publishProject') }}
-        </Button>
         <div v-if="mode === 'graph'" class="graph-controls" role="group" :aria-label="t('knowledge.workspace.workspace.view.graphControls')">
           <Button variant="ghost" :aria-label="t('knowledge.workspace.workspace.view.zoomOut')" @click="graphCanvas?.zoomOut()">−</Button>
           <Button variant="ghost" :aria-label="t('knowledge.workspace.workspace.view.zoomIn')" @click="graphCanvas?.zoomIn()">＋</Button>
@@ -1234,7 +1212,6 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
       :graph="graph"
       :editable="editable"
       :current-project-id="projectId"
-      :can-publish-project="store.state?.capabilities?.publishProject"
       :can-manage-project="Boolean(manageableSelectedProject)"
       :space-id="store.activePersonalSpace?.id ?? spaceId"
       :mode="mode"
@@ -1243,7 +1220,6 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
       @edit="editingItem = $event"
       @create-project="projectActionItem = $event"
       @open-project="openPersonalProject"
-      @publish-project="publishPersonalProject"
       @open-directory="openItemInMode($event, 'directory')"
       @open-graph="openItemInMode($event, 'graph')"
       @open-replacement="openReplacement"
@@ -1260,7 +1236,6 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
     <KnowledgeWorkspaceDialogs
       :editing-item="editingItem"
       :project-action-item="projectActionItem"
-      :publishing-project="publishingProject"
       :managing-project="managingProject"
       :managing-material-type="managingMaterialType"
       :personal-space-id="store.activePersonalSpace?.id ?? spaceId"
@@ -1270,7 +1245,6 @@ usePageRefresh(() => (editingItem.value ? undefined : loadGraph()))
       :replacement-items="allItems"
       @close-edit="editingItem = null"
       @close-project-action="projectActionItem = null"
-      @close-publish="publishingProject = null"
       @close-profile="managingProject = null"
       @refresh="loadGraph"
       @access-denied="revokeKnowledgeAccess"

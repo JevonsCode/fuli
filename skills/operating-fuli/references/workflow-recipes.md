@@ -32,7 +32,6 @@ Use these as sequencing hints only. Always call `list_agent_interfaces` and insp
 | Give a task a due date ("这个任务周五前要完成") | Jefa's `read_board` for the task and its `updatedAt` | Jefa's `update_tasks` with `expectedUpdatedAt` and `dueDate` as `YYYY-MM-DD` (`null` clears it); `create_tasks` takes `dueDate` too | `get_task`: `dueDate`. The board card shows it and marks it overdue |
 | Read or answer an occupation's starter kit (起步包: checklist, acceptance, recommended Skills and MCP) | `read_occupation_kit` with `agentId` (or `occupation`); add `personalProjectId` for the lessons and checks the person kept there | when recruiting: the person's answer as `occupationKit` in `decide_project_agent_recruitment`; later changes are the person's on the FLA page (`PUT /api/project-agents/:agentId/occupation-kit` is `agent_relayed`) | read the kit again: each recommendation's `enabled` and `choice` |
 | Manage a specialist Agent | `list_employee_templates` and the current responsibility scope | recruit or update the specialist scope with its dedicated tool | re-list the template and effective managed projects |
-| Publish or remove a public project | read the personal project and current publication | publish/update/delete tool | re-read publication status and release metadata |
 
 For the external-knowledge move example, prefer updating the existing binding targets. Do not delete and recreate the binding merely to change project membership: recreation can lose revision history, connector state, and audit continuity.
 

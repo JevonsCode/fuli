@@ -4,5 +4,4 @@ export { beginTaskContext, beginTaskFromPreferences } from './task-context-entry
 export { checkpointTaskKnowledge } from './task-knowledge-checkpoint.js';
 export { recordDecisionTrace } from './decision-trace.js';
 export { recordKnowledgeFeedback } from './knowledge-feedback.js';
-export { discoverCommonKnowledgeCandidates, providerCommonKnowledgePromotion } from './common-knowledge-candidates.js';
 export { discoverPersonalGlobalPreferenceCandidates } from './personal-global-preference-candidates.js';

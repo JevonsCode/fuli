@@ -21,7 +21,7 @@ export const aboutMessages = {
       },
       authority: {
         title: '你来拍板',
-        description: 'Agent 可以提议、整理和提醒，但只有你的确认才算确认；公开项目也要你看过预览再发布。',
+        description: 'Agent 可以提议、整理和提醒，但只有你的确认才算确认。',
       },
       history: {
         title: '历史不被覆盖',
@@ -195,7 +195,7 @@ export const aboutMessages = {
       },
       authority: {
         title: 'You make the call',
-        description: 'Agents propose, organize, and remind, but only your confirmation counts as confirmed, and a public project is published only after you review its preview.',
+        description: 'Agents propose, organize, and remind, but only your confirmation counts as confirmed.',
       },
       history: {
         title: 'History is never overwritten',

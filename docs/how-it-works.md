@@ -119,14 +119,13 @@ push without authorization” is more likely a judgment preference. To make the 
 say: `This is a long-term collaboration trait; save it as a personal-global personality preference: I communicate directly.` An Agent-inferred candidate can be confirmed, corrected, or invalidated
 by the user from `/preferences`.
 
-### Personal-global, project-scoped, and shared
+### Personal-global and project-scoped
 
 | Scope | When to use it | Key write fields | Retrieval rule |
 | --- | --- | --- | --- |
 | Personal-global preference | The behavior should remain the same in unrelated projects | `targetKind: "personal"`; omit `personalProjectId`; set `profileAspect` | Loaded for every task |
 | Project-scoped personal preference | The collaboration behavior belongs to one project or project family | Same fields plus the exact `personalProjectId`; default to `local_only` and never inherited by child projects; explicitly use `descendants` or `selected_projects` when propagation is intended | Exact project wins; propagation follows only the explicit inheritance mode and authorized relationships, and score never resolves a conflict automatically |
 | Project knowledge | A fact belongs to one project or to a designated parent/source project | `targetKind: "personal"`; set `personalProjectId`; omit `profileAspect` | Search the current project first, then authorized `PART_OF` / `USES_KNOWLEDGE_FROM` sources up to two hops |
-| Team-shared knowledge | Human-confirmed project or domain knowledge genuinely needed by a team | `targetKind: "project"` after preview/review | Visible only from explicitly selected or subscribed public projects; personal preferences never enter this layer |
 
 To choose a preference scope, ask: **Should this change the Agent's behavior in a completely
 unrelated project?** If yes, use personal-global. If it applies only to Fuli, use a project-scoped
@@ -159,7 +158,7 @@ directory, and resolution follows this order:
 
 For an unregistered repository with an unambiguous identity, the installed capture skill may call
 `upsert_personal_project` before the first project-scoped write to create a minimal local private
-project. It never creates or subscribes to a public project automatically. If a workspace has
+project. If a workspace has
 multiple candidates, run the Agent from the exact project directory or explicitly register and
 select the project first.
 

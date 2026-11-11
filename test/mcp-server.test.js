@@ -143,7 +143,7 @@ test('MCP annotations distinguish reads, writes, and review decisions', () => {
   assert.equal(annotationsFor('search_human_knowledge_changes').readOnlyHint, false);
   assert.equal(annotationsFor('capture_session_knowledge').readOnlyHint, false);
   assert.equal(annotationsFor('capture_session_knowledge').openWorldHint, true);
-  assert.equal(annotationsFor('review_project_proposal').destructiveHint, true);
+  assert.equal(annotationsFor('resolve_deferred_preference_conflict').destructiveHint, true);
 });
 
 test('controlled Provider validation errors keep the actionable reason', () => {

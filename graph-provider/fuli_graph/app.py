@@ -34,11 +34,6 @@ from .knowledge_review_models import (
     KnowledgeReviewRun,
     KnowledgeReviewStart,
 )
-from .common_knowledge_models import (
-    CommonKnowledgePromotionPreview,
-    CommonKnowledgePromotionRequest,
-    CommonKnowledgePromotionResult,
-)
 from .project_action_models import (
     KnowledgeProjectActionRequest,
     KnowledgeProjectActionResult,
@@ -86,22 +81,12 @@ from .models import (
     KnowledgeRevisionRecord,
     KnowledgeHumanChangeSearchRequest,
     KnowledgeHumanChangeSearchResult,
-    MembershipCreate,
-    MembershipRecord,
     PersonalProjectRecord,
     PersonalProjectUpsert,
     PrincipalCreate,
     PrincipalResult,
-    ProjectRelationCreate,
-    ProjectRelationDecision,
-    ProjectRelationRecord,
-    ProjectDeleteResult,
-    ProjectReleaseRecord,
     PublicationDraftCreate,
     PublicationDraftRecord,
-    ProposalCreate,
-    ProposalDecision,
-    ProposalRecord,
     SearchRequest,
     SearchResult,
     SpaceCreate,
@@ -125,10 +110,6 @@ from .knowledge_review import (
     record_knowledge_review_progress,
     start_knowledge_review,
     withdraw_ai_review,
-)
-from .common_knowledge import (
-    apply_common_knowledge_promotion,
-    preview_common_knowledge_promotion,
 )
 from .knowledge_management import (
     reassign_knowledge_item,
@@ -311,26 +292,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def list_spaces(actor: Actor) -> list[SpaceRecord]:
         return await store.list_spaces(actor)
 
-    @application.get(
-        '/v1/projects/{project_id}/releases',
-        response_model=list[ProjectReleaseRecord],
-    )
-    async def list_project_releases(
-        project_id: str,
-        actor: Actor,
-    ) -> list[ProjectReleaseRecord]:
-        return await store.list_project_releases(actor, project_id)
-
-    @application.delete(
-        '/v1/projects/{project_id}',
-        response_model=ProjectDeleteResult,
-    )
-    async def delete_project(
-        project_id: str,
-        actor: Actor,
-    ) -> ProjectDeleteResult:
-        return await store.delete_project(actor, project_id)
-
     @application.post('/v1/temporary-projects/ensure', response_model=PersonalProjectRecord)
     async def ensure_task_project(request: TemporaryProjectEnsure, actor: Actor):
         return await ensure_temporary_project(store, actor, request)
@@ -414,50 +375,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             draft_id,
             request,
         )
-
-    @application.post(
-        '/v1/projects/{project_id}/members',
-        response_model=MembershipRecord,
-    )
-    async def add_member(
-        project_id: str,
-        request: MembershipCreate,
-        actor: Actor,
-    ) -> MembershipRecord:
-        return await store.add_membership(actor, project_id, request)
-
-    @application.post(
-        '/v1/projects/{project_id}/relations',
-        response_model=ProjectRelationRecord,
-    )
-    async def create_project_relation(
-        project_id: str,
-        request: ProjectRelationCreate,
-        actor: Actor,
-    ) -> ProjectRelationRecord:
-        return await store.create_project_relation(actor, project_id, request)
-
-    @application.get(
-        '/v1/projects/{project_id}/relations',
-        response_model=list[ProjectRelationRecord],
-    )
-    async def list_project_relations(
-        project_id: str,
-        actor: Actor,
-    ) -> list[ProjectRelationRecord]:
-        return await store.list_project_relations(actor, project_id)
-
-    @application.post(
-        '/v1/projects/{project_id}/relations/{relation_id}/decision',
-        response_model=ProjectRelationRecord,
-    )
-    async def decide_project_relation(
-        project_id: str,
-        relation_id: str,
-        request: ProjectRelationDecision,
-        actor: Actor,
-    ) -> ProjectRelationRecord:
-        return await store.decide_project_relation(actor, project_id, relation_id, request)
 
     @application.post('/v1/subscriptions', response_model=SubscriptionRecord)
     async def subscribe(request: SubscriptionCreate, actor: Actor) -> SubscriptionRecord:
@@ -716,31 +633,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return await set_preference_scope(store, actor, item_id, request)
 
     @application.post(
-        '/v1/knowledge/common-promotions/preview',
-        response_model=CommonKnowledgePromotionPreview,
-    )
-    async def preview_common_promotion(
-        request: CommonKnowledgePromotionRequest,
-        actor: Actor,
-    ) -> CommonKnowledgePromotionPreview:
-        return await preview_common_knowledge_promotion(
-            store, actor, request
-        )
-
-    @application.post(
-        '/v1/knowledge/common-promotions',
-        response_model=CommonKnowledgePromotionResult,
-    )
-    async def apply_common_promotion(
-        request: CommonKnowledgePromotionRequest,
-        actor: ReviewAwareActor,
-    ) -> CommonKnowledgePromotionResult:
-        require_human_proof(actor, request.operation_actor)
-        return await apply_common_knowledge_promotion(
-            store, actor, request
-        )
-
-    @application.post(
         '/v1/preference-conflicts/defer',
         response_model=PreferenceConflictRecord,
     )
@@ -861,48 +753,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             project_id,
             request,
         )
-
-    @application.post(
-        '/v1/projects/{project_id}/proposals',
-        response_model=ProposalRecord,
-    )
-    async def create_proposal(
-        project_id: str,
-        request: ProposalCreate,
-        actor: Actor,
-    ) -> ProposalRecord:
-        return await store.create_proposal(actor, project_id, request)
-
-    @application.get(
-        '/v1/projects/{project_id}/proposals',
-        response_model=list[ProposalRecord],
-    )
-    async def list_proposals(
-        project_id: str,
-        actor: Actor,
-        proposal_status: Annotated[str, Query(alias='status')] = 'pending',
-    ) -> list[ProposalRecord]:
-        return await store.list_proposals(actor, project_id, proposal_status)
-
-    @application.get('/v1/projects/{project_id}/proposals/lookup')
-    async def lookup_proposal(
-        project_id: str,
-        actor: Actor,
-        idempotency_key: Annotated[str, Query(min_length=1, max_length=256)],
-    ) -> dict | None:
-        return await store.lookup_proposal(actor, project_id, idempotency_key)
-
-    @application.post(
-        '/v1/projects/{project_id}/proposals/{proposal_id}/decision',
-        response_model=ProposalRecord,
-    )
-    async def decide_proposal(
-        project_id: str,
-        proposal_id: str,
-        decision: ProposalDecision,
-        actor: Actor,
-    ) -> ProposalRecord:
-        return await store.decide_proposal(actor, project_id, proposal_id, decision)
 
     @application.post('/v1/search', response_model=SearchResult)
     async def search(request: SearchRequest, actor: Actor) -> SearchResult:

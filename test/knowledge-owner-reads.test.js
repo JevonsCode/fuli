@@ -24,7 +24,7 @@ const SPACE = 'personal-space';
 const CONFIG = { version: 1, workspaces: [], personal: { providerUrl: 'http://127.0.0.1:8787',
   accessToken: 'synthetic-token', principalId: 'synthetic-owner', spaceId: SPACE } };
 const GRAPH = { space_id: SPACE, nodes: [], edges: [], truncated: false };
-const LISTS = new Set(['/v1/preference-conflicts', '/v1/publication-drafts']);
+const LISTS = new Set(['/v1/preference-conflicts']);
 
 function application() {
   const calls = [];
@@ -95,15 +95,13 @@ test('every console full read carries the review proof on its own route', async 
   await ownerReads.sessionRecords({ personal_space_id: SPACE });
   await ownerReads.sessionMigration({ personal_space_id: SPACE });
   await ownerReads.preferenceConflicts({ personalSpaceId: SPACE, status: 'ai_pending', limit: 50, offset: 100 });
-  await ownerReads.publicationDrafts({ personalSpaceId: SPACE, status: 'all' });
   assert.deepEqual(sent, [
     { path: '/v1/knowledge/item-views', method: 'POST', review: true },
     { path: '/v1/knowledge/turn-receipts', method: 'POST', review: true },
     { path: '/v1/session-records', method: 'POST', review: true },
     { path: '/v1/knowledge/session-migrations/preview', method: 'POST', review: true },
     { path: `/v1/preference-conflicts?personal_space_id=${SPACE}&limit=50&status=ai_pending&offset=100`, method: 'GET',
-      review: true },
-    { path: `/v1/publication-drafts?personal_space_id=${SPACE}&status=all`, method: 'GET', review: true }]);
+      review: true }]);
   const refused = knowledgeOwnerReads('synthetic-data-dir', { send: async () => ({ ok: false, status: 403,
     payload: { detail: 'independent human review proof required' } }) });
   await assert.rejects(refused.itemView({}), { status: 403 });
@@ -186,70 +184,6 @@ test('a conflict\'s defer and resolve name the Agent\'s FLA; the console defers 
   assert.deepEqual(sent, [{ path: '/v1/preference-conflicts/defer', review: true, reader: undefined },
     { path: '/v1/preference-conflicts/conflict-1/complete', review: true, reader: undefined }]);
   assert.equal(calls.length, 0, 'the person\'s decision never leaves on the Agent client');
-});
-
-test('publication drafts: an Agent tool reads as a plain session; the console lists them all through its port', async () => {
-  const { app, calls } = application();
-  await callAgentTool(app, 'list_personal_review_queue', { personalSpaceId: SPACE });
-  const drafts = calls.filter(call => call.path === '/v1/publication-drafts');
-  // Reconciling submissions reads metadata only; then the Agent's list.
-  assert.deepEqual(drafts.map(call => call.query), [
-    { personal_space_id: SPACE, status: 'all', metadata_only: 'true' }, { personal_space_id: SPACE, status: 'pending' }]);
-  assert.ok(drafts.every(call => !reviewHeader(call.headers)), 'no proof: no draft of an FLA\'s work');
-  calls.length = 0;
-  const { sent, ownerReads } = recordingPort();
-  assert.equal((await consoleGet(app, `/api/personal-review?personalSpaceId=${SPACE}&status=submitted`, ownerReads)).status,
-    200);
-  // Reconciliation settles the person's drafts on the same channel: an FLA's draft, even erased, is theirs alone.
-  assert.deepEqual(sent, [
-    { path: '/v1/publication-drafts', method: 'GET', review: true,
-      query: { personal_space_id: SPACE, status: 'all', metadata_only: 'true' } },
-    { path: '/v1/publication-drafts', method: 'GET', review: true,
-      query: { personal_space_id: SPACE, status: 'submitted' } }]);
-  assert.deepEqual(calls, [], 'nothing of the console\'s list or settlement leaves on the Agent client');
-});
-
-test('the console decides and submits a draft on its port; an Agent tool on its own client', async () => {
-  const { app, calls } = application();
-  const sent = [];
-  const ownerReads = knowledgeOwnerReads('synthetic-data-dir', { send: async (path, body, options) => {
-    sent.push({ path: path.split('?')[0], body, review: options.review, method: options.method });
-    return { ok: true, status: 200, payload: { id: 'draft-1', status: 'ignored' } };
-  } });
-  const response = { setHeader() {}, writeHead() {}, end() {} };
-  await handleGraphApiRequest({ request: Object.assign(Readable.from([Buffer.from(JSON.stringify({ decision: 'ignore' }))]),
-    { method: 'POST', headers: { 'content-type': 'application/json' }, socket: { remoteAddress: '127.0.0.1' } }),
-  response, url: new URL('http://127.0.0.1/api/personal-review/draft-1/decision'), app, ownerReads });
-  assert.deepEqual(sent, [{ path: '/v1/publication-drafts/draft-1/decision', method: 'POST', review: true,
-    body: { decision: 'ignore', shared_proposal_id: null } }]);
-  assert.deepEqual(calls, []);
-  // A capture made only for a team names no local source: only this channel reads it to submit.
-  await ownerReads.submissions.getPublicationDraft(SPACE, 'draft-1');
-  assert.deepEqual(sent.at(-1), { path: '/v1/publication-drafts/draft-1', method: 'GET', review: true, body: null });
-  await callAgentTool(app, 'review_personal_draft', { draftId: 'draft-1', decision: 'ignore' });
-  assert.deepEqual(calls.map(call => call.path), ['/v1/publication-drafts/draft-1/decision']);
-  assert.ok(!reviewHeader(calls[0].headers));
-});
-
-test('the console\'s settlement of an uncertain submission goes through its port with the proof', async () => {
-  const { app, calls } = application();
-  const sent = [];
-  const draft = { id: 'draft-1', status: 'submission_unknown', submission_id: 'attempt-1',
-    submission_started_at: '2026-10-24T00:00:00Z', provider_url: 'https://public.example',
-    target_project_id: 'team', source_identity: { idempotency_key: 'key-1' } };
-  const ownerReads = knowledgeOwnerReads('synthetic-data-dir', { send: async (path, body, options) => {
-    sent.push({ path: path.split('?')[0], body, review: options.review, method: options.method });
-    return { ok: true, status: 200, payload: options.method === 'GET' ? [draft] : draft };
-  } });
-  const lookups = [];
-  const team = { lookupProposal: async (...args) => { lookups.push(args.slice(0, 2)); return { id: 'p-1', status: 'pending' }; } };
-  app.workspaces.set('https://public.example', { client: team });
-  await app.reconcilePersonalSubmissions({}, ownerReads);
-  assert.deepEqual(lookups, [['team', 'key-1']]);
-  assert.deepEqual(sent.map(({ path, review, method }) => [method, path, review]), [
-    ['GET', '/v1/publication-drafts', true], ['POST', '/v1/publication-drafts/draft-1/decision', true]]);
-  assert.equal(sent[1].body.decision, 'reconcile_submit_public');
-  assert.deepEqual(calls, []);
 });
 
 test('a console graph read while the provider is down is provider_unavailable, not the caller\'s bad input', async () => {

@@ -118,8 +118,7 @@ export async function createServer(options = {}) {
   const knowledgeHardDelete = options.knowledgeHardDelete ?? (localOptions.runtimeConfigPath
     ? createKnowledgeHardDelete(dirname(localOptions.runtimeConfigPath),
       { personalSpaceId: () => application.config?.personal?.spaceId ?? null,
-        agentSnapshots: application.agentSnapshots,
-        reconcileSubmissions: () => application.reconcilePersonalSubmissions({}, knowledgeOwnerReads) }) : null);
+        agentSnapshots: application.agentSnapshots }) : null);
   // A person's change of where knowledge applies (rec#20, rec#11 D-22), console only.
   const knowledgeScope = options.knowledgeScope ?? (localOptions.runtimeConfigPath
     ? createKnowledgeScopeConsole(dirname(localOptions.runtimeConfigPath)) : null);

@@ -28,86 +28,29 @@ describe('ConnectionsPage', () => {
     postJson.mockResolvedValue({})
   })
 
-  it('keeps local health separate from public status and manages explicit subscriptions', async () => {
+  it('shows the local graph connection openly', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
-    const store = useConsoleStore()
-    store.state = {
-      mode: 'connected',
+    useConsoleStore().state = {
+      mode: 'personal_only',
       activePersonalSpaceId: 'personal-1',
       personalSpaces: [{ id: 'personal-1', name: '我' }],
       personalProjects: [],
-      providers: {
-        personal: { status: 'ready' },
-        workspaces: [{ status: 'ready', providerUrl: 'https://provider.example' }],
-      },
-      capabilities: {
-        browsePublicProjects: true,
-        subscribeProject: true,
-        publishProject: false,
-        submitKnowledge: false,
-        reviewProposals: false,
-      },
-      projects: [
-        {
-          id: 'project-a',
-          name: '项目 A',
-          providerUrl: 'https://provider.example',
-        },
-        {
-          id: 'project-b',
-          name: '项目 B',
-          providerUrl: 'https://provider.example',
-        },
-      ],
-      subscriptions: [{
-        project_id: 'project-a',
-        provider_url: 'https://provider.example',
-        project_name: '项目 A',
-      }],
+      providers: { personal: { status: 'ready' }, workspaces: [] },
+      projects: [],
+      subscriptions: [],
     }
-    const refresh = vi.spyOn(store, 'refresh').mockResolvedValue(undefined)
-    const wrapper = mount(ConnectionsPage, {
-      global: {
-        plugins: [pinia],
-        stubs: { ...optionSelectStubs },
-      },
-    })
+    const wrapper = mount(ConnectionsPage, { global: { plugins: [pinia], stubs: { ...optionSelectStubs } } })
 
     const cards = wrapper.findAll('.service-connection-card')
+    expect(cards).toHaveLength(1)
     expect(cards[0].text()).toContain('本地 Graphiti')
     expect(cards[0].text()).toContain('已连接')
-    // Storage cards stack one per row, and the local details show openly.
-    expect(cards.map((card) => card.attributes('data-span'))).toEqual(['wide', 'wide'])
+    expect(cards[0].attributes('data-span')).toBe('wide')
     expect(cards[0].find('.ui-disclosure').exists()).toBe(false)
     expect(cards[0].get('dl').text()).toContain('Neo4j')
     expect(cards[0].text()).toContain('个人项目与协作偏好')
-    expect(cards[1].text()).toContain('公共服务')
-    expect(cards[1].text()).toContain('1 个共享服务可用')
-    expect(cards[1].text()).toContain('发现和订阅')
-    expect(cards[1].text()).not.toContain('发布')
-    expect(cards[1].text()).not.toContain('投稿')
-    expect(cards[1].text()).not.toContain('审核')
-
-    await wrapper.get('[aria-label="团队共享项目"]').setValue(
-      'https://provider.example::project-b',
-    )
-    await wrapper.get('.subscription-form').trigger('submit')
-    await flushPromises()
-    expect(postJson).toHaveBeenCalledWith('/api/subscriptions', {
-      personalSpaceId: 'personal-1',
-      projectId: 'project-b',
-      providerUrl: 'https://provider.example',
-      projectName: '项目 B',
-    })
-
-    await wrapper.get('.subscription-action').trigger('click')
-    await flushPromises()
-    expect(deleteJson).toHaveBeenCalledWith(
-      '/api/subscriptions/project-a?personalSpaceId=personal-1'
-      + '&providerUrl=https%3A%2F%2Fprovider.example',
-    )
-    expect(refresh).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).not.toContain('公共服务')
     wrapper.unmount()
   })
 
@@ -277,30 +220,6 @@ describe('ConnectionsPage', () => {
     wrapper.unmount()
   })
 
-  it('submits a subscription once while its request is pending', async () => {
-    const wrapper = mountPage()
-    const store = useConsoleStore()
-    let finishRefresh!: () => void
-    vi.spyOn(store, 'refresh').mockImplementation(() => new Promise<void>((resolve) => { finishRefresh = resolve }))
-    store.state = { ...store.state!, capabilities: { subscribeProject: true },
-      projects: [{ id: 'shared-project', name: 'Synthetic shared project', providerUrl: 'https://provider.example' }] }
-    let finish!: (value: unknown) => void
-    postJson.mockImplementation(() => new Promise((resolve) => { finish = resolve }))
-    await flushPromises()
-    await wrapper.get('.subscription-form select').setValue('https://provider.example::shared-project')
-    await wrapper.get('.subscription-form').trigger('submit')
-    await wrapper.get('.subscription-form').trigger('submit')
-    expect(postJson).toHaveBeenCalledTimes(1)
-    expect(wrapper.get('.subscription-form button').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('.growth-loading--inline').text()).toBe('正在订阅公共项目…')
-    finish({})
-    await flushPromises()
-    expect(wrapper.get('.growth-loading--inline').text()).toBe('正在读取项目订阅状态…')
-    finishRefresh()
-    await flushPromises()
-    expect(wrapper.find('.growth-loading--inline').exists()).toBe(false)
-    wrapper.unmount()
-  })
 })
 
 function mountPage() {

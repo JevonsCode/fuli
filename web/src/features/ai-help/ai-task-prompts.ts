@@ -79,7 +79,7 @@ const ZH: Record<AiTaskId, Template> = {
   decisions: (c) => [
     '帮我处理 FULI「待决策」里等我的事。',
     COMMON_ZH(c),
-    '先用 list_personal_review_queue 和 list_agent_attention 读出来，按项目分组、每条一句话告诉我，并给出你的建议。我说了怎么处理之后：要确认的用 run_delegated_action 的「POST /api/knowledge/batch-confirmation」，Tonborg 的问题用「POST /api/judgment/feedback」，都把我的原话放进 personWords；不要的用 revise_personal_knowledge 设为失效，reason 写上我的原话。我没表态的不要动。',
+    '先用 list_agent_attention 和 list_tonborg_questions 读出来，按项目分组、每条一句话告诉我，并给出你的建议。我说了怎么处理之后：要确认的用 run_delegated_action 的「POST /api/knowledge/batch-confirmation」，Tonborg 的问题用「POST /api/judgment/feedback」，都把我的原话放进 personWords；不要的用 revise_personal_knowledge 设为失效，reason 写上我的原话。我没表态的不要动。',
     BROWSER_ZH,
   ].join('\n'),
   workbench: (c) => [
@@ -146,7 +146,7 @@ const EN: Record<AiTaskId, Template> = {
   decisions: (c) => [
     'Help me with what waits for me in FULI\'s inbox (待决策).',
     COMMON_EN(c),
-    'Read it with list_personal_review_queue and list_agent_attention, group it by project, one line each, with your suggestion. After I say what to do: confirm with run_delegated_action on "POST /api/knowledge/batch-confirmation" and answer Tonborg\'s questions with "POST /api/judgment/feedback", both with my exact words as personWords; drop with revise_personal_knowledge (invalidate), my words as its reason. Leave what I did not decide.',
+    'Read it with list_agent_attention and list_tonborg_questions, group it by project, one line each, with your suggestion. After I say what to do: confirm with run_delegated_action on "POST /api/knowledge/batch-confirmation" and answer Tonborg\'s questions with "POST /api/judgment/feedback", both with my exact words as personWords; drop with revise_personal_knowledge (invalidate), my words as its reason. Leave what I did not decide.',
     BROWSER_EN,
   ].join('\n'),
   workbench: (c) => [

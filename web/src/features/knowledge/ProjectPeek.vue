@@ -85,9 +85,6 @@ onMounted(async () => {
           <Button variant="ghost" size="sm" @click="copy(projectId)">
             <span>{{ t('knowledge.workspace.projectPeek.copyId') }}</span><code>{{ projectId }}</code>
           </Button>
-          <Button v-if="project?.publication_key" variant="ghost" size="sm" @click="copy(project.publication_key)">
-            <span>{{ t('knowledge.workspace.projectPeek.copyKey') }}</span><code>{{ project.publication_key.slice(0, 8) }}…</code>
-          </Button>
           <small v-if="copied" role="status">{{ t('knowledge.workspace.projectPeek.copied') }}</small>
         </div>
       </div>

@@ -1,10 +1,9 @@
 import { personalHumanReviewChannel, providerRefusal } from '../graphiti/human-review-channel.js';
-import { graphReadPath, preferenceConflictsPath, publicationDraftsPath } from '../graphiti/knowledge-reader.js';
+import { graphReadPath, preferenceConflictsPath } from '../graphiti/knowledge-reader.js';
 
 // The person's own full reads of personal knowledge, from the local console:
 // the graph, one item's view, a turn's full receipt, a session's records and
-// what it holds for a migration, the preference conflicts and the publication
-// drafts; the person's defer and completion of a conflict, which answer as
+// what it holds for a migration and the preference conflicts; the person's defer and completion of a conflict, which answer as
 // missing to a reader that may not see its items; and the person's own change
 // of an item (a revision, a batch confirmation, a move to another project),
 // which the provider records as theirs only with this proof. Knowledge an FLA wrote, and
@@ -22,8 +21,6 @@ export function knowledgeOwnerReads(dataDir, { send = personalHumanReviewChannel
     if (ok) return payload;
     throw providerRefusal(status, payload);
   };
-  const draftPath = (personalSpaceId, draftId, suffix = '') => `/v1/publication-drafts/${encodeURIComponent(draftId)}${
-    suffix}?${new URLSearchParams({ personal_space_id: personalSpaceId })}`;
   return {
     graph: ({ spaceId, limit, personalProjectId, offset }) =>
       request(graphReadPath(spaceId, { limit, personalProjectId, offset }), null, 'GET'),
@@ -41,19 +38,6 @@ export function knowledgeOwnerReads(dataDir, { send = personalHumanReviewChannel
     sessionMigration: (body) => request('/v1/knowledge/session-migrations/preview', body),
     preferenceConflicts: ({ personalSpaceId, status, limit, offset }) =>
       request(preferenceConflictsPath(personalSpaceId, { status, limit, offset }), null, 'GET'),
-    publicationDrafts: ({ personalSpaceId, status }) =>
-      request(publicationDraftsPath(personalSpaceId, { status }), null, 'GET'),
-    // The person's drafts as their submission and its reconciliation read and decide them (the
-    // provider client's shape). A draft whose source is not positively plain work (an FLA's, erased,
-    // or never recorded here, as a capture made only for a team) is the person's alone, its source
-    // and attempt too, so only this channel reads, submits and settles it.
-    submissions: {
-      listPublicationDrafts: (personalSpaceId, status, { metadataOnly = false } = {}) =>
-        request(publicationDraftsPath(personalSpaceId, { status, metadataOnly }), null, 'GET'),
-      getPublicationDraft: (personalSpaceId, draftId) => request(draftPath(personalSpaceId, draftId), null, 'GET'),
-      decidePublicationDraft: (personalSpaceId, draftId, body, { timeoutMs } = {}) =>
-        request(draftPath(personalSpaceId, draftId, '/decision'), body, 'POST', { timeoutMs })
-    },
     reviseKnowledgeItem: (itemId, body) => request('/v1/knowledge/items/' + encodeURIComponent(itemId), body, 'PATCH'),
     confirmKnowledgeBatch: (body) => request('/v1/knowledge/batch-confirmations', body),
     reassignKnowledgeItem: (itemId, body) => request('/v1/knowledge/items/' + encodeURIComponent(itemId) + '/assignment', body),

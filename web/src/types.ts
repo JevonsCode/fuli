@@ -1,10 +1,3 @@
-export type CapabilityName =
-  | 'browsePublicProjects'
-  | 'publishProject'
-  | 'reviewProposals'
-  | 'submitKnowledge'
-  | 'subscribeProject'
-
 export interface CapturePolicy {
   enabled: boolean
   disabledSources?: string[]
@@ -99,7 +92,6 @@ export interface PersonalProject {
   personal_space_id: string
   status?: 'active' | 'inactive' | 'archived' | string
   scope_type?: 'registered' | 'temporary'
-  publication_key?: string | null
   profile: ProjectProfile
   created_at?: string | null
   updated_at?: string | null
@@ -611,24 +603,12 @@ export interface ProjectAgentRecord {
   executorDirectory?: ProjectAgentExecutorRef[]
 }
 
-export interface ProjectRelease {
-  version: string
-  publisher_name?: string
-  published_at?: string
-  update_summary?: string
-}
-
+// A project a configured workspace provider shows; its graph can be read.
 export interface PublicProject {
   id: string
   name: string
   description?: string
   providerUrl: string
-  publication_key?: string | null
-  role?: string
-  isOwner?: boolean
-  can_manage?: boolean
-  profile?: ProjectProfile
-  current_release?: ProjectRelease | null
 }
 
 export interface Subscription {
@@ -702,7 +682,6 @@ export interface ConsoleState {
   firstRunGuide?: { open: boolean }
   agentAccessPolicy?: AgentAccessPolicy
   recallPolicy?: RecallPolicy
-  capabilities?: Partial<Record<CapabilityName, boolean>>
   providers?: {
     personal?: ProviderStatus
     workspaces?: ProviderStatus[]

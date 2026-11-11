@@ -5,7 +5,6 @@ import { runWithAgentRequestContext } from '../src/app/agent-request-context.js'
 import { GraphitiProviderClient, ProviderRequestError } from '../src/graphiti/provider-client.js';
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 import {
-  FULI_WORKSPACE_CAPABILITIES,
   FuliWorkspaceProviderClient,
   createWorkspaceProvider
 } from '../src/graphiti/workspace-provider-client.js';
@@ -50,7 +49,7 @@ test('workspace provider factory keeps Graphiti as the default protocol', () => 
 
   assert.equal(provider.protocol, 'graphiti-v1');
   assert.equal(provider.client instanceof GraphitiProviderClient, true);
-  assert.equal(provider.capabilities.publishProject, true);
+  assert.deepEqual(provider.capabilities, { query: true });
 });
 
 test('fuli-workspace health and paginated discovery use their native endpoints', async () => {
@@ -217,18 +216,7 @@ test('fuli-workspace health requires an authenticated provider session', async (
   });
 });
 
-test('fuli-workspace advertises only the implemented public capability slice', () => {
-  assert.deepEqual(FULI_WORKSPACE_CAPABILITIES, {
-    browsePublicProjects: true,
-    publishProject: false,
-    submitKnowledge: false,
-    subscribeProject: true,
-    reviewProposals: false,
-    query: true
-  });
-});
-
-test('federated state exposes only the capabilities implemented by fuli-workspace', async () => {
+test('federated state reads a fuli-workspace provider through its native health check', async () => {
   const calls = [];
   const routes = {
     '/health': {
@@ -273,13 +261,7 @@ test('federated state exposes only the capabilities implemented by fuli-workspac
 
   assert.equal(state.mode, 'connected');
   assert.equal(state.projects[0].id, 'workspace-1');
-  assert.deepEqual(state.capabilities, {
-    browsePublicProjects: true,
-    publishProject: false,
-    submitKnowledge: false,
-    subscribeProject: true,
-    reviewProposals: false
-  });
+  assert.equal('capabilities' in state, false);
   assert.equal(state.providers.workspaces[0].protocol, 'fuli-workspace-v1');
   assert.equal(state.providers.workspaces[0].capabilities.query, true);
   assert.equal(calls.some(({ origin, path }) =>

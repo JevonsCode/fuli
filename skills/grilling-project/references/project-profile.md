@@ -1,7 +1,7 @@
 # Fuli project profile reference
 
 Use this reference to construct the complete payload for `upsert_personal_project`.
-Optional fields may be absent. Publication is never blocked by this guidance.
+Optional fields may be absent.
 
 ## Profile fields
 
@@ -25,7 +25,7 @@ For a `repository`, `frontend_repository`, or `backend_repository` source, use t
 worktree of that repository to this project when exactly one registered project records the same
 remote, before any folder name; ssh and https forms of one repository are equal. A checkout whose
 folder is named after a project that records another repository does not resolve to it. Keep the source
-`private` unless the user approved the remote for public inclusion.
+`private` unless the user said it may be shared.
 
 Supported kinds:
 
@@ -43,9 +43,9 @@ Supported kinds:
 
 Set sensitivity to:
 
-- `normal` only when the source is approved for public inclusion
-- `private` for personal or non-public project evidence
-- `restricted` for highly controlled evidence that must never reach a public Provider
+- `normal` for evidence the user may share freely
+- `private` for personal or internal project evidence
+- `restricted` for highly controlled evidence that must never leave this computer
 
 Do not store credentials at any sensitivity.
 
@@ -60,7 +60,7 @@ be a reasoned weighted average of supported evidence, not an unexamined count of
 3. `technical` — architecture, key modules, interfaces, and constraints
 4. `code` — confirmed frontend/backend repositories and ownership boundaries
 5. `operations` — run, deploy, rollback, monitoring, and incident evidence
-6. `governance` — privacy boundary, contribution rules, maintainership, and durable development rules
+6. `governance` — privacy boundary, contribution rules, ownership, and durable development rules
 
 Suggested weighting:
 
@@ -95,20 +95,3 @@ Each dimension contains:
 The assessment contains `confirmed` and `inferred` summaries only. It does not contain a
 generated `missing` list. A zero score means Fuli currently has no usable evidence for
 that dimension; it does not claim the project must add a particular artifact.
-
-## Publication checklist
-
-Before asking for final confirmation, verify the preview explicitly covers:
-
-- project purpose and scope
-- PRD/product documentation
-- technical documentation
-- frontend and backend repository evidence
-- runbook or local run/deployment instructions
-- monitoring and error-diagnosis instructions
-- privacy and public-sharing boundary
-- durable project development rules
-- confirmed and inferred existing information
-- Owner/automatic-subscription consequence
-
-Sparse evidence never prevents publication.
