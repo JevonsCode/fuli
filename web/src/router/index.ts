@@ -1,20 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
-import { agentManagementPath, formerManagementQuery } from '@/features/project-agents/orchestration-filters'
-
 import { updateDocumentTitle } from './meta'
 import { installNavigationRecovery } from './navigation-recovery'
-
-export function legacyKnowledgeHashPath(hash: string) {
-  const match = hash.match(
-    /^#\/knowledge\/([^/?#]+)\/([^/?#]+)\/(entity|relationship)\/([^/?#]+)(?:\?([^#]*))?$/,
-  )
-  if (!match) return null
-  const [, scope, spaceId, itemKind, itemId, query] = match
-  return `/knowledge/${scope}/${spaceId}/directory/${itemKind}/${itemId}${
-    query ? `?${query}` : ''
-  }`
-}
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -88,7 +75,6 @@ export const router = createRouter({
     { path: '/project-agents/apps', name: 'agent-apps', component: () => import('@/features/agent-apps/AgentAppsPage.vue'), meta: { title: 'agentApps.title' } },
     { path: '/project-agents/apps/:appId', name: 'agent-app', component: () => import('@/features/agent-apps/AppViewerPage.vue'), meta: { title: 'agentApps.title', detail: true } },
     { path: '/project-agents/manage', name: 'agent-management', component: () => import('@/pages/ProjectAgentsPage.vue'), meta: { title: 'shell.sections.orchestrate' } },
-    { path: '/project-agents/manage/:spaceId/:agentId', name: 'agent-management-detail', redirect: to => ({ path: agentManagementPath(String(to.params.spaceId), String(to.params.agentId)), query: formerManagementQuery(to.query), hash: to.hash }), meta: { title: 'projectAgents.pageTitle', detail: true } },
     {
       path: '/employees/:templateId',
       name: 'employee-workbench',
@@ -185,7 +171,6 @@ export const router = createRouter({
         aiHelp: 'task.decisions',
       },
     },
-    { path: '/review', redirect: '/public-projects' },
     {
       path: '/connections',
       name: 'connections',
@@ -278,12 +263,6 @@ export const router = createRouter({
 })
 
 installNavigationRecovery(router)
-
-router.beforeEach((to) => {
-  if (to.path !== '/' || typeof window === 'undefined') return true
-  const legacyPath = legacyKnowledgeHashPath(window.location.hash)
-  return legacyPath ?? true
-})
 
 router.afterEach((route) => {
   updateDocumentTitle(route.meta.title)

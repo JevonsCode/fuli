@@ -33,7 +33,6 @@ export class ProviderRequestError extends ApplicationError {
 }
 
 export class GraphitiProviderClient {
-  #workflowObservationToken;
   #refreshAccessToken;
 
   constructor({
@@ -49,6 +48,9 @@ export class GraphitiProviderClient {
       throw new TypeError('Graphiti provider token refresh must be a function');
     }
     if (!accessToken) throw new TypeError('Graphiti provider accessToken is required');
+    // Runtime configs still carry the MCP host's workflow observation token;
+    // nothing sends it since 11-11 (record_workflow_transition_observation was
+    // removed), but a malformed one still fails here as before.
     if (workflowObservationToken !== null && (
       typeof workflowObservationToken !== 'string' ||
       workflowObservationToken.trim().length < 32
@@ -65,7 +67,6 @@ export class GraphitiProviderClient {
     }
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.accessToken = accessToken;
-    this.#workflowObservationToken = workflowObservationToken?.trim() ?? null;
     this.fetch = fetchImpl;
     this.requestTimeoutMs = requestTimeoutMs;
     this.#refreshAccessToken = refreshAccessToken;
@@ -106,34 +107,6 @@ export class GraphitiProviderClient {
   getProjectAgentWorkerRun(runId, { personal_space_id, personal_project_id }, { capability, signal } = {}) {
     const query = new URLSearchParams({ personal_space_id, personal_project_id });
     return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}?${query}`, { capability, signal });
-  }
-  prepareProjectAgentWorkerRun(input, { signal } = {}) {
-    return this.#workerHostRequest('/v1/project-agent-worker-runs', { method: 'PUT', body: input, signal });
-  }
-  claimProjectAgentWorkerStart(runId, scope, { capability, signal } = {}) {
-    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/start-claim`, {
-      capability, signal, method: 'POST', body: scope
-    });
-  }
-  sealProjectAgentWorkerSession(runId, input, { capability, signal } = {}) {
-    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/session`, {
-      capability, signal, method: 'PUT', body: input
-    });
-  }
-  closeProjectAgentWorkerRun(runId, input, { capability, signal } = {}) {
-    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/close`, {
-      capability, signal, method: 'POST', body: input
-    });
-  }
-  dispatchProjectAgentWorkerPrompt(runId, input, { capability, signal } = {}) {
-    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/dispatch`, {
-      capability, signal, method: 'POST', body: input
-    });
-  }
-  recordProjectAgentWorkerResult(runId, input, { capability, signal } = {}) {
-    return this.#workerRequest(`/v1/project-agent-worker-runs/${encodeURIComponent(runId)}/result`, {
-      capability, signal, method: 'POST', body: input
-    });
   }
   listProjectAgentTaskRuns({ personalSpaceId, personalProjectId, taskId, limit = 50, cursor }) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId, personal_project_id: personalProjectId,
@@ -513,15 +486,6 @@ export class GraphitiProviderClient {
       method: 'PUT', body: input
     });
   }
-  getProjectAgentRecruitmentPolicy(personalSpaceId) {
-    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
-    return this.#request(`/v1/project-agent-recruitment-policy?${query}`);
-  }
-  updateProjectAgentRecruitmentPolicy(input) {
-    return this.#request('/v1/project-agent-recruitment-policy', {
-      method: 'PUT', body: input
-    });
-  }
   listProjectAgentRecruitments({
     personalSpaceId,
     personalProjectId = null,
@@ -749,14 +713,6 @@ export class GraphitiProviderClient {
   preflightCommits(inputs) {
     return this.#request('/v1/knowledge/commits/preflight', { method: 'POST', body: inputs });
   }
-  recordWorkflowObservation(input) {
-    if (!this.#workflowObservationToken) {
-      throw new TypeError('MCP host workflow observation credential is not configured');
-    }
-    return this.#request('/v1/workflow-observations', {
-      method: 'POST', body: input, workflowObservation: true
-    });
-  }
   startKnowledgeReview(input) {
     return this.#request('/v1/knowledge/reviews/start', {
       method: 'POST', body: input
@@ -784,11 +740,6 @@ export class GraphitiProviderClient {
   }
   searchWorkflowCandidates(input) {
     return this.#request('/v1/workflow-candidates/search', {
-      method: 'POST', body: input
-    });
-  }
-  recommendWorkflowCandidates(input) {
-    return this.#request('/v1/workflow-candidates/recommendations', {
       method: 'POST', body: input
     });
   }
@@ -860,20 +811,6 @@ export class GraphitiProviderClient {
     return this.#request(
       '/v1/personal-global-preference-candidates/' +
       `${encodeURIComponent(candidateId)}/scope-options`,
-      { method: 'POST', body: input }
-    );
-  }
-  inspectPersonalGlobalPreferenceDecision(candidateId, input) {
-    return this.#request(
-      '/v1/personal-global-preference-candidates/' +
-      `${encodeURIComponent(candidateId)}/decision-inspection`,
-      { method: 'POST', body: input }
-    );
-  }
-  applyPersonalGlobalPreferenceDecision(candidateId, input) {
-    return this.#request(
-      '/v1/personal-global-preference-candidates/' +
-      `${encodeURIComponent(candidateId)}/decision`,
       { method: 'POST', body: input }
     );
   }
@@ -1022,7 +959,6 @@ export class GraphitiProviderClient {
     method = 'GET',
     body,
     authenticated = true,
-    workflowObservation = false,
     workerCapability = null,
     stream = false,
     signal: requestSignal = activeAgentRequestSignal(),
@@ -1031,9 +967,6 @@ export class GraphitiProviderClient {
     // The provider names an older connection in its refusals by this (rec#74).
     const headers = { accept: stream ? 'text/event-stream' : 'application/json', 'x-fuli-client-version': FULI_VERSION };
     if (authenticated) headers.authorization = `Bearer ${this.accessToken}`;
-    if (workflowObservation) {
-      headers['x-fuli-workflow-observation-token'] = this.#workflowObservationToken;
-    }
     if (workerCapability !== null) headers['x-fuli-worker-capability'] = workerCapability;
     if (body !== undefined) headers['content-type'] = 'application/json';
     const controller = new AbortController();

@@ -323,27 +323,3 @@ async def test_expired_claim_cancellation_serializes_with_inflight_provisioning(
         assert (await recruitments(client, scope))[0]['status'] == 'fulfilled'
         assert [(p['agent_id'], p['status']) for p in current.json()['participants']] == [
             (recruitment['proposed_agent_id'], 'cancelled')]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize('confirmation', [True, False])
-async def test_legacy_policy_discloses_that_project_policy_is_effective(confirmation):
-    async with provider_client(fixture_settings()) as (client, _):
-        scope, payload = await recruitment_setup(client, confirmation=confirmation)
-        legacy_mode = 'automatic' if confirmation else 'require_confirmation'
-        saved = await client.put('/v1/project-agent-recruitment-policy', json={
-            'personal_space_id': scope['personal_space_id'], 'confirmation_mode': legacy_mode,
-        })
-        assert saved.status_code == 200, saved.text
-        loaded = await client.get('/v1/project-agent-recruitment-policy', params={
-            'personal_space_id': scope['personal_space_id'],
-        })
-        for record in [saved.json(), loaded.json()]:
-            assert record['confirmation_mode'] == legacy_mode
-            assert record['policy_status'] == 'superseded'
-            assert record['applies_to_recruitment'] is False
-            assert 'update_project_agent_coordination_policy' in record['warning']
-        routed = await client.post('/v1/project-agent-tasks', json=payload)
-        assert routed.status_code == 200, routed.text
-        assert routed.json()['recruitment']['status'] == (
-            'awaiting_confirmation' if confirmation else 'fulfilled')

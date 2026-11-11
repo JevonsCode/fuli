@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { setLocale } from '@/i18n'
-import { legacyKnowledgeHashPath, router } from './index'
+import { router } from './index'
 import { routeMetaText, updateDocumentTitle } from './meta'
 
 describe('localized route metadata', () => {
@@ -86,13 +86,9 @@ describe('localized route metadata', () => {
     expect(routeMetaText(router.resolve('/settings').meta.title)).toBe('设置')
   })
 
-  it('resolves source marker links and upgrades legacy hash links', () => {
+  it('resolves source marker links', () => {
     expect(router.resolve(
       '/knowledge/personal/personal-space/directory/entity/knowledge-1',
     ).name).toBe('knowledge-item')
-    expect(legacyKnowledgeHashPath(
-      '#/knowledge/personal/personal-space/entity/knowledge-1',
-    )).toBe('/knowledge/personal/personal-space/directory/entity/knowledge-1')
-    expect(legacyKnowledgeHashPath('#/preferences')).toBeNull()
   })
 })

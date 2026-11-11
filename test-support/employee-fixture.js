@@ -63,7 +63,6 @@ export function createEmployeeFixture({ runtimeConfigPath }) {
     async listExecutors() { return { executors: [] }; },
     async listExecutorRoutingRules() { return { rules: [] }; },
     async listProjectAgentRoutingLearning() { return []; },
-    async getProjectAgentRecruitmentPolicy() { return { confirmation_mode: 'manual' }; },
     async getProjectAgentCoordinationPolicy() { return { mode: 'assist' }; },
     close() { return app.employees.close(); }
   };

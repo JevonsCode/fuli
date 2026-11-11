@@ -263,7 +263,6 @@ export const projectAgentTaskActivityInput = objectSchema({
 }, [
   'personalSpaceId', 'personalProjectId', 'taskId', 'idempotencyKey', 'status', 'summary'
 ]);
-export const recruitmentConfirmationMode = enumSchema(['automatic', 'require_confirmation']);
 export const recruitmentStatus = enumSchema([
   'awaiting_confirmation', 'requested', 'fulfilled', 'cancelled', 'blocked', 'no_hr'
 ]);

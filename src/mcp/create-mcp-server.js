@@ -78,7 +78,6 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   search_current_project_knowledge: 64 * 1024,
   discover_common_knowledge_candidates: 32 * 1024,
   discover_personal_global_preference_candidates: 32 * 1024,
-  preview_personal_global_preference_decision: 32 * 1024,
   list_personal_projects: 32 * 1024,
   list_project_agents: 32 * 1024,
   get_project_agent: 32 * 1024,
@@ -109,7 +108,6 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   list_project_agent_routing_learning: 64 * 1024,
   get_agent_score_card: 32 * 1024,
   list_workflow_candidates: 32 * 1024,
-  recommend_next_workflow_steps: 32 * 1024,
   role_work: 256 * 1024,
   plan_agent_collaboration: 64 * 1024
 });
@@ -131,7 +129,6 @@ export function createMcpServer(
   app,
   {
     env = process.env,
-    clock = () => new Date(),
     sourceApplication = nativeCodexThreadId(env) ? 'codex' : 'other',
     withRuntimeLease = (_owner, operation) => operation(),
     hostSessionId = null,
@@ -171,7 +168,6 @@ export function createMcpServer(
     projectActionPreviews,
     nativeThreadId,
     effectiveHostSessionId,
-    clock,
     authoritativeSourceApplication,
     withRuntimeLease,
     toolNames ?? workerTaskContext?.toolNames ?? toolNamesForProfile(toolProfile),
@@ -189,7 +185,7 @@ export function createMcpServer(
   if (flaMenu && !workerTaskContext) registerFlaMenuPrompts(server, app, { sourceApplication: authoritativeSourceApplication, withRuntimeLease });
   const onDemandTools = isChatProfile ? createToolMap(app,
     projectActionPreviews, nativeThreadId, effectiveHostSessionId,
-    clock, authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env, null, onSession) : null;
+    authoritativeSourceApplication, withRuntimeLease, null, prepareToolInput, env, null, onSession) : null;
   if (onDemandTools) registerDispatchTool(server);
   registerCallHandler(server, tools, onDemandTools,
     !workerTaskContext && hostSessionId === null ? nativeRequestContext : null);
@@ -222,7 +218,6 @@ function createToolMap(
   projectActionPreviews,
   nativeThreadId,
   hostSessionId,
-  clock,
   sourceApplication,
   withRuntimeLease,
   toolNames,
@@ -290,7 +285,7 @@ function createToolMap(
         const prepared = prepareToolInput(definition.name, input);
         const callSource = await callSourceApplication(app, sourceApplication, prepared);
         const normalized = normalizeAgentSessionInput(definition.name, prepared,
-          requestNative, requestHost, clock, callSource);
+          requestNative, requestHost, callSource);
         onSession(callingSession(definition.name, normalized, requestNative));
         return invokeAgentTool(app, definition.name, normalized, projectActionPreviews, commonKnowledgePreviews,
           agentHostRequestContext({ ...requestContext, testToolsEnabled: includeTestTools }, requestHost, callSource));

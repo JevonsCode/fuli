@@ -100,8 +100,8 @@ function knowledgeEpisode(sourceApplication) {
 const disabledShape = value => ({ status: value?.status, reason: value?.reason, layer: value?.layer });
 
 // Every write a session can trigger: raw transcript, Agent conversation, task
-// checkpoint with preference evidence, knowledge capture, Agent memory, workflow
-// observation and project registration.
+// checkpoint with preference evidence, knowledge capture, Agent memory and
+// project registration.
 async function everyWritePath(f) {
   const scope = { personalSpaceId: 'synthetic-space', personalProjectId: 'synthetic-project', sourceApplication: 'codex' };
   return {
@@ -115,8 +115,6 @@ async function everyWritePath(f) {
     knowledge: await callAgentTool(f.app, 'capture_session_knowledge', knowledgeEpisode('codex')),
     memory: await callAgentTool(f.app, 'checkpoint_project_agent_memory', { ...scope, agentId: 'synthetic-lead',
       expectedRevision: 0, idempotencyKey: 'synthetic-memory', memory: { summary: PRIVATE } }),
-    observation: await callAgentTool(f.app, 'record_workflow_transition_observation',
-      { personalSpaceId: 'synthetic-space', sourceApplication: 'codex' }),
     project: await callAgentTool(f.app, 'upsert_personal_project', { personalSpaceId: 'synthetic-space',
       projectId: 'synthetic-new', profile: { name: PRIVATE }, sourceApplication: 'codex' })
   };

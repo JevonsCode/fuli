@@ -40,68 +40,10 @@ test('MCP exposes and routes read-only personal-global preference candidate disc
     }]);
   });
 
-test('MCP exposes proposal inspection but no Agent-side decision write', async () => {
-  const preview = GRAPH_TOOL_DEFINITIONS.find(
-    ({ name }) => name === 'preview_personal_global_preference_decision'
-  );
-  const apply = GRAPH_TOOL_DEFINITIONS.find(
-    ({ name }) => name === 'apply_personal_global_preference_decision'
-  );
-  const directScope = GRAPH_TOOL_DEFINITIONS.find(
-    ({ name }) => name === 'set_personal_preference_scope'
-  );
-  assert.match(preview.title, /^READ/);
-  assert.match(preview.description, /does not mint an approval token/i);
-  assert.match(preview.description, /independent human-review/i);
-  assert.equal(apply, undefined);
-  assert.equal(directScope, undefined);
-
-  const calls = [];
-  const app = {
-    getAgentAccessPolicy: () => ({ enabled: true }),
-    previewPersonalGlobalPreferenceDecision: async (input) => {
-      calls.push(['preview', input]);
-      return { status: 'human_review_required', approval_token_issued: false };
-    }
-  };
-  const input = decisionInput();
-  const inspected = await dispatchGraphTool(
-    app,
-    'preview_personal_global_preference_decision',
-    input
-  );
-  assert.equal(inspected.approval_token_issued, false);
-  assert.deepEqual(calls.map(([name]) => name), ['preview']);
-  assert.throws(
-    () => dispatchGraphTool(
-      app,
-      'apply_personal_global_preference_decision',
-      { ...input, previewToken: 'human-issued-one-time-token-value-1234567890' }
-    ),
-    /Unknown agent tool/
-  );
+// 11-11: the decision half was removed; discovery stays read-only.
+test('MCP has no personal-global decision inspection, apply or direct scope tool', () => {
+  for (const name of ['preview_personal_global_preference_decision',
+    'apply_personal_global_preference_decision', 'set_personal_preference_scope']) {
+    assert.equal(GRAPH_TOOL_DEFINITIONS.some((tool) => tool.name === name), false, name);
+  }
 });
-
-function decisionInput() {
-  return {
-    personalSpaceId: 'personal-1',
-    candidateId: 'personal-global-1234567890abcdef1234',
-    candidateVersion: 'v1:1234567890abcdef12345678',
-    decisionRevision: 0,
-    decision: 'reject',
-    sourceItems: [
-      { itemId: 'preference-d', itemKind: 'entity', projectId: 'travel-d' },
-      { itemId: 'preference-e', itemKind: 'entity', projectId: 'preference-e' }
-    ],
-    preferenceKey: 'alignment.comments.explain-function',
-    targetScope: 'personal_global',
-    targetProjectId: null,
-    profileAspect: null,
-    globalTitle: null,
-    globalInstruction: null,
-    humanConfirmationReason: '用户通过独立审查拒绝此次范围提升。',
-    confirmedAt: '2026-08-03T12:00:00.000Z',
-    sessionId: 'scope-review-1',
-    idempotencyKey: 'personal-global-reject-scope-review-1'
-  };
-}

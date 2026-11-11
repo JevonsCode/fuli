@@ -311,11 +311,7 @@ async function executeBenchmark() {
         runtimeConfigPath,
         mcpConfigPath,
         claudeSettingsPath,
-        lifecycleAuditPath,
-        providerUrl,
-        accessToken: identity.access_token,
-        humanReviewToken:
-          state.composeEnvironment.FULI_ALIGNMENT_HUMAN_REVIEW_TOKEN
+        lifecycleAuditPath
       });
     } else if (SKIP_CLAUDE) {
       addSkippedClaudeCases();
@@ -1291,10 +1287,7 @@ async function runMultiAgentNetworkCases({
   runtimeConfigPath,
   mcpConfigPath,
   claudeSettingsPath,
-  lifecycleAuditPath,
-  providerUrl,
-  accessToken,
-  humanReviewToken
+  lifecycleAuditPath
 }) {
   const [codexVersion, cursorVersion, claudeVersion] = await Promise.all([
     tryRunProcess('codex', ['--version'], {
@@ -1393,91 +1386,58 @@ async function runMultiAgentNetworkCases({
       entitySummary: '这个项目由 AI 开发时，注释要用中文写清楚功能。'
     })
   });
-  const sameSessionSequenceControl = await runCodex({
-    ...codexContext,
-    callId: 'NETWORK-WORKFLOW-00.same-session-control',
-    cwd: join(fixtureWorkspaces, PROJECTS.travel),
-    prompt: sameSessionSequenceControlPrompt()
-  });
-  const sequenceCaptures = [];
-  for (let occurrence = 1; occurrence <= 3; occurrence += 1) {
-    let capture = null;
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
-      capture = await runCodex({
-        ...codexContext,
-        callId: `NETWORK-WORKFLOW-01.sequence-${occurrence}.try-${attempt}`,
-        cwd: join(fixtureWorkspaces, PROJECTS.travel),
-        prompt: sequenceObservationPrompt(occurrence)
-      });
-      if (hasWorkflowObservationCall(capture)) break;
-    }
-    sequenceCaptures.push(capture);
-  }
-
   const [
     parentAResult,
     parentBResult,
     dPreferenceResult,
     cPreferenceResult,
-    ePreferenceResult,
-    sequenceResult
+    ePreferenceResult
   ] =
     await Promise.all([
       search(app, personalSpaceId, PROJECTS.parent, 'NETWORK-A-GUIDE-101'),
       search(app, personalSpaceId, PROJECTS.secondaryParent, 'NETWORK-B-GUIDE-202'),
       search(app, personalSpaceId, PROJECTS.travel, '注释要写清楚功能'),
       search(app, personalSpaceId, PROJECTS.related, '注释要写清楚功能'),
-      search(app, personalSpaceId, PROJECTS.preference, '注释要用中文写清楚功能'),
-      search(app, personalSpaceId, PROJECTS.travel, 'NETWORK-STEP-Y-707', {
-        includePending: true
-      })
+      search(app, personalSpaceId, PROJECTS.preference, '注释要用中文写清楚功能')
     ]);
   const codexCaptured = [
     findItem(parentAResult, 'NETWORK-A-GUIDE-101'),
     findItem(parentBResult, 'NETWORK-B-GUIDE-202'),
     findItem(dPreferenceResult, '注释要写清楚功能'),
     findItem(cPreferenceResult, '注释要写清楚功能'),
-    findItem(ePreferenceResult, '注释要用中文写清楚功能'),
-    findItem(sequenceResult, 'NETWORK-STEP-Y-707')
+    findItem(ePreferenceResult, '注释要用中文写清楚功能')
   ];
   const codexErrors = [
     parentACapture.error,
     parentBCapture.error,
     dPreferenceCapture.error,
     cPreferenceCapture.error,
-    ePreferenceCapture.error,
-    ...sequenceCaptures.map(({ error }, index) =>
-      error ?? (hasWorkflowObservationCall(sequenceCaptures[index])
-        ? null
-        : `Codex session ${index + 1} omitted the required workflow observation`)
-    )
+    ePreferenceCapture.error
   ].filter(Boolean);
   addCase({
     id: 'NETWORK-CODEX-01',
-    title: 'Codex 从合成文档沉淀项目上下文、偏好与步骤关系',
+    title: 'Codex 从合成文档沉淀项目上下文与偏好',
     domain: 'codex-capture',
     status: codexErrors.length
       ? 'ERROR'
       : codexCaptured.every(Boolean) ? 'PASS' : 'FAIL',
-    expected: 'Codex 经 Fuli MCP 写入 A/B 上下文、C/D/E 偏好和待确认 X→Y 关系。',
+    expected: 'Codex 经 Fuli MCP 写入 A/B 上下文和 C/D/E 偏好。',
     observed: `A=${Boolean(codexCaptured[0])}；B=${Boolean(codexCaptured[1])}；` +
       `D偏好=${Boolean(codexCaptured[2])}；C偏好=${Boolean(codexCaptured[3])}；` +
-      `E偏好=${Boolean(codexCaptured[4])}；X→Y=${Boolean(codexCaptured[5])}；` +
+      `E偏好=${Boolean(codexCaptured[4])}；` +
       `errors=${codexErrors.join(' | ') || 'none'}。`,
     evidence: [
       ...parentACapture.toolCalls,
       ...parentBCapture.toolCalls,
       ...dPreferenceCapture.toolCalls,
       ...cPreferenceCapture.toolCalls,
-      ...ePreferenceCapture.toolCalls,
-      ...sequenceCaptures.flatMap(({ toolCalls }) => toolCalls)
+      ...ePreferenceCapture.toolCalls
     ].map(codexToolCallEvidence).concat([
       ...parentACapture.toolResults,
       ...parentBCapture.toolResults,
       ...dPreferenceCapture.toolResults,
       ...cPreferenceCapture.toolResults,
-      ...ePreferenceCapture.toolResults,
-      ...sequenceCaptures.flatMap(({ toolResults }) => toolResults)
+      ...ePreferenceCapture.toolResults
     ].map(({ name, status, summary }) => `${name} ${status}: ${summary}`))
   });
 
@@ -1687,12 +1647,11 @@ async function runMultiAgentNetworkCases({
     };
   });
 
-  let personalGlobalPreferenceCandidate = null;
   await evaluateCase({
     id: 'NETWORK-PREFERENCE-02',
-    title: 'D/E 共同注释偏好经人审收敛到父项目 A',
+    title: 'D/E 共同注释偏好形成可选父项目 A 的候选',
     domain: 'parent-preference-convergence',
-    expected: 'D/E 共同核心先形成候选；独立人审选择 A 后创建 A 的 descendants 偏好，保留 D/E 原文与 E 的中文限定。'
+    expected: 'D/E 共同核心形成候选，可选作用域含父项目 A；D/E 原文与 E 的中文限定保留，不自动生效。'
   }, async () => {
     const result = await app.discoverPersonalGlobalPreferenceCandidates({
       personalSpaceId,
@@ -1716,166 +1675,15 @@ async function runMultiAgentNetworkCases({
         evidence: []
       };
     }
-    const dSourceBefore = candidate.source_items.find(
-      ({ defined_project_id: projectId }) => projectId === PROJECTS.travel
-    );
-    const eSourceBefore = candidate.source_items.find(
+    const eSource = candidate.source_items.find(
       ({ defined_project_id: projectId }) => projectId === PROJECTS.preference
     );
-    if (!dSourceBefore || !eSourceBefore) {
-      return {
-        pass: false,
-        observed: '候选缺少 D 或 E 的完整来源快照。',
-        evidence: []
-      };
-    }
-    const parentBefore = await app.getCollaborationPreferences({
-      personalProjectId: PROJECTS.parent
-    });
-    const decisionInput = {
-      personalSpaceId,
-      candidateId: candidate.candidate_id,
-      candidateVersion: candidate.candidate_version,
-      decisionRevision: candidate.decision_revision ?? 0,
-      decision: 'approve',
-      sourceItems: candidate.source_items.map((item) => ({
-        itemId: item.id,
-        itemKind: item.item_kind,
-        projectId: item.defined_project_id
-      })),
-      preferenceKey: 'alignment.comments.explain-function',
-      targetScope: 'parent_project',
-      targetProjectId: PROJECTS.parent,
-      profileAspect: 'judgment_preference',
-      globalTitle: 'A 项目族的 AI 注释功能说明',
-      globalInstruction: '由 AI 开发时，注释要写清楚功能。',
-      humanConfirmationReason: 'MOCK 验收的人类决定：D/E 的共同核心属于父项目 A；中文仍只属于 E。',
-      confirmedAt: '2026-08-03T11:00:00.000Z',
-      sessionId: 'alignment-network-parent-scope-review',
-      idempotencyKey: `${FIXTURE_VERSION}:parent-preference:${candidate.candidate_version}:approve`
-    };
-    const inspection = await app.previewPersonalGlobalPreferenceDecision(
-      decisionInput
-    );
-    const human = await applyHumanReviewedPreferenceDecision({
-      providerUrl,
-      accessToken,
-      humanReviewToken,
-      candidateId: candidate.candidate_id,
-      decisionInput,
-      label: 'parent preference human decision'
-    });
-    const [
-      parentAfter,
-      hotelAfter,
-      dAfter,
-      eAfter,
-      unrelatedAfter,
-      dSearchAfter,
-      eSearchAfter
-    ] = await Promise.all([
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.parent }),
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.hotel }),
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.travel }),
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.preference }),
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.unrelated }),
-      app.searchKnowledge({
-        personalSpaceId,
-        personalProjectId: PROJECTS.travel,
-        query: '注释 写清楚 功能',
-        includePending: false,
-        limit: 50
-      }),
-      app.searchKnowledge({
-        personalSpaceId,
-        personalProjectId: PROJECTS.preference,
-        query: '注释 中文 写清楚 功能',
-        includePending: false,
-        limit: 50
-      })
-    ]);
-    const preferenceKey = 'alignment.comments.explain-function';
-    const before = (parentBefore.effective_preferences ?? []).find(
-      ({ preference_key: key }) => key === preferenceKey
-    );
-    const parent = (parentAfter.effective_preferences ?? []).find(
-      ({ preference_key: key }) => key === preferenceKey
-    );
-    const inherited = (hotelAfter.effective_preferences ?? []).find(
-      ({ preference_key: key }) => key === preferenceKey
-    );
-    const dLocal = (dAfter.project_preferences ?? []).find(
-      ({ id }) => id === dSourceBefore.id
-    );
-    const dInheritedParent = (dAfter.project_preferences ?? []).find(
-      ({ id }) => id === human.applied.global_assertion_id
-    );
-    const exactE = (eAfter.effective_preferences ?? []).find(
-      ({ preference_key: key }) => key === preferenceKey
-    );
-    const eLocal = (eAfter.project_preferences ?? []).find(
-      ({ id }) => id === eSourceBefore.id
-    );
-    const leakedGlobal = (unrelatedAfter.effective_preferences ?? []).find(
-      ({ preference_key: key }) => key === preferenceKey
-    );
-    const dSearchLocal = findSearchResultItem(dSearchAfter, dSourceBefore.id);
-    const eSearchLocal = findSearchResultItem(eSearchAfter, eSourceBefore.id);
-    const dSourcePreserved = dLocal?.scope_distance === 0
-      && !dLocal.inherited_from_project_id
-      && dLocal.instruction === dSourceBefore.summary
-      && dSearchLocal?.defined_project_id === PROJECTS.travel
-      && dSearchLocal.scope_distance === 0
-      && stableJsonStringify(dSearchLocal.preference_qualifiers ?? {}) ===
-        stableJsonStringify(dSourceBefore.preference_qualifiers ?? {})
-      && stableJsonStringify([...(dSearchLocal.source_uris ?? [])].sort()) ===
-        stableJsonStringify([...(dSourceBefore.source_uris ?? [])].sort());
-    const eSourcePreserved = eLocal?.scope_distance === 0
-      && !eLocal.inherited_from_project_id
-      && eLocal.instruction === eSourceBefore.summary
-      && eSearchLocal?.defined_project_id === PROJECTS.preference
-      && eSearchLocal.scope_distance === 0
-      && stableJsonStringify(eSearchLocal.preference_qualifiers ?? {}) ===
-        stableJsonStringify(eSourceBefore.preference_qualifiers ?? {})
-      && stableJsonStringify([...(eSearchLocal.source_uris ?? [])].sort()) ===
-        stableJsonStringify([...(eSourceBefore.source_uris ?? [])].sort());
-    const eSnapshot = inspection.source_snapshots?.find(
-      ({ project_id: projectId }) => projectId === PROJECTS.preference
-    );
     return {
-      pass: !before
-        && inspection.approval_token_issued === false
-        && inspection.target_scope === 'parent_project'
-        && inspection.target_project_id === PROJECTS.parent
-        && eSnapshot?.instruction.includes('中文')
-        && human.unauthorizedPreview.status === 403
-        && human.applied.decision === 'approved'
-        && human.applied.target_scope === 'parent_project'
-        && human.applied.target_project_id === PROJECTS.parent
-        && human.replayed.decision_event_id === human.applied.decision_event_id
-        && parent?.preference_scope === 'project'
-        && parent?.preference_project_id === PROJECTS.parent
-        && parent?.inheritance_mode === 'descendants'
-        && inherited?.inherited_from_project_id === PROJECTS.parent
-        && dSourcePreserved
-        && eSourcePreserved
-        && dInheritedParent?.inherited_from_project_id === PROJECTS.parent
-        && human.applied.global_assertion_id !== dSourceBefore.id
-        && human.applied.global_assertion_id !== eSourceBefore.id
-        && exactE?.instruction.includes('中文')
-        && !leakedGlobal,
-      observed: `候选=true；A可选=true；无独立人审=${human.unauthorizedPreview.status}；` +
-        `A断言=${Boolean(parent)}；其他子项目继承=${Boolean(inherited)}；` +
-        `D原来源保留=${dSourcePreserved}；E原来源保留=${eSourcePreserved}；` +
-        `D同时可见A继承=${Boolean(dInheritedParent)}；` +
-        `E中文保留=${Boolean(exactE?.instruction.includes('中文'))}；` +
-        `无关项目泄漏=${Boolean(leakedGlobal)}。`,
-      evidence: [
-        candidate.candidate_id,
-        'MOCK independent human parent-scope decision',
-        'new parent assertion with descendants inheritance',
-        'local source snapshots preserved'
-      ]
+      pass: Boolean(eSource?.summary.includes('中文'))
+        && candidate.requires_human_scope_judgment === true
+        && candidate.scope_apply_performed === false,
+      observed: `候选=true；A可选=true；E中文限定保留=${Boolean(eSource?.summary.includes('中文'))}。`,
+      evidence: [candidate.candidate_id, 'parent A is an eligible scope', 'no automatic scope apply']
     };
   });
 
@@ -1901,7 +1709,6 @@ async function runMultiAgentNetworkCases({
       [PROJECTS.related, PROJECTS.travel, PROJECTS.preference]
         .every((projectId) => ids.includes(projectId))
     );
-    personalGlobalPreferenceCandidate = candidate ?? null;
     const eSource = candidate?.source_items.find(
       ({ defined_project_id: projectId }) => projectId === PROJECTS.preference
     );
@@ -1937,207 +1744,6 @@ async function runMultiAgentNetworkCases({
     };
   });
 
-  await evaluateCase({
-    id: 'NETWORK-PREFERENCE-04',
-    title: '人工作用域决定创建全局断言并保留局部来源',
-    domain: 'global-preference-human-decision',
-    expected: 'MOCK 人工确认绑定精确候选后创建新的个人全局断言；C/D/E 原偏好、E 的中文限定与来源全部保留。'
-  }, async () => {
-    if (!personalGlobalPreferenceCandidate) {
-      return {
-        pass: false,
-        observed: '前置个人全局候选不存在。',
-        evidence: []
-      };
-    }
-    const candidate = personalGlobalPreferenceCandidate;
-    const decisionInput = {
-      personalSpaceId,
-      candidateId: candidate.candidate_id,
-      candidateVersion: candidate.candidate_version,
-      decisionRevision: candidate.decision_revision ?? 0,
-      decision: 'approve',
-      sourceItems: candidate.source_items.map((item) => ({
-        itemId: item.id,
-        itemKind: item.item_kind,
-        projectId: item.defined_project_id
-      })),
-      preferenceKey: 'alignment.comments.explain-function',
-      targetScope: 'personal_global',
-      targetProjectId: null,
-      profileAspect: 'judgment_preference',
-      globalTitle: 'AI 开发注释写清楚功能',
-      globalInstruction: '由 AI 开发时，注释要写清楚功能。',
-      humanConfirmationReason: 'MOCK 验收中的人类决定：共同核心适用于个人全局；中文仍只属于 E。',
-      confirmedAt: '2026-08-03T12:00:00.000Z',
-      sessionId: 'alignment-network-global-scope-review',
-      idempotencyKey: `${FIXTURE_VERSION}:personal-global:${candidate.candidate_version}:approve`
-    };
-    const inspection = await app.previewPersonalGlobalPreferenceDecision(
-      decisionInput
-    );
-    const human = await applyHumanReviewedPreferenceDecision({
-      providerUrl,
-      accessToken,
-      humanReviewToken,
-      candidateId: candidate.candidate_id,
-      decisionInput,
-      label: 'personal-global preference human decision'
-    });
-    const [unrelatedPreferences, eAfter, rediscovered] = await Promise.all([
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.unrelated }),
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.preference }),
-      app.discoverPersonalGlobalPreferenceCandidates({
-        personalSpaceId,
-        personalProjectIds: [
-          PROJECTS.related,
-          PROJECTS.travel,
-          PROJECTS.preference
-        ],
-        query: '注释 写清楚 功能 中文',
-        minProjects: 3,
-        similarityThreshold: 0.2,
-        limitPerProject: 20
-      })
-    ]);
-    const globalInUnrelated = (unrelatedPreferences.effective_preferences ?? [])
-      .find(({ preference_key: key }) =>
-        key === 'alignment.comments.explain-function'
-      );
-    const exactE = (eAfter.effective_preferences ?? []).find(
-      ({ preference_key: key }) => key === 'alignment.comments.explain-function'
-    );
-    const suppressed = (rediscovered.suppressed_candidates ?? []).find(
-      ({ candidate_id: id }) => id === candidate.candidate_id
-    );
-    const eSnapshot = (inspection.source_snapshots ?? []).find(
-      ({ project_id: projectId }) => projectId === PROJECTS.preference
-    );
-    return {
-      pass: human.unauthorizedPreview.status === 403
-        && inspection.candidate_binding_verified === true
-        && inspection.original_sources_will_remain_unchanged === true
-        && inspection.approval_token_issued === false
-        && inspection.source_snapshots?.length === 3
-        && eSnapshot?.instruction.includes('中文')
-        && typeof human.preview.approval_token === 'string'
-        && human.applied.decision === 'approved'
-        && human.applied.target_scope === 'personal_global'
-        && human.applied.target_project_id === null
-        && Boolean(human.applied.global_assertion_id)
-        && human.applied.global_assertion_active === true
-        && human.replayed.decision_event_id === human.applied.decision_event_id
-        && Boolean(globalInUnrelated)
-        && !globalInUnrelated.instruction.includes('中文')
-        && exactE?.instruction.includes('中文')
-        && suppressed?.decision === 'approved',
-      observed: `无独立人审=${human.unauthorizedPreview.status}；` +
-        `检查绑定=${inspection.candidate_binding_verified}；` +
-        `新全局断言=${Boolean(human.applied.global_assertion_id)}；` +
-        `无关项目生效=${Boolean(globalInUnrelated)}；` +
-        `E中文限定保留=${Boolean(exactE?.instruction.includes('中文'))}；` +
-        `重复候选抑制=${suppressed?.decision ?? '无'}。`,
-      evidence: [
-        candidate.candidate_id,
-        'MOCK independent human scope decision',
-        'one-time candidate/version/revision-bound capability',
-        'new global assertion',
-        'local source snapshots preserved'
-      ]
-    };
-  });
-
-  await evaluateCase({
-    id: 'NETWORK-WORKFLOW-00',
-    title: '同一 Codex 会话重复上报不能伪装成三个独立会话',
-    domain: 'workflow-session-attestation',
-    expected: '同一 MCP 宿主会话内三次相同转换保持幂等，不形成满足三会话门槛的候选。'
-  }, async () => {
-    if (sameSessionSequenceControl.error) {
-      throw new Error(sameSessionSequenceControl.error);
-    }
-    const calls = sameSessionSequenceControl.toolCalls.filter(({ name }) =>
-      name === 'mcp__fuli__record_workflow_transition_observation'
-    );
-    const result = await app.listWorkflowCandidates({
-      personalSpaceId,
-      personalProjectId: PROJECTS.travel,
-      afterStepKey: 'alignment:network:step:x',
-      limit: 50
-    });
-    const leaked = (result.candidates ?? []).find((candidate) =>
-      candidate.condition?.acceptanceControl === 'same-host-session'
-    );
-    return {
-      pass: calls.length === 3 && !leaked,
-      observed: `观察调用=${calls.length}；形成三会话候选=${Boolean(leaked)}。`,
-      evidence: [
-        'one fresh Codex process',
-        'one MCP host session id',
-        'idempotent host-derived observation id'
-      ]
-    };
-  });
-
-  let workflowCandidate = null;
-  await evaluateCase({
-    id: 'NETWORK-WORKFLOW-01',
-    title: 'Codex 将重复 X→Y 行为保存为待确认关系',
-    domain: 'workflow-sequence-capture',
-    expected: '关系网从至少三个独立 episode 形成 pending RECOMMENDS_NEXT 候选，解释分数并要求人工确认；同一会话重试不增加 distinct-session 数。'
-  }, async () => {
-    const [result, recommendations] = await Promise.all([
-      search(
-        app,
-        personalSpaceId,
-        PROJECTS.travel,
-        'NETWORK-STEP-X-606 NETWORK-STEP-Y-707',
-        { includePending: true }
-      ),
-      app.recommendNextWorkflowSteps({
-        personalSpaceId,
-        personalProjectId: PROJECTS.travel,
-        afterStepKey: 'alignment:network:step:x',
-        limit: 20
-      })
-    ]);
-    const text = allText(result);
-    const relation = (result.facts ?? []).find((item) =>
-      item.relationship === 'RECOMMENDS_NEXT'
-        || item.type === 'RECOMMENDS_NEXT'
-        || itemText(item).includes('RECOMMENDS_NEXT')
-    );
-    workflowCandidate = recommendations.candidates?.find(
-      ({ targetStepKey: key }) => key === 'alignment:network:step:y'
-    ) ?? null;
-    return {
-      pass: text.includes('NETWORK-STEP-X-606')
-        && text.includes('NETWORK-STEP-Y-707')
-        && Boolean(relation)
-        && relation.confirmation_status === 'pending'
-        && workflowCandidate?.occurrenceCount >= 3
-        && workflowCandidate?.distinctSessionCount >= 3
-        && workflowCandidate?.occurrenceCount ===
-          workflowCandidate?.distinctSessionCount
-        && workflowCandidate?.recommendation.action === 'ask_user'
-        && workflowCandidate?.executionAuthorized === false,
-      observed: `X=${text.includes('NETWORK-STEP-X-606')}；` +
-        `Y=${text.includes('NETWORK-STEP-Y-707')}；` +
-        `关系=${relation?.relationship ?? relation?.type ?? '未命中'}；` +
-        `确认=${relation?.confirmation_status ?? '无'}；` +
-        `episodes=${workflowCandidate?.occurrenceCount ?? 0}；` +
-        `sessions=${workflowCandidate?.distinctSessionCount ?? 0}；` +
-        `score=${workflowCandidate?.recommendation.score ?? '无'}；` +
-        `action=${workflowCandidate?.recommendation.action ?? '无'}。`,
-      evidence: workflowCandidate ? [
-        workflowCandidate.candidateId,
-        `version=${workflowCandidate.candidateVersion}`,
-        'occurrences + distinct sessions + recency + authority - negative evidence',
-        'pending recommendation asks user'
-      ] : []
-    };
-  });
-
   const cursorContext = {
     nodePath: process.execPath,
     mcpServerPath: join(REPOSITORY_ROOT, 'src', 'mcp-server.js'),
@@ -2157,8 +1763,7 @@ async function runMultiAgentNetworkCases({
   });
   const cursorMarkers = markers(cursorD.answer, [
     'NETWORK-A-GUIDE-101',
-    'NETWORK-B-GUIDE-202',
-    'NETWORK-STEP-Y-707'
+    'NETWORK-B-GUIDE-202'
   ]);
   const cursorParentPreferences = markers(cursorD.answer, [
     'alignment.network.parent-a.explain-boundary',
@@ -2166,22 +1771,18 @@ async function runMultiAgentNetworkCases({
   ]);
   addCase({
     id: 'NETWORK-CURSOR-01',
-    title: 'Cursor 跨客户端取得多父上下文并建议 Y',
+    title: 'Cursor 跨客户端取得多父上下文',
     domain: 'cursor-cross-agent-retrieval',
     status: cursorD.error
       ? 'ERROR'
-      : cursorMarkers.length === 3
+      : cursorMarkers.length === 2
         && cursorParentPreferences.length === 2
-        && /CURSOR_AUTO_EXECUTE=no/i.test(cursorD.answer)
-        && /CURSOR_ASK_USER=yes/i.test(cursorD.answer)
         ? 'PASS' : 'FAIL',
-    expected: 'Cursor 在空目录中仅通过 Fuli 取得 A/B 与 X→Y，并先询问用户而不自动执行。',
+    expected: 'Cursor 在空目录中仅通过 Fuli 取得 A/B 共享上下文与父项目偏好。',
     observed: cursorD.error
       ? `Cursor 调用失败：${cursorD.error}`
       : `命中=${cursorMarkers.join(', ') || '无'}；` +
-        `父偏好=${cursorParentPreferences.join(', ') || '无'}；` +
-        `auto_no=${/CURSOR_AUTO_EXECUTE=no/i.test(cursorD.answer)}；` +
-        `ask_yes=${/CURSOR_ASK_USER=yes/i.test(cursorD.answer)}。`,
+        `父偏好=${cursorParentPreferences.join(', ') || '无'}。`,
     evidence: cursorD.toolCalls.map(networkRetrievalToolEvidence)
   });
   addCase({
@@ -2213,7 +1814,6 @@ async function runMultiAgentNetworkCases({
     builtInTools: [],
     allowedTools: [
       'mcp__fuli__search_current_project_knowledge',
-      'mcp__fuli__recommend_next_workflow_steps',
       'mcp__fuli__record_knowledge_usage',
       'mcp__fuli__checkpoint_task_knowledge'
     ]
@@ -2221,8 +1821,7 @@ async function runMultiAgentNetworkCases({
   recordClaudeMetrics('NETWORK-CLAUDE-01.retrieval', claudeD);
   const claudeMarkers = markers(claudeD.answer, [
     'NETWORK-A-GUIDE-101',
-    'NETWORK-B-GUIDE-202',
-    'NETWORK-STEP-Y-707'
+    'NETWORK-B-GUIDE-202'
   ]);
   const claudeParentPreferences = markers(claudeD.answer, [
     'alignment.network.parent-a.explain-boundary',
@@ -2230,221 +1829,22 @@ async function runMultiAgentNetworkCases({
   ]);
   addCase({
     id: 'NETWORK-CLAUDE-01',
-    title: 'Claude Code 跨客户端取得相同关系并保留人工确认门',
+    title: 'Claude Code 跨客户端取得相同共享上下文',
     domain: 'claude-cross-agent-retrieval',
     status: classifyClaudeCaseStatus({
       errors: claudeRunErrors(claudeD),
       passed: !claudeD.error
         && claudeD.hookSignals.beginTaskContext
-        && claudeMarkers.length === 3
+        && claudeMarkers.length === 2
         && claudeParentPreferences.length === 2
-        && /CLAUDE_AUTO_EXECUTE=no/i.test(claudeD.answer)
-        && /CLAUDE_ASK_USER=yes/i.test(claudeD.answer)
     }),
-    expected: 'Claude Code 的全新会话通过 Hook 与 Fuli 取得同一关系，推荐 Y 但先询问。',
+    expected: 'Claude Code 的全新会话通过 Hook 与 Fuli 取得同一份 A/B 上下文与父项目偏好。',
     observed: claudeD.error
       ? `Claude 调用失败：${claudeD.error}`
       : `entry=${claudeD.hookSignals.beginTaskContext}；` +
         `命中=${claudeMarkers.join(', ') || '无'}；` +
-        `父偏好=${claudeParentPreferences.join(', ') || '无'}；` +
-        `auto_no=${/CLAUDE_AUTO_EXECUTE=no/i.test(claudeD.answer)}；` +
-        `ask_yes=${/CLAUDE_ASK_USER=yes/i.test(claudeD.answer)}。`,
+        `父偏好=${claudeParentPreferences.join(', ') || '无'}。`,
     evidence: claudeD.toolCalls.map(networkRetrievalToolEvidence)
-  });
-
-  let authorizedWorkflowCandidate = null;
-  await evaluateCase({
-    id: 'NETWORK-WORKFLOW-02',
-    title: '系统自动发现 X→Y 并在人工同意后建立长期规则',
-    domain: 'workflow-pattern-automation',
-    expected: '三个宿主证明的独立会话形成候选；相反的人审并发只有一个获胜，最终明确同意后持久授权，同时高风险动作仍逐次询问。'
-  }, async () => {
-    if (!workflowCandidate) {
-      return { pass: false, observed: '前置 X→Y 候选不存在。', evidence: [] };
-    }
-    const reviewPath = '/v1/workflow-candidates/' +
-      `${encodeURIComponent(workflowCandidate.candidateId)}/review`;
-    const reviewBase = {
-      personal_space_id: personalSpaceId,
-      candidate_version: workflowCandidate.candidateVersion,
-      evidence_revision: workflowCandidate.evidenceRevision,
-      decision_revision: workflowCandidate.decisionRevision,
-      authority: { kind: 'user', label: 'Synthetic acceptance reviewer' },
-      decision_source: 'direct_user_confirmation'
-    };
-    const approveIntent = {
-      ...reviewBase,
-      idempotency_key: `${FIXTURE_VERSION}:workflow:approve:race`,
-      decision: 'approve',
-      reason: '合成验收的人类确认：以后在相同条件下建议并授权执行 Y。',
-      durable_authorization_confirmed: true
-    };
-    const rejectIntent = {
-      ...reviewBase,
-      idempotency_key: `${FIXTURE_VERSION}:workflow:reject:race`,
-      decision: 'reject',
-      reason: '合成验收的相反并发决定，用于验证只有一个修订获胜。',
-      durable_authorization_confirmed: false
-    };
-    const unauthorized = await postProviderJson({
-      providerUrl,
-      accessToken,
-      path: `${reviewPath}-preview`,
-      body: approveIntent
-    });
-    const [approvePreview, rejectPreview] = await Promise.all([
-      postProviderJson({
-        providerUrl,
-        accessToken,
-        path: `${reviewPath}-preview`,
-        body: approveIntent,
-        humanReviewToken
-      }),
-      postProviderJson({
-        providerUrl,
-        accessToken,
-        path: `${reviewPath}-preview`,
-        body: rejectIntent,
-        humanReviewToken
-      })
-    ]);
-    const approveCapability = requireProviderSuccess(
-      approvePreview,
-      'workflow approve preview'
-    );
-    const rejectCapability = requireProviderSuccess(
-      rejectPreview,
-      'workflow reject preview'
-    );
-    const [approveRace, rejectRace] = await Promise.all([
-      postProviderJson({
-        providerUrl,
-        accessToken,
-        path: reviewPath,
-        body: {
-          ...approveIntent,
-          approval_token: approveCapability.approval_token
-        },
-        humanReviewToken
-      }),
-      postProviderJson({
-        providerUrl,
-        accessToken,
-        path: reviewPath,
-        body: {
-          ...rejectIntent,
-          approval_token: rejectCapability.approval_token
-        },
-        humanReviewToken
-      })
-    ]);
-    const raceStatuses = [approveRace.status, rejectRace.status].sort(
-      (left, right) => left - right
-    );
-    if (approveRace.status !== 200) {
-      const afterReject = (await app.listWorkflowCandidates({
-        personalSpaceId,
-        personalProjectId: PROJECTS.travel,
-        afterStepKey: 'alignment:network:step:x',
-        limit: 20
-      })).candidates.find(({ candidateId }) =>
-        candidateId === workflowCandidate.candidateId
-      );
-      if (!afterReject) throw new Error('Workflow candidate disappeared after reject race');
-      const finalApproveIntent = {
-        ...approveIntent,
-        candidate_version: afterReject.candidateVersion,
-        evidence_revision: afterReject.evidenceRevision,
-        decision_revision: afterReject.decisionRevision,
-        idempotency_key: `${FIXTURE_VERSION}:workflow:approve:final`
-      };
-      const finalPreview = requireProviderSuccess(await postProviderJson({
-        providerUrl,
-        accessToken,
-        path: `${reviewPath}-preview`,
-        body: finalApproveIntent,
-        humanReviewToken
-      }), 'workflow final approve preview');
-      requireProviderSuccess(await postProviderJson({
-        providerUrl,
-        accessToken,
-        path: reviewPath,
-        body: {
-          ...finalApproveIntent,
-          approval_token: finalPreview.approval_token
-        },
-        humanReviewToken
-      }), 'workflow final approve');
-    }
-    authorizedWorkflowCandidate = (await app.listWorkflowCandidates({
-      personalSpaceId,
-      personalProjectId: PROJECTS.travel,
-      afterStepKey: 'alignment:network:step:x',
-      limit: 20
-    })).candidates.find(({ candidateId }) =>
-      candidateId === workflowCandidate.candidateId
-    ) ?? null;
-    return {
-      pass: unauthorized.status === 403
-        && raceStatuses[0] === 200
-        && raceStatuses[1] === 409
-        && authorizedWorkflowCandidate?.status === 'approved'
-        && authorizedWorkflowCandidate?.executionAuthorized === true
-        && authorizedWorkflowCandidate?.authorization?.active === true
-        && authorizedWorkflowCandidate?.authorization
-          ?.highRiskPerCallApprovalRequired === true
-        && ['send', 'delete', 'publish', 'payment', 'external_write'].every(
-          (category) => authorizedWorkflowCandidate.authorization
-            .highRiskActionCategories.includes(category)
-        ),
-      observed: `无独立人审=${unauthorized.status}；` +
-        `并发结果=${raceStatuses.join('/')}；` +
-        `最终状态=${authorizedWorkflowCandidate?.status ?? '无'}；` +
-        `长期授权=${authorizedWorkflowCandidate?.executionAuthorized ?? false}；` +
-        `高风险逐次确认=${authorizedWorkflowCandidate?.authorization
-          ?.highRiskPerCallApprovalRequired ?? false}。`,
-      evidence: [
-        workflowCandidate.candidateId,
-        'real Provider/Neo4j compare-and-set review',
-        'independent human-review capability',
-        'durable authorization separate from high-risk per-call approval'
-      ]
-    };
-  });
-
-  const claudeAuthorized = await runClaude({
-    prompt: authorizedWorkflowRetrievalPrompt(),
-    cwd: join(emptyWorkspaces, PROJECTS.travel),
-    mcpConfigPath,
-    settingsPath: claudeSettingsPath,
-    lifecycleAuditPath,
-    enforceFuliStart: true,
-    builtInTools: [],
-    allowedTools: [
-      'mcp__fuli__recommend_next_workflow_steps',
-      'mcp__fuli__checkpoint_task_knowledge'
-    ]
-  });
-  recordClaudeMetrics('NETWORK-CLAUDE-02.authorized', claudeAuthorized);
-  addCase({
-    id: 'NETWORK-CLAUDE-02',
-    title: '全新 Claude Code 会话读取长期授权但保留高风险逐次确认',
-    domain: 'claude-durable-workflow-authorization',
-    status: classifyClaudeCaseStatus({
-      errors: claudeRunErrors(claudeAuthorized),
-      passed: !claudeAuthorized.error
-        && Boolean(authorizedWorkflowCandidate)
-        && /CLAUDE_DURABLE_AUTHORIZATION=yes/i.test(claudeAuthorized.answer)
-        && /CLAUDE_HIGH_RISK_PER_CALL_ASK=yes/i.test(claudeAuthorized.answer)
-        && /CLAUDE_EXECUTED=no/i.test(claudeAuthorized.answer)
-    }),
-    expected: '另一个无上下文 Claude 会话从 Fuli 读取长期授权；本轮不执行 Y，高风险动作仍必须逐次询问。',
-    observed: claudeAuthorized.error
-      ? `Claude 调用失败：${claudeAuthorized.error}`
-      : `durable=${/CLAUDE_DURABLE_AUTHORIZATION=yes/i.test(claudeAuthorized.answer)}；` +
-        `high_risk_ask=${/CLAUDE_HIGH_RISK_PER_CALL_ASK=yes/i.test(claudeAuthorized.answer)}；` +
-        `executed_no=${/CLAUDE_EXECUTED=no/i.test(claudeAuthorized.answer)}。`,
-    evidence: claudeAuthorized.toolCalls.map(({ name }) => name)
   });
 
   addCase({
@@ -2454,12 +1854,12 @@ async function runMultiAgentNetworkCases({
     status: codexErrors.length || cursorD.error || claudeD.error
       ? 'ERROR'
       : codexCaptured.every(Boolean)
-        && cursorMarkers.length === 3
-        && claudeMarkers.length === 3
+        && cursorMarkers.length === 2
+        && claudeMarkers.length === 2
         ? 'PASS' : 'FAIL',
     expected: '关系节点不绑定某个 Agent；三个客户端通过同一 Fuli 图谱协作。',
     observed: `Codex写入=${codexCaptured.every(Boolean)}；` +
-      `Cursor=${cursorMarkers.length}/3；Claude=${claudeMarkers.length}/3。`,
+      `Cursor=${cursorMarkers.length}/2；Claude=${claudeMarkers.length}/2。`,
     evidence: ['Codex capture', 'Cursor retrieval', 'Claude Code retrieval']
   });
 }
@@ -2919,70 +2319,6 @@ function preferenceCapturePrompt({
   });
 }
 
-function sequenceObservationPrompt(occurrence) {
-  const payload = workflowObservationPayload(occurrence);
-  return [
-    '这是隔离的合成验收，所有内容都是虚构样本，不是生产事实。不要修改文件。',
-    '先调用 get_collaboration_preferences；projectPath 使用当前工作目录，',
-    'taskPrompt 使用本次合成沉淀请求，并取得返回的 personal_space_id。',
-    `只读取 06-step-sequence.md 的第 ${occurrence} 段合成会话。`,
-    '确认 X 和 Y 都已经在该段样本中完成后，恰好调用一次',
-    'record_workflow_transition_observation。不能提交 session、时间、幂等键、次数、',
-    '确认权威或长期授权；这些字段不属于 Agent。完整工具参数 JSON：',
-    JSON.stringify(payload, null, 2),
-    '只把 personalSpaceId 占位字符串替换成刚取得的 personal_space_id；不要添加、',
-    '删除、改名或推断其他字段，也不要执行第二次观察调用。',
-    '不要执行 Y，也不要创建自动化。最后只输出 CODEX_SEQUENCE_CAPTURE_OK。'
-  ].join('\n');
-}
-
-function sameSessionSequenceControlPrompt() {
-  const payloads = [1, 2, 3].map((attempt) => ({
-    ...workflowObservationPayload(attempt),
-    condition: {
-      projectId: PROJECTS.travel,
-      acceptanceControl: 'same-host-session'
-    },
-    evidenceSummary: `同一宿主会话中的第 ${attempt} 次合成重试；不得重复计数。`
-  }));
-  return [
-    '这是隔离的合成负向验收，所有内容都是虚构样本。不要修改文件。',
-    '先调用 get_collaboration_preferences 并取得 personal_space_id。',
-    '在当前这一个 Codex 会话中，依次调用三次',
-    'record_workflow_transition_observation；它们模拟同一动作转换的三次重试。',
-    '每次只替换 personalSpaceId 占位值；不得提交或修改 session、时间、幂等键、',
-    '次数、权威或授权字段。三个参数依次是：',
-    JSON.stringify(payloads, null, 2),
-    '不得执行 Y 或创建自动化。最后只输出 CODEX_SAME_SESSION_CONTROL_OK。'
-  ].join('\n');
-}
-
-function workflowObservationPayload(occurrence) {
-  return {
-    personalSpaceId: '<personal_space_id_from_get_collaboration_preferences>',
-    personalProjectId: PROJECTS.travel,
-    fromStep: {
-      actionId: 'alignment:network:step:x',
-      name: '生成变更说明草稿 · NETWORK-STEP-X-606',
-      summary: 'NETWORK-STEP-X-606：生成变更说明草稿'
-    },
-    toStep: {
-      actionId: 'alignment:network:step:y',
-      name: '检查说明中的链接 · NETWORK-STEP-Y-707',
-      summary: 'NETWORK-STEP-Y-707：检查说明中的链接'
-    },
-    workflowKey: 'alignment:network:step-x-recommends-y',
-    condition: {
-      projectId: PROJECTS.travel,
-      fixture: 'synthetic-independent-host-session'
-    },
-    evidenceSummary: `第 ${occurrence} 个独立合成会话完成 X 后完成 Y。`,
-    sourceApplication: 'codex',
-    sourceTurnId: `alignment-network-sequence-${occurrence}`,
-    sensitivity: 'private'
-  };
-}
-
 function confirmedSyntheticBasis(quadrantReason) {
   return {
     existenceReason: '合成文档直接陈述',
@@ -3015,25 +2351,18 @@ function exactCodexCapturePrompt({
 }
 
 function networkRetrievalPrompt(agentName) {
-  const prefix = agentName.toUpperCase().replaceAll(' ', '_');
   return [
     `你是 ${agentName}，位于一个没有项目文档的 travel-d 空工作区。`,
     '只能使用 Fuli；不要读取文件，也不要扩大到全部本地项目。',
     '若宿主没有提供生命周期上下文，先调用 get_collaboration_preferences，',
     'projectPath 使用当前工作目录。然后调用 search_current_project_knowledge，',
     'queries 分别搜索“A 项目共享上下文”和“B 项目共享上下文”，并显式设置',
-    'includePending=true。再调用 recommend_next_workflow_steps：personalSpaceId 和',
-    'personalProjectId 使用 Fuli 入口返回值，afterStepKey=alignment:network:step:x。',
-    '回答 A/B 两条共享约定的稳定标记，并从结构化候选说明完成 X 后建议的 Y 稳定标记。',
+    'includePending=true。',
+    '回答 A/B 两条共享约定的稳定标记。',
     '同时从入口 effective_preferences 输出两个显式父项目偏好键：',
     'alignment.network.parent-a.explain-boundary 和',
     'alignment.network.parent-b.rollback-path；不要把搜索内容冒充偏好包。',
-    'X→Y 仍是 pending 行为候选：不得声称已自动执行，必须先询问用户是否执行，',
-    '也不得声称已经获得“以后总是执行”的长期授权。',
-    '如果有生命周期 taskContextToken，结束前用 retain_nothing 完成 checkpoint。',
-    '最后必须包含以下两行，值只能是 yes/no：',
-    `${prefix}_AUTO_EXECUTE=no`,
-    `${prefix}_ASK_USER=yes`
+    '如果有生命周期 taskContextToken，结束前用 retain_nothing 完成 checkpoint。'
   ].join('\n');
 }
 
@@ -3048,22 +2377,6 @@ function relatedBoundaryPrompt(agentName) {
     '最后必须包含以下两行：',
     `${prefix}_RELATED_AUTO_EXPANDED=no`,
     `${prefix}_EXPANSION_OFFER=yes`
-  ].join('\n');
-}
-
-function authorizedWorkflowRetrievalPrompt() {
-  return [
-    '你是一个全新的 Claude Code 会话，当前空工作区没有任何项目文档。',
-    '只能使用 Fuli，不要读取文件，不要执行步骤 Y，也不要执行任何外部写入。',
-    '调用 recommend_next_workflow_steps：personalSpaceId 与 personalProjectId 使用',
-    'Fuli 生命周期入口返回值，afterStepKey=alignment:network:step:x。',
-    '只根据结构化候选回答：是否存在 active durable authorization，以及',
-    'highRiskPerCallApprovalRequired 是否仍为 true。长期授权不等于本轮已执行。',
-    '如果有 lifecycle taskContextToken，结束前用 retain_nothing checkpoint。',
-    '最后必须包含以下三行，值只能是 yes/no：',
-    'CLAUDE_DURABLE_AUTHORIZATION=yes',
-    'CLAUDE_HIGH_RISK_PER_CALL_ASK=yes',
-    'CLAUDE_EXECUTED=no'
   ].join('\n');
 }
 
@@ -3590,12 +2903,6 @@ async function runCodex({
   return run;
 }
 
-function hasWorkflowObservationCall(result) {
-  return (result?.toolCalls ?? []).some(({ name }) =>
-    name === 'mcp__fuli__record_workflow_transition_observation'
-  );
-}
-
 function isTransientAgentStreamError(value) {
   return /stream disconnected|tls handshake|connection reset|reconnecting/i.test(
     String(value ?? '')
@@ -3667,17 +2974,6 @@ function parseToolArguments(value) {
 }
 
 function codexToolCallEvidence({ name, input }) {
-  if (name === 'mcp__fuli__record_workflow_transition_observation') {
-    return `${name} input: ${JSON.stringify({
-      personalProjectId: input?.personalProjectId ?? null,
-      fromActionId: input?.fromStep?.actionId ?? null,
-      toActionId: input?.toStep?.actionId ?? null,
-      workflowKey: input?.workflowKey ?? null,
-      condition: input?.condition ?? null,
-      agentSuppliedSession: Object.hasOwn(input ?? {}, 'sessionId'),
-      agentSuppliedObservedAt: Object.hasOwn(input ?? {}, 'observedAt')
-    })}`;
-  }
   if (name !== 'mcp__fuli__capture_session_knowledge') return name;
   const entities = Array.isArray(input?.entities) ? input.entities : [];
   const relationships = Array.isArray(input?.relationships) ? input.relationships : [];
@@ -4070,76 +3366,6 @@ function requireProviderSuccess(result, label) {
   throw new Error(`${label} failed: ${detail}`);
 }
 
-function providerPreferenceDecisionPayload(input) {
-  return {
-    personal_space_id: input.personalSpaceId,
-    candidate_version: input.candidateVersion,
-    decision_revision: input.decisionRevision,
-    decision: input.decision,
-    source_items: input.sourceItems.map((item) => ({
-      item_id: item.itemId,
-      item_kind: item.itemKind,
-      project_id: item.projectId
-    })),
-    preference_key: input.preferenceKey,
-    target_scope: input.targetScope,
-    target_project_id: input.targetProjectId ?? null,
-    profile_aspect: input.profileAspect ?? null,
-    global_title: input.globalTitle ?? null,
-    global_instruction: input.globalInstruction ?? null,
-    human_confirmation_reason: input.humanConfirmationReason,
-    confirmed_at: input.confirmedAt,
-    session_id: input.sessionId,
-    idempotency_key: input.idempotencyKey
-  };
-}
-
-async function applyHumanReviewedPreferenceDecision({
-  providerUrl,
-  accessToken,
-  humanReviewToken,
-  candidateId,
-  decisionInput,
-  label
-}) {
-  const providerDecision = providerPreferenceDecisionPayload(decisionInput);
-  const decisionPath = '/v1/personal-global-preference-candidates/' +
-    `${encodeURIComponent(candidateId)}/decision`;
-  const previewPath = `${decisionPath}-preview`;
-  const unauthorizedPreview = await postProviderJson({
-    providerUrl,
-    accessToken,
-    path: previewPath,
-    body: providerDecision
-  });
-  const preview = requireProviderSuccess(await postProviderJson({
-    providerUrl,
-    accessToken,
-    path: previewPath,
-    body: providerDecision,
-    humanReviewToken
-  }), `${label} preview`);
-  const applyPayload = {
-    ...providerDecision,
-    approval_token: preview.approval_token
-  };
-  const applied = requireProviderSuccess(await postProviderJson({
-    providerUrl,
-    accessToken,
-    path: decisionPath,
-    body: applyPayload,
-    humanReviewToken
-  }), `${label} apply`);
-  const replayed = requireProviderSuccess(await postProviderJson({
-    providerUrl,
-    accessToken,
-    path: decisionPath,
-    body: applyPayload,
-    humanReviewToken
-  }), `${label} idempotent replay`);
-  return { unauthorizedPreview, preview, applied, replayed };
-}
-
 async function waitForProvider(providerUrl) {
   const deadline = Date.now() + 8 * 60_000;
   while (Date.now() < deadline) {
@@ -4472,14 +3698,13 @@ function renderMultiAgentNetworkReport(result) {
   );
   const codexCase = byId.get('NETWORK-CODEX-01');
   const codexPersisted = [
-    'A=true', 'B=true', 'D偏好=true', 'E偏好=true', 'X→Y=true'
+    'A=true', 'B=true', 'D偏好=true', 'E偏好=true'
   ].every((marker) => codexCase?.observed.includes(marker));
   const corePassed = codexPersisted && [
     'NETWORK-SCOPE-01',
     'NETWORK-SCOPE-02',
     'NETWORK-SCOPE-03',
     'NETWORK-PREFERENCE-02',
-    'NETWORK-WORKFLOW-01',
     'NETWORK-CLAUDE-01'
   ].every((id) => byId.get(id)?.status === 'PASS');
   const scopedStatuses = [
@@ -4514,23 +3739,20 @@ ${counts.ERROR ?? 0} ERROR、${counts.SKIP ?? 0} SKIP。
           └──父级──▶ E└──RELATED_TO── C（只建议扩展，不自动继承）
 
 Codex 对话沉淀 ──▶ Fuli 关系网 ──▶ Cursor / Claude Code 有界检索
-重复 X→Y ──▶ pending RECOMMENDS_NEXT ──▶ 先询问人 ──▶ 才可形成长期规则
 \`\`\`
 
 ## 已验证能力
 
-- Codex 写入 A/B 上下文、D/E 偏好和待确认 X→Y：
+- Codex 写入 A/B 上下文与 D/E 偏好：
   **${codexPersisted ? 'PASS（以 Graphiti 回读为准）' : codexCase?.status ?? 'UNKNOWN'}**。
   ${codexCase?.status === 'ERROR'
     ? `Codex 最终回答流另有外部传输 ERROR，未推翻已提交的幂等写入。`
     : ''}
 - D 同时继承 A/B、E 继承 A，C 的 RELATED_TO 不静默扩张：
   **${scopedStatuses}**。
-- D/E 的共同偏好先形成候选，只有绑定候选版本的人审决定才能上收到父项目 A：
+- D/E 的共同偏好形成候选，父项目 A 可选，不自动写入：
   **${byId.get('NETWORK-PREFERENCE-02')?.status ?? 'UNKNOWN'}**。
-- X→Y 保持 pending，记录样本次数与人工批准要求：
-  **${byId.get('NETWORK-WORKFLOW-01')?.status ?? 'UNKNOWN'}**。
-- Claude Code 从空工作区复用 Codex 沉淀，并保持“不自动执行、先询问”：
+- Claude Code 从空工作区复用 Codex 沉淀：
   **${byId.get('NETWORK-CLAUDE-01')?.status ?? 'UNKNOWN'}**。
 
 ## 本轮断言发现的产品能力缺口
@@ -4548,8 +3770,6 @@ ${productGaps.length
 
 - 尚未提供基于 WebAuthn 或可信原生界面的用户在场确认；当前人审凭据只实现逻辑隔离，
   不能抵御同一操作系统用户权限下的恶意 Agent。
-- 工作流已具备候选、长期授权和高风险逐次确认元数据，但还没有统一拦截所有实际执行器的
-  强制执行网关；本轮 X/Y 完成事件由 Agent 报告，宿主只证明会话、时间和幂等身份。
 - 偏好来源已保存为可审计快照，但尚未全部投影成可遍历的 \`DERIVED_FROM\` / \`EVIDENCED_BY\`
   图边；复杂多父级冲突、未知上下文权重和自动执行策略仍需继续验证。
 
@@ -4557,9 +3777,7 @@ ${productGaps.length
 
 ${byId.get('NETWORK-CLAUDE-01')?.status === 'PASS'
     ? '- Claude Code 行为用例已通过。'
-    : `- **NETWORK-CLAUDE-01**：${byId.get('NETWORK-CLAUDE-01')?.observed ?? '未运行'}\n` +
-      '  Claude 已复用 A/B 且保持先询问，但自然语言 X→Y 查询没有在回答中带出 Y；' +
-      '仍需用确定性探针区分 Agent 参数遵循和关系邻接召回。'}
+    : `- **NETWORK-CLAUDE-01**：${byId.get('NETWORK-CLAUDE-01')?.observed ?? '未运行'}`}
 
 ## 外部环境阻塞
 
@@ -4770,25 +3988,6 @@ function freePort() {
 function findItem(result, marker) {
   return [...(result.entities ?? []), ...(result.facts ?? [])]
     .find((item) => itemText(item).includes(marker)) ?? null;
-}
-
-function findSearchResultItem(result, itemId) {
-  return [...(result.entities ?? []), ...(result.facts ?? [])]
-    .find(({ id }) => id === itemId) ?? null;
-}
-
-function stableJsonStringify(value) {
-  return JSON.stringify(stableJsonValue(value));
-}
-
-function stableJsonValue(value) {
-  if (Array.isArray(value)) return value.map(stableJsonValue);
-  if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, stableJsonValue(value[key])])
-  );
 }
 
 function itemText(item) {

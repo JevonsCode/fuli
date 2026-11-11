@@ -44,12 +44,8 @@ import {
   discoverCommonKnowledgeCandidates as discoverCommonKnowledgeCandidatesWorkflow,
   discoverPersonalGlobalPreferenceCandidates as
     discoverPersonalGlobalPreferenceCandidatesWorkflow,
-  applyPersonalGlobalPreferenceDecision as
-    applyPersonalGlobalPreferenceDecisionWorkflow,
   recordDecisionTrace as recordDecisionTraceWorkflow,
-  recordKnowledgeFeedback as recordKnowledgeFeedbackWorkflow,
-  previewPersonalGlobalPreferenceDecision as
-    previewPersonalGlobalPreferenceDecisionWorkflow
+  recordKnowledgeFeedback as recordKnowledgeFeedbackWorkflow
 } from './agent-knowledge-workflows.js';
 import {
   ProjectAgentControlPlaneApplication,
@@ -74,9 +70,7 @@ import {
   validateCaptureSessionKnowledge
 } from './session-knowledge-capture.js';
 import {
-  listWorkflowCandidates,
-  recommendNextWorkflowSteps,
-  recordWorkflowTransitionObservation
+  listWorkflowCandidates
 } from './workflow-learning.js';
 import { collaborationPreferencesAtEntry, getUserTasteSkill } from './collaboration-preference-entry.js';
 import {
@@ -287,10 +281,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return captureSessionKnowledge(this, input, options);
   }
 
-  async recordWorkflowTransitionObservation(input) {
-    return recordWorkflowTransitionObservation(this, input);
-  }
-
   getCollaborationPreferences(input) {
     return collaborationPreferencesAtEntry(this, input);
   }
@@ -325,18 +315,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   async discoverPersonalGlobalPreferenceCandidates(input) {
     assertActivePersonalSpace(this, input.personalSpaceId);
     return discoverPersonalGlobalPreferenceCandidatesWorkflow(this, input);
-  }
-
-  async previewPersonalGlobalPreferenceDecision(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    assertSafeKnowledgeMutation(input);
-    return previewPersonalGlobalPreferenceDecisionWorkflow(this, input);
-  }
-
-  async applyPersonalGlobalPreferenceDecision(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    assertSafeKnowledgeMutation(input);
-    return applyPersonalGlobalPreferenceDecisionWorkflow(this, input);
   }
 
   async previewCommonKnowledgePromotion(input) {
@@ -377,10 +355,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async listWorkflowCandidates(input) {
     return listWorkflowCandidates(this, input);
-  }
-
-  async recommendNextWorkflowSteps(input) {
-    return recommendNextWorkflowSteps(this, input);
   }
 
   async recordKnowledgeUsage(input) {

@@ -291,7 +291,7 @@ test('Agent memory export is a read workflow beside the console memory route', (
   assert.deepEqual(Object.keys(tool.inputSchema.properties).sort(), ['agentId', 'personalProjectId', 'personalSpaceId',
     'taskContextToken']);
   assert.equal(normalizeAgentSessionInput(tool.name, { agentId: 'a', personalSpaceId: 's', sourceApplication: 'codex' },
-    null, 'fuli-host-synthetic', undefined, 'cursor').sourceApplication, 'cursor');
+    null, 'fuli-host-synthetic', 'cursor').sourceApplication, 'cursor');
 });
 
 test('list_agent_interfaces returns the same parity contract exposed in code', async () => {

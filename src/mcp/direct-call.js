@@ -13,7 +13,6 @@ export async function prepareDirectAgentToolCall({
   input,
   sourceApplication = 'other',
   env = process.env,
-  clock = () => new Date(),
   hostSessionId = null
 }) {
   const definition = listAgentTools().find((item) => item.name === toolName);
@@ -32,7 +31,6 @@ export async function prepareDirectAgentToolCall({
       parsed.data,
       nativeThreadId,
       authoritativeHostSessionId,
-      clock,
       source
     )
   };

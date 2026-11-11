@@ -96,25 +96,17 @@ test('a key is tied to the origin it was saved for and is never read for another
   await assert.rejects(store.read('work', ENDPOINT), error => error.code === 'secret_endpoint_mismatch');
 });
 
-test('keys saved before origins were recorded are tied once to their only configured origin, else stay refused', async t => {
+// 11-11: keys saved before origins were recorded (before 0.25) are no longer
+// tied automatically; such a key is refused until it is saved again.
+test('a key saved before origins were recorded stays refused until it is saved again', async t => {
   const { path, store } = temporaryStore(t, { platform: 'linux', fileMode: () => 0o600 });
-  await store.set('single', SECRET, ENDPOINT);
-  await store.set('split', SECRET, ENDPOINT);
-  await store.set('unused', SECRET, ENDPOINT);
-  // What an older FULI wrote: the same records without an endpoint.
+  await store.set('old', SECRET, ENDPOINT);
+  // What an older FULI wrote: the same record without an endpoint.
   const raw = JSON.parse(readFileSync(path, 'utf8'));
-  for (const record of Object.values(raw.secrets)) delete record.endpoint;
+  delete raw.secrets.old.endpoint;
   writeFileSync(path, JSON.stringify(raw));
-  await assert.rejects(store.read('single', ENDPOINT), error => error.code === 'secret_endpoint_unbound');
-  store.bindLegacyKeys({
-    a: { endpoint: ENDPOINT, secretRef: 'single' }, b: { endpoint: 'https://llm.example.test/other', secretRef: 'single' },
-    c: { endpoint: ENDPOINT, secretRef: 'split' }, d: { endpoint: OTHER, secretRef: 'split' },
-  });
-  assert.equal(await store.read('single', ENDPOINT), SECRET);
-  assert.deepEqual(store.origins(), { single: 'https://llm.example.test', split: null, unused: null });
-  await assert.rejects(store.read('split', OTHER), error => error.code === 'secret_endpoint_unbound');
-  // Once only: a connection pointed elsewhere later never ties an untied key to it.
-  store.bindLegacyKeys({ e: { endpoint: OTHER, secretRef: 'unused' } });
-  await assert.rejects(store.read('unused', OTHER), error => error.code === 'secret_endpoint_unbound');
-  assert.equal(JSON.parse(readFileSync(path, 'utf8')).legacyKeysBound, true);
+  await assert.rejects(store.read('old', ENDPOINT), error => error.code === 'secret_endpoint_unbound');
+  assert.deepEqual(store.origins(), { old: null });
+  await store.set('old', SECRET, ENDPOINT);
+  assert.equal(await store.read('old', ENDPOINT), SECRET);
 });

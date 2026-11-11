@@ -549,14 +549,6 @@ export interface ProjectAgentRoutingRule {
   updatedAt?: string | null
 }
 
-export type ProjectAgentRecruitmentConfirmationMode = 'automatic' | 'require_confirmation'
-
-export interface ProjectAgentRecruitmentPolicy {
-  personalSpaceId?: string | null
-  confirmationMode: ProjectAgentRecruitmentConfirmationMode
-  updatedAt?: string | null
-}
-
 export interface ProjectAgentCoordinationPolicy {
   personalSpaceId: string
   personalProjectId: string
@@ -612,7 +604,6 @@ export interface ProjectAgentRecord {
   archiveReason?: string | null
   tasks?: ProjectAgentTaskRecord[]
   recruitments?: ProjectAgentRecruitmentRecord[]
-  recruitmentPolicy?: ProjectAgentRecruitmentPolicy | null
   activity?: ProjectAgentActivityResult | null
   clientEvidence?: ProjectAgentClientEvidence[]
   routingRules?: ProjectAgentRoutingRule[]

@@ -13,7 +13,6 @@ import {
   projectAgentTaskActivityInput,
   projectAgentTaskCoordinateInput,
   projectAgentTaskSubmitInput,
-  recruitmentConfirmationMode,
   recruitmentDecision,
   recruitmentStatus
 } from './project-agent-definitions.js';
@@ -246,21 +245,6 @@ export const PROJECT_AGENT_TOOL_DEFINITIONS = [
       'personalSpaceId', 'personalProjectId',
       'askBeforeRecruitment', 'autoReusePreviousAgent'
     ])
-  },
-  {
-    name: 'get_project_agent_recruitment_policy',
-    title: 'READ · Get recruitment policy',
-    description: 'Deprecated: read the legacy stored space setting, which does not control recruitment. Use get_project_agent_coordination_policy for the effective exact-project switches.',
-    inputSchema: objectSchema({ personalSpaceId: id }, ['personalSpaceId'])
-  },
-  {
-    name: 'update_project_agent_recruitment_policy',
-    title: 'WRITE · Set recruitment policy',
-    description: 'Deprecated compatibility storage only; this does not change recruitment authorization. Use update_project_agent_coordination_policy with the exact project and askBeforeRecruitment instead. The response warns that this legacy value is not effective.',
-    inputSchema: objectSchema({
-      personalSpaceId: id,
-      confirmationMode: recruitmentConfirmationMode
-    }, ['personalSpaceId', 'confirmationMode'])
   },
   {
     name: 'list_project_agent_recruitments',

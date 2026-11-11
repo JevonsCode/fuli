@@ -114,40 +114,6 @@ const commonKnowledgePromotionRequired = [
   'personalSpaceId', 'parentProjectId', 'itemKind', 'canonicalItemId',
   'duplicateItemIds', 'reason', 'humanConfirmationReason'
 ];
-const personalGlobalPreferenceDecisionIntent = {
-  personalSpaceId: id,
-  candidateId: {
-    ...boundedString(64),
-    pattern: '^personal-global-[a-f0-9]{20}$'
-  },
-  candidateVersion: {
-    ...boundedString(32),
-    pattern: '^v1:[a-f0-9]{24}$'
-  },
-  decisionRevision: integerSchema({ minimum: 0 }),
-  decision: enumSchema(['approve', 'reject']),
-  sourceItems: arraySchema(objectSchema({
-    itemId: id,
-    itemKind: knowledgeItemKind,
-    projectId: id
-  }, ['itemId', 'itemKind', 'projectId']), { minItems: 2, maxItems: 32 }),
-  preferenceKey: boundedString(512),
-  targetScope: enumSchema(['parent_project', 'personal_global']),
-  targetProjectId: nullableStringSchema(),
-  profileAspect,
-  globalTitle: { type: ['string', 'null'], minLength: 1, maxLength: 512 },
-  globalInstruction: { type: ['string', 'null'], minLength: 1, maxLength: 8192 },
-  humanConfirmationReason: boundedString(4096),
-  confirmedAt: dateTime,
-  sessionId: id,
-  idempotencyKey: id
-};
-const personalGlobalPreferenceDecisionRequired = [
-  'personalSpaceId', 'candidateId', 'candidateVersion', 'decisionRevision',
-  'decision', 'sourceItems', 'preferenceKey', 'targetScope',
-  'targetProjectId', 'humanConfirmationReason',
-  'confirmedAt', 'sessionId', 'idempotencyKey'
-];
 export const captureEpisodeFields = {
   idempotencyKey: id,
   name: label,
@@ -167,12 +133,6 @@ export const captureEpisodeRequired = [
   'idempotencyKey', 'name', 'sourceKind', 'sourceDescription',
   'referenceTime', 'entities', 'relationships'
 ];
-const workflowObservedStep = objectSchema({
-  actionId: id,
-  name: label,
-  summary: nullableStringSchema()
-}, ['actionId', 'name']);
-
 // Capturing, searching and governing personal and team-shared knowledge.
 export const KNOWLEDGE_DEFINITIONS = [
   {
@@ -203,25 +163,6 @@ export const KNOWLEDGE_DEFINITIONS = [
       ...captureEpisodeFields
     }, [
       'targetKind', 'spaceId', 'sessionId', ...captureEpisodeRequired
-    ])
-  },
-  {
-    name: 'record_workflow_transition_observation',
-    title: 'WRITE · Observe one completed workflow transition',
-    description: 'Record one Agent-reported completed X-to-Y action transition in the personal Provider, only after both actions succeed. One call submits one observation; same project, X/Y, workflow key, condition, and MCP-host session deduplicate to one Episodic node. Provider derives occurrence/distinct-session counts from persisted episodes. MCP host attests session, time, observation identity, never action truth. Accepts no aggregate counts, confirmation authority, approval, or durable-consent claims. All observations stay pending behavioral evidence, not user consent or execution authorization. This Agent/adapter observation seam is not automatic telemetry for arbitrary host tools.',
-    inputSchema: objectSchema({
-      personalSpaceId: id,
-      personalProjectId: nullableStringSchema(),
-      fromStep: workflowObservedStep,
-      toStep: workflowObservedStep,
-      workflowKey: id,
-      condition: attributes,
-      evidenceSummary: shortText,
-      sourceApplication,
-      sourceTurnId: { type: ['string', 'null'], minLength: 1, maxLength: 256 },
-      sensitivity: enumSchema(['normal', 'private', 'restricted'])
-    }, [
-      'personalSpaceId', 'fromStep', 'toStep', 'workflowKey', 'evidenceSummary'
     ])
   },
   {
@@ -362,7 +303,7 @@ export const KNOWLEDGE_DEFINITIONS = [
   {
     name: 'discover_personal_global_preference_candidates',
     title: 'READ · Find possible personal-global preferences',
-    description: 'Read-only scope-governance aid across two or more explicitly selected personal projects. It searches each exact project independently, excludes inherited and existing personal-global results, preserves every original preference text, qualifier, project source, and source URI, and exposes any shared lexical core only as a non-authoritative derived candidate. Similarity and weight never apply or promote a preference. Every candidate requires explicit human scope judgment through the candidate-bound review workflow.',
+    description: 'Read-only scope-governance aid across two or more explicitly selected personal projects. It searches each exact project independently, excludes inherited and existing personal-global results, preserves every original preference text, qualifier, project source, and source URI, and exposes any shared lexical core only as a non-authoritative derived candidate. Similarity and weight never apply or promote a preference. Every candidate requires explicit human scope judgment.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectIds: arraySchema(id, { minItems: 2, maxItems: 32 }),
@@ -371,15 +312,6 @@ export const KNOWLEDGE_DEFINITIONS = [
       similarityThreshold: numberSchema({ minimum: 0, maximum: 1 }),
       limitPerProject: integerSchema({ minimum: 1, maximum: 50 })
     }, ['personalSpaceId', 'personalProjectIds', 'query'])
-  },
-  {
-    name: 'preview_personal_global_preference_decision',
-    title: 'READ · Inspect a version-bound scope decision',
-    description: 'Read-only inspection for one exact personal-global preference candidate and decision revision. It revalidates every selected local source in the Provider and returns the preserved snapshots plus an exact payload fingerprint. It deliberately does not mint an approval token: an independent human-review client must confirm that fingerprint and mint the short-lived, one-time capability. The Agent cannot claim human authority through this tool.',
-    inputSchema: objectSchema(
-      personalGlobalPreferenceDecisionIntent,
-      personalGlobalPreferenceDecisionRequired
-    )
   },
   {
     name: 'preview_common_knowledge_promotion',

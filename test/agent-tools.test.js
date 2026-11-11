@@ -52,7 +52,6 @@ const NAMES = [
   'get_user_taste_skill',
   'resolve_deferred_preference_conflict',
   'capture_session_knowledge',
-  'record_workflow_transition_observation',
   'record_decision_trace',
   'search_knowledge_graph',
   'search_connected_knowledge',
@@ -62,7 +61,6 @@ const NAMES = [
   'search_current_project_knowledge',
   'discover_common_knowledge_candidates',
   'discover_personal_global_preference_candidates',
-  'preview_personal_global_preference_decision',
   'preview_common_knowledge_promotion',
   'apply_common_knowledge_promotion',
   'get_knowledge_graph',
@@ -103,8 +101,6 @@ const NAMES = [
   'get_project_agent_coordination_policy',
   'get_project_team',
   'update_project_agent_coordination_policy',
-  'get_project_agent_recruitment_policy',
-  'update_project_agent_recruitment_policy',
   'list_project_agent_recruitments',
   'decide_project_agent_recruitment',
   'upsert_executor',
@@ -125,7 +121,6 @@ const NAMES = [
   'ignore_project_agent_routing_learning',
   'reset_project_agent_routing_learning',
   'list_workflow_candidates',
-  'recommend_next_workflow_steps',
   'revise_personal_knowledge',
   'reassign_personal_knowledge',
   'preview_personal_project_action',
@@ -258,19 +253,6 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
     capture.inputSchema.properties.entities.items.properties.confirmationStatus.enum,
     ['confirmed', 'pending']
   );
-  const workflowObservation = tools.find(({ name }) =>
-    name === 'record_workflow_transition_observation'
-  );
-  assert.match(workflowObservation.description, /one call.*one observation/i);
-  assert.match(workflowObservation.description, /pending.*not.*authorization/i);
-  assert.equal(
-    workflowObservation.inputSchema.properties.occurrenceCount,
-    undefined
-  );
-  assert.equal(workflowObservation.inputSchema.properties.sessionId, undefined);
-  assert.equal(workflowObservation.inputSchema.properties.idempotencyKey, undefined);
-  assert.equal(workflowObservation.inputSchema.properties.observedAt, undefined);
-  assert.equal(workflowObservation.inputSchema.properties.authority, undefined);
   assert.deepEqual(
     capture.inputSchema.properties.entities.items.properties.attributes
       .properties.searchTerms,
@@ -409,8 +391,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     resolveDeferredPreferenceConflict: async (input) =>
       calls.push(['resolve-preference-conflict', input]),
     captureSessionKnowledge: async (input) => calls.push(['capture', input]),
-    recordWorkflowTransitionObservation: async (input) =>
-      calls.push(['workflow-observation', input]),
     recordDecisionTrace: async (input) => calls.push(['decision-trace', input]),
     searchKnowledge: async (input) => calls.push(['search', input]),
     recordKnowledgeUsage: async (input) => calls.push(['knowledge-usage', input]),
@@ -423,8 +403,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       calls.push(['common-candidates', input]),
     discoverPersonalGlobalPreferenceCandidates: async (input) =>
       calls.push(['personal-global-candidates', input]),
-    previewPersonalGlobalPreferenceDecision: async (input) =>
-      calls.push(['preview-personal-global-decision', input]),
     previewCommonKnowledgePromotion: async (input) =>
       calls.push(['preview-common-promotion', input]),
     applyCommonKnowledgePromotion: async (input) =>
@@ -473,10 +451,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     getProjectTeam: async (input) => calls.push(['get-project-team', input]),
     updateProjectAgentCoordinationPolicy: async (input) =>
       calls.push(['update-project-agent-coordination-policy', input]),
-    getProjectAgentRecruitmentPolicy: async (input) =>
-      calls.push(['get-project-agent-recruitment-policy', input]),
-    updateProjectAgentRecruitmentPolicy: async (input) =>
-      calls.push(['update-project-agent-recruitment-policy', input]),
     listProjectAgentRecruitments: async (input) =>
       calls.push(['list-project-agent-recruitments', input]),
     decideProjectAgentRecruitment: async (input) =>
@@ -505,8 +479,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     resetProjectAgentRoutingLearning: async (input) =>
       calls.push(['reset-project-agent-routing-learning', input]),
     listWorkflowCandidates: async (input) => calls.push(['workflow-candidates', input]),
-    recommendNextWorkflowSteps: async (input) =>
-      calls.push(['workflow-recommendations', input]),
     reviseKnowledgeItem: async (input) => calls.push(['revise-knowledge', input]),
     reassignKnowledgeItem: async (input) => calls.push(['reassign-knowledge', input]),
     previewKnowledgeProjectAction: async (input) => calls.push(['preview-project-action', input]),
@@ -558,11 +530,10 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'read-task-preferences',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',
-    'capture', 'workflow-observation', 'decision-trace', 'search', 'connected-search',
+    'capture', 'decision-trace', 'search', 'connected-search',
     'get-capture-policy', 'knowledge-usage', 'tags-resolve', 'get-capture-policy', 'tags-create',
     'get-capture-policy', 'knowledge-feedback',
     'current-project-search', 'common-candidates', 'personal-global-candidates',
-    'preview-personal-global-decision',
     'preview-common-promotion', 'apply-common-promotion',
     'graph', 'human-changes', 'review-human-change',
     'spaces', 'get-capture-policy', 'upsert-project', 'personal-projects',
@@ -580,7 +551,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'get-project-agent-coordination-policy',
     'get-project-team',
     'update-project-agent-coordination-policy',
-    'get-project-agent-recruitment-policy', 'update-project-agent-recruitment-policy',
     'list-project-agent-recruitments', 'decide-project-agent-recruitment',
     'upsert-executor', 'list-executors', 'get-executor', 'delete-executor',
     'preflight-executor', 'authorize-executor', 'report-executor-health',
@@ -590,7 +560,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'delete-executor-routing-rule', 'record-project-agent-task-outcome',
     'list-project-agent-routing-learning', 'ignore-project-agent-routing-learning',
     'reset-project-agent-routing-learning',
-    'workflow-candidates', 'workflow-recommendations',
+    'workflow-candidates',
     'get-capture-policy', 'revise-knowledge', 'reassign-knowledge', 'preview-project-action',
     'apply-project-action',
     'publish-project', 'project-releases', 'create-relation', 'relations', 'review-relation',

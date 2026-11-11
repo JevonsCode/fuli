@@ -489,17 +489,6 @@ export async function handleGraphApiRequest({
     sendJson(response, 200, await app.updateProjectAgentCoordinationPolicy(await readJson(request)));
     return true;
   }
-  if (url.pathname === '/api/project-agent-recruitment-policy' && request.method === 'GET') {
-    sendJson(response, 200, await app.getProjectAgentRecruitmentPolicy({
-      personalSpaceId: url.searchParams.get('personalSpaceId')
-    }));
-    return true;
-  }
-  if (url.pathname === '/api/project-agent-recruitment-policy' &&
-      (request.method === 'PUT' || request.method === 'PATCH')) {
-    sendJson(response, 200, await app.updateProjectAgentRecruitmentPolicy(await readJson(request)));
-    return true;
-  }
   if (url.pathname === '/api/project-agent-recruitments' && request.method === 'GET') {
     sendJson(response, 200, await app.listProjectAgentRecruitments({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
