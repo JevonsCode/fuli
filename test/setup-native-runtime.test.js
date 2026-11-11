@@ -256,7 +256,16 @@ test('native setup accepts a lower Provider only when the downgrade is explicit'
     installProvider: async () => mutations.push('install'), installNeo4j: async () => mutations.push('database'),
     writeManifest: () => mutations.push('manifest')
   };
-  await assert.rejects(ensureNativeRuntime({ paths, env: {}, runtimeSettings: DEFAULT_RUNTIME_SETTINGS }, deps), /--allow-provider-downgrade/);
+  // The refusal names its code and both versions, as fields and at the start of the text the desktop client reads.
+  await assert.rejects(ensureNativeRuntime({ paths, env: {}, runtimeSettings: DEFAULT_RUNTIME_SETTINGS }, deps), (error) => {
+    assert.equal(error.code, 'provider_downgrade_refused');
+    assert.equal(error.installedProviderVersion, '99.0.0-rc.4+native.2');
+    assert.match(error.requiredProviderVersion, /^\d+\.\d+\.\d+.*\+native\.\d+$/);
+    assert.ok(error.message.startsWith(
+      `provider_downgrade_refused installed=99.0.0-rc.4+native.2 required=${error.requiredProviderVersion}: `));
+    assert.match(error.message, /--allow-provider-downgrade/);
+    return true;
+  });
   assert.deepEqual(mutations, []);
   await ensureNativeRuntime({ paths, env: {}, runtimeSettings: DEFAULT_RUNTIME_SETTINGS, allowProviderDowngrade: true }, deps);
   assert.ok(mutations.includes('install'), 'the packaged Provider is installed over the higher-versioned one');

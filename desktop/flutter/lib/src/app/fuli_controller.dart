@@ -8,6 +8,7 @@ import '../doctor/doctor_report.dart';
 import '../l10n/strings.dart';
 import '../platform/ports.dart';
 import '../runtime/fuli_runtime.dart';
+import '../runtime/provider_conflict.dart';
 import 'attention_watch.dart';
 import 'check_log.dart';
 import 'fuli_condition.dart';
@@ -317,11 +318,22 @@ class FuliController extends ChangeNotifier {
     _stoppedByPerson = false;
     return _bringUp(strings.starting, () async {
       final report = await _call(runtime.start);
-      final error = report.error;
-      if (error == null) return;
-      _notice = Notice(report.portBlocked && runtime.canChangePort ? strings.startFailedPortBlocked(error) : strings.startFailed(error),
-          error: true);
+      _notice = _startFailure(report) ?? _notice;
     });
+  }
+
+  // Why a start did not work, in the person's words where the cause is known; null when it worked.
+  Notice? _startFailure(RuntimeReport report) {
+    final error = report.error;
+    if (error == null) return null;
+    final shown = ProviderConflict.parse(error)?.shown;
+    return Notice(
+        shown != null
+            ? strings.startFailedNewerData(shown.installed, shown.current)
+            : report.portBlocked && runtime.canChangePort
+                ? strings.startFailedPortBlocked(error)
+                : strings.startFailed(error),
+        error: true);
   }
 
   Future<void> stop() {
@@ -356,9 +368,7 @@ class FuliController extends ChangeNotifier {
         return;
       }
       _runtimePort = null;
-      final started = await _call(runtime.start);
-      final error = started.error;
-      if (error != null) _notice = Notice(strings.startFailed(error), error: true);
+      _notice = _startFailure(await _call(runtime.start)) ?? _notice;
     });
   }
 
