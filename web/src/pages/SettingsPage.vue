@@ -608,13 +608,6 @@ usePageRefresh(() => Promise.all([loadResources(), detectClients()]))
                     </div>
                     <SettingsRestartNotice v-if="pendingRestart.has('ports')" :applying="applying" :error="applyError" @apply="applyRestartSettings" />
                   </div>
-                  <div class="port-section development-section">
-                    <div>
-                      <h3 class="ui-group-label">{{ t('settings.ports.development') }}</h3>
-                      <span>{{ t('settings.ports.developing') }}</span>
-                    </div>
-                    <p>{{ t('settings.ports.developmentMeta') }}</p>
-                  </div>
                 </div>
               </Card>
               </PageColumns>
@@ -823,11 +816,6 @@ usePageRefresh(() => Promise.all([loadResources(), detectClients()]))
 
 .port-section { display: grid; gap: 13px; }
 .port-section + .port-section { margin-top: 25px; padding-top: 22px; border-top: 1px solid var(--color-border); }
-.development-section > div { display: flex; align-items: center; gap: 9px; }
-.development-section > div > span {
-  padding: 4px 8px; border-radius: 999px; color: var(--color-warning); background: var(--color-warning-soft); font-size: 12px; font-weight: 700;
-}
-.development-section > p { color: var(--color-muted); font-size: 12px; }
 /* Short related fields sit side by side. */
 .port-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .port-grid label { display: grid; gap: 7px; color: var(--color-muted); font-size: 12px; }
