@@ -24,6 +24,12 @@ const HELD_CODES = new Set(['EPERM', 'EBUSY', 'EACCES', 'ENOTEMPTY']);
 // A download that sends nothing for this long is given up.
 const IDLE_TIMEOUT_MS = 60_000;
 
+// How a model turns text into a vector besides its weights: a catalog fix to any of these gives
+// other vectors from the same files, so it is part of what an index was built with.
+export const embeddingSettingsTag = model => createHash('sha256')
+  .update(JSON.stringify([model.pooling ?? null, model.lowercase ?? null, model.stripAccents ?? null, model.maxTokens ?? null]))
+  .digest('hex').slice(0, 6);
+
 export const embeddingModelsDirectory = dataDir => join(dataDir, 'models', 'embedding');
 
 // rename(from, to) moves a folder; a test makes it fail the way a held file does.
@@ -41,12 +47,13 @@ export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fe
     }
   }
 
-  // The models that finished downloading: { id, revision, dimensions, bytes }.
+  // The models that finished downloading: { id, revision, settings, dimensions, bytes }.
   function installed() {
     let names = [];
     try { names = readdirSync(directory); } catch { return []; }
     return names.map(id => ({ id, spec: spec(id) })).filter(entry => entry.spec)
-      .map(({ id, spec: found }) => ({ id, revision: found.revision ?? null, dimensions: found.dimensions ?? null, bytes: found.bytes ?? null }));
+      .map(({ id, spec: found }) => ({ id, revision: found.revision ?? null, settings: embeddingSettingsTag(found),
+        dimensions: found.dimensions ?? null, bytes: found.bytes ?? null }));
   }
 
   const progress = id => downloads.get(id) ?? null;

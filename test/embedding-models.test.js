@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import { diffEmbeddingModels, embeddingModelBytes, parseEmbeddingModelsManifest } from '../src/embedding-models/manifest.js';
 import { createEmbeddingModels } from '../src/embedding-models/port.js';
-import { createEmbeddingModelStore, MODEL_SPEC_FILE } from '../src/embedding-models/store.js';
+import { createEmbeddingModelStore, MODEL_SPEC_FILE, embeddingSettingsTag } from '../src/embedding-models/store.js';
 import { handleEmbeddingModelsRequest } from '../src/http/embedding-models-api-router.js';
 import { readModelBackendConfig } from '../src/model-backends/config.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
@@ -31,6 +31,8 @@ function model(id = 'tiny-zh', overrides = {}) {
       urls: [`https://huggingface.co/synthetic/tiny/resolve/${REVISION}/${path}`, `https://hf-mirror.com/synthetic/tiny/resolve/${REVISION}/${path}`] })),
     ...overrides };
 }
+// The settings part of a saved model name, for the synthetic model as the catalog describes it.
+const SETTINGS = embeddingSettingsTag(model());
 
 const manifest = (models = [model()], manifestVersion = 1) => ({ format: 'fuli-embedding-models', formatVersion: 1, manifestVersion,
   updatedAt: '2026-11-11', models });
@@ -103,7 +105,7 @@ test('a download keeps a model only when every file has the size and digest the 
   const store = createEmbeddingModelStore({ directory, fetchImpl: good.fetchImpl });
   assert.deepEqual(store.installed(), []);
   assert.deepEqual(await store.download(model()), { id: 'tiny-zh', bytes: embeddingModelBytes(model()) });
-  assert.deepEqual(store.installed(), [{ id: 'tiny-zh', revision: REVISION, dimensions: 16, bytes: embeddingModelBytes(model()) }]);
+  assert.deepEqual(store.installed(), [{ id: 'tiny-zh', revision: REVISION, settings: SETTINGS, dimensions: 16, bytes: embeddingModelBytes(model()) }]);
   assert.equal(good.calls.length, 3, 'the first source is enough');
   const spec = JSON.parse(readFileSync(join(directory, 'tiny-zh', MODEL_SPEC_FILE), 'utf8'));
   assert.deepEqual([spec.pooling, spec.lowercase, spec.stripAccents, spec.maxTokens], ['cls', true, false, 24]);
@@ -179,14 +181,14 @@ test('a downloaded model becomes what search uses, with no key, no price and no 
   assert.equal(filled.length, 1, 'the meaning index starts filling for the new model');
   const saved = JSON.parse(readFileSync(configPath, 'utf8'));
   assert.deepEqual(saved.connections['builtin-embedding'], { protocol: 'builtin_embeddings', endpoint: 'http://127.0.0.1/builtin-embeddings',
-    model: 'tiny-zh@aaaaaaaaaaaa', secretRef: null, reasoningEffort: null, pricing: null });
+    model: `tiny-zh@aaaaaaaaaaaa.${SETTINGS}`, secretRef: null, reasoningEffort: null, pricing: null });
   assert.deepEqual(saved.roles.semantic.egress, { approvedProjects: [], allowUnassigned: false });
 
   // Nothing leaves the computer, so every project's text may be embedded without an approval.
   assert.equal(modelBackends.allowsEgress(embedRequest('any-project')), true);
   const answer = await modelBackends.embed(embedRequest('any-project'));
   assert.deepEqual([answer.vectors, answer.dimensions, answer.model, answer.modelReceipt.status, answer.modelReceipt.usage.inputTokens],
-    [[[0, 1], [1, 1]], 2, 'tiny-zh@aaaaaaaaaaaa', 'completed', 7]);
+    [[[0, 1], [1, 1]], 2, `tiny-zh@aaaaaaaaaaaa.${SETTINGS}`, 'completed', 7]);
   assert.deepEqual(embedded, [{ id: 'tiny-zh', texts: embedRequest().texts }]);
 
   // Downloading it again replaces the copy, after the graph service let go of the files.
@@ -262,11 +264,12 @@ test('new files under the same id are another model to the index, and a delete c
   const modelBackends = createModelBackendPort({ readConfig: () => readModelBackendConfig(configPath),
     secrets: { read: async () => null }, ledger: new ModelUsageLedger(':memory:') });
   let revision = REVISION;
+  let pooling = model().pooling;
   let release = null;
   const filled = [];
   const models = createEmbeddingModels({
     registry: { current: () => ({ manifest: parseEmbeddingModelsManifest(manifest([
-      model('tiny-zh', { revision, files: model().files.map(file => ({ ...file, urls: file.urls.map(url => url.replace(REVISION, revision)) })) }),
+      model('tiny-zh', { revision, pooling, files: model().files.map(file => ({ ...file, urls: file.urls.map(url => url.replace(REVISION, revision)) })) }),
       model('other', { recommended: false })])), autoUpdate: true, lastCheckedAt: null }) },
     store: createEmbeddingModelStore({ directory: join(directory, 'models'),
       fetchImpl: async url => new Response(CONTENT[url.split('/').at(-1)]) }),
@@ -277,13 +280,21 @@ test('new files under the same id are another model to the index, and a delete c
   const saved = () => JSON.parse(readFileSync(configPath, 'utf8')).connections['builtin-embedding'].model;
 
   await models.download('tiny-zh', { useAfter: true }).done;
-  assert.equal(saved(), 'tiny-zh@aaaaaaaaaaaa');
+  assert.equal(saved(), `tiny-zh@aaaaaaaaaaaa.${SETTINGS}`);
   // The catalog names newer weights for the model in use: downloading them saves the new revision and fills again.
   revision = 'b'.repeat(40);
   assert.equal(models.list().models[0].outdated, true);
   await models.download('tiny-zh').done;
-  assert.equal(saved(), 'tiny-zh@bbbbbbbbbbbb');
+  assert.equal(saved(), `tiny-zh@bbbbbbbbbbbb.${SETTINGS}`);
   assert.deepEqual([models.list().inUse, models.list().models[0].outdated, filled.length], ['tiny-zh', false, 2]);
+  // The catalog corrects how the model pools, at the same revision: the copy here is outdated, and
+  // downloading it again is another model to the index.
+  pooling = 'mean';
+  assert.equal(models.list().models[0].outdated, true);
+  await models.download('tiny-zh').done;
+  assert.notEqual(saved(), `tiny-zh@bbbbbbbbbbbb.${SETTINGS}`);
+  assert.match(saved(), /^tiny-zh@bbbbbbbbbbbb\.[0-9a-f]{6}$/);
+  assert.deepEqual([models.list().models[0].outdated, filled.length], [false, 3]);
 
   // Search switches to `other` while its removal waits for the graph service: the removal is refused, the files stay.
   await models.download('other').done;
@@ -297,7 +308,7 @@ test('new files under the same id are another model to the index, and a delete c
 
 test('a graph service on another computer is never sent texts under the local exemption', async () => {
   const port = createModelBackendPort({ readConfig: () => readModelBackendConfig('x', { read: () => ({ version: 1,
-    connections: { builtin: { protocol: 'builtin_embeddings', endpoint: 'http://127.0.0.1/builtin-embeddings', model: 'tiny-zh@aaaaaaaaaaaa' } },
+    connections: { builtin: { protocol: 'builtin_embeddings', endpoint: 'http://127.0.0.1/builtin-embeddings', model: `tiny-zh@aaaaaaaaaaaa.${SETTINGS}` } },
     roles: { semantic: { enabled: true, connection: 'builtin', allowedOperations: ['knowledge_embedding'], budget: {} } } }) }),
   secrets: { read: async () => null }, ledger: new ModelUsageLedger(':memory:'), builtinEmbed: null });
   const answer = await port.embed(embedRequest());

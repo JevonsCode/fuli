@@ -24,8 +24,8 @@ export const builtinEmbeddingsAdapter = Object.freeze({
     try {
       // The saved name is `id@revision` (src/embedding-models/port.js). The graph service runs the id
       // and refuses when the files on disk are another revision, so vectors of two sets of weights never share a name.
-      const [model, revision = null] = connection.model.split('@');
-      answer = await builtinEmbed({ model, revision, texts, signal });
+      const [model, version = ''] = connection.model.split('@');
+      answer = await builtinEmbed({ model, revision: version.split('.')[0] || null, texts, signal });
     } catch (error) {
       // 404: the model is not downloaded (or was removed); 422: its files are not ones this version runs.
       if (error?.status === 404) return attemptFailure(modelFailure('configuration', 'model_not_downloaded'), state);

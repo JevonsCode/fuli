@@ -1,3 +1,4 @@
+import { embeddingSettingsTag } from './store.js';
 import { ApplicationError } from '../app/application-error.js';
 import {
   BUILTIN_EMBEDDING_ENDPOINT, BUILTIN_EMBEDDING_PROTOCOL, KNOWLEDGE_EMBEDDING_OPERATION, SEMANTIC_ROLE
@@ -17,11 +18,12 @@ import { embeddingModelBytes } from './manifest.js';
 
 // The one connection a built-in model is saved as.
 const CONNECTION_ID = 'builtin-embedding';
-// The files' revision is part of the saved model name (`id@revision`), so new
-// weights under the same id are another model to the meaning index and to the
-// query cache: both rebuild instead of mixing vectors of two sets of weights.
+// The files' revision and the tokenizer and pooling settings are part of the
+// saved model name (`id@revision.settings`), so new weights or other settings
+// under the same id are another model to the meaning index and to the query
+// cache: both rebuild instead of mixing two kinds of vectors.
 const REVISION_CHARS = 12;
-const savedModel = (id, revision) => (revision ? `${id}@${String(revision).slice(0, REVISION_CHARS)}` : id);
+const savedModel = (id, { revision, settings }) => (revision ? `${id}@${String(revision).slice(0, REVISION_CHARS)}.${settings}` : id);
 export const builtinModelId = model => String(model).split('@')[0];
 
 export function createEmbeddingModels({ registry, store, modelBackends, roleSettings, unload = async () => {},
@@ -54,7 +56,8 @@ export function createEmbeddingModels({ registry, store, modelBackends, roleSett
         source: model.source, dimensions: model.dimensions, memoryMb: model.memoryMb, recommended: model.recommended,
         downloadBytes: embeddingModelBytes(model),
         // A catalog update may name a newer revision of a model already here.
-        installed: installed.has(model.id), outdated: installed.has(model.id) && installed.get(model.id).revision !== model.revision,
+        installed: installed.has(model.id), outdated: installed.has(model.id) && (installed.get(model.id).revision !== model.revision
+          || installed.get(model.id).settings !== embeddingSettingsTag(model)),
         inUse: used === model.id, download: store.progress(model.id)
       })),
       // On this computer but no longer in the catalog: still usable, and removable.
@@ -72,7 +75,7 @@ export function createEmbeddingModels({ registry, store, modelBackends, roleSett
       revision: modelBackends.roles().revision,
       connectionId: CONNECTION_ID,
       connection: { protocol: BUILTIN_EMBEDDING_PROTOCOL, endpoint: BUILTIN_EMBEDDING_ENDPOINT,
-        model: savedModel(id, installed.revision) },
+        model: savedModel(id, installed) },
       settings: { enabled: true, allowedOperations: [KNOWLEDGE_EMBEDDING_OPERATION], budget: {} }
     });
     fillIndex();
