@@ -15,6 +15,10 @@ import { createPackageVersionChecker } from './package-version-checker.js';
 import { clientConnectionConfig } from '../setup/client-connection.js';
 import { createClientConnectionObserver } from './client-connection-status.js';
 import { createClientInstaller } from './client-connection-install.js';
+import { createClientRestart } from './client-restart.js';
+import { clientApps } from '../agents/client-apps.js';
+import { inspectAgent } from '../agent-kits/client-detection.js';
+import { FULI_VERSION } from '../package-metadata.js';
 import { createSettingsApplier } from './settings-apply.js';
 import { consoleUpdate } from './console-update.js';
 import { createDoctor } from './doctor.js';
@@ -61,13 +65,19 @@ export function createSystemService({
   agentKits = agentKitPorts(paths, { runtimeConfigPath,
     ...(codexFlaPrompts ? { clientPrompts: () => ({ codex: codexFlaPrompts.prompts() }) } : {}) }),
   customClients = customClientStore({ extensionsDir: agentKits.clientInstaller.extensionsDir }),
+  // The client apps FULI quits and reopens around an update (src/agents/client-apps.js).
+  apps = clientApps(),
   clientObserver = createClientConnectionObserver({
     installer: agentKits.clientInstaller,
     customClients,
     historyPath: join(paths.dataDir, 'client-connection-observations.json'),
-    awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath)
+    awaitingRestart: () => sessionsAwaitingRestart(runtimeConfigPath),
+    consoleInstall: { nodePath: paths.clientNodePath, mcpServerPath: paths.mcpServerPath, version: FULI_VERSION },
+    apps
   }),
-  clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller }),
+  clientInstaller = createClientInstaller({ installer: agentKits.clientInstaller, apps }),
+  clientRestart = createClientRestart({ apps, connect: clientInstaller,
+    inspect: (id) => inspectAgent(agentKits.clientInstaller, id) }),
   executorAdapters = new Map(),
   versionChecker = null,
   update = consoleUpdate(paths.dataDir),
@@ -209,6 +219,8 @@ export function createSystemService({
     newSessionWays: (clientIds) => newSessions.ways(clientIds),
     openNewSession: (request) => newSessions.open(request),
     connectClient: clientInstaller,
+    // 「重启并更新」: quit, update, reopen (client-restart.js); the console's loopback route only.
+    restartClient: clientRestart,
     // Clients the person describes by hand (custom-client-connection.js).
     ...createCustomClients({ installer: agentKits.clientInstaller, store: customClients }),
     resources: () => resourceMonitor.sample(),

@@ -5,6 +5,7 @@ import GrowthLoading from '@/components/GrowthLoading.vue'
 import TextField from '@/components/TextField.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
 import { OptionSelect } from '@/components/ui/select'
 import { currentLocale, t } from '@/i18n'
@@ -13,9 +14,11 @@ import UiIcon from '@/ui/UiIcon.vue'
 import UiNotice from '@/ui/UiNotice.vue'
 import { refreshDoctorReport } from '@/features/doctor/doctor-report'
 import { useConsoleStore } from '@/stores/console'
+import ClientConnectionDetails from './ClientConnectionDetails.vue'
 
-import { CUSTOM_CLIENT_FORMATS, canConnect, connectActionKey, connectionSummary, shownClients, type ClientObservation, type ClientStatus,
-  type ConnectionResult, type ConnectionStatus, type CustomClient, type CustomClientFormat, type Format } from './client-connection-model'
+import { CUSTOM_CLIENT_FORMATS, canConnect, changedExplanation, connectActionKey, connectionSummary, offersRestart, shownClients,
+  type ClientObservation, type ClientStatus, type ConnectionResult, type ConnectionStatus, type CustomClient, type CustomClientFormat, type Format,
+  restartResultShape, type RestartStatus } from './client-connection-model'
 
 // Re-read configuration this often while the page is visible.
 const RECHECK_MS = 15_000
@@ -31,7 +34,13 @@ const observation = ref<ConnectionStatus | null>(null)
 const checking = ref(false)
 const checkError = ref(false)
 const connecting = ref('')
-const connectionFeedback = ref<Record<string, 'restart' | 'connectError' | 'componentUnavailable'>>({})
+const connectionFeedback = ref<Record<string, 'restart' | 'connectError' | 'componentUnavailable' | 'clientRunning'>>({})
+// 「重启并更新」 (rec issue 106): the client being confirmed, the one restarting, and each one's last outcome.
+const confirming = ref<ClientObservation | null>(null)
+const restarting = ref('')
+const restartFeedback = ref<Record<string, RestartStatus | 'connect_failed_closed' | 'error'>>({})
+// 查看详情: a client's id, or 'installs' for the 「本机有两份 FULI」 notice.
+const details = ref<string | null>(null)
 const adding = ref(false)
 const addPending = ref(false)
 const addError = ref('')
@@ -51,12 +60,16 @@ const formatOptions = computed(() => CUSTOM_CLIENT_FORMATS.map((value) => ({ val
 const clients = computed(() => shownClients(observation.value))
 const customClients = computed<CustomClient[]>(() => observation.value?.customClients ?? [])
 const summary = computed(() => connectionSummary(observation.value))
+const installs = computed(() => observation.value?.installs)
+const otherInstalls = computed(() => installs.value?.others ?? [])
+const detailClient = computed(() => clients.value.find(client => client.id === details.value))
 // A write in flight: no status read starts until it ends. Between the clients of 一键接入 nothing is in flight,
 // so each client's new status is read as soon as it is written.
-const writePending = computed(() => Boolean(connecting.value) || addPending.value || Boolean(removing.value))
+const writePending = computed(() => Boolean(connecting.value) || addPending.value || Boolean(removing.value) || Boolean(restarting.value))
 const busy = computed(() => writePending.value || connectingAll.value)
 // 一键接入 (Jevons 11-02): every client FULI can write that is not connected yet, one after another.
-const connectable = computed(() => clients.value.filter(client => canConnect(client) && client.status !== 'connected'))
+// A running client that writes its old entry back waits for its own 重启并更新 (rec issue 106).
+const connectable = computed(() => clients.value.filter(client => canConnect(client) && client.status !== 'connected' && !offersRestart(client)))
 // A connected client gets the shared check icon; the other states keep their plain marks.
 const icons: Record<Exclude<ClientStatus, 'connected'>, string> = { changed: '!', skills_left: '!', removed: '×',
   not_connected: '○', not_detected: '○', unknown: '?' }
@@ -112,7 +125,8 @@ async function connectOne(client: ClientObservation) {
     try {
       const result = await postJson<ConnectionResult>('/api/system/client-connection/connect', { clientId: client.id })
       if (!unmounted) connectionFeedback.value[client.id] = result.status === 'connected' ? 'restart'
-        : result.reason === 'client_component_unavailable' ? 'componentUnavailable' : 'connectError'
+        : result.reason === 'client_component_unavailable' ? 'componentUnavailable'
+          : result.reason === 'client_running' ? 'clientRunning' : 'connectError'
     } catch {
       if (!unmounted) connectionFeedback.value[client.id] = 'connectError'
     } finally { connecting.value = '' }
@@ -121,6 +135,25 @@ async function connectOne(client: ClientObservation) {
 async function connect(client: ClientObservation) {
   if (busy.value || !canConnect(client)) return
   await connectOne(client)
+}
+// Quits the client, updates its entry while it is closed, reopens it (the console's loopback route only).
+async function restart() {
+  const client = confirming.value
+  confirming.value = null
+  if (!client || busy.value) return
+  restarting.value = client.id
+  delete restartFeedback.value[client.id]
+  delete connectionFeedback.value[client.id]
+  await writing(async () => {
+    try {
+      const result = await postJson('/api/system/client-connection/restart', { clientId: client.id }, restartResultShape)
+      // A failed write says whether the app FULI closed was reopened; without that it was never closed.
+      if (!unmounted) restartFeedback.value[client.id] = result.status !== 'connect_failed' ? result.status
+        : result.reopened === false ? 'connect_failed_closed' : result.reopened === true ? 'connect_failed' : 'error'
+    } catch {
+      if (!unmounted) restartFeedback.value[client.id] = 'error'
+    } finally { restarting.value = '' }
+  })
 }
 const connectingAll = ref(false)
 // 一键接入's one indicator names the client being written and how far it is.
@@ -196,7 +229,21 @@ function explanation(client: ClientObservation) {
   if (client.status === 'unknown' && client.lastKnownStatus) {
     return t('settings.connection.clients.unknownWithLast', { status: t(`settings.connection.clients.status.${client.lastKnownStatus}`) })
   }
+  if (client.status === 'changed') {
+    const { difference, params, step } = changedExplanation(client, installs.value?.console)
+    return `${t(`settings.connection.clients.changed.${difference}`, params)}${t(`settings.connection.clients.changed.${step}`)}`
+  }
   return t(`settings.connection.clients.explain.${client.status}`)
+}
+function lastChange(client: ClientObservation) {
+  const change = client.changes.at(-1)
+  return change ? t('settings.connection.clients.lastChange', { from: t(`settings.connection.clients.status.${change.from}`),
+    to: t(`settings.connection.clients.status.${change.to}`), time: formatTime(change.detectedAt) }) : t('settings.connection.clients.details')
+}
+function restartOutcome(client: ClientObservation) {
+  const outcome = restartFeedback.value[client.id]
+  return outcome === 'error' ? t('settings.connection.clients.connectError')
+    : t(`settings.connection.clients.restartResult.${outcome}`, { client: client.label })
 }
 function select(value: string) {
   if (value === 'standard' || value === 'vscode' || value === 'server') {
@@ -245,6 +292,11 @@ async function copy() {
         <GrowthLoading v-if="checking && !observation" variant="compact" :label="t('settings.connection.clients.checking')" />
         <UiNotice v-if="checkError" tone="warning">{{ t('settings.connection.clients.checkError') }}</UiNotice>
         <UiNotice v-if="observation?.available === false" tone="warning" data-detection-unavailable>{{ t('settings.connection.clients.unavailable') }}</UiNotice>
+        <UiNotice v-if="installs && otherInstalls.length" tone="warning" data-two-installs>
+          {{ t('settings.connection.clients.twoInstalls.notice', { count: otherInstalls.length + 1, version: installs.console.version ?? '—',
+            clients: otherInstalls.flatMap(other => other.clients).join('、') }) }}
+          <template #actions><Button size="sm" variant="outline" data-install-details-open @click="details = 'installs'">{{ t('settings.connection.clients.details') }}</Button></template>
+        </UiNotice>
         <!-- One tile per client, as many per row as the width holds; a long list scrolls inside, the page does not grow. -->
         <ul v-if="observation && observation.available !== false" class="client-grid">
           <li v-for="client in clients" :key="client.id" :data-client-status="client.status"
@@ -260,18 +312,26 @@ async function copy() {
               <p v-if="connectionFeedback[client.id]" :role="connectionFeedback[client.id] === 'restart' ? 'status' : 'alert'">
                 {{ t(`settings.connection.clients.${connectionFeedback[client.id]}`) }}
               </p>
+              <p v-if="restartFeedback[client.id]" :role="restartFeedback[client.id] === 'connected' ? 'status' : 'alert'" data-restart-result>
+                {{ restartOutcome(client) }}
+              </p>
               <a v-if="client.manualOnly && client.manualUrl" :href="client.manualUrl" target="_blank" rel="noopener noreferrer">
                 {{ t('settings.connection.clients.manualConnect') }}
               </a>
               <p v-else-if="client.manualOnly && client.status !== 'connected'">{{ t('settings.connection.clients.manualSnippet') }}</p>
-              <p v-if="client.changes.length" class="client-row__meta">
-                {{ t('settings.connection.clients.lastChange', {
-                  from: t(`settings.connection.clients.status.${client.changes.at(-1)!.from}`),
-                  to: t(`settings.connection.clients.status.${client.changes.at(-1)!.to}`),
-                  time: formatTime(client.changes.at(-1)!.detectedAt) }) }}
-              </p>
+              <!-- One line on the tile; the whole history, full times and both installations open in 查看详情. -->
+              <Button v-if="client.changes.length || client.configuredInstall" variant="link" class="client-row__meta client-row__history"
+                :data-client-details="client.id" :title="`${lastChange(client)} · ${t('settings.connection.clients.details')}`"
+                @click="details = client.id">
+                {{ lastChange(client) }}
+              </Button>
               <!-- The tile's action sits at its foot, so tiles of one row line up their buttons. -->
-              <Button v-if="canConnect(client) && client.status !== 'connected'" size="sm" variant="outline" class="client-row__action"
+              <Button v-if="canConnect(client) && offersRestart(client)" size="sm" variant="outline" class="client-row__action"
+                :data-restart-client="client.id" :disabled="busy" :loading="restarting === client.id"
+                :loading-label="t('settings.connection.clients.restarting', { client: client.label })" @click="confirming = client">
+                {{ t('settings.connection.clients.restartAction') }}
+              </Button>
+              <Button v-else-if="canConnect(client) && client.status !== 'connected'" size="sm" variant="outline" class="client-row__action"
                 :data-connect-client="client.id" :disabled="busy" :loading="connecting === client.id && !connectingAll"
                 :loading-label="t('settings.connection.clients.connecting', { client: client.label })" @click="connect(client)">
                 {{ t(`settings.connection.clients.${connectActionKey(client.status)}`) }}
@@ -355,6 +415,24 @@ async function copy() {
         </template>
       </section>
     </div>
+    <Dialog :open="Boolean(confirming)" @update:open="(open: boolean) => { if (!open) confirming = null }">
+      <DialogContent v-if="confirming" size="sm" data-restart-confirm>
+        <DialogHeader>
+          <DialogTitle>{{ t('settings.connection.clients.restartConfirm.title', { client: confirming.label }) }}</DialogTitle>
+          <DialogDescription>{{ t('settings.connection.clients.restartConfirm.body', { client: confirming.label }) }}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" @click="confirming = null">{{ t('settings.connection.clients.restartConfirm.cancel') }}</Button>
+          <Button data-restart-confirmed @click="restart">{{ t('settings.connection.clients.restartConfirm.confirm') }}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog :open="Boolean(details)" @update:open="(open: boolean) => { if (!open) details = null }">
+      <DialogContent v-if="details" size="md" data-connection-details>
+        <ClientConnectionDetails v-if="details === 'installs'" :installs="installs" />
+        <ClientConnectionDetails v-else-if="detailClient" :client="detailClient" :installs="installs" />
+      </DialogContent>
+    </Dialog>
   </Card>
 </template>
 
@@ -402,6 +480,12 @@ async function copy() {
 .client-row--skills_left .client-row__icon { color: var(--color-warning); }
 .connection-settings .client-row__meta { font-size: 12px; }
 .client-row .client-row__meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The one-line history opens 查看详情; it reads as text, underlined on hover. */
+.client-row__history {
+  display: block; max-width: 100%; height: auto; min-height: 0; padding: 0; border: 0; background: none; font-weight: 400; color: var(--color-muted); font: inherit; font-size: 12px;
+  line-height: 1.6; text-align: start; cursor: pointer; user-select: none;
+}
+.client-row__history:hover, .client-row__history:focus-visible { color: var(--color-ink); text-decoration: underline; }
 .custom-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; align-items: end; padding: 14px; border-radius: var(--radius-card); box-shadow: 0 0 0 1px var(--color-border); }
 .custom-form__actions { display: flex; gap: 8px; }
 .custom-form > :deep(.ui-notice) { grid-column: 1 / -1; }
