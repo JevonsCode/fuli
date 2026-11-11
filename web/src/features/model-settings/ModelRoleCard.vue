@@ -6,7 +6,7 @@ import { currentLocale, t } from '@/i18n'
 import ModelFailureNote from './ModelFailureNote.vue'
 import ModelUseCard from './ModelUseCard.vue'
 import SemanticIndexProgress from './SemanticIndexProgress.vue'
-import { BUILTIN_EMBEDDING_PROTOCOL, roleName, SEMANTIC_ROLE, type ModelRoleView } from './model'
+import { BUILTIN_EMBEDDING_PROTOCOL, modelName, roleName, SEMANTIC_ROLE, type ModelRoleView } from './model'
 import { healthLine, isFailing } from './model-health'
 import { stateTone, useAdvice } from './model-uses'
 import { needsPerson } from './role-details'
@@ -44,7 +44,7 @@ const state = computed(() => (failing.value ? t('modelSettings.health.failingSta
     :data-model-failing="failing || undefined">
     <template #model>
       <template v-if="connection">
-        <code data-model-role-model>{{ connection.model }}</code>
+        <code data-model-role-model>{{ modelName(connection) }}</code>
         <span v-if="builtin" data-model-role-builtin>{{ t('modelSettings.builtin.local') }}</span>
         <span v-else :title="connection.endpointHost">{{ connection.endpointHost }}</span>
       </template>

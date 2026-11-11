@@ -65,14 +65,24 @@ function downloadUrl(value, label) {
   return value;
 }
 
-function parseFile(file, label, revision) {
+// The address after the URL parser has resolved it: `..` segments, encoded
+// slashes or another repository cannot stand in for the pinned file.
+function pinnedFileUrl(value, label, { repository, revision, path }) {
+  downloadUrl(value, label);
+  const url = new URL(value);
+  if (url.href !== value || url.pathname !== `${repository}/resolve/${revision}/${path}`) {
+    fail(`${label} must be exactly <model repository>/resolve/<revision>/${path}`);
+  }
+  return value;
+}
+
+function parseFile(file, label, { repository, revision }) {
   exactKeys(file, ['path', 'bytes', 'sha256', 'urls'], label);
   if (!EMBEDDING_MODEL_FILES.includes(file.path)) fail(`${label}.path must be one of ${EMBEDDING_MODEL_FILES.join(', ')}`);
   if (typeof file.sha256 !== 'string' || !SHA256.test(file.sha256)) fail(`${label}.sha256 must be a lowercase SHA-256`);
   if (!Array.isArray(file.urls) || !file.urls.length || file.urls.length > MAX_URLS) fail(`${label}.urls must list 1 to ${MAX_URLS} URLs`);
-  const urls = file.urls.map((url, index) => downloadUrl(url, `${label}.urls[${index}]`));
-  // A link names the exact commit, so the file behind it cannot change.
-  if (urls.some(url => !url.includes(`/resolve/${revision}/`))) fail(`${label}.urls must name the model's revision`);
+  // A link names the exact commit of the model's own repository, so the file behind it cannot change.
+  const urls = file.urls.map((url, index) => pinnedFileUrl(url, `${label}.urls[${index}]`, { repository, revision, path: file.path }));
   return { path: file.path, bytes: whole(file.bytes, `${label}.bytes`, 1, MAX_FILE_BYTES), sha256: file.sha256, urls };
 }
 
@@ -91,7 +101,11 @@ function parseModel(model, label) {
   if (!Array.isArray(model.files) || model.files.length !== EMBEDDING_MODEL_FILES.length) {
     fail(`${label}.files must be exactly ${EMBEDDING_MODEL_FILES.join(', ')}`);
   }
-  const files = model.files.map((file, index) => parseFile(file, `${label}.files[${index}]`, model.revision));
+  const source = downloadUrl(model.source, `${label}.source`);
+  // /owner/name, as every file address must start.
+  const repository = new URL(source).pathname.replace(/\/+$/, '');
+  if (!/^\/[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(repository)) fail(`${label}.source must be a model repository`);
+  const files = model.files.map((file, index) => parseFile(file, `${label}.files[${index}]`, { repository, revision: model.revision }));
   if (new Set(files.map(file => file.path)).size !== files.length) fail(`${label}.files repeats a file`);
   return {
     id: model.id, name: text(model.name, `${label}.name`, 80), license: model.license, languages: [...model.languages],
@@ -100,7 +114,7 @@ function parseModel(model, label) {
     stripAccents: flag(model.stripAccents, `${label}.stripAccents`), recommended: flag(model.recommended, `${label}.recommended`),
     memoryMb: whole(model.memoryMb, `${label}.memoryMb`, 1, 65536),
     summary: { zh: text(model.summary.zh, `${label}.summary.zh`, 100), en: text(model.summary.en, `${label}.summary.en`, 160) },
-    source: downloadUrl(model.source, `${label}.source`), revision: model.revision, files
+    source, revision: model.revision, files
   };
 }
 

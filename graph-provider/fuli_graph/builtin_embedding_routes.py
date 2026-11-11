@@ -47,4 +47,5 @@ def register_builtin_embedding_routes(application, settings, Actor) -> None:
     @application.post('/v1/builtin-embeddings/unload', status_code=204)
     async def unload_builtin_embeddings(actor: Actor):
         # Before a model's files are removed: Windows keeps a mapped file from being deleted.
-        models.unload()
+        # It waits for a running embed, so it waits off the event loop like the embed itself.
+        await asyncio.to_thread(models.unload)

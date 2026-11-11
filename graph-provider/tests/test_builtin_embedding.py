@@ -9,7 +9,7 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from builtin_embedding_fixture import write_model
+from builtin_embedding_fixture import CONFIG, write_model
 from fuli_graph.builtin_embedding import BuiltinEmbeddingError, BuiltinEmbeddingModel, BuiltinEmbeddings, WordPiece
 from fuli_graph.builtin_embedding_routes import register_builtin_embedding_routes
 
@@ -112,3 +112,59 @@ def test_the_route_answers_vectors_and_names_what_is_missing(tmp_path):
     assert (missing.status_code, missing.json()['detail']['code']) == (404, 'model_missing')
     assert client.post('/v1/builtin-embeddings', json={'model': 'tiny', 'texts': []}).status_code == 422
     assert client.post('/v1/builtin-embeddings/unload').status_code == 204
+
+
+@pytest.mark.parametrize('damage', [
+    lambda folder: (folder / 'model.safetensors').write_bytes(b''),
+    lambda folder: (folder / 'model.safetensors').write_bytes((2).to_bytes(8, 'little') + b'[]'),
+    lambda folder: (folder / 'model.safetensors').write_bytes((16).to_bytes(8, 'little') + b'{"a":{"dtype":1}}'[:16]),
+    lambda folder: (folder / 'config.json').write_text(json.dumps({**CONFIG, 'num_attention_heads': 0}), encoding='utf-8'),
+    lambda folder: (folder / 'config.json').write_text(json.dumps({**CONFIG, 'num_attention_heads': 3}), encoding='utf-8'),
+    lambda folder: (folder / 'config.json').write_text(json.dumps({**CONFIG, 'num_hidden_layers': 10 ** 9}), encoding='utf-8'),
+    lambda folder: (folder / 'config.json').write_text('[]', encoding='utf-8'),
+    lambda folder: (folder / 'fuli-model.json').write_text('[]', encoding='utf-8'),
+    lambda folder: (folder / 'vocab.txt').write_text('\n'.join(f'word{index}' for index in range(40)) + '\n[UNK]\n[CLS]\n[SEP]\n[PAD]\n',
+                                                    encoding='utf-8'),
+])
+def test_files_that_are_not_a_model_are_one_named_refusal(tmp_path, damage):
+    """An empty file, a header that is a list, zero heads, sizes no encoder has: refused, never a stray error."""
+    damage(write_model(tmp_path / 'tiny'))
+    with pytest.raises(BuiltinEmbeddingError) as refused:
+        BuiltinEmbeddings(str(tmp_path)).embed('tiny', ['你好'])
+    assert refused.value.code in ('model_invalid', 'model_unsupported')
+
+
+def test_unloading_waits_for_a_running_embed_without_holding_the_event_loop(tmp_path):
+    """A removal asked for while a text is embedded must not stall every other request of the graph service."""
+    import asyncio
+    import threading
+    import time
+
+    write_model(tmp_path / 'tiny')
+    application = FastAPI()
+    register_builtin_embedding_routes(application, type('Settings', (), {'embedding_models_dir': str(tmp_path)})(),
+                                      Annotated[dict, Depends(lambda: {})])
+    unload = next(route.endpoint for route in application.routes if route.path == '/v1/builtin-embeddings/unload')
+    models = unload.__closure__[0].cell_contents
+    held = threading.Event()
+
+    def hold():
+        with models._lock:
+            held.set()
+            time.sleep(0.3)
+
+    async def scenario():
+        threading.Thread(target=hold).start()
+        held.wait()
+        beats = []
+        async def heart():
+            while len(beats) < 5:
+                started = time.monotonic()
+                await asyncio.sleep(0.01)
+                beats.append(time.monotonic() - started)
+        await asyncio.gather(unload({}), heart())
+        return beats
+
+    beats = asyncio.run(scenario())
+    assert max(beats) < 0.2, 'the event loop kept answering while the unload waited'
+

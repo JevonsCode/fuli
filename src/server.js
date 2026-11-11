@@ -53,6 +53,7 @@ import { createModelSecretStore } from './model-backends/secret-store.js';
 import { latestEvaluation } from './model-backends/evaluation-record.js';
 import { createClientLinksRegistry } from './client-links/registry.js';
 import { createEmbeddingModels } from './embedding-models/port.js';
+import { isLoopbackUrl } from './external-knowledge/connectors/response-values.js';
 import { createEmbeddingModelRegistry } from './embedding-models/registry.js';
 import { createEmbeddingModelStore, embeddingModelsDirectory } from './embedding-models/store.js';
 import { createAgentDelegation } from './agent-delegation/port.js';
@@ -315,7 +316,9 @@ export async function createServer(options = {}) {
     ...(system?.withGraphRuntimeLease ? { withLease: (owner, run) => system.withGraphRuntimeLease(owner, run) } : {}) });
   application.semanticIndexer = semanticIndexer;
   // Built-in embedding models: the catalog, the downloads and which one search uses.
+  // Offered only with a graph service on this computer (local-runtimes.js): elsewhere it cannot read the files.
   const embeddingModelRegistry = options.embeddingModelRegistry ?? (localOptions.runtimeConfigPath && modelRoleSettings
+    && isLoopbackUrl(application.config.personal.providerUrl)
     ? createEmbeddingModelRegistry({ statePath: resolveSetupPaths({ dataDir: dirname(localOptions.runtimeConfigPath) }).embeddingModelsPath })
     : null);
   application.embeddingModels = embeddingModelRegistry && createEmbeddingModels({

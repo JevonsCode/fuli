@@ -68,6 +68,25 @@ describe('BuiltinEmbeddingDialog', () => {
     expect(wrapper.emitted('changed')).toHaveLength(1)
   })
 
+  it('keeps the last progress when one read fails, says so, and reads again by itself', async () => {
+    vi.useFakeTimers()
+    const downloadingList = list([model('a', { recommended: true, download: { status: 'downloading', receivedBytes: 24, totalBytes: 96, reason: null } })])
+    vi.mocked(readBuiltinModels).mockResolvedValueOnce(downloadingList)
+    const wrapper = await open()
+    vi.mocked(readBuiltinModels).mockRejectedValueOnce(new Error('synthetic connection lost'))
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+    // The row stays as it was, with why it is not moving and a way to read again.
+    expect(row(wrapper, 'a').get('[data-builtin-downloading]').text()).toContain('25%')
+    expect(wrapper.get('[data-builtin-stale]').text()).toContain('内置模型没有读取成功。')
+    vi.mocked(readBuiltinModels).mockResolvedValueOnce(list([model('a', { recommended: true, installed: true, inUse: true })]))
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+    expect(wrapper.find('[data-builtin-stale]').exists()).toBe(false)
+    expect(row(wrapper, 'a').find('[data-builtin-in-use]').exists()).toBe(true)
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+  })
+
   it('says why a download was not kept and offers 重试', async () => {
     vi.mocked(readBuiltinModels).mockResolvedValue(list([model('a', {
       download: { status: 'failed', receivedBytes: 0, totalBytes: 96, reason: 'embedding_model_altered' } }),
@@ -99,7 +118,9 @@ describe('BuiltinEmbeddingDialog', () => {
 describe('语义搜索 with a built-in model', () => {
   const view = (connection?: ModelRoleView['connection']): ModelRoleView => ({ role: 'semantic', state: connection ? 'enabled' : 'not_configured',
     answeredBy: connection ? 'model_api' : null, ...(connection ? { connection, allowedOperations: ['knowledge_embedding'] } : {}) } as ModelRoleView)
-  const builtin = { id: 'builtin-embedding', protocol: 'builtin_embeddings' as const, endpointHost: '127.0.0.1', model: 'bge-small-zh-v1.5', secretRef: null }
+  // Saved with the files' revision; people read the id.
+  const builtin = { id: 'builtin-embedding', protocol: 'builtin_embeddings' as const, endpointHost: '127.0.0.1',
+    model: 'bge-small-zh-v1.5@7999e1d33597', secretRef: null }
 
   it('offers 内置模型 first when nothing is connected, and shows a built-in model as on this computer', async () => {
     const empty = mount(ModelRoleCard, { props: { view: view(), locked: false, editing: false } })

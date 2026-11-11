@@ -23,6 +23,13 @@ MODEL_ID = re.compile(r'^[a-z0-9][a-z0-9._-]{0,63}$')
 SPEC_FILE = 'fuli-model.json'
 MAX_HEADER_BYTES = 8 * 1024 * 1024
 MAX_WORD_CHARS = 100
+# No array of a small encoder has more axes or a longer axis than this.
+MAX_DIMENSIONS = 4
+MAX_AXIS = 1_000_000
+# What the catalog's models stay well inside; a config beyond it is not one FULI runs.
+MAX_LAYERS = 48
+MAX_HEADS = 64
+MAX_POSITIONS = 8192
 BATCH = 16
 _DTYPES = {'F32': np.float32, 'F16': np.float16, 'F64': np.float64, 'I64': np.int64, 'I32': np.int32}
 
@@ -38,8 +45,12 @@ class BuiltinEmbeddingError(Exception):
 def read_safetensors(path: Path) -> dict[str, np.ndarray]:
     """Every array of a safetensors file as float32 (integers as they are),
     read through a memory map, so pages the model never touches stay on disk."""
-    with open(path, 'rb') as handle:
-        mapped = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
+    try:
+        with open(path, 'rb') as handle:
+            mapped = mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ)
+    except (OSError, ValueError) as error:
+        # An empty file cannot be mapped.
+        raise BuiltinEmbeddingError('model_invalid', 'The model file is empty or cannot be read') from error
     if len(mapped) < 8:
         raise BuiltinEmbeddingError('model_invalid', 'The model file is too short')
     header_bytes = int.from_bytes(mapped[:8], 'little')
@@ -49,14 +60,24 @@ def read_safetensors(path: Path) -> dict[str, np.ndarray]:
         header = json.loads(mapped[8:8 + header_bytes].decode('utf-8'))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise BuiltinEmbeddingError('model_invalid', 'The model file has no readable header') from error
+    if not isinstance(header, dict):
+        raise BuiltinEmbeddingError('model_invalid', 'The model file has no readable header')
     start = 8 + header_bytes
     arrays = {}
     for name, entry in header.items():
         if name == '__metadata__':
             continue
+        if not isinstance(entry, dict):
+            raise BuiltinEmbeddingError('model_invalid', f'The model file describes an array wrongly: {name}')
         dtype = _DTYPES.get(entry.get('dtype'))
-        begin, end = entry.get('data_offsets', (0, 0))
-        shape = tuple(entry.get('shape') or ())
+        offsets = entry.get('data_offsets')
+        shape = entry.get('shape')
+        if not (isinstance(offsets, list) and len(offsets) == 2 and all(type(value) is int for value in offsets)
+                and isinstance(shape, list) and len(shape) <= MAX_DIMENSIONS
+                and all(type(size) is int and 0 < size <= MAX_AXIS for size in shape)):
+            raise BuiltinEmbeddingError('model_invalid', f'The model file describes an array wrongly: {name}')
+        begin, end = offsets
+        shape = tuple(shape)
         if dtype is None or not 0 <= begin <= end <= len(mapped) - start:
             raise BuiltinEmbeddingError('model_invalid', f'The model file holds an array this version cannot read: {name}')
         count = int(np.prod(shape)) if shape else 1
@@ -181,16 +202,30 @@ class BertEncoder:
                 or config.get('hidden_act', 'gelu') != 'gelu':
             raise BuiltinEmbeddingError('model_unsupported', 'Only BERT encoders with absolute positions and GELU are supported')
         self.weights = {name[len(prefix):]: array for name, array in weights.items() if name.startswith(prefix)}
-        self.layers = int(config['num_hidden_layers'])
-        self.heads = int(config['num_attention_heads'])
-        self.epsilon = float(config.get('layer_norm_eps', 1e-12))
-        self.positions = int(config.get('max_position_embeddings', 512))
         try:
-            self.hidden = self._get('embeddings.word_embeddings.weight').shape[1]
+            self.layers = int(config['num_hidden_layers'])
+            self.heads = int(config['num_attention_heads'])
+            self.epsilon = float(config.get('layer_norm_eps', 1e-12))
+            self.positions = int(config.get('max_position_embeddings', 512))
+        except (KeyError, TypeError, ValueError) as error:
+            raise BuiltinEmbeddingError('model_invalid', 'The model config lacks its sizes') from error
+        if not (0 < self.layers <= MAX_LAYERS and 0 < self.heads <= MAX_HEADS and 0 < self.positions <= MAX_POSITIONS):
+            raise BuiltinEmbeddingError('model_invalid', 'The model config has sizes no encoder has')
+        try:
+            words = self._get('embeddings.word_embeddings.weight')
+            positions = self._get('embeddings.position_embeddings.weight')
             for layer in range(self.layers):
                 self._get(f'encoder.layer.{layer}.output.dense.weight')
         except KeyError as error:
             raise BuiltinEmbeddingError('model_unsupported', f'The model file lacks {error.args[0]}') from error
+        if words.ndim != 2 or positions.ndim != 2 or positions.shape[1] != words.shape[1]:
+            raise BuiltinEmbeddingError('model_invalid', 'The model file has embeddings of the wrong shape')
+        self.hidden = words.shape[1]
+        self.vocabulary = words.shape[0]
+        # A text is never longer than the positions the file really holds.
+        self.positions = min(self.positions, positions.shape[0])
+        if self.hidden % self.heads:
+            raise BuiltinEmbeddingError('model_invalid', 'The model config does not fit its weights')
 
     def _get(self, name: str) -> np.ndarray:
         return self.weights[name]
@@ -254,8 +289,13 @@ class BuiltinEmbeddingModel:
                                    bool(spec.get('stripAccents')))
         if not (directory / 'model.safetensors').is_file():
             raise BuiltinEmbeddingError('model_missing', 'This model is not downloaded on this computer')
+        if not isinstance(spec, dict) or not isinstance(config, dict):
+            raise BuiltinEmbeddingError('model_invalid', 'The model description is not an object')
         self.encoder = BertEncoder(read_safetensors(directory / 'model.safetensors'), config)
-        self.limit = max(8, min(int(spec.get('maxTokens') or 512), self.encoder.positions))
+        if len(self.tokenizer.ids) > self.encoder.vocabulary:
+            raise BuiltinEmbeddingError('model_invalid', 'The vocabulary is longer than the model knows')
+        limit = spec.get('maxTokens')
+        self.limit = max(2, min(limit if type(limit) is int and limit > 0 else 512, self.encoder.positions))
         self.dimensions = self.encoder.hidden
 
     def embed(self, texts: list[str]) -> tuple[list[list[float]], int]:
@@ -281,6 +321,16 @@ class BuiltinEmbeddingModel:
         return vectors, sum(len(item) for item in encoded)
 
 
+def _load(folder: Path) -> BuiltinEmbeddingModel:
+    """The model in a folder; files that are not what they claim are one refusal, never a stray error."""
+    try:
+        return BuiltinEmbeddingModel(folder)
+    except BuiltinEmbeddingError:
+        raise
+    except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, OverflowError) as error:
+        raise BuiltinEmbeddingError('model_invalid', 'The model files are not ones FULI can read') from error
+
+
 class BuiltinEmbeddings:
     """The models directory; the model last asked for stays loaded."""
 
@@ -304,9 +354,14 @@ class BuiltinEmbeddings:
             # A model downloaded again (or removed) is read again.
             if not self._loaded or self._loaded[:2] != (model_id, stamp):
                 self._loaded = None
-                self._loaded = (model_id, stamp, BuiltinEmbeddingModel(folder))
+                self._loaded = (model_id, stamp, _load(folder))
             model = self._loaded[2]
-            vectors, tokens = model.embed(texts)
+            try:
+                vectors, tokens = model.embed(texts)
+            except (ValueError, IndexError, KeyError, TypeError, ZeroDivisionError, FloatingPointError) as error:
+                # Weights whose shapes do not fit each other only show when they are multiplied.
+                self._loaded = None
+                raise BuiltinEmbeddingError('model_invalid', 'The model files do not fit together') from error
         return {'model': model_id, 'dimensions': model.dimensions, 'vectors': vectors, 'tokens': tokens}
 
     def unload(self) -> None:

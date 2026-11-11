@@ -22,7 +22,8 @@ export const builtinEmbeddingsAdapter = Object.freeze({
     if (!builtinEmbed) return attemptFailure(modelFailure('configuration', 'builtin_unavailable'), state);
     let answer;
     try {
-      answer = await builtinEmbed({ model: connection.model, texts, signal });
+      // The saved name is `id@revision` (src/embedding-models/port.js); the graph service knows the id.
+      answer = await builtinEmbed({ model: connection.model.split('@')[0], texts, signal });
     } catch (error) {
       // 404: the model is not downloaded (or was removed); 422: its files are not ones this version runs.
       if (error?.status === 404) return attemptFailure(modelFailure('configuration', 'model_not_downloaded'), state);

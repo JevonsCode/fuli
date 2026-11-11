@@ -17,6 +17,12 @@ import { embeddingModelBytes } from './manifest.js';
 
 // The one connection a built-in model is saved as.
 const CONNECTION_ID = 'builtin-embedding';
+// The files' revision is part of the saved model name (`id@revision`), so new
+// weights under the same id are another model to the meaning index and to the
+// query cache: both rebuild instead of mixing vectors of two sets of weights.
+const REVISION_CHARS = 12;
+const savedModel = (id, revision) => (revision ? `${id}@${String(revision).slice(0, REVISION_CHARS)}` : id);
+export const builtinModelId = model => String(model).split('@')[0];
 
 export function createEmbeddingModels({ registry, store, modelBackends, roleSettings, unload = async () => {},
   fillIndex = () => {} }) {
@@ -32,7 +38,7 @@ export function createEmbeddingModels({ registry, store, modelBackends, roleSett
   function inUse() {
     const semantic = modelBackends.roles().roles.find(item => item.role === SEMANTIC_ROLE);
     return semantic?.state === 'enabled' && semantic.connection.protocol === BUILTIN_EMBEDDING_PROTOCOL
-      ? semantic.connection.model : null;
+      ? builtinModelId(semantic.connection.model) : null;
   }
 
   function list() {
@@ -58,13 +64,15 @@ export function createEmbeddingModels({ registry, store, modelBackends, roleSett
 
   // Search uses this model from now on; the index fills for it in the background.
   function use(id) {
-    if (!store.installed().some(item => item.id === id)) {
+    const installed = store.installed().find(item => item.id === id);
+    if (!installed) {
       throw new ApplicationError('embedding_model_not_downloaded', 'Download this model first.', { status: 409 });
     }
     const saved = roleSettings.save(SEMANTIC_ROLE, {
       revision: modelBackends.roles().revision,
       connectionId: CONNECTION_ID,
-      connection: { protocol: BUILTIN_EMBEDDING_PROTOCOL, endpoint: BUILTIN_EMBEDDING_ENDPOINT, model: id },
+      connection: { protocol: BUILTIN_EMBEDDING_PROTOCOL, endpoint: BUILTIN_EMBEDDING_ENDPOINT,
+        model: savedModel(id, installed.revision) },
       settings: { enabled: true, allowedOperations: [KNOWLEDGE_EMBEDDING_OPERATION], budget: {} }
     });
     fillIndex();
@@ -78,19 +86,26 @@ export function createEmbeddingModels({ registry, store, modelBackends, roleSett
     const done = (async () => {
       // A copy being replaced must not be held open by the graph service.
       await store.download(model, { beforeReplace: () => unload().catch(() => {}) });
-      if (useAfter) use(id);
+      // New files for the model search already uses are saved as its new revision, so the index rebuilds.
+      if (useAfter || inUse() === id) use(id);
     })();
     // The outcome is read from list(): a failed download shows there with its reason.
     done.catch(() => {});
     return { started: id, done };
   }
 
+  function refuseInUse(id) {
+    if (inUse() !== id) return;
+    throw new ApplicationError('embedding_model_in_use', 'Search uses this model. Switch to another model or turn search by meaning off first.',
+      { status: 409 });
+  }
+
   async function remove(id) {
-    if (inUse() === id) {
-      throw new ApplicationError('embedding_model_in_use', 'Search uses this model. Switch to another model or turn search by meaning off first.',
-        { status: 409 });
-    }
+    refuseInUse(id);
     await unload().catch(() => {});
+    // Search may have switched to this model while the graph service let go of it:
+    // checked again here, with nothing awaited before the files go.
+    refuseInUse(id);
     store.remove(id);
     return list();
   }

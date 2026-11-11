@@ -68,7 +68,20 @@ test('a catalog copy is refused whole when it names anything FULI does not run o
   const refused = (change, pattern) => assert.throws(() => parseEmbeddingModelsManifest(manifest([change(structuredClone(model()))])), pattern);
   refused(item => { item.files[0].urls = ['https://example.com/x/resolve/' + REVISION + '/config.json']; return item; }, /huggingface\.co or hf-mirror\.com/);
   refused(item => { item.files[0].urls = ['http://huggingface.co/x/resolve/' + REVISION + '/config.json']; return item; }, /https URL/);
-  refused(item => { item.files[0].urls = ['https://huggingface.co/x/resolve/main/config.json']; return item; }, /name the model's revision/);
+  const address = 'https://huggingface.co/synthetic/tiny/resolve/';
+  for (const url of [
+    'https://huggingface.co/synthetic/tiny/resolve/main/config.json',
+    // Resolves to /resolve/main/config.json: the revision must be in the address as it really is.
+    `${address}${REVISION}/../main/config.json`,
+    `${address}${REVISION}/%2e%2e/main/config.json`,
+    // Another repository, another file, or an address that does not read back to itself.
+    `https://huggingface.co/other/model/resolve/${REVISION}/config.json`,
+    `${address}${REVISION}/vocab.txt`,
+    `${address}${REVISION}//config.json`,
+    `https://HUGGINGFACE.co/synthetic/tiny/resolve/${REVISION}/config.json`]) {
+    refused(item => { item.files[0].urls = [url]; return item; }, /must be exactly <model repository>\/resolve\/<revision>\/config\.json/);
+  }
+  refused(item => { item.source = 'https://huggingface.co/synthetic'; return item; }, /source must be a model repository/);
   refused(item => { item.files[2].path = 'model.onnx'; return item; }, /path must be one of/);
   refused(item => { item.files[1] = item.files[0]; return item; }, /repeats a file/);
   refused(item => { item.files[0].sha256 = 'ABC'; return item; }, /SHA-256/);
@@ -110,6 +123,13 @@ test('a download keeps a model only when every file has the size and digest the 
     assert.equal(failing.progress('broken').reason, code);
   }
   assert.deepEqual(readdirSync(directory).sort(), ['mirrored', 'tiny-zh'], 'no partial folder is left behind');
+  // A file that cannot be written (a full disk) fails this download; it is never an unhandled stream error.
+  const { Writable } = await import('node:stream');
+  const unwritable = createEmbeddingModelStore({ directory, fetchImpl: transport().fetchImpl,
+    openFile: () => new Writable({ write(chunk, encoding, done) { done(Object.assign(new Error('synthetic ENOSPC'), { code: 'ENOSPC' })); } }) });
+  await assert.rejects(unwritable.download(model('full-disk')), error => error.code === 'embedding_model_unavailable');
+  assert.equal(unwritable.progress('full-disk').status, 'failed');
+  assert.deepEqual(readdirSync(directory).sort(), ['mirrored', 'tiny-zh']);
   assert.deepEqual(store.remove('tiny-zh'), { id: 'tiny-zh', removed: true });
   assert.equal(existsSync(join(directory, 'tiny-zh')), false);
   assert.throws(() => store.remove('../mirrored'), /Unknown embedding model/);
@@ -155,14 +175,14 @@ test('a downloaded model becomes what search uses, with no key, no price and no 
   assert.equal(filled.length, 1, 'the meaning index starts filling for the new model');
   const saved = JSON.parse(readFileSync(configPath, 'utf8'));
   assert.deepEqual(saved.connections['builtin-embedding'], { protocol: 'builtin_embeddings', endpoint: 'http://127.0.0.1/builtin-embeddings',
-    model: 'tiny-zh', secretRef: null, reasoningEffort: null, pricing: null });
+    model: 'tiny-zh@aaaaaaaaaaaa', secretRef: null, reasoningEffort: null, pricing: null });
   assert.deepEqual(saved.roles.semantic.egress, { approvedProjects: [], allowUnassigned: false });
 
   // Nothing leaves the computer, so every project's text may be embedded without an approval.
   assert.equal(modelBackends.allowsEgress(embedRequest('any-project')), true);
   const answer = await modelBackends.embed(embedRequest('any-project'));
   assert.deepEqual([answer.vectors, answer.dimensions, answer.model, answer.modelReceipt.status, answer.modelReceipt.usage.inputTokens],
-    [[[0, 1], [1, 1]], 2, 'tiny-zh', 'completed', 7]);
+    [[[0, 1], [1, 1]], 2, 'tiny-zh@aaaaaaaaaaaa', 'completed', 7]);
   assert.deepEqual(embedded, [{ id: 'tiny-zh', texts: embedRequest().texts }]);
 
   // Downloading it again replaces the copy, after the graph service let go of the files.
@@ -231,3 +251,57 @@ test('the console routes list, download, use and remove, and change nothing from
     url: new URL('/api/embedding-models', 'http://127.0.0.1'), embeddingModels: null });
   assert.equal(off.status, 503);
 });
+
+test('new files under the same id are another model to the index, and a delete cannot race a switch', async (t) => {
+  const directory = workspace(t);
+  const configPath = join(directory, 'model-backends.json');
+  const modelBackends = createModelBackendPort({ readConfig: () => readModelBackendConfig(configPath),
+    secrets: { read: async () => null }, ledger: new ModelUsageLedger(':memory:') });
+  let revision = REVISION;
+  let release = null;
+  const filled = [];
+  const models = createEmbeddingModels({
+    registry: { current: () => ({ manifest: parseEmbeddingModelsManifest(manifest([
+      model('tiny-zh', { revision, files: model().files.map(file => ({ ...file, urls: file.urls.map(url => url.replace(REVISION, revision)) })) }),
+      model('other', { recommended: false })])), autoUpdate: true, lastCheckedAt: null }) },
+    store: createEmbeddingModelStore({ directory: join(directory, 'models'),
+      fetchImpl: async url => new Response(CONTENT[url.split('/').at(-1)]) }),
+    modelBackends, roleSettings: createModelRoleSettings(configPath),
+    // A held unload stands for the graph service still running a text when it is asked to let go.
+    unload: () => (release ? new Promise((resolve) => { release = resolve; }) : Promise.resolve()),
+    fillIndex: () => filled.push(true) });
+  const saved = () => JSON.parse(readFileSync(configPath, 'utf8')).connections['builtin-embedding'].model;
+
+  await models.download('tiny-zh', { useAfter: true }).done;
+  assert.equal(saved(), 'tiny-zh@aaaaaaaaaaaa');
+  // The catalog names newer weights for the model in use: downloading them saves the new revision and fills again.
+  revision = 'b'.repeat(40);
+  assert.equal(models.list().models[0].outdated, true);
+  await models.download('tiny-zh').done;
+  assert.equal(saved(), 'tiny-zh@bbbbbbbbbbbb');
+  assert.deepEqual([models.list().inUse, models.list().models[0].outdated, filled.length], ['tiny-zh', false, 2]);
+
+  // Search switches to `other` while its removal waits for the graph service: the removal is refused, the files stay.
+  await models.download('other').done;
+  release = () => {};
+  const removing = models.remove('other');
+  models.use('other');
+  release();
+  await assert.rejects(removing, error => error.code === 'embedding_model_in_use');
+  assert.deepEqual(models.list().models.map(item => [item.id, item.installed, item.inUse]), [['tiny-zh', true, false], ['other', true, true]]);
+});
+
+test('a graph service on another computer is never sent texts under the local exemption', async () => {
+  const port = createModelBackendPort({ readConfig: () => readModelBackendConfig('x', { read: () => ({ version: 1,
+    connections: { builtin: { protocol: 'builtin_embeddings', endpoint: 'http://127.0.0.1/builtin-embeddings', model: 'tiny-zh@aaaaaaaaaaaa' } },
+    roles: { semantic: { enabled: true, connection: 'builtin', allowedOperations: ['knowledge_embedding'], budget: {} } } }) }),
+  secrets: { read: async () => null }, ledger: new ModelUsageLedger(':memory:'), builtinEmbed: null });
+  const answer = await port.embed(embedRequest());
+  assert.deepEqual([answer.vectors, answer.modelReceipt.reason], [null, 'builtin_unavailable']);
+  // local-runtimes.js passes builtinEmbed only for a loopback graph service.
+  const { isLoopbackUrl } = await import('../src/external-knowledge/connectors/response-values.js');
+  assert.deepEqual(['http://127.0.0.1:2829', 'http://localhost:2829', 'https://remote-provider.example'].map(isLoopbackUrl), [true, true, false]);
+  const source = readFileSync(new URL('../src/graphiti/local-runtimes.js', import.meta.url), 'utf8');
+  assert.match(source, /builtinEmbed: isLoopbackUrl\(providerIdentity\) \? input => app\.personal\.builtinEmbed\(input\) : null/);
+});
+

@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 import { ApplicationError } from '../app/application-error.js';
 import { EMBEDDING_MODEL_ID, embeddingModelBytes } from './manifest.js';
@@ -19,7 +21,8 @@ const IDLE_TIMEOUT_MS = 60_000;
 
 export const embeddingModelsDirectory = dataDir => join(dataDir, 'models', 'embedding');
 
-export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fetch, idleTimeoutMs = IDLE_TIMEOUT_MS }) {
+export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fetch, idleTimeoutMs = IDLE_TIMEOUT_MS,
+  openFile = createWriteStream }) {
   // id -> { status: 'downloading' | 'failed', receivedBytes, totalBytes, reason }
   const downloads = new Map();
 
@@ -62,6 +65,7 @@ export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fe
         : `${file.path} could not be downloaded: ${last}`, { status: 502 });
   }
 
+  // openFile(path) makes the file's write stream; a test can make it fail the way a full disk does.
   async function fetchOne(url, file, target, state, signal) {
     const idle = new AbortController();
     let timer = setTimeout(() => idle.abort(new Error('the download stalled')), idleTimeoutMs);
@@ -71,25 +75,34 @@ export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fe
       const response = await fetchImpl(url, { redirect: 'follow', signal: combined });
       if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
       const hash = createHash('sha256');
-      const out = createWriteStream(target);
       let received = 0;
-      try {
-        for await (const chunk of response.body) {
+      const checked = async function* (source) {
+        for await (const chunk of source) {
           received += chunk.length;
           if (received > file.bytes) throw altered();
           hash.update(chunk);
-          if (!out.write(chunk)) await new Promise(resolve => out.once('drain', resolve));
           state.receivedBytes += chunk.length;
           clearTimeout(timer);
           timer = setTimeout(() => idle.abort(new Error('the download stalled')), idleTimeoutMs);
+          yield chunk;
         }
-      } finally {
-        await new Promise(resolve => out.end(resolve));
-      }
+      };
+      // pipeline carries a read, check or write error to this await and closes the file either way:
+      // a disk that fills up fails this download instead of raising an unhandled stream error.
+      await pipeline(Readable.from(response.body), checked, openFile(target), { signal: combined });
       if (received !== file.bytes || hash.digest('hex') !== file.sha256) throw altered();
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  // Throws away a partial download. Windows may still hold a file that just failed to write, so it
+  // is tried a few times, and a folder that will not go is left for the next download to clear:
+  // the failure that brought us here is the one the person hears about.
+  function discard(folder) {
+    try {
+      rmSync(folder, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    } catch { /* The next download of this model removes it first. */ }
   }
 
   const altered = () => Object.assign(new Error('digest mismatch'), { code: 'embedding_model_altered' });
@@ -104,7 +117,7 @@ export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fe
     downloads.set(model.id, state);
     const partial = join(directory, `${PARTIAL_PREFIX}${model.id}`);
     try {
-      rmSync(partial, { recursive: true, force: true });
+      rmSync(partial, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
       mkdirSync(partial, { recursive: true });
       for (const file of model.files) await fetchFile(file, join(partial, file.path), state, signal);
       // The spec is written last: only a folder that has it is a model.
@@ -120,7 +133,7 @@ export function createEmbeddingModelStore({ directory, fetchImpl = globalThis.fe
       downloads.delete(model.id);
       return { id: model.id, bytes: state.totalBytes };
     } catch (error) {
-      rmSync(partial, { recursive: true, force: true });
+      discard(partial);
       downloads.set(model.id, { ...state, status: 'failed', reason: error?.code ?? 'embedding_model_unavailable' });
       throw error;
     }

@@ -22,6 +22,9 @@ const EMBEDDING_PROTOCOL = 'openai_embeddings'
 export const BUILTIN_EMBEDDING_PROTOCOL = 'builtin_embeddings'
 export const MODEL_PROTOCOLS = ['openai_chat', 'anthropic_messages', 'typesafe_systemone'] as const
 export type ModelProtocol = typeof MODEL_PROTOCOLS[number] | typeof EMBEDDING_PROTOCOL | typeof BUILTIN_EMBEDDING_PROTOCOL
+// A built-in model is saved as `id@revision` so new weights rebuild the index; people see the id.
+export const modelName = (connection: { protocol: ModelProtocol; model: string }) =>
+  (connection.protocol === BUILTIN_EMBEDDING_PROTOCOL ? connection.model.split('@')[0]! : connection.model)
 // What serves a connection, in one line: its kind and where it is. A built-in model has no address worth showing.
 export const connectionService = (connection: { protocol: ModelProtocol; endpointHost: string }) =>
   (connection.protocol === BUILTIN_EMBEDDING_PROTOCOL ? t('modelSettings.protocols.builtin_embeddings')

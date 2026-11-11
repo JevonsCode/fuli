@@ -29,6 +29,9 @@ const error = ref('')
 const acting = ref<string | null>(null)
 let timer: ReturnType<typeof setTimeout> | undefined
 let reading: AbortController | null = null
+// Failed reads in a row, for the wait before the next try.
+let retries = 0
+const RETRY_MAX_MS = 15_000
 
 const downloading = (value: BuiltinModels | null) => Boolean(value?.models.some(model => model.download?.status === 'downloading'))
 
@@ -40,9 +43,17 @@ async function read() {
   try {
     apply(await readBuiltinModels(reading.signal))
     error.value = ''
+    retries = 0
   } catch (cause) {
     if ((cause as Error)?.name === 'AbortError') return
     error.value = apiErrorReason(cause)
+    // A read that failed while a download runs is tried again by itself, a little later each time,
+    // so the progress does not freeze on one lost answer.
+    clearTimeout(timer)
+    if (props.open && downloading(list.value)) {
+      retries += 1
+      timer = setTimeout(read, Math.min(RETRY_MAX_MS, 1000 * 2 ** retries))
+    }
   } finally {
     loading.value = false
   }
@@ -92,7 +103,13 @@ onBeforeUnmount(() => { clearTimeout(timer); reading?.abort() })
       <p>{{ t('modelSettings.builtin.loadFailed') }} {{ error }}</p>
       <Button size="sm" variant="outline" @click="read">{{ t('modelSettings.retry') }}</Button>
     </div>
-    <ul v-else-if="list" class="builtin-list">
+    <div v-else-if="list" class="builtin-body">
+    <!-- The list stays while a read fails: the last known progress with why it is not moving, and a way to read again. -->
+    <p v-if="error" class="builtin-stale" role="alert" data-builtin-stale>
+      <span>{{ t('modelSettings.builtin.loadFailed') }} {{ error }}</span>
+      <Button size="sm" variant="ghost" @click="read">{{ t('modelSettings.retry') }}</Button>
+    </p>
+    <ul class="builtin-list">
       <li v-for="model in list.models" :key="model.id" class="builtin-row" :data-builtin-model="model.id">
         <div class="builtin-main">
           <p class="builtin-head">
@@ -125,6 +142,7 @@ onBeforeUnmount(() => { clearTimeout(timer); reading?.abort() })
         </div>
       </li>
     </ul>
+    </div>
     <template #footer>
       <Button size="sm" variant="ghost" data-builtin-own @click="emit('own')">{{ t('modelSettings.builtin.own') }}</Button>
     </template>
@@ -134,6 +152,8 @@ onBeforeUnmount(() => { clearTimeout(timer); reading?.abort() })
 <style scoped>
 .builtin-error { display: grid; justify-items: start; gap: var(--space-3); color: var(--color-danger); font-size: var(--text-control); }
 .builtin-error p { margin: 0; }
+.builtin-body { display: grid; gap: var(--space-2); min-width: 0; }
+.builtin-stale { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin: 0; color: var(--color-danger); font-size: var(--text-control); }
 .builtin-list { display: grid; margin: 0; padding: 0; list-style: none; }
 .builtin-row { display: flex; align-items: center; gap: var(--space-4); min-width: 0; padding-block: var(--space-3); }
 .builtin-row + .builtin-row { border-top: 1px solid var(--color-border); }
