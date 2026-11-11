@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { apply, inject, name } from '../../../packages/dsh-connector/index.js';
+import { apply, inject, name } from '../../../packages/dsh-connector/src/index.js';
 import { dshBundleFiles } from '../../../src/agents/dsh/bundle.js';
 import { defaultDataDir } from '../../../src/setup/paths.js';
 
@@ -48,7 +48,7 @@ const importing = (specifier) => (specifier === '@deepseek-ai/dsh-mcp-client' ? 
 test('the connector is a DSH bundle that names its own plugin row', () => {
   const manifest = JSON.parse(readFileSync(new URL('../../../packages/dsh-connector/package.json', import.meta.url), 'utf8'));
   assert.deepEqual(manifest.dsh, { bundle: { patch: './cordis.patch.yml' } });
-  assert.equal(manifest.main, 'index.js');
+  assert.equal(manifest.main, 'src/index.js');
   assert.match(readFileSync(new URL('../../../packages/dsh-connector/cordis.patch.yml', import.meta.url), 'utf8'),
     /id: fuli-connector\n\s+name: fuli-dsh-connector/);
   assert.equal(name, 'fuli-connector');

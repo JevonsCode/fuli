@@ -33,7 +33,7 @@ export async function apply(ctx, _config, { env = process.env, platform = proces
     }
     const bundle = join(fuliDataDir(env, platform, homeDir), 'agent-kits', 'dsh-bundle');
     if (!existsSync(join(bundle, 'index.js'))) {
-      log('warn', 'no FULI found on this computer (or its version predates DeepSeek Harness support). '
+      log('warn', 'no FULI found on this computer (DeepSeek Harness needs FULI 0.27.0 or newer). '
         + 'Install FULI from https://github.com/JevonsCode/fuli and start it once.');
       return;
     }
