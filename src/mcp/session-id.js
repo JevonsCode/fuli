@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { SOURCE_APPLICATIONS } from '../agents/source-applications.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const WORKFLOW_OBSERVATION_TOOL = 'record_workflow_transition_observation';
 const FULI_PROCESS_SESSION = 'fuli-host-';
 const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'search_knowledge_graph',
@@ -95,39 +94,8 @@ export function normalizeAgentSessionInput(
   input,
   nativeThreadId,
   hostSessionId = nativeThreadId,
-  clock = () => new Date(),
   sourceApplication = nativeThreadId ? 'codex' : 'other'
 ) {
-  if (name === WORKFLOW_OBSERVATION_TOOL) {
-    if (!hostSessionId) {
-      throw new TypeError('Workflow observations require an MCP host session');
-    }
-    const {
-      sessionId: _sessionId,
-      session_id: _session_id,
-      idempotencyKey: _idempotencyKey,
-      idempotency_key: _idempotency_key,
-      observedAt: _observedAt,
-      observed_at: _observed_at,
-      hostSessionId: _hostSessionId,
-      host_session_id: _host_session_id,
-      hostObservedAt: _hostObservedAt,
-      host_observed_at: _host_observed_at,
-      sourceApplication: _sourceApplication,
-      source_application: _source_application,
-      sourceSessionId: _sourceSessionId,
-      source_session_id: _source_session_id,
-      sourceSessionVerified: _sourceSessionVerified,
-      source_session_verified: _source_session_verified,
-      ...safeInput
-    } = input ?? {};
-    return {
-      ...safeInput,
-      sourceApplication: normalizeMcpSourceApplication(sourceApplication),
-      hostSessionId,
-      hostObservedAt: clock().toISOString()
-    };
-  }
   if (PROJECT_AGENT_SOURCE_TOOLS.has(name)) {
     if (!hostSessionId) {
       throw new TypeError('Project Agent calls require an MCP host session');

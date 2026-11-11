@@ -350,19 +350,15 @@ test('provider client maps workflow reads without exposing the human review chan
   };
 
   await client.searchWorkflowCandidates(scope);
-  await client.recommendWorkflowCandidates({
-    ...scope,
-    after_step_key: 'step-x'
-  });
-  assert.deepEqual(calls.map(({ url }) => new URL(url).pathname), [
-    '/v1/workflow-candidates/search',
-    '/v1/workflow-candidates/recommendations'
-  ]);
-  assert.equal(calls.every(({ options }) => options.method === 'POST'), true);
+  assert.deepEqual(calls.map(({ url }) => new URL(url).pathname), ['/v1/workflow-candidates/search']);
+  assert.equal(calls[0].options.method, 'POST');
   assert.equal(client.reviewWorkflowCandidate, undefined);
+  assert.equal(client.recommendWorkflowCandidates, undefined);
 });
 
-test('workflow observations require and send the MCP-host-only capability', async () => {
+// 11-11: workflow observations were removed; an old runtime config's token is
+// still accepted but never sent.
+test('a client built with the old workflow observation token never sends it', async () => {
   const calls = [];
   const client = new GraphitiProviderClient({
     baseUrl: 'http://127.0.0.1:8787',
@@ -370,28 +366,12 @@ test('workflow observations require and send the MCP-host-only capability', asyn
     workflowObservationToken: 'mcp-host-workflow-observation-token-123456',
     fetchImpl: async (url, options) => {
       calls.push({ url, options });
-      return jsonResponse(200, { status: 'committed' });
+      return jsonResponse(200, {});
     }
   });
-  const actorOnlyClient = new GraphitiProviderClient({
-    baseUrl: 'http://127.0.0.1:8787',
-    accessToken: 'actor-only-token',
-    fetchImpl: async () => {
-      throw new Error('request must not be sent without the host capability');
-    }
-  });
-
-  assert.throws(
-    () => actorOnlyClient.recordWorkflowObservation({}),
-    /MCP host workflow observation credential/
-  );
-  await client.recordWorkflowObservation({ observation_id: 'observation-1' });
-
-  assert.equal(new URL(calls[0].url).pathname, '/v1/workflow-observations');
-  assert.equal(
-    calls[0].options.headers['x-fuli-workflow-observation-token'],
-    'mcp-host-workflow-observation-token-123456'
-  );
+  await client.searchWorkflowCandidates({ personal_space_id: 'personal-1' });
+  assert.equal(client.recordWorkflowObservation, undefined);
+  assert.equal('x-fuli-workflow-observation-token' in calls[0].options.headers, false);
 });
 
 test('provider client reports network failures without exposing credentials', async () => {

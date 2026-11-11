@@ -278,7 +278,7 @@ test('a pause changes only the session and never rides along with a long-term ch
   assert.equal((await captureDecision(f.app, { sourceApplication: 'codex', sessionId: SESSION })).allowed, true);
   // The client is the MCP process's, never the payload's.
   assert.equal(normalizeAgentSessionInput('update_capture_policy', { sessionPaused: true, sourceApplication: 'cursor' },
-    null, 'host-session', () => new Date(), 'codex').sourceApplication, 'codex');
+    null, 'host-session', 'codex').sourceApplication, 'codex');
 });
 
 test('C3-5 a pause record removed before any hook ran still keeps the paused stretch out', async (t) => {

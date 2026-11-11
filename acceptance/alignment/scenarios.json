@@ -138,7 +138,7 @@
     {
       "id": "NETWORK-CODEX-01",
       "category": "codex-capture",
-      "question": "Can Codex turn MOCK dialogue artifacts into scoped context, preferences, and a pending workflow relation?"
+      "question": "Can Codex turn MOCK dialogue artifacts into scoped context and preferences?"
     },
     {
       "id": "NETWORK-SCOPE-01",
@@ -181,34 +181,14 @@
       "question": "Can a high-relevance RELATED_TO preference be inspected after consent without entering the effective preference packet?"
     },
     {
-      "id": "NETWORK-WORKFLOW-00",
-      "category": "workflow-session-attestation",
-      "question": "Do three retries inside one MCP host session remain one observation instead of satisfying the three-session gate?"
-    },
-    {
-      "id": "NETWORK-WORKFLOW-01",
-      "category": "workflow-sequence-capture",
-      "question": "Can repeated X-to-Y behavior remain a pending recommendation with an explicit approval gate?"
-    },
-    {
-      "id": "NETWORK-WORKFLOW-02",
-      "category": "workflow-sequence-learning",
-      "question": "Can Fuli detect repeated sequences and ask before converting them into a durable automatic rule?"
-    },
-    {
       "id": "NETWORK-CURSOR-01",
       "category": "cursor-retrieval",
-      "question": "Can Cursor retrieve Codex-captured multi-parent context and pending workflow guidance?"
+      "question": "Can Cursor retrieve Codex-captured multi-parent context?"
     },
     {
       "id": "NETWORK-CLAUDE-01",
       "category": "claude-retrieval",
-      "question": "Can Claude Code retrieve the same graph and preserve the human confirmation gate?"
-    },
-    {
-      "id": "NETWORK-CLAUDE-02",
-      "category": "claude-fresh-session-authorization",
-      "question": "Can a second fresh Claude Code session read a durable low-risk authorization while retaining per-call approval for high-risk actions?"
+      "question": "Can Claude Code retrieve the same graph?"
     },
     {
       "id": "AGENT-01",

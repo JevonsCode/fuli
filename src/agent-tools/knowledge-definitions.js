@@ -133,12 +133,6 @@ export const captureEpisodeRequired = [
   'idempotencyKey', 'name', 'sourceKind', 'sourceDescription',
   'referenceTime', 'entities', 'relationships'
 ];
-const workflowObservedStep = objectSchema({
-  actionId: id,
-  name: label,
-  summary: nullableStringSchema()
-}, ['actionId', 'name']);
-
 // Capturing, searching and governing personal and team-shared knowledge.
 export const KNOWLEDGE_DEFINITIONS = [
   {
@@ -169,25 +163,6 @@ export const KNOWLEDGE_DEFINITIONS = [
       ...captureEpisodeFields
     }, [
       'targetKind', 'spaceId', 'sessionId', ...captureEpisodeRequired
-    ])
-  },
-  {
-    name: 'record_workflow_transition_observation',
-    title: 'WRITE · Observe one completed workflow transition',
-    description: 'Record one Agent-reported completed X-to-Y action transition in the personal Provider, only after both actions succeed. One call submits one observation; same project, X/Y, workflow key, condition, and MCP-host session deduplicate to one Episodic node. Provider derives occurrence/distinct-session counts from persisted episodes. MCP host attests session, time, observation identity, never action truth. Accepts no aggregate counts, confirmation authority, approval, or durable-consent claims. All observations stay pending behavioral evidence, not user consent or execution authorization. This Agent/adapter observation seam is not automatic telemetry for arbitrary host tools.',
-    inputSchema: objectSchema({
-      personalSpaceId: id,
-      personalProjectId: nullableStringSchema(),
-      fromStep: workflowObservedStep,
-      toStep: workflowObservedStep,
-      workflowKey: id,
-      condition: attributes,
-      evidenceSummary: shortText,
-      sourceApplication,
-      sourceTurnId: { type: ['string', 'null'], minLength: 1, maxLength: 256 },
-      sensitivity: enumSchema(['normal', 'private', 'restricted'])
-    }, [
-      'personalSpaceId', 'fromStep', 'toStep', 'workflowKey', 'evidenceSummary'
     ])
   },
   {

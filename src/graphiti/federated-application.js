@@ -70,9 +70,7 @@ import {
   validateCaptureSessionKnowledge
 } from './session-knowledge-capture.js';
 import {
-  listWorkflowCandidates,
-  recommendNextWorkflowSteps,
-  recordWorkflowTransitionObservation
+  listWorkflowCandidates
 } from './workflow-learning.js';
 import { collaborationPreferencesAtEntry, getUserTasteSkill } from './collaboration-preference-entry.js';
 import {
@@ -283,10 +281,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return captureSessionKnowledge(this, input, options);
   }
 
-  async recordWorkflowTransitionObservation(input) {
-    return recordWorkflowTransitionObservation(this, input);
-  }
-
   getCollaborationPreferences(input) {
     return collaborationPreferencesAtEntry(this, input);
   }
@@ -361,10 +355,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
 
   async listWorkflowCandidates(input) {
     return listWorkflowCandidates(this, input);
-  }
-
-  async recommendNextWorkflowSteps(input) {
-    return recommendNextWorkflowSteps(this, input);
   }
 
   async recordKnowledgeUsage(input) {

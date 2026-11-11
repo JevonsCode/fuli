@@ -48,17 +48,6 @@ export const KNOWLEDGE_CURATION_DEFINITIONS = [
     }, ['personalSpaceId'])
   },
   {
-    name: 'recommend_next_workflow_steps',
-    title: 'READ · Recommend what to ask after a workflow step',
-    description: 'Read persisted candidates matching the completed source step. Provider weights only decide whether a candidate crosses the recommendation threshold; they never grant execution authority. A recommended but unapproved candidate returns ask_user and must not execute Y. Even a durable authorization never replaces per-call approval for high-risk send, delete, publish, payment, or external-write tools.',
-    inputSchema: objectSchema({
-      personalSpaceId: id,
-      personalProjectId: nullableStringSchema(),
-      afterStepKey: id,
-      limit: integerSchema({ minimum: 1, maximum: 100 })
-    }, ['personalSpaceId', 'afterStepKey'])
-  },
-  {
     name: 'revise_personal_knowledge',
     description: 'Confirm, correct (a new version supersedes the old), mark_outdated (negative feedback that ends validity), invalidate, restore, or link a replacement for one personal entity or relationship; history and evidence are kept. A replacement link needs an invalidated item and an exact replacement ID and kind. Same personal-only operation as the management UI; Agent attribution is kept.',
     inputSchema: objectSchema({

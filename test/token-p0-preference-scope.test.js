@@ -11,7 +11,7 @@ test('an MCP process identity is not a native session: a session-limited rule is
   const item = rule('native-session', { sessionId: 'saved-session' });
   for (const source of ['claude_code', 'cursor']) {
     const input = normalizeAgentSessionInput('get_collaboration_preferences', {}, null,
-      'fuli-host-process', undefined, source);
+      'fuli-host-process', source);
     assert.equal(preferenceTaskApplicability(item, input), 'scope_unknown');
     assert.equal(preferenceAppliesToTask(item, { ...input, sessionId: 'other-session' }), false);
     assert.equal(preferenceAppliesToTask(item, { ...input, sessionId: 'saved-session' }), true);

@@ -52,7 +52,6 @@ const NAMES = [
   'get_user_taste_skill',
   'resolve_deferred_preference_conflict',
   'capture_session_knowledge',
-  'record_workflow_transition_observation',
   'record_decision_trace',
   'search_knowledge_graph',
   'search_connected_knowledge',
@@ -122,7 +121,6 @@ const NAMES = [
   'ignore_project_agent_routing_learning',
   'reset_project_agent_routing_learning',
   'list_workflow_candidates',
-  'recommend_next_workflow_steps',
   'revise_personal_knowledge',
   'reassign_personal_knowledge',
   'preview_personal_project_action',
@@ -255,19 +253,6 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
     capture.inputSchema.properties.entities.items.properties.confirmationStatus.enum,
     ['confirmed', 'pending']
   );
-  const workflowObservation = tools.find(({ name }) =>
-    name === 'record_workflow_transition_observation'
-  );
-  assert.match(workflowObservation.description, /one call.*one observation/i);
-  assert.match(workflowObservation.description, /pending.*not.*authorization/i);
-  assert.equal(
-    workflowObservation.inputSchema.properties.occurrenceCount,
-    undefined
-  );
-  assert.equal(workflowObservation.inputSchema.properties.sessionId, undefined);
-  assert.equal(workflowObservation.inputSchema.properties.idempotencyKey, undefined);
-  assert.equal(workflowObservation.inputSchema.properties.observedAt, undefined);
-  assert.equal(workflowObservation.inputSchema.properties.authority, undefined);
   assert.deepEqual(
     capture.inputSchema.properties.entities.items.properties.attributes
       .properties.searchTerms,
@@ -405,8 +390,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     resolveDeferredPreferenceConflict: async (input) =>
       calls.push(['resolve-preference-conflict', input]),
     captureSessionKnowledge: async (input) => calls.push(['capture', input]),
-    recordWorkflowTransitionObservation: async (input) =>
-      calls.push(['workflow-observation', input]),
     recordDecisionTrace: async (input) => calls.push(['decision-trace', input]),
     searchKnowledge: async (input) => calls.push(['search', input]),
     recordKnowledgeUsage: async (input) => calls.push(['knowledge-usage', input]),
@@ -495,8 +478,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     resetProjectAgentRoutingLearning: async (input) =>
       calls.push(['reset-project-agent-routing-learning', input]),
     listWorkflowCandidates: async (input) => calls.push(['workflow-candidates', input]),
-    recommendNextWorkflowSteps: async (input) =>
-      calls.push(['workflow-recommendations', input]),
     reviseKnowledgeItem: async (input) => calls.push(['revise-knowledge', input]),
     reassignKnowledgeItem: async (input) => calls.push(['reassign-knowledge', input]),
     previewKnowledgeProjectAction: async (input) => calls.push(['preview-project-action', input]),
@@ -548,7 +529,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'read-task-preferences',
     'begin-task', 'checkpoint-task', 'verify-task',
     'preferences', 'taste-skill', 'resolve-preference-conflict',
-    'capture', 'workflow-observation', 'decision-trace', 'search', 'connected-search',
+    'capture', 'decision-trace', 'search', 'connected-search',
     'get-capture-policy', 'knowledge-usage', 'tags-resolve', 'get-capture-policy', 'tags-create',
     'get-capture-policy', 'knowledge-feedback',
     'current-project-search', 'common-candidates', 'personal-global-candidates',
@@ -578,7 +559,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'delete-executor-routing-rule', 'record-project-agent-task-outcome',
     'list-project-agent-routing-learning', 'ignore-project-agent-routing-learning',
     'reset-project-agent-routing-learning',
-    'workflow-candidates', 'workflow-recommendations',
+    'workflow-candidates',
     'get-capture-policy', 'revise-knowledge', 'reassign-knowledge', 'preview-project-action',
     'apply-project-action',
     'publish-project', 'project-releases', 'create-relation', 'relations', 'review-relation',

@@ -133,8 +133,6 @@ const HANDLERS = Object.freeze({
       operationActor: 'agent'
     }),
   capture_session_knowledge: (app, input) => app.captureSessionKnowledge(input),
-  record_workflow_transition_observation: (app, input) =>
-    app.recordWorkflowTransitionObservation(input),
   record_decision_trace: (app, input) => app.recordDecisionTrace(input),
   search_knowledge_graph: (app, input) => app.searchKnowledge({
     ...input,
@@ -269,8 +267,6 @@ const HANDLERS = Object.freeze({
   reset_project_agent_routing_learning: (app, input) =>
     app.resetProjectAgentRoutingLearning(input),
   list_workflow_candidates: (app, input) => app.listWorkflowCandidates(input),
-  recommend_next_workflow_steps: (app, input) =>
-    app.recommendNextWorkflowSteps(input),
   // The console's own edits reach reviseKnowledgeItem as the person; this Agent
   // path is not verifiably the person, so it stops with automatic recording.
   revise_personal_knowledge: (app, input) => captureGuard(app, sessionCaptureScope(input),

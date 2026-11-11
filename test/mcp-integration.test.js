@@ -12,8 +12,6 @@ import { listenFetchableServer } from '../src/server/listen.js';
 
 test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知识', async (t) => {
   const received = [];
-  const workflowObservations = [];
-  const workflowObservationProofs = [];
   const searchRequests = [];
   const taskContexts = taskContextProviderFixture();
   const personal = await provider((request) => {
@@ -99,18 +97,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
         entity_ids: ['entity-1'], relationship_ids: []
       };
     }
-    if (request.path === '/v1/workflow-observations') {
-      workflowObservations.push(request.body);
-      workflowObservationProofs.push(
-        request.headers['x-fuli-workflow-observation-token']
-      );
-      return {
-        status: 'committed', space_id: 'personal-1',
-        episode_id: request.body.observation_id,
-        entity_ids: ['step-x', 'step-y'], relationship_ids: ['transition']
-      };
-    }
-    if (request.path === '/v1/workflow-candidates/recommendations') {
+    if (request.path === '/v1/workflow-candidates/search') {
       return approvedWorkflowCandidatePage();
     }
     return [];
@@ -130,6 +117,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     personal: {
       providerUrl: personal.url,
       accessToken: 'personal-access',
+      // An old runtime config still carries the removed observation token.
       workflowObservationToken: 'mcp-host-workflow-observation-token-123456',
       principalId: 'principal-personal',
       spaceId: 'personal-1'
@@ -222,7 +210,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'get_user_taste_skill',
     'resolve_deferred_preference_conflict',
     'capture_session_knowledge',
-    'record_workflow_transition_observation', 'record_decision_trace',
+    'record_decision_trace',
     'search_knowledge_graph', 'search_connected_knowledge',
     'record_knowledge_usage', 'resolve_knowledge_tags', 'change_knowledge_tags', 'record_knowledge_feedback',
     'search_current_project_knowledge',
@@ -257,7 +245,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'get_executor_routing_rule', 'delete_executor_routing_rule',
     'record_project_agent_task_outcome', 'list_project_agent_routing_learning',
     'ignore_project_agent_routing_learning', 'reset_project_agent_routing_learning',
-    'list_workflow_candidates', 'recommend_next_workflow_steps',
+    'list_workflow_candidates',
     'revise_personal_knowledge', 'reassign_personal_knowledge',
     'preview_personal_project_action', 'apply_personal_project_action',
     'publish_personal_project', 'list_project_releases',
@@ -346,26 +334,26 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
   });
   assert.equal(actualExecutor.isError, undefined, JSON.stringify(actualExecutor));
 
-  const workflowRecommendation = await connection.client.callTool({
-    name: 'recommend_next_workflow_steps',
+  const workflowCandidates = await connection.client.callTool({
+    name: 'list_workflow_candidates',
     arguments: {
       personalSpaceId: 'personal-1',
       personalProjectId: 'hotel-b',
       afterStepKey: 'step-x'
     }
   });
-  assert.equal(workflowRecommendation.structuredContent.truncated, undefined);
+  assert.equal(workflowCandidates.structuredContent.truncated, undefined);
   assert.equal(
-    workflowRecommendation.structuredContent.candidates[0].targetStepName,
+    workflowCandidates.structuredContent.candidates[0].targetStepName,
     'Check links · NETWORK-STEP-Y-707'
   );
   assert.equal(
-    workflowRecommendation.structuredContent.candidates[0]
+    workflowCandidates.structuredContent.candidates[0]
       .authorization.highRiskPerCallApprovalRequired,
     true
   );
   assert.deepEqual(
-    workflowRecommendation.structuredContent.candidates[0]
+    workflowCandidates.structuredContent.candidates[0]
       .authorization.highRiskActionCategories,
     ['send', 'delete', 'publish', 'payment', 'external_write']
   );
@@ -401,47 +389,6 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     taskContext.structuredContent.effective_preferences[0].instruction,
     'Use direct, low-fluff writing.'
   );
-
-  const observationArguments = {
-    personalSpaceId: 'personal-1',
-    personalProjectId: 'hotel-b',
-    fromStep: {
-      actionId: 'generate-release-notes',
-      name: 'Generate release notes'
-    },
-    toStep: { actionId: 'check-links', name: 'Check links' },
-    workflowKey: 'release-notes-link-check',
-    condition: { releaseChannel: 'final' },
-    evidenceSummary: 'Completed release notes were followed by link checks.',
-    sourceApplication: 'other'
-  };
-  for (let occurrence = 0; occurrence < 3; occurrence += 1) {
-    const observed = await connection.client.callTool({
-      name: 'record_workflow_transition_observation',
-      arguments: observationArguments
-    });
-    assert.equal(observed.isError, undefined, JSON.stringify(observed));
-  }
-  assert.equal(workflowObservations.length, 3);
-  assert.deepEqual(
-    workflowObservationProofs,
-    Array(3).fill('mcp-host-workflow-observation-token-123456')
-  );
-  assert.equal(new Set(
-    workflowObservations.map(({ host_session_id: sessionId }) => sessionId)
-  ).size, 1);
-  assert.equal(new Set(
-    workflowObservations.map(({ observation_id: observationId }) => observationId)
-  ).size, 1);
-  assert.equal(workflowObservations[0].observed_at > '2026-01-01', true);
-  assert.equal('session_id' in workflowObservations[0], false);
-  assert.equal('occurrence_count' in workflowObservations[0], false);
-  const forgedSession = await connection.client.callTool({
-    name: 'record_workflow_transition_observation',
-    arguments: { ...observationArguments, sessionId: 'forged-session' }
-  });
-  assert.equal(forgedSession.isError, true);
-  assert.equal(workflowObservations.length, 3);
 
   const pendingCheckpoint = await connection.client.callTool({
     name: 'verify_task_checkpoint',

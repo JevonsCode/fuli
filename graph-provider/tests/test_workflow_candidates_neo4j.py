@@ -1,4 +1,3 @@
-import asyncio
 import os
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -15,14 +14,13 @@ from fuli_graph.app import create_app
 from fuli_graph.config import Settings
 
 
-HUMAN_REVIEW_TOKEN = 'integration-human-review-token-not-shared-with-agents'
 WORKFLOW_OBSERVATION_TOKEN = (
     'integration-workflow-observation-token-for-mcp-host'
 )
 
 
 @pytest.mark.asyncio
-async def test_real_neo4j_persists_evidence_and_serializes_opposite_reviews():
+async def test_real_neo4j_persists_evidence_and_versions_rule_changes():
     uri = os.getenv('FULI_TEST_NEO4J_URI')
     password = os.getenv('FULI_TEST_NEO4J_PASSWORD')
     ephemeral = os.getenv('FULI_TEST_NEO4J_EPHEMERAL') == '1'
@@ -141,79 +139,6 @@ async def test_real_neo4j_persists_evidence_and_serializes_opposite_reviews():
                 untrusted_relationship_ids
             )
 
-            shared = {
-                'personal_space_id': 'personal-space',
-                'candidate_version': 1,
-                'evidence_revision': 1,
-                'decision_revision': 0,
-                'authority': {'kind': 'user', 'label': 'Integration reviewer'},
-                'decision_source': 'direct_user_confirmation',
-            }
-            approve_intent = {
-                **shared,
-                'idempotency_key': 'integration-approve-review',
-                'decision': 'approve',
-                'reason': 'Approve the durable link-check workflow.',
-                'durable_authorization_confirmed': True,
-            }
-            reject_intent = {
-                **shared,
-                'idempotency_key': 'integration-reject-review',
-                'decision': 'reject',
-                'reason': 'Reject the durable link-check workflow.',
-                'durable_authorization_confirmed': False,
-            }
-            human_headers = {
-                'x-fuli-human-review-token': HUMAN_REVIEW_TOKEN,
-            }
-            approve_preview = await client.post(
-                f"/v1/workflow-candidates/{candidate['candidate_id']}/review-preview",
-                json=approve_intent,
-                headers=human_headers,
-            )
-            reject_preview = await client.post(
-                f"/v1/workflow-candidates/{candidate['candidate_id']}/review-preview",
-                json=reject_intent,
-                headers=human_headers,
-            )
-            assert approve_preview.status_code == 200, approve_preview.text
-            assert reject_preview.status_code == 200, reject_preview.text
-            approve_payload = {
-                **approve_intent,
-                'approval_token': approve_preview.json()['approval_token'],
-            }
-            reject_payload = {
-                **reject_intent,
-                'approval_token': reject_preview.json()['approval_token'],
-            }
-            approve_response, reject_response = await asyncio.gather(
-                client.post(
-                    f"/v1/workflow-candidates/{candidate['candidate_id']}/review",
-                    json=approve_payload,
-                    headers=human_headers,
-                ),
-                client.post(
-                    f"/v1/workflow-candidates/{candidate['candidate_id']}/review",
-                    json=reject_payload,
-                    headers=human_headers,
-                ),
-            )
-            assert sorted([
-                approve_response.status_code,
-                reject_response.status_code,
-            ]) == [200, 409]
-            winning_payload = (
-                approve_payload
-                if approve_response.status_code == 200
-                else reject_payload
-            )
-            exact_replay = await client.post(
-                f"/v1/workflow-candidates/{candidate['candidate_id']}/review",
-                json=winning_payload,
-                headers=human_headers,
-            )
-            assert exact_replay.status_code == 200, exact_replay.text
-
             fourth = await client.post(
                 '/v1/workflow-observations',
                 json=workflow_observation(
@@ -234,26 +159,6 @@ async def test_real_neo4j_persists_evidence_and_serializes_opposite_reviews():
                 )
                 assert changed_rule.status_code == 200, changed_rule.text
 
-        event_records, _, _ = await driver.execute_query(
-            '''
-            MATCH (:FuliWorkflowCandidate {id: $candidate_id})-
-                  [:HAS_WORKFLOW_REVIEW_EVENT]->(event)
-            RETURN count(event) AS event_count
-            ''',
-            candidate_id=candidate['candidate_id'],
-        )
-        preview_records, _, _ = await driver.execute_query(
-            '''
-            MATCH (:FuliWorkflowCandidate {id: $candidate_id})-
-                  [:HAS_WORKFLOW_REVIEW_PREVIEW]->(preview)
-            WHERE preview.used_at IS NOT NULL
-            RETURN count(preview) AS used_count
-            ''',
-            candidate_id=candidate['candidate_id'],
-        )
-        assert event_records[0]['event_count'] == 1
-        assert preview_records[0]['used_count'] == 1
-
         fresh_driver = AsyncGraphDatabase.driver(uri, auth=('neo4j', password))
         fresh_application = workflow_application(fresh_driver, uri, password)
         async with httpx.AsyncClient(
@@ -269,7 +174,6 @@ async def test_real_neo4j_persists_evidence_and_serializes_opposite_reviews():
         assert persisted['candidate_id'] == candidate['candidate_id']
         assert persisted['candidate_version'] == 2
         assert persisted['evidence_revision'] == 3
-        assert persisted['decision_revision'] == 2
         assert persisted['condition'] == {'releaseChannel': 'final'}
         assert persisted['status'] == 'pending'
         assert persisted['execution_authorized'] is False
@@ -305,7 +209,6 @@ class TransactionalDriver:
 def workflow_application(driver, uri, password):
     application = create_app(Settings(
         bootstrap_token='test-bootstrap-token-1234',
-        human_review_token=HUMAN_REVIEW_TOKEN,
         workflow_observation_token=WORKFLOW_OBSERVATION_TOKEN,
         neo4j_uri=uri,
         neo4j_password=password,

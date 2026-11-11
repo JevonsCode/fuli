@@ -59,13 +59,8 @@ from .personal_global_preference_models import (
     PersonalGlobalPreferenceScopeOptionsRequest,
 )
 from .workflow_candidate_models import (
-    WorkflowCandidate,
     WorkflowCandidatePage,
-    WorkflowCandidateReview,
-    WorkflowCandidateReviewIntent,
-    WorkflowCandidateReviewPreview,
     WorkflowCandidateSearch,
-    WorkflowRecommendationPage,
 )
 from .workflow_observation_models import WorkflowTransitionObservation
 from .models import (
@@ -165,9 +160,6 @@ from .personal_global_preferences import (
     personal_global_preference_scope_options,
 )
 from .workflow_candidates import (
-    preview_workflow_candidate_review,
-    recommend_workflow_candidates,
-    review_workflow_candidate,
     search_workflow_candidates,
 )
 from .workflow_observations import record_workflow_transition_observation
@@ -553,16 +545,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @application.post(
-        '/v1/workflow-candidates/recommendations',
-        response_model=WorkflowRecommendationPage,
-    )
-    async def workflow_candidate_recommendations(
-        request: WorkflowCandidateSearch,
-        actor: Actor,
-    ) -> WorkflowRecommendationPage:
-        return await recommend_workflow_candidates(store, actor, request)
-
-    @application.post(
         '/v1/workflow-candidates/search',
         response_model=WorkflowCandidatePage,
     )
@@ -571,32 +553,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         actor: Actor,
     ) -> WorkflowCandidatePage:
         return await search_workflow_candidates(store, actor, request)
-
-    @application.post(
-        '/v1/workflow-candidates/{candidate_id}/review-preview',
-        response_model=WorkflowCandidateReviewPreview,
-    )
-    async def preview_workflow_review(
-        candidate_id: str,
-        request: WorkflowCandidateReviewIntent,
-        actor: HumanReviewer,
-    ) -> WorkflowCandidateReviewPreview:
-        return await preview_workflow_candidate_review(
-            store, actor, candidate_id, request
-        )
-
-    @application.post(
-        '/v1/workflow-candidates/{candidate_id}/review',
-        response_model=WorkflowCandidate,
-    )
-    async def review_workflow(
-        candidate_id: str,
-        request: WorkflowCandidateReview,
-        actor: HumanReviewer,
-    ) -> WorkflowCandidate:
-        return await review_workflow_candidate(
-            store, actor, candidate_id, request
-        )
 
     @application.post(
         '/v1/knowledge/reviews/start',

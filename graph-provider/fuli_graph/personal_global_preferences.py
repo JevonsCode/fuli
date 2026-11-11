@@ -581,8 +581,9 @@ RETURN coalesce(decision.decision_revision, 0) AS decision_revision
 
 
 # Decisions are only read since 11-11 (the apply route was removed). Events an
-# earlier version stored also carry decided_by_actor_id and decision_channel;
-# nothing reads them, and they leave the field contract with the next graph version.
+# earlier version stored also carry decided_by_actor_id and decision_channel,
+# its previews issued_to_actor_id and issued_channel; nothing reads them, and
+# they leave the field contract with the next graph version.
 _DECISION_STATUS_QUERY = '''
 /* fuli:personal-global-decision-status */
 UNWIND $candidates AS requested

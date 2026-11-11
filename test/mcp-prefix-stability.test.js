@@ -12,9 +12,9 @@ import { createMcpServer } from '../src/mcp/create-mcp-server.js';
 
 const SENTINEL = 'SYNTHETIC_DYNAMIC_SENTINEL';
 const SESSIONS = [
-  { hostSessionId: '0e2b6a1c-0d3f-4c51-9a7e-6f1b2c3d4e5f', clock: () => new Date('2026-01-02T03:04:05Z'),
+  { hostSessionId: '0e2b6a1c-0d3f-4c51-9a7e-6f1b2c3d4e5f',
     env: { FULI_SYNTHETIC: `${SENTINEL}_ONE` }, project: `${SENTINEL}_project_one` },
-  { hostSessionId: '7c9d8e7f-6a5b-4c3d-8e2f-1a0b9c8d7e6f', clock: () => new Date('2027-11-30T23:59:59Z'),
+  { hostSessionId: '7c9d8e7f-6a5b-4c3d-8e2f-1a0b9c8d7e6f',
     env: { FULI_SYNTHETIC: `${SENTINEL}_TWO`, CODEX_THREAD_ID: 'synthetic-thread' }, project: `${SENTINEL}_project_two` }
 ];
 
@@ -31,7 +31,7 @@ async function prefix(client) {
 }
 
 async function session(profile, settings, operation) {
-  const server = createMcpServer(syntheticApp(settings.project), { env: settings.env, clock: settings.clock,
+  const server = createMcpServer(syntheticApp(settings.project), { env: settings.env,
     sourceApplication: 'claude_code', hostSessionId: settings.hostSessionId, toolProfile: profile, registerResources: false });
   const client = new Client({ name: 'synthetic-prefix', version: '1' });
   const changes = [];

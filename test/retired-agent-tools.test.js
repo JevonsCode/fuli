@@ -17,7 +17,10 @@ const RETIRED = new Map([
   ['preview_personal_global_preference_decision',
     'Personal-global preference decisions were removed; discover_personal_global_preference_candidates still lists candidates.'],
   ...['get_project_agent_recruitment_policy', 'update_project_agent_recruitment_policy'].map((name) => [name,
-    'The space recruitment policy was removed; use get_project_agent_coordination_policy or update_project_agent_coordination_policy.'])
+    'The space recruitment policy was removed; use get_project_agent_coordination_policy or update_project_agent_coordination_policy.']),
+  ['record_workflow_transition_observation',
+    'Workflow observations were removed; propose repeated steps with propose_agent_workflow.'],
+  ['recommend_next_workflow_steps', 'Workflow step recommendations were removed; use list_workflow_candidates.']
 ]);
 
 async function connect(t, toolProfile) {

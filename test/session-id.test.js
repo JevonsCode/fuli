@@ -19,7 +19,7 @@ test('message status and cancel use the trusted host client exactly like message
     for (const [nativeThreadId, host, client] of [[NATIVE_THREAD_ID, NATIVE_THREAD_ID, 'codex'], [null, 'claude-host', 'claude_code']]) {
       const forged = { taskContextToken: 'fuli-task-synthetic', messageId: 'message-1',
         sourceApplication: 'cursor', source_application: 'cursor', sourceSessionId: 'forged' };
-      const actual = normalizeAgentSessionInput(name, forged, nativeThreadId, host, undefined, client);
+      const actual = normalizeAgentSessionInput(name, forged, nativeThreadId, host, client);
       assert.equal(actual.sourceApplication, client, name);
       assert.equal(actual.sourceSessionId, host, name);
       assert.equal('source_application' in actual, false, name);
@@ -106,32 +106,6 @@ test('read-only expansion attribution comes from the native host, never search a
   assert.equal('sourceSessionVerified' in actual, false);
 });
 
-test('workflow observations replace every Agent session and timestamp with host values', () => {
-  const hostSessionId = mcpHostSessionId({}, () => 'process-session-1');
-  assert.equal(hostSessionId, 'fuli-host-process-session-1');
-  const clock = () => new Date('2026-08-03T08:00:00Z');
-  const normalized = ['fake-session-1', 'fake-session-2', 'fake-session-3'].map(
-    (sessionId) => normalizeAgentSessionInput(
-      'record_workflow_transition_observation',
-      {
-        workflowKey: 'release-notes-link-check',
-        sessionId,
-        idempotencyKey: `fake-${sessionId}`,
-        observedAt: '2099-01-01T00:00:00Z'
-      },
-      null,
-      hostSessionId,
-      clock
-    )
-  );
-
-  assert.deepEqual(normalized, [0, 1, 2].map(() => ({
-    workflowKey: 'release-notes-link-check', sourceApplication: 'other',
-    hostSessionId: 'fuli-host-process-session-1',
-    hostObservedAt: '2026-08-03T08:00:00.000Z'
-  })));
-});
-
 test('Project Agent MCP calls replace forged client and session attribution', () => {
   const forged = {
     personalSpaceId: 'space-1',
@@ -147,7 +121,6 @@ test('Project Agent MCP calls replace forged client and session attribution', ()
       forged,
       null,
       'claude-host-session',
-      () => new Date('2026-08-17T00:00:00Z'),
       'claude_code'
     ),
     {
@@ -162,7 +135,6 @@ test('Project Agent MCP calls replace forged client and session attribution', ()
       { projectPath: '/workspace/fuli' },
       null,
       'codex-host-session',
-      () => new Date('2026-08-17T00:00:00Z'),
       'codex'
     ),
     {
@@ -187,7 +159,6 @@ test('task activity keeps worker runtime separate from host-authoritative source
       },
       null,
       'cursor-host-session',
-      () => new Date('2026-08-17T00:00:00Z'),
       'cursor'
     ),
     {
@@ -200,7 +171,7 @@ test('task activity keeps worker runtime separate from host-authoritative source
   );
 });
 
-test('knowledge writes and workflow observations cannot forge client attribution', () => {
+test('knowledge writes cannot forge client attribution', () => {
   assert.deepEqual(
     normalizeAgentSessionInput(
       'capture_session_knowledge',
@@ -210,27 +181,11 @@ test('knowledge writes and workflow observations cannot forge client attribution
       },
       null,
       'claude-host-session',
-      () => new Date('2026-08-17T00:00:00Z'),
       'claude_code'
     ),
     {
       sessionId: 'claude-conversation', name: 'bounded capture',
       sourceApplication: 'claude_code', sourceSessionId: 'claude-host-session'
-    }
-  );
-  assert.deepEqual(
-    normalizeAgentSessionInput(
-      'record_workflow_transition_observation',
-      { workflowKey: 'release', sourceApplication: 'codex' },
-      null,
-      'cursor-host-session',
-      () => new Date('2026-08-17T00:00:00Z'),
-      'cursor'
-    ),
-    {
-      workflowKey: 'release', sourceApplication: 'cursor',
-      hostSessionId: 'cursor-host-session',
-      hostObservedAt: '2026-08-17T00:00:00.000Z'
     }
   );
 });
@@ -246,33 +201,14 @@ test('host-bound normalization strips camelCase and snake_case trust aliases', (
     },
     null,
     'claude-host-session',
-    () => new Date('2026-08-17T00:00:00Z'),
     'claude_code'
   );
   assert.equal(project.sourceSessionVerified, false);
   assert.equal('source_session_verified' in project, false);
+});
 
-  const observation = normalizeAgentSessionInput(
-    'record_workflow_transition_observation',
-    {
-      workflowKey: 'release',
-      session_id: 'forged-session',
-      idempotency_key: 'forged-key',
-      observed_at: '2099-01-01T00:00:00Z',
-      host_session_id: 'forged-host',
-      host_observed_at: '2099-01-01T00:00:00Z',
-      source_session_verified: true
-    },
-    null,
-    'cursor-host-session',
-    () => new Date('2026-08-17T00:00:00Z'),
-    'cursor'
-  );
-  assert.deepEqual(observation, {
-    workflowKey: 'release', sourceApplication: 'cursor',
-    hostSessionId: 'cursor-host-session',
-    hostObservedAt: '2026-08-17T00:00:00.000Z'
-  });
+test('a process without a client session gets a FULI host session id', () => {
+  assert.equal(mcpHostSessionId({}, () => 'process-session-1'), 'fuli-host-process-session-1');
 });
 
 test('capture-gated tools carry the MCP client, so a client switched off cannot be forged around', () => {
@@ -280,7 +216,7 @@ test('capture-gated tools carry the MCP client, so a client switched off cannot 
     'upsert_personal_project', 'get_knowledge_graph', 'search_current_project_knowledge']) {
     for (const forged of [{}, { sourceApplication: 'other' }]) {
       assert.equal(normalizeAgentSessionInput(name, { personalSpaceId: 'synthetic-space', ...forged },
-        null, 'claude-host', undefined, 'claude_code').sourceApplication, 'claude_code', name);
+        null, 'claude-host', 'claude_code').sourceApplication, 'claude_code', name);
     }
   }
 });

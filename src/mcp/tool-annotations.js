@@ -57,7 +57,6 @@ const READ_TOOLS = new Set([
   'get_agent_score_card',
   'resolve_knowledge_tags',
   'list_workflow_candidates',
-  'recommend_next_workflow_steps',
   'preview_personal_project_action',
   'list_project_releases',
   'list_project_relations',
@@ -97,7 +96,6 @@ const WRITE_TOOLS = new Set([
   'get_user_taste_skill',
   'resolve_deferred_preference_conflict',
   'capture_session_knowledge',
-  'record_workflow_transition_observation',
   'record_decision_trace',
   'search_knowledge_graph',
   'search_connected_knowledge',
@@ -192,7 +190,6 @@ export function annotationsFor(name) {
       name === 'publish_personal_project' || name === 'unsubscribe_public_project' ||
       name === 'record_knowledge_usage' || name === 'record_decision_trace' ||
       name === 'record_knowledge_feedback' ||
-      name === 'record_workflow_transition_observation' ||
       name === 'message_agent' || name === 'reply_agent_message' || name === 'cancel_agent_message' ||
       name === 'checkpoint_task_knowledge' ||
       name === 'checkpoint_project_agent_memory' ||
@@ -219,7 +216,6 @@ export function annotationsFor(name) {
       name === 'upsert_executor_routing_rule' ||
       name === 'update_executor_routing_rule' ||
       name === 'delete_executor_routing_rule' ||
-      name === 'record_workflow_transition_observation' ||
       name === 'search_connected_knowledge' ||
       name === 'record_decision_trace' ||
       name === 'record_knowledge_feedback' ||
