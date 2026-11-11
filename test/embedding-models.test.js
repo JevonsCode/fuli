@@ -131,8 +131,9 @@ test('a download keeps a model only when every file has the size and digest the 
   const { Writable } = await import('node:stream');
   const unwritable = createEmbeddingModelStore({ directory, fetchImpl: transport().fetchImpl,
     openFile: () => new Writable({ write(chunk, encoding, done) { done(Object.assign(new Error('synthetic ENOSPC'), { code: 'ENOSPC' })); } }) });
-  await assert.rejects(unwritable.download(model('full-disk')), error => error.code === 'embedding_model_unavailable');
-  assert.equal(unwritable.progress('full-disk').status, 'failed');
+  // It is named as this computer's refusal, not as an unreachable source, and no second source is tried.
+  await assert.rejects(unwritable.download(model('full-disk')), error => error.code === 'embedding_model_not_written');
+  assert.deepEqual([unwritable.progress('full-disk').status, unwritable.progress('full-disk').reason], ['failed', 'embedding_model_not_written']);
   assert.deepEqual(readdirSync(directory).sort(), ['mirrored', 'tiny-zh']);
   assert.deepEqual(store.remove('tiny-zh'), { id: 'tiny-zh', removed: true });
   assert.equal(existsSync(join(directory, 'tiny-zh')), false);
@@ -335,12 +336,12 @@ test('a newer download that cannot take the old one\'s place leaves the old one 
   const mapped = createEmbeddingModelStore({ directory, fetchImpl: transport().fetchImpl,
     rename: held('EPERM', from => from.endsWith('tiny-zh') && !from.includes('.partial')) });
   let asked = 0;
-  await assert.rejects(mapped.download(model(), { beforeReplace: async () => { asked += 1; } }), error => error.code === 'EPERM');
+  await assert.rejects(mapped.download(model(), { beforeReplace: async () => { asked += 1; } }), error => error.code === 'embedding_model_not_written');
   assert.equal(asked, 1);
   // A scanner holds the new files just written: the new folder will not move in, so the old one goes back.
   const scanned = createEmbeddingModelStore({ directory, fetchImpl: transport().fetchImpl,
     rename: held('EBUSY', from => from.includes('.partial')) });
-  await assert.rejects(scanned.download(model()), error => error.code === 'EBUSY');
+  await assert.rejects(scanned.download(model()), error => error.code === 'embedding_model_not_written');
 
   for (const store of [mapped, scanned]) {
     assert.equal(store.progress('tiny-zh').status, 'failed');

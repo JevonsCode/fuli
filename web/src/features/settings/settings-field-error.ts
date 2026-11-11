@@ -5,6 +5,9 @@ import { t } from '@/i18n'
 // the browser's language, so the page says it under the field instead.
 type ValidatedField = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
 
+// The id of the message under a field (data-settings-field), for its aria-describedby.
+export const fieldErrorId = (key: string) => `settings-field-error-${key.replace(/\W/g, '-')}`
+
 export function fieldErrorMessage(field: ValidatedField): string {
   const { validity } = field
   if (validity.valueMissing) return t('settings.fieldErrors.required')

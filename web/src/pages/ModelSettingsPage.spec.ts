@@ -93,6 +93,13 @@ const openDetails = async (wrapper: Awaited<ReturnType<typeof mountPage>>, role:
 const closeDetails = (wrapper: Awaited<ReturnType<typeof mountPage>>) => wrapper.get('[data-model-use-details] button[aria-label="关闭"]').trigger('click')
 
 describe('ModelSettingsPage', () => {
+  it('links to the AI permission for these settings instead of repeating it', async () => {
+    const wrapper = await mountPage()
+    const link = wrapper.get('[data-model-permission-link]')
+    expect(link.attributes('to')).toBe('/settings?tab=ai#ai-permissions')
+    expect(wrapper.find('[data-agent-delegation-settings]').exists()).toBe(false)
+  })
+
   it('shows every use as a card with its state, its model, one line of how it stands and one quick action', async () => {
     const wrapper = await mountPage()
     expect(wrapper.findAll('.model-use-grid > article h3').map(heading => heading.text()))

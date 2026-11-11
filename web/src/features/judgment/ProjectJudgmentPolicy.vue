@@ -91,7 +91,11 @@ function reset() {
 
 <template>
   <section class="project-judgment-policy" :data-project-judgment="projectId" :data-inherited="policy?.inherited">
-    <strong class="project-judgment-heading">{{ heading }}</strong>
+    <div class="project-judgment-head">
+      <strong class="project-judgment-heading">{{ heading }}</strong>
+      <!-- The project page links to where the default lives; Tonborg's own page has none. -->
+      <slot name="heading-action" />
+    </div>
     <GrowthLoading v-if="pending === 'loading'" variant="inline" :label="pendingLabel" />
     <template v-else-if="policy">
       <div v-if="policy.inherited" class="project-judgment-row">
@@ -117,6 +121,7 @@ function reset() {
 
 <style scoped>
 .project-judgment-policy { display: grid; gap: 8px; min-width: 0; }
+.project-judgment-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; min-width: 0; }
 .project-judgment-heading { color: var(--color-ink); font-size: 14px; font-weight: 550; }
 .project-judgment-row { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px; }
 .project-judgment-controls { flex: 1 1 320px; }

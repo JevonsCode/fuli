@@ -14,7 +14,10 @@
 .project-overview-purpose { max-width: var(--measure); color: var(--color-ink-soft); line-height: 1.6; }
 .project-overview-actions { display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
 
-.project-capture-card, .project-judgment-card { padding: var(--space-4) var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); }
+/* Recording, Tonborg's judgment and 整理: one card surface, so the three read as one group. */
+.project-capture-card, .project-judgment-card, .project-organizing-card { padding: var(--space-4) var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); }
+.project-judgment-default-link { color: var(--color-muted); font-size: var(--text-meta); -webkit-user-select: none; user-select: none; }
+.project-judgment-default-link:hover, .project-judgment-default-link:focus-visible { color: var(--color-ink); }
 .project-team { display: grid; gap: var(--space-3); padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--card); }
 .project-team-header { display: flex; align-items: center; gap: var(--space-3); min-height: var(--control-height); }
 .project-team-header h3 { font-size: var(--text-section); font-weight: 650; margin-right: auto; }
