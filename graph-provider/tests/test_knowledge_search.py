@@ -12,6 +12,7 @@ from fuli_graph.knowledge_search import (
     _item_scope_metadata,
     _ranked_relevance,
     _relevance,
+    _term_weights,
     personal_edge_scopes,
     personal_project_scopes,
     search_knowledge,
@@ -647,3 +648,59 @@ def test_a_concept_matches_whatever_word_form_the_question_uses():
     assert _relevance('owns codes', record) > 0
     assert _relevance('who reviews changes', record) > 0
     assert _relevance('release freeze window', record) == 0
+
+
+def _synthetic_project_records():
+    """A project's records as one search sees them: the product's own words
+    (控制台, 圆桌, FLA) run through many of them."""
+    record = lambda name, summary, aspect=None: {
+        'name': name, 'type': 'Knowledge', 'summary': summary, 'reasoning_summary': None, 'profile_aspect': aspect}
+    return [
+        record('AI 替人操作', 'AI 要能替人操作所有事情，不要让人总去控制台里做。', 'judgment_preference'),
+        record('介绍团队', '介绍团队时讲清每个项目一位负责人 FLA，宣传要包含圆桌。', 'judgment_preference'),
+        record('控制台布局', '控制台页面用整宽，不做左右分栏。', 'taste'),
+        record('控制台文案', '控制台里给人看的字不超过一百个。', 'taste'),
+        record('FLA 起名', '每个 FLA 有自己的名字。'),
+        record('FLA 头像', '介绍 FLA 时带上头像。'),
+        record('FLA 分工', '复杂的事由负责人做，FLA 接有边界的部分。'),
+        record('圆桌演示', '圆桌的演示对话至少三四个来回。', 'taste'),
+        record('统一按钮与交互控件', '不同性质的按钮不要混放。', 'taste'),
+        record('发布说明', '发布说明写短一点。', 'taste'),
+        record('会话卡片', '不要让人去点会话卡片。', 'judgment_preference'),
+        record('日志排查方式', '先查询线上错误日志。'),
+    ]
+
+
+def test_sharing_only_the_projects_common_words_with_a_query_is_not_a_match():
+    records = _synthetic_project_records()
+    by_name = {record['name']: record for record in records}
+
+    def found(query, extra=()):
+        candidates = [*records, *extra]
+        weights = _term_weights(query, candidates)
+        scored = [(record['name'], _relevance(query, record, weights)) for record in candidates]
+        return [name for name, score in sorted(scored, key=lambda item: -item[1]) if score > 0]
+
+    # Nothing here says which port: three records only share 控制台 with the question.
+    assert found('控制台端口') == []
+    port = {**by_name['日志排查方式'], 'name': '控制台端口', 'summary': '本机控制台端口是 2828。'}
+    assert found('控制台端口', [port])[0] == '控制台端口'
+    # 圆桌 and FLA alone do not answer how an FLA is woken.
+    assert found('圆桌 叫醒 FLA') == []
+    wake = {**by_name['日志排查方式'], 'name': '叫醒 FLA', 'summary': '圆桌叫醒 FLA 先续接它上次的会话。'}
+    assert found('圆桌 叫醒 FLA', [wake]) == ['叫醒 FLA']
+    # Two words written together still find the record that carries one of them:
+    # the characters that only meet across the boundary (钮设) count for less.
+    assert found('按钮设计') == ['统一按钮与交互控件']
+    # A query whose words nobody wrote down matches nothing, whatever common word it shares.
+    assert found('更新本机 FLA 安装') == []
+
+
+def test_term_weights_follow_how_few_candidates_carry_a_term():
+    records = _synthetic_project_records()
+    weights = _term_weights('圆桌 叫醒 FLA 按钮', records)
+    assert weights['按钮'] > weights['圆桌'] > weights['fla']
+    assert weights['叫醒'] < weights['按钮'], 'a term nobody carries counts for less than the rarest real one'
+    assert _term_weights('圆桌', records[:7]) == {} and _term_weights('', records) == {}, 'too few candidates to weigh'
+    # Without weights every term counts the same, as before.
+    assert _relevance('按钮设计', records[8]) > 0
