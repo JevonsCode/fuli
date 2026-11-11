@@ -4,8 +4,10 @@ import { graphReadPath, preferenceConflictsPath, publicationDraftsPath } from '.
 // The person's own full reads of personal knowledge, from the local console:
 // the graph, one item's view, a turn's full receipt, a session's records and
 // what it holds for a migration, the preference conflicts and the publication
-// drafts; and the person's defer and completion of a conflict, which answer as
-// missing to a reader that may not see its items. Knowledge an FLA wrote, and
+// drafts; the person's defer and completion of a conflict, which answer as
+// missing to a reader that may not see its items; and the person's own change
+// of an item (a revision, a batch confirmation, a move to another project),
+// which the provider records as theirs only with this proof. Knowledge an FLA wrote, and
 // a preference given to one FLA, is that FLA's; the provider shows it to any
 // other reader only with the human-review token this port sends
 // (human-review-channel.js). Without it the provider
@@ -52,6 +54,9 @@ export function knowledgeOwnerReads(dataDir, { send = personalHumanReviewChannel
       decidePublicationDraft: (personalSpaceId, draftId, body, { timeoutMs } = {}) =>
         request(draftPath(personalSpaceId, draftId, '/decision'), body, 'POST', { timeoutMs })
     },
+    reviseKnowledgeItem: (itemId, body) => request('/v1/knowledge/items/' + encodeURIComponent(itemId), body, 'PATCH'),
+    confirmKnowledgeBatch: (body) => request('/v1/knowledge/batch-confirmations', body),
+    reassignKnowledgeItem: (itemId, body) => request('/v1/knowledge/items/' + encodeURIComponent(itemId) + '/assignment', body),
     deferPreferenceConflict: (body) => request('/v1/preference-conflicts/defer', body),
     completePreferenceConflict: (conflictId, body) =>
       request(`/v1/preference-conflicts/${encodeURIComponent(conflictId)}/complete`, body)
