@@ -87,14 +87,17 @@ function go(entry: OutlineEntry) {
    centre line. Closed, only the capsule takes the pointer: the hidden names must not cover the
    page. Open, the glass behind every row takes it, so the pointer can travel to a name. */
 .page-outline {
-  --outline-row: 30px;
   --outline-pad: 6px;
-  --outline-capsule: clamp(14px, calc(2.4vw - 10px), 20px);
-  --outline-dot: 5px;
-  --outline-pill: 14px;
-  --outline-name-max: 180px;
   --outline-top-min: calc(76px + var(--desktop-caption-top, 0px));
   --outline-bottom: 32px;
+  /* A row is 30px while every section fits between the top bar and the bottom margin; a page with
+     more sections than that gets shorter rows (never under 16px, a line of the names), so the
+     whole list and the mark on it stay inside the window instead of running off its end. */
+  --outline-row: clamp(16px, calc((100dvh - var(--outline-top-min) - var(--outline-bottom) - 2 * var(--outline-pad)) / var(--outline-rows, 3)), 30px);
+  --outline-capsule: clamp(14px, calc(2.4vw - 10px), 20px);
+  --outline-dot: 5px;
+  --outline-pill: min(14px, calc(var(--outline-row) - 4px));
+  --outline-name-max: 180px;
   --outline-height: calc(var(--outline-rows, 3) * var(--outline-row) + 2 * var(--outline-pad));
   /* Opening under the pointer waits for it to rest (passing over never opens it); the keyboard opens it at once. */
   --outline-open-delay: var(--motion-intent);
