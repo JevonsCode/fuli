@@ -91,6 +91,38 @@ as that worker's history and leaves the task status unchanged; record it once an
 as a status change. In a team without sub-teams, the Agent dispatching from its own task becomes
 the new task's coordinator: omit `coordinatorAgentId` rather than naming the project lead.
 
+## Bring an FLA In
+
+"找 FLA AAA 做 X" means AAA works on X now, with its own context. Call `message_agent` (`to` AAA,
+`wait: true`, the current `taskContextToken`). FULI tries, in order: AAA's latest session (Claude Code
+forks it; a Codex conversation gets the ask queued behind a running turn, never inside it), a new
+session as AAA in your own client first, then this session standing in. `ladder` lists every step
+with `reason` and `why`; tell the person which tier held the ask and why each earlier one failed,
+in those words.
+
+`status: stand_in` means this session now speaks for AAA as 「代入」, with this client and model
+executing:
+
+- show `standIn.present` once and prefix everything AAA says with `standIn.speaker`;
+- read only `standIn.scope` and AAA's own items on demand; keep your private memory out of AAA's
+  answer and AAA's context out of yours;
+- your own checkpoint records only your own work; never list AAA as a collaborator for it;
+- when AAA is done, call `reply_agent_message` with that `messageId` and AAA's increment (what it
+  did, conclusions, blockers). FULI records it as AAA's stand-in reply and hands it to AAA, which
+  sees it at its next task (`stand_in_handbacks`, then `read_agent_messages` `handbacks`) and
+  keeps what still holds in its own work record;
+- end the reply with `standIn.receipt.markdown`: identity AAA, executor this client. Never say AAA
+  ran in its own client.
+
+AAA may still answer its own ask first; then the stand-in reply is refused. There is no stand-in
+when AAA may still be running (`wake_timeout`, an unconfirmed cleanup), when the team rules refuse
+the contact (`not_permitted`), for a cross-project ask, inside a woken session, or with
+`wait: false`; the result stays `queued` with its reason.
+
+The same FLA in another session is another instance. Address it by `conversation` set to that
+session's `sessionId` from `find_agents` `recentConversations`; naming your own FLA without it
+returns the sessions to choose from.
+
 ## Ask Another Project's Lead
 
 When the person asks about another project ("去看看 X 项目", "问问 X 项目", "ask the X project"), the

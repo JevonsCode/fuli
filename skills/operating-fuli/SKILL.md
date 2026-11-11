@@ -88,6 +88,8 @@ When the user addresses AR or Bole to ask about organization or find someone, re
 
 ## Asking another project
 
+"找 FLA X 做 Y" brings X in: `message_agent(to: X, wait: true)` tries X's latest session, then a new session as X (your client first), then this session stands in for X as 「代入」 (`status: stand_in`); report `ladder` (which tier held it and why each earlier one failed) and follow `standIn` (capturing-session-knowledge references/coordination.md, "Bring an FLA In"). Another session of your own FLA is reached with `conversation: <its sessionId>`.
+
 "去看看 X 项目" / "问问 X 项目" means asking X's lead on the roundtable, not reading X yourself: `message_agent(to: "project:<id or exact name>", wait: true)` with the current `taskContextToken` (task entry's `roundtable_ask` gives the address). Answer from the reply, naming who answered; a `queued` reply is checked later with `get_agent_message_status`; report its `delivery` and `guidance` as given (`not_delivered` means no client has it yet; FULI cannot push into a client chat that is already running). Only the current project's lead asks across projects.
 
 ## Before starting collaborators

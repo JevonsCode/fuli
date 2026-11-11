@@ -44,7 +44,8 @@ const LONG_REPLY = 'Peta UAT 绑定在重启网关后生效。'.repeat(400);
 test('an inbox reply reaches the asker: announced once at task entry, full body once from read_agent_messages', async t => {
   const { roundtable, ask, reply, read } = fixture(t);
   const sent = await ask('Peta UAT 绑定怎么生效？');
-  assert.equal(sent.status, 'queued');
+  // The asker's session may stand in; the ask still waits in Nova's inbox.
+  assert.equal(sent.status, 'stand_in');
   assert.equal((await reply(sent.messageId, LONG_REPLY)).status, 'sent');
 
   // Only the asker, in the asking project, is told; the replier is not.

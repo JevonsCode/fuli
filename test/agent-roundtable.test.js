@@ -124,7 +124,7 @@ test('grants are per-attempt, verified against the answering session, and always
 test('a missing redemption cannot be attributed to the intended member', async () => {
   const { roundtable, revoked } = fixture({ redeemed: false });
   const result = await roundtable.messageAgent({ taskContextToken: 'token-milo', to: 'reviewer-1', body: 'Review' });
-  assert.equal(result.status, 'queued');
+  assert.equal(result.status, 'stand_in');
   assert.equal(result.reason, 'delegation_not_redeemed');
   assert.equal(roundtable.thread({ threadId: result.threadId }).messages.length, 1);
   assert.equal(revoked.length, 1);
@@ -158,7 +158,7 @@ test('a message that cannot be delivered waits in the inbox until the Agent repl
   const { roundtable } = fixture({ wake: async () => { throw Object.assign(new Error('offline'), { code: 'client_unavailable' }); } });
   const sent = await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code',
     to: 'reviewer-1', body: '请看一下 PR' });
-  assert.equal(sent.status, 'queued');
+  assert.equal(sent.status, 'stand_in');
   assert.equal(sent.reason, 'client_unavailable');
   const inbox = await roundtable.readMessages({ taskContextToken: 'token-nova', sourceApplication: 'codex' });
   assert.deepEqual(inbox.messages.map(({ from, body }) => [from, body]), [['Milo Reed', '请看一下 PR']]);
@@ -278,10 +278,11 @@ test('a reused PID whose group answers is held for a day, not forever (rec#97)',
 test('an Agent with no client this computer can start is named plainly (rec#97)', async () => {
   const { roundtable, woken } = fixture({ clientAvailable: () => false });
   const sent = await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'reviewer-1', body: 'hello' });
-  assert.deepEqual([sent.status, sent.reason, sent.delivery, woken.length], ['queued', 'no_client', 'not_delivered', 0]);
-  assert.match(sent.guidance, /none of Nova Lane's clients \(Codex\) can be started on this computer/);
+  assert.deepEqual([sent.status, sent.reason, woken.length], ['stand_in', 'no_client', 0]);
+  assert.deepEqual(sent.ladder.steps.map(({ tier, client, reason }) => [tier, client, reason]), [
+    ['resume', null, 'no_previous_session'], ['new_session', 'claude_code', 'client_not_allowed']]);
   const status = await roundtable.messageStatus({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', messageId: sent.messageId });
-  assert.deepEqual([status.reason, status.delivery], ['no_client', 'not_delivered']);
+  assert.deepEqual([status.reason, status.delivery], ['no_client', 'stand_in']);
 });
 
 test('a message sent without waiting says no session was started (rec#97)', async () => {
@@ -298,8 +299,8 @@ test('status and cancel work from each client’s own task and reject another pr
   const sent = await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code',
     to: 'reviewer-1', body: '请复核测试' });
   // Recipient on Codex and sender on Claude Code both read the status.
-  assert.equal((await roundtable.messageStatus({ taskContextToken: 'token-nova', sourceApplication: 'codex', messageId: sent.messageId })).status, 'queued');
-  assert.equal((await roundtable.messageStatus({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', messageId: sent.messageId })).status, 'queued');
+  assert.equal((await roundtable.messageStatus({ taskContextToken: 'token-nova', sourceApplication: 'codex', messageId: sent.messageId })).status, 'stand_in');
+  assert.equal((await roundtable.messageStatus({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', messageId: sent.messageId })).status, 'stand_in');
   await assert.rejects(roundtable.cancelMessage({ taskContextToken: 'token-nova', sourceApplication: 'codex', messageId: sent.messageId }), /No such message sent/);
   await assert.rejects(roundtable.messageStatus({ taskContextToken: 'token-foreign', sourceApplication: 'claude_code', messageId: sent.messageId }), /current project/);
   await assert.rejects(roundtable.cancelMessage({ taskContextToken: 'token-foreign', sourceApplication: 'claude_code', messageId: sent.messageId }), /current project/);
@@ -345,12 +346,12 @@ test('a timed-out wake does not start another client', async () => {
   assert.equal(woken.length, 1);
 });
 
-test('a fresh run is used when the recipient has no resumable conversation', async () => {
+test('a fresh run is used when the recipient has no resumable conversation, in the sender\'s own client first', async () => {
   const { roundtable, woken } = fixture();
   const result = await roundtable.messageAgent({ taskContextToken: 'token-nova', sourceApplication: 'codex',
     to: 'Milo Reed', body: 'hello', projectPath: '/work/app' });
-  assert.equal(result.via, 'claude_code:new');
-  assert.deepEqual([woken[0].client, woken[0].sessionId, woken[0].cwd], ['claude_code', null, '/work/app']);
+  assert.equal(result.via, 'codex:new');
+  assert.deepEqual([woken[0].client, woken[0].sessionId, woken[0].cwd], ['codex', null, '/work/app']);
 });
 
 test('names must be unambiguous and threads have a message limit', async () => {
@@ -640,7 +641,7 @@ test('a woken process is recorded as soon as spawn returns, before its spawn eve
 test('the address find_agents gives works as the to of message_agent, and a near-miss name is offered as a question (rec#110)', async () => {
   const { roundtable } = fixture({ wake: async () => { throw Object.assign(new Error('offline'), { code: 'client_unavailable' }); } });
   const [nova] = (await roundtable.findAgents({ query: 'Nova Lane' })).agents;
-  const sent = await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: nova.address, body: '请复核' });
+  const sent = await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: nova.address, body: '请复核', wait: false });
   assert.equal(sent.status, 'queued');
   const missed = await roundtable.findAgents({ query: 'Nova Lan' });
   assert.ok(missed.agents.length, 'a substring still matches as before');
@@ -654,7 +655,7 @@ test('the address find_agents gives works as the to of message_agent, and a near
 
 test('an Agent working with no project reads the status of the message it sent (rec#110)', async () => {
   const { roundtable } = fixture({ wake: async () => { throw Object.assign(new Error('offline'), { code: 'client_unavailable' }); } });
-  const sent = await roundtable.messageAgent({ taskContextToken: 'token-global', sourceApplication: 'claude_code', to: 'reviewer-1', body: '请复核' });
+  const sent = await roundtable.messageAgent({ taskContextToken: 'token-global', sourceApplication: 'claude_code', to: 'reviewer-1', body: '请复核', wait: false });
   assert.equal((await roundtable.messageStatus({ taskContextToken: 'token-global', sourceApplication: 'claude_code', messageId: sent.messageId })).status, 'queued');
   // A project's task still does not reach a message of no project, nor the reverse.
   await assert.rejects(roundtable.messageStatus({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', messageId: sent.messageId }), /current project/);

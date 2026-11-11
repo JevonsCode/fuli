@@ -41,6 +41,9 @@
 //                                               matchedTerms? }] (a project name, or an active standing assignment);
 //                                               when it throws, find_agents answers from the directory
 //                                               and names its code as workUnavailable
+//   standInScope({ agentId, name, occupation, projectId, text, client, sessionId })
+//                                               optional: the Agent's shareable index for a session that
+//                                               stands in for it (stand-in.js); never its private memory
 //   requestSignal()                             optional, sync: the current request's AbortSignal
 //   inRestrictedWorker()                        optional, sync: true inside a sealed worker run
 export const ROUNDTABLE_HOST_METHODS = Object.freeze([
