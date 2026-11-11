@@ -1,0 +1,35 @@
+/*
+ * One tile per client, shared by the clients' status card and the manual card
+ * (ClientConnectionSettings.vue, ClientManualConnection.vue). Tiles fill the
+ * row by width; past two rows the grid scrolls inside itself.
+ */
+.client-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 248px), 1fr)); gap: 12px;
+  max-height: 392px; margin: 0; padding: 2px; overflow-y: auto; list-style: none; scrollbar-gutter: stable;
+}
+.client-grid__empty { grid-column: 1 / -1; color: var(--color-muted); font-size: 13px; }
+.client-row {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; min-width: 0;
+  padding: 14px; border-radius: var(--radius-card); background: var(--color-surface); box-shadow: 0 0 0 1px var(--color-border);
+}
+.client-row--connected { background: color-mix(in srgb, var(--color-success-soft) 35%, var(--color-surface)); }
+.client-row__body { display: flex; flex-direction: column; gap: 4px; min-width: 0; height: 100%; overflow-wrap: anywhere; }
+.client-row__body p { margin: 0; }
+/* Name and status on top, the action pinned to the tile's right so it never moves. */
+.client-row__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-height: 26px; padding-top: 2px; }
+.client-row__head strong { overflow: hidden; color: var(--color-ink); font-weight: var(--weight-medium); text-overflow: ellipsis; white-space: nowrap; }
+.client-row__label { flex: none; color: var(--color-muted); font-size: 12px; }
+.client-row__action { align-self: flex-start; margin-top: auto; }
+.client-row__head .client-row__action { margin: 0 0 0 auto; align-self: center; }
+.client-row__icon {
+  display: inline-grid; width: 22px; height: 22px; margin-top: 4px; place-items: center; border: 1px solid currentColor; border-radius: 50%;
+  color: var(--color-muted); font-size: 12px; font-weight: var(--weight-strong);
+}
+.client-row--connected .client-row__icon { color: var(--color-success); }
+.client-row--removed .client-row__icon,
+.client-row--changed .client-row__icon,
+.client-row--skills_left .client-row__icon { color: var(--color-warning); }
+/* Detected clients, or the hand-described ones, each in a full-width section. */
+.connection-sections { display: grid; gap: 28px; padding-inline: 24px; }
+.connection-section { display: grid; gap: 12px; align-content: start; min-width: 0; }
+@media (max-width: 680px) { .connection-sections { padding-inline: var(--space-4); } }

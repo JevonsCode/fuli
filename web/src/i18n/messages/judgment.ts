@@ -4,7 +4,6 @@ export const judgmentMessages = {
       title: '@:{\'roleNames.tonborg\'} 的默认判断方式',
       hint: '所有项目默认按这里判断；某个项目要不同，在这里或项目页单独设置。',
       link: '@:{\'roleNames.tonborg\'} 的判断标准和默认判断方式',
-      open: '查看',
       undo: '撤销',
       saved: '判断方式已保存。',
       loading: '正在读取 @:{\'roleNames.tonborg\'} 的默认判断方式…',
@@ -43,6 +42,7 @@ export const judgmentMessages = {
       starting: '正在为「{name}」单独设置 @:{\'roleNames.tonborg\'} 的判断方式…',
       saving: '正在保存「{name}」的 @:{\'roleNames.tonborg\'} 判断方式…',
       resetting: '正在让「{name}」恢复 @:{\'roleNames.tonborg\'} 的默认判断…',
+      defaultLink: '默认方式在 @:{\'roleNames.tonborg\'} 页面',
     },
     overrides: {
       title: '各项目单独的判断方式',
@@ -207,7 +207,6 @@ export const judgmentMessages = {
       title: "@:{'roleNames.tonborg'}'s default judgment",
       hint: 'Every project is judged this way unless it has its own setting, here or on its page.',
       link: "@:{'roleNames.tonborg'}'s standards and default judgment",
-      open: 'View',
       undo: 'Undo',
       saved: 'Saved.',
       loading: "Reading @:{'roleNames.tonborg'}'s default judgment…",
@@ -246,6 +245,7 @@ export const judgmentMessages = {
       starting: "Giving {name} its own @:{'roleNames.tonborg'} judgment…",
       saving: "Saving @:{'roleNames.tonborg'}'s judgment for {name}…",
       resetting: "Returning {name} to @:{'roleNames.tonborg'}'s default judgment…",
+      defaultLink: "The default is on @:{'roleNames.tonborg'}'s page",
     },
     overrides: {
       title: 'Projects with their own judgment',

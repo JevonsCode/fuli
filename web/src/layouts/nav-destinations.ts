@@ -39,9 +39,8 @@ export function navDestinations({ spaceId }: NavContext): NavDestination[] {
     { key: 'projects', icon: 'project', to: projects, owns: ['/personal/'], placement: 'dock', sections: [
       { key: 'myProjects', to: projects, owns: ['/personal/'] },
     ] },
-    { key: 'settings', icon: 'settings', to: '/settings', owns: ['/settings', '/connections', '/about', '/howto'], placement: 'top', sections: [
+    { key: 'settings', icon: 'settings', to: '/settings', owns: ['/settings', '/about', '/howto'], placement: 'top', sections: [
       { key: 'settings', to: '/settings', owns: ['/settings'] },
-      { key: 'connections', to: '/connections', owns: ['/connections'] },
       { key: 'about', to: '/about', owns: ['/about'] },
       { key: 'howto', to: '/howto', owns: ['/howto'] },
     ] },

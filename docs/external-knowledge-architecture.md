@@ -157,7 +157,7 @@ flowchart LR
 
 同步采用“新版本先写入、旧版本后失效”。如果新内容无法通过安全检查，旧版本仍保持有效，
 避免半更新。一个目标失败不会复用另一个目标的游标或镜像索引。当前没有后台定时器；同步由
-连接页或 API 显式触发。
+「设置 → 连接」或 API 显式触发。
 
 ### 图谱投影
 
@@ -183,7 +183,7 @@ Notion 当前 Markdown 接口见 [Retrieve a page as markdown](https://developer
 ### 自定义连接器
 
 模板见 [markdown-folder.mjs](../examples/external-knowledge/markdown-folder.mjs)。安装时把受信任模块放入
-`${dataDir}/external-knowledge/connectors/`，然后在连接页填写相对模块名、来源 JSON 和允许暴露的
+`${dataDir}/external-knowledge/connectors/`，然后在「设置 → 连接」填写相对模块名、来源 JSON 和允许暴露的
 环境变量名称。
 
 模块契约：
@@ -251,7 +251,7 @@ Agent 使用 `search_connected_knowledge`。运行时只选择与当前 `persona
 记录 Agent 查看事件，因此 MCP 注解不会把它伪标成纯本地、无副作用读取。
 Agent 工具（`discover_external_knowledge_sources`、`create_external_knowledge_binding`）不能指定 MCP 的 stdio 命令，
 也不能为自己填写的 MCP / Retrieval API 端点指定凭据环境变量（`tokenEnv`、`headerEnv`）：本地命令以用户身份运行，
-凭据会被发往调用方选择的地址，回环地址（本机服务）和自定义代码连接器也一样；这些连接只由用户在连接页创建（`local_user_only`）。已创建的绑定，
+凭据会被发往调用方选择的地址，回环地址（本机服务）和自定义代码连接器也一样；这些连接只由用户在「设置 → 连接」创建（`local_user_only`）。已创建的绑定，
 Agent 照常检查、同步和检索；Notion、飞书的凭据只发往各自的官方接口，Agent 仍可创建。
 
 外部错误只返回有界诊断；疑似包含凭据的错误文本会替换为保护性说明，不写入注册表或返回给
@@ -260,7 +260,7 @@ Agent。
 ## 验证
 
 默认测试使用显式标注的 fixture / mock 响应验证协议、分页、安全边界、API、Agent 工具和 Vue
-连接页；这些数据不是运行事实。真实联网验证使用两个公开官方文档仓库，在系统临时目录完成
+「设置 → 连接」；这些数据不是运行事实。真实联网验证使用两个公开官方文档仓库，在系统临时目录完成
 浅克隆、同步映射和只读检索，并在 `finally` 中删除全部下载内容：
 
 ```sh

@@ -13,9 +13,9 @@ import { useConsoleStore } from '@/stores/console'
 import { setLocale } from '@/i18n'
 import { optionSelectStubs } from '@/test-support/OptionSelectStub'
 import { closeCombobox, openCombobox, setOption } from '@/test-support/option-pickers'
-import ConnectionsPage from './ConnectionsPage.vue'
+import ExternalKnowledgeSettings from './ExternalKnowledgeSettings.vue'
 
-describe('ConnectionsPage', () => {
+describe('ExternalKnowledgeSettings', () => {
   beforeEach(() => {
     setLocale('zh-CN', { persist: false })
     deleteJson.mockReset()
@@ -26,32 +26,6 @@ describe('ConnectionsPage', () => {
     patchJson.mockResolvedValue({})
     postJson.mockReset()
     postJson.mockResolvedValue({})
-  })
-
-  it('shows the local graph connection openly', async () => {
-    const pinia = createPinia()
-    setActivePinia(pinia)
-    useConsoleStore().state = {
-      mode: 'personal_only',
-      activePersonalSpaceId: 'personal-1',
-      personalSpaces: [{ id: 'personal-1', name: '我' }],
-      personalProjects: [],
-      providers: { personal: { status: 'ready' }, workspaces: [] },
-      projects: [],
-      subscriptions: [],
-    }
-    const wrapper = mount(ConnectionsPage, { global: { plugins: [pinia], stubs: { ...optionSelectStubs } } })
-
-    const cards = wrapper.findAll('.service-connection-card')
-    expect(cards).toHaveLength(1)
-    expect(cards[0].text()).toContain('本地 Graphiti')
-    expect(cards[0].text()).toContain('已连接')
-    expect(cards[0].attributes('data-span')).toBe('wide')
-    expect(cards[0].find('.ui-disclosure').exists()).toBe(false)
-    expect(cards[0].get('dl').text()).toContain('Neo4j')
-    expect(cards[0].text()).toContain('个人项目与协作偏好')
-    expect(wrapper.text()).not.toContain('公共服务')
-    wrapper.unmount()
   })
 
   it('creates, retargets and syncs an MCP binding', async () => {
@@ -129,16 +103,15 @@ describe('ConnectionsPage', () => {
       projects: [],
       subscriptions: [],
     }
-    const wrapper = mount(ConnectionsPage, {
+    const wrapper = mount(ExternalKnowledgeSettings, {
       attachTo: document.body,
       global: {
         plugins: [pinia],
-        stubs: { ...optionSelectStubs, ConflictPolicyCard: true },
+        stubs: { ...optionSelectStubs },
       },
     })
     await flushPromises()
 
-    expect(wrapper.find('conflict-policy-card-stub').exists()).toBe(true)
     expect(wrapper.findAll('.external-binding-row')).toHaveLength(2)
     expect(wrapper.text()).toContain('2 个连接')
     expect(wrapper.get('.external-create-action').text()).toBe('添加连接')
@@ -152,6 +125,11 @@ describe('ConnectionsPage', () => {
     expect(wrapper.findAll('.external-binding-target-chip').map((chip) => chip.text())).toContain(
       'Project B · 仅实时',
     )
+    // With connections listed, the form waits for 添加连接; the opener then makes way for it.
+    expect(wrapper.get<HTMLElement>('[data-external-connect-form]').element.style.display).toBe('none')
+    await wrapper.get('[data-external-connect-open]').trigger('click')
+    expect(wrapper.get<HTMLElement>('[data-external-connect-form]').element.style.display).toBe('')
+    expect(wrapper.find('[data-external-connect-open]').exists()).toBe(false)
     await wrapper.get('[data-testid="external-name"]').setValue('Engineering docs')
     await openCombobox(wrapper.get('[data-select-id="external-projects"]'))
     await setOption(wrapper, 'project-b', true)
@@ -219,21 +197,4 @@ describe('ConnectionsPage', () => {
     )
     wrapper.unmount()
   })
-
 })
-
-function mountPage() {
-  const pinia = createPinia()
-  setActivePinia(pinia)
-  useConsoleStore().state = {
-    mode: 'personal_only', activePersonalSpaceId: 'personal-1',
-    personalSpaces: [{ id: 'personal-1', name: 'Synthetic personal space' }],
-    personalProjects: ['project-a', 'project-b'].map((id) => ({
-      project_id: id, personal_space_id: 'personal-1', profile: { name: id },
-    })),
-    projects: [], subscriptions: [],
-  }
-  return mount(ConnectionsPage, { global: {
-    plugins: [pinia], stubs: { ...optionSelectStubs, ConflictPolicyCard: true },
-  } })
-}

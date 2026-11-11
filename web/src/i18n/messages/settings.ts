@@ -215,7 +215,7 @@ export const settingsMessages = {
       active: '当前 {port}',
     },
     behavior: {
-      capture: '自动沉淀',
+      capture: '全部客户端',
       captureMeta: '把新的稳定会话知识写入本机',
       captureClientsMeta: '按客户端采集：关掉的客户端仍可查询已有记忆，只是不再写入新内容',
       captureClientsLoading: '正在查找本机的客户端…',
@@ -267,9 +267,9 @@ export const settingsMessages = {
         other: '其他 Agent',
       },
     },
-    tabs: { label: '设置分组', memory: '记忆与访问', clients: '客户端', network: '网络', system: '系统', version: '版本' },
+    tabs: { label: '设置分组', recording: '记录', ai: 'AI 能做什么', clients: '客户端', connections: '连接', system: '系统' },
     version: {
-      title: '更新',
+      title: '版本与更新',
       current: '当前版本',
       beta: '接收测试版',
       betaMeta: '打开后也提示 Beta 版更新，能更早用到新功能，偶尔会有问题。关闭后只提示正式版。',
@@ -280,7 +280,9 @@ export const settingsMessages = {
       unavailable: '暂时检查不了新版本',
       checkedAt: '检查于 {time}',
     },
-    groups: { capture: '采集与回答', access: 'Agent 访问', lan: '局域网', interface: '界面', runtime: '运行' },
+    groups: { capture: '自动沉淀', access: 'Agent 访问', lan: '局域网', interface: '界面', runtime: '运行' },
+    elsewhere: '相关页面',
+    clientsMore: '更多接入方式',
     searchEverywhere: '正在显示全部分组里的匹配项',
     fieldErrors: {
       required: '请填写这一项',
@@ -584,7 +586,7 @@ export const settingsMessages = {
       active: 'Active: {port}',
     },
     behavior: {
-      capture: 'Automatic capture',
+      capture: 'All clients',
       captureMeta: 'Write new, stable conversation knowledge to this device',
       captureClientsMeta: 'Per client: a client that is off still reads existing memory; it just adds nothing new',
       captureClientsLoading: 'Finding the clients on this device…',
@@ -636,9 +638,9 @@ export const settingsMessages = {
         other: 'Other Agent',
       },
     },
-    tabs: { label: 'Settings sections', memory: 'Memory & access', clients: 'Clients', network: 'Network', system: 'System', version: 'Version' },
+    tabs: { label: 'Settings sections', recording: 'Recording', ai: 'What AI may do', clients: 'Clients', connections: 'Connections', system: 'System' },
     version: {
-      title: 'Updates',
+      title: 'Version and updates',
       current: 'This version',
       beta: 'Receive beta releases',
       betaMeta: 'When on, beta updates are offered too: new features sooner, with the odd rough edge. When off, only stable releases are offered.',
@@ -649,7 +651,9 @@ export const settingsMessages = {
       unavailable: 'Cannot check for a newer version right now',
       checkedAt: 'Checked {time}',
     },
-    groups: { capture: 'Capture and answers', access: 'Agent access', lan: 'Local network', interface: 'Interface', runtime: 'Runtime' },
+    groups: { capture: 'Automatic capture', access: 'Agent access', lan: 'Local network', interface: 'Interface', runtime: 'Runtime' },
+    elsewhere: 'Related pages',
+    clientsMore: 'More ways to connect',
     searchEverywhere: 'Showing matches from every section',
     fieldErrors: {
       required: 'Fill in this field',

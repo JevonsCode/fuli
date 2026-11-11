@@ -11,7 +11,10 @@ const graphRuntime = readFileSync(
 const layout = ['AppShell', 'AppDock', 'SectionTabs']
   .map((name) => readFileSync(`web/src/layouts/${name}.vue`, 'utf8'))
   .join('\n');
-const settings = readFileSync('web/src/pages/SettingsPage.vue', 'utf8');
+// The settings page composes one tab per subject.
+const settings = ['pages/SettingsPage.vue', 'features/settings/RecordingSettingsTab.vue', 'features/settings/AiAccessSettingsTab.vue',
+  'features/settings/SystemSettingsTab.vue']
+  .map((file) => readFileSync(`web/src/${file}`, 'utf8')).join('\n');
 const routes = readFileSync('web/src/router/index.ts', 'utf8');
 const routePaths = readFileSync('web/src/router/paths.ts', 'utf8');
 const store = readFileSync('web/src/stores/console.ts', 'utf8');
@@ -31,7 +34,9 @@ const graphCanvas = readFileSync(
 const inspector = ['KnowledgeInspector.vue', 'KnowledgeRecords.vue']
   .map(file => readFileSync(`web/src/features/knowledge/${file}`, 'utf8')).join('\n');
 const profile = readFileSync('web/src/pages/PersonalProfilePage.vue', 'utf8');
-const connections = readFileSync('web/src/pages/ConnectionsPage.vue', 'utf8');
+// Connections are a settings tab; external knowledge is its own card there.
+const externalKnowledge = readFileSync('web/src/features/connections/ExternalKnowledgeSettings.vue', 'utf8');
+const connections = `${readFileSync('web/src/features/settings/ConnectionsSettingsTab.vue', 'utf8')}\n${externalKnowledge}`;
 const settingsMessages = readFileSync('web/src/i18n/messages/settings.ts', 'utf8');
 const knowledgeMessages = readFileSync(
   'web/src/i18n/messages/knowledge-workspace.ts',
@@ -144,9 +149,9 @@ test('all existing workspace areas have Vue pages and API actions', () => {
 });
 
 test('connection forms use the shared custom controls', () => {
-  assert.match(connections, /<Option(?:Select|Combobox)\b/);
-  assert.match(connections, /<TextField/);
-  assert.doesNotMatch(connections, /<(?:input|select|textarea)\b/);
+  assert.match(externalKnowledge, /<Option(?:Select|Combobox)\b/);
+  assert.match(externalKnowledge, /<TextField/);
+  assert.doesNotMatch(externalKnowledge, /<(?:input|select|textarea)\b/);
 });
 
 test('the UI keeps the restrained visual system and routed anchor states', () => {

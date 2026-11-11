@@ -56,10 +56,6 @@ export const routeMessages = {
     settings: {
       title: '设置',
     },
-    connections: {
-      title: '连接',
-      description: '本地知识库状态与外部知识库连接。',
-    },
   },
   'en-US': {
     overview: {
@@ -117,10 +113,6 @@ export const routeMessages = {
     },
     settings: {
       title: 'Settings',
-    },
-    connections: {
-      title: 'Connections',
-      description: 'Local knowledge status and external knowledge connections.',
     },
   },
 } as const
