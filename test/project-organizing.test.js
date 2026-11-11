@@ -44,7 +44,7 @@ test('a run records what it settled, the sources it read and its counts; the nex
   const app = application(t);
   const saved = await call(app, { action: 'update',
     areas: { purpose: { status: 'known', note: ' From the README\n' }, stack: { status: 'unsure' }, people: { status: 'not_applicable' } },
-    sources: { project_files: 'read', client_memories: 'declined' },
+    sources: { project_files: 'read', named_material: 'read', client_memories: 'declined' },
     run: { model: 'synthetic-sonnet', scope: 'release steps', added: 12, merged: 2, stale: 1, unsure: 3 } });
   assert.deepEqual(saved.progress, { settled: 2, total: 9, complete: false });
   assert.equal(saved.guidance, undefined, 'an update answers ids and states only');
@@ -55,7 +55,7 @@ test('a run records what it settled, the sources it read and its counts; the nex
     added: 12, merged: 2, stale: 1, unsure: 3 });
   const again = await call(app, { action: 'read' });
   assert.equal(again.first_run, false);
-  assert.deepEqual(again.sources, { project_files: 'read', client_memories: 'declined' });
+  assert.deepEqual(again.sources, { project_files: 'read', named_material: 'read', client_memories: 'declined' });
   // A later run changes only what it names and keeps the earlier report behind it.
   await call(app, { action: 'update', areas: { stack: { status: 'known' } }, run: { added: 1 } });
   const view = app.projectOrganizing.view('synthetic-space', 'synthetic-project');
@@ -78,10 +78,37 @@ test('what is not an area, a source or a count is refused, and so is a task outs
   await assert.rejects(call(app, { action: 'update', sources: { browser_history: 'read' } }), /Unknown source/);
   await assert.rejects(call(app, { action: 'update', run: { added: -1 } }), /run\.added is a whole number/);
   await assert.rejects(call(app, { action: 'update' }), /Send areas, sources, run or several/);
+  // The request named a project: the same one goes on, another one is refused before anything is read or written.
+  assert.equal((await call(app, { action: 'read', personalProjectId: 'synthetic-project' })).personal_project_id, 'synthetic-project');
+  for (const action of ['read', 'update']) {
+    await assert.rejects(call(app, { action, personalProjectId: 'another-project', areas: { purpose: { status: 'known' } } }),
+      error => error.code === 'project_mismatch' && /another-project/.test(error.message));
+  }
   await assert.rejects(organizeProject(application(t, { project: null }), { action: 'read', taskContextToken: 'turn-1' }),
     error => error.code === 'project_unresolved');
   await assert.rejects(organizeProject({ config: app.config }, { action: 'read', taskContextToken: 'turn-1' }),
     error => error.code === 'project_organizing_unavailable');
+});
+
+test('a read names the check for preferences shared with other projects, only when there are other projects', async (t) => {
+  const app = application(t);
+  // Without the person's project list, and with this project alone, there is nothing to compare.
+  assert.equal((await call(app, { action: 'read' })).repeated_preference_check, undefined);
+  app.personal = { listPersonalProjects: async () => [{ project_id: 'synthetic-project' }] };
+  const alone = await call(app, { action: 'read' });
+  assert.equal(alone.repeated_preference_check, undefined);
+  assert.doesNotMatch(alone.guidance, /repeated_preference_check/);
+
+  app.personal = { listPersonalProjects: async space => (space === 'synthetic-space'
+    ? [{ project_id: 'beta' }, { project_id: 'synthetic-project' }, { project_id: 'gamma' }] : []) };
+  const read = await call(app, { action: 'read' });
+  assert.deepEqual(read.repeated_preference_check, { tool: 'discover_personal_global_preference_candidates',
+    arguments: { personalSpaceId: 'synthetic-space', personalProjectIds: ['synthetic-project', 'beta', 'gamma'] } });
+  assert.match(read.guidance, /升级成全局吗/);
+  // An update answers states only, and a project list that cannot be read never fails the run.
+  assert.equal((await call(app, { action: 'update', areas: { purpose: { status: 'known' } } })).repeated_preference_check, undefined);
+  app.personal = { listPersonalProjects: async () => { throw new Error('synthetic: graph service down'); } };
+  assert.equal((await call(app, { action: 'read' })).repeated_preference_check, undefined);
 });
 
 test('a model is placed only when its family leaves no doubt', () => {

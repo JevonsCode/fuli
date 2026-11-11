@@ -27,8 +27,14 @@ export type ProjectOrganizingState = z.infer<typeof state>
 export const readProjectOrganizing = (spaceId: string, projectId: string, signal?: AbortSignal) =>
   getJson(`/api/project-organizing?${new URLSearchParams({ personalSpaceId: spaceId, personalProjectId: projectId })}`, shape, { signal })
 
-// What the person says to their own AI to start a run. `#FLA Astro` hands the turn to Astro in any connected client.
-export const ORGANIZE_SENTENCE = '#FLA Astro 整理当前项目'
+// What the person says to their own AI to start a run. `#FLA Astro` hands the
+// turn to Astro in any connected client; the sentence stays Chinese in every
+// locale, since that is the form Astro and the Skill recognise.
+const MATERIAL_MAX_CHARS = 500
+export function organizeSentence({ projectId, material = '' }: { projectId: string; material?: string }) {
+  const where = [...material.replace(/\s+/g, ' ').trim()].slice(0, MATERIAL_MAX_CHARS).join('')
+  return `#FLA Astro 整理项目 ${projectId}${where ? `，资料在 ${where}` : ''}`
+}
 
 export const runCounts = (value: OrganizingRun) =>
   t('projects.organizing.counts', { added: value.added, merged: value.merged, stale: value.stale, unsure: value.unsure })
