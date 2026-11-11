@@ -1,8 +1,8 @@
 {
   "format": "fuli-embedding-models",
   "formatVersion": 1,
-  "manifestVersion": 1,
-  "updatedAt": "2026-11-11",
+  "manifestVersion": 2,
+  "updatedAt": "2026-11-12",
   "models": [
     {
       "id": "bge-small-zh-v1.5",
@@ -16,11 +16,11 @@
       "pooling": "cls",
       "lowercase": true,
       "stripAccents": false,
-      "recommended": true,
+      "recommended": false,
       "memoryMb": 200,
       "summary": {
-        "zh": "中文为主的知识库首选。中英混排也能用。",
-        "en": "First choice for knowledge mostly in Chinese; mixed Chinese and English works too."
+        "zh": "最快、最省内存的中文模型。用英文提问时没那么准。",
+        "en": "The fastest, lightest Chinese model; less accurate for questions asked in English."
       },
       "source": "https://huggingface.co/BAAI/bge-small-zh-v1.5",
       "revision": "7999e1d3359715c523056ef9478215996d62a620",
@@ -66,11 +66,11 @@
       "pooling": "cls",
       "lowercase": true,
       "stripAccents": true,
-      "recommended": false,
+      "recommended": true,
       "memoryMb": 240,
       "summary": {
-        "zh": "下载最小的中文模型。",
-        "en": "The smallest download for Chinese."
+        "zh": "中文为主的知识库首选。中英混排、用英文提问也找得准。",
+        "en": "First choice for knowledge mostly in Chinese; accurate for mixed and English questions too."
       },
       "source": "https://huggingface.co/thenlper/gte-small-zh",
       "revision": "af7bd46fbb00b3a6963c8dd7f1786ddfbfbe973a",
