@@ -321,7 +321,7 @@ void main() {
       final controller = controllerFor(DemoFuliApi()..reachable = false, FixedRuntime(RuntimeReport(RuntimeState.stopped, error: error)));
       await controller.start();
       expect(controller.notice!.error, isTrue);
-      expect(controller.notice!.text, '没有启动：这台电脑的数据由更新的 FULI（$installed）建立，当前是 $current。数据没有改动，更新 FULI 后再启动。');
+      expect(controller.notice!.text, '没有启动：这里的数据是更新的 FULI（$installed）保存的，现在是 $current。数据没有改动，更新 FULI 后再启动。');
       expect(controller.notice!.text, isNot(contains('downgrade')));
     }
     // A matching package starts; no notice.

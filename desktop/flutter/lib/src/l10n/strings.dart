@@ -91,7 +91,7 @@ class Strings {
   String startFailed(String reason) => _t('没有启动成功：$reason', 'FULI did not start: $reason');
   // The graph service here was set up by a newer FULI (runtime/provider_conflict.dart); nothing was changed.
   String startFailedNewerData(String installed, String current) => _t(
-      '没有启动：这台电脑的数据由更新的 FULI（$installed）建立，当前是 $current。数据没有改动，更新 FULI 后再启动。',
+      '没有启动：这里的数据是更新的 FULI（$installed）保存的，现在是 $current。数据没有改动，更新 FULI 后再启动。',
       'FULI did not start: a newer FULI ($installed) set up the data on this computer; this one is $current. '
           'Nothing was changed. Update FULI, then start again.');
   String stopFailed(String reason) => _t('没有停止成功：$reason', 'FULI did not stop: $reason');
