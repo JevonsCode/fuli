@@ -27,13 +27,12 @@ import { savedCaptureScope } from './capture-onboarding'
 const CHOICES: readonly CaptureScopeChoice[] = ['all', 'selected', 'off']
 
 const store = useConsoleStore()
-const dismissed = ref(false)
-const asking = computed(() => store.state?.captureOnboarding?.ask === true && !dismissed.value)
+const asking = computed(() => store.state?.captureOnboarding?.ask === true && !store.captureQuestionDismissed)
 const guide = computed(() => store.firstRunGuideShown)
-const open = computed(() => asking.value || guide.value)
+const open = computed(() => store.firstRunDialogOpen)
 const connecting = ref(false)
 // Opened again from 设置 › 客户端: an open question shows again too.
-watch(guide, shown => { if (shown) dismissed.value = false })
+watch(guide, shown => { if (shown) store.captureQuestionDismissed = false })
 const choice = ref<CaptureScopeChoice | null>(null)
 const ticked = ref<Record<string, boolean>>({})
 // The request in flight: the answer, then, when its result is unknown, the read that finds out.
@@ -48,7 +47,7 @@ const projects = computed(() => pickerOrder((store.state?.personalProjects ?? []
 
 function openChange(value: boolean) {
   if (value || saving.value || connecting.value) return
-  dismissed.value = true
+  store.captureQuestionDismissed = true
   if (guide.value) void store.closeFirstRunGuide('skipped')
 }
 

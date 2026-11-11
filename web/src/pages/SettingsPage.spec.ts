@@ -7,6 +7,7 @@ import { setLocale } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConsoleState } from '@/types'
 import { DEFAULT_CONVERSATION_LAUNCHERS } from '@/features/knowledge/source-adapters'
+import { tour } from '@/features/onboarding-tour/onboarding-tour'
 import SettingsPage from './SettingsPage.vue'
 
 const configured = {
@@ -495,6 +496,28 @@ describe('SettingsPage', () => {
     expect(document.documentElement.dataset.motion).toBeUndefined()
     expect(window.localStorage.getItem('fuli.motion')).toBeNull()
     expect(fetch.mock.calls).toHaveLength(requests)
+    wrapper.unmount()
+  })
+
+  it('starts the beginner\'s guide again from step 1 in 系统 › 界面, saving nothing', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    const fetch = vi.fn(async (input) => String(input) === '/api/system/settings'
+      ? Response.json({ configured, active: configured, restartRequired: false })
+      : Response.json({}, { status: 503 }))
+    vi.stubGlobal('fetch', fetch)
+    Object.assign(tour, { open: false, paused: true, step: 3 })
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
+    await flushPromises()
+    const requests = fetch.mock.calls.length
+    const row = wrapper.get('[data-settings-tab="system"] [data-tour-show-again]')
+    expect(row.text()).toBe('再看一遍')
+    expect(row.element.closest('.setting-row')?.textContent).toContain('新手引导')
+    await row.trigger('click')
+    expect([tour.open, tour.paused, tour.step]).toEqual([true, false, 0])
+    expect(fetch.mock.calls).toHaveLength(requests)
+    Object.assign(tour, { open: false })
     wrapper.unmount()
   })
 
