@@ -132,7 +132,7 @@ test('every built-in client connects through agent-installer and then reads as c
   const builtIn = (await detectAgents(installer)).agents.filter((agent) => !agent.manualOnly);
   const desktop = process.platform === 'darwin' || process.platform === 'win32' ? ['claude-desktop'] : [];
   assert.deepEqual(builtIn.map(({ id }) => id).sort(),
-    ['antigravity', 'claude-code', 'codex', 'cursor', 'gemini', 'kiro', 'opencode', 'qwen-code', ...desktop].sort());
+    ['antigravity', 'claude-code', 'codex', 'cursor', 'dsh', 'gemini', 'kiro', 'opencode', 'qwen-code', ...desktop].sort());
   for (const agent of builtIn) {
     const result = await installAgent(installer, agent);
     assert.equal(result.status, 'connected', `${agent.id}: ${result.message}`);
