@@ -28,6 +28,11 @@ from .knowledge_tag_ranking import TagRanking
 from .knowledge_visibility import AgentReader, fla_endpoints_visible_cypher, fla_visible, reader_parameter
 
 MIN_TERM_COVERAGE = 0.25
+# How much of an item's rank its relevance alone decides; the rest scales with
+# its knowledge weight. At 0.5 an exact match that is still pending ranks above a
+# partial match a person confirmed, and no tag boost (at most 1.25) lifts an item
+# flagged for attention above an unflagged one that matches as well.
+RELEVANCE_SHARE = 0.5
 # With the query's terms weighed by how few candidates carry them
 # (_term_weights), a record must carry this share of the query's weight.
 MIN_WEIGHTED_COVERAGE = 0.33
@@ -778,13 +783,23 @@ def _agent_scope_metadata(project_id: str, scope: dict, agent_id: str) -> dict:
 
 
 def _ranked_relevance(base_score: float, metadata) -> float:
-    """Relevance times the item's knowledge weight, the one people see."""
+    """Relevance first, then the item's knowledge weight (the one people see):
+    at equal relevance the stronger confirmation always ranks higher, but a
+    weak match no longer outranks a strong one only because it is confirmed."""
     if base_score <= 0:
         return 0.0
     scope_distance = int(metadata.get('scope_distance') or 0)
     scope_factor = max(0.65, 1.0 - scope_distance * 0.15)
     weight = ranking_weight(metadata, evidence_ids=metadata.get('evidence_ids') or [])
-    return round(base_score * weight * scope_factor, 4)
+    return round(_relevance_band(base_score) * (RELEVANCE_SHARE + (1 - RELEVANCE_SHARE) * weight) * scope_factor, 4)
+
+
+def _relevance_band(base_score: float) -> float:
+    """Relevance in whole steps: items that match about equally well share a
+    band, so inside it the weight alone orders them (a small difference in
+    semantic order never puts a pending item above a confirmed one)."""
+    # Half a step is what semantic order adds at most (_edge_relevance): it stays in the band.
+    return float(math.ceil(base_score - 0.5)) or base_score
 
 
 def _scope_precedence(

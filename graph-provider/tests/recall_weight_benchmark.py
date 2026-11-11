@@ -115,7 +115,7 @@ def load_ranker(ref):
     if 'def ranking_weight(' in weight:
         search_ns['ranking_weight'] = weight_ns['ranking_weight']
     names = {'_ranked_relevance', '_scope_precedence', '_dedupe_ranked_entities', '_relevance',
-             '_terms', '_retrieval_aliases', '_alias_relevance', 'MIN_TERM_COVERAGE',
+             '_terms', '_retrieval_aliases', '_alias_relevance', 'MIN_TERM_COVERAGE', 'RELEVANCE_SHARE', '_relevance_band',
              'LATIN_QUERY_FILLERS', 'CHINESE_QUERY_FILLERS'}
     if 'def _tie_weight(' in search:
         names.add('_tie_weight')

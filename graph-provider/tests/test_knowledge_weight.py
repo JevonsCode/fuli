@@ -1,5 +1,6 @@
 """One knowledge weight: shown on read, used for ranking, never authorization."""
 import json
+import math
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -166,7 +167,9 @@ async def test_higher_displayed_weight_ranks_higher_at_equal_relevance():
     for position, edge in enumerate(edges):
         fact = next(fact for fact in result.facts if fact.id == edge.uuid)
         relevance = _edge_relevance('release notes', edge, {}, position, len(edges))
-        assert fact.score == pytest.approx(relevance * fact.weight_percent / 100, abs=1e-4)
+        # Relevance in whole steps decides half of the rank and the shown weight the rest.
+        assert fact.score == pytest.approx(
+            math.ceil(relevance - 0.5) * (0.5 + 0.5 * fact.weight_percent / 100), abs=1e-4)
 
 
 def test_equal_scores_keep_the_heavier_item_first():
@@ -231,3 +234,23 @@ def test_high_pending_weight_does_not_grant_default_retrieval():
     assert payload.get('confirmed_by_person') is False
     assert payload['confirmation_status'] == 'pending'
     assert not is_default_retrievable(item)
+
+
+def test_an_exact_match_outranks_a_partial_one_whatever_their_confirmation():
+    """rec#111: a confirmed item that only shares a word with the query ranked
+    above every pending item, however well the pending one matched."""
+    from fuli_graph.knowledge_search import _ranked_relevance
+
+    confirmed, pending = record('confirmed', 'user'), record()
+    flagged = {**record('confirmed', 'user'), 'requires_attention': True}
+    # The whole phrase in a pending item, against part of it in a confirmed one.
+    assert _ranked_relevance(8.4, pending) > _ranked_relevance(4.2, confirmed)
+    # About equally relevant: the stronger confirmation wins, as before.
+    assert _ranked_relevance(3.4, confirmed) > _ranked_relevance(3.2, pending)
+    assert _ranked_relevance(3.0, confirmed) > _ranked_relevance(3.4, pending)
+    # A somewhat better match is not enough for a pending item.
+    assert _ranked_relevance(4.2, confirmed) > _ranked_relevance(5.0, pending)
+    # Negative feedback: below the unflagged item even with the largest tag boost.
+    assert _ranked_relevance(8.0, flagged) * 1.25 < _ranked_relevance(8.0, confirmed)
+    assert _ranked_relevance(0.3, confirmed) == pytest.approx(0.3), 'a faint match keeps its own score'
+    assert _ranked_relevance(0.0, confirmed) == 0.0

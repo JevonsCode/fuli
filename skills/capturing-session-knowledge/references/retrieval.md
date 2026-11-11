@@ -168,7 +168,7 @@ preference conflict. Agents report qualifying use; they do not calculate, overri
 the promotion themselves.
 
 Every item has one knowledge weight (0-100%), the number the console and turn receipts show and
-the factor search ranks by (relevance × weight × scope distance, then tag matches). Confirmation
+the factor search ranks by (relevance in whole steps, half of it scaled by the weight, × scope distance, then tag matches: at equal relevance the higher weight ranks first, and an exact match that is pending ranks above a partial match that is confirmed). Confirmation
 sets its band: user or authoritative-source confirmation 100%, `agent_confirmed` 70-95%, pending
 10-69%. Within a band it rises with qualified use, distinct tasks and real sources, fades as use
 grows old, and drops with negative feedback; an item flagged for attention is halved. The weight

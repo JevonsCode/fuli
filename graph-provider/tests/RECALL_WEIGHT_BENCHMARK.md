@@ -55,3 +55,10 @@ that weight and one distinctive term (rec#111: records that only shared the
 project's common words, such as 控制台 or FLA, were returned as matches). The
 working tree then scored nDCG@5 0.9020, MRR 1.0 and irrelevant@5 0.2550
 against 0.8671, 1.0 and 0.3633 just before it, with no trusted-first violations.
+
+Also on 2026-11-11 the rank became relevance in whole steps with half of it
+scaled by the weight (`RELEVANCE_SHARE`, `_relevance_band`) instead of
+relevance times the weight. The benchmark does not move (0.9020, 1.0, 0.2550,
+no trusted-first violations): its fixture has no query where an exact pending
+match competes with a partial confirmed one. `test_knowledge_weight.py` holds
+that case.
