@@ -2,7 +2,7 @@
 
 Unchanged copy of `bindings/node/` (`index.mjs`, `index.d.ts`) and `LICENSE` from
 [JevonsCode/agent-installer](https://github.com/JevonsCode/agent-installer)
-tag `v0.5.0`, commit `3f25a8b07b1980759c74f7f0b963e3fe5de357d7`.
+tag `v0.5.1`, commit `8bbf9ae508317df3c0eaf84cbf1fddc50d35b696`.
 
 Do not edit these files: fix the component upstream, release it, then copy the new tag's
 binding here and bump the pins in `src/agent-kits/pins.js` in the same change. FULI code
