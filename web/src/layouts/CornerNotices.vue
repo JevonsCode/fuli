@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import NpmCopyNotice from '@/features/npm-copies/NpmCopyNotice.vue'
+import TourResumeNotice from '@/features/onboarding-tour/TourResumeNotice.vue'
 import WhatsNewNotice from '@/features/whats-new/WhatsNewNotice.vue'
 
-// The floating notices at the bottom right, just above the dock: what is new
-// after an update, an older npm copy of FULI. They stack upwards from the
-// dock without overlapping, never cover the top bar or a page's tabs, and take
-// no height from the page. The npm copy stays lowest, so closing what is new
-// never moves it.
+// The floating notices at the bottom right, just above the dock: a paused
+// beginner's guide, what is new after an update, an older npm copy of FULI.
+// They stack upwards from the dock without overlapping, never cover the top
+// bar or a page's tabs, and take no height from the page. The npm copy stays
+// lowest and the paused guide highest, so closing one never moves the others.
 </script>
 
 <template>
   <div class="corner-notices" data-corner-notices>
+    <TourResumeNotice />
     <WhatsNewNotice />
     <NpmCopyNotice />
   </div>

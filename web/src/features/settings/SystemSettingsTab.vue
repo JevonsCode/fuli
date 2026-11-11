@@ -9,6 +9,7 @@ import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/comp
 import { OptionSelect } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
+import { startTour } from '@/features/onboarding-tour/onboarding-tour'
 import ConsoleUpdate from '@/features/update/ConsoleUpdate.vue'
 import { offersUpdate, useChannelVersionStatus } from '@/features/update/version-status'
 import { currentLocale, i18n, setLocale, t, type AppLocale } from '@/i18n'
@@ -22,7 +23,7 @@ import DiagnosticsSettings from './DiagnosticsSettings.vue'
 import GraphMigrationRow from './GraphMigrationRow.vue'
 import StorageSettings from './StorageSettings.vue'
 
-// Settings › 系统: this console and this computer: the interface, the
+// Settings › 系统: this console and this computer: the interface (with the beginner's guide), the
 // version and its updates, how often FULI reads its resources, its data
 // (format migrations, storage), the diagnostics bundle and what it uses.
 const form = defineModel<RuntimeSettings>('form', { required: true })
@@ -140,6 +141,11 @@ function formatTime(value: string | undefined) {
           <Switch data-reduce-motion :model-value="motionPreference === 'reduced'" :aria-label="t('settings.behavior.reduceMotion')"
             @update:model-value="setMotionPreference($event ? 'reduced' : 'system')" />
         </label>
+        <!-- The beginner's guide from step 1 (features/onboarding-tour). -->
+        <div class="setting-row">
+          <span><strong>{{ t('onboardingTour.settingsRow') }}</strong></span>
+          <Button type="button" variant="outline" size="sm" data-tour-show-again @click="startTour">{{ t('onboardingTour.showAgain') }}</Button>
+        </div>
       </div>
     </Card>
     <Card as="section" id="version" class="settings-card" aria-labelledby="settings-version-title" data-version-settings>

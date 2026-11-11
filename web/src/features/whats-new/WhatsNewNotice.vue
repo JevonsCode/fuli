@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 
 import { Button } from '@/components/ui/button'
+import { tourHoldsNotices } from '@/features/onboarding-tour/onboarding-tour'
 import { currentLocale, t } from '@/i18n'
 import { UiDialog, UiIcon, UiIconButton } from '@/ui'
 import { linesFor, loadWhatsNew, whatsNew } from './whats-new'
@@ -14,7 +15,8 @@ import { linesFor, loadWhatsNew, whatsNew } from './whats-new'
 const details = ref(false)
 const current = computed(() => whatsNew.shown)
 const lines = computed(() => current.value ? linesFor(current.value, currentLocale()) : [])
-const shown = computed(() => current.value !== null && !whatsNew.closed && lines.value.length > 0)
+// One thing at a time: while the beginner's guide is about to open or is open, the notice waits behind it.
+const shown = computed(() => current.value !== null && !whatsNew.closed && lines.value.length > 0 && !tourHoldsNotices())
 const title = computed(() => current.value ? t('whatsNew.title', { version: current.value.version }) : '')
 const skipped = computed(() => current.value?.notice?.skipped ?? 0)
 const skippedLabel = computed(() => skipped.value === 1 ? t('whatsNew.skippedOne') : t('whatsNew.skipped', { count: skipped.value }))
