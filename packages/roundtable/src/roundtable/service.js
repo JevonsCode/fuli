@@ -704,7 +704,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     store.appendMessage(ask.thread_id, { id: idFactory(), kind: 'reply', body, status: 'sent', inReplyTo: ask.id,
       via: `${me.client}:inbox`, from: { ...answering, client: me.client, session: me.session },
       to, delivery: replyInbox.pendingFor(to) });
-    return { status: 'sent', threadId: ask.thread_id };
+    // asker: who this answer is for, so the turn's receipt can name them.
+    return { status: 'sent', threadId: ask.thread_id,
+      ...(ask.from_agent ? { asker: { agentId: ask.from_agent, name: ask.from_name } } : {}) };
   }
 
   // A stand-in answers only inside the space and project its ask was sent from,
