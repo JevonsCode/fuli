@@ -2,6 +2,10 @@ import hashlib
 import hmac
 import secrets
 
+from fastapi import HTTPException
+
+HUMAN_PROOF_REQUIRED = 'independent human review proof required'
+
 
 def issue_access_token() -> str:
     return secrets.token_urlsafe(48)
@@ -33,3 +37,9 @@ def matches_workflow_observation_token(
     if not provided or not expected:
         return False
     return hmac.compare_digest(provided, expected)
+
+
+def require_human_proof(actor: dict, operation_actor: str) -> None:
+    """A change recorded as the person's own needs the console's human-review proof."""
+    if operation_actor == 'human' and actor.get('_human_review_verified') is not True:
+        raise HTTPException(status_code=403, detail=HUMAN_PROOF_REQUIRED)

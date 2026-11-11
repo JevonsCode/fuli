@@ -4,6 +4,7 @@ import { recordProjectMemoryUsage } from './project-memory-usage.js';
 import { activeAgentRequestSignal, activeSealedWorkerRequest } from '../app/agent-request-context.js';
 import { termsOverlap } from '../standing-assignments/term-match.js';
 import { identityKey } from '../text/name-identity.js';
+import { groupMemberContext } from './group-member-context.js';
 
 // FULI as the Roundtable host: Agents, projects, task identity and wake
 // authority all come from the Provider of this device's personal space.
@@ -99,6 +100,10 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
         source_application: client, message_id: messageId, digest, target_node: targetNode,
         binding_id: bindingId, expires_at: expiresAt, ...(purpose ? { purpose } : {}) }),
     remoteOriginAuthority: () => app.personal.getRemoteOriginAuthority(spaceId()),
+    // A stand-in reads what a `#FLG 一起看` session reads of one member: its
+    // shareable index, never its working memory (group-member-context.js).
+    standInScope: ({ agentId, name, occupation, projectId, text, client, sessionId }) =>
+      groupMemberContext(app, [{ agentId, name, occupation, projectId }], text, { sourceApplication: client, sessionId }),
     requestSignal: activeAgentRequestSignal,
     inRestrictedWorker: activeSealedWorkerRequest,
     recordMemoryUsage: input => app.personal.recordProjectMemoryUsage

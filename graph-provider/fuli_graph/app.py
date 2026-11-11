@@ -9,6 +9,7 @@ from .auth import (
     matches_bootstrap_token,
     matches_human_review_token,
     matches_workflow_observation_token,
+    require_human_proof,
 )
 from .client_version_note import install_client_version_note
 from .config import Settings, get_settings
@@ -703,8 +704,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def revise_item(
         item_id: str,
         request: KnowledgeRevisionCreate,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> KnowledgeRevisionRecord:
+        require_human_proof(actor, request.operation_actor)
         return await revise_knowledge_item(store, actor, item_id, request)
 
     @application.post(
@@ -764,8 +766,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def confirm_batch(
         request: KnowledgeBatchConfirmationCreate,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> KnowledgeBatchConfirmationResult:
+        require_human_proof(actor, request.operation_actor)
         return await confirm_knowledge_batch(store, actor, request)
 
     @application.post(
@@ -775,8 +778,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def reassign_item(
         item_id: str,
         request: KnowledgeAssignmentChange,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> KnowledgeAssignmentRecord:
+        require_human_proof(actor, request.operation_actor)
         return await reassign_knowledge_item(store, actor, item_id, request)
 
     @application.post(
@@ -808,8 +812,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def apply_common_promotion(
         request: CommonKnowledgePromotionRequest,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> CommonKnowledgePromotionResult:
+        require_human_proof(actor, request.operation_actor)
         return await apply_common_knowledge_promotion(
             store, actor, request
         )
@@ -851,8 +856,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def resolve_conflict(
         conflict_id: str,
         request: PreferenceConflictResolveCreate,
-        actor: Actor,
+        actor: ReviewAwareActor,
     ) -> PreferenceConflictRecord:
+        require_human_proof(actor, request.operation_actor)
         return await resolve_preference_conflict(
             store,
             actor,
@@ -869,6 +875,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: PreferenceConflictCompleteCreate,
         actor: ReviewAwareActor,
     ) -> PreferenceConflictRecord:
+        require_human_proof(actor, request.operation_actor)
         return await complete_preference_conflict(
             store,
             actor,

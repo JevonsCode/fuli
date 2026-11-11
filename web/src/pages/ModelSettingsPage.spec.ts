@@ -2,13 +2,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const api = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn() }))
+const api = vi.hoisted(() => ({ getJson: vi.fn(), putJson: vi.fn(), postJson: vi.fn() }))
 const routing = vi.hoisted(() => ({ route: { query: {} as Record<string, string>, hash: '' }, replace: vi.fn() }))
 vi.mock('vue-router', async (importOriginal) => ({
   ...await importOriginal<typeof import('vue-router')>(), useRoute: () => routing.route, useRouter: () => ({ replace: routing.replace }),
 }))
 vi.mock('@/api/client', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/api/client')>(), getJson: api.getJson, putJson: api.putJson,
+  ...await importOriginal<typeof import('@/api/client')>(), getJson: api.getJson, putJson: api.putJson, postJson: api.postJson,
 }))
 
 import { ApiError } from '@/api/client'
@@ -67,6 +67,7 @@ beforeEach(() => {
   routing.replace.mockReset()
   api.getJson.mockReset()
   api.putJson.mockReset()
+  api.postJson.mockReset()
   api.getJson.mockImplementation(async (url: string) => (url.startsWith('/api/model-backends/usage') ? usage()
     : url.startsWith('/api/model-backends/suggestions') || url.startsWith('/api/judgment/suggestions') ? { suggestions: [] }
       : url.startsWith('/api/model-backends/history') ? { entries: [] }
@@ -92,7 +93,7 @@ const openDetails = async (wrapper: Awaited<ReturnType<typeof mountPage>>, role:
 const closeDetails = (wrapper: Awaited<ReturnType<typeof mountPage>>) => wrapper.get('[data-model-use-details] button[aria-label="关闭"]').trigger('click')
 
 describe('ModelSettingsPage', () => {
-  it('shows every use as a card with its state, its model, what is enough and one quick action', async () => {
+  it('shows every use as a card with its state, its model, one line of how it stands and one quick action', async () => {
     const wrapper = await mountPage()
     expect(wrapper.findAll('.model-use-grid > article h3').map(heading => heading.text()))
       .toEqual(['语义搜索', 'Astro', 'Dreaming', '补检索词', 'Jefa', 'Tonborg', 'Bole'])
@@ -101,13 +102,18 @@ describe('ModelSettingsPage', () => {
     const tonborg = wrapper.get('[data-model-role="tonborg"]')
     expect(tonborg.get('[data-model-use-state]').text()).toBe('已接上')
     expect(tonborg.get('[data-model-use-model]').text()).toBe('qwen-test127.0.0.1:11434')
-    expect(tonborg.get('[data-model-use-advice]').text()).toBe('推荐要做判断：用强的在线模型或当前会话，本机小模型不够准。')
+    // With a model the line says how the connection stands; the recommendation is in the details.
+    expect(tonborg.get('[data-model-role-health]').text()).toBe('还没调用过')
+    expect(tonborg.find('[data-model-use-advice]').exists()).toBe(false)
     expect(tonborg.get('[data-model-role-edit]').text()).toBe('编辑')
     const astro = wrapper.get('[data-model-role="assistant"]')
-    expect(astro.get('[data-model-use-state]').text()).toBe('未接')
-    expect(astro.get('[data-model-use-model]').text()).toBe('没接模型，用当前会话回答')
+    expect(astro.get('[data-model-use-state]').text()).toBe('用当前会话')
+    expect(astro.get('[data-model-use-model]').text()).toBe('没接独立模型；用到时由当前会话的模型回答')
+    expect(astro.get('[data-model-use-advice]').text()).toBe('推荐能回 JSON 的小型聊天模型就够，本机 Ollama 跑得动。')
     expect(astro.get('[data-model-role-edit]').text()).toBe('接入')
-    expect(wrapper.get('[data-dreaming] [data-model-use-model]').text()).toBe('Astro 还没接模型')
+    expect(wrapper.get('[data-dreaming] [data-model-use-model]').text()).toBe('Astro 还没接独立模型，这项不运行')
+    // Every card keeps the same room for its one line, whatever it says.
+    expect(wrapper.findAll('.model-use-grid > article [data-model-use-note]')).toHaveLength(7)
   })
 
   it("opens Tonborg's details from a link to its confirmation settings and rings the switch", async () => {
@@ -251,9 +257,10 @@ describe('ModelSettingsPage', () => {
     expect((await openDetails(wrapper, 'tonborg')).find('[data-model-fact="localBuild"]').exists()).toBe(false)
   })
 
-  it('edits a role in a labelled form and saves it with the revision it read', async () => {
+  it('edits a role in a labelled form, saves it with the revision it read, and tests the saved model at once', async () => {
     const saved = roles()
     api.putJson.mockResolvedValue(saved)
+    api.postJson.mockResolvedValue({ ok: true, receipt: { status: 'completed', actualModel: 'qwen-next' } })
     const wrapper = await mountPage()
     await wrapper.get('[data-model-role="tonborg"] [data-model-role-edit]').trigger('click')
     expect(wrapper.get('[data-model-role="tonborg"]').classes()).toContain('shadow-md')
@@ -276,7 +283,37 @@ describe('ModelSettingsPage', () => {
     expect(body.settings.budget.maxOutputTokens).toBe(800)
     expect(body.settings.egress.approvedProjects).toEqual([{ personalSpaceId: 'space-1', personalProjectId: 'alpha' }])
     expect(wrapper.find('[data-model-role-dialog]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('已保存 Tonborg 的模型设置。')
+    // The saved model is on, so it is tested; the floating toast says both, and nothing is pushed into the page.
+    expect(api.postJson).toHaveBeenCalledWith('/api/model-backends/roles/tonborg/check', {})
+    expect(useConsoleStore().feedback).toMatchObject({ tone: 'success', message: '已保存 Tonborg 的模型设置。 连接正常，qwen-next 回答了。' })
+    expect(wrapper.find('.model-settings-column .ui-notice').exists()).toBe(false)
+  })
+
+  it('says at once when a saved model does not answer: the reason in the toast, and on its card with 测试连接', async () => {
+    api.putJson.mockResolvedValue(roles())
+    api.postJson.mockResolvedValue({ ok: false, receipt: { status: 'failed', reason: 'auth_failed' } })
+    const wrapper = await mountPage()
+    await wrapper.get('[data-model-role="tonborg"] [data-model-role-edit]').trigger('click')
+    // The settings read after the test carry the failed call.
+    rolesPayload.roles[3] = { ...(rolesPayload.roles[3] as object), health: { status: 'failing', at: new Date().toISOString(), reason: 'auth_failed' } } as never
+    await wrapper.get('[data-model-role-dialog] form').trigger('submit')
+    await flushPromises()
+    expect(useConsoleStore().feedback).toMatchObject({ tone: 'error', message: '已保存 Tonborg 的模型设置。 没有连上：密钥不对' })
+    const tonborg = wrapper.get('[data-model-role="tonborg"]')
+    expect(tonborg.get('[data-model-use-state]').text()).toBe('没回应')
+    expect(tonborg.get('[data-model-failure-text]').text()).toContain('没回应：密钥不对')
+    expect(wrapper.get('[data-model-connection-id="local-qwen"] [data-model-connection-health]').text()).toContain('没回应：密钥不对')
+
+    // 测试连接 on the card tests again, answers in place, and the page reads the settings again.
+    api.postJson.mockResolvedValue({ ok: true, receipt: { status: 'completed', actualModel: 'qwen-test' } })
+    rolesPayload.roles[3] = { ...(rolesPayload.roles[3] as object), health: { status: 'ok', at: new Date().toISOString(), reason: null } } as never
+    const reads = () => api.getJson.mock.calls.filter(([url]) => url === '/api/model-backends/roles').length
+    const before = reads()
+    await tonborg.get('[data-model-check]').trigger('click')
+    await flushPromises()
+    expect(reads()).toBe(before + 1)
+    expect(wrapper.get('[data-model-role="tonborg"] [data-model-use-state]').text()).toBe('已接上')
+    expect(wrapper.find('[data-model-role="tonborg"] [data-model-failure]').exists()).toBe(false)
   })
 
   it('says why a key name is refused, keeps it from saving, and offers the names already known', async () => {

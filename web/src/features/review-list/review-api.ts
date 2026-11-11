@@ -11,10 +11,13 @@ import type { DelegatedReviews } from './review-list'
 // The reads and writes behind the 待决策 list (rec#96). Each one is a route the
 // console already had, except the two for 「交给 Tonborg 确认」.
 
+const guess = z.enum(['keep', 'drop', 'edit'])
 const delegatedEntry = z.looseObject({
   id: z.string(), createdAt: z.string(), personalProjectId: z.string().nullable(), target: z.string(),
   title: z.string().nullable(), summary: z.string(), confidence: z.number().nullable(),
-  guess: z.enum(['keep', 'drop', 'edit']).nullable(), question: z.string().nullable(), feedbackRevision: z.number(),
+  guess: guess.nullable(), question: z.string().nullable(), feedbackRevision: z.number(),
+  // A question's one sentence and its two choices, the guess first (src/judgment/question-options.js).
+  ask: z.string().optional(), answers: z.array(guess).optional(),
 })
 const delegatedShape = shapeFor<DelegatedReviews>(z.looseObject({ confirmed: z.array(delegatedEntry), questions: z.array(delegatedEntry) }))
 const delegationSchema = z.looseObject({
@@ -40,8 +43,9 @@ export async function readSpaceKnowledge(spaceId: string, stale: () => boolean):
   }
 }
 
+/** The console's language goes along, so each question is asked in it. */
 export const readDelegatedReviews = (spaceId: string) =>
-  getJson(`/api/judgment/delegated?${new URLSearchParams({ personalSpaceId: spaceId })}`, delegatedShape)
+  getJson(`/api/judgment/delegated?${new URLSearchParams({ personalSpaceId: spaceId, language: currentLocale() })}`, delegatedShape)
 
 export const readDelegation = (spaceId: string) =>
   getJson(`/api/judgment/delegation?${new URLSearchParams({ personalSpaceId: spaceId })}`, delegationShape)

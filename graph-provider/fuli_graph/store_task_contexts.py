@@ -26,6 +26,7 @@ from .task_turn_receipts import mark_turn_receipt_unread, unread_session_turn_re
 from .knowledge_versions import lock_knowledge
 from .knowledge_source_fence import require_source_available
 from .client_coverage import covers_client
+from .task_checkpoint_amendment import amend_task_checkpoint
 
 
 def foreign_client_detail(begun_in, used_in):
@@ -323,6 +324,15 @@ class StoreTaskContexts:
                     record_json=task_context_json({key: value for key, value in record.items()
                                                    if key != 'agent_memory'}))
             return record
+
+    async def amend_task_checkpoint(self, actor, token, request):
+        # Same fences as the checkpoint: a deleted source never gets words back.
+        async with query_store_transaction(self) as scoped:
+            space = await scoped.authorize(actor, request.personal_space_id, 'maintainer')
+            await lock_knowledge(scoped, space)
+            await require_source_available(scoped, space, task_token=token)
+            await scoped.guard_worker_task_context(actor, request.personal_space_id, token, for_write=True)
+            return await amend_task_checkpoint(scoped, actor, token, request)
 
     async def _checkpoint_task_context(self, actor, token, request):
         await self.authorize(actor, request.personal_space_id, 'maintainer')

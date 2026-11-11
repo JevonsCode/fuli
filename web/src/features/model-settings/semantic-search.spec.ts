@@ -105,7 +105,7 @@ describe('语义搜索 on the model page', () => {
     const card = wrapper.get('[data-semantic-search]')
     expect(wrapper.get('.model-use-grid > *').attributes('data-model-role')).toBe('semantic')
     expect(card.findAll('h3').map(heading => heading.text())).toEqual(['语义搜索'])
-    expect(card.get('[data-model-use-model]').text()).toBe('没接模型，只按字面找')
+    expect(card.get('[data-model-use-model]').text()).toBe('没接模型：只按字面找，换个说法就找不到')
     expect(card.get('[data-model-use-advice]').text()).toContain('qwen3-embedding:0.6b')
     expect(card.get('[data-model-use-state]').text()).toBe('未接')
     expect(card.get('[data-model-role-edit]').text()).toBe('接入')
@@ -155,7 +155,7 @@ describe('语义搜索 on the model page', () => {
     expect(url).toBe('/api/model-backends/roles/semantic')
     expect(body.connection).toMatchObject({ protocol: 'openai_embeddings', endpoint: OLLAMA, model: 'synthetic-embed', secretRef: null })
     expect(body.settings.egress.approvedProjects).toEqual([{ personalSpaceId: 'space-1', personalProjectId: 'alpha' }])
-    expect(wrapper.text()).toContain('已保存 语义搜索 的模型设置。')
+    expect(useConsoleStore().feedback?.message).toContain('已保存 语义搜索 的模型设置。')
   })
 
   it('tests the connection and shows how many dimensions the model gives', async () => {

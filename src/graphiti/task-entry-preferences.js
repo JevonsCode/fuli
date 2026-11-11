@@ -10,7 +10,7 @@ import { withProjectCandidate } from './assistant-project-candidate.js';
 import { withBoardMatch } from './jefa-board-match.js';
 import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 import { ATTENTION_REPLIES_GUIDANCE } from '../../packages/roundtable/src/roundtable/attention-inbox.js';
-import { AGENT_REPLIES_GUIDANCE } from '../../packages/roundtable/src/roundtable/reply-inbox.js';
+import { AGENT_REPLIES_GUIDANCE, STAND_IN_HANDBACKS_GUIDANCE } from '../../packages/roundtable/src/roundtable/reply-inbox.js';
 import { captureDecision } from './capture-decision.js';
 import { receiptNotices } from './capture-notice.js';
 import { receiptFormatNotices } from '../data-format/format-notices.js';
@@ -18,6 +18,7 @@ import { noteEntryTask } from '../conversations/entry-budget.js';
 import { withSharedProjectList } from './shared-project-list.js';
 import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 import { standingOwnerEntry } from './task-entry-standing-owner.js';
+import { ownerChangeEntry } from './task-entry-owner-change.js';
 import { roundtableAskEntry } from './task-entry-roundtable-ask.js';
 import { isReadOnlyRefusal, readOnlyLifecycle, readOnlyTaskEntry } from './task-entry-read-only.js';
 
@@ -198,6 +199,7 @@ async function entryPreferences(application, projectResolution, {
   ]);
   const managedPreferences = management ? { ...preferences, project_management_context: management } : preferences;
   if (context) applyAgentAssignment(context, selection);
+  const ownerChange = await ownerChangeEntry(application, projectResolution, selection, context?.role?.name);
   // Questions other Agents left for this Agent while it was not running.
   const waiting = includeMessages && selection?.agent && application.roundtable
     ? application.roundtable.pending(selection.agent.agentId, projectResolution.personalProjectId) : [];
@@ -207,13 +209,18 @@ async function entryPreferences(application, projectResolution, {
   // Other Agents' replies to asks this Agent sent, announced once; the body comes from read_agent_messages.
   const replied = includeMessages && selection?.agent && projectResolution.personalProjectId && application.roundtable?.agentReplies
     ? application.roundtable.agentReplies(selection.agent.agentId, projectResolution.personalProjectId) : [];
+  // What another session did as this Agent while it stood in (代入), announced once the same way.
+  const handedBack = includeMessages && selection?.agent && projectResolution.personalProjectId && application.roundtable?.standInHandbacks
+    ? application.roundtable.standInHandbacks(selection.agent.agentId, projectResolution.personalProjectId) : [];
   const notices = [...[fla?.notice, group?.notice].filter(Boolean).map(receiptText),
     ...(standing?.notice ? [standing.receiptNotice] : []),
+    ...(ownerChange ? [ownerChange.receiptNotice] : []),
     ...receiptNotices(capture, projectResolution.basis === 'created_from_prompt' ? ['project_created'] : [],
       { settingsUrl: captureSettingsUrl(application) }), ...formatNotices];
   return { ...managedPreferences, ...(context ? { project_agent_context: context } : {}),
     ...(triage ? { triage_candidates: triage } : {}),
     ...(standing ? { standing_owner: standing.field } : {}),
+    ...(ownerChange ? { owner_change: ownerChange.field } : {}),
     ...(fla?.view ? { fla: fla.view } : {}), ...(group?.view ? { flg: group.view } : {}),
     ...(group?.interaction ?? fla?.interaction ? { human_interaction: group?.interaction ?? fla.interaction } : {}),
     ...(routeMarkers.length ? { [FLA_ROUTE]: routeMarkers } : {}),
@@ -223,6 +230,7 @@ async function entryPreferences(application, projectResolution, {
     ...(answered.length ? { attention_replies: answered, attention_replies_guidance: ATTENTION_REPLIES_GUIDANCE } : {}),
     ...(roundtableAsk ? { roundtable_ask: roundtableAsk } : {}),
     ...(replied.length ? { agent_replies: replied, agent_replies_guidance: AGENT_REPLIES_GUIDANCE } : {}),
+    ...(handedBack.length ? { stand_in_handbacks: handedBack, stand_in_handbacks_guidance: STAND_IN_HANDBACKS_GUIDANCE } : {}),
     agent_receipt: taskAgentReceipt(application, {
       projectId: projectResolution.personalProjectId, agentId: selection?.agent?.agentId ?? null,
       name: context?.role?.name, role: selection?.agent?.profile?.name, sourceApplication,

@@ -28,12 +28,17 @@ function mountHelp(term: string) {
   return wrapper
 }
 
-describe('a card\'s 「?」', () => {
+describe('a card\'s entry to its explanation', () => {
   it('opens the glossary card with what the area is for and a copyable prompt filled with this console\'s address', async () => {
     const writeText = vi.fn(async () => {})
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
     const help = mountHelp('task.models')
-    expect(help.get('[data-ai-help]').attributes('aria-label')).toBe('「模型与用量」是做什么的，怎么让 AI 来做')
+    // An area an AI can do: the blue AI mark, named by what it does and where; never a question mark.
+    const entry = help.get('[data-ai-help]')
+    expect(entry.attributes('data-ai-entry')).toBeDefined()
+    expect(entry.attributes('aria-label')).toBe('让 AI 来做：模型与用量')
+    expect(entry.attributes('title')).toBe('让 AI 来做：模型与用量')
+    expect(entry.html()).toContain('M10 5.5c')
     await help.get('[data-ai-help]').trigger('click')
     await flushPromises()
     const card = document.querySelector('[data-glossary-term="task.models"]')!
@@ -48,6 +53,9 @@ describe('a card\'s 「?」', () => {
 
   it('a change only the person makes explains why and offers no prompt', async () => {
     const help = mountHelp('task.aiPermissions')
+    // Nothing for an AI here: the entry is the 「?」 that only explains.
+    expect(help.get('[data-ai-help]').attributes('data-ai-entry')).toBeUndefined()
+    expect(help.get('[data-ai-help]').attributes('aria-label')).toBe('「AI 权限」是做什么的')
     await help.get('[data-ai-help]').trigger('click')
     await flushPromises()
     const card = document.querySelector('[data-glossary-term="task.aiPermissions"]')!

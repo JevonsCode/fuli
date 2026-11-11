@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { parseProviderEnv } from '../setup/provider-env.js';
-import { ProviderRequestError } from './provider-client.js';
+import { ProviderRequestError, providerRefusalMessage } from './provider-client.js';
 
 // The personal provider as a person's own console and CLI reach it for the
 // operations that change real data on their word: a confirmed data format
@@ -73,7 +73,9 @@ export function providerRefusal(status, payload) {
   const detail = payload?.detail;
   const code = typeof detail?.code === 'string' ? detail.code : status >= 500 ? 'provider_http_5xx' : 'provider_error';
   const message = typeof detail?.message === 'string' ? detail.message
-    : typeof detail === 'string' && status < 500 ? detail : `The graph provider answered HTTP ${status}`;
+    : typeof detail === 'string' && status < 500 ? detail
+      // A validation failure (422) lists fields and reasons; the console shows them.
+      : Array.isArray(detail) && status < 500 ? providerRefusalMessage(payload) : `The graph provider answered HTTP ${status}`;
   const deletedAt = typeof detail?.deleted_at === 'string' ? detail.deleted_at : undefined;
   const items = Array.isArray(detail?.items) ? detail.items : Array.isArray(detail?.stale_items) ? detail.stale_items : undefined;
   const details = deletedAt || items ? { ...(deletedAt ? { deletedAt } : {}), ...(items ? { items } : {}) } : null;
