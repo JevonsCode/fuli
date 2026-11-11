@@ -80,6 +80,10 @@ h2 { margin-top: 12px; font-size: clamp(30px, 3.6vw, 52px); font-weight: 680; li
 .hero-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; margin-top: 36px; }
 .hero-actions .button-quiet { border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
 .hero-actions .button-quiet:hover { border-color: var(--jade-line); background: var(--jade-soft); }
+.hero-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: 18px 0 0; font-size: 14px; }
+.hero-guide { color: var(--jade); font-weight: 500; user-select: none; }
+.hero-guide::after { content: "→"; display: inline-block; margin-left: 6px; transition: transform .2s ease; }
+.hero-guide:hover::after { transform: translateX(3px); }
 .hero-server { color: var(--muted); font-size: 14px; user-select: none; }
 .hero-server:hover { color: var(--jade); }
 /* Measured numbers inside a chapter: label, then before → after with the current value strong. */

@@ -246,10 +246,16 @@ test('the home story walks through the product in order, with measured numbers a
     assert.ok(document.querySelector('#workbench .growth-next .growth-badge'), path);
     assert.deepEqual([...document.querySelectorAll('#team .member b')].slice(0, 4).map(node => node.textContent), ['Astro', 'Jefa', 'Bole', 'Tonborg'], path);
   }
-  // On the stable page the client downloads lead the hero; npm is one link to the server install.
+  // On the stable page the client downloads lead the hero; under them, the quick start
+  // guide and one link to the server install, both on the first screen.
   const { document } = parseHTML(files.get('index.html'));
   assert.deepEqual([...document.querySelectorAll('.hero-actions [data-download-windows], .hero-actions [data-download-macos]')].length, 2);
-  assert.equal(document.querySelector('.hero-actions .hero-server').getAttribute('href'), '#start');
+  assert.equal(document.querySelector('.hero-links .hero-server').getAttribute('href'), '#start');
+  assert.match(document.querySelector('.hero-links .hero-guide').getAttribute('href'), /\/fuli\/guide\/$/);
+  for (const [path, guide] of [['index.html', /\/fuli\/guide\/$/], ['en/index.html', /\/fuli\/guide\/en\/$/]]) {
+    const page = parseHTML(files.get(path)).document;
+    assert.match(page.querySelector('.hero-chapter .hero-guide').getAttribute('href'), guide, path);
+  }
   assert.equal(document.querySelector('.terminal'), null);
 });
 
