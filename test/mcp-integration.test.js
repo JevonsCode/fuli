@@ -208,7 +208,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'list_tonborg_questions', 'answer_tonborg_question', 'list_reply_echoes',
     'get_model_usage', 'role_work',
     'get_agent_score_card',
-    'control_project_agent_task_run', 'register_standing_assignment', 'report_agent_service',
+    'control_project_agent_task_run', 'register_standing_assignment', 'organize_project', 'report_agent_service',
     'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
     'record_fla_lesson',
     'list_work_surfaces', 'pause_work_surfaces', 'resume_work_surfaces',

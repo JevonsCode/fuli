@@ -3,6 +3,7 @@ import { AGENT_APP_TOOL_DEFINITIONS } from './agent-app-definitions.js';
 import { JUDGMENT_TOOL_DEFINITIONS } from './judgment-definitions.js';
 import { MODEL_BACKEND_DEFINITIONS } from './model-backend-definitions.js';
 import { STANDING_ASSIGNMENT_DEFINITIONS } from './standing-assignment-definitions.js';
+import { PROJECT_ORGANIZING_DEFINITIONS } from './project-organizing-definitions.js';
 import { AGENT_SERVICE_DEFINITIONS } from './agent-service-definitions.js';
 import { AGENT_WORKFLOW_DEFINITIONS } from './agent-workflow-definitions.js';
 import { FLA_LESSON_DEFINITIONS } from './fla-lesson-definitions.js';
@@ -39,6 +40,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...AGENT_SCORE_CARD_DEFINITIONS,
   ...TASK_RUN_DEFINITIONS,
   ...STANDING_ASSIGNMENT_DEFINITIONS,
+  ...PROJECT_ORGANIZING_DEFINITIONS,
   ...AGENT_SERVICE_DEFINITIONS,
   ...AGENT_WORKFLOW_DEFINITIONS,
   ...FLA_LESSON_DEFINITIONS,
