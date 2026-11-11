@@ -11,13 +11,14 @@ export const reviewListMessages = {
     echoesHint: 'Agent 把自己的回复存成了知识，已修好，这些可以一起丢掉',
     undoReason: "撤销了 @:{'roleNames.tonborg'} 的确认",
     voteReason: '你选了「{action}」',
+    otherReason: '你说：「{words}」',
     groups: { echoes: '之前误存的 Agent 回复', questions: "@:{'roleNames.tonborg'} 拿不准，要你定", pending: '待确认的知识', attention: 'Agent 在问你', confirmed: "@:{'roleNames.tonborg'} 替你确认了" },
     reasons: {
       unreviewed: '还没人看过', tonborg_reviewed: "@:{'roleNames.tonborg'} 看过，等你点头", tonborg_unsure: "@:{'roleNames.tonborg'} 拿不准",
-      conflict: '和别的条目冲突', attention: '需要留意', basis_changed: '依据变了',
+      conflict: '和另一条对不上', attention: '要你看一眼', basis_changed: '它依据的那条改过了',
     },
-    guessed: "@:{'roleNames.tonborg'} 猜：{guess}",
-    guessShort: { keep: '保留', drop: '不要', edit: '先改一下' },
+    answers: { keep: '保留', drop: '不要', edit: '改一下', keepAsIs: '原样保留', other: '其他' },
+    other: { title: '其他', label: '用你自己的话说', submit: '记下' },
     actions: {
       confirm: '确认', drop: '不要', edit: '改一下', details: '查看详情', confirmAll: '全部确认', acceptGuesses: '全按猜的办',
       undo: '撤销', allRight: '都对', answer: '回答', dropAll: '全部丢掉',
@@ -25,15 +26,15 @@ export const reviewListMessages = {
     pending: {
       confirm: '正在确认这条知识…', drop: '正在把这条知识标为不要…', undo: "正在撤销 @:{'roleNames.tonborg'} 的确认…",
       ack: "正在记下你认可 @:{'roleNames.tonborg'} 的确认…", all: '正在确认 {done}/{total}', guesses: "正在按猜的办 {done}/{total}",
-      echoes: '正在丢掉误存的回复 {done}/{total}', restore: '正在撤销丢掉的 {count} 条回复…',
+      echoes: '正在丢掉误存的回复 {done}/{total}', restore: '正在撤销丢掉的 {count} 条回复…', other: '正在记下你的话…',
     },
     done: {
       confirm: '已确认「{text}」', drop: '已标为不要「{text}」，可在知识里恢复', undo: "已撤销 @:{'roleNames.tonborg'} 对「{text}」的确认",
-      all: '已处理 {count} 条', confirmedAll: '已确认 {count} 条知识',
+      all: '已处理 {count} 条', confirmedAll: '已确认 {count} 条知识', other: '已记下你的话，这条回到「待确认的知识」',
       echoes: '已丢掉 {count} 条误存的 Agent 回复', restored: '已恢复 {count} 条，回到待决策', partial: '已处理 {count} 条，{failed} 条没成功，还在列表里',
     },
     details: {
-      title: '详情', content: '内容', project: '项目', proposer: '谁提的', reason: '为什么还等着', tonborg: "@:{'roleNames.tonborg'} 的理由", guess: "@:{'roleNames.tonborg'} 的猜测",
+      title: '详情', content: '内容', project: '项目', proposer: '谁提的', reason: '为什么还等着', tonborg: "@:{'roleNames.tonborg'} 的理由", ask: "@:{'roleNames.tonborg'} 问你",
     },
     explain: {
       area: "@:{'roleNames.tonborg'} 给你解释这些问题", title: "让 @:{'roleNames.tonborg'} 给你解释", lead: '在你的 AI 里新开一个会话，逐条讲清楚',
@@ -62,13 +63,14 @@ export const reviewListMessages = {
     echoesHint: 'Agents saved their own replies as knowledge. That is fixed; drop these together',
     undoReason: "Undid @:{'roleNames.tonborg'}’s confirmation",
     voteReason: 'You chose “{action}”',
+    otherReason: 'You said: “{words}”',
     groups: { echoes: 'Agent replies kept by mistake', questions: "@:{'roleNames.tonborg'} is unsure; your call", pending: 'Knowledge to confirm', attention: 'Agents ask you', confirmed: "@:{'roleNames.tonborg'} confirmed for you" },
     reasons: {
       unreviewed: 'Nobody looked yet', tonborg_reviewed: "@:{'roleNames.tonborg'} looked; waits for your nod", tonborg_unsure: "@:{'roleNames.tonborg'} is unsure",
-      conflict: 'Conflicts with another item', attention: 'Needs attention', basis_changed: 'Its basis changed',
+      conflict: 'Disagrees with another item', attention: 'Needs a look from you', basis_changed: 'The item it rests on changed',
     },
-    guessed: "@:{'roleNames.tonborg'} guesses: {guess}",
-    guessShort: { keep: 'keep', drop: 'drop', edit: 'edit first' },
+    answers: { keep: 'Keep', drop: 'Drop', edit: 'Edit', keepAsIs: 'Keep as is', other: 'Other' },
+    other: { title: 'Other', label: 'Say it in your own words', submit: 'Record' },
     actions: {
       confirm: 'Confirm', drop: 'Drop', edit: 'Edit', details: 'Details', confirmAll: 'Confirm all', acceptGuesses: 'Accept guesses',
       undo: 'Undo', allRight: 'All right', answer: 'Answer', dropAll: 'Drop all',
@@ -76,15 +78,15 @@ export const reviewListMessages = {
     pending: {
       confirm: 'Confirming this item…', drop: 'Dropping this item…', undo: "Undoing @:{'roleNames.tonborg'}’s confirmation…",
       ack: "Recording that @:{'roleNames.tonborg'}’s confirmations are right…", all: 'Confirming {done}/{total}', guesses: 'Applying guesses {done}/{total}',
-      echoes: 'Dropping replies kept by mistake {done}/{total}', restore: 'Undoing the drop of {count} replies…',
+      echoes: 'Dropping replies kept by mistake {done}/{total}', restore: 'Undoing the drop of {count} replies…', other: 'Recording your words…',
     },
     done: {
       confirm: 'Confirmed “{text}”', drop: 'Dropped “{text}”; you can restore it in Knowledge', undo: "Undid @:{'roleNames.tonborg'}’s confirmation of “{text}”",
-      all: 'Handled {count} items', confirmedAll: 'Confirmed {count} items',
+      all: 'Handled {count} items', confirmedAll: 'Confirmed {count} items', other: 'Recorded your words; the item is back under Knowledge to confirm',
       echoes: 'Dropped {count} Agent replies kept by mistake', restored: 'Restored {count}; back in Decisions', partial: 'Handled {count} items; {failed} failed and stay in the list',
     },
     details: {
-      title: 'Details', content: 'Content', project: 'Project', proposer: 'Proposed by', reason: 'Why it waits', tonborg: "@:{'roleNames.tonborg'}’s reason", guess: "@:{'roleNames.tonborg'}’s guess",
+      title: 'Details', content: 'Content', project: 'Project', proposer: 'Proposed by', reason: 'Why it waits', tonborg: "@:{'roleNames.tonborg'}’s reason", ask: "@:{'roleNames.tonborg'} asks",
     },
     explain: {
       area: "@:{'roleNames.tonborg'} explains these questions", title: "Let @:{'roleNames.tonborg'} explain", lead: 'Opens a new chat in your AI and goes through them one by one',

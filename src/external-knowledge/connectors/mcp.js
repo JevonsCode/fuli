@@ -5,7 +5,7 @@ import {
 } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { requiredString } from '../../validation/values.js';
-import { dateTimeOrNull, onlineUrl } from './response-values.js';
+import { dateTimeOrNull, isLoopbackUrl, onlineUrl } from './response-values.js';
 
 const LOCAL_CURSOR_PREFIX = 'fuli-mcp-v1:';
 
@@ -14,6 +14,18 @@ export function createMcpConnector({ openSession = defaultOpenSession } = {}) {
     type: 'mcp',
     name: 'MCP',
     capabilities: ['discover', 'sync', 'retrieve'],
+
+    // A local command runs as the person, a credential here goes to an
+    // endpoint the caller chose, and a loopback URL reaches a local service:
+    // only the person sets these up (连接 page).
+    personOnlyFields(config) {
+      return [
+        config.transport === 'stdio' && 'transport',
+        isLoopbackUrl(config.url) && 'url',
+        config.tokenEnv && 'tokenEnv',
+        Object.keys(plainObject(config.headerEnv) ?? {}).length > 0 && 'headerEnv'
+      ].filter(Boolean);
+    },
 
     async check(context) {
       return withSession(openSession, context, async (client) => {

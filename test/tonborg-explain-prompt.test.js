@@ -14,8 +14,8 @@ test('the prompt asks how many to hear first only above the threshold', () => {
   for (const locale of LOCALES) {
     const few = tonborgExplainPrompt(ASK_HOW_MANY_ABOVE, locale);
     const many = tonborgExplainPrompt(ASK_HOW_MANY_ABOVE + 1, locale);
-    assert.doesNotMatch(few, /先听几条|How many first/, locale);
-    assert.match(many, locale === 'zh-CN' ? /一共 6 条，先听几条，还是一次讲完？/ : /6 items in all\. How many first, or all at once\?/, locale);
+    assert.doesNotMatch(few, /先过几条|How many first/, locale);
+    assert.match(many, locale === 'zh-CN' ? /一共 6 条，先过几条，还是一次过完？/ : /6 items in all\. How many first, or all at once\?/, locale);
     // Tonborg speaks, in words: a new chat has no project folder for an @Tonborg entry.
     assert.match(many, /^(你现在是 FULI 里的 Tonborg|Speak to me as Tonborg)/, locale);
     assert.match(few, new RegExp(`\\b${ASK_HOW_MANY_ABOVE}\\b`), locale);

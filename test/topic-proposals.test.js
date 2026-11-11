@@ -65,7 +65,10 @@ test('the conversation that reaches the bar asks once every three conversations'
 
 test('accepting forms a project, staffs a lead and attaches every conversation of the topic', async () => {
   const app = application([topic('Garden', 4, 3)]);
-  const formed = await acceptTopicProposal(app, { topic: 'garden' });
+  // This Provider cannot staff a team: the formation stands and says so
+  // (topic-team-handoff.test.js covers the team).
+  const { team, ...formed } = await acceptTopicProposal(app, { topic: 'garden' });
+  assert.deepEqual(team.handoffs.map(item => [item.position, item.status]), [['lead', 'unavailable']]);
   assert.deepEqual(formed, { status: 'formed', personal_project_id: 'garden', topic: 'Garden',
     reason: '你同意了 Astro 的建议：话题「Garden」累计 4 个会话、跨 3 天', created: true, lead_agent_id: 'lead-garden',
     lead_status: 'ready', conversations: 3, knowledge_moved: 0, knowledge_kept: 0 });

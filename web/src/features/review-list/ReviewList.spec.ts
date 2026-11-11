@@ -20,6 +20,10 @@ const tonborg = { ...basis, confirmed_by: { kind: 'agent', label: 'Tonborg' }, c
 const decision = (target: string, extra: Record<string, unknown> = {}) => ({ id: `decision-${target}`, createdAt: '2026-11-06T00:00:00Z',
   personalProjectId: 'project-a', target, title: null, summary: 'Synthetic reason', confidence: 0.6, guess: 'drop',
   question: 'I think you drop this. Right?', feedbackRevision: 0, ...extra })
+// A question as the server lists it: its one sentence and two choices, the guess first.
+const asking = (target: string, guess: 'keep' | 'drop' | 'edit' = 'drop', extra: Record<string, unknown> = {}) => decision(target, { guess,
+  ask: { keep: '「Synthetic asked」像是只说了这一次，保留吗？', drop: '「Synthetic asked」像是只说了这一次，丢掉吗？', edit: '「Synthetic asked」说得不够清楚，先改一下再留吗？' }[guess],
+  answers: [guess, guess === 'keep' ? 'drop' : 'keep'], doubt: 'one_off', ...extra })
 let nodes: Array<ReturnType<typeof node>> = []
 let delegated = { confirmed: [] as unknown[], questions: [] as unknown[] }
 const projects = [{ project_id: 'project-a', personal_space_id: 'space-a', profile: { name: 'Synthetic project' } }]
@@ -30,7 +34,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
   for (const mock of [getJson, postJson, patchJson, putJson, push]) mock.mockReset()
   nodes = [node('plain'), node('asked'), node('tonborg', { confirmation_status: 'agent_confirmed', confirmation_basis: tonborg })]
-  delegated = { questions: [decision('entity:asked')], confirmed: [decision('entity:tonborg', { question: null, guess: 'keep' })] }
+  delegated = { questions: [asking('entity:asked')], confirmed: [decision('entity:tonborg', { question: null, guess: 'keep' })] }
   getJson.mockImplementation(async (url: string) => {
     if (url.startsWith('/api/graph?')) return { nodes, edges: [], truncated: false }
     if (url.startsWith('/api/judgment/delegated?')) return delegated
@@ -56,45 +60,51 @@ describe('ReviewList', () => {
   it('shows each waiting item as one line in its group, Tonborg\'s guess as the filled button', async () => {
     const wrapper = await mountList()
     expect(wrapper.findAll('[data-review-group]').map(group => group.attributes('data-review-group'))).toEqual(['questions', 'pending', 'confirmed'])
-    // A Tonborg row leads with the item itself, never only Tonborg's own vague question.
-    expect(row(wrapper, 'entity:asked').get('.review-row__text').text()).toBe('Synthetic asked：Synthetic asked statement')
+    // A Tonborg row is one plain question that quotes the item; the whole item is on hover.
+    expect(row(wrapper, 'entity:asked').get('.review-row__text').text()).toBe('「Synthetic asked」像是只说了这一次，丢掉吗？')
+    expect(row(wrapper, 'entity:asked').get('.review-row__text').attributes('title')).toBe('Synthetic asked：Synthetic asked statement')
     expect(row(wrapper, 'entity:asked').text()).not.toContain('I think you drop this. Right?')
     expect(row(wrapper, 'entity:plain').text()).toContain('Synthetic project · Synthetic Agent · 还没人看过')
+    // Its guess is the filled first button, the opposite the second, then 其他.
     const asked = row(wrapper, 'entity:asked')
-    expect(asked.findAll('button').map(candidate => candidate.attributes('data-variant'))).toEqual(['outline', 'default', 'ghost', 'ghost'])
+    expect(asked.findAll('button').map(candidate => [candidate.text(), candidate.attributes('data-variant')])).toEqual(
+      [['不要', 'default'], ['保留', 'outline'], ['其他', 'ghost'], ['', 'ghost']])
     // Every row of a group offers the same actions in the same places.
     expect(row(wrapper, 'entity:plain').findAll('button').map(candidate => candidate.text())).toEqual(['确认', '不要', '改一下', ''])
   })
 
-  it("sets Tonborg's questions apart: its face and name, how many need the person, and its guess on each line", async () => {
+  it("sets Tonborg's questions apart: its face and name, and how many need the person", async () => {
     const wrapper = await mountList()
     const asks = wrapper.get('[data-review-group=questions]')
     expect(asks.classes()).toContain('review-group--asks')
     expect(asks.find('img.review-group__avatar').exists()).toBe(true)
     expect([asks.get('.review-group__name').text(), asks.get('.review-group__count').text()]).toEqual(['Tonborg 拿不准，要你定', '· 1'])
-    // The guess and its one-line reason sit in the meta line; the whole reason is on hover.
-    const meta = row(wrapper, 'entity:asked').get('.review-row__meta')
-    expect(meta.text()).toBe('Synthetic project · Synthetic Agent · Tonborg 猜：不要 · Synthetic reason')
-    expect(meta.get('[data-review-guess]').text()).toBe('Tonborg 猜：不要')
-    expect(meta.attributes('title')).toBe('Synthetic reason')
+    // The meta line says where it is from; the reason is in 查看详情, not squeezed in here.
+    expect(row(wrapper, 'entity:asked').get('.review-row__meta').text()).toBe('Synthetic project · Synthetic Agent')
     // Plain pending items keep their own group and look.
     expect(wrapper.get('[data-review-group=pending]').classes()).not.toContain('review-group--asks')
   })
 
-  it('names what Tonborg asked about and what it confirmed, its reason cut to one short line', async () => {
+  it('every kind of question keeps two choices and 其他 in the same places; the reason is in 查看详情', async () => {
     const long = 'Synthetic long reason '.repeat(10)
-    delegated = { questions: [decision('entity:asked', { guess: 'edit', summary: long })],
+    nodes = [...nodes, node('kept'), node('vague')]
+    delegated = { questions: [asking('entity:asked'), asking('entity:kept', 'keep'), asking('entity:vague', 'edit', { summary: long })],
       confirmed: [decision('entity:tonborg', { question: null, guess: 'keep', summary: 'Synthetic confirmed reason' })] }
     const wrapper = await mountList()
-    const asked = row(wrapper, 'entity:asked')
-    expect(asked.get('[data-review-guess]').text()).toBe('Tonborg 猜：先改一下')
-    const reason = asked.get('.review-row__meta').text().split(' · ').at(-1)!
-    expect(reason.length).toBeLessThanOrEqual(60)
-    expect(reason.endsWith('…')).toBe(true)
-    expect(asked.get('[data-variant=default]').text()).toBe('改一下')
-    // Tonborg's own question stays in 查看详情.
-    await button(asked, '').trigger('click'); await flushPromises()
-    expect(document.body.textContent).toContain('I think you drop this. Right?')
+    const labels = (key: string) => row(wrapper, key).findAll('button').map(candidate => candidate.text())
+    expect([labels('entity:asked'), labels('entity:kept'), labels('entity:vague')]).toEqual(
+      [['不要', '保留', '其他', ''], ['保留', '不要', '其他', ''], ['改一下', '原样保留', '其他', '']])
+    for (const key of ['entity:asked', 'entity:kept', 'entity:vague']) {
+      expect(row(wrapper, key).findAll('button').map(candidate => candidate.attributes('data-variant'))).toEqual(['default', 'outline', 'ghost', 'ghost'])
+    }
+    const vague = row(wrapper, 'entity:vague')
+    expect(vague.get('[data-review-ask]').text()).toBe('「Synthetic asked」说得不够清楚，先改一下再留吗？')
+    await button(vague, '改一下').trigger('click'); await flushPromises()
+    expect(push).toHaveBeenCalledWith('/knowledge/item/space-a/entity/vague')
+    // Tonborg's whole reason and what it asks are in 查看详情.
+    await button(vague, '').trigger('click'); await flushPromises()
+    expect(document.body.textContent).toContain(long.trim())
+    expect(document.body.textContent).toContain('Tonborg 问你')
     const confirmed = row(wrapper, 'entity:tonborg')
     expect(confirmed.get('.review-row__text').text()).toBe('Synthetic tonborg：Synthetic tonborg statement')
     expect(confirmed.get('.review-row__meta').text()).toBe('Synthetic project · Tonborg 替你确认 · Synthetic confirmed reason')
@@ -108,10 +118,40 @@ describe('ReviewList', () => {
     expect(wrapper.find('[data-review-line="entity:plain"]').exists()).toBe(false)
     expect(useConsoleStore().feedback?.message).toContain('已确认')
 
-    await button(row(wrapper, 'entity:asked'), '确认').trigger('click'); await flushPromises()
-    // Tonborg guessed drop; the person kept it: a 👎 with their choice as the reason.
+    await button(row(wrapper, 'entity:asked'), '保留').trigger('click'); await flushPromises()
+    // Tonborg guessed drop; the person kept it with one click: their confirmation, and a 👎 with their choice as the reason.
+    expect(patchJson).toHaveBeenCalledWith('/api/knowledge/entity/asked', expect.objectContaining({ action: 'confirm' }))
     expect(postJson).toHaveBeenCalledWith('/api/judgment/feedback', { personalSpaceId: 'space-a', decisionId: 'decision-entity:asked',
-      vote: 'down', reason: '你选了「确认」', expectedRevision: 0 })
+      vote: 'down', reason: '你选了「保留」', expectedRevision: 0 })
+  })
+
+  it('其他 opens a short field: the person\'s own words are recorded as said and the item goes back to pending knowledge', async () => {
+    const wrapper = await mountList()
+    await row(wrapper, 'entity:asked').get('[data-review-other]').trigger('click'); await flushPromises()
+    const dialog = wrapper.get('[data-review-other-dialog]')
+    // The question again, one field, and the third way to answer that the row does not show.
+    expect(dialog.text()).toContain('「Synthetic asked」像是只说了这一次，丢掉吗？')
+    expect(dialog.findAll('textarea')).toHaveLength(1)
+    expect(dialog.get('[data-review-other-rest]').text()).toBe('改一下')
+    const submit = dialog.get('button[type=submit]')
+    expect(submit.attributes('disabled')).toBeDefined()
+    await dialog.get('textarea').setValue('  这条先放着，下周发版后再定  ')
+    expect(submit.attributes('disabled')).toBeUndefined()
+    await dialog.get('form').trigger('submit'); await flushPromises()
+    expect(postJson).toHaveBeenCalledWith('/api/judgment/feedback', { personalSpaceId: 'space-a', decisionId: 'decision-entity:asked',
+      vote: 'down', reason: '你说：「这条先放着，下周发版后再定」', expectedRevision: 0 })
+    // Nothing about the item changed: it leaves Tonborg's questions and waits with the pending knowledge.
+    expect(patchJson).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-review-other-dialog]').exists()).toBe(false)
+    expect(wrapper.find('[data-review-group=questions]').exists()).toBe(false)
+    expect(wrapper.get('[data-review-group=pending]').find('[data-review-line="entity:asked"]').exists()).toBe(true)
+    expect(useConsoleStore().feedback?.message).toBe('已记下你的话，这条回到「待确认的知识」')
+  })
+
+  it('asks for the questions in the console\'s language', async () => {
+    await mountList()
+    expect(getJson.mock.calls.map(([url]) => String(url)).filter(url => url.startsWith('/api/judgment/delegated?')))
+      .toEqual(['/api/judgment/delegated?personalSpaceId=space-a&language=zh-CN'])
   })
 
   it('drops the earlier Agent replies together without asking, and 撤销 in the toast brings them back', async () => {

@@ -193,7 +193,7 @@ describe('JudgmentWorkbench', () => {
     await flushPromises()
     await wrapper.get('.judgment-filter [data-value="all"]').trigger('click')
     const notes = wrapper.findAll('[data-injection-precheck]').map(note => note.text())
-    expect(notes.sort()).toEqual(['已知注入格式冒称已获批准 · 试图指定审核结果', '已知注入格式同批另一候选匹配'])
+    expect(notes.sort()).toEqual(['文字像在对 AI 下指令一起看的另一条像在对 AI 下指令', '文字像在对 AI 下指令冒称已获批准 · 试图指定审核结果'])
   })
 
   it('says honestly when an undo is refused, and offers none for permanently deleted knowledge (D-36.12)', async () => {
@@ -298,7 +298,7 @@ describe('JudgmentWorkbench', () => {
 
     const empty = wrapper.get('[data-judgment-empty]')
     expect(empty.classes()).toContain('ui-empty')
-    expect(empty.text()).toContain('没有需要人工处理的判断')
+    expect(empty.text()).toContain('没有要你定的事')
     expect(wrapper.findAll('[data-action="review"]')).toHaveLength(1)
     await empty.get('[data-action="review"]').trigger('click')
     expect(empty.get('[data-action="review"]').attributes('aria-busy')).toBe('true')

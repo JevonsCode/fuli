@@ -139,7 +139,9 @@ async def defer_preference_conflict(
         left_item_kind=request.left_item_kind,
         right_item_id=request.right_item_id,
         right_item_kind=request.right_item_kind,
-        requested_by=request.operation_actor,
+        # Its body defaults to 'human': only the console's proof makes it the person's.
+        requested_by=('human' if request.operation_actor == 'human'
+                      and actor.get('_human_review_verified') is True else 'agent'),
         reason=request.reason,
         deferred_at=deferred_at,
     )

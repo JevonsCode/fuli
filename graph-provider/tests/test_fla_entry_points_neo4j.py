@@ -102,10 +102,10 @@ async def test_a_conflict_naming_an_flas_item_is_missing_to_another_agents_resol
                 'left_item_kind': 'entity', 'right_item_id': space.id('shared-habit'), 'right_item_kind': 'entity',
                 'reason': 'Synthetic defer.', 'operation_actor': 'agent', **(reader or {})})
 
-        def complete(conflict_id, headers=None):
+        def complete(conflict_id, headers=None, actor='human'):
             return client.post(f'/v1/preference-conflicts/{conflict_id}/complete', headers=headers, json={
                 'personal_space_id': space.space_id, 'resolution': 'keep_left', 'reason': 'Synthetic.',
-                'operation_actor': 'human'})
+                'operation_actor': actor})
 
         missing = (404, 'preference conflict not found')
         for reader in (AS_H, None):
@@ -119,7 +119,8 @@ async def test_a_conflict_naming_an_flas_item_is_missing_to_another_agents_resol
             assert (await defer(reader, new_id)).status_code == 404
             assert await stored_conflict(settings, new_id) is None, 'nothing was written'
             assert (await defer(reader, pending, left='plain-fact')).status_code == 404
-        assert (await complete(pending)).status_code == 404, 'no proof: read as a plain session'
+        assert (await complete(pending, actor='agent')).status_code == 404, 'no proof: read as a plain session'
+        assert (await complete(pending)).status_code == 403, 'no proof: not recorded as the person'
         for conflict_id, stored in before.items():
             assert await stored_conflict(settings, conflict_id) == stored, 'nothing changed'
         # G reads its own conflict's retry; the person completes it with the console's proof.

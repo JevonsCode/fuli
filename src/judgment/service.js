@@ -28,6 +28,11 @@ const policyWriteSchema = scopeSchema.extend({ policy: policySchema.nullable(), 
 const reviewVerdictSchema = z.object({ personalSpaceId: id, agentId: id, personalProjectId: id.nullable().optional() }).strict();
 const acceptanceOutcomeSchema = z.object({ personalSpaceId: id, taskId: id.nullable().default(null),
   taskKeys: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(500).default([]) }).strict();
+// The questions a conversation card already told the person about (Jevons
+// 11-11: the same card closed every task while they stayed open). Kept per
+// space, the newest ANNOUNCED_MAX: more than the lists that ask them read.
+const ANNOUNCED_KEY = 'questions-announced';
+const ANNOUNCED_MAX = 1000;
 const feedbackSchema =z.object({ personalSpaceId: id, decisionId: id, vote: z.enum(['up', 'down']).nullable(),
   reason: z.string().trim().max(1000).default(''), expectedRevision: revision }).strict();
 
@@ -72,8 +77,11 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
     return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
   // An Agent tool's answer: the records as this reader may read them (agent-view.js).
-  const agentView = (result, personalSpaceId, reader = null) =>
-    agentJudgmentView(app.personal, result, { personalSpaceId, reader });
+  // The language the person reads FULI in, saved with 「交给 Tonborg 确认」 (null: its default).
+  const language = personalSpaceId => store().delegation(personalSpaceId).language;
+  // announced: the questions a card already told the person about (a checkpoint's read only).
+  const agentView = (result, personalSpaceId, reader = null, announced) =>
+    agentJudgmentView(app.personal, result, { personalSpaceId, reader, language: language(personalSpaceId), announced });
   let questionsPort;
   const questions = () => {
     if (!questionTools) throw new EmployeeError('Judgment runtime unavailable', 503);
@@ -111,7 +119,7 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       const page = store().records(parsed.personalSpaceId, { ...parsed, limit: parsed.limit + 1, humanNeeded: filter === 'human',
         search: search ? { text: search, projectIds: await projectsNamed(parsed.personalSpaceId, search) } : null });
       const records = page.slice(0, parsed.limit);
-      return { ...judgmentHumanInteraction(records, parsed.personalSpaceId), records,
+      return { ...judgmentHumanInteraction(records, parsed.personalSpaceId, { language: language(parsed.personalSpaceId) }), records,
         nextCursor: page.length > parsed.limit ? records.at(-1).id : null };
     },
     // Reads the local ledger only; no judgment client runs.
@@ -130,8 +138,8 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
     // relay: the person's vote an FLA relayed in their words (rec#80), or null.
     async feedback(input, relay = null) { const parsed = parse(feedbackSchema, input); space(parsed);
       await prepareStore(parsed.personalSpaceId);
-      // A picked option is recorded as its own action, whatever the relaying Agent sent (rec#99).
-      if (relay) checkRelayedChoice(store().get(parsed.personalSpaceId, parsed.decisionId), parsed, relay.personWords);
+      // A picked choice is recorded as its own answer, whatever the relaying Agent sent (rec#99).
+      if (relay) checkRelayedChoice(store().get(parsed.personalSpaceId, parsed.decisionId), parsed, relay.personWords, language(parsed.personalSpaceId));
       return store().feedback(parsed.personalSpaceId, parsed.decisionId, parsed.vote, parsed.reason, parsed.expectedRevision, relay); },
     async review(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.review(service, input); },
     async reviewAutomatic(input) { if (!engine) throw new EmployeeError('Judgment runtime unavailable', 503); return engine.reviewAutomatic(service, input); },
@@ -150,8 +158,20 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
       },
       async conversationQuestions({ projectAgentId = null, ...input }) {
         const reader = agentReader(input, projectAgentId);
-        const { human_interaction } = await agentView({ records: await questionRecords(input) }, input.personalSpaceId, reader);
-        return human_interaction ? { human_interaction } : {};
+        const records = await questionRecords(input);
+        // Once per batch of new questions: a card only for one no card named yet, saying how many are new.
+        const told = store().setting(input.personalSpaceId, ANNOUNCED_KEY);
+        const { human_interaction } = await agentView({ records }, input.personalSpaceId, reader, new Set(told.value ?? []));
+        if (!human_interaction) return {};
+        const named = human_interaction.source.batch ?? [human_interaction.source.id];
+        try {
+          store().writeSetting(input.personalSpaceId, ANNOUNCED_KEY,
+            [...new Set([...(told.value ?? []), ...named])].slice(-ANNOUNCED_MAX), told.revision);
+        } catch (error) {
+          // Another conversation named them at the same moment: the card may show twice, never more.
+          if (error.status !== 409) throw error;
+        }
+        return { human_interaction };
       },
       review: async input => agentView(await service.review(input), input.personalSpaceId),
       assess: async input => agentView(await service.assess(input), input.personalSpaceId),
