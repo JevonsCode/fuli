@@ -1,5 +1,6 @@
-import { spawn } from 'node:child_process';
 import { join } from 'node:path';
+
+import { bounded, entryText, KILL_GRACE_MS, MAX_PROMPT_CHARS, sessionQueue, spawnHook } from '../plugin-hook-process.js';
 
 // The OpenCode V2 server plugin (rec#11 D-63). OpenCode loads it inside its
 // own Bun process through the file FULI setup writes into OpenCode's plugins
@@ -36,9 +37,6 @@ import { join } from 'node:path';
 export const OPENCODE_LIFECYCLE_MARKER = '--fuli-opencode-lifecycle';
 const OPENCODE_PLUGIN_ID = 'fuli';
 
-// The hook answers by its own deadline (--timeout-ms); this covers a Node
-// that never starts or never exits.
-const KILL_GRACE_MS = 1500;
 // A close is short work; the next prompt of the session waits for it.
 const STOP_TIMEOUT_MS = 5_000;
 // Reading a session (child or not, its directory, its outcome) is bounded so
@@ -48,9 +46,6 @@ const UNLOAD_HANDOFF_MS = 1_000;
 // Session idle times come from OpenCode's clock in this same process; this
 // absorbs rounding to the millisecond it records.
 const IDLE_TOLERANCE_MS = 1_000;
-const MAX_ANSWER_BYTES = 512 * 1024;
-// FULI keeps no more of a task prompt than this (begin_task_context).
-const MAX_PROMPT_CHARS = 8192;
 const TERMINAL_EVENTS = Object.freeze(['session.execution.succeeded', 'session.execution.failed',
   'session.execution.interrupted']);
 const DELIVERED_EVENT = 'session.inbox.delivered';
@@ -90,8 +85,7 @@ export function fuliOpenCodePlugin({ nodePath, hookPath, runtimeConfigPath, even
       const begin = (sessionID, turn) => {
         turn.entry = queue(sessionID, () => run('prompt', { session_id: sessionID, message_id: turn.messageID,
           cwd: turn.cwd, prompt: turn.text, ...distribution }, timeoutMs))
-          .then((answer) => typeof answer?.context === 'string' && answer.context.trim()
-            ? answer.context : unavailableNotice(answer?.cause), () => unavailableNotice());
+          .then(entryText, () => entryText());
         return turn.entry;
       };
       // Each turn closes once, after its own entry and before the next one.
@@ -228,10 +222,6 @@ export function fuliOpenCodePlugin({ nodePath, hookPath, runtimeConfigPath, even
   };
 }
 
-function unavailableNotice(cause = 'no answer') {
-  return `Fuli context is unavailable (${cause}). Continue with the user request; FULI memory and preferences were not loaded for this turn.`;
-}
-
 async function sessionInfo(ctx, sessionID) {
   try {
     return await ctx.session.get?.({ sessionID }) ?? null;
@@ -247,70 +237,7 @@ function succeededSince(session, since) {
   return session.outcome === 'succeeded' && Number.isFinite(idleAt) && idleAt >= since - IDLE_TOLERANCE_MS;
 }
 
-function bounded(promise, ms) {
-  let timer;
-  return Promise.race([promise, new Promise((resolve) => { timer = setTimeout(resolve, ms, null); })])
-    .finally(() => clearTimeout(timer));
-}
-
 function workingDirectory(session, ctx) {
   const directory = session?.location?.directory ?? ctx.location?.directory;
   return typeof directory === 'string' && session?.subpath ? join(directory, session.subpath) : directory;
-}
-
-// One hook at a time per session, so a stop never overlaps the next prompt's entry.
-function sessionQueue() {
-  const tails = new Map();
-  return (sessionID, task) => {
-    const next = (tails.get(sessionID) ?? Promise.resolve()).then(task, task);
-    const tail = next.catch(() => {});
-    tails.set(sessionID, tail);
-    void tail.then(() => { if (tails.get(sessionID) === tail) tails.delete(sessionID); });
-    return next;
-  };
-}
-
-// `detached`: a close outlives OpenCode's shutdown in its own process group,
-// reads nothing back and keeps nothing alive; `onSent` runs once its input is
-// handed over (or it could not start).
-function spawnHook({ command, args, input, killAfterMs, detached = false, onSent = () => {} }) {
-  return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawn(command, args, { stdio: ['pipe', detached ? 'ignore' : 'pipe', 'ignore'], windowsHide: true, detached });
-    } catch {
-      onSent();
-      resolve({ cause: 'FULI could not be started' });
-      return;
-    }
-    const chunks = [];
-    let size = 0;
-    const timer = setTimeout(() => {
-      child.kill();
-      resolve({ cause: `no answer within ${killAfterMs} ms` });
-    }, killAfterMs);
-    if (detached) {
-      child.unref();
-      timer.unref();
-    }
-    child.stdout?.on('data', (chunk) => {
-      size += chunk.length;
-      if (size <= MAX_ANSWER_BYTES) chunks.push(chunk);
-    });
-    child.on('error', () => {
-      clearTimeout(timer);
-      onSent();
-      resolve({ cause: 'FULI could not be started' });
-    });
-    child.on('close', () => {
-      clearTimeout(timer);
-      try {
-        resolve(detached ? {} : JSON.parse(Buffer.concat(chunks).toString('utf8')));
-      } catch {
-        resolve({ cause: 'FULI gave no answer' });
-      }
-    });
-    child.stdin.on('error', () => {});
-    child.stdin.end(JSON.stringify(input), () => onSent());
-  });
 }

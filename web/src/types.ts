@@ -728,12 +728,13 @@ export type ConversationSourceApplication =
   | 'kiro'
   | 'opencode'
   | 'antigravity'
+  | 'dsh'
   | 'other'
 
 // Applications the console can open a conversation in. OpenCode and
 // Antigravity have no launcher yet: the stored runtime settings keep exactly
 // these keys.
-export type ConversationLauncherApplication = Exclude<ConversationSourceApplication, 'opencode' | 'antigravity'>
+export type ConversationLauncherApplication = Exclude<ConversationSourceApplication, 'opencode' | 'antigravity' | 'dsh'>
 
 export type ConversationIdFormat = 'any' | 'uuid'
 

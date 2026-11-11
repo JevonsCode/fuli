@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { dshBundleFiles } from '../agents/dsh/bundle.js';
 import { openCodePluginSource } from '../agents/opencode/plugin-file.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { installedClientPacks } from '../setup/agents/client-pack-store.js';
@@ -28,7 +29,10 @@ function fuliInstallerManifest({ packs, openCodePlugin, clientPrompts }) {
   return manifest;
 }
 
-// Writes the manifest for this machine and answers its variables.
+// Writes the manifest for this machine and answers its variables. The
+// DeepSeek Harness bundle (src/agents/dsh/bundle.js) is written beside it as
+// `dsh-bundle/`, for a DSH profile to add by link; agent-installer 0.4.1 has
+// no DSH client, so the manifest does not name it yet.
 // openCodePlugin: whether OpenCode gets FULI's plugin here
 // (opencode-plugin-gate.js). Its source is written beside the manifest as
 // `opencode-plugin/index.js`; agent-installer puts it at
@@ -39,6 +43,9 @@ export function prepareInstallerManifest({ manifestPath, context, openCodePlugin
   if (plugin) {
     const pack = packs.find((candidate) => candidate.id === 'opencode');
     writeDerivedText(join(pluginDir, 'index.js'), openCodePluginSource(context, pack.lifecycleHooks));
+  }
+  for (const [name, text] of Object.entries(dshBundleFiles(context))) {
+    writeDerivedText(join(dirname(manifestPath), 'dsh-bundle', name), text);
   }
   writeDerivedJson(manifestPath, fuliInstallerManifest({ packs, openCodePlugin: plugin, clientPrompts }));
   return installerVariables(context, plugin ? pluginDir : null);

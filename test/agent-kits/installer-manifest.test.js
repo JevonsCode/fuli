@@ -43,6 +43,15 @@ test('the OpenCode plugin is named only where OpenCode takes it, beside its sour
     'nodePath', 'openCodePlugin', 'runtimeConfigPath', 'skillsDir']);
 });
 
+test('the DeepSeek Harness bundle is written beside the manifest, which does not name it yet', (t) => {
+  const { manifest, root } = composed(t, false);
+  const bundle = join(root, 'agent-kits', 'dsh-bundle');
+  assert.equal(JSON.parse(readFileSync(join(bundle, 'package.json'), 'utf8')).name, 'fuli-dsh');
+  assert.match(readFileSync(join(bundle, 'index.js'), 'utf8'), /fuliDshPlugin/);
+  assert.match(readFileSync(join(bundle, 'cordis.patch.yml'), 'utf8'), /"--source-application","dsh"/);
+  assert.equal(manifest.clients.dsh, undefined);
+});
+
 test('a client gets prompts only when its list is known; an empty list is still a list (11-08)', (t) => {
   assert.equal(composed(t, false).manifest.clients.codex.prompts, undefined);
   assert.equal(composed(t, false, { codex: null }).manifest.clients.codex.prompts, undefined);

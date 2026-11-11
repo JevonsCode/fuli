@@ -35,6 +35,7 @@ PROJECT_AGENT_CLIENTS: tuple[SourceApplication, ...] = (
     'kiro',
     'opencode',
     'antigravity',
+    'dsh',
     'other',
 )
 

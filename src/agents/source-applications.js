@@ -2,14 +2,14 @@
 // list covers (rec#11 D-64). OpenCode and Antigravity used the generic `other`
 // until each got its own source: a list written before that names `other` for
 // it, so at read time a list that contains `other` and lacks `opencode` (or
-// `antigravity`) covers that client too. Without it, every Agent hired before
+// `antigravity`, or `dsh`) covers that client too. Without it, every Agent hired before
 // the client got its own source refuses it, and its tasks have no owner. No
 // stored list is rewritten. The graph Provider applies the same rule in
 // graph-provider/fuli_graph/client_coverage.py, the console in
 // web/src/lib/source-coverage.ts.
-export const SOURCE_APPLICATIONS = Object.freeze(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'antigravity', 'other']);
+export const SOURCE_APPLICATIONS = Object.freeze(['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'antigravity', 'dsh', 'other']);
 
-const LEGACY_ALIASES = Object.freeze({ opencode: 'other', antigravity: 'other' });
+const LEGACY_ALIASES = Object.freeze({ opencode: 'other', antigravity: 'other', dsh: 'other' });
 
 // `explicit`: clients the person set themselves beside the list, which the
 // alias never decides for (the capture policy's capturedSources).

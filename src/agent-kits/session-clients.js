@@ -27,6 +27,7 @@ const SOURCE_LABELS = Object.freeze({
   kiro: 'Kiro',
   opencode: 'OpenCode',
   antigravity: 'Antigravity',
+  dsh: 'DeepSeek Harness',
   other: 'unknown'
 });
 
