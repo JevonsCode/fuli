@@ -875,20 +875,6 @@ export class GraphitiProviderClient {
       { method: 'POST', body: input }
     );
   }
-  inspectPersonalGlobalPreferenceDecision(candidateId, input) {
-    return this.#request(
-      '/v1/personal-global-preference-candidates/' +
-      `${encodeURIComponent(candidateId)}/decision-inspection`,
-      { method: 'POST', body: input }
-    );
-  }
-  applyPersonalGlobalPreferenceDecision(candidateId, input) {
-    return this.#request(
-      '/v1/personal-global-preference-candidates/' +
-      `${encodeURIComponent(candidateId)}/decision`,
-      { method: 'POST', body: input }
-    );
-  }
   deferPreferenceConflict(input) {
     return this.#request('/v1/preference-conflicts/defer', {
       method: 'POST', body: input

@@ -167,8 +167,6 @@ const HANDLERS = Object.freeze({
     app.discoverCommonKnowledgeCandidates(input),
   discover_personal_global_preference_candidates: (app, input) =>
     app.discoverPersonalGlobalPreferenceCandidates(input),
-  preview_personal_global_preference_decision: (app, input) =>
-    app.previewPersonalGlobalPreferenceDecision(input),
   preview_common_knowledge_promotion: (app, input) =>
     app.previewCommonKnowledgePromotion(input),
   apply_common_knowledge_promotion: (app, input) => {

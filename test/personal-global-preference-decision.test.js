@@ -4,98 +4,24 @@ import test from 'node:test';
 
 import { FederatedGraphApplication } from '../src/graphiti/federated-application.js';
 
-test('preview is proposal-only and approved apply uses the Provider decision state',
+// 11-11: FULI no longer applies personal-global decisions, but a decision
+// stored by an earlier version still suppresses its exact candidate.
+test('a stored exact-version rejection suppresses discovery through structured Provider status',
   async () => {
     const sourceItems = fixtureSourceRefs();
     const candidateId = personalGlobalCandidateId(sourceItems.map(({ itemId }) => itemId));
     const candidateVersion = fixtureCandidateVersion(sourceItems);
     const requests = [];
-    const app = decisionApplication(requests);
-    const input = {
-      personalSpaceId: 'personal-1',
-      candidateId,
-      candidateVersion,
-      decisionRevision: 0,
-      decision: 'approve',
-      sourceItems,
-      preferenceKey: 'alignment.comments.explain-function',
-      targetScope: 'parent_project',
-      targetProjectId: 'parent-a',
-      profileAspect: 'judgment_preference',
-      globalTitle: '注释写清楚功能',
-      globalInstruction: '由 AI 开发时，注释要写清楚功能。',
-      humanConfirmationReason: '用户确认共同核心适用于个人全局，但中文仍只属于 E。',
-      confirmedAt: '2026-08-03T12:00:00.000Z',
-      sessionId: 'scope-review-1',
-      idempotencyKey: 'personal-global-approve-scope-review-1'
-    };
-
-    const preview = await app.previewPersonalGlobalPreferenceDecision(input);
-
-    assert.equal(preview.status, 'human_review_required');
-    assert.equal(preview.scope_apply_performed, false);
-    assert.equal(preview.approval_token_issued, false);
-    assert.equal(preview.original_sources_will_remain_unchanged, true);
-    assert.match(
-      preview.source_snapshots.find(({ project_id: id }) => id === 'preference-e')
-        .instruction,
-      /中文/
-    );
-    assert.equal(requests.some(({ path }) => path === '/v1/knowledge/commits'), false);
-
-    const applied = await app.applyPersonalGlobalPreferenceDecision({
-      ...input,
-      previewToken: 'human-issued-one-time-token-value-1234567890'
-    });
-
-    assert.equal(applied.decision, 'approved');
-    assert.equal(applied.global_assertion_active, true);
-    const applyRequest = requests.find(({ path }) =>
-      path.endsWith('/decision')
-    );
-    assert.equal(applyRequest.body.candidate_version, candidateVersion);
-    assert.equal(applyRequest.body.decision_revision, 0);
-    assert.equal(applyRequest.body.target_scope, 'parent_project');
-    assert.equal(applyRequest.body.target_project_id, 'parent-a');
-    assert.equal(applyRequest.body.approval_token,
-      'human-issued-one-time-token-value-1234567890');
-    assert.equal(applyRequest.body.global_instruction,
-      '由 AI 开发时，注释要写清楚功能。');
-    assert.equal(applyRequest.body.source_items.length, 2);
-    assert.equal(
-      requests.some(({ path }) => /knowledge\/commits|preference-scope/.test(path)),
-      false
-    );
-  });
-
-test('exact-version rejection suppresses discovery through structured Provider status',
-  async () => {
-    const sourceItems = fixtureSourceRefs();
-    const candidateId = personalGlobalCandidateId(sourceItems.map(({ itemId }) => itemId));
-    const candidateVersion = fixtureCandidateVersion(sourceItems);
-    const requests = [];
-    const state = { decision: null };
-    const app = decisionAndDiscoveryApplication(requests, state);
-
-    const applied = await app.applyPersonalGlobalPreferenceDecision({
-      personalSpaceId: 'personal-1',
-      candidateId,
-      candidateVersion,
-      decisionRevision: 0,
+    const state = { decision: decisionRecord(candidateId, {
+      candidate_version: candidateVersion,
+      decision_revision: 0,
       decision: 'reject',
-      sourceItems,
-      preferenceKey: 'alignment.comments.explain-function',
-      targetScope: 'personal_global',
-      targetProjectId: null,
-      humanConfirmationReason: '用户判断这只是两个项目的局部巧合，不应成为全局偏好。',
-      confirmedAt: '2026-08-03T12:30:00.000Z',
-      sessionId: 'scope-review-2',
-      idempotencyKey: 'personal-global-reject-scope-review-2',
-      previewToken: 'human-issued-one-time-token-value-abcdefghij'
-    });
-
-    assert.equal(applied.decision, 'rejected');
-    assert.equal(applied.global_assertion_active, false);
+      target_scope: 'personal_global',
+      target_project_id: null,
+      confirmed_at: '2026-08-03T12:30:00.000Z',
+      human_confirmation_reason: '用户判断这只是两个项目的局部巧合，不应成为全局偏好。'
+    }) };
+    const app = decisionAndDiscoveryApplication(requests, state);
 
     const result = await app.discoverPersonalGlobalPreferenceCandidates({
       personalSpaceId: 'personal-1',
@@ -126,41 +52,6 @@ test('exact-version rejection suppresses discovery through structured Provider s
     );
   });
 
-function decisionApplication(requests) {
-  return applicationWithFetch(async (parsed, body) => {
-    requests.push({ path: parsed.pathname, body });
-    if (parsed.pathname.endsWith('/decision-inspection')) {
-      return response({
-        status: 'human_review_required',
-        personal_space_id: 'personal-1',
-        candidate_id: parsed.pathname.split('/').at(-2),
-        candidate_version: body.candidate_version,
-        decision_revision: body.decision_revision,
-        decision: body.decision,
-        preference_key: body.preference_key,
-        target_scope: body.target_scope,
-        target_project_id: body.target_project_id,
-        eligible_target_scopes: [{
-          target_scope: body.target_scope,
-          target_project_id: body.target_project_id,
-          max_distance: body.target_scope === 'parent_project' ? 1 : null
-        }],
-        payload_fingerprint: 'f'.repeat(64),
-        source_snapshots: fixtureSnapshots(),
-        candidate_binding_verified: true,
-        original_sources_will_remain_unchanged: true,
-        scope_apply_performed: false,
-        approval_token_issued: false,
-        required_action: 'Independent human review required.'
-      });
-    }
-    if (parsed.pathname.endsWith('/decision')) {
-      return response(decisionRecord(parsed.pathname.split('/').at(-2), body));
-    }
-    throw new Error(`Unexpected request: ${parsed.pathname}`);
-  });
-}
-
 function decisionAndDiscoveryApplication(requests, state) {
   const summaries = {
     'travel-d': '这个项目由 AI 开发时，注释要写清楚功能。',
@@ -168,10 +59,6 @@ function decisionAndDiscoveryApplication(requests, state) {
   };
   return applicationWithFetch(async (parsed, body) => {
     requests.push({ path: parsed.pathname, body });
-    if (parsed.pathname.endsWith('/decision')) {
-      state.decision = decisionRecord(parsed.pathname.split('/').at(-2), body);
-      return response(state.decision);
-    }
     if (parsed.pathname === '/v1/personal-projects') {
       return response(Object.keys(summaries).map((projectId) => ({ project_id: projectId })));
     }

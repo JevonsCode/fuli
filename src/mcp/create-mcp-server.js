@@ -78,7 +78,6 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   search_current_project_knowledge: 64 * 1024,
   discover_common_knowledge_candidates: 32 * 1024,
   discover_personal_global_preference_candidates: 32 * 1024,
-  preview_personal_global_preference_decision: 32 * 1024,
   list_personal_projects: 32 * 1024,
   list_project_agents: 32 * 1024,
   get_project_agent: 32 * 1024,

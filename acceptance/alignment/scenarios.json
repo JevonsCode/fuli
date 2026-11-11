@@ -167,18 +167,13 @@
     },
     {
       "id": "NETWORK-PREFERENCE-02",
-      "category": "parent-preference-human-decision",
-      "question": "Can the D/E common core become a candidate and, only after a candidate-bound human decision, create an A descendants preference without promoting E's Chinese-only qualifier?"
+      "category": "parent-preference-convergence",
+      "question": "Can the D/E common core become a candidate that offers parent A as a scope without promoting E's Chinese-only qualifier or applying anything?"
     },
     {
       "id": "NETWORK-PREFERENCE-03",
       "category": "global-preference-convergence",
       "question": "Can repeated ideas across unrelated projects become a personal-global candidate for human scope judgment?"
-    },
-    {
-      "id": "NETWORK-PREFERENCE-04",
-      "category": "global-preference-human-decision",
-      "question": "Can a candidate-bound human decision create a new global assertion while preserving every local source and qualifier?"
     },
     {
       "id": "NETWORK-PREFERENCE-05",

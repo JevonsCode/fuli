@@ -51,11 +51,8 @@ from .project_action_models import (
 )
 from .personal_project_hierarchy import change_personal_project_parent
 from .personal_global_preference_models import (
-    PersonalGlobalPreferenceDecisionApply,
     PersonalGlobalPreferenceDecisionInspection,
     PersonalGlobalPreferenceDecisionIntent,
-    PersonalGlobalPreferenceDecisionPreview,
-    PersonalGlobalPreferenceDecisionRecord,
     PersonalGlobalPreferenceDecisionStatusRequest,
     PersonalGlobalPreferenceDecisionStatusResult,
     PersonalGlobalPreferenceScopeOptions,
@@ -163,11 +160,9 @@ from .preference_conflicts import (
     resolve_preference_conflict,
 )
 from .personal_global_preferences import (
-    apply_personal_global_preference_decision,
     inspect_personal_global_preference_decision,
     personal_global_preference_decision_status,
     personal_global_preference_scope_options,
-    preview_personal_global_preference_decision,
 )
 from .workflow_candidates import (
     preview_workflow_candidate_review,
@@ -551,38 +546,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         actor: Actor,
     ) -> PersonalGlobalPreferenceDecisionInspection:
         return await inspect_personal_global_preference_decision(
-            store,
-            actor,
-            candidate_id,
-            request,
-        )
-
-    @application.post(
-        '/v1/personal-global-preference-candidates/{candidate_id}/decision-preview',
-        response_model=PersonalGlobalPreferenceDecisionPreview,
-    )
-    async def preview_personal_global_preference(
-        candidate_id: str,
-        request: PersonalGlobalPreferenceDecisionIntent,
-        actor: HumanReviewer,
-    ) -> PersonalGlobalPreferenceDecisionPreview:
-        return await preview_personal_global_preference_decision(
-            store,
-            actor,
-            candidate_id,
-            request,
-        )
-
-    @application.post(
-        '/v1/personal-global-preference-candidates/{candidate_id}/decision',
-        response_model=PersonalGlobalPreferenceDecisionRecord,
-    )
-    async def apply_personal_global_preference(
-        candidate_id: str,
-        request: PersonalGlobalPreferenceDecisionApply,
-        actor: HumanReviewer,
-    ) -> PersonalGlobalPreferenceDecisionRecord:
-        return await apply_personal_global_preference_decision(
             store,
             actor,
             candidate_id,

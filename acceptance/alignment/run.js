@@ -1687,12 +1687,11 @@ async function runMultiAgentNetworkCases({
     };
   });
 
-  let personalGlobalPreferenceCandidate = null;
   await evaluateCase({
     id: 'NETWORK-PREFERENCE-02',
-    title: 'D/E 共同注释偏好经人审收敛到父项目 A',
+    title: 'D/E 共同注释偏好形成可选父项目 A 的候选',
     domain: 'parent-preference-convergence',
-    expected: 'D/E 共同核心先形成候选；独立人审选择 A 后创建 A 的 descendants 偏好，保留 D/E 原文与 E 的中文限定。'
+    expected: 'D/E 共同核心形成候选，可选作用域含父项目 A；D/E 原文与 E 的中文限定保留，不自动生效。'
   }, async () => {
     const result = await app.discoverPersonalGlobalPreferenceCandidates({
       personalSpaceId,
@@ -1716,166 +1715,15 @@ async function runMultiAgentNetworkCases({
         evidence: []
       };
     }
-    const dSourceBefore = candidate.source_items.find(
-      ({ defined_project_id: projectId }) => projectId === PROJECTS.travel
-    );
-    const eSourceBefore = candidate.source_items.find(
+    const eSource = candidate.source_items.find(
       ({ defined_project_id: projectId }) => projectId === PROJECTS.preference
     );
-    if (!dSourceBefore || !eSourceBefore) {
-      return {
-        pass: false,
-        observed: '候选缺少 D 或 E 的完整来源快照。',
-        evidence: []
-      };
-    }
-    const parentBefore = await app.getCollaborationPreferences({
-      personalProjectId: PROJECTS.parent
-    });
-    const decisionInput = {
-      personalSpaceId,
-      candidateId: candidate.candidate_id,
-      candidateVersion: candidate.candidate_version,
-      decisionRevision: candidate.decision_revision ?? 0,
-      decision: 'approve',
-      sourceItems: candidate.source_items.map((item) => ({
-        itemId: item.id,
-        itemKind: item.item_kind,
-        projectId: item.defined_project_id
-      })),
-      preferenceKey: 'alignment.comments.explain-function',
-      targetScope: 'parent_project',
-      targetProjectId: PROJECTS.parent,
-      profileAspect: 'judgment_preference',
-      globalTitle: 'A 项目族的 AI 注释功能说明',
-      globalInstruction: '由 AI 开发时，注释要写清楚功能。',
-      humanConfirmationReason: 'MOCK 验收的人类决定：D/E 的共同核心属于父项目 A；中文仍只属于 E。',
-      confirmedAt: '2026-08-03T11:00:00.000Z',
-      sessionId: 'alignment-network-parent-scope-review',
-      idempotencyKey: `${FIXTURE_VERSION}:parent-preference:${candidate.candidate_version}:approve`
-    };
-    const inspection = await app.previewPersonalGlobalPreferenceDecision(
-      decisionInput
-    );
-    const human = await applyHumanReviewedPreferenceDecision({
-      providerUrl,
-      accessToken,
-      humanReviewToken,
-      candidateId: candidate.candidate_id,
-      decisionInput,
-      label: 'parent preference human decision'
-    });
-    const [
-      parentAfter,
-      hotelAfter,
-      dAfter,
-      eAfter,
-      unrelatedAfter,
-      dSearchAfter,
-      eSearchAfter
-    ] = await Promise.all([
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.parent }),
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.hotel }),
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.travel }),
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.preference }),
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.unrelated }),
-      app.searchKnowledge({
-        personalSpaceId,
-        personalProjectId: PROJECTS.travel,
-        query: '注释 写清楚 功能',
-        includePending: false,
-        limit: 50
-      }),
-      app.searchKnowledge({
-        personalSpaceId,
-        personalProjectId: PROJECTS.preference,
-        query: '注释 中文 写清楚 功能',
-        includePending: false,
-        limit: 50
-      })
-    ]);
-    const preferenceKey = 'alignment.comments.explain-function';
-    const before = (parentBefore.effective_preferences ?? []).find(
-      ({ preference_key: key }) => key === preferenceKey
-    );
-    const parent = (parentAfter.effective_preferences ?? []).find(
-      ({ preference_key: key }) => key === preferenceKey
-    );
-    const inherited = (hotelAfter.effective_preferences ?? []).find(
-      ({ preference_key: key }) => key === preferenceKey
-    );
-    const dLocal = (dAfter.project_preferences ?? []).find(
-      ({ id }) => id === dSourceBefore.id
-    );
-    const dInheritedParent = (dAfter.project_preferences ?? []).find(
-      ({ id }) => id === human.applied.global_assertion_id
-    );
-    const exactE = (eAfter.effective_preferences ?? []).find(
-      ({ preference_key: key }) => key === preferenceKey
-    );
-    const eLocal = (eAfter.project_preferences ?? []).find(
-      ({ id }) => id === eSourceBefore.id
-    );
-    const leakedGlobal = (unrelatedAfter.effective_preferences ?? []).find(
-      ({ preference_key: key }) => key === preferenceKey
-    );
-    const dSearchLocal = findSearchResultItem(dSearchAfter, dSourceBefore.id);
-    const eSearchLocal = findSearchResultItem(eSearchAfter, eSourceBefore.id);
-    const dSourcePreserved = dLocal?.scope_distance === 0
-      && !dLocal.inherited_from_project_id
-      && dLocal.instruction === dSourceBefore.summary
-      && dSearchLocal?.defined_project_id === PROJECTS.travel
-      && dSearchLocal.scope_distance === 0
-      && stableJsonStringify(dSearchLocal.preference_qualifiers ?? {}) ===
-        stableJsonStringify(dSourceBefore.preference_qualifiers ?? {})
-      && stableJsonStringify([...(dSearchLocal.source_uris ?? [])].sort()) ===
-        stableJsonStringify([...(dSourceBefore.source_uris ?? [])].sort());
-    const eSourcePreserved = eLocal?.scope_distance === 0
-      && !eLocal.inherited_from_project_id
-      && eLocal.instruction === eSourceBefore.summary
-      && eSearchLocal?.defined_project_id === PROJECTS.preference
-      && eSearchLocal.scope_distance === 0
-      && stableJsonStringify(eSearchLocal.preference_qualifiers ?? {}) ===
-        stableJsonStringify(eSourceBefore.preference_qualifiers ?? {})
-      && stableJsonStringify([...(eSearchLocal.source_uris ?? [])].sort()) ===
-        stableJsonStringify([...(eSourceBefore.source_uris ?? [])].sort());
-    const eSnapshot = inspection.source_snapshots?.find(
-      ({ project_id: projectId }) => projectId === PROJECTS.preference
-    );
     return {
-      pass: !before
-        && inspection.approval_token_issued === false
-        && inspection.target_scope === 'parent_project'
-        && inspection.target_project_id === PROJECTS.parent
-        && eSnapshot?.instruction.includes('中文')
-        && human.unauthorizedPreview.status === 403
-        && human.applied.decision === 'approved'
-        && human.applied.target_scope === 'parent_project'
-        && human.applied.target_project_id === PROJECTS.parent
-        && human.replayed.decision_event_id === human.applied.decision_event_id
-        && parent?.preference_scope === 'project'
-        && parent?.preference_project_id === PROJECTS.parent
-        && parent?.inheritance_mode === 'descendants'
-        && inherited?.inherited_from_project_id === PROJECTS.parent
-        && dSourcePreserved
-        && eSourcePreserved
-        && dInheritedParent?.inherited_from_project_id === PROJECTS.parent
-        && human.applied.global_assertion_id !== dSourceBefore.id
-        && human.applied.global_assertion_id !== eSourceBefore.id
-        && exactE?.instruction.includes('中文')
-        && !leakedGlobal,
-      observed: `候选=true；A可选=true；无独立人审=${human.unauthorizedPreview.status}；` +
-        `A断言=${Boolean(parent)}；其他子项目继承=${Boolean(inherited)}；` +
-        `D原来源保留=${dSourcePreserved}；E原来源保留=${eSourcePreserved}；` +
-        `D同时可见A继承=${Boolean(dInheritedParent)}；` +
-        `E中文保留=${Boolean(exactE?.instruction.includes('中文'))}；` +
-        `无关项目泄漏=${Boolean(leakedGlobal)}。`,
-      evidence: [
-        candidate.candidate_id,
-        'MOCK independent human parent-scope decision',
-        'new parent assertion with descendants inheritance',
-        'local source snapshots preserved'
-      ]
+      pass: Boolean(eSource?.summary.includes('中文'))
+        && candidate.requires_human_scope_judgment === true
+        && candidate.scope_apply_performed === false,
+      observed: `候选=true；A可选=true；E中文限定保留=${Boolean(eSource?.summary.includes('中文'))}。`,
+      evidence: [candidate.candidate_id, 'parent A is an eligible scope', 'no automatic scope apply']
     };
   });
 
@@ -1901,7 +1749,6 @@ async function runMultiAgentNetworkCases({
       [PROJECTS.related, PROJECTS.travel, PROJECTS.preference]
         .every((projectId) => ids.includes(projectId))
     );
-    personalGlobalPreferenceCandidate = candidate ?? null;
     const eSource = candidate?.source_items.find(
       ({ defined_project_id: projectId }) => projectId === PROJECTS.preference
     );
@@ -1934,116 +1781,6 @@ async function runMultiAgentNetworkCases({
         'human scope judgment required',
         'no automatic scope apply'
       ] : []
-    };
-  });
-
-  await evaluateCase({
-    id: 'NETWORK-PREFERENCE-04',
-    title: '人工作用域决定创建全局断言并保留局部来源',
-    domain: 'global-preference-human-decision',
-    expected: 'MOCK 人工确认绑定精确候选后创建新的个人全局断言；C/D/E 原偏好、E 的中文限定与来源全部保留。'
-  }, async () => {
-    if (!personalGlobalPreferenceCandidate) {
-      return {
-        pass: false,
-        observed: '前置个人全局候选不存在。',
-        evidence: []
-      };
-    }
-    const candidate = personalGlobalPreferenceCandidate;
-    const decisionInput = {
-      personalSpaceId,
-      candidateId: candidate.candidate_id,
-      candidateVersion: candidate.candidate_version,
-      decisionRevision: candidate.decision_revision ?? 0,
-      decision: 'approve',
-      sourceItems: candidate.source_items.map((item) => ({
-        itemId: item.id,
-        itemKind: item.item_kind,
-        projectId: item.defined_project_id
-      })),
-      preferenceKey: 'alignment.comments.explain-function',
-      targetScope: 'personal_global',
-      targetProjectId: null,
-      profileAspect: 'judgment_preference',
-      globalTitle: 'AI 开发注释写清楚功能',
-      globalInstruction: '由 AI 开发时，注释要写清楚功能。',
-      humanConfirmationReason: 'MOCK 验收中的人类决定：共同核心适用于个人全局；中文仍只属于 E。',
-      confirmedAt: '2026-08-03T12:00:00.000Z',
-      sessionId: 'alignment-network-global-scope-review',
-      idempotencyKey: `${FIXTURE_VERSION}:personal-global:${candidate.candidate_version}:approve`
-    };
-    const inspection = await app.previewPersonalGlobalPreferenceDecision(
-      decisionInput
-    );
-    const human = await applyHumanReviewedPreferenceDecision({
-      providerUrl,
-      accessToken,
-      humanReviewToken,
-      candidateId: candidate.candidate_id,
-      decisionInput,
-      label: 'personal-global preference human decision'
-    });
-    const [unrelatedPreferences, eAfter, rediscovered] = await Promise.all([
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.unrelated }),
-      app.getCollaborationPreferences({ personalProjectId: PROJECTS.preference }),
-      app.discoverPersonalGlobalPreferenceCandidates({
-        personalSpaceId,
-        personalProjectIds: [
-          PROJECTS.related,
-          PROJECTS.travel,
-          PROJECTS.preference
-        ],
-        query: '注释 写清楚 功能 中文',
-        minProjects: 3,
-        similarityThreshold: 0.2,
-        limitPerProject: 20
-      })
-    ]);
-    const globalInUnrelated = (unrelatedPreferences.effective_preferences ?? [])
-      .find(({ preference_key: key }) =>
-        key === 'alignment.comments.explain-function'
-      );
-    const exactE = (eAfter.effective_preferences ?? []).find(
-      ({ preference_key: key }) => key === 'alignment.comments.explain-function'
-    );
-    const suppressed = (rediscovered.suppressed_candidates ?? []).find(
-      ({ candidate_id: id }) => id === candidate.candidate_id
-    );
-    const eSnapshot = (inspection.source_snapshots ?? []).find(
-      ({ project_id: projectId }) => projectId === PROJECTS.preference
-    );
-    return {
-      pass: human.unauthorizedPreview.status === 403
-        && inspection.candidate_binding_verified === true
-        && inspection.original_sources_will_remain_unchanged === true
-        && inspection.approval_token_issued === false
-        && inspection.source_snapshots?.length === 3
-        && eSnapshot?.instruction.includes('中文')
-        && typeof human.preview.approval_token === 'string'
-        && human.applied.decision === 'approved'
-        && human.applied.target_scope === 'personal_global'
-        && human.applied.target_project_id === null
-        && Boolean(human.applied.global_assertion_id)
-        && human.applied.global_assertion_active === true
-        && human.replayed.decision_event_id === human.applied.decision_event_id
-        && Boolean(globalInUnrelated)
-        && !globalInUnrelated.instruction.includes('中文')
-        && exactE?.instruction.includes('中文')
-        && suppressed?.decision === 'approved',
-      observed: `无独立人审=${human.unauthorizedPreview.status}；` +
-        `检查绑定=${inspection.candidate_binding_verified}；` +
-        `新全局断言=${Boolean(human.applied.global_assertion_id)}；` +
-        `无关项目生效=${Boolean(globalInUnrelated)}；` +
-        `E中文限定保留=${Boolean(exactE?.instruction.includes('中文'))}；` +
-        `重复候选抑制=${suppressed?.decision ?? '无'}。`,
-      evidence: [
-        candidate.candidate_id,
-        'MOCK independent human scope decision',
-        'one-time candidate/version/revision-bound capability',
-        'new global assertion',
-        'local source snapshots preserved'
-      ]
     };
   });
 
@@ -4070,76 +3807,6 @@ function requireProviderSuccess(result, label) {
   throw new Error(`${label} failed: ${detail}`);
 }
 
-function providerPreferenceDecisionPayload(input) {
-  return {
-    personal_space_id: input.personalSpaceId,
-    candidate_version: input.candidateVersion,
-    decision_revision: input.decisionRevision,
-    decision: input.decision,
-    source_items: input.sourceItems.map((item) => ({
-      item_id: item.itemId,
-      item_kind: item.itemKind,
-      project_id: item.projectId
-    })),
-    preference_key: input.preferenceKey,
-    target_scope: input.targetScope,
-    target_project_id: input.targetProjectId ?? null,
-    profile_aspect: input.profileAspect ?? null,
-    global_title: input.globalTitle ?? null,
-    global_instruction: input.globalInstruction ?? null,
-    human_confirmation_reason: input.humanConfirmationReason,
-    confirmed_at: input.confirmedAt,
-    session_id: input.sessionId,
-    idempotency_key: input.idempotencyKey
-  };
-}
-
-async function applyHumanReviewedPreferenceDecision({
-  providerUrl,
-  accessToken,
-  humanReviewToken,
-  candidateId,
-  decisionInput,
-  label
-}) {
-  const providerDecision = providerPreferenceDecisionPayload(decisionInput);
-  const decisionPath = '/v1/personal-global-preference-candidates/' +
-    `${encodeURIComponent(candidateId)}/decision`;
-  const previewPath = `${decisionPath}-preview`;
-  const unauthorizedPreview = await postProviderJson({
-    providerUrl,
-    accessToken,
-    path: previewPath,
-    body: providerDecision
-  });
-  const preview = requireProviderSuccess(await postProviderJson({
-    providerUrl,
-    accessToken,
-    path: previewPath,
-    body: providerDecision,
-    humanReviewToken
-  }), `${label} preview`);
-  const applyPayload = {
-    ...providerDecision,
-    approval_token: preview.approval_token
-  };
-  const applied = requireProviderSuccess(await postProviderJson({
-    providerUrl,
-    accessToken,
-    path: decisionPath,
-    body: applyPayload,
-    humanReviewToken
-  }), `${label} apply`);
-  const replayed = requireProviderSuccess(await postProviderJson({
-    providerUrl,
-    accessToken,
-    path: decisionPath,
-    body: applyPayload,
-    humanReviewToken
-  }), `${label} idempotent replay`);
-  return { unauthorizedPreview, preview, applied, replayed };
-}
-
 async function waitForProvider(providerUrl) {
   const deadline = Date.now() + 8 * 60_000;
   while (Date.now() < deadline) {
@@ -4770,25 +4437,6 @@ function freePort() {
 function findItem(result, marker) {
   return [...(result.entities ?? []), ...(result.facts ?? [])]
     .find((item) => itemText(item).includes(marker)) ?? null;
-}
-
-function findSearchResultItem(result, itemId) {
-  return [...(result.entities ?? []), ...(result.facts ?? [])]
-    .find(({ id }) => id === itemId) ?? null;
-}
-
-function stableJsonStringify(value) {
-  return JSON.stringify(stableJsonValue(value));
-}
-
-function stableJsonValue(value) {
-  if (Array.isArray(value)) return value.map(stableJsonValue);
-  if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, stableJsonValue(value[key])])
-  );
 }
 
 function itemText(item) {

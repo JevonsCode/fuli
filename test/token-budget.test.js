@@ -200,7 +200,8 @@ const BASELINE = Object.freeze({
   // 208,242 -> 208,237 B (-5 B), measured.
   // 11-11: the /flreview knowledge review was retired; its four tools leave the full profile:
   // 208,237 -> 205,151 B (-3,086 B), measured. Chat, instructions and entry are unchanged.
-  fullToolSchemaBytes: 205151,
+  // 11-11: preview_personal_global_preference_decision was removed: 205,151 -> 202,547 B (-2,604 B), measured.
+  fullToolSchemaBytes: 202547,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.

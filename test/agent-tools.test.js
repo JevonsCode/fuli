@@ -62,7 +62,6 @@ const NAMES = [
   'search_current_project_knowledge',
   'discover_common_knowledge_candidates',
   'discover_personal_global_preference_candidates',
-  'preview_personal_global_preference_decision',
   'preview_common_knowledge_promotion',
   'apply_common_knowledge_promotion',
   'get_knowledge_graph',
@@ -422,8 +421,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       calls.push(['common-candidates', input]),
     discoverPersonalGlobalPreferenceCandidates: async (input) =>
       calls.push(['personal-global-candidates', input]),
-    previewPersonalGlobalPreferenceDecision: async (input) =>
-      calls.push(['preview-personal-global-decision', input]),
     previewCommonKnowledgePromotion: async (input) =>
       calls.push(['preview-common-promotion', input]),
     applyCommonKnowledgePromotion: async (input) =>
@@ -561,7 +558,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'get-capture-policy', 'knowledge-usage', 'tags-resolve', 'get-capture-policy', 'tags-create',
     'get-capture-policy', 'knowledge-feedback',
     'current-project-search', 'common-candidates', 'personal-global-candidates',
-    'preview-personal-global-decision',
     'preview-common-promotion', 'apply-common-promotion',
     'graph', 'human-changes', 'review-human-change',
     'spaces', 'get-capture-policy', 'upsert-project', 'personal-projects',

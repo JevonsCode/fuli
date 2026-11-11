@@ -161,7 +161,6 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   search_current_project_knowledge: UNSCOPED,
   discover_common_knowledge_candidates: UNSCOPED,
   discover_personal_global_preference_candidates: UNSCOPED,
-  preview_personal_global_preference_decision: UNSCOPED,
   preview_common_knowledge_promotion: UNSCOPED,
   apply_common_knowledge_promotion: UNSCOPED,
   search_human_knowledge_changes: UNSCOPED,

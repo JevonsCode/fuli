@@ -33,7 +33,6 @@ const READ_TOOLS = new Set([
   'search_current_project_knowledge',
   'discover_common_knowledge_candidates',
   'discover_personal_global_preference_candidates',
-  'preview_personal_global_preference_decision',
   'preview_common_knowledge_promotion',
   'list_knowledge_spaces',
   'list_personal_projects',

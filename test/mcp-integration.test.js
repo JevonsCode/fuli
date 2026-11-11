@@ -228,7 +228,6 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'search_current_project_knowledge',
     'discover_common_knowledge_candidates',
     'discover_personal_global_preference_candidates',
-    'preview_personal_global_preference_decision',
     'preview_common_knowledge_promotion', 'apply_common_knowledge_promotion',
     'get_knowledge_graph',
     'search_human_knowledge_changes', 'review_human_knowledge_change',

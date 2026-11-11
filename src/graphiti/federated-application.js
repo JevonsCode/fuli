@@ -44,12 +44,8 @@ import {
   discoverCommonKnowledgeCandidates as discoverCommonKnowledgeCandidatesWorkflow,
   discoverPersonalGlobalPreferenceCandidates as
     discoverPersonalGlobalPreferenceCandidatesWorkflow,
-  applyPersonalGlobalPreferenceDecision as
-    applyPersonalGlobalPreferenceDecisionWorkflow,
   recordDecisionTrace as recordDecisionTraceWorkflow,
-  recordKnowledgeFeedback as recordKnowledgeFeedbackWorkflow,
-  previewPersonalGlobalPreferenceDecision as
-    previewPersonalGlobalPreferenceDecisionWorkflow
+  recordKnowledgeFeedback as recordKnowledgeFeedbackWorkflow
 } from './agent-knowledge-workflows.js';
 import {
   ProjectAgentControlPlaneApplication,
@@ -325,18 +321,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
   async discoverPersonalGlobalPreferenceCandidates(input) {
     assertActivePersonalSpace(this, input.personalSpaceId);
     return discoverPersonalGlobalPreferenceCandidatesWorkflow(this, input);
-  }
-
-  async previewPersonalGlobalPreferenceDecision(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    assertSafeKnowledgeMutation(input);
-    return previewPersonalGlobalPreferenceDecisionWorkflow(this, input);
-  }
-
-  async applyPersonalGlobalPreferenceDecision(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    assertSafeKnowledgeMutation(input);
-    return applyPersonalGlobalPreferenceDecisionWorkflow(this, input);
   }
 
   async previewCommonKnowledgePromotion(input) {
