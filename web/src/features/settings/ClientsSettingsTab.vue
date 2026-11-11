@@ -26,6 +26,10 @@ const props = defineProps<{ fieldErrors: Readonly<Record<string, string>> }>()
 
 provideClientConnectionStatus()
 const conversationApplications = CONVERSATION_SOURCE_APPLICATIONS
+// Two stacks side by side, each its own height: a client whose fields are open pushes down only
+// the clients under it, and nothing is left empty beside it.
+const launcherHalf = Math.ceil(conversationApplications.length / 2)
+const launcherColumns = [conversationApplications.slice(0, launcherHalf), conversationApplications.slice(launcherHalf)]
 const conversationIdFormatOptions = computed(() => [
   { value: 'any', label: t('settings.conversationLaunchers.idFormats.any') },
   { value: 'uuid', label: t('settings.conversationLaunchers.idFormats.uuid') },
@@ -46,8 +50,9 @@ function conversationApplicationLabel(application: ConversationSourceApplication
       <ClientConnectionSettings data-span="wide" />
       <Card as="section" id="conversation-launchers" class="settings-card conversation-launcher-card" aria-labelledby="settings-launchers-title" data-span="wide">
         <CardHeader><CardTitle id="settings-launchers-title" as="h2">{{ t('settings.conversationLaunchers.title') }}<AiHelpButton term="task.launchers" /></CardTitle></CardHeader>
-        <div class="setting-list conversation-launcher-list">
-          <article v-for="application in conversationApplications" :key="application" class="conversation-launcher-row">
+        <div class="conversation-launcher-columns">
+        <div v-for="(column, side) in launcherColumns" :key="side" class="setting-list conversation-launcher-list">
+          <article v-for="application in column" :key="application" class="conversation-launcher-row">
             <div class="conversation-launcher-heading">
               <span>
                 <strong>{{ conversationApplicationLabel(application) }}</strong>
@@ -94,6 +99,7 @@ function conversationApplicationLabel(application: ConversationSourceApplication
             </div>
           </article>
         </div>
+        </div>
       </Card>
       <Card v-if="form.notifications" as="section" id="notifications" class="settings-card notifications-card" aria-labelledby="settings-notifications-title" data-span="wide">
         <CardHeader><CardTitle id="settings-notifications-title" as="h2">{{ t('settings.notifications.title') }}<AiHelpButton term="task.notifications" /></CardTitle></CardHeader>
@@ -136,10 +142,11 @@ function conversationApplicationLabel(application: ConversationSourceApplication
 .clients-more { display: grid; gap: var(--space-3); min-width: 0; }
 .clients-more > h2 { margin: 0; }
 
-/* Full width, its clients flowing down two columns: a tall list beside the short 通知 card left half
-   the row empty, and rows paired across would leave a gap beside a client whose fields are open. */
-.conversation-launcher-list { display: block; columns: 440px 2; column-gap: var(--space-8, 32px); }
-.conversation-launcher-row { break-inside: avoid; padding: 16px 0; border-bottom: 1px solid var(--color-border); }
+/* Full width, its clients in two stacks: a tall list beside the short 通知 card left half the row
+   empty, and rows paired across would leave a gap beside a client whose fields are open. */
+.conversation-launcher-columns { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 var(--space-8, 32px); }
+.conversation-launcher-list { display: grid; flex: 1 1 440px; min-width: 0; }
+.conversation-launcher-row { padding: 16px 0; border-bottom: 1px solid var(--color-border); }
 .conversation-launcher-heading { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .conversation-launcher-heading > span { display: grid; min-width: 0; gap: 4px; overflow-wrap: anywhere; }
 .conversation-launcher-heading strong { color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); }

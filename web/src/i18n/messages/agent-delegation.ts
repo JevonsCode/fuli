@@ -28,7 +28,7 @@ export const agentDelegationMessages = {
       decisions: { label: '转达你的决定', summary: "按你的原话记下：求助答复、@:{'roleNames.tonborg'} 投票、偏好裁决、确认、@:{'roleNames.jefa'} 验收、「我」和引导" },
       lan_roundtable: { label: '局域网圆桌', summary: '开启监听、配对设备、共享项目、撤销设备、退出局域网' },
       model_settings: { label: '内置 Agent 模型', summary: '角色模型、数据外发、预算和「只给建议」开关（不含密钥）' },
-      public_projects: { label: '公开分享看板', summary: '给项目的 Jefa 看板生成公开链接，或收回' },
+      public_projects: { label: '公开分享看板', summary: "给项目的 @:{'roleNames.jefa'} 看板生成公开链接，或收回" },
     },
   },
   'en-US': {
@@ -59,7 +59,7 @@ export const agentDelegationMessages = {
       decisions: { label: 'Relay your decisions', summary: "In your words: replies, @:{'roleNames.tonborg'} votes, rulings, confirmations, @:{'roleNames.jefa'} acceptance, profile, guide" },
       lan_roundtable: { label: 'LAN roundtable', summary: 'Listen, pair devices, share projects, revoke a device, leave the LAN' },
       model_settings: { label: 'Built-in Agent models', summary: 'Role model, data egress, budget and the suggest-only switch (never keys)' },
-      public_projects: { label: 'Public board sharing', summary: "Share a project's Jefa board by public link, or stop" },
+      public_projects: { label: 'Public board sharing', summary: "Share a project's @:{'roleNames.jefa'} board by public link, or stop" },
     },
   },
 } as const
