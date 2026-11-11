@@ -199,7 +199,9 @@ const BASELINE = Object.freeze({
   // rec#85: checkpoint_task_knowledge takes amend (a correction appended under a completed
   // checkpoint); its knowledgeUsage, captureRouting and description text shrink to pay for it:
   // 208,242 -> 208,237 B (-5 B), measured.
-  fullToolSchemaBytes: 208237,
+  // 11-11 整理 (rec#114): one full-profile tool, organize_project, reads and records how well a
+  // project is known; its nine areas share one schema: 208,237 -> 209,914 B (+1,677 B), measured.
+  fullToolSchemaBytes: 209914,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
