@@ -49,6 +49,7 @@ import { firstRunMessages } from './messages/first-run'
 import { clientLinksMessages } from './messages/client-links'
 import { npmCopiesMessages } from './messages/npm-copies'
 import { whatsNewMessages } from './messages/whats-new'
+import { onboardingTourMessages } from './messages/onboarding-tour'
 import { openInAppMessages } from './messages/open-in-app'
 import { cliPathMessages } from './messages/cli-path'
 import { agentDelegationMessages } from './messages/agent-delegation'
@@ -138,6 +139,7 @@ export const messages = {
     clientLinks: clientLinksMessages['zh-CN'],
     npmCopies: npmCopiesMessages['zh-CN'],
     whatsNew: whatsNewMessages['zh-CN'],
+    onboardingTour: onboardingTourMessages['zh-CN'],
     openInApp: openInAppMessages['zh-CN'],
     cliPath: cliPathMessages['zh-CN'],
     agentDelegation: agentDelegationMessages['zh-CN'],
@@ -199,6 +201,7 @@ export const messages = {
     clientLinks: clientLinksMessages['en-US'],
     npmCopies: npmCopiesMessages['en-US'],
     whatsNew: whatsNewMessages['en-US'],
+    onboardingTour: onboardingTourMessages['en-US'],
     openInApp: openInAppMessages['en-US'],
     cliPath: cliPathMessages['en-US'],
     agentDelegation: agentDelegationMessages['en-US'],

@@ -11,6 +11,7 @@ import { loadPersonProfile } from '@/features/person-home/person-profile'
 import { loadRoleNames } from '@/features/agent-profile/role-names'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
 import CaptureOnboardingDialog from '@/features/capture/CaptureOnboardingDialog.vue'
+import OnboardingTour from '@/features/onboarding-tour/OnboardingTour.vue'
 import ModelPowerButton from '@/features/model-settings/ModelPowerButton.vue'
 import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
 import { clientsNeedUpdate } from '@/features/doctor/doctor-report'
@@ -237,6 +238,8 @@ watchEffect(() => {
       <RouterView v-slot="{ Component }"><component :is="Component" /></RouterView>
       <GlossaryLayer />
       <CaptureOnboardingDialog />
+      <!-- After the first-run dialog closes, never with it (OnboardingTour.vue). -->
+      <OnboardingTour />
     </main>
     <WidgetSlot place="shell.aboveDock" />
     <AppDock :destinations="dockDestinations" :active-key="destination?.key" :live-key="liveDockKey" :space-id="activeSpaceId" :folded="dockFolded" />
