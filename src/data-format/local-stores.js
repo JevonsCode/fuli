@@ -57,6 +57,7 @@ import { OCCUPATION_KIT_CHOICES_FORMAT } from '../occupation-plugins/choice-stor
 import { SESSION_CLIENT_FORMAT } from '../agent-kits/session-clients.js';
 import { ENTRY_PROMPT_FORMAT } from '../agent-delegation/entry-prompts.js';
 import { PERSON_PROFILE_FORMAT } from '../person-profile/port.js';
+import { PROJECT_ORGANIZING_FORMAT } from '../project-organizing/port.js';
 import { AGENT_DELEGATION_FORMAT } from '../agent-delegation/operation-log.js';
 import { AGENT_DELEGATION_POLICY_FORMAT } from '../agent-delegation/policy-store.js';
 import { DEBUG_TURN_FORMAT, DEBUG_TURN_PENDING_FORMAT } from '../debug-turns/store.js';
@@ -141,6 +142,8 @@ const jsonStores = () => [
   ['occupation-plugins.json', OCCUPATION_PLUGINS_STATE_FORMAT],
   // The person's own name and picture (「我」), changed only in the console on this computer.
   ['person-profile.json', PERSON_PROFILE_FORMAT],
+  // How well each project is known and what each 整理 run did (rec#114): coverage only, no knowledge.
+  ['project-organizing.json', PROJECT_ORGANIZING_FORMAT],
   // Whether the person stopped FULI on purpose and when client sessions started it (rec#94).
   [CONSOLE_AUTOSTART_FILE, CONSOLE_AUTOSTART_FORMAT],
   // The npm copies whose clients the desktop app already pointed at itself.

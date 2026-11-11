@@ -13,6 +13,7 @@ import { personalProjectsPath } from '@/router/paths'
 import type { PersonalProject } from '@/types'
 import ProjectBoardSettings from './ProjectBoardSettings.vue'
 import ProjectChangeLog from './ProjectChangeLog.vue'
+import ProjectOrganizing from './ProjectOrganizing.vue'
 import ProjectTeamSummary from './ProjectTeamSummary.vue'
 import ProfileAuthorChip from './ProfileAuthorChip.vue'
 import ProjectCaptureSwitch from '@/features/capture/ProjectCaptureSwitch.vue'
@@ -64,6 +65,7 @@ const createdDate = computed(() =>
     <ProjectCaptureSwitch :key="project.project_id" class="project-capture-card" :project-id="project.project_id" :project-name="project.profile.name" />
     <ProjectJudgmentPolicy :key="`judgment-${project.project_id}`" class="project-judgment-card" :personal-space-id="spaceId"
       :project-id="project.project_id" :project-name="project.profile.name" :heading="t('judgment.project.heading')" />
+    <ProjectOrganizing :key="`organizing-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id" />
     <ProjectTeamSummary :space-id="spaceId" :project-id="project.project_id" />
     <ProjectBoardSettings :key="`board-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id" :project-name="project.profile.name" />
     <ProjectChangeLog :key="`changes-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id"

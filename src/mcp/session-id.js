@@ -35,7 +35,7 @@ const PROJECT_AGENT_SOURCE_TOOLS = new Set([
   'checkpoint_project_agent_memory',
   'dismiss_project_agent',
   // The task token is resolved for this client; its session is the conversation recorded.
-  'register_standing_assignment', 'report_agent_service', 'record_fla_lesson',
+  'register_standing_assignment', 'organize_project', 'report_agent_service', 'record_fla_lesson',
   'propose_agent_workflow', 'list_agent_workflows', 'read_agent_workflow', 'record_agent_workflow_run',
   'pause_work_surfaces', 'resume_work_surfaces', 'run_delegated_action', 'list_tonborg_questions', 'answer_tonborg_question',
   'list_reply_echoes',
