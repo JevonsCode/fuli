@@ -89,7 +89,7 @@ refuses and names the migration command, as on Windows.
 
 ## Update and removal
 
-- Update: 设置 › 版本 「更新到 vX」, the same one click as on Windows
+- Update: 设置 › 系统 › 版本与更新 「更新到 vX」, the same one click as on Windows
   (`src/desktop/macos-app-update.js`, run by the console's update worker). It
   downloads `fuli-macos-<arch>-<version>.dmg` and checks its published SHA-256,
   copies the new FULI.app next to the installed one without the quarantine flag,

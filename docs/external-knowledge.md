@@ -8,7 +8,7 @@ Bind Notion, Lark, MCP, RAG or your own code to projects without giving FULI wri
 
 One knowledge-base connection can be bound to one or more existing personal projects without
 granting Fuli write access to the source. Each target keeps independent retrieval mode, sync
-cursor, and error state. The Connections page supports multi-project assignment, connection
+cursor, and error state. Settings › Connections supports multi-project assignment, connection
 checks, manual synchronization, disconnection, and a per-project conflict switch.
 
 | Connector | Read path | Current boundary |
@@ -32,7 +32,7 @@ are isolated per target. Use Bind projects on an existing connection to add or r
 2. If the source needs a token, set it in the environment that starts Fuli, then start or restart
    the service. The binding stores only the environment-variable name. For example, run
    `export PROJECT_KB_TOKEN='...'` and then `fl restart`.
-3. Open `http://127.0.0.1:2727/connections`. Under External knowledge, enter a connection name,
+3. Open `http://127.0.0.1:2727/settings?tab=connections` (Settings › Connections). Under External knowledge, enter a connection name,
    connector, one or more bound projects, and retrieval mode.
 4. For MCP HTTP, enter the final endpoint URL (redirects to another origin are not followed) and an
    optional token environment-variable name. For MCP stdio,

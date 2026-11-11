@@ -9,7 +9,7 @@ describe('nav destinations', () => {
     expect(all.filter(d => d.placement === 'top').map(d => d.key)).toEqual(['settings'])
     expect(all.find(d => d.key === 'projects')?.sections.map(s => s.key)).toEqual(['myProjects'])
     expect(all.find(d => d.key === 'memory')?.sections.map(s => s.key)).toEqual(['knowledge', 'preferences', 'organize', 'tags'])
-    expect(all.find(d => d.key === 'settings')?.sections.map(s => s.key)).toEqual(['settings', 'connections', 'about', 'howto'])
+    expect(all.find(d => d.key === 'settings')?.sections.map(s => s.key)).toEqual(['settings', 'about', 'howto'])
   })
 
   it.each([

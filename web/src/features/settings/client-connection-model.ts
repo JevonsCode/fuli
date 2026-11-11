@@ -34,6 +34,10 @@ export const restartResultShape = shapeOf(z.looseObject({ id: z.string(), status
 export const CUSTOM_CLIENT_FORMATS = ['mcp-servers-json', 'opencode-json', 'codex-toml'] as const
 export type CustomClientFormat = typeof CUSTOM_CLIENT_FORMATS[number]
 
+// A client tile's mark: a connected client gets the shared check icon; the other states keep these plain marks.
+export const STATUS_MARKS: Readonly<Record<Exclude<ClientStatus, 'connected'>, string>> = { changed: '!', skills_left: '!', removed: '×',
+  not_connected: '○', not_detected: '○', unknown: '?' }
+
 // The connect button says what it does for this status; it runs the same install every time.
 export function connectActionKey(status: ClientStatus): 'connect' | 'reconnect' | 'update' {
   if (status === 'changed') return 'update'
