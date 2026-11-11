@@ -97,7 +97,7 @@
 - **固定合成任务**：在隔离测试空间中提交含可复用偏好/事实候选的任务收尾（`capture_candidates`）及两条同 key 冲突规则，验证待确认候选分流、冲突入队与人工确认/一次性预览提升边界。
 - **核验要点**：
   1. **源码测试**：`npm run test:knowledge:live`（`KAC-01` 至 `KAC-09`）及 `node --test test/mcp-integration.test.js`
-  2. **宿主触发**：客户端发起 `checkpoint_task_knowledge`（含 `capture_candidates`）、`list_preference_conflicts`、以及写入前的 `preview_personal_project_action` / `preview_common_knowledge_promotion`。
+  2. **宿主触发**：客户端发起 `checkpoint_task_knowledge`（含 `capture_candidates`）、`list_preference_conflicts`、以及写入前的 `preview_personal_project_action`。
   3. **模型接收**：模型在入口阶段不将 `pending` 候选当作已确认规则静默注入；遇到 `active_conflicts` 时向用户呈现候选差异而非擅自替用户拍板；使用一次性 `previewToken` 执行匹配的 `apply_*` 操作。
   4. **真实数据库写回**：Provider 图数据中未经人类确认的条目保持 `pending` 或 `agent_confirmed`，仅在人工确认或消费匹配的一次性 `previewToken` 后才写入目标作用域或变为 `confirmed`，且重复消费同一 `previewToken` 被拒绝。
 

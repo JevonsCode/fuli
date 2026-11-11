@@ -6,7 +6,6 @@ html, body { overflow: hidden; }
 body { margin: 0; min-width: 320px; }
 .nav-icon { width: 18px; height: 18px; display: inline-block; background: currentColor; -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
 .nav-icon-personal-project { --icon: url('./assets/icons/personal-project.svg'); }
-.nav-icon-public-project { --icon: url('./assets/icons/public-project.svg'); }
 /* The page: the workbench's width and side margins on every route; its scrollbar always keeps its room, so the top bar's right edge (which adds --scrollbar-size) stays on the page's. */
 .view { min-width: 0; min-height: 0; flex: 1; padding: 12px var(--page-inline) 40px; overflow: auto; scrollbar-gutter: stable; }
 .view[data-view-panel=personal-profile] { display: flex; flex-direction: column; overflow: hidden; }
@@ -16,14 +15,6 @@ body { margin: 0; min-width: 320px; }
 .profile-aspect-mark.taste { color: var(--aspect-taste); background: var(--aspect-taste-soft); }
 .profile-aspect-mark.personality { color: var(--aspect-personality); background: var(--aspect-personality-soft); }
 .profile-aspect-mark.judgment_preference { color: var(--aspect-judgment); background: var(--aspect-judgment-soft); }
-.subscription-action { margin-left: 4px; }
-
-.subscription-list { display: grid; gap: 8px; }
-.subscription-row { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 9px; padding: 10px 0; border-bottom: 1px solid var(--color-border); }
-.subscription-row:last-child { border-bottom: 0; }
-.subscription-row strong { display: block; font-size: 12px; }
-.subscription-row span { color: var(--color-muted); font-size: 12px; }
-
 .service-connection-card {
   min-width: 0; padding: 18px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-control);
   background: var(--color-surface);
@@ -38,7 +29,6 @@ body { margin: 0; min-width: 320px; }
   width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-control); color: var(--color-ink); background: var(--color-surface-subtle);
 }
-.service-connection-icon.public { border-color: var(--color-border); color: var(--color-muted); background: var(--color-surface); }
 .service-state {
   display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted);
   font-size: 12px; font-weight: 650;
@@ -581,21 +571,7 @@ body { margin: 0; min-width: 320px; }
 .approve { border: 1px solid var(--color-ink); background: var(--color-ink); color: var(--color-surface); }
 .reject { border: 1px solid var(--color-danger-soft); background: var(--color-surface); color: var(--color-danger); }
 .empty-state { padding: 40px 0; text-align: center; color: var(--color-muted); font-size: 13px; }
-.subscription-form { display: flex; align-items: center; gap: 7px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--color-border); }
-.subscription-form :is([data-slot=option-select], [data-slot=option-combobox]) { flex: 1; }
 .muted { color: var(--color-muted); font-size: 12px; }
-
-.publish-dialog {
-  width: min(500px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 12px;
-  color: var(--color-ink); background: var(--color-surface); box-shadow: var(--shadow-dialog);
-}
-.publish-dialog::backdrop { background: var(--color-overlay); }
-.publish-dialog h3 { margin: 0; font-size: 20px; }
-.publish-impact { margin-top: 19px; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
-.publish-impact > div { display: grid; grid-template-columns: 108px 1fr; gap: 14px; padding: 12px 0; }
-.publish-impact > div + div { border-top: 1px solid var(--color-border); }
-.publish-impact strong { color: var(--color-ink); font-size: 12px; }
-.publish-impact span { color: var(--color-muted); font-size: 12px; line-height: 1.5; }
 
 .knowledge-edit-dialog { width: min(880px, calc(100vw - 32px)); }
 .knowledge-edit-columns { display: grid; grid-template-columns: 1.15fr .85fr; gap: 28px; padding-top: 22px; }

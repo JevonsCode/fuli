@@ -48,7 +48,7 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   submit_agent_app_version: MANAGES_APPS,
   list_agent_apps: MANAGES_APPS,
 
-  // Data leaves this computer: knowledge providers, connectors, public projects, LAN peers.
+  // Data leaves this computer: knowledge providers, connectors, LAN peers.
   list_external_knowledge_connectors: EGRESS,
   discover_external_knowledge_sources: EGRESS,
   list_external_knowledge_bindings: EGRESS,
@@ -65,16 +65,6 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   search_knowledge_graph: EGRESS,
   capture_session_knowledge: EGRESS,
   get_knowledge_graph: EGRESS,
-  delete_public_project: EGRESS,
-  publish_personal_project: EGRESS,
-  list_project_releases: EGRESS,
-  create_project_relation: EGRESS,
-  list_project_relations: EGRESS,
-  review_project_relation: EGRESS,
-  subscribe_public_project: EGRESS,
-  unsubscribe_public_project: EGRESS,
-  list_project_review_queue: EGRESS,
-  review_project_proposal: EGRESS,
   agent_chat: PEERS,
   group_discussion: PEERS,
   find_agents: EGRESS,
@@ -159,10 +149,7 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   change_knowledge_tags: UNSCOPED,
   record_knowledge_feedback: UNSCOPED,
   search_current_project_knowledge: UNSCOPED,
-  discover_common_knowledge_candidates: UNSCOPED,
   discover_personal_global_preference_candidates: UNSCOPED,
-  preview_common_knowledge_promotion: UNSCOPED,
-  apply_common_knowledge_promotion: UNSCOPED,
   search_human_knowledge_changes: UNSCOPED,
   review_human_knowledge_change: UNSCOPED,
   list_knowledge_spaces: UNSCOPED,
@@ -220,8 +207,6 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   reassign_personal_knowledge: UNSCOPED,
   preview_personal_project_action: UNSCOPED,
   apply_personal_project_action: UNSCOPED,
-  list_personal_review_queue: UNSCOPED,
-  review_personal_draft: UNSCOPED,
   get_graphiti_status: UNSCOPED
 });
 

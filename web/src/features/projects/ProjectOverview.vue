@@ -23,13 +23,11 @@ const props = withDefaults(defineProps<{
   spaceId: string
   project: PersonalProject
   frequentProjects?: readonly FrequentProjectSummary[]
-  canPublish?: boolean
 }>(), {
   frequentProjects: () => [],
-  canPublish: false,
 })
 
-defineEmits<{ 'edit-profile': []; publish: [] }>()
+defineEmits<{ 'edit-profile': [] }>()
 
 const visibleFrequentProjects = computed(() =>
   (props.frequentProjects ?? []).slice(0, 3),
@@ -50,9 +48,6 @@ const createdDate = computed(() =>
         <p v-else class="ui-meta">{{ t('projects.overview.noPurpose') }}</p>
       </div>
       <div class="project-overview-actions">
-        <Button size="sm" variant="ghost" v-if="canPublish" @click="$emit('publish')">
-          {{ t('knowledge.workspace.workspace.view.publishProject') }}
-        </Button>
         <Button size="icon-sm" variant="ghost"
           :aria-label="t('projects.overview.editProfile')"
           :title="t('projects.overview.editProfile')"

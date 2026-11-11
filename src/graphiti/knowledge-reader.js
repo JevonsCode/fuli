@@ -37,10 +37,3 @@ export function preferenceConflictsPath(personalSpaceId, { status = null, limit 
   return `/v1/preference-conflicts?${query}`;
 }
 
-// The Provider's publication drafts. An Agent's read leaves out a draft of an
-// FLA's work, made before the Provider refused them; the console's port reads all.
-export function publicationDraftsPath(personalSpaceId, { status = 'pending', metadataOnly = false } = {}) {
-  const query = new URLSearchParams({ personal_space_id: personalSpaceId, status });
-  if (metadataOnly) query.set('metadata_only', 'true');
-  return `/v1/publication-drafts?${query}`;
-}

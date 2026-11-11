@@ -1,6 +1,6 @@
 ---
 name: operating-fuli
-description: Use when an AI Agent needs to inspect or change FULI knowledge, personal projects, Project Agents, specialist Agents, public-project subscriptions, reviews, capture policy, or external-knowledge connections through structured tools instead of browser automation. Also use to check whether a FULI UI action has an Agent interface and to explain a deliberate local-user-only boundary.
+description: Use when an AI Agent needs to inspect or change FULI knowledge, personal projects, Project Agents, specialist Agents, reviews, capture policy, or external-knowledge connections through structured tools instead of browser automation. Also use to check whether a FULI UI action has an Agent interface and to explain a deliberate local-user-only boundary.
 ---
 
 # Operating FULI
@@ -26,7 +26,7 @@ If an expected capability is absent from `list_agent_interfaces`, report an Agen
 - Never mark a Jefa work item complete on your own judgment; use an Agent task-update tool only for non-acceptance workflow changes. A custom column that stands for `done` is the same acceptance. When the person accepts it in chat, relay their words through the workbench status route (`agent_relayed`, below).
 - Set a project's own project manager or board (custom columns, external board link) only on the person's request; a project with an external board is tracked at its link, so do not mirror its tasks on Jefa's board.
 - By default there is no approval step: the person sets direction and you carry it out, keeping each action traceable and reversible (re-read, report, undo) instead of asking first. Add a confirmation only where the person said they must confirm it.
-- Require explicit user authorization for deletes, publication, destructive conflict decisions, or changes that affect another project. An unambiguous request already authorizes that exact action; do not ask again unless the target or consequences remain unclear.
+- Require explicit user authorization for deletes, destructive conflict decisions, or changes that affect another project. An unambiguous request already authorizes that exact action; do not ask again unless the target or consequences remain unclear.
 - Use environment-variable references for connector secrets. Never request, print, store, or copy secret values into knowledge records, logs, Skill files, or tool arguments that expect only a reference.
 - Stay inside the exact FULI workspace and registered project scopes. Do not use home-directory-wide discovery as a fallback.
 - Record every long-running server you start with `report_agent_service` and update it when you stop it. Stopping one service through FULI, deleting its record and clearing its log go through `run_delegated_action` (services_apps permission).
@@ -40,7 +40,7 @@ Console changes without their own tool are `agent_delegable` (on by default) or 
 
 - On by default: settings (runtime settings, recall, session links, one-click update, occupation plugin updates, client connections, doctor repair, confirming capture changes, restoring old data, deleting `#fulidebug` turn records), organisation (occupations, an FLA's occupation and look, workflow decisions, standing assignments, marking a block cleared), projects (hierarchy, Astro's project proposals, conversation owners, temporary-project moves, one item's scope, tag governance), services and apps (stop services, delete records, clear logs; start, stop, restart, approve, roll back, disable, export apps), roundtable board/chat mode.
 - Also on by default: built-in Agent and semantic search (语义搜索) model settings (model, egress, budget, 「只给建议」, 「交给 Tonborg 确认」, 测试连接 `POST /api/model-backends/roles/:role/check`).
-- Off until the person turns it on: LAN roundtable (listen, pair, share, revoke, leave), public project visibility.
+- Off until the person turns it on: LAN roundtable (listen, pair, share, revoke, leave), sharing a project's Jefa board publicly.
 - Never delegable: permanent knowledge deletion and its preview/export, deleting old data now, data-format migration apply/rollback/prune/restore, deleting an Agent app's code or data, the Agent-access switch, AI permissions themselves, model API keys and listing a model endpoint's models with the saved key.
 - Connecting a model when the person asks (「帮我给 FULI 配个模型」), in this order:
   1. Ask which OpenAI- or Anthropic-compatible endpoint and key to use, or use the one they named. Never search environment variables, config files or documents for a key yourself.

@@ -101,19 +101,6 @@ const relationship = objectSchema({
   'confirmationStatus', 'confirmationBasis'
 ]);
 
-const commonKnowledgePromotionIntent = {
-  personalSpaceId: id,
-  parentProjectId: id,
-  itemKind: knowledgeItemKind,
-  canonicalItemId: id,
-  duplicateItemIds: arraySchema(id, { minItems: 1, maxItems: 31 }),
-  reason: boundedString(2000),
-  humanConfirmationReason: boundedString(2000)
-};
-const commonKnowledgePromotionRequired = [
-  'personalSpaceId', 'parentProjectId', 'itemKind', 'canonicalItemId',
-  'duplicateItemIds', 'reason', 'humanConfirmationReason'
-];
 export const captureEpisodeFields = {
   idempotencyKey: id,
   name: label,
@@ -133,32 +120,31 @@ export const captureEpisodeRequired = [
   'idempotencyKey', 'name', 'sourceKind', 'sourceDescription',
   'referenceTime', 'entities', 'relationships'
 ];
-// Capturing, searching and governing personal and team-shared knowledge.
+// Capturing, searching and governing personal knowledge.
 export const KNOWLEDGE_DEFINITIONS = [
   {
     name: 'capture_session_knowledge',
-    description: 'Silently batch durable session knowledge when user-enabled capture policy permits. For online knowledge, sourceUri preserves the exact original HTTP(S) link for capable Agents to re-read and refresh Fuli knowledge; it grants no source-document writeback. Every item records discovery quadrant, structured confirmation basis, and pending/confirmed state. reasoningSummary is required for every entity/relationship whose originQuadrant is not known_known. Disabled policy returns capture_disabled without writes. Personal profile knowledge stays personal; only project knowledge with auditable confirmation may enter public review.',
+    description: 'Silently batch durable session knowledge when user-enabled capture policy permits. For online knowledge, sourceUri preserves the exact original HTTP(S) link for capable Agents to re-read and refresh Fuli knowledge; it grants no source-document writeback. Every item records discovery quadrant, structured confirmation basis, and pending/confirmed state. reasoningSummary is required for every entity/relationship whose originQuadrant is not known_known. Disabled policy returns capture_disabled without writes.',
     inputSchema: objectSchema({
       targetKind: {
-        ...enumSchema(['personal', 'project']),
-        description: 'Use "personal" for the personal graph, including knowledge scoped to a local personal project via personalProjectId. Use "project" only for a team-shared project queued for public review.'
+        ...enumSchema(['personal']),
+        description: 'Always "personal": the personal graph, including knowledge scoped to a local personal project via personalProjectId.'
       },
       spaceId: {
         ...id,
-        description: 'With targetKind "personal", the active personal space id. With targetKind "project", the team-shared project id.'
+        description: 'The active personal space id.'
       },
       personalProjectId: {
         ...nullableStringSchema(),
-        description: 'Local personal project scope. Only meaningful with targetKind "personal".'
+        description: 'Local personal project scope.'
       },
       projectAgentId: {
         ...nullableStringSchema(),
-        description: 'Optional project Agent owner for this knowledge. Requires targetKind "personal" and personalProjectId. Agent-scoped preferences and memory are excluded from every other Agent and from ordinary project-only retrieval.'
+        description: 'Optional project Agent owner for this knowledge. Requires personalProjectId. Agent-scoped preferences and memory are excluded from every other Agent and from ordinary project-only retrieval.'
       },
-      providerUrl: {
-        ...nullableStringSchema(),
-        description: 'Required with targetKind "project" and ignored for "personal".'
-      },
+      // Compatible with clients from before 11-11, which sent providerUrl: null with
+      // every personal capture; it goes with src/agent-tools/retired-tools.js.
+      providerUrl: { type: 'null', description: 'Ignored.' },
       sessionId: id,
       ...captureEpisodeFields
     }, [
@@ -288,19 +274,6 @@ export const KNOWLEDGE_DEFINITIONS = [
     }, ['projectPath', 'queries'])
   },
   {
-    name: 'discover_common_knowledge_candidates',
-    title: 'READ · Find possible parent-project knowledge',
-    description: 'Read-only governance aid for one parent personal project. It searches each direct PART_OF child independently, excludes inherited and personal-global results, and groups lexically similar knowledge found in multiple children. Similarity is only an inferred candidate signal: the tool never merges, promotes, rewrites, or invalidates knowledge, and every candidate requires explicit human confirmation before a separate promotion action.',
-    inputSchema: objectSchema({
-      personalSpaceId: id,
-      parentProjectId: id,
-      query: shortText,
-      minChildProjects: integerSchema({ minimum: 2, maximum: 32 }),
-      similarityThreshold: numberSchema({ minimum: 0, maximum: 1 }),
-      limitPerProject: integerSchema({ minimum: 1, maximum: 50 })
-    }, ['personalSpaceId', 'parentProjectId', 'query'])
-  },
-  {
     name: 'discover_personal_global_preference_candidates',
     title: 'READ · Find possible personal-global preferences',
     description: 'Read-only scope-governance aid across two or more explicitly selected personal projects. It searches each exact project independently, excludes inherited and existing personal-global results, preserves every original preference text, qualifier, project source, and source URI, and exposes any shared lexical core only as a non-authoritative derived candidate. Similarity and weight never apply or promote a preference. Every candidate requires explicit human scope judgment.',
@@ -312,24 +285,6 @@ export const KNOWLEDGE_DEFINITIONS = [
       similarityThreshold: numberSchema({ minimum: 0, maximum: 1 }),
       limitPerProject: integerSchema({ minimum: 1, maximum: 50 })
     }, ['personalSpaceId', 'personalProjectIds', 'query'])
-  },
-  {
-    name: 'preview_common_knowledge_promotion',
-    title: 'CONFIRM · Preview parent-project promotion',
-    description: 'Validate the exact common-knowledge promotion after a human has explicitly chosen the canonical item, duplicates, parent project, and rationale. The preview is read-only, requires items from distinct direct PART_OF children, and returns a short-lived token binding the exact intent. Do not treat inferred lexical similarity as human confirmation.',
-    inputSchema: objectSchema(
-      commonKnowledgePromotionIntent,
-      commonKnowledgePromotionRequired
-    )
-  },
-  {
-    name: 'apply_common_knowledge_promotion',
-    title: 'WRITE · Atomically promote parent knowledge',
-    description: 'Apply one human-confirmed preview as a single Provider mutation. It moves the canonical item to the parent, enables descendants inheritance, invalidates selected child duplicates with replacement links, and stores both the scope reason and human-confirmation reason in permanent revision history. A valid one-time previewToken is mandatory.',
-    inputSchema: objectSchema({
-      ...commonKnowledgePromotionIntent,
-      previewToken: id
-    }, [...commonKnowledgePromotionRequired, 'previewToken'])
   },
   {
     name: 'get_knowledge_graph',

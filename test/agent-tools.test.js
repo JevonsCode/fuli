@@ -27,7 +27,6 @@ const NAMES = [
   'get_external_knowledge_conflict_policy',
   'update_external_knowledge_conflict_policy',
   'defer_preference_conflict',
-  'delete_public_project',
   'list_employee_templates',
   'recruit_employee',
   'list_employee_tools',
@@ -59,10 +58,7 @@ const NAMES = [
   'resolve_knowledge_tags', 'change_knowledge_tags',
   'record_knowledge_feedback',
   'search_current_project_knowledge',
-  'discover_common_knowledge_candidates',
   'discover_personal_global_preference_candidates',
-  'preview_common_knowledge_promotion',
-  'apply_common_knowledge_promotion',
   'get_knowledge_graph',
   'search_human_knowledge_changes',
   'review_human_knowledge_change',
@@ -125,17 +121,6 @@ const NAMES = [
   'reassign_personal_knowledge',
   'preview_personal_project_action',
   'apply_personal_project_action',
-  'publish_personal_project',
-  'list_project_releases',
-  'create_project_relation',
-  'list_project_relations',
-  'review_project_relation',
-  'list_personal_review_queue',
-  'review_personal_draft',
-  'subscribe_public_project',
-  'unsubscribe_public_project',
-  'list_project_review_queue',
-  'review_project_proposal',
   'get_graphiti_status',
   'agent_chat', 'group_discussion', 'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
     'get_agent_message_status', 'cancel_agent_message'
@@ -211,12 +196,9 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
   const capture = tools.find(({ name }) => name === 'capture_session_knowledge');
   assert.deepEqual(capture.inputSchema.properties.personalProjectId.type, ['string', 'null']);
   assert.deepEqual(capture.inputSchema.properties.projectAgentId.type, ['string', 'null']);
-  assert.match(capture.inputSchema.properties.targetKind.description, /team-shared project/i);
+  assert.deepEqual(capture.inputSchema.properties.targetKind.enum, ['personal']);
   assert.match(capture.inputSchema.properties.spaceId.description, /active personal space/i);
-  assert.match(
-    capture.inputSchema.properties.personalProjectId.description,
-    /targetKind "personal"/
-  );
+  assert.match(capture.inputSchema.properties.personalProjectId.description, /Local personal project scope/);
   assert.match(
     capture.inputSchema.properties.projectAgentId.description,
     /excluded from every other Agent/i
@@ -229,10 +211,7 @@ test('Agent surface exposes only the Graphiti final-version tools', () => {
   );
   assert.match(projectAgentContext.description, /excludes every other project Agent/i);
   assert.match(projectAgentContext.description, /control layer/i);
-  assert.match(
-    capture.inputSchema.properties.providerUrl.description,
-    /required with targetKind "project"/i
-  );
+  assert.deepEqual(capture.inputSchema.properties.providerUrl, { type: 'null', description: 'Ignored.' });
   assert.deepEqual(capture.inputSchema.properties.sourceUri, {
     type: ['string', 'null'],
     minLength: 1,
@@ -370,7 +349,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     deferPreferenceConflict: async (input) => calls.push(['defer-preference-conflict', input]),
     listPreferenceConflicts: async (input) => calls.push(['preference-conflicts', input]),
     listProjectAgentTasks: async (input) => calls.push(['agent-tasks', input]),
-    deletePublicProject: async (input) => calls.push(['delete-public-project', input]),
     employees: {
       list: async (input) => calls.push(['employee-list', input]),
       recruit: async (input) => calls.push(['employee-recruit', input]),
@@ -399,14 +377,8 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
       calls.push(['knowledge-feedback', input]),
     searchCurrentProjectKnowledge: async (input) =>
       calls.push(['current-project-search', input]),
-    discoverCommonKnowledgeCandidates: async (input) =>
-      calls.push(['common-candidates', input]),
     discoverPersonalGlobalPreferenceCandidates: async (input) =>
       calls.push(['personal-global-candidates', input]),
-    previewCommonKnowledgePromotion: async (input) =>
-      calls.push(['preview-common-promotion', input]),
-    applyCommonKnowledgePromotion: async (input) =>
-      calls.push(['apply-common-promotion', input]),
     getKnowledgeGraph: async (input) => calls.push(['graph', input]),
     searchHumanChanges: async (input) => calls.push(['human-changes', input]),
     reviewHumanChange: async (input) => calls.push(['review-human-change', input]),
@@ -483,17 +455,6 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     reassignKnowledgeItem: async (input) => calls.push(['reassign-knowledge', input]),
     previewKnowledgeProjectAction: async (input) => calls.push(['preview-project-action', input]),
     applyKnowledgeProjectAction: async (input) => calls.push(['apply-project-action', input]),
-    publishPersonalProject: async (input) => calls.push(['publish-project', input]),
-    listProjectReleases: async (input) => calls.push(['project-releases', input]),
-    createProjectRelation: async (input) => calls.push(['create-relation', input]),
-    listProjectRelations: async (input) => calls.push(['relations', input]),
-    reviewProjectRelation: async (input) => calls.push(['review-relation', input]),
-    listPersonalReviewQueue: async (input) => calls.push(['personal-review', input]),
-    reviewPersonalDraft: async (input) => calls.push(['review-draft', input]),
-    subscribePublicProject: async (input) => calls.push(['subscribe', input]),
-    unsubscribePublicProject: async (input) => calls.push(['unsubscribe', input]),
-    listReviewQueue: async (input) => calls.push(['queue', input]),
-    reviewProposal: async (input) => calls.push(['review', input]),
     getGraphitiStatus: async () => calls.push(['status'])
   };
 
@@ -520,7 +481,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'external-connectors', 'external-discover', 'external-bindings',
     'external-create', 'external-check', 'external-sync', 'external-retrieve',
     'external-targets', 'external-delete', 'external-conflict-policy',
-    'external-update-default-policy', 'defer-preference-conflict', 'delete-public-project',
+    'external-update-default-policy', 'defer-preference-conflict',
     'employee-list', 'employee-recruit', 'employee-tools', 'employee-call', 'app-submit', 'app-list',
     'judgment-policy', 'judgment-records', 'judgment-review', 'judgment-assess', 'judgment-accept', 'judgment-pins', 'judgment-pin', 'judgment-questions', 'judgment-answerQuestion', 'reply-echoes-graph', 'model-usage', 'role-work-claim', 'agent-score-card', 'task-run-control', 'standing-assignment', 'organize-project', 'service-register',
     'workflow-propose', 'workflow-index', 'workflow-read', 'workflow-recordRun',
@@ -533,8 +494,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'capture', 'decision-trace', 'search', 'connected-search',
     'get-capture-policy', 'knowledge-usage', 'tags-resolve', 'get-capture-policy', 'tags-create',
     'get-capture-policy', 'knowledge-feedback',
-    'current-project-search', 'common-candidates', 'personal-global-candidates',
-    'preview-common-promotion', 'apply-common-promotion',
+    'current-project-search', 'personal-global-candidates',
     'graph', 'human-changes', 'review-human-change',
     'spaces', 'get-capture-policy', 'upsert-project', 'personal-projects',
     'get-capture-policy', 'upsert-project-agent', 'rename-project-agent', 'agent-naming-style', 'project-agents', 'project-agent-context',
@@ -563,9 +523,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     'workflow-candidates',
     'get-capture-policy', 'revise-knowledge', 'reassign-knowledge', 'preview-project-action',
     'apply-project-action',
-    'publish-project', 'project-releases', 'create-relation', 'relations', 'review-relation',
-    'personal-review', 'review-draft',
-    'subscribe', 'unsubscribe', 'queue', 'review', 'status'
+    'status'
   ]);
   } finally {
     if (previousTestTools === undefined) delete process.env.FULI_ENABLE_TEST_TOOLS;

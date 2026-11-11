@@ -206,7 +206,11 @@ const BASELINE = Object.freeze({
   // 11-11: the deprecated get/update_project_agent_recruitment_policy were removed: 204,235 -> 203,082 B (-1,153 B), measured.
   // 11-11: record_workflow_transition_observation and recommend_next_workflow_steps were removed:
   // 203,082 -> 200,079 B (-3,003 B), measured.
-  fullToolSchemaBytes: 200079,
+  // 11-11: public projects were removed: their twelve tools (publishing, releases, relations,
+  // subscriptions, both review queues, deleting) and the three common-knowledge promotion tools
+  // leave the full profile, and capture_session_knowledge keeps only its personal target:
+  // 200,079 -> 188,936 B (-11,143 B), measured. Chat, instructions and entry are unchanged.
+  fullToolSchemaBytes: 188936,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.

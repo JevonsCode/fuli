@@ -233,7 +233,3 @@ class StoreIdentity:
     def _require_personal(self) -> None:
         if self.settings.provider_mode != 'personal':
             raise HTTPException(status_code=404, detail='personal provider endpoint')
-
-    def _require_workspace(self) -> None:
-        if self.settings.provider_mode != 'workspace':
-            raise HTTPException(status_code=404, detail='workspace provider endpoint')

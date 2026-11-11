@@ -116,21 +116,6 @@
       "question": "Does replaying the same episode avoid duplicate knowledge?"
     },
     {
-      "id": "CONVERGE-01",
-      "category": "common-candidate-discovery",
-      "question": "Can direct-child common candidates be found without a write or inherited-result contamination?"
-    },
-    {
-      "id": "CONVERGE-02",
-      "category": "common-promotion-preview",
-      "question": "Does preview require explicit human rationale and bind the exact intent?"
-    },
-    {
-      "id": "CONVERGE-03",
-      "category": "atomic-common-promotion",
-      "question": "Does one Provider mutation promote the canonical item and replace duplicates atomically?"
-    },
-    {
       "id": "FEEDBACK-01",
       "category": "negative-evidence",
       "question": "Does bounded negative evidence lower ranking and flag attention without overriding human authority?"

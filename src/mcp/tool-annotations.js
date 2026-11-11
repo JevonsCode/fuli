@@ -31,9 +31,7 @@ const READ_TOOLS = new Set([
   'verify_task_checkpoint',
   'read_task_preferences',
   'search_current_project_knowledge',
-  'discover_common_knowledge_candidates',
   'discover_personal_global_preference_candidates',
-  'preview_common_knowledge_promotion',
   'list_knowledge_spaces',
   'list_personal_projects',
   'list_project_agents',
@@ -58,10 +56,6 @@ const READ_TOOLS = new Set([
   'resolve_knowledge_tags',
   'list_workflow_candidates',
   'preview_personal_project_action',
-  'list_project_releases',
-  'list_project_relations',
-  'list_personal_review_queue',
-  'list_project_review_queue',
   'get_graphiti_status'
 ]);
 
@@ -85,7 +79,6 @@ const WRITE_TOOLS = new Set([
   'delete_external_knowledge_binding',
   'update_external_knowledge_conflict_policy',
   'defer_preference_conflict',
-  'delete_public_project',
   'recruit_employee',
   'call_employee_tool',
   'submit_agent_app_version',
@@ -102,7 +95,6 @@ const WRITE_TOOLS = new Set([
   'record_knowledge_usage',
   'record_knowledge_feedback',
   'change_knowledge_tags',
-  'apply_common_knowledge_promotion',
   'get_knowledge_graph',
   'search_human_knowledge_changes',
   'review_human_knowledge_change',
@@ -136,27 +128,14 @@ const WRITE_TOOLS = new Set([
   'reset_project_agent_routing_learning',
   'revise_personal_knowledge',
   'reassign_personal_knowledge',
-  'apply_personal_project_action',
-  'publish_personal_project',
-  'create_project_relation',
-  'review_project_relation',
-  'review_personal_draft',
-  'subscribe_public_project',
-  'unsubscribe_public_project',
-  'review_project_proposal'
+  'apply_personal_project_action'
 ]);
 
 const DESTRUCTIVE_TOOLS = new Set([
   'dismiss_project_agent',
   'delete_external_knowledge_binding',
-  'delete_public_project',
   'recruit_employee',
   'resolve_deferred_preference_conflict',
-  'apply_common_knowledge_promotion',
-  'review_project_proposal',
-  'review_project_relation',
-  'review_personal_draft',
-  'unsubscribe_public_project',
   'cleanup_test_project_agents'
 ]);
 
@@ -187,7 +166,6 @@ export function annotationsFor(name) {
       name === 'report_executor_health' ||
       name === 'upsert_executor_routing_rule' ||
       name === 'update_executor_routing_rule' ||
-      name === 'publish_personal_project' || name === 'unsubscribe_public_project' ||
       name === 'record_knowledge_usage' || name === 'record_decision_trace' ||
       name === 'record_knowledge_feedback' ||
       name === 'message_agent' || name === 'reply_agent_message' || name === 'cancel_agent_message' ||
@@ -202,7 +180,6 @@ export function annotationsFor(name) {
       name === 'retrieve_external_knowledge_binding' ||
       name === 'update_external_knowledge_binding_targets' ||
       name === 'delete_external_knowledge_binding' ||
-      name === 'delete_public_project' ||
       name === 'coordinate_project_agent_task' ||
       name === 'submit_project_agent_task' ||
       name === 'record_project_agent_task_activity' ||
@@ -219,13 +196,6 @@ export function annotationsFor(name) {
       name === 'search_connected_knowledge' ||
       name === 'record_decision_trace' ||
       name === 'record_knowledge_feedback' ||
-      name === 'checkpoint_task_knowledge' ||
-      name === 'publish_personal_project' ||
-      name === 'create_project_relation' ||
-      name === 'review_project_relation' ||
-      name === 'review_personal_draft' ||
-      name === 'subscribe_public_project' ||
-      name === 'unsubscribe_public_project' ||
-      name === 'review_project_proposal'
+      name === 'checkpoint_task_knowledge'
   };
 }

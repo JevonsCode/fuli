@@ -1,7 +1,7 @@
 import { ApplicationError } from '../app/application-error.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { activeAgentRequestSignal } from '../app/agent-request-context.js';
-import { graphReadPath, preferenceConflictsPath, publicationDraftsPath } from './knowledge-reader.js';
+import { graphReadPath, preferenceConflictsPath } from './knowledge-reader.js';
 import { preferenceTaskSession } from './preference-task-scope.js';
 import { afterProjectWrite, sharedProjectList } from './shared-project-list.js';
 
@@ -145,12 +145,6 @@ export class GraphitiProviderClient {
   health() { return this.#request('/health', { authenticated: false }); }
   listSpaces() { return this.#request('/v1/spaces'); }
   createSpace(input) { return this.#request('/v1/spaces', { method: 'POST', body: input }); }
-  listProjectReleases(projectId) {
-    return this.#request(`/v1/projects/${encodeURIComponent(projectId)}/releases`);
-  }
-  deleteProject(projectId) {
-    return afterProjectWrite(this, () => this.#request(`/v1/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' }));
-  }
   upsertPersonalProject(input) {
     return afterProjectWrite(this, () => this.#request('/v1/personal-projects', { method: 'PUT', body: input }));
   }
@@ -657,55 +651,9 @@ export class GraphitiProviderClient {
   listProjectAgentScoreEvidence(query) {
     return this.#request('/v1/project-agent-score-card/evidence', { method: 'POST', body: query });
   }
-  createPublicationDraft(input) {
-    return this.#request('/v1/publication-drafts', { method: 'POST', body: input });
-  }
-  listPublicationDrafts(personalSpaceId, status = 'pending', { metadataOnly = false, ...options } = {}) {
-    return this.#request(publicationDraftsPath(personalSpaceId, { status, metadataOnly }), options);
-  }
-  getPublicationDraft(personalSpaceId, draftId) {
-    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
-    return this.#request(
-      `/v1/publication-drafts/${encodeURIComponent(draftId)}?${query}`
-    );
-  }
-  decidePublicationDraft(personalSpaceId, draftId, input, options = {}) {
-    const query = new URLSearchParams({ personal_space_id: personalSpaceId });
-    return this.#request(
-      `/v1/publication-drafts/${encodeURIComponent(draftId)}/decision?${query}`,
-      { ...options, method: 'POST', body: input }
-    );
-  }
-  createProjectRelation(projectId, input) {
-    return this.#request(`/v1/projects/${encodeURIComponent(projectId)}/relations`, {
-      method: 'POST', body: input
-    });
-  }
-  listProjectRelations(projectId) {
-    return this.#request(`/v1/projects/${encodeURIComponent(projectId)}/relations`);
-  }
-  decideProjectRelation(projectId, relationId, input) {
-    return this.#request(
-      `/v1/projects/${encodeURIComponent(projectId)}/relations/` +
-      `${encodeURIComponent(relationId)}/decision`,
-      { method: 'POST', body: input }
-    );
-  }
-  subscribe(input) {
-    return this.#request('/v1/subscriptions', { method: 'POST', body: input });
-  }
   listSubscriptions(personalSpaceId) {
     const query = new URLSearchParams({ personal_space_id: personalSpaceId });
     return this.#request(`/v1/subscriptions?${query}`);
-  }
-  unsubscribe(personalSpaceId, projectId, providerUrl) {
-    const query = new URLSearchParams({
-      personal_space_id: personalSpaceId,
-      provider_url: providerUrl
-    });
-    return this.#request(`/v1/subscriptions/${encodeURIComponent(projectId)}?${query}`, {
-      method: 'DELETE'
-    });
   }
   commit(input) {
     return this.#request('/v1/knowledge/commits', { method: 'POST', body: input });
@@ -791,16 +739,6 @@ export class GraphitiProviderClient {
       { method: 'POST', body: input }
     );
   }
-  previewCommonKnowledgePromotion(input) {
-    return this.#request('/v1/knowledge/common-promotions/preview', {
-      method: 'POST', body: input
-    });
-  }
-  applyCommonKnowledgePromotion(input) {
-    return this.#request('/v1/knowledge/common-promotions', {
-      method: 'POST', body: input
-    });
-  }
   personalGlobalPreferenceDecisionStatus(input) {
     return this.#request(
       '/v1/personal-global-preference-candidates/decision-status',
@@ -844,28 +782,6 @@ export class GraphitiProviderClient {
   applyKnowledgeProjectAction(itemId, input) {
     return this.#request(
       `/v1/knowledge/items/${encodeURIComponent(itemId)}/project-action`,
-      { method: 'POST', body: input }
-    );
-  }
-  createProposal(projectId, input, options = {}) {
-    return this.#request(`/v1/projects/${encodeURIComponent(projectId)}/proposals`, {
-      ...options, method: 'POST', body: input
-    });
-  }
-  lookupProposal(projectId, idempotencyKey, options = {}) {
-    const query = new URLSearchParams({ idempotency_key: idempotencyKey });
-    return this.#request(`/v1/projects/${encodeURIComponent(projectId)}/proposals/lookup?${query}`, options);
-  }
-  listProposals(projectId, status = 'pending') {
-    const query = new URLSearchParams({ status });
-    return this.#request(
-      `/v1/projects/${encodeURIComponent(projectId)}/proposals?${query}`
-    );
-  }
-  decideProposal(projectId, proposalId, input) {
-    return this.#request(
-      `/v1/projects/${encodeURIComponent(projectId)}/proposals/` +
-      `${encodeURIComponent(proposalId)}/decision`,
       { method: 'POST', body: input }
     );
   }

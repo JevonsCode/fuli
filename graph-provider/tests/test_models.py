@@ -9,7 +9,6 @@ from fuli_graph.models import (
     PreferenceScopeChange,
     ProjectProfile,
     ProjectReleaseCreate,
-    ProjectRelationCreate,
     PublicationDraftCreate,
     SearchRequest,
     SpaceRecord,
@@ -463,16 +462,6 @@ def test_non_known_known_items_require_reasoning_and_preserve_discovery_quadrant
             'origin_quadrant': 'unknown_unknown',
             'epistemic_status': 'exploratory',
         }], relationships=[]))
-
-
-def test_project_relation_supports_explicit_dependency_and_hierarchy_types():
-    relation = ProjectRelationCreate.model_validate({
-        'target_project_id': 'activity-platform',
-        'relation_type': 'PART_OF',
-        'note': 'Hotel Theme is delivered inside the activity platform domain.',
-    })
-
-    assert relation.relation_type == 'PART_OF'
 
 
 def test_project_release_requires_safe_version_and_nonempty_update_summary():

@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest'
 import type { KnowledgeItem, PersonalProject } from '@/types'
 import KnowledgeProjectDialog from '@/features/projects/KnowledgeProjectDialog.vue'
 import PersonalProjectProfileDialog from '@/features/projects/PersonalProjectProfileDialog.vue'
-import PublishProjectDialog from '@/features/projects/PublishProjectDialog.vue'
 import KnowledgeEditDialog from './KnowledgeEditDialog.vue'
 import KnowledgeWorkspaceDialogs from './KnowledgeWorkspaceDialogs.vue'
 
@@ -26,7 +25,6 @@ describe('KnowledgeWorkspaceDialogs', () => {
       props: {
         editingItem: item,
         projectActionItem: item,
-        publishingProject: project,
         managingProject: project,
         managingMaterialType: 'ProjectPurpose',
         personalSpaceId: 'space-fixture',
@@ -39,7 +37,6 @@ describe('KnowledgeWorkspaceDialogs', () => {
 
     const editDialog = wrapper.findComponent(KnowledgeEditDialog)
     const projectDialog = wrapper.findComponent(KnowledgeProjectDialog)
-    const publishDialog = wrapper.findComponent(PublishProjectDialog)
     const profileDialog = wrapper.findComponent(PersonalProjectProfileDialog)
 
     expect(editDialog.props('personalProjectId')).toBe('edit-project')
@@ -50,12 +47,11 @@ describe('KnowledgeWorkspaceDialogs', () => {
     editDialog.vm.$emit('close')
     editDialog.vm.$emit('saved')
     projectDialog.vm.$emit('saved', { status: 'linked' }, 'Target project')
-    publishDialog.vm.$emit('published')
     profileDialog.vm.$emit('saved', project)
     await wrapper.vm.$nextTick()
 
     expect(wrapper.emitted('close-edit')).toHaveLength(1)
-    expect(wrapper.emitted('refresh')).toHaveLength(2)
+    expect(wrapper.emitted('refresh')).toHaveLength(1)
     expect(wrapper.emitted('project-saved')).toEqual([
       [{ status: 'linked' }, 'Target project'],
     ])

@@ -78,7 +78,6 @@ ProjectRelationType = Literal[
     'SUCCESSOR_OF',
     'RELATED_TO',
 ]
-ProjectRelationStatus = Literal['pending', 'active', 'rejected']
 KnowledgeInheritanceMode = Literal[
     'local_only',
     'descendants',
@@ -410,12 +409,6 @@ class SpaceRecord(StrictModel):
     created_at: datetime
 
 
-class ProjectDeleteResult(StrictModel):
-    project_id: str
-    project_name: str
-    deleted: bool
-
-
 class PersonalProjectUpsert(StrictModel):
     personal_space_id: str = Field(min_length=1, max_length=128)
     project_id: str = Field(min_length=1, max_length=128)
@@ -438,42 +431,6 @@ class PersonalProjectRecord(StrictModel):
     profile: ProjectProfile
     created_at: datetime
     updated_at: datetime
-
-
-class ProjectRelationCreate(StrictModel):
-    target_project_id: str = Field(min_length=1, max_length=128)
-    relation_type: ProjectRelationType
-    note: str | None = Field(default=None, max_length=2000)
-
-
-class ProjectRelationRecord(StrictModel):
-    id: str
-    source_project_id: str
-    target_project_id: str
-    relation_type: ProjectRelationType
-    status: ProjectRelationStatus
-    note: str | None
-    created_by: str
-    created_at: datetime
-    decided_by: str | None = None
-    decided_at: datetime | None = None
-
-
-class ProjectRelationDecision(StrictModel):
-    decision: Literal['confirm', 'reject']
-    note: str | None = Field(default=None, max_length=2000)
-
-
-class MembershipCreate(StrictModel):
-    principal_id: str = Field(min_length=1, max_length=128)
-    role: Role
-
-
-class MembershipRecord(StrictModel):
-    project_id: str
-    principal_id: str
-    role: Role
-    created_at: datetime
 
 
 class SubscriptionCreate(StrictModel):
@@ -763,32 +720,6 @@ class CommitResult(StrictModel):
     # may silently replace that now wait for a person (still current).
     superseded: list[KnowledgeItemKey] = Field(default_factory=list)
     possibly_outdated: list[KnowledgeItemKey] = Field(default_factory=list)
-
-
-class ProposalCreate(StrictModel):
-    episode: StructuredEpisode
-
-    @model_validator(mode='after')
-    def require_public_eligible_episode(self):
-        require_public_eligible_episode(self.episode)
-        return self
-
-
-class ProposalRecord(StrictModel):
-    id: str
-    project_id: str
-    submitted_by: str
-    status: Literal['pending', 'processing', 'approved', 'rejected']
-    episode: StructuredEpisode
-    created_at: datetime
-    decided_at: datetime | None = None
-    decided_by: str | None = None
-    decision_note: str | None = None
-
-
-class ProposalDecision(StrictModel):
-    decision: Literal['approve', 'reject']
-    note: str | None = Field(default=None, max_length=2000)
 
 
 class SearchRequest(StrictModel):

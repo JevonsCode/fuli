@@ -2,12 +2,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
-from .models import (
-    ProjectDeleteResult,
-    ProjectReleaseRecord,
-    SpaceCreate,
-    SpaceRecord,
-)
+from .models import SpaceCreate, SpaceRecord
 from .provider_values import graphiti_group_id, now_utc, stable_uuid
 
 
@@ -23,69 +18,6 @@ async def publish_project(store, actor: dict, request: SpaceCreate) -> SpaceReco
             )
         return await _update_project(store, actor, existing, request)
     return await _create_project(store, actor, request)
-
-
-async def list_project_releases(
-    store,
-    actor: dict,
-    project_id: str,
-) -> list[ProjectReleaseRecord]:
-    await store.authorize(actor, project_id, 'reader')
-    records, _, _ = await store.runtime.driver.execute_query(
-        '''
-        MATCH (:FuliSpace {id: $project_id, kind: 'project'})-
-              [:HAS_RELEASE]->(release:FuliProjectRelease)
-        RETURN release ORDER BY release.published_at DESC
-        ''',
-        project_id=project_id,
-        routing_='r',
-    )
-    return [store._project_release(record['release']) for record in records]
-
-
-async def delete_project(store, actor: dict, project_id: str) -> ProjectDeleteResult:
-    store._require_workspace()
-    records, _, _ = await store.runtime.driver.execute_query(
-        '''
-        MATCH (space:FuliSpace {
-          id: $project_id,
-          kind: 'project',
-          visibility: 'public'
-        })
-        MATCH (owner:FuliPrincipal)-[:OWNS]->(space)
-        WHERE owner.id = $principal_id OR $provider_admin = true
-        RETURN space.name AS name, space.group_id AS group_id
-        ''',
-        project_id=project_id,
-        principal_id=actor['id'],
-        provider_admin=bool(actor.get('provider_admin')),
-        routing_='r',
-    )
-    if not records:
-        raise HTTPException(status_code=403, detail='project owner or provider administrator required')
-
-    project = records[0]
-    await store.runtime.driver.execute_query(
-        '''
-        MATCH (space:FuliSpace {id: $project_id, kind: 'project'})
-        OPTIONAL MATCH (artifact)
-        WHERE artifact <> space AND (
-          artifact.group_id = $group_id OR
-          (artifact.project_id = $project_id AND
-           (artifact:FuliProjectRelease OR artifact:FuliProposal))
-        )
-        WITH space, collect(DISTINCT artifact) AS artifacts
-        FOREACH (artifact IN artifacts | DETACH DELETE artifact)
-        DETACH DELETE space
-        ''',
-        project_id=project_id,
-        group_id=project['group_id'],
-    )
-    return ProjectDeleteResult(
-        project_id=project_id,
-        project_name=project['name'],
-        deleted=True,
-    )
 
 
 async def _owned_publication(store, actor: dict, publication_key: str | None):

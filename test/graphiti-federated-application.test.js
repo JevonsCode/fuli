@@ -87,77 +87,6 @@ test('personal project capture and graph reads keep an exact local project bound
   assert.equal(graph.query.personal_project_id, 'fuli');
 });
 
-test('silent project capture creates a local pre-review draft before any public submission', async () => {
-  const calls = [];
-  const app = new FederatedGraphApplication(CONFIG, {
-    fetchImpl: providerFetch(calls, {
-      '/v1/publication-drafts': {
-        id: 'draft-1', status: 'pending'
-      }
-    })
-  });
-  const input = { ...episodeInput('project'), spaceId: 'project-1' };
-  const result = await app.captureSessionKnowledge(input);
-  assert.deepEqual(result, {
-    route: 'personal_review',
-    status: 'pending',
-    draftId: 'draft-1',
-    projectId: 'project-1',
-    providerUrl: 'https://workspace.example'
-  });
-  assert.equal(calls.some(({ path }) => path === '/v1/knowledge/commits'), false);
-  assert.equal(calls.some(({ origin }) => origin === 'https://workspace.example'), false);
-});
-
-test('a project capture retried after a lost reply is reported unconfirmed, pointing to the console', async () => {
-  // 0.20.1: a team-only draft is the person's alone, so the Provider answers a create that meets it
-  // exactly as a missing draft. That is neither a success nor proof that nothing was saved.
-  const calls = [];
-  let created = false;
-  const app = new FederatedGraphApplication(CONFIG, { consoleUrl: 'http://127.0.0.1:4545',
-    fetchImpl: providerFetch(calls, {
-      '/v1/publication-drafts': () => {
-        if (created) {
-          return new Response(JSON.stringify({ detail: 'publication draft not found' }),
-            { status: 404, headers: { 'content-type': 'application/json' } });
-        }
-        created = true;
-        return { id: 'draft-1', status: 'pending' };
-      }
-    }) });
-  const input = { ...episodeInput('project'), spaceId: 'project-1' };
-  await app.captureSessionKnowledge(input); // its reply is lost; the host retries the same capture
-  const retried = await app.captureSessionKnowledge(input);
-  assert.deepEqual(retried, {
-    route: 'personal_review',
-    status: 'unconfirmed',
-    message: 'Cannot confirm whether this capture was saved; check the publish queue in the FULI console.',
-    reviewUrl: 'http://127.0.0.1:4545/public-projects',
-    projectId: 'project-1',
-    providerUrl: 'https://workspace.example'
-  });
-  assert.equal(calls.filter(({ path }) => path === '/v1/publication-drafts').length, 2);
-  // Any other refusal is still an error.
-  const refusing = new FederatedGraphApplication(CONFIG, { fetchImpl: providerFetch([], {
-    '/v1/publication-drafts': () => new Response(JSON.stringify({ detail: { code: 'project_agent_knowledge_personal_only' } }),
-      { status: 422, headers: { 'content-type': 'application/json' } }) }) });
-  await assert.rejects(refusing.captureSessionKnowledge(input));
-});
-
-test('restricted knowledge cannot be submitted to a team-shared queue', async () => {
-  const app = new FederatedGraphApplication(CONFIG, {
-    fetchImpl: providerFetch([], {})
-  });
-  await assert.rejects(
-    app.captureSessionKnowledge({
-      ...episodeInput('project'),
-      spaceId: 'project-1',
-      sensitivity: 'restricted'
-    }),
-    /cannot enter a team-shared project queue/
-  );
-});
-
 test('confirmation preserves the discovery-time quadrant and its audit basis', async () => {
   const calls = [];
   const app = new FederatedGraphApplication(CONFIG, {
@@ -187,7 +116,7 @@ test('confirmation preserves the discovery-time quadrant and its audit basis', a
   assert.equal(stored.profile_aspect, 'taste');
 });
 
-test('personal profile knowledge can be project-scoped locally but never proposed publicly', async () => {
+test('personal profile knowledge can be project-scoped locally', async () => {
   const calls = [];
   const app = new FederatedGraphApplication(CONFIG, {
     fetchImpl: providerFetch(calls, {
@@ -203,13 +132,6 @@ test('personal profile knowledge can be project-scoped locally but never propose
   };
   await app.captureSessionKnowledge(profileInput);
   assert.equal(calls[0].body.personal_project_id, 'fuli');
-
-  const publicInput = { ...profileInput, targetKind: 'project', spaceId: 'project-1' };
-  delete publicInput.personalProjectId;
-  await assert.rejects(
-    app.captureSessionKnowledge(publicInput),
-    /auditable confirmation/
-  );
   assert.equal(calls.some(({ origin }) => origin === 'https://workspace.example'), false);
 });
 
@@ -260,30 +182,6 @@ test('source URI must be an absolute HTTP(S) link without embedded credentials',
       sourceUri: 'https://sample-user@docs.example.invalid/requirements'
     }),
     /absolute HTTP\(S\) URI/
-  );
-  assert.deepEqual(calls, []);
-});
-
-test('pending knowledge stays outside public review regardless of its quadrant', async () => {
-  const calls = [];
-  const app = new FederatedGraphApplication(CONFIG, { fetchImpl: providerFetch(calls, {}) });
-  const input = { ...episodeInput('project'), spaceId: 'project-1' };
-  input.entities[0] = {
-    ...input.entities[0],
-    originQuadrant: 'known_unknown',
-    confirmationStatus: 'pending',
-    confirmationBasis: {
-      existenceReason: 'The architecture tradeoff was raised for review.',
-      quadrantReason: 'The question is explicit but remains unresolved.',
-      proposedBy: { kind: 'agent', label: 'Codex' },
-      confirmedBy: null,
-      confirmedAt: null
-    },
-    reasoningSummary: 'The architecture tradeoff is not resolved.'
-  };
-  await assert.rejects(
-    app.captureSessionKnowledge(input),
-    /auditable confirmation/
   );
   assert.deepEqual(calls, []);
 });
@@ -442,28 +340,6 @@ test('human-change search records a view and maps explicit Agent review checks',
     classification_check: 'reasonable',
     note: 'No conflict and the classification is supported by the current evidence.'
   });
-});
-
-test('unsubscribing removes only the selected local subscription', async () => {
-  const calls = [];
-  const app = new FederatedGraphApplication(CONFIG, {
-    fetchImpl: providerFetch(calls, {
-      '/v1/subscriptions/project-1': { project_id: 'project-1', deleted: true }
-    })
-  });
-
-  const result = await app.unsubscribePublicProject({
-    personalSpaceId: 'personal-space',
-    projectId: 'project-1',
-    providerUrl: 'https://workspace.example'
-  });
-
-  assert.equal(result.deleted, true);
-  assert.deepEqual(calls.map(({ origin, path, method }) => ({ origin, path, method })), [{
-    origin: 'http://127.0.0.1:8787',
-    path: '/v1/subscriptions/project-1',
-    method: 'DELETE'
-  }]);
 });
 
 test('personal search combines global profile, active project, and only named context projects',
@@ -642,21 +518,13 @@ test('state stays fully usable in personal-only mode without a public Provider',
   const state = await app.state();
 
   assert.equal(state.mode, 'personal_only');
-  assert.deepEqual(state.publicProvider, { configured: false, status: 'not_connected' });
-  assert.deepEqual(state.capabilities, {
-    browsePublicProjects: false,
-    publishProject: false,
-    submitKnowledge: false,
-    subscribeProject: false,
-    reviewProposals: false
-  });
   assert.deepEqual(state.personalSpaces, [{ id: 'personal-space', name: '我', kind: 'personal' }]);
   assert.deepEqual(state.agentAccessPolicy, { enabled: true, updatedAt: null });
   assert.deepEqual(state.projects, []);
   assert.deepEqual(state.providers.workspaces, []);
 });
 
-test('state degrades only public capabilities when a configured Provider is unavailable', async () => {
+test('state degrades only the workspace part when a configured Provider is unavailable', async () => {
   const app = new FederatedGraphApplication(CONFIG, {
     fetchImpl: async (rawUrl, options = {}) => {
       const url = new URL(rawUrl);
@@ -676,149 +544,10 @@ test('state degrades only public capabilities when a configured Provider is unav
   const state = await app.state();
 
   assert.equal(state.mode, 'degraded');
-  assert.deepEqual(state.publicProvider, { configured: true, status: 'unavailable' });
   assert.equal(state.personalSpaces.length, 1);
   assert.equal(state.subscriptions.length, 1);
   assert.deepEqual(state.projects, []);
   assert.equal(state.providers.workspaces[0].status, 'unavailable');
-  assert.equal(state.capabilities.publishProject, false);
-  assert.equal(state.capabilities.reviewProposals, false);
-});
-
-test('publishing a personal project creates a public project owned by the publisher and subscribes it',
-  async () => {
-    const calls = [];
-    const app = new FederatedGraphApplication(CONFIG, {
-      fetchImpl: providerFetch(calls, {
-        '/v1/personal-projects/hotel-theme': {
-          project_id: 'hotel-theme',
-          publication_key: 'publication-key-hotel-theme',
-          profile: {
-            name: 'Hotel Theme',
-            purpose: 'Hotel themed event delivery.',
-            lifecycle: 'active',
-            sources: [],
-            boundaries: [],
-            assessment: {
-              score: 24,
-              label: 'needs_clarification',
-              confirmed: [],
-              inferred: [],
-              missing: ['PRD'],
-              dimensions: [],
-              analyzed_at: '2026-07-21T10:00:00Z'
-            }
-          }
-        },
-        '/v1/spaces': {
-          id: 'project-hotel-theme',
-          name: 'Hotel Theme',
-          kind: 'project',
-          visibility: 'public',
-          owner_id: 'person-remote',
-          role: 'maintainer'
-        },
-        '/v1/subscriptions': {
-          id: 'subscription-1',
-          project_id: 'project-hotel-theme',
-          provider_url: 'https://workspace.example'
-        }
-      })
-    });
-
-    const result = await app.publishPersonalProject({
-      personalSpaceId: 'personal-space',
-      providerUrl: 'https://workspace.example',
-      localProjectId: 'hotel-theme',
-      releaseVersion: 'v1.0.0',
-      updateSummary: 'Initial public release.'
-    });
-
-    assert.equal(result.project.owner_id, 'person-remote');
-    assert.equal(result.project.role, 'maintainer');
-    assert.equal(result.subscription.project_id, 'project-hotel-theme');
-    const created = calls.find(({ origin, path, method }) =>
-      origin === 'https://workspace.example' && path === '/v1/spaces' && method === 'POST'
-    );
-    assert.deepEqual(created.body, {
-      name: 'Hotel Theme',
-      kind: 'project',
-      description: 'Hotel themed event delivery.',
-      publication_key: 'publication-key-hotel-theme',
-      profile: {
-        name: 'Hotel Theme',
-        purpose: 'Hotel themed event delivery.',
-        scope: null,
-        technical_summary: null,
-        lifecycle: 'active',
-        sources: [],
-        boundaries: [],
-        assessment: {
-          score: 24,
-          label: 'needs_clarification',
-          confirmed: [],
-          inferred: [],
-          dimensions: [],
-          analyzed_at: '2026-07-21T10:00:00Z'
-        }
-      },
-      release: {
-        version: 'v1.0.0',
-        summary: 'Initial public release.'
-      }
-    });
-    const subscribed = calls.find(({ origin, path, method }) =>
-      origin === 'http://127.0.0.1:8787' && path === '/v1/subscriptions' && method === 'POST'
-    );
-    assert.equal(subscribed.body.project_id, 'project-hotel-theme');
-  });
-
-test('public release history is read from only the selected Provider', async () => {
-  const calls = [];
-  const app = new FederatedGraphApplication(CONFIG, {
-    fetchImpl: providerFetch(calls, {
-      '/v1/projects/project-1/releases': [{
-        id: 'release-1', project_id: 'project-1', version: 'v1.0.0',
-        summary: 'Initial release', publisher_name: 'Alice',
-        published_at: '2026-07-22T08:00:00Z'
-      }]
-    })
-  });
-
-  const result = await app.listProjectReleases({
-    projectId: 'project-1',
-    providerUrl: 'https://workspace.example'
-  });
-
-  assert.equal(result.releases[0].version, 'v1.0.0');
-  assert.equal(calls[0].origin, 'https://workspace.example');
-});
-
-test('deleting a public project also deactivates the current personal subscription', async () => {
-  const calls = [];
-  const app = new FederatedGraphApplication(CONFIG, {
-    fetchImpl: providerFetch(calls, {
-      '/v1/projects/project-1': {
-        project_id: 'project-1', project_name: 'Hotel Theme', deleted: true
-      },
-      '/v1/subscriptions/project-1': { project_id: 'project-1', deleted: true }
-    })
-  });
-
-  const result = await app.deletePublicProject({
-    projectId: 'project-1',
-    providerUrl: 'https://workspace.example'
-  });
-
-  assert.equal(result.deleted, true);
-  assert.equal(calls.some(({ origin, path, method }) =>
-    origin === 'https://workspace.example' && path === '/v1/projects/project-1' &&
-    method === 'DELETE'
-  ), true);
-  assert.equal(calls.some(({ origin, path, method }) =>
-    origin === 'http://127.0.0.1:8787' && path === '/v1/subscriptions/project-1' &&
-    method === 'DELETE'
-  ), true);
 });
 
 test('agents can record and update an incomplete personal project profile without publishing it',
@@ -861,108 +590,6 @@ test('agents can record and update an incomplete personal project profile withou
     });
     assert.equal(calls.some(({ origin }) => origin === 'https://workspace.example'), false);
   });
-
-test('related projects stay suggestions and never expand personal subscriptions automatically',
-  async () => {
-    const calls = [];
-    const app = new FederatedGraphApplication(CONFIG, {
-      fetchImpl: providerFetch(calls, {
-        '/v1/projects/project-1/relations': [{
-          id: 'relation-1',
-          source_project_id: 'project-1',
-          target_project_id: 'project-2',
-          relation_type: 'DEPENDS_ON',
-          status: 'active'
-        }]
-      })
-    });
-
-    const result = await app.listProjectRelations({
-      projectId: 'project-1',
-      providerUrl: 'https://workspace.example'
-    });
-
-    assert.equal(result.relations[0].target_project_id, 'project-2');
-    assert.equal(calls.some(({ path, method }) =>
-      path === '/v1/subscriptions' && method === 'POST'
-    ), false);
-  });
-
-test('personal approval submits the full draft to shared review and then marks it submitted',
-  async () => {
-    const calls = [];
-    const draft = {
-      id: 'draft-1',
-      status: 'pending',
-      target_project_id: 'project-1',
-      provider_url: 'https://workspace.example',
-      episode: {
-        idempotency_key: 'session-1-batch-1',
-        sensitivity: 'normal',
-        entities: [{
-          key: 'project:one',
-          name: 'Project one',
-          type: 'Project',
-          current_quadrant: 'known_known',
-          epistemic_status: 'confirmed',
-          confirmation_status: 'confirmed',
-          confirmation_basis: {
-            existence_reason: 'The project was explicitly reviewed.',
-            quadrant_reason: 'The project definition was explicitly stated.',
-            proposed_by: { kind: 'agent', label: 'Codex' },
-            confirmed_by: { kind: 'user', label: 'Current user' },
-            confirmed_at: '2026-07-21T10:00:00.000Z'
-          }
-        }],
-        relationships: []
-      }
-    };
-    const app = new FederatedGraphApplication(CONFIG, {
-      fetchImpl: providerFetch(calls, {
-        '/v1/publication-drafts/draft-1': draft,
-        '/v1/projects/project-1/proposals': { id: 'proposal-1', status: 'pending' },
-        '/v1/publication-drafts/draft-1/decision': ({ body }) => ({
-          ...draft,
-          status: body.decision === 'begin_submit_public' ? 'submitting' : 'submitted',
-          submission_id: 'attempt', submission_started_at: new Date().toISOString(),
-          shared_proposal_id: 'proposal-1'
-        })
-      })
-    });
-
-    const result = await app.reviewPersonalDraft({
-      draftId: 'draft-1',
-      decision: 'submit_public'
-    });
-
-    assert.equal(result.status, 'submitted');
-    const shared = calls.find(({ path, method }) =>
-      path === '/v1/projects/project-1/proposals' && method === 'POST'
-    );
-    assert.deepEqual(shared.body, { episode: draft.episode });
-    const finalized = calls.find(({ path, method, body }) =>
-      path === '/v1/publication-drafts/draft-1/decision' && method === 'POST' && body.decision === 'submit_public'
-    );
-    assert.deepEqual(finalized.body, {
-      decision: 'submit_public',
-      submission_id: 'attempt',
-      shared_proposal_id: 'proposal-1'
-    });
-  });
-
-test('a source-deleted draft rejects Agent submission before any remote request', async () => {
-  const calls = [];
-  const app = new FederatedGraphApplication(CONFIG, {
-    fetchImpl: providerFetch(calls, {
-      '/v1/publication-drafts/draft-deleted': { id: 'draft-deleted', status: 'source_deleted', episode: null }
-    })
-  });
-  await assert.rejects(app.reviewPersonalDraft({ draftId: 'draft-deleted', decision: 'submit_public' }),
-    (error) => error.status === 409);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].method, 'GET');
-  assert.equal(calls[0].path, '/v1/publication-drafts/draft-deleted');
-});
 
 test('personal knowledge correction stays on the personal Provider and keeps project scope',
   async () => {
@@ -1173,7 +800,6 @@ function episodeInput(targetKind) {
   return {
     targetKind,
     spaceId: 'personal-space',
-    providerUrl: targetKind === 'project' ? 'https://workspace.example' : null,
     idempotencyKey: 'session-1-batch-1',
     sessionId: 'session-1',
     name: 'Session knowledge',

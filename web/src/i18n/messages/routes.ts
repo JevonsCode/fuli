@@ -29,10 +29,6 @@ export const routeMessages = {
     organizer: {
       title: '知识整理',
     },
-    publicProjects: {
-      title: '公共项目',
-      description: '发现、订阅和维护公共 Provider 上的项目。',
-    },
     knowledge: {
       title: '知识',
     },
@@ -62,7 +58,7 @@ export const routeMessages = {
     },
     connections: {
       title: '连接',
-      description: '本地知识库状态、公共 Provider 与项目订阅。',
+      description: '本地知识库状态与外部知识库连接。',
     },
   },
   'en-US': {
@@ -95,10 +91,6 @@ export const routeMessages = {
     organizer: {
       title: 'Organize',
     },
-    publicProjects: {
-      title: 'Public projects',
-      description: 'Discover, subscribe to, and maintain projects on a public Provider.',
-    },
     knowledge: {
       title: 'Knowledge',
     },
@@ -128,7 +120,7 @@ export const routeMessages = {
     },
     connections: {
       title: 'Connections',
-      description: 'Local knowledge status, public Providers, and project subscriptions.',
+      description: 'Local knowledge status and external knowledge connections.',
     },
   },
 } as const

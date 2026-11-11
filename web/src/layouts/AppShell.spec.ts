@@ -49,7 +49,7 @@ beforeEach(() => {
   })
 })
 
-async function setup(path: string, capabilities: Record<string, boolean> = {}, extraRoutes: RouteRecordRaw[] = []) {
+async function setup(path: string, extraRoutes: RouteRecordRaw[] = []) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const store = useConsoleStore()
@@ -63,7 +63,6 @@ async function setup(path: string, capabilities: Record<string, boolean> = {}, e
     subscriptions: [],
     capturePolicy: { enabled: false },
     agentAccessPolicy: { enabled: true },
-    capabilities: { browsePublicProjects: false, submitKnowledge: false, reviewProposals: false, ...capabilities },
   } as never
   const page = { template: '<div class="routed-page" />' }
   const router = createRouter({
@@ -93,7 +92,7 @@ describe('AppShell', () => {
     expect(wrapper.get('[data-section="knowledge"]').attributes('aria-current')).toBe('page')
     wrapper.unmount()
   })
-  it('marks the active destination and shows only the sections current capabilities allow', async () => {
+  it('marks the active destination and shows its sections', async () => {
     const { wrapper } = await setup('/preferences')
     expect(wrapper.get('[data-destination="memory"]').attributes('aria-current')).toBe('page')
     expect(wrapper.findAll('[data-section]').map(tab => tab.attributes('data-section'))).toEqual(['knowledge', 'preferences', 'organize', 'tags'])
@@ -102,12 +101,12 @@ describe('AppShell', () => {
   })
 
   it('lets glossary mode explain every sidebar destination and section tab', async () => {
-    const { wrapper, router } = await setup('/project-agents', { browsePublicProjects: true })
+    const { wrapper, router } = await setup('/project-agents')
     const unexplained = (selector: string) => wrapper.findAll(selector)
       .filter(element => findTerm(element.element)?.element !== element.element)
       .map(element => element.attributes(selector.slice(1, -1)))
     expect(unexplained('[data-destination]')).toEqual([])
-    for (const path of ['/project-agents', '/roundtables', '/public-projects', '/preferences', '/settings']) {
+    for (const path of ['/project-agents', '/roundtables', '/preferences', '/settings']) {
       await router.push(path)
       await flushPromises()
       expect(wrapper.findAll('[data-section]').length, path).toBeGreaterThan(1)
@@ -116,15 +115,6 @@ describe('AppShell', () => {
     // 设置 is both a destination and its first tab; each explains itself.
     expect(findTerm(wrapper.get('[data-destination="settings"]').element)?.term.id).toBe('destination.settings')
     expect(findTerm(wrapper.get('[data-section="settings"]').element)?.term.id).toBe('section.settings')
-    wrapper.unmount()
-  })
-
-  it('adds public projects when the capabilities allow them; publishing decisions live there, not in memory', async () => {
-    const { wrapper, router } = await setup('/public-projects', { browsePublicProjects: true, reviewProposals: true })
-    expect(wrapper.findAll('[data-section]').map(tab => tab.attributes('data-section'))).toEqual(['myProjects', 'publicProjects'])
-    await router.push('/organize')
-    await flushPromises()
-    expect(wrapper.findAll('[data-section]').map(tab => tab.attributes('data-section'))).not.toContain('review')
     wrapper.unmount()
   })
 
@@ -300,7 +290,7 @@ describe('AppShell', () => {
 
   it('renders one H1: a record page names itself, the route title is only the fallback', async () => {
     const profile = defineComponent({ setup() { usePageTitle('Ada Lovelace'); return () => h('div', { class: 'routed-page' }) } })
-    const { wrapper, router } = await setup('/agents/personal-1/agent-a', {}, [
+    const { wrapper, router } = await setup('/agents/personal-1/agent-a', [
       { path: '/agents/:spaceId/:agentId', component: profile, meta: { title: 'agentProfiles.profile', layout: 'canvas' } },
     ])
     expect(wrapper.findAll('h1').map(heading => heading.text())).toEqual(['Ada Lovelace'])
@@ -324,7 +314,7 @@ describe('AppShell', () => {
       usePageTitle('Ada Lovelace', { inPage: true })
       return () => h('h1', { class: 'routed-page' }, 'Ada Lovelace')
     } })
-    const { wrapper } = await setup('/agents/personal-1/agent-a', {}, [
+    const { wrapper } = await setup('/agents/personal-1/agent-a', [
       { path: '/agents/:spaceId/:agentId', component: profile, meta: { title: 'agentProfiles.profile', layout: 'canvas', detail: true } },
     ])
     expect(wrapper.find('.app-title').exists()).toBe(false)
@@ -335,7 +325,7 @@ describe('AppShell', () => {
 
   it('gives a detail page its own name alone: no section tabs beside it', async () => {
     const profile = defineComponent({ setup() { usePageTitle('Ada Lovelace'); return () => h('div', { class: 'routed-page' }) } })
-    const { wrapper, router } = await setup('/agents/personal-1/agent-a', {}, [
+    const { wrapper, router } = await setup('/agents/personal-1/agent-a', [
       { path: '/agents/:spaceId/:agentId', component: profile, meta: { title: 'agentProfiles.profile', layout: 'canvas', detail: true } },
     ])
     expect(wrapper.get('h1').text()).toBe('Ada Lovelace')
@@ -352,7 +342,7 @@ describe('AppShell', () => {
     let finishPage: () => void = () => {}
     const pageReload = vi.fn(() => new Promise<void>((resolve) => { finishPage = resolve }))
     const reading = defineComponent({ setup() { usePageRefresh(pageReload); return () => h('div', { class: 'routed-page' }) } })
-    const { wrapper, store } = await setup('/reading', {}, [{ path: '/reading', component: reading, meta: { title: '页面' } }])
+    const { wrapper, store } = await setup('/reading', [{ path: '/reading', component: reading, meta: { title: '页面' } }])
     vi.spyOn(store, 'refresh').mockResolvedValue(undefined as never)
     const button = wrapper.get('[data-shell-refresh]')
     expect(button.attributes('title')).toBe('刷新这一页')

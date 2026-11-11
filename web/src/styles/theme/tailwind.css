@@ -47,7 +47,6 @@
 @source "../../features/project-agents/AttentionWorkspace.vue";
 @source "../../features/project-agents/AttentionPeek.vue";
 @source "../../pages/ConnectionsPage.vue";
-@source "../../pages/PublicProjectsPage.vue";
 @source "../../pages/SharedJefaReportPage.vue";
 @source "../../pages/NotFoundPage.vue";
 /* rec#11 D-71: 服务管理, the services FLAs started, on the same canvas. */

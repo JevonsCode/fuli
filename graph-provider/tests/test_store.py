@@ -5,7 +5,6 @@ import pytest
 from fuli_graph.config import Settings
 from fuli_graph.models import (
     PersonalProjectUpsert,
-    ProjectRelationCreate,
     SpaceCreate,
     StructuredEpisode,
 )
@@ -270,29 +269,6 @@ async def test_project_publication_records_release_version_publisher_time_and_su
 
 
 @pytest.mark.asyncio
-async def test_project_owner_or_provider_admin_can_delete_public_project_graph():
-    driver = SequentialDriver([
-        [{'name': 'Hotel Theme', 'group_id': 'workspace-project-hotel-theme'}],
-        [],
-    ])
-    store = GraphStore(RuntimeStub(driver), workspace_settings())
-
-    result = await store.delete_project(
-        {'id': 'principal-1', 'provider_admin': False},
-        'hotel-theme',
-    )
-
-    authorization_query, authorization_parameters = driver.calls[0]
-    deletion_query, deletion_parameters = driver.calls[1]
-    assert 'provider administrator required' not in authorization_query
-    assert authorization_parameters['provider_admin'] is False
-    assert 'artifact.group_id = $group_id' in deletion_query
-    assert 'DETACH DELETE space' in deletion_query
-    assert deletion_parameters['group_id'] == 'workspace-project-hotel-theme'
-    assert result.deleted is True
-
-
-@pytest.mark.asyncio
 async def test_workspace_catalog_lists_public_projects_for_non_members_as_readers():
     created_at = datetime(2026, 7, 21, tzinfo=timezone.utc)
     driver = RecordingDriver([{
@@ -353,72 +329,6 @@ async def test_personal_project_profile_is_stored_inside_the_personal_graph_boun
     assert parameters['personal_space_id'] == 'personal-space'
     assert result.project_id == 'hotel-theme'
     assert result.profile.name == 'Hotel Theme'
-
-
-@pytest.mark.asyncio
-async def test_part_of_relation_waits_for_parent_project_confirmation():
-    created_at = datetime(2026, 7, 21, tzinfo=timezone.utc)
-    driver = SequentialDriver([
-        [{'space': {'id': 'hotel-theme'}, 'role': 'maintainer'}],
-        [{'target': {'id': 'activity-platform'}}],
-        [],
-        [{'relation': {
-            'id': 'relation-1',
-            'source_project_id': 'hotel-theme',
-            'target_project_id': 'activity-platform',
-            'relation_type': 'PART_OF',
-            'status': 'pending',
-            'note': None,
-            'created_by': 'principal-1',
-            'created_at': created_at,
-        }}],
-    ])
-    store = GraphStore(RuntimeStub(driver), workspace_settings())
-
-    relation = await store.create_project_relation(
-        {'id': 'principal-1'},
-        'hotel-theme',
-        ProjectRelationCreate(
-            target_project_id='activity-platform',
-            relation_type='PART_OF',
-        ),
-    )
-
-    _, parameters = driver.calls[-1]
-    assert parameters['relation_status'] == 'pending'
-    assert relation.status == 'pending'
-
-
-@pytest.mark.asyncio
-async def test_dependency_relation_is_active_without_target_confirmation():
-    created_at = datetime(2026, 7, 21, tzinfo=timezone.utc)
-    driver = SequentialDriver([
-        [{'space': {'id': 'hotel-theme'}, 'role': 'maintainer'}],
-        [{'target': {'id': 'shared-platform'}}],
-        [{'relation': {
-            'id': 'relation-2',
-            'source_project_id': 'hotel-theme',
-            'target_project_id': 'shared-platform',
-            'relation_type': 'DEPENDS_ON',
-            'status': 'active',
-            'note': None,
-            'created_by': 'principal-1',
-            'created_at': created_at,
-        }}],
-    ])
-    store = GraphStore(RuntimeStub(driver), workspace_settings())
-
-    relation = await store.create_project_relation(
-        {'id': 'principal-1'},
-        'hotel-theme',
-        ProjectRelationCreate(
-            target_project_id='shared-platform',
-            relation_type='DEPENDS_ON',
-        ),
-    )
-
-    assert relation.status == 'active'
-    assert driver.calls[-1][1]['relation_status'] == 'active'
 
 
 class RecordingDriver:

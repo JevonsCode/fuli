@@ -31,8 +31,6 @@ const graphCanvas = readFileSync(
 const inspector = ['KnowledgeInspector.vue', 'KnowledgeRecords.vue']
   .map(file => readFileSync(`web/src/features/knowledge/${file}`, 'utf8')).join('\n');
 const profile = readFileSync('web/src/pages/PersonalProfilePage.vue', 'utf8');
-const publicProjects = readFileSync('web/src/pages/PublicProjectsPage.vue', 'utf8');
-const review = readFileSync('web/src/features/publishing/PublishQueue.vue', 'utf8');
 const connections = readFileSync('web/src/pages/ConnectionsPage.vue', 'utf8');
 const settingsMessages = readFileSync('web/src/i18n/messages/settings.ts', 'utf8');
 const knowledgeMessages = readFileSync(
@@ -65,7 +63,6 @@ test('Vue Router owns primary navigation and addressable knowledge state', () =>
     "'/preferences'",
     "'/personal/:spaceId/projects/:mode'",
     "'/personal/:spaceId/projects/:projectId/:mode'",
-    "'/public-projects'",
     "'/knowledge/:scope/:spaceId/:mode'",
     "'/connections'"
   ]) {
@@ -142,18 +139,8 @@ test('all existing workspace areas have Vue pages and API actions', () => {
   assert.match(profile, /preferences\.profile\.summary\.conflicts/);
   assert.match(preferenceMessages, /summaryAria: '协作偏好状态'/);
   assert.match(preferenceMessages, /conflicts: '疑似冲突'/);
-  assert.match(publicProjects, /\/api\/subscriptions/);
-  assert.match(publicProjects, /\/api\/project-relations/);
-  assert.match(publicProjects, /pages\.publicProjects\.viewGraph/);
-  assert.match(review, /\/api\/personal-review/);
-  assert.match(review, /\/api\/review/);
-  assert.match(review, /pages\.review\.publicTitle/);
   assert.match(connections, /pages\.connections\.statusAria/);
-  assert.match(connections, /pages\.connections\.unsubscribe/);
-  assert.match(pageMessages, /viewGraph: '查看知识图谱'/);
-  assert.match(pageMessages, /publicTitle: '别人提交的内容'/);
-  assert.match(pageMessages, /unsubscribe: '取消订阅'/);
-  assert.match(pageMessages, /unsubscribe: '取消订阅'/);
+  assert.doesNotMatch(connections, /\/api\/subscriptions/);
 });
 
 test('connection forms use the shared custom controls', () => {

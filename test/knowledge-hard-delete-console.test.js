@@ -367,7 +367,7 @@ for (const itemKind of ['episode', 'session']) test(`${itemKind} routes preserve
     removed_episodes: [{ episode_id: 'source-episode' }] };
   const deletion = { deletion_id: 'source-deletion', item_kind: itemKind, item_id: itemId, ...source,
     deleted_at: '2026-10-22T01:02:03Z', deleted_item_ids: [itemId, 'included', 'old-version', 'source-episode'], counts: {} };
-  const calls = []; let reconciliations = 0;
+  const calls = [];
   const send = async (path, request, options) => {
     calls.push({ path, request, options });
     return { ok: true, status: 200, payload: path.endsWith('/preview') ? plan
@@ -379,13 +379,11 @@ for (const itemKind of ['episode', 'session']) test(`${itemKind} routes preserve
     assert.equal(references.names('retained'), false);
     return 1;
   } }];
-  const port = knowledgeHardDelete(dataDir, { send, localStores, personalSpaceId: () => SPACE,
-    reconcileSubmissions: async () => { reconciliations++; } });
+  const port = knowledgeHardDelete(dataDir, { send, localStores, personalSpaceId: () => SPACE });
   const base = `/api/knowledge/${itemKind}/${itemId}/hard-delete`;
   assert.equal((await route(`${base}/preview`, input, { hardDelete: port })).status, 200);
   const result = await route(base, { ...input, previewId: PREVIEW_ID, confirmation: '删除' }, { hardDelete: port });
   assert.equal(result.body.outcome, 'complete');
-  assert.equal(reconciliations, 2);
   const confirm = calls.find(call => call.path.endsWith('/hard-delete'));
   assert.deepEqual([confirm.request.include, confirm.request.exclude], [selection.include, selection.exclude]);
   assert.equal(confirm.request.item_kind, itemKind);

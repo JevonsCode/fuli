@@ -44,7 +44,6 @@ export function knowledgeHardDelete(dataDir, {
   ledger = hardDeleteLedger(dataDir, { now }),
   // The active personal space, for rebuilding the record from the graph.
   personalSpaceId = () => null,
-  reconcileSubmissions = async () => {},
   agentSnapshots = null,
   deleteTimeoutMs = DELETE_TIMEOUT_MS,
   abortAfterMs = ABORT_AFTER_MS
@@ -57,12 +56,7 @@ export function knowledgeHardDelete(dataDir, {
     if (ok) return payload;
     throw providerRefusal(status, payload);
   };
-  const preview = async input => {
-    // The host's metadata-only reconciliation has a five-second deadline.
-    // An unavailable remote provider proves nothing and must not hide preview.
-    try { await reconcileSubmissions(); } catch { /* keep the unknown warning */ }
-    return request(item('/hard-delete/preview', input), ref(input));
-  };
+  const preview = input => request(item('/hard-delete/preview', input), ref(input));
   const graphDeleted = (operation, deletion) => ledger.update(operation.id, { state: 'graph_deleted',
     // A recorded time stays: a later status or recovery never moves the cutoff.
     deletionId: deletion.deletion_id, deletedAt: operation.deletedAt ?? deletion.deleted_at,

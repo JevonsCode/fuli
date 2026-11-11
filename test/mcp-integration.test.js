@@ -189,7 +189,6 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'delete_external_knowledge_binding', 'get_external_knowledge_conflict_policy',
     'update_external_knowledge_conflict_policy',
     'defer_preference_conflict',
-    'delete_public_project',
     'list_employee_templates', 'recruit_employee', 'list_employee_tools', 'call_employee_tool',
     'submit_agent_app_version', 'list_agent_apps',
     'get_judgment_policy', 'list_judgments', 'review_with_tonborg', 'assess_agent_action', 'assess_task_completion', 'get_agent_pins', 'pin_agent',
@@ -214,9 +213,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'search_knowledge_graph', 'search_connected_knowledge',
     'record_knowledge_usage', 'resolve_knowledge_tags', 'change_knowledge_tags', 'record_knowledge_feedback',
     'search_current_project_knowledge',
-    'discover_common_knowledge_candidates',
     'discover_personal_global_preference_candidates',
-    'preview_common_knowledge_promotion', 'apply_common_knowledge_promotion',
     'get_knowledge_graph',
     'search_human_knowledge_changes', 'review_human_knowledge_change',
     'list_knowledge_spaces', 'upsert_personal_project', 'list_personal_projects',
@@ -248,11 +245,6 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'list_workflow_candidates',
     'revise_personal_knowledge', 'reassign_personal_knowledge',
     'preview_personal_project_action', 'apply_personal_project_action',
-    'publish_personal_project', 'list_project_releases',
-    'create_project_relation', 'list_project_relations',
-    'review_project_relation', 'list_personal_review_queue', 'review_personal_draft',
-    'subscribe_public_project', 'unsubscribe_public_project',
-    'list_project_review_queue', 'review_project_proposal',
     'get_graphiti_status',
     'agent_chat', 'group_discussion', 'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
     'get_agent_message_status', 'cancel_agent_message'
@@ -812,119 +804,6 @@ test('Agent 项目写入必须使用匹配且一次性的预览授权', async (t
     name: 'apply_personal_project_action',
     arguments: {
       ...action,
-      previewToken: preview.structuredContent.previewToken
-    }
-  });
-  assert.equal(replayed.isError, true);
-  assert.equal(replayed.structuredContent.error.code, 'preview_expired');
-  assert.equal(writes, 1);
-});
-
-test('公共知识上收必须使用匹配且一次性的人工确认预览', async (t) => {
-  let writes = 0;
-  const personal = await provider((request) => {
-    if (request.path === '/health') return { status: 'ready', providerId: 'personal' };
-    if (request.path === '/v1/subscriptions') return [];
-    if (request.path === '/v1/spaces') return [{ id: 'personal-1', kind: 'personal' }];
-    if (request.path === '/v1/knowledge/common-promotions/preview') {
-      return {
-        status: 'ready',
-        personal_space_id: 'personal-1',
-        parent_project_id: 'platform-a',
-        item_kind: 'entity',
-        canonical_item_id: 'canonical',
-        duplicate_item_ids: ['duplicate'],
-        source_project_ids: ['flight-c', 'hotel-b'],
-        inheritance_mode: 'descendants',
-        atomic: true,
-        requires_human_confirmation: true,
-        reason: request.body.reason,
-        human_confirmation_reason: request.body.human_confirmation_reason
-      };
-    }
-    if (request.path === '/v1/knowledge/common-promotions') {
-      writes += 1;
-      return {
-        status: 'promoted',
-        promotion_id: 'promotion-1',
-        personal_space_id: 'personal-1',
-        parent_project_id: 'platform-a',
-        item_kind: 'entity',
-        canonical_item_id: 'canonical',
-        invalidated_item_ids: ['duplicate'],
-        source_project_ids: ['flight-c', 'hotel-b'],
-        inheritance_mode: 'descendants',
-        revision_ids: ['revision-1', 'revision-2'],
-        reason: request.body.reason,
-        human_confirmation_reason: request.body.human_confirmation_reason
-      };
-    }
-    return [];
-  });
-  t.after(() => close(personal.server));
-
-  const runtimeConfigPath = join(
-    mkdtempSync(join(tmpdir(), 'fuli-mcp-common-promotion-')),
-    'runtime.json'
-  );
-  writeFileSync(runtimeConfigPath, JSON.stringify({
-    version: 1,
-    personal: {
-      providerUrl: personal.url,
-      accessToken: 'personal-access',
-      principalId: 'principal-personal',
-      spaceId: 'personal-1'
-    },
-    workspaces: []
-  }));
-  const connection = await connectMcp(runtimeConfigPath);
-  t.after(() => connection.close());
-
-  const promotion = {
-    personalSpaceId: 'personal-1',
-    parentProjectId: 'platform-a',
-    itemKind: 'entity',
-    canonicalItemId: 'canonical',
-    duplicateItemIds: ['duplicate'],
-    reason: 'Synthetic shared runbook evidence.',
-    humanConfirmationReason: 'The synthetic benchmark explicitly approved this exact intent.'
-  };
-
-  const preview = await connection.client.callTool({
-    name: 'preview_common_knowledge_promotion',
-    arguments: promotion
-  });
-  assert.equal(preview.isError, undefined);
-  assert.equal(preview.structuredContent.atomic, true);
-  assert.match(preview.structuredContent.previewToken, /^[A-Za-z0-9_-]{20,}$/);
-
-  const mismatched = await connection.client.callTool({
-    name: 'apply_common_knowledge_promotion',
-    arguments: {
-      ...promotion,
-      reason: 'Changed rationale.',
-      previewToken: preview.structuredContent.previewToken
-    }
-  });
-  assert.equal(mismatched.isError, true);
-  assert.equal(mismatched.structuredContent.error.code, 'preview_mismatch');
-  assert.equal(writes, 0);
-
-  const applied = await connection.client.callTool({
-    name: 'apply_common_knowledge_promotion',
-    arguments: {
-      ...promotion,
-      previewToken: preview.structuredContent.previewToken
-    }
-  });
-  assert.equal(applied.isError, undefined);
-  assert.equal(applied.structuredContent.status, 'promoted');
-  assert.equal(writes, 1);
-
-  const replayed = await connection.client.callTool({
-    name: 'apply_common_knowledge_promotion',
-    arguments: {
-      ...promotion,
       previewToken: preview.structuredContent.previewToken
     }
   });

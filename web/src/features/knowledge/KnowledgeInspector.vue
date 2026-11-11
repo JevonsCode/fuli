@@ -46,7 +46,6 @@ const props = defineProps<{
   graph: KnowledgeGraph | null
   editable?: boolean
   currentProjectId?: string | null
-  canPublishProject?: boolean
   canManageProject?: boolean
   mode?: 'directory' | 'graph' | 'preference'
   preferenceScopeLabel?: string
@@ -63,7 +62,6 @@ const emit = defineEmits<{
   edit: [item: KnowledgeItem]
   createProject: [item: KnowledgeItem]
   openProject: [projectId: string]
-  publishProject: [projectId: string]
   openDirectory: [item: KnowledgeItem]
   openGraph: [item: KnowledgeItem]
   openReplacement: [item: KnowledgeItem]
@@ -134,8 +132,7 @@ const hasActions = computed(() =>
     projectItem.value
     && Boolean(personalProjectId.value)
     && personalProjectId.value !== props.currentProjectId
-  )
-  || (projectItem.value && Boolean(personalProjectId.value) && props.canPublishProject),
+  ),
 )
 const reviewState = computed(() =>
   props.item ? knowledgeReviewState(props.item) : 'unclassified',
@@ -402,12 +399,6 @@ function preferenceScopeLabel(item: KnowledgeItem) {
           @click="emit('openProject', personalProjectId)"
         >
           {{ t('knowledge.workspace.inspector.enterProject') }}
-        </Button>
-        <Button variant="outline" size="sm"
-          v-if="projectItem && personalProjectId && canPublishProject"
-          @click="emit('publishProject', personalProjectId)"
-        >
-          {{ t('knowledge.workspace.inspector.publish') }}
         </Button>
         <Button size="sm"
           v-if="canCreateProject"

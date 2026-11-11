@@ -3,10 +3,7 @@ import { closeLocalRuntimes, openLocalRuntimes } from './local-runtimes.js';
 import { withTaskMemorySnapshot } from './project-agent-memory.js';
 
 import { GraphitiProviderClient } from './provider-client.js';
-import {
-  aggregatePublicCapabilities,
-  createWorkspaceProvider
-} from './workspace-provider-client.js';
+import { createWorkspaceProvider } from './workspace-provider-client.js';
 import {
   personalTokenRefresher,
   readGraphRuntimeConfig
@@ -41,7 +38,6 @@ import { readRuntimeSettings } from '../system/runtime-settings.js';
 import { describeSettings } from '../system/settings-guide.js';
 import {
   checkpointTaskKnowledge as checkpointTaskKnowledgeWorkflow,
-  discoverCommonKnowledgeCandidates as discoverCommonKnowledgeCandidatesWorkflow,
   discoverPersonalGlobalPreferenceCandidates as
     discoverPersonalGlobalPreferenceCandidatesWorkflow,
   recordDecisionTrace as recordDecisionTraceWorkflow,
@@ -80,10 +76,8 @@ import {
 } from './knowledge-graph-reads.js';
 import { getAgentGrowth } from './agent-growth.js';
 import {
-  applyCommonKnowledgePromotion,
   applyKnowledgeProjectAction,
   confirmKnowledgeBatch,
-  previewCommonKnowledgePromotion,
   previewKnowledgeProjectAction,
   reassignKnowledgeItem,
   recordKnowledgeUsage,
@@ -97,19 +91,7 @@ import {
   resolveDeferredPreferenceConflict
 } from './preference-conflict-requests.js';
 import { reviewHumanChange, searchHumanChanges } from './human-knowledge-changes.js';
-import {
-  deletePublicProject,
-  listKnowledgeSpaces,
-  listProjectReleases,
-  publishPersonalProject,
-  subscribePublicProject,
-  unsubscribePublicProject
-} from './public-projects.js';
-import {
-  createProjectRelation,
-  listProjectRelations,
-  reviewProjectRelation
-} from './public-project-relations.js';
+import { listKnowledgeSpaces } from './knowledge-spaces.js';
 import {
   agentProfileWriter,
   listPersonalProjectHistory,
@@ -117,13 +99,6 @@ import {
   listProjectRelationWeights,
   upsertPersonalProject
 } from './personal-projects.js';
-import {
-  listPersonalReviewQueue,
-  listReviewQueue,
-  reconcilePersonalSubmissions,
-  reviewPersonalDraft,
-  reviewProposal
-} from './publication-review-queues.js';
 
 export function openFederatedGraphApplication({
   runtimeConfigPath,
@@ -307,22 +282,9 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return searchCurrentProjectKnowledge(this, input);
   }
 
-  async discoverCommonKnowledgeCandidates(input) {
-    assertActivePersonalSpace(this, input.personalSpaceId);
-    return discoverCommonKnowledgeCandidatesWorkflow(this, input);
-  }
-
   async discoverPersonalGlobalPreferenceCandidates(input) {
     assertActivePersonalSpace(this, input.personalSpaceId);
     return discoverPersonalGlobalPreferenceCandidatesWorkflow(this, input);
-  }
-
-  async previewCommonKnowledgePromotion(input) {
-    return previewCommonKnowledgePromotion(this, input);
-  }
-
-  async applyCommonKnowledgePromotion(input) {
-    return applyCommonKnowledgePromotion(this, input);
   }
 
   async getKnowledgeGraph(input, ownerReads) {
@@ -429,26 +391,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return listKnowledgeSpaces(this);
   }
 
-  async subscribePublicProject(input) {
-    return subscribePublicProject(this, input);
-  }
-
-  async unsubscribePublicProject(input) {
-    return unsubscribePublicProject(this, input);
-  }
-
-  async publishPersonalProject(input) {
-    return publishPersonalProject(this, input);
-  }
-
-  async listProjectReleases(input) {
-    return listProjectReleases(this, input);
-  }
-
-  async deletePublicProject(input) {
-    return deletePublicProject(this, input);
-  }
-
   async upsertPersonalProject(input) {
     return upsertPersonalProject(this, input);
   }
@@ -469,42 +411,10 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     return listProjectRelationWeights(this, input);
   }
 
-  async createProjectRelation(input) {
-    return createProjectRelation(this, input);
-  }
-
-  async listProjectRelations(input) {
-    return listProjectRelations(this, input);
-  }
-
-  async reviewProjectRelation(input) {
-    return reviewProjectRelation(this, input);
-  }
-
-  async listPersonalReviewQueue(input, ownerReads) {
-    return listPersonalReviewQueue(this, input, ownerReads);
-  }
-
   async readRoleSuggestions({ limit } = {}) {
     const personalSpaceId = this.config.personal.spaceId;
     await this.knowledgeRecoveryGate?.refresh(personalSpaceId);
     return this.roleSuggestions.list({ personalSpaceId, limit });
-  }
-
-  reconcilePersonalSubmissions(options, ownerReads) {
-    return reconcilePersonalSubmissions(this, options, ownerReads);
-  }
-
-  async reviewPersonalDraft(input, ownerReads) {
-    return reviewPersonalDraft(this, input, ownerReads);
-  }
-
-  async listReviewQueue(input) {
-    return listReviewQueue(this, input);
-  }
-
-  async reviewProposal(input) {
-    return reviewProposal(this, input);
   }
 
   async getGraphitiStatus() {
@@ -632,7 +542,6 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
     ]);
     const configured = this.workspaces.size > 0;
     const connected = providers.workspaces.some(({ status }) => status === 'ready');
-    const publicStatus = configured ? (connected ? 'ready' : 'unavailable') : 'not_connected';
     return {
       mode: configured ? (connected ? 'connected' : 'degraded') : 'personal_only',
       ...spaces,
@@ -641,11 +550,7 @@ export class FederatedGraphApplication extends ProjectAgentControlPlaneApplicati
       captureOnboarding: this.captureOnboarding.state(),
       firstRunGuide: this.firstRunGuide.state(),
       agentAccessPolicy: this.getAgentAccessPolicy(),
-      recallPolicy: this.getRecallPolicy(),
-      publicProvider: { configured, status: publicStatus },
-      capabilities: aggregatePublicCapabilities(
-        this.workspaces, providers.workspaces, spaces.projects
-      )
+      recallPolicy: this.getRecallPolicy()
     };
   }
 

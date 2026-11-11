@@ -12,7 +12,7 @@ import { activeDestination, navDestinations } from './nav-destinations'
 vi.mock('@/api/client', () => ({ getJson: vi.fn(), putJson: vi.fn(), patchJson: vi.fn(), postJson: vi.fn(), deleteJson: vi.fn() }))
 
 const SPACE = 'synthetic-space'
-const destinations = navDestinations({ spaceId: SPACE, publicProjects: false }).filter(item => item.placement === 'dock')
+const destinations = navDestinations({ spaceId: SPACE }).filter(item => item.placement === 'dock')
 
 beforeEach(() => {
   vi.mocked(getJson).mockReset()

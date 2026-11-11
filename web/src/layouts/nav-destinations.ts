@@ -9,9 +9,9 @@ export interface NavSection { key: string; to: string; owns: readonly string[] }
 export type NavPlacement = 'dock' | 'top'
 export interface NavDestination { key: string; icon: IconName; to: string; owns: readonly string[]; exact?: boolean; placement: NavPlacement; sections: readonly NavSection[] }
 
-export interface NavContext { spaceId: string; publicProjects: boolean }
+export interface NavContext { spaceId: string }
 
-export function navDestinations({ spaceId, publicProjects }: NavContext): NavDestination[] {
+export function navDestinations({ spaceId }: NavContext): NavDestination[] {
   const projects = personalProjectsPath(spaceId, 'graph')
   const knowledge = knowledgePath('personal', spaceId, 'directory')
   return [
@@ -36,9 +36,8 @@ export function navDestinations({ spaceId, publicProjects }: NavContext): NavDes
       { key: 'organize', to: '/organize', owns: ['/organize'] },
       { key: 'tags', to: '/tags', owns: ['/tags'] },
     ] },
-    { key: 'projects', icon: 'project', to: projects, owns: ['/personal/', '/public-projects'], placement: 'dock', sections: [
+    { key: 'projects', icon: 'project', to: projects, owns: ['/personal/'], placement: 'dock', sections: [
       { key: 'myProjects', to: projects, owns: ['/personal/'] },
-      ...(publicProjects ? [{ key: 'publicProjects', to: '/public-projects', owns: ['/public-projects'] }] : []),
     ] },
     { key: 'settings', icon: 'settings', to: '/settings', owns: ['/settings', '/connections', '/about', '/howto'], placement: 'top', sections: [
       { key: 'settings', to: '/settings', owns: ['/settings'] },
