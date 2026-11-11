@@ -76,6 +76,8 @@ class FuliController extends ChangeNotifier {
   bool _polling = false;
   // The person stopped FULI: being stopped is not news to them.
   bool _stoppedByPerson = false;
+  // The last check found FULI's graph running without a console process.
+  bool _consoleDown = false;
   bool _startOnOpen = false;
   final _restarts = <DateTime>[];
   int _failures = 0;
@@ -142,9 +144,12 @@ class FuliController extends ChangeNotifier {
   void _startIfWanted(FuliSnapshot snapshot) {
     final opened = _startOnOpen;
     _startOnOpen = false;
-    if (snapshot.condition != FuliCondition.notRunning || _pending != null) return;
+    // The graph can run with no console process (a first open, a console that went away, rec issue 70):
+    // starting brings the console up. A console that runs but answers slowly is left alone.
+    final consoleDown = _consoleDown;
+    if ((snapshot.condition != FuliCondition.notRunning && !consoleDown) || _pending != null) return;
     if (!opened) {
-      if (!snapshot.crashed || _stoppedByPerson) return;
+      if (!(snapshot.crashed || consoleDown) || _stoppedByPerson) return;
       final now = _now();
       _restarts.removeWhere((at) => now.difference(at) > restartWindow);
       if (_restarts.length >= maxRestarts) return;
@@ -196,6 +201,7 @@ class FuliController extends ChangeNotifier {
     final api = apiFor(port);
     try {
       final report = await api.doctor();
+      _consoleDown = false;
       return FuliSnapshot(
         condition: conditionOf(report.overall),
         port: port,
@@ -225,6 +231,7 @@ class FuliController extends ChangeNotifier {
         return _inspect(retried: true);
       }
       if (!report.running) _runtimePort = null;
+      _consoleDown = report.running && report.consoleStopped;
       return FuliSnapshot(
         condition: switch (report.state) {
           RuntimeState.notFound => FuliCondition.notFound,

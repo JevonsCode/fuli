@@ -203,6 +203,29 @@ void main() {
     expect(runtime.calls.where((call) => call == 'start'), hasLength(maxRestarts));
   });
 
+  test('a graph running without its console gets the console started, but not without end', () async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.degraded, consoleStopped: true));
+    final controller = controllerFor(api, runtime);
+    addTearDown(controller.dispose);
+    for (var check = 0; check < 8; check++) {
+      await controller.refresh();
+      await pumpEventQueue();
+    }
+    expect(runtime.calls.where((call) => call == 'start'), hasLength(maxRestarts));
+  });
+
+  test('a console that runs but does not answer is not started over', () async {
+    final api = DemoFuliApi()..reachable = false;
+    final runtime = FixedRuntime(const RuntimeReport(RuntimeState.degraded));
+    final controller = controllerFor(api, runtime);
+    addTearDown(controller.dispose);
+    await controller.refresh();
+    await pumpEventQueue();
+    expect(runtime.calls, isNot(contains('start')));
+    expect(controller.snapshot!.problem, 'FULI 在运行，但控制台没有应答。');
+  });
+
   test('a stop the person asked for is not undone', () async {
     final api = DemoFuliApi()..reachable = false;
     final runtime = FixedRuntime(const RuntimeReport(RuntimeState.stopped));
