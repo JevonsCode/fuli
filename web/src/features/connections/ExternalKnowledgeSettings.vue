@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import PageColumns from '@/components/PageColumns.vue'
-import UiDisclosure from '@/components/UiDisclosure.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardTitle } from '@/components/ui/card'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -12,8 +10,8 @@ import TextField from '@/components/TextField.vue'
 import { t } from '@/i18n'
 import { compactIdentity, identitySearchText } from '@/lib/identity'
 import { useConsoleStore } from '@/stores/console'
-import ConflictPolicyCard from '@/features/connections/ConflictPolicyCard.vue'
-import { docsHelpUrl } from '@/features/connections/docs-help'
+import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
+import { docsHelpUrl } from './docs-help'
 import type {
   ExternalKnowledgeBinding,
   ExternalKnowledgeBindingTarget,
@@ -24,11 +22,15 @@ import { OptionSelect } from '@/components/ui/select'
 import { OptionCombobox } from '@/components/ui/combobox'
 import { usePageRefresh } from '@/layouts/page-refresh'
 
+// Settings › 连接's external knowledge: the bindings, each one's projects and
+// modes, and connecting a new source.
 const store = useConsoleStore()
 const connectors = ref<ExternalKnowledgeConnector[]>([])
 const bindings = ref<ExternalKnowledgeBinding[]>([])
 const externalBusy = ref(false)
 const externalLoading = ref(false)
+// 添加连接 asked for while connections exist; with none yet the form shows anyway.
+const connectOpen = ref(false)
 const externalAction = ref('')
 const editingBindingId = ref<string | null>(null)
 const editingProjectIds = ref<string[]>([])
@@ -62,7 +64,6 @@ const form = reactive({
   customSourceJson: '{}',
 })
 
-const personalReady = computed(() => store.state?.providers?.personal?.status === 'ready')
 const personalProjects = computed(() => store.state?.personalProjects ?? [])
 const externalKnowledgeHelpUrl = computed(() => docsHelpUrl('external-knowledge', 'connect-external-knowledge'))
 const connectorOptions = computed<SelectOption[]>(() =>
@@ -145,6 +146,7 @@ async function createBinding() {
     })
     store.notify(t('pages.connections.externalCreated', { name: form.name.trim() }))
     form.name = ''
+    connectOpen.value = false
     await refreshExternalKnowledge()
   } catch (error) {
     store.reportError(error)
@@ -414,211 +416,192 @@ usePageRefresh(refreshExternalKnowledge)
 </script>
 
 <template>
-  <section class="view connections-view">
-    <div class="flex w-full flex-col gap-4">
-    <PageColumns role="group" :aria-label="t('pages.connections.statusAria')">
-      <article class="service-connection-card" data-span="wide" :data-status="personalReady ? 'ready' : 'error'">
-        <header>
-          <span class="service-connection-icon local" aria-hidden="true"><span class="nav-icon nav-icon-personal-project" /></span>
-          <div><h2>{{ t('pages.connections.localGraphiti') }}</h2></div>
-          <span class="service-state">{{ personalReady ? t('common.status.connected') : t('common.status.connectionError') }}</span>
-        </header>
-        <dl>
-          <div><dt>{{ t('pages.connections.storage') }}</dt><dd>Neo4j</dd></div>
-          <div><dt>{{ t('pages.connections.purpose') }}</dt><dd>{{ t('pages.connections.localPurpose') }}</dd></div>
-        </dl>
-      </article>
-    </PageColumns>
-
-    <Card as="section" class="external-knowledge-section" aria-labelledby="external-knowledge-title">
-      <div class="flex flex-wrap items-center gap-2 px-5">
-        <CardTitle id="external-knowledge-title" as="h2" class="text-base">{{ t('pages.connections.externalTitle') }}</CardTitle>
-        <a
-          class="section-help-link"
-          data-testid="external-knowledge-help"
-          :href="externalKnowledgeHelpUrl"
-          :aria-label="t('pages.connections.externalHelp')"
-          :title="t('pages.connections.externalHelp')"
-          target="_blank"
-          rel="noreferrer"
-        >?</a>
-        <span class="external-binding-count">{{ t('pages.connections.bindingCount', { count: bindings.length }) }}</span>
-      </div>
-      <div class="grid gap-3 px-5">
-      <GrowthLoading v-if="externalLoading || externalBusy" variant="compact" :label="t(externalLoading ? 'pages.connections.loadingBindings' : externalAction)" />
-      <div class="external-binding-list">
-        <article v-for="binding in bindings" :key="binding.id" class="external-binding-row" :data-status="binding.status">
-          <i aria-hidden="true" />
-          <div class="external-binding-copy">
-            <strong>{{ binding.name }}</strong>
-            <span>{{ connectorName(binding.connectorType) }}</span>
-            <div class="external-binding-targets">
-              <b>{{ t('pages.connections.boundTo') }}</b>
-              <span
-                v-for="target in bindingTargets(binding)"
-                :key="target.id"
-                class="external-binding-target-chip"
-                :data-status="target.status"
-              >{{ projectName(target.personalProjectId) }} · {{ t(`pages.connections.mode.${target.mode}`) }}</span>
-            </div>
-            <small v-if="bindingError(binding)">{{ bindingError(binding) }}</small>
-            <small v-else-if="bindingSkippedCredentials(binding)">{{ t('pages.connections.credentialsSkipped', { count: bindingSkippedCredentials(binding) }) }}</small>
-          </div>
-          <div class="external-binding-actions">
-            <Button size="sm" variant="ghost" :disabled="externalBusy" @click="checkBinding(binding)">{{ t('pages.connections.check') }}</Button>
-            <Button size="sm" variant="ghost" class="external-sync-action" :disabled="externalBusy || !bindingCanSync(binding)" @click="syncBinding(binding)">{{ t('pages.connections.sync') }}</Button>
-            <Button size="sm" variant="ghost" :disabled="externalBusy" @click="startEditingTargets(binding)">{{ t('pages.connections.manageProjects') }}</Button>
-            <Button size="sm" variant="destructive" :disabled="externalBusy" @click="deleteBinding(binding)">{{ t('pages.connections.disconnect') }}</Button>
-          </div>
-          <div v-if="editingBindingId === binding.id" class="external-binding-editor">
-            <label>
-              <span>{{ t('pages.connections.targetProjects') }}</span>
-              <OptionCombobox multiple
-                v-model="editingProjectIds"
-                :control-id="`external-projects-${binding.id}`"
-                :label="t('pages.connections.targetProjects')"
-                :options="personalProjectOptions"
-                :disabled="externalBusy"
-                required
-                @update:model-value="updateEditingProjects"
- />
-            </label>
-            <div class="external-target-mode-list">
-              <div
-                v-for="projectId in editingProjectIds"
-                :key="projectId"
-                class="external-target-mode-row"
-              >
-                <span>{{ projectName(projectId) }}</span>
-                <OptionSelect
-                  :model-value="editingTargetModes[projectId] ?? binding.mode"
-                  :control-id="`external-target-mode-${binding.id}-${projectId}`"
-                  :label="t('pages.connections.bindingMode')"
-                  :options="targetModeOptions(binding.connectorType)"
-                  :disabled="externalBusy"
-                  @update:model-value="setEditingTargetMode(projectId, $event)"
- />
-              </div>
-            </div>
-            <div class="external-binding-editor-actions">
-              <Button variant="ghost" :disabled="externalBusy" @click="cancelEditingTargets">{{ t('common.actions.cancel') }}</Button>
-              <Button :disabled="externalBusy || !editingProjectIds.length" @click="saveBindingTargets(binding)">{{ t('pages.connections.saveProjects') }}</Button>
-            </div>
-          </div>
-        </article>
-        <div v-if="!externalLoading && !bindings.length" class="py-4 text-xs text-muted-foreground">{{ t('pages.connections.noExternalBindings') }}</div>
-      </div>
-
-      <UiDisclosure :title="t('pages.connections.connect')" :open="!bindings.length">
-      <form class="external-binding-form" @submit.prevent="createBinding">
-        <TextField v-model="form.name" :label="t('pages.connections.bindingName')" data-testid="external-name" required />
-        <label>
-          <span>{{ t('pages.connections.connector') }}</span>
-          <OptionSelect
-            v-model="form.connectorType"
-            control-id="external-connector"
-            :label="t('pages.connections.connector')"
-            :options="connectorOptions"
-            :disabled="externalBusy"
-            required
- />
-        </label>
-        <label>
-          <span>{{ t('pages.connections.targetProjects') }}</span>
-          <OptionCombobox multiple
-            v-model="form.personalProjectIds"
-            control-id="external-projects"
-            :label="t('pages.connections.targetProjects')"
-            :options="personalProjectOptions"
-            :disabled="externalBusy"
-            required
- />
-        </label>
-        <label>
-          <span>{{ t('pages.connections.bindingMode') }}</span>
-          <OptionSelect
-            v-model="form.mode"
-            control-id="external-binding-mode"
-            :label="t('pages.connections.bindingMode')"
-            :options="bindingModeOptions"
-            :disabled="externalBusy"
-            required
- />
-        </label>
-
-        <template v-if="form.connectorType === 'mcp'">
-          <label>
-            <span>{{ t('pages.connections.transport') }}</span>
-            <OptionSelect
-              v-model="form.mcpTransport"
-              control-id="external-mcp-transport"
-              :label="t('pages.connections.transport')"
-              :options="mcpTransportOptions"
-              :disabled="externalBusy"
-              required
- />
-          </label>
-          <TextField v-if="form.mcpTransport === 'http'" v-model="form.mcpUrl" label="MCP URL" data-testid="mcp-url" type="url" required />
-          <TextField v-else v-model="form.mcpCommand" :label="t('pages.connections.command')" required />
-          <TextField v-if="form.mcpTransport === 'stdio'" v-model="form.mcpArgs" :label="t('pages.connections.arguments')" />
-          <TextField v-else v-model="form.mcpTokenEnv" :label="t('pages.connections.tokenEnv')" data-testid="mcp-token-env" />
-          <TextField v-model="form.mcpResourcePrefix" :label="t('pages.connections.resourcePrefix')" data-testid="mcp-resource-prefix" />
-        </template>
-
-        <template v-else-if="form.connectorType === 'notion'">
-          <TextField v-model="form.notionTokenEnv" :label="t('pages.connections.tokenEnv')" required />
-          <TextField v-model="form.notionPageIds" label="Page IDs" />
-          <TextField v-model="form.notionDataSourceIds" label="Data Source IDs" />
-        </template>
-
-        <template v-else-if="form.connectorType === 'feishu'">
-          <TextField v-model="form.feishuTokenEnv" :label="t('pages.connections.tokenEnv')" required />
-          <label>
-            <span>{{ t('pages.connections.region') }}</span>
-            <OptionSelect
-              v-model="form.feishuRegion"
-              control-id="external-feishu-region"
-              :label="t('pages.connections.region')"
-              :options="feishuRegionOptions"
-              :disabled="externalBusy"
-              required
- />
-          </label>
-          <TextField v-model="form.feishuSpaceId" label="Space ID" />
-          <TextField v-model="form.feishuRootNodeToken" label="Root Node Token" />
-          <TextField v-model="form.feishuNodeTokens" label="Node Tokens" />
-          <TextField v-model="form.feishuWebBaseUrl" label="Web URL" type="url" />
-        </template>
-
-        <template v-else-if="form.connectorType === 'retrieval_api'">
-          <TextField v-model="form.retrievalUrl" :label="t('pages.connections.retrievalUrl')" type="url" required />
-          <TextField v-model="form.retrievalTokenEnv" :label="t('pages.connections.tokenEnv')" />
-          <TextField v-model="form.retrievalKnowledgeIds" :label="t('pages.connections.knowledgeIds')" required />
-          <TextField v-model="form.retrievalScoreThreshold" :label="t('pages.connections.scoreThreshold')" inputmode="decimal" required />
-        </template>
-
-        <template v-else>
-          <TextField v-model="form.customModule" :label="t('pages.connections.module')" required />
-          <TextField v-model="form.customEnvironmentNames" :label="t('pages.connections.environmentNames')" />
-          <div class="wide-field">
-            <TextField v-model="form.customSourceJson" :label="t('pages.connections.sourceJson')" multiline required />
-          </div>
-          <span class="trusted-code-badge">{{ t('pages.connections.trustedCode') }}</span>
-        </template>
-        <Button
-          class="external-create-action"
-          type="submit"
-          :disabled="externalBusy || !personalProjects.length || !form.personalProjectIds.length"
-        >
-          <span class="external-create-action-icon" aria-hidden="true" />
-          <span>{{ t('pages.connections.connect') }}</span>
-        </Button>
-      </form>
-      </UiDisclosure>
-      </div>
-    </Card>
-
-    <ConflictPolicyCard v-if="personalProjects.length" />
+  <Card as="section" id="external-knowledge" class="settings-card external-knowledge-section" aria-labelledby="external-knowledge-title">
+    <div class="flex flex-wrap items-center gap-2 px-5">
+      <CardTitle id="external-knowledge-title" as="h2" class="text-base">{{ t('pages.connections.externalTitle') }}<AiHelpButton term="task.connections" /></CardTitle>
+      <a
+        class="section-help-link"
+        data-testid="external-knowledge-help"
+        :href="externalKnowledgeHelpUrl"
+        :aria-label="t('pages.connections.externalHelp')"
+        :title="t('pages.connections.externalHelp')"
+        target="_blank"
+        rel="noreferrer"
+      >?</a>
+      <span class="external-binding-count">{{ t('pages.connections.bindingCount', { count: bindings.length }) }}</span>
+      <!-- Settings cards stay open, never a disclosure: the form shows under the list when asked for, or when there is none yet. -->
+      <Button v-if="bindings.length && !connectOpen" size="sm" variant="outline" class="ml-auto" data-external-connect-open
+        @click="connectOpen = true">{{ t('pages.connections.connect') }}</Button>
     </div>
-  </section>
+    <div class="grid gap-3 px-5">
+    <GrowthLoading v-if="externalLoading || externalBusy" variant="compact" :label="t(externalLoading ? 'pages.connections.loadingBindings' : externalAction)" />
+    <div class="external-binding-list">
+      <article v-for="binding in bindings" :key="binding.id" class="external-binding-row" :data-status="binding.status">
+        <i aria-hidden="true" />
+        <div class="external-binding-copy">
+          <strong>{{ binding.name }}</strong>
+          <span>{{ connectorName(binding.connectorType) }}</span>
+          <div class="external-binding-targets">
+            <b>{{ t('pages.connections.boundTo') }}</b>
+            <span
+              v-for="target in bindingTargets(binding)"
+              :key="target.id"
+              class="external-binding-target-chip"
+              :data-status="target.status"
+            >{{ projectName(target.personalProjectId) }} · {{ t(`pages.connections.mode.${target.mode}`) }}</span>
+          </div>
+          <small v-if="bindingError(binding)">{{ bindingError(binding) }}</small>
+          <small v-else-if="bindingSkippedCredentials(binding)">{{ t('pages.connections.credentialsSkipped', { count: bindingSkippedCredentials(binding) }) }}</small>
+        </div>
+        <div class="external-binding-actions">
+          <Button size="sm" variant="ghost" :disabled="externalBusy" @click="checkBinding(binding)">{{ t('pages.connections.check') }}</Button>
+          <Button size="sm" variant="ghost" class="external-sync-action" :disabled="externalBusy || !bindingCanSync(binding)" @click="syncBinding(binding)">{{ t('pages.connections.sync') }}</Button>
+          <Button size="sm" variant="ghost" :disabled="externalBusy" @click="startEditingTargets(binding)">{{ t('pages.connections.manageProjects') }}</Button>
+          <Button size="sm" variant="destructive" :disabled="externalBusy" @click="deleteBinding(binding)">{{ t('pages.connections.disconnect') }}</Button>
+        </div>
+        <div v-if="editingBindingId === binding.id" class="external-binding-editor">
+          <label>
+            <span>{{ t('pages.connections.targetProjects') }}</span>
+            <OptionCombobox multiple
+              v-model="editingProjectIds"
+              :control-id="`external-projects-${binding.id}`"
+              :label="t('pages.connections.targetProjects')"
+              :options="personalProjectOptions"
+              :disabled="externalBusy"
+              required
+              @update:model-value="updateEditingProjects"
+ />
+          </label>
+          <div class="external-target-mode-list">
+            <div
+              v-for="projectId in editingProjectIds"
+              :key="projectId"
+              class="external-target-mode-row"
+            >
+              <span>{{ projectName(projectId) }}</span>
+              <OptionSelect
+                :model-value="editingTargetModes[projectId] ?? binding.mode"
+                :control-id="`external-target-mode-${binding.id}-${projectId}`"
+                :label="t('pages.connections.bindingMode')"
+                :options="targetModeOptions(binding.connectorType)"
+                :disabled="externalBusy"
+                @update:model-value="setEditingTargetMode(projectId, $event)"
+ />
+            </div>
+          </div>
+          <div class="external-binding-editor-actions">
+            <Button variant="ghost" :disabled="externalBusy" @click="cancelEditingTargets">{{ t('common.actions.cancel') }}</Button>
+            <Button :disabled="externalBusy || !editingProjectIds.length" @click="saveBindingTargets(binding)">{{ t('pages.connections.saveProjects') }}</Button>
+          </div>
+        </div>
+      </article>
+      <div v-if="!externalLoading && !bindings.length" class="py-4 text-xs text-muted-foreground">{{ t('pages.connections.noExternalBindings') }}</div>
+    </div>
+
+    <form v-show="connectOpen || !bindings.length" class="external-binding-form" data-external-connect-form @submit.prevent="createBinding">
+      <TextField v-model="form.name" :label="t('pages.connections.bindingName')" data-testid="external-name" required />
+      <label>
+        <span>{{ t('pages.connections.connector') }}</span>
+        <OptionSelect
+          v-model="form.connectorType"
+          control-id="external-connector"
+          :label="t('pages.connections.connector')"
+          :options="connectorOptions"
+          :disabled="externalBusy"
+          required
+ />
+      </label>
+      <label>
+        <span>{{ t('pages.connections.targetProjects') }}</span>
+        <OptionCombobox multiple
+          v-model="form.personalProjectIds"
+          control-id="external-projects"
+          :label="t('pages.connections.targetProjects')"
+          :options="personalProjectOptions"
+          :disabled="externalBusy"
+          required
+ />
+      </label>
+      <label>
+        <span>{{ t('pages.connections.bindingMode') }}</span>
+        <OptionSelect
+          v-model="form.mode"
+          control-id="external-binding-mode"
+          :label="t('pages.connections.bindingMode')"
+          :options="bindingModeOptions"
+          :disabled="externalBusy"
+          required
+ />
+      </label>
+
+      <template v-if="form.connectorType === 'mcp'">
+        <label>
+          <span>{{ t('pages.connections.transport') }}</span>
+          <OptionSelect
+            v-model="form.mcpTransport"
+            control-id="external-mcp-transport"
+            :label="t('pages.connections.transport')"
+            :options="mcpTransportOptions"
+            :disabled="externalBusy"
+            required
+ />
+        </label>
+        <TextField v-if="form.mcpTransport === 'http'" v-model="form.mcpUrl" label="MCP URL" data-testid="mcp-url" type="url" required />
+        <TextField v-else v-model="form.mcpCommand" :label="t('pages.connections.command')" required />
+        <TextField v-if="form.mcpTransport === 'stdio'" v-model="form.mcpArgs" :label="t('pages.connections.arguments')" />
+        <TextField v-else v-model="form.mcpTokenEnv" :label="t('pages.connections.tokenEnv')" data-testid="mcp-token-env" />
+        <TextField v-model="form.mcpResourcePrefix" :label="t('pages.connections.resourcePrefix')" data-testid="mcp-resource-prefix" />
+      </template>
+
+      <template v-else-if="form.connectorType === 'notion'">
+        <TextField v-model="form.notionTokenEnv" :label="t('pages.connections.tokenEnv')" required />
+        <TextField v-model="form.notionPageIds" label="Page IDs" />
+        <TextField v-model="form.notionDataSourceIds" label="Data Source IDs" />
+      </template>
+
+      <template v-else-if="form.connectorType === 'feishu'">
+        <TextField v-model="form.feishuTokenEnv" :label="t('pages.connections.tokenEnv')" required />
+        <label>
+          <span>{{ t('pages.connections.region') }}</span>
+          <OptionSelect
+            v-model="form.feishuRegion"
+            control-id="external-feishu-region"
+            :label="t('pages.connections.region')"
+            :options="feishuRegionOptions"
+            :disabled="externalBusy"
+            required
+ />
+        </label>
+        <TextField v-model="form.feishuSpaceId" label="Space ID" />
+        <TextField v-model="form.feishuRootNodeToken" label="Root Node Token" />
+        <TextField v-model="form.feishuNodeTokens" label="Node Tokens" />
+        <TextField v-model="form.feishuWebBaseUrl" label="Web URL" type="url" />
+      </template>
+
+      <template v-else-if="form.connectorType === 'retrieval_api'">
+        <TextField v-model="form.retrievalUrl" :label="t('pages.connections.retrievalUrl')" type="url" required />
+        <TextField v-model="form.retrievalTokenEnv" :label="t('pages.connections.tokenEnv')" />
+        <TextField v-model="form.retrievalKnowledgeIds" :label="t('pages.connections.knowledgeIds')" required />
+        <TextField v-model="form.retrievalScoreThreshold" :label="t('pages.connections.scoreThreshold')" inputmode="decimal" required />
+      </template>
+
+      <template v-else>
+        <TextField v-model="form.customModule" :label="t('pages.connections.module')" required />
+        <TextField v-model="form.customEnvironmentNames" :label="t('pages.connections.environmentNames')" />
+        <div class="wide-field">
+          <TextField v-model="form.customSourceJson" :label="t('pages.connections.sourceJson')" multiline required />
+        </div>
+        <span class="trusted-code-badge">{{ t('pages.connections.trustedCode') }}</span>
+      </template>
+      <Button
+        class="external-create-action"
+        type="submit"
+        :disabled="externalBusy || !personalProjects.length || !form.personalProjectIds.length"
+      >
+        <span class="external-create-action-icon" aria-hidden="true" />
+        <span>{{ t('pages.connections.connect') }}</span>
+      </Button>
+    </form>
+    </div>
+  </Card>
 </template>

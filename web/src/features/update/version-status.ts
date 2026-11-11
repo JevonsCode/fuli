@@ -31,7 +31,7 @@ const RETRY_MS = 1200
 const MAX_TRIES = 6
 
 /**
- * The newest release on the channel the person picked (设置 › 版本). The
+ * The newest release on the channel the person picked (设置 › 系统 › 版本与更新). The
  * channel saves itself with the settings form, so the check asks again until
  * the server answers for the channel shown; an older answer is never shown.
  * Every check is fresh (11-03: the page said 已是最新 hours after a release):

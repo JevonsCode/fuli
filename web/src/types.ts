@@ -752,7 +752,7 @@ export interface RuntimeSettings {
   notifications: { needsPersonUrl: string }
   agentNamingStyle: string
   topicPromotion: 'auto' | 'ask'
-  // Which releases the console offers (设置 › 版本).
+  // Which releases the console offers (设置 › 系统 › 版本与更新).
   updateChannel: 'stable' | 'beta'
   // Agent clients list the person's FLAs under /fla (设置 › 客户端).
   flaSlashMenu: boolean

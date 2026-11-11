@@ -1,9 +1,19 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { defineComponent, h } from 'vue'
 
-import { useConsoleStore } from '@/stores/console'
 import ClientConnectionSettings from './ClientConnectionSettings.vue'
+import ClientManualConnection from './ClientManualConnection.vue'
+import { provideClientConnectionStatus } from './client-connection-status'
+
+// The clients tab's two cards over the one status they share (ClientsSettingsTab.vue).
+const ClientCards = defineComponent({
+  setup() {
+    provideClientConnectionStatus()
+    return () => [h(ClientConnectionSettings), h(ClientManualConnection)]
+  },
+})
 
 const server = { type: 'stdio', command: 'node', args: ['mcp-server.js'] }
 const configuration = { standard: { mcpServers: { fuli: server } }, vscode: { servers: { fuli: server } }, server }
@@ -31,13 +41,13 @@ const statusCalls = (calls: [string, RequestInit | undefined][]) => calls.filter
 
 it('is never folded away: it checks clients and loads the snippet as soon as it shows', async () => {
   const calls = routed(() => Response.json(statusOf([{}])))
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   expect(wrapper.find('details').exists()).toBe(false)
   await flushPromises()
   expect(statusCalls(calls)).toBe(1)
   expect(calls.filter(([url]) => url.endsWith('/client-connection'))).toHaveLength(1)
   expect(wrapper.find('[data-copy-connection]').exists()).toBe(true)
-  expect(wrapper.findAll('h2').map((heading) => heading.text())).toEqual(['客户端接入'])
+  expect(wrapper.findAll('h2').map((heading) => heading.text())).toEqual(['客户端接入', '手动接入'])
   wrapper.unmount()
 })
 
@@ -45,7 +55,7 @@ it('copies configuration without modifying a client, and keeps it selectable wit
   routed(() => Response.json(statusOf()))
   const writeText = vi.fn(async (_text: string) => {})
   vi.stubGlobal('navigator', { clipboard: { writeText } })
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   await wrapper.get('[data-copy-connection]').trigger('click')
   expect(JSON.parse(writeText.mock.calls[0]![0] as string)).toEqual(configuration.standard)
@@ -60,7 +70,7 @@ it('copies configuration without modifying a client, and keeps it selectable wit
 it('can retry a failed configuration request', async () => {
   const replies = [Response.json({ error: { message: 'Unavailable' } }, { status: 503 }), Response.json(configuration)]
   routed(() => Response.json(statusOf()), () => replies.shift()!)
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   expect(wrapper.find('[data-copy-connection]').exists()).toBe(false)
   await wrapper.get('[data-retry-connection]').trigger('click')
@@ -71,7 +81,7 @@ it('can retry a failed configuration request', async () => {
 
 it('tells on the client row that open sessions need a restart, and says nothing when none do', async () => {
   routed(() => Response.json(statusOf([{ id: 'codex', restartSessions: 2 }, { id: 'cursor', label: 'Cursor', restartSessions: 0 }])))
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   const rows = wrapper.findAll('[data-client-restart]')
   expect(rows).toHaveLength(1)
@@ -85,7 +95,7 @@ it('sums the detected and hand-described clients FULI is in, and keeps the summa
     { id: 'cursor', label: 'Cursor', status: 'not_connected' },
     { id: 'kiro', label: 'Kiro', status: 'not_detected', detected: false },
   ], undefined, [{ id: 'acme-agent', label: 'Acme Agent', detected: true, status: 'connected', mcpPaths: ['~/.acme/mcp.json'], removable: true }])))
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   expect(wrapper.find('[data-connection-summary]').exists()).toBe(true)
   await flushPromises()
   expect(wrapper.get('[data-connection-summary]').text()).toBe('已接入 2/3 个客户端')
@@ -102,7 +112,7 @@ it('shows each client’s configuration status in plain words without claiming i
     { id: 'cursor', label: 'Cursor', status: 'unknown', lastKnownStatus: 'connected' },
     { id: 'claude-desktop', label: 'Claude Desktop', status: 'skills_left', previouslyConnected: false },
   ])))
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   const rows = wrapper.findAll('[data-client-status]')
   expect(rows.map((row) => row.attributes('data-client-status'))).toEqual(['connected', 'removed', 'unknown', 'skills_left'])
@@ -117,7 +127,7 @@ it('shows each client’s configuration status in plain words without claiming i
 
 it('says when agent-installer could not detect anything instead of listing no clients', async () => {
   routed(() => Response.json({ ...statusOf(), available: false }))
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   expect(wrapper.find('[data-detection-unavailable]').exists()).toBe(true)
   expect(wrapper.find('[data-client-status]').exists()).toBe(false)
@@ -132,7 +142,7 @@ it('rechecks while the page is visible, without overlapping requests, and stops 
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
   let release: (() => void) | undefined
   const calls = routed(() => new Promise<Response>((resolve) => { release = () => resolve(Response.json(statusOf([{}]))) }))
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   expect(statusCalls(calls)).toBe(1)
   await vi.advanceTimersByTimeAsync(30_000)
@@ -164,7 +174,7 @@ it('ignores an older observation that arrives after a newer one and keeps the li
     Response.json({ error: { message: 'Unavailable' } }, { status: 503 }),
     Response.json(statusOf([{ status: 'removed' }], '2026-10-13T08:00:00.000Z'))]
   routed(() => replies.shift()!)
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   await wrapper.get('[data-refresh-clients]').trigger('click')
   await flushPromises()
@@ -178,7 +188,7 @@ it('ignores an older observation that arrives after a newer one and keeps the li
 
 it('uses a labelled refresh icon instead of visible button text', async () => {
   routed(() => Response.json(statusOf([{}])))
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   const refresh = wrapper.get('[data-refresh-clients]')
   expect(refresh.attributes('aria-label')).toBe('重新检查')
@@ -191,7 +201,7 @@ it('connects only the selected detected client and shows restart feedback', asyn
   let finish: ((value: Response) => void) | undefined
   const calls = routed(() => Response.json(statusOf([{ id: 'gemini', label: 'Gemini CLI', status: 'not_connected' }])),
     (url) => url.endsWith('/connect') ? new Promise<Response>((resolve) => { finish = resolve }) : Response.json(configuration))
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   await wrapper.get('[data-connect-client="gemini"]').trigger('click')
   expect(wrapper.get('[data-connect-client="gemini"]').attributes('disabled')).toBeDefined()
@@ -209,7 +219,7 @@ it('does not offer writes for undetected, unreadable or manual-only configuratio
   routed(() => Response.json(statusOf([{ id: 'codex', status: 'unknown' }, { id: 'cursor', status: 'removed', detected: false },
     { id: 'opencode', label: 'OpenCode', status: 'not_connected', manualOnly: true, manualUrl: 'https://opencode.ai/docs/config/' },
     { id: 'kiro', label: 'Kiro', status: 'not_connected', manualOnly: true }])))
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   expect(wrapper.find('[data-connect-client]').exists()).toBe(false)
   expect(wrapper.text()).toContain('手动接入')
@@ -223,7 +233,7 @@ it('offers 更新接入 and 重新接入 in place of a terminal command, running
     { id: 'claude-code', label: 'Claude Code', status: 'removed' },
     { id: 'gemini', label: 'Gemini CLI', status: 'not_connected' },
   ])), (url) => Response.json(url.endsWith('/connect') ? { id: 'claude-code', status: 'connected', restartRequired: true } : configuration))
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   expect(wrapper.text()).not.toMatch(/fuli setup|终端/)
   expect(wrapper.get('[data-connect-client="codex"]').text()).toBe('更新接入')
@@ -240,7 +250,7 @@ it('offers 更新接入 and 重新接入 in place of a terminal command, running
 it('reports partial installs without claiming success and allows retry', async () => {
   routed(() => Response.json(statusOf([{ id: 'gemini', status: 'not_connected' }])),
     (url) => Response.json(url.endsWith('/connect') ? { id: 'gemini', status: 'partial', restartRequired: false } : configuration))
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   await wrapper.get('[data-connect-client="gemini"]').trigger('click')
   await flushPromises()
@@ -254,7 +264,7 @@ it('says the client component could not be downloaded when agent-installer is mi
   routed(() => Response.json(statusOf([{ id: 'gemini', status: 'not_connected' }])),
     (url) => Response.json(url.endsWith('/connect')
       ? { id: 'gemini', status: 'failed', restartRequired: false, reason: 'client_component_unavailable' } : configuration))
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   await wrapper.get('[data-connect-client="gemini"]').trigger('click')
   await flushPromises()
@@ -271,7 +281,7 @@ it('adds a client by hand, shows why one was refused, and removes one FULI added
     if (url.includes('/custom-clients/') && options?.method === 'DELETE') { custom = []; return Response.json({ id: 'acme-agent' }) }
     return Response.json(configuration)
   })
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   const add = wrapper.get('[data-add-custom-client]')
   await add.trigger('click')
@@ -309,7 +319,7 @@ it('connects every client FULI can write with 一键接入, one after another, a
     posted.push(JSON.parse(String(init?.body)).clientId)
     return Response.json({ status: 'connected' })
   })
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   expect(wrapper.find('[data-open-first-run-guide]').exists()).toBe(false)
   const all = wrapper.get('[data-connect-all]')
@@ -334,7 +344,7 @@ it('reads every status again as each client of 一键接入 is written and when 
       resolve(Response.json({ id, status: 'connected', restartRequired: true }))
     }))
   })
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   const rows = () => wrapper.findAll('[data-client-status]').map(row => row.attributes('data-client-status'))
   expect(rows()).toEqual(['changed', 'changed'])
@@ -375,7 +385,7 @@ const withInstalls = (clients: Partial<Client>[]) => ({ ...statusOf(clients), in
 
 it('says the client wrote its old entry back, which FULI each side runs, and two installations', async () => {
   routed(() => Response.json(withInstalls([overwritten() as Partial<Client>])))
-  const wrapper = mount(ClientConnectionSettings, { attachTo: document.body })
+  const wrapper = mount(ClientCards, { attachTo: document.body })
   await flushPromises()
   const tile = wrapper.get('[data-client-status="changed"]')
   expect(tile.text()).toContain('Claude Desktop 把旧配置写回了。先完全退出它，再点「更新接入」，然后重新打开。')
@@ -399,7 +409,7 @@ it('says the client wrote its old entry back, which FULI each side runs, and two
 
 it('names the version difference of an outdated entry instead of a generic sentence', async () => {
   routed(() => Response.json(withInstalls([{ ...overwritten({ overwritten: false, changes: [] }) } as Partial<Client>])))
-  const wrapper = mount(ClientConnectionSettings)
+  const wrapper = mount(ClientCards)
   await flushPromises()
   expect(wrapper.get('[data-client-status="changed"]').text()).toContain('配置里是 FULI 0.23.0，控制台是 0.25.0。点「更新接入」改成控制台这份。')
   wrapper.unmount()
@@ -409,7 +419,7 @@ it('restarts a running client only after the person confirms, in the same place 
   let finish: ((value: Response) => void) | undefined
   const calls = routed(() => Response.json(withInstalls([overwritten({ restart: { running: true } }) as Partial<Client>])),
     (url) => url.endsWith('/restart') ? new Promise<Response>((resolve) => { finish = resolve }) : Response.json(configuration))
-  const wrapper = mount(ClientConnectionSettings, { attachTo: document.body })
+  const wrapper = mount(ClientCards, { attachTo: document.body })
   await flushPromises()
   expect(wrapper.find('[data-connect-client="claude-desktop"]').exists()).toBe(false)
   const button = wrapper.get('[data-restart-client="claude-desktop"]')

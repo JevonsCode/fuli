@@ -199,6 +199,8 @@ onBeforeUnmount(() => {
             <h2 id="model-uses-title" class="list-title">{{ t('modelSettings.uses.title') }}</h2>
             <a class="model-guide-link" :href="modelGuideUrl(currentLocale())" target="_blank" rel="noopener noreferrer"
               data-model-guide>{{ t('modelSettings.guide') }}</a>
+            <!-- What FLAs may change here is a permission; it has one home, in settings. -->
+            <RouterLink class="model-guide-link" to="/settings?tab=ai#ai-permissions" data-model-permission-link>{{ t('modelSettings.permissionLink') }}</RouterLink>
           </div>
           <div class="model-use-grid">
             <ModelRoleCard :view="view(SEMANTIC_ROLE)" :locked="locked" :editing="editing === SEMANTIC_ROLE"

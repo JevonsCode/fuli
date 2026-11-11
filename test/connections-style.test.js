@@ -6,16 +6,18 @@ const connectionStyles = readFileSync('web/src/styles/connections.css', 'utf8');
 const styles = `${readFileSync('web/styles.css', 'utf8')}\n${connectionStyles}`;
 
 test('connection sections are cards on the page width and keep accessible help links', () => {
-  const page = readFileSync('web/src/pages/ConnectionsPage.vue', 'utf8');
+  // Connections are a settings tab: its cards, and external knowledge as one of them.
+  const tab = readFileSync('web/src/features/settings/ConnectionsSettingsTab.vue', 'utf8');
+  const page = readFileSync('web/src/features/connections/ExternalKnowledgeSettings.vue', 'utf8');
   // D-03: each section is a shared Card; no hand-made dividers.
-  assert.match(page, /<Card as="section" class="external-knowledge-section"/);
-  assert.match(page, /<ConflictPolicyCard v-if="personalProjects.length" \/>/);
+  assert.match(page, /<Card as="section" id="external-knowledge" class="settings-card external-knowledge-section"/);
+  assert.match(tab, /<ConflictPolicyCard v-if="hasProjects" class="settings-card" \/>/);
   const conflictCard = readFileSync('web/src/features/connections/ConflictPolicyCard.vue', 'utf8');
   assert.match(conflictCard, /<Card as="section" class="conflict-policy-section"/);
   // Every page keeps the workbench's width (Jevons 11-01): the page sets no width of its
   // own, and on a wide window the two service cards sit side by side instead.
-  assert.doesNotMatch(page, /max-w-|--(canvas|layout|column|form)-max|--form-measure/);
-  assert.match(page, /<PageColumns role="group"/);
+  assert.doesNotMatch(`${tab}${page}`, /max-w-|--(canvas|layout|column|form)-max|--form-measure/);
+  assert.match(tab, /<PageColumns>/);
   assert.doesNotMatch(styles, /\.external-knowledge-section, \.conflict-policy-section/);
   const helpRule = styles.match(/\.section-help-link\s*\{(?<body>[^}]*)\}/);
 
@@ -34,7 +36,7 @@ test('external knowledge create action uses a flat button and a geometry-based c
   assert.notEqual(actionEnd, -1);
   assert.doesNotMatch(actionStyles, /linear-gradient/);
   assert.doesNotMatch(actionStyles, /box-shadow/);
-  const page = readFileSync('web/src/pages/ConnectionsPage.vue', 'utf8');
+  const page = readFileSync('web/src/features/connections/ExternalKnowledgeSettings.vue', 'utf8');
   // The create action is the shared Button in its primary (default) variant; the flat accent
   // fill comes from the design system: bg-primary, and --primary is the semantic accent.
   assert.match(page, /<Button\s+class="external-create-action"/);

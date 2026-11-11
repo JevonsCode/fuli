@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 import { updateDocumentTitle } from './meta'
 import { installNavigationRecovery } from './navigation-recovery'
+import { renamedSettingsTab } from '@/features/settings/settings-tabs'
 
 export const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -162,16 +163,8 @@ export const router = createRouter({
         aiHelp: 'task.decisions',
       },
     },
-    {
-      path: '/connections',
-      name: 'connections',
-      component: () => import('@/pages/ConnectionsPage.vue'),
-      meta: {
-        title: 'routes.connections.title',
-        description: 'routes.connections.description',
-        aiHelp: 'task.connections',
-      },
-    },
+    // Connections are a settings tab now: one subject, one home.
+    { path: '/connections', redirect: { path: '/settings', query: { tab: 'connections' } } },
     {
       path: '/settings',
       name: 'settings',
@@ -254,6 +247,10 @@ export const router = createRouter({
 })
 
 installNavigationRecovery(router)
+
+// An old settings tab (?tab=memory|network|version) opens the tab that holds it
+// now, also when the settings page is already open.
+router.beforeEach(to => to.path === '/settings' ? renamedSettingsTab(to) : true)
 
 router.afterEach((route) => {
   updateDocumentTitle(route.meta.title)

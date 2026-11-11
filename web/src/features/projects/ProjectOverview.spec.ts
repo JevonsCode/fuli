@@ -37,7 +37,7 @@ vi.mock('@/features/judgment/ProjectJudgmentPolicy.vue', () => ({
   default: {
     name: 'ProjectJudgmentPolicy',
     props: ['personalSpaceId', 'projectId', 'projectName', 'heading'],
-    template: '<div data-project-judgment-stub :data-project="projectId">{{ heading }}</div>',
+    template: '<div data-project-judgment-stub :data-project="projectId"><strong>{{ heading }}</strong><slot name="heading-action" /></div>',
   },
 }))
 
@@ -181,13 +181,24 @@ describe('ProjectOverview frequent projects section', () => {
     expect(section.findAll('[data-frequent-project]')).toHaveLength(0)
   })
 
-  it('shows this project\'s Tonborg judgment setting', () => {
+  it('shows this project\'s Tonborg judgment setting, with a link to where the default lives', () => {
     const wrapper = mount(ProjectOverview, {
       props: { spaceId: 'space-1', project: makeProject() },
       global: { stubs: { RouterLink: RouterLinkStub } },
     })
     const setting = wrapper.get('[data-project-judgment-stub]')
     expect(setting.attributes('data-project')).toBe('fuli')
-    expect(setting.text()).toBe('这个项目的 Tonborg 判断方式')
+    expect(setting.get('strong').text()).toBe('这个项目的 Tonborg 判断方式')
+    const link = setting.getComponent(RouterLinkStub)
+    expect(link.props('to')).toBe('/employees/tonborg?view=standards')
+    expect(link.text()).toBe('默认方式在 Tonborg 页面')
+  })
+
+  it('gives 整理 the same card surface as recording and the judgment setting', () => {
+    const wrapper = mount(ProjectOverview, {
+      props: { spaceId: 'space-1', project: makeProject() },
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    expect(wrapper.get('[data-project-organizing]').classes()).toContain('project-organizing-card')
   })
 })
