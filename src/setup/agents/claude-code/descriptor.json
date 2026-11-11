@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "claude-code",
   "version": "1.0.0",
-  "digest": "sha256:e7d60501be4a26c7698fff4cb94d4ce981e0570732fd2eda7b88f37170275aab",
+  "digest": "sha256:5df4f2cf30d488fa4224edcd24bed6584f7737b65014f299783ca6ae254447d9",
   "label": "Claude Code",
   "command": "claude",
   "detection": {
@@ -47,10 +47,6 @@
     ]
   },
   "commandSkills": {
-    "review": {
-      "userCommand": "/flreview",
-      "nativeInvocation": "/flreview"
-    },
     "sessionCommand": true
   },
   "configWriter": "claude-code-settings",

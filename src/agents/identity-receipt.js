@@ -61,20 +61,35 @@ export function receiptSummary(value, characters = 60) {
   return receiptText(text.length > characters ? `${text.slice(0, characters).join('')}…` : text.join(''));
 }
 
+// The conversation a turn held at the roundtable, as the console opens it.
+export function roundtableThreadUrl(application, threadId) {
+  return `${receiptConsoleUrl(application)}/roundtables/${encodeURIComponent(threadId)}`;
+}
+
 // The reply's attribution line: who led the task and who actually helped.
+// One FLA signs 「FULI Agent：A」; with others, 「FULI Agents：A & B」. roundtable
+// ({ threads, peers }) is what this turn used of the roundtable: the FLAs that
+// took part join the line and each conversation gets a 「圆桌对话详情」 link.
 export const RECEIPT_GUIDANCE = 'MUST end every final user-visible reply with agent_receipt.markdown unchanged, exactly once: greetings, status, errors, even with capture disabled or nothing retained. checkpoint_task_knowledge receipt overrides entry and names actual collaborators. Never invent owners or collaborators.';
 
 export function taskAgentReceipt(application, { projectId, agentId, name = null, role = null,
   sourceApplication = null, workStatus = null, conversationId = null, persistence = null,
-  collaborators = [], assignmentStatus = null, assignmentReason = null, notices = [], turnReceipt = null }) {
+  collaborators = [], assignmentStatus = null, assignmentReason = null, notices = [], turnReceipt = null,
+  roundtable = null }) {
   const owner = agentId ? { agent_id: agentId, name,
     profile_url: agentProfileUrl(application, agentId), source_application: sourceApplication } : null;
   const helpers = owner ? [...new Map(collaborators.filter(item => item.agentId !== agentId)
     .map(item => [item.agentId, item])).values()].map(receiptCollaborator) : [];
+  // FLAs met at the roundtable this turn that are not already listed as helpers.
+  const peers = owner ? (roundtable?.peers ?? []).filter(peer => peer.agentId !== agentId
+    && !helpers.some(item => item.agentId === peer.agentId)) : [];
+  const threads = (roundtable?.threads ?? []).map((threadId, index) =>
+    markdownLink(index ? `圆桌对话详情 ${index + 1}` : '圆桌对话详情', roundtableThreadUrl(application, threadId)));
   const build = () => ({ required: true, markdown: [owner
-    ? `FULI Agent：${agentLink(application, agentId, name, role)}`
-      + (helpers.length ? ` · 协作 ${helpers.map(item => collaboratorLink(application, item)).join('、')}` : '')
-    : unassignedReceipt(assignmentStatus, assignmentReason), ...notices].join(' · '), owner,
+    ? `FULI Agent${helpers.length + peers.length ? 's' : ''}：${[agentLink(application, agentId, name, role),
+      ...helpers.map(item => collaboratorLink(application, item)),
+      ...peers.map(peer => agentLink(application, peer.agentId, peer.name))].join(' & ')}`
+    : unassignedReceipt(assignmentStatus, assignmentReason), ...threads, ...notices].join(' · '), owner,
     collaborators: helpers.map(item => ({ agent_id: item.agentId, name: item.name,
       profile_url: agentProfileUrl(application, item.agentId),
       ...(item.responsibility ? { responsibility: item.responsibility } : {}),

@@ -275,12 +275,6 @@ const HANDLERS = Object.freeze({
     app.ignoreProjectAgentRoutingLearning(input),
   reset_project_agent_routing_learning: (app, input) =>
     app.resetProjectAgentRoutingLearning(input),
-  start_knowledge_review: (app, input) => app.startKnowledgeReview(input),
-  list_knowledge_review_candidates: (app, input) =>
-    app.listKnowledgeReviewCandidates(input),
-  record_knowledge_review_progress: (app, input) =>
-    app.recordKnowledgeReviewProgress(input),
-  finish_knowledge_review: (app, input) => app.finishKnowledgeReview(input),
   list_workflow_candidates: (app, input) => app.listWorkflowCandidates(input),
   recommend_next_workflow_steps: (app, input) =>
     app.recommendNextWorkflowSteps(input),

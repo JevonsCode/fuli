@@ -12,6 +12,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { callAgentTool, listAgentTools } from '../agent-tools.js';
+import { retiredToolError } from '../agent-tools/retired-tools.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { agentHostRequestContext, runWithAgentRequestContext, sealedWorkerRequestContext } from '../app/agent-request-context.js';
 import { FULI_VERSION } from '../package-metadata.js';
@@ -107,7 +108,6 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   get_executor_routing_rule: 32 * 1024,
   list_project_agent_routing_learning: 64 * 1024,
   get_agent_score_card: 32 * 1024,
-  list_knowledge_review_candidates: 32 * 1024,
   list_workflow_candidates: 32 * 1024,
   recommend_next_workflow_steps: 32 * 1024,
   role_work: 256 * 1024,
@@ -336,15 +336,10 @@ function registerCallHandler(server, tools, onDemandTools, resolveNativeContext 
     if (request.params.name === DISPATCH_TOOL && onDemandTools) {
       const { toolName, input } = request.params.arguments ?? {};
       tool = toolName === DISPATCH_TOOL ? null : tools.get(toolName) ?? onDemandTools.get(toolName);
-      if (!tool) return errorToolResult(new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
+      if (!tool) return unknownToolResult(toolName);
       request = { ...request, params: { ...request.params, name: tool.definition.name, arguments: input ?? {} } };
     }
-    if (!tool) {
-      return errorToolResult(new ApplicationError(
-        ApplicationErrorCode.NOT_FOUND,
-        'Unknown Fuli tool'
-      ));
-    }
+    if (!tool) return unknownToolResult(request.params.name);
     const parsed = await tool.input.parse(withoutUnusedTaskToken(tool, request.params.arguments ?? {}));
     if (!parsed.success) {
       return protocolErrorResult(
@@ -360,6 +355,10 @@ function registerCallHandler(server, tools, onDemandTools, resolveNativeContext 
     catch (error) { return errorToolResult(error); }
     return invokeTool(tool, parsed.data, native ? { ...extra, [NATIVE_CONTEXT]: native } : extra);
   });
+}
+
+function unknownToolResult(name) {
+  return errorToolResult(retiredToolError(name) ?? new ApplicationError(ApplicationErrorCode.NOT_FOUND, 'Unknown Fuli tool'));
 }
 
 async function invokeTool(tool, input, requestContext = null) {

@@ -10,7 +10,6 @@ import { compactTaskContext } from '../src/conversations/task-context-view.js';
 import { hookAdditionalContextToolResult } from '../src/mcp/tool-result.js';
 import { sessionFuliOffContext } from '../src/conversations/session-fuli-entry.js';
 import { PASS_TASK_TOKEN, taskClosingInstruction } from '../src/agents/lifecycle-message.js';
-import { withCodexReviewGuidance } from '../src/agents/codex/review-command.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../src/mcp/create-mcp-server.js';
@@ -199,9 +198,11 @@ const BASELINE = Object.freeze({
   // rec#85: checkpoint_task_knowledge takes amend (a correction appended under a completed
   // checkpoint); its knowledgeUsage, captureRouting and description text shrink to pay for it:
   // 208,242 -> 208,237 B (-5 B), measured.
+  // 11-11: the /flreview knowledge review was retired; its four tools leave the full profile:
+  // 208,237 -> 205,151 B (-3,086 B), measured. Chat, instructions and entry are unchanged.
   // 11-11 整理 (rec#114): one full-profile tool, organize_project, reads and records how well a
-  // project is known; its nine areas share one schema: 208,237 -> 209,914 B (+1,677 B), measured.
-  fullToolSchemaBytes: 209914,
+  // project is known; its nine areas share one schema: 205,151 -> 206,839 B (+1,688 B), measured.
+  fullToolSchemaBytes: 206839,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
@@ -328,10 +329,8 @@ const BASELINE = Object.freeze({
   turnReceiptNoChangeChars: 0,
   turnReceiptHeadingChars: 88,
   turnReceiptEntryChars: 152,
-  // rec#22: only a Codex turn the person starts with an exact `fuli review` line gets this
-  // one line (with its separator) after the task entry; the always-loaded Codex bootstrap
-  // dropped its dead `/flreview` bridge for it (962 -> 910 B).
-  codexReviewGuidanceBytes: 101,
+  // 11-11: the /flreview knowledge review was retired, so the Codex `fuli review` line and its
+  // 101 B of guidance (rec#22, codexReviewGuidanceBytes) are gone.
   // Data-format completion reminders add the remaining count and local dismissal link:
   // 37 -> 104 characters, only for up to seven task receipts per completed migration.
   // The link text names the page (关闭提醒：[设置 → 数据格式迁移]), since Claude Desktop shows a
@@ -465,7 +464,7 @@ async function measure() {
     sessionOffEntryChars: Math.max(...['session_stopped', 'session_not_started', 'session_start_unsaved', 'policy_unavailable']
       .map(reason => sessionFuliOffContext({ reason }).length)),
     taskTokenHintChars: PASS_TASK_TOKEN.length,
-    codexReviewGuidanceBytes: codexReviewGuidanceBytes(), ...await turnReceiptChars(), ...await migrationReceiptChars(),
+    ...await turnReceiptChars(), ...await migrationReceiptChars(),
     ...await sessionMigrationChars(), ...await sessionMigrationConfirmedChars() };
 }
 
@@ -502,12 +501,6 @@ async function sessionMigrationChars() {
   return { sessionMigrationNoneChars: 1 + await offer({ held_count: 0, linked_task_count: 1 }),
     sessionMigrationOfferChars: 1 + await offer({ held_count: 12, linked_task_count: 1 }),
     sessionMigrationTurnChars: 1 + sessionMigrationLine({ config: { personal: { spaceId: 'space' } } }, task).length };
-}
-
-function codexReviewGuidanceBytes() {
-  const entry = { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'entry' } };
-  return Buffer.byteLength(withCodexReviewGuidance(entry).hookSpecificOutput.additionalContext, 'utf8')
-    - Buffer.byteLength(entry.hookSpecificOutput.additionalContext, 'utf8');
 }
 
 // The receipt's data format notice from synthetic notices and operations, through the identity receipt.

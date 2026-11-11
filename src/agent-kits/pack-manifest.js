@@ -8,7 +8,7 @@
 // The packaged Skills every pack client receives, and the person's
 // /fuli start|stop|restart|status (rec#5 C3b) where the client turns a Skill
 // into a command (`commandSkills.sessionCommand`).
-const SKILLS = Object.freeze(['capturing-session-knowledge', 'grilling-project', 'flreview', 'operating-fuli']);
+const SKILLS = Object.freeze(['capturing-session-knowledge', 'grilling-project', 'operating-fuli']);
 const SESSION_COMMAND_SKILL = 'fuli';
 // The tool profile a new entry starts with; the person's own choice in an
 // existing entry survives (the manifest's `preserveArgs`).

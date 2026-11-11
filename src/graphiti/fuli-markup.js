@@ -22,7 +22,7 @@ const ONLY_LINKS = new RegExp(String.raw`^[\s>*•·,，、;；:：-]*(?:${LABEL
 const MARKUP_LINES = [
   /^\s*\*{0,2}FULI 来源 · \d+ 条\*{0,2}\s*$/u,
   /^\s*[-*•]?\s*另有 \d+ 条命中/u,
-  /FULI Agent：/u,
+  /FULI Agents?：/u,
   /^\s*FULI [本上]轮沉淀(?:（补发）)? \d+ 条/u,
   /^\s*另 \d+ 条未列出：/u,
   /^\s*[-*•]\s*(?:新增|更新)\s.*｜.*\]\(<?(?:fuli:|https?:)/u,

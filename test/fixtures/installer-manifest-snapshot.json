@@ -187,14 +187,6 @@
           }
         },
         {
-          "name": "flreview",
-          "source": "{skillsDir}/flreview",
-          "adopt": {
-            "file": "SKILL.md",
-            "contains": "name: flreview"
-          }
-        },
-        {
           "name": "operating-fuli",
           "source": "{skillsDir}/operating-fuli",
           "adopt": {
@@ -307,14 +299,6 @@
           }
         },
         {
-          "name": "flreview",
-          "source": "{skillsDir}/flreview",
-          "adopt": {
-            "file": "SKILL.md",
-            "contains": "name: flreview"
-          }
-        },
-        {
           "name": "operating-fuli",
           "source": "{skillsDir}/operating-fuli",
           "adopt": {
@@ -406,14 +390,6 @@
           }
         },
         {
-          "name": "flreview",
-          "source": "{skillsDir}/flreview",
-          "adopt": {
-            "file": "SKILL.md",
-            "contains": "name: flreview"
-          }
-        },
-        {
           "name": "operating-fuli",
           "source": "{skillsDir}/operating-fuli",
           "adopt": {
@@ -458,14 +434,6 @@
           "adopt": {
             "file": "SKILL.md",
             "contains": "name: grilling-project"
-          }
-        },
-        {
-          "name": "flreview",
-          "source": "{skillsDir}/flreview",
-          "adopt": {
-            "file": "SKILL.md",
-            "contains": "name: flreview"
           }
         },
         {

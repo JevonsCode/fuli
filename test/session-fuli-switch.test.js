@@ -219,7 +219,7 @@ const MEMORY_READS = [['search_knowledge_graph', { query: 'chapter' }], ['search
   ['search_connected_knowledge', { query: 'chapter' }], ['get_knowledge_graph', {}], ['search_human_knowledge_changes', {}],
   ['get_project_agent_context', {}], ['get_project_agent_memory', {}], ['export_project_agent_memory', {}],
   ['read_agent_conversation', {}], ['list_agent_conversations', {}], ['list_preference_conflicts', {}],
-  ['discover_personal_global_preference_candidates', {}], ['list_knowledge_review_candidates', {}],
+  ['discover_personal_global_preference_candidates', {}],
   ['recommend_next_workflow_steps', {}], ['get_agent_handoff', {}], ['read_agent_messages', {}], ['list_personal_projects', {}]];
 
 test('C3b-3 every memory read a model starts is refused for a stopped session, and only for it', async (t) => {
