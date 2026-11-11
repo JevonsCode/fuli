@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 import pytest
+from fastapi import HTTPException
 
 from fuli_graph.config import Settings
 from fuli_graph.models import (
@@ -197,75 +198,18 @@ def test_project_agent_scope_namespaces_stable_knowledge_ids():
 
 
 @pytest.mark.asyncio
-async def test_workspace_project_creator_becomes_owner_and_maintainer():
-    driver = RecordingDriver([{ 'space': {
-        'id': 'project-1',
-        'name': 'Hotel Theme',
-        'kind': 'project',
-        'group_id': 'workspace-project-project-1',
-        'description': None,
-        'visibility': 'public',
-        'created_at': datetime(2026, 7, 21, tzinfo=timezone.utc),
-    }}])
+async def test_a_workspace_provider_takes_no_new_project_or_release():
+    """Public projects were removed: what a workspace provider holds stays readable, nothing new is published."""
+    driver = RecordingDriver([])
     store = GraphStore(RuntimeStub(driver), workspace_settings())
-
-    project = await store.create_space(
-        {'id': 'principal-1'},
-        SpaceCreate(name='Hotel Theme', kind='project'),
-    )
-
-    query, parameters = driver.calls[0]
-    assert '[:OWNS' in query
-    assert "[:MEMBER_OF {role: 'maintainer'" in query
-    assert "visibility: 'public'" in query
-    assert project.owner_id == 'principal-1'
-    assert project.role == 'maintainer'
-    assert project.visibility == 'public'
-
-
-@pytest.mark.asyncio
-async def test_project_publication_records_release_version_publisher_time_and_summary():
-    published_at = datetime(2026, 7, 22, tzinfo=timezone.utc)
-    driver = SequentialDriver([
-        [],
-        [{'space': {
-            'id': 'project-release',
-            'name': 'Hotel Theme',
-            'kind': 'project',
-            'group_id': 'workspace-project-project-release',
-            'description': 'Hotel themed events',
-            'visibility': 'public',
-            'publication_key': 'publication-key',
-            'release_id': 'release-1',
-            'release_version': 'v1.0.0',
-            'release_summary': 'Initial public release',
-            'release_publisher_id': 'principal-1',
-            'release_publisher_name': 'Alice',
-            'released_at': published_at,
-            'created_at': published_at,
-        }}],
-    ])
-    store = GraphStore(RuntimeStub(driver), workspace_settings())
-
-    project = await store.create_space(
-        {'id': 'principal-1', 'name': 'Alice'},
-        SpaceCreate.model_validate({
-            'name': 'Hotel Theme',
-            'kind': 'project',
-            'publication_key': 'publication-key',
-            'release': {'version': 'v1.0.0', 'summary': 'Initial public release'},
-        }),
-    )
-
-    query, parameters = driver.calls[1]
-    assert 'FuliProjectRelease' in query
-    assert 'HAS_RELEASE' in query
-    assert parameters['version'] == 'v1.0.0'
-    assert parameters['summary'] == 'Initial public release'
-    assert parameters['publisher_name'] == 'Alice'
-    assert project.current_release.version == 'v1.0.0'
-    assert project.current_release.publisher_name == 'Alice'
-    assert project.current_release.published_at == published_at
+    for request in (SpaceCreate(name='Synthetic', kind='project'),
+                    SpaceCreate.model_validate({'name': 'Synthetic', 'kind': 'project', 'publication_key': 'synthetic-key',
+                                                'release': {'version': 'v1.0.0', 'summary': 'Synthetic'}}),
+                    SpaceCreate(name='Synthetic', kind='personal')):
+        with pytest.raises(HTTPException) as refused:
+            await store.create_space({'id': 'principal-1'}, request)
+        assert refused.value.status_code == 422
+    assert driver.calls == []
 
 
 @pytest.mark.asyncio
