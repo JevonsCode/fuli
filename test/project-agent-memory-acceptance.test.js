@@ -323,7 +323,10 @@ test('real scoped checkpoint candidates require synthetic human confirmation bef
       && item.preference_scope === 'global' && item.confirmation_status === 'confirmed'),
     JSON.stringify(applied.effective_preferences));
     const foreign = await reader.client.callTool({ name: 'checkpoint_task_knowledge', arguments: input });
-    assert.equal(foreign.isError, true, 'another client cannot reuse the writer task token');
+    // Refused before any write: a status that says nothing was saved, not a save (rec#110 item 8).
+    assert.notEqual(foreign.isError, true, JSON.stringify(foreign));
+    assert.deepEqual([foreign.structuredContent.status, foreign.structuredContent.reason], ['checkpoint_not_saved', 'task_token_refused'],
+      'another client cannot reuse the writer task token');
   } finally { await reader.close(); }
   const replay = await connectMcp(runtimeConfigPath, { sourceApplication: 'codex' });
   try {
