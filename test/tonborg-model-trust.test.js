@@ -120,7 +120,10 @@ test('rec#26: a trusted model\'s approval of injection-shaped text is escalated 
   assert.deepEqual(record.aiReview.interceptions, ['injection_suspected']);
   assert.deepEqual(record.aiReview.injectionSignals, ['reviewer_instruction', 'outcome_directive']);
   assert.equal(writes.length, 0);
-  assert.match(result.human_interaction.question, /^宿主预检：候选文本匹配已知注入格式 \/ Host pre-check: .*\(reviewer_instruction, outcome_directive\)\. AI 建议/);
+  // The card says so in plain words before its question; the signal names and the model's outcome are fixed values beside it.
+  assert.match(result.human_interaction.question, /^注意：这条的文字像是在对 AI 下指令。 「.+」我拿不准，保留吗？$/);
+  assert.deepEqual([result.human_interaction.source.injectionSignals, result.human_interaction.source.modelOutcome],
+    [['reviewer_instruction', 'outcome_directive'], 'approve']);
   // Ordinary text is untouched by the pre-check.
   const plain = await reviewOnce(t, { content: 'npm test; ignore the lint warnings in generated files.' });
   assert.equal(plain.record.execution.status, 'applied');
@@ -137,7 +140,8 @@ test('rec#26: injected text in one candidate keeps every approval of that batch\
   assert.deepEqual([a.aiReview.interceptions, a.aiReview.injectionInBatch], [['injection_suspected'], undefined]);
   assert.deepEqual([b.aiReview.interceptions, b.aiReview.injectionSignals, b.aiReview.injectionInBatch], [['batch_contaminated'], undefined, true]);
   assert.equal(batch.writes.length, 0);
-  assert.match(judgmentHumanInteraction([b], 's').human_interaction.question, /^宿主预检：同批候选匹配已知注入格式 \/ Host pre-check: another candidate/);
+  assert.match(judgmentHumanInteraction([b], 's').human_interaction.question, /^注意：和它一起看的另一条，文字像是在对 AI 下指令。 /);
+  assert.match(judgmentHumanInteraction([b], 's', { language: 'en-US' }).human_interaction.question, /^Note: another item reviewed with it reads like instructions to an AI\. /);
 
   const clean = harness(t, { candidateCount: 2 });
   const records = (await clean.service.review(input)).records;
