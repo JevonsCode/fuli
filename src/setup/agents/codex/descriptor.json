@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "codex",
   "version": "1.0.0",
-  "digest": "sha256:c7733ad51c404af94bb6b19b61debcd6277746ffbfd4b598af237ca118182a3c",
+  "digest": "sha256:9bf5e12d7a997a478b607ab83ad236ebb9809b0a13f66fcb8e77f1d2a16ffb5d",
   "label": "Codex",
   "command": "codex",
   "detection": {
@@ -57,10 +57,6 @@
     ]
   },
   "commandSkills": {
-    "review": {
-      "userCommand": "fuli review",
-      "nativeInvocation": "$flreview"
-    },
     "sessionCommand": false
   },
   "configWriter": "codex-toml",

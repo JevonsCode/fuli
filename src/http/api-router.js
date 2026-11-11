@@ -16,6 +16,7 @@ import { handleOccupationPluginsRequest } from './occupation-plugins-api-router.
 import { handleDebugTurnsRequest } from './debug-turns-api-router.js';
 import { handleDiagnosticEventsRequest } from './diagnostic-events-api-router.js';
 import { handlePersonProfileRequest } from './person-profile-api-router.js';
+import { handleProjectOrganizingRequest } from './project-organizing-api-router.js';
 import { handleSessionLaunchRequest } from './session-launch-api-router.js';
 import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-router.js';
 import { handleKnowledgeScopeRequest } from './knowledge-scope-api-router.js';
@@ -298,6 +299,7 @@ export async function handleApiRequest({
     await handleKnowledgeTagsRequest({ request, response, url, app, tagsConsole: knowledgeTags }) ||
     await handleJudgmentApiRequest({ request, response, url, app, undoConsole: judgmentUndo, ownerReads: knowledgeOwnerReads }) ||
     await handleStandingAssignmentRequest({ request, response, url, app }) ||
+    await handleProjectOrganizingRequest({ request, response, url, app }) ||
     await handleAgentServicesRequest({ request, response, url, app }) ||
     await handleAgentWorkflowsRequest({ request, response, url, app }) ||
     await handleAgentAvatarsRequest({ request, response, url, app }) ||

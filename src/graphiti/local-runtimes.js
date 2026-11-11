@@ -25,6 +25,7 @@ import { RecallImpressionsStore } from '../knowledge-impressions/store.js';
 import { createAgentAvatars } from '../agent-avatars/port.js';
 import { createProjectChangeLog } from '../project-change-log/port.js';
 import { createPersonProfile } from '../person-profile/port.js';
+import { createProjectOrganizing } from '../project-organizing/port.js';
 import { entryPromptRecords } from '../agent-delegation/entry-prompts.js';
 import { createWorkSurfaces } from '../work-surfaces/port.js';
 import { createOldDataShelf } from '../old-data/port.js';
@@ -98,6 +99,8 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   app.projectChangeLog = createProjectChangeLog({ path: join(dataDir, 'project-change-log.sqlite') });
   // The person's own name and picture (「我」); the file is created by the first change.
   app.personProfile = createPersonProfile({ path: join(dataDir, 'person-profile.json') });
+  // How well each project is known and what each 整理 run did (rec#114); created by the first run.
+  app.projectOrganizing = createProjectOrganizing({ path: join(dataDir, 'project-organizing.json') });
   // The prompt of each session's current hook-entered task, kept only for the relay check (rec#80).
   app.entryPrompts = entryPromptRecords(dataDir);
   // What the person answered in the client's own question card, for the same check.

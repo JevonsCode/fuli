@@ -25,7 +25,7 @@ const clientContext = paths => integrationContext(paths);
 const WRITTEN = ['claude-code', 'codex', 'cursor', 'opencode'];
 const CLIENT_FILES = ['.claude.json', '.claude/settings.json', '.codex/config.toml', '.codex/hooks.json', '.cursor/mcp.json',
   '.cursor/hooks.json', '.config/opencode/opencode.json', '.config/opencode/plugins/fuli/index.js'];
-const SKILLS = ['capturing-session-knowledge', 'grilling-project', 'flreview', 'operating-fuli', 'fuli'];
+const SKILLS = ['capturing-session-knowledge', 'grilling-project', 'operating-fuli', 'fuli'];
 
 async function clients(t, f) {
   const executable = await realAgentKitExecutable('agent-installer');

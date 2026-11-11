@@ -34,7 +34,7 @@ Read [coding-taste.md](coding-taste.md) before writing code: it defines reuse, d
 
 ## Product Skill Synchronization
 
-- Every feature addition, behavior change, or removal must review the shipped Skills in the same change: `skills/capturing-session-knowledge`, `skills/grilling-project`, `skills/flreview`, and `skills/operating-fuli`, plus `skills/fuli` when session commands are affected.
+- Every feature addition, behavior change, or removal must review the shipped Skills in the same change: `skills/capturing-session-knowledge`, `skills/grilling-project`, and `skills/operating-fuli`, plus `skills/fuli` when session commands are affected.
 - Update affected `SKILL.md` files, references, and examples together with the implementation, including tool names, input/output schemas, workflows, permission boundaries, and client capabilities or fallbacks. Remove obsolete instructions and references when functionality is removed; do not defer cleanup to a later release.
 - Check instructions against the actual implementation and relevant tests. Keep shared Skills Agent-agnostic and client differences in their owning adapters. Skill prose does not implement runtime behavior or prove that a client loaded or executed it.
 - Before committing, record the Skill impact and verification in the PR description (or commit message when there is no PR). If no Skill is affected, explicitly write `Skills: N/A` with a reason; do not omit the review.

@@ -9,6 +9,7 @@ import { queryConversations, resumeConversation, updateConversationPolicy } from
 import { recordUserTriage } from './conversation-triage.js';
 import { acceptTopicProposal, declineTopicProposal, listTopicProposals, undoTopicPromotion } from './topic-proposals.js';
 import { registerStandingAssignment } from './standing-assignment-entry.js';
+import { organizeProject } from '../project-organizing/agent-tool.js';
 import { agentProjectResolution } from './agent-project-resolution.js';
 import { listAgentAttention, getAgentAttention, changeAgentAttention, respondToAgentAttention } from './agent-attention.js';
 import { loadProjectTeam } from './project-team-view.js';
@@ -102,6 +103,10 @@ export class ProjectAgentControlPlaneApplication {
   // The person's "from now on this work goes to that project" (rec#29 F2).
   async registerStandingAssignment(input) {
     return registerStandingAssignment(this, input);
+  }
+  // 整理: how well the task's project is known, and what a run settled (rec#114).
+  async organizeProject(input) {
+    return organizeProject(this, input);
   }
   async queryAgentConversations(input) {
     this.#assertSpace(input.personalSpaceId);

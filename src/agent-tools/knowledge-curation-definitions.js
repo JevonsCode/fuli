@@ -13,9 +13,6 @@ import {
 import { arraySchema, booleanSchema, boundedString, enumSchema, integerSchema, nullableStringSchema, objectSchema }
   from './schema.js';
 
-const knowledgeReviewScope = enumSchema([
-  'all', 'preferences_global', 'preferences_project', 'projects_all', 'project'
-]);
 const knowledgeConflictResolution = enumSchema([
   'defer', 'keep_target', 'use_source', 'coexist'
 ]);
@@ -37,56 +34,8 @@ const personalProjectActionRequired = [
   'personalSpaceId', 'itemKind', 'itemId', 'mode', 'reason'
 ];
 
-// A person's curation of what FULI learned: review runs, learned workflow
-// steps, revisions and the personal project an entity belongs to.
+// A person's curation of what FULI learned: learned workflow steps, revisions and the personal project an entity belongs to.
 export const KNOWLEDGE_CURATION_DEFINITIONS = [
-  {
-    name: 'start_knowledge_review',
-    title: 'REVIEW · Start or resume personal knowledge review',
-    description: 'Start or resume the exact selected /flreview scope. A first review has no watermark and scans all in-scope history. A later review uses only the last completed run as its watermark; paused runs never advance it. Project scopes accept only local personal project IDs.',
-    inputSchema: objectSchema({
-      personalSpaceId: id,
-      scope: knowledgeReviewScope,
-      personalProjectId: nullableStringSchema()
-    }, ['personalSpaceId', 'scope'])
-  },
-  {
-    name: 'list_knowledge_review_candidates',
-    title: 'REVIEW · List ranked personal knowledge candidates',
-    description: 'List one bounded page for an active or paused review. Provider policy ranks new/changed knowledge, conflicts or attention, low-weight knowledge, then repeated cross-session patterns. Already decided items stay out of the current run. The page limit is not a total-question cap.',
-    inputSchema: objectSchema({
-      personalSpaceId: id,
-      reviewId: id,
-      limit: integerSchema({ minimum: 1, maximum: 50 })
-    }, ['personalSpaceId', 'reviewId'])
-  },
-  {
-    name: 'record_knowledge_review_progress',
-    title: 'WRITE · Record one review outcome',
-    description: 'Record one user-authorized candidate outcome after any required knowledge mutation succeeds. confirmed keeps the item, updated/invalidated follow successful writes, deferred carries it into the next review, and delegated_to_ai follows a successful current-quadrant change to unknown_unknown.',
-    inputSchema: objectSchema({
-      personalSpaceId: id,
-      reviewId: id,
-      candidateKey: {
-        ...boundedString(520),
-        pattern: '^(entity|relationship):.+'
-      },
-      outcome: enumSchema([
-        'confirmed', 'updated', 'invalidated', 'deferred', 'delegated_to_ai'
-      ]),
-      note: nullableStringSchema()
-    }, ['personalSpaceId', 'reviewId', 'candidateKey', 'outcome'])
-  },
-  {
-    name: 'finish_knowledge_review',
-    title: 'WRITE · Pause or complete knowledge review',
-    description: 'Pause a review without moving its watermark, or complete it and establish the next run watermark. Use completed only when the selected scope is exhausted or the user explicitly finishes it.',
-    inputSchema: objectSchema({
-      personalSpaceId: id,
-      reviewId: id,
-      disposition: enumSchema(['paused', 'completed'])
-    }, ['personalSpaceId', 'reviewId', 'disposition'])
-  },
   {
     name: 'list_workflow_candidates',
     title: 'READ · List learned workflow candidates',

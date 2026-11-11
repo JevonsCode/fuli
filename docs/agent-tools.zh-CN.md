@@ -6,10 +6,9 @@
 
 ## Agent 接入与主要工具
 
-Fuli 为支持的 Agent 安装 `capturing-session-knowledge`、`grilling-project`、`operating-fuli` 和 `flreview`
-Skills。输入 `/flreview` 后可选择全部、个人偏好或个人项目（Codex 在 Hook 运行前就拒绝自定义斜杠命令，
-请单独一行输入 `fuli review` 或 `flreview`：Codex 提示词 Hook 会把这一行连同已安装 Skill 的名称交给模型；本会话停用 FULI 时由 Hook 直接答复，不开始复核）；若用户表示完全没耐心，流程会
-跳过心情、时间和 token 询问，只处理少量最高优先级问题。Fuli setup 为 Claude Code 生成
+Fuli 为支持的 Agent 安装 `capturing-session-knowledge`、`grilling-project` 和 `operating-fuli`
+Skills。`/flreview` 知识回顾已停用（11-11）：它的四个工具不再列出，本版本内仍调用它们的客户端会收到
+`tool_retired`。Fuli setup 为 Claude Code 生成
 `UserPromptSubmit`/`Stop` MCP Hook，为 Codex 生成 `UserPromptSubmit` MCP Hook 和本地 `Stop`
 命令，为 Cursor 生成 `sessionStart`/`beforeSubmitPrompt`/`stop` Hook。Codex bootstrap 和 Cursor
 指令只在未收到生命周期上下文时使用 fallback，不重复已提供的偏好。Codex 的 Stop 命令首次
@@ -79,7 +78,3 @@ checkpoint，但只有真实连接后的 Claude 会话才能证明该行为。
 | `preview_common_knowledge_promotion` | 预览人类确认的公共知识提升 |
 | `apply_common_knowledge_promotion` | 使用一次性令牌原子执行提升 |
 | `resolve_deferred_preference_conflict` | 在实际需要时处理已授权给 AI 的冲突 |
-| `start_knowledge_review` | 启动或恢复精确范围的个人知识回顾 |
-| `list_knowledge_review_candidates` | 按时间、冲突、权重和跨会话重复顺序列出候选 |
-| `record_knowledge_review_progress` | 保存确认、修改、失效、跳过或稍后处理结果 |
-| `finish_knowledge_review` | 暂停回顾，或完成并推进下次回顾水位线 |

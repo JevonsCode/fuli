@@ -23,6 +23,7 @@ import { clearSessionTaskBlockers, noteBlockerProgress } from './task-blocker-pr
 import { storedUnassignment } from './task-agent-assignment.js';
 import { amendCheckpoint, assertAmendmentInput, checkpointConflictMessage } from './checkpoint-amendment.js';
 import { admittedTask } from './checkpoint-save-status.js';
+import { roundtableTurn } from '../agent-roundtable/turn-receipt.js';
 
 export async function checkpointTaskKnowledge(application, {
   taskContextToken,
@@ -120,6 +121,7 @@ export async function checkpointTaskKnowledge(application, {
         assignmentStatus: unassigned?.status ?? null, assignmentReason: unassigned?.reason ?? null,
         workStatus: effectiveLog.status, conversationId: conversation?.conversation_id ?? null,
         persistence: conversation?.status ?? null, collaborators: team.collaborators,
+        roundtable: roundtableTurn(task.token),
         notices: [...namedFlaReceiptNotices(task), ...standingReceiptNotices(task), ...ownerChangeReceiptNotices(task), ...receiptNotices(decision, [], { settingsUrl: captureSettingsUrl(application) }), ...await receiptFormatNotices(application, { taskId: task.token })],
         turnReceipt: await checkpointTurnReceipt(application, checkpointTask, { memory, agentName: team.name }) }),
       ...(team.ignored.length ? { ignored_collaborators: team.ignored } : {}) };

@@ -60,7 +60,10 @@ const mcpServer = z.object({
 }).strict();
 
 const commandSkills = z.object({
-  review: z.object({ userCommand: text(40), nativeInvocation: text(40) }).strict(),
+  // No longer read: the /flreview knowledge review was retired (11-11) and the
+  // built-in packs dropped it. Still accepted so schema-1 packs already
+  // published keep parsing; drop it with the next pack schema.
+  review: z.object({ userCommand: text(40), nativeInvocation: text(40) }).strict().optional(),
   sessionCommand: z.boolean()
 }).strict();
 

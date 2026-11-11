@@ -34,6 +34,7 @@ const HANDLERS = Object.freeze({
   get_model_usage: (app, input) => modelBackends(app).usage(input),
   role_work: (app, { action, ...input }) => roleWork(app)[action === 'submit' ? 'submit' : 'claim'](input),
   register_standing_assignment: (app, input) => app.registerStandingAssignment(input),
+  organize_project: (app, input) => app.organizeProject(input),
   report_agent_service: (app, input) => reportAgentService(app, input),
   record_fla_lesson: (app, input) => recordFlaLesson(app, input),
   ...AGENT_WORKFLOW_HANDLERS,
@@ -274,12 +275,6 @@ const HANDLERS = Object.freeze({
     app.ignoreProjectAgentRoutingLearning(input),
   reset_project_agent_routing_learning: (app, input) =>
     app.resetProjectAgentRoutingLearning(input),
-  start_knowledge_review: (app, input) => app.startKnowledgeReview(input),
-  list_knowledge_review_candidates: (app, input) =>
-    app.listKnowledgeReviewCandidates(input),
-  record_knowledge_review_progress: (app, input) =>
-    app.recordKnowledgeReviewProgress(input),
-  finish_knowledge_review: (app, input) => app.finishKnowledgeReview(input),
   list_workflow_candidates: (app, input) => app.listWorkflowCandidates(input),
   recommend_next_workflow_steps: (app, input) =>
     app.recommendNextWorkflowSteps(input),
