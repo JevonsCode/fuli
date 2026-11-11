@@ -15,10 +15,8 @@ import { createDpapiProtector } from './windows-dpapi.js';
 // for, and is read only for that origin (dot review of fuli PR 784): a connection
 // pointed at another host, by a delegated role edit or anything else, cannot
 // take an existing key there. Using it elsewhere means saving it again for
-// the new endpoint. Keys saved before origins were recorded are tied once,
-// when a runtime first opens the store, to the one origin the configured
-// connections naming them use (bindLegacyKeys); a key named by none or by
-// several stays untied and is refused until it is saved again.
+// the new endpoint. A key saved before origins were recorded (before 0.25) is
+// untied and refused until it is saved again.
 
 const STORE_VERSION = 1;
 export const MODEL_SECRETS_FORMAT = jsonFormat({ store: 'model-secrets', versions: [STORE_VERSION] });
@@ -134,22 +132,6 @@ export function createModelSecretStore({
         throw new ModelSecretError('secret_unreadable',
           `The key for ${ref} could not be decrypted. Save it again on the model page or with: fuli models set-key ${ref} --endpoint <its endpoint>`);
       }
-    },
-    // Once per store: ties each key saved before origins were recorded to the one origin of the
-    // configured connections that name it. Compatible with stores written before 0.25; it can go
-    // once no supported release writes untied keys and their owners have saved them again.
-    bindLegacyKeys(connections) {
-      if (fileMode(path) === null) return;
-      assertPrivate();
-      const current = stored();
-      if (current.legacyKeysBound) return;
-      const secrets = Object.fromEntries(Object.entries(current.secrets).map(([ref, record]) => {
-        if (record.endpoint) return [ref, record];
-        const origins = new Set(Object.values(connections).filter(connection => connection.secretRef === ref)
-          .map(connection => keyOrigin(connection.endpoint)));
-        return [ref, origins.size === 1 ? { ...record, endpoint: [...origins][0] } : record];
-      }));
-      write({ ...current, secrets, legacyKeysBound: true });
     }
   };
 }

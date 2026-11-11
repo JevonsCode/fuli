@@ -43,7 +43,7 @@ Each saved key records the endpoint origin it was saved for: scheme, host and po
 - **Saving.** The model dialog sends the endpoint typed above the key field; the CLI requires `--endpoint`.
 - **Sending.** The model port refuses a call before decrypting the key, with receipt reason `key_endpoint_mismatch`. That covers role calls and 测试连接. The endpoint listing answers `409 secret_endpoint_mismatch` before any request leaves.
 - **Editing.** A role edit (delegated, or the person's own) that points a connection naming a tied key at another origin is refused with `409 key_endpoint_mismatch` and leaves the file unchanged. Using the key elsewhere means saving it again for the new endpoint. The dialog says so when the typed address differs from the key's origin.
-- **Older keys.** Keys saved before origins were recorded are tied once, when a runtime first opens the store. Each goes to the single origin of the configured connections that name it. A key that none or several connections name stays untied, and is refused (`secret_endpoint_unbound`) until it is saved again. A role edit may keep an untied key on the origin its connection already had, but cannot give it to a new connection or a new origin. Otherwise the one-time binding could tie it to an address an Agent chose.
+- **Older keys.** A key saved before origins were recorded (before 0.25) stays untied, and is refused (`secret_endpoint_unbound`) until it is saved again. A role edit may keep an untied key on the origin its connection already had, but cannot give it to a new connection or a new origin.
 
 ## The AI mark and 「让 AI 来做」
 
