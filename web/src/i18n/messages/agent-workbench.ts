@@ -1,7 +1,6 @@
 export const agentWorkbenchMessages = {
   'zh-CN': {
     opening: '正在打开 Workbench',
-    readingBoard: '正在读取这个项目的看板列',
     workflows: {
       title: 'Workflow',
       search: '搜索 Workflow',
@@ -30,7 +29,6 @@ export const agentWorkbenchMessages = {
   },
   'en-US': {
     opening: 'Opening the workbench',
-    readingBoard: 'Reading this project\'s board columns',
     workflows: {
       title: 'Workflow',
       search: 'Search Workflows',

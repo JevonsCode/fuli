@@ -221,7 +221,6 @@ export const projectMessages = {
     },
     overview: {
       tab: '概览',
-      loading: '正在加载项目概览',
       noPurpose: '还没有填写项目目标',
       createdAt: '创建于 {date}',
       changeLog: {
@@ -518,7 +517,6 @@ export const projectMessages = {
     },
     overview: {
       tab: 'Overview',
-      loading: 'Loading project overview',
       noPurpose: 'No project goal yet',
       createdAt: 'Created {date}',
       changeLog: {

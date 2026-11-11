@@ -5,9 +5,8 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
-import { cleanupReleaseProof, createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
+import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/service.js';
 import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
-import { readWindowsBootAnchor } from '../src/native-runtime/windows-processes.js';
 import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 
 const UNCONFIRMED = { status: 'unconfirmed', code: 'cleanup_timeout' };
@@ -94,7 +93,6 @@ test('an existing database gains the evidence and claim columns; its legacy hold
   const store = open();
   const row = store.getMessage('legacy');
   assert.equal(row.cleanup_evidence_version, null);
-  assert.equal(cleanupReleaseProof(row, { ...EVIDENCE, anchor: { ...EVIDENCE.anchor, pid: 4242 } }), null);
   assert.equal(store.releaseProvenCleanup('legacy', { machineHash: EVIDENCE.machineHash, anchorPid: 1736,
     proof: 'boot_anchor_replaced', observation: 'anchor_pid_changed' }), false);
   const { ask, woken } = coordinator(store, { wake: answered });
@@ -126,44 +124,6 @@ test('a pre-existing roundtable file without the new columns is migrated in plac
   } finally { store.close(); }
 });
 
-test('the Windows boot-anchor reader returns evidence only for one critical session-0 wininit and null otherwise', async () => {
-  const guid = '0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b';
-  const valid = { anchors: [{ pid: 1736, image: 'C:\\Windows\\System32\\wininit.exe', critical: true }], machineGuid: guid };
-  let scripts = 0;
-  const read = (result, options = {}) => readWindowsBootAnchor({ salt: 'fuli-test', platform: 'win32',
-    run: async (script) => {
-      scripts++;
-      assert.doesNotMatch(script, /CommandLine/);
-      assert.ok(script.includes('-Path "HKLM:\\SOFTWARE\\Microsoft\\Cryptography"'), 'the script reads the real MachineGuid key');
-      if (result instanceof Error) throw result;
-      return result;
-    },
-    ...options });
-  const evidence = await read(valid);
-  assert.equal(evidence.version, 1);
-  assert.deepEqual(evidence.anchor, { pid: 1736, image: 'wininit.exe', critical: true });
-  assert.match(evidence.machineHash, /^[0-9a-f]{64}$/);
-  assert.equal(evidence.machineHash.includes(guid.replaceAll('-', '')), false, 'the raw machine id is not stored');
-  assert.equal((await read({ ...valid, machineGuid: guid.toUpperCase() })).machineHash, evidence.machineHash);
-  assert.notEqual((await read(valid, { salt: 'other' })).machineHash, evidence.machineHash);
-  for (const [label, result] of [
-    ['error', new Error('access denied')],
-    ['two anchors', { ...valid, anchors: [valid.anchors[0], { ...valid.anchors[0], pid: 1800 }] }],
-    ['no anchor', { ...valid, anchors: [] }],
-    ['critical unknown', { ...valid, anchors: [{ ...valid.anchors[0], critical: null }] }],
-    ['not critical', { ...valid, anchors: [{ ...valid.anchors[0], critical: false }] }],
-    ['other image', { ...valid, anchors: [{ ...valid.anchors[0], image: 'C:\\Temp\\wininit.exe.bak' }] }],
-    ['bad pid', { ...valid, anchors: [{ ...valid.anchors[0], pid: 0 }] }],
-    ['no machine id', { ...valid, machineGuid: '' }],
-    ['partial', null]]) {
-    assert.equal(await read(result), null, label);
-  }
-  const before = scripts;
-  assert.equal(await read(valid, { platform: 'linux' }), null);
-  assert.equal(await read(valid, { salt: '' }), null);
-  assert.equal(scripts, before, 'nothing is queried off Windows or without a salt');
-});
-
 // ---- Stage 2: evidence-bound release exists only as an internal CAS ----
 
 function heldRow(store, id = 'held', evidence = EVIDENCE, { spaceId = 'space', agentId = 'reviewer-1' } = {}) {
@@ -174,32 +134,12 @@ function heldRow(store, id = 'held', evidence = EVIDENCE, { spaceId = 'space', a
 }
 const replaced = { ...EVIDENCE, anchor: { ...EVIDENCE.anchor, pid: 4242 } };
 
-test('a release proof needs same-machine, recorded-critical evidence and a different current critical anchor', () => {
-  const store = createRoundtableStore();
-  try {
-    const row = heldRow(store);
-    assert.deepEqual(cleanupReleaseProof(row, replaced), { machineHash: EVIDENCE.machineHash, anchorPid: '1736',
-      proof: 'boot_anchor_replaced', observation: 'anchor_pid_changed' });
-    for (const [label, current] of [
-      ['same anchor', EVIDENCE],
-      ['other machine', { ...replaced, machineHash: 'n'.repeat(64) }],
-      ['current not critical', { ...replaced, anchor: { ...replaced.anchor, critical: null } }],
-      ['current unknown', null],
-      ['current unversioned', { ...replaced, version: 2 }]]) {
-      assert.equal(cleanupReleaseProof(row, current), null, label);
-    }
-    const notCritical = heldRow(store, 'not-critical', { ...EVIDENCE, anchor: { ...EVIDENCE.anchor, critical: false } });
-    assert.equal(cleanupReleaseProof(notCritical, replaced), null, 'an anchor never observed critical proves nothing');
-    assert.equal(cleanupReleaseProof(heldRow(store, 'no-evidence', null), replaced), null);
-  } finally { store.close(); }
-});
-
 test('the evidence-bound release succeeds once across coordinators, keeps history, and lifts only its own hold', async (t) => {
   const open = await sharedFile(t);
   const [first, second] = [open(), open()];
-  const row = heldRow(first);
+  heldRow(first);
   heldRow(first, 'other-space-held', EVIDENCE, { spaceId: 'other-space' });
-  const proof = cleanupReleaseProof(row, replaced);
+  const proof = { machineHash: EVIDENCE.machineHash, anchorPid: '1736', proof: 'boot_anchor_replaced', observation: 'anchor_pid_changed' };
   assert.deepEqual([first.releaseProvenCleanup('held', proof), second.releaseProvenCleanup('held', proof)], [true, false]);
   assert.equal(first.releaseProvenCleanup('held', proof), false, 'a replay changes nothing');
   const released = second.getMessage('held');

@@ -5,7 +5,6 @@ export const routeMessages = {
     },
     preferences: {
       title: '偏好',
-      description: '全局与项目级的品味、个性和判断偏好。',
     },
     personalProjects: {
       title: '项目',
@@ -72,7 +71,6 @@ export const routeMessages = {
     },
     preferences: {
       title: 'Preferences',
-      description: 'Global and project taste, personality, and judgment preferences.',
     },
     personalProjects: {
       title: 'Projects',

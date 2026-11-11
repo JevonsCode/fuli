@@ -10,10 +10,6 @@ export function localServerAuthority(address) {
   return address.port === 80 ? '127.0.0.1' : `127.0.0.1:${address.port}`;
 }
 
-export function rejectDisallowedRequest({ request, response, authority }) {
-  return rejectRequestOutsidePolicy({ request, response, authority });
-}
-
 export function rejectRequestOutsidePolicy({
   request,
   response,

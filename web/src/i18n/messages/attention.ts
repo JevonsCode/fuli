@@ -1,6 +1,6 @@
 export const attentionMessages = {
   'zh-CN': {
-    title: '待决策', count: '{count} 件事待你处理', all: '全部 Agent', refresh: '刷新', close: '关闭',
+    title: '待决策', count: '{count} 件事待你处理', all: '全部 Agent', refresh: '刷新',
     loading: '正在读取待处理的 Agent 请求…',
     loadError: '没读到待决策的事，请重试',
     response: '你的回复', send: '提交回复', sending: '正在把你的回复交给 Agent…', more: '加载更多', task: '查看 Agent 任务',
@@ -11,7 +11,7 @@ export const attentionMessages = {
     kinds: { question: '需要答复', approval: '需要决定', review: '需要验收', permission: '需要权限', blocked: '需要协助' },
   },
   'en-US': {
-    title: 'Decisions', count: '{count} requests need you', all: 'All Agents', refresh: 'Refresh', close: 'Close',
+    title: 'Decisions', count: '{count} requests need you', all: 'All Agents', refresh: 'Refresh',
     loading: 'Loading pending Agent requests…',
     loadError: 'Could not load your decisions. Try again',
     response: 'Your reply', send: 'Reply and resolve', sending: 'Sending your reply to the Agent…', more: 'Load more', task: 'View Agent tasks',

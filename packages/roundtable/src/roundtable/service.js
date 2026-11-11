@@ -912,17 +912,3 @@ function label(agent) {
 function validation(message) {
   return new RoundtableError('validation', message);
 }
-
-// Release proof for one recorded hold: the same machine, an anchor recorded as
-// critical, and a complete current snapshot whose single critical session-0
-// anchor is a different process. Anything else is no proof. No production path
-// calls this yet: the boot-anchor assumption is unverified, so release stays off.
-export function cleanupReleaseProof(row, current) {
-  if (row?.cleanup_status !== 'unconfirmed' || row.cleanup_released_at != null || row.cleanup_evidence_version !== '1'
-      || row.cleanup_anchor_critical !== '1' || !row.cleanup_machine_hash || !row.cleanup_anchor_pid) return null;
-  if (current?.version !== 1 || current.machineHash !== row.cleanup_machine_hash || current.anchor?.critical !== true
-      || !Number.isInteger(current.anchor.pid) || current.anchor.pid <= 0) return null;
-  if (String(current.anchor.pid) === row.cleanup_anchor_pid) return null;
-  return { machineHash: row.cleanup_machine_hash, anchorPid: row.cleanup_anchor_pid,
-    proof: 'boot_anchor_replaced', observation: 'anchor_pid_changed' };
-}

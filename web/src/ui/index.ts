@@ -1,9 +1,7 @@
 // The design system: pages compose these; they never re-implement a control.
 export { default as UiAiButton } from './UiAiButton.vue'
 export { default as UiAvatar } from './UiAvatar.vue'
-export { default as UiCard } from './UiCard.vue'
 export { default as UiChip } from './UiChip.vue'
-export { default as UiChipRow } from './UiChipRow.vue'
 export { default as UiDialog } from './UiDialog.vue'
 export { default as UiEmpty } from './UiEmpty.vue'
 export { default as UiIcon } from './UiIcon.vue'

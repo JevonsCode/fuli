@@ -21,8 +21,8 @@
 // - A chosen item also sits on the quiet muted surface beside its check; an
 //   item may add a `meta` slot (an ID, a count) in muted 12px after its text,
 //   outside the text the trigger shows.
-// - Not copied (nothing uses it yet): SelectItemText (SelectItem renders
-//   reka-ui's directly, as upstream does).
+// - Not copied (nothing uses them yet): SelectItemText (SelectItem renders
+//   reka-ui's directly, as upstream does), SelectSeparator.
 // FULI additions:
 // - OptionSelect: these parts composed for a list of options (`option.ts`),
 //   the one way pages pick from a short fixed list. It takes the control's
@@ -40,6 +40,5 @@ export { default as SelectItem } from "./SelectItem.vue"
 export { default as SelectLabel } from "./SelectLabel.vue"
 export { default as SelectScrollDownButton } from "./SelectScrollDownButton.vue"
 export { default as SelectScrollUpButton } from "./SelectScrollUpButton.vue"
-export { default as SelectSeparator } from "./SelectSeparator.vue"
 export { default as SelectTrigger } from "./SelectTrigger.vue"
 export { default as SelectValue } from "./SelectValue.vue"

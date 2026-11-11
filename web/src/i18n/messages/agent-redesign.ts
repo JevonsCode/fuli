@@ -1,6 +1,5 @@
 export const agentRedesignMessages = {
   "zh-CN": {
-    membershipStatus: "成员 · {status}",
     projects: {
       more: "全部项目 · {count}",
     },
@@ -21,13 +20,8 @@ export const agentRedesignMessages = {
       saveError: "职业保存失败",
     },
     workbench: {
-      current: "当前",
       titleNotLoaded: "任务标题未在最近 200 条任务中，打开查看",
-      lastUpdate: "最近更新 {time}",
-      lastUpdateUnknown: "最近更新时间未知",
       runningFor: "已运行 {duration}",
-      runningForUnknown: "运行时长未知",
-      responsibility: "长期职责",
     },
     statusDetail: {
       blocked: "受阻：{reason}",
@@ -110,7 +104,6 @@ export const agentRedesignMessages = {
     },
   },
   "en-US": {
-    membershipStatus: "Member · {status}",
     projects: {
       more: "All projects · {count}",
     },
@@ -131,13 +124,8 @@ export const agentRedesignMessages = {
       saveError: "Could not save the occupation",
     },
     workbench: {
-      current: "Now",
       titleNotLoaded: "Task title is not among the latest 200 tasks; open to view",
-      lastUpdate: "Updated {time}",
-      lastUpdateUnknown: "Last update unknown",
       runningFor: "Running for {duration}",
-      runningForUnknown: "Running time unknown",
-      responsibility: "Long-term responsibility",
     },
     statusDetail: {
       blocked: "Blocked: {reason}",

@@ -737,17 +737,6 @@ class PublicationDraftRecord(StrictModel):
     submission_outcome: Literal['unknown'] | None = None
 
 
-class PublicationDraftDecision(StrictModel):
-    decision: Literal['submit_public', 'keep_personal', 'ignore']
-    shared_proposal_id: str | None = Field(default=None, max_length=128)
-
-    @model_validator(mode='after')
-    def require_shared_proposal(self):
-        if self.decision == 'submit_public' and not self.shared_proposal_id:
-            raise ValueError('shared_proposal_id is required after public submission')
-        if self.decision != 'submit_public' and self.shared_proposal_id:
-            raise ValueError('shared_proposal_id is only valid for public submission')
-        return self
 class KnowledgeCommit(StrictModel):
     space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str | None = Field(default=None, min_length=1, max_length=128)

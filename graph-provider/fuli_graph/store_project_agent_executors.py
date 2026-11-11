@@ -1107,21 +1107,13 @@ class StoreProjectAgentExecutors(
 
     # Short aliases make the mixin convenient for provider/facade adapters and
     # keep the public naming independent from the eventual HTTP route names.
-    register_executor = register_project_agent_executor
     upsert_executor = upsert_project_agent_executor
     authorize_executor = authorize_project_agent_executor
-    record_executor_preflight = record_project_agent_executor_preflight
-    record_executor_health = record_project_agent_executor_health
     list_executors = list_project_agent_executors
     get_executor = get_project_agent_executor
-    archive_executor = archive_project_agent_executor
-    update_executor_priority = update_project_agent_executor_priority
-    create_executor_routing_rule = create_project_agent_executor_routing_rule
     list_executor_routing_rules = list_project_agent_executor_routing_rules
     update_executor_routing_rule = update_project_agent_executor_routing_rule
     get_executor_routing_rule = get_project_agent_executor_routing_rule
-    archive_executor_routing_rule = archive_project_agent_executor_routing_rule
-    record_task_executor_actual = record_project_agent_executor_actual
 
     @staticmethod
     def _payload_hash(value: Any) -> str:
