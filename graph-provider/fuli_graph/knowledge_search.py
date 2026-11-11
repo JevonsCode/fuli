@@ -982,7 +982,7 @@ def _relevance(query: str, record, term_weights: dict[str, float] | None = None)
     haystack = _haystack(record)
     if not needle:
         return 0.0
-    score = 8.0 if needle in haystack else 0.0
+    score = 8.0 if needle in haystack or _joined(needle) in _joined(haystack) else 0.0
     score = max(score, _alias_relevance(needle, _retrieval_aliases(record)))
     terms = _terms(needle)
     if terms:
@@ -1018,7 +1018,17 @@ def _edge_relevance(query: str, edge, names: dict[str, str], position: int, tota
     return round(lexical + semantic_order, 4)
 
 
+# 的 and 之 between two Chinese characters only link them: 控制台的端口 is the
+# phrase 控制台端口, as a whole and in its two-character terms.
+_LINKING_PARTICLE = re.compile(r'(?<=[一-鿿])[的之](?=[一-鿿])')
+
+
+def _joined(value: str) -> str:
+    return _LINKING_PARTICLE.sub('', value)
+
+
 def _terms(value: str) -> set[str]:
+    value = _joined(value)
     latin = {
         _word_stem(term) for term in re.findall(r'[a-z0-9_]+', value)
         if term not in LATIN_QUERY_FILLERS
