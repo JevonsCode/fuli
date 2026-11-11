@@ -26,6 +26,13 @@ kit (`read_occupation_kit` with its `occupation`), ask once which recommended Sk
 the new FLA uses, and pass their answer as `occupationKit` in `decide_project_agent_recruitment`.
 MCP servers are suggestions only: never connect one for them, and keys stay theirs.
 
+When a checkpoint returns `triage.promotion` (a topic Astro looked after grew into a project), append its `notice`
+unchanged. If it carries `start_question`, ask it with the host’s native choice: its `options` plus a free answer when
+`allow_other` is true. Only the person answers. On 马上开工 set each task in `on_yes.task_ids` to `queued` with
+`record_project_agent_task_activity` in `on_yes.personal_project_id`; on 先不 change nothing; record a free answer
+as their words and act on what it says. `team.handoffs` lists who Bole hired and each handover task; a position
+with status `unavailable` was not filled, so say so instead of reporting a full team.
+
 Treat the returned durable Agent identity and a host worker as different things. A durable Agent
 keeps its project assignment, preferences, task history, and Agent-scoped graph memory while idle;
 the host creates an execution process only when needed. Start only entries in `worker_plan`, give
