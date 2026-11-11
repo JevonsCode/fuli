@@ -18,7 +18,7 @@ import { noteEntryTask } from '../conversations/entry-budget.js';
 import { withSharedProjectList } from './shared-project-list.js';
 import { clearSessionTaskBlockers } from './task-blocker-progress.js';
 import { standingOwnerEntry } from './task-entry-standing-owner.js';
-import { ownerChangeEntry } from './task-entry-owner-change.js';
+import { changedOwner, ownerChangeEntry, previousOwnerName } from './task-entry-owner-change.js';
 import { roundtableAskEntry } from './task-entry-roundtable-ask.js';
 import { isReadOnlyRefusal, readOnlyLifecycle, readOnlyTaskEntry } from './task-entry-read-only.js';
 
@@ -150,7 +150,7 @@ async function entryPreferences(application, projectResolution, {
   const group = projectResolution.group ? await groupDiscussionEntry(application, projectResolution.group,
     fla?.selection ?? selected, projectResolution.personalProjectId ?? null) : null;
   const selection = group?.selection ?? fla?.selection ?? selected;
-  const routeMarkers = [...(fla?.markers ?? []), ...(group?.markers ?? []), ...unassignedMarkers(selection)];
+  const ownerFrom = changedOwner(projectResolution, selection);
   // A rejected explicit role must not leak its private preferences via fallback.
   const selectedAgentId = selection ? selection.agent?.agentId ?? null : projectAgentId;
   const standing = standingOwnerEntry(projectResolution, selection);
@@ -168,7 +168,7 @@ async function entryPreferences(application, projectResolution, {
       includeTeam ? taskJudgmentContext(application, projectResolution.personalProjectId) : null
     ]);
   });
-  const [preferences, management, [context, judgmentContext], triage, capture, formatNotices, roundtableAsk] = await Promise.all([
+  const [preferences, management, [context, judgmentContext], triage, capture, formatNotices, roundtableAsk, ownerFromName] = await Promise.all([
     getCollaborationPreferencesWorkflow(
       application,
       projectResolution,
@@ -195,11 +195,15 @@ async function entryPreferences(application, projectResolution, {
     reads.formatNotices,
     // "去看看 / 问问 X 项目": which project's lead to ask on the roundtable (rec#71).
     includeMessages && agentInvocation ? roundtableAskEntry(application, { taskPrompt, sessionId },
-      { personalProjectId: projectResolution.personalProjectId ?? null, agentId: selection?.agent?.agentId ?? null }) : null
+      { personalProjectId: projectResolution.personalProjectId ?? null, agentId: selection?.agent?.agentId ?? null }) : null,
+    // Display only: bounded, and its ID stands in (task-entry-owner-change.js).
+    previousOwnerName(application, ownerFrom)
   ]);
   const managedPreferences = management ? { ...preferences, project_management_context: management } : preferences;
   if (context) applyAgentAssignment(context, selection);
-  const ownerChange = await ownerChangeEntry(application, projectResolution, selection, context?.role?.name);
+  const ownerChange = ownerFrom && ownerChangeEntry(ownerFrom, ownerFromName, projectResolution, selection.agent.agentId, context?.role?.name);
+  const routeMarkers = [...(fla?.markers ?? []), ...(group?.markers ?? []), ...unassignedMarkers(selection),
+    ...(ownerChange ? [ownerChange.marker] : [])];
   // Questions other Agents left for this Agent while it was not running.
   const waiting = includeMessages && selection?.agent && application.roundtable
     ? application.roundtable.pending(selection.agent.agentId, projectResolution.personalProjectId) : [];
