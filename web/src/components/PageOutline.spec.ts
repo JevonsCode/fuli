@@ -20,7 +20,7 @@ describe('the page outline look', () => {
 
   it('starts a little over a quarter down the window (28%), rising only as far as a long list needs, never under the top bar', () => {
     const outline = rule('.page-outline')
-    expect(outline).toMatch(/--outline-row: 30px/)
+    expect(outline).toMatch(/--outline-row: clamp\(16px, .*, 30px\)/)
     expect(outline).toMatch(/top: max\(var\(--outline-top-min\), min\(28dvh, calc\(100dvh - var\(--outline-height\) - var\(--outline-bottom\)\)\)\)/)
     expect(outline).toMatch(/--outline-top-min: calc\(76px \+ var\(--desktop-caption-top, 0px\)\)/)
     expect(outline).toMatch(/--outline-height: calc\(var\(--outline-rows, 3\) \* var\(--outline-row\) \+ 2 \* var\(--outline-pad\)\)/)
@@ -35,6 +35,12 @@ describe('the page outline look', () => {
     expect(rule('.page-outline-item')).toMatch(/pointer-events: none/)
     expect(open('.page-outline-item')).toMatch(/pointer-events: auto/)
     expect(rule('.page-outline-dot')).toMatch(/width: var\(--outline-capsule\)/)
+  })
+
+  it('keeps a long list inside the window by shortening its rows, down to one line of the names', () => {
+    const root = rule('.page-outline')
+    expect(root).toMatch(/--outline-row: clamp\(16px, calc\(\(100dvh - var\(--outline-top-min\) - var\(--outline-bottom\) - 2 \* var\(--outline-pad\)\) \/ var\(--outline-rows, 3\)\), 30px\)/)
+    expect(root).toMatch(/--outline-pill: min\(14px, calc\(var\(--outline-row\) - 4px\)\)/)
   })
 
   it('floats on the dock\'s frosted glass with the shared glass edge, the backdrop declared -webkit- first', () => {
