@@ -35,6 +35,13 @@ export function sessionWorkingDirectory(client, sessionId, { home = homedir(), e
   return wakeAdapter(client)?.sessionDirectory(sessionId, { home, env }) ?? null;
 }
 
+// Whether the session's client shows a turn still running in it. A client that
+// forks on resume (Claude Code) never joins a running turn and says nothing.
+export function sessionTurnRunning(client, sessionId, { home = homedir(), env = process.env } = {}) {
+  if (!SESSION_ID.test(sessionId)) return false;
+  return wakeAdapter(client)?.turnRunning?.(sessionId, { home, env }) ?? false;
+}
+
 export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeoutMs = 300_000,
   delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn, onSession, readOnly = false } = {}) {
   const command = resolveClientCommand(client, { env });

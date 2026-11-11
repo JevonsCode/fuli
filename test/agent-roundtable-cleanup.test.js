@@ -87,7 +87,8 @@ test('a confirmed failure still falls back to the next channel without a cleanup
   } });
   const result = await ask('Review this');
   assert.equal(result.status, 'answered');
-  assert.equal(woken.length, 2);
+  // The resume fails, the sender's own Claude Code cannot read this Codex-shaped answer, the fresh Codex session answers.
+  assert.deepEqual(woken.map(input => [input.client, input.sessionId]), [['codex', 'cx-session-9'], ['claude_code', null], ['codex', null]]);
   assert.equal(result.cleanup, undefined);
   assert.equal(roundtable.thread({ threadId: result.threadId }).messages[0].cleanup, undefined);
 });

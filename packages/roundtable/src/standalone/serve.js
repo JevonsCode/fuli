@@ -38,12 +38,25 @@ function sendJson(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
+// This service has no web page: its only caller is the command on this
+// computer, which sends JSON and no browser headers. A page in a browser
+// could otherwise post here across sites (a no-cors POST needs no preflight).
+function fromWebPage(request) {
+  const { origin, 'sec-fetch-site': fetchSite, 'content-type': contentType = '' } = request.headers;
+  if (origin !== undefined || fetchSite !== undefined) return true;
+  return request.method !== 'GET' && !/^application\/json\b/i.test(contentType);
+}
+
 // Keeps the LAN roundtable of a standalone home running: it resumes whatever
 // the owner turned on and answers the owner's controls on loopback only.
 export async function startStandaloneServe({ standalone, port = DEFAULT_SERVE_PORT, onError = () => {} }) {
   const runtime = createPeerRuntime({ host: standalone.host, roundtable: standalone.roundtable, port: standalone.peer, onError });
   await runtime.resume().catch(onError);
   const server = createServer((request, response) => {
+    if (fromWebPage(request)) {
+      sendJson(response, 403, { error: 'local_owner_only', message: 'LAN roundtable settings are changed with the fuli-roundtable command on this computer' });
+      return;
+    }
     handlePeerControlRequest({ request, response, url: new URL(request.url, 'http://127.0.0.1'), peer: runtime,
       readJson, sendJson, unavailableMessage: 'The LAN roundtable is not available' })
       .then(handled => { if (!handled) sendJson(response, 404, { error: 'not_found', message: 'Unknown route' }); })

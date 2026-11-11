@@ -21,9 +21,22 @@ describe('model uses', () => {
       ['strong', 'synthetic-strong', [{ use: 'tonborg', on: false }]],
     ])
     expect(models[0]!.service).toBe('OpenAI 兼容 · 127.0.0.1:11434')
+    // 测试连接 goes through the first use that is on; a connection whose uses are all off has none.
+    expect(models.map(model => model.checkRole)).toEqual(['assistant', null])
     const semantic = modelsInUse(payload([{ role: 'semantic', state: 'enabled', answeredBy: 'model_api',
       connection: { ...connection('semantic', 'synthetic-embed'), protocol: 'openai_embeddings' } }]))
     expect(semantic[0]!.service).toBe('OpenAI 兼容向量接口 · 127.0.0.1:11434')
+  })
+
+  it('give a connection the health of the roles that are on: a failure first, and nothing from a role that is off', () => {
+    const failing = { status: 'failing', at: '2026-11-11T02:00:00.000Z', reason: 'timeout' }
+    const [shared, off] = modelsInUse(payload([
+      { role: 'assistant', state: 'enabled', answeredBy: 'model_api', connection: connection('shared', 'synthetic'), health: { status: 'ok', at: '2026-11-11T03:00:00.000Z', reason: null } },
+      { role: 'jefa', state: 'enabled', answeredBy: 'model_api', connection: connection('shared', 'synthetic'), health: failing },
+      { role: 'tonborg', state: 'disabled', answeredBy: 'current_session', connection: connection('off', 'synthetic'), health: failing },
+    ]))
+    expect(shared!.health).toEqual(failing)
+    expect(off!.health).toBeNull()
   })
 
   it('turn an Astro task on only while Astro\'s model is on and allows it', () => {

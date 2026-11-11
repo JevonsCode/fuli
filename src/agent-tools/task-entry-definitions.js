@@ -26,7 +26,7 @@ export const TASK_ENTRY_DEFINITIONS = [
   {
     name: 'checkpoint_task_knowledge',
     title: 'LIFECYCLE · Finish knowledge review',
-    description: 'Record capture candidates or a meaningful task workLog once. Routine empty finishes follow entry checkpoint_guidance. Employees calling this tool supply a concise truthful workLog, even with retain_nothing. Memory changes include agentMemory with loaded revision and merged notes. capture_candidates is a bounded supported batch; proposals stay pending without valid human/source confirmation. retain_nothing skips knowledge capture. No transcripts, guesses, logs, credentials or disposable output. collaborators contains actual contributing Agent IDs only; unknown/inactive IDs are ignored. Copy returned agent_receipt.markdown unchanged.',
+    description: 'Record capture candidates or a meaningful task workLog once. Routine empty finishes follow entry checkpoint_guidance. Employees supply a concise truthful workLog, even with retain_nothing. Memory changes include agentMemory with loaded revision and merged notes. capture_candidates is one bounded batch; proposals stay pending without valid human/source confirmation. retain_nothing skips knowledge capture. No transcripts, guesses, logs, credentials or disposable output. collaborators: actual contributing Agent IDs only; others are ignored. Sent too early: call again with amend:true and only the corrected reason/workLog; the first stays. Copy returned agent_receipt.markdown unchanged.',
     inputSchema: objectSchema({
       taskContextToken: id,
       disposition: enumSchema(['capture_candidates', 'retain_nothing']),
@@ -36,7 +36,7 @@ export const TASK_ENTRY_DEFINITIONS = [
         summary: boundedString(2000)
       }, ['status', 'summary']),
       knowledgeUsage: { ...knowledgeUsageItems,
-        description: 'Explicit material use only, including with retain_nothing. Atomically recorded with checkpoint preparation using the task token as taskId; retries replay the original receipt. Retrieval and automatic preference injection do not qualify. The existing Agent confirmation policy still applies.' },
+        description: 'Explicit material use only, also with retain_nothing; recorded atomically with the checkpoint under the task token, and retries replay its receipt. Retrieval and automatic preference injection do not qualify; the Agent confirmation policy still applies.' },
       capture: objectSchema(captureEpisodeFields, captureEpisodeRequired),
       captureRouting: arraySchema(objectSchema({
         scope: enumSchema(['personal_global', 'current_project']),
@@ -44,12 +44,13 @@ export const TASK_ENTRY_DEFINITIONS = [
         relationshipKeys: arraySchema(id, { maxItems: 256 }),
         sourceExcerpt: shortText
       }, ['scope', 'entityKeys', 'relationshipKeys']), { minItems: 1, maxItems: 2,
-        description: 'Use with one capture. Partition every entity/relationship key exactly once into unique scopes; each scope needs an entity, and relationships stay with their endpoints. Shared episode metadata; optional sourceExcerpt overrides its evidence. Global requires preferences with explicit global evidence; project-limited preferences stay current_project, which requires the registered task project. Ask when scope is uncertain. All routed proposals remain pending; saved IDs open existing human confirmation.' }),
+        description: 'Use with one capture. Partition every entity/relationship key exactly once into unique scopes; each scope needs an entity, and relationships stay with their endpoints. sourceExcerpt optionally overrides the shared evidence. Global requires preferences with explicit global evidence; project-limited preferences stay current_project, which requires the registered task project. Ask when scope is uncertain. Routed proposals stay pending for human confirmation.' }),
       agentMemory: objectSchema({
         expectedRevision: integerSchema({ minimum: 0 }),
         memory: workingMemorySchema
       }, ['expectedRevision', 'memory']),
       collaborators: arraySchema(boundedString(128), { maxItems: 16 }),
+      amend: { type: 'boolean' },
       ...checkpointCompactFields
     }, ['taskContextToken', 'disposition', 'reason'])
   },

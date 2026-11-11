@@ -18,6 +18,8 @@ import {
 } from './review-list'
 
 const EMPTY: DelegatedReviews = { confirmed: [], questions: [] }
+/** The word a question's button shows for each action (保留, not the pending list's 确认). */
+const ANSWER_WORD = { confirm: 'keep', drop: 'drop', edit: 'edit' } as const
 const TOAST_TEXT = 24
 /** Votes on Tonborg's guesses sent at once after a whole group is handled. */
 const VOTES_AT_ONCE = 4
@@ -40,7 +42,7 @@ export const useReviewList = defineStore('review-list', () => {
   const loading = ref(false)
   const error = ref('')
   /** The line key (or a whole group's name) whose action is pending, and which action. */
-  const pending = ref<Record<string, ReviewAction | 'undo' | 'ack'>>({})
+  const pending = ref<Record<string, ReviewAction | 'undo' | 'ack' | 'other'>>({})
   /** How many dropped replies 撤销 is putting back. */
   const restoring = ref(0)
   /** How far a whole group's action got, counted from the requests that came back. */
@@ -97,7 +99,7 @@ export const useReviewList = defineStore('review-list', () => {
     if (ids(reviews) !== ids(delegated.value)) await refresh()
   }
 
-  async function guarded(key: string, action: ReviewAction | 'undo' | 'ack', work: () => Promise<void>) {
+  async function guarded(key: string, action: ReviewAction | 'undo' | 'ack' | 'other', work: () => Promise<void>) {
     if (pending.value[key]) return false
     pending.value = { ...pending.value, [key]: action }
     try {
@@ -114,10 +116,10 @@ export const useReviewList = defineStore('review-list', () => {
 
   // Answering a line Tonborg asked about is also the vote on its guess.
   async function vote(line: ReviewLine, action: ReviewAction) {
-    if (!line.review || !line.review.question) return
+    if (!line.review?.ask) return
     const agrees = agreesWithGuess(line.review, action)
     await voteOnReview(spaceId.value, line.review.id, agrees ? 'up' : 'down',
-      agrees ? '' : t('reviewList.voteReason', { action: t(`reviewList.actions.${action}`) }), line.review.feedbackRevision)
+      agrees ? '' : t('reviewList.voteReason', { action: t(`reviewList.answers.${ANSWER_WORD[action]}`) }), line.review.feedbackRevision)
   }
 
   async function apply(line: ReviewLine, action: Exclude<ReviewAction, 'edit'>) {
@@ -139,6 +141,22 @@ export const useReviewList = defineStore('review-list', () => {
   /** 改一下 is answered on the item's own page; the vote records what the person chose. */
   async function edit(line: ReviewLine) {
     await vote(line, 'edit').catch(() => {})
+  }
+
+  /**
+   * 其他 (Jevons 11-11): the person answers a question in their own words. They
+   * are kept as said with a vote against the guess, which Tonborg reads next
+   * time; the item itself does not change and waits with the other pending knowledge.
+   */
+  async function other(line: ReviewLine, words: string) {
+    const review = line.review
+    if (!review) return false
+    const done = await guarded(line.key, 'other', async () => {
+      await voteOnReview(spaceId.value, review.id, 'down', t('reviewList.otherReason', { words }), review.feedbackRevision)
+      delegated.value = { ...delegated.value, questions: delegated.value.questions.filter(question => question.id !== review.id) }
+    })
+    if (done) consoleStore.notify(t('reviewList.done.other'))
+    return done
   }
 
   /** The lines leave the list together: one change, one list animation. */
@@ -203,7 +221,7 @@ export const useReviewList = defineStore('review-list', () => {
         advance(done ? [line] : [], 1)
       }
       // Answering Tonborg's questions is also the vote on each guess.
-      const asked = handled.filter(line => line.review?.question)
+      const asked = handled.filter(line => line.review?.ask)
       for (let start = 0; start < asked.length; start += VOTES_AT_ONCE) {
         await Promise.all(asked.slice(start, start + VOTES_AT_ONCE).map(line =>
           vote(line, drops.includes(line) ? 'drop' : 'confirm').catch(() => {})))
@@ -285,5 +303,5 @@ export const useReviewList = defineStore('review-list', () => {
   }
 
   return { spaceId, items, delegated, loaded, loading, error, pending, progress, restoring, list, total,
-    setSpace, refresh, refreshIfTonborgMoved, act, edit, actAll, dropEchoes, undo, acknowledgeConfirmed }
+    setSpace, refresh, refreshIfTonborgMoved, act, edit, other, actAll, dropEchoes, undo, acknowledgeConfirmed }
 })

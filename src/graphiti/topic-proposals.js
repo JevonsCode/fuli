@@ -2,6 +2,7 @@ import { receiptConsoleUrl } from '../agents/identity-receipt.js';
 import { createProjectNamed, projectByName } from './task-entry-project-mention.js';
 import { PERSON_WRITER, UNNAMED_AGENT_WRITER } from './project-profile-authors.js';
 import { sourceConsoleUrl } from './source-marker.js';
+import { staffTopicTeam, teamNotice } from './topic-team-handoff.js';
 import { ApplicationError, ApplicationErrorCode } from '../app/application-error.js';
 import { markdownLink } from '../text/markdown-link.js';
 
@@ -12,7 +13,9 @@ import { markdownLink } from '../text/markdown-link.js';
 // yet" and an undo both wait for more conversations. Every rule reads stored
 // triage counts; no model is called. Forming also moves what the topic's
 // sessions held in their temporary projects into it, and an undo moves back
-// what nobody changed since (the Provider's topic_knowledge_migration).
+// what nobody changed since (the Provider's topic_knowledge_migration). Then
+// Bole hires the project's first team and Astro hands the topic over to each
+// of them as a task of their own (topic-team-handoff.js).
 export const PROPOSAL_MIN_CONVERSATIONS = 3;
 const PROPOSAL_MIN_DAYS = 2;
 const PROPOSAL_ASK_AGAIN_AFTER = 3;
@@ -63,20 +66,37 @@ async function promoteTopic(application, topic, { sourceApplication = 'other' } 
     promoted: formed.personal_project_id, topic: stats.topic })}`;
   return { ...formed, status: 'promoted', proposed_by: 'employee.assistant',
     notice: `FULI：话题「${stats.topic}」聊了 ${stats.count} 次、跨 ${stats.days} 天，已升级为项目「${stats.topic}」`
-      + `${formed.knowledge_moved ? `，搬了 ${formed.knowledge_moved} 条知识` : ''}。${markdownLink('改名、换上级或撤销', link)}`,
-    guidance: 'Add notice to the end of your reply, unchanged. The person can rename, move or undo it at its link.' };
+      + `${formed.knowledge_moved ? `，搬了 ${formed.knowledge_moved} 条知识` : ''}${teamNotice(formed.team)}。`
+      + `${markdownLink('改名、换上级或撤销', link)}`,
+    ...startQuestion(formed),
+    guidance: 'Add notice to the end of your reply, unchanged. The person can rename, move or undo it at its link.'
+      + (formed.team?.handoffs.some(item => item.task_id)
+        ? ' Then ask start_question with the native choice of the host; only the person answers it.' : '') };
 }
 
-// The person said yes: an AI-draft brief, a lead staffed through AR, and every
-// open conversation of the topic attached. The lead hires more people only when
-// the work needs them. People can rename, merge or split it afterwards.
+// Whether the team starts now is the person's call at that moment (Jevons
+// 11-11): one click, with 其他 for their own words. Each handover is a
+// backlog task, so "yes" is setting those tasks to queued.
+function startQuestion(formed) {
+  // Only a task waiting in the backlog can be started; a blocked one says why in the task itself.
+  const tasks = (formed.team?.handoffs ?? []).filter(item => item.task_id && item.status === 'backlog').map(item => item.task_id);
+  if (!tasks.length) return {};
+  return { start_question: { ask: `「${formed.topic}」的团队现在就开工吗？`, options: ['马上开工', '先不'], allow_other: true,
+    on_yes: { tool: 'record_project_agent_task_activity', status: 'queued', summary: '你说马上开工',
+      personal_project_id: formed.personal_project_id, task_ids: tasks } } };
+}
+
+// The person said yes: an AI-draft brief, a lead staffed through AR, every
+// open conversation of the topic attached, and the team hired and briefed.
+// People can rename, merge or split it afterwards.
 export async function acceptTopicProposal(application, { topic, sourceApplication = 'other' }) {
   const stats = await openTopic(application, topic);
   const existing = await projectByName(application, stats.topic);
   if (existing?.ambiguous) throw new ApplicationError(ApplicationErrorCode.VALIDATION,
     `More than one project is named ${stats.topic}; move the conversations to one of them instead`);
   const reason = `你同意了 Astro 的建议：话题「${stats.topic}」累计 ${stats.count} 个会话、跨 ${stats.days} 天`;
-  return { ...await formTopicProject(application, stats, existing, reason, sourceApplication), status: 'formed' };
+  const formed = await formTopicProject(application, stats, existing, reason, sourceApplication);
+  return { ...formed, ...startQuestion(formed), status: 'formed' };
 }
 
 // Undo of a formation: the topic's conversations are open again and count as
@@ -113,10 +133,13 @@ async function formTopicProject(application, stats, existing, reason, sourceAppl
     personal_project_id: projectId, source_application: sourceApplication }).catch(() => null);
   const attached = await application.personal.conversationTriage('form', {
     personal_space_id: spaceId, topic: stats.topic, personal_project_id: projectId });
+  const team = lead?.agent?.agent_id ? await staffTopicTeam(application, { topic: stats.topic, projectId, lead: lead.agent,
+    created: !existing, conversationIds: attached.conversation_ids, knowledgeMoved: attached.knowledge.moved,
+    sourceApplication }) : null;
   return { personal_project_id: projectId, topic: stats.topic, reason, created: !existing,
     lead_agent_id: lead?.agent?.agent_id ?? null, lead_status: lead?.status ?? 'unavailable',
     conversations: attached.conversation_ids.length, knowledge_moved: attached.knowledge.moved,
-    knowledge_kept: attached.knowledge.kept };
+    knowledge_kept: attached.knowledge.kept, ...(team ? { team } : {}) };
 }
 
 export async function declineTopicProposal(application, { topic }) {

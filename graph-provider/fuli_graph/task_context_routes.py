@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Query
 
 from .models import SourceApplication
-from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskContextAdoptAgent, TaskContextCoordinationTask, TaskPreferenceRead, TurnReceiptClaim, SessionTurnReceiptClaim, SessionHintClaim
+from .task_context_models import TaskContextBegin, TaskContextCheckpoint, TaskCheckpointAmendment, TaskContextAdoptAgent, TaskContextCoordinationTask, TaskPreferenceRead, TurnReceiptClaim, SessionTurnReceiptClaim, SessionHintClaim
 from .task_session_hints import claim_session_hint
 from .task_turn_receipts import claim_session_turn_receipts, claim_turn_receipt
 from .project_memory_usage_routes import register_project_memory_usage_routes
@@ -49,6 +49,10 @@ def register_task_context_routes(application, store, Actor):
     @application.put('/v1/task-contexts/{token}/checkpoint')
     async def checkpoint_context(token: str, request: TaskContextCheckpoint, actor: Actor):
         return await store.checkpoint_task_context(actor, token, request)
+
+    @application.post('/v1/task-contexts/{token}/checkpoint/amendments')
+    async def amend_checkpoint(token: str, request: TaskCheckpointAmendment, actor: Actor):
+        return await store.amend_task_checkpoint(actor, token, request)
 
     @application.post('/v1/task-contexts/{token}/turn-receipt/claim')
     async def claim_receipt(token: str, request: TurnReceiptClaim, actor: Actor):

@@ -321,6 +321,12 @@ export class GraphitiProviderClient {
       method: 'PUT', body: input
     });
   }
+  // rec#85: a correction appended under a completed checkpoint.
+  amendTaskCheckpoint(token, input) {
+    return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/checkpoint/amendments`, {
+      method: 'POST', body: input
+    });
+  }
   // rec#20: the checkpoint's reply claims its own turn receipt exactly once.
   claimTurnReceipt(token, input) {
     return this.#request(`/v1/task-contexts/${encodeURIComponent(token)}/turn-receipt/claim`, {
@@ -1161,6 +1167,12 @@ function providerErrorDiagnostic(status, payload) {
     // When hard-deleted knowledge was deleted (rec#5 C9): a timestamp, no content.
     ...(typeof deletedAt === 'string' && ISO_TIME.test(deletedAt) ? { deletedAt } : {})
   };
+}
+
+// What a refusal says, for the human-review channel too (human-review-channel.js):
+// validation failures name the field and reason, and paths, URLs and tokens are removed.
+export function providerRefusalMessage(payload) {
+  return sanitizeProviderDetail(providerErrorMessage(payload));
 }
 
 function providerErrorMessage(payload, validationErrors = providerValidationErrors(payload)) {

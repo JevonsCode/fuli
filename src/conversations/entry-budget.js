@@ -96,7 +96,7 @@ function missingParts(entry) {
   const memory = (part, personalProjectId) => continuity?.[part] && spaceId
     ? [{ parts: [`project_agent_context.${part}`], tool: 'get_project_agent_memory',
       arguments: { personalSpaceId: spaceId, personalProjectId, agentId } }] : [];
-  const messages = ['agent_messages', 'agent_replies', 'attention_replies'].filter(part => entry[part]?.length);
+  const messages = ['agent_messages', 'agent_replies', 'stand_in_handbacks', 'attention_replies'].filter(part => entry[part]?.length);
   return [
     { parts: ['effective_preferences', 'task_guidance', ...['project_agent_context', 'judgment_context'].filter(part => entry[part])],
       tool: 'read_task_preferences', arguments: { taskContextToken: token }, note: RECOVERY_NOTE },

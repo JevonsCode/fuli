@@ -93,7 +93,7 @@ function fakeOllama(verdicts) {
   return { bodies, fetchImpl };
 }
 
-const verdict = (extra = {}) => ({ target: 'entity:syn-abc', outcome: 'approve', summary: 'Supported.', evidence: ['pnpm'], confidence: 0.95, options: [], ...extra });
+const verdict = (extra = {}) => ({ target: 'entity:syn-abc', outcome: 'approve', summary: 'Supported.', evidence: ['pnpm'], confidence: 0.95, guess: 'keep', doubt: 'other', question: 'Keep "synthetic"?', ...extra });
 
 test('a review goes through the production knowledge_review request with the candidate only in DATA', async t => {
   const ollama = fakeOllama([verdict()]);

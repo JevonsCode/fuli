@@ -147,7 +147,7 @@ export async function handleGraphApiRequest({
       itemKind: assignment[1],
       itemId: decodeURIComponent(assignment[2]),
       operationActor: 'human'
-    }));
+    }, ownerReads));
     return true;
   }
   const preferenceScope = url.pathname.match(
@@ -190,7 +190,7 @@ export async function handleGraphApiRequest({
         ...(await readJson(request)),
         ...(relay ? { confirmer: { kind: 'user', label: relayedConfirmerLabel(relay) } } : {}),
         operationActor: 'human'
-      })
+      }, ownerReads)
     );
     return true;
   }
@@ -203,7 +203,7 @@ export async function handleGraphApiRequest({
       itemKind: knowledgeItem[1],
       itemId: decodeURIComponent(knowledgeItem[2]),
       operationActor: 'human'
-    }));
+    }, ownerReads));
     return true;
   }
   if (url.pathname === '/api/subscriptions' && request.method === 'POST') {
