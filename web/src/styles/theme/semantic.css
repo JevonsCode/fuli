@@ -86,6 +86,9 @@
   --color-danger: #a8392e;
   --color-danger-soft: #f8e9e6;
   --color-on-accent: #ffffff;
+  /* The AI's own colour: the mark that opens a prompt for an AI (ui/UiAiButton.vue). Blue, apart from the brand's gold. */
+  --color-ai: #2563c9;
+  --color-ai-soft: #e8f0fc;
   --color-chart-blue: #2f5f8a;
   --color-chart-teal: #3f7462;
   --color-chart-violet: #6b4f8f;

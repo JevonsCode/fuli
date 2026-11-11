@@ -9,9 +9,13 @@ import { captureDecision, taskCaptureScope } from './capture-decision.js';
 const UNCAPTURED = /^Capture was off for this task \((\w+): (\w+)\); FULI kept no summary\.$/;
 
 export async function checkpointCaptureDecision(application, task) {
-  const stored = UNCAPTURED.exec(task.checkpoint?.reason ?? '');
-  return stored ? { allowed: false, reason: stored[2], layer: stored[1] }
-    : captureDecision(application, taskCaptureScope(task));
+  return storedCaptureOff(task.checkpoint?.reason) ?? captureDecision(application, taskCaptureScope(task));
+}
+
+// The decision a stored record names when it was kept with capture off, else null.
+export function storedCaptureOff(reason) {
+  const stored = UNCAPTURED.exec(reason ?? '');
+  return stored ? { allowed: false, reason: stored[2], layer: stored[1] } : null;
 }
 
 // What the checkpoint stores: the first attempt's record when one exists,

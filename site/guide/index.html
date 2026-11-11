@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f6f5f1">
-    <title data-i18n="meta.title">FULI 复利 · 快速上手：安装、接入客户端、开始用</title>
+    <title data-i18n="meta.title">FULI 复利 · 快速上手：带截图的安装和使用教程</title>
     <meta data-i18n-content="meta.description" name="description" content="">
     <meta data-i18n-content="meta.title" property="og:title" content="">
     <meta data-i18n-content="meta.social" property="og:description" content="">
@@ -19,6 +19,7 @@
     <script>document.documentElement.classList.add('js')</script>
     <link rel="stylesheet" href="../style.css">
     <link rel="stylesheet" href="../guide-page.css">
+    <link rel="stylesheet" href="../screens.css">
     <link rel="stylesheet" href="./guide.css">
     <script type="module" src="../guide.js"></script>
   </head>
@@ -29,7 +30,8 @@
       <nav data-i18n-aria-label="nav.label" aria-label="页面导航">
         <a data-i18n="guide.nav.install" href="#install">安装</a>
         <a data-i18n="guide.nav.connect" href="#connect">接入</a>
-        <a data-i18n="guide.nav.use" href="#use">使用</a>
+        <a data-i18n="guide.nav.use" href="#use">上手</a>
+        <a data-i18n="guide.nav.console" href="#console">控制台</a>
         <a data-i18n="guide.nav.model" href="#model">模型</a>
         <a data-i18n="guide.nav.help" href="#help">排错</a>
         <a class="nav-github" href="https://github.com/JevonsCode/fuli">GitHub</a>
@@ -44,12 +46,13 @@
       <section class="guide-hero" aria-labelledby="guide-title">
         <p data-i18n="guide.eyebrow" class="eyebrow">快速上手</p>
         <h1 data-i18n-html="guide.title" id="guide-title">装好，接上，<em>照常干活。</em></h1>
-        <p data-i18n="guide.lead" class="lede">写给不用终端的人。按钮都写的是控制台里的原名，照着点就行。</p>
+        <p data-i18n="guide.lead" class="lede">第一次用 FULI：跟着截图一步步点，几分钟就能用上。按钮都写控制台里的原名。</p>
         <p class="guide-links"><a data-i18n="guide.download" class="button" href="https://github.com/JevonsCode/fuli/releases/latest">下载最新版本</a></p>
       </section>
 
       <section class="guide-section guide-step" id="install" aria-labelledby="install-title">
-        <h2 id="install-title"><span class="step-index" aria-hidden="true">1</span><span data-i18n="guide.install">安装</span></h2>
+        <h2 id="install-title"><span class="step-index" aria-hidden="true">1</span><span data-i18n="guide.install">安装桌面客户端</span></h2>
+        <p data-i18n="guide.install.lead">桌面客户端自带运行需要的一切：下载、安装、打开。</p>
         <div class="platform-grid">
           <article class="guide-card">
             <h3>Windows</h3>
@@ -58,6 +61,7 @@
               <li data-i18n="guide.windows.warning">提示「Windows 已保护你的电脑」时，点「更多信息」，再点「仍要运行」。</li>
               <li data-i18n="guide.windows.bundled">不要管理员权限，也不用另装 Node.js、Java 或数据库。</li>
             </ol>
+            <img class="install-picture" src="./img/windows-smartscreen.webp" alt="" width="1224" height="400" loading="lazy" decoding="async">
           </article>
           <article class="guide-card">
             <h3 data-i18n="guide.mac">macOS（Apple 芯片）</h3>
@@ -66,49 +70,146 @@
               <li data-i18n="guide.mac.open">从「应用程序」打开 FULI，不要在磁盘映像里打开。</li>
               <li data-i18n="guide.mac.warning">第一次被拦下时，到「系统设置 › 隐私与安全性」点「仍要打开」。</li>
             </ol>
+            <img class="install-picture" src="./img/macos-first-open.webp" alt="" width="1224" height="256" loading="lazy" decoding="async">
             <p data-i18n="guide.mac.requirement" class="card-note">需要 macOS 13.5 以上。Intel 芯片的 Mac 请用终端安装。</p>
           </article>
         </div>
         <p data-i18n="guide.start" class="step-note">打开 FULI，它会自己启动，控制台在窗口里打开。没启动时，点「启动 FULI」。</p>
+        <p data-i18n-html="guide.install.npm" class="step-note">虚拟机、云主机或服务器上用 npm：<code>npm install --global fuli-context &amp;&amp; fuli setup</code></p>
       </section>
 
       <section class="guide-section guide-step" id="connect" aria-labelledby="connect-title">
         <h2 id="connect-title"><span class="step-index" aria-hidden="true">2</span><span data-i18n="guide.connect">接入你的 AI 客户端</span></h2>
-        <ol class="guide-list">
-          <li data-i18n="guide.connect.first">第一次打开控制台会出现「开始使用 FULI」：勾选找到的客户端，点「一键接入」。</li>
-          <li data-i18n="guide.connect.scope">最后回答「FULI 要在哪些项目里记录？」，点「开始使用」。选好之前什么都不记。</li>
-          <li data-i18n="guide.connect.later">以后在 设置 › 客户端 里接：点「接入」或「一键接入」；FULI 更新后点「更新接入」。</li>
-          <li data-i18n="guide.connect.other">没列出的客户端：点「复制 MCP 配置」，粘贴进它的 MCP 设置。</li>
+        <p data-i18n="guide.connect.lead">Claude Code、Codex、OpenCode 都能一键接入。</p>
+        <div class="tour" data-tour>
+          <figure data-i18n-aria-label="guide.tour.window" class="app-window tour-window" aria-label="FULI 控制台的截图，数据是合成的示例">
+            <div class="app-chrome" aria-hidden="true"><i></i><i></i><i></i><span>FULI</span></div>
+            <div class="app-screen">
+                <div class="app-frame is-current" data-frame="0"><img class="screen-zh" src="../assets/screens/first-run-zh-1600.webp" srcset="../assets/screens/first-run-zh-800.webp 800w, ../assets/screens/first-run-zh-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"><img class="screen-en" src="../assets/screens/first-run-en-1600.webp" srcset="../assets/screens/first-run-en-800.webp 800w, ../assets/screens/first-run-en-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"></div>
+                <div class="app-frame" data-frame="1"><img class="screen-zh" src="../assets/screens/connections-zh-1600.webp" srcset="../assets/screens/connections-zh-800.webp 800w, ../assets/screens/connections-zh-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"><img class="screen-en" src="../assets/screens/connections-en-1600.webp" srcset="../assets/screens/connections-en-800.webp 800w, ../assets/screens/connections-en-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"></div>
+              <span class="tour-spot" data-step="0" style="--x: 23.44%; --y: 26.25%; --w: 53.13%; --h: 15.5%" aria-hidden="true"><b>1</b></span>
+              <span class="tour-spot" data-step="1" style="--x: 68.59%; --y: 21.5%; --w: 8.13%; --h: 5.5%" aria-hidden="true"><b>2</b></span>
+              <span class="tour-spot" data-step="2" style="--x: 23.28%; --y: 47.5%; --w: 53.44%; --h: 39%" aria-hidden="true"><b>3</b></span>
+              <span class="tour-spot" data-step="3" style="--x: 3.91%; --y: 30.75%; --w: 68.44%; --h: 17.25%" aria-hidden="true"><b>4</b></span>
+              <span class="tour-spot" data-step="4" style="--x: 3.75%; --y: 54.25%; --w: 92.5%; --h: 14.5%" aria-hidden="true"><b>5</b></span>
+            </div>
+            <figcaption data-i18n="guide.tour.caption">界面截图，数据为合成示例</figcaption>
+          </figure>
+          <ol class="tour-steps">
+            <li data-frame="0"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">1</span><span data-i18n="guide.connect.first">第一次打开控制台会出现「开始使用 FULI」，列出这台电脑上找到的 AI 客户端。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="0"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">2</span><span data-i18n="guide.connect.all">勾选要用的客户端，点「一键接入」，状态变成「已接入」。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="0"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">3</span><span data-i18n="guide.connect.scope">再回答「FULI 要在哪些项目里记录？」，点「开始使用」。选好之前什么都不记。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="1"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">4</span><span data-i18n="guide.connect.later">以后在 设置 › 客户端 看接入状态；FULI 更新后点「更新接入」。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="1"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">5</span><span data-i18n="guide.connect.other">没列出的客户端：在「手动接入」点「复制 MCP 配置」，粘贴进它的 MCP 设置。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+          </ol>
+        </div>
+        <ul class="guide-list guide-notes">
           <li data-i18n="guide.connect.restart">接好后重启客户端。已经打开的会话要重开，才会用上新的 FULI。</li>
           <li data-i18n-html="guide.connect.codex">用 Codex 的话：在 Codex 里输入 <code>/hooks</code>，信任 FULI 的 hooks。</li>
-        </ol>
-        <p data-i18n="guide.connect.boundary" class="step-note">「已接入」只说明配置在，不代表客户端已经连上。</p>
+          <li data-i18n="guide.connect.boundary">「已接入」只说明配置在，不代表客户端已经连上。</li>
+        </ul>
       </section>
 
       <section class="guide-section guide-step" id="use" aria-labelledby="use-title">
-        <h2 id="use-title"><span class="step-index" aria-hidden="true">3</span><span data-i18n="guide.use">照常干活</span></h2>
-        <ol class="guide-list">
-          <li data-i18n="guide.use.ask">在项目文件夹里，像平常一样给 AI 提任务，不用特意叫 FULI。</li>
-          <li data-i18n="guide.use.recall">每次提问，FULI 都会把相关的偏好和知识交给 AI。</li>
-          <li data-i18n="guide.use.save">值得留下的结论会存下来。回复末尾列出这一轮存了什么，点链接能改。</li>
-          <li data-i18n="guide.use.review">存下的知识在「沉淀 › 知识」，要你确认的在「沉淀 › 知识整理」。</li>
-          <li data-i18n="guide.use.decisions">AI 等你拍板的事，在顶栏的「待决策」里。</li>
-          <li data-i18n="guide.use.howto">不知道怎么跟 AI 说？设置 › 常用操作 里有能直接复制的说法。</li>
-        </ol>
+        <h2 id="use-title"><span class="step-index" aria-hidden="true">3</span><span data-i18n="guide.use">第一个任务</span></h2>
+        <p data-i18n="guide.use.lead">照常干活就行。下面用示例项目 orbit-ledger 走一遍。</p>
+        <div class="tour" data-tour>
+          <figure data-i18n-aria-label="guide.tour.session" class="app-window tour-window" aria-label="客户端里的一次对话和 FULI 控制台，内容是合成的示例">
+            <div class="app-chrome" aria-hidden="true"><i></i><i></i><i></i><span>FULI</span></div>
+            <div class="app-screen">
+              <div class="app-frame tour-terminal is-current" data-frame="0">
+                <div class="term">
+                  <p class="term-head"><span>~/orbit-ledger</span><span data-i18n="guide.term.label">客户端里的一次对话（示意）</span></p>
+                  <p class="term-line term-ask" data-step="0"><b aria-hidden="true">›</b><span data-i18n="guide.term.ask">结算日改按新加坡时间算，不用 UTC。</span></p>
+                  <p class="term-line" data-step="1"><span data-i18n="guide.term.reply">已改好 settlement job，测试都通过了。</span></p>
+                  <p class="term-line term-fuli" data-step="1"><span data-i18n="guide.term.saved">FULI 本轮沉淀 1 条：</span></p>
+                  <p class="term-line term-fuli" data-step="1"><span data-i18n="guide.term.item">- 新增 事实「Settlement uses the Singapore date」｜Agent推断·待确认｜修改</span></p>
+                  <p class="term-line term-fuli" data-step="2"><span data-i18n="guide.term.agent">FULI Agent：Kai Moreno</span></p>
+                </div>
+              </div>
+                <div class="app-frame" data-frame="1"><img class="screen-zh" src="../assets/screens/knowledge-zh-1600.webp" srcset="../assets/screens/knowledge-zh-800.webp 800w, ../assets/screens/knowledge-zh-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"><img class="screen-en" src="../assets/screens/knowledge-en-1600.webp" srcset="../assets/screens/knowledge-en-800.webp 800w, ../assets/screens/knowledge-en-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"></div>
+                <div class="app-frame" data-frame="2"><img class="screen-zh" src="../assets/screens/inbox-zh-1600.webp" srcset="../assets/screens/inbox-zh-800.webp 800w, ../assets/screens/inbox-zh-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"><img class="screen-en" src="../assets/screens/inbox-en-1600.webp" srcset="../assets/screens/inbox-en-800.webp 800w, ../assets/screens/inbox-en-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"></div>
+              <span class="tour-spot" data-step="3" style="--x: 2.03%; --y: 47.25%; --w: 95.47%; --h: 9.75%" aria-hidden="true"><b>4</b></span>
+              <span class="tour-spot" data-step="4" style="--x: 2.5%; --y: 18.25%; --w: 94.53%; --h: 22%" aria-hidden="true"><b>5</b></span>
+              <span class="tour-spot" data-step="5" style="--x: 2.5%; --y: 42.25%; --w: 94.53%; --h: 15%" aria-hidden="true"><b>6</b></span>
+            </div>
+            <figcaption data-i18n="guide.tour.caption2">对话为示意，截图数据为合成示例</figcaption>
+          </figure>
+          <ol class="tour-steps">
+            <li data-frame="0"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">1</span><span data-i18n="guide.use.ask">在项目文件夹里打开客户端，像平常一样提任务。FULI 会把相关的偏好和知识交给 AI。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="0"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">2</span><span data-i18n="guide.use.save">值得留下的结论会存下来：回复末尾列出这一轮存了什么，点「修改」能改。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="0"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">3</span><span data-i18n="guide.use.owner">最后一行是负责这件事的 FLA，点名字打开它的主页。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="1"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">4</span><span data-i18n="guide.use.review">存下的知识在「沉淀」里按项目查看，刚存的标着「待确认」。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="2"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">5</span><span data-i18n="guide.use.confirm">要你确认的知识在「待决策」：点「确认」「不要」或「改一下」。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="2"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">6</span><span data-i18n="guide.use.decisions">AI 等你拍板的问题也在这里，点「回答」。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+          </ol>
+        </div>
+        <ul class="guide-list guide-notes">
+          <li data-i18n="guide.use.howto">想让 AI 替你操作 FULI：设置 › 常用操作 里有能直接复制的说法。</li>
+        </ul>
+      </section>
+
+      <section class="guide-section guide-step" id="console" aria-labelledby="console-title">
+        <h2 id="console-title"><span class="step-index" aria-hidden="true">4</span><span data-i18n="guide.console">控制台里常用的几页</span></h2>
+        <div class="tour" data-tour>
+          <figure data-i18n-aria-label="guide.tour.window" class="app-window tour-window" aria-label="FULI 控制台的截图，数据是合成的示例">
+            <div class="app-chrome" aria-hidden="true"><i></i><i></i><i></i><span>FULI</span></div>
+            <div class="app-screen">
+                <div class="app-frame is-current" data-frame="0"><img class="screen-zh" src="../assets/screens/workbench-zh-1600.webp" srcset="../assets/screens/workbench-zh-800.webp 800w, ../assets/screens/workbench-zh-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"><img class="screen-en" src="../assets/screens/workbench-en-1600.webp" srcset="../assets/screens/workbench-en-800.webp 800w, ../assets/screens/workbench-en-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"></div>
+                <div class="app-frame" data-frame="1"><img class="screen-zh" src="../assets/screens/team-zh-1600.webp" srcset="../assets/screens/team-zh-800.webp 800w, ../assets/screens/team-zh-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"><img class="screen-en" src="../assets/screens/team-en-1600.webp" srcset="../assets/screens/team-en-800.webp 800w, ../assets/screens/team-en-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"></div>
+                <div class="app-frame" data-frame="2"><img class="screen-zh" src="../assets/screens/agent-zh-1600.webp" srcset="../assets/screens/agent-zh-800.webp 800w, ../assets/screens/agent-zh-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"><img class="screen-en" src="../assets/screens/agent-en-1600.webp" srcset="../assets/screens/agent-en-800.webp 800w, ../assets/screens/agent-en-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"></div>
+              <span class="tour-spot" data-step="0" style="--x: 50.31%; --y: 9.5%; --w: 46.25%; --h: 16.25%" aria-hidden="true"><b>1</b></span>
+              <span class="tour-spot" data-step="1" style="--x: 50.31%; --y: 26.75%; --w: 46.25%; --h: 41.25%" aria-hidden="true"><b>2</b></span>
+              <span class="tour-spot" data-step="2" style="--x: 1.25%; --y: 90%; --w: 20%; --h: 8%" aria-hidden="true"><b>3</b></span>
+              <span class="tour-spot" data-step="3" style="--x: 1.88%; --y: 20%; --w: 95.78%; --h: 41.25%" aria-hidden="true"><b>4</b></span>
+              <span class="tour-spot" data-step="4" style="--x: 1.88%; --y: 60.75%; --w: 95.78%; --h: 23.75%" aria-hidden="true"><b>5</b></span>
+              <span class="tour-spot" data-step="5" style="--x: 78.28%; --y: 19%; --w: 12.5%; --h: 6.75%" aria-hidden="true"><b>6</b></span>
+              <span class="tour-spot" data-step="6" style="--x: 1.88%; --y: 30.5%; --w: 95.78%; --h: 52%" aria-hidden="true"><b>7</b></span>
+            </div>
+            <figcaption data-i18n="guide.tour.caption">界面截图，数据为合成示例</figcaption>
+          </figure>
+          <ol class="tour-steps">
+            <li data-frame="0"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">1</span><span data-i18n="guide.console.home">「工作台」是首页，最上面是等你处理的事，点「查看并回应」。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="0"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">2</span><span data-i18n="guide.console.work">下面是 FLA 正在做的任务和进度，点一行能看细节。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="0"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">3</span><span data-i18n="guide.console.dock">左下角这排按钮切换页面：工作台、FLAs、圆桌、沉淀、项目。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="1"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">4</span><span data-i18n="guide.console.flas">「FLAs」列出所有 FLA：每个项目一位负责人，需要时几位一起做。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="1"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">5</span><span data-i18n="guide.console.builtIn">下面是内置的 FLA：Astro、Bole、Jefa、Tonborg，每个空间都有。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="2"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">6</span><span data-i18n="guide.console.call">点一位 FLA 打开它的主页。「复制 #FLA」后粘贴到客户端里，就能点名叫它。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="2"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">7</span><span data-i18n="guide.console.tasks">主页里是它的任务单：分到哪些步骤、做到哪一步、谁在协作。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+          </ol>
+        </div>
+        <h3 data-i18n="guide.console.team" class="fla-title">每个空间都有的 FLA</h3>
+        <ul class="fla-row">
+          <li><img src="../assets/avatars/astro.webp" alt="" width="96" height="96" loading="lazy" decoding="async"><span data-i18n="diagram.astro">Astro · 接待与复盘</span></li>
+          <li><img src="../assets/avatars/jefa.webp" alt="" width="96" height="96" loading="lazy" decoding="async"><span data-i18n="diagram.pm">Jefa · 项目经理</span></li>
+          <li><img src="../assets/avatars/bole.webp" alt="" width="96" height="96" loading="lazy" decoding="async"><span data-i18n="diagram.hr">Bole · Agent 资源</span></li>
+          <li><img src="../assets/avatars/tonborg.webp" alt="" width="96" height="96" loading="lazy" decoding="async"><span data-i18n="diagram.judge">Tonborg · 判断</span></li>
+        </ul>
       </section>
 
       <section class="guide-section guide-step" id="model" aria-labelledby="model-title">
-        <h2 id="model-title"><span class="step-index" aria-hidden="true">4</span><span data-i18n="guide.model">可选：接一个模型</span></h2>
+        <h2 id="model-title"><span class="step-index" aria-hidden="true">5</span><span data-i18n="guide.model">可选：接一个模型</span></h2>
         <p data-i18n="guide.model.lead">不接也能用：AI 用当前会话回答，FULI 按字面找知识。</p>
+        <div class="tour" data-tour>
+          <figure data-i18n-aria-label="guide.tour.window" class="app-window tour-window" aria-label="FULI 控制台的截图，数据是合成的示例">
+            <div class="app-chrome" aria-hidden="true"><i></i><i></i><i></i><span>FULI</span></div>
+            <div class="app-screen">
+                <div class="app-frame is-current" data-frame="0"><img class="screen-zh" src="../assets/screens/models-zh-1600.webp" srcset="../assets/screens/models-zh-800.webp 800w, ../assets/screens/models-zh-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"><img class="screen-en" src="../assets/screens/models-en-1600.webp" srcset="../assets/screens/models-en-800.webp 800w, ../assets/screens/models-en-1600.webp 1600w" sizes="(max-width: 1080px) 92vw, 1000px" alt="" loading="lazy" decoding="async" width="1280" height="800"></div>
+              <span class="tour-spot" data-step="0" style="--x: 90.63%; --y: 1%; --w: 4.22%; --h: 6.5%" aria-hidden="true"><b>1</b></span>
+              <span class="tour-spot" data-step="1" style="--x: 2.03%; --y: 29.5%; --w: 95.31%; --h: 15%" aria-hidden="true"><b>2</b></span>
+              <span class="tour-spot" data-step="2" style="--x: 2.03%; --y: 45.25%; --w: 95.31%; --h: 26%" aria-hidden="true"><b>3</b></span>
+              <span class="tour-spot" data-step="3" style="--x: 2.03%; --y: 72%; --w: 95.31%; --h: 22.75%" aria-hidden="true"><b>4</b></span>
+            </div>
+            <figcaption data-i18n="guide.tour.caption">界面截图，数据为合成示例</figcaption>
+          </figure>
+          <ol class="tour-steps">
+            <li data-frame="0"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">1</span><span data-i18n="guide.model.buttonWhere">闪电是模型按钮，在顶栏「设置」旁边。没接时是灰色虚线圈，接上后变金色、轻轻发光。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="0"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">2</span><span data-i18n="guide.model.page">点它打开「模型与用量」：「用途」里每张卡写着要多强的模型，点「接入」。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="0"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">3</span><span data-i18n="guide.model.astro">Astro 接上模型后，Dreaming 和「补检索词」也能用了。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+            <li data-frame="0"><button type="button" class="tour-step"><span class="tour-n" aria-hidden="true">4</span><span data-i18n="guide.model.flas">Jefa、Tonborg、Bole 不接模型也能用，用当前会话回答。</span><i class="tour-bar" aria-hidden="true"></i></button></li>
+          </ol>
+        </div>
         <div class="model-grid">
-          <article class="guide-card">
-            <h3 data-i18n="guide.model.button">模型按钮</h3>
-            <ol class="step-list">
-              <li data-i18n="guide.model.buttonWhere">在顶栏「设置」旁边。没接时是灰色虚线圈，接上后闪电变金色、轻轻发光。</li>
-              <li data-i18n="guide.model.buttonFill">给老知识补算时，外圈会慢慢填满。</li>
-              <li data-i18n="guide.model.page">点它打开「模型与用量」：「用途」里每张卡写着要多强的模型，点「接入」。</li>
-            </ol>
-          </article>
           <article class="guide-card">
             <h3 data-i18n="guide.model.semantic">按意思找：语义搜索</h3>
             <ol class="step-list">
@@ -124,6 +225,7 @@
               <li data-i18n="guide.model.termsAstro">先给 Astro 接上模型，在它的设置里打开「允许补老知识的检索词」。</li>
               <li data-i18n="guide.model.termsEstimate">选一个项目，先看免费估算：多少条缺检索词、大约多少 tokens。</li>
               <li data-i18n="guide.model.termsTest">点「先试 20 条」，看补前补后能找回几条，再决定「补剩下 N 条」或「不补」。</li>
+              <li data-i18n="guide.model.buttonFill">补的时候，模型按钮的外圈会慢慢填满。</li>
             </ol>
             <p data-i18n="guide.model.termsStop" class="card-note">补的时候随时可以点「停止」。</p>
           </article>
@@ -132,7 +234,7 @@
       </section>
 
       <section class="guide-section guide-step" id="help" aria-labelledby="help-title">
-        <h2 id="help-title"><span class="step-index" aria-hidden="true">5</span><span data-i18n="guide.help">遇到问题</span></h2>
+        <h2 id="help-title"><span class="step-index" aria-hidden="true">6</span><span data-i18n="guide.help">遇到问题</span></h2>
         <ol class="guide-list">
           <li data-i18n="guide.help.doctor">FULI 会自己体检。顶栏出现「有 N 件事需要你」时点「查看」，能修的点「自动修复」。</li>
           <li data-i18n="guide.help.port">Windows 上没启动成功、提示端口被保留时，在托盘菜单选「换一个端口」。</li>

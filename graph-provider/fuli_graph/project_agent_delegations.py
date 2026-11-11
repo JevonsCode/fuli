@@ -152,7 +152,12 @@ class StoreAgentDelegations:
         lead = policy.team_lead_agent_id
         sender = context.get('project_agent_id')
         target_project_id = request.target_personal_project_id or project_id
-        if target_project_id == project_id and not direct_reporting_link(policy, sender, request.agent_id):
+        # The same FLA in another of its sessions is another instance of it
+        # (rec#109): it needs no reporting line, but never its own session.
+        same_agent = sender is not None and sender == request.agent_id
+        if same_agent and request.target_session_id and request.target_session_id == context.get('session_id'):
+            raise HTTPException(403, 'An Agent cannot wake the session it is working in')
+        if target_project_id == project_id and not same_agent and not direct_reporting_link(policy, sender, request.agent_id):
             raise HTTPException(403, 'Communicate only with the immediate reporting lead or direct reports')
         sender_profile_updated_at = None
         if getattr(policy, 'sub_teams', []):

@@ -87,9 +87,9 @@ const HANDLERS = Object.freeze({
     return app.captureChanges.propose(settings, { sourceApplication, taskContextToken });
   },
   list_external_knowledge_connectors: (app) => externalKnowledge(app).listConnectorTypes(),
-  discover_external_knowledge_sources: (app, input) => externalKnowledge(app).discover(input),
+  discover_external_knowledge_sources: (app, input) => externalKnowledge(app).discover(input, { caller: 'agent' }),
   list_external_knowledge_bindings: (app) => externalKnowledge(app).listBindings(),
-  create_external_knowledge_binding: (app, input) => externalKnowledge(app).createBinding(input),
+  create_external_knowledge_binding: (app, input) => externalKnowledge(app).createBinding(input, { caller: 'agent' }),
   check_external_knowledge_binding: (app, input) => externalKnowledge(app).checkBinding(input.bindingId),
   sync_external_knowledge_binding: (app, { bindingId, ...input }) =>
     externalKnowledge(app).syncBinding(bindingId, input),

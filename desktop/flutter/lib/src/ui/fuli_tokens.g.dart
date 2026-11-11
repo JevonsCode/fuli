@@ -43,6 +43,8 @@ abstract final class FuliColors {
   static const danger = Color(0xFFA8392E);
   static const dangerSoft = Color(0xFFF8E9E6);
   static const onAccent = Color(0xFFFFFFFF);
+  static const ai = Color(0xFF2563C9);
+  static const aiSoft = Color(0xFFE8F0FC);
   static const chartBlue = Color(0xFF2F5F8A);
   static const chartTeal = Color(0xFF3F7462);
   static const chartViolet = Color(0xFF6B4F8F);

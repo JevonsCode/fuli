@@ -228,18 +228,20 @@ export function createRoundtableStore(path = ':memory:', { clock = () => new Dat
     messages(threadId) {
       return database.prepare('SELECT * FROM messages WHERE thread_id = ? ORDER BY seq').all(threadId);
     },
-    // Questions waiting for this Agent that no delivery is currently answering.
+    // Questions waiting for this Agent that no delivery is currently answering
+    // (one a sender's session stands in for still waits: the Agent may answer first).
     pendingFor(spaceId, agentId, limit = 5) {
       return database.prepare(`SELECT m.* FROM messages m JOIN threads t ON t.id = m.thread_id
-        WHERE t.space_id = ? AND m.to_agent = ? AND m.kind = 'ask' AND m.status = 'queued'
+        WHERE t.space_id = ? AND m.to_agent = ? AND m.kind = 'ask' AND m.status IN ('queued', 'stand_in')
         ORDER BY m.created_at LIMIT ?`).all(spaceId, agentId, limit);
     },
-    // Replies addressed to this Agent in one project, in one of the given delivery states.
-    repliesFor(spaceId, agentId, projectId, states, limit) {
+    // Replies (or stand-in handbacks) addressed to this Agent in one project, in
+    // one of the given delivery states. A handback names its project itself.
+    repliesFor(spaceId, agentId, projectId, states, limit, kind = 'reply') {
       return database.prepare(`SELECT m.*, t.subject FROM messages m JOIN threads t ON t.id = m.thread_id
-        WHERE t.space_id = ? AND t.project_id = ? AND m.to_agent = ? AND m.kind = 'reply'
+        WHERE t.space_id = ? AND coalesce(m.target_project_id, t.project_id) = ? AND m.to_agent = ? AND m.kind = ?
           AND m.delivery_status IN (${states.map(() => '?').join(',')})
-        ORDER BY m.created_at, m.seq LIMIT ?`).all(spaceId, projectId, agentId, ...states, limit);
+        ORDER BY m.created_at, m.seq LIMIT ?`).all(spaceId, projectId, agentId, kind, ...states, limit);
     },
     // Compare-and-set: true only for the one call that moved the reply on.
     markReplyDelivery(id, from, to, via) {

@@ -37,28 +37,29 @@ export async function findReplyEchoes(readPage) {
 // Drops the named items that are still reply echoes, one after another; an
 // item that failed stays pending and is named. relayed: an FLA's relay of the
 // person's words (delegation-header.js), kept in the reason.
-export async function dropReplyEchoes(app, readPage, { personalSpaceId, items }, relayed = null) {
+export async function dropReplyEchoes(app, readPage, { personalSpaceId, items }, relayed = null, ownerReads = null) {
   const wanted = itemKeys(items);
   const found = new Map((await findReplyEchoes(readPage)).map(echo => [`${echo.itemKind}:${echo.itemId}`, echo]));
   const reason = relayed ? `${DROP_REASON}（由 ${relayed.relayedBy ?? 'FLA'} 转达：「${relayed.personWords}」）` : DROP_REASON;
   return change(app, personalSpaceId, wanted.filter(key => found.has(key)), 'invalidate', reason,
-    { skipped: wanted.filter(key => !found.has(key)).map(splitKey) });
+    { skipped: wanted.filter(key => !found.has(key)).map(splitKey) }, ownerReads);
 }
 
 // Makes dropped items current again (the 撤销 of a drop).
-export async function restoreReplyEchoes(app, { personalSpaceId, items }, relayed = null) {
+export async function restoreReplyEchoes(app, { personalSpaceId, items }, relayed = null, ownerReads = null) {
   const reason = relayed ? `${RESTORE_REASON}（由 ${relayed.relayedBy ?? 'FLA'} 转达：「${relayed.personWords}」）` : RESTORE_REASON;
-  return change(app, personalSpaceId, itemKeys(items), 'restore', reason, {});
+  return change(app, personalSpaceId, itemKeys(items), 'restore', reason, {}, ownerReads);
 }
 
-async function change(app, personalSpaceId, keys, action, reason, extra) {
+// ownerReads: the console's port, whose proof makes each change the person's.
+async function change(app, personalSpaceId, keys, action, reason, extra, ownerReads) {
   const done = [];
   const failed = [];
   for (const key of keys) {
     const { itemKind, itemId } = splitKey(key);
     try {
       await app.reviseKnowledgeItem({ personalSpaceId, personalProjectId: null, itemKind, itemId, action, reason,
-        operationActor: 'human' });
+        operationActor: 'human' }, ownerReads);
       done.push({ itemKind, itemId });
     } catch (error) {
       failed.push({ itemKind, itemId, code: error?.code ?? 'error' });

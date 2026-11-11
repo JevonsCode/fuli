@@ -87,14 +87,15 @@ function recentPointer(latest) {
   return Buffer.byteLength(JSON.stringify({ recent_conversation: pointer })) <= POINTER_BYTES ? pointer : null;
 }
 
-export async function checkpointConversation(application, task, workLog, team = null) {
+// An amendment appends its own summary event; the first summary stays (rec#85).
+export async function checkpointConversation(application, task, workLog, team = null, eventId = null) {
   if (!task.projectAgentId) return { status: 'unassigned' };
   const capture = await captureDecision(application, taskCaptureScope(task));
   if (!capture.allowed) return captureDisabled(capture);
   try {
     const result = await application.personal.conversation('append', {
       ...conversationTask(application, task), summary: safeConversationContent(workLog.summary), status: workLog.status,
-      events: [{ event_id: `${task.token}:summary`, role: 'summary', kind: 'checkpoint', content: safeConversationContent(workLog.summary) }]
+      events: [{ event_id: eventId ?? `${task.token}:summary`, role: 'summary', kind: 'checkpoint', content: safeConversationContent(workLog.summary) }]
     });
     if (result.status !== 'saved') return result;
     const owner = team ?? await taskAgentIdentity(application, task);

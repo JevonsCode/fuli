@@ -26,6 +26,13 @@ kit (`read_occupation_kit` with its `occupation`), ask once which recommended Sk
 the new FLA uses, and pass their answer as `occupationKit` in `decide_project_agent_recruitment`.
 MCP servers are suggestions only: never connect one for them, and keys stay theirs.
 
+When a checkpoint returns `triage.promotion` (a topic Astro looked after grew into a project), append its `notice`
+unchanged. If it carries `start_question`, ask it with the host’s native choice: its `options` plus a free answer when
+`allow_other` is true. Only the person answers. On 马上开工 set each task in `on_yes.task_ids` to `queued` with
+`record_project_agent_task_activity` in `on_yes.personal_project_id`; on 先不 change nothing; record a free answer
+as their words and act on what it says. `team.handoffs` lists who Bole hired and each handover task; a position
+with status `unavailable` was not filled, so say so instead of reporting a full team.
+
 Treat the returned durable Agent identity and a host worker as different things. A durable Agent
 keeps its project assignment, preferences, task history, and Agent-scoped graph memory while idle;
 the host creates an execution process only when needed. Start only entries in `worker_plan`, give
@@ -83,6 +90,38 @@ A worker report that arrives after the coordinator completed, cancelled or pause
 as that worker's history and leaves the task status unchanged; record it once and do not retry it
 as a status change. In a team without sub-teams, the Agent dispatching from its own task becomes
 the new task's coordinator: omit `coordinatorAgentId` rather than naming the project lead.
+
+## Bring an FLA In
+
+"找 FLA AAA 做 X" means AAA works on X now, with its own context. Call `message_agent` (`to` AAA,
+`wait: true`, the current `taskContextToken`). FULI tries, in order: AAA's latest session (Claude Code
+forks it; a Codex conversation gets the ask queued behind a running turn, never inside it), a new
+session as AAA in your own client first, then this session standing in. `ladder` lists every step
+with `reason` and `why`; tell the person which tier held the ask and why each earlier one failed,
+in those words.
+
+`status: stand_in` means this session now speaks for AAA as 「代入」, with this client and model
+executing:
+
+- show `standIn.present` once and prefix everything AAA says with `standIn.speaker`;
+- read only `standIn.scope` and AAA's own items on demand; keep your private memory out of AAA's
+  answer and AAA's context out of yours;
+- your own checkpoint records only your own work; never list AAA as a collaborator for it;
+- when AAA is done, call `reply_agent_message` with that `messageId` and AAA's increment (what it
+  did, conclusions, blockers). FULI records it as AAA's stand-in reply and hands it to AAA, which
+  sees it at its next task (`stand_in_handbacks`, then `read_agent_messages` `handbacks`) and
+  keeps what still holds in its own work record;
+- end the reply with `standIn.receipt.markdown`: identity AAA, executor this client. Never say AAA
+  ran in its own client.
+
+AAA may still answer its own ask first; then the stand-in reply is refused. There is no stand-in
+when AAA may still be running (`wake_timeout`, an unconfirmed cleanup), when the team rules refuse
+the contact (`not_permitted`), for a cross-project ask, inside a woken session, or with
+`wait: false`; the result stays `queued` with its reason.
+
+The same FLA in another session is another instance. Address it by `conversation` set to that
+session's `sessionId` from `find_agents` `recentConversations`; naming your own FLA without it
+returns the sessions to choose from.
 
 ## Ask Another Project's Lead
 

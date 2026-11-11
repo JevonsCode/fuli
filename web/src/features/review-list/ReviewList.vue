@@ -6,6 +6,8 @@ import { useRouter } from 'vue-router'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardHeader, CardTitle } from '@/components/ui/card'
+import { Field, FieldLabel } from '@/components/ui/field'
+import { Textarea } from '@/components/ui/textarea'
 import { itemEditPath } from '@/features/knowledge-quick-edit/model'
 import { t } from '@/i18n'
 import type { PersonalProject } from '@/types'
@@ -13,7 +15,7 @@ import UiDialog from '@/ui/UiDialog.vue'
 import UiIconButton from '@/ui/UiIconButton.vue'
 import UiNotice from '@/ui/UiNotice.vue'
 
-import { guessedAction, oneLine, type ReviewAction, type ReviewLine } from './review-list'
+import { guessedAction, oneLine, rowChoices, type ReviewLine, type RowChoice } from './review-list'
 import ReviewRows from './ReviewRows.vue'
 import TonborgExplain from './TonborgExplain.vue'
 import { useReviewList } from './review-store'
@@ -45,13 +47,15 @@ const projectName = (line: ReviewLine) => line.projectId
 const meta = (line: ReviewLine) => [projectName(line), line.proposer, line.reason ? t(`reviewList.reasons.${line.reason}`) : '']
   .filter(Boolean).join(' · ')
 // What Tonborg asks stands apart (Jevons 11-06: 「长得都一样，看不出来」): its own lifted
-// glass card first, its avatar and name. Each line leads with the item itself
-// (Jevons 11-07: 「内容是什么呀？你不跟我说什么事儿」); Tonborg's guess and its
-// reason sit in the meta line, its own question only in 查看详情.
+// glass card first, its avatar and name. Each line is ONE plain question that
+// quotes the item (Jevons 11-07: 「内容是什么呀？」; 11-11: 「说人话，说重点，能点
+// 一下是否就不要让他自己输」): what FULI is about to do and why Tonborg is
+// unsure. Its guess is the filled first button, the opposite the second, and
+// 其他 opens a short field for the person's own words. Tonborg's reason is in 查看详情.
 const REASON_LIMIT = 60
 const askedMeta = (line: ReviewLine) => [projectName(line), line.proposer].filter(Boolean).join(' · ')
-const guessLabel = (line: ReviewLine) => line.review?.guess
-  ? t('reviewList.guessed', { guess: t(`reviewList.guessShort.${line.review.guess}`) }) : t('reviewList.reasons.tonborg_unsure')
+const askText = (line: ReviewLine) => line.review?.ask ?? line.text
+const choicesOf = (line: ReviewLine) => line.review ? rowChoices(line.review) : null
 const tonborgReason = (line: ReviewLine) => line.review?.summary ? oneLine(line.review.summary, REASON_LIMIT) : ''
 const busy = (key: string) => review.pending[key]
 const pendingLabel = (key: string) => t(`reviewList.pending.${busy(key) ?? 'confirm'}`)
@@ -71,9 +75,29 @@ function edit(line: ReviewLine) {
   void review.edit(line)
   void router.push(itemEditPath(props.personalSpaceId, { item_kind: line.item.itemKind, item_id: line.item.id }))
 }
-// The action Tonborg guessed is the one filled button; the others keep their places and the list's quiet look.
-const variant = (line: ReviewLine, action: ReviewAction) =>
-  guessedAction(line.review?.guess ?? null) === action ? 'default' : action === 'confirm' ? 'outline' : 'ghost'
+// One click answers a question: keep or drop at once, 改一下 on the item's own page.
+function answer(line: ReviewLine, choice: RowChoice) {
+  if (choice.action === 'edit') edit(line)
+  else void review.act(line, choice.action)
+}
+
+// 其他: the question again, a short field for the person's own words, and the one way to answer the row does not show.
+const otherLine = ref<ReviewLine | null>(null)
+const otherWords = ref('')
+const otherRest = computed(() => otherLine.value ? choicesOf(otherLine.value)?.rest ?? null : null)
+function openOther(line: ReviewLine) { otherWords.value = ''; otherLine.value = line }
+async function sendOther() {
+  const line = otherLine.value
+  const words = otherWords.value.trim()
+  if (!line || !words) return
+  if (await review.other(line, words)) otherLine.value = null
+}
+function answerRest() {
+  const line = otherLine.value
+  const rest = otherRest.value
+  otherLine.value = null
+  if (line && rest) answer(line, rest)
+}
 </script>
 
 <template>
@@ -123,14 +147,14 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
       </CardHeader>
       <ReviewRows v-slot="{ line }" :lines="review.list.questions" :label="t('reviewList.groups.questions')">
         <span class="review-row__body">
-          <span class="review-row__meta" :title="line.review?.summary">{{ askedMeta(line) }} · <span class="review-row__guess" data-review-guess>{{ guessLabel(line) }}</span><template v-if="tonborgReason(line)"> · {{ tonborgReason(line) }}</template></span>
-          <span class="review-row__text" :title="line.text">{{ line.text }}</span>
+          <span class="review-row__meta">{{ askedMeta(line) }}</span>
+          <span class="review-row__text" :title="line.text" data-review-ask>{{ askText(line) }}</span>
         </span>
         <span class="review-row__actions">
           <span class="review-busy"><GrowthLoading v-if="busy(line.key)" variant="inline" :label="pendingLabel(line.key)" /></span>
-          <Button size="sm" :variant="variant(line, 'confirm')" :disabled="Boolean(busy(line.key) || busy('questions'))" @click="review.act(line, 'confirm')">{{ t('reviewList.actions.confirm') }}</Button>
-          <Button size="sm" :variant="variant(line, 'drop')" :disabled="Boolean(busy(line.key) || busy('questions'))" @click="review.act(line, 'drop')">{{ t('reviewList.actions.drop') }}</Button>
-          <Button size="sm" :variant="variant(line, 'edit')" :disabled="Boolean(busy(line.key) || busy('questions'))" @click="edit(line)">{{ t('reviewList.actions.edit') }}</Button>
+          <Button v-for="choice in choicesOf(line)?.choices" :key="choice.answer" size="sm" :variant="choice.guessed ? 'default' : 'outline'"
+            :disabled="Boolean(busy(line.key) || busy('questions'))" :data-review-answer="choice.answer" @click="answer(line, choice)">{{ t(`reviewList.answers.${choice.label}`) }}</Button>
+          <Button size="sm" variant="ghost" :disabled="Boolean(busy(line.key) || busy('questions'))" data-review-other @click="openOther(line)">{{ t('reviewList.answers.other') }}</Button>
           <UiIconButton icon="info" size="sm" :label="t('reviewList.actions.details')" @click="detail = line" />
         </span>
       </ReviewRows>
@@ -193,9 +217,22 @@ const variant = (line: ReviewLine, action: ReviewAction) =>
         <template v-if="detail.reason"><dt>{{ t('reviewList.details.reason') }}</dt><dd>{{ t(`reviewList.reasons.${detail.reason}`) }}</dd></template>
         <template v-if="detail.review">
           <dt>{{ t('reviewList.details.tonborg') }}</dt><dd class="ui-prose">{{ detail.review.summary }}</dd>
-          <template v-if="detail.review.question"><dt>{{ t('reviewList.details.guess') }}</dt><dd>{{ detail.review.question }}</dd></template>
+          <template v-if="detail.review.ask"><dt>{{ t('reviewList.details.ask') }}</dt><dd>{{ detail.review.ask }}</dd></template>
         </template>
       </dl>
+    </UiDialog>
+
+    <UiDialog :open="Boolean(otherLine)" :title="t('reviewList.other.title')" :description="otherLine ? askText(otherLine) : undefined"
+      size="sm" form :busy="Boolean(otherLine && busy(otherLine.key))" data-review-other-dialog @close="otherLine = null" @submit="sendOther">
+      <Field>
+        <FieldLabel for="review-other-words">{{ t('reviewList.other.label') }}</FieldLabel>
+        <Textarea id="review-other-words" v-model="otherWords" rows="3" maxlength="600" autofocus />
+      </Field>
+      <template #footer>
+        <Button v-if="otherRest" type="button" variant="ghost" data-review-other-rest @click="answerRest">{{ t(`reviewList.answers.${otherRest.label}`) }}</Button>
+        <Button type="submit" :disabled="!otherWords.trim()" :loading="Boolean(otherLine && busy(otherLine.key))"
+          :loading-label="t('reviewList.pending.other')">{{ t('reviewList.other.submit') }}</Button>
+      </template>
     </UiDialog>
   </div>
 </template>

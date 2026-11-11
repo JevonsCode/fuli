@@ -50,7 +50,7 @@ const productionTrust = ({ acknowledged }) => port => {
   return trust;
 };
 const reviewInput = { personalSpaceId: 's', personalProjectId: 'p', requestId: 'review-1', limit: 10 };
-const verdict = (extra = {}) => ({ target: 'entity:one', outcome: 'approve', summary: 'Confirmed routine command', evidence: ['npm test'], confidence: 0.95, options: [], ...extra });
+const verdict = (extra = {}) => ({ target: 'entity:one', outcome: 'approve', summary: 'Confirmed routine command', evidence: ['npm test'], confidence: 0.95, guess: 'keep', doubt: 'other', question: 'Keep "synthetic"?', ...extra });
 // evidenceIds name parts of the judgment data: candidates for a review,
 // eligible for routing, gate for an acceptance.
 const answer = (payload, evidenceIds = ['candidates']) => ({ decision: 'propose', payload, reason: 'Supported by the evidence.', evidenceIds, uncertainty: null });

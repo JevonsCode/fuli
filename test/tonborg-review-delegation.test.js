@@ -44,9 +44,9 @@ function fixture(t, { mode = 'manual', decisions, trust = trustedTonborg() } = {
     prompts.push(call);
     return { body: JSON.stringify({ decisions: decisions ?? [
       { target: 'entity:keep', outcome: 'approve', summary: 'Matches the confirmed tooling preference', evidence: ['pnpm-lock.yaml'],
-        confidence: 0.95, guess: 'keep', question: 'I think you keep this: use pnpm. Right?' },
+        confidence: 0.95, guess: 'keep', doubt: 'other', question: 'I think you keep this: use pnpm. Right?' },
       { target: 'entity:unsure', outcome: 'escalate', summary: 'Conflicts with an earlier no-Friday-deploy vote', evidence: ['vote'],
-        confidence: 0.6, guess: 'drop', question: 'I think you drop this: deploy on Fridays. Right?' }] }),
+        confidence: 0.6, guess: 'drop', doubt: 'conflict', question: 'I think you drop this: deploy on Fridays. Right?' }] }),
     client: 'codex', ...MODEL_ANSWER };
   };
   const service = createJudgmentService({ app, engine: createJudgmentEngine({ app, judge, trust }) });
@@ -73,16 +73,23 @@ test('delegated: Tonborg confirms the clear item as its own and asks about the r
   assert.match(kept.summary, /confirmed tooling preference/);
   // The model was asked to decide as the person would and to guess the rest.
   assert.match(f.prompts[0].instructions, /decide each candidate the way this person would/);
-  assert.deepEqual(f.prompts[0].schema.properties.decisions.items.required.slice(-2), ['guess', 'question']);
+  assert.deepEqual(f.prompts[0].schema.properties.decisions.items.required.slice(-3), ['guess', 'doubt', 'question']);
 
-  // The unclear one waits as ONE batched question, phrased as Tonborg's guess.
+  // The unclear one waits as ONE card that says how many there are, never one card per item.
   assert.equal(unsure.execution.status, 'not_applied');
-  assert.equal(unsure.guess, 'drop');
+  assert.deepEqual([unsure.guess, unsure.doubt], ['drop', 'conflict']);
   const hint = result.human_interaction;
   assert.equal(hint.presentation, 'host_native_single_choice');
   assert.deepEqual(hint.source.batch, [unsure.id]);
-  // The question names its item: one that quotes nothing leads with the item's title.
-  assert.equal(hint.question, '1. 「Deploy on Fridays」I think you drop this: deploy on Fridays. Right?');
+  assert.deepEqual([hint.title, hint.question, hint.options], ['Tonborg 有事想问你', 'Tonborg 有 1 件事拿不准，想问你。现在过一遍吗？', ['现在过一遍', '稍后']]);
+  assert.match(hint.guidance, /list_tonborg_questions, then ask each question as it is written there/);
+  // Its row in 待决策: the model's English sentence for a 简体中文 reader is replaced by FULI's own, from the guess and the doubt.
+  const { questions } = await delegatedReviewList({ judgment: f.service, input: { personalSpaceId: 's' } });
+  assert.deepEqual(questions.map(({ ask, answers, doubt }) => ({ ask, answers, doubt })),
+    [{ ask: '「Deploy on Fridays」和已有的一条对不上，丢掉吗？', answers: ['drop', 'keep'], doubt: 'conflict' }]);
+  // The console says which language it shows now.
+  const english = await delegatedReviewList({ judgment: f.service, input: { personalSpaceId: 's', language: 'en-US' } });
+  assert.equal(english.questions[0].ask, '"Deploy on Fridays" disagrees with one you already have. Drop it?');
   assert.match(hint.guidance, /do not confirm, drop or edit these knowledge items on your own judgment/);
 });
 
@@ -121,8 +128,10 @@ test('an Agent sees the batch without Tonborg\'s words, and only fixed guess val
   assert.equal(unsure.delegated, true);
   assert.equal(unsure.question, undefined);
   assert.ok(unsure.content_withheld.includes('question'));
-  assert.doesNotMatch(view.human_interaction.question, /Fridays/);
-  assert.match(view.human_interaction.question, /FULI 待决策/);
+  assert.ok(unsure.content_withheld.includes('summary'));
+  // Its doubt is a fixed value too, so the Agent can ask the same plain question.
+  assert.equal(unsure.doubt, 'conflict');
+  assert.equal(view.human_interaction.question, 'Tonborg 有 1 件事拿不准，想问你。现在过一遍吗？');
 });
 
 test('the switch needs Tonborg\'s own model, then clears 「只给建议」 and acknowledges the warning in the same click', async t => {
@@ -181,17 +190,27 @@ test('a batch of many delegated questions reaches the Agent whole', () => {
   assert.deepEqual(delivered.structuredContent.human_interaction.source.batch, records.map(record => record.id));
 });
 
-test('each batched question says what its item is, without quoting it twice', () => {
-  const record = (id, title, question) => ({ id, kind: 'review', delegated: true, outcome: 'escalate', target: `entity:${id}`,
-    title, question, feedback: { revision: 0, vote: null }, execution: { status: 'not_applied' } });
-  const { human_interaction } = judgmentHumanInteraction([
-    record('a', 'Synthetic   rule about a very long deploy window', '我猜你会保留这条，对吗？'),
-    record('b', 'Synthetic tooling note', '我猜你会保留「Synthetic tooling note」，对吗？'),
-    record('c', null, 'Keep the synthetic item?')], 's');
-  assert.deepEqual(human_interaction.question.split('\n'), [
-    '1. 「Synthetic rule about a…」我猜你会保留这条，对吗？',
-    '2. 我猜你会保留「Synthetic tooling note」，对吗？',
-    '3. Keep the synthetic item?']);
+test('the card comes once per batch of new questions and says how many are new (11-11: it closed every task)', async t => {
+  const f = fixture(t);
+  await turnOn(f);
+  await f.service.review(input);
+  const checkpoint = () => f.service.agent.conversationQuestions({ personalSpaceId: 's', personalProjectId: 'p' });
+  const first = await checkpoint();
+  assert.equal(first.human_interaction.question, 'Tonborg 有 1 件事拿不准，想问你。现在过一遍吗？');
+  assert.equal(first.human_interaction.source.newCount, 1);
+  // The same question still open: every later checkpoint is quiet, and the question stays in 待决策.
+  assert.deepEqual([await checkpoint(), await checkpoint()], [{}, {}]);
+  assert.equal((await delegatedReviewList({ judgment: f.service, input: { personalSpaceId: 's' } })).questions.length, 1);
+
+  // Tonborg asks about two more items: one card, naming the two new ones among the three open.
+  f.candidates.push(pending('entity:new-1', 'Synthetic rule one'), pending('entity:new-2', 'Synthetic rule two'));
+  const more = ['entity:new-1', 'entity:new-2'].map(target => f.service.store().record('s', { personalProjectId: 'p', kind: 'review', target,
+    title: target, summary: 'Synthetic', outcome: 'escalate', delegated: true, guess: 'keep', doubt: 'unclear' }, `ask:${target}`));
+  const second = await checkpoint();
+  assert.equal(second.human_interaction.question, 'Tonborg 新问了 2 件事（共 3 件没答）。现在过一遍吗？');
+  assert.deepEqual([second.human_interaction.source.newCount, second.human_interaction.source.batch.length], [2, 3]);
+  assert.deepEqual(second.human_interaction.source.revision.split(',').sort(), more.map(record => record.id).sort());
+  assert.deepEqual(await checkpoint(), {});
 });
 
 test('Tonborg asks in the person\'s language: the console\'s, saved with the switch, else 简体中文', async t => {
@@ -199,16 +218,16 @@ test('Tonborg asks in the person\'s language: the console\'s, saved with the swi
   await turnOn(f);
   await f.service.review(input);
   // A switch saved without a language (before 11-06) asks in the console's default.
-  assert.match(f.prompts[0].instructions, /one short question in Simplified Chinese, the person's language, even when the evidence is in another language/);
-  assert.match(f.prompts[0].instructions, /我猜你会保留「用 pnpm 安装依赖」/);
-  assert.match(f.prompts[0].instructions, /names the candidate by quoting a short excerpt of its own content/);
+  assert.match(f.prompts[0].instructions, /one plain sentence in Simplified Chinese, the person's language whatever the evidence's/);
+  assert.match(f.prompts[0].instructions, /「用 pnpm 安装依赖」像是只说了这一次，还保留吗？/);
+  assert.match(f.prompts[0].instructions, /quotes a short excerpt of the candidate/);
 
   const english = fixture(t);
   const saved = await setReviewDelegation({ judgment: english.service, modelTrust: english.app.modelTrust,
     input: { personalSpaceId: 's', enabled: true, expectedRevision: 0, language: 'en-US' } });
   assert.equal(saved.language, 'en-US');
   await english.service.review(input);
-  assert.match(english.prompts[0].instructions, /one short question in English, the person's language/);
+  assert.match(english.prompts[0].instructions, /one plain sentence in English, the person's language/);
   assert.doesNotMatch(english.prompts[0].instructions, /Simplified Chinese/);
 
   // Saving only another language keeps when it was turned on; a save without one keeps the language.

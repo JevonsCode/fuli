@@ -68,3 +68,20 @@ async def test_cross_project_root_uses_the_target_project_role_even_if_it_is_a_s
         source_application='codex', agent_id='member', target_application='codex',
         target_personal_project_id='other-project')
     assert len((await store.issue_agent_delegation({'id': 'principal'}, request))['token']) >= 32
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('sender', ['member', 'lead', 'other'])
+async def test_the_same_agent_reaches_another_of_its_sessions_but_never_its_own(sender):
+    # rec#109: the same FLA in two clients talks instead of being refused as itself.
+    class SessionStore(DelegationStore):
+        async def get_task_context(self, *args):
+            return {'personal_project_id': 'project', 'project_agent_id': self.sender, 'session_id': 'own-session'}
+    store = SessionStore(sender)
+    other = AgentDelegationIssue(personal_space_id='space', task_context_token='synthetic-token',
+        source_application='codex', agent_id=sender, target_application='codex', target_session_id='other-session')
+    assert len((await store.issue_agent_delegation({'id': 'principal'}, other))['token']) >= 32
+    own = other.model_copy(update={'target_session_id': 'own-session'})
+    with pytest.raises(HTTPException) as error:
+        await store.issue_agent_delegation({'id': 'principal'}, own)
+    assert error.value.status_code == 403

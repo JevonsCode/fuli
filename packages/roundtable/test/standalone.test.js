@@ -145,3 +145,25 @@ test('serve answers the owner peer controls on loopback, and peer share --agent 
   const rowan = standalone.store.agents()[0];
   assert.deepEqual(body, { shares: [{ projectId: rowan.agentId, clients: ['claude_code'], workingDirectory: root }] });
 });
+
+test('serve refuses a web page: any browser header, or a body that is not JSON', async t => {
+  const { openStandalone } = await import('../src/standalone/runtime.js');
+  const { startStandaloneServe } = await import('../src/standalone/serve.js');
+  const root = mkdtempSync(join(tmpdir(), 'roundtable-serve-csrf-'));
+  const standalone = openStandalone({ home: join(root, 'home'), env: {} });
+  const serving = await startStandaloneServe({ standalone, port: 0 });
+  t.after(async () => { await serving.close(); await standalone.close(); rmSync(root, { recursive: true, force: true }); });
+  const post = headers => fetch(`http://127.0.0.1:${serving.port}/api/peer/disable`, { method: 'POST', headers, body: '{}' });
+  for (const headers of [
+    { 'content-type': 'text/plain' },
+    { 'content-type': 'application/json', origin: 'https://example.test' },
+    { 'content-type': 'application/json', origin: `http://127.0.0.1:${serving.port}` },
+    { 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' },
+  ]) {
+    const response = await post(headers);
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error, 'local_owner_only');
+  }
+  assert.equal((await post({ 'content-type': 'application/json' })).status, 200);
+  assert.equal((await fetch(`http://127.0.0.1:${serving.port}/api/peer`)).status, 200);
+});
