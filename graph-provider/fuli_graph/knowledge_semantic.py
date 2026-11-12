@@ -59,12 +59,18 @@ def usable_vector(item_kind: str, record: dict, length: int) -> list[float] | No
 # its own squared length, when it has the query's length. The database does
 # the arithmetic so the vectors themselves never travel: reading 5000 of them
 # back cost a search most of its time (rec#126).
+#
+# The one-element list binds the stored vector once. Indexing the property
+# itself inside reduce made Neo4j read the whole vector from the store again
+# for every element wherever the plan did not happen to cache it: 1400
+# entities of 512 floats took 7.3 s, bound once 0.14 s (rec#126).
 def cosine_parts(vector: str) -> str:
-    return f'''CASE WHEN size({vector}) = $length THEN
-                 reduce(sum = 0.0, i IN range(0, $length - 1) | sum + {vector}[i] * $query_vector[i]) END
+    stored = f'[stored IN [{vector}] WHERE size(stored) = $length |'
+    return f'''head({stored}
+                 reduce(sum = 0.0, i IN range(0, $length - 1) | sum + stored[i] * $query_vector[i])])
                  AS semantic_dot,
-               CASE WHEN size({vector}) = $length THEN
-                 reduce(sum = 0.0, value IN {vector} | sum + value * value) END
+               head({stored}
+                 reduce(sum = 0.0, value IN stored | sum + value * value)])
                  AS semantic_norm2'''
 
 

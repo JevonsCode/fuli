@@ -112,6 +112,43 @@ async def test_meaning_finds_only_what_lexical_search_may_return_on_neo4j():
             assert unrelated['entities'] == []
 
 
+def db_hits(plan):
+    return plan['args'].get('DbHits', 0) + sum(db_hits(child) for child in plan.get('children', []))
+
+
+@pytest.mark.asyncio
+async def test_scoring_reads_a_stored_vector_once_whatever_its_length_on_neo4j():
+    """rec#126: indexing the stored property inside reduce made Neo4j read the
+    whole vector again for every element, so a scoring query's work grew with
+    items x length (7 s for 1400 entities of 512 floats). Bound once, it stays
+    far below that."""
+    model, length = 'synthetic-wide-embedding-model', 256
+    async with provider_client(reviewed()) as (client, _):
+        space_id, close, _, _ = await seeded(client)
+        items = await pending(client, space_id, model=model)
+        vectors = {row['item_id']: [1.0 if position == index else 0.0 for position in range(length)]
+                   for index, row in enumerate(items)}
+        ok(await client.post('/v1/semantic/vectors', json={'personal_space_id': space_id, 'model': model, 'items': [
+            {'item_kind': row['item_kind'], 'item_id': row['item_id'], 'hash': row['hash'],
+             'vector': vectors[row['item_id']]} for row in items]}))
+        store = client._transport.app.state.store
+        execute, scored = store.runtime.driver.execute_query, []
+
+        async def recording(query, **parameters):
+            if parameters.get('semantic_model') and 'query_vector' in parameters:
+                scored.append((query, parameters))
+            return await execute(query, **parameters)
+
+        with patch.object(store.runtime.graphiti, 'search', new=AsyncMock(return_value=[])), \
+                patch.object(store.runtime.driver, 'execute_query', new=recording):
+            result = await search(client, space_id, semantic={'model': model, 'vector': vectors[close]})
+        assert [(row['id'], row['matched_by']) for row in result['entities']] == [(close, 'semantic')]
+        assert len(scored) == 2, 'one scoring query for relationships, one for entities'
+        for query, parameters in scored:
+            _, summary, _ = await execute('PROFILE ' + query, **parameters)
+            assert db_hits(summary.profile) < len(items) * length
+
+
 @pytest.mark.asyncio
 async def test_a_vector_write_changes_no_version_and_a_changed_text_is_skipped_on_neo4j():
     async with provider_client(reviewed()) as (client, _):
