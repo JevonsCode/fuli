@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { startCoordinatorServer } from '../packages/roundtable/src/peer/coordinator-http.js';
 import { createCoordinatorService } from '../packages/roundtable/src/peer/coordinator-service.js';
 import { createCoordinatorStore } from '../packages/roundtable/src/peer/coordinator-store.js';
 import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
@@ -340,7 +341,7 @@ test('second review: a coordinator whose address is gone says so, and turning it
 test('second review: trust waiting for its first use is still taken back after a restart', { timeout: 30_000 }, async () => {
   const bus = discoveryBus();
   const [desk, laptop] = await Promise.all([device('desk', { discovery: bus.discovery }),
-    device('laptop', { discovery: bus.discovery, runtimeOptions: { trustUseMs: 600, pairedGraceMs: 60_000 } })]);
+    device('laptop', { discovery: bus.discovery, runtimeOptions: { trustUseMs: 2_000, pairedGraceMs: 60_000 } })]);
   let restarted = null;
   try {
     await desk.runtime.nearbyOn({ name: 'Desk' });
@@ -356,7 +357,8 @@ test('second review: trust waiting for its first use is still taken back after a
     await laptop.runtime.confirmPairing({ requestId: there.requestId, code: here.code });
     await until(laptop.runtime, (status) => status.devices.some((entry) => !entry.self && entry.status === 'active'), 'the laptop to trust the desk');
     await laptop.runtime.close();
-    await delay(700);
+    // Closed well inside the deadline even on a slow runner; restarted after it.
+    await delay(2_100);
     restarted = restartedRuntime(laptop);
     await restarted.resume();
     const after = await restarted.status();
@@ -364,18 +366,47 @@ test('second review: trust waiting for its first use is still taken back after a
   } finally { await restarted?.close(); await desk.close(); await laptop.close(); }
 });
 
+// The listener the runtime asks for, recorded, and opened on loopback whatever
+// the address: which loopback aliases an operating system has (macOS has only
+// 127.0.0.1) and its firewall never decide what these tests prove.
+function recordedListener({ refuse = null } = {}) {
+  const asked = [];
+  return { asked, startServer: (options) => {
+    asked.push(options.host);
+    if (options.host === refuse) return Promise.reject(Object.assign(new Error('synthetic'), { code: 'EADDRNOTAVAIL' }));
+    return startCoordinatorServer({ ...options, host: '127.0.0.1' });
+  } };
+}
+
 test('second review: a listener the person placed returns there when nearby turns off, and where devices reached it is kept', { timeout: 30_000 }, async () => {
-  const [laptop, desk] = await Promise.all([device('laptop', { discovery: discoveryBus().discovery, runtimeOptions: { nearbyListenHost: '127.0.0.2' } }),
-    device('desk')]);
+  const listener = recordedListener();
+  const [laptop, desk] = await Promise.all([device('laptop', { discovery: discoveryBus().discovery,
+    runtimeOptions: { nearbyListenHost: '0.0.0.0', startServer: listener.startServer } }), device('desk')]);
   try {
     await pair(laptop, desk, { folder: false });
     const store = laptop.app.peer.nodeStore();
     await until(laptop.runtime, (status) => status.devices.some((entry) => !entry.self && entry.online), 'the desk to connect');
     assert.deepEqual(Object.values(store.setting('reachedAddresses')), ['127.0.0.1', '127.0.0.1']);
     await laptop.runtime.nearbyOn({ name: 'Laptop' });
-    assert.deepEqual([store.setting('coordinator').host, store.setting('nearby').previousHost], ['127.0.0.2', '127.0.0.1']);
+    assert.deepEqual([store.setting('coordinator').host, store.setting('nearby').previousHost], ['0.0.0.0', '127.0.0.1']);
     await laptop.runtime.nearbyOff();
     assert.equal(store.setting('coordinator').host, '127.0.0.1');
+    assert.deepEqual(listener.asked, ['127.0.0.1', '0.0.0.0', '127.0.0.1'], 'the listener really moved and came back');
+    await until(laptop.runtime, (status) => status.devices.some((entry) => !entry.self && entry.online), 'the desk to reconnect');
+  } finally { await desk.close(); await laptop.close(); }
+});
+
+test('an address nearby pairing cannot listen on leaves the listener where the person placed it, trusting the same devices', { timeout: 30_000 }, async () => {
+  const listener = recordedListener({ refuse: '0.0.0.0' });
+  const [laptop, desk] = await Promise.all([device('laptop', { discovery: discoveryBus().discovery,
+    runtimeOptions: { nearbyListenHost: '0.0.0.0', startServer: listener.startServer } }), device('desk')]);
+  try {
+    await pair(laptop, desk, { folder: false });
+    const before = (await laptop.runtime.status()).devices.filter((entry) => !entry.self).map((entry) => [entry.nodeId, entry.status]);
+    const on = await laptop.runtime.nearbyOn({ name: 'Laptop' });
+    assert.deepEqual([laptop.app.peer.nodeStore().setting('coordinator').host, on.coordinator.listening], ['127.0.0.1', true]);
+    assert.deepEqual(listener.asked, ['127.0.0.1', '0.0.0.0', '127.0.0.1']);
+    assert.deepEqual(on.devices.filter((entry) => !entry.self).map((entry) => [entry.nodeId, entry.status]), before);
   } finally { await desk.close(); await laptop.close(); }
 });
 
@@ -440,7 +471,7 @@ test('nearby pairing turns itself off after a pairing and after its time, with a
 test('trust written for a pairing the other computer never finished is taken back', { timeout: 30_000 }, async () => {
   const bus = discoveryBus();
   const [desk, laptop] = await Promise.all([device('desk', { discovery: bus.discovery }),
-    device('laptop', { discovery: bus.discovery, runtimeOptions: { trustUseMs: 400, pairedGraceMs: 60_000 } })]);
+    device('laptop', { discovery: bus.discovery, runtimeOptions: { trustUseMs: 1_500, pairedGraceMs: 60_000 } })]);
   try {
     await desk.runtime.nearbyOn({ name: 'Desk' });
     await laptop.runtime.nearbyOn({ name: 'Laptop' });

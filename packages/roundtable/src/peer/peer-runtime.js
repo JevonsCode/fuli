@@ -36,7 +36,7 @@ const teamPeople = team => team?.people ?? [];
 // The local owner's LAN roundtable controls, run only by the console process.
 // Nothing here starts unless the owner turned it on; console LAN access does not.
 export function createPeerRuntime({ host, roundtable, port, interfaces = networkInterfaces, allowLoopback = false,
-  claimWaitMs, createDiscovery = createBonjourDiscovery, nearbyListenHost = NEARBY_LISTEN_HOST, clock = Date.now,
+  claimWaitMs, createDiscovery = createBonjourDiscovery, startServer = startCoordinatorServer, nearbyListenHost = NEARBY_LISTEN_HOST, clock = Date.now,
   nearbySessionMs = NEARBY_SESSION_MS, pairedGraceMs = PAIRED_GRACE_MS, trustUseMs = TRUST_USE_MS, onError = () => {} }) {
   const store = () => port.nodeStore();
   let coordinator = null;
@@ -106,7 +106,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       onTrustChange: () => server?.refreshTrust(),
       repositoryChanges: { read: () => store().setting('repositoryChanges'), write: (value) => store().setSetting('repositoryChanges', value) } });
     try {
-      server = await startCoordinatorServer({ service, identity: device, host: address, port: listenPort, claimWaitMs,
+      server = await startServer({ service, identity: device, host: address, port: listenPort, claimWaitMs,
         nearby: { listening: (address) => nearbyRole().listening && !virtualAddresses(interfaces).includes(address),
           handle: (...args) => pairing.handle(...args) },
         onReached: rememberReached });
