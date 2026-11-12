@@ -19,6 +19,31 @@ export const GROUP_DISCUSSION_TABLES = `
       updated_at TEXT NOT NULL, PRIMARY KEY(chat_id, round, agent_id));
 `;
 
+// rec#129: how a discussion can be joined and how far its host may take it.
+// join_code: the short code `#FLG 加入 <code>` names, unique among live
+// discussions of a scope and cleared when the discussion ends; lifetime:
+// short (the code dies with the discussion) or long (a standing group whose
+// host starts new topics); round_limit: host-led rounds per topic, 0 for no
+// limit (null: a discussion from before rec#129, read as the default);
+// host_rounds: rounds the host started in the current topic; topic: 1-based.
+export const GROUP_DISCUSSION_JOIN_COLUMNS = Object.freeze({ join_code: 'TEXT', lifetime: 'TEXT',
+  round_limit: 'INTEGER', host_rounds: 'INTEGER', topic: 'INTEGER' });
+
+// rec#129: the members who joined by code from a session of any connected
+// client (never woken), and who said each message with what: the speaker's
+// member key (an Agent ID for a woken member, join:<id> for a joined one,
+// host for the moderator), its client and the model as that client reported
+// it (unknown when it did not), and the session that wrote it.
+export const GROUP_DISCUSSION_JOIN_TABLES = `
+    CREATE TABLE IF NOT EXISTS group_discussion_joins (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, agent_id TEXT NOT NULL, name TEXT NOT NULL,
+      project_id TEXT, client TEXT NOT NULL, session TEXT NOT NULL, status TEXT NOT NULL,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(chat_id, agent_id, client, session));
+    CREATE TABLE IF NOT EXISTS group_discussion_posts (
+      chat_id TEXT NOT NULL, seq INTEGER NOT NULL, speaker TEXT NOT NULL, client TEXT, model TEXT NOT NULL,
+      session TEXT, PRIMARY KEY(chat_id, seq));
+`;
+
 // Shares the roundtable connection; every change signals waiting readers
 // through the chat notifications, as chat messages do. A discussion is
 // addressed by its scope and request ID; its turns by its chat.
@@ -31,13 +56,68 @@ export function createGroupDiscussionStore(db, chat) {
     get,
     byChat: chatId => db.prepare('SELECT * FROM group_discussions WHERE chat_id=?').get(chatId) ?? null,
     // The person's confirmation (status confirmed): the only way a discussion begins.
-    confirm({ scope, requestId, owner, projectId, question, members }) {
+    confirm({ scope, requestId, owner, projectId, question, members, lifetime, roundLimit }) {
       const at = now();
       db.prepare(`INSERT OR IGNORE INTO group_discussions(scope, request_id, owner, project_id, question, members,
-        status, response_rounds, round, follow_ups, created_at, updated_at) VALUES(?,?,?,?,?,?,'confirmed',0,0,0,?,?)`)
-        .run(scope, requestId, owner, projectId, question, JSON.stringify(members), at, at);
+        status, response_rounds, round, follow_ups, lifetime, round_limit, host_rounds, topic, created_at, updated_at)
+        VALUES(?,?,?,?,?,?,'confirmed',0,0,0,?,?,0,1,?,?)`)
+        .run(scope, requestId, owner, projectId, question, JSON.stringify(members), lifetime, roundLimit, at, at);
       return changed(get(scope, requestId));
     },
+    // The live discussion a join code names in this scope, or null.
+    byCode: (scope, code) => db.prepare('SELECT * FROM group_discussions WHERE scope=? AND join_code=?').get(scope, code) ?? null,
+    // Gives a started discussion its code once; false when a live one of the scope already has that code.
+    assignCode(scope, requestId, code) {
+      if (this.byCode(scope, code)) return false;
+      return db.prepare(`UPDATE group_discussions SET join_code=?, updated_at=? WHERE scope=? AND request_id=?
+        AND join_code IS NULL AND status!='ended'`).run(code, now(), scope, requestId).changes === 1;
+    },
+    // The host's next round of this topic, once per expected count: true for the one call that took it.
+    takeHostRound(scope, requestId, expected) {
+      return changed(db.prepare(`UPDATE group_discussions SET host_rounds=coalesce(host_rounds,0)+1, updated_at=?
+        WHERE scope=? AND request_id=? AND coalesce(host_rounds,0)=?`).run(now(), scope, requestId, expected).changes === 1);
+    },
+    // A long group's next topic after its summary: the question, rounds and follow-ups start again.
+    takeTopic(scope, requestId, topic, question) {
+      return changed(db.prepare(`UPDATE group_discussions SET question=?, topic=coalesce(topic,1)+1, host_rounds=0,
+        follow_ups=0, summary_seq=NULL, pending_follow_up=NULL, pending_to=NULL, updated_at=?
+        WHERE scope=? AND request_id=? AND coalesce(topic,1)=? AND summary_seq IS NOT NULL AND status!='ended'`)
+        .run(question, now(), scope, requestId, topic).changes === 1);
+    },
+    setMembers(scope, requestId, members) {
+      db.prepare('UPDATE group_discussions SET members=?, updated_at=? WHERE scope=? AND request_id=?')
+        .run(JSON.stringify(members), now(), scope, requestId);
+      return changed(get(scope, requestId));
+    },
+    // A session of any client joins as its current FLA; joining again restores a removed join.
+    // { join, fresh }: fresh when this session was not a member before.
+    join({ chatId, agentId, name, projectId, client, session }) {
+      const before = db.prepare(`SELECT * FROM group_discussion_joins WHERE chat_id=? AND agent_id=? AND client=?
+        AND session=?`).get(chatId, agentId, client, session);
+      const at = now();
+      db.prepare(`INSERT INTO group_discussion_joins(chat_id, agent_id, name, project_id, client, session, status,
+        created_at, updated_at) VALUES(?,?,?,?,?,?,'joined',?,?) ON CONFLICT(chat_id, agent_id, client, session)
+        DO UPDATE SET status='joined', name=excluded.name, updated_at=excluded.updated_at`)
+        .run(chatId, agentId, name, projectId, client, session, at, at);
+      const join = db.prepare(`SELECT * FROM group_discussion_joins WHERE chat_id=? AND agent_id=? AND client=?
+        AND session=?`).get(chatId, agentId, client, session);
+      return changed({ join, fresh: before?.status !== 'joined' });
+    },
+    joins: chatId => db.prepare('SELECT * FROM group_discussion_joins WHERE chat_id=? ORDER BY id').all(chatId),
+    // The discussions this session of a client joined and is still a member of.
+    sessionJoins: (client, session) => db.prepare(`SELECT * FROM group_discussion_joins WHERE client=? AND session=?
+      AND status='joined' ORDER BY id`).all(client, session),
+    leave(chatId, id) {
+      db.prepare(`UPDATE group_discussion_joins SET status='removed', updated_at=? WHERE chat_id=? AND id=?`)
+        .run(now(), chatId, id);
+      chat.publishChanges();
+    },
+    // Who said one message with what (see GROUP_DISCUSSION_JOIN_TABLES).
+    recordPost(chatId, seq, { speaker, client = null, model, session = null }) {
+      db.prepare('INSERT OR IGNORE INTO group_discussion_posts VALUES(?,?,?,?,?,?)')
+        .run(chatId, seq, speaker, client, model, session);
+    },
+    posts: chatId => db.prepare('SELECT * FROM group_discussion_posts WHERE chat_id=? ORDER BY seq').all(chatId),
     // confirmed -> running, once: whoever wins starts the rounds.
     claim(scope, requestId, responseRounds) {
       return db.prepare(`UPDATE group_discussions SET status='running', response_rounds=?, updated_at=?
@@ -54,10 +134,13 @@ export function createGroupDiscussionStore(db, chat) {
       return changed(get(scope, requestId));
     },
     // status: confirmed | running | concluded | ended. A round number only grows.
+    // An ended discussion's join code stops working at once.
     update(scope, requestId, { status = null, round = null, summarySeq = null, endReason = null }) {
       db.prepare(`UPDATE group_discussions SET status=coalesce(?, status), round=max(round, coalesce(?, round)),
-        summary_seq=coalesce(?, summary_seq), end_reason=coalesce(?, end_reason), updated_at=? WHERE scope=? AND request_id=?`)
-        .run(status, round, summarySeq, endReason, now(), scope, requestId);
+        summary_seq=coalesce(?, summary_seq), end_reason=coalesce(?, end_reason),
+        join_code=CASE WHEN coalesce(?, status)='ended' THEN NULL ELSE join_code END, updated_at=?
+        WHERE scope=? AND request_id=?`)
+        .run(status, round, summarySeq, endReason, status, now(), scope, requestId);
       return changed(get(scope, requestId));
     },
     // The runner of the rounds is alive (ms since epoch).

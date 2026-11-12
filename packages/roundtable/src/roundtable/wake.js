@@ -12,6 +12,7 @@ import { WAKE_CLIENTS, wakeAdapter } from '../agents/wake-registry.js';
 // command, arguments, session lookup and output format live in its adapter.
 export { WAKE_CLIENTS };
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9-]{7,127}$/;
+const MODEL_LIMIT = 120;
 
 function adapterFor(client) {
   const adapter = wakeAdapter(client);
@@ -90,7 +91,8 @@ export function parseFinalAnswer(client, { code, stdout }) {
   if (code !== 0 || state.failed || !state.completed || !state.body.trim()) {
     throw Object.assign(new Error(`${client} did not return an answer`), { code: 'wake_failed' });
   }
-  return { body: state.body.trim(), sessionId };
+  // model: as the client reported it, only where its adapter reads one.
+  return { body: state.body.trim(), sessionId, ...(state.model ? { model: state.model.slice(0, MODEL_LIMIT) } : {}) };
 }
 
 // Owns exactly one child process tree and never touches unrelated clients.

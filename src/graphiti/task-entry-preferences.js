@@ -1,6 +1,6 @@
 import { captureSettingsUrl, receiptText, taskAgentReceipt } from '../agents/identity-receipt.js';
 import { FLA_ROUTE, namedFlaEntry } from './task-entry-named-fla.js';
-import { groupDiscussionEntry } from './task-entry-group-discussion.js';
+import { groupDiscussionEntry, joinedRoundsEntry } from './task-entry-group-discussion.js';
 import { beginTaskContext, beginTaskFromPreferences } from './agent-knowledge-workflows.js';
 import { getCollaborationPreferences as getCollaborationPreferencesWorkflow } from './collaboration-preference-workflow.js';
 import { resolveTaskEntryAgent, loadProjectAgentContinuity } from './project-agent-task-entry.js';
@@ -168,7 +168,8 @@ async function entryPreferences(application, projectResolution, {
       includeTeam ? taskJudgmentContext(application, projectResolution.personalProjectId) : null
     ]);
   });
-  const [preferences, management, [context, judgmentContext], triage, capture, formatNotices, roundtableAsk, ownerFromName] = await Promise.all([
+  const [preferences, management, [context, judgmentContext], triage, capture, formatNotices, roundtableAsk, ownerFromName,
+    joinedRounds] = await Promise.all([
     getCollaborationPreferencesWorkflow(
       application,
       projectResolution,
@@ -197,7 +198,10 @@ async function entryPreferences(application, projectResolution, {
     includeMessages && agentInvocation ? roundtableAskEntry(application, { taskPrompt, sessionId },
       { personalProjectId: projectResolution.personalProjectId ?? null, agentId: selection?.agent?.agentId ?? null }) : null,
     // Display only: bounded, and its ID stands in (task-entry-owner-change.js).
-    previousOwnerName(application, ownerFrom)
+    previousOwnerName(application, ownerFrom),
+    // A round the host of a discussion this session joined by code addressed to it (rec#129).
+    includeMessages && agentInvocation && !group?.view
+      ? joinedRoundsEntry(application, { sourceApplication, sessionId: sessionId ?? sourceSessionId }) : null
   ]);
   const managedPreferences = management ? { ...preferences, project_management_context: management } : preferences;
   if (context) applyAgentAssignment(context, selection);
@@ -225,7 +229,7 @@ async function entryPreferences(application, projectResolution, {
     ...(triage ? { triage_candidates: triage } : {}),
     ...(standing ? { standing_owner: standing.field } : {}),
     ...(ownerChange ? { owner_change: ownerChange.field } : {}),
-    ...(fla?.view ? { fla: fla.view } : {}), ...(group?.view ? { flg: group.view } : {}),
+    ...(fla?.view ? { fla: fla.view } : {}), ...(group?.view ?? joinedRounds ? { flg: group?.view ?? joinedRounds } : {}),
     ...(group?.interaction ?? fla?.interaction ? { human_interaction: group?.interaction ?? fla.interaction } : {}),
     ...(routeMarkers.length ? { [FLA_ROUTE]: routeMarkers } : {}),
     ...(judgmentContext ? { judgment_context: judgmentContext } : {}),

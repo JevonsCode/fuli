@@ -25,20 +25,28 @@ const AGENTS = [agent('lead', 'Ada Lead', '负责人'), agent('dev', 'Jamie Ash'
   agent('ux', 'Jade Lin', '设计'), agent('oc-only', 'Otto Cole', '运维', ['opencode'])];
 
 function fixture({ answer = null, clientAvailable = () => true, agents = AGENTS, store = null, redeemed = true,
-  env = {}, now = Date.now } = {}) {
+  env = {}, now = Date.now, resumable = false } = {}) {
   const woken = [];
   const grants = [];
   const roster = { agents: [...agents] };
   const tasks = {
     'token-ada': { projectAgentId: 'lead', personalProjectId: 'app', sessionId: 'host-1', sourceApplication: 'claude_code' },
     'token-ada-2': { projectAgentId: 'lead', personalProjectId: 'app', sessionId: 'host-1', sourceApplication: 'claude_code' },
-    'token-jamie': { projectAgentId: 'dev', personalProjectId: 'app', sessionId: 'host-2', sourceApplication: 'claude_code' }
+    'token-jamie': { projectAgentId: 'dev', personalProjectId: 'app', sessionId: 'host-2', sourceApplication: 'claude_code' },
+    // Sessions the person opened in clients FULI cannot wake (rec#129): Astro outside any project, an FLA in one.
+    'token-astro-oc': { projectAgentId: 'employee.assistant', personalProjectId: null, sessionId: 'oc-1', sourceApplication: 'opencode' },
+    'token-astro-cursor': { projectAgentId: 'employee.assistant', personalProjectId: null, sessionId: 'cur-1', sourceApplication: 'cursor' },
+    'token-jade-cursor': { projectAgentId: 'ux', personalProjectId: 'app', sessionId: 'cur-2', sourceApplication: 'cursor' }
   };
+  // Each member's earlier sessions, when a wake may resume one (rec#129 rounds).
+  const sessions = [];
   const app = {
     config: { personal: { spaceId: 'space' } },
     listProjectAgents: async () => roster.agents,
     taskContextRegistry: { context: async token => tasks[token] },
-    personal: { recentAgentSessions: async () => [],
+    personal: { recentAgentSessions: async ({ agentId }) => resumable ? sessions.filter(item => item.agent === agentId)
+      .map(item => ({ source_application: item.client, session_id: item.sessionId, personal_project_id: 'app',
+        last_active: '2026-11-13T00:00:00Z' })) : [],
       listPersonalProjects: async () => [],
       issueAgentDelegation: async input => { grants.push(input); return { token: `grant-${grants.length}` }; },
       sealAgentDelegation: async () => ({}),
@@ -47,24 +55,31 @@ function fixture({ answer = null, clientAvailable = () => true, agents = AGENTS,
   };
   let id = 0;
   const roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), openStore: () => store ?? createRoundtableStore(),
-    idFactory: () => `id-${++id}`, locateCwd: () => null, clientAvailable, env, now,
+    idFactory: () => `id-${++id}`, locateCwd: (client, sessionId) => resumable && sessionId ? '/synthetic/app' : null,
+    clientAvailable, env, now,
     // The executor port: the woken client restores the member named by the
-    // prompt's leading #FLA {agentId} and answers as itself.
+    // prompt's leading #FLA {agentId} and answers as itself. Claude Code
+    // reports its model on its init event; Codex reports none.
     wake: async input => {
       const member = /^#FLA \{([^}]+)\}/u.exec(input.prompt)[1];
       woken.push({ member, client: input.client, prompt: input.prompt, sessionId: input.sessionId, readOnly: input.readOnly });
       const body = answer ? await answer(member, input) : `${member} 的观点`;
-      return { body, sessionId: `session-${member}-${woken.length}` };
+      const sessionId = `session-${member}-${woken.length}`;
+      sessions.push({ agent: member, client: input.client, sessionId });
+      return { body, sessionId, ...(input.client === 'claude_code' ? { model: 'synthetic-model-a' } : {}) };
     } });
   const call = (action, data = {}, token = 'token-ada') => roundtable.discuss({ taskContextToken: token,
-    sourceApplication: 'claude_code', action, ...data });
+    sourceApplication: tasks[token]?.sourceApplication ?? 'claude_code', action, ...data });
   // What the person's #FLG entry records: the confirmed members, then a follow-up.
-  const confirm = (requestId, members, question = '这个方案的产品体验和技术风险？') =>
-    roundtable.recordGroupChoice({ requestId, agentId: 'lead', projectId: 'app', question, members });
+  const confirm = (requestId, members, question = '这个方案的产品体验和技术风险？', options = {}) =>
+    roundtable.recordGroupChoice({ requestId, agentId: 'lead', projectId: 'app', question, members, ...options });
   const start = async (requestId, members, extra = {}) => {
-    confirm(requestId, members, extra.question);
+    confirm(requestId, members, extra.question, extra.options);
     return call('start', { requestId, ...(extra.responseRounds !== undefined ? { responseRounds: extra.responseRounds } : {}) });
   };
+  // The person's `#FLG 加入 <code>` in a session of another client, as task entry passes it.
+  const join = (code, token, name = 'Astro') => roundtable.joinGroupDiscussion({ code, agentId: tasks[token].projectAgentId,
+    name, projectId: tasks[token].personalProjectId, client: tasks[token].sourceApplication, sessionId: tasks[token].sessionId });
   const ask = (requestId, body, to = null) => roundtable.requestGroupFollowUp({ requestId, body, to });
   const settle = async (chatId, token = 'token-ada') => {
     let view = await call('status', { chatId }, token);
@@ -73,7 +88,7 @@ function fixture({ answer = null, clientAvailable = () => true, agents = AGENTS,
     }
     return call('status', { chatId }, token);
   };
-  return { app, roster, roundtable, woken, grants, call, confirm, start, ask, settle };
+  return { app, roster, roundtable, woken, grants, call, confirm, start, ask, settle, join, tasks };
 }
 
 const latest = view => Object.fromEntries(view.members.map(member => [member.agentId, member.status]));
@@ -389,4 +404,188 @@ test('the MCP tool reaches the same discussion and names its error codes', async
     sourceApplication: 'claude_code', action: 'start', requestId: 'r' }), error => error.code === 'flg_no_executor');
   await assert.rejects(callRoundtableTool(roundtable, 'group_discussion', { taskContextToken: 'token-ada',
     sourceApplication: 'claude_code', action: 'summary', chatId: 'c' }), error => error.code === 'flg_invalid');
+});
+
+// rec#129: joining by code from any connected client, who said what with which
+// client and model, host-led rounds with a limit, and short or long groups.
+const code = view => /^#FLG 加入 ([2-9A-HJKMNP-Z]{4})$/u.exec(view.join)?.[1];
+const member = (view, key) => view.members.find(item => item.member === key);
+
+test('joining by code: any connected session joins as its FLA (Astro outside a project), replies itself, and the host sees it', async t => {
+  const { roundtable, start, settle, call, join } = fixture();
+  t.after(() => roundtable.close());
+  const started = await start('flg-join', ['dev', 'qa'], { responseRounds: 0 });
+  const joinCode = code(started);
+  assert.ok(joinCode, started.join);
+  const done = await settle(started.chatId);
+  // Case-insensitive; the excerpt is bounded.
+  const { joined } = await join(joinCode.toLowerCase(), 'token-astro-oc');
+  assert.equal(joined.fresh, true);
+  assert.equal(joined.question, '这个方案的产品体验和技术风险？');
+  assert.ok(joined.excerpt.length <= 5 && joined.excerpt.every(message => message.body.length <= 310));
+  assert.ok(joined.open);
+  assert.match(joined.member, /^join:\d+$/u);
+  // Joining again from the same session is the same membership, said once.
+  assert.equal((await join(joinCode, 'token-astro-oc')).joined.fresh, false);
+  const status = await call('status', { chatId: started.chatId });
+  const astro = member(status, joined.member);
+  assert.deepEqual([astro.source, astro.client, astro.status, astro.name], ['joined', 'opencode', 'waiting', 'Astro · OpenCode']);
+  assert.deepEqual([member(status, 'dev').source, member(status, 'dev').client], ['woken', 'claude_code']);
+  assert.equal(status.waitingForJoined, true);
+  assert.match(status.guidance, /Joined members are never woken/u);
+  // The member reads a bounded page and answers with the model its client states; FULI records the client itself.
+  const read = await call('read', { chatId: started.chatId }, 'token-astro-oc');
+  assert.ok(read.messages.length <= 10);
+  assert.match(read.guidance, /never guessed[\s\S]*Read-only/u);
+  const reply = await call('reply', { chatId: started.chatId, body: 'Astro 的观点', model: 'synthetic-model-b' }, 'token-astro-oc');
+  assert.equal(reply.by, 'OpenCode · synthetic-model-b');
+  await assert.rejects(call('reply', { chatId: started.chatId, body: '再说一次' }, 'token-astro-oc'),
+    error => error.code === 'flg_no_turn');
+  const after = await call('status', { chatId: started.chatId, after: done.nextAfter });
+  assert.deepEqual(after.messages.map(message => [message.from, message.by]), [['Astro · OpenCode', 'OpenCode · synthetic-model-b']]);
+  const all = await call('status', { chatId: started.chatId });
+  // The host reported no model: unknown, never guessed.
+  assert.ok(all.messages.filter(message => message.from.startsWith('主持')).every(message => message.by === 'Claude Code · unknown'));
+  assert.equal(member(all, joined.member).status, 'replied');
+  // A session that did not join cannot read or post.
+  await assert.rejects(call('read', { chatId: started.chatId }, 'token-astro-cursor'), error => error.code === 'flg_not_member');
+});
+
+test('a joined or woken member can never host: no rounds, follow-ups, removals or summaries from them', async t => {
+  const { roundtable, start, settle, call, join, ask } = fixture();
+  t.after(() => roundtable.close());
+  const started = await start('flg-host', ['dev', 'qa'], { responseRounds: 0 });
+  await settle(started.chatId);
+  const { chatId } = started;
+  // The host FLA in its own project is the host, never a member.
+  assert.deepEqual(await roundtable.joinGroupDiscussion({ code: code(started), agentId: 'lead', name: 'Ada', projectId: 'app',
+    client: 'cursor', sessionId: 'cur-9' }), { refused: 'host' });
+  await join(code(started), 'token-jade-cursor', 'Jade Lin');
+  ask('flg-host', '追问');
+  for (const [action, data] of [['round', { to: ['dev'], questions: ['为什么？'] }], ['remove', { member: 'dev' }],
+    ['follow_up', {}], ['summary', { requestId: 's', body: '总结' }], ['stop', {}]]) {
+    await assert.rejects(call(action, { chatId, ...data }, 'token-jade-cursor'),
+      error => ['flg_not_moderator', 'flg_member_not_host', 'chat_task_required', 'chat_not_found'].includes(error.code), action);
+  }
+  // A woken session cannot join, and an unknown code joins nothing.
+  const wokenSession = fixture({ env: { FULI_ROUNDTABLE_DELEGATION: 'synthetic-grant' } });
+  t.after(() => wokenSession.roundtable.close());
+  assert.deepEqual(await wokenSession.join(code(started), 'token-astro-oc'), { refused: 'woken' });
+  assert.deepEqual(await join('ZZZZ', 'token-astro-cursor'), { refused: 'unknown' });
+});
+
+test('the host removes a joined member; woken and joined members together are capped at six', async t => {
+  const { roundtable, start, settle, call, join, tasks } = fixture();
+  t.after(() => roundtable.close());
+  const started = await start('flg-cap6', ['dev', 'qa', 'ux'], { responseRounds: 0 });
+  await settle(started.chatId);
+  const { chatId } = started;
+  const first = (await join(code(started), 'token-astro-oc')).joined;
+  await join(code(started), 'token-astro-cursor');
+  for (let n = 0; n < 2; n++) {
+    tasks[`token-extra-${n}`] = { projectAgentId: 'employee.assistant', personalProjectId: null, sessionId: `x-${n}`,
+      sourceApplication: 'other' };
+  }
+  assert.ok((await join(code(started), 'token-extra-0')).joined);
+  assert.deepEqual(await join(code(started), 'token-extra-1'), { refused: 'full', limit: 6 });
+  const removed = await call('remove', { chatId, member: first.member });
+  assert.equal(removed.members.some(item => item.member === first.member), false);
+  await assert.rejects(call('reply', { chatId, body: '还在吗' }, 'token-astro-oc'), error => error.code === 'flg_not_member');
+  assert.ok((await join(code(started), 'token-extra-1')).joined);
+  await assert.rejects(call('remove', { chatId, member: 'join:999' }), error => error.code === 'flg_not_member');
+});
+
+test('host-led rounds: questions to named members, woken again in their own session, joined ones on their next turn, up to the limit', async t => {
+  const { roundtable, woken, start, settle, call, join } = fixture({ resumable: true });
+  t.after(() => roundtable.close());
+  const started = await start('flg-rounds', ['dev', 'qa'], { responseRounds: 0 });
+  await settle(started.chatId);
+  const { joined } = await join(code(started), 'token-astro-oc');
+  await call('reply', { chatId: started.chatId, body: 'Astro 的观点' }, 'token-astro-oc');
+  // Nothing new for the joined session until the host asks it.
+  assert.deepEqual(await roundtable.groupDiscussionTurns({ client: 'opencode', sessionId: 'oc-1' }), []);
+  const before = woken.length;
+  const devSession = woken.find(item => item.member === 'dev');
+  const round = await call('round', { chatId: started.chatId, to: ['dev', joined.member],
+    questions: ['灰度比例定多少？', '回滚条件是什么？'] });
+  assert.equal(round.hostRound, 2);
+  assert.match(round.messages[0].body, /^【第 2 轮 · 主持人提问 → Jamie Ash（开发）、Astro · OpenCode】\n1\. 灰度比例定多少？\n2\. 回滚条件是什么？$/u);
+  const done = await settle(started.chatId);
+  // Only the named woken member is woken, in the session it answered from before.
+  assert.deepEqual(woken.slice(before).map(item => [item.member, item.sessionId]),
+    [['dev', `session-dev-${woken.indexOf(devSession) + 1}`]]);
+  assert.match(woken.at(-1).prompt, /第 2 轮：主持人提问[\s\S]*灰度比例定多少/u);
+  assert.equal(member(done, 'qa').round, 1);
+  // The joined member sees the round once, on its next turn; the host is told to have the person nudge it.
+  assert.match(done.guidance, /Ask the person to send any message/u);
+  const shown = await roundtable.groupDiscussionTurns({ client: 'opencode', sessionId: 'oc-1' });
+  assert.deepEqual(shown.map(item => [item.member, item.round]), [[joined.member, done.round]]);
+  assert.match(shown[0].latest.body, /灰度比例/u);
+  assert.deepEqual(await roundtable.groupDiscussionTurns({ client: 'opencode', sessionId: 'oc-1' }), []);
+  await call('reply', { chatId: started.chatId, body: '回滚看错误率' }, 'token-astro-oc');
+  // Round 3 is the last of the default three; a fourth is refused and the guidance says to conclude.
+  await call('round', { chatId: started.chatId, to: ['qa'], questions: ['测试够吗？'] });
+  const third = await settle(started.chatId);
+  assert.equal(third.hostRound, 3);
+  assert.match(third.guidance, /round limit is reached/u);
+  await assert.rejects(call('round', { chatId: started.chatId, to: ['qa'], questions: ['再来'] }),
+    error => error.code === 'flg_round_limit');
+  // Without a limit the host may go on; a non-member is refused.
+  const open = fixture();
+  t.after(() => open.roundtable.close());
+  const free = await open.start('flg-free', ['dev', 'qa'], { responseRounds: 0, options: { roundLimit: 0 } });
+  await open.settle(free.chatId);
+  for (let n = 0; n < 3; n++) {
+    await open.call('round', { chatId: free.chatId, to: ['qa'], questions: [`第 ${n} 问`] });
+    await open.settle(free.chatId);
+  }
+  assert.equal((await open.call('status', { chatId: free.chatId })).roundLimit, null);
+  await assert.rejects(open.call('round', { chatId: free.chatId, to: ['ux'], questions: ['?'] }), error => error.code === 'flg_not_member');
+});
+
+test('short and long: a short discussion\'s code dies with its summary; a long group keeps it and starts a new topic', async t => {
+  const { roundtable, woken, start, settle, call, join, ask } = fixture();
+  t.after(() => roundtable.close());
+  const short = await start('flg-short', ['dev', 'qa'], { responseRounds: 0 });
+  await settle(short.chatId);
+  assert.equal(short.lifetime, 'short');
+  const summarized = await call('summary', { chatId: short.chatId, requestId: 's-1', body: '结论' });
+  assert.equal(summarized.status, 'ended');
+  assert.equal(summarized.join, undefined);
+  assert.deepEqual(await join(code(short), 'token-astro-oc'), { refused: 'unknown' });
+  const long = await start('flg-long', ['dev', 'qa'], { responseRounds: 0, options: { lifetime: 'long' } });
+  await settle(long.chatId);
+  await join(code(long), 'token-astro-cursor');
+  const kept = await call('summary', { chatId: long.chatId, requestId: 's-2', body: '第一个话题的结论' });
+  assert.deepEqual([kept.status, kept.join, kept.summary.not_counted.map(item => item.name)],
+    ['concluded', long.join, ['Astro · Cursor']]);
+  assert.match(kept.guidance, /new topic/u);
+  // The code still joins, and the person's next #FLG text is a new topic, beyond the follow-up count.
+  const later = (await join(code(long), 'token-astro-oc')).joined;
+  assert.equal(later.open, false);
+  assert.equal(roundtable.groupDiscussionStatus({ requestId: 'flg-long' }).nextTopic, true);
+  assert.deepEqual(ask('flg-long', '第二个话题：要不要拆服务？'), { recorded: true });
+  const before = woken.length;
+  const topic = await call('follow_up', { chatId: long.chatId });
+  assert.deepEqual([topic.topic, topic.question, topic.hostRound], [2, '第二个话题：要不要拆服务？', 1]);
+  assert.match(topic.messages[0].body, /^【新话题】第二个话题/u);
+  const second = await settle(long.chatId);
+  assert.deepEqual(woken.slice(before).map(item => item.member).sort(), ['dev', 'qa']);
+  assert.equal(member(second, later.member).status, 'invited');
+  assert.equal(second.summary.recorded, false);
+  // Stopping a long group ends its code too.
+  await call('stop', { chatId: long.chatId });
+  assert.deepEqual(await join(code(long), 'token-jade-cursor'), { refused: 'unknown' });
+});
+
+test('a woken Claude Code member\'s model comes from its client, a Codex one is unknown; nothing grants edits', async t => {
+  const { roundtable, woken, start, settle } = fixture({ agents: [agent('lead', 'Ada Lead', '负责人'),
+    agent('dev', 'Jamie Ash', '开发', ['claude_code']), agent('qa', 'Nova Lane', '测试', ['codex'])] });
+  t.after(() => roundtable.close());
+  const { chatId } = await start('flg-models', ['dev', 'qa'], { responseRounds: 0 });
+  const done = await settle(chatId);
+  assert.deepEqual([member(done, 'dev').client, member(done, 'dev').model], ['claude_code', 'synthetic-model-a']);
+  assert.deepEqual([member(done, 'qa').client, member(done, 'qa').model], ['codex', 'unknown']);
+  assert.ok(woken.every(item => item.readOnly === true));
+  assert.match(done.guidance, /authorizes no edits or publishing/u);
 });
