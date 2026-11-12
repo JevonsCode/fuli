@@ -45,7 +45,7 @@ async function save(change: RoleTrustChange, kind: 'mode' | 'acknowledge') {
 </script>
 
 <template>
-  <section class="model-role-trust grid gap-2 border-t pt-3" :data-model-trust="role" :aria-label="t('modelSettings.trust.label')">
+  <section class="model-role-trust grid gap-2 border-t pt-4" :data-model-trust="role" :aria-label="t('modelSettings.trust.label')">
     <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
       <p class="m-0 min-w-0 text-sm" data-model-trust-status>{{ trustStatusText(trust, model) }}</p>
       <div class="flex items-center gap-2">
