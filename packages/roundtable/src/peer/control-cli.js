@@ -118,23 +118,37 @@ function printStatus(status, write) {
 
 function printNearby(status, write, command) {
   const { nearby } = status;
+  const ended = NEARBY_ENDED[nearby.ended?.kind];
+  if (ended) write(ended(nearby.ended));
   if (!nearby.on) {
-    write(`Nearby pairing: off. \`${command} peer nearby on --name NAME\` lets computers on this network see that this one runs FULI.`);
+    write(`Nearby pairing: off. \`${command} peer nearby on [--name NAME]\` lets computers on this network see that this one runs FULI (for 30 minutes).`);
     return;
   }
-  write(`Nearby pairing: on, seen as "${nearby.name}"${nearby.canPair ? '' : ` (${nearby.reason})`}`);
+  write(`Nearby pairing: on until ${nearby.until}, seen as "${nearby.name}"${nearby.reason ? ` (${nearby.reason})` : ''}`);
+  if (nearby.limited) write(`Too many unfinished pairing requests (${nearby.unfinishedRequests}); turn nearby pairing off and on again to pair.`);
+  else if (nearby.unfinishedRequests) write(`Unfinished pairing requests so far: ${nearby.unfinishedRequests}.`);
   if (!nearby.devices.length) write('  No other FULI seen on this network yet.');
   for (const device of nearby.devices) write(`  ${device.name} · ${device.shortFingerprint}${device.paired ? ' · paired' : ''}`);
   const { pairing } = nearby;
   if (!pairing) return;
   const device = `${pairing.device.name} (${pairing.device.shortFingerprint ?? '…'})`;
-  if (pairing.state === 'confirm' || pairing.state === 'finishing') {
+  if (pairing.direction === 'incoming' && pairing.state === 'connecting') {
+    write(`${device} asks to pair with this computer. \`${command} peer cancel\` refuses it.`);
+  } else if (pairing.state === 'confirm' || pairing.state === 'finishing') {
     write(`Pairing with ${device}: code ${pairing.code}. ${pairing.coordinator === 'this' ? 'This computer' : 'The other computer'} will coordinate.`);
     write(pairing.confirmedHere
       ? `Confirmed here; waiting for the person on the other computer${pairing.confirmedThere ? ' (confirmed there too, finishing)' : ''}.`
       : `Compare it with the code on the other computer; if they match, run \`${command} peer confirm <the code shown there>\` before ${pairing.expiresAt}.`);
   } else write(`Pairing with ${device}: ${pairing.state}${pairing.reason ? ` (${pairing.reason})` : ''}`);
 }
+
+// Why nearby pairing turned itself off, or what it last did.
+const NEARBY_ENDED = {
+  paired: (ended) => `Paired with ${ended.name}; nearby pairing turned itself off.`,
+  timeout: () => 'Nearby pairing turned itself off after 30 minutes.',
+  discovery_failed: (ended) => `Nearby discovery could not start: ${ended.reason}. Nearby pairing is off; the rest keeps running.`,
+  trust_withdrawn: (ended) => `${ended.name} never connected after pairing, so this computer no longer trusts it.`,
+};
 
 // The words before the first --option.
 function positional(args) {

@@ -1,0 +1,66 @@
+import assert from 'node:assert/strict';
+import { createSocket } from 'node:dgram';
+import test from 'node:test';
+
+import { announcedAddresses, lanAddresses } from '../packages/roundtable/src/peer/lan-addresses.js';
+import { createBonjourDiscovery } from '../packages/roundtable/src/peer/nearby-discovery.js';
+import { createNearbyPresence } from '../packages/roundtable/src/peer/nearby-presence.js';
+
+const interfaces = () => ({
+  'vEthernet (WSL)': [{ address: '172.29.112.1', family: 'IPv4', internal: false }],
+  Ethernet: [{ address: '192.168.1.8', family: 'IPv4', internal: false }, { address: 'fe80::1', family: 'IPv6', internal: false }],
+  Loopback: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
+  utun3: [{ address: '100.64.0.2', family: 'IPv4', internal: false }],
+});
+
+test('security review: a multicast socket that cannot bind turns into a reported failure, not a crash', async () => {
+  // The reviewer's probe on loopback: a port another socket holds exclusively.
+  const holder = createSocket({ type: 'udp4', reuseAddr: false });
+  await new Promise((resolve) => holder.bind({ port: 0, address: '127.0.0.1', exclusive: true }, resolve));
+  try {
+    const failure = Promise.withResolvers();
+    const discovery = createBonjourDiscovery({ onFailure: failure.resolve,
+      options: { port: holder.address().port, interface: '127.0.0.1', reuseAddr: false, multicast: false } });
+    const browser = discovery.browse({ onUp: () => {}, onDown: () => {} });
+    const error = await failure.promise;
+    assert.match(error.code, /EADDRINUSE|EACCES/);
+    // Everything after the failure is a no-op, never a throw.
+    browser.refresh();
+    browser.stop();
+    discovery.close();
+  } finally { holder.close(); }
+});
+
+test('only physical LAN addresses are announced and offered first', () => {
+  assert.deepEqual(announcedAddresses(interfaces), ['192.168.1.8']);
+  assert.deepEqual(lanAddresses(interfaces), ['192.168.1.8', '172.29.112.1', '100.64.0.2']);
+  assert.deepEqual(announcedAddresses(() => ({ 'vEthernet (WSL)': interfaces()['vEthernet (WSL)'] })), ['172.29.112.1']);
+});
+
+test('the nearby list is capped, forgets computers that stopped answering, and advertises a fresh id each time', () => {
+  let now = 0;
+  const adverts = [];
+  let handlers = null;
+  const discovery = { browse: (next) => { handlers = next; return { stop() {}, refresh() {} }; },
+    advertise: (record) => { adverts.push(record); return { stop() {} }; }, close() {} };
+  const presence = createNearbyPresence({ discovery, clock: () => now });
+  presence.browse('0'.repeat(64));
+  for (let index = 0; index < 40; index += 1) {
+    handlers.onUp({ port: 4100, addresses: ['192.168.1.20'], txt: { v: '1', fp: index.toString(16).padStart(16, 'a'), n: `Device ${index}` } });
+  }
+  assert.equal(presence.list().length, 32);
+  assert.equal(presence.list()[0].name, 'Device 8', 'the least recently seen go first');
+  now = 100_000;
+  handlers.onUp({ port: 4100, addresses: ['192.168.1.20'], txt: { v: '1', fp: 'b'.repeat(16), n: 'Laptop' } });
+  now = 160_000;
+  assert.deepEqual(presence.list().map((entry) => entry.name), ['Laptop']);
+  handlers.onUp({ port: 4100, addresses: ['192.168.1.20'], txt: { v: '2', fp: 'c'.repeat(16), n: 'Other version' } });
+  assert.equal(presence.list().length, 1, 'another protocol version is ignored');
+
+  presence.advertise({ name: 'Desk', port: 4100, fingerprint: '1'.repeat(64), addresses: ['192.168.1.8'] });
+  presence.stop();
+  presence.advertise({ name: 'Desk', port: 4100, fingerprint: '1'.repeat(64), addresses: ['192.168.1.8'] });
+  assert.match(adverts[0].name, /^FULI [0-9a-f]{8}$/);
+  assert.notEqual(adverts[0].name, adverts[1].name);
+  assert.deepEqual([adverts[0].txt, adverts[0].addresses], [{ v: '1', fp: '1'.repeat(16), n: 'Desk' }, ['192.168.1.8']]);
+});

@@ -50,6 +50,11 @@ export function originRemoteSource(repositoryRoot) {
   return { key: 'origin-remote', kind: 'repository', role: 'own', title, uri, sensitivity: 'normal' };
 }
 
+// The normalised origin URL of a repository on this computer, or null.
+export function localOriginRemoteKey(repositoryRoot) {
+  return originRemoteKey(repositoryRoot, { pathApi: path, readText: readTextOrEmpty });
+}
+
 function readTextOrEmpty(filePath) {
   try { return readFileSync(filePath, 'utf8'); } catch { return ''; }
 }

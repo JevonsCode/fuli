@@ -3,24 +3,31 @@ import { computed, ref, watch } from 'vue'
 import { postJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { t } from '@/i18n'
 import UiNotice from '@/ui/UiNotice.vue'
 import { groupedCode, pairingOutcome, peerApiMessage, peerStatusShape, type Nearby, type PeerStatus } from './peer-model'
 
-// 附近的 FULI (rec issue 127): be seen on this network, pair from the list with
-// a 6-digit code each person compares and confirms on their own computer.
+// 附近的 FULI (rec issue 127): be seen on this network for a while, pair from
+// the list with a 6-digit code the person compares on both screens and
+// confirms on each computer.
 const props = defineProps<{ nearby: Nearby; coordinatorName: string | null }>()
 const emit = defineEmits<{ status: [next: PeerStatus] }>()
 
 const busy = ref('')
 const error = ref('')
-const name = ref(props.nearby.name ?? props.nearby.suggestedName)
+const name = ref(props.nearby.name ?? '')
+// The person's own statement that both screens show the same digits; reset for every new code.
+const sameDigits = ref(false)
 watch(() => props.nearby.name, (next) => { if (next) name.value = next })
+watch(() => props.nearby.pairing?.code ?? null, () => { sameDigits.value = false })
 
 const pairing = computed(() => props.nearby.pairing)
 const showsCode = computed(() => pairing.value && ['confirm', 'finishing'].includes(pairing.value.state) && pairing.value.code)
+const asked = computed(() => pairing.value?.direction === 'incoming' && pairing.value.state === 'connecting')
+const pairingOpen = computed(() => Boolean(pairing.value && ['connecting', 'confirm', 'finishing'].includes(pairing.value.state)))
 const outcome = computed(() => (pairing.value ? pairingOutcome(pairing.value) : null))
 
 async function run(kind: string, work: () => Promise<PeerStatus>) {
@@ -42,7 +49,7 @@ function pair(fingerprint: string) {
 
 function confirm() {
   const current = pairing.value
-  if (!current?.requestId || !current.code) return
+  if (!current?.requestId || !current.code || !sameDigits.value) return
   return run('confirm', () => postJson('/api/peer/nearby/confirm', { requestId: current.requestId, code: current.code }, peerStatusShape))
 }
 
@@ -58,7 +65,8 @@ function cancel() {
     <div class="peer-nearby-switch">
       <label class="peer-nearby-name">
         <span>{{ t('settings.peer.nearbyName') }}</span>
-        <Input v-model="name" size="sm" maxlength="60" :disabled="Boolean(busy) || nearby.on" data-nearby-name />
+        <Input v-model="name" size="sm" maxlength="60" :placeholder="nearby.suggestedName ?? 'FULI'"
+          :disabled="Boolean(busy) || nearby.on" data-nearby-name />
       </label>
       <label class="peer-nearby-toggle">
         <Switch :model-value="nearby.on" :disabled="Boolean(busy)" :aria-label="t('settings.peer.nearbySwitch')"
@@ -69,9 +77,16 @@ function cancel() {
     <GrowthLoading v-if="busy === 'toggle'" variant="inline"
       :label="t(nearby.on ? 'settings.peer.nearbyStopping' : 'settings.peer.nearbyStarting')" />
     <UiNotice v-if="error" tone="error">{{ error }}</UiNotice>
+    <UiNotice v-if="!nearby.on && nearby.ended" :tone="nearby.ended.kind === 'paired' ? 'success' : 'warning'" data-nearby-ended>
+      {{ t(`settings.peer.nearbyEnded.${nearby.ended.kind}`, { name: nearby.ended.name ?? '', reason: nearby.ended.reason ?? '' }) }}
+    </UiNotice>
 
     <template v-if="nearby.on">
-      <p v-if="!nearby.canPair && coordinatorName">{{ t('settings.peer.pairThroughCoordinator', { name: coordinatorName }) }}</p>
+      <p>{{ t('settings.peer.nearbyAutoOff') }}</p>
+      <p v-if="!nearby.canPair && coordinatorName && !nearby.limited">{{ t('settings.peer.pairThroughCoordinator', { name: coordinatorName }) }}</p>
+      <UiNotice v-if="nearby.limited" tone="warning" data-nearby-limited>
+        {{ t('settings.peer.nearbyLimited', { count: nearby.unfinishedRequests ?? 0 }) }}
+      </UiNotice>
       <ul v-if="nearby.devices.length" class="peer-devices" data-nearby-devices>
         <li v-for="device in nearby.devices" :key="device.fingerprint">
           <div>
@@ -80,7 +95,7 @@ function cancel() {
           </div>
           <span v-if="device.paired" class="peer-paired">{{ t('settings.peer.paired') }}</span>
           <Button v-else size="sm" variant="outline" :data-nearby-pair="device.fingerprint"
-            :disabled="!nearby.canPair || Boolean(pairing && ['connecting', 'confirm', 'finishing'].includes(pairing.state))"
+            :disabled="!nearby.canPair || pairingOpen"
             :loading="busy === `pair:${device.fingerprint}`" :loading-label="t('settings.peer.connecting', { name: device.name })"
             @click="pair(device.fingerprint)">
             {{ t('settings.peer.pair') }}
@@ -89,13 +104,25 @@ function cancel() {
       </ul>
       <GrowthLoading v-else variant="inline" :label="t('settings.peer.nearbySearching')" />
 
-      <div v-if="showsCode && pairing" class="peer-code" data-pairing-code role="group" :aria-label="t('settings.peer.codeTitle', { name: pairing.device.name })">
+      <div v-if="asked && pairing" class="peer-code" data-pairing-asked>
+        <strong>{{ t('settings.peer.asked', { name: pairing.device.name }) }}</strong>
+        <small>{{ pairing.device.shortFingerprint }}</small>
+        <Button size="sm" variant="outline" data-pairing-cancel
+          :loading="busy === 'cancel'" :loading-label="t('settings.peer.cancelling')" @click="cancel">
+          {{ t('settings.peer.refuse') }}
+        </Button>
+      </div>
+      <div v-else-if="showsCode && pairing" class="peer-code" data-pairing-code role="group" :aria-label="t('settings.peer.codeTitle', { name: pairing.device.name })">
         <strong>{{ t('settings.peer.codeTitle', { name: pairing.device.name }) }}</strong>
         <code>{{ groupedCode(pairing.code ?? '') }}</code>
         <p>{{ t('settings.peer.codeHint') }}</p>
         <p>{{ pairing.coordinator === 'this' ? t('settings.peer.coordinatorThis') : t('settings.peer.coordinatorOther', { name: pairing.device.name }) }}</p>
+        <label class="peer-same-digits">
+          <Checkbox v-model="sameDigits" :disabled="pairing.confirmedHere || Boolean(busy)" data-pairing-same />
+          <span>{{ t('settings.peer.sameDigits') }}</span>
+        </label>
         <div class="peer-actions">
-          <Button size="sm" data-pairing-confirm :disabled="pairing.confirmedHere || pairing.state !== 'confirm'"
+          <Button size="sm" data-pairing-confirm :disabled="!sameDigits || pairing.confirmedHere || pairing.state !== 'confirm'"
             :loading="busy === 'confirm'" :loading-label="t('settings.peer.confirming')" @click="confirm">
             {{ t('settings.peer.confirm') }}
           </Button>
@@ -128,11 +155,10 @@ function cancel() {
 .peer-devices strong, .peer-devices small { display: block; overflow-wrap: anywhere; }
 .peer-devices strong { color: var(--color-ink); font-size: 14px; }
 .peer-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.peer-nearby-toggle { display: flex !important; align-items: center; gap: 8px; min-height: 30px; user-select: none; cursor: pointer; }
-.peer-nearby-toggle span { color: var(--color-ink); font-size: 13px; }
+.peer-nearby-toggle, .peer-same-digits { display: flex; align-items: center; gap: 8px; min-height: 30px; user-select: none; cursor: pointer; }
+.peer-nearby-toggle span, .peer-same-digits span { color: var(--color-ink); font-size: 13px; }
 .peer-paired { color: var(--color-muted); font-size: 13px; user-select: none; }
 .peer-code { display: grid; gap: 8px; justify-items: start; }
 .peer-code strong { color: var(--color-ink); font-size: 14px; }
 .peer-code code { font: 600 28px/1.2 var(--font-mono); letter-spacing: 0.12em; color: var(--color-ink); }
-.peer-code p { margin: 0; }
 </style>

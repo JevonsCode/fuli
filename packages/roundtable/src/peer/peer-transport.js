@@ -33,7 +33,8 @@ export async function connectNearby({ identity, target, timeoutMs = PROBE_MS }) 
   let failure = new PeerError('nearby_unreachable', 'The nearby computer did not answer', 503);
   for (const address of target.addresses) {
     let certPem;
-    try { certPem = await peerCertificate({ identity, host: address, port: target.port, timeoutMs }); }
+    let localAddress;
+    try { ({ certPem, localAddress } = await peerCertificate({ identity, host: address, port: target.port, timeoutMs })); }
     catch (error) { failure = error; continue; }
     const fingerprint = certificateFingerprint(certPem);
     if (!fingerprint.startsWith(target.fingerprint)) {
@@ -41,18 +42,19 @@ export async function connectNearby({ identity, target, timeoutMs = PROBE_MS }) 
       continue;
     }
     const client = createPeerClient({ identity, coordinator: { url: coordinatorUrl(address, target.port), certPem, fingerprint } });
-    return { ...client, fingerprint, certPem, address, port: target.port };
+    return { ...client, fingerprint, certPem, address, port: target.port, localAddress };
   }
   throw failure;
 }
 
 // True when https://address:port answers with exactly this device certificate.
 export async function answersAs({ identity, address, port, fingerprint, timeoutMs = PROBE_MS }) {
-  const certPem = await peerCertificate({ identity, host: address, port, timeoutMs });
+  const { certPem } = await peerCertificate({ identity, host: address, port, timeoutMs });
   return certificateFingerprint(certPem) === fingerprint;
 }
 
-// Reads the certificate a listener presents, without trusting it for anything.
+// Reads the certificate a listener presents, without trusting it for anything,
+// and the local address this computer reached it from.
 function peerCertificate({ identity, host, port, timeoutMs }) {
   return new Promise((resolve, reject) => {
     const socket = tlsConnect({ host, port, ...identity.tlsOptions, rejectUnauthorized: false, minVersion: 'TLSv1.3' });
@@ -64,8 +66,9 @@ function peerCertificate({ identity, host, port, timeoutMs }) {
     socket.once('error', fail);
     socket.once('secureConnect', () => {
       const certificate = socket.getPeerX509Certificate();
+      const localAddress = socket.localAddress?.replace(/^::ffff:/, '') ?? null;
       socket.destroy();
-      if (certificate) resolve(derToPem(certificate.raw));
+      if (certificate) resolve({ certPem: derToPem(certificate.raw), localAddress });
       else fail();
     });
   });

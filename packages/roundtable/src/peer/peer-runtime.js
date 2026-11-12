@@ -1,29 +1,41 @@
-import { hostname, networkInterfaces } from 'node:os';
+import { createHmac } from 'node:crypto';
+import { networkInterfaces } from 'node:os';
 import { join as joinPath } from 'node:path';
 
 import { startCoordinatorServer } from './coordinator-http.js';
 import { cleanName, createCoordinatorService } from './coordinator-service.js';
 import { createCoordinatorStore } from './coordinator-store.js';
 import { loadDeviceIdentity } from './device-identity.js';
+import { announcedAddresses, lanAddresses } from './lan-addresses.js';
 import { createBonjourDiscovery } from './nearby-discovery.js';
 import { createNearbyPairing } from './nearby-pairing.js';
 import { createNearbyPresence } from './nearby-presence.js';
 import { answersAs, connectNearby, createPeerClient, pairWithCoordinator } from './peer-transport.js';
-import { coordinatorUrl, decodeInvitation, PeerError, sha256Hex, shortFingerprint } from './protocol.js';
+import { coordinatorUrl, decodeInvitation, PeerError, shortFingerprint } from './protocol.js';
 import { createPeerRunner } from './runner.js';
 
 const PUBLISH_MS = 60_000;
 const DIRECTORY_READ_MS = 3_000;
 const WAKE_CLIENTS = new Set(['codex', 'claude_code']);
-// Nearby pairing listens on every IPv4 interface: the address another
-// computer reaches comes from discovery, not from the person.
+// While nearby pairing is on, its listener answers on every IPv4 interface:
+// the address another computer reaches comes from discovery, not from the
+// person. Afterwards it narrows to the address its paired devices use.
 const NEARBY_LISTEN_HOST = '0.0.0.0';
+// Nearby pairing turns itself off this long after the person turned it on,
+// and shortly after a pairing finished (the other computer may still ask once).
+const NEARBY_SESSION_MS = 30 * 60_000;
+const PAIRED_GRACE_MS = 5_000;
+// A device this computer trusted through nearby pairing that never connects
+// within this time did not finish its side: the trust is taken back.
+const TRUST_USE_MS = 60_000;
+const LOOPBACK = /^(127\.|::1$)/;
 const teamPeople = team => team?.people ?? [];
 
 // The local owner's LAN roundtable controls, run only by the console process.
 // Nothing here starts unless the owner turned it on; console LAN access does not.
 export function createPeerRuntime({ host, roundtable, port, interfaces = networkInterfaces, allowLoopback = false,
-  claimWaitMs, discovery = createBonjourDiscovery(), nearbyListenHost = NEARBY_LISTEN_HOST, onError = () => {} }) {
+  claimWaitMs, createDiscovery = createBonjourDiscovery, nearbyListenHost = NEARBY_LISTEN_HOST, clock = Date.now,
+  nearbySessionMs = NEARBY_SESSION_MS, pairedGraceMs = PAIRED_GRACE_MS, trustUseMs = TRUST_USE_MS, onError = () => {} }) {
   const store = () => port.nodeStore();
   let coordinator = null;
   let runner = null;
@@ -33,9 +45,15 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   let leaveWork = null;
   let leaveAbort = null;
   let lastPublish = null;
+  let repositoryKey = null;
+  let nearbyNotice = null;
+  let nearbyTimer = null;
+  const trustChecks = new Set();
   const spaceId = () => host.spaceId();
   const identity = () => loadDeviceIdentity(port.directory);
-  const presence = createNearbyPresence({ discovery });
+  const discovery = createDiscovery({ onFailure: (error) => endNearby({ kind: 'discovery_failed', reason: error.code ?? error.message })
+    .catch(onError) });
+  const presence = createNearbyPresence({ discovery, clock });
   const pairing = createNearbyPairing({ local: {
     identity, authority: () => port.localAuthority(),
     name: () => store().setting('nearby')?.name ?? 'FULI',
@@ -43,18 +61,17 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     trusted: (fingerprint) => trustedFingerprints().includes(fingerprint),
     trustDevice: (peer) => {
       if (!coordinator) throw new PeerError('not_coordinator', 'This computer stopped coordinating', 409);
-      return coordinator.service.trustNearbyDevice(peer);
+      coordinator.service.trustNearbyDevice(peer);
+      watchTrustUse(peer);
     },
-    untrustDevice: async (fingerprint) => { coordinator?.service.revoke(fingerprint); },
+    untrustDevice: async (fingerprint) => { withdrawTrust(fingerprint); },
     joinCoordinator: async (peer) => adoptCoordinator({ url: coordinatorUrl(peer.address, peer.port), certPem: peer.certPem,
       fingerprint: peer.fingerprint, name: peer.name, authority: peer.authority }),
     reachable: async (peer) => answersAs({ identity: await identity(), address: peer.address, port: peer.port, fingerprint: peer.fingerprint }),
-  }, connect: async (target) => connectNearby({ identity: await identity(), target }), onError });
+  }, connect: async (target) => connectNearby({ identity: await identity(), target }), clock,
+  onPaired: (peer) => afterPairing(peer), onError });
 
-  function localAddresses() {
-    return Object.values(interfaces()).flat().filter((entry) => entry && !entry.internal
-      && (entry.family === 'IPv4' || entry.family === 4)).map((entry) => entry.address);
-  }
+  const localAddresses = () => lanAddresses(interfaces);
 
   async function resume() {
     if (!port.configured()) return;
@@ -62,7 +79,9 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     const settings = store().setting('coordinator');
     if (settings) await startCoordinator(settings);
     if (store().setting('membership')) await startRunner();
-    await startNearby();
+    const nearby = store().setting('nearby');
+    if (nearby && !(nearby.until > clock())) await endNearby({ kind: 'timeout' });
+    else await startNearby();
   }
 
   async function startCoordinator({ host: address, port: listenPort, name }) {
@@ -98,7 +117,10 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       nodeId: device.fingerprint, spaceId, onError });
     runner.start().catch(onError);
     await publish().catch(onError);
-    publisher = setInterval(() => publish().catch(onError), PUBLISH_MS);
+    publisher = setInterval(() => {
+      publish().catch(onError);
+      narrowListener().catch(onError);
+    }, PUBLISH_MS);
     publisher.unref();
   }
 
@@ -113,6 +135,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     runner = null;
     runnerClient?.close();
     runnerClient = null;
+    repositoryKey = null;
     if (coordinator) {
       await coordinator.server.close();
       coordinator.store.close();
@@ -157,21 +180,30 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
           ...(share.communicationOnly ? { communicationOnly: true } : {}), clients: share.clients }];
       });
       await runner?.reconcileShares(new Set(agents.map((agent) => agent.bindingId)));
-      await runnerClient.post('/peer/1/directory/publish', { agents, repositories: await repositoryDigests() });
+      const sent = repositoryKey;
+      const answer = await runnerClient.post('/peer/1/directory/publish', { agents,
+        ...(sent ? { repositories: { keyId: sent.id, digests: await repositoryDigests(sent) } } : {}) });
       published.clear();
       for (const agent of agents) published.set(agent.bindingId, agent);
       lastPublish = { at: new Date().toISOString(), agents: agents.length, error: null };
+      // The group's repository key comes with the answer; a new one means sending the digests again.
+      if (validKey(answer.repositoryKey) && answer.repositoryKey.id !== sent?.id) {
+        repositoryKey = answer.repositoryKey;
+        await runnerClient.post('/peer/1/directory/publish', { agents,
+          repositories: { keyId: repositoryKey.id, digests: await repositoryDigests(repositoryKey) } });
+      }
     } catch (error) {
       lastPublish = { at: new Date().toISOString(), agents: null, error: error.code ?? 'publish_failed', message: error.message };
       throw error;
     }
   }
 
-  // Digests of the own repository addresses of this device's projects, so
-  // paired devices see which projects they share without the addresses.
-  async function repositoryDigests() {
+  // This device's own repository addresses, keyed with the paired group's
+  // secret (from the coordinator, only after pairing): the coordinator matches
+  // them between devices, and no device sees another device's digests.
+  async function repositoryDigests(key) {
     const projects = await host.listProjects().catch(() => []);
-    return [...new Set(projects.filter((project) => !project.temporary).flatMap(projectDigests))];
+    return [...new Set(projects.filter((project) => !project.temporary).flatMap((project) => projectDigests(project, key)))];
   }
 
   async function pairedDirectory() {
@@ -182,33 +214,39 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   // Projects the owner may share: each with its current lead, the clients that
   // lead may use and, for a project a paired device registered with the same
-  // own repository, that device and the folder this computer knows for it.
+  // own repository, that device. A folder is offered only when this computer
+  // knows one whose Git remote is that repository.
   async function shareable() {
     const list = (await host.listProjects().catch(() => [])).filter((project) => !project.temporary).slice(0, 50);
     const agents = await host.listAgents().catch(() => []);
-    const paired = await pairedDirectory();
+    const paired = repositoryKey ? await pairedDirectory() : [];
     return Promise.all(list.map(async (project) => {
       const projectId = project.projectId;
       const team = await host.projectTeam(projectId).catch(() => null);
       const allowed = (agents.find((agent) => agent.agentId === team?.lead?.agentId)?.profile.allowedClients ?? [])
         .filter((client) => WAKE_CLIENTS.has(client));
-      const digests = new Set(projectDigests(project));
-      const sameProjectOn = paired.filter((device) => (device.repositories ?? []).some((digest) => digests.has(digest)))
+      const digests = new Set(repositoryKey ? projectDigests(project, repositoryKey) : []);
+      const sameProjectOn = paired.filter((device) => (device.sameRepositories ?? []).some((digest) => digests.has(digest)))
         .map(({ nodeId, name }) => ({ nodeId, name }));
-      const knownFolder = sameProjectOn.length && team?.lead
-        ? await roundtable.knownProjectFolder({ agentId: team.lead.agentId, projectId }).catch(() => null) : null;
       return { projectId, projectName: project.name ?? projectId,
         lead: team?.lead ? { agentId: team.lead.agentId, name: team.lead.name } : null, clients: allowed,
         communicationAgents: teamPeople(team).map(person => ({ agentId: person.agentId, name: person.name,
           occupation: agents.find(a => a.agentId === person.agentId)?.occupation?.role ?? null })),
-        sameProjectOn, knownFolder };
+        sameProjectOn, knownFolder: sameProjectOn.length && team?.lead ? await repositoryFolder(project, team.lead.agentId) : null };
     }));
+  }
+
+  async function repositoryFolder(project, agentId) {
+    const folder = await roundtable.knownProjectFolder({ agentId, projectId: project.projectId }).catch(() => null);
+    if (!folder || !host.folderRepository) return null;
+    const remote = await Promise.resolve().then(() => host.folderRepository(folder)).catch(() => null);
+    return remote && (project.repositories ?? []).includes(remote) ? folder : null;
   }
 
   async function status() {
     if (!port.configured()) {
       return { beta: true, role: null, device: null, coordinator: null, addresses: localAddresses(), devices: [],
-        openInvitations: 0, shares: [], shareable: [], lastPublish: null, nearby: nearbyView() };
+        openInvitations: 0, shares: [], shareable: [], lastPublish: null, nearby: await nearbyView() };
     }
     const membership = store().setting('membership');
     const device = membership ? await identity() : null;
@@ -227,7 +265,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       shares: membership ? (await shareStates()).map(({ lead: _lead, ...share }) => share) : [],
       shareable: membership ? await shareable() : [],
       lastPublish: membership ? lastPublish : null,
-      nearby: nearbyView(),
+      nearby: await nearbyView(),
     };
   }
 
@@ -244,10 +282,13 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     return status();
   }
 
+  // A wildcard listener invites on the address paired devices already reach,
+  // else the first physical LAN address, never a VPN or virtual adapter first.
   function createInvitation() {
     if (!coordinator) throw new PeerError('not_coordinator', 'Only the coordinator device creates invitations', 409);
     const settings = store().setting('coordinator');
-    const address = settings.host === NEARBY_LISTEN_HOST ? localAddresses()[0] : settings.host;
+    const reached = trustedFingerprints().map((nodeId) => coordinator.server.reachedAt(nodeId)).find((address) => address && !LOOPBACK.test(address));
+    const address = settings.host === NEARBY_LISTEN_HOST ? reached ?? localAddresses()[0] : settings.host;
     if (!address) throw new PeerError('invalid_address', 'This computer has no LAN address to invite from', 409);
     return coordinator.service.createInvitation({ url: coordinatorUrl(address, settings.port) });
   }
@@ -388,15 +429,19 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     return { listening: true, coordinatesOthers: coordinatesOthers(), listenPort: coordinator.server.address.port };
   }
 
-  function nearbyView() {
+  async function nearbyView() {
     const settings = port.configured() ? store().setting('nearby') : null;
     const trusted = settings ? trustedFingerprints() : [];
     const role = nearbyRole();
-    return { on: Boolean(settings), name: settings?.name ?? null, suggestedName: cleanName(hostname()) || 'FULI',
-      canPair: role.listening, reason: settings && !role.listening ? role.reason : null,
+    const budget = pairing.budget();
+    return { on: Boolean(settings), name: settings?.name ?? null,
+      suggestedName: port.configured() ? defaultName(await identity()) : null,
+      canPair: role.listening && !budget.limited, reason: settings && !role.listening ? role.reason : null,
+      until: settings?.until ? new Date(settings.until).toISOString() : null,
+      unfinishedRequests: budget.unfinished, limited: budget.limited,
       devices: settings ? presence.list().map((entry) => ({ ...entry,
         paired: trusted.some((fingerprint) => fingerprint.startsWith(entry.fingerprint)) })) : [],
-      pairing: pairing.view() };
+      pairing: pairing.view(), ended: nearbyNotice };
   }
 
   async function startNearby() {
@@ -404,11 +449,18 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     if (!settings) return;
     const device = await identity();
     presence.browse(device.fingerprint);
-    if (coordinator) presence.advertise({ name: settings.name, port: coordinator.server.address.port, fingerprint: device.fingerprint });
-    else presence.stopAdvertising();
+    if (coordinator) {
+      presence.advertise({ name: settings.name, port: coordinator.server.address.port, fingerprint: device.fingerprint,
+        addresses: coordinator.host === NEARBY_LISTEN_HOST ? announcedAddresses(interfaces) : [coordinator.host] });
+    } else presence.stopAdvertising();
+    clearTimeout(nearbyTimer);
+    nearbyTimer = setTimeout(() => endNearby({ kind: 'timeout' }).catch(onError), Math.max(0, settings.until - clock()));
+    nearbyTimer.unref?.();
   }
 
   function stopNearby() {
+    clearTimeout(nearbyTimer);
+    nearbyTimer = null;
     pairing.close();
     presence.stop();
     if (port.configured()) store().setSetting('nearby', null);
@@ -418,25 +470,83 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   // pairing request. A computer not yet paired opens its own listener for it.
   async function nearbyOn({ name } = {}) {
     const previous = store().setting('nearby');
-    const chosen = cleanName(name) || previous?.name || cleanName(hostname()) || 'FULI';
+    const chosen = cleanName(name) || previous?.name || defaultName(await identity());
     const opened = !store().setting('membership');
     if (opened) {
       if (store().setting('pendingLeave')) throw new PeerError('leave_pending', 'The previous coordinator is offline. Retry after it is available, or revoke this device there.', 409);
       await startCoordinator({ host: nearbyListenHost, port: 0, name: chosen });
+    } else if (coordinator && coordinator.host !== NEARBY_LISTEN_HOST && coordinator.host !== nearbyListenHost && !previous) {
+      await rebindCoordinator(nearbyListenHost);
     }
-    store().setSetting('nearby', { name: chosen, openedListener: opened || Boolean(previous?.openedListener) });
+    nearbyNotice = null;
+    store().setSetting('nearby', { name: chosen, openedListener: opened || Boolean(previous?.openedListener),
+      until: clock() + nearbySessionMs });
     if (opened) await startRunner();
     await startNearby();
     return status();
   }
 
-  // Stops advertising and listing. A listener nearby pairing opened, with no
-  // device paired through it, closes too, so nothing listens while off.
   async function nearbyOff() {
+    await endNearby(null);
+    return status();
+  }
+
+  // Stops advertising and listing. A listener nearby pairing opened, with no
+  // device paired through it, closes too, so nothing listens while off; one
+  // with paired devices narrows to the address they use.
+  async function endNearby(notice) {
     const settings = port.configured() ? store().setting('nearby') : null;
     stopNearby();
-    if (settings?.openedListener && store().setting('membership')?.role === 'coordinator' && !coordinatesOthers()) return disable();
-    return status();
+    if (notice) nearbyNotice = { ...notice, at: new Date(clock()).toISOString() };
+    if (settings?.openedListener && store().setting('membership')?.role === 'coordinator' && !coordinatesOthers()) await disable();
+    else await narrowListener();
+  }
+
+  function afterPairing(peer) {
+    nearbyNotice = { kind: 'paired', name: peer.name, at: new Date(clock()).toISOString() };
+    const timer = setTimeout(() => endNearby({ kind: 'paired', name: peer.name }).catch(onError), pairedGraceMs);
+    timer.unref?.();
+  }
+
+  // While nearby pairing is off, a wildcard listener moves to the one address
+  // every paired device reached it on; until each has connected it waits.
+  async function narrowListener() {
+    if (!coordinator || coordinator.host !== NEARBY_LISTEN_HOST || store().setting('nearby')) return;
+    const addresses = new Set(trustedFingerprints().map((nodeId) => coordinator.server.reachedAt(nodeId)));
+    const [address] = addresses;
+    if (addresses.size !== 1 || !address || LOOPBACK.test(address)) return;
+    await rebindCoordinator(address);
+  }
+
+  async function rebindCoordinator(address) {
+    const settings = store().setting('coordinator');
+    await stopAll();
+    try { await startCoordinator({ host: address, port: settings.port, name: settings.name }); }
+    catch (error) {
+      onError(error);
+      await startCoordinator({ host: settings.host, port: settings.port, name: settings.name });
+    }
+    await startRunner();
+  }
+
+  // Trust written for a nearby pairing is kept only once the other computer
+  // used it; a side that never finished leaves nothing trusted here.
+  function watchTrustUse(peer) {
+    const timer = setTimeout(() => {
+      trustChecks.delete(timer);
+      const device = coordinator?.service.devices().find((entry) => entry.nodeId === peer.fingerprint && entry.status === 'active');
+      if (!device || (device.lastSeenAt && Date.parse(device.lastSeenAt) >= Date.parse(device.pairedAt))) return;
+      withdrawTrust(peer.fingerprint);
+      nearbyNotice = { kind: 'trust_withdrawn', name: peer.name, at: new Date(clock()).toISOString() };
+    }, trustUseMs);
+    timer.unref?.();
+    trustChecks.add(timer);
+  }
+
+  function withdrawTrust(fingerprint) {
+    if (!coordinator?.service.devices().some((entry) => entry.nodeId === fingerprint && entry.status === 'active')) return;
+    coordinator.service.revoke(fingerprint);
+    store().forgetAuthority(fingerprint);
   }
 
   async function pairNearby({ fingerprint }) {
@@ -491,6 +601,9 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   }
 
   async function close() {
+    clearTimeout(nearbyTimer);
+    for (const timer of trustChecks) clearTimeout(timer);
+    trustChecks.clear();
     pairing.close();
     presence.stop();
     await stopAll();
@@ -500,8 +613,17 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     nearbyOn, nearbyOff, pairNearby, confirmPairing, cancelPairing, publish, close, runnerActive: () => Boolean(runner) };
 }
 
-// One project's own repository addresses (host Project.repositories) as
-// short digests; the same address on two computers gives the same digest.
-function projectDigests(project) {
-  return (project.repositories ?? []).map((key) => sha256Hex(`fuli-repository:${key}`).slice(0, 32));
+// The name another computer sees until the person types one: never this computer's own name.
+function defaultName(device) {
+  return `FULI ${device.fingerprint.slice(12, 16).toUpperCase()}`;
+}
+
+function validKey(value) {
+  return typeof value?.id === 'string' && typeof value?.key === 'string' && value.key.length >= 32;
+}
+
+// One project's own repository addresses (host Project.repositories) keyed
+// with the paired group's secret; the same address gives the same digest.
+function projectDigests(project, key) {
+  return (project.repositories ?? []).map((address) => createHmac('sha256', key.key).update(`fuli-repository:${address}`).digest('hex').slice(0, 32));
 }

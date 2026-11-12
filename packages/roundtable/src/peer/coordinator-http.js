@@ -22,6 +22,8 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
       { error: error instanceof PeerError ? error.code : 'internal_error', message: error instanceof PeerError ? error.message : 'Request failed' }));
   });
   server.keepAliveTimeout = 5_000;
+  // The local address each paired device last reached this listener on.
+  const reached = new Map();
 
   async function handle(request, response) {
     const { pathname } = new URL(request.url, 'https://peer.invalid');
@@ -37,7 +39,8 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
     if (pathname.startsWith('/peer/1/nearby/')) {
       if (!nearby) throw new PeerError('nearby_off', 'This computer is not open for nearby pairing', 404);
       const { value, after } = await nearby.handle(pathname, body, { certPem: derToPem(certificate.raw),
-        fingerprint: sha256Hex(certificate.raw), address: request.socket.remoteAddress?.replace(/^::ffff:/, '') });
+        fingerprint: sha256Hex(certificate.raw), address: plainAddress(request.socket.remoteAddress),
+        localAddress: plainAddress(request.socket.localAddress) });
       // A step that closes this listener (joining the other computer) runs once the answer is out.
       if (after) response.once('finish', after);
       sendJson(response, value);
@@ -45,6 +48,7 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
     }
     if (!request.socket.authorized) throw new PeerError('device_not_trusted', 'This device is not paired', 403);
     const nodeId = service.authenticate(sha256Hex(certificate.raw)).id;
+    reached.set(nodeId, plainAddress(request.socket.localAddress));
     switch (pathname) {
       case '/peer/1/directory/publish': return sendJson(response, service.publishDirectory(nodeId, body));
       case '/peer/1/directory': return sendJson(response, service.directory(nodeId));
@@ -100,6 +104,7 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
     address: server.address(),
     // Trust changes apply to new connections; existing ones are re-checked per request.
     refreshTrust: () => server.setSecureContext(secureContext()),
+    reachedAt: (nodeId) => reached.get(nodeId) ?? null,
     close: () => new Promise((resolve) => {
       clearInterval(sweeper);
       server.close(() => resolve());
@@ -128,6 +133,10 @@ function readBody(request) {
     });
     request.on('error', reject);
   });
+}
+
+function plainAddress(address) {
+  return typeof address === 'string' ? address.replace(/^::ffff:/, '') : null;
 }
 
 function send(response, status, value) {

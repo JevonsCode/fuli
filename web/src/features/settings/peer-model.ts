@@ -52,11 +52,17 @@ export type NearbyPairing = {
 export type Nearby = {
   on: boolean
   name: string | null
-  suggestedName: string
+  // FULI and four characters of this computer's fingerprint; never its own name.
+  suggestedName: string | null
   canPair: boolean
   reason: string | null
+  until?: string | null
+  unfinishedRequests?: number
+  limited?: boolean
   devices: NearbyDevice[]
   pairing: NearbyPairing | null
+  // Why it turned itself off, or what it last did.
+  ended?: { kind: 'paired' | 'timeout' | 'discovery_failed' | 'trust_withdrawn'; name?: string; reason?: string; at: string } | null
 }
 
 export type PeerStatus = {

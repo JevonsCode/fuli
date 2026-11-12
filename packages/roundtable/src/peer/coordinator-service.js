@@ -28,6 +28,8 @@ export function createCoordinatorService({ store, identity, authority, name, clo
   const iso = (offsetMs = 0) => new Date(clock() + offsetMs).toISOString();
   const pairingFailures = [];
   const repositories = new Map();
+  let repositoryKey = null;
+  rotateRepositoryKey();
   if (!isAuthorityKey(authority)) throw new PeerError('authority_unavailable', 'The coordinator needs its local origin authority', 500);
   store.upsertNode({ id: identity.fingerprint, name, certPem: identity.certPem, authority, at: iso() });
   const chat = createCoordinatorChat({ store, identity, clock });
@@ -94,21 +96,31 @@ export function createCoordinatorService({ store, identity, authority, name, clo
       catch (error) { throw new PeerError(error.code, `${error.message} (entry ${index + 1})`, error.status); }
     });
     store.setDirectory(nodeId, entries);
-    // Digests of each device's own repository addresses, so paired devices
-    // see which projects they share. Like online state, kept only in memory:
-    // every device publishes again within a minute after a restart.
-    if (projectRepositories !== undefined) repositories.set(nodeId, repositoryDigests(projectRepositories));
-    return { published: entries.length };
+    // Each device's own repository addresses, keyed with a secret only the
+    // paired group gets (repositoryKey, from this answer). Like online state
+    // they are kept only in memory and published again within a minute; a
+    // digest made with an older key is dropped.
+    if (projectRepositories?.keyId === repositoryKey.id) repositories.set(nodeId, repositoryDigests(projectRepositories.digests));
+    return { published: entries.length, repositoryKey };
   }
 
+  // Another device's digests never leave the coordinator: each device learns
+  // only which of its own digests another paired device also has.
   function directory(nodeId) {
     const now = clock();
+    const mine = new Set(repositories.get(nodeId) ?? []);
     return { devices: store.nodes().filter((node) => node.status === 'active' && node.id !== nodeId).map((node) => ({
       nodeId: node.id, name: node.name,
       online: seenWithin(node, now, ONLINE_MS),
       agents: JSON.parse(node.directory_json),
-      repositories: repositories.get(node.id) ?? [],
+      sameRepositories: (repositories.get(node.id) ?? []).filter((digest) => mine.has(digest)),
     })) };
+  }
+
+  // A revoked device keeps the old key, so the group gets a new one.
+  function rotateRepositoryKey() {
+    repositoryKey = { id: randomUUID(), key: randomBytes(32).toString('base64url') };
+    repositories.clear();
   }
 
   function submit(nodeId, { assertion, signature }) {
@@ -254,7 +266,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
         else store.updateMessage(message.id, { cancel_requested: 1 }, iso(), 'cancel_requested', 'device_revoked');
       }
     });
-    repositories.delete(nodeId);
+    rotateRepositoryKey();
     onTrustChange();
     return { revoked: true };
   }
@@ -284,7 +296,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
   function devices() {
     const now = clock();
     return store.nodes().map((node) => ({ nodeId: node.id, name: node.name, status: node.status,
-      self: node.id === identity.fingerprint, pairedAt: node.paired_at, revokedAt: node.revoked_at,
+      self: node.id === identity.fingerprint, pairedAt: node.paired_at, revokedAt: node.revoked_at, lastSeenAt: node.last_seen_at ?? null,
       online: node.id === identity.fingerprint || seenWithin(node, now, ONLINE_MS),
       sharedAgents: JSON.parse(node.directory_json).length }));
   }

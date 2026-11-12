@@ -161,19 +161,30 @@ profile allows.
 
 Devices on the same trusted local network can share project leads. Each computer
 needs FULI 0.12.1 or later. Open **Settings → LAN roundtable (Beta)** on the computer
-itself. Turn on **附近的 FULI** on both computers (`fuli peer nearby on`): each then
-advertises its chosen name, port, a short fingerprint and the protocol version over
-mDNS, and lists the others. Click 配对 on one computer; both show the same 6-digit
-code, derived from both certificate fingerprints and a fresh nonce from each side.
-Compare it and click 确认 on each computer (`fuli peer confirm <code shown on the other
-computer>`). Only then are the devices paired, with the same mutual-TLS trust records
-an invitation writes; a request nobody confirms ends after 2 minutes. The computer
-that already coordinates other devices keeps coordinating; otherwise the computer
-that was picked from the list does. Without nearby pairing, choose one computer to
-host, copy its one-use invitation to the other computer, compare the displayed
-fingerprints, and join. Select the project leads and local clients you want to
-share. Sharing is off until you choose it; a project both computers registered with
-the same own repository is offered with its lead preselected.
+itself. Turn on **附近的 FULI** on both computers (`fuli peer nearby on`): for up to 30
+minutes each advertises over mDNS a random instance id, the name you chose (default
+`FULI` plus four fingerprint characters, never the computer's name), its port, a short
+fingerprint and the protocol version, only on physical LAN addresses, and lists the
+others. Click 配对 on one computer; the other shows who asks at once. Both then show
+the same 6-digit code, derived from both certificate fingerprints and a fresh nonce
+from each side. Compare the two screens, tick that they match and click 确认 on each
+computer (`fuli peer confirm <code shown on the other computer>`); no Agent can confirm.
+Only then are the devices paired, with the same mutual-TLS trust records an invitation
+writes. A request nobody confirms ends after 2 minutes; requests that do not end paired
+count, 3 per device and 6 in all until nearby is turned off and on, so a device in the
+middle gets at most 7 tries at a 1-in-a-million code per session. Trust a side wrote for
+a pairing the other side never used is taken back after a minute. Nearby pairing turns
+itself off after a pairing or 30 minutes; if the mDNS port cannot be opened it turns off
+with the reason and the console keeps running. The computer that already coordinates
+other devices keeps coordinating; otherwise the computer that was picked from the list
+does. Without nearby pairing, choose one computer to host, copy its one-use invitation
+to the other computer, compare the displayed fingerprints, and join. Select the project
+leads and local clients you want to share; nothing is shared until you tick it. A
+project another paired computer registered with the same own repository is suggested:
+devices send keyed digests of their own repository addresses only to the coordinator,
+which tells each device which of its own digests another paired device also has. The
+coordinator (a paired device holding the key) could test guessed addresses; other
+devices learn only these matches, never another device's other projects.
 
 `find_agents` includes shared leads with their device and project names. Use the
 returned `peer:` address with `message_agent`. Remote asks support `auto` or `new`

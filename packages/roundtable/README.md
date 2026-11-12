@@ -30,7 +30,7 @@ Keep the service running on each computer:
 fuli-roundtable serve
 ```
 
-On the same network, turn nearby pairing on on both computers. Each then sees the other by name and short fingerprint; this tells the devices on that network that the computer runs FULI.
+On the same network, turn nearby pairing on on both computers. Each then sees the other by name and short fingerprint; this tells the devices on that network that the computer runs FULI. It turns itself off after a pairing or 30 minutes.
 
 ```sh
 fuli-roundtable peer nearby on --name Desk
@@ -38,7 +38,7 @@ fuli-roundtable peer nearby
 fuli-roundtable peer pair <fingerprint from the list>
 ```
 
-Both computers then show the same 6-digit code. On each computer, compare it with the other screen and confirm with the code shown there. A request nobody confirms ends after 2 minutes.
+Both computers then show the same 6-digit code. On each computer, compare it with the other screen and confirm with the code shown there. A request nobody confirms ends after 2 minutes; after 6 unfinished requests, turn nearby pairing off and on again.
 
 ```sh
 fuli-roundtable peer confirm <code shown on the other computer>

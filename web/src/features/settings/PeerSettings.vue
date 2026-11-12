@@ -28,8 +28,6 @@ const invitation = ref<{ invitation: string; fingerprint?: string; expiresAt?: s
 const inviteFeedback = ref<'copied' | 'manual' | ''>('')
 const joiningDevice = ref<{ name: string; url: string; shortFingerprint: string } | null>(null)
 const drafts = reactive<Record<string, ShareDraft>>({})
-// Projects already preselected because a paired computer has the same one; the person's later choice wins.
-const preselected = new Set<string>()
 let refresh: ReturnType<typeof setInterval> | null = null
 
 const addressOptions = computed(() => (status.value?.addresses ?? []).map((value) => ({ value, label: value })))
@@ -53,14 +51,11 @@ function applyStatus(next: PeerStatus) {
   for (const key of Object.keys(drafts)) if (!known.has(key)) delete drafts[key]
   for (const project of next.shareable) {
     const existing = next.shares.find((share) => share.projectId === project.projectId)
-    const draft = drafts[project.projectId] ??= {
+    // A refresh never changes a draft: what is saved is only what the person ticked.
+    drafts[project.projectId] ??= {
       selected: Boolean(existing),
       clients: existing?.clients?.length ? existing.clients : project.clients.slice(0, 1),
       folder: existing?.workingDirectory ?? '',
-    }
-    if (!existing && project.lead && project.sameProjectOn?.length && !preselected.has(project.projectId)) {
-      preselected.add(project.projectId)
-      Object.assign(draft, { selected: true, clients: [...project.clients], folder: draft.folder || project.knownFolder || '' })
     }
   }
 }
@@ -138,6 +133,8 @@ function toggleProject(project: Shareable, selected: boolean) {
   if (!draft) return
   draft.selected = selected
   if (selected && !draft.clients.length) draft.clients = project.clients.slice(0, 1)
+  // A folder FULI knows is a checkout of this project's own repository (the server checks its origin).
+  if (selected && !draft.folder && project.knownFolder) draft.folder = project.knownFolder
 }
 
 function toggleClient(projectId: string, client: ClientId, selected: boolean) {

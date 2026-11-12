@@ -89,24 +89,35 @@ it('copies a pairing invitation and revokes another device from this computer', 
   wrapper.unmount()
 })
 
-it('preselects sharing a project a paired computer has too, and says when no folder is known here', async () => {
+it('suggests a project a paired computer has too, shares nothing until the person ticks it, then offers the known checkout', async () => {
+  const matched = { ...paired, shareable: [{ ...paired.shareable[0], sameProjectOn: [{ nodeId: 'b'.repeat(64), name: 'Laptop' }],
+    knownFolder: '/synthetic/checkout' }], lastPublish: { at: '2030-01-01T00:00:00.000Z', agents: null, error: 'coordinator_unreachable' } }
   const fetch = vi.fn()
-    .mockResolvedValueOnce(json({ ...paired, shareable: [{ ...paired.shareable[0], sameProjectOn: [{ nodeId: 'b'.repeat(64), name: 'Laptop' }],
-      knownFolder: null }], lastPublish: { at: '2030-01-01T00:00:00.000Z', agents: null, error: 'coordinator_unreachable' } }))
+    .mockResolvedValueOnce(json(matched))
     .mockResolvedValueOnce(json(paired))
   vi.stubGlobal('fetch', fetch)
   const wrapper = mount(PeerSettings)
   await flushPromises()
-  expect((wrapper.get('.peer-share-title input').element as HTMLInputElement).checked).toBe(true)
-  expect(wrapper.get('[data-same-project]').text()).toContain('Laptop')
-  expect(wrapper.find('[data-folder-unknown]').exists()).toBe(true)
+  expect((wrapper.get('.peer-share-title input').element as HTMLInputElement).checked).toBe(false)
+  expect(wrapper.get('[data-same-project]').text()).toContain('Laptop 上也有这个项目')
   expect(wrapper.get('[data-publish-error]').text()).toContain('coordinator_unreachable')
-  await wrapper.get('.peer-shares input[type="text"]').setValue('/local/only')
+  await wrapper.get('.peer-share-title input').setValue(true)
+  expect((wrapper.get('.peer-shares input[type="text"]').element as HTMLInputElement).value).toBe('/synthetic/checkout')
   await wrapper.get('[data-save-shares]').trigger('click')
   await flushPromises()
   expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({
-    shares: [{ projectId: 'sample-project', clients: ['codex', 'claude_code'], workingDirectory: '/local/only' }],
+    shares: [{ projectId: 'sample-project', clients: ['codex'], workingDirectory: '/synthetic/checkout' }],
   })
+  wrapper.unmount()
+})
+
+it('says when no checkout of the project is known here', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ ...paired, shareable: [{ ...paired.shareable[0],
+    sameProjectOn: [{ nodeId: 'b'.repeat(64), name: 'Laptop' }], knownFolder: null }] })))
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  await wrapper.get('.peer-share-title input').setValue(true)
+  expect(wrapper.find('[data-folder-unknown]').exists()).toBe(true)
   wrapper.unmount()
 })
 

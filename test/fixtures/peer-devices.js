@@ -43,27 +43,34 @@ function identityDirectory(label) {
 export function discoveryBus() {
   const adverts = new Map();
   const browsers = new Set();
+  const failures = [];
   const view = (record) => ({ name: record.name, port: record.port, txt: record.txt, addresses: ['127.0.0.1'] });
   return {
     adverts, browsers,
-    discovery: () => ({
-      advertise(record) {
-        const key = Symbol(record.name);
-        adverts.set(key, record);
-        for (const browser of browsers) browser.onUp(view(record));
-        return { stop: () => { adverts.delete(key); for (const browser of browsers) browser.onDown(view(record)); } };
-      },
-      browse(handlers) {
-        browsers.add(handlers);
-        for (const record of adverts.values()) handlers.onUp(view(record));
-        return { stop: () => browsers.delete(handlers) };
-      },
-      close() {},
-    }),
+    // The multicast socket of every device failing, as a taken UDP 5353 would.
+    fail: (error) => { for (const onFailure of failures) onFailure(error); },
+    discovery: ({ onFailure = () => {} } = {}) => {
+      failures.push(onFailure);
+      return {
+        advertise(record) {
+          const key = Symbol(record.name);
+          adverts.set(key, record);
+          for (const browser of browsers) browser.onUp(view(record));
+          return { stop: () => { if (adverts.delete(key)) for (const browser of browsers) browser.onDown(view(record)); } };
+        },
+        browse(handlers) {
+          browsers.add(handlers);
+          for (const record of adverts.values()) handlers.onUp(view(record));
+          return { stop: () => browsers.delete(handlers),
+            refresh: () => { for (const record of adverts.values()) handlers.onUp(view(record)); } };
+        },
+        close() {},
+      };
+    },
   };
 }
 
-export async function device(label, { tamper = null, wake = null, discovery = null, repository = null } = {}) {
+export async function device(label, { tamper = null, wake = null, discovery = null, repository = null, sessionFolder = null, runtimeOptions = {} } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), `fuli-peer-${label}-`));
   await cp(await identityDirectory(label), peerDirectory(dataDir), { recursive: true });
   const spaceId = `${label}-space`;
@@ -89,7 +96,8 @@ export async function device(label, { tamper = null, wake = null, discovery = nu
     issueRemoteAgentDelegation: async (input) => { calls.grants.push(input); return { token: `grant-${calls.grants.length}` }; },
     verifyAgentDelegation: async () => ({ redeemed: true }),
     revokeAgentDelegation: async () => ({}),
-    recentAgentSessions: async () => [],
+    recentAgentSessions: async () => (sessionFolder ? [{ source_application: 'codex', session_id: `${label}-recent`,
+      personal_project_id: projectId, last_active: '2026-11-13T08:00:00.000Z' }] : []),
     getProjectAgentCoordinationPolicy: async () => ({ team_lead_agent_id: leadId, team_member_agent_ids: [] }),
     listProjectAgents: async () => [{ agent_id: leadId, profile: { status: 'active', name: `${label} lead` },
       assignments: [{ personal_project_id: projectId, status: 'active' }] },
@@ -113,13 +121,15 @@ export async function device(label, { tamper = null, wake = null, discovery = nu
   app.peer = createPeerPort({ dataDir, host: createFuliRoundtableHost(app), statusPollMs: 50 });
   const until = recordSteps(app.peer, calls, { chatWakeSnapshot: 'snapshots', waitFor: 'settled' });
   app.roundtable = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => createRoundtableStore(), clientAvailable: () => true,
+    ...(sessionFolder ? { locateCwd: () => sessionFolder } : {}),
     wake: async (input) => { calls.wakes.push(input);
       return wake ? wake(input) : { body: `${label} answers`, sessionId: `${label}-woken` }; } });
   const folder = join(dataDir, 'project-folder');
   app.projectPathResolver = (path) => path === folder
     ? { status: 'matched', personalProjectId: projectId } : { status: 'unmatched', personalProjectId: null };
   const runtime = createPeerRuntime({ host: createFuliRoundtableHost(app), roundtable: app.roundtable, port: app.peer, allowLoopback: true,
-    claimWaitMs: 300, interfaces: () => ({}), nearbyListenHost: '127.0.0.1', ...(discovery ? { discovery: discovery() } : {}) });
+    claimWaitMs: 300, interfaces: () => ({}), nearbyListenHost: '127.0.0.1', ...(discovery ? { createDiscovery: discovery } : {}),
+    ...runtimeOptions });
   return { app, runtime, calls, until, projectId, folder, close: async () => {
     await runtime.close(); await app.roundtable.close(); app.peer.close(); await rm(dataDir, { recursive: true, force: true });
   } };
