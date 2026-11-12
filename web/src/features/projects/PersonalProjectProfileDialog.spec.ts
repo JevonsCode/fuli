@@ -84,6 +84,7 @@ describe('PersonalProjectProfileDialog', () => {
         sources: [{
           key: 'prd',
           kind: 'prd',
+          role: 'own',
           title: '产品文档',
           uri: 'file:///prd.md',
           summary: null,
@@ -93,6 +94,28 @@ describe('PersonalProjectProfileDialog', () => {
     })
     expect(wrapper.emitted('saved')).toHaveLength(1)
     expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  // rec#125: a repository the project only refers to keeps saying so, and only
+  // repository sources ask whose they are.
+  it('keeps a referenced repository as reference and asks the role only of repositories', async () => {
+    const wrapper = mount(PersonalProjectProfileDialog, {
+      props: { project: {
+        project_id: 'beta', personal_space_id: 'synthetic-space',
+        profile: { name: 'Beta', sources: [
+          { key: 'alpha-repo', kind: 'repository', role: 'reference', title: 'Alpha repository', uri: 'https://git.example/alpha' },
+          { key: 'notes', kind: 'runbook', title: 'Runbook' },
+        ] },
+      } },
+    })
+    const rows = wrapper.findAll('.project-source-row')
+    expect(rows[0].text()).toContain('归属')
+    expect(rows[1].text()).not.toContain('归属')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(putJson.mock.calls[0][1].profile.sources.map((source: { role: string }) => source.role))
+      .toEqual(['reference', 'own'])
+    wrapper.unmount()
   })
 
   it('shows who wrote each field beside its label, nothing for an empty one, and never sends authors', async () => {

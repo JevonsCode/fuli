@@ -47,24 +47,33 @@ export function originRemoteSource(repositoryRoot) {
   const uri = normalizable && key ? `https://${key}` : safeRemote;
   const titlePath = key?.split('/').slice(1).join('/') ?? uri.replace(/\\/g, '/');
   const title = titlePath.replace(/\/+$/, '').replace(/\.git$/i, '').split('/').filter(Boolean).slice(-2).join('/') || uri;
-  return { key: 'origin-remote', kind: 'repository', title, uri, sensitivity: 'normal' };
+  return { key: 'origin-remote', kind: 'repository', role: 'own', title, uri, sensitivity: 'normal' };
 }
 
 function readTextOrEmpty(filePath) {
   try { return readFileSync(filePath, 'utf8'); } catch { return ''; }
 }
 
-// The registered projects whose profile records a repository source at remote.
-export function projectsWithRemote(projects, remote) {
-  return projects.filter(project => (project.profile?.sources ?? []).some(source =>
-    REPOSITORY_SOURCE_KINDS.has(source.kind) && typeof source.uri === 'string' && remoteKey(source.uri) === remote));
+// The remotes of a project's own repositories (rec#125). A repository it only
+// refers to (role 'reference') says nothing about which project a checkout is.
+// A source without a role was recorded before roles existed and counts as the
+// project's own, as every repository source did then.
+function ownRemotes(project) {
+  return (project?.profile?.sources ?? [])
+    .filter(source => REPOSITORY_SOURCE_KINDS.has(source.kind) && source.role !== 'reference'
+      && typeof source.uri === 'string')
+    .map(source => remoteKey(source.uri)).filter(Boolean);
 }
 
-// True when the project records a repository source at some other remote: a
-// checkout of that remote is not this project, whatever its folder is called.
+// The registered projects whose own repository source is at remote.
+export function projectsWithRemote(projects, remote) {
+  return projects.filter(project => ownRemotes(project).includes(remote));
+}
+
+// True when the project's own repository is at some other remote: a checkout
+// of that remote is not this project, whatever its folder is called.
 export function recordsOtherRemote(project, remote) {
-  return (project?.profile?.sources ?? []).some(source => REPOSITORY_SOURCE_KINDS.has(source.kind)
-    && typeof source.uri === 'string' && remoteKey(source.uri) !== null && remoteKey(source.uri) !== remote);
+  return ownRemotes(project).some(key => key !== remote);
 }
 
 // host/path with scheme, user, port, trailing slashes and .git removed and the

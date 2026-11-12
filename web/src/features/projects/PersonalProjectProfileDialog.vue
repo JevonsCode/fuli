@@ -12,6 +12,7 @@ import ProfileAuthorChip from './ProfileAuthorChip.vue'
 type SourceDraft = {
   key: string
   kind: string
+  role: string
   title: string
   uri: string
   summary: string
@@ -80,6 +81,13 @@ const SENSITIVITY_VALUES = ['normal', 'private', 'restricted'] as const
 const sensitivityOptions = computed(() => SENSITIVITY_VALUES
   .map((value) => ({ value, label: t(`projects.profileDialog.sensitivities.${value}`) })))
 
+// Only the project's own repository identifies a checkout as this project
+// (rec#125); a repository it merely refers to says "reference".
+const SOURCE_ROLE_VALUES = ['own', 'reference'] as const
+const sourceRoleOptions = computed(() => SOURCE_ROLE_VALUES
+  .map((value) => ({ value, label: t(`projects.profileDialog.sourceRoles.${value}`) })))
+const REPOSITORY_KINDS = new Set<string>(['repository', 'frontend_repository', 'backend_repository'])
+
 const sourceKindValues = new Set<string>(SOURCE_KIND_VALUES)
 const sensitivityValues = new Set<string>(SENSITIVITY_VALUES)
 
@@ -113,6 +121,7 @@ function normalizeSource(source: Record<string, unknown>, index: number): Source
   return {
     key: text(source.key) || `source-${index + 1}`,
     kind,
+    role: source.role === 'reference' ? 'reference' : 'own',
     title: text(source.title) || text(source.name),
     uri: text(source.uri),
     summary: text(source.summary),
@@ -141,6 +150,7 @@ function addSource() {
   sources.value.push({
     key: `source-${Date.now().toString(36)}-${sources.value.length + 1}`,
     kind: 'other',
+    role: 'own',
     title: '',
     uri: '',
     summary: '',
@@ -178,6 +188,7 @@ async function save() {
         sources: sources.value.map((source) => ({
           key: source.key,
           kind: source.kind,
+          role: source.role,
           title: source.title.trim(),
           uri: nullable(source.uri),
           summary: nullable(source.summary),
@@ -248,6 +259,7 @@ async function save() {
             <textarea v-model="source.summary" maxlength="4096" rows="2" />
           </label>
           <OptionSelect v-model="source.sensitivity" field :label="t('projects.profileDialog.sensitivity')" :options="sensitivityOptions" />
+          <OptionSelect v-if="REPOSITORY_KINDS.has(source.kind)" v-model="source.role" field :label="t('projects.profileDialog.sourceRole')" :options="sourceRoleOptions" />
           <Button class="project-source-remove" variant="ghost" size="sm" data-source-remove @click="removeSource(index)">{{ t('projects.profileDialog.removeSource') }}</Button>
         </article>
       </div>

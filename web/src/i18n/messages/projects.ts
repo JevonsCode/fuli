@@ -188,6 +188,11 @@ export const projectMessages = {
         private: '私有',
         restricted: '受限',
       },
+      sourceRole: '归属',
+      sourceRoles: {
+        own: '本项目的仓库',
+        reference: '只是参考',
+      },
       noSources: '还没有登记资料来源。',
       stateBoundary: '项目资料不需要确认或失效，直接编辑即可。',
       saving: '正在保存项目资料…',
@@ -477,6 +482,11 @@ export const projectMessages = {
         normal: 'Normal',
         private: 'Private',
         restricted: 'Restricted',
+      },
+      sourceRole: 'Belongs to',
+      sourceRoles: {
+        own: 'This project',
+        reference: 'Reference only',
       },
       noSources: 'No source materials registered.',
       stateBoundary: 'Project materials need no confirmation; just edit them.',
