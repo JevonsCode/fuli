@@ -10,7 +10,7 @@
       "license": "Apache-2.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "1.5.0",
-        "@hono/node-server": "2.1.5",
+        "@hono/node-server": "2.1.8",
         "@internationalized/date": "3.12.4",
         "@modelcontextprotocol/sdk": "^1.31.0",
         "@peculiar/x509": "2.1.0",
@@ -553,9 +553,9 @@
       }
     },
     "node_modules/@hono/node-server": {
-      "version": "2.1.5",
-      "resolved": "https://registry.npmjs.org/@hono/node-server/-/node-server-2.1.5.tgz",
-      "integrity": "sha512-MgP/I06GdvsilDspMk/qmRzpk8LOUStP6jFAbSRi40W09DhoyUn+Mj7eyKICPqeYKybOjVFLVIAQzvu1bfIa7Q==",
+      "version": "2.1.8",
+      "resolved": "https://registry.npmjs.org/@hono/node-server/-/node-server-2.1.8.tgz",
+      "integrity": "sha512-jdf7FHh6A1lzjpHHQUgxsg2GeER2vMetnAOfeActzcoli6jamlK+NAwL6Dsr5Fl3BS3tYUQzCdtZjU8Qxv7bEA==",
       "license": "MIT",
       "engines": {
         "node": ">=20"
