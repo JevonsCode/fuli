@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import math
+from importlib.metadata import version
+from importlib.util import find_spec
 
 import pytest
 
@@ -19,6 +21,13 @@ def test_neo4j_notifications_stay_out_of_the_provider_log_while_driver_errors_re
     logging.getLogger('neo4j').error('synthetic driver error')
 
     assert [record.getMessage() for record in caplog.records] == ['synthetic driver error']
+
+
+def test_the_neo4j_driver_decodes_with_its_rust_codec():
+    # Without the extension the driver falls back to pure Python and says
+    # nothing; decoding was then most of a search's time (rec#126).
+    assert version('neo4j-rust-ext').startswith(version('neo4j') + '.')
+    assert find_spec('neo4j._rust') is not None
 
 
 def test_local_hash_embedder_rejects_dimensions_that_are_too_small():
