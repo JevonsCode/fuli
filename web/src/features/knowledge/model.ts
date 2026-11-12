@@ -526,6 +526,7 @@ function sessionLabel(evidence: EvidenceRecord) {
     kiro: 'Kiro',
     opencode: 'OpenCode',
     antigravity: 'Antigravity',
+    dsh: 'DeepSeek Harness',
     other: t('knowledge.domain.confirmation.otherSource'),
   }[evidence.source_application ?? '']
   return application
@@ -542,6 +543,7 @@ function proposedByFromEvidence(evidence?: EvidenceRecord) {
     kiro: 'Kiro',
     opencode: 'OpenCode',
     antigravity: 'Antigravity',
+    dsh: 'DeepSeek Harness',
     other: t('knowledge.domain.actors.otherAgent'),
   }[evidence?.source_application ?? '']
   return application

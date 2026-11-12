@@ -3,6 +3,7 @@ import {
   promptAgentSelection,
   shouldPromptForAgentSelection
 } from './setup-agent-selection.js';
+import { entryState } from '../agent-kits/client-detection.js';
 import { parseSetupOptions } from '../setup/options.js';
 import { applyLocalSetup, planLocalSetup } from '../setup/setup.js';
 import {
@@ -30,7 +31,7 @@ export async function runSetupCommand(args, dependencies = {}) {
   let plan = await planSetup(options, dependencies);
   if (options.connectedOnly) {
     plan = applyAgentSelection(plan, plan.agents.filter((agent) =>
-      ['current', 'outdated'].includes(agent.integrationDetails?.mcp)
+      ['current', 'outdated'].includes(entryState(agent.integrationDetails))
     ).map(({ id }) => id));
   } else if (shouldPromptForAgentSelection(plan, options)) {
     const detected = plan.agents.filter(({ available }) => available);
@@ -119,7 +120,7 @@ export function formatSetupPreview(plan, options, copy = String) {
   if (options.connectedOnly) {
     for (const agent of available.filter((agent) => agent.selected === false &&
       ['current', 'outdated'].includes(agent.integrationDetails?.skills))) {
-      lines.push(`${agent.label}: skipped because there is no Fuli MCP entry; existing Skills were left unchanged. Run fuli setup to reconnect.`);
+      lines.push(`${agent.label}: skipped because there is no Fuli entry; existing Skills were left unchanged. Run fuli setup to reconnect.`);
     }
   }
   return lines.join('\n');

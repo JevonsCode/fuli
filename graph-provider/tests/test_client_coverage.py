@@ -21,6 +21,14 @@ def test_a_list_naming_other_covers_antigravity_by_the_same_rule():
     assert not covers_client(['antigravity'], 'other')
 
 
+def test_a_list_naming_other_covers_dsh_by_the_same_rule():
+    hired_before = ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'antigravity', 'other']
+    assert covers_client(hired_before, 'dsh')
+    assert covers_client(['dsh'], 'dsh')
+    assert not covers_client(['codex'], 'dsh')
+    assert not covers_client(['dsh'], 'other')
+
+
 def test_an_existing_lead_serves_antigravity_so_its_tasks_keep_their_owner():
     # Hired with the default client list before Antigravity had its own source.
     profile = ProjectAgentProfile(name='Synthetic lead', responsibility='Synthetic work',

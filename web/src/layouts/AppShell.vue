@@ -11,6 +11,7 @@ import { loadPersonProfile } from '@/features/person-home/person-profile'
 import { loadRoleNames } from '@/features/agent-profile/role-names'
 import { AGENT_PINS_KEY, useAgentPins } from '@/features/agent-profile/agent-pins'
 import CaptureOnboardingDialog from '@/features/capture/CaptureOnboardingDialog.vue'
+import OnboardingTour from '@/features/onboarding-tour/OnboardingTour.vue'
 import ModelPowerButton from '@/features/model-settings/ModelPowerButton.vue'
 import DoctorBanner from '@/features/doctor/DoctorBanner.vue'
 import { clientsNeedUpdate } from '@/features/doctor/doctor-report'
@@ -138,7 +139,7 @@ async function refreshConsole() {
   } finally { refreshing.value = false }
 }
 // A newer release is a dot at the version's top-right (Jevons 11-04: not on the mark);
-// the version opens 设置 › 版本, where it installs.
+// the version opens 设置 › 系统 › 版本与更新, where it installs.
 const latestVersion = ref<string | null>(null)
 const versionRequest = new AbortController()
 onMounted(() => {
@@ -189,8 +190,8 @@ watchEffect(() => {
               <span class="app-runtime-dot" aria-hidden="true" />
               <span class="app-runtime-text" :class="{ 'is-visible': !runtimeReady }">{{ t(runtimeReady ? 'shell.runtimeReady' : 'shell.runtimeOffline') }}</span>
             </span>
-            <!-- The version beside the dot opens 设置 › 版本 (update channel and updates). -->
-            <RouterLink class="app-version" to="/settings?tab=version" draggable="false" data-app-version
+            <!-- The version beside the dot opens 设置 › 系统 › 版本与更新 (update channel and updates). -->
+            <RouterLink class="app-version" to="/settings?tab=system#version" draggable="false" data-app-version
               :aria-label="latestVersion ? t('shell.versionUpdate', { version: FULI_VERSION, latest: latestVersion })
                 : t('shell.versionLink', { version: FULI_VERSION })">v{{ FULI_VERSION }}<span
                 v-if="latestVersion" class="app-version-dot" aria-hidden="true" data-update-dot /></RouterLink>
@@ -237,6 +238,8 @@ watchEffect(() => {
       <RouterView v-slot="{ Component }"><component :is="Component" /></RouterView>
       <GlossaryLayer />
       <CaptureOnboardingDialog />
+      <!-- After the first-run dialog closes, never with it (OnboardingTour.vue). -->
+      <OnboardingTour />
     </main>
     <WidgetSlot place="shell.aboveDock" />
     <AppDock :destinations="dockDestinations" :active-key="destination?.key" :live-key="liveDockKey" :space-id="activeSpaceId" :folded="dockFolded" />

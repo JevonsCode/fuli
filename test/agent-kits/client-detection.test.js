@@ -28,7 +28,8 @@ test('installer clients become FULI\'s: component states and where the MCP entry
       state: 'unsupported', componentStates: [] }
   ]));
   assert.deepEqual(answer, { status: 'available', clients: [{ id: 'gemini', label: 'Gemini CLI', builtin: true, detected: true,
-    manual: false, connected: true, components: { mcp: 'current' }, mcpPaths: ['~/.gemini/settings.json'] }] });
+    manual: false, connected: true, components: { mcp: 'current' }, mcpPaths: ['~/.gemini/settings.json'],
+    entryPaths: ['~/.gemini/settings.json'] }] });
   assert.deepEqual(await detectClients({ status: async () => ({ status: 'unavailable', reason: 'offline' }) }),
     { status: 'unavailable', reason: 'offline' });
 });
@@ -132,7 +133,7 @@ test('every built-in client connects through agent-installer and then reads as c
   const builtIn = (await detectAgents(installer)).agents.filter((agent) => !agent.manualOnly);
   const desktop = process.platform === 'darwin' || process.platform === 'win32' ? ['claude-desktop'] : [];
   assert.deepEqual(builtIn.map(({ id }) => id).sort(),
-    ['antigravity', 'claude-code', 'codex', 'cursor', 'gemini', 'kiro', 'opencode', 'qwen-code', ...desktop].sort());
+    ['antigravity', 'claude-code', 'codex', 'cursor', 'dsh', 'gemini', 'kiro', 'opencode', 'qwen-code', ...desktop].sort());
   for (const agent of builtIn) {
     const result = await installAgent(installer, agent);
     assert.equal(result.status, 'connected', `${agent.id}: ${result.message}`);

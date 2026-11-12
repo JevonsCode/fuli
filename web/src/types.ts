@@ -678,8 +678,9 @@ export interface ConsoleState {
   subscriptions: Subscription[]
   capturePolicy?: CapturePolicy
   captureOnboarding?: { ask: boolean }
-  // The console's first-run guide: open once for a new installation until finished or skipped.
-  firstRunGuide?: { open: boolean }
+  // The console's first-run guide: open once for a new installation until finished or skipped;
+  // tourSeen: the newest beginner's guide version the console has shown (null: none yet).
+  firstRunGuide?: { open: boolean; tourSeen?: number | null }
   agentAccessPolicy?: AgentAccessPolicy
   recallPolicy?: RecallPolicy
   providers?: {
@@ -707,12 +708,13 @@ export type ConversationSourceApplication =
   | 'kiro'
   | 'opencode'
   | 'antigravity'
+  | 'dsh'
   | 'other'
 
 // Applications the console can open a conversation in. OpenCode and
 // Antigravity have no launcher yet: the stored runtime settings keep exactly
 // these keys.
-export type ConversationLauncherApplication = Exclude<ConversationSourceApplication, 'opencode' | 'antigravity'>
+export type ConversationLauncherApplication = Exclude<ConversationSourceApplication, 'opencode' | 'antigravity' | 'dsh'>
 
 export type ConversationIdFormat = 'any' | 'uuid'
 
@@ -752,7 +754,7 @@ export interface RuntimeSettings {
   notifications: { needsPersonUrl: string }
   agentNamingStyle: string
   topicPromotion: 'auto' | 'ask'
-  // Which releases the console offers (设置 › 版本).
+  // Which releases the console offers (设置 › 系统 › 版本与更新).
   updateChannel: 'stable' | 'beta'
   // Agent clients list the person's FLAs under /fla (设置 › 客户端).
   flaSlashMenu: boolean

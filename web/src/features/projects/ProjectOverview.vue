@@ -59,8 +59,14 @@ const createdDate = computed(() =>
     </header>
     <ProjectCaptureSwitch :key="project.project_id" class="project-capture-card" :project-id="project.project_id" :project-name="project.profile.name" />
     <ProjectJudgmentPolicy :key="`judgment-${project.project_id}`" class="project-judgment-card" :personal-space-id="spaceId"
-      :project-id="project.project_id" :project-name="project.profile.name" :heading="t('judgment.project.heading')" />
-    <ProjectOrganizing :key="`organizing-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id" />
+      :project-id="project.project_id" :project-name="project.profile.name" :heading="t('judgment.project.heading')">
+      <template #heading-action>
+        <RouterLink class="project-judgment-default-link" to="/employees/tonborg?view=standards" data-judgment-default-link>
+          {{ t('judgment.project.defaultLink') }}
+        </RouterLink>
+      </template>
+    </ProjectJudgmentPolicy>
+    <ProjectOrganizing :key="`organizing-${project.project_id}`" class="project-organizing-card" :space-id="spaceId" :project-id="project.project_id" />
     <ProjectTeamSummary :space-id="spaceId" :project-id="project.project_id" />
     <ProjectBoardSettings :key="`board-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id" :project-name="project.profile.name" />
     <ProjectChangeLog :key="`changes-${project.project_id}`" :space-id="spaceId" :project-id="project.project_id"

@@ -17,7 +17,7 @@ def test_unknown_claimed_and_internal_contexts_do_not_qualify(change):
     assert not routine_fallback_eligible({**BASE, **change})
 
 
-@pytest.mark.parametrize('source_application', ['kiro', 'antigravity'])
+@pytest.mark.parametrize('source_application', ['kiro', 'antigravity', 'dsh'])
 def test_mcp_only_clients_with_their_own_source_qualify(source_application):
     assert routine_fallback_eligible({**BASE, 'source_application': source_application})
 

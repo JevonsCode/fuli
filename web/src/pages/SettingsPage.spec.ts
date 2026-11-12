@@ -7,6 +7,7 @@ import { setLocale } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConsoleState } from '@/types'
 import { DEFAULT_CONVERSATION_LAUNCHERS } from '@/features/knowledge/source-adapters'
+import { tour } from '@/features/onboarding-tour/onboarding-tour'
 import SettingsPage from './SettingsPage.vue'
 
 const configured = {
@@ -62,7 +63,35 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
-  it('links to Tonborg\'s standards and leaves the judgment policy to its workbench', async () => {
+  it('gives each subject one tab, starting with what gets recorded', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    vi.stubGlobal('fetch', vi.fn(async (input) => String(input) === '/api/system/settings'
+      ? Response.json({ configured, active: configured, restartRequired: false })
+      : Response.json({}, { status: 503 })))
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
+    await flushPromises()
+    expect(wrapper.findAll('[data-settings-tab-trigger]').map(tab => [tab.attributes('data-settings-tab-trigger'), tab.text()])).toEqual([
+      ['recording', '记录'], ['ai', 'AI 能做什么'], ['clients', '客户端'], ['connections', '连接'], ['system', '系统']])
+    expect(wrapper.get('[data-settings-tab="recording"]').attributes('hidden')).toBeUndefined()
+    const tab = (id: string) => wrapper.get(`[data-settings-tab="${id}"]`)
+    expect(tab('recording').find('[data-capture-projects-card]').exists()).toBe(true)
+    expect(tab('ai').find('[data-agent-delegation-settings]').exists()).toBe(true)
+    expect(tab('ai').find('[data-recall-answer-from-confirmed]').exists()).toBe(true)
+    // The clients' status comes first; connecting by hand and the other ways in sit below, open.
+    expect(tab('clients').get('.settings-card').attributes('data-client-connection')).toBeDefined()
+    expect(tab('clients').get('[data-clients-more]').find('[data-client-manual-connection]').exists()).toBe(true)
+    expect(tab('clients').get('[data-clients-more]').find('[data-client-links-settings]').exists()).toBe(true)
+    expect(tab('connections').find('[data-local-graph]').exists()).toBe(true)
+    expect(tab('connections').find('#external-knowledge').exists()).toBe(true)
+    expect(tab('connections').find('.ports-card').exists()).toBe(true)
+    expect(tab('system').find('[data-version-settings]').exists()).toBe(true)
+    expect(tab('system').find('[data-diagnostics-card]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('links to Tonborg\'s standards and to the models instead of showing them', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useConsoleStore()
@@ -76,6 +105,9 @@ describe('SettingsPage', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-open-judgment-standards]').attributes('href')).toBe('/employees/tonborg?view=standards')
+    expect(wrapper.get('[data-open-model-settings]').attributes('href')).toBe('/models')
+    expect(wrapper.get('[data-open-model-settings]').text()).toBe('模型与用量')
+    expect(wrapper.find('#settings-models-title').exists()).toBe(false)
     expect(wrapper.find('.judgment-policy-fields').exists()).toBe(false)
     expect(fetchSettings.mock.calls.some(([url]) => String(url).startsWith('/api/judgment/'))).toBe(false)
     wrapper.unmount()
@@ -97,7 +129,7 @@ describe('SettingsPage', () => {
     const ports = wrapper.get('.ports-card')
     expect(ports.attributes('data-search-hidden')).toBeUndefined()
     // A search looks through every tab, not only the open one.
-    expect(wrapper.get('[data-settings-tab="network"]').attributes('hidden')).toBeUndefined()
+    expect(wrapper.get('[data-settings-tab="connections"]').attributes('hidden')).toBeUndefined()
     expect(wrapper.get('.behavior-card').attributes('data-search-hidden')).toBe('')
     await search.setValue('zzz-no-such-setting')
     await flushPromises()
@@ -105,7 +137,7 @@ describe('SettingsPage', () => {
     await search.setValue('')
     await flushPromises()
     expect(wrapper.findAll('[data-search-hidden]')).toHaveLength(0)
-    expect(wrapper.get('[data-settings-tab="network"]').attributes('hidden')).toBeDefined()
+    expect(wrapper.get('[data-settings-tab="connections"]').attributes('hidden')).toBeDefined()
     wrapper.unmount()
   })
 
@@ -309,21 +341,21 @@ describe('SettingsPage', () => {
     const wrapper = mount(SettingsPage, { global: { plugins: [pinia, router] }, attachTo: document.body })
     await flushPromises()
     expect(wrapper.find('[data-settings-restart-notice]').exists()).toBe(false)
-    await wrapper.get('[data-settings-tab="network"] [role="switch"]').trigger('click')
+    await wrapper.get('[data-settings-tab="connections"] [role="switch"]').trigger('click')
     await flushPromises()
     expect(puts).toHaveLength(0)
-    expect(wrapper.get('[data-settings-tab="network"] [data-settings-restart-notice]').text()).toContain('重启 FULI 才生效')
+    expect(wrapper.get('[data-settings-tab="connections"] [data-settings-restart-notice]').text()).toContain('重启 FULI 才生效')
 
     // A port left empty is not sent and says why when the person applies.
     const port = wrapper.get<HTMLInputElement>('.port-grid input')
     await port.setValue('')
-    await wrapper.get('[data-settings-tab="network"] [data-settings-restart-apply]').trigger('click')
+    await wrapper.get('[data-settings-tab="connections"] [data-settings-restart-apply]').trigger('click')
     await flushPromises()
     expect(puts).toHaveLength(0)
     expect(wrapper.get('.port-grid [data-settings-field-error]').text()).toBe('请填写这一项')
-    expect(wrapper.get('[data-settings-tab="network"] [data-settings-restart-notice]').text()).toContain('有一项填写不对')
+    expect(wrapper.get('[data-settings-tab="connections"] [data-settings-restart-notice]').text()).toContain('有一项填写不对')
     await port.setValue('70000')
-    await wrapper.get('[data-settings-tab="network"] [data-settings-restart-apply]').trigger('click')
+    await wrapper.get('[data-settings-tab="connections"] [data-settings-restart-apply]').trigger('click')
     await flushPromises()
     expect(wrapper.get('.port-grid [data-settings-field-error]').text()).toBe('请填写 1 到 65535 之间的数字')
 
@@ -340,9 +372,9 @@ describe('SettingsPage', () => {
     expect(wrapper.find('[data-graph-migration]').exists()).toBe(true)
     expect(wrapper.find('[data-select-id="settings-runtime-mode"]').exists()).toBe(false)
 
-    await wrapper.get('[data-settings-tab-trigger="network"]').trigger('mousedown')
+    await wrapper.get('[data-settings-tab-trigger="connections"]').trigger('mousedown')
     await flushPromises()
-    await wrapper.get('[data-settings-tab="network"] [data-settings-restart-apply]').trigger('click')
+    await wrapper.get('[data-settings-tab="connections"] [data-settings-restart-apply]').trigger('click')
     await flushPromises()
     expect(puts).toHaveLength(2)
     expect(puts[1]).toMatchObject({ resourceRefreshSeconds: 10, lanAccess: true, graphRuntimeMode: 'container' })
@@ -467,6 +499,28 @@ describe('SettingsPage', () => {
     wrapper.unmount()
   })
 
+  it('starts the beginner\'s guide again from step 1 in 系统 › 界面, saving nothing', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConsoleStore().runtimeStatus = 'ready'
+    const fetch = vi.fn(async (input) => String(input) === '/api/system/settings'
+      ? Response.json({ configured, active: configured, restartRequired: false })
+      : Response.json({}, { status: 503 }))
+    vi.stubGlobal('fetch', fetch)
+    Object.assign(tour, { open: false, paused: true, step: 3 })
+    const wrapper = mount(SettingsPage, { global: { plugins: [pinia, settingsRouter()] } })
+    await flushPromises()
+    const requests = fetch.mock.calls.length
+    const row = wrapper.get('[data-settings-tab="system"] [data-tour-show-again]')
+    expect(row.text()).toBe('再看一遍')
+    expect(row.element.closest('.setting-row')?.textContent).toContain('新手引导')
+    await row.trigger('click')
+    expect([tour.open, tour.paused, tour.step]).toEqual([true, false, 0])
+    expect(fetch.mock.calls).toHaveLength(requests)
+    Object.assign(tour, { open: false })
+    wrapper.unmount()
+  })
+
   it('shows every settings topic as its own open card, with no accordion or 高级 box', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -507,7 +561,7 @@ describe('SettingsPage', () => {
     expect(scrolled).toEqual([launchers.element])
     expect(launchers.attributes('data-settings-linked')).toBe('')
     // Moving on to another tab clears the mark.
-    await wrapper.get('[data-settings-tab-trigger="network"]').trigger('mousedown', { button: 0 })
+    await wrapper.get('[data-settings-tab-trigger="connections"]').trigger('mousedown', { button: 0 })
     await flushPromises()
     expect(launchers.attributes('data-settings-linked')).toBeUndefined()
     wrapper.unmount()
@@ -618,7 +672,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     const card = wrapper.get('.behavior-card')
     expect(card.findAll('[data-capture-source]').map(row => row.attributes('data-capture-source')))
-      .toEqual(['claude_code', 'codex', 'cursor', 'opencode'])
+      .toEqual(['claude_code', 'codex', 'cursor', 'opencode', 'dsh'])
     expect(card.find('.ui-notice').exists()).toBe(false)
     expect(card.find('[role="alert"]').exists()).toBe(false)
     wrapper.unmount()
