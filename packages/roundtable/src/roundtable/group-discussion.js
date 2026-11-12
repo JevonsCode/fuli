@@ -74,7 +74,15 @@ const READ_UNITS = 2000;
 // Unambiguous letters and digits (no 0/O, 1/I/L), read case-insensitively.
 const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const CODE_LENGTH = 4;
+// A code as typed (any case): four of CODE_ALPHABET with at least one digit and one letter (randomCode).
+export const JOIN_CODE_PATTERN = String.raw`(?=[a-hj-km-np-z]{0,3}[2-9])(?=[2-9]{0,3}[a-hj-km-np-z])[2-9a-hj-km-np-z]{4}`;
 const CODE_ATTEMPTS = 8;
+// A short discussion's code stops working after a day without a message or change; a long group's does not.
+const SHORT_CODE_IDLE_MS = 24 * 60 * 60_000;
+// Unknown codes typed within the window, per session and per personal space, before joining is refused for a while.
+const JOIN_MISS_WINDOW_MS = 10 * 60_000;
+const JOIN_MISSES_PER_SESSION = 5;
+const JOIN_MISSES_PER_SCOPE = 20;
 const UNKNOWN_MODEL = 'unknown';
 const MODEL_UNITS = 120;
 const HOST = 'host';
@@ -144,8 +152,9 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
       client: task?.sourceApplication ?? input.sourceApplication ?? 'other', session: task?.sessionId ?? null,
       completed: Boolean(task?.completed || task?.checkpoint?.phase === 'complete') };
   }
+  // The discussion's own calls on its chat (chat-service.js discussionChat).
   const say = (input, request) => chat({ taskContextToken: input.taskContextToken,
-    sourceApplication: input.sourceApplication ?? 'other', ...request });
+    sourceApplication: input.sourceApplication ?? 'other', ...request }, { discussion: true });
   // The host's own post, recorded with its client and the model it reported.
   async function hostSay(input, discussion, request) {
     const posted = await say(input, { action: 'send', chatId: discussion.chat_id, ...request });
@@ -307,7 +316,9 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
     const current = fresh(discussion);
     if (current.status !== 'running') return;
     const next = !signal.aborted && responses > 0
-      ? store.discussions.turns(chatId).filter(turn => turn.round === round && turn.status === 'replied' && woken(turn)) : [];
+      ? store.discussions.turns(chatId).filter(turn => turn.round === round && turn.status === 'replied' && woken(turn)
+        // A member the host removed meanwhile is out at once.
+        && JSON.parse(current.members).includes(turn.agent_id)) : [];
     if (next.length < MEMBER_MINIMUM) {
       store.discussions.update(...key(discussion), { status: 'concluded' });
       return;
@@ -358,7 +369,8 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
       await memberChat({ address: `local:${agentId}` }, { action: 'send', chatId,
         requestId: `flg-${round}-${result.messageId}`, body: bounded(result.reply, REPLY_UNITS) },
       { commit: message => posted(chatId, round, agentId, message, { askId: result.messageId, via: result.via },
-        { client: executor.client ?? null, model: executor.model ?? UNKNOWN_MODEL, session: executor.session ?? null }) });
+        { client: executor.client ?? null, model: executor.model ?? UNKNOWN_MODEL, session: executor.session ?? null }),
+      discussion: true });
     } catch (error) {
       if (error.code === 'chat_commit_refused') return;
       store.discussions.settle(chatId, round, agentId, { status: 'failed', reason: error.code ?? 'chat_unavailable',
@@ -391,7 +403,7 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
   }
 
   function ownerRead(chatId, from, limit) {
-    return memberChat({ owner: true, owns: () => true }, { action: 'read', chatId, after: from, limit });
+    return memberChat({ owner: true, owns: () => true }, { action: 'read', chatId, after: from, limit }, { discussion: true });
   }
 
   // Carries out what the person asked with their own `#FLG …`, once: a
@@ -427,8 +439,14 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
       if (!store.discussions.takeTopic(...key(current), current.topic ?? 1, body)) {
         refuse('flg_follow_up_not_requested', 'The person\'s new topic was already started');
       }
-      posted = await hostSay(input, current, { requestId: `${current.request_id}:topic:${(current.topic ?? 1) + 1}`,
-        body: `【新话题】${body}` });
+      try {
+        posted = await hostSay(input, current, { requestId: `${current.request_id}:topic:${(current.topic ?? 1) + 1}`,
+          body: `【新话题】${body}` });
+      } catch (error) {
+        // Not posted: the summarized topic stays current and the person's text waits again.
+        store.discussions.restoreTopic(current);
+        throw error;
+      }
     } else {
       const taken = store.discussions.takeFollowUp(...key(current), FOLLOW_UP_LIMIT);
       if (!taken) refuse('flg_follow_up_not_requested', 'The person\'s follow-up was already carried out');
@@ -473,13 +491,25 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
     if (strangers.length) {
       refuse('flg_not_member', `Not a member of this discussion: ${strangers.join(', ')}; use members[].member`, 422);
     }
-    if (!store.discussions.takeHostRound(...key(current), done)) refuse('flg_busy', 'Another round was just started');
     const directory = await agents();
     const labels = await labelsFor(current.chat_id, directory);
-    const { settled, joined } = reach(targets, directory);
+    const { wakeable, settled, joined } = reach(targets, directory);
+    // A round nobody it names can answer uses up nothing and posts nothing.
+    if (!wakeable.length && !joined.length) {
+      refuse('flg_member_unavailable', `No member of this round can be reached now: ${targets
+        .map(id => `${labelOf(labels, id)} (${settled[id] ?? 'unavailable'})`).join(', ')}`);
+    }
+    if (!store.discussions.takeHostRound(...key(current), done)) refuse('flg_busy', 'Another round was just started');
     const questions = input.questions.map((question, index) => `${index + 1}. ${question}`).join('\n');
-    const posted = await hostSay(input, current, { requestId: `${current.request_id}:round:${current.topic ?? 1}:${done + 2}`,
-      body: `【第 ${done + 2} 轮 · 主持人提问 → ${targets.map(id => labelOf(labels, id)).join('、')}】\n${questions}` });
+    let posted;
+    try {
+      posted = await hostSay(input, current, { requestId: `${current.request_id}:round:${current.topic ?? 1}:${done + 2}`,
+        body: `【第 ${done + 2} 轮 · 主持人提问 → ${targets.map(id => labelOf(labels, id)).join('、')}】\n${questions}` });
+    } catch (error) {
+      // Not posted: the round is not used up.
+      store.discussions.restoreHostRound(...key(current), done + 1);
+      throw error;
+    }
     const latest = await latestReplies(current);
     nextRound(current, { round: current.round + 1, kind: 'round', joined, wokenTargets: targets.filter(id => !joined.includes(id)),
       settled, input, responses: 0, prompt: agentId => roundPrompt(current.question, done + 2, questions, agentId,
@@ -517,12 +547,15 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
     return replies(discussion.chat_id, [...latest.values()]);
   }
 
-  // The host takes a member out: a woken one is not woken again, a joined
-  // session can no longer post. Its open turn ends as removed.
+  // The host takes a member out, at once, even mid-round: a woken one is not
+  // woken again (nor picked for a response round), a joined session can no
+  // longer post, and the FLA leaves the chat unless it is still a member
+  // another way. Its open turn ends as removed; a late answer is not posted.
   async function remove(input) {
     notWoken();
     const discussion = await owned(input);
     const current = fresh(discussion);
+    if (current.status === 'ended') refuse('flg_ended', 'This discussion has ended');
     if (!memberKeys(current).includes(input.member)) {
       refuse('flg_not_member', `Not a member of this discussion: ${input.member}; use members[].member`, 422);
     }
@@ -532,18 +565,17 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
           store.discussions.settle(current.chat_id, turn.round, turn.agent_id, { status: 'ended', reason: 'removed' });
         }
       }
-      if (input.member.startsWith(JOINED)) {
-        const row = activeJoins(current.chat_id).find(join => joinKey(join) === input.member);
-        store.discussions.leave(current.chat_id, row.id);
-        const address = `local:${row.agent_id}`;
-        const stays = JSON.parse(current.members).includes(row.agent_id)
-          || activeJoins(current.chat_id).some(join => join.agent_id === row.agent_id);
-        if (!stays && address !== current.owner) {
-          store.chat.remove(current.chat_id, address);
-          store.chat.update(current.chat_id, store.chat.get(current.chat_id).owner, new Date(now()).toISOString());
-        }
-      } else {
-        store.discussions.setMembers(...key(current), JSON.parse(current.members).filter(id => id !== input.member));
+      const joinRow = input.member.startsWith(JOINED)
+        ? activeJoins(current.chat_id).find(join => joinKey(join) === input.member) : null;
+      if (joinRow) store.discussions.leave(current.chat_id, joinRow.id);
+      const remaining = JSON.parse(current.members).filter(id => id !== input.member);
+      if (!joinRow) store.discussions.setMembers(...key(current), remaining);
+      const agentId = joinRow?.agent_id ?? input.member;
+      const address = `local:${agentId}`;
+      const stays = remaining.includes(agentId) || activeJoins(current.chat_id).some(join => join.agent_id === agentId);
+      if (!stays && address !== current.owner && store.chat.members(current.chat_id).some(item => item.address === address)) {
+        store.chat.remove(current.chat_id, address);
+        store.chat.update(current.chat_id, store.chat.get(current.chat_id).owner, new Date(now()).toISOString());
       }
     });
     return view(fresh(current), { after: lastSeq(current) });
@@ -621,6 +653,12 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
 
   function lastSeq(discussion) {
     return discussion.chat_id ? store.chat.lastSeq(discussion.chat_id) : 0;
+  }
+
+  // The discussion's last change or message (ms).
+  function lastActivity(discussion) {
+    const chatAt = discussion.chat_id ? Date.parse(store.chat.get(discussion.chat_id)?.updated_at ?? '') : NaN;
+    return Math.max(Date.parse(discussion.updated_at), Number.isNaN(chatAt) ? 0 : chatAt);
   }
 
   // Woken members (confirmed Agent IDs) and joined members (join:<id>), as members[].member.
@@ -727,12 +765,14 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
     const turn = store.discussions.turns(discussion.chat_id).filter(item => item.agent_id === member
       && UNSETTLED.has(item.status)).at(-1);
     if (!turn) refuse('flg_no_turn', 'Nothing is waiting for your answer; the host starts the next round');
+    // The model the member states, else the one its client's hook reported at the join.
+    const model = input.model ?? join.model ?? UNKNOWN_MODEL;
     const message = await memberChat({ address: `local:${join.agent_id}` }, { action: 'send', chatId: discussion.chat_id,
       requestId: `flg-${member}-${turn.round}`, body: bounded(input.body, REPLY_UNITS) },
     { commit: sent => posted(discussion.chat_id, turn.round, member, sent, {},
-      { client: me.client, model: input.model ?? UNKNOWN_MODEL, session: me.session }) });
+      { client: me.client, model, session: me.session }), discussion: true });
     return { chatId: discussion.chat_id, member, round: turn.round, seq: message.seq, recorded: true,
-      by: `${clientLabel(me.client)} · ${input.model ?? UNKNOWN_MODEL}` };
+      by: `${clientLabel(me.client)} · ${model}` };
   }
 
   async function joinedCaller(input) {
@@ -772,23 +812,38 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
   }
 
   // The person's `#FLG 加入 <code>` at task entry: this session's FLA joins.
-  // { joined } or { refused: 'woken' | 'unknown' | 'host' | 'full' }.
-  async function ownerJoin({ code: typed, agentId, name, projectId = null, client, sessionId }) {
+  // model: what this client's prompt hook reported, when it reports one.
+  // { joined } or { refused: 'woken' | 'throttled' | 'unknown' | 'host' | 'full' }.
+  async function ownerJoin({ code: typed, agentId, name, projectId = null, client, sessionId, model = null }) {
     if (inDelegatedWake()) return { refused: 'woken' };
+    const since = now() - JOIN_MISS_WINDOW_MS;
+    const misses = store.discussions.misses(scope(), client, sessionId, since);
+    if (misses.session >= JOIN_MISSES_PER_SESSION || misses.scope >= JOIN_MISSES_PER_SCOPE) return { refused: 'throttled' };
+    const unknown = () => {
+      store.discussions.miss(scope(), client, sessionId, now());
+      return { refused: 'unknown' };
+    };
     const found = store.discussions.byCode(scope(), normalizeCode(typed));
-    if (!found?.chat_id) return { refused: 'unknown' };
+    if (!found?.chat_id) return unknown();
     reconcile(found);
     const discussion = fresh(found);
-    if (discussion.status === 'ended') return { refused: 'unknown' };
+    if (discussion.status === 'ended') return unknown();
+    if (!long(discussion) && lastActivity(discussion) < now() - SHORT_CODE_IDLE_MS) {
+      store.discussions.dropCode(...key(discussion));
+      return unknown();
+    }
     if (`local:${agentId}` === discussion.owner && projectId === discussion.project_id) return { refused: 'host' };
-    const already = activeJoins(discussion.chat_id).find(row => row.agent_id === agentId && row.client === client
-      && row.session === sessionId);
-    if (!already && memberKeys(discussion).length >= MEMBER_LIMIT) return { refused: 'full', limit: MEMBER_LIMIT };
-    const { join, fresh: first } = store.transaction(() => {
-      const joined = store.discussions.join({ chatId: discussion.chat_id, agentId, name, projectId, client, session: sessionId });
+    // The cap is checked in the same transaction that admits, so two joins never pass it together.
+    const admitted = store.transaction(() => {
+      const already = activeJoins(discussion.chat_id).find(row => row.agent_id === agentId && row.client === client
+        && row.session === sessionId);
+      if (!already && memberKeys(fresh(discussion)).length >= MEMBER_LIMIT) return null;
+      const joined = store.discussions.join({ chatId: discussion.chat_id, agentId, name, projectId, client,
+        session: sessionId, model });
       const address = `local:${agentId}`;
       if (!store.chat.members(discussion.chat_id).some(member => member.address === address)) {
-        store.chat.admit(discussion.chat_id, { address, agentId, name }, 0);
+        // From now on only: history is read through the discussion, bounded.
+        store.chat.admit(discussion.chat_id, { address, agentId, name }, store.chat.lastSeq(discussion.chat_id));
         store.chat.update(discussion.chat_id, store.chat.get(discussion.chat_id).owner, new Date(now()).toISOString());
       }
       // Its turn in the current round opens now, unless this topic is already summarized.
@@ -798,6 +853,8 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
       }
       return joined;
     });
+    if (!admitted) return { refused: 'full', limit: MEMBER_LIMIT };
+    const { join, fresh: first } = admitted;
     const labels = await labelsFor(discussion.chat_id);
     const last = lastSeq(discussion);
     const from = Math.max(0, last - JOIN_EXCERPT_MESSAGES);
@@ -812,16 +869,20 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
       ...(from > 0 ? { earlier: { after: 0, before: from + 1 } } : {}), open } };
   }
 
-  // What a joined session's next turn shows once: a round it has not seen yet.
-  // [{ chatId, member, round, question, asked }] (bounded), marked seen.
-  async function ownerSessionTurn({ client, sessionId }) {
+  // What a joined session's turn shows while a round waits for its FLA's
+  // answer: whether an entry reached the model is not knowable here, so it is
+  // shown again until answered. Only to the FLA that joined from this session.
+  // [{ chatId, member, round, question, latest }] (bounded).
+  async function ownerSessionTurn({ client, sessionId, agentId }) {
     const shown = [];
-    for (const join of store.discussions.sessionJoins(client, sessionId)) {
+    for (const join of store.discussions.sessionJoins(client, sessionId).filter(row => row.agent_id === agentId)) {
       const discussion = store.discussions.byChat(join.chat_id);
       if (!discussion || discussion.status === 'ended') continue;
       const member = joinKey(join);
-      const turn = store.discussions.turns(join.chat_id).filter(item => item.agent_id === member && item.status === 'invited').at(-1);
-      if (!turn || !store.discussions.settle(join.chat_id, turn.round, member, { status: 'waiting' })) continue;
+      const turn = store.discussions.turns(join.chat_id).filter(item => item.agent_id === member && UNSETTLED.has(item.status)).at(-1);
+      if (!turn) continue;
+      // Shown at least once: the host's status says the member was reached.
+      store.discussions.settle(join.chat_id, turn.round, member, { status: 'waiting' });
       // The host's latest post opened this round (its questions, a follow-up or a new topic).
       const asked = store.discussions.posts(join.chat_id).filter(post => post.speaker === HOST).at(-1)?.seq;
       const page = asked ? await ownerRead(join.chat_id, asked - 1, 1) : { messages: [] };
@@ -882,8 +943,13 @@ function joinSentence(code) {
   return `#FLG 加入 ${code}`;
 }
 
+// At least one digit and one letter, so a four-letter word after `#FLG 加入`
+// stays a question (fla-mention.js reads the same shape).
 function randomCode() {
-  return Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
+  for (;;) {
+    const code = Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
+    if (/\d/u.test(code) && /[A-Z]/u.test(code)) return code;
+  }
 }
 
 function normalizeCode(code) {

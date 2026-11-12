@@ -201,7 +201,8 @@ async function entryPreferences(application, projectResolution, {
     previousOwnerName(application, ownerFrom),
     // A round the host of a discussion this session joined by code addressed to it (rec#129).
     includeMessages && agentInvocation && !group?.view
-      ? joinedRoundsEntry(application, { sourceApplication, sessionId: sessionId ?? sourceSessionId }) : null
+      ? joinedRoundsEntry(application, { sourceApplication, sessionId: sessionId ?? sourceSessionId,
+        agentId: selection?.agent?.agentId ?? null }) : null
   ]);
   const managedPreferences = management ? { ...preferences, project_management_context: management } : preferences;
   if (context) applyAgentAssignment(context, selection);

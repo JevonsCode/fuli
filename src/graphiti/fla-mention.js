@@ -26,6 +26,8 @@
 //   discussion from any connected client.
 
 // The keywords, half- or full-width `#`, any case.
+import { JOIN_CODE_PATTERN } from '../../packages/roundtable/src/roundtable/group-discussion.js';
+
 const KEYWORD = /^[#＃]FLA(?=$|\s)/iu;
 const GROUP = /^[#＃]FLG(?=$|[\s:：,，])/iu;
 // Everything below reads at most this much of a prompt, and every pattern
@@ -55,8 +57,10 @@ const LONG = /(?:^| )(?:长期调研群|长期|long)(?= |$)/iu;
 const SHORT = /(?:^| )(?:短期|short)(?= |$)/iu;
 const ROUNDS = /(?:^| )(?:(?:限定|最多) ?)?([1-9]) ?(?:轮|rounds?)(?= |$)/iu;
 const NO_ROUND_LIMIT = /(?:^| )(?:不限轮数|不限|no limit|unlimited)(?= |$)/iu;
-// `#FLG 加入 7K3M` (or `join`): this session joins a started discussion by its code.
-const JOIN = /^(?:加入|join) ?([a-z0-9]{4,8})$/iu;
+// `#FLG 加入 7K3M` (or `join`): this session joins a started discussion by its
+// code, exactly the shape FULI generates. Text after the code (on its line
+// or on later lines) is ignored; anything else after 加入 is a question.
+const JOIN = new RegExp(String.raw`^(?:加入|join)[\s:：]*(${JOIN_CODE_PATTERN})(?=$|[\s,，。.!！:：])`, 'iu');
 // What a client puts ahead of the person's words is skipped before deciding
 // what the message starts with: a quoted file (Claude Code writes
 // `@"C:\…\clip.mp4"`, possibly with `#FLA` right after it) or any other `@`
@@ -125,7 +129,7 @@ function groupMention(rest) {
   const text = rest.replace(/^[\s:：,，]+/u, '').trim();
   const words = reply(text);
   if (words !== null && RELEASE.test(words)) return { release: true };
-  const join = words === null ? null : JOIN.exec(words);
+  const join = JOIN.exec(text);
   if (join) return { join: join[1].toUpperCase() };
   const { rest: answer, options } = discussionOptions(words);
   const confirm = answer === null ? null : CONFIRM.exec(answer);

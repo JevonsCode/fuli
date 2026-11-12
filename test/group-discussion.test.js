@@ -78,8 +78,9 @@ function fixture({ answer = null, clientAvailable = () => true, agents = AGENTS,
     return call('start', { requestId, ...(extra.responseRounds !== undefined ? { responseRounds: extra.responseRounds } : {}) });
   };
   // The person's `#FLG 加入 <code>` in a session of another client, as task entry passes it.
-  const join = (code, token, name = 'Astro') => roundtable.joinGroupDiscussion({ code, agentId: tasks[token].projectAgentId,
-    name, projectId: tasks[token].personalProjectId, client: tasks[token].sourceApplication, sessionId: tasks[token].sessionId });
+  const join = (code, token, name = 'Astro', model = null) => roundtable.joinGroupDiscussion({ code,
+    agentId: tasks[token].projectAgentId, name, projectId: tasks[token].personalProjectId,
+    client: tasks[token].sourceApplication, sessionId: tasks[token].sessionId, ...(model ? { model } : {}) });
   const ask = (requestId, body, to = null) => roundtable.requestGroupFollowUp({ requestId, body, to });
   const settle = async (chatId, token = 'token-ada') => {
     let view = await call('status', { chatId }, token);
@@ -214,10 +215,9 @@ test('follow-ups: only the person\'s own #FLG entry asks one, each once, to the 
   await settle(chatId);
   assert.equal(woken.length, 2);
   await assert.rejects(call('follow_up', { chatId }), error => error.code === 'flg_follow_up_not_requested');
-  // The moderator adds a member through agent_chat: it is never woken by the discussion.
-  const room = await roundtable.chat({ taskContextToken: 'token-ada', sourceApplication: 'claude_code', action: 'read', chatId });
-  await roundtable.chat({ taskContextToken: 'token-ada', sourceApplication: 'claude_code', action: 'members', chatId,
-    expectedRevision: room.revision, add: ['local:ux'] });
+  // The discussion's chat is not managed through agent_chat, even by its host (rec#129).
+  await assert.rejects(roundtable.chat({ taskContextToken: 'token-ada', sourceApplication: 'claude_code', action: 'members',
+    chatId, expectedRevision: 1, add: ['local:ux'] }), error => error.code === 'chat_group_discussion');
   assert.deepEqual(ask('flg-f', '如果流量翻倍呢？'), { recorded: true });
   const asked = await call('follow_up', { chatId }, 'token-ada-2');
   assert.match(asked.messages[0].body, /^【用户追问】如果流量翻倍呢？$/u);
@@ -502,8 +502,10 @@ test('host-led rounds: questions to named members, woken again in their own sess
   await settle(started.chatId);
   const { joined } = await join(code(started), 'token-astro-oc');
   await call('reply', { chatId: started.chatId, body: 'Astro 的观点' }, 'token-astro-oc');
+  const turns = (agentId = 'employee.assistant') => roundtable.groupDiscussionTurns({ client: 'opencode', sessionId: 'oc-1',
+    agentId });
   // Nothing new for the joined session until the host asks it.
-  assert.deepEqual(await roundtable.groupDiscussionTurns({ client: 'opencode', sessionId: 'oc-1' }), []);
+  assert.deepEqual(await turns(), []);
   const before = woken.length;
   const devSession = woken.find(item => item.member === 'dev');
   const round = await call('round', { chatId: started.chatId, to: ['dev', joined.member],
@@ -516,13 +518,16 @@ test('host-led rounds: questions to named members, woken again in their own sess
     [['dev', `session-dev-${woken.indexOf(devSession) + 1}`]]);
   assert.match(woken.at(-1).prompt, /第 2 轮：主持人提问[\s\S]*灰度比例定多少/u);
   assert.equal(member(done, 'qa').round, 1);
-  // The joined member sees the round once, on its next turn; the host is told to have the person nudge it.
+  // The joined member sees the round on its turns until it answers, and only as the FLA that joined;
+  // the host is told to have the person nudge it.
   assert.match(done.guidance, /Ask the person to send any message/u);
-  const shown = await roundtable.groupDiscussionTurns({ client: 'opencode', sessionId: 'oc-1' });
+  const shown = await turns();
   assert.deepEqual(shown.map(item => [item.member, item.round]), [[joined.member, done.round]]);
   assert.match(shown[0].latest.body, /灰度比例/u);
-  assert.deepEqual(await roundtable.groupDiscussionTurns({ client: 'opencode', sessionId: 'oc-1' }), []);
+  assert.equal((await turns()).length, 1);
+  assert.deepEqual(await turns('dev'), []);
   await call('reply', { chatId: started.chatId, body: '回滚看错误率' }, 'token-astro-oc');
+  assert.deepEqual(await turns(), []);
   // Round 3 is the last of the default three; a fourth is refused and the guidance says to conclude.
   await call('round', { chatId: started.chatId, to: ['qa'], questions: ['测试够吗？'] });
   const third = await settle(started.chatId);
@@ -588,4 +593,121 @@ test('a woken Claude Code member\'s model comes from its client, a Codex one is 
   assert.deepEqual([member(done, 'qa').client, member(done, 'qa').model], ['codex', 'unknown']);
   assert.ok(woken.every(item => item.readOnly === true));
   assert.match(done.guidance, /authorizes no edits or publishing/u);
+});
+
+// rec#129 review: the chat behind a discussion has no side door, removal is
+// immediate and complete, failed posts lose nothing, codes are bounded.
+const chatAs = (roundtable, token, request) => roundtable.chat({ taskContextToken: token, sourceApplication: 'claude_code',
+  ...request });
+
+test('the chat behind a discussion is reached only through group_discussion: no reads, posts, membership or mention wakes', async t => {
+  const { roundtable, woken, start, settle, call, join } = fixture();
+  t.after(() => roundtable.close());
+  const started = await start('flg-door', ['dev', 'qa'], { responseRounds: 0 });
+  await settle(started.chatId);
+  const { chatId } = started;
+  await join(code(started), 'token-jade-cursor', 'Jade Lin');
+  // A woken member's ordinary session and the joined FLA's: agent_chat is refused, pointing to group_discussion.
+  for (const token of ['token-jamie', 'token-jade-cursor', 'token-ada']) {
+    for (const request of [{ action: 'read', chatId }, { action: 'send', chatId, requestId: `x-${token}`, body: '插话 @{local:qa}' },
+      { action: 'members', chatId, expectedRevision: 1, remove: ['local:qa'] }, { action: 'wait', chatId, timeoutSeconds: 1 }]) {
+      await assert.rejects(chatAs(roundtable, token, request), error => error.code === 'chat_group_discussion'
+        && /group_discussion/u.test(error.message), `${token} ${request.action}`);
+    }
+  }
+  // A host question that mentions a member wakes nobody but the members it names through the discussion.
+  const before = woken.length;
+  await call('round', { chatId, to: ['join:1'], questions: ['@{local:qa} 你怎么看？'] });
+  await settle(chatId);
+  assert.equal(woken.length, before);
+  // The person's own console still reads it.
+  assert.ok((await roundtable.chatOwner({ action: 'read', chatId })).messages.length > 0);
+  // Removing a woken member takes it out of the chat too.
+  await call('remove', { chatId, member: 'qa' });
+  const room = await roundtable.chatOwner({ action: 'read', chatId });
+  assert.ok(!room.members.some(item => item.address === 'local:qa'));
+});
+
+test('a member removed mid-round is out at once: never picked for the response round', async t => {
+  const gate = Promise.withResolvers();
+  const { roundtable, woken, start, settle, call } = fixture({ answer: async member => member === 'dev' ? 'dev 的观点'
+    : gate.promise.then(() => `${member} 的观点`) });
+  t.after(() => { gate.resolve(); return roundtable.close(); });
+  const { chatId } = await start('flg-mid', ['dev', 'qa', 'ux'], { responseRounds: 1 });
+  let view = await call('status', { chatId });
+  for (let i = 0; i < 50 && member(view, 'dev').status !== 'replied'; i++) view = await call('wait', { chatId, timeoutSeconds: 1 });
+  const removed = await call('remove', { chatId, member: 'dev' });
+  assert.ok(!removed.members.some(item => item.member === 'dev'));
+  gate.resolve();
+  const done = await settle(chatId);
+  assert.deepEqual(woken.filter(item => item.member === 'dev').length, 1);
+  assert.deepEqual(done.turns.filter(turn => turn.round === 2).map(turn => turn.agentId).sort(), ['qa', 'ux']);
+  // A removal after the end is refused.
+  await call('stop', { chatId });
+  await assert.rejects(call('remove', { chatId, member: 'qa' }), error => error.code === 'flg_ended');
+});
+
+test('a failed post loses nothing: a new topic stays the person\'s, a host round is not used up', async t => {
+  const store = createRoundtableStore();
+  const { roundtable, start, settle, call, ask } = fixture({ store });
+  t.after(() => roundtable.close());
+  const long = await start('flg-retry-topic', ['dev', 'qa'], { responseRounds: 0, options: { lifetime: 'long' } });
+  await settle(long.chatId);
+  // A round whose questions cannot be posted.
+  const append = store.chat.append;
+  store.chat.append = () => { throw new Error('Synthetic send failure'); };
+  await assert.rejects(call('round', { chatId: long.chatId, to: ['qa'], questions: ['为什么？'] }), /Synthetic send failure/u);
+  store.chat.append = append;
+  assert.equal((await call('status', { chatId: long.chatId })).hostRound, 1);
+  await call('summary', { chatId: long.chatId, requestId: 's-1', body: '第一个话题的结论' });
+  ask('flg-retry-topic', '第二个话题');
+  store.chat.append = () => { throw new Error('Synthetic send failure'); };
+  await assert.rejects(call('follow_up', { chatId: long.chatId }), /Synthetic send failure/u);
+  store.chat.append = append;
+  const kept = await call('status', { chatId: long.chatId });
+  assert.deepEqual([kept.topic, kept.question, kept.summary.recorded], [1, '这个方案的产品体验和技术风险？', true]);
+  const topic = await call('follow_up', { chatId: long.chatId });
+  assert.deepEqual([topic.topic, topic.question], [2, '第二个话题']);
+});
+
+test('a round addressed only to members nobody can reach uses up nothing and posts nothing', async t => {
+  const { roundtable, start, settle, call } = fixture({ clientAvailable: client => client !== 'codex' });
+  t.after(() => roundtable.close());
+  const { chatId } = await start('flg-none', ['dev', 'oc-only'], { responseRounds: 0 });
+  const before = await settle(chatId);
+  await assert.rejects(call('round', { chatId, to: ['oc-only'], questions: ['?'] }), error => error.code === 'flg_member_unavailable');
+  const after = await call('status', { chatId, after: before.nextAfter });
+  assert.deepEqual([after.hostRound, after.messages], [1, []]);
+});
+
+test('codes: unique per space, a short one dies after a day idle, and unknown codes are limited per session', async t => {
+  let offset = 0;
+  const store = createRoundtableStore();
+  const { roundtable, start, settle, join } = fixture({ store, now: () => Date.now() + offset });
+  t.after(() => roundtable.close());
+  const short = await start('flg-idle', ['dev', 'qa'], { responseRounds: 0 });
+  const long = await start('flg-standing', ['dev', 'qa'], { responseRounds: 0, options: { lifetime: 'long' } });
+  await settle(short.chatId);
+  await settle(long.chatId);
+  // A live code cannot be given to a second discussion.
+  assert.equal(store.discussions.assignCode('space', 'flg-standing', code(short)), false);
+  offset = 25 * 60 * 60_000;
+  assert.deepEqual(await join(code(short), 'token-astro-oc'), { refused: 'unknown' });
+  assert.equal(store.discussions.get('space', 'flg-idle').join_code, null);
+  assert.ok((await join(code(long), 'token-astro-oc')).joined);
+  // Five unknown codes from one session, then even a right code is refused for a while.
+  for (let n = 0; n < 5; n++) assert.deepEqual(await join(`Z${n + 2}ZZ`, 'token-astro-cursor'), { refused: 'unknown' });
+  assert.deepEqual(await join(code(long), 'token-astro-cursor'), { refused: 'throttled' });
+  offset += 11 * 60_000;
+  assert.ok((await join(code(long), 'token-astro-cursor')).joined);
+});
+
+test('a joined Codex session\'s model is the one its prompt hook reported, unless it states another', async t => {
+  const { roundtable, start, settle, call, join } = fixture();
+  t.after(() => roundtable.close());
+  const started = await start('flg-codex-model', ['dev', 'qa'], { responseRounds: 0 });
+  await settle(started.chatId);
+  await join(code(started), 'token-astro-oc', 'Astro', 'synthetic-hook-model');
+  const reply = await call('reply', { chatId: started.chatId, body: '观点' }, 'token-astro-oc');
+  assert.equal(reply.by, 'OpenCode · synthetic-hook-model');
 });

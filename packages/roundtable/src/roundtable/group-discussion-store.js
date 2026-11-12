@@ -33,15 +33,22 @@ export const GROUP_DISCUSSION_JOIN_COLUMNS = Object.freeze({ join_code: 'TEXT', 
 // client (never woken), and who said each message with what: the speaker's
 // member key (an Agent ID for a woken member, join:<id> for a joined one,
 // host for the moderator), its client and the model as that client reported
-// it (unknown when it did not), and the session that wrote it.
+// it (unknown when it did not), and the session that wrote it. A joined
+// session's model is the one its client's prompt hook reported at the join,
+// when it reports one (Codex). A live join code is unique in its scope, and
+// unknown codes typed are counted per session to bound guessing.
 export const GROUP_DISCUSSION_JOIN_TABLES = `
     CREATE TABLE IF NOT EXISTS group_discussion_joins (
       id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL, agent_id TEXT NOT NULL, name TEXT NOT NULL,
-      project_id TEXT, client TEXT NOT NULL, session TEXT NOT NULL, status TEXT NOT NULL,
+      project_id TEXT, client TEXT NOT NULL, session TEXT NOT NULL, model TEXT, status TEXT NOT NULL,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(chat_id, agent_id, client, session));
     CREATE TABLE IF NOT EXISTS group_discussion_posts (
       chat_id TEXT NOT NULL, seq INTEGER NOT NULL, speaker TEXT NOT NULL, client TEXT, model TEXT NOT NULL,
       session TEXT, PRIMARY KEY(chat_id, seq));
+    CREATE TABLE IF NOT EXISTS group_discussion_join_misses (
+      scope TEXT NOT NULL, client TEXT NOT NULL, session TEXT NOT NULL, at INTEGER NOT NULL);
+    CREATE UNIQUE INDEX IF NOT EXISTS group_discussions_join_code ON group_discussions(scope, join_code)
+      WHERE join_code IS NOT NULL;
 `;
 
 // Shares the roundtable connection; every change signals waiting readers
@@ -66,16 +73,41 @@ export function createGroupDiscussionStore(db, chat) {
     },
     // The live discussion a join code names in this scope, or null.
     byCode: (scope, code) => db.prepare('SELECT * FROM group_discussions WHERE scope=? AND join_code=?').get(scope, code) ?? null,
-    // Gives a started discussion its code once; false when a live one of the scope already has that code.
+    // Gives a started discussion its code once, atomically: false when a live
+    // discussion of the scope already holds that code (the unique index says so).
     assignCode(scope, requestId, code) {
-      if (this.byCode(scope, code)) return false;
-      return db.prepare(`UPDATE group_discussions SET join_code=?, updated_at=? WHERE scope=? AND request_id=?
-        AND join_code IS NULL AND status!='ended'`).run(code, now(), scope, requestId).changes === 1;
+      try {
+        return db.prepare(`UPDATE group_discussions SET join_code=?, updated_at=? WHERE scope=? AND request_id=?
+          AND join_code IS NULL AND status!='ended'`).run(code, now(), scope, requestId).changes === 1;
+      } catch (error) {
+        if (/UNIQUE constraint failed/u.test(error.message)) return false;
+        throw error;
+      }
+    },
+    // A code that stopped working (an idle short discussion) is gone for every process.
+    dropCode(scope, requestId) {
+      db.prepare('UPDATE group_discussions SET join_code=NULL WHERE scope=? AND request_id=?').run(scope, requestId);
+    },
+    // Unknown codes this session typed since a time (ms), and the space as a whole; older ones are forgotten.
+    misses(scope, client, session, since) {
+      db.prepare('DELETE FROM group_discussion_join_misses WHERE at<?').run(since);
+      return { session: db.prepare(`SELECT count(*) AS n FROM group_discussion_join_misses WHERE scope=? AND client=?
+        AND session=?`).get(scope, client, session).n,
+      scope: db.prepare('SELECT count(*) AS n FROM group_discussion_join_misses WHERE scope=?').get(scope).n };
+    },
+    miss(scope, client, session, at) {
+      db.prepare('INSERT INTO group_discussion_join_misses VALUES(?,?,?,?)').run(scope, client, session, at);
     },
     // The host's next round of this topic, once per expected count: true for the one call that took it.
     takeHostRound(scope, requestId, expected) {
       return changed(db.prepare(`UPDATE group_discussions SET host_rounds=coalesce(host_rounds,0)+1, updated_at=?
         WHERE scope=? AND request_id=? AND coalesce(host_rounds,0)=?`).run(now(), scope, requestId, expected).changes === 1);
+    },
+    // A taken round whose questions could not be posted is given back.
+    restoreHostRound(scope, requestId, taken) {
+      db.prepare(`UPDATE group_discussions SET host_rounds=?, updated_at=? WHERE scope=? AND request_id=?
+        AND host_rounds=?`).run(taken - 1, now(), scope, requestId, taken);
+      chat.publishChanges();
     },
     // A long group's next topic after its summary: the question, rounds and follow-ups start again.
     takeTopic(scope, requestId, topic, question) {
@@ -84,6 +116,15 @@ export function createGroupDiscussionStore(db, chat) {
         WHERE scope=? AND request_id=? AND coalesce(topic,1)=? AND summary_seq IS NOT NULL AND status!='ended'`)
         .run(question, now(), scope, requestId, topic).changes === 1);
     },
+    // A taken topic whose opening could not be posted: the row it replaced comes back, the person's text waits again.
+    restoreTopic(previous) {
+      db.prepare(`UPDATE group_discussions SET question=?, topic=?, host_rounds=?, follow_ups=?, summary_seq=?,
+        pending_follow_up=?, pending_to=?, updated_at=? WHERE scope=? AND request_id=? AND topic=?`)
+        .run(previous.question, previous.topic, previous.host_rounds, previous.follow_ups, previous.summary_seq,
+          previous.pending_follow_up, previous.pending_to, now(), previous.scope, previous.request_id,
+          (previous.topic ?? 1) + 1);
+      chat.publishChanges();
+    },
     setMembers(scope, requestId, members) {
       db.prepare('UPDATE group_discussions SET members=?, updated_at=? WHERE scope=? AND request_id=?')
         .run(JSON.stringify(members), now(), scope, requestId);
@@ -91,14 +132,15 @@ export function createGroupDiscussionStore(db, chat) {
     },
     // A session of any client joins as its current FLA; joining again restores a removed join.
     // { join, fresh }: fresh when this session was not a member before.
-    join({ chatId, agentId, name, projectId, client, session }) {
+    join({ chatId, agentId, name, projectId, client, session, model = null }) {
       const before = db.prepare(`SELECT * FROM group_discussion_joins WHERE chat_id=? AND agent_id=? AND client=?
         AND session=?`).get(chatId, agentId, client, session);
       const at = now();
-      db.prepare(`INSERT INTO group_discussion_joins(chat_id, agent_id, name, project_id, client, session, status,
-        created_at, updated_at) VALUES(?,?,?,?,?,?,'joined',?,?) ON CONFLICT(chat_id, agent_id, client, session)
-        DO UPDATE SET status='joined', name=excluded.name, updated_at=excluded.updated_at`)
-        .run(chatId, agentId, name, projectId, client, session, at, at);
+      db.prepare(`INSERT INTO group_discussion_joins(chat_id, agent_id, name, project_id, client, session, model, status,
+        created_at, updated_at) VALUES(?,?,?,?,?,?,?,'joined',?,?) ON CONFLICT(chat_id, agent_id, client, session)
+        DO UPDATE SET status='joined', name=excluded.name, model=coalesce(excluded.model, model),
+        updated_at=excluded.updated_at`)
+        .run(chatId, agentId, name, projectId, client, session, model, at, at);
       const join = db.prepare(`SELECT * FROM group_discussion_joins WHERE chat_id=? AND agent_id=? AND client=?
         AND session=?`).get(chatId, agentId, client, session);
       return changed({ join, fresh: before?.status !== 'joined' });

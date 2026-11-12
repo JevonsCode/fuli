@@ -514,10 +514,16 @@ test('mode 1: a member whose tasks cannot be read is said so; the rest still loa
 });
 
 test('rec#129 parsing: #FLG 加入 <code> joins, case-insensitive; the roundtable options ride on the confirmation', () => {
-  for (const prompt of ['#FLG 加入 7k3m', '#FLG join 7K3M', '#flg 加入7K3M', '＃FLG： 加入 7K3M']) {
+  // Text after the code, on its line or on later lines, is ignored.
+  for (const prompt of ['#FLG 加入 7k3m', '#FLG join 7K3M', '#flg 加入7K3M', '＃FLG： 加入 7K3M', '#FLG 加入 7K3M 我在 OpenCode',
+    '#FLG 加入 7K3M\n先读一下讨论再回答']) {
     assert.deepEqual(parseFlaMention(prompt), { group: { join: '7K3M' } }, prompt);
   }
-  assert.deepEqual(parseFlaMention('#FLG 加入这个讨论看看大家的意见'), { group: { query: '加入这个讨论看看大家的意见' } });
+  // Only the code shape FULI generates (four of 2–9/A–Z without I/L/O, a digit and a letter) joins; the rest are questions.
+  for (const question of ['加入这个讨论看看大家的意见', '加入 Redis 集群怎么选型', 'join meeting notes into the doc', 'join team',
+    '加入 7K3MX 方案', '加入 1234', '加入 7KIO']) {
+    assert.deepEqual(parseFlaMention(`#FLG ${question}`), { group: { query: question } }, question);
+  }
   assert.deepEqual(groupChoiceReply('1 3 圆桌 长期 不限轮数'), { choices: [1, 3], mode: 'roundtable', lifetime: 'long', roundLimit: 0 });
   assert.deepEqual(groupChoiceReply('1 3 在圆桌里分头回复 长期调研群 最多 3 轮'),
     { choices: [1, 3], mode: 'roundtable', lifetime: 'long', roundLimit: 3 });
@@ -549,22 +555,34 @@ test('rec#129: the lifetime and round limit are asked in the same choice and rec
   assert.equal(plain.calls.find(([kind]) => kind === 'confirm')[1].lifetime, undefined);
 });
 
-test('rec#129: #FLG 加入 <code> makes this session\'s FLA a member, Astro outside a project; a host round shows once later', async () => {
-  for (const [folder, agentId, client] of [[{ status: 'unmatched', personalProjectId: null }, 'employee.assistant', 'opencode'],
-    [FOLDER, 'ada', 'codex']]) {
+// The global assistant as the Provider returns it once it exists (synthetic).
+const ASTRO = { agent_id: 'employee.assistant', personal_space_id: SPACE, personal_project_id: null,
+  memory_scope: 'reviewed_agent', updated_at: '2026-10-20T00:00:00Z', assignments: [],
+  profile: { name: 'Astro', display_name: 'Astro', responsibility: '全局助手', status: 'active',
+    allowed_clients: ['opencode', 'codex', 'claude_code'], work_kinds: ['project_context'], capabilities: [], agent_type: 'durable' } };
+
+test('rec#129: #FLG 加入 <code> makes this session\'s FLA a member, Astro outside a project; a waiting round shows until answered', async () => {
+  for (const [folder, agentId, client, extra] of [[{ status: 'unmatched', personalProjectId: null }, 'employee.assistant', 'opencode', {}],
+    [FOLDER, 'ada', 'codex', { clientModel: 'synthetic-codex-model' }]]) {
     const { app, hook, memoryReads } = fixture({ folder });
+    const getAgent = app.personal.getProjectAgent;
+    app.personal.getProjectAgent = async (space, project, id) => id === ASTRO.agent_id ? structuredClone(ASTRO)
+      : getAgent(space, project, id);
     const joins = [];
+    const asked = [];
     let turns = [];
     Object.assign(app.roundtable, {
       joinGroupDiscussion: async input => { joins.push(input); return input.code === '7K3M' ? { joined: { chatId: 'local:chat-1',
         member: 'join:1', fresh: joins.length === 1, question: '要不要拆服务？', topic: 1, hostRound: 1, roundLimit: 3,
         moderator: 'Nova Lane（测试）', members: ['Jamie Ash（开发）', 'Astro · OpenCode'], excerpt: [], open: true } }
         : { refused: 'unknown' }; },
-      groupDiscussionTurns: async () => { const shown = turns; turns = []; return shown; } });
-    const entry = await hook('#FLG 加入 7k3m', { sourceApplication: client, sessionId: 'oc-session' });
+      groupDiscussionTurns: async input => { asked.push(input); return turns; } });
+    const entry = await hook('#FLG 加入 7k3m', { sourceApplication: client, sessionId: 'oc-session', ...extra });
     assert.equal(entry.flg.status, 'joined', JSON.stringify(entry.flg));
+    // The model Codex's prompt hook reported rides along; nothing is guessed for other clients.
     assert.deepEqual(joins[0], { code: '7K3M', agentId, name: joins[0].name, projectId: folder.personalProjectId,
-      client, sessionId: 'oc-session' });
+      client, sessionId: 'oc-session', ...(extra.clientModel ? { model: extra.clientModel } : {}) });
+    assert.match(entry.flg.guidance, /chatId = flg\.chat_id/u);
     // Told once that the discussion goes to this client's model; the member answers itself, read-only.
     assert.match(entry.flg.notice, /已加入 #FLG 讨论（主持：Nova Lane（测试））；这场讨论的内容会发给这个客户端的模型/u);
     assert.match(entry.agent_receipt.markdown, /这场讨论的内容会发给这个客户端的模型/u);
@@ -573,20 +591,26 @@ test('rec#129: #FLG 加入 <code> makes this session\'s FLA a member, Astro outs
     assert.deepEqual(memoryReads().filter(([, , agent]) => agent !== agentId), []);
     assert.doesNotMatch((await hook('#FLG 加入 7K3M', { sourceApplication: client, sessionId: 'oc-session' })).flg.notice,
       /客户端的模型/u);
-    assert.equal((await hook('#FLG 加入 QQQQ', { sourceApplication: client, sessionId: 'oc-session' })).flg.reason, 'join_unknown');
-    // An ordinary prompt carries nothing, until the host addresses a round to this session.
+    assert.equal((await hook('#FLG 加入 QQ2Q', { sourceApplication: client, sessionId: 'oc-session' })).flg.reason, 'join_unknown');
+    // An ordinary prompt carries nothing, until the host addresses a round to this session's FLA.
     assert.equal((await hook('先看看日志', { sourceApplication: client, sessionId: 'oc-session' })).flg, undefined);
+    assert.equal(asked.at(-1).agentId, agentId);
     turns = [{ chatId: 'local:chat-1', member: 'join:1', round: 2, question: '要不要拆服务？',
       latest: { seq: 9, from: '主持 · Nova Lane（测试）', by: 'Claude Code · unknown', body: '【第 2 轮 · 主持人提问】1. 拆分成本？' } }];
-    const next = await hook('先看看日志', { sourceApplication: client, sessionId: 'oc-session' });
-    assert.equal(next.flg.status, 'member_turn');
-    assert.match(next.flg.guidance, /group_discussion reply/u);
-    assert.equal((await hook('再看看', { sourceApplication: client, sessionId: 'oc-session' })).flg, undefined);
+    for (const prompt of ['先看看日志', '再看看']) {
+      const next = await hook(prompt, { sourceApplication: client, sessionId: 'oc-session' });
+      assert.equal(next.flg.status, 'member_turn');
+      assert.match(next.flg.guidance, /group_discussion reply \(chatId = turns\[\]\.chat_id/u);
+    }
   }
-  // An FLA this client may not run never joins through it.
-  const { app, hook } = fixture();
-  app.roundtable.joinGroupDiscussion = async () => assert.fail('must not join');
-  assert.equal((await hook('#FLG 加入 7K3M', { sourceApplication: 'opencode', sessionId: 'oc-2' })).flg.reason, 'join_no_fla');
+  // No FLA ready this turn (none assigned, or one this client may not run): nobody joins, and the reason is said.
+  for (const [folder, client, reason] of [[{ status: 'unmatched', personalProjectId: null }, 'opencode', 'assistant_unavailable'],
+    [FOLDER, 'opencode', 'client_not_allowed']]) {
+    const { app, hook } = fixture({ folder });
+    app.roundtable.joinGroupDiscussion = async () => assert.fail('must not join');
+    const refused = await hook('#FLG 加入 7K3M', { sourceApplication: client, sessionId: 'oc-2' });
+    assert.deepEqual([refused.flg.reason, refused.flg.notice.endsWith(reason)], ['join_no_fla', true]);
+  }
 });
 
 test('token budget: an ordinary prompt carries nothing new; the member choice and the confirmation stay small', async t => {
