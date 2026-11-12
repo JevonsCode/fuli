@@ -1,4 +1,5 @@
 import { sourceConsoleUrl } from '../graphiti/source-marker.js';
+import { REMOTE_CONFLICT } from '../graphiti/agent-project-resolution.js';
 import { agentLabel } from './agent-label.js';
 import { flaAddress } from '../../packages/roundtable/src/roundtable/fla-address.js';
 import { markdownLink } from '../text/markdown-link.js';
@@ -168,7 +169,8 @@ function receiptSessionUrl(value) {
 function unassignedReceipt(status, reason) {
   if (!status) return 'FULI Agent：分配未完成（任务没有可用负责人）';
   if (status === 'project_unresolved') {
-    return reason === 'ambiguous' ? 'FULI Agent：分配待确认（项目归属待确认）'
+    // A repository address and folder name that point to two projects wait for the person too (rec#125).
+    return reason === 'ambiguous' || reason === REMOTE_CONFLICT ?'FULI Agent：分配待确认（项目归属待确认）'
       : reason === 'session_identity_required' ? 'FULI Agent：分配失败（缺少会话标识）'
         : 'FULI Agent：分配失败（项目归属未能恢复）';
   }

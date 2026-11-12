@@ -35,3 +35,19 @@ test('the list is bounded, and a project with no knowledge sends none', async ()
   assert.ok(answer.knowledge_index.titles.every(([title]) => title.length <= 120));
   assert.equal((await search(application({ facts: [], entities: [] }, []))).knowledge_index, undefined);
 });
+
+// rec#125: an address/folder conflict names both projects and how the person settles it.
+test('a repository address and folder that name two projects say so instead of workspace advice', async () => {
+  const app = application({ facts: [], entities: [] }, []);
+  const conflict = await searchCurrentProjectKnowledge(app, { status: 'ambiguous', basis: null, personalProjectId: null,
+    candidateCount: 2, reason: 'repository_remote_conflict', candidateProjectIds: ['beta', 'alpha'] }, { queries: ['x'] });
+  assert.equal(conflict.status, 'project_unresolved');
+  assert.deepEqual(conflict.project_resolution.candidate_project_ids, ['beta', 'alpha']);
+  assert.match(conflict.required_action, /address points to project beta and the folder name to project alpha/);
+  assert.match(conflict.required_action, /reference/);
+  assert.doesNotMatch(conflict.required_action, /workspace children|exact project directory/);
+  const other = await searchCurrentProjectKnowledge(app, { status: 'ambiguous', basis: null, personalProjectId: null,
+    candidateCount: 2 }, { queries: ['x'] });
+  assert.equal(other.project_resolution.reason, undefined);
+  assert.match(other.required_action, /workspace children/);
+});

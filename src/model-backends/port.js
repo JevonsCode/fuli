@@ -4,10 +4,10 @@ import { modelFetch } from './model-fetch.js';
 
 import { MODEL_ADAPTERS } from './adapters/registry.js';
 import { budgetBlock, callLimits, ceilingCost, estimateCost, estimateTokens, roundCost, windowStart } from './budget.js';
-import { MODEL_BACKEND_ROLES, SEMANTIC_ROLE, configRevision, connectionIdentity } from './config.js';
+import { MODEL_BACKEND_ROLES, SEMANTIC_ROLE, configRevision, connectionHealthIdentity, connectionIdentity } from './config.js';
 import { decisionContract, decisionEnvelope } from './decision-contract.js';
 import { egressAllowed } from './egress.js';
-import { FAILURE_STATUS, isFallbackEligible, modelFailure } from './failures.js';
+import { CONNECTIVITY_REASONS, FAILURE_STATUS, isFallbackEligible, modelFailure } from './failures.js';
 import { decisionPrompt, promptForMode, repairTurns } from './prompt.js';
 import {
   CONNECTION_CHECK, connectionCheckRequest, embeddingCheckRequest, embeddingEgress, parseDecisionRequest, parseEmbeddingRequest,
@@ -116,7 +116,8 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     const pending = {
       requestId: request.requestId, attemptId: randomUUID(), attemptNumber: call.attempts.length + 1, purpose, channel: 'model_api',
       role: request.role, operation: request.operation, personalSpaceId: request.scope.personalSpaceId,
-      personalProjectId: request.scope.personalProjectId, connectionId: target.id, protocol: target.protocol,
+      personalProjectId: request.scope.personalProjectId, connectionId: target.id,
+      healthIdentity: connectionHealthIdentity(target.id, target), protocol: target.protocol,
       endpointHost: new URL(target.endpoint).host, endpoint: target.endpoint, requestedModel: target.model, outputMode: call.mode,
       startedAt: attemptStarted.toISOString(), budgetCeilingTokens: inputTokens + maxOutputTokens,
       costCurrency: target.pricing?.currency ?? null
@@ -351,9 +352,15 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     // disabled or no longer allowed the operation allows nothing.
     allowsEgress(request) {
       const settings = this.operationSettings(request.role, request.operation);
-      if (!settings) return false;
-      return MODEL_ADAPTERS[settings.connection.protocol].local === true
-        || egressAllowed(request.texts ? embeddingEgress(request) : request, settings.egress);
+      return Boolean(settings) && sendsAllowed(settings, request);
+    },
+    // Whether the role's own model, as configured now, would stop this request
+    // at egress before any attempt (prepare's egress_not_approved). A role
+    // without a model for the operation refuses nothing here: its work goes
+    // to the current session.
+    refusesEgress(request) {
+      const settings = this.operationSettings(request.role, request.operation);
+      return Boolean(settings) && !sendsAllowed(settings, request);
     },
     // What Settings shows of the local build behind a role's latest answer
     // on its configured endpoint and model (rec#10 D-32). An observation of
@@ -361,18 +368,24 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     // receipt, review record or gate. Only a connection on the read path
     // (openai_chat on loopback HTTP /v1) applies. connectionId and
     // connection: the role's configured connection, or null.
-    // Whether a role's configured model answered on its latest call (rec#92):
-    // ok, failing (the latest call to this connection and model failed), or
-    // unknown (never called yet). An answer that would not validate still
-    // came from a working model, so only a failed call counts as failing.
+    // Whether a role's configured model answers (rec#92): ok, failing or
+    // unknown (never called yet), and what that is about (rec#122). A failure
+    // of the role's own latest call that is not about connectivity is the
+    // role's (scope 'role'); no other role's answer clears it. Otherwise the
+    // latest attempt on the whole connection configuration, by any role,
+    // that says whether it answers (scope 'connection'): a newer answer
+    // supersedes an older network failure, and a newer network failure
+    // reaches every role on it. An answer that would not validate still came
+    // from a working model, so only a failed call counts as failing.
     health(role, connectionId, connection) {
       if (!connection) return null;
-      const last = ledger.lastAttempt({ role, connectionId, protocol: connection.protocol, endpoint: connection.endpoint,
-        requestedModel: connection.model });
-      if (!last) return { status: 'unknown', at: null, reason: null };
-      return last.outcome === 'failed'
-        ? { status: 'failing', at: last.at, reason: last.failureReason ?? last.failureClass ?? null }
-        : { status: 'ok', at: last.at, reason: null };
+      const identity = connectionHealthIdentity(connectionId, connection);
+      const own = ledger.lastAttempt({ healthIdentity: identity, role });
+      if (own?.outcome === 'failed' && !CONNECTIVITY_REASONS.includes(own.failureReason)) return failingHealth(own, 'role');
+      const shared = ledger.lastAttempt({ healthIdentity: identity, connectivityReasons: CONNECTIVITY_REASONS });
+      if (!shared) return { status: 'unknown', at: null, reason: null, scope: null };
+      return shared.outcome === 'failed' ? failingHealth(shared, 'connection')
+        : { status: 'ok', at: shared.at, reason: null, scope: 'connection' };
     },
     localBuild(role, connectionId, connection) {
       const none = status => ({ status, digest: null, completedAt: null });
@@ -409,6 +422,16 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
           estimatedCost: pricing ? roundCost(window.estimatedCost) : null, cost: pricing ? 'estimate' : 'unknown' };
       });
   }
+}
+
+function failingHealth(attempt, scope) {
+  return { status: 'failing', at: attempt.at, reason: attempt.failureReason ?? attempt.failureClass ?? null, scope };
+}
+
+// A model on this computer sends nothing out; any other needs the request approved.
+function sendsAllowed(settings, request) {
+  return MODEL_ADAPTERS[settings.connection.protocol].local === true
+    || egressAllowed(request.texts ? embeddingEgress(request) : request, settings.egress);
 }
 
 function receiptUsage(attempts) {

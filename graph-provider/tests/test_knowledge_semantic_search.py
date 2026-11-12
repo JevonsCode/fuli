@@ -16,10 +16,11 @@ from fuli_graph.knowledge_semantic import (
     MIN_IN_SCOPE_ITEMS,
     RRF_K,
     fused_ranking,
-    meaning_matches,
     semantic_hash,
     semantic_text,
-    usable_vector,
+    standing_out,
+    usable_cosine,
+    vector_norm,
 )
 from fuli_graph.models import SearchRequest
 
@@ -43,6 +44,27 @@ def axis(index, length=DIMENSIONS):
 # The query's meaning, and one item that means nearly the same.
 QUERY = [0.95, 0.31] + [0.0] * (DIMENSIONS - 2)
 CLOSE = [0.9, 0.4] + [0.0] * (DIMENSIONS - 2)
+
+
+def cosine_parts(vector, parameters):
+    """What the provider's Cypher returns for a stored vector: nothing for another length."""
+    query = parameters['query_vector']
+    if not vector or len(vector) != parameters['length']:
+        return {'semantic_dot': None, 'semantic_norm2': None}
+    return {'semantic_dot': sum(a * b for a, b in zip(vector, query)),
+            'semantic_norm2': sum(value * value for value in vector)}
+
+
+def meaning_matches(candidates, query, limit):
+    """standing_out over {key: vector}, scored the way a search scores them."""
+    parameters = {'query_vector': query, 'length': len(query)}
+    scores = {}
+    for key, vector in candidates.items():
+        record = {'fact': key, 'semantic_hash': semantic_hash(key), **cosine_parts(vector, parameters)}
+        score = usable_cosine('relationship', record, vector_norm(query))
+        if score is not None:
+            scores[key] = score
+    return standing_out(scores, limit)
 
 
 def entity(item_id, name, summary, vector=None, *, model=MODEL, project=PROJECT, stale=False, **fields):
@@ -92,7 +114,9 @@ class SemanticGraph:
         if 'MATCH (node:Entity {group_id: $group_id})' in query:
             return self._entity_rows(parameters), None, None
         if 'edge.fuli_semantic_model = $semantic_model' in query:
-            return [row for row in self._edge_rows() if row['fuli_semantic_model'] == parameters['semantic_model']
+            assert 'fuli_semantic_vector AS' not in query, 'no vector travels back'
+            return [{**row, **cosine_parts(row['fuli_semantic_vector'], parameters)}
+                    for row in self._edge_rows() if row['fuli_semantic_model'] == parameters['semantic_model']
                     and len(row['fuli_semantic_vector'] or []) == parameters['length']], None, None
         if 'endpoints_visible' in query:
             return [{'id': row['uuid'], 'endpoints_visible': True, 'assignment_project_id': row['project'],
@@ -119,7 +143,7 @@ class SemanticGraph:
                 continue
             row = {key: value for key, value in record.items() if not key.startswith('fuli_semantic')}
             if parameters['semantic_model'] is not None:
-                row['semantic_vector'] = record['fuli_semantic_vector']
+                row.update(cosine_parts(record['fuli_semantic_vector'], parameters))
                 row['semantic_hash'] = record['fuli_semantic_hash']
             rows.append(row)
         return rows
@@ -129,8 +153,7 @@ class SemanticGraph:
                  'group_id': GROUP, 'name': 'RELATES_TO', 'fact': row['fact'], 'episodes': [],
                  'created_at': CREATED, 'valid_at': None, 'invalid_at': row.get('invalid_at'), 'expired_at': None,
                  'fuli_semantic_model': row.get('model', MODEL),
-                 'fuli_semantic_vector': row.get('vector'),
-                 'semantic_vector': row.get('vector'), 'semantic_hash': semantic_hash(row['fact'])}
+                 'fuli_semantic_vector': row.get('vector'), 'semantic_hash': semantic_hash(row['fact'])}
                 for row in self.edges]
 
     def _edge(self, row):
@@ -236,14 +259,18 @@ async def test_a_vector_whose_text_changed_since_counts_for_nothing():
     assert (await run(graph, 'when may we ship')).entities == []
 
 
-def test_usable_vector_needs_the_query_length_and_the_current_text():
-    record = {'name': 'Release freeze', 'summary': 'Freeze', 'semantic_vector': [0.1, 0.2],
-              'semantic_hash': semantic_hash('Release freeze\nFreeze')}
-    assert usable_vector('entity', record, 2) == [0.1, 0.2]
-    assert usable_vector('entity', record, 3) is None
-    assert usable_vector('entity', {**record, 'summary': 'Thaw'}, 2) is None
-    edge = {'fact': 'Ships stop', 'semantic_vector': [1.0], 'semantic_hash': semantic_hash('Ships stop')}
-    assert usable_vector('relationship', edge, 1) == [1.0]
+def test_a_cosine_needs_the_query_length_a_length_of_its_own_and_the_current_text():
+    def record(vector, query, **fields):
+        return {'name': 'Release freeze', 'summary': 'Freeze', 'semantic_hash': semantic_hash('Release freeze\nFreeze'),
+                **cosine_parts(vector, {'query_vector': query, 'length': len(query)}), **fields}
+
+    assert usable_cosine('entity', record([3.0, 4.0], [1.0, 0.0]), 1.0) == pytest.approx(0.6)
+    assert usable_cosine('entity', record([3.0, 4.0], [1.0, 0.0, 0.0]), 1.0) is None
+    assert usable_cosine('entity', record([0.0, 0.0], [1.0, 0.0]), 1.0) is None
+    assert usable_cosine('entity', record([3.0, 4.0], [0.0, 0.0]), 0.0) is None
+    assert usable_cosine('entity', record([3.0, 4.0], [1.0, 0.0], summary='Thaw'), 1.0) is None
+    edge = {'fact': 'Ships stop', 'semantic_hash': semantic_hash('Ships stop'), 'semantic_dot': 2.0, 'semantic_norm2': 4.0}
+    assert usable_cosine('relationship', edge, 1.0) == pytest.approx(1.0)
 
 
 def test_meaning_matches_floor_and_fusion():

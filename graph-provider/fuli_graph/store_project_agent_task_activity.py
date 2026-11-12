@@ -18,6 +18,32 @@ from .task_participant_running import running_since_set
 
 
 TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
+# A revision named in a refusal; the whole message is cut at 240 characters.
+_REVISION_SHOWN = 40
+
+
+def _unverified_completion(raw_task: dict, artifact_revision: str | None) -> str | None:
+    """Why a task that needs independent verification cannot complete yet, or None.
+
+    Every task but a default_lead staffing record is verified before it
+    completes. FULI records no "has no artifact" fact, so a task without files
+    names what it delivered (a config digest, an evidence ID) as its revision;
+    exempting tasks on the reporter's word would exempt every task (rec#123).
+    """
+    verified = raw_task.get('verified_artifact_revision')
+    if raw_task.get('quality_gate') == 'passed' and verified and verified == artifact_revision:
+        return None
+    if not artifact_revision:
+        return ('This task needs independent verification: pass artifactRevision (the commit, or a '
+                'digest or ID of what you delivered) that record_agent_verification passed, or '
+                'report awaiting_review for the person')
+    shown = artifact_revision[:_REVISION_SHOWN]
+    if raw_task.get('quality_gate') == 'passed' and verified:
+        return (f'Verification passed for revision {verified[:_REVISION_SHOWN]}, not {shown}: '
+                'complete with that revision or verify this one with record_agent_verification')
+    return (f'Revision {shown} has no passing verification (quality gate '
+            f"{raw_task.get('quality_gate') or 'not run'}): record_agent_verification for it, "
+            'or report awaiting_review for the person')
 
 
 class StoreProjectAgentTaskActivity:
@@ -111,9 +137,9 @@ class StoreProjectAgentTaskActivity:
         if request.worker_run_id and await self._worker_run_superseded(request):
             return self._task_from_row(row)
         if request.status == 'completed' and raw_task.get('verification_required'):
-            if (not request.artifact_revision or raw_task.get('quality_gate') != 'passed'
-                or raw_task.get('verified_artifact_revision') != request.artifact_revision):
-                raise HTTPException(409, 'Verify this exact artifact revision before completing the task')
+            refusal = _unverified_completion(raw_task, request.artifact_revision)
+            if refusal:
+                raise HTTPException(409, refusal)
         if request.expected_verification_attempt_id is not None:
             if (request.status != 'completed' or raw_task.get('quality_gate') != 'passed'
                 or raw_task.get('verified_attempt_id') != request.expected_verification_attempt_id

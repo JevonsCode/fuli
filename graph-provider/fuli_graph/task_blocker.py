@@ -17,6 +17,14 @@ from .provider_values import native_datetime
 PERSON_CLEAR_SUMMARY = 'Marked as unblocked by the person in FULI.'
 # The person confirmed a block FULI saw as probably resolved, without a note.
 PERSON_CONFIRM_SUMMARY = 'Confirmed as unblocked by the person after the Agent went on in another session.'
+# Why another session's status report cannot move a blocked task on, and what
+# does (rec#123). The Agent-facing message is cut at 240 characters and the
+# Node client turns ':' into ' —', so it names the route without its path.
+BLOCKED_MOVE_GUIDANCE = (
+    'needs the session that reported the block or its lead Agent. Fixed the block? Clear it via '
+    'run_delegated_action, task blocker/clear route (params.taskId, reason = what you fixed), '
+    'then report the status'
+)
 
 
 def current_blocker(

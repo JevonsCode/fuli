@@ -59,7 +59,7 @@ test('MCP and console list/detail deliver the same origin as the Provider mappin
     await mcp.connect(b); await client.connect(a);
     const called = await client.callTool({ name: 'list_project_agent_tasks',
       arguments: { personalSpaceId: 'fixture-space', personalProjectId: 'fixture-project' } });
-    assert.deepEqual(called.structuredContent.result[0].activityOrigin, origin);
+    assert.deepEqual(called.structuredContent.tasks[0].activityOrigin, origin);
     const query = '?personalSpaceId=fixture-space&personalProjectId=fixture-project';
     const listed = await fetch(`${url}/api/project-agent-tasks${query}`);
     assert.equal(listed.status, 200);

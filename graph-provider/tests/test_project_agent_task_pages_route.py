@@ -56,6 +56,37 @@ async def test_task_pages_route_passes_every_filter_and_refuses_an_empty_status(
         assert unknown.status_code == 422
 
 
+@pytest.mark.asyncio
+async def test_the_task_list_continues_after_a_listed_task_given_both_its_time_and_id():
+    calls = []
+
+    async def read(actor, space, **options):
+        calls.append(options)
+        return []
+
+    async def actor():
+        return {'id': 'principal-a'}
+
+    app = FastAPI()
+    register_project_agent_routes(
+        app, SimpleNamespace(list_project_agent_tasks=read), Annotated[dict, Depends(actor)],
+        Annotated[dict, Depends(actor)],
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://fixture') as client:
+        listed = await client.get('/v1/project-agent-tasks', params={
+            'personal_space_id': 'space-a', 'limit': '6',
+            'after_updated_at': '2026-11-06T12:30:01.250000Z', 'after_task_id': 'task-7'})
+        assert listed.status_code == 200, listed.text
+        assert calls[-1]['after_updated_at'] == datetime(2026, 11, 6, 12, 30, 1, 250000, tzinfo=timezone.utc)
+        assert (calls[-1]['after_task_id'], calls[-1]['limit']) == ('task-7', 6)
+        first = await client.get('/v1/project-agent-tasks', params={'personal_space_id': 'space-a'})
+        assert first.status_code == 200
+        assert (calls[-1]['after_updated_at'], calls[-1]['after_task_id']) == (None, None)
+        half = await client.get('/v1/project-agent-tasks', params={'personal_space_id': 'space-a',
+                                                                  'after_task_id': 'task-7'})
+        assert half.status_code == 422 and len(calls) == 2
+
+
 def test_task_cursor_round_trips_its_position():
     at = datetime(2026, 11, 6, 12, 30, 1, 250000, tzinfo=timezone.utc)
     assert decode_task_cursor(encode_task_cursor(at, 'task-7')) == (at.isoformat(), 'task-7')

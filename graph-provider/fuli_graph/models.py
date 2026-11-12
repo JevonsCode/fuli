@@ -6,6 +6,7 @@ from pydantic import (
     AliasChoices,
     Field,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
@@ -63,6 +64,10 @@ ProjectSourceKind = Literal[
     'issue_tracker',
     'other',
 ]
+# Whether a source is the project's own or material it refers to (rec#125):
+# only an own repository identifies a checkout as this project. A source saved
+# before roles existed reads as 'own', as every repository source counted then.
+ProjectSourceRole = Literal['own', 'reference']
 AssessmentState = Literal['confirmed', 'inferred']
 AssessmentLabel = Literal[
     'needs_clarification',
@@ -287,10 +292,20 @@ class PrincipalResult(StrictModel):
 class ProjectSource(StrictModel):
     key: str = Field(min_length=1, max_length=128)
     kind: ProjectSourceKind
+    role: ProjectSourceRole = 'own'
     title: str = Field(min_length=1, max_length=512)
     uri: str | None = Field(default=None, max_length=2048)
     summary: str | None = Field(default=None, max_length=4096)
     sensitivity: Sensitivity = 'normal'
+
+    @model_serializer(mode='wrap')
+    def _omit_own_role(self, handler):
+        # Only 'reference' is written, so a profile this build saves without
+        # one still validates on 0.27.0, whose sources forbid unknown fields.
+        data = handler(self)
+        if isinstance(data, dict) and data.get('role') == 'own':
+            data.pop('role', None)
+        return data
 
 
 class AssessmentDimension(StrictModel):

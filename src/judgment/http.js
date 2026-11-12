@@ -52,7 +52,7 @@ export async function handleJudgmentApiRequest({ request, response, url, app, un
     response.setHeader('Cache-Control', 'no-store');
     if (refuseRemoteDecision(request, response, 'Handing review to Tonborg is changed only on this computer')) return true;
     sendJson(response, 200, await setReviewDelegation({ judgment: app.judgment, modelTrust: app.modelTrust ?? null,
-      input: await readJson(request) }));
+      modelBackends: app.modelBackends ?? null, input: await readJson(request) }));
     return true;
   }
   if (OWNER_ROUTES.has(route)) {
@@ -76,7 +76,7 @@ export async function handleJudgmentApiRequest({ request, response, url, app, un
     [`GET ${SUGGESTIONS_PATH}`]: async () => ({ suggestions: await tonborgReviewSuggestions({ judgment: app.judgment,
       input: { personalSpaceId: query.personalSpaceId } }) }),
     [`GET ${DELEGATION_PATH}`]: () => reviewDelegation({ judgment: app.judgment, modelTrust: app.modelTrust ?? null,
-      input: { personalSpaceId: query.personalSpaceId } }),
+      modelBackends: app.modelBackends ?? null, input: { personalSpaceId: query.personalSpaceId } }),
     // language: the one the console shows now, so each question is asked in it.
     [`GET ${DELEGATED_PATH}`]: () => delegatedReviewList({ judgment: app.judgment, personal: app.personal,
       input: { personalSpaceId: query.personalSpaceId, ...(query.language ? { language: query.language } : {}) } }),

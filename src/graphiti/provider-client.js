@@ -396,7 +396,9 @@ export class GraphitiProviderClient {
     personalProjectId = null,
     agentId = null,
     status = null,
-    limit = null
+    limit = null,
+    afterUpdatedAt = null,
+    afterTaskId = null
   }) {
     const query = new URLSearchParams({
       personal_space_id: personalSpaceId
@@ -405,6 +407,11 @@ export class GraphitiProviderClient {
     if (agentId) query.set('agent_id', agentId);
     if (status) query.set('status', status);
     if (limit !== null && limit !== undefined) query.set('limit', String(limit));
+    // The last task an earlier page listed; the Provider takes both or neither.
+    if (afterUpdatedAt && afterTaskId) {
+      query.set('after_updated_at', afterUpdatedAt);
+      query.set('after_task_id', afterTaskId);
+    }
     return this.#request(`/v1/project-agent-tasks?${query}`);
   }
   // One keyset page of the console's full task lists (store_project_agent_task_pages.py).

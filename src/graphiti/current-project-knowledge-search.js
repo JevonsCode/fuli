@@ -1,4 +1,4 @@
-import { agentProjectResolution } from './agent-project-resolution.js';
+import { agentProjectResolution, remoteConflictAction } from './agent-project-resolution.js';
 import { budgetKnowledgeSearch } from './knowledge-result-budget.js';
 import {
   relatedProjectGuidance,
@@ -35,9 +35,9 @@ export async function searchCurrentProjectKnowledge(
       personal_project_id: null,
       project_resolution: projectResolution,
       results: [],
-      required_action: resolution.status === 'ambiguous'
+      required_action: remoteConflictAction(resolution) ?? (resolution.status === 'ambiguous'
         ? 'Run from the exact project directory or explicitly choose one project; Fuli will not guess among workspace children.'
-        : 'Register this repository or directory as one local personal project before project-scoped search.'
+        : 'Register this repository or directory as one local personal project before project-scoped search.')
     };
   }
 

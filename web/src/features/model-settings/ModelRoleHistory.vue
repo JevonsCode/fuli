@@ -81,9 +81,9 @@ const views = computed(() => (entries.value ?? []).map((entry, index) => ({
 </script>
 
 <template>
-  <section class="model-role-history grid gap-2 border-t pt-3" :data-model-history="role">
+  <section class="model-role-history grid gap-2 border-t pt-4" :data-model-history="role">
     <div class="flex items-center gap-2">
-      <Button variant="ghost" size="sm" class="-ml-2" :aria-expanded="open" :aria-controls="listId" data-model-history-toggle
+      <Button variant="ghost" size="sm" class="model-history-toggle" :aria-expanded="open" :aria-controls="listId" data-model-history-toggle
         @click="toggle">
         {{ t('modelSettings.history.title') }}
       </Button>
@@ -118,6 +118,8 @@ const views = computed(() => (entries.value ?? []).map((entry, index) => ({
 </template>
 
 <style scoped>
+/* The label starts on the card's left edge, in line with the text above the divider. */
+.model-history-toggle { margin-inline-start: calc(-1 * var(--control-padding-sm) - 1px); }
 .model-history-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
 .model-history-list time { display: block; color: var(--color-muted); font-size: 12.5px; }
 .model-history-list ul { margin: 0; padding: 0; list-style: none; overflow-wrap: anywhere; }

@@ -18,6 +18,7 @@ import { OCCUPATION_KIT_HANDLERS } from '../occupation-plugins/agent-tools.js';
 import { agentNamingStyleAnswer } from '../agent-naming/naming-style.js';
 import { withProviderOutageEntry } from '../graphiti/task-entry-provider-outage.js';
 import { withCheckpointSaveStatus } from '../graphiti/checkpoint-save-status.js';
+import { listProjectAgentTaskSummaries } from '../graphiti/project-agent-task-summaries.js';
 
 // These tools read or change the two local stores that can retain deleted
 // knowledge. Provider-only reads and unrelated tools remain available.
@@ -65,7 +66,7 @@ const HANDLERS = Object.freeze({
   resume_agent_conversation: (app, input) => app.resumeAgentConversation(input),
   get_agent_conversation_policy: (app, input) => app.queryAgentConversations({ ...input, mode: 'policy' }),
   update_agent_conversation_policy: (app, input) => app.updateAgentConversationPolicy(input),
-  list_project_agent_tasks: (app, input) => app.listProjectAgentTasks(input),
+  list_project_agent_tasks: (app, input) => listProjectAgentTaskSummaries(app, input),
   request_agent_attention: (app, input) => app.requestAgentAttention(input),
   list_agent_attention: (app, input) => app.listAgentAttention(input),
   cancel_agent_attention: (app, input) => app.cancelAgentAttention(input),

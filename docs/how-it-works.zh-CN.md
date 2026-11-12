@@ -123,8 +123,12 @@ Fuli 只匹配已经登记在“个人项目”中的稳定 `project_id`，不�
 当前工作目录，解析顺序如下：
 
 1. 向上找到最近的 Git 仓库根，从 `.git/config`（worktree 读其公共目录）读取 `origin`
-   远程地址，与某一个已登记项目记录的仓库来源 URL 完全相同时命中；同一仓库的 ssh 与 https
-   写法视为相同。因此任何目录名的克隆或 worktree 都解析到原项目（`git_remote`）。
+   远程地址，与某一个已登记项目自己的仓库来源 URL 完全相同时命中；同一仓库的 ssh 与 https
+   写法视为相同。标为 `role: reference`（只是参考的仓库）的来源不参与匹配；没有 role 的旧来源
+   按本项目自己的仓库算。因此任何目录名的克隆或 worktree 都解析到原项目（`git_remote`）；
+   但目录名（或 worktree 原仓库名）正好是另一个未归档、且有一个没填地址的自有仓库来源的项目时，
+   两者不一致，返回 `ambiguous`（`repository_remote_conflict`，列出两个项目 ID）。消息开头点名的
+   项目，或本会话上一个项目（若是两者之一）可以直接定下；否则由人来选。
 2. 否则按仓库目录名与已登记 `project_id` 完全相同时命中；Codex worktree 用 `.git` 指向的
    原始仓库名。记录了另一个仓库地址的项目不会因为同名被命中（`repository_remote_conflict`）。
 3. 当前目录名与已登记项目 ID 完全相同时命中。
