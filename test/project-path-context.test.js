@@ -333,11 +333,17 @@ test('a clone under another folder name resolves by its origin remote', (t) => {
   }
 });
 
-// #632: a clone whose folder is named after another project belongs to its remote.
+// #632: a clone whose folder is named after another project belongs to its
+// remote unless that project could be it too (rec#125: then the person chooses).
 test('the remote wins over the folder name, and the remote never matches partially', (t) => {
   const { clone } = cloneFixture(t, 'projectb', originConfig('https://github.com/JevonsCode/fuli.git'));
   assert.deepEqual(resolvePersonalProjectPath(clone, [repositoryProject('fuli', 'https://github.com/JevonsCode/fuli'),
-    { project_id: 'projectb' }]), { status: 'matched', basis: 'git_remote', personalProjectId: 'fuli' });
+    { project_id: 'projectb' }]), {
+    status: 'ambiguous', basis: null, personalProjectId: null, candidateCount: 2, reason: 'repository_remote_conflict'
+  });
+  assert.deepEqual(resolvePersonalProjectPath(clone, [repositoryProject('fuli', 'https://github.com/JevonsCode/fuli'),
+    repositoryProject('projectb', 'https://github.com/someone/projectb')]),
+  { status: 'matched', basis: 'git_remote', personalProjectId: 'fuli' });
   // A project without a recorded repository is still named by its folder.
   assert.equal(resolvePersonalProjectPath(clone, [{ project_id: 'projectb' }]).basis, 'repository_root');
   // One that records another repository is not this checkout, and no registration under its ID is offered.
@@ -366,6 +372,46 @@ test('a remote shared by two projects is ambiguous, and temporary or non-reposit
   const runbook = repositoryProject('fuli', uri);
   runbook.profile.sources[0].kind = 'runbook';
   assert.equal(resolvePersonalProjectPath(clone, [runbook]).status, 'unmatched');
+});
+
+// rec#125: beta lists alpha's repository as material it refers to, and alpha's
+// own repository source has no address. A clone of alpha in a folder named
+// alpha must not become beta's.
+test('a repository another project only refers to never claims a checkout', (t) => {
+  const { clone } = cloneFixture(t, 'alpha', originConfig('git@git.example:team/alpha.git'));
+  const alphaUri = 'https://git.example/team/alpha';
+  const reference = (projectId, uri) => {
+    const project = repositoryProject(projectId, uri);
+    project.profile.sources[0].role = 'reference';
+    return project;
+  };
+  const alphaWithoutAddress = { project_id: 'alpha',
+    profile: { name: 'alpha', sources: [{ key: 'repo', kind: 'repository', title: 'Alpha', uri: null }] } };
+  // A reference never matches: the folder names alpha, as before.
+  assert.deepEqual(resolvePersonalProjectPath(clone, [alphaWithoutAddress, reference('beta', alphaUri)]),
+    { status: 'matched', basis: 'repository_root', personalProjectId: 'alpha' });
+  // Nor does it stop a project's own repository matching, or count as another repository.
+  assert.deepEqual(resolvePersonalProjectPath(clone, [repositoryProject('alpha', alphaUri), reference('beta', alphaUri)]),
+    { status: 'matched', basis: 'git_remote', personalProjectId: 'alpha' });
+  const borrowing = reference('alpha', 'https://git.example/team/other');
+  assert.equal(resolvePersonalProjectPath(clone, [borrowing]).basis, 'repository_root');
+  // A source saved before roles existed counts as owned, so an old record of
+  // alpha's address under beta now meets the folder name and is not adopted.
+  assert.deepEqual(resolvePersonalProjectPath(clone, [alphaWithoutAddress, repositoryProject('beta', alphaUri)]), {
+    status: 'ambiguous', basis: null, personalProjectId: null, candidateCount: 2, reason: 'repository_remote_conflict'
+  });
+});
+
+test('a worktree whose original repository names another project than its remote is a conflict', (t) => {
+  const { root, clone } = cloneFixture(t, 'alpha', originConfig('https://git.example/team/beta'), {
+    'alpha/.git/worktrees/task/commondir': '../..\n'
+  });
+  const worktree = path.join(root, 'task-worktree');
+  mkdirSync(worktree);
+  writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(clone, '.git', 'worktrees', 'task')}\n`);
+  const projects = [{ project_id: 'alpha' }, repositoryProject('beta', 'https://git.example/team/beta')];
+  assert.equal(resolvePersonalProjectPath(worktree, projects).reason, 'repository_remote_conflict');
+  assert.equal(resolvePersonalProjectPath(worktree, projects).status, 'ambiguous');
 });
 
 test('a worktree reads the origin remote from its common directory', (t) => {

@@ -443,6 +443,16 @@ def test_project_profile_summarizes_existing_evidence_and_discards_legacy_missin
     assert profile.sources[1].kind == 'frontend_repository'
 
 
+def test_project_source_role_defaults_to_own_and_keeps_reference():
+    source = {'key': 'repo', 'kind': 'repository', 'title': 'Repository', 'uri': 'https://git.example/alpha'}
+    # A source saved before roles existed reads as the project's own.
+    assert ProjectProfile.model_validate({'name': 'Alpha', 'sources': [source]}).sources[0].role == 'own'
+    referenced = ProjectProfile.model_validate({'name': 'Beta', 'sources': [source | {'role': 'reference'}]})
+    assert referenced.model_dump(mode='json')['sources'][0]['role'] == 'reference'
+    with pytest.raises(ValidationError):
+        ProjectProfile.model_validate({'name': 'Beta', 'sources': [source | {'role': 'borrowed'}]})
+
+
 def test_non_known_known_items_require_reasoning_and_preserve_discovery_quadrant():
     value = episode()
     value['entities'][0] |= {

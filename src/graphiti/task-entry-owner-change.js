@@ -21,6 +21,22 @@ const GUIDANCE = 'This session\'s FLA changed: from this task on, to_agent_id ow
 const NAME_WAIT_MS = 300;
 const MARKER = /^owner_change:(\S+) (.+)$/su;
 
+// How this task's project was found, said beside the change (rec#125), so a
+// switch by repository address is not silent. Other bases add nothing.
+const BASIS_LABELS = Object.freeze({
+  git_remote: { 'zh-CN': '按仓库地址', 'en-US': 'by repository address' },
+  repository_root: { 'zh-CN': '按仓库目录名', 'en-US': 'by repository folder name' },
+  directory_name: { 'zh-CN': '按目录名', 'en-US': 'by folder name' },
+  git_worktree_origin: { 'zh-CN': '按 worktree 原仓库名', 'en-US': 'by the worktree\'s original repository' },
+  workspace_child: { 'zh-CN': '按工作区里的项目目录', 'en-US': 'by a project folder in the workspace' },
+  registered_repository: { 'zh-CN': '按刚登记的仓库', 'en-US': 'by the repository just registered' },
+  named_in_prompt: { 'zh-CN': '按消息里的项目名', 'en-US': 'by the project named in the message' }
+});
+
+function basisLabel(basis) {
+  return BASIS_LABELS[String(basis ?? '').replace(/_case_insensitive$/u, '')] ?? null;
+}
+
 // The FLA and project of the session's current task, as the session itself
 // holds them (a standing assignment's route keeps the session where it was).
 export function sessionOwnerOf(task) {
@@ -51,10 +67,14 @@ export async function previousOwnerName(application, from) {
 // The owner_change field, receipt notice and route marker.
 export function ownerChangeEntry(from, fromName, resolution, to, toName) {
   const fromLabel = fromName ?? from.agentId;
-  const notice = `本会话上一个任务由 ${fromLabel} 负责，这次起由 ${toName ?? to} 负责；要继续由 ${fromLabel} 负责，消息开头写 #FLA ${fromLabel}`;
+  const label = basisLabel(resolution.basis);
+  const projectId = resolution.personalProjectId ?? null;
+  const basis = label ? `（${label['zh-CN']}${projectId ? `匹配到项目 ${projectId}` : ''}）` : '';
+  const notice = `本会话上一个任务由 ${fromLabel} 负责，这次起由 ${toName ?? to} 负责${basis}；要继续由 ${fromLabel} 负责，消息开头写 #FLA ${fromLabel}`;
   return {
     field: { from_agent_id: from.agentId, from_project_id: from.personalProjectId, to_agent_id: to,
-      to_project_id: resolution.personalProjectId ?? null, guidance: GUIDANCE },
+      to_project_id: projectId, ...(label ? { basis: resolution.basis, basis_text: label['en-US'] } : {}),
+      guidance: GUIDANCE },
     receiptNotice: receiptText(notice),
     marker: `owner_change:${from.agentId} ${notice}`
   };

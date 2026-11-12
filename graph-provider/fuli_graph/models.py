@@ -63,7 +63,11 @@ ProjectSourceKind = Literal[
     'issue_tracker',
     'other',
 ]
-AssessmentState = Literal['confirmed', 'inferred']
+# Whether a source is the project's own or material it refers to (rec#125):
+# only an own repository identifies a checkout as this project. A source saved
+# before roles existed reads as 'own', as every repository source counted then.
+ProjectSourceRole = Literal['own', 'reference']
+AssessmentState =Literal['confirmed', 'inferred']
 AssessmentLabel = Literal[
     'needs_clarification',
     'partially_documented',
@@ -287,6 +291,7 @@ class PrincipalResult(StrictModel):
 class ProjectSource(StrictModel):
     key: str = Field(min_length=1, max_length=128)
     kind: ProjectSourceKind
+    role: ProjectSourceRole = 'own'
     title: str = Field(min_length=1, max_length=512)
     uri: str | None = Field(default=None, max_length=2048)
     summary: str | None = Field(default=None, max_length=4096)

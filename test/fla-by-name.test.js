@@ -722,13 +722,34 @@ test('a session whose FLA changes with its folder says who takes over and how to
   const moved = await hook('继续实现');
   assert.deepEqual(owner(moved), ['project-b', 'jamie']);
   assert.deepEqual({ ...moved.owner_change, guidance: undefined }, { from_agent_id: 'ada', from_project_id: 'project-a',
-    to_agent_id: 'jamie', to_project_id: 'project-b', guidance: undefined });
+    to_agent_id: 'jamie', to_project_id: 'project-b', basis: 'repository_root', basis_text: 'by repository folder name',
+    guidance: undefined });
   assert.match(moved.owner_change.guidance, /not copied/);
-  assert.match(moved.agent_receipt.markdown, /上一个任务由 Ada Lead 负责，这次起由 .+ 负责；要继续由 Ada Lead 负责，消息开头写 \#FLA Ada Lead/);
+  assert.match(moved.agent_receipt.markdown,
+    /上一个任务由 Ada Lead 负责，这次起由 .+ 负责（按仓库目录名匹配到项目 project-b）；要继续由 Ada Lead 负责，消息开头写 \#FLA Ada Lead/);
   // Once: the next task in the same folder keeps its owner and says nothing.
   assert.equal((await hook('再改一处')).owner_change, undefined);
   // A named FLA explains itself; no change notice is added.
   assert.equal((await hook('#FLA Ada Lead 回来看看')).owner_change, undefined);
+});
+
+// rec#125: a change found by the repository address says so, in the receipt
+// (zh) and in the Agent-facing field (en); a basis without a label adds nothing.
+test('an owner change says on what basis the project was found', async () => {
+  const { app, hook } = fixture();
+  await hook('先看看 Alpha');
+  app.projectPathResolver = () => ({ status: 'matched', basis: 'git_remote', personalProjectId: 'project-b' });
+  const moved = await hook('继续实现');
+  assert.equal(moved.owner_change.basis, 'git_remote');
+  assert.equal(moved.owner_change.basis_text, 'by repository address');
+  assert.match(moved.agent_receipt.markdown, /这次起由 .+ 负责（按仓库地址匹配到项目 project-b）；/);
+
+  const other = fixture();
+  await other.hook('先看看 Alpha');
+  other.app.projectPathResolver = () => ({ status: 'matched', basis: 'host_session_assignment', personalProjectId: 'project-b' });
+  const quiet = await other.hook('继续实现');
+  assert.equal(quiet.owner_change.basis, undefined);
+  assert.match(quiet.agent_receipt.markdown, /这次起由 .+ 负责；/);
 });
 
 // DOT on #875: the earlier FLA's name is display only, so a lookup that hangs
@@ -758,6 +779,6 @@ test('an owner change survives a hanging name lookup and reaches the checkpoint 
       getProjectAgent: async () => JAMIE } };
   const result = await checkpointTaskKnowledge(finishing, { taskContextToken: begun.token, sourceApplication: 'claude_code',
     disposition: 'retain_nothing', reason: 'Synthetic work continued' });
-  assert.match(result.agent_receipt.markdown, /上一个任务由 ada 负责，这次起由 .+ 负责；要继续由 ada 负责/);
+  assert.match(result.agent_receipt.markdown, /上一个任务由 ada 负责，这次起由 .+ 负责（按仓库目录名匹配到项目 project-b）；要继续由 ada 负责/);
   assert.doesNotMatch(result.agent_receipt.markdown, /owner_change:/);
 });
