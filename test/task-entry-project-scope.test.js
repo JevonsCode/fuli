@@ -242,6 +242,29 @@ test('directory or legacy-session ambiguity stays explicit without provisioning'
   }
 });
 
+// rec#125: the repository address names beta, the folder alpha. A project the
+// message names decides, then the session's previous project when it is one of
+// the two; otherwise the person is asked and told how to settle it.
+test('a repository address and folder that name two projects are settled only by the message or the session', async () => {
+  const resolution = { status: 'ambiguous', basis: null, personalProjectId: null, candidateCount: 2,
+    reason: 'repository_remote_conflict', candidateProjectIds: ['beta', 'alpha'] };
+  const named = fixture({ resolution, existing: ['alpha', 'beta', 'gamma'], current: { personalProjectId: 'beta' } });
+  assert.equal((await named.run({ taskPrompt: 'alpha 修一下入口' })).context.personal_project_id, 'alpha');
+  assert.equal((await named.run({ taskPrompt: 'gamma 看一下' })).context.personal_project_id, 'gamma');
+  assert.equal((await named.run({ taskPrompt: '继续' })).context.personal_project_id, 'beta');
+
+  for (const current of [null, { personalProjectId: 'gamma' }]) {
+    const { run, writes, hires } = fixture({ resolution, existing: ['alpha', 'beta', 'gamma'], current });
+    const asked = await run({ taskPrompt: '继续' });
+    assert.equal(asked.context.personal_project_id, null);
+    assert.equal(asked.agent_receipt.owner, null);
+    assert.match(asked.agent_receipt.markdown, /分配待确认（项目归属待确认）/);
+    assert.deepEqual(asked.context.project_resolution, { status: 'ambiguous', basis: null, personal_project_id: null,
+      candidate_count: 2, reason: 'repository_remote_conflict', candidate_project_ids: ['beta', 'alpha'] });
+    assert.deepEqual([writes.length, hires.length], [0, 0]);
+  }
+});
+
 test('an unavailable ownership lookup is reported and cannot create a substitute', async () => {
   const { run, writes } = fixture({ lookupError: new Error('Provider offline') });
   const result = await run();

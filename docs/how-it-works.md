@@ -149,8 +149,10 @@ directory, and resolution follows this order:
    `role: reference` (a repository the project only refers to) never matches; a source saved
    without a role counts as the project's own. Any clone or worktree therefore resolves to its
    project (`git_remote`), whatever its folder is called, unless the folder (or a worktree's
-   original repository) names another registered project that records no other repository of its
-   own: then the result is `ambiguous` (`repository_remote_conflict`) and the person chooses.
+   original repository) names another non-archived project that has an own repository source
+   without an address: then the result is `ambiguous` (`repository_remote_conflict`, naming both
+   project IDs). A project named at the start of the message, or the session's previous project
+   when it is one of the two, settles it; otherwise the person chooses.
 2. Otherwise match the repository directory name exactly to a registered `project_id`; for a
    Codex worktree, the original repository ID from its `.git` pointer. A project that records a
    different repository source is never matched by name (`repository_remote_conflict`).

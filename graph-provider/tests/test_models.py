@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -446,9 +447,17 @@ def test_project_profile_summarizes_existing_evidence_and_discards_legacy_missin
 def test_project_source_role_defaults_to_own_and_keeps_reference():
     source = {'key': 'repo', 'kind': 'repository', 'title': 'Repository', 'uri': 'https://git.example/alpha'}
     # A source saved before roles existed reads as the project's own.
-    assert ProjectProfile.model_validate({'name': 'Alpha', 'sources': [source]}).sources[0].role == 'own'
+    owned = ProjectProfile.model_validate({'name': 'Alpha', 'sources': [source]})
+    assert owned.sources[0].role == 'own'
+    # Own is never written, so a profile this build stores still validates on
+    # a build whose sources have no role and forbid unknown fields.
+    assert 'role' not in json.loads(owned.model_dump_json())['sources'][0]
+    assert 'role' not in ProjectProfile.model_validate(
+        {'name': 'Alpha', 'sources': [source | {'role': 'own'}]}).model_dump(mode='json')['sources'][0]
     referenced = ProjectProfile.model_validate({'name': 'Beta', 'sources': [source | {'role': 'reference'}]})
-    assert referenced.model_dump(mode='json')['sources'][0]['role'] == 'reference'
+    stored = referenced.model_dump_json()
+    assert json.loads(stored)['sources'][0]['role'] == 'reference'
+    assert ProjectProfile.model_validate_json(stored).sources[0].role == 'reference'
     with pytest.raises(ValidationError):
         ProjectProfile.model_validate({'name': 'Beta', 'sources': [source | {'role': 'borrowed'}]})
 

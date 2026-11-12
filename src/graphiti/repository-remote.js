@@ -54,15 +54,25 @@ function readTextOrEmpty(filePath) {
   try { return readFileSync(filePath, 'utf8'); } catch { return ''; }
 }
 
-// The remotes of a project's own repositories (rec#125). A repository it only
-// refers to (role 'reference') says nothing about which project a checkout is.
-// A source without a role was recorded before roles existed and counts as the
-// project's own, as every repository source did then.
-function ownRemotes(project) {
+// A project's own repository sources (rec#125). A repository it only refers
+// to (role 'reference') says nothing about which project a checkout is. A
+// source without a role is the project's own: FULI stores only 'reference',
+// and every repository source counted as own before roles existed.
+function ownRepositorySources(project) {
   return (project?.profile?.sources ?? [])
-    .filter(source => REPOSITORY_SOURCE_KINDS.has(source.kind) && source.role !== 'reference'
-      && typeof source.uri === 'string')
+    .filter(source => REPOSITORY_SOURCE_KINDS.has(source.kind) && source.role !== 'reference');
+}
+
+function ownRemotes(project) {
+  return ownRepositorySources(project)
+    .filter(source => typeof source.uri === 'string')
     .map(source => remoteKey(source.uri)).filter(Boolean);
+}
+
+// True when the project says it has a repository of its own but not where:
+// a checkout named after it may be that repository, whatever its remote.
+export function claimsUnaddressedRepository(project) {
+  return ownRepositorySources(project).some(source => typeof source.uri !== 'string' || !source.uri.trim());
 }
 
 // The registered projects whose own repository source is at remote.

@@ -333,14 +333,11 @@ test('a clone under another folder name resolves by its origin remote', (t) => {
   }
 });
 
-// #632: a clone whose folder is named after another project belongs to its
-// remote unless that project could be it too (rec#125: then the person chooses).
+// #632: a clone whose folder is named after another project belongs to its remote.
 test('the remote wins over the folder name, and the remote never matches partially', (t) => {
   const { clone } = cloneFixture(t, 'projectb', originConfig('https://github.com/JevonsCode/fuli.git'));
   assert.deepEqual(resolvePersonalProjectPath(clone, [repositoryProject('fuli', 'https://github.com/JevonsCode/fuli'),
-    { project_id: 'projectb' }]), {
-    status: 'ambiguous', basis: null, personalProjectId: null, candidateCount: 2, reason: 'repository_remote_conflict'
-  });
+    { project_id: 'projectb' }]), { status: 'matched', basis: 'git_remote', personalProjectId: 'fuli' });
   assert.deepEqual(resolvePersonalProjectPath(clone, [repositoryProject('fuli', 'https://github.com/JevonsCode/fuli'),
     repositoryProject('projectb', 'https://github.com/someone/projectb')]),
   { status: 'matched', basis: 'git_remote', personalProjectId: 'fuli' });
@@ -396,22 +393,50 @@ test('a repository another project only refers to never claims a checkout', (t) 
   const borrowing = reference('alpha', 'https://git.example/team/other');
   assert.equal(resolvePersonalProjectPath(clone, [borrowing]).basis, 'repository_root');
   // A source saved before roles existed counts as owned, so an old record of
-  // alpha's address under beta now meets the folder name and is not adopted.
-  assert.deepEqual(resolvePersonalProjectPath(clone, [alphaWithoutAddress, repositoryProject('beta', alphaUri)]), {
-    status: 'ambiguous', basis: null, personalProjectId: null, candidateCount: 2, reason: 'repository_remote_conflict'
-  });
+  // alpha's address under beta meets alpha, which claims a repository without
+  // its address: the person chooses rather than the remote being adopted.
+  const conflict = {
+    status: 'ambiguous', basis: null, personalProjectId: null, candidateCount: 2,
+    reason: 'repository_remote_conflict', candidateProjectIds: ['beta', 'alpha']
+  };
+  assert.deepEqual(resolvePersonalProjectPath(clone, [alphaWithoutAddress, repositoryProject('beta', alphaUri)]), conflict);
+  // An archived alpha is no candidate.
+  const archived = { ...alphaWithoutAddress, profile: { ...alphaWithoutAddress.profile, lifecycle: 'archived' } };
+  assert.equal(resolvePersonalProjectPath(clone, [archived, repositoryProject('beta', alphaUri)]).basis, 'git_remote');
 });
 
-test('a worktree whose original repository names another project than its remote is a conflict', (t) => {
-  const { root, clone } = cloneFixture(t, 'alpha', originConfig('https://git.example/team/beta'), {
-    'alpha/.git/worktrees/task/commondir': '../..\n'
+// Reviewers of rec#125: projects FULI creates without a repository (topic
+// slugs such as "console") and a project owning several repositories keep
+// the remote match; only a folder project claiming an unaddressed repository blocks it.
+function worktreeOf(t, folder, remote) {
+  const { root, clone } = cloneFixture(t, folder, originConfig(remote), {
+    [`${folder}/.git/worktrees/task/commondir`]: '../..\n'
   });
   const worktree = path.join(root, 'task-worktree');
   mkdirSync(worktree);
   writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(clone, '.git', 'worktrees', 'task')}\n`);
-  const projects = [{ project_id: 'alpha' }, repositoryProject('beta', 'https://git.example/team/beta')];
-  assert.equal(resolvePersonalProjectPath(worktree, projects).reason, 'repository_remote_conflict');
-  assert.equal(resolvePersonalProjectPath(worktree, projects).status, 'ambiguous');
+  return { clone, worktree };
+}
+
+test('a multi-repository project keeps a clone whose folder names a repository-less project', (t) => {
+  const { clone, worktree } = worktreeOf(t, 'console', 'git@git.example:team/console.git');
+  const shop = { project_id: 'shop', profile: { name: 'Shop', sources: [
+    { key: 'console', kind: 'frontend_repository', title: 'Console', uri: 'https://git.example/team/console' },
+    { key: 'api', kind: 'backend_repository', title: 'API', uri: 'https://git.example/team/shop-api' }] } };
+  const toShop = { status: 'matched', basis: 'git_remote', personalProjectId: 'shop' };
+  for (const consoleProject of [{ project_id: 'console', profile: { name: 'console' } },
+    { project_id: 'console', profile: { name: 'console', lifecycle: 'archived',
+      sources: [{ key: 'repo', kind: 'repository', title: 'Console', uri: null }] } },
+    repositoryProject('console', 'https://git.example/team/other-console')]) {
+    assert.deepEqual(resolvePersonalProjectPath(clone, [shop, consoleProject]), toShop);
+    assert.deepEqual(resolvePersonalProjectPath(worktree, [shop, consoleProject]), toShop);
+  }
+  // A current console that claims a repository of its own without its address may be this checkout.
+  const unaddressed = { project_id: 'console', profile: { name: 'console',
+    sources: [{ key: 'repo', kind: 'repository', title: 'Console' }] } };
+  for (const checkout of [clone, worktree]) {
+    assert.deepEqual(resolvePersonalProjectPath(checkout, [shop, unaddressed]).candidateProjectIds, ['shop', 'console']);
+  }
 });
 
 test('a worktree reads the origin remote from its common directory', (t) => {
