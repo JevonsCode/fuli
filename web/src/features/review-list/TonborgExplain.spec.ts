@@ -225,5 +225,8 @@ describe('TonborgExplain', () => {
     expect(names).toEqual(['Codex', 'OpenCode'])
     expect(panel().querySelector('[data-new-session-open="codex"]')).not.toBeNull()
     expect(panel().querySelector('[data-new-session-terminal="opencode"]')).not.toBeNull()
+    // The row of a client whose entry is an older one says so; a current one has no such word.
+    expect(panel().querySelector('[data-new-session-open="codex"] .new-session-panel__tag')?.textContent).toBe('接入待更新')
+    expect(panel().querySelector('[data-new-session-terminal="opencode"] .new-session-panel__tag')?.textContent).toBe('新窗口')
   })
 })

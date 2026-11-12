@@ -58,7 +58,12 @@ const rows = computed(() => connected.value.slice(0, MAX_ROWS).map((client) => {
   const choice = props.models?.[client.sourceApplication ?? '']
   const way = newSessionWay(links.state?.manifest, terminals.value, client, { prompt: props.ask, model: choice?.model })
   // The model's name shows only when the link really carries it.
-  return { id: client.id, name: client.label, way, model: way?.kind === 'link' && way.carriesModel && choice ? choice.label : '' }
+  // A client whose FULI entry is an older one still opens (FULI is in it), and its row says so:
+  // listed beside 设置 › 客户端's 「已接入 0」 without a word, it read as connected (rec issue 118).
+  const stale = client.status === 'changed' ? t('clientLinks.newSession.staleTag') : ''
+  const tags = (own: string) => [stale, own].filter(Boolean).join(' · ')
+  return { id: client.id, name: client.label, way, tags,
+    model: tags(way?.kind === 'link' && way.carriesModel && choice ? choice.label : '') }
 }))
 
 onMounted(() => {
@@ -114,12 +119,12 @@ async function launch(name: string, way: Extract<NewSessionWay, { kind: 'termina
         @click="launch(row.name, row.way)">
         <UiIcon name="chat" :size="16" />
         <span class="new-session-panel__name">{{ row.name }}</span>
-        <span class="new-session-panel__tag">{{ t('clientLinks.newSession.terminalTag') }}</span>
+        <span class="new-session-panel__tag">{{ row.tags(t('clientLinks.newSession.terminalTag')) }}</span>
       </Button>
       <Button v-else variant="ghost" class="new-session-panel__row" :data-new-session-paste="row.id" @click="copyFor(row.name)">
         <UiIcon name="chat" :size="16" />
         <span class="new-session-panel__name">{{ row.name }}</span>
-        <span class="new-session-panel__tag">{{ t('clientLinks.newSession.copyTag') }}</span>
+        <span class="new-session-panel__tag">{{ row.tags(t('clientLinks.newSession.copyTag')) }}</span>
       </Button>
     </li>
   </ul>
