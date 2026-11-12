@@ -3,12 +3,12 @@
 // FULI_ALIGNMENT_BENCHMARK.md section 8 before changing one.
 import * as home from "../translations.js";
 
-const shared = ["meta.locale", "nav.skip", "nav.label", "nav.language", "footer.copyright"];
+const shared = ["meta.locale", "meta.keywords", "nav.skip", "nav.label", "nav.language", "footer.copyright"];
 
 const copy = {
   "zh-CN": {
     "meta.title": "FULI 复利 · 模型指南：每个模型做什么、花多少 Token",
-    "meta.description": "FULI 不接模型也能用。这里说明每个模型在 FULI 里做什么、多大就够、实测花多少 Token。",
+    "meta.description": "FULI（FULI AI）不接模型也能用。这里说明每个模型在 FULI context 检索与内置 FULI Agent 里做什么、多大就够、实测花多少 Token。",
     "meta.social": "接一个模型，FULI 多一种能力。每个模型做什么、多大就够、实测花多少 Token。",
     "models.home": "Fuli 复利 首页",
     "models.homeUrl": "https://xn--8ovp9s.xn--m8txu.com/fuli/",
@@ -76,7 +76,7 @@ const copy = {
   },
   "en": {
     "meta.title": "FULI · Model guide: what each model does and what it costs",
-    "meta.description": "FULI works without a model. What each model in FULI does, what size is enough, and the tokens it used when we measured it.",
+    "meta.description": "FULI (FULI AI) works without a model. What each model in FULI context retrieval and built-in FULI Agents does, what size is enough, and the tokens it used when we measured it.",
     "meta.social": "Connect a model, and FULI gains a skill. What each model does, what is enough, and what it costs.",
     "models.home": "Fuli home",
     "models.homeUrl": "https://xn--8ovp9s.xn--m8txu.com/fuli/en/",

@@ -6,12 +6,12 @@
 // "before / after" or "from X to Y" values.
 import * as home from "../translations.js";
 
-const shared = ["meta.locale", "nav.skip", "nav.label", "nav.language", "footer.copyright"];
+const shared = ["meta.locale", "meta.keywords", "nav.skip", "nav.label", "nav.language", "footer.copyright"];
 
 const copy = {
   "zh-CN": {
     "meta.title": "FULI 复利 · 实测报告：每个任务用 0.81 倍的 token",
-    "meta.description": "FULI 0.25.0 实测：一个项目连续 9 个会话，开着 FULI 每做成一个任务用的 token 是不开时的 0.81 倍，只说过一次的事照样做对。方法、模型和范围都写明。",
+    "meta.description": "FULI 0.25.0（FULI AI）实测：一个项目连续 9 个会话，开着 FULI Agent 与 FULI context 每做成一个任务用的 token 是不开时的 0.81 倍，只说过一次的事照样做对。方法、模型和范围都写明。",
     "meta.social": "记住你说过的，每个任务就少花 token：FULI 0.25.0 连续 9 个会话的实测。",
     "report.home": "Fuli 复利 首页",
     "report.homeUrl": "https://xn--8ovp9s.xn--m8txu.com/fuli/",
@@ -95,7 +95,7 @@ const copy = {
   },
   "en": {
     "meta.title": "FULI · Report: 0.81× the tokens per task",
-    "meta.description": "FULI 0.25.0, measured: over nine sessions on one project, FULI uses 0.81× the tokens per successful task of running without it, and gets right what you said only once. Method, model and scope included.",
+    "meta.description": "FULI 0.25.0 (FULI AI), measured: over nine sessions on one project, FULI Agent and FULI context use 0.81× the tokens per successful task of running without it, and get right what you said only once. Method, model and scope included.",
     "meta.social": "It remembers what you said, so each task costs fewer tokens: FULI 0.25.0 measured over nine sessions.",
     "report.home": "Fuli home",
     "report.homeUrl": "https://xn--8ovp9s.xn--m8txu.com/fuli/en/",

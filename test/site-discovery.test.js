@@ -41,6 +41,11 @@ test('each language is complete without JavaScript and has reciprocal discovery 
     assert.equal(page.url, base + path);
     assert.equal(page.inLanguage, locale);
     assert.ok(app.featureList.length >= 4);
+    for (const keyword of ['FULI Agent', 'FULI context', 'FULI AI']) {
+      assert.ok(document.querySelector('meta[name="keywords"]').content.includes(keyword), keyword);
+      assert.ok(app.alternateName.includes(keyword), keyword);
+      assert.ok(app.keywords.includes(keyword), keyword);
+    }
     assert.equal(app.aggregateRating, undefined);
     assert.equal(app.review, undefined);
   }
@@ -54,6 +59,10 @@ test('sitemap and machine-readable summaries describe the same public product', 
   assert.doesNotMatch(sitemap, /127\.0\.0\.1|localhost|v0/);
   assert.match(files.get('llms.txt'), /AI agent/);
   assert.ok(files.get('llms.txt').includes(base + 'en/index.md'));
+  for (const keyword of ['FULI Agent', 'FULI context', 'FULI AI']) {
+    assert.ok(files.get('llms.txt').includes(keyword), keyword);
+    assert.ok(files.get('llms-full.txt').includes(keyword), keyword);
+  }
   const markdown = files.get('en/index.md');
   assert.match(markdown, /MCP/);
   assert.match(markdown, /npm install --global fuli-context/);

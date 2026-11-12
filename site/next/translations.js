@@ -6,7 +6,7 @@ import * as home from "../translations.js";
 const copy = {
   "zh-CN": {
     "meta.title": "FULI 复利 抢先体验 · 下一版预览",
-    "meta.description": "FULI 下一版的公开预览：相对稳定版 0.27.0 的全部新功能和变化；每个平台一条命令装上 beta。",
+    "meta.description": "FULI（FULI AI）下一版的公开预览：涵盖 FULI Agent 与 FULI context 相对稳定版 0.27.0 的全部新功能和变化；每个平台一条命令装上 beta。",
     "meta.social": "FULI 下一版预览：相对稳定版的全部新功能，一条命令装上 beta。",
     "nav.changes": "全部变化",
     "copy.label": "复制预览版安装命令",
@@ -37,7 +37,7 @@ const copy = {
   },
   "en": {
     "meta.title": "FULI Preview · The next release",
-    "meta.description": "The public preview of the next FULI release: everything new or changed since stable 0.27.0. One command per platform installs the beta.",
+    "meta.description": "The public preview of the next FULI (FULI AI) release: everything new or changed in FULI Agent and FULI context since stable 0.27.0. One command per platform installs the beta.",
     "meta.social": "The next FULI release in preview: everything new since stable, installed with one command.",
     "nav.changes": "What changed",
     "copy.label": "Copy the preview install commands",

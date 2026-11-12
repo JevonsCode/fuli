@@ -8,12 +8,12 @@
 import * as home from "../translations.js";
 
 // The built-in FLAs are named as on the home page.
-const shared = ["meta.locale", "nav.skip", "nav.label", "nav.language", "footer.copyright", "diagram.astro", "diagram.pm", "diagram.hr", "diagram.judge"];
+const shared = ["meta.locale", "meta.keywords", "nav.skip", "nav.label", "nav.language", "footer.copyright", "diagram.astro", "diagram.pm", "diagram.hr", "diagram.judge"];
 
 const copy = {
   "zh-CN": {
     "meta.title": "FULI 复利 · 快速上手：带截图的安装和使用教程",
-    "meta.description": "跟着真实截图一步步上手 FULI：装桌面客户端，接上你的 AI 客户端，做第一个任务，认识控制台常用的几页。",
+    "meta.description": "跟着真实截图一步步上手 FULI（FULI AI）：装桌面客户端，接上你的 AI 客户端启用 FULI context，唤醒你的 FULI Agent 做第一个任务，认识控制台常用的几页。",
     "meta.social": "装好，接上，照常干活。带截图的 FULI 快速上手。",
     "guide.home": "Fuli 复利 首页",
     "guide.homeUrl": "https://xn--8ovp9s.xn--m8txu.com/fuli/",
@@ -111,7 +111,7 @@ const copy = {
   },
   "en": {
     "meta.title": "FULI · Quick start: install and use it, screen by screen",
-    "meta.description": "Get started with FULI screen by screen: install the desktop app, connect your AI clients, run a first task and find your way around the console.",
+    "meta.description": "Get started with FULI (FULI AI) screen by screen: install the desktop app, connect your AI clients for FULI context, run a first task with your FULI Agent and find your way around the console.",
     "meta.social": "Install, connect, work as usual. The FULI quick start, screen by screen.",
     "guide.home": "FULI home",
     "guide.homeUrl": "https://xn--8ovp9s.xn--m8txu.com/fuli/en/",

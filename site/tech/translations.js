@@ -5,12 +5,12 @@
 // knowledge_semantic_index.py, graph_format_migrations.py). Check the source before changing one.
 import * as home from "../translations.js";
 
-const shared = ["meta.locale", "nav.skip", "nav.label", "nav.language", "footer.copyright"];
+const shared = ["meta.locale", "meta.keywords", "nav.skip", "nav.label", "nav.language", "footer.copyright"];
 
 const copy = {
   "zh-CN": {
     "meta.title": "FULI 复利 · 技术：架构、Skills、数据设计与理念",
-    "meta.description": "FULI 怎么在本机搭起来：Node 控制台、Python Provider 和本机 Neo4j；随附的 Skills；数据怎么按空间、项目和版本保存；以及背后的理念。",
+    "meta.description": "FULI（FULI AI）怎么在本机搭起 FULI Agent 与 FULI context：Node 控制台、Python Provider 和本机 Neo4j；随附的 Skills；数据怎么按空间、项目和版本保存；以及背后的理念。",
     "meta.social": "跑在你的电脑上，由你说了算。FULI 的架构、Skills、数据设计与理念。",
     "tech.home": "Fuli 复利 首页",
     "tech.homeUrl": "https://xn--8ovp9s.xn--m8txu.com/fuli/",
@@ -81,7 +81,7 @@ const copy = {
   },
   "en": {
     "meta.title": "FULI · Technology: architecture, Skills, data design and principles",
-    "meta.description": "How FULI runs on your computer: a Node console, a Python Provider and a local Neo4j; the Skills it installs; how data is kept by space, project and version; and the principles behind it.",
+    "meta.description": "How FULI (FULI AI) runs FULI Agents and FULI context on your computer: a Node console, a Python Provider and a local Neo4j; the Skills it installs; how data is kept by space, project and version; and the principles behind it.",
     "meta.social": "Runs on your computer, answers to you. The architecture, Skills, data design and principles of FULI.",
     "tech.home": "Fuli home",
     "tech.homeUrl": "https://xn--8ovp9s.xn--m8txu.com/fuli/en/",
