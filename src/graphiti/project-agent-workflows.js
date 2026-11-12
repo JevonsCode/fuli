@@ -391,7 +391,9 @@ export async function listProjectAgentTasks(application, input) {
     personalProjectId: input.personalProjectId ?? null,
     agentId: input.agentId ?? null,
     status: input.status ?? null,
-    limit: input.limit ?? null
+    limit: input.limit ?? null,
+    afterUpdatedAt: input.afterUpdatedAt ?? null,
+    afterTaskId: input.afterTaskId ?? null
   });
   return asList(value, ['tasks', 'items']).map(projectAgentTaskRecord);
 }

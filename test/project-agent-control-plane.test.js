@@ -96,7 +96,9 @@ test('control-plane provider client uses durable task and activity routes', asyn
     personalProjectId: 'project-1',
     agentId: 'agent-1',
     status: 'completed',
-    limit: 25
+    limit: 25,
+    afterUpdatedAt: '2026-11-01T00:00:00Z',
+    afterTaskId: 'task-0'
   });
   await client.archiveTestProjectAgent('space-1', 'agent-1', 'archived test role');
   await client.cleanupProjectAgentTestRoles('space-1', 'e2e-1');
@@ -131,7 +133,10 @@ test('control-plane provider client uses durable task and activity routes', asyn
     personal_project_id: 'project-1',
     agent_id: 'agent-1',
     status: 'completed',
-    limit: '25'
+    limit: '25',
+    // A later page continues after the last task an earlier one listed (rec#123).
+    after_updated_at: '2026-11-01T00:00:00Z',
+    after_task_id: 'task-0'
   });
   assert.deepEqual(calls[5].query, {
     personal_space_id: 'space-1',

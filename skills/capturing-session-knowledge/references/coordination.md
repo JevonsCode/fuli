@@ -69,8 +69,15 @@ what blocked a task from another session, say so once: as its lead, report the t
 with `record_project_agent_task_activity` (the summary says what you fixed); otherwise call
 `run_delegated_action` with `POST /api/project-agent-tasks/:taskId/blocker/clear`
 (`params.taskId`; body `personalSpaceId`, `personalProjectId`; `reason` = what you fixed). The task
-history keeps the block and records you and your reason. Never clear or move a block you did not
-resolve; the person can still mark it cleared (「标记为已解除」).
+history keeps the block and records you and your reason. The clear moves the task to running;
+report its next status after it. Any other session's status report on a blocked task is refused and
+the refusal names this route. Never clear or move a block you did not resolve; the person can still
+mark it cleared (「标记为已解除」).
+
+A task (all but a `default_lead` staffing record) completes only with the `artifactRevision` that
+`record_agent_verification` passed; a refusal names the missing or mismatched revision. Work without
+files names what it delivered (a config digest or evidence ID) as its revision. Without a passing
+verification, report `awaiting_review` for the person instead of claiming completion.
 
 `workerStatus` requires `workerId` and the participating `agentId`. Structured actual executor,
 provider and model form one report and must match authorized preflight evidence. When that

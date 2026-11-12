@@ -214,7 +214,10 @@ const BASELINE = Object.freeze({
   // 200,259 -> 189,116 B, measured. Chat, instructions and entry are unchanged.
   // DeepSeek Harness's own source application: "dsh" joins each source enum the full profile lists:
   // 189,116 -> 189,230 B (+114 B), measured. Chat is unchanged.
-  fullToolSchemaBytes: 189230,
+  // rec#123: list_project_agent_tasks returns summaries without events or routing and pages with a
+  // cursor (14 long-history tasks: a 128 KB cut that dropped 6 of them, now about 20 KB); its
+  // description says so and limit caps at 100: 189,230 -> 189,318 B (+88 B), measured. Chat is unchanged.
+  fullToolSchemaBytes: 189318,
   // rec#80 group B 旧数据: one full-profile read, read_old_data, lists the backups FULI kept and reads
   // one's text files read-only (restore is run_delegated_action): 200,801 -> 201,280 B (+479 B),
   // measured. Chat reaches it through list_agent_interfaces/fuli_call; chat, instructions and entry are unchanged.
