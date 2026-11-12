@@ -1,0 +1,45 @@
+{
+  "name": "fuli-dsh-connector",
+  "version": "1.0.0",
+  "description": "Connects DeepSeek Harness to the FULI installed on this computer: FULI's task entry each turn, its task close, and FULI's MCP tools.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-mcp-client": ">=0.2.0-0 <1.0.0-0 || >=0.2.0 <1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-mcp-client": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "fuli",
+    "memory"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JevonsCode/fuli.git",
+    "directory": "packages/dsh-connector"
+  }
+}
