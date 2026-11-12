@@ -88,7 +88,7 @@ export function createJudgmentService({ app, openStore = () => new JudgmentStore
     return questionsPort ??= questionTools({ app, service });
   };
   const service = {
-    store, scope,
+    store, scope, activeProjectIds,
     async pins(input) { space(input); return store().pins(input.personalSpaceId); },
     async pin(input) {
       const parsed = parse(pinSchema, input); space(parsed);
