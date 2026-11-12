@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { request as httpsRequest } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -8,6 +10,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createCoordinatorService } from '../packages/roundtable/src/peer/coordinator-service.js';
 import { createCoordinatorStore } from '../packages/roundtable/src/peer/coordinator-store.js';
 import { createDeviceCertificate, deviceIdentity } from '../packages/roundtable/src/peer/device-identity.js';
+import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
+import { createFuliRoundtableHost } from '../src/graphiti/roundtable-host.js';
 import { device, discoveryBus, pair, remoteAddress } from './fixtures/peer-devices.js';
 
 // Polls a runtime's status until it matches; a real pairing runs over TLS on loopback.
@@ -175,9 +179,133 @@ test('the coordinator keeps repository digests to itself, keyed per paired group
   const seenByDesk = service.directory(desk.fingerprint).devices.find((entry) => entry.nodeId === laptop.fingerprint);
   assert.deepEqual(seenByDesk.sameRepositories, [shared], 'only what the desk itself sent and the laptop also has');
   assert.equal(JSON.stringify(service.directory(desk.fingerprint)).includes('c'.repeat(32)), false);
+  // second review: a member can test few guesses: 50 digests per set, 3 new sets a day.
+  const guesses = Array.from({ length: 60 }, (_, index) => index.toString(16).padStart(32, 'e'));
+  service.publishDirectory(desk.fingerprint, { agents: [], repositories: { keyId: repositoryKey.id, digests: guesses } });
+  service.publishDirectory(laptop.fingerprint, { agents: [], repositories: { keyId: repositoryKey.id, digests: [guesses[55], guesses[1]] } });
+  assert.deepEqual(service.directory(desk.fingerprint).devices.find((entry) => entry.nodeId === laptop.fingerprint).sameRepositories, [guesses[1]]);
+  service.publishDirectory(desk.fingerprint, { agents: [], repositories: { keyId: repositoryKey.id, digests: ['f'.repeat(32)] } });
+  service.publishDirectory(desk.fingerprint, { agents: [], repositories: { keyId: repositoryKey.id, digests: [guesses[55]] } });
+  assert.deepEqual(service.directory(desk.fingerprint).devices.find((entry) => entry.nodeId === laptop.fingerprint).sameRepositories, [],
+    'a fourth new set in a day is not taken');
   service.revoke(laptop.fingerprint);
   assert.notEqual(service.publishDirectory(desk.fingerprint, { agents: [] }).repositoryKey.id, repositoryKey.id);
   store.close();
+});
+
+// A device that never paired asks for a nonce over real TLS and cancels: the second review's re-roll.
+async function strangerReroll(port, certificate, index) {
+  const nonce = createHash('sha256').update(`x${index}`).digest('base64url');
+  const post = (path, body) => new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const sent = httpsRequest({ host: '127.0.0.1', port, path, method: 'POST', key: certificate.keyPem, cert: certificate.certPem,
+      rejectUnauthorized: false, headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } }, (response) => {
+      let data = '';
+      response.on('data', (chunk) => { data += chunk; });
+      response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(data) }));
+    });
+    sent.on('error', reject);
+    sent.end(payload);
+  });
+  const answer = await post('/peer/1/nearby/request', { protocol: 1, commit: createHash('sha256').update(`fuli-pair-commit:1:${nonce}`).digest('hex'),
+    name: 'Stranger', authority: { keyId: 'a'.repeat(32), publicKey: Buffer.alloc(32, 7).toString('base64url') }, coordinates: false });
+  if (answer.status !== 200) return answer.body.error;
+  await post('/peer/1/nearby/poll', { requestId: answer.body.requestId, cancel: true });
+  return 'granted';
+}
+
+const listenPort = (app) => Number(new URL(app.peer.nodeStore().setting('membership').coordinator.url).port);
+const restartedRuntime = (record, options = {}) => createPeerRuntime({ host: createFuliRoundtableHost(record.app), roundtable: record.app.roundtable,
+  port: record.app.peer, allowLoopback: true, claimWaitMs: 300, interfaces: () => ({}), nearbyListenHost: '127.0.0.1',
+  createDiscovery: discoveryBus().discovery, ...options });
+
+test('second review: pairing attempts survive nearby off and on and a restart, on-while-on keeps its end, and only the person clears them', { timeout: 30_000 }, async () => {
+  const bus = discoveryBus();
+  const desk = await device('desk', { discovery: bus.discovery });
+  let restarted = null;
+  try {
+    await desk.runtime.nearbyOn({ name: 'Desk' });
+    const certificates = await Promise.all(Array.from({ length: 6 }, () => createDeviceCertificate()));
+    const first = [];
+    for (const [index, certificate] of certificates.entries()) first.push(await strangerReroll(listenPort(desk.app), certificate, index));
+    assert.deepEqual(first, ['granted', 'granted', 'granted', 'granted', 'granted', 'pairing_rate_limited']);
+    const until1 = desk.app.peer.nodeStore().setting('nearby').until;
+    await delay(20);
+    await desk.runtime.nearbyOn({});
+    assert.equal(desk.app.peer.nodeStore().setting('nearby').until, until1, 'on while on never extends the end');
+    await desk.runtime.nearbyOff();
+    const again = await desk.runtime.nearbyOn({ name: 'Desk' });
+    assert.deepEqual([again.nearby.limited, again.nearby.canPair], [true, false]);
+    assert.equal(await strangerReroll(listenPort(desk.app), certificates[0], 50), 'pairing_rate_limited');
+    await desk.runtime.close();
+    restarted = restartedRuntime(desk);
+    await restarted.resume();
+    assert.equal((await restarted.status()).nearby.attempts.lastWindow, 5, 'a restart forgets nothing');
+    const cleared = await restarted.clearPairingAttempts();
+    assert.deepEqual([cleared.nearby.limited, cleared.nearby.attempts.lastDay], [false, 0]);
+  } finally { await restarted?.close(); await desk.close(); }
+});
+
+test('second review: a coordinator whose address is gone says so, and turning it off revokes its devices even without a listener', { timeout: 30_000 }, async () => {
+  const [laptop, desk] = await Promise.all([device('laptop'), device('desk')]);
+  let restarted = null;
+  try {
+    await pair(laptop, desk, { folder: false });
+    const store = laptop.app.peer.nodeStore();
+    const deskNode = (await laptop.runtime.status()).devices.find((entry) => !entry.self).nodeId;
+    await laptop.runtime.close();
+    store.setSetting('coordinator', { ...store.setting('coordinator'), host: '10.255.255.1' });
+    restarted = restartedRuntime(laptop);
+    await restarted.resume();
+    const stuck = await restarted.status();
+    assert.deepEqual([stuck.role, stuck.coordinator.listening, stuck.coordinator.listenFailure.address], ['coordinator', false, '10.255.255.1']);
+    assert.equal(stuck.devices.find((entry) => entry.nodeId === deskNode).status, 'active', 'trust is kept, but nothing listens');
+    await restarted.disable();
+    const on = await restarted.nearbyOn({ name: 'Laptop' });
+    assert.equal(on.devices.some((entry) => entry.nodeId === deskNode && entry.status === 'active'), false, 'old devices are not trusted again');
+  } finally { await restarted?.close(); await desk.close(); await laptop.close(); }
+});
+
+test('second review: trust waiting for its first use is still taken back after a restart', { timeout: 30_000 }, async () => {
+  const bus = discoveryBus();
+  const [desk, laptop] = await Promise.all([device('desk', { discovery: bus.discovery }),
+    device('laptop', { discovery: bus.discovery, runtimeOptions: { trustUseMs: 600, pairedGraceMs: 60_000 } })]);
+  let restarted = null;
+  try {
+    await desk.runtime.nearbyOn({ name: 'Desk' });
+    await laptop.runtime.nearbyOn({ name: 'Laptop' });
+    const { here, there } = await nearbyPair(desk, laptop);
+    const nodeStore = desk.app.peer.nodeStore();
+    const setSetting = nodeStore.setSetting.bind(nodeStore);
+    nodeStore.setSetting = (key, value) => {
+      if (key === 'membership' && value?.role === 'member') throw Object.assign(new Error('synthetic disk failure'), { code: 'EIO' });
+      return setSetting(key, value);
+    };
+    await desk.runtime.confirmPairing({ requestId: here.requestId, code: there.code });
+    await laptop.runtime.confirmPairing({ requestId: there.requestId, code: here.code });
+    await until(laptop.runtime, (status) => status.devices.some((entry) => !entry.self && entry.status === 'active'), 'the laptop to trust the desk');
+    await laptop.runtime.close();
+    await delay(700);
+    restarted = restartedRuntime(laptop);
+    await restarted.resume();
+    const after = await restarted.status();
+    assert.deepEqual([after.devices.filter((entry) => !entry.self).map((entry) => entry.status), after.nearby.ended?.kind], [['revoked'], 'trust_withdrawn']);
+  } finally { await restarted?.close(); await desk.close(); await laptop.close(); }
+});
+
+test('second review: a listener the person placed returns there when nearby turns off, and where devices reached it is kept', { timeout: 30_000 }, async () => {
+  const [laptop, desk] = await Promise.all([device('laptop', { discovery: discoveryBus().discovery, runtimeOptions: { nearbyListenHost: '127.0.0.2' } }),
+    device('desk')]);
+  try {
+    await pair(laptop, desk, { folder: false });
+    const store = laptop.app.peer.nodeStore();
+    await until(laptop.runtime, (status) => status.devices.some((entry) => !entry.self && entry.online), 'the desk to connect');
+    assert.deepEqual(Object.values(store.setting('reachedAddresses')), ['127.0.0.1', '127.0.0.1']);
+    await laptop.runtime.nearbyOn({ name: 'Laptop' });
+    assert.deepEqual([store.setting('coordinator').host, store.setting('nearby').previousHost], ['127.0.0.2', '127.0.0.1']);
+    await laptop.runtime.nearbyOff();
+    assert.equal(store.setting('coordinator').host, '127.0.0.1');
+  } finally { await desk.close(); await laptop.close(); }
 });
 
 test('security review: a taken mDNS port turns nearby pairing off with its reason and the console keeps running', { timeout: 20_000 }, async () => {
@@ -192,6 +320,22 @@ test('security review: a taken mDNS port turns nearby pairing off with its reaso
     await desk.runtime.resume();
     assert.equal((await desk.runtime.status()).nearby.on, false, 'nothing turns it on again by itself');
   } finally { await desk.close(); }
+
+  // The failure can arrive while turning on is still under way: nothing is closed twice.
+  const errors = [];
+  const racing = discoveryBus();
+  const tablet = await device('tablet', { discovery: (hooks) => {
+    const discovery = racing.discovery(hooks);
+    return { ...discovery, browse: (handlers) => {
+      setImmediate(() => hooks.onFailure(Object.assign(new Error('bind'), { code: 'EADDRINUSE' })));
+      return discovery.browse(handlers);
+    } };
+  }, runtimeOptions: { onError: (error) => errors.push(error) } });
+  try {
+    await tablet.runtime.nearbyOn({ name: 'Tablet' });
+    await until(tablet.runtime, (status) => !status.nearby.on && !status.role, 'nearby to stop');
+    assert.deepEqual(errors.filter((error) => error instanceof TypeError), []);
+  } finally { await tablet.close(); }
 });
 
 test('nearby pairing turns itself off after a pairing and after its time, with a default name that is never the hostname', { timeout: 30_000 }, async () => {

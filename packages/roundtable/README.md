@@ -38,7 +38,7 @@ fuli-roundtable peer nearby
 fuli-roundtable peer pair <fingerprint from the list>
 ```
 
-Both computers then show the same 6-digit code. On each computer, compare it with the other screen and confirm with the code shown there. A request nobody confirms ends after 2 minutes; after 6 unfinished requests, turn nearby pairing off and on again.
+Both computers then show the same 6-digit code. On each computer, compare it with the other screen and confirm with the code shown there. A request nobody confirms ends after 2 minutes. Each computer allows 5 pairing attempts per 10 minutes and 10 per 24 hours; `fuli-roundtable peer nearby clear-attempts` clears the count on that computer.
 
 ```sh
 fuli-roundtable peer confirm <code shown on the other computer>

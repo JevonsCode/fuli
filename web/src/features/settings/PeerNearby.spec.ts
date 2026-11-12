@@ -71,13 +71,24 @@ it('says why nearby pairing turned off, when too many requests failed, and how a
   const ended = mount(PeerNearby, { props: { nearby: { ...off, ended: { kind: 'discovery_failed', reason: 'EADDRINUSE', at: 'now' } },
     coordinatorName: null } })
   expect(ended.get('[data-nearby-ended]').text()).toContain('附近发现没能启动：EADDRINUSE')
-  const limited = mount(PeerNearby, { props: { nearby: { ...listed, canPair: false, limited: true, unfinishedRequests: 6 }, coordinatorName: null } })
-  expect(limited.get('[data-nearby-limited]').text()).toContain('6 次')
+  const limited = mount(PeerNearby, { props: { nearby: { ...listed, canPair: false, limited: true,
+    attempts: { lastWindow: 5, lastDay: 7, limited: true } }, coordinatorName: null } })
+  expect(limited.get('[data-nearby-limited]').text()).toContain('10 分钟 5 次，24 小时 7 次')
   expect(limited.get('[data-nearby-pair="abcd123456789abc"]').attributes('disabled')).toBeDefined()
   const mismatch = mount(PeerNearby, { props: { nearby: { ...listed, canPair: false,
     pairing: { ...waiting, state: 'failed', reason: 'code_mismatch', code: null } }, coordinatorName: 'Laptop' } })
   expect(mismatch.get('[data-pairing-outcome]').text()).toContain('两边的数字不一致')
   expect(mismatch.text()).toContain('新电脑请在 Laptop 上配对')
+})
+
+it('lets the person clear the attempt count on this computer', async () => {
+  const fetch = vi.fn().mockResolvedValueOnce(json(answer({ ...listed, attempts: { lastWindow: 0, lastDay: 0, limited: false } })))
+  vi.stubGlobal('fetch', fetch)
+  const wrapper = mount(PeerNearby, { props: { nearby: { ...listed, canPair: false, limited: true,
+    attempts: { lastWindow: 5, lastDay: 5, limited: true } }, coordinatorName: null } })
+  await wrapper.get('[data-nearby-clear]').trigger('click')
+  await flushPromises()
+  expect(fetch.mock.calls[0]?.[0]).toBe('/api/peer/nearby/attempts/clear')
 })
 
 it('reads codes in two groups and maps each ending to one message', () => {

@@ -173,7 +173,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [58, 11, 18, 31]);
+    catalog.coverage.localUserOnly], [58, 11, 18, 32]);
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
   for (const entry of relayed) {
@@ -276,6 +276,7 @@ test('Agent interface catalog lists roundtable reads and requested-Agent identit
   }
   // rec#127: the person compares the code on both computers and confirms it themself; never an Agent.
   assert.equal(byRoute.get('POST /api/peer/nearby/confirm')?.access, 'local_user_only');
+  assert.equal(byRoute.get('POST /api/peer/nearby/attempts/clear')?.access, 'local_user_only');
 });
 
 test('Agent memory export is a read workflow beside the console memory route', () => {

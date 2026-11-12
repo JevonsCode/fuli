@@ -57,7 +57,8 @@ export type Nearby = {
   canPair: boolean
   reason: string | null
   until?: string | null
-  unfinishedRequests?: number
+  // Pairing handshakes counted on this computer: they age out or the person clears them here.
+  attempts?: { lastWindow: number; lastDay: number; limited: boolean }
   limited?: boolean
   devices: NearbyDevice[]
   pairing: NearbyPairing | null
@@ -70,7 +71,9 @@ export type PeerStatus = {
   remoteRemovalPending?: boolean
   role: 'coordinator' | 'member' | null
   device: { fingerprint: string; shortFingerprint: string } | null
-  coordinator: { name: string; url: string; shortFingerprint: string; listening: boolean } | null
+  coordinator: { name: string; url: string; shortFingerprint: string; listening: boolean;
+    // Why the listener is not running: an address that is gone, a port in use.
+    listenFailure?: { address: string; port: number; code: string; at: string } | null } | null
   addresses: string[]
   devices: Device[]
   openInvitations: number

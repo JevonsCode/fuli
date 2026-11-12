@@ -58,6 +58,13 @@ export function canonicalTime(value) {
   return Number.isFinite(time) && new Date(time).toISOString() === value ? time : null;
 }
 
+// Text another device sent, as this computer shows it: without C0 and C1
+// control characters (terminal escapes) or bidirectional overrides.
+const CONTROLS = /[\u0000-\u001f\u007f-\u009f؜‎‏‪-‮⁦-⁩]/g;
+export function withoutControls(value) {
+  return value.replace(CONTROLS, '');
+}
+
 export function shortFingerprint(fingerprint) {
   return fingerprint.slice(0, 24).toUpperCase().match(/.{4}/g).join(' ');
 }
@@ -162,7 +169,7 @@ export function validateAssertion(assertion, { now = Date.now() } = {}) {
 
 export function publicDirectoryEntry(entry) {
   if (!isOpaqueId(entry?.bindingId) || !isOpaqueId(entry?.agentId)) throw new PeerError('invalid_directory', 'Invalid shared Agent');
-  const text = (value, max) => typeof value === 'string' ? value.slice(0, max) : null;
+  const text = (value, max) => typeof value === 'string' ? withoutControls(value).slice(0, max) : null;
   return { bindingId: entry.bindingId, agentId: entry.agentId, name: text(entry.name, 120) ?? entry.agentId,
     employeeNumber: text(entry.employeeNumber, 32), responsibility: text(entry.responsibility, 500),
     projectName: text(entry.projectName, 120),

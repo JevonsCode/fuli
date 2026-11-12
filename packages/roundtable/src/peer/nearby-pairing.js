@@ -10,14 +10,26 @@ const PAIRING_MS = 2 * 60_000;
 const CONNECTING_MS = 10_000;
 const POLL_MS = 1_000;
 const REQUEST_MS = 5_000;
-// Requests that did not end paired, since the person turned nearby pairing on:
-// at most this many per initiating certificate and address, and in all.
-const FAILURES_PER_DEVICE = 3;
-const FAILURES_IN_ALL = 6;
 const COMMITMENT = /^[0-9a-f]{64}$/;
 const NONCE = /^[A-Za-z0-9_-]{43}$/;
 const REQUEST_ID = /^[A-Za-z0-9-]{1,64}$/;
 const OPEN_STATES = new Set(['connecting', 'confirm', 'finishing']);
+
+// What the other computer may say when it refuses, in this computer's own
+// words; its own code, message and status are never shown or passed on.
+const REMOTE_REFUSALS = Object.freeze({
+  pairing_busy: ['The other computer is already pairing; try again in two minutes', 409],
+  pairing_rate_limited: ['The other computer takes no more pairing attempts for now', 429],
+  already_paired: ['These computers are already paired', 409],
+  both_coordinate: ['Both computers already coordinate other devices; turn the LAN roundtable off on one first', 409],
+  not_found: ['The other computer is not open for nearby pairing', 404],
+  device_not_trusted: ['The other computer is not open for nearby pairing', 404],
+  pairing_not_found: ['The other computer no longer has this pairing request', 404],
+  pairing_mismatch: ['The other computer refused the pairing answer', 409],
+  unsupported_protocol: ['The other computer pairs with another protocol version', 409],
+});
+// How the other computer may say a pairing ended; anything else reads as failed there.
+const REMOTE_REASONS = new Set(['code_mismatch', 'expired', 'no_answer', 'coordinator_unreachable', 'trust_failed', 'join_failed']);
 
 // Pairing two computers that see each other on the LAN, with a 6-digit code
 // each person compares by eye and confirms on their own computer (rec issue 127).
@@ -31,29 +43,30 @@ const OPEN_STATES = new Set(['connecting', 'confirm', 'finishing']);
 // - The code is derived from both full certificate fingerprints, the chosen
 //   coordinator and a fresh nonce from each side. The initiator commits to its
 //   nonce before it sees the target's, so a device in the middle can only try a
-//   fresh target nonce by starting a new request: 1 chance in 10^6 per request.
-// - Every request that does not end paired (cancelled, abandoned after 10 s,
-//   expired after 2 minutes, mismatched, malformed) is counted: at most 3 per
-//   certificate and address and 6 in all, until the person turns nearby pairing
-//   off and on again (it also turns itself off after 30 minutes). So one
-//   session gives a device in the middle at most 7 tries, a chance of at most
-//   7 in 10^6, and every try shows on the target's screen.
+//   fresh target nonce by starting a new handshake: 1 chance in 10^6 per
+//   handshake, and only one handshake is open at a time.
+// - Every handshake is an attempt, counted in this computer's own store before
+//   any nonce leaves it (nearby-attempts.js): at most 3 per device and address
+//   and 5 in all per 10 minutes, and 10 per rolling 24 hours. Turning nearby
+//   pairing off and on, an Agent, or a restart does not clear them; only time or
+//   the person on this computer does. So a device in the middle wins with a
+//   chance of at most 10 in 10^6 per computer per 24 hours (each of its tries
+//   shows on the screens), until the person here clears the count.
 // - This computer accepts "paired" from the other side only after its own
-//   person confirmed; an early "paired" is a counted failure.
+//   person confirmed, and, when it coordinates, only after it wrote its trust.
 // - A wrong commitment, or a code that differs from this computer's, cancels the
 //   request. There is no weaker fallback: an unknown protocol version is refused.
 // - Paired devices get the same mutual-TLS and origin-authority records an
 //   invitation writes; a device already trusted, or this device itself, is
-//   refused. Nothing is answered or counted while nearby pairing is off.
+//   refused. While nearby pairing is off these routes answer as unknown paths.
 //
 // Which computer coordinates is not the person's choice: the one that already
 // coordinates other devices keeps doing so; otherwise the computer that was
 // picked from the list (the target), since the initiator just proved it can
 // reach it. Two computers that both coordinate others are refused.
-export function createNearbyPairing({ local, connect, clock = Date.now, nonce = () => randomBytes(32).toString('base64url'),
+export function createNearbyPairing({ local, attempts, connect, clock = Date.now, nonce = () => randomBytes(32).toString('base64url'),
   idFactory = randomUUID, pollMs = POLL_MS, onPaired = () => {}, onError = () => {} }) {
   let slot = null;
-  let failures = [];
 
   function sweep() {
     if (!slot) return;
@@ -68,7 +81,6 @@ export function createNearbyPairing({ local, connect, clock = Date.now, nonce = 
     return slot && OPEN_STATES.has(slot.state) ? slot : null;
   }
 
-  // Every ending other than paired counts against the requesting device.
   function end(current, state, reason = null) {
     if (!OPEN_STATES.has(current.state)) return;
     current.state = state;
@@ -77,19 +89,7 @@ export function createNearbyPairing({ local, connect, clock = Date.now, nonce = 
     clearTimeout(current.timer);
     current.client?.close();
     current.client = null;
-    if (state !== 'paired') failures.push(current.key);
     if (state === 'paired') Promise.resolve().then(() => onPaired(current.peer)).catch(onError);
-  }
-
-  function withinBudget(key) {
-    if (failures.length >= FAILURES_IN_ALL || failures.filter((entry) => entry === key).length >= FAILURES_PER_DEVICE) {
-      throw new PeerError('pairing_rate_limited', 'Too many unfinished pairing requests; turn nearby pairing off and on again', 429);
-    }
-  }
-
-  function refuse(key, code, message, status = 400) {
-    failures.push(key);
-    return new PeerError(code, message, status);
   }
 
   function codeOf(current) {
@@ -103,23 +103,24 @@ export function createNearbyPairing({ local, connect, clock = Date.now, nonce = 
   // ---- The computer that was picked (target): routes on its listener ----
 
   async function receiveRequest(body, peer) {
-    const role = local.role();
-    if (!role.listening) throw new PeerError('nearby_off', 'This computer is not open for nearby pairing', 404);
-    const key = deviceKey(peer);
-    withinBudget(key);
-    if (body.protocol !== NEARBY_PROTOCOL) throw refuse(key, 'unsupported_protocol', 'This FULI pairs with nearby protocol 1 only');
     const self = await local.identity();
     const authority = await local.authority();
-    if (peer.fingerprint === self.fingerprint) throw refuse(key, 'invalid_pairing', 'A device cannot pair with itself');
-    if (local.trusted(peer.fingerprint)) throw refuse(key, 'already_paired', 'These computers are already paired', 409);
+    // Everything awaited is done: from here to the nonce nothing yields, so no
+    // parallel request passes the slot and budget checks between them.
+    const role = local.role();
+    if (!role.listening) throw unknownPath();
+    if (body.protocol !== NEARBY_PROTOCOL) throw new PeerError('unsupported_protocol', 'This FULI pairs with nearby protocol 1 only');
+    if (peer.fingerprint === self.fingerprint) throw new PeerError('invalid_pairing', 'A device cannot pair with itself');
+    if (local.trusted(peer.fingerprint)) throw new PeerError('already_paired', 'These computers are already paired', 409);
     if (!COMMITMENT.test(body.commit ?? '') || !isAuthorityKey(body.authority) || typeof body.coordinates !== 'boolean'
-      || (body.coordinates && !validPort(body.port))) throw refuse(key, 'invalid_pairing', 'Invalid nearby pairing request');
+      || (body.coordinates && !validPort(body.port))) throw new PeerError('invalid_pairing', 'Invalid nearby pairing request');
     if (body.coordinates && role.coordinatesOthers) {
-      throw refuse(key, 'both_coordinate', 'Both computers already coordinate other devices; turn the LAN roundtable off on one first', 409);
+      throw new PeerError('both_coordinate', 'Both computers already coordinate other devices; turn the LAN roundtable off on one first', 409);
     }
-    if (open()) throw refuse(key, 'pairing_busy', 'This computer is already pairing; try again in two minutes', 409);
+    if (open()) throw new PeerError('pairing_busy', 'This computer is already pairing; try again in two minutes', 409);
+    attempts.take(deviceKey(peer));
     const now = clock();
-    slot = { id: idFactory(), key, direction: 'incoming', self: self.fingerprint, state: 'connecting',
+    slot = { id: idFactory(), direction: 'incoming', self: self.fingerprint, state: 'connecting',
       peer: { fingerprint: peer.fingerprint, certPem: peer.certPem, name: cleanName(body.name) || `FULI ${peer.fingerprint.slice(0, 4)}`,
         authority: { keyId: body.authority.keyId, publicKey: body.authority.publicKey }, address: peer.address,
         port: body.coordinates ? body.port : null, reachedAt: peer.localAddress ?? null },
@@ -163,9 +164,9 @@ export function createNearbyPairing({ local, connect, clock = Date.now, nonce = 
       current.applying ??= Promise.resolve().then(() => local.trustDevice(current.peer));
       try { await current.applying; }
       catch (error) {
-        end(current, 'failed', error.code ?? 'trust_failed');
+        end(current, 'failed', 'trust_failed');
         onError(error);
-        return { value: { state: 'failed', reason: error.code ?? 'trust_failed' } };
+        return { value: { state: 'failed', reason: 'trust_failed' } };
       }
       current.applied = true;
       end(current, 'paired');
@@ -175,27 +176,32 @@ export function createNearbyPairing({ local, connect, clock = Date.now, nonce = 
       current.state = 'finishing';
       return { value: { state: 'confirmed', confirmed: true } };
     }
-    if (current.applied) return { value: { state: 'paired' } };
+    if (current.joining) return { value: { state: 'paired' } };
     // This computer joins the initiator: first check that it answers where it said.
     if (!await local.reachable(current.peer).catch(() => false)) {
       end(current, 'failed', 'coordinator_unreachable');
       return { value: { state: 'failed', reason: 'coordinator_unreachable' } };
     }
-    current.applied = true;
+    current.joining = true;
     return { value: { state: 'paired' }, after: () => {
-      Promise.resolve().then(() => local.joinCoordinator(current.peer)).then(() => end(current, 'paired'), (error) => {
-        end(current, 'failed', error.code ?? 'join_failed');
+      // The pairing reads as paired only once this computer actually joined.
+      Promise.resolve().then(() => local.joinCoordinator(current.peer)).then(() => {
+        current.applied = true;
+        end(current, 'paired');
+      }, (error) => {
+        end(current, 'failed', 'join_failed');
         onError(error);
       });
     } };
   }
 
   async function handle(pathname, body, peer) {
+    if (!local.role().listening) throw unknownPath();
     switch (pathname) {
       case '/peer/1/nearby/request': return receiveRequest(body, peer);
       case '/peer/1/nearby/reveal': return receiveReveal(body, peer);
       case '/peer/1/nearby/poll': return receivePoll(body, peer);
-      default: throw new PeerError('not_found', 'Not found', 404);
+      default: throw unknownPath();
     }
   }
 
@@ -205,9 +211,8 @@ export function createNearbyPairing({ local, connect, clock = Date.now, nonce = 
     const role = local.role();
     if (!role.listening) throw new PeerError('nearby_unavailable', role.reason ?? 'Turn nearby pairing on first', 409);
     if (open()) throw new PeerError('pairing_busy', 'A pairing is already waiting for confirmation', 409);
-    const key = `${target.fingerprint}|${target.addresses?.[0] ?? ''}`;
-    withinBudget(key);
-    const current = { id: null, key, direction: 'outgoing', state: 'connecting', expiresAt: clock() + PAIRING_MS,
+    attempts.take(`${target.fingerprint}|${target.addresses?.[0] ?? ''}`);
+    const current = { id: null, direction: 'outgoing', state: 'connecting', expiresAt: clock() + PAIRING_MS,
       peer: { name: target.name, fingerprint: null, shortFingerprint: target.shortFingerprint },
       coordinator: role.coordinatesOthers ? 'initiator' : 'target', here: false, there: false, applied: false };
     slot = current;
@@ -221,9 +226,9 @@ export function createNearbyPairing({ local, connect, clock = Date.now, nonce = 
       const self = await local.identity();
       const authority = await local.authority();
       const initiatorNonce = nonce();
-      const answer = await current.client.post('/peer/1/nearby/request', { protocol: NEARBY_PROTOCOL,
+      const answer = await remote(current.client.post('/peer/1/nearby/request', { protocol: NEARBY_PROTOCOL,
         commit: sha256Hex(commitmentText(initiatorNonce)), name: local.name(), authority, coordinates: role.coordinatesOthers,
-        ...(role.coordinatesOthers ? { port: role.listenPort } : {}) }, { timeoutMs: REQUEST_MS });
+        ...(role.coordinatesOthers ? { port: role.listenPort } : {}) }, { timeoutMs: REQUEST_MS }));
       stillOpen();
       if (answer.protocol !== NEARBY_PROTOCOL || !REQUEST_ID.test(answer.requestId ?? '') || !NONCE.test(answer.nonce ?? '')
         || !isAuthorityKey(answer.authority) || answer.coordinator !== current.coordinator) {
@@ -233,13 +238,16 @@ export function createNearbyPairing({ local, connect, clock = Date.now, nonce = 
         peer: { fingerprint: current.client.fingerprint, certPem: current.client.certPem,
           name: cleanName(answer.name) || target.name, authority: { keyId: answer.authority.keyId, publicKey: answer.authority.publicKey },
           address: current.client.address, port: current.client.port, reachedAt: current.client.localAddress ?? null } });
-      await current.client.post('/peer/1/nearby/reveal', { requestId: current.id, nonce: initiatorNonce }, { timeoutMs: REQUEST_MS });
+      await remote(current.client.post('/peer/1/nearby/reveal', { requestId: current.id, nonce: initiatorNonce }, { timeoutMs: REQUEST_MS }));
       stillOpen();
       current.code = codeOf(current);
       current.state = 'confirm';
       schedulePoll(current);
     } catch (error) {
-      end(current, 'failed', error.code ?? 'pairing_failed');
+      // A cancel while connecting leaves a client end() no longer closes.
+      current.client?.close();
+      current.client = null;
+      end(current, 'failed', error.code);
       throw error;
     }
     return view();
@@ -249,21 +257,21 @@ export function createNearbyPairing({ local, connect, clock = Date.now, nonce = 
     clearTimeout(current.timer);
     current.timer = setTimeout(() => poll(current).catch((error) => {
       onError(error);
-      end(current, 'failed', error.code ?? 'pairing_failed');
+      end(current, 'failed', 'pairing_failed');
     }), delayMs);
     current.timer.unref?.();
   }
 
   async function poll(current) {
     if (!OPEN_STATES.has(current.state)) return;
-    if (current.expiresAt <= clock()) { await settleExpired(current); return; }
+    if (current.expiresAt <= clock()) { settleExpired(current); return; }
     let answer;
     try {
-      answer = await current.client.post('/peer/1/nearby/poll', { requestId: current.id, confirmed: current.here,
-        applied: current.applied }, { timeoutMs: REQUEST_MS });
+      answer = await remote(current.client.post('/peer/1/nearby/poll', { requestId: current.id, confirmed: current.here,
+        applied: current.applied }, { timeoutMs: REQUEST_MS }));
     } catch (error) {
       if (!OPEN_STATES.has(current.state)) return;
-      if (error.status === 404) { await settleExpired(current, 'cancelled_there'); return; }
+      if (error.status === 404) { settleExpired(current, 'cancelled_there'); return; }
       schedulePoll(current);
       return;
     }
@@ -283,7 +291,8 @@ export function createNearbyPairing({ local, connect, clock = Date.now, nonce = 
     }
     if (['failed', 'cancelled', 'expired'].includes(answer.state)) {
       if (current.applied) await local.untrustDevice(current.peer.fingerprint);
-      end(current, answer.state === 'failed' ? 'failed' : 'cancelled', typeof answer.reason === 'string' ? answer.reason.slice(0, 40) : 'cancelled_there');
+      end(current, answer.state === 'failed' ? 'failed' : 'cancelled', REMOTE_REASONS.has(answer.reason) ? answer.reason
+        : answer.state === 'failed' ? 'failed_there' : 'cancelled_there');
       return;
     }
     if (answer.state === 'confirmed' && current.coordinator === 'initiator' && current.here && !current.applied) {
@@ -299,7 +308,7 @@ export function createNearbyPairing({ local, connect, clock = Date.now, nonce = 
 
   // Once this computer wrote its trust, a lost answer leaves the outcome open:
   // the runtime takes the trust back when the other computer never connects.
-  async function settleExpired(current, reason = 'expired') {
+  function settleExpired(current, reason = 'expired') {
     if (current.applied) end(current, 'paired');
     else end(current, reason === 'expired' ? 'expired' : 'cancelled', reason);
   }
@@ -326,11 +335,13 @@ export function createNearbyPairing({ local, connect, clock = Date.now, nonce = 
   }
 
   // Tells the other computer when this one started the pairing; the target's
-  // side is seen by the initiator on its next poll.
+  // side is seen by the initiator on its next poll. Trust this computer already
+  // wrote for it is taken back.
   function stop(current, reason) {
-    const { client, id } = current;
+    const { client, id, applied } = current;
     current.client = null;
     end(current, reason === 'code_mismatch' ? 'failed' : 'cancelled', reason);
+    if (applied) Promise.resolve().then(() => local.untrustDevice(current.peer.fingerprint)).catch(onError);
     if (!client) return;
     if (!id) { client.close(); return; }
     client.post('/peer/1/nearby/poll', { requestId: id, cancel: true }, { timeoutMs: REQUEST_MS })
@@ -349,20 +360,28 @@ export function createNearbyPairing({ local, connect, clock = Date.now, nonce = 
       expiresAt: new Date(slot.expiresAt).toISOString() };
   }
 
-  // How many requests did not end paired in this session, and whether more are refused.
-  function budget() {
-    sweep();
-    return { unfinished: failures.length, limited: failures.length >= FAILURES_IN_ALL };
-  }
-
-  // Ends the session: an open request is cancelled and the count starts over.
+  // Ends the session's open request; the attempt count stays (it is the store's).
   function close() {
     if (slot && OPEN_STATES.has(slot.state)) stop(slot, 'cancelled_here');
     slot = null;
-    failures = [];
   }
 
-  return { handle, start, confirm, cancel, view, budget, close };
+  return { handle, start, confirm, cancel, view, close };
+}
+
+// The other computer's refusal in this computer's own words and status.
+async function remote(request) {
+  try { return await request; }
+  catch (error) {
+    if (!error?.remote) throw error;
+    const [message, status] = REMOTE_REFUSALS[error.code] ?? ['The other computer refused the pairing', 409];
+    throw new PeerError(REMOTE_REFUSALS[error.code] ? error.code : 'nearby_refused', message, status);
+  }
+}
+
+// What an unknown path answers on the coordinator listener.
+function unknownPath() {
+  return new PeerError('not_found', 'Not found', 404);
 }
 
 function deviceKey(peer) {

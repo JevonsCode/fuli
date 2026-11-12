@@ -56,6 +56,11 @@ function confirm() {
 function cancel() {
   return run('cancel', () => postJson('/api/peer/nearby/cancel', {}, peerStatusShape))
 }
+
+// The person's own reset of the attempt count on this computer.
+function clearAttempts() {
+  return run('clear', () => postJson('/api/peer/nearby/attempts/clear', {}, peerStatusShape))
+}
 </script>
 
 <template>
@@ -85,7 +90,13 @@ function cancel() {
       <p>{{ t('settings.peer.nearbyAutoOff') }}</p>
       <p v-if="!nearby.canPair && coordinatorName && !nearby.limited">{{ t('settings.peer.pairThroughCoordinator', { name: coordinatorName }) }}</p>
       <UiNotice v-if="nearby.limited" tone="warning" data-nearby-limited>
-        {{ t('settings.peer.nearbyLimited', { count: nearby.unfinishedRequests ?? 0 }) }}
+        {{ t('settings.peer.nearbyLimited', { window: nearby.attempts?.lastWindow ?? 0, day: nearby.attempts?.lastDay ?? 0 }) }}
+        <template #actions>
+          <Button size="sm" variant="outline" data-nearby-clear :loading="busy === 'clear'"
+            :loading-label="t('settings.peer.clearingAttempts')" @click="clearAttempts">
+            {{ t('settings.peer.clearAttempts') }}
+          </Button>
+        </template>
       </UiNotice>
       <ul v-if="nearby.devices.length" class="peer-devices" data-nearby-devices>
         <li v-for="device in nearby.devices" :key="device.fingerprint">

@@ -5,7 +5,7 @@ import { shortFingerprint } from './protocol.js';
 export function peerUsage(command) {
   return `${command} peer <action>  (LAN roundtable Beta; the local service must be running)
   status
-  nearby [on [--name NAME] | off]                 list nearby FULI; on: be seen and listen for pairing
+  nearby [on [--name NAME] | off | clear-attempts] list nearby FULI; on: be seen and listen for pairing
   pair FINGERPRINT                                pair with a nearby FULI (first 4+ characters from the list)
   confirm CODE                                    the 6 digits the person reads on the OTHER computer
   cancel                                          cancel the pairing waiting here
@@ -40,6 +40,7 @@ export async function runPeerControlCommand(args, { baseUrl, command, notRunning
       const [toggle] = positional(rest);
       if (toggle === 'on') return printNearby(await call('POST', '/api/peer/nearby', { on: true, name: option(rest, '--name') }), write, command);
       if (toggle === 'off') return printNearby(await call('POST', '/api/peer/nearby', { on: false }), write, command);
+      if (toggle === 'clear-attempts') return printNearby(await call('POST', '/api/peer/nearby/attempts/clear', {}), write, command);
       if (toggle) throw new Error(`Unknown nearby action: ${toggle}\n${peerUsage(command)}`);
       return printNearby(await call('GET', '/api/peer'), write, command);
     }
@@ -103,6 +104,8 @@ function printStatus(status, write) {
   write(`LAN roundtable (Beta): ${status.role === 'coordinator' ? 'coordinator' : 'paired device'}`);
   write(`This device: ${status.device.shortFingerprint}`);
   write(`Coordinator: ${status.coordinator.name} ${status.coordinator.url} (${status.coordinator.shortFingerprint})`);
+  const failure = status.coordinator.listenFailure;
+  if (failure) write(`Not listening: could not open ${failure.address}:${failure.port} (${failure.code}). Paired devices cannot reach this computer; turn the LAN roundtable off and on again.`);
   for (const device of status.devices.filter((entry) => !entry.self)) {
     write(`  device ${device.name} ${device.shortFingerprint} ${device.status}${device.online ? ' online' : ''} · shared Agents ${device.sharedAgents} · ${device.nodeId}`);
   }
@@ -125,8 +128,9 @@ function printNearby(status, write, command) {
     return;
   }
   write(`Nearby pairing: on until ${nearby.until}, seen as "${nearby.name}"${nearby.reason ? ` (${nearby.reason})` : ''}`);
-  if (nearby.limited) write(`Too many unfinished pairing requests (${nearby.unfinishedRequests}); turn nearby pairing off and on again to pair.`);
-  else if (nearby.unfinishedRequests) write(`Unfinished pairing requests so far: ${nearby.unfinishedRequests}.`);
+  const tried = nearby.attempts;
+  if (nearby.limited) write(`Too many pairing attempts (${tried.lastWindow} in 10 minutes, ${tried.lastDay} in 24 hours). Wait, or the person on this computer runs \`${command} peer nearby clear-attempts\`.`);
+  else if (tried?.lastDay) write(`Pairing attempts: ${tried.lastWindow} in the last 10 minutes, ${tried.lastDay} in 24 hours.`);
   if (!nearby.devices.length) write('  No other FULI seen on this network yet.');
   for (const device of nearby.devices) write(`  ${device.name} · ${device.shortFingerprint}${device.paired ? ' · paired' : ''}`);
   const { pairing } = nearby;

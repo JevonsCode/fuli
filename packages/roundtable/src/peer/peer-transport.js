@@ -114,8 +114,10 @@ function post(origin, path, body, { agent, tls = {}, timeoutMs = 15_000, signal 
         if (response.statusCode >= 200 && response.statusCode < 300) {
           return object ? settle(null, object) : settle(new PeerError('invalid_response', 'The coordinator sent an invalid response', 502));
         }
-        settle(new PeerError(typeof object?.error === 'string' ? object.error : 'coordinator_error',
-          typeof object?.message === 'string' ? object.message : `Coordinator responded ${response.statusCode}`, response.statusCode));
+        // Marked as the other side's words: nearby pairing never shows them as they are.
+        settle(Object.assign(new PeerError(typeof object?.error === 'string' ? object.error : 'coordinator_error',
+          typeof object?.message === 'string' ? object.message : `Coordinator responded ${response.statusCode}`, response.statusCode),
+        { remote: true }));
       });
       const interrupted = () => settle(new PeerError('response_interrupted', 'The coordinator response was interrupted', 502));
       response.on('aborted', interrupted);

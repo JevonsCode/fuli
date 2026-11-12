@@ -5,7 +5,7 @@ import { isAuthorityKey } from './origin-proof.js';
 import { createCoordinatorChat } from './chat-coordinator.js';
 import {
   canonicalJson, encodeInvitation, PEER_LIMITS, PeerError, peerCleanup, pemToDer, publicDirectoryEntry,
-  RESULT_OUTCOMES, sha256Hex, TERMINAL_STATUSES, validateAssertion,
+  RESULT_OUTCOMES, sha256Hex, TERMINAL_STATUSES, validateAssertion, withoutControls,
 } from './protocol.js';
 
 const ONLINE_MS = 90_000;
@@ -20,6 +20,11 @@ const LAST_SEEN_WRITE_MS = 15_000;
 const PAIRING_FAILURE_WINDOW_MS = 10 * 60_000;
 const PAIRING_FAILURE_LIMIT = 10;
 const REPOSITORY_DIGEST = /^[0-9a-f]{32}$/;
+// A paired device could publish guessed addresses to learn what others have:
+// at most this many digests per device, and its set may change this often a day.
+const REPOSITORY_LIMIT = 50;
+const REPOSITORY_CHANGES_PER_DAY = 3;
+const DAY_MS = 24 * 60 * 60_000;
 
 // Routes messages between paired devices. It never executes anything: each
 // receiving device re-checks its own shares and identity authority.
@@ -28,6 +33,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
   const iso = (offsetMs = 0) => new Date(clock() + offsetMs).toISOString();
   const pairingFailures = [];
   const repositories = new Map();
+  const repositoryChanges = new Map();
   let repositoryKey = null;
   rotateRepositoryKey();
   if (!isAuthorityKey(authority)) throw new PeerError('authority_unavailable', 'The coordinator needs its local origin authority', 500);
@@ -100,7 +106,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
     // paired group gets (repositoryKey, from this answer). Like online state
     // they are kept only in memory and published again within a minute; a
     // digest made with an older key is dropped.
-    if (projectRepositories?.keyId === repositoryKey.id) repositories.set(nodeId, repositoryDigests(projectRepositories.digests));
+    if (projectRepositories?.keyId === repositoryKey.id) acceptRepositories(nodeId, repositoryDigests(projectRepositories.digests));
     return { published: entries.length, repositoryKey };
   }
 
@@ -115,6 +121,17 @@ export function createCoordinatorService({ store, identity, authority, name, clo
       agents: JSON.parse(node.directory_json),
       sameRepositories: (repositories.get(node.id) ?? []).filter((digest) => mine.has(digest)),
     })) };
+  }
+
+  // The same set again is free; a new set counts, and past the daily limit the earlier set stays.
+  function acceptRepositories(nodeId, digests) {
+    const current = repositories.get(nodeId);
+    if (current && current.length === digests.length && digests.every((digest) => current.includes(digest))) return;
+    const now = clock();
+    const changes = (repositoryChanges.get(nodeId) ?? []).filter((at) => at > now - DAY_MS);
+    if (changes.length >= REPOSITORY_CHANGES_PER_DAY) return;
+    repositoryChanges.set(nodeId, [...changes, now]);
+    repositories.set(nodeId, digests);
   }
 
   // A revoked device keeps the old key, so the group gets a new one.
@@ -328,9 +345,9 @@ function statusView(message) {
 // Only 32-hex digests pass (peer-runtime.js makes them); anything else is dropped, never echoed.
 function repositoryDigests(value) {
   return Array.isArray(value) ? [...new Set(value.filter((digest) => typeof digest === 'string' && REPOSITORY_DIGEST.test(digest)))]
-    .slice(0, PEER_LIMITS.directoryAgents * 4) : [];
+    .slice(0, REPOSITORY_LIMIT) : [];
 }
 
 export function cleanName(value) {
-  return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 60) : '';
+  return typeof value === 'string' ? withoutControls(value).trim().slice(0, 60) : '';
 }

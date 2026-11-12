@@ -19,7 +19,9 @@ export async function handlePeerControlRequest({ request, response, url, peer, r
     sendJson(response, 200, result);
   } catch (error) {
     if (!(error instanceof PeerError)) throw error;
-    sendJson(response, error.status ?? 400, { error: error.code, message: error.message });
+    // A refusal is always an error status, whatever another device answered.
+    const status = Number.isInteger(error.status) && error.status >= 400 && error.status < 600 ? error.status : 502;
+    sendJson(response, status, { error: error.code, message: error.message });
   }
   return true;
 }
@@ -54,5 +56,6 @@ async function route(request, pathname, peer, readJson) {
     return peer.confirmPairing({ requestId: body.requestId, code: body.code });
   }
   if (pathname === '/api/peer/nearby/cancel' && method === 'POST') { await readJson(request); return peer.cancelPairing(); }
+  if (pathname === '/api/peer/nearby/attempts/clear' && method === 'POST') { await readJson(request); return peer.clearPairingAttempts(); }
   return undefined;
 }

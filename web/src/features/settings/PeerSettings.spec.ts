@@ -111,6 +111,15 @@ it('suggests a project a paired computer has too, shares nothing until the perso
   wrapper.unmount()
 })
 
+it('says when the coordinator is not listening and why', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ ...paired, coordinator: { ...paired.coordinator, listening: false,
+    listenFailure: { address: '10.255.255.1', port: 4101, code: 'EADDRNOTAVAIL', at: '2030-01-01T00:00:00.000Z' } } })))
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  expect(wrapper.get('[data-listen-failure]').text()).toContain('没能在 10.255.255.1 上监听（EADDRNOTAVAIL）')
+  wrapper.unmount()
+})
+
 it('says when no checkout of the project is known here', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(json({ ...paired, shareable: [{ ...paired.shareable[0],
     sameProjectOn: [{ nodeId: 'b'.repeat(64), name: 'Laptop' }], knownFolder: null }] })))

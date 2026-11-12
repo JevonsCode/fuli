@@ -12,7 +12,7 @@ const SWEEP_MS = 5_000;
 // and nearby pairing (nearby-pairing.js), which trusts nothing until the person
 // on each computer confirmed the same code.
 export async function startCoordinatorServer({ service, identity, host, port = 0, claimWaitMs = PEER_LIMITS.claimWaitMs,
-  nearby = null }) {
+  nearby = null, onReached = () => {} }) {
   const secureContext = () => ({ ...identity.tlsOptions, ca: service.trustedCertificates() });
   const server = createServer({
     ...secureContext(), requestCert: true, rejectUnauthorized: false, minVersion: 'TLSv1.3',
@@ -36,8 +36,8 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
       sendJson(response, service.pair({ code: body.code, name: body.name, authority: body.authority, certPem: derToPem(certificate.raw) }));
       return;
     }
-    if (pathname.startsWith('/peer/1/nearby/')) {
-      if (!nearby) throw new PeerError('nearby_off', 'This computer is not open for nearby pairing', 404);
+    // While nearby pairing is off these paths answer exactly as any unknown path.
+    if (pathname.startsWith('/peer/1/nearby/') && nearby?.listening()) {
       const { value, after } = await nearby.handle(pathname, body, { certPem: derToPem(certificate.raw),
         fingerprint: sha256Hex(certificate.raw), address: plainAddress(request.socket.remoteAddress),
         localAddress: plainAddress(request.socket.localAddress) });
@@ -48,7 +48,8 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
     }
     if (!request.socket.authorized) throw new PeerError('device_not_trusted', 'This device is not paired', 403);
     const nodeId = service.authenticate(sha256Hex(certificate.raw)).id;
-    reached.set(nodeId, plainAddress(request.socket.localAddress));
+    const reachedAt = plainAddress(request.socket.localAddress);
+    if (reached.get(nodeId) !== reachedAt) { reached.set(nodeId, reachedAt); onReached(nodeId, reachedAt); }
     switch (pathname) {
       case '/peer/1/directory/publish': return sendJson(response, service.publishDirectory(nodeId, body));
       case '/peer/1/directory': return sendJson(response, service.directory(nodeId));
@@ -104,7 +105,6 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
     address: server.address(),
     // Trust changes apply to new connections; existing ones are re-checked per request.
     refreshTrust: () => server.setSecureContext(secureContext()),
-    reachedAt: (nodeId) => reached.get(nodeId) ?? null,
     close: () => new Promise((resolve) => {
       clearInterval(sweeper);
       server.close(() => resolve());

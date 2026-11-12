@@ -56,6 +56,9 @@ test('the nearby list is capped, forgets computers that stopped answering, and a
   assert.deepEqual(presence.list().map((entry) => entry.name), ['Laptop']);
   handlers.onUp({ port: 4100, addresses: ['192.168.1.20'], txt: { v: '2', fp: 'c'.repeat(16), n: 'Other version' } });
   assert.equal(presence.list().length, 1, 'another protocol version is ignored');
+  // second review: a name another device sends never carries terminal escapes or direction overrides.
+  handlers.onUp({ port: 4100, addresses: ['192.168.1.21'], txt: { v: '1', fp: 'd'.repeat(16), n: '\u001b[2JLap‮top\u0085' } });
+  assert.equal(presence.list().find((entry) => entry.fingerprint === 'd'.repeat(16)).name, '[2JLaptop');
 
   presence.advertise({ name: 'Desk', port: 4100, fingerprint: '1'.repeat(64), addresses: ['192.168.1.8'] });
   presence.stop();

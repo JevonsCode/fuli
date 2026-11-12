@@ -189,7 +189,10 @@ export const settingsMessages = {
       asked: '{name} 想和这台电脑配对',
       refuse: '拒绝',
       nearbyAutoOff: '配对成功或 30 分钟后会自动关闭。',
-      nearbyLimited: '未完成的配对请求已有 {count} 次。关掉再打开「附近的 FULI」后才能再配对。',
+      nearbyLimited: '配对尝试太多（10 分钟 {window} 次，24 小时 {day} 次），先等一会儿，或在这台电脑上清零。',
+      clearAttempts: '清零',
+      clearingAttempts: '正在清零配对尝试…',
+      listenFailure: '没能在 {address} 上监听（{code}），已配对的电脑现在连不上。关掉再打开局域网圆桌。',
       nearbyEnded: {
         paired: '已和 {name} 配对，附近的 FULI 已自动关闭。',
         timeout: '30 分钟没有配对，附近的 FULI 已自动关闭。需要时再打开。',
@@ -601,7 +604,10 @@ export const settingsMessages = {
       asked: '{name} asks to pair with this computer',
       refuse: 'Refuse',
       nearbyAutoOff: 'Turns itself off after a pairing or 30 minutes.',
-      nearbyLimited: '{count} pairing requests did not finish. Turn FULI nearby off and on to pair again.',
+      nearbyLimited: 'Too many pairing attempts ({window} in 10 min, {day} in 24 h). Wait, or clear them on this computer.',
+      clearAttempts: 'Clear',
+      clearingAttempts: 'Clearing pairing attempts…',
+      listenFailure: 'Not listening on {address} ({code}). Turn the LAN roundtable off and on to fix it.',
       nearbyEnded: {
         paired: 'Paired with {name}. FULI nearby turned itself off.',
         timeout: 'No pairing in 30 minutes, so FULI nearby turned itself off. Turn it on when needed.',
