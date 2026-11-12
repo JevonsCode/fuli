@@ -26,7 +26,10 @@ const MIN_ROW = 16
 const PADDING = 12
 const TOP_MIN = 76
 const BOTTOM = 32
-const fits = (rows: number) => rows * MIN_ROW + PADDING <= window.innerHeight - TOP_MIN - BOTTOM
+// The desktop client keeps a strip under its window buttons (--desktop-caption-top), which the style adds to the top.
+// lib/desktop-client.ts sets it on the root element's own style.
+const captionTop = () => Number.parseFloat(document.documentElement.style.getPropertyValue('--desktop-caption-top')) || 0
+const fits = (rows: number) => rows * MIN_ROW + PADDING <= window.innerHeight - TOP_MIN - captionTop() - BOTTOM
 
 const entries = shallowRef<OutlineEntry[]>([])
 const scroller = shallowRef<HTMLElement | null>(null)

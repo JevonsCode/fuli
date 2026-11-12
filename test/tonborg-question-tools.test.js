@@ -278,3 +278,16 @@ test('其他: the person\'s own words are recorded as said, the item is not touc
   // newText is only for edit.
   await assert.rejects(answer(g.app, { ...call, decisionId: again.id, answer: 'other', personWords: '保留', newText: 'x' }), /newText is only for edit/);
 });
+
+test('going through a batch never lists or reads a question that cannot name its item (rec#99)', async t => {
+  const f = fixture(t);
+  f.ask('entity:titled', 'Synthetic writing habit', 'keep');
+  const untitled = f.ask('entity:untitled', '', 'keep');
+  // The batch card counts only the one it can ask about, and so does the list the card leads to.
+  const all = await list(f.app, call);
+  assert.deepEqual(all.questions.map(question => question.item), ['Synthetic writing habit']);
+  assert.doesNotMatch(JSON.stringify(all), /entity:untitled|有一条知识/);
+  // Read by its ID it is not open here either; it waits in the console's 待决策.
+  await assert.rejects(list(f.app, { ...call, decisionId: untitled.id }));
+});
+

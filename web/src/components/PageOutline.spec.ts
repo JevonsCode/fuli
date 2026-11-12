@@ -46,8 +46,15 @@ describe('the page outline look', () => {
       expect(await outlineOf(longPage(labels))).toBeNull()
       Object.defineProperty(window, 'innerHeight', { configurable: true, value: 312 })
       expect(await outlineOf(longPage(labels))).not.toBeNull()
+      // In the desktop client the strip under the window buttons takes its height from the same room.
+      mounted.splice(0).forEach(wrapper => wrapper.unmount())
+      document.documentElement.style.setProperty('--desktop-caption-top', '40px')
+      expect(await outlineOf(longPage(labels))).toBeNull()
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 352 })
+      expect(await outlineOf(longPage(labels))).not.toBeNull()
     } finally {
       Object.defineProperty(window, 'innerHeight', { configurable: true, value: height })
+      document.documentElement.style.removeProperty('--desktop-caption-top')
     }
   })
 

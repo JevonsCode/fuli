@@ -1,3 +1,4 @@
+import { namesItsItem } from './conversation.js';
 import { z } from 'zod';
 
 import { DELEGATION_HANDLERS } from '../agent-delegation/agent-tool.js';
@@ -115,7 +116,9 @@ async function openQuestions(app, judgment, input, task, { only = null } = {}) {
   const project = record => record.personalProjectId ?? null;
   const scoped = reader || projectId
     ? questions.filter(record => project(record) === null || project(record) === projectId) : questions;
-  const knowledge = scoped.filter(record => KNOWLEDGE_KEY.test(record.target ?? ''));
+  // The same rule as the chat card (conversation.js): a question that cannot name its item is
+  // not listed or read here, so going through a batch never asks 「有一条知识…」; it stays in the console.
+  const knowledge = scoped.filter(record => KNOWLEDGE_KEY.test(record.target ?? '') && namesItsItem(record));
   const asked = only ? knowledge.filter(record => record.id === only) : knowledge;
   const { visible, states, versions, unavailable } = await visibleKnowledgeKeys(app.personal,
     { personalSpaceId: input.personalSpaceId, reader }, asked.map(record => record.target), { withState: true, withVersion: Boolean(only) });
