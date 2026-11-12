@@ -17,8 +17,9 @@ export function reviewEgressRefused(modelBackends, personalSpaceId, personalProj
 
 // What the switch says of the active projects: how many there are, which ones
 // Tonborg's model may not read, and whether knowledge outside projects may go.
-export function reviewReach(modelBackends, personalSpaceId, projectIds) {
-  return { projects: projectIds.length,
-    blockedProjectIds: projectIds.filter(projectId => reviewEgressRefused(modelBackends, personalSpaceId, projectId)),
-    unassignedAllowed: !reviewEgressRefused(modelBackends, personalSpaceId, null) };
+// A scope reviewed through the person's own CLI client sends nothing to the
+// model, so the scheduled review still covers it (usesModel says which do not).
+export function reviewReach(modelBackends, personalSpaceId, projectIds, usesModel = () => true) {
+  const refused = projectId => usesModel(projectId) && reviewEgressRefused(modelBackends, personalSpaceId, projectId);
+  return { projects: projectIds.length, blockedProjectIds: projectIds.filter(refused), unassignedAllowed: !refused(null) };
 }

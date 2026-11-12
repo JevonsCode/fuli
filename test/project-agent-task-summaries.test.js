@@ -114,3 +114,14 @@ test('a cursor the list did not give is refused with what to pass', async () => 
     }
   });
 });
+
+test('a Provider that ignores the cursor ends the listing instead of repeating page one', async () => {
+  const { listProjectAgentTaskSummaries } = await import('../src/graphiti/project-agent-task-summaries.js');
+  const tasks = [0, 2, 4, 6].map(index => providerTask(index, { events: 1 }));
+  const sorted = [...tasks].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  const app = { async listProjectAgentTasks(input) { return sorted.slice(0, input.limit); } };
+  const first = await listProjectAgentTaskSummaries(app, { personalSpaceId: 'space-a', limit: 2 });
+  assert.ok(first.nextCursor);
+  const again = await listProjectAgentTaskSummaries(app, { personalSpaceId: 'space-a', limit: 2, cursor: first.nextCursor });
+  assert.equal(again.nextCursor, null);
+});

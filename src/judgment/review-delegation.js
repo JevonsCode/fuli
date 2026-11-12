@@ -49,7 +49,8 @@ function tonborgModel(modelTrust) {
 async function delegationView({ judgment, modelTrust, modelBackends }, personalSpaceId, saved) {
   const projectIds = await judgment.activeProjectIds(personalSpaceId).catch(() => null);
   return { ...saved, model: tonborgModel(modelTrust),
-    reach: projectIds ? reviewReach(modelBackends, personalSpaceId, projectIds) : null };
+    reach: projectIds ? reviewReach(modelBackends, personalSpaceId, projectIds,
+      projectId => judgment.store().policy(personalSpaceId, projectId ?? '').backend !== 'legacy_cli') : null };
 }
 
 export async function reviewDelegation({ judgment, modelTrust, modelBackends = null, input }) {

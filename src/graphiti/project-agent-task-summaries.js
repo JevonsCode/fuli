@@ -30,7 +30,10 @@ export async function listProjectAgentTaskSummaries(app, { cursor = null, limit 
     bytes += added;
   }
   const last = page.at(-1);
-  return { tasks: page, nextCursor: tasks.length > page.length && last ? encodeCursor(last) : null,
+  // A Provider that does not know the cursor answers with the first page again: stop there, never loop.
+  const moved = !after || !page.length || Date.parse(page[0].updatedAt) < Date.parse(after.updatedAt)
+    || (Date.parse(page[0].updatedAt) === Date.parse(after.updatedAt) && page[0].taskId !== after.taskId);
+  return { tasks: page, nextCursor: moved && tasks.length > page.length && last ? encodeCursor(last) : null,
     detail: TASK_DETAIL_HINT };
 }
 
