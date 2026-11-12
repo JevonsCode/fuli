@@ -71,7 +71,9 @@ export async function codexLifecycleOutput(event, input, invoke, { delivery, cur
     { delivery, currentTask, onCurrentTask });
   const context = await invoke('begin_task_context', { sessionId: input.session_id,
     turnId: input.turn_id ?? null, projectPath: input.cwd, taskPrompt: withoutDebugMark(input.prompt).slice(0, 8192),
-    sourceApplication: 'codex', sourceSessionId: input.session_id, ...taskSceneInput(withoutDebugMark(input.prompt)) });
+    sourceApplication: 'codex', sourceSessionId: input.session_id, ...taskSceneInput(withoutDebugMark(input.prompt)),
+    // Codex names the session's model in its prompt hook input; a #FLG join records it (rec#129).
+    ...(typeof input.model === 'string' && input.model.trim() ? { clientModel: input.model.trim().slice(0, 120) } : {}) });
   const entry = compactTaskContext(context);
   return preferenceHookOutput(entry, event, input, delivery, 'codex',
     'Fuli task context. Apply effective_preferences. ' + taskClosingInstruction(entry) + PASS_TASK_TOKEN + TASK_RULES_ON_DEMAND);

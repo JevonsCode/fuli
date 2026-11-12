@@ -513,6 +513,106 @@ test('mode 1: a member whose tasks cannot be read is said so; the rest still loa
   assert.equal(entry.flg.context.members[0].tasks.length, 3);
 });
 
+test('rec#129 parsing: #FLG 加入 <code> joins, case-insensitive; the roundtable options ride on the confirmation', () => {
+  // Text after the code, on its line or on later lines, is ignored.
+  for (const prompt of ['#FLG 加入 7k3m', '#FLG join 7K3M', '#flg 加入7K3M', '＃FLG： 加入 7K3M', '#FLG 加入 7K3M 我在 OpenCode',
+    '#FLG 加入 7K3M\n先读一下讨论再回答']) {
+    assert.deepEqual(parseFlaMention(prompt), { group: { join: '7K3M' } }, prompt);
+  }
+  // Only the code shape FULI generates (four of 2–9/A–Z without I/L/O, a digit and a letter) joins; the rest are questions.
+  for (const question of ['加入这个讨论看看大家的意见', '加入 Redis 集群怎么选型', 'join meeting notes into the doc', 'join team',
+    '加入 7K3MX 方案', '加入 1234', '加入 7KIO']) {
+    assert.deepEqual(parseFlaMention(`#FLG ${question}`), { group: { query: question } }, question);
+  }
+  assert.deepEqual(groupChoiceReply('1 3 圆桌 长期 不限轮数'), { choices: [1, 3], mode: 'roundtable', lifetime: 'long', roundLimit: 0 });
+  assert.deepEqual(groupChoiceReply('1 3 在圆桌里分头回复 长期调研群 最多 3 轮'),
+    { choices: [1, 3], mode: 'roundtable', lifetime: 'long', roundLimit: 3 });
+  assert.deepEqual(parseFlaMention('#FLG 开始 圆桌 短期 5轮'),
+    { group: { confirm: true, mode: 'roundtable', lifetime: 'short', roundLimit: 5 } });
+  assert.deepEqual(parseFlaMention('#FLG 长期调研群'), { group: { confirm: true, lifetime: 'long' } });
+  // A question that only contains such words is still a question.
+  assert.deepEqual(parseFlaMention('#FLG 长期来看这个方案的风险'), { group: { query: '长期来看这个方案的风险' } });
+  assert.deepEqual(parseFlaMention('#FLG how long should the rollout take'), { group: { query: 'how long should the rollout take' } });
+  assert.equal(groupChoiceReply('最多 3 轮'), null);
+});
+
+test('rec#129: the lifetime and round limit are asked in the same choice and recorded with the confirmation', async () => {
+  const { hook, calls } = fixture();
+  const choose = await hook('#FLG 讨论上线风险 Nova Lane Pia Mo');
+  assert.deepEqual(choose.human_interaction.lifetime_choice.options, ['短期', '长期调研群']);
+  assert.deepEqual(choose.human_interaction.rounds_choice.options, ['最多 3 轮', '不限轮数']);
+  assert.equal(choose.human_interaction.lifetime_choice.preselected, 1);
+  const confirmed = await hook('#FLG 开始 圆桌 长期调研群 不限轮数');
+  assert.equal(confirmed.flg.status, 'confirmed');
+  const recorded = calls.find(([kind]) => kind === 'confirm')[1];
+  assert.deepEqual([recorded.lifetime, recorded.roundLimit], ['long', 0]);
+  assert.match(confirmed.flg.notice, /长期调研群，不限轮数/u);
+  assert.match(confirmed.flg.guidance, /join sentence[\s\S]*No edits or publishing/u);
+  // Without options: short and the default limit, recorded by the roundtable's defaults.
+  const plain = fixture();
+  await plain.hook('#FLG 讨论上线风险 Nova Lane Pia Mo');
+  assert.match((await plain.hook('#FLG 开始')).flg.notice, /短期，最多 3 轮/u);
+  assert.equal(plain.calls.find(([kind]) => kind === 'confirm')[1].lifetime, undefined);
+});
+
+// The global assistant as the Provider returns it once it exists (synthetic).
+const ASTRO = { agent_id: 'employee.assistant', personal_space_id: SPACE, personal_project_id: null,
+  memory_scope: 'reviewed_agent', updated_at: '2026-10-20T00:00:00Z', assignments: [],
+  profile: { name: 'Astro', display_name: 'Astro', responsibility: '全局助手', status: 'active',
+    allowed_clients: ['opencode', 'codex', 'claude_code'], work_kinds: ['project_context'], capabilities: [], agent_type: 'durable' } };
+
+test('rec#129: #FLG 加入 <code> makes this session\'s FLA a member, Astro outside a project; a waiting round shows until answered', async () => {
+  for (const [folder, agentId, client, extra] of [[{ status: 'unmatched', personalProjectId: null }, 'employee.assistant', 'opencode', {}],
+    [FOLDER, 'ada', 'codex', { clientModel: 'synthetic-codex-model' }]]) {
+    const { app, hook, memoryReads } = fixture({ folder });
+    const getAgent = app.personal.getProjectAgent;
+    app.personal.getProjectAgent = async (space, project, id) => id === ASTRO.agent_id ? structuredClone(ASTRO)
+      : getAgent(space, project, id);
+    const joins = [];
+    const asked = [];
+    let turns = [];
+    Object.assign(app.roundtable, {
+      joinGroupDiscussion: async input => { joins.push(input); return input.code === '7K3M' ? { joined: { chatId: 'local:chat-1',
+        member: 'join:1', fresh: joins.length === 1, question: '要不要拆服务？', topic: 1, hostRound: 1, roundLimit: 3,
+        moderator: 'Nova Lane（测试）', members: ['Jamie Ash（开发）', 'Astro · OpenCode'], excerpt: [], open: true } }
+        : { refused: 'unknown' }; },
+      groupDiscussionTurns: async input => { asked.push(input); return turns; } });
+    const entry = await hook('#FLG 加入 7k3m', { sourceApplication: client, sessionId: 'oc-session', ...extra });
+    assert.equal(entry.flg.status, 'joined', JSON.stringify(entry.flg));
+    // The model Codex's prompt hook reported rides along; nothing is guessed for other clients.
+    assert.deepEqual(joins[0], { code: '7K3M', agentId, name: joins[0].name, projectId: folder.personalProjectId,
+      client, sessionId: 'oc-session', ...(extra.clientModel ? { model: extra.clientModel } : {}) });
+    assert.match(entry.flg.guidance, /chatId = flg\.chat_id/u);
+    // Told once that the discussion goes to this client's model; the member answers itself, read-only.
+    assert.match(entry.flg.notice, /已加入 #FLG 讨论（主持：Nova Lane（测试））；这场讨论的内容会发给这个客户端的模型/u);
+    assert.match(entry.agent_receipt.markdown, /这场讨论的内容会发给这个客户端的模型/u);
+    assert.match(entry.flg.guidance, /group_discussion reply[\s\S]*never[\s\S]*guessed[\s\S]*Read-only/u);
+    // Joining reads no other FLA's working memory.
+    assert.deepEqual(memoryReads().filter(([, , agent]) => agent !== agentId), []);
+    assert.doesNotMatch((await hook('#FLG 加入 7K3M', { sourceApplication: client, sessionId: 'oc-session' })).flg.notice,
+      /客户端的模型/u);
+    assert.equal((await hook('#FLG 加入 QQ2Q', { sourceApplication: client, sessionId: 'oc-session' })).flg.reason, 'join_unknown');
+    // An ordinary prompt carries nothing, until the host addresses a round to this session's FLA.
+    assert.equal((await hook('先看看日志', { sourceApplication: client, sessionId: 'oc-session' })).flg, undefined);
+    assert.equal(asked.at(-1).agentId, agentId);
+    turns = [{ chatId: 'local:chat-1', member: 'join:1', round: 2, question: '要不要拆服务？',
+      latest: { seq: 9, from: '主持 · Nova Lane（测试）', by: 'Claude Code · unknown', body: '【第 2 轮 · 主持人提问】1. 拆分成本？' } }];
+    for (const prompt of ['先看看日志', '再看看']) {
+      const next = await hook(prompt, { sourceApplication: client, sessionId: 'oc-session' });
+      assert.equal(next.flg.status, 'member_turn');
+      assert.match(next.flg.guidance, /group_discussion reply \(chatId = turns\[\]\.chat_id/u);
+    }
+  }
+  // No FLA ready this turn (none assigned, or one this client may not run): nobody joins, and the reason is said.
+  for (const [folder, client, reason] of [[{ status: 'unmatched', personalProjectId: null }, 'opencode', 'assistant_unavailable'],
+    [FOLDER, 'opencode', 'client_not_allowed']]) {
+    const { app, hook } = fixture({ folder });
+    app.roundtable.joinGroupDiscussion = async () => assert.fail('must not join');
+    const refused = await hook('#FLG 加入 7K3M', { sourceApplication: client, sessionId: 'oc-2' });
+    assert.deepEqual([refused.flg.reason, refused.flg.notice.endsWith(reason)], ['join_no_fla', true]);
+  }
+});
+
 test('token budget: an ordinary prompt carries nothing new; the member choice and the confirmation stay small', async t => {
   const plain = await fixture().hook('讨论这个方案的产品体验和技术风险');
   assert.equal(plain.flg, undefined);
@@ -525,7 +625,8 @@ test('token budget: an ordinary prompt carries nothing new; the member choice an
   const confirmation = size({ flg: confirm.flg });
   t.diagnostic(`choice fields ${choice} B, confirmation field ${confirmation} B, choice entry ${bytes(choose)} B`);
   // Mode 1 adds mode_choice (two labels) and the mode to the guidance: 1,171 -> about 1,400 B.
-  assert.ok(choice < 1_500, `choice ${choice}`);
+  // rec#129 asks the roundtable's lifetime and round limit in the same UI: about 1,680 B.
+  assert.ok(choice < 1_750, `choice ${choice}`);
   assert.ok(confirmation < 700, `confirmation ${confirmation}`);
   // Mode 1's index for two members, each with three tasks, plus one knowledge title: once per
   // confirmation or `#FLG <text>`, never on ordinary turns; full items are read on demand.

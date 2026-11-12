@@ -9,6 +9,7 @@ export function createAgentChat({ host, peer = null, store, agents, idFactory, m
   const scope = host.spaceId();
   const local = createChatService({ store: new Proxy({}, { get: (_, key) => store.chat[key] }),
     transaction: work => store.transaction(work), scope, transport: 'local', idFactory,
+    discussionChat: id => Boolean(store.discussions?.byChat(id)),
     directory: async () => (await agents()).map(a => ({ address: `local:${a.agentId}`, agentId: a.agentId,
       name: a.profile.displayName || a.profile.name || a.agentId })) });
   const wakes = createChatWake({ store: new Proxy({}, { get: (_, key) => store.chat[key] }), scope, messageAgent, waitUntilIdle, transaction: work => store.transaction(work) });

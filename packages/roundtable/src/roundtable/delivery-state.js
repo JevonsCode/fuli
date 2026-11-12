@@ -3,7 +3,8 @@
 // cannot push into a client chat that is already running. So every state says
 // plainly whether any client received the message and what happens next.
 
-export const CLIENT_LABELS = { claude_code: 'Claude Code', codex: 'Codex', cursor: 'Cursor', claude: 'Claude', other: 'Agent' };
+export const CLIENT_LABELS = { claude_code: 'Claude Code', codex: 'Codex', cursor: 'Cursor', opencode: 'OpenCode', claude: 'Claude',
+  other: 'Agent' };
 const INBOX = 'sees it in its inbox when its next task starts (task-entry agent_messages or read_agent_messages) and answers with reply_agent_message. '
   + 'FULI cannot push a message into a client chat that is already running; ask the person to prompt that chat if it is urgent. '
   + 'Check later with get_agent_message_status.';

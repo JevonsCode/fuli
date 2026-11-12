@@ -53,6 +53,7 @@ export const codexWake = Object.freeze({
   },
 
   // `codex exec --json` streams items; the last agent message before turn.completed is the answer.
+  // No event names the model, so a Codex wake's model stays unknown (rec#129).
   initialState: () => ({ body: '', completed: false, failed: false }),
   nativeSessionId: event => event.type === 'thread.started' ? event.thread_id : null,
   readEvent(event, state) {

@@ -5,7 +5,13 @@ import { PeerError } from '../peer/protocol.js';
 import { CHAT_LIMITS, parseChatRequest } from './chat-contract.js';
 
 // Only message membership is granted here. No execution, knowledge or weight ports.
-export function createChatService({ store, transaction, scope, transport, directory, idFactory = randomUUID, clock = Date.now }) {
+// discussionChat: whether a chat backs a #FLG group discussion (rec#129). Such a
+// chat is written, managed and read by its members only through the
+// discussion (its calls pass { discussion: true }), so every post carries
+// its speaker, client and model and no post becomes a mention wake; the
+// person's owner view still reads it.
+export function createChatService({ store, transaction, scope, transport, directory, idFactory = randomUUID, clock = Date.now,
+  discussionChat = () => false }) {
   const error = (code, message, status = 403) => { throw new PeerError(code, message, status); };
   const member = (chatId, actor) => store.members(chatId).find(m => m.address === actor.address);
   const visible = (room, actor) => actor.owner ? store.members(room.id).some(m => actor.owns(m)) : Boolean(member(room.id, actor));
@@ -20,11 +26,15 @@ export function createChatService({ store, transaction, scope, transport, direct
   // inbox: the waiting Agent's answered attention requests, which end a wait too.
   // commit: for a send, called with the new message inside its transaction;
   // false rolls the message back (the group discussion's settled turn).
-  async function execute(actor, raw, { signal, authorize, onMessage, inbox, commit } = {}) {
+  async function execute(actor, raw, { signal, authorize, onMessage, inbox, commit, discussion = false } = {}) {
     signal?.throwIfAborted();
     await authorize?.();
     signal?.throwIfAborted();
     const request = parseChatRequest(raw);
+    if (request.chatId && !actor.owner && !discussion && discussionChat(request.chatId)) {
+      error('chat_group_discussion', 'This chat backs a #FLG group discussion: read and post only with group_discussion '
+        + '(status/wait/round as its host, read/reply as a member that joined by code)');
+    }
     if (request.action === 'wait') {
       if (actor.owner) error('chat_owner_read_only', 'The owner view is read only');
       const { timeoutSeconds, ...page } = request;
@@ -100,7 +110,8 @@ export function createChatService({ store, transaction, scope, transport, direct
       if (request.action === 'send') {
         const saved = store.message(room.id, actor.address, request.requestId);
         if (saved && saved.body !== request.body) error('chat_conflict', 'This request ID belongs to a different message', 409);
-        if (!saved) delivered = { chatId: room.id, targets: store.members(room.id).filter(m => m.address !== actor.address
+        // A discussion's members are reached only by the discussion, never by a mention.
+        if (!saved && !discussionChat(room.id)) delivered = { chatId: room.id, targets: store.members(room.id).filter(m => m.address !== actor.address
           && (room.kind === 'direct' || request.body.includes(`@{${m.address}}`))
           && !store.waiting(scope, m.address, room.id)).map(m => m.address) };
         const message = messageView(saved ?? store.append({ chatId: room.id, seq: store.lastSeq(room.id) + 1,

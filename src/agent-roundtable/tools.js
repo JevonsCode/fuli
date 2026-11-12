@@ -17,9 +17,12 @@ export const ROUNDTABLE_TOOL_DEFINITIONS = [
   },
   {
     name: 'group_discussion', title: 'ROUNDTABLE · Group discussion (#FLG)',
-    description: 'Moderate the #FLG discussion the person chose, as the current task Agent; each member is woken in its own client, without file edits or shell, and answers itself, so never write a member\'s view. start: requestId (the entry\'s flg.start),responseRounds?; status/stop: chatId,after?; wait: chatId,after?,timeoutSeconds?; follow_up: chatId (carries out the person\'s own #FLG follow-up); summary: chatId,requestId,body. Grants no edits or publishing.',
-    inputSchema: objectSchema({ taskContextToken: text(160), action: enumSchema(['start','status','wait','follow_up','stop','summary']),
+    description: 'Host the #FLG discussion the person chose, as the current task Agent; woken members answer themselves in their own clients (no edits or shell): never write a member\'s view. start: requestId (entry flg.start),responseRounds?; status/stop: chatId,after?; wait: chatId,after?,timeoutSeconds?; follow_up: chatId (the person\'s #FLG text); round: chatId,to (members[].member),questions; remove: chatId,member; summary: chatId,requestId,body. Joined by code (flg.status joined/member_turn): read: chatId,after?; reply: chatId,body. model: only as your client states it. Grants no edits or publishing.',
+    inputSchema: objectSchema({ taskContextToken: text(160),
+      action: enumSchema(['start','status','wait','follow_up','round','remove','stop','summary','read','reply']),
       chatId: text(160), requestId: text(128), responseRounds: integerSchema({ minimum: 0, maximum: 2 }), body: text(8000),
+      to: arraySchema(text(160), { minItems: 1, maxItems: 6 }), questions: arraySchema(text(600), { minItems: 1, maxItems: 3 }),
+      member: text(160), model: text(120),
       after: integerSchema({ minimum: 0 }), timeoutSeconds: integerSchema({ minimum: 1, maximum: 300 }) },
     ['taskContextToken', 'action'])
   },

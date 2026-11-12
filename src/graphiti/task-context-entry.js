@@ -25,7 +25,9 @@ export async function beginTaskContext(application, {
   workKind,
   promptScene,
   workflow,
-  requiredCapabilities = []
+  requiredCapabilities = [],
+  // The model a client's prompt hook reported (Codex); like promptScene, hooks only, not in the tool schema.
+  clientModel = null
 }) {
   const continuationToken = /^FULI_CHECKPOINT_REQUIRED: (fuli-task-[a-zA-Z0-9-]{8,128})\b/.exec(taskPrompt ?? '')?.[1];
   const readsCurrent = Boolean(!continuationToken && turnId && application.taskContextRegistry.current);
@@ -69,6 +71,7 @@ export async function beginTaskContext(application, {
     requiredCapabilities,
     agentInvocation: true,
     agentToolName: 'begin_task_context',
+    ...(clientModel ? { clientModel } : {}),
     // Read above for a same-turn retry; the entry reuses it for the session's FLA binding.
     ...(readsCurrent ? { sessionTask: current } : {})
   });

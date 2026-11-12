@@ -1,7 +1,8 @@
 import { openFormattedDatabase, sqliteFormat } from '../storage/database-format.js';
 import { CHAT_SCHEMA, createChatStore } from './chat-store.js';
 import { ATTENTION_INBOX_SCHEMA, createAttentionInboxStore } from './attention-inbox-store.js';
-import { GROUP_DISCUSSION_TABLES, createGroupDiscussionStore } from './group-discussion-store.js';
+import { GROUP_DISCUSSION_JOIN_COLUMNS, GROUP_DISCUSSION_JOIN_TABLES, GROUP_DISCUSSION_TABLES,
+  createGroupDiscussionStore } from './group-discussion-store.js';
 import { THREAD_SUBSCRIPTION_TABLES, createThreadSubscriptionStore } from './thread-subscriptions.js';
 import { DESKTOP_INBOX_TABLES, createDesktopInboxStore } from './desktop-inbox-store.js';
 
@@ -56,6 +57,15 @@ export const ROUNDTABLE_FORMAT = sqliteFormat({
     id: 'roundtable/7-wake-process', to: 7, kind: 'add-columns', table: 'messages',
     summary: 'which process each roundtable wake started, so a lost wake is released only after it ended',
     columns: { wake_process_evidence: 'TEXT', wake_pid: 'TEXT', wake_pid_identity: 'TEXT' }
+  }, {
+    // rec#129: a join code, short or long life and a round limit per discussion.
+    id: 'roundtable/8-group-discussion-join-codes', to: 8, kind: 'add-columns', table: 'group_discussions',
+    summary: 'each group discussion\'s join code, lifetime, round limit, host-led rounds and topic',
+    columns: GROUP_DISCUSSION_JOIN_COLUMNS
+  }, {
+    id: 'roundtable/9-group-discussion-joins', to: 9, kind: 'add-table', table: 'group_discussion_joins',
+    summary: 'members who joined a group discussion by code, and the client and model of each message',
+    create: GROUP_DISCUSSION_JOIN_TABLES
   }],
   pragmas: 'PRAGMA journal_mode = WAL;'
 });
