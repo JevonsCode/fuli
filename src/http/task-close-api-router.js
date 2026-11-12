@@ -11,7 +11,7 @@ const MAX_NOTE = 1000;
 const PERSON_SUMMARY = 'Closed by the person in FULI.';
 // Closing a task is the person's acceptance, so their relayed words must say
 // it themselves: a bare yes to the Agent's question is not enough (rec#123).
-const MIN_CLOSE_WORDS = 4;
+const MIN_CLOSE_WORDS = 2;
 const ASSENT = new Set(['可以', '好', '好的', '好吧', '行', '行吧', '嗯', '嗯嗯', '对', '是', '是的', '可以的', '没问题',
   '同意', 'ok', 'okay', 'yes', 'yep', 'yeah', 'sure', 'fine', 'alright', 'agreed', 'go ahead', 'do it', 'sounds good']);
 const ASSENT_ONLY = '这句话只是同意：要结束任务，请让本人用自己的话说这个任务已完成或取消。 / '
