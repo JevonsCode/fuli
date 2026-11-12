@@ -34,6 +34,12 @@ const UI_MUTATION_PARITY = Object.freeze([
   delegable('lan_roundtable', 'PUT /api/peer/shares', 'Save the earlier shares again.'),
   delegable('lan_roundtable', 'POST /api/peer/devices/:nodeId/revoke', 'Pair the device again with a new invitation.'),
   delegable('lan_roundtable', 'POST /api/peer/disable', 'Open the listener and pair again.'),
+  // Nearby pairing (rec issue 127): an FLA may turn discovery on and start a request; the code is
+  // compared by the person, so confirming relays the person's own words.
+  delegable('lan_roundtable', 'POST /api/peer/nearby', 'Send it again with the opposite on.'),
+  delegable('lan_roundtable', 'POST /api/peer/nearby/pair', 'POST /api/peer/nearby/cancel; an unconfirmed request ends by itself after 2 minutes.'),
+  delegable('lan_roundtable', 'POST /api/peer/nearby/cancel', 'Start the pairing again with POST /api/peer/nearby/pair.'),
+  relayed('POST /api/peer/nearby/confirm', 'Revoke the paired device on the coordinator, or leave with POST /api/peer/disable.'),
   delegable('model_settings', 'PUT /api/model-backends/roles/:role', 'Save the earlier settings again; GET /api/model-backends/history shows them.'),
   local('PUT /api/model-backends/keys/:reference', 'A built-in Agent\'s model API key is stored on this computer, never shown again, and no Agent tool can read or set it: the person enters it on the model settings page (loopback only), or the Agent the person asked pipes it into fuli models set-key --endpoint on stdin without printing it. A key is sent only to the endpoint origin it was saved for.'),
   delegable('model_settings', 'PUT /api/model-backends/roles/:role/trust', 'Switch it back.'),

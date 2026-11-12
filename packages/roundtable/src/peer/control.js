@@ -43,5 +43,16 @@ async function route(request, pathname, peer, readJson) {
   const revoke = /^\/api\/peer\/devices\/([0-9a-f]{64})\/revoke$/.exec(pathname);
   if (revoke && method === 'POST') { await readJson(request); return peer.revokeDevice(revoke[1]); }
   if (pathname === '/api/peer/disable' && method === 'POST') { await readJson(request); return peer.disable(); }
+  if (pathname === '/api/peer/nearby' && method === 'POST') {
+    const body = await readJson(request);
+    if (typeof body.on !== 'boolean') throw new PeerError('invalid_nearby', 'Pass on: true or on: false', 422);
+    return body.on ? peer.nearbyOn({ name: body.name }) : peer.nearbyOff();
+  }
+  if (pathname === '/api/peer/nearby/pair' && method === 'POST') return peer.pairNearby({ fingerprint: (await readJson(request)).fingerprint });
+  if (pathname === '/api/peer/nearby/confirm' && method === 'POST') {
+    const body = await readJson(request);
+    return peer.confirmPairing({ requestId: body.requestId, code: body.code });
+  }
+  if (pathname === '/api/peer/nearby/cancel' && method === 'POST') { await readJson(request); return peer.cancelPairing(); }
   return undefined;
 }

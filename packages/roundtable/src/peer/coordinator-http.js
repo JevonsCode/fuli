@@ -8,8 +8,11 @@ const SWEEP_MS = 5_000;
 
 // The only network listener of the LAN roundtable. Every route requires a
 // TLS-verified, currently paired device, except one-use pairing, which accepts
-// a not-yet-trusted client certificate and authorizes it by invitation code.
-export async function startCoordinatorServer({ service, identity, host, port = 0, claimWaitMs = PEER_LIMITS.claimWaitMs }) {
+// a not-yet-trusted client certificate and authorizes it by invitation code,
+// and nearby pairing (nearby-pairing.js), which trusts nothing until the person
+// on each computer confirmed the same code.
+export async function startCoordinatorServer({ service, identity, host, port = 0, claimWaitMs = PEER_LIMITS.claimWaitMs,
+  nearby = null }) {
   const secureContext = () => ({ ...identity.tlsOptions, ca: service.trustedCertificates() });
   const server = createServer({
     ...secureContext(), requestCert: true, rejectUnauthorized: false, minVersion: 'TLSv1.3',
@@ -29,6 +32,15 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
     const body = await readBody(request);
     if (pathname === '/peer/1/pair') {
       sendJson(response, service.pair({ code: body.code, name: body.name, authority: body.authority, certPem: derToPem(certificate.raw) }));
+      return;
+    }
+    if (pathname.startsWith('/peer/1/nearby/')) {
+      if (!nearby) throw new PeerError('nearby_off', 'This computer is not open for nearby pairing', 404);
+      const { value, after } = await nearby.handle(pathname, body, { certPem: derToPem(certificate.raw),
+        fingerprint: sha256Hex(certificate.raw), address: request.socket.remoteAddress?.replace(/^::ffff:/, '') });
+      // A step that closes this listener (joining the other computer) runs once the answer is out.
+      if (after) response.once('finish', after);
+      sendJson(response, value);
       return;
     }
     if (!request.socket.authorized) throw new PeerError('device_not_trusted', 'This device is not paired', 403);

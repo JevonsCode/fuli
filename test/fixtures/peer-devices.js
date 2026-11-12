@@ -38,7 +38,32 @@ function identityDirectory(label) {
   return identities.get(label);
 }
 
-export async function device(label, { tamper = null, wake = null } = {}) {
+// Nearby discovery inside this process: every device's advertisement reaches
+// every browsing device on 127.0.0.1, with no multicast socket.
+export function discoveryBus() {
+  const adverts = new Map();
+  const browsers = new Set();
+  const view = (record) => ({ name: record.name, port: record.port, txt: record.txt, addresses: ['127.0.0.1'] });
+  return {
+    adverts, browsers,
+    discovery: () => ({
+      advertise(record) {
+        const key = Symbol(record.name);
+        adverts.set(key, record);
+        for (const browser of browsers) browser.onUp(view(record));
+        return { stop: () => { adverts.delete(key); for (const browser of browsers) browser.onDown(view(record)); } };
+      },
+      browse(handlers) {
+        browsers.add(handlers);
+        for (const record of adverts.values()) handlers.onUp(view(record));
+        return { stop: () => browsers.delete(handlers) };
+      },
+      close() {},
+    }),
+  };
+}
+
+export async function device(label, { tamper = null, wake = null, discovery = null, repository = null } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), `fuli-peer-${label}-`));
   await cp(await identityDirectory(label), peerDirectory(dataDir), { recursive: true });
   const spaceId = `${label}-space`;
@@ -70,7 +95,8 @@ export async function device(label, { tamper = null, wake = null } = {}) {
       assignments: [{ personal_project_id: projectId, status: 'active' }] },
       { agent_id: memberId, occupation: { role: 'tester' }, profile: { status: 'active', name: `${label} tester`, capabilities: ['testing'] },
         assignments: [{ personal_project_id: projectId, status: 'active' }] }],
-    listPersonalProjects: async () => [{ project_id: projectId, name: `${label} project` }],
+    listPersonalProjects: async () => [{ project_id: projectId, name: `${label} project`,
+      ...(repository ? { profile: { name: `${label} project`, sources: [{ kind: 'repository', role: 'own', uri: repository }] } } : {}) }],
   };
   const app = {
     config: { personal: { spaceId } },
@@ -92,7 +118,8 @@ export async function device(label, { tamper = null, wake = null } = {}) {
   const folder = join(dataDir, 'project-folder');
   app.projectPathResolver = (path) => path === folder
     ? { status: 'matched', personalProjectId: projectId } : { status: 'unmatched', personalProjectId: null };
-  const runtime = createPeerRuntime({ host: createFuliRoundtableHost(app), roundtable: app.roundtable, port: app.peer, allowLoopback: true, claimWaitMs: 300, interfaces: () => ({}) });
+  const runtime = createPeerRuntime({ host: createFuliRoundtableHost(app), roundtable: app.roundtable, port: app.peer, allowLoopback: true,
+    claimWaitMs: 300, interfaces: () => ({}), nearbyListenHost: '127.0.0.1', ...(discovery ? { discovery: discovery() } : {}) });
   return { app, runtime, calls, until, projectId, folder, close: async () => {
     await runtime.close(); await app.roundtable.close(); app.peer.close(); await rm(dataDir, { recursive: true, force: true });
   } };

@@ -23,7 +23,9 @@ test('FULI hosts Roundtable with its Provider records in the port shapes', async
     personal: {
       recentAgentSessions: async input => { calls.push(['sessions', input]);
         return [{ source_application: 'codex', session_id: 's-1', personal_project_id: 'app', last_active: 't' }]; },
-      listPersonalProjects: async () => ({ projects: [{ project_id: 'app', profile: { name: 'App' }, scope_type: 'registered' },
+      listPersonalProjects: async () => ({ projects: [{ project_id: 'app', scope_type: 'registered', profile: { name: 'App',
+        sources: [{ kind: 'repository', role: 'own', uri: 'git@example.test:team/app.git' },
+          { kind: 'repository', role: 'reference', uri: 'https://example.test/team/lib' }] } },
         { project_id: 'tmp', scope_type: 'temporary', profile: { lifecycle: 'archived' } }] }),
       getProjectAgentCoordinationPolicy: async () => ({ team_lead_agent_id: 'lead' }),
       issueAgentDelegation: async input => { calls.push(['issue', input]); return { token: 't' }; },
@@ -36,8 +38,9 @@ test('FULI hosts Roundtable with its Provider records in the port shapes', async
   assert.deepEqual(await host.recentSessions({ agentId: 'lead', projectId: 'app', limit: 5 }),
     [{ client: 'codex', sessionId: 's-1', projectId: 'app', lastActive: 't' }]);
   assert.deepEqual(calls.at(-1), ['sessions', { personalSpaceId: 'space-1', agentId: 'lead', personalProjectId: 'app', limit: 5 }]);
-  assert.deepEqual(await host.listProjects(), [{ projectId: 'app', name: 'App', temporary: false, archived: false },
-    { projectId: 'tmp', name: null, temporary: true, archived: true }]);
+  // Only the project's own repository identifies it to paired devices; a reference never does.
+  assert.deepEqual(await host.listProjects(), [{ projectId: 'app', name: 'App', temporary: false, archived: false,
+    repositories: ['example.test/team/app'] }, { projectId: 'tmp', name: null, temporary: true, archived: true, repositories: [] }]);
   assert.equal(await host.projectLeadId('app'), 'lead');
   assert.equal(await host.projectForPath('/work/app'), 'app');
   assert.equal(await host.projectForPath('/elsewhere'), null);

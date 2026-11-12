@@ -1,6 +1,10 @@
 import { Agent, request as httpsRequest } from 'node:https';
+import { connect as tlsConnect } from 'node:tls';
 
-import { PEER_LIMITS, PeerError, parseCoordinatorUrl, sha256Hex } from './protocol.js';
+import { certificateFingerprint } from './device-identity.js';
+import { coordinatorUrl, derToPem, PEER_LIMITS, PeerError, parseCoordinatorUrl, sha256Hex } from './protocol.js';
+
+const PROBE_MS = 3_000;
 
 // Talks to exactly one coordinator: trusted only through its pinned
 // certificate, never redirected, and always presenting this device's certificate.
@@ -19,6 +23,52 @@ export function pairWithCoordinator({ identity, authority, invitation, name, tim
   const coordinator = { url: invitation.url, certPem: invitation.certificatePem, fingerprint: invitation.fingerprint };
   return post(parseCoordinatorUrl(invitation.url), '/peer/1/pair', { code: invitation.code, name, authority },
     { agent: false, tls: pinnedTls(identity, coordinator), timeoutMs });
+}
+
+// A nearby computer is known only by the fingerprint prefix it advertises. Its
+// certificate is read once and checked against that prefix; every request
+// after that pins the whole certificate, as a paired coordinator is pinned.
+// The pairing code then binds both full fingerprints (nearby-pairing.js).
+export async function connectNearby({ identity, target, timeoutMs = PROBE_MS }) {
+  let failure = new PeerError('nearby_unreachable', 'The nearby computer did not answer', 503);
+  for (const address of target.addresses) {
+    let certPem;
+    try { certPem = await peerCertificate({ identity, host: address, port: target.port, timeoutMs }); }
+    catch (error) { failure = error; continue; }
+    const fingerprint = certificateFingerprint(certPem);
+    if (!fingerprint.startsWith(target.fingerprint)) {
+      failure = new PeerError('fingerprint_mismatch', 'The nearby computer answered with another identity', 502);
+      continue;
+    }
+    const client = createPeerClient({ identity, coordinator: { url: coordinatorUrl(address, target.port), certPem, fingerprint } });
+    return { ...client, fingerprint, certPem, address, port: target.port };
+  }
+  throw failure;
+}
+
+// True when https://address:port answers with exactly this device certificate.
+export async function answersAs({ identity, address, port, fingerprint, timeoutMs = PROBE_MS }) {
+  const certPem = await peerCertificate({ identity, host: address, port, timeoutMs });
+  return certificateFingerprint(certPem) === fingerprint;
+}
+
+// Reads the certificate a listener presents, without trusting it for anything.
+function peerCertificate({ identity, host, port, timeoutMs }) {
+  return new Promise((resolve, reject) => {
+    const socket = tlsConnect({ host, port, ...identity.tlsOptions, rejectUnauthorized: false, minVersion: 'TLSv1.3' });
+    const fail = () => {
+      socket.destroy();
+      reject(new PeerError('nearby_unreachable', 'The nearby computer is unreachable', 503));
+    };
+    socket.setTimeout(timeoutMs, fail);
+    socket.once('error', fail);
+    socket.once('secureConnect', () => {
+      const certificate = socket.getPeerX509Certificate();
+      socket.destroy();
+      if (certificate) resolve(derToPem(certificate.raw));
+      else fail();
+    });
+  });
 }
 
 function pinnedTls(identity, coordinator) {

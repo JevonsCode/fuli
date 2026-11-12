@@ -122,6 +122,8 @@ const RELAYED_DECISIONS = new Set([
   'PUT /api/project-agents/:agentId/occupation-kit',
   // rec#123: the person completes or cancels a task themself.
   'POST /api/project-agent-tasks/:taskId/close',
+  // rec#127: the person compares the nearby pairing code and confirms it.
+  'POST /api/peer/nearby/confirm',
 ]);
 
 test('Agent interface catalog covers UI mutations with a tool or an explicit local-user boundary', () => {
@@ -173,7 +175,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [58, 8, 18, 30]);
+    catalog.coverage.localUserOnly], [58, 11, 19, 30]);
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
   for (const entry of relayed) {
@@ -270,9 +272,12 @@ test('Agent interface catalog lists roundtable reads and requested-Agent identit
   assert.equal(byRoute.get('POST /api/roundtable/chats')?.toolName, 'agent_chat');
   // rec#11 D-81: an FLA pairs and shares only after the person turns lan_roundtable on.
   for (const route of ['POST /api/peer/coordinator', 'POST /api/peer/invitations', 'POST /api/peer/join',
-    'PUT /api/peer/shares', 'POST /api/peer/devices/:nodeId/revoke', 'POST /api/peer/disable']) {
+    'PUT /api/peer/shares', 'POST /api/peer/devices/:nodeId/revoke', 'POST /api/peer/disable',
+    'POST /api/peer/nearby', 'POST /api/peer/nearby/pair', 'POST /api/peer/nearby/cancel']) {
     assert.equal(byRoute.get(route)?.access, 'agent_delegable_off', route);
   }
+  // rec#127: the code is compared by the person; an FLA only relays their own words.
+  assert.equal(byRoute.get('POST /api/peer/nearby/confirm')?.access, 'agent_relayed');
 });
 
 test('Agent memory export is a read workflow beside the console memory route', () => {

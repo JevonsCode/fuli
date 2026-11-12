@@ -6,7 +6,8 @@
 //   Agent    { agentId, employeeNumber?, occupation?, assignments?, personalProjectId?,
 //              profile: { name, displayName?, responsibility?, capabilities?, allowedClients, status } }
 //   Session  { client, sessionId, projectId, lastActive }
-//   Project  { projectId, name, temporary, archived }
+//   Project  { projectId, name, temporary, archived, repositories? }  repositories: the normalised
+//            addresses of the project's own repositories (host/path), which paired devices compare as digests
 //   Team     { lead: { agentId, name, employeeNumber?, responsibility? } | null, people: [same shape] }
 //
 // Methods (async unless marked sync)

@@ -828,6 +828,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   const ownerThread = async ({ threadId }) => ({ ...thread({ threadId }), ...await person.view(threadId) });
   return { ...chat, findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
     messageStatus, cancelMessage, answerRemote,
+    // The folder a fresh wake of this lead would use: its latest session in the project, else the host's.
+    knownProjectFolder: ({ agentId, projectId }) => projectFolder({ agentId }, projectId),
     discuss: discussions.discuss,
     ownerGroupDiscussion: discussions.ownerView,
     ownerStopGroupDiscussion: discussions.ownerStop,

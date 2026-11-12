@@ -161,9 +161,19 @@ profile allows.
 
 Devices on the same trusted local network can share project leads. Each computer
 needs FULI 0.12.1 or later. Open **Settings → LAN roundtable (Beta)** on the computer
-itself. Choose one computer to host, copy its one-use invitation to the other
-computer, compare the displayed fingerprints, and join. Select the project leads
-and local clients you want to share. Sharing is off until you choose it.
+itself. Turn on **附近的 FULI** on both computers (`fuli peer nearby on`): each then
+advertises its chosen name, port, a short fingerprint and the protocol version over
+mDNS, and lists the others. Click 配对 on one computer; both show the same 6-digit
+code, derived from both certificate fingerprints and a fresh nonce from each side.
+Compare it and click 确认 on each computer (`fuli peer confirm <code shown on the other
+computer>`). Only then are the devices paired, with the same mutual-TLS trust records
+an invitation writes; a request nobody confirms ends after 2 minutes. The computer
+that already coordinates other devices keeps coordinating; otherwise the computer
+that was picked from the list does. Without nearby pairing, choose one computer to
+host, copy its one-use invitation to the other computer, compare the displayed
+fingerprints, and join. Select the project leads and local clients you want to
+share. Sharing is off until you choose it; a project both computers registered with
+the same own repository is offered with its lead preselected.
 
 `find_agents` includes shared leads with their device and project names. Use the
 returned `peer:` address with `message_agent`. Remote asks support `auto` or `new`

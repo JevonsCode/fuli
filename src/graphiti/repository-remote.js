@@ -63,7 +63,9 @@ function ownRepositorySources(project) {
     .filter(source => REPOSITORY_SOURCE_KINDS.has(source.kind) && source.role !== 'reference');
 }
 
-function ownRemotes(project) {
+// The normalised addresses of a project's own repositories; the LAN roundtable
+// matches projects across paired computers by them (rec issue 127).
+export function ownRemotes(project) {
   return ownRepositorySources(project)
     .filter(source => typeof source.uri === 'string')
     .map(source => remoteKey(source.uri)).filter(Boolean);

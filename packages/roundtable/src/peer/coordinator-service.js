@@ -19,6 +19,7 @@ const ONLINE_MS = 90_000;
 const LAST_SEEN_WRITE_MS = 15_000;
 const PAIRING_FAILURE_WINDOW_MS = 10 * 60_000;
 const PAIRING_FAILURE_LIMIT = 10;
+const REPOSITORY_DIGEST = /^[0-9a-f]{32}$/;
 
 // Routes messages between paired devices. It never executes anything: each
 // receiving device re-checks its own shares and identity authority.
@@ -26,6 +27,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
   randomCode = () => randomBytes(32).toString('base64url'), idFactory = randomUUID, onTrustChange = () => {} }) {
   const iso = (offsetMs = 0) => new Date(clock() + offsetMs).toISOString();
   const pairingFailures = [];
+  const repositories = new Map();
   if (!isAuthorityKey(authority)) throw new PeerError('authority_unavailable', 'The coordinator needs its local origin authority', 500);
   store.upsertNode({ id: identity.fingerprint, name, certPem: identity.certPem, authority, at: iso() });
   const chat = createCoordinatorChat({ store, identity, clock });
@@ -51,13 +53,28 @@ export function createCoordinatorService({ store, identity, authority, name, clo
       pairingFailures.push(now);
       throw new PeerError('invalid_pairing_code', 'This invitation is invalid, expired or already used', 403);
     }
+    return trustDevice({ fingerprint, certPem, name: deviceName, authority: deviceAuthority }, () => {
+      if (!store.useInvitation(codeHash, fingerprint, iso())) throw new PeerError('invalid_pairing_code', 'This invitation was already used', 403);
+    });
+  }
+
+  // Nearby pairing (nearby-pairing.js) writes the same trust record an
+  // invitation does, after the person on each computer confirmed the same code.
+  function trustNearbyDevice({ certPem, name: deviceName, authority: deviceAuthority }) {
+    const fingerprint = certificateFingerprint(certPem);
+    if (fingerprint === identity.fingerprint) throw new PeerError('invalid_pairing', 'A device cannot pair with itself', 400);
+    return trustDevice({ fingerprint, certPem, name: deviceName, authority: deviceAuthority });
+  }
+
+  function trustDevice({ fingerprint, certPem, name: deviceName, authority: deviceAuthority }, claimInvitation = () => {}) {
     if (!isAuthorityKey(deviceAuthority)) throw new PeerError('invalid_pairing', 'The device did not present its origin authority', 400);
     const label = cleanName(deviceName) || `FULI device ${fingerprint.slice(0, 8)}`;
     store.transaction(() => {
-      if (!store.useInvitation(codeHash, fingerprint, iso())) throw new PeerError('invalid_pairing_code', 'This invitation was already used', 403);
+      claimInvitation();
       store.upsertNode({ id: fingerprint, name: label, certPem,
         authority: { keyId: deviceAuthority.keyId, publicKey: deviceAuthority.publicKey }, at: iso() });
     });
+    repositories.delete(fingerprint);
     onTrustChange();
     return { nodeId: fingerprint, coordinatorNodeId: identity.fingerprint, coordinatorName: name };
   }
@@ -70,10 +87,17 @@ export function createCoordinatorService({ store, identity, authority, name, clo
     return node;
   }
 
-  function publishDirectory(nodeId, { agents }) {
+  function publishDirectory(nodeId, { agents, repositories: projectRepositories }) {
     if (!Array.isArray(agents) || agents.length > PEER_LIMITS.directoryAgents) throw new PeerError('invalid_directory', 'Invalid shared Agent list');
-    const entries = agents.map(publicDirectoryEntry);
+    const entries = agents.map((agent, index) => {
+      try { return publicDirectoryEntry(agent); }
+      catch (error) { throw new PeerError(error.code, `${error.message} (entry ${index + 1})`, error.status); }
+    });
     store.setDirectory(nodeId, entries);
+    // Digests of each device's own repository addresses, so paired devices
+    // see which projects they share. Like online state, kept only in memory:
+    // every device publishes again within a minute after a restart.
+    if (projectRepositories !== undefined) repositories.set(nodeId, repositoryDigests(projectRepositories));
     return { published: entries.length };
   }
 
@@ -83,6 +107,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
       nodeId: node.id, name: node.name,
       online: seenWithin(node, now, ONLINE_MS),
       agents: JSON.parse(node.directory_json),
+      repositories: repositories.get(node.id) ?? [],
     })) };
   }
 
@@ -229,6 +254,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
         else store.updateMessage(message.id, { cancel_requested: 1 }, iso(), 'cancel_requested', 'device_revoked');
       }
     });
+    repositories.delete(nodeId);
     onTrustChange();
     return { revoked: true };
   }
@@ -263,7 +289,7 @@ export function createCoordinatorService({ store, identity, authority, name, clo
       sharedAgents: JSON.parse(node.directory_json).length }));
   }
 
-  return { chat: chat.execute, chatOwner: chat.ownerRead, chatUpdates: chat.ownerUpdates, createInvitation, pair, authenticate, publishDirectory, directory, submit, claim, renew, result,
+  return { chat: chat.execute, chatOwner: chat.ownerRead, chatUpdates: chat.ownerUpdates, createInvitation, pair, trustNearbyDevice, authenticate, publishDirectory, directory, submit, claim, renew, result,
     status, cancel, revoke, sweep, devices, trustedCertificates: () => store.activeCertificates(),
     openInvitations: () => store.openInvitations(iso()).length };
 }
@@ -285,6 +311,12 @@ function statusView(message) {
   return { messageId: JSON.parse(message.assertion_json).messageId, status: message.status, reply: message.reply ?? null, error: message.error ?? null,
     via: message.via ?? null, verified: message.verified === 1, updatedAt: message.updated_at,
     ...(message.cleanup_status ? { cleanup: { status: message.cleanup_status, code: message.cleanup_code ?? null } } : {}) };
+}
+
+// Only 32-hex digests pass (peer-runtime.js makes them); anything else is dropped, never echoed.
+function repositoryDigests(value) {
+  return Array.isArray(value) ? [...new Set(value.filter((digest) => typeof digest === 'string' && REPOSITORY_DIGEST.test(digest)))]
+    .slice(0, PEER_LIMITS.directoryAgents * 4) : [];
 }
 
 export function cleanName(value) {
