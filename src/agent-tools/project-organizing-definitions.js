@@ -1,8 +1,9 @@
-import { boundedString, enumSchema, objectSchema } from './schema.js';
+import { boundedString, enumSchema, integerSchema, objectSchema } from './schema.js';
 import { AREA_STATUSES, ORGANIZING_AREAS, ORGANIZING_SOURCES, RUN_COUNTS, SOURCE_STATUSES } from '../project-organizing/port.js';
 
 // 整理 (rec#114): one tool that reads or records how well the current project
-// is known. Full profile only; chat reaches it on demand.
+// is known, or (rec#121) reads the person's preferences to tidy. Full profile
+// only; chat reaches it on demand.
 const area = objectSchema({ status: enumSchema(AREA_STATUSES), note: boundedString(200) }, ['status']);
 const count = { type: 'integer', minimum: 0 };
 
@@ -13,9 +14,11 @@ export const PROJECT_ORGANIZING_DEFINITIONS = [
     description: 'When the person asks to organise, learn or initialise this project (「整理当前项目」). '
       + 'read (give your model): nine areas, what is open, the last run, and what your model should attempt. '
       + 'update: areas settled, sources read, and run with your counts. It stores coverage only; '
-      + 'save knowledge with checkpoint_task_knowledge.',
+      + 'save knowledge with checkpoint_task_knowledge. '
+      + 'preferences (「整理我的偏好」, any folder): a page of the person\'s preferences, likely duplicates, how to apply a yes.',
     inputSchema: objectSchema({
-      action: enumSchema(['read', 'update']),
+      action: enumSchema(['read', 'update', 'preferences']),
+      offset: integerSchema({ minimum: 0 }),
       taskContextToken: boundedString(256),
       model: { ...boundedString(120), description: 'The model you run on, as its id.' },
       personalProjectId: { ...boundedString(128), description: 'The project the request named, if any; refused when this session is in another.' },
