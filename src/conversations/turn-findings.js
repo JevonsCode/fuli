@@ -10,8 +10,15 @@
 // to other items. Kept as experiences, each turn wrapped the last one's link
 // and the review queue filled with nested echoes of earlier replies.
 const ERROR_LINE = /(?:Error|ENOENT|not found|Cannot find|No such file|failed)/u;
-// A project script, as a person would type it again.
-const PROJECT_SCRIPT = /^(?:npm (?:test|t|run [\w:.-]+)|pnpm (?:test|run [\w:.-]+|[\w:.-]+)|yarn (?:test|run [\w:.-]+|[\w:.-]+)|make [\w.-]+)\b/u;
+// A project script, as a person would type it again. pnpm and yarn run a script by its bare
+// name, so their own commands are left out: `pnpm exec`, `pnpm dlx` and the like are the package
+// manager's, not a check of the project, and each finished task kept one as knowledge (rec#124).
+const MANAGER_COMMANDS = 'exec|dlx|install|i|add|remove|rm|uninstall|update|up|upgrade|outdated|why|list|ls|link|unlink'
+  + '|store|config|init|create|publish|pack|login|logout|cache|prune|rebuild|dedupe|audit|info|view|bin|root|patch'
+  + '|import|fetch|approve-builds|setup|env|self-update|set|workspace|workspaces|global|node|npm|version|help';
+const BARE_SCRIPT = `(?!(?:${MANAGER_COMMANDS})(?![\\w:.-]))\\w[\\w:.-]*`;
+const PROJECT_SCRIPT = new RegExp(
+  `^(?:npm (?:test|t|run [\\w:.-]+)|pnpm (?:test|run [\\w:.-]+|${BARE_SCRIPT})|yarn (?:test|run [\\w:.-]+|${BARE_SCRIPT})|make [\\w.-]+)\\b`, 'u');
 const DENIED = /^(?:This (?:Bash )?command|A variable in braces|Permission to use)|require[sd]? approval/u;
 
 export function turnFindings(records) {

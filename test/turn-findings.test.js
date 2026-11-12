@@ -57,3 +57,13 @@ test('the Stop hook closes with what the turn showed as pending experiences, and
   assert.deepEqual(sent.map(input => input.disposition), ['retain_nothing']);
 });
 
+
+test('a package manager\'s own command or flag is no project check (rec#124)', () => {
+  for (const command of ['pnpm exec vitest run', 'pnpm dlx synthetic-tool', 'pnpm install', 'yarn add synthetic-package',
+    'yarn dlx synthetic-tool', 'pnpm -w lint', 'pnpm --filter web test']) {
+    assert.deepEqual(turnFindings([...run(command, 'ok')]), [], command);
+  }
+  // A script named by itself still counts, also one whose name only starts like a command.
+  assert.deepEqual(turnFindings([...run('pnpm lint && yarn typecheck && pnpm execute', 'ok')]).map(item => item.task),
+    ['Project checks: `pnpm execute`, `pnpm lint`, `yarn typecheck`']);
+});
