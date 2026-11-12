@@ -82,7 +82,7 @@ const sensitivityOptions = computed(() => SENSITIVITY_VALUES
   .map((value) => ({ value, label: t(`projects.profileDialog.sensitivities.${value}`) })))
 
 // Only the project's own repository identifies a checkout as this project
-// (rec#125); a repository it merely refers to says "reference".
+// (rec issue 125); a repository it merely refers to says "reference".
 const SOURCE_ROLE_VALUES = ['own', 'reference'] as const
 const sourceRoleOptions = computed(() => SOURCE_ROLE_VALUES
   .map((value) => ({ value, label: t(`projects.profileDialog.sourceRoles.${value}`) })))

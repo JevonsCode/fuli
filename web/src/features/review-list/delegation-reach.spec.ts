@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { reachNotice } from './delegation-reach'
 
-// rec#124, synthetic project ids only.
+// rec issue 124, synthetic project ids only.
 const reach = (blockedProjectIds: string[], unassignedAllowed = true, projects = 3) => ({ projects, blockedProjectIds, unassignedAllowed })
 
 describe('reachNotice', () => {
