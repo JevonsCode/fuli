@@ -16,8 +16,9 @@ into its data directory.
 dsh plugin --profile desktop add "github:JevonsCode/fuli#path:/packages/dsh-connector"
 ```
 
-Restart DSH. Connecting DSH from the FULI console instead does the same for every DSH profile at
-once; the connector then stays idle, so nothing runs twice.
+Restart DSH. Connecting DSH from the FULI console instead does the same for every DSH profile it
+can connect at once; in a profile that loads FULI's own bundle the connector stays idle, so nothing
+runs twice.
 
 ## What it installs
 
@@ -29,8 +30,10 @@ is an optional peer that DSH itself provides. It contains no FULI code.
 
 When DSH starts the profile:
 
-1. If `<DSH home>/plugins/fuli` exists (FULI connected this DSH from its console), it does nothing
-   else.
+1. If DSH started this profile with FULI's own bundle `fuli-dsh` (the profile was connected from
+   the FULI console), it does nothing else. This is read from the bundles DSH started this profile
+   with (`profileContext.startedBundles`), not from shared files: another profile being connected,
+   or FULI's shared copy in `<DSH home>/plugins/fuli`, does not idle it here.
 2. Otherwise it looks for FULI's data directory: `FULI_DATA_DIR`, or FULI's default
    (`%LOCALAPPDATA%\Fuli` on Windows, `~/Library/Application Support/Fuli` on macOS,
    `$XDG_DATA_HOME/fuli` or `~/.local/share/fuli` elsewhere). A Windows install that chose another
@@ -52,6 +55,18 @@ what FULI itself does is governed by FULI's settings.
 - FULI installed but its local service not running: turns run normally, each with one context line
   saying FULI was not available. FULI's MCP tools are missing or fail until FULI runs again.
 - FULI slow: an entry waits at most about 15 seconds, then the turn continues without it.
+
+## With the FULI console connection
+
+The FULI console links a different package, `fuli-dsh`, into each profile it can connect (from its
+shared copy in `<DSH home>/plugins/fuli`); it leaves out a profile that already depends on that name
+another way. The two packages never share a name, so neither changes the other's entry.
+
+- A profile that loads both: FULI's `fuli-dsh` runs and the connector stays idle, so each turn has
+  one entry, one close and one `fuli` MCP server.
+- A profile the console did not connect: the connector works there, whatever other profiles do.
+- Disconnecting from the console removes only `fuli-dsh`; the connector takes over again at the
+  next DSH start.
 
 ## Uninstall
 

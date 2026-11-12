@@ -12,23 +12,27 @@ import { pathToFileURL } from 'node:url';
 //   turn's first step, the task close at its completed end);
 // - FULI's MCP server, from the `fuli-mcp` row of the bundle's
 //   cordis.patch.yml, through DSH's own @deepseek-ai/dsh-mcp-client.
-// When FULI connected this DSH itself (it copies the same bundle to
-// `<DSH home>/plugins/fuli` and links it into each profile), the connector
-// stays idle, so nothing runs twice. Without FULI it only logs one line.
+// When this profile already loads FULI's own bundle (`fuli-dsh`, which the
+// FULI console links into each profile it connects), the connector stays
+// idle, so nothing runs twice. That is read from what DSH started this
+// profile with (`profileContext.startedBundles`), never from shared files:
+// another profile being connected says nothing about this one. Without FULI
+// it only logs one line.
 // Node built-ins only; every failure leaves DSH running.
 
 export const name = 'fuli-connector';
 export const inject = ['agents'];
 
 const MCP_ROW = 'fuli-mcp';
+// The package FULI's console links into a profile (src/agents/dsh/bundle.js).
+const FULI_BUNDLE = 'fuli-dsh';
 
 export async function apply(ctx, _config, { env = process.env, platform = process.platform, homeDir = homedir(),
   importModule = (specifier) => import(specifier) } = {}) {
   const log = (level, text) => ctx.logger?.[level]?.(`fuli-connector: ${text}`);
   try {
-    if (existsSync(join(dshHome(env, homeDir), 'plugins', 'fuli', 'index.js'))) {
-      log('info', 'FULI connected this DeepSeek Harness itself; the connector stays idle. '
-        + 'A profile created later is connected from the FULI console again.');
+    if (startedBundles(ctx).includes(FULI_BUNDLE)) {
+      log('info', "this profile already loads FULI's own bundle (connected from the FULI console); the connector stays idle.");
       return;
     }
     const bundle = join(fuliDataDir(env, platform, homeDir), 'agent-kits', 'dsh-bundle');
@@ -48,9 +52,16 @@ export async function apply(ctx, _config, { env = process.env, platform = proces
   }
 }
 
-// `DSH_HOME`, or `~/.dsh`, as DSH resolves its home.
-function dshHome(env, homeDir) {
-  return nonEmpty(env.DSH_HOME) ?? join(homeDir, '.dsh');
+// The bundle packages DSH started this profile with; none outside a profile
+// DSH launched (an embedding host), where FULI's console never links its own.
+function startedBundles(ctx) {
+  let profile;
+  try {
+    profile = typeof ctx.get === 'function' ? ctx.get('profileContext') : ctx.profileContext;
+  } catch {
+    profile = undefined;
+  }
+  return Array.isArray(profile?.startedBundles) ? profile.startedBundles : [];
 }
 
 // FULI's data directory: `FULI_DATA_DIR`, or its default, as
