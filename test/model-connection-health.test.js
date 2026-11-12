@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import test from 'node:test';
 
-import { readModelBackendConfig } from '../src/model-backends/config.js';
+import { connectionHealthIdentity, connectionIdentity, readModelBackendConfig } from '../src/model-backends/config.js';
 import { handleModelBackendApiRequest } from '../src/model-backends/http.js';
 import { createModelBackendPort } from '../src/model-backends/port.js';
 import { ModelUsageLedger } from '../src/model-backends/usage-ledger.js';
@@ -111,6 +111,19 @@ test('after the configuration changes in place, its earlier answers no longer co
     config.connections.shared = connection(change);
     assert.deepEqual(health('tonborg'), { status: 'unknown', at: null, reason: null, scope: null }, JSON.stringify(change));
   }
+});
+
+// The trust gate (rec#10 D-36) compares connectionIdentity with the identity a
+// saved answer carries. It is the value 0.27.0 computed for the same
+// configuration, so an upgrade does not refuse saved answers as
+// connection_changed; only health also tells key references apart.
+test('the trust gate\'s connection identity is unchanged; only health tells key references apart', () => {
+  const saved = connection();
+  assert.equal(connectionIdentity('shared', saved), '4b03655a06b05aaf2ba1ed2c9f0d16ebdad7ce1271e82623a1883b56f85ac7f2');
+  const rekeyed = connection({ secretRef: 'synthetic-next-ref' });
+  assert.equal(connectionIdentity('shared', rekeyed), connectionIdentity('shared', saved));
+  assert.notEqual(connectionHealthIdentity('shared', rekeyed), connectionHealthIdentity('shared', saved));
+  assert.notEqual(connectionHealthIdentity('shared', saved), connectionIdentity('shared', saved));
 });
 
 test('the roles read shows each role the shared connection health', async t => {

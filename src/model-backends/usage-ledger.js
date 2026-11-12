@@ -64,9 +64,9 @@ export const MODEL_USAGE_FORMAT = sqliteFormat({
   }, {
     // Earlier attempts keep it NULL: which key reference they used is not
     // known, so they never count for a connection's health again.
-    id: 'model-usage/3-connection-identity', to: 3, kind: 'add-columns', table: 'model_attempts',
-    summary: 'the identity of the whole connection configuration each attempt used (rec#122)',
-    columns: { connection_identity: 'TEXT' }
+    id: 'model-usage/3-health-identity', to: 3, kind: 'add-columns', table: 'model_attempts',
+    summary: 'the health identity (connection and key reference) of the configuration each attempt used (rec#122)',
+    columns: { health_identity: 'TEXT' }
   }]
 });
 
@@ -93,7 +93,7 @@ export class ModelUsageLedger {
       attempt.outputMode, attempt.startedAt, attempt.durationMs, attempt.outcome, attempt.failureClass, attempt.failureReason,
       usage.inputTokens, usage.outputTokens, usage.totalTokens, usage.cachedInputTokens, usage.cacheWriteInputTokens,
       usage.reasoningTokens, usage.definition, attempt.budgetCeilingTokens, attempt.estimatedCost, attempt.costCurrency,
-      attempt.endpoint ?? null, attempt.observedTagDigest ?? null, attempt.connectionIdentity ?? null);
+      attempt.endpoint ?? null, attempt.observedTagDigest ?? null, attempt.healthIdentity ?? null);
     return result.changes === 1;
   }
 
@@ -205,19 +205,19 @@ export class ModelUsageLedger {
   }
 
   // The latest model API attempt on one connection configuration (config.js
-  // connectionIdentity), whatever its outcome: { outcome, failureClass,
+  // connectionHealthIdentity), whatever its outcome: { outcome, failureClass,
   // failureReason, at }, or null when there is none (rec#92: the top bar turns
   // red while the configured model fails). With role, only that role's
   // attempts. With connectivityReasons and no role, the latest attempt of any
   // role that says whether the connection answers (rec#122): an answer, valid
   // or not, or a failure for one of those reasons.
-  lastAttempt({ connectionIdentity, role = null, connectivityReasons = null }) {
+  lastAttempt({ healthIdentity, role = null, connectivityReasons = null }) {
     const reasons = connectivityReasons ? JSON.stringify(connectivityReasons) : null;
     const row = this.db.prepare(`SELECT outcome, failure_class, failure_reason, started_at, duration_ms FROM model_attempts
-      WHERE channel = 'model_api' AND connection_identity = ?1 AND (?2 IS NULL OR role = ?2)
+      WHERE channel = 'model_api' AND health_identity = ?1 AND (?2 IS NULL OR role = ?2)
         AND (?3 IS NULL OR outcome != 'failed' OR failure_reason IN (SELECT value FROM json_each(?3)))
       ORDER BY julianday(started_at) * 86400000 + duration_ms DESC, rowid DESC LIMIT 1`)
-      .get(connectionIdentity, role, reasons);
+      .get(healthIdentity, role, reasons);
     return row ? { outcome: row.outcome, failureClass: row.failure_class, failureReason: row.failure_reason,
       at: new Date(Date.parse(row.started_at) + row.duration_ms).toISOString() } : null;
   }

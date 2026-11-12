@@ -4,7 +4,7 @@ import { modelFetch } from './model-fetch.js';
 
 import { MODEL_ADAPTERS } from './adapters/registry.js';
 import { budgetBlock, callLimits, ceilingCost, estimateCost, estimateTokens, roundCost, windowStart } from './budget.js';
-import { MODEL_BACKEND_ROLES, SEMANTIC_ROLE, configRevision, connectionIdentity } from './config.js';
+import { MODEL_BACKEND_ROLES, SEMANTIC_ROLE, configRevision, connectionHealthIdentity, connectionIdentity } from './config.js';
 import { decisionContract, decisionEnvelope } from './decision-contract.js';
 import { egressAllowed } from './egress.js';
 import { CONNECTIVITY_REASONS, FAILURE_STATUS, isFallbackEligible, modelFailure } from './failures.js';
@@ -117,7 +117,7 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
       requestId: request.requestId, attemptId: randomUUID(), attemptNumber: call.attempts.length + 1, purpose, channel: 'model_api',
       role: request.role, operation: request.operation, personalSpaceId: request.scope.personalSpaceId,
       personalProjectId: request.scope.personalProjectId, connectionId: target.id,
-      connectionIdentity: connectionIdentity(target.id, target), protocol: target.protocol,
+      healthIdentity: connectionHealthIdentity(target.id, target), protocol: target.protocol,
       endpointHost: new URL(target.endpoint).host, endpoint: target.endpoint, requestedModel: target.model, outputMode: call.mode,
       startedAt: attemptStarted.toISOString(), budgetCeilingTokens: inputTokens + maxOutputTokens,
       costCurrency: target.pricing?.currency ?? null
@@ -373,10 +373,10 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     // from a working model, so only a failed call counts as failing.
     health(role, connectionId, connection) {
       if (!connection) return null;
-      const identity = connectionIdentity(connectionId, connection);
-      const own = ledger.lastAttempt({ connectionIdentity: identity, role });
+      const identity = connectionHealthIdentity(connectionId, connection);
+      const own = ledger.lastAttempt({ healthIdentity: identity, role });
       if (own?.outcome === 'failed' && !CONNECTIVITY_REASONS.includes(own.failureReason)) return failingHealth(own, 'role');
-      const shared = ledger.lastAttempt({ connectionIdentity: identity, connectivityReasons: CONNECTIVITY_REASONS });
+      const shared = ledger.lastAttempt({ healthIdentity: identity, connectivityReasons: CONNECTIVITY_REASONS });
       if (!shared) return { status: 'unknown', at: null, reason: null, scope: null };
       return shared.outcome === 'failed' ? failingHealth(shared, 'connection')
         : { status: 'ok', at: shared.at, reason: null, scope: 'connection' };
