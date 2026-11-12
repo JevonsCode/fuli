@@ -36,8 +36,8 @@ export async function startCoordinatorServer({ service, identity, host, port = 0
       sendJson(response, service.pair({ code: body.code, name: body.name, authority: body.authority, certPem: derToPem(certificate.raw) }));
       return;
     }
-    // While nearby pairing is off these paths answer exactly as any unknown path.
-    if (pathname.startsWith('/peer/1/nearby/') && nearby?.listening()) {
+    // While nearby pairing is off, or on an adapter it does not answer on, these paths answer exactly as any unknown path.
+    if (pathname.startsWith('/peer/1/nearby/') && nearby?.listening(plainAddress(request.socket.localAddress))) {
       const { value, after } = await nearby.handle(pathname, body, { certPem: derToPem(certificate.raw),
         fingerprint: sha256Hex(certificate.raw), address: plainAddress(request.socket.remoteAddress),
         localAddress: plainAddress(request.socket.localAddress) });

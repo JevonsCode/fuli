@@ -39,9 +39,10 @@ export type NearbyDevice = { name: string; fingerprint: string; shortFingerprint
 export type NearbyPairing = {
   requestId: string | null
   direction: 'incoming' | 'outgoing'
-  state: 'connecting' | 'confirm' | 'finishing' | 'paired' | 'cancelled' | 'expired' | 'failed'
+  // waiting: this computer trusts the other, which has not connected yet; paired comes after that.
+  state: 'connecting' | 'confirm' | 'finishing' | 'waiting' | 'paired' | 'trust_withdrawn' | 'cancelled' | 'expired' | 'failed'
   reason: string | null
-  device: { name: string; shortFingerprint: string | null }
+  device: { name: string; fingerprint?: string | null; shortFingerprint: string | null }
   code: string | null
   coordinator: 'this' | 'other'
   confirmedHere: boolean
@@ -63,7 +64,7 @@ export type Nearby = {
   devices: NearbyDevice[]
   pairing: NearbyPairing | null
   // Why it turned itself off, or what it last did.
-  ended?: { kind: 'paired' | 'timeout' | 'discovery_failed' | 'trust_withdrawn'; name?: string; reason?: string; at: string } | null
+  ended?: { kind: 'paired' | 'waiting' | 'timeout' | 'discovery_failed' | 'trust_withdrawn'; name?: string; reason?: string; at: string } | null
 }
 
 export type PeerStatus = {
@@ -113,8 +114,8 @@ export function peerApiMessage(caught: unknown, fallback: string) {
 }
 
 // How an ended pairing reads: the i18n key under settings.peer.pairEnded.
-export function pairingOutcome(pairing: NearbyPairing): 'paired' | 'expired' | 'mismatch' | 'cancelled' | 'failed' | null {
-  if (pairing.state === 'paired') return 'paired'
+export function pairingOutcome(pairing: NearbyPairing): 'paired' | 'waiting' | 'trust_withdrawn' | 'expired' | 'mismatch' | 'cancelled' | 'failed' | null {
+  if (pairing.state === 'paired' || pairing.state === 'waiting' || pairing.state === 'trust_withdrawn') return pairing.state
   if (pairing.state === 'expired') return 'expired'
   if (pairing.reason === 'code_mismatch') return 'mismatch'
   if (pairing.state === 'cancelled') return 'cancelled'

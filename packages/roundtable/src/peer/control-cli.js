@@ -115,7 +115,7 @@ function printStatus(status, write) {
   for (const project of status.shareable.filter((entry) => entry.sameProjectOn?.length)) {
     write(`  same project on ${project.sameProjectOn.map((device) => device.name).join(', ')}: ${project.projectName} (${project.projectId})${project.knownFolder ? '' : ' · no known folder here, pass --folder'}`);
   }
-  if (status.lastPublish?.error) write(`The coordinator did not get this device's shared list: ${status.lastPublish.error}. ${status.lastPublish.message ?? ''}`.trim());
+  if (status.lastPublish?.error) write(`The coordinator did not get this device's shared list: ${status.lastPublish.error}.`);
   else if (status.lastPublish) write(`Shared list sent to the coordinator: ${status.lastPublish.agents} Agent(s) at ${status.lastPublish.at}`);
 }
 

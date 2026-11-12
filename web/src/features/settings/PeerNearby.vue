@@ -57,9 +57,12 @@ function cancel() {
   return run('cancel', () => postJson('/api/peer/nearby/cancel', {}, peerStatusShape))
 }
 
-// The person's own reset of the attempt count on this computer.
-function clearAttempts() {
-  return run('clear', () => postJson('/api/peer/nearby/attempts/clear', {}, peerStatusShape))
+// The person's own reset of the attempt count on this computer: a second,
+// deliberate step, since many attempts can mean someone is trying uninvited.
+const clearAsked = ref(false)
+async function clearAttempts() {
+  await run('clear', () => postJson('/api/peer/nearby/attempts/clear', {}, peerStatusShape))
+  clearAsked.value = false
 }
 </script>
 
@@ -82,7 +85,8 @@ function clearAttempts() {
     <GrowthLoading v-if="busy === 'toggle'" variant="inline"
       :label="t(nearby.on ? 'settings.peer.nearbyStopping' : 'settings.peer.nearbyStarting')" />
     <UiNotice v-if="error" tone="error">{{ error }}</UiNotice>
-    <UiNotice v-if="!nearby.on && nearby.ended" :tone="nearby.ended.kind === 'paired' ? 'success' : 'warning'" data-nearby-ended>
+    <UiNotice v-if="!nearby.on && nearby.ended" :tone="nearby.ended.kind === 'paired' ? 'success' : nearby.ended.kind === 'waiting' ? 'info' : 'warning'"
+      data-nearby-ended>
       {{ t(`settings.peer.nearbyEnded.${nearby.ended.kind}`, { name: nearby.ended.name ?? '', reason: nearby.ended.reason ?? '' }) }}
     </UiNotice>
 
@@ -91,13 +95,20 @@ function clearAttempts() {
       <p v-if="!nearby.canPair && coordinatorName && !nearby.limited">{{ t('settings.peer.pairThroughCoordinator', { name: coordinatorName }) }}</p>
       <UiNotice v-if="nearby.limited" tone="warning" data-nearby-limited>
         {{ t('settings.peer.nearbyLimited', { window: nearby.attempts?.lastWindow ?? 0, day: nearby.attempts?.lastDay ?? 0 }) }}
-        <template #actions>
+        <template v-if="!clearAsked" #actions>
+          <Button size="sm" variant="ghost" data-nearby-clear-ask @click="clearAsked = true">{{ t('settings.peer.clearAsk') }}</Button>
+        </template>
+      </UiNotice>
+      <div v-if="nearby.limited && clearAsked" class="peer-clear" data-nearby-clear-confirm>
+        <p>{{ t('settings.peer.clearConfirm') }}</p>
+        <div class="peer-actions">
           <Button size="sm" variant="outline" data-nearby-clear :loading="busy === 'clear'"
             :loading-label="t('settings.peer.clearingAttempts')" @click="clearAttempts">
             {{ t('settings.peer.clearAttempts') }}
           </Button>
-        </template>
-      </UiNotice>
+          <Button size="sm" variant="ghost" data-nearby-clear-keep @click="clearAsked = false">{{ t('settings.peer.clearKeep') }}</Button>
+        </div>
+      </div>
       <ul v-if="nearby.devices.length" class="peer-devices" data-nearby-devices>
         <li v-for="device in nearby.devices" :key="device.fingerprint">
           <div>
@@ -146,7 +157,7 @@ function clearAttempts() {
       </div>
       <GrowthLoading v-else-if="pairing?.state === 'connecting'" variant="inline"
         :label="t('settings.peer.connecting', { name: pairing.device.name })" />
-      <UiNotice v-else-if="pairing && outcome" :tone="outcome === 'paired' ? 'success' : 'warning'" data-pairing-outcome>
+      <UiNotice v-else-if="pairing && outcome" :tone="outcome === 'paired' ? 'success' : outcome === 'waiting' ? 'info' : 'warning'" data-pairing-outcome>
         {{ t(`settings.peer.pairEnded.${outcome}`, { name: pairing.device.name, reason: pairing.reason ?? '' }) }}
       </UiNotice>
     </template>
@@ -169,7 +180,7 @@ function clearAttempts() {
 .peer-nearby-toggle, .peer-same-digits { display: flex; align-items: center; gap: 8px; min-height: 30px; user-select: none; cursor: pointer; }
 .peer-nearby-toggle span, .peer-same-digits span { color: var(--color-ink); font-size: 13px; }
 .peer-paired { color: var(--color-muted); font-size: 13px; user-select: none; }
-.peer-code { display: grid; gap: 8px; justify-items: start; }
+.peer-code, .peer-clear { display: grid; gap: 8px; justify-items: start; }
 .peer-code strong { color: var(--color-ink); font-size: 14px; }
 .peer-code code { font: 600 28px/1.2 var(--font-mono); letter-spacing: 0.12em; color: var(--color-ink); }
 </style>

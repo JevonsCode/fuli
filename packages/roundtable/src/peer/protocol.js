@@ -59,10 +59,26 @@ export function canonicalTime(value) {
 }
 
 // Text another device sent, as this computer shows it: without C0 and C1
-// control characters (terminal escapes) or bidirectional overrides.
-const CONTROLS = /[\u0000-\u001f\u007f-\u009f؜‎‏‪-‮⁦-⁩]/g;
+// control characters (terminal escapes), bidirectional marks and overrides,
+// zero-width and invisible filler characters, line and paragraph separators,
+// or tag characters.
+const CONTROLS = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u115f\u1160\u180e\u200b-\u200f\u2028-\u202e\u2060-\u2069\u3164\ufeff\uffa0\u{e0000}-\u{e007f}]/gu;
 export function withoutControls(value) {
   return value.replace(CONTROLS, '');
+}
+
+const GRAPHEMES = new Intl.Segmenter('und', { granularity: 'grapheme' });
+
+// At most `limit` user-perceived characters: an emoji or an accented letter is never cut in two.
+export function graphemePrefix(value, limit) {
+  let text = '';
+  let count = 0;
+  for (const { segment } of GRAPHEMES.segment(value)) {
+    if (count === limit) break;
+    text += segment;
+    count += 1;
+  }
+  return text;
 }
 
 export function shortFingerprint(fingerprint) {
@@ -169,7 +185,7 @@ export function validateAssertion(assertion, { now = Date.now() } = {}) {
 
 export function publicDirectoryEntry(entry) {
   if (!isOpaqueId(entry?.bindingId) || !isOpaqueId(entry?.agentId)) throw new PeerError('invalid_directory', 'Invalid shared Agent');
-  const text = (value, max) => typeof value === 'string' ? withoutControls(value).slice(0, max) : null;
+  const text = (value, max) => typeof value === 'string' ? graphemePrefix(withoutControls(value), max) : null;
   return { bindingId: entry.bindingId, agentId: entry.agentId, name: text(entry.name, 120) ?? entry.agentId,
     employeeNumber: text(entry.employeeNumber, 32), responsibility: text(entry.responsibility, 500),
     projectName: text(entry.projectName, 120),

@@ -16,6 +16,11 @@ export function announcedAddresses(interfaces) {
   return (physical.length ? physical : all).map((entry) => entry.address);
 }
 
+// Addresses of virtual and VPN adapters, where nearby pairing does not answer.
+export function virtualAddresses(interfaces) {
+  return classified(interfaces).filter((entry) => entry.virtual).map((entry) => entry.address);
+}
+
 function classified(interfaces) {
   return Object.entries(interfaces()).flatMap(([name, list]) => (list ?? [])
     .filter((entry) => entry && !entry.internal && (entry.family === 'IPv4' || entry.family === 4))

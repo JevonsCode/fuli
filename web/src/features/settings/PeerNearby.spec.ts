@@ -81,14 +81,28 @@ it('says why nearby pairing turned off, when too many requests failed, and how a
   expect(mismatch.text()).toContain('新电脑请在 Laptop 上配对')
 })
 
-it('lets the person clear the attempt count on this computer', async () => {
+it('warns that many attempts can mean an uninvited device, and clears only as a deliberate second step', async () => {
   const fetch = vi.fn().mockResolvedValueOnce(json(answer({ ...listed, attempts: { lastWindow: 0, lastDay: 0, limited: false } })))
   vi.stubGlobal('fetch', fetch)
   const wrapper = mount(PeerNearby, { props: { nearby: { ...listed, canPair: false, limited: true,
     attempts: { lastWindow: 5, lastDay: 5, limited: true } }, coordinatorName: null } })
+  expect(wrapper.get('[data-nearby-limited]').text()).toContain('可能有人在未经邀请地试着配对')
+  expect(wrapper.find('[data-nearby-clear]').exists()).toBe(false)
+  await wrapper.get('[data-nearby-clear-ask]').trigger('click')
+  expect(wrapper.get('[data-nearby-clear-confirm]').text()).toContain('只有确定是你自己')
+  await wrapper.get('[data-nearby-clear-keep]').trigger('click')
+  expect(wrapper.find('[data-nearby-clear]').exists()).toBe(false)
+  await wrapper.get('[data-nearby-clear-ask]').trigger('click')
   await wrapper.get('[data-nearby-clear]').trigger('click')
   await flushPromises()
+  expect(fetch).toHaveBeenCalledTimes(1)
   expect(fetch.mock.calls[0]?.[0]).toBe('/api/peer/nearby/attempts/clear')
+})
+
+it('says waiting, not paired, until the other computer first connects', () => {
+  const wrapper = mount(PeerNearby, { props: { nearby: { ...listed, pairing: { ...waiting, state: 'waiting', code: null } }, coordinatorName: null } })
+  expect(wrapper.get('[data-pairing-outcome]').text()).toContain('等它第一次连上')
+  expect(pairingOutcome({ ...waiting, state: 'trust_withdrawn' })).toBe('trust_withdrawn')
 })
 
 it('reads codes in two groups and maps each ending to one message', () => {

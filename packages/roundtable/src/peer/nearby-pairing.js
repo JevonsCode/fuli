@@ -17,7 +17,7 @@ const OPEN_STATES = new Set(['connecting', 'confirm', 'finishing']);
 
 // What the other computer may say when it refuses, in this computer's own
 // words; its own code, message and status are never shown or passed on.
-const REMOTE_REFUSALS = Object.freeze({
+const REMOTE_REFUSALS = new Map(Object.entries({
   pairing_busy: ['The other computer is already pairing; try again in two minutes', 409],
   pairing_rate_limited: ['The other computer takes no more pairing attempts for now', 429],
   already_paired: ['These computers are already paired', 409],
@@ -27,7 +27,7 @@ const REMOTE_REFUSALS = Object.freeze({
   pairing_not_found: ['The other computer no longer has this pairing request', 404],
   pairing_mismatch: ['The other computer refused the pairing answer', 409],
   unsupported_protocol: ['The other computer pairs with another protocol version', 409],
-});
+}));
 // How the other computer may say a pairing ended; anything else reads as failed there.
 const REMOTE_REASONS = new Set(['code_mismatch', 'expired', 'no_answer', 'coordinator_unreachable', 'trust_failed', 'join_failed']);
 
@@ -51,7 +51,14 @@ const REMOTE_REASONS = new Set(['code_mismatch', 'expired', 'no_answer', 'coordi
 //   pairing off and on, an Agent, or a restart does not clear them; only time or
 //   the person on this computer does. So a device in the middle wins with a
 //   chance of at most 10 in 10^6 per computer per 24 hours (each of its tries
-//   shows on the screens), until the person here clears the count.
+//   shows on the screens), until the person here clears the count. Time is
+//   the process's monotonic clock while FULI runs, and never earlier than the
+//   latest stored attempt across restarts; the bound assumes the system clock
+//   is not moved forward while FULI is stopped (that ages the count once).
+// - The nearby list is keyed by a fingerprint prefix nobody vouches for: a
+//   device can pose as another in the list, which can only block or misdirect
+//   a pairing, never grant one, since the code binds both full fingerprints.
+//   Requests arriving on a virtual or VPN adapter are not answered.
 // - This computer accepts "paired" from the other side only after its own
 //   person confirmed, and, when it coordinates, only after it wrote its trust.
 // - A wrong commitment, or a code that differs from this computer's, cancels the
@@ -169,6 +176,11 @@ export function createNearbyPairing({ local, attempts, connect, clock = Date.now
         return { value: { state: 'failed', reason: 'trust_failed' } };
       }
       current.applied = true;
+      // A cancel that arrived while the trust was written takes it back.
+      if (!OPEN_STATES.has(current.state)) {
+        await local.untrustDevice(current.peer.fingerprint);
+        return { value: { state: current.state, reason: current.reason ?? null } };
+      }
       end(current, 'paired');
       return { value: { state: current.state, reason: current.reason ?? null } };
     }
@@ -178,14 +190,19 @@ export function createNearbyPairing({ local, attempts, connect, clock = Date.now
     }
     if (current.joining) return { value: { state: 'paired' } };
     // This computer joins the initiator: first check that it answers where it said.
-    if (!await local.reachable(current.peer).catch(() => false)) {
+    const reachable = await local.reachable(current.peer).catch(() => false);
+    // Either person may have cancelled while this computer checked.
+    if (!OPEN_STATES.has(current.state)) return { value: { state: current.state, reason: current.reason ?? null } };
+    if (!reachable) {
       end(current, 'failed', 'coordinator_unreachable');
       return { value: { state: 'failed', reason: 'coordinator_unreachable' } };
     }
     current.joining = true;
     return { value: { state: 'paired' }, after: () => {
       // The pairing reads as paired only once this computer actually joined.
-      Promise.resolve().then(() => local.joinCoordinator(current.peer)).then(() => {
+      Promise.resolve().then(() => local.joinCoordinator(current.peer)).then(async () => {
+        // Cancelled while joining: leave again, which also makes the other side drop its trust.
+        if (!OPEN_STATES.has(current.state)) { await local.leaveCoordinator(current.peer); return; }
         current.applied = true;
         end(current, 'paired');
       }, (error) => {
@@ -196,7 +213,8 @@ export function createNearbyPairing({ local, attempts, connect, clock = Date.now
   }
 
   async function handle(pathname, body, peer) {
-    if (!local.role().listening) throw unknownPath();
+    // Off, or reached on a virtual or VPN adapter: answered as an unknown path.
+    if (!local.role().listening || !local.answersOn(peer.localAddress)) throw unknownPath();
     switch (pathname) {
       case '/peer/1/nearby/request': return receiveRequest(body, peer);
       case '/peer/1/nearby/reveal': return receiveReveal(body, peer);
@@ -285,7 +303,10 @@ export function createNearbyPairing({ local, attempts, connect, clock = Date.now
         return;
       }
       current.there = true;
-      if (current.coordinator === 'target') await local.joinCoordinator(current.peer);
+      if (current.coordinator === 'target') {
+        await local.joinCoordinator(current.peer);
+        if (!OPEN_STATES.has(current.state)) { await local.leaveCoordinator(current.peer); return; }
+      }
       end(current, 'paired');
       return;
     }
@@ -300,6 +321,7 @@ export function createNearbyPairing({ local, attempts, connect, clock = Date.now
       current.state = 'finishing';
       await local.trustDevice(current.peer);
       current.applied = true;
+      if (!OPEN_STATES.has(current.state)) { await local.untrustDevice(current.peer.fingerprint); return; }
       schedulePoll(current, 0);
       return;
     }
@@ -354,7 +376,8 @@ export function createNearbyPairing({ local, attempts, connect, clock = Date.now
     const fingerprint = slot.peer.fingerprint;
     const thisCoordinates = (slot.coordinator === 'target') === (slot.direction === 'incoming');
     return { requestId: slot.id, direction: slot.direction, state: slot.state, reason: slot.reason ?? null,
-      device: { name: slot.peer.name, shortFingerprint: fingerprint ? shortFingerprint(fingerprint) : slot.peer.shortFingerprint ?? null },
+      device: { name: slot.peer.name, fingerprint: fingerprint ?? null,
+        shortFingerprint: fingerprint ? shortFingerprint(fingerprint) : slot.peer.shortFingerprint ?? null },
       code: ['confirm', 'finishing'].includes(slot.state) ? slot.code : null,
       coordinator: thisCoordinates ? 'this' : 'other', confirmedHere: slot.here, confirmedThere: slot.there,
       expiresAt: new Date(slot.expiresAt).toISOString() };
@@ -374,8 +397,10 @@ async function remote(request) {
   try { return await request; }
   catch (error) {
     if (!error?.remote) throw error;
-    const [message, status] = REMOTE_REFUSALS[error.code] ?? ['The other computer refused the pairing', 409];
-    throw new PeerError(REMOTE_REFUSALS[error.code] ? error.code : 'nearby_refused', message, status);
+    // A Map, so a code such as __proto__ or toString is just an unknown code.
+    const known = typeof error.code === 'string' && REMOTE_REFUSALS.has(error.code);
+    const [message, status] = known ? REMOTE_REFUSALS.get(error.code) : ['The other computer refused the pairing', 409];
+    throw new PeerError(known ? error.code : 'nearby_refused', message, status);
   }
 }
 

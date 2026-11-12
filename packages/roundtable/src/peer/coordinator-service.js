@@ -5,7 +5,7 @@ import { isAuthorityKey } from './origin-proof.js';
 import { createCoordinatorChat } from './chat-coordinator.js';
 import {
   canonicalJson, encodeInvitation, PEER_LIMITS, PeerError, peerCleanup, pemToDer, publicDirectoryEntry,
-  RESULT_OUTCOMES, sha256Hex, TERMINAL_STATUSES, validateAssertion, withoutControls,
+  graphemePrefix, RESULT_OUTCOMES, sha256Hex, TERMINAL_STATUSES, validateAssertion, withoutControls,
 } from './protocol.js';
 
 const ONLINE_MS = 90_000;
@@ -29,11 +29,11 @@ const DAY_MS = 24 * 60 * 60_000;
 // Routes messages between paired devices. It never executes anything: each
 // receiving device re-checks its own shares and identity authority.
 export function createCoordinatorService({ store, identity, authority, name, clock = Date.now,
-  randomCode = () => randomBytes(32).toString('base64url'), idFactory = randomUUID, onTrustChange = () => {} }) {
+  randomCode = () => randomBytes(32).toString('base64url'), idFactory = randomUUID, onTrustChange = () => {},
+  repositoryChanges = memoryRecord() }) {
   const iso = (offsetMs = 0) => new Date(clock() + offsetMs).toISOString();
   const pairingFailures = [];
   const repositories = new Map();
-  const repositoryChanges = new Map();
   let repositoryKey = null;
   rotateRepositoryKey();
   if (!isAuthorityKey(authority)) throw new PeerError('authority_unavailable', 'The coordinator needs its local origin authority', 500);
@@ -124,13 +124,19 @@ export function createCoordinatorService({ store, identity, authority, name, clo
   }
 
   // The same set again is free; a new set counts, and past the daily limit the earlier set stays.
+  // The count is kept in the host's store (repositoryChanges), so a restart
+  // does not reset it. The first set a device sends under a new key (after a
+  // restart or a revoke) is free, so a revoke never locks out the others.
   function acceptRepositories(nodeId, digests) {
     const current = repositories.get(nodeId);
     if (current && current.length === digests.length && digests.every((digest) => current.includes(digest))) return;
     const now = clock();
-    const changes = (repositoryChanges.get(nodeId) ?? []).filter((at) => at > now - DAY_MS);
-    if (changes.length >= REPOSITORY_CHANGES_PER_DAY) return;
-    repositoryChanges.set(nodeId, [...changes, now]);
+    const all = repositoryChanges.read() ?? {};
+    const record = all[nodeId] ?? {};
+    const changes = (Array.isArray(record.at) ? record.at : []).filter((at) => Number.isFinite(at) && at > now - DAY_MS);
+    const firstUnderKey = record.keyId !== repositoryKey.id;
+    if (!firstUnderKey && changes.length >= REPOSITORY_CHANGES_PER_DAY) return;
+    repositoryChanges.write({ ...all, [nodeId]: { keyId: repositoryKey.id, at: firstUnderKey ? changes : [...changes, now] } });
     repositories.set(nodeId, digests);
   }
 
@@ -348,6 +354,11 @@ function repositoryDigests(value) {
     .slice(0, REPOSITORY_LIMIT) : [];
 }
 
+function memoryRecord() {
+  let value = {};
+  return { read: () => value, write: (next) => { value = next; } };
+}
+
 export function cleanName(value) {
-  return typeof value === 'string' ? withoutControls(value).trim().slice(0, 60) : '';
+  return typeof value === 'string' ? graphemePrefix(withoutControls(value).trim(), 60).trim() : '';
 }

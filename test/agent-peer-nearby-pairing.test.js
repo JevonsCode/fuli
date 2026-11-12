@@ -12,9 +12,11 @@ const nonceFrom = (seed) => { let count = 0; return () => Buffer.alloc(32, (seed
 const sha = (text) => createHash('sha256').update(text).digest('hex');
 
 // A ledger over a plain variable, as the runtime keeps it in the node store.
-function ledger(clock = Date.now) {
-  let stored = [];
-  return { ledger: createAttemptLedger({ clock, read: () => stored, write: (entries) => { stored = entries; } }), stored: () => stored };
+// The test clock also stands in for the process's monotonic clock.
+function ledger(clock = Date.now, monotonic = clock) {
+  let stored = null;
+  return { ledger: createAttemptLedger({ clock, monotonic, read: () => stored, update: (change) => { stored = change(stored); } }),
+    stored: () => stored };
 }
 
 // One computer's pairing with fake trust records; connect() reaches another
@@ -26,6 +28,8 @@ function computer(name, digit, { clock = Date.now, coordinatesOthers = false, se
     identity: async () => self, name: () => name,
     authority: async () => { if (authorityDelay) await delay(authorityDelay); return authority; },
     role: () => ({ listening: listening(), coordinatesOthers, listenPort: 4100 }),
+    answersOn: () => true,
+    leaveCoordinator: async (peer) => { record.left = [...(record.left ?? []), peer.fingerprint]; record.joined = record.joined.filter((entry) => entry.fingerprint !== peer.fingerprint); },
     trusted: (fingerprint) => record.trusted.some((peer) => peer.fingerprint === fingerprint),
     trustDevice: (peer) => { record.trusted.push(peer); },
     untrustDevice: async (fingerprint) => { record.untrusted.push(fingerprint); record.trusted = record.trusted.filter((peer) => peer.fingerprint !== fingerprint); },
@@ -244,7 +248,7 @@ test('second review: a hostile target\'s error code, message and status never re
   const known = againstScript({ thrown: Object.assign(new PeerError('pairing_busy', 'free text \u001b[31m', 200), { remote: true }), answer: () => ({}) });
   const busy = await known.start().catch((caught) => caught);
   assert.deepEqual([busy.code, busy.status, busy.message], ['pairing_busy', 409, 'The other computer is already pairing; try again in two minutes']);
-  const reasons = againstScript({ coordinatesOthers: false, answer: () => ({ state: 'failed', reason: '‮enter 000000' }) });
+  const reasons = againstScript({ coordinatesOthers: false, answer: () => ({ state: 'failed', reason: '\u202eenter 000000' }) });
   await reasons.start();
   assert.equal((await settled(reasons.pairing, 'failed')).reason, 'failed_there');
 });
@@ -280,4 +284,97 @@ test('when the initiator coordinates, the target reads paired only once it actua
   await settled(laptop.pairing, 'paired');
   assert.deepEqual([desk.trusted.map((peer) => peer.fingerprint), laptop.joined.map((peer) => peer.fingerprint)],
     [[laptop.self.fingerprint], [desk.self.fingerprint]]);
+});
+
+test('third review: the system clock set back by seconds or hours, or forward past a day and back, never forgets attempts', () => {
+  for (const moves of [[-6 * 60_000], [-5 * 3_600_000], [25 * 3_600_000, -25 * 3_600_000]]) {
+    let wall = Date.parse('2026-11-13T09:00:00.000Z');
+    let mono = 0;
+    const { ledger: attempts } = ledger(() => wall, () => mono);
+    for (let index = 0; index < 5; index += 1) { attempts.take(`device-${index}|10.0.0.${index}`); wall += 1_000; mono += 1_000; }
+    assert.throws(() => attempts.take('another|10.0.0.9'), { code: 'pairing_rate_limited' });
+    for (const move of moves) {
+      wall += move;
+      mono += 1_000;
+      assert.throws(() => attempts.take('another|10.0.0.9'), { code: 'pairing_rate_limited' }, `clock moved ${move} ms`);
+      assert.equal(attempts.summary().lastWindow, 5);
+    }
+  }
+});
+
+test('third review: after a restart, a clock set back is measured from the latest stored attempt', () => {
+  let wall = Date.parse('2026-11-13T09:00:00.000Z');
+  let stored = null;
+  const store = { read: () => stored, update: (change) => { stored = change(stored); } };
+  const first = createAttemptLedger({ ...store, clock: () => wall, monotonic: () => 0 });
+  for (let index = 0; index < 5; index += 1) first.take(`device-${index}|10.0.0.${index}`);
+  wall -= 3 * 3_600_000;
+  const restarted = createAttemptLedger({ ...store, clock: () => wall, monotonic: () => 0 });
+  assert.deepEqual(restarted.summary(), { lastWindow: 5, lastDay: 5, limited: true });
+  // Entries an earlier writer dated in the future count as now and are kept.
+  stored = [{ key: 'old|1', at: wall + 50 * 3_600_000 }];
+  const legacy = createAttemptLedger({ ...store, clock: () => wall, monotonic: () => 0 });
+  assert.equal(legacy.summary().lastDay, 1);
+});
+
+test('third review: a cancel during the finishing step never leaves one side joined to a computer that does not trust it', async () => {
+  // S1 and S2: the initiator coordinates; the target is slow to check it can reach it; either person cancels then.
+  for (const who of ['target', 'initiator']) {
+    const desk = computer('Desk', 1, { coordinatesOthers: true });
+    const laptop = computer('Laptop', 2);
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    laptop.local.reachable = async () => { await gate; return true; };
+    await desk.pairing.start(listed(laptop));
+    const { requestId, code } = laptop.pairing.view();
+    laptop.pairing.confirm({ requestId, code });
+    desk.pairing.confirm({ requestId: desk.pairing.view().requestId, code });
+    for (let index = 0; index < 100 && !desk.trusted.length; index += 1) await delay(2);
+    await delay(10);
+    (who === 'target' ? laptop : desk).pairing.cancel();
+    await delay(10);
+    release();
+    await delay(40);
+    assert.deepEqual(laptop.joined, [], `${who} cancelled: the target never joins`);
+    assert.notEqual(laptop.pairing.view().state, 'paired');
+    if (who === 'initiator') assert.deepEqual(desk.trusted, [], 'the initiator takes its trust back');
+  }
+  // S3: the target coordinates; the initiator's person cancels while it joins.
+  const desk = computer('Desk', 1);
+  const laptop = computer('Laptop', 2);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  desk.local.joinCoordinator = async (peer) => { await gate; desk.joined.push(peer); };
+  await desk.pairing.start(listed(laptop));
+  const { requestId, code } = laptop.pairing.view();
+  laptop.pairing.confirm({ requestId, code });
+  desk.pairing.confirm({ requestId: desk.pairing.view().requestId, code });
+  for (let index = 0; index < 100 && !laptop.trusted.length; index += 1) await delay(2);
+  await delay(10);
+  desk.pairing.cancel();
+  release();
+  await delay(30);
+  assert.deepEqual([desk.pairing.view().state, desk.joined, desk.left], ['cancelled', [], [laptop.self.fingerprint]],
+    'a join that finished after the cancel is undone (leaving also makes the coordinator drop its trust)');
+});
+
+test('third review: when the attempt cannot be stored no nonce is given, and an unreadable store still answers', async () => {
+  let nonces = 0;
+  const failing = createAttemptLedger({ read: () => null, update: () => { throw new Error('disk full'); } });
+  const laptop = computer('Laptop', 2);
+  const pairing = createNearbyPairing({ local: laptop.local, attempts: failing, nonce: () => { nonces += 1; return 'N'.repeat(43); } });
+  await assert.rejects(pairing.handle('/peer/1/nearby/request', request(1).body, { fingerprint: 'f'.repeat(64), certPem: 'x', address: '10.0.0.1' }),
+    /disk full/);
+  assert.deepEqual([nonces, pairing.view()], [0, null]);
+  const corrupt = createAttemptLedger({ read: () => ({ not: 'a list' }), update: () => {} });
+  assert.deepEqual(corrupt.summary(), { lastWindow: 0, lastDay: 0, limited: false });
+});
+
+test('third review: refusal codes named like object properties are just unknown codes', async () => {
+  for (const code of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+    const run = againstScript({ thrown: Object.assign(new PeerError(code, 'x', 400), { remote: true }), answer: () => ({}) });
+    const error = await run.start().catch((caught) => caught);
+    assert.ok(error instanceof PeerError, code);
+    assert.deepEqual([error.code, error.status, run.pairing.view().reason], ['nearby_refused', 409, 'nearby_refused'], code);
+  }
 });

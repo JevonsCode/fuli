@@ -185,12 +185,83 @@ test('the coordinator keeps repository digests to itself, keyed per paired group
   service.publishDirectory(laptop.fingerprint, { agents: [], repositories: { keyId: repositoryKey.id, digests: [guesses[55], guesses[1]] } });
   assert.deepEqual(service.directory(desk.fingerprint).devices.find((entry) => entry.nodeId === laptop.fingerprint).sameRepositories, [guesses[1]]);
   service.publishDirectory(desk.fingerprint, { agents: [], repositories: { keyId: repositoryKey.id, digests: ['f'.repeat(32)] } });
+  service.publishDirectory(desk.fingerprint, { agents: [], repositories: { keyId: repositoryKey.id, digests: ['9'.repeat(32)] } });
   service.publishDirectory(desk.fingerprint, { agents: [], repositories: { keyId: repositoryKey.id, digests: [guesses[55]] } });
   assert.deepEqual(service.directory(desk.fingerprint).devices.find((entry) => entry.nodeId === laptop.fingerprint).sameRepositories, [],
-    'a fourth new set in a day is not taken');
+    'a fourth new set in a day under one key is not taken (the first set under a key is free)');
   service.revoke(laptop.fingerprint);
   assert.notEqual(service.publishDirectory(desk.fingerprint, { agents: [] }).repositoryKey.id, repositoryKey.id);
   store.close();
+});
+
+test('third review: the daily count of digest sets survives a restart, and revokes do not lock out the others', async () => {
+  const [coordinator, member, other, revoked] = await Promise.all([1, 2, 3, 4].map(async () => deviceIdentity(await createDeviceCertificate())));
+  const store = createCoordinatorStore();
+  let counts = null;
+  const repositoryChanges = { read: () => counts, write: (value) => { counts = value; } };
+  const start = () => createCoordinatorService({ store, identity: coordinator, name: 'Coordinator', repositoryChanges,
+    authority: { keyId: '0'.repeat(32), publicKey: Buffer.alloc(32).toString('base64url') } });
+  for (const entry of [member, other, revoked]) store.upsertNode({ id: entry.fingerprint, name: 'Device', certPem: entry.certPem, at: new Date().toISOString() });
+  const digest = (index) => index.toString(16).padStart(32, '0');
+  let service = start();
+  let key = service.publishDirectory(other.fingerprint, { agents: [] }).repositoryKey;
+  service.publishDirectory(other.fingerprint, { agents: [], repositories: { keyId: key.id, digests: [digest(7)] } });
+  const memberSets = (count, from) => {
+    for (let index = 0; index < count; index += 1) {
+      service.publishDirectory(member.fingerprint, { agents: [], repositories: { keyId: key.id, digests: [digest(from + index)] } });
+    }
+  };
+  memberSets(4, 100);
+  service = start();
+  key = service.publishDirectory(other.fingerprint, { agents: [] }).repositoryKey;
+  service.publishDirectory(other.fingerprint, { agents: [], repositories: { keyId: key.id, digests: [digest(7)] } });
+  memberSets(1, 200);
+  service.publishDirectory(member.fingerprint, { agents: [], repositories: { keyId: key.id, digests: [digest(7)] } });
+  assert.deepEqual(service.directory(member.fingerprint).devices.find((entry) => entry.nodeId === other.fingerprint).sameRepositories, [],
+    'the restart did not give the member three new guesses');
+  for (let index = 0; index < 3; index += 1) {
+    store.upsertNode({ id: revoked.fingerprint, name: 'Device', certPem: revoked.certPem, at: new Date().toISOString() });
+    service.revoke(revoked.fingerprint);
+  }
+  key = service.publishDirectory(other.fingerprint, { agents: [] }).repositoryKey;
+  service.publishDirectory(other.fingerprint, { agents: [], repositories: { keyId: key.id, digests: [digest(7)] } });
+  service.publishDirectory(member.fingerprint, { agents: [], repositories: { keyId: key.id, digests: [digest(7)] } });
+  assert.deepEqual(service.directory(member.fingerprint).devices.find((entry) => entry.nodeId === other.fingerprint).sameRepositories, [digest(7)],
+    'after revokes, each device\'s first set under the new key is taken');
+  store.close();
+});
+
+test('third review: nearby requests reaching this computer on a virtual adapter are answered as unknown paths', { timeout: 20_000 }, async () => {
+  const bus = discoveryBus();
+  const virtual = () => ({ 'vEthernet (WSL)': [{ address: '127.0.0.1', family: 'IPv4', internal: false }] });
+  const desk = await device('desk', { discovery: bus.discovery, runtimeOptions: { interfaces: virtual } });
+  try {
+    await desk.runtime.nearbyOn({ name: 'Desk' });
+    assert.equal(await strangerReroll(listenPort(desk.app), await createDeviceCertificate(), 1), 'device_not_trusted');
+    assert.equal((await desk.runtime.status()).nearby.attempts.lastDay, 0, 'nothing was counted');
+  } finally { await desk.close(); }
+});
+
+test('third review: paired shows only once the other computer used the trust; until then it says waiting', { timeout: 30_000 }, async () => {
+  const bus = discoveryBus();
+  const [desk, laptop] = await Promise.all([device('desk', { discovery: bus.discovery }),
+    device('laptop', { discovery: bus.discovery, runtimeOptions: { trustUseMs: 60_000, pairedGraceMs: 60_000 } })]);
+  try {
+    await desk.runtime.nearbyOn({ name: 'Desk' });
+    await laptop.runtime.nearbyOn({ name: 'Laptop' });
+    const { here, there } = await nearbyPair(desk, laptop);
+    const nodeStore = desk.app.peer.nodeStore();
+    const setSetting = nodeStore.setSetting.bind(nodeStore);
+    nodeStore.setSetting = (key, value) => {
+      if (key === 'membership' && value?.role === 'member') throw Object.assign(new Error('synthetic disk failure'), { code: 'EIO' });
+      return setSetting(key, value);
+    };
+    await desk.runtime.confirmPairing({ requestId: here.requestId, code: there.code });
+    await laptop.runtime.confirmPairing({ requestId: there.requestId, code: here.code });
+    const waiting = await until(laptop.runtime, (status) => status.devices.some((entry) => !entry.self && entry.status === 'active'), 'the laptop to trust the desk');
+    assert.equal((await laptop.runtime.status()).nearby.pairing.state, 'waiting', 'the desk never connected, so not paired');
+    assert.ok(waiting);
+  } finally { await desk.close(); await laptop.close(); }
 });
 
 // A device that never paired asks for a nonce over real TLS and cancels: the second review's re-roll.

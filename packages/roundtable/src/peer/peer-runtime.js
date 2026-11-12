@@ -7,7 +7,7 @@ import { startCoordinatorServer } from './coordinator-http.js';
 import { cleanName, createCoordinatorService } from './coordinator-service.js';
 import { createCoordinatorStore } from './coordinator-store.js';
 import { loadDeviceIdentity } from './device-identity.js';
-import { announcedAddresses, lanAddresses } from './lan-addresses.js';
+import { announcedAddresses, lanAddresses, virtualAddresses } from './lan-addresses.js';
 import { createAttemptLedger } from './nearby-attempts.js';
 import { createBonjourDiscovery } from './nearby-discovery.js';
 import { createNearbyPairing } from './nearby-pairing.js';
@@ -57,10 +57,14 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   const discovery = createDiscovery({ onFailure: (error) => endNearby({ kind: 'discovery_failed', reason: failureCode(error) })
     .catch(onError) });
   const presence = createNearbyPresence({ discovery, clock });
-  const attempts = createAttemptLedger({ clock, read: () => (port.configured() ? store().setting('nearbyAttempts') : []),
-    write: (entries) => store().setSetting('nearbyAttempts', entries) });
+  const attempts = createAttemptLedger({ clock, read: () => (port.configured() ? store().setting('nearbyAttempts') : null),
+    update: (change) => store().updateSetting('nearbyAttempts', change) });
   const pairing = createNearbyPairing({ attempts, local: {
     identity, authority: () => port.localAuthority(),
+    answersOn: (address) => !virtualAddresses(interfaces).includes(address),
+    leaveCoordinator: async (peer) => {
+      if (store().setting('membership')?.coordinator?.fingerprint === peer.fingerprint) await disable();
+    },
     name: () => store().setting('nearby')?.name ?? 'FULI',
     role: nearbyRole,
     trusted: (fingerprint) => trustedFingerprints().includes(fingerprint),
@@ -99,10 +103,12 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     const coordinatorStore = createCoordinatorStore(joinPath(port.directory, 'coordinator.sqlite'));
     let server = null;
     const service = createCoordinatorService({ store: coordinatorStore, identity: device, authority, name,
-      onTrustChange: () => server?.refreshTrust() });
+      onTrustChange: () => server?.refreshTrust(),
+      repositoryChanges: { read: () => store().setting('repositoryChanges'), write: (value) => store().setSetting('repositoryChanges', value) } });
     try {
       server = await startCoordinatorServer({ service, identity: device, host: address, port: listenPort, claimWaitMs,
-        nearby: { listening: () => nearbyRole().listening, handle: (...args) => pairing.handle(...args) },
+        nearby: { listening: (address) => nearbyRole().listening && !virtualAddresses(interfaces).includes(address),
+          handle: (...args) => pairing.handle(...args) },
         onReached: rememberReached });
     } catch (error) {
       coordinatorStore.close();
@@ -208,7 +214,8 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
           repositories: { keyId: repositoryKey.id, digests: await repositoryDigests(repositoryKey) } });
       }
     } catch (error) {
-      lastPublish = { at: new Date().toISOString(), agents: null, error: error.code ?? 'publish_failed', message: error.message };
+      // Only a known word reaches the card and CLI: the coordinator's own text never does.
+      lastPublish = { at: new Date().toISOString(), agents: null, error: failureCode(error) };
       throw error;
     }
   }
@@ -223,7 +230,10 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   async function pairedDirectory() {
     if (!runnerClient) return [];
-    try { return (await runnerClient.post('/peer/1/directory', {}, { timeoutMs: DIRECTORY_READ_MS })).devices ?? []; }
+    try {
+      const { devices } = await runnerClient.post('/peer/1/directory', {}, { timeoutMs: DIRECTORY_READ_MS });
+      return (Array.isArray(devices) ? devices : []).map((entry) => ({ ...entry, name: cleanName(entry?.name) || 'FULI' }));
+    }
     catch { return []; }
   }
 
@@ -383,7 +393,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     // A list the coordinator did not get is said here, not only in the log.
     try { await publish(); }
     catch (error) {
-      throw new PeerError('share_not_published', `Saved here, but the coordinator did not get the list (${error.code ?? 'error'}: ${error.message}); FULI retries every minute`, 502);
+      throw new PeerError('share_not_published', `Saved here, but the coordinator did not get the list (${failureCode(error)}); FULI retries every minute`, 502);
     }
     return status();
   }
@@ -487,7 +497,25 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       attempts: budget, limited: budget.limited,
       devices: settings ? presence.list().map((entry) => ({ ...entry,
         paired: trusted.some((fingerprint) => fingerprint.startsWith(entry.fingerprint)) })) : [],
-      pairing: pairing.view(), ended: nearbyNotice };
+      ...honestOutcome(pairing.view(), nearbyNotice) };
+  }
+
+  // Paired means the other computer used the trust this one wrote: until its
+  // first connection the card says waiting, and after a withdrawal it says so.
+  function honestOutcome(view, notice) {
+    if (!port.configured()) return { pairing: view, ended: notice };
+    const pending = new Set((store().setting('pendingTrust') ?? []).map((entry) => entry.fingerprint));
+    const devices = store().setting('membership')?.role === 'coordinator' ? storedDevices() : [];
+    const outcome = (fingerprint) => {
+      const device = devices.find((entry) => entry.nodeId === fingerprint);
+      if (device?.status === 'revoked') return 'trust_withdrawn';
+      const used = device?.lastSeenAt && Date.parse(device.lastSeenAt) >= Date.parse(device.pairedAt);
+      return pending.has(fingerprint) && device?.status === 'active' && !used ? 'waiting' : null;
+    };
+    const viewOutcome = view?.state === 'paired' && view.device.fingerprint ? outcome(view.device.fingerprint) : null;
+    const noticeOutcome = notice?.kind === 'paired' && notice.fingerprint ? outcome(notice.fingerprint) : null;
+    return { pairing: viewOutcome ? { ...view, state: viewOutcome } : view,
+      ended: noticeOutcome === 'waiting' ? { ...notice, kind: 'waiting' } : notice };
   }
 
   async function startNearby() {
@@ -558,8 +586,8 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   }
 
   function afterPairing(peer) {
-    nearbyNotice = { kind: 'paired', name: peer.name, at: new Date(clock()).toISOString() };
-    const timer = setTimeout(() => endNearby({ kind: 'paired', name: peer.name }).catch(onError), pairedGraceMs);
+    nearbyNotice = { kind: 'paired', name: peer.name, fingerprint: peer.fingerprint, at: new Date(clock()).toISOString() };
+    const timer = setTimeout(() => endNearby({ kind: 'paired', name: peer.name, fingerprint: peer.fingerprint }).catch(onError), pairedGraceMs);
     timer.unref?.();
   }
 
@@ -712,8 +740,12 @@ function defaultName(device) {
 }
 
 // A failure's code as shown to the person: a known word, never free text.
+// Codes the coordinator answers with that this computer knows; any other word it sends reads as coordinator_error.
+const COORDINATOR_CODES = new Set(['invalid_directory', 'device_not_trusted', 'payload_too_large', 'invalid_json',
+  'unsupported_media_type', 'certificate_required', 'not_found', 'internal_error', 'queue_full']);
 function failureCode(error) {
   const code = typeof error?.code === 'string' ? error.code : 'error';
+  if (error?.remote) return COORDINATOR_CODES.has(code) ? code : 'coordinator_error';
   return /^[A-Za-z0-9_]{1,40}$/.test(code) ? code : 'error';
 }
 
