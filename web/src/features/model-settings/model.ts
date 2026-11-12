@@ -115,7 +115,15 @@ export interface ModelRoleView {
   health?: ModelRoleHealth | null
 }
 
-export interface ModelRoleHealth { status: 'ok' | 'failing' | 'unknown'; at: string | null; reason: string | null }
+// scope (rec issue 122): 'connection' when it is about the connection configuration
+// the role shares with others (any of them may have answered), 'role' for a
+// failure of the role's own call that another role's answer does not clear.
+export interface ModelRoleHealth {
+  status: 'ok' | 'failing' | 'unknown'
+  at: string | null
+  reason: string | null
+  scope?: 'connection' | 'role' | null
+}
 
 // An observation of the local catalog, never proof of what served an answer.
 export interface LocalBuild {

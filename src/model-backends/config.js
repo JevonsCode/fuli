@@ -84,6 +84,13 @@ export function connectionIdentity(id, connection) {
   return contentHash({ id, protocol: connection.protocol, endpoint: connection.endpoint, model: connection.model });
 }
 
+// The whole configuration whose health roles share (rec#122): the connection
+// identity above and its key reference, so a key reference changed in place
+// starts with no record. Health only; the trust gate keeps connectionIdentity.
+export function connectionHealthIdentity(id, connection) {
+  return contentHash({ connection: connectionIdentity(id, connection), secretRef: connection.secretRef ?? null });
+}
+
 // Validates a whole configuration, throwing a TypeError that names the field.
 // Its result reads back to itself, so it is also what FULI writes.
 export function normalizeConfig(raw) {

@@ -33,7 +33,7 @@ describe('ModelRoleCard', () => {
   it('with a model says when it last answered instead of the recommendation', () => {
     const wrapper = mountCard(connected({ health: { status: 'ok', at: ago(2), reason: null } }))
     expect(wrapper.get('[data-model-use-state]').text()).toBe('已接上')
-    expect(wrapper.get('[data-model-role-health]').text()).toBe('正常 · 上次回答 2小时前')
+    expect(wrapper.get('[data-model-role-health]').text()).toBe('连接正常 · 最近回答 2小时前')
     expect(wrapper.find('[data-model-use-advice]').exists()).toBe(false)
     expect(wrapper.find('[data-model-failure]').exists()).toBe(false)
   })
@@ -44,7 +44,7 @@ describe('ModelRoleCard', () => {
     expect(wrapper.get('[data-model-use-state]').text()).toBe('没回应')
     expect(wrapper.get('[data-model-use-state]').attributes('data-variant')).toBe('destructive')
     expect(wrapper.attributes('data-model-failing')).toBe('true')
-    expect(wrapper.get('[data-model-failure-text]').text()).toBe('没回应：密钥不对 · 3小时前')
+    expect(wrapper.get('[data-model-failure-text]').text()).toBe('连接没回应：密钥不对 · 3小时前')
     // The actions are the same two, in the same place.
     expect(wrapper.findAll('footer button').map(button => button.text())).toEqual(['查看详情', '编辑'])
     await wrapper.get('[data-model-check]').trigger('click')
@@ -52,6 +52,18 @@ describe('ModelRoleCard', () => {
     expect(checkModelRole).toHaveBeenCalledWith('assistant')
     expect(wrapper.get('[data-model-failure-text]').text()).toBe('连接正常，synthetic-chat 回答了。')
     expect(wrapper.emitted('checked')).toHaveLength(1)
+  })
+
+  it('a failure of the role\'s own task says so, apart from the shared connection (rec issue 122)', () => {
+    const wrapper = mountCard(connected({ health: { status: 'failing', at: ago(3), reason: 'permission_denied', scope: 'role' } }))
+    expect(wrapper.get('[data-model-use-state]').text()).toBe('任务失败')
+    expect(wrapper.get('[data-model-failure-text]').text()).toMatch(/^本角色任务失败：.+ · 3小时前$/)
+  })
+
+  it('a newer answer on the shared connection shows the connection working, with its time', () => {
+    const wrapper = mountCard(connected({ role: 'tonborg', health: { status: 'ok', at: ago(1), reason: null, scope: 'connection' } }))
+    expect(wrapper.find('[data-model-failure]').exists()).toBe(false)
+    expect(wrapper.get('[data-model-role-health]').text()).toBe('连接正常 · 最近回答 1小时前')
   })
 
   it('a use that is off shows no failure: it makes no calls', () => {

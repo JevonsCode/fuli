@@ -212,7 +212,7 @@ test('health says unknown before any call, ok after an answer, failing after a f
   const ollama = await fakeOllama(t);
   const { port } = portFor(ollama.endpoint);
   const health = () => port.health('tonborg', 'local', { protocol: 'openai_chat', endpoint: ollama.endpoint, model: MODEL });
-  assert.deepEqual(health(), { status: 'unknown', at: null, reason: null });
+  assert.deepEqual(health(), { status: 'unknown', at: null, reason: null, scope: null });
   await port.decide(request());
   assert.equal(health().status, 'ok');
   assert.equal(port.health('tonborg', 'local', null), null);

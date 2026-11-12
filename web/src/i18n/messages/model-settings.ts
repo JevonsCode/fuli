@@ -14,7 +14,8 @@ export const modelSettingsMessages = {
     permissionLink: 'FLA 能否改这里，在 AI 权限里设置',
     back: '设置',
     models: { title: '模型', usedBy: '谁在用', off: '已停用', checkOff: '用它的用途都停用了，打开一个才能测试' },
-    health: { ok: '正常 · 上次回答 {when}', failing: '没回应：{reason} · {when}', unknown: '还没调用过', failingState: '没回应' },
+    health: { ok: '连接正常 · 最近回答 {when}', failing: '连接没回应：{reason} · {when}', roleFailing: '本角色任务失败：{reason} · {when}',
+      unknown: '还没调用过', failingState: '没回应', roleFailingState: '任务失败' },
     uses: {
       title: '用途',
       advicePrefix: '推荐',
@@ -383,7 +384,8 @@ export const modelSettingsMessages = {
     permissionLink: 'Whether FLAs may change this is set in AI permissions',
     back: 'Settings',
     models: { title: 'Models', usedBy: 'Used by', off: 'Off', checkOff: 'Every use of it is off; turn one on to test it' },
-    health: { ok: 'Working · last answer {when}', failing: 'No answer: {reason} · {when}', unknown: 'Not called yet', failingState: 'No answer' },
+    health: { ok: 'Connection working · last answer {when}', failing: 'Connection not answering: {reason} · {when}',
+      roleFailing: 'This role’s task failed: {reason} · {when}', unknown: 'Not called yet', failingState: 'No answer', roleFailingState: 'Task failed' },
     uses: {
       title: 'Uses',
       advicePrefix: 'Recommended',
