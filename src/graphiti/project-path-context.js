@@ -7,7 +7,9 @@ import {
 import path from 'node:path';
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { hostPathOfCallerPath } from '../system/platform-path.js';
-import { linkedGitDirectory, originRemoteKey, projectsWithRemote, recordsOtherRemote } from './repository-remote.js';
+import {
+  claimsUnaddressedRepository, linkedGitDirectory, originRemoteKey, projectsWithRemote, recordsOtherRemote
+} from './repository-remote.js';
 
 // Says what to pass, never the path the caller sent.
 const INVALID_PATH_MESSAGE = 'projectPath must be an existing absolute directory. '
@@ -72,14 +74,18 @@ export function resolvePersonalProjectPath(projectPath, projects, {
     // identifies the project, even when the folder names another project.
     const candidateId = worktreeId ?? pathApi.basename(repositoryRoot);
     const named = resolveProjectId(candidateId, projectIds, worktreeId ? 'git_worktree_origin' : 'repository_root');
-    // The origin remote decides first (#632), but when the folder or the
-    // worktree's original repository names another registered project that
-    // records no other repository of its own, the two disagree: the person
-    // chooses rather than the owner switching silently (rec#125).
+    // The origin remote decides first (#632). Only when the folder or the
+    // worktree's original repository names another current project that
+    // claims a repository of its own without its address may that project be
+    // this checkout too: then the person chooses rather than the owner
+    // switching silently (rec#125).
     const byRemote = remote && remoteProject(remote, registered);
-    if (byRemote?.personalProjectId && named?.personalProjectId
-      && named.personalProjectId !== byRemote.personalProjectId && !otherRepository(named)) {
-      return unresolved('ambiguous', { candidateCount: 2, reason: 'repository_remote_conflict' });
+    const namedProject = named?.personalProjectId
+      && registered.find(({ project_id: projectId }) => projectId === named.personalProjectId);
+    if (byRemote?.personalProjectId && namedProject && named.personalProjectId !== byRemote.personalProjectId
+      && namedProject.profile?.lifecycle !== 'archived' && claimsUnaddressedRepository(namedProject)) {
+      return unresolved('ambiguous', { candidateCount: 2, reason: 'repository_remote_conflict',
+        candidateProjectIds: [byRemote.personalProjectId, named.personalProjectId] });
     }
     if (byRemote) return byRemote;
     // Without a recorded remote the folder names the project, as before,

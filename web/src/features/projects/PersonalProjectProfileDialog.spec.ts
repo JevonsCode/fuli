@@ -96,7 +96,7 @@ describe('PersonalProjectProfileDialog', () => {
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
 
-  // rec issue 125: a repository the project only refers to keeps saying so, and only
+  // A repository the project only refers to keeps saying so, and only
   // repository sources ask whose they are.
   it('keeps a referenced repository as reference and asks the role only of repositories', async () => {
     const wrapper = mount(PersonalProjectProfileDialog, {

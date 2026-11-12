@@ -39,6 +39,7 @@ import {
   routingLearningRecord
 } from './project-agent-mapping.js';
 import { coversClient } from '../agents/source-applications.js';
+import { remoteConflictAction } from './agent-project-resolution.js';
 
 const CHARACTER_FIELDS = Object.freeze(['judgment', 'taste', 'personality']);
 
@@ -242,9 +243,9 @@ export async function coordinateProjectAgentTask(
       personal_space_id: application.config.personal.spaceId,
       personal_project_id: null,
       project_resolution: projectResolution,
-      required_action: projectResolution.status === 'ambiguous'
+      required_action: remoteConflictAction(projectResolution) ?? (projectResolution.status === 'ambiguous'
         ? 'Run from the exact project directory; Fuli will not guess among workspace children.'
-        : 'Register this repository or directory as one local personal project first.',
+        : 'Register this repository or directory as one local personal project first.'),
       host_execution_required: false,
       worker_plan: []
     };
@@ -632,9 +633,9 @@ export async function getProjectAgentContext(
       personal_space_id: application.config.personal.spaceId,
       personal_project_id: null,
       project_resolution: projectResolution,
-      required_action: projectResolution.status === 'ambiguous'
+      required_action: remoteConflictAction(projectResolution) ?? (projectResolution.status === 'ambiguous'
         ? 'Run from the exact project directory; Fuli will not guess among workspace children.'
-        : 'Register this repository or directory as one local personal project first.'
+        : 'Register this repository or directory as one local personal project first.')
     };
   }
 
