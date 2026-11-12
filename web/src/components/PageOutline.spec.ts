@@ -37,6 +37,20 @@ describe('the page outline look', () => {
     expect(rule('.page-outline-dot')).toMatch(/width: var\(--outline-capsule\)/)
   })
 
+  it('shows no outline when even the shortest rows would not fit the window', async () => {
+    const height = window.innerHeight
+    try {
+      // 12 sections need 12 x 16 + 12 = 204px between the top bar (76) and the bottom margin (32).
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 311 })
+      const labels = Array.from({ length: 12 }, (_, index) => `合成 ${index}`)
+      expect(await outlineOf(longPage(labels))).toBeNull()
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: 312 })
+      expect(await outlineOf(longPage(labels))).not.toBeNull()
+    } finally {
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: height })
+    }
+  })
+
   it('keeps a long list inside the window by shortening its rows, down to one line of the names', () => {
     const root = rule('.page-outline')
     expect(root).toMatch(/--outline-row: clamp\(16px, calc\(\(100dvh - var\(--outline-top-min\) - var\(--outline-bottom\) - 2 \* var\(--outline-pad\)\) \/ var\(--outline-rows, 3\)\), 30px\)/)

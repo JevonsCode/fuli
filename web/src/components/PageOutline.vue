@@ -19,6 +19,15 @@ import { outlineEntries, outlineNeeded, readingIndex, scrollParent, type Outline
 // data-outline-count.
 const props = defineProps<{ content?: HTMLElement | null }>()
 
+// The style's own numbers (.page-outline): rows shorten to MIN_ROW to fit between the top bar and
+// the bottom margin. A window too short even for that shows no outline, rather than one whose last
+// sections lie outside the window.
+const MIN_ROW = 16
+const PADDING = 12
+const TOP_MIN = 76
+const BOTTOM = 32
+const fits = (rows: number) => rows * MIN_ROW + PADDING <= window.innerHeight - TOP_MIN - BOTTOM
+
 const entries = shallowRef<OutlineEntry[]>([])
 const scroller = shallowRef<HTMLElement | null>(null)
 const reading = ref(0)
@@ -35,7 +44,7 @@ function refresh() {
     const content = props.content
     entries.value = content ? outlineEntries(content) : []
     scroller.value = content ? scrollParent(content) : null
-    needed.value = Boolean(scroller.value && outlineNeeded(entries.value, scroller.value))
+    needed.value = Boolean(scroller.value && outlineNeeded(entries.value, scroller.value)) && fits(entries.value.length)
     updateReading()
   })
 }
