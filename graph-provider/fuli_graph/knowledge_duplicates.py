@@ -22,7 +22,7 @@ from fastapi import HTTPException
 from .knowledge_audit import record_human_change
 from .knowledge_audit_models import KnowledgeRevisionRecord
 from .knowledge_duplicate_models import DuplicateMergeRequest, DuplicateMergeResult
-from .knowledge_duplicate_rules import duplicate_merge, shape
+from .knowledge_duplicate_rules import Merge, duplicate_merge, shape
 from .knowledge_semantic import item_text
 from .knowledge_versions import _END_OF_VALIDITY, invalid_property, item_revisions, lock_knowledge, \
     record_version_revision
@@ -52,6 +52,12 @@ _MEANING_FIELDS = '''{
 def _fields(name: str, template: str = _ITEM_FIELDS, said_at: str | None = None) -> str:
     fields = template.replace('{item}', name)
     return fields[:fields.rindex('}')] + f', said_at: {said_at}}}' if said_at else fields
+
+
+def duplicate_item_fields(name: str, said_at: str | None = None) -> str:
+    """What duplicate_pairs reads of the bound item `name`, as a Cypher map
+    projection; said_at is the expression of its latest source, if any."""
+    return _fields(name, said_at=said_at)
 
 
 # Same type, current, not a preference; an entity's place is the [project,
@@ -192,20 +198,27 @@ async def merge_duplicates(store, actor, request: DuplicateMergeRequest) -> Dupl
             records, _, _ = await scoped.runtime.driver.execute_query(
                 '// duplicate merge: scan\n' + (_ENTITY_SCAN if item_kind == 'entity' else _RELATIONSHIP_SCAN),
                 group_id=space['group_id'], workflow_relation=WORKFLOW_RELATION, routing_='r')
-            items = {record['item']['item_id']: {**_record(item_kind, record['item']), 'kind_key': record['kind_key'],
-                                                 'places': [tuple(place) for place in record['places']]}
-                     for record in records}
-            apart = await _kept_apart(scoped, space, item_kind, items.values())
-            groups = _groups([item for item in items.values() if item['item_id'] not in apart])
-            await _with_meaning(scoped, space, item_kind, groups)
-            for group in groups:
-                for merge in _group_merges(group):
-                    if len(merged) >= request.limit:
-                        return DuplicateMergeResult(merged=merged)
-                    if await _merge(scoped, actor, space, item_kind, merge, created_at=created_at):
-                        merged.append({'item_kind': item_kind, 'item_id': merge.drop['item_id'],
-                                       'kept_item_id': merge.keep['item_id'], 'rule': merge.rule})
+            for merge in await duplicate_pairs(scoped, space, item_kind, records):
+                if len(merged) >= request.limit:
+                    return DuplicateMergeResult(merged=merged)
+                if await _merge(scoped, actor, space, item_kind, merge, created_at=created_at):
+                    merged.append({'item_kind': item_kind, 'item_id': merge.drop['item_id'],
+                                   'kept_item_id': merge.keep['item_id'], 'rule': merge.rule})
     return DuplicateMergeResult(merged=merged)
+
+
+async def duplicate_pairs(store, space, item_kind, records) -> list[Merge]:
+    """Every merge the pair rules find among items already read, each record
+    {'item': _ITEM_FIELDS with said_at, 'kind_key', 'places'}: only items of
+    one kind key, sharing a place, are compared. Writes nothing; the periodic
+    pass merges them, the preference organising read proposes them to a person."""
+    items = {record['item']['item_id']: {**_record(item_kind, record['item']), 'kind_key': record['kind_key'],
+                                         'places': [tuple(place) for place in record['places']]}
+             for record in records}
+    apart = await _kept_apart(store, space, item_kind, items.values())
+    groups = _groups([item for item in items.values() if item['item_id'] not in apart])
+    await _with_meaning(store, space, item_kind, groups)
+    return [merge for group in groups for merge in _group_merges(group)]
 
 
 def _groups(items) -> list[list[dict]]:

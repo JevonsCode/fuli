@@ -69,6 +69,14 @@ export const preferenceMessages = {
       },
       deferReason: '用户选择交给 AI，在首次相关使用前判断并处理。',
       deferNotice: '已交给 AI，任务用到时再处理。',
+      // 「让 AI 整理」 (rec issue 121): one sentence to the person's own AI; nothing changes without their yes.
+      organize: {
+        area: '整理我的偏好',
+        title: '让 AI 整理我的偏好',
+        lead: "@:{'roleNames.astro'} 找出重复、该挪范围和过时的偏好，你说好才改",
+        opened: '已在 {client} 打开，发送后开始整理',
+        copied: '已复制，粘贴给你的 AI 发送就开始整理',
+      },
       summaryAria: '协作偏好状态',
       summary: {
         confirmedAria: '查看 {count} 条已确认偏好',
@@ -269,6 +277,13 @@ export const preferenceMessages = {
       },
       deferReason: 'The user delegated this to AI for assessment and handling before the first relevant use.',
       deferNotice: 'Delegated to AI; handled when a task needs it.',
+      organize: {
+        area: 'tidy my preferences',
+        title: 'Let AI tidy my preferences',
+        lead: "@:{'roleNames.astro'} finds duplicates, wrong scopes and stale ones; nothing changes until you say yes",
+        opened: 'Opened in {client}; send it to start tidying',
+        copied: 'Copied; paste it into your AI and send to start tidying',
+      },
       summaryAria: 'Collaboration preference status',
       summary: {
         confirmedAria: 'View {count} confirmed preference | View {count} confirmed preferences',

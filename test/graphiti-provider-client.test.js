@@ -533,7 +533,7 @@ test('a 401 is reported unchanged when no different token is available', async (
   assert.equal(refreshed, false);
 });
 
-test('the duplicate-merge pass sends the space, and a limit only when given, with ordinary auth', async () => {
+test('the duplicate-merge pass sends the space, and a limit only when given, with ordinary auth; so does the preference organising read', async () => {
   const calls = [];
   const client = new GraphitiProviderClient({ baseUrl: 'http://provider.test', accessToken: 'synthetic-token',
     fetchImpl: async (url, options) => { calls.push({ url, options }); return jsonResponse(200, { merged: [] }); } });
@@ -544,4 +544,7 @@ test('the duplicate-merge pass sends the space, and a limit only when given, wit
   assert.deepEqual(calls.map(({ options }) => JSON.parse(options.body)), [
     { personal_space_id: 'synthetic-space' }, { personal_space_id: 'synthetic-space', limit: 5 }]);
   assert.equal(calls[0].options.headers.authorization, 'Bearer synthetic-token');
+  await client.readPreferenceOrganizing({ personalSpaceId: 'synthetic-space', offset: 50 });
+  assert.equal(calls[2].url, 'http://provider.test/v1/knowledge/preferences/organizing');
+  assert.deepEqual(JSON.parse(calls[2].options.body), { personal_space_id: 'synthetic-space', offset: 50 });
 });

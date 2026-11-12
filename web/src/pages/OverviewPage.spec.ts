@@ -111,7 +111,12 @@ async function setup({
   return { wrapper, router, consoleStore, attentionStore: useAgentAttention() }
 }
 
-afterEach(() => vi.useRealTimers())
+// The page's widgets load lazily: a test that ends while one is still loading left the import to
+// land after the environment was torn down, which failed the whole run on a slow machine.
+afterEach(async () => {
+  vi.useRealTimers()
+  await vi.dynamicImportSettled()
+})
 
 beforeEach(() => {
   setLocale('zh-CN', { persist: false })
