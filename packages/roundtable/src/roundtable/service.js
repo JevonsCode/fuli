@@ -347,7 +347,10 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     const observation = await observeReturnedMemory(host, store, { ask, reply: woken.reply, from, taskContextToken });
     return { status: 'answered', threadId: thread.id, messageId: ask.id, recipient: { agentId: target.agentId, name: label(target) },
       ...(observation ? { memoryObservation: observation } : {}),
-      via: woken.via, reply: woken.reply.body, ladder: ladder.view(woken.tier) };
+      via: woken.via, reply: woken.reply.body, ladder: ladder.view(woken.tier),
+      // A discussion turn records who answered with what (rec#129); other asks stay as they were.
+      ...(readOnly ? { executor: { client: woken.reply.from_client, session: woken.reply.from_session,
+        model: woken.model ?? null } } : {}) };
   }
 
   // The one way an ask wakes its recipient, whoever sent it: a durable execution
@@ -382,7 +385,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       const reply = store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent',
         inReplyTo: ask.id, via, from: { agentId: target.agentId, name: label(target), client: delivery.client,
           session: answer.sessionId }, to: replyTo, delivery: replyInbox.pendingFor(replyTo) });
-      return { status: 'answered', reply, via, tier: delivery.sessionId ? 'resume' : 'new_session' };
+      return { status: 'answered', reply, via, tier: delivery.sessionId ? 'resume' : 'new_session',
+        ...(answer.model ? { model: answer.model } : {}) };
     } catch (error) {
       finishWake(ask, error);
       store.updateMessage(ask.id, { status: 'queued', error: error.code ?? 'wake_failed' });
@@ -834,6 +838,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     recordGroupChoice: discussions.ownerRecordChoice,
     requestGroupFollowUp: discussions.ownerFollowUp,
     groupDiscussionStatus: discussions.ownerStatus,
+    joinGroupDiscussion: discussions.ownerJoin,
+    groupDiscussionTurns: discussions.ownerSessionTurn,
     ownerMessageStatus: ({ messageId }) => statusOf(ownedAsk(messageId)),
     // Cancelling is not evidence that a possibly running process exited; any cleanup hold stays.
     ownerCancelMessage: ({ messageId }) => cancelAsk(ownedAsk(messageId)),

@@ -41,10 +41,12 @@ export const claudeCodeWake = Object.freeze({
     return null;
   },
 
-  // stream-json ends with one `result` event carrying the final answer.
-  initialState: () => ({ body: '', completed: true, failed: false }),
+  // stream-json ends with one `result` event carrying the final answer. Its
+  // `system` `init` event names the model the session runs (rec#129).
+  initialState: () => ({ body: '', completed: true, failed: false, model: null }),
   nativeSessionId: event => event.type === 'system' && event.subtype === 'init' ? event.session_id : null,
   readEvent(event, state) {
+    if (event.type === 'system' && event.subtype === 'init' && typeof event.model === 'string') state.model = event.model;
     if (event.type !== 'result') return;
     state.body = event.result ?? '';
     state.failed ||= Boolean(event.is_error);

@@ -25,6 +25,11 @@ test('Claude Code answers come from the final result event', () => {
   assert.deepEqual(parseFinalAnswer('claude_code', { code: 0, stdout: [
     JSON.stringify({ type: 'system', session_id: 'fork-1' }), JSON.stringify({ type: 'result', result: ' 好的 ' })].join('\n') }),
   { body: '好的', sessionId: 'fork-1' });
+  // rec#129: the init event names the model the session runs; FULI records it as reported.
+  assert.deepEqual(parseFinalAnswer('claude_code', { code: 0, stdout: [
+    JSON.stringify({ type: 'system', subtype: 'init', session_id: 'fork-2', model: 'synthetic-model-a' }),
+    JSON.stringify({ type: 'result', result: 'ok' })].join('\n') }),
+  { body: 'ok', sessionId: 'fork-2', model: 'synthetic-model-a' });
   assert.throws(() => parseFinalAnswer('claude_code', { code: 0, stdout: JSON.stringify({ type: 'result', result: 'x', is_error: true }) }),
     /did not return an answer/);
 });
