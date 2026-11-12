@@ -99,7 +99,7 @@ class StoreProjectAgentTaskBlockers:
         if not await self._clear_task_blocker(
             request.personal_space_id, task_id, cause,
             project_id=request.personal_project_id, note=request.note, clearer=clearer,
-            resume_status=request.resume_status,
+            resume_status=request.resume_status, expected_revision=request.expected_revision,
         ):
             raise HTTPException(409, 'the task is no longer blocked, or nothing says it is probably resolved; reload it')
         return await self.get_project_agent_task(
@@ -159,7 +159,7 @@ class StoreProjectAgentTaskBlockers:
 
     async def _clear_task_blocker(
         self, space_id: str, task_id: str, cause: BlockerClearCause, *, session=None,
-        project_id=None, note=None, clearer=None, resume_status='running',
+        project_id=None, note=None, clearer=None, resume_status='running', expected_revision=None,
     ) -> bool:
         """Move one blocked task to running (or queued). session, when given, must be the reporting one.
 
@@ -175,6 +175,11 @@ class StoreProjectAgentTaskBlockers:
             blocker = scoped._blocker_from_row(row) if row else None
             if not blocker or (session and not blocked_in_session(blocker, *session)):
                 return False
+            current = int(dict(row['task']).get('revision') or 0)
+            if expected_revision is not None and expected_revision != current:
+                # Checked under the task lock: a block reported again since is not cleared.
+                raise HTTPException(409, f'task revision is stale: expected {expected_revision}, current '
+                                         f'{current}; nothing was cleared, read the task again')
             hint = blocker.probably_resolved
             if cause == 'person_confirmed' and not hint:
                 return False

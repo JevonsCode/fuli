@@ -507,6 +507,8 @@ class ProjectAgentTaskBlockerPersonClear(StrictModel):
     note: str | None = Field(default=None, min_length=1, max_length=500)
     confirm_hint: bool = False
     resume_status: Literal['running', 'queued'] = 'running'
+    # The revision the clearer read; a task that changed since is not cleared.
+    expected_revision: int | None = Field(default=None, ge=0)
     cleared_by: Literal['person', 'agent'] = 'person'
     agent_id: str | None = Field(default=None, min_length=1, max_length=128)
     source_application: SourceApplication | None = None

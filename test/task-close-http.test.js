@@ -83,6 +83,18 @@ test('without the person\'s words, or with Relay your decisions off, nothing clo
   assert.deepEqual(calls, []);
 });
 
+test('a bare assent relayed as the person\'s words does not close a task', async () => {
+  const { port, calls } = closing();
+  for (const words of ['可以', '好的！', 'OK.', 'okay', 'Yes!', 'sure', '嗯嗯', '行吧', 'go ahead', '做完了']) {
+    const refused = await post(port, BODY, { headers: relayedCall({ ...WORDS, words }) });
+    assert.equal(refused.status, 400, words);
+    assert.equal(refused.body.code, 'person_words_not_a_close', words);
+    assert.match(refused.body.error, /in their own words that the task is done or cancelled/);
+  }
+  assert.deepEqual(calls, []);
+  assert.equal((await post(port, BODY, { headers: relayedCall({ ...WORDS, words: '取消这个任务吧' }) })).status, 200);
+});
+
 test('the person\'s own close, bad input and a remote caller', async () => {
   const { port, calls } = closing();
   const own = await post(port, { ...BODY, status: 'cancelled' });

@@ -20,8 +20,10 @@ from .task_participant_running import running_since_set
 TERMINAL_TASK_STATUSES = {"completed", "failed", "cancelled"}
 # A revision named in a refusal; the whole message is cut at 240 characters.
 _REVISION_SHOWN = 32
-# The person's own acceptance needs no verified revision (store_project_agent_task_person_close.py).
-PERSON_CLOSE_HINT = 'Person said done? Relay their words via run_delegated_action, task close route.'
+# rec#123 review: an Agent never writes the person's event; the person's own close is a relayed decision.
+PERSON_EVENT_REFUSAL = ("actorKind human is the person's own event and is written only from the FULI console; "
+                        'report as agent. If the person themself said the task is done or cancelled, relay '
+                        'their words via run_delegated_action, task close route')
 
 
 def _unverified_completion(raw_task: dict, artifact_revision: str | None) -> str | None:
@@ -31,22 +33,23 @@ def _unverified_completion(raw_task: dict, artifact_revision: str | None) -> str
     completes it. FULI records no "has no artifact" fact, so a task without
     files names what it delivered (a config digest, an evidence ID) as its
     revision; exempting tasks on the reporter's word would exempt every task.
-    The person's own close is their acceptance and needs none (rec#123).
+    The person's own close is their acceptance and needs none (rec#123); only
+    the no-revision guidance names it, for when the person themself said so.
+    An Agent whose revision failed or differs is never pointed past verification.
     """
     verified = raw_task.get('verified_artifact_revision')
     if raw_task.get('quality_gate') == 'passed' and verified and verified == artifact_revision:
         return None
     if not artifact_revision:
-        reason = ('Pass the artifactRevision (commit, or digest/ID of what you delivered) that '
-                  'record_agent_verification passed. Else report awaiting_review.')
-    elif raw_task.get('quality_gate') == 'passed' and verified:
-        reason = (f'Verification passed for revision {verified[:_REVISION_SHOWN]}, not '
-                  f'{artifact_revision[:_REVISION_SHOWN]}: complete with that one or verify yours.')
-    else:
-        reason = (f'Revision {artifact_revision[:_REVISION_SHOWN]} not verified (gate '
-                  f"{raw_task.get('quality_gate') or 'not run'}): run record_agent_verification "
-                  'or report awaiting_review.')
-    return f'{reason} {PERSON_CLOSE_HINT}'
+        return ('Pass the artifactRevision (commit, or digest/ID of what you delivered) that '
+                'record_agent_verification passed, else report awaiting_review. Person themself said it '
+                'is done? Relay their words via run_delegated_action, task close route.')
+    if raw_task.get('quality_gate') == 'passed' and verified:
+        return (f'Verification passed for revision {verified[:_REVISION_SHOWN]}, not '
+                f'{artifact_revision[:_REVISION_SHOWN]}: complete with that one or verify yours.')
+    return (f'Revision {artifact_revision[:_REVISION_SHOWN]} not verified (gate '
+            f"{raw_task.get('quality_gate') or 'not run'}): run record_agent_verification "
+            'or report awaiting_review.')
 
 
 class StoreProjectAgentTaskActivity:
@@ -66,6 +69,10 @@ class StoreProjectAgentTaskActivity:
         request: ProjectAgentTaskActivityCreate,
     ) -> ProjectAgentTaskRecord:
         self._require_personal()
+        if request.actor_kind == 'human' and actor.get('_human_review_verified') is not True:
+            # A person's event (a completion counts as 人确认) comes only on the
+            # console's human-review channel, like every other human-only write.
+            raise HTTPException(403, PERSON_EVENT_REFUSAL)
         space = await self.authorize(actor, request.personal_space_id, 'maintainer')
         await authorize_personal_project(
             self,
@@ -161,14 +168,6 @@ class StoreProjectAgentTaskActivity:
         from_blocking_session = blocked_in_session(
             blocker, request.source_application, request.source_session_id,
         )
-        if not worker_only:
-            self._validate_task_transition(
-                raw_task.get('status'),
-                request.status,
-                has_actual_executor=bool(request.actual_executor_id),
-                from_blocking_session=from_blocking_session,
-                from_lead=bool(request.agent_id) and request.agent_id == raw_task.get('lead_agent_id'),
-            )
         # A report from another session that moves a blocked task on is the
         # Agent's word that the block is resolved; its event says so.
         blocker_cleared_by = 'agent' if (
@@ -213,6 +212,18 @@ class StoreProjectAgentTaskActivity:
                         {'agent_id': request.agent_id, 'profile': profile},
                         application,
                     )
+        # The transition is checked last: a blocked task's refusal
+        # (task_blocked_elsewhere) then means every other check of this report
+        # passed, so the Agent tool may clear the block for the person and
+        # record it without the report failing after the clear (rec#123).
+        if not worker_only:
+            self._validate_task_transition(
+                raw_task.get('status'),
+                request.status,
+                has_actual_executor=bool(request.actual_executor_id),
+                from_blocking_session=from_blocking_session,
+                from_lead=bool(request.agent_id) and request.agent_id == raw_task.get('lead_agent_id'),
+            )
         if request.status in TERMINAL_TASK_STATUSES:
             await self.close_task_agent_loans(actor, request.personal_space_id, request.task_id)
         now = now_utc()

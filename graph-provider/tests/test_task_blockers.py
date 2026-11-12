@@ -104,6 +104,23 @@ async def test_another_session_cannot_unblock_the_task_and_is_told_how(status):
     assert ':' not in message and len(message) <= 240
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(('changes', 'says'), [
+    ({'agent_id': 'agent-z'}, 'Agent is not assigned to this task'),
+    ({'agent_id': None}, 'task has no lead yet'),
+    ({'expected_revision': 1}, 'task revision is stale'),
+])
+async def test_a_blocked_refusal_comes_only_after_every_other_check_of_the_report_passed(changes, says):
+    # rec#123 review: the Agent tool clears the block only on task_blocked_elsewhere,
+    # so a report that would fail after the clear is refused for its own reason first.
+    store = ActivityStore(blocked_row())
+    request = activity('running', SESSION_B, 'resume-b-3').model_copy(update=changes)
+    with pytest.raises(HTTPException, match=says) as refused:
+        await store.record_project_agent_task_activity({'id': 'principal'}, request)
+    assert not isinstance(refused.value.detail, dict)
+    assert store.runtime.driver.event_calls == []
+
+
 class BlockerDriver:
     def __init__(self, candidates):
         self.candidates = candidates
@@ -451,6 +468,22 @@ async def test_an_fla_whose_report_asks_for_queued_puts_the_cleared_task_back_in
     with pytest.raises(ValueError):
         ProjectAgentTaskBlockerPersonClear(personal_space_id='personal-space', personal_project_id='project-a',
                                            resume_status='completed')
+
+
+@pytest.mark.asyncio
+async def test_a_clear_for_a_revision_the_task_has_moved_past_clears_nothing():
+    # rec#123 review: a block reported again after the clearer read the task stays.
+    store = BlockerStore(blocked_row())
+    with pytest.raises(HTTPException, match='expected 2, current 3; nothing was cleared') as stale:
+        await store.clear_task_blocker_by_person(PERSON, 'task-a', ProjectAgentTaskBlockerPersonClear(
+            personal_space_id='personal-space', personal_project_id='project-a', note='Executor is back.',
+            cleared_by='agent', agent_id='agent-b', expected_revision=2))
+    assert stale.value.status_code == 409
+    assert store.runtime.driver.writes('CREATE (event') == []
+    await store.clear_task_blocker_by_person(PERSON, 'task-a', ProjectAgentTaskBlockerPersonClear(
+        personal_space_id='personal-space', personal_project_id='project-a', note='Executor is back.',
+        cleared_by='agent', agent_id='agent-b', expected_revision=3))
+    assert len(store.runtime.driver.writes('CREATE (event:FuliProjectAgentTaskEvent')) == 1
 
 
 @pytest.mark.parametrize('changes', [

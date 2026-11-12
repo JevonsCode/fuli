@@ -41,12 +41,17 @@ export async function handleTaskBlockerRequest({ request, response, url, app, bl
   if (body.resumeStatus != null && !RESUME_STATUSES.has(body.resumeStatus)) {
     throw validationError('resumeStatus must be running or queued');
   }
+  // The revision the clearer read; the Provider clears nothing if the task moved on since.
+  if (body.expectedRevision != null && !(Number.isSafeInteger(body.expectedRevision) && body.expectedRevision >= 0)) {
+    throw validationError('expectedRevision must be a whole number from 0');
+  }
   const call = delegatedCall(request);
   const clearer = call
     ? { agent: { agentId: call.actor.agentId, client: call.actor.client, sessionId: call.actor.sessionId },
       note: note ?? call.reason }
     : { confirmHint: body.confirmHint === true, note };
   sendJson(response, 200, await blockerConsole.markUnblocked(taskId,
-    { personalSpaceId: body.personalSpaceId, personalProjectId, resumeStatus: body.resumeStatus ?? null, ...clearer }));
+    { personalSpaceId: body.personalSpaceId, personalProjectId, resumeStatus: body.resumeStatus ?? null,
+      expectedRevision: body.expectedRevision ?? null, ...clearer }));
   return true;
 }

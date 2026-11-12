@@ -99,6 +99,22 @@ async def test_an_agents_own_completion_still_needs_the_verified_revision_and_na
             idempotency_key='no-agent', status='completed', summary='Done.')
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status', ['cancelled', 'completed', 'running', 'blocked'])
+async def test_an_agents_activity_never_writes_the_persons_event(status):
+    # rec#123 review: actorKind human (a completion counts as 人确认) comes only on the human-review channel.
+    store = ActivityStore(verified_row())
+    request = ProjectAgentTaskActivityCreate(
+        personal_space_id='personal-space', personal_project_id='project-a', task_id='task-a',
+        idempotency_key='as-the-person', status=status, summary='The person wants this stopped.',
+        agent_id='agent-a', actor_kind='human')
+    with pytest.raises(HTTPException) as refused:
+        await store.record_project_agent_task_activity({'id': 'principal'}, request)
+    assert refused.value.status_code == 403 and 'task close route' in refused.value.detail
+    assert len(refused.value.detail) <= 240
+    assert store.runtime.driver.event_calls == []
+
+
 def test_the_close_route_takes_only_the_human_review_actor():
     async def actor():
         return {'id': 'principal'}
