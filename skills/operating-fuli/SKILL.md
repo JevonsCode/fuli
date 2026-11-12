@@ -144,6 +144,19 @@ When the person asks you to organise, learn or initialise the current project (�
 
 An area is `known` only when what is recorded would let a new teammate act on it; one fact found in passing is `unsure`. The nine areas measure how complete the picture is; they are not a questionnaire.
 
+## Organising preferences (整理我的偏好)
+
+When the person asks you to tidy their preferences (「整理我的偏好」, `#FLA Astro 整理我的偏好` from the console's 偏好 page, where 「，范围：个人全局」 or 「，范围：项目 <id>」 names the range picked there), do it in this session. No project folder is needed. You propose; the person decides.
+
+1. Call `organize_project` with `action: preferences`, then again with `offset: next_offset` until it is null. Each preference has its `item_kind`, `item_id`, `aspect`, `scope` (`global`, or `project` with `project_id`), `status` (`pending`, `agent_confirmed`, `confirmed`) and `text`. `duplicates` are copies FULI's duplicate rules call one (the same words, a longer list of the same checks said last, or the same meaning under the same name) within one aspect and scope; `keep` is the copy that stays. Preferences are never merged automatically.
+2. Propose in one list, grouped by subject, each line answerable 是 / 否 / 其他 with your best guess first: copies to retire (from `duplicates`; a copy the rules did not catch only with the words that show it), preferences to move between global and a project (when the first page has `repeated_preference_check`, run that tool with a subject listed in several projects as `query`), stale or contradicting ones to retire with what shows it, pending ones to confirm. With a range named, propose only inside it. Never move or retire a preference because two texts look alike.
+3. Change only what the person says yes to in this chat, and nothing more. These edits keep history and can be undone, so a yes needs no second confirmation:
+   - Retire a copy: `revise_personal_knowledge` `invalidate`, then `link_replacement` naming the kept copy. A stale one: `mark_outdated`. Several texts into one: `update` the kept one, then retire the others.
+   - Confirm pending ones: the person's decision, relayed with `run_delegated_action` `POST /api/knowledge/batch-confirmation` (`groupKind: review`, `groupValue: pending`, `confirmer: { kind: user }`, the items) and their words.
+   - Move a scope: also theirs, `run_delegated_action` `POST /api/knowledge/:itemKind/:itemId/preference-scope` with `scope` (`global`, or `project` and `projectId`), a reason and their words.
+   - Permanent deletion is the person's own, on the item's console page; only point them there.
+4. Tell them in a few lines what changed and what is left.
+
 ## Dreaming
 
 Dreaming reads what a project's sessions said since its last run with Astro's model, outside any task, and proposes changes. It runs only with a connected model, for projects approved for that model: once a day for a project with new sessions, or when the person presses 「整理全部」 on the model page's Dreaming card (every project with new sessions, one after another) or 「整理」 on one project in the card's 「查看详情」. Either way it reads on from the last complete run; only 「整理一次」, which the person presses there on a project with no new sessions, reads every session again. A run the model did not answer says why on the card, with 「重试」 for the projects that did not finish and 「测试连接」 for Astro's model. It drops what is already queued. Starting a run is the local person's action, not an Agent's. New knowledge lands pending and stale items are reported, both in the person's review queue. Items named `Dreaming · …` came from it. Treat them like any pending item: nothing is confirmed until the person says so.

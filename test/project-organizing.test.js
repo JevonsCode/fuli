@@ -111,6 +111,34 @@ test('a read names the check for preferences shared with other projects, only wh
   assert.equal((await call(app, { action: 'read' })).repeated_preference_check, undefined);
 });
 
+test('整理我的偏好 reads the person\'s preferences in any folder; the first page says how to apply a yes', async (t) => {
+  // A session outside every project still reads them: preferences belong to the person.
+  const app = application(t, { project: null });
+  const reads = [];
+  const page = { total: 2, pending: 1, next_offset: null, duplicates_truncated: false,
+    preferences: [{ item_kind: 'entity', item_id: 'p1', aspect: 'taste', scope: 'global', project_id: null, status: 'confirmed',
+      text: 'Reply tone\nAnswer in short plain sentences.' }],
+    duplicates: [{ item_kind: 'entity', keep: 'p1', same: [{ item_id: 'p2', rule: 'same_text' }] }] };
+  app.personal = { readPreferenceOrganizing: async input => { reads.push(input); return page; },
+    listPersonalProjects: async () => [{ project_id: 'alpha' }, { project_id: 'beta' }] };
+  const first = await call(app, { action: 'preferences' });
+  assert.deepEqual(first.duplicates, page.duplicates);
+  assert.match(first.guidance, /revise_personal_knowledge/);
+  assert.match(first.guidance, /preference-scope/);
+  assert.match(first.guidance, /Permanent deletion stays in the console/);
+  // Across the person's projects, not around one of them.
+  assert.deepEqual(first.repeated_preference_check.arguments, { personalSpaceId: 'synthetic-space', personalProjectIds: ['alpha', 'beta'] });
+  // A later page is the page alone, and no project's coverage is touched.
+  assert.deepEqual(await call(app, { action: 'preferences', offset: 50 }), page);
+  assert.deepEqual(reads, [{ personalSpaceId: 'synthetic-space', offset: 0 }, { personalSpaceId: 'synthetic-space', offset: 50 }]);
+  assert.equal(app.projectOrganizing.view('synthetic-space', 'alpha').started, false);
+  // With one project there is nothing to compare across.
+  app.personal.listPersonalProjects = async () => [{ project_id: 'alpha' }];
+  const alone = await call(app, { action: 'preferences' });
+  assert.equal(alone.repeated_preference_check, undefined);
+  assert.doesNotMatch(alone.guidance, /repeated_preference_check/);
+});
+
 test('a model is placed only when its family leaves no doubt', () => {
   assert.deepEqual(['synthetic-opus-9', 'claude-fable-5-2', 'synthetic-sonnet-9', 'synthetic-haiku-9', 'synthetic-opus-mini',
     'local-model:4b', 'gpt-9-preview', '', null].map(modelTier),

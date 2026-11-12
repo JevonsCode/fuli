@@ -128,6 +128,7 @@ from .knowledge_deletion_watermark import register_knowledge_deletion_watermark_
 from .builtin_embedding_routes import register_builtin_embedding_routes
 from .knowledge_semantic_index import register_knowledge_semantic_routes
 from .knowledge_duplicates import register_knowledge_duplicate_routes
+from .preference_organizing import register_preference_organizing_routes
 from .knowledge_retrieval_terms import register_knowledge_retrieval_routes
 from .knowledge_tag_routes import register_knowledge_tag_routes
 from .preference_conflicts import (
@@ -330,6 +331,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_knowledge_semantic_routes(application, store, Actor)
     register_builtin_embedding_routes(application, resolved_settings, Actor)
     register_knowledge_duplicate_routes(application, store, Actor)
+    register_preference_organizing_routes(application, store, Actor)
     register_knowledge_retrieval_routes(application, store, Actor)
 
     @application.post('/v1/publication-drafts', response_model=PublicationDraftRecord)

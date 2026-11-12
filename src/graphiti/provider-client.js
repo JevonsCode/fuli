@@ -815,6 +815,13 @@ export class GraphitiProviderClient {
       method: 'POST', body: { personal_space_id: personalSpaceId, ...(limit ? { limit } : {}) }
     });
   }
+  // rec#121: a page of the person's current preferences, read as an Agent, with the
+  // copies the same duplicate rules call one; a proposal for the person, never merged.
+  readPreferenceOrganizing({ personalSpaceId, offset = 0 }) {
+    return this.#request('/v1/knowledge/preferences/organizing', {
+      method: 'POST', body: { personal_space_id: personalSpaceId, offset }
+    });
+  }
   semanticStatus({ personalSpaceId, model }) {
     return this.#request('/v1/semantic/status', {
       method: 'POST', body: { personal_space_id: personalSpaceId, model }
