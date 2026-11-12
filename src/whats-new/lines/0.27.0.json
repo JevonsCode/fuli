@@ -1,0 +1,13 @@
+{
+  "version": "0.27.0",
+  "zh": [
+    "按意思搜索不用再接模型：点一下，FULI 自己下个小模型在本机跑。",
+    "项目页多了「整理」：挑一个你的 AI，让它把项目读一遍，补上 FULI 还缺的。",
+    "设置重新归了类，同一件事只放一个地方；还新接了 DeepSeek Harness。"
+  ],
+  "en": [
+    "Search by meaning needs no model service now: one click and a small model runs on your computer.",
+    "A project page has 整理: pick an AI client; it reads the project and fills in what FULI is missing.",
+    "Settings keeps each subject in one place, and DeepSeek Harness is a client now."
+  ]
+}
