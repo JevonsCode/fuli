@@ -150,7 +150,7 @@ On your computer. Your personal graph and conversation records stay local. Exter
 <details>
 <summary><b>Which clients work with FULI?</b></summary>
 
-Claude Code, Codex, OpenCode, Cursor and Claude Desktop connect from the console with one click.
+Claude Code, Codex, OpenCode, Cursor, DeepSeek Harness and Claude Desktop connect from the console with one click.
 Other MCP clients run `fuli connect` for a standard configuration.
 </details>
 

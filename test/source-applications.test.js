@@ -28,6 +28,16 @@ test('a list naming `other` covers Antigravity, which used it before its own sou
   assert.equal(coversClient(['other'], 'antigravity', { explicit: ['antigravity'] }), false);
 });
 
+test('a list naming `other` covers DeepSeek Harness, new with its own source, by the same rule', () => {
+  const hiredBefore = ['codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'antigravity', 'other'];
+  assert.ok(SOURCE_APPLICATIONS.includes('dsh'));
+  assert.equal(coversClient(hiredBefore, 'dsh'), true);
+  assert.equal(coversClient(['dsh'], 'dsh'), true);
+  assert.equal(coversClient(['codex'], 'dsh'), false);
+  assert.equal(coversClient(['dsh'], 'other'), false);
+  assert.equal(coversClient(['other'], 'dsh', { explicit: ['dsh'] }), false);
+});
+
 test('an existing Agent that allowed `other` loads its memory in OpenCode, with its stored profile unchanged', async () => {
   const profile = { status: 'active', allowedClients: ['codex', 'other'] };
   const reads = [];

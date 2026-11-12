@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { sep } from 'node:path';
 
-import { clientSourceApplication, detectClients } from '../agent-kits/client-detection.js';
+import { clientSourceApplication, detectClients, entryState } from '../agent-kits/client-detection.js';
 import { configuredInstall, installOf } from './configured-install.js';
 import { jsonFormat, writeVersionedJsonFileAtomic } from '../storage/json-format.js';
 
@@ -65,8 +65,9 @@ export function createClientConnectionObserver({ installer, customClients, histo
       const extra = { sourceApplication, manualOnly: client.manual, restartSessions: waiting.get(sourceApplication) ?? 0,
         ...(client.manual && MANUAL_URLS[client.id] ? { manualUrl: MANUAL_URLS[client.id] } : {}) };
       const record = history.clients[client.id] ?? { status: null, previouslyConnected: false, since: null, changes: [] };
-      // A FULI entry FULI cannot read or call its own is never reported as a removal.
-      if (client.components.mcp === 'conflict') {
+      // A FULI entry FULI cannot read or call its own (for DeepSeek Harness, a
+      // plugin directory that is not FULI's) is never reported as a removal.
+      if (entryState(client.components) === 'conflict') {
         return { shown: view(client, { ...record, status: 'unknown' }, { ...extra, lastKnownStatus: record.status }) };
       }
       const previouslyConnected = record.previouslyConnected || PRESENT.has(statusOf(client, false));
@@ -108,7 +109,7 @@ export function createClientConnectionObserver({ installer, customClients, histo
       ...(ownInstall ? { installs: installsOf(ownInstall, views, platform) } : {}),
       customClients: answer.clients.filter((client) => !client.builtin).map((client) => ({
         id: client.id, label: client.label, detected: client.detected,
-        status: client.components.mcp === 'conflict' ? 'unknown' : statusOf(client, false),
+        status: entryState(client.components) === 'conflict' ? 'unknown' : statusOf(client, false),
         // Where the person puts FULI's MCP entry by hand, relative to home.
         mcpPaths: client.mcpPaths, removable: removable.has(client.id) })) };
   }
@@ -116,9 +117,9 @@ export function createClientConnectionObserver({ installer, customClients, histo
 }
 
 function statusOf(client, previouslyConnected) {
-  const { mcp, skills } = client.components;
+  const { skills } = client.components;
   if (client.connected) return 'connected';
-  if (LEFT.has(mcp)) return 'changed';
+  if (LEFT.has(entryState(client.components))) return 'changed';
   if (LEFT.has(skills)) return 'skills_left';
   if (previouslyConnected) return 'removed';
   return client.detected ? 'not_connected' : 'not_detected';

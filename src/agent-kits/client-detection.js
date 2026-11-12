@@ -9,14 +9,21 @@ const PRESENT = new Set(['current', 'outdated', 'conflict']);
 // fuli-installer-manifest.json). The clients that say 'other' can't be told
 // apart, so nothing about their open sessions can be said.
 const SOURCES = Object.freeze({ codex: 'codex', 'claude-code': 'claude_code', cursor: 'cursor', opencode: 'opencode',
-  'claude-desktop': 'claude', kiro: 'kiro', antigravity: 'antigravity' });
+  'claude-desktop': 'claude', kiro: 'kiro', antigravity: 'antigravity', dsh: 'dsh' });
 export const clientSourceApplication = id => SOURCES[id] ?? null;
+
+// The component that carries FULI's entry in a client: its MCP entry, or, in
+// a client with no MCP file (DeepSeek Harness), the plugin bundle that starts
+// FULI's MCP server itself. `components`: component name to state.
+export const entryComponent = (components) => ('mcp' in (components ?? {}) ? 'mcp' : 'plugin');
+export const entryState = (components) => components?.[entryComponent(components)];
 
 // installer: the client installer port (client-installer.js). Answers
 // { status: 'available', clients } or { status: 'unavailable', reason }.
 // Each client: { id, label, builtin, detected, manual, connected,
 // components: { mcp: 'current' | 'outdated' | 'missing' | 'conflict', … },
-// mcpPaths }. Clients this platform cannot run are left out.
+// mcpPaths, entryPaths }. entryPaths are the files or directories of the
+// entry component (entryComponent). Clients this platform cannot run are left out.
 export async function detectClients(installer) {
   const answer = await installer.status();
   if (answer.status !== 'available') return answer;
@@ -25,6 +32,8 @@ export async function detectClients(installer) {
 
 function clientOf(client) {
   const states = client.componentStates.filter(({ state }) => state !== 'unsupported');
+  const components = Object.fromEntries(states.map(({ component, state }) => [component, state]));
+  const pathsOf = (name) => states.find(({ component }) => component === name)?.paths ?? [];
   return {
     id: client.id,
     label: client.name,
@@ -32,8 +41,9 @@ function clientOf(client) {
     detected: client.detected,
     manual: client.state === 'manual',
     connected: client.state === 'connected',
-    components: Object.fromEntries(states.map(({ component, state }) => [component, state])),
-    mcpPaths: states.find(({ component }) => component === 'mcp')?.paths ?? []
+    components,
+    mcpPaths: pathsOf('mcp'),
+    entryPaths: pathsOf(entryComponent(components))
   };
 }
 

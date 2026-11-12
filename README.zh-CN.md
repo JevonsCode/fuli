@@ -144,7 +144,7 @@ fuli open
 <details>
 <summary><b>支持哪些客户端？</b></summary>
 
-Claude Code、Codex、OpenCode、Cursor 和 Claude 桌面版都能在控制台里一键接入。其他 MCP 客户端运行
+Claude Code、Codex、OpenCode、Cursor、DeepSeek Harness 和 Claude 桌面版都能在控制台里一键接入。其他 MCP 客户端运行
 `fuli connect` 拿一份标准配置。
 </details>
 

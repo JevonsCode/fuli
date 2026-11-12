@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { dshBundleFiles } from '../src/agents/dsh/bundle.js';
 import { npmUninstallCommand } from '../src/cli/update-installation.js';
 import { runTrayAction } from '../src/desktop/desktop-controller.js';
 import { adoptionHold, otherPackageConsole, reconnectAfterAdoption } from '../src/desktop/npm-adoption.js';
@@ -172,6 +173,22 @@ test('a client entry tells which data an npm copy serves', () => {
   assert.deepEqual(npmCopyDataUse([win], { runtimeConfigPath: 'C:\\Users\\s\\AppData\\Local\\Fuli\\graph-runtime.json',
     clients: [{ components: { mcp: 'current' }, mcpPaths: ['~/.claude.json'] }], homeDir: 'C:\\Users\\s', platform: 'win32',
     readText: () => winFile }).get(win.packageRoot), { shares: false, dataDir: 'D:\\数据\\Fuli' });
+});
+
+test('a DeepSeek Harness bundle copied from an npm copy counts as that copy\'s client', t => {
+  const root = temporary(t);
+  const packageRoot = join(root, 'npm', 'fuli-context');
+  const runtimeConfigPath = join(root, 'data', 'graph-runtime.json');
+  // The plugin directory agent-installer copied into DSH: the bundle that npm copy wrote.
+  const plugin = join(root, '.dsh', 'plugins', 'fuli');
+  mkdirSync(plugin, { recursive: true });
+  for (const [name, text] of Object.entries(dshBundleFiles({ nodePath: process.execPath,
+    mcpServerPath: join(packageRoot, 'src', 'mcp-server.js'), runtimeConfigPath }))) writeFileSync(join(plugin, name), text);
+  const clients = [{ components: { skills: 'current', plugin: 'outdated' }, mcpPaths: [],
+    entryPaths: [join(root, '.dsh', 'profiles', 'desktop', 'package.json'), plugin] }];
+  assert.deepEqual(npmCopyDataUse([{ packageRoot }], { runtimeConfigPath, clients }).get(packageRoot), { shares: true, dataDir: null });
+  assert.deepEqual(npmCopyDataUse([{ packageRoot }], { runtimeConfigPath: join(root, 'other', 'graph-runtime.json'), clients })
+    .get(packageRoot).shares, false);
 });
 
 test('the app waits while the data is busy, and leaves a newer npm copy running', t => {

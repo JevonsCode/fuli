@@ -77,6 +77,11 @@ function lifecycleCommand(script, event) {
 }
 
 function skillsOf(pack) {
-  return [...SKILLS, ...(pack.commandSkills.sessionCommand ? [SESSION_COMMAND_SKILL] : [])].map((name) => ({
+  return packagedSkills(pack.commandSkills.sessionCommand);
+}
+
+// The packaged Skills a client receives; `sessionCommand`: it also takes `fuli` as /fuli.
+export function packagedSkills(sessionCommand) {
+  return [...SKILLS, ...(sessionCommand ? [SESSION_COMMAND_SKILL] : [])].map((name) => ({
     name, source: `{skillsDir}/${name}`, adopt: { file: 'SKILL.md', contains: `name: ${name}` } }));
 }

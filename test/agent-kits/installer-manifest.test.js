@@ -39,8 +39,20 @@ test('the OpenCode plugin is named only where OpenCode takes it, beside its sour
   const withPlugin = composed(t, true);
   assert.equal(withPlugin.variables.openCodePlugin, join(withPlugin.root, 'agent-kits', 'opencode-plugin'));
   assert.match(readFileSync(join(withPlugin.variables.openCodePlugin, 'index.js'), 'utf8'), /fuliOpenCodePlugin/);
-  assert.deepEqual(Object.keys(withPlugin.variables).sort(), ['claudeHook', 'codexHook', 'cursorHook', 'mcpServerPath',
+  assert.deepEqual(Object.keys(withPlugin.variables).sort(), ['claudeHook', 'codexHook', 'cursorHook', 'dshBundle', 'mcpServerPath',
     'nodePath', 'openCodePlugin', 'runtimeConfigPath', 'skillsDir']);
+});
+
+test('DeepSeek Harness gets the bundle written beside the manifest and the Skills, and no MCP file', (t) => {
+  const { manifest, variables, root } = composed(t, false);
+  const bundle = join(root, 'agent-kits', 'dsh-bundle');
+  assert.equal(variables.dshBundle, bundle);
+  assert.equal(JSON.parse(readFileSync(join(bundle, 'package.json'), 'utf8')).name, 'fuli-dsh');
+  assert.match(readFileSync(join(bundle, 'index.js'), 'utf8'), /fuliDshPlugin/);
+  assert.match(readFileSync(join(bundle, 'cordis.patch.yml'), 'utf8'), /"--source-application","dsh"/);
+  assert.equal(manifest.clients.dsh.mcp, null);
+  assert.deepEqual(manifest.clients.dsh.plugin, { name: 'fuli', source: '{dshBundle}' });
+  assert.deepEqual(manifest.clients.dsh.skills.map(({ name }) => name), ['capturing-session-knowledge', 'grilling-project', 'operating-fuli']);
 });
 
 test('a client gets prompts only when its list is known; an empty list is still a list (11-08)', (t) => {

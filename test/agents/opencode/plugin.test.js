@@ -435,7 +435,10 @@ test('an installed Windows copy\'s plugin file loads the plugin of the version i
     const directory = path.join(root, 'versions', name, 'src', 'agents', 'opencode');
     mkdirSync(directory, { recursive: true });
     if (plugin) writeFileSync(path.join(directory, 'plugin.js'), plugin);
-    else copyFileSync(new URL('../../../src/agents/opencode/plugin.js', import.meta.url), path.join(directory, 'plugin.js'));
+    else {
+      copyFileSync(new URL('../../../src/agents/opencode/plugin.js', import.meta.url), path.join(directory, 'plugin.js'));
+      copyFileSync(new URL('../../../src/agents/plugin-hook-process.js', import.meta.url), path.join(directory, '..', 'plugin-hook-process.js'));
+    }
     return path.join(root, 'versions', name);
   };
   const pack = loadClientDescriptorPacks().find(({ id }) => id === 'opencode');

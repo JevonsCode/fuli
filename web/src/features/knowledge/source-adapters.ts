@@ -27,6 +27,7 @@ const APPLICATION_LABELS: Record<ConversationSourceApplication, string> = {
   kiro: 'Kiro',
   opencode: 'OpenCode',
   antigravity: 'Antigravity',
+  dsh: 'DeepSeek Harness',
   other: 'Other Agent',
 }
 
@@ -99,6 +100,7 @@ export function sourceApplication(
   if (text.includes('claude')) return 'claude_code'
   if (text.includes('cursor')) return 'cursor'
   if (text.includes('antigravity')) return 'antigravity'
+  if (text.includes('deepseek harness')) return 'dsh'
   if (text.includes('gemini')) return 'gemini_cli'
   if (text.includes('kiro')) return 'kiro'
   if (text.includes('opencode')) return 'opencode'
@@ -161,7 +163,7 @@ export function sourceLauncherAppName(
 // The launcher of the evidence's application, or undefined when it has none (OpenCode, Antigravity).
 function launcherRule(configuration: ConversationLauncherConfiguration, evidence: EvidenceRecord): ConversationLauncherRule | undefined {
   const application = sourceApplication(evidence)
-  return application === 'opencode' || application === 'antigravity' ? undefined : configuration[application]
+  return application === 'opencode' || application === 'antigravity' || application === 'dsh' ? undefined : configuration[application]
 }
 
 export async function copySourceSession(

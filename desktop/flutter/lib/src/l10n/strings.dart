@@ -205,6 +205,7 @@ class Strings {
         'kiro' => 'Kiro',
         'opencode' => 'OpenCode',
         'antigravity' => 'Antigravity',
+        'dsh' => 'DeepSeek Harness',
         '' => 'Agent',
         _ => id,
       };

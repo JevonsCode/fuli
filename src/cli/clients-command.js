@@ -10,7 +10,7 @@ import { readPinnedClientManifest } from '../setup/agents/client-manifest.js';
 import { installedClientPacks, readClientPackState } from '../setup/agents/client-pack-store.js';
 import { loadClientDescriptorPacks as clientDescriptorPacks } from '../setup/agents/descriptor-packs.js';
 import { changeClientPack } from '../setup/agents/client-pack-change.js';
-import { detectClients } from '../agent-kits/client-detection.js';
+import { detectClients, entryState } from '../agent-kits/client-detection.js';
 import { agentKitPorts } from '../agent-kits/ports.js';
 import { CLIENT_COMPONENT_UNAVAILABLE } from '../agent-kits/client-installer.js';
 import { compareSemanticVersions } from '../semantic-version.js';
@@ -85,13 +85,13 @@ export async function runClientsCommand(args, { env = process.env, write = conso
     pack = newer.find(candidate => `${candidate.id}@${candidate.version}` === options.get('--apply'));
     if (!pack) { write('Requested newer pack unavailable; no changes.'); return { status: 'current' }; }
   } else throw new TypeError(`Unknown clients command: ${action}`);
-  // Only a client agent-installer finds FULI's MCP entry in has files to change.
+  // Only a client agent-installer finds FULI's entry in has files to change.
   const installer = clientInstaller(paths);
   const detection = await detectClients(installer);
   if (detection.status !== 'available') {
     write(`${CLIENT_COMPONENT_UNAVAILABLE} (${detection.reason}); no changes.`);
     return { status: 'unavailable' };
   }
-  const connected = ['current', 'outdated'].includes(detection.clients.find(({ id }) => id === pack.id)?.components.mcp);
+  const connected = ['current', 'outdated'].includes(entryState(detection.clients.find(({ id }) => id === pack.id)?.components));
   return changeClientPack({ dataDir: paths.dataDir, pack, rollback: action === 'rollback', installer: connected ? installer : null, confirm, write });
 }

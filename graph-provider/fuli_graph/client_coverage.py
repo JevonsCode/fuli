@@ -1,13 +1,13 @@
 """Which client a stored client or source list covers (rec#11 D-64).
 
 OpenCode and Antigravity used the generic ``other`` source until each got its
-own (``opencode``, ``antigravity``). A list written before that names
+own (``opencode``, ``antigravity``, ``dsh``). A list written before that names
 ``other`` for it, so at read time a list that contains ``other`` and lacks
 that client covers it too. No stored list is rewritten. The Node side applies
 the same rule in ``src/agents/source-applications.js``.
 """
 
-LEGACY_ALIASES = {'opencode': 'other', 'antigravity': 'other'}
+LEGACY_ALIASES = {'opencode': 'other', 'antigravity': 'other', 'dsh': 'other'}
 
 
 def covers_client(clients, client):

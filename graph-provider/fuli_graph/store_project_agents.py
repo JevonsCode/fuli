@@ -1108,7 +1108,7 @@ class StoreProjectAgents:
             value
             for value in observed_values
             if value in {
-                'codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'antigravity', 'other'
+                'codex', 'claude', 'claude_code', 'cursor', 'kiro', 'opencode', 'antigravity', 'dsh', 'other'
             }
         })
         return ProjectAgentRecord(

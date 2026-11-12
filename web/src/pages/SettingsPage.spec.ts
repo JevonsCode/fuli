@@ -672,7 +672,7 @@ describe('SettingsPage', () => {
     await flushPromises()
     const card = wrapper.get('.behavior-card')
     expect(card.findAll('[data-capture-source]').map(row => row.attributes('data-capture-source')))
-      .toEqual(['claude_code', 'codex', 'cursor', 'opencode'])
+      .toEqual(['claude_code', 'codex', 'cursor', 'opencode', 'dsh'])
     expect(card.find('.ui-notice').exists()).toBe(false)
     expect(card.find('[role="alert"]').exists()).toBe(false)
     wrapper.unmount()

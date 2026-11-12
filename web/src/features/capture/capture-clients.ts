@@ -7,7 +7,8 @@ import { captureSourceOff } from './capture-sources'
 
 // The clients FULI captures from (src/agents/<client>), by capture source id.
 // Also the list shown when this machine's clients cannot be read.
-export const CAPTURE_CLIENTS = [['claude_code', 'Claude Code'], ['codex', 'Codex'], ['cursor', 'Cursor'], ['opencode', 'OpenCode']] as const
+export const CAPTURE_CLIENTS = [['claude_code', 'Claude Code'], ['codex', 'Codex'], ['cursor', 'Cursor'], ['opencode', 'OpenCode'],
+  ['dsh', 'DeepSeek Harness']] as const
 export type CaptureClient = typeof CAPTURE_CLIENTS[number]
 
 // Only what the capture switches read of /api/system/client-connection/status.
