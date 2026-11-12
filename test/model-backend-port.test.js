@@ -448,6 +448,22 @@ test('C7: unapproved project or unassigned content is blocked before any request
   assert.equal(allowed.modelReceipt.status, 'completed');
 });
 
+test('C7 (rec#124): refusesEgress says, before any call, whether the configured model would stop a scope at egress', () => {
+  const scoped = (role, personalProjectId) => ({ role, operation: 'pick', scope: { personalSpaceId: 'space', personalProjectId },
+    evidence: [{ personalProjectId }] });
+  const { port, ledger } = harness({ bole: role('local'), jefa: role('local', { enabled: false }) });
+  assert.equal(port.refusesEgress(scoped('bole', 'alpha')), false);
+  assert.equal(port.refusesEgress(scoped('bole', 'beta')), true);
+  assert.equal(port.refusesEgress(scoped('bole', null)), true);
+  assert.equal(port.allowsEgress(scoped('bole', 'beta')), false);
+  // Without a model for the operation nothing is sent, so nothing is refused; the session answers.
+  for (const quiet of [scoped('jefa', 'beta'), scoped('tonborg', 'beta'), { ...scoped('bole', 'beta'), operation: 'other' }]) {
+    assert.equal(port.refusesEgress(quiet), false);
+    assert.equal(port.allowsEgress(quiet), false);
+  }
+  assert.equal(ledger.db.prepare('SELECT COUNT(*) AS n FROM model_attempts').get().n, 0);
+});
+
 test('C8: an endpoint that ignores the schema is shown it in the repair, and in the prompt from then on', async () => {
   const offShape = JSON.stringify({ decision: 'propose', payload: { anything: true }, reason: 'r', evidenceIds: [], uncertainty: null });
   const { port, calls } = harness({ bole: role('claude') }, { responses: [anthropicStream(offShape), anthropicStream(answer()), anthropicStream(answer())] });

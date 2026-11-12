@@ -359,4 +359,35 @@ describe('交给 Tonborg 确认', () => {
     expect(wrapper.emitted('changed')).toEqual([[true]])
     expect(wrapper.text()).toContain('Tonborg 正在替你确认')
   })
+
+  it('rec#124: says how many projects Tonborg can confirm in, and links to where projects are approved', async () => {
+    const reach = { projects: 3, blockedProjectIds: ['beta', 'gamma'], unassignedAllowed: true }
+    getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', reach,
+      model: { connected: true, status: 'automatic', reason: null } })
+    const onList = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a', settingsLink: true }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    const notice = onList.get('[data-tonborg-reach]')
+    expect(notice.attributes('data-tone')).toBe('warning')
+    expect(notice.text()).toContain('3 个项目里只有 1 个批准发给 Tonborg 的模型，其余仍等你确认。')
+    expect(onList.text()).not.toContain('正在替你确认')
+    const links = onList.findAllComponents(RouterLinkStub)
+    expect(links.map(link => [link.text(), link.props('to')])).toEqual([['去批准', { path: '/models', query: { details: 'tonborg' } }]])
+
+    // None approved: said plainly. In Tonborg's own details the 编辑 button is right there, so no link.
+    getJson.mockResolvedValue({ enabled: true, changedAt: null, revision: 2, language: 'zh-CN', reach: { ...reach, blockedProjectIds: ['alpha', 'beta', 'gamma'], unassignedAllowed: false },
+      model: { connected: true, status: 'automatic', reason: null } })
+    const inSettings = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    expect(inSettings.get('[data-tonborg-reach]').text()).toBe('没有内容批准发给 Tonborg 的模型，它什么都确认不了，都等你确认。')
+    expect(inSettings.findComponent(RouterLinkStub).exists()).toBe(false)
+  })
+
+  it('rec#124: off, it keeps its usual hint whatever the model may read', async () => {
+    getJson.mockResolvedValue({ enabled: false, changedAt: null, revision: 2, language: 'zh-CN',
+      reach: { projects: 2, blockedProjectIds: ['beta'], unassignedAllowed: true }, model: { connected: true, status: 'automatic', reason: null } })
+    const wrapper = mount(TonborgDelegationSwitch, { props: { personalSpaceId: 'space-a' }, global: { stubs: { RouterLink: RouterLinkStub } } })
+    await flushPromises()
+    expect(wrapper.find('[data-tonborg-reach]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('打开后')
+  })
 })

@@ -46,7 +46,16 @@ export const reviewListMessages = {
       settings: '设置', settingsTitle: "在模型与用量里打开 @:{'roleNames.tonborg'} 的确认设置",
       offHint: "打开后，@:{'roleNames.tonborg'} 按你的偏好替你确认清楚的知识，拿不准的一次问你。",
       onHint: "@:{'roleNames.tonborg'} 正在替你确认；它做的每个决定都写着理由，可撤销。",
-      on: "已交给 @:{'roleNames.tonborg'} 确认，几分钟内它会看完待确认的知识", off: '已收回，知识确认回到你手上',
+      // rec issue 124: while on, what its model may not read still waits for the person.
+      reach: {
+        some: "{total} 个项目里只有 {approved} 个批准发给 @:{'roleNames.tonborg'} 的模型，其余仍等你确认。",
+        someAndGeneral: "{total} 个项目里只有 {approved} 个批准发给 @:{'roleNames.tonborg'} 的模型，其余和通用知识仍等你确认。",
+        noProject: "没有项目批准发给 @:{'roleNames.tonborg'} 的模型，项目里的知识仍等你确认。",
+        nothing: "没有内容批准发给 @:{'roleNames.tonborg'} 的模型，它什么都确认不了，都等你确认。",
+        general: "通用知识没批准发给 @:{'roleNames.tonborg'} 的模型，仍等你确认；其余它在替你确认。",
+        approve: '去批准', approveTitle: "在模型与用量里批准 @:{'roleNames.tonborg'} 的模型能读哪些项目",
+      },
+      on:"已交给 @:{'roleNames.tonborg'} 确认，几分钟内它会看完待确认的知识", off: '已收回，知识确认回到你手上',
     },
   },
   'en-US': {
@@ -95,7 +104,15 @@ export const reviewListMessages = {
       settings: 'Settings', settingsTitle: "Open @:{'roleNames.tonborg'}’s confirmation settings in Models and usage",
       offHint: "When on, @:{'roleNames.tonborg'} confirms the clear items your way and asks about the rest at once.",
       onHint: "@:{'roleNames.tonborg'} confirms for you; every decision shows its reason and can be undone.",
-      on: "Handed to @:{'roleNames.tonborg'}; it will look through pending knowledge within minutes", off: 'Taken back; confirming knowledge is yours again',
+      reach: {
+        some: "Only {approved} of {total} projects are approved for @:{'roleNames.tonborg'}’s model; the rest wait for you.",
+        someAndGeneral: "Only {approved} of {total} projects are approved for @:{'roleNames.tonborg'}’s model; the rest and general knowledge wait for you.",
+        noProject: "No project is approved for @:{'roleNames.tonborg'}’s model; project knowledge waits for you.",
+        nothing: "Nothing is approved for @:{'roleNames.tonborg'}’s model, so it confirms nothing; everything waits for you.",
+        general: "General knowledge is not approved for @:{'roleNames.tonborg'}’s model and waits for you; it confirms the rest.",
+        approve: 'Approve projects', approveTitle: "Choose which projects @:{'roleNames.tonborg'}’s model may read, in Models and usage",
+      },
+      on:"Handed to @:{'roleNames.tonborg'}; it will look through pending knowledge within minutes", off: 'Taken back; confirming knowledge is yours again',
     },
   },
 }

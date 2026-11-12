@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../../packages/roundtable/src/storage/database-format.js';
 import { ApplicationError } from '../app/application-error.js';
 import { MODEL_BACKEND_ROLES } from './config.js';
+import { scopeEgress } from './egress.js';
 
 // Whether a built-in Agent's own model may carry out an operation by itself
 // (rec#10 D-36.5–D-36.12, replacing the D-24 build registry). A role the
@@ -80,7 +81,8 @@ export function createRoleTrust({ path = ':memory:', modelBackends, history = nu
     if (!settings) return refuse('not_configured');
     // Another connection, endpoint, protocol or model than the one that answered.
     if (settings.connection.identity !== key.connection) return refuse('connection_changed');
-    if (key.scope && !modelBackends.allowsEgress(egressRequest(key))) return refuse('egress_not_approved');
+    // A review's own request shape: every evidence item belongs to the answer's project (judgment backend).
+    if (key.scope && !modelBackends.allowsEgress(scopeEgress(key))) return refuse('egress_not_approved');
     if (current.suggestionsOnly) return refuse('suggestions_only');
     if (!current.warningSeen) return refuse('warning_not_seen');
     return { status: 'passed', reason: null, modelId: key.model };
@@ -169,12 +171,4 @@ export function createRoleTrust({ path = ':memory:', modelBackends, history = nu
     },
     close() { database?.close(); database = null; }
   };
-}
-
-// The egress question the port answers for a review's own request shape:
-// every evidence item belongs to the answer's project (judgment backend).
-function egressRequest({ role, operation, scope }) {
-  const personalProjectId = scope.personalProjectId ?? null;
-  return { role, operation, scope: { personalSpaceId: scope.personalSpaceId, personalProjectId },
-    evidence: [{ personalProjectId }] };
 }

@@ -54,7 +54,7 @@ test('registered origin sources are safe and resolve a second clone by remote', 
     const registered = await registerRepositoryProject(app(async input => writes.push(input)), resolution,
       { projectPath: path.join(first, 'src') });
     assert.equal(registered.basis, 'registered_repository');
-    assert.deepEqual(writes[0].profile.sources, [{ key: 'origin-remote', kind: 'repository', title, uri, sensitivity: 'normal' }]);
+    assert.deepEqual(writes[0].profile.sources, [{ key: 'origin-remote', kind: 'repository', role: 'own', title, uri, sensitivity: 'normal' }]);
     assert.doesNotMatch(JSON.stringify(writes), /alice|secret/);
     if (!remote.startsWith('/')) {
       assert.deepEqual(resolvePersonalProjectPath(path.join(second, 'src'), [{ project_id: registered.personalProjectId, profile: writes[0].profile }]),
@@ -78,6 +78,6 @@ test('registration from a worktree reads its common origin config', async t => {
   const writes = [];
   const resolution = resolvePersonalProjectPath(worktree, []);
   await registerRepositoryProject(app(async input => writes.push(input)), resolution, { projectPath: worktree });
-  assert.deepEqual(writes[0].profile.sources, [{ key: 'origin-remote', kind: 'repository', title: 'Example/Widget',
+  assert.deepEqual(writes[0].profile.sources, [{ key: 'origin-remote', kind: 'repository', role: 'own', title: 'Example/Widget',
     uri: 'https://github.com/Example/Widget', sensitivity: 'normal' }]);
 });

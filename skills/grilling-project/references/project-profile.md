@@ -21,11 +21,19 @@ FULI records who wrote `purpose`, `scope`, `technicalSummary` and `boundaries` i
 Every source needs a stable `key`, `kind`, and `title`. Add `uri` and `summary` only when supported by evidence.
 
 For a `repository`, `frontend_repository`, or `backend_repository` source, use the repository's
-`origin` remote URL (without credentials) as `uri` when it is known. FULI resolves any clone or
-worktree of that repository to this project when exactly one registered project records the same
-remote, before any folder name; ssh and https forms of one repository are equal. A checkout whose
-folder is named after a project that records another repository does not resolve to it. Keep the source
-`private` unless the user said it may be shared.
+`origin` remote URL (without credentials) as `uri` when it is known. Set `role` to `reference` for a
+repository this project only refers to (a candidate base, an upstream, another team's code); leave it
+out or use `own` for the project's own repository. A source saved without `role` counts as `own`,
+so when you rewrite `sources`, send `role: reference` again for every reference source you keep.
+
+FULI resolves any clone or worktree to the project whose own repository source records the same
+remote, when exactly one does; ssh and https forms of one repository are equal, and `reference`
+sources never match. Only when the checkout's folder (or a worktree's original repository) names
+another current project that has an own repository source without a `uri` does the task's project
+stay ambiguous until the person names one project or marks the other's source `reference`; give
+your own repository its `uri` to avoid that. A checkout whose folder is named after a project
+that records another repository does not resolve to it. Keep the source `private` unless the user
+said it may be shared.
 
 Supported kinds:
 

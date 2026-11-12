@@ -4,11 +4,14 @@ import { RouterLink, useRoute } from 'vue-router'
 
 import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { modelDetailsLink } from '@/features/model-settings/details-link'
 import { currentLocale, t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
+import { UiNotice } from '@/ui'
 
+import { reachNotice } from './delegation-reach'
 import { readDelegation, saveDelegation, type ReviewDelegation } from './review-api'
 
 // 「交给 Tonborg 确认」 (rec#96), the same switch on the 待决策 list and in
@@ -41,7 +44,11 @@ onMounted(load)
 watch(() => props.personalSpaceId, load)
 
 const settingsTarget = modelDetailsLink('tonborg', 'delegation')
+// Which projects Tonborg's model may read is set in its details (编辑 → the approved projects).
+const approveTarget = modelDetailsLink('tonborg')
 const connected = computed(() => state.value?.model?.connected === true)
+// rec issue 124: on, it still confirms nothing its model may not read; then the line says so instead of 「正在替你确认」.
+const reach = computed(() => (state.value?.enabled && connected.value ? reachNotice(state.value.reach) : null))
 const hint = computed(() => {
   if (!state.value) return ''
   if (!connected.value) return t('reviewList.delegation.needsModel')
@@ -74,7 +81,17 @@ async function change(enabled: boolean) {
       <Switch :id="id" :model-value="state?.enabled === true" :disabled="!state || !connected || saving"
         @update:model-value="change(Boolean($event))" />
     </div>
-    <p v-if="hint" class="tonborg-delegation__hint">
+    <UiNotice v-if="reach" tone="warning" class="tonborg-delegation__reach" data-tonborg-reach>
+      {{ t(`reviewList.delegation.reach.${reach.key}`, { approved: reach.approved, total: reach.total }) }}
+      <template v-if="settingsLink" #actions>
+        <Button variant="link" size="sm" as-child>
+          <RouterLink :to="approveTarget" :title="t('reviewList.delegation.reach.approveTitle')" data-tonborg-approve-link>
+            {{ t('reviewList.delegation.reach.approve') }}
+          </RouterLink>
+        </Button>
+      </template>
+    </UiNotice>
+    <p v-else-if="hint" class="tonborg-delegation__hint">
       {{ hint }}
       <RouterLink v-if="state && !connected" to="/models" class="tonborg-delegation__link">{{ t('reviewList.delegation.connect') }}</RouterLink>
       <RouterLink v-else-if="settingsLink" :to="settingsTarget" class="tonborg-delegation__link" :title="t('reviewList.delegation.settingsTitle')"
@@ -89,6 +106,7 @@ async function change(enabled: boolean) {
 .tonborg-delegation__label { color: var(--color-ink); font-size: var(--text-body); font-weight: var(--weight-medium); user-select: none; cursor: pointer; }
 /* Reserved, so the switch never moves while a change is saved. */
 .tonborg-delegation__busy { display: inline-flex; width: 16px; justify-content: center; }
+.tonborg-delegation__reach { font-size: var(--text-meta); }
 .tonborg-delegation__hint { margin: 0; color: var(--color-muted); font-size: var(--text-meta); text-align: right; }
 .tonborg-delegation__link { margin-left: 4px; color: var(--color-primary); user-select: none; }
 </style>

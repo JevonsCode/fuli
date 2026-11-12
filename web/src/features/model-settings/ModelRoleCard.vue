@@ -7,7 +7,7 @@ import ModelFailureNote from './ModelFailureNote.vue'
 import ModelUseCard from './ModelUseCard.vue'
 import SemanticIndexProgress from './SemanticIndexProgress.vue'
 import { BUILTIN_EMBEDDING_PROTOCOL, modelName, roleName, SEMANTIC_ROLE, type ModelRoleView } from './model'
-import { healthLine, isFailing } from './model-health'
+import { failingState, healthLine, isFailing } from './model-health'
 import { stateTone, useAdvice } from './model-uses'
 import { needsPerson } from './role-details'
 
@@ -18,7 +18,8 @@ import { needsPerson } from './role-details'
 // own model that finds knowledge by meaning, shown wide with its index
 // progress. Its one line says how it stands now: without a model, what model
 // is enough (and the action is 接入); with one, whether its latest call
-// answered. A model that did not answer says why, with 「测试连接」 in the line.
+// answered. A model that did not answer says why, with 「测试连接」 in the line,
+// and whether that is the shared connection or this role's own task (rec issue 122).
 // The long facts, trust and history open in 「查看详情」.
 const props = defineProps<{ view: ModelRoleView; locked: boolean; editing: boolean }>()
 const emit = defineEmits<{ edit: []; details: []; checked: []; builtin: [] }>()
@@ -32,7 +33,7 @@ const waiting = computed(() => needsPerson(props.view))
 // Only a use that is on can fail: one that is off makes no calls.
 const failing = computed(() => props.view.state === 'enabled' && isFailing(props.view.health))
 const health = computed(() => healthLine(props.view.health, currentLocale()))
-const state = computed(() => (failing.value ? t('modelSettings.health.failingState')
+const state = computed(() => (failing.value ? failingState(props.view.health)
   : props.view.state === 'not_configured' && !semantic.value ? t('modelSettings.uses.sessionState')
     : t(`modelSettings.states.${props.view.state}`)))
 </script>

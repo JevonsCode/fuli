@@ -16,6 +16,14 @@ const MODEL_MISSING_SIGNAL = /model_not_found|model .{0,80}(not found|does not e
 const TOO_LARGE_SIGNAL = /max_tokens_exceeded|context[_ -]length|maximum context|too (long|large)|exceeds .{0,40}(limit|context)/i;
 const STRUCTURED_OUTPUT_SIGNAL = /response_format|json_schema|output_config|output_format|structured output/i;
 
+// Failures that say only that the connection could not be reached (rec#122).
+// Any newer answer on the same complete connection configuration, from any
+// role, supersedes them. Every other failure is about the role's own call (its
+// output, key use, permission, budget, egress or task) and stays the role's
+// until the role itself answers. A timeout is the role's too: the time limit is
+// the role's own budget, so a long request of one role says nothing of the rest.
+export const CONNECTIVITY_REASONS = Object.freeze(['network']);
+
 export function modelFailure(failureClass, reason, { retryAfterMs = null } = {}) {
   return { failureClass, reason, retryAfterMs };
 }

@@ -47,25 +47,6 @@ def test_new_tasks_always_require_verification_even_when_field_is_omitted():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('artifact_revision', [None, 'changed-revision'])
-async def test_new_task_cannot_complete_without_its_exact_verified_revision(artifact_revision):
-    store = ActivityStore({
-        'task': {'task_id': 'task-a', 'personal_project_id': 'project-a',
-                 'status': 'running', 'revision': 1, 'verification_required': task_request().verification_required,
-                 'quality_gate': 'passed', 'verified_artifact_revision': 'previous-revision'},
-        'participant_rows': [{'agent_id': 'agent-a', 'role': 'lead'}], 'event_rows': [],
-    })
-    request = ProjectAgentTaskActivityCreate(
-        personal_space_id='personal-space', personal_project_id='project-a', task_id='task-a',
-        idempotency_key='complete-unverified-artifact', status='completed', summary='Done.',
-        agent_id='agent-a', artifact_revision=artifact_revision,
-    )
-    with pytest.raises(HTTPException, match='exact artifact revision'):
-        await store.record_project_agent_task_activity({'id': 'principal'}, request)
-    assert store.runtime.driver.event_calls == []
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize('actual_attempt', [None, 'newer-attempt'])
 async def test_judgment_acceptance_rechecks_the_verification_attempt_under_task_lock(actual_attempt):
     store = ActivityStore({

@@ -8,6 +8,8 @@ const projectSource = objectSchema({
     'backend_repository', 'repository', 'design', 'runbook', 'monitoring',
     'issue_tracker', 'other'
   ]),
+  // Default own; only own repositories identify a checkout (rec#125).
+  role: enumSchema(['own', 'reference']),
   title: label,
   uri: nullableStringSchema(),
   summary: nullableStringSchema(),

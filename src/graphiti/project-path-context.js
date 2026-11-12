@@ -7,7 +7,9 @@ import {
 import path from 'node:path';
 import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { hostPathOfCallerPath } from '../system/platform-path.js';
-import { linkedGitDirectory, originRemoteKey, projectsWithRemote, recordsOtherRemote } from './repository-remote.js';
+import {
+  claimsUnaddressedRepository, linkedGitDirectory, originRemoteKey, projectsWithRemote, recordsOtherRemote
+} from './repository-remote.js';
 
 // Says what to pass, never the path the caller sent.
 const INVALID_PATH_MESSAGE = 'projectPath must be an existing absolute directory. '
@@ -59,14 +61,9 @@ export function resolvePersonalProjectPath(projectPath, projects, {
   // An unregistered repository can be registered under this exact ID.
   let repositoryProjectId = null;
   if (repositoryRoot) {
-    // The origin remote decides first (#632): a clone or worktree whose folder
-    // is named after another project still belongs to its own repository.
     const remote = originRemoteKey(repositoryRoot, { readText, pathApi });
-    const byRemote = remote && remoteProject(remote, registered);
-    if (byRemote) return byRemote;
-    // Without a recorded remote the folder names the project, as before,
-    // unless that project records another repository: then nothing matches
-    // and no registration under its ID is offered.
+    // A project whose own repository is at another remote is not this
+    // checkout, whatever the folder is called.
     const otherRepository = resolution => Boolean(remote && resolution?.personalProjectId && recordsOtherRemote(
       registered.find(({ project_id: projectId }) => projectId === resolution.personalProjectId), remote));
     const worktreeId = worktreeOriginProjectId(
@@ -77,6 +74,23 @@ export function resolvePersonalProjectPath(projectPath, projects, {
     // identifies the project, even when the folder names another project.
     const candidateId = worktreeId ?? pathApi.basename(repositoryRoot);
     const named = resolveProjectId(candidateId, projectIds, worktreeId ? 'git_worktree_origin' : 'repository_root');
+    // The origin remote decides first (#632). Only when the folder or the
+    // worktree's original repository names another current project that
+    // claims a repository of its own without its address may that project be
+    // this checkout too: then the person chooses rather than the owner
+    // switching silently (rec#125).
+    const byRemote = remote && remoteProject(remote, registered);
+    const namedProject = named?.personalProjectId
+      && registered.find(({ project_id: projectId }) => projectId === named.personalProjectId);
+    if (byRemote?.personalProjectId && namedProject && named.personalProjectId !== byRemote.personalProjectId
+      && namedProject.profile?.lifecycle !== 'archived' && claimsUnaddressedRepository(namedProject)) {
+      return unresolved('ambiguous', { candidateCount: 2, reason: 'repository_remote_conflict',
+        candidateProjectIds: [byRemote.personalProjectId, named.personalProjectId] });
+    }
+    if (byRemote) return byRemote;
+    // Without a recorded remote the folder names the project, as before,
+    // unless that project records another repository: then nothing matches
+    // and no registration under its ID is offered.
     if (otherRepository(named)) return unresolved('unmatched', { reason: 'repository_remote_conflict' });
     if (named) return named;
     if (worktreeId) {
@@ -146,7 +160,7 @@ function worktreeOriginProjectId(gitMarkerPath, {
 }
 
 // A clone under another folder name: its origin URL equals exactly one
-// project's recorded repository URL.
+// project's own recorded repository URL.
 function remoteProject(remote, projects) {
   const matches = projectsWithRemote(projects, remote);
   if (matches.length === 1) return matched(matches[0].project_id, 'git_remote');

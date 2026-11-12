@@ -64,3 +64,39 @@ async def test_agent_filter_includes_roles_before_limit_and_preserves_scope():
             {}, space_id, agent_id='target', status='completed',
         ) == []
         assert len(await store.list_project_agent_tasks({}, space_id, limit=200)) == 200
+
+
+@pytest.mark.asyncio
+async def test_a_list_continues_after_the_last_task_it_returned_without_gaps_or_repeats():
+    settings = fixture_settings()
+    space_id = f'task-keyset-{uuid4()}'
+    async with AsyncGraphDatabase.driver(
+        settings.neo4j_uri, auth=('neo4j', settings.neo4j_password),
+    ) as driver:
+        # Two tasks share each change time, so the task ID breaks the tie.
+        await driver.execute_query('''
+            CREATE (space:FuliSpace {id: $space_id, kind: 'personal'})
+            WITH space
+            UNWIND range(0, 6) AS n
+            CREATE (space)-[:HAS_PROJECT_AGENT_TASK]->(:FuliProjectAgentTask {
+                personal_space_id: $space_id, task_id: 'task-' + toString(n),
+                personal_project_id: 'project-a', status: 'blocked',
+                updated_at: datetime('2026-11-01T00:00:00Z') + duration({minutes: n / 2})
+            })
+        ''', space_id=space_id)
+        class PositionStore(TaskQueryStore):
+            def _task_from_row(self, row):
+                return row['task']['task_id'], row['task']['updated_at'].to_native()
+
+        store = PositionStore(driver)
+        seen, after = [], None
+        while True:
+            page = await store.list_project_agent_tasks(
+                {}, space_id, limit=3,
+                after_updated_at=after[1] if after else None, after_task_id=after[0] if after else None,
+            )
+            if not page:
+                break
+            seen += [task_id for task_id, _ in page]
+            after = page[-1]
+        assert seen == ['task-6', 'task-4', 'task-5', 'task-2', 'task-3', 'task-0', 'task-1']

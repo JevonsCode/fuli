@@ -7,6 +7,7 @@ import { groupDiscussionRequest } from './task-entry-group-discussion.js';
 import { addressedAgentId } from './fla-mention.js';
 import { ASSISTANT_AGENT_ID } from './assistant-identity.js';
 import { sessionOwnerOf } from './task-entry-owner-change.js';
+import { REMOTE_CONFLICT } from './agent-project-resolution.js';
 
 // Restore only exact session provenance; a normal folder name is not a role binding.
 // An unclaimed conversation never creates a project or hires a lead: it stays
@@ -47,6 +48,9 @@ function sessionTaskReader(application, input) {
 }
 
 async function sessionEntryProject(application, resolution, input, readSessionTask) {
+  if (resolution.reason === REMOTE_CONFLICT && resolution.status === 'ambiguous') {
+    return remoteConflictProject(application, resolution, input, readSessionTask);
+  }
   // An unregistered repository ID is only a hint: when auto-registration did
   // not apply, the prompt, the session and the assistant still decide.
   if (resolution.personalProjectId
@@ -98,6 +102,21 @@ async function sessionEntryProject(application, resolution, input, readSessionTa
     return { status: 'unavailable', basis: null, personalProjectId: null,
       reason: 'session_scope_unavailable' };
   }
+}
+
+// The repository address and the folder name point to two projects (rec#125):
+// a project the message names decides, then the session's previous project
+// when it is one of the two. Otherwise the person still chooses.
+async function remoteConflictProject(application, resolution, input, readSessionTask) {
+  try {
+    if (!hostInternalActivity(application, input)) {
+      const named = await projectNamedInPrompt(application, input.taskPrompt);
+      if (named && !named.ambiguous) return matched(named.personalProjectId, named.basis);
+    }
+    const previous = sessionTaskContext(await readSessionTask())?.personalProjectId;
+    if (previous && resolution.candidateProjectIds?.includes(previous)) return matched(previous, 'host_session_context');
+  } catch { /* an unreadable prompt project or session leaves the choice to the person */ }
+  return resolution;
 }
 
 // Where the session's current task keeps it, or null. A task a standing

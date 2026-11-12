@@ -24,10 +24,10 @@ describe('ModelList', () => {
       role('jefa', 'bad', { health: { status: 'failing', at: ago(3), reason: 'auth_failed' } }),
       role('bole', 'new', { health: { status: 'unknown', at: null, reason: null } }),
     ]) } })
-    expect(row(wrapper, 'good').get('[data-model-connection-health]').text()).toBe('正常 · 上次回答 2小时前')
+    expect(row(wrapper, 'good').get('[data-model-connection-health]').text()).toBe('连接正常 · 最近回答 2小时前')
     // One role on the connection failing is the connection's state.
     const bad = row(wrapper, 'bad').get('[data-model-connection-health]')
-    expect(bad.text()).toBe('没回应：密钥不对 · 3小时前')
+    expect(bad.text()).toBe('连接没回应：密钥不对 · 3小时前')
     expect(bad.attributes('data-model-connection-health')).toBe('failing')
     expect(bad.attributes('role')).toBe('alert')
     expect(row(wrapper, 'new').get('[data-model-connection-health]').text()).toBe('还没调用过')

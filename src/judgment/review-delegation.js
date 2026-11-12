@@ -4,6 +4,7 @@ import { EmployeeError } from '../employees/manifest.js';
 import { TONBORG_OPERATIONS } from './backend.js';
 import { DELEGATED_LIST_LIMIT, latestDelegatedReviews } from './delegated-reviews.js';
 import { plainQuestion } from './question-options.js';
+import { reviewReach } from './review-egress.js';
 import { parse } from './service.js';
 import { visibleKnowledgeKeys } from './visible-items.js';
 
@@ -41,13 +42,24 @@ function tonborgModel(modelTrust) {
   return { connected, status: view.status, reason: connected ? view.reason : 'not_configured' };
 }
 
-export async function reviewDelegation({ judgment, modelTrust, input }) {
-  const { personalSpaceId } = parse(readInput, input);
-  await judgment.scope({ personalSpaceId });
-  return { ...judgment.store().delegation(personalSpaceId), model: tonborgModel(modelTrust) };
+// The switch as the console reads it: its state, Tonborg's model, and which
+// active projects that model may read (rec#124: on, it still confirms nothing
+// in a project the person did not approve for it). The projects live in the
+// Provider; without it reach is null and the switch still reads.
+async function delegationView({ judgment, modelTrust, modelBackends }, personalSpaceId, saved) {
+  const projectIds = await judgment.activeProjectIds(personalSpaceId).catch(() => null);
+  return { ...saved, model: tonborgModel(modelTrust),
+    reach: projectIds ? reviewReach(modelBackends, personalSpaceId, projectIds,
+      projectId => judgment.store().policy(personalSpaceId, projectId ?? '').backend !== 'legacy_cli') : null };
 }
 
-export async function setReviewDelegation({ judgment, modelTrust, input }) {
+export async function reviewDelegation({ judgment, modelTrust, modelBackends = null, input }) {
+  const { personalSpaceId } = parse(readInput, input);
+  await judgment.scope({ personalSpaceId });
+  return delegationView({ judgment, modelTrust, modelBackends }, personalSpaceId, judgment.store().delegation(personalSpaceId));
+}
+
+export async function setReviewDelegation({ judgment, modelTrust, modelBackends = null, input }) {
   const { personalSpaceId, enabled, expectedRevision, language } = parse(writeInput, input);
   await judgment.scope({ personalSpaceId });
   // Only turning it on is the say-so; saving it on again (a new language) changes no trust setting.
@@ -64,7 +76,7 @@ export async function setReviewDelegation({ judgment, modelTrust, input }) {
     if (!trust.warningSeen) modelTrust.acknowledgeWarning(ROLE, trust.warningVersion, trust.revision);
   }
   const saved = judgment.store().setDelegation(personalSpaceId, enabled, expectedRevision, language);
-  return { ...saved, model: tonborgModel(modelTrust) };
+  return delegationView({ judgment, modelTrust, modelBackends }, personalSpaceId, saved);
 }
 
 // What the person's list shows of Tonborg's delegated work: the items it

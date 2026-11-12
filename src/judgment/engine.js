@@ -18,6 +18,7 @@ import { ASK_FIELDS, askProperties, guessProperty, softAsk } from './question-op
 import { injectionSignals } from './review-injection-precheck.js';
 import { automaticWriteDecision } from '../graphiti/capture-decision.js';
 import { coversClient } from '../agents/source-applications.js';
+import { reviewEgressRefused } from './review-egress.js';
 
 const id = z.string().min(1).max(256);
 const reviewInput = z.object({ personalSpaceId: id, personalProjectId: id.nullable().optional(), requestId: id,
@@ -253,7 +254,11 @@ export function createJudgmentEngine({ app, judge = createJudgmentBackend(), tru
     let records = [], checked = 0;
     for (; checked < Math.min(scopes.length, 25); checked++) {
       const projectId = scopes[((cursor.value ?? 0) + checked) % scopes.length];
-      if (automatic && store.policy(space, projectId ?? '').mode === 'manual' && !store.delegation(space).enabled) continue;
+      const policy = store.policy(space, projectId ?? '');
+      if (automatic && policy.mode === 'manual' && !store.delegation(space).enabled) continue;
+      // rec#124: a scope Tonborg's model may not read is skipped, with no attempt and no failed record each round;
+      // the switch on 待决策 names it (review-egress.js). A review the person asks for still records the refusal.
+      if (automatic && policy.backend !== 'legacy_cli' && reviewEgressRefused(app.modelBackends, space, projectId)) continue;
       try {
         const result = await review(service, { ...input, personalProjectId: projectId,
           requestId: `${input.requestId}:${projectId ?? 'global'}`.slice(0, 256) }, { localOnly: true });

@@ -21,13 +21,14 @@ export const AGENT_INTERFACE_DEFINITIONS = [
   {
     name: 'list_project_agent_tasks',
     title: 'READ · List project Agent tasks',
-    description: 'Read task summaries for one personal space, optionally narrowed to one exact project, Agent or status. Use this to discover task IDs before viewing or updating a task. Results are bounded; do not claim omitted historical tasks do not exist.',
+    description: 'Read task summaries (status, project, lead, blocker, bounded result; no events or routing) for one personal space, latest change first, optionally one exact project, Agent or status. Follow nextCursor as cursor until null; view_project_agent_task reads one task in full.',
     inputSchema: objectSchema({
       personalSpaceId: id,
       personalProjectId: nullableStringSchema(),
       agentId: nullableStringSchema(),
       status: enumSchema(['awaiting_recruitment', 'backlog', 'queued', 'running', 'paused', 'failed', 'awaiting_review', 'blocked', 'completed', 'cancelled']),
-      limit: integerSchema({ minimum: 1, maximum: 200 }),
+      limit: integerSchema({ minimum: 1, maximum: 100 }),
+      cursor: { ...stringSchema(), minLength: 1, maxLength: 1024 },
     }, ['personalSpaceId']),
   },
   {

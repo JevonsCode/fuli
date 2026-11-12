@@ -144,9 +144,15 @@ directory name, so `/workspace/fuli` maps to `fuli`. Standard calls pass only th
 directory, and resolution follows this order:
 
 1. Find the nearest Git repository root, read its `origin` remote from its `.git/config` (a
-   worktree's common directory) and match it exactly to one registered project's recorded
-   repository source URL; ssh and https forms of the same repository are equal. Any clone or
-   worktree therefore resolves to its project (`git_remote`), whatever its folder is called.
+   worktree's common directory) and match it exactly to one registered project's own repository
+   source URL; ssh and https forms of the same repository are equal. A source marked
+   `role: reference` (a repository the project only refers to) never matches; a source saved
+   without a role counts as the project's own. Any clone or worktree therefore resolves to its
+   project (`git_remote`), whatever its folder is called, unless the folder (or a worktree's
+   original repository) names another non-archived project that has an own repository source
+   without an address: then the result is `ambiguous` (`repository_remote_conflict`, naming both
+   project IDs). A project named at the start of the message, or the session's previous project
+   when it is one of the two, settles it; otherwise the person chooses.
 2. Otherwise match the repository directory name exactly to a registered `project_id`; for a
    Codex worktree, the original repository ID from its `.git` pointer. A project that records a
    different repository source is never matched by name (`repository_remote_conflict`).

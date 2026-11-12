@@ -23,6 +23,8 @@ const delegatedShape = shapeFor<DelegatedReviews>(z.looseObject({ confirmed: z.a
 const delegationSchema = z.looseObject({
   enabled: z.boolean(), changedAt: z.string().nullable(), revision: z.number(), language: z.string().nullable().optional(),
   model: z.looseObject({ connected: z.boolean(), status: z.string(), reason: z.string().nullable() }),
+  // rec issue 124: the active projects Tonborg's model may read; null when the projects could not be read.
+  reach: z.looseObject({ projects: z.number(), blockedProjectIds: z.array(z.string()), unassignedAllowed: z.boolean() }).nullable().optional(),
 })
 export type ReviewDelegation = z.infer<typeof delegationSchema>
 const delegationShape = shapeOf(delegationSchema)
