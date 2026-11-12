@@ -56,7 +56,7 @@ function fixture(t, { mode = 'manual', decisions, trust = trustedTonborg() } = {
 }
 const input = { personalSpaceId: 's', personalProjectId: 'p', requestId: 'delegated-1', limit: 10 };
 const turnOn = (f, revision = 0) => setReviewDelegation({ judgment: f.service, modelTrust: f.app.modelTrust,
-  input: { personalSpaceId: 's', enabled: true, expectedRevision: revision } });
+  modelBackends: f.app.modelBackends ?? null, input: { personalSpaceId: 's', enabled: true, expectedRevision: revision } });
 
 test('delegated: Tonborg confirms the clear item as its own and asks about the rest as its guess', async t => {
   const f = fixture(t);
@@ -166,6 +166,38 @@ test('turning delegation on makes the scheduler run even when every policy is ã€
   assert.equal(f.service.store().hasAutomaticPolicy('s'), true);
   const result = await f.service.reviewAutomatic({ personalSpaceId: 's', requestId: 'scheduled-1', limit: 10 });
   assert.ok(result.records.some(record => record.delegated && record.execution.status === 'applied'));
+});
+
+test('rec#124: the schedule skips scopes Tonborg\'s model may not read, and the switch says which ones', async t => {
+  const f = fixture(t);
+  // Only alpha is approved for Tonborg's model; beta and knowledge outside projects are not.
+  const refused = [];
+  f.app.listPersonalProjects = async () => [{ project_id: 'alpha' }, { project_id: 'beta' }, { project_id: 'old', profile: { lifecycle: 'archived' } }];
+  f.app.modelBackends = { refusesEgress: request => {
+    refused.push(request);
+    return request.scope.personalProjectId !== 'alpha';
+  } };
+  const saved = await turnOn(f);
+  assert.deepEqual(refused[0], { role: 'tonborg', operation: 'knowledge_review',
+    scope: { personalSpaceId: 's', personalProjectId: 'alpha' }, evidence: [{ personalProjectId: 'alpha' }] });
+  for (let round = 1; round <= 4; round++) {
+    await f.service.reviewAutomatic({ personalSpaceId: 's', requestId: `scheduled-${round}`, limit: 10 });
+  }
+  // No model call and no failed record for the refused scopes, round after round.
+  assert.deepEqual([...new Set(f.prompts.map(call => call.scope.personalProjectId))], ['alpha']);
+  for (const scope of ['beta', null]) assert.deepEqual(f.service.store().records('s', { personalProjectId: scope }), []);
+
+  // The switch reads which active projects Tonborg's model can reach, from the live settings.
+  const reach = { projects: 2, blockedProjectIds: ['beta'], unassignedAllowed: false };
+  assert.deepEqual(saved.reach, reach);
+  assert.deepEqual((await reviewDelegation({ judgment: f.service, modelTrust: f.app.modelTrust, modelBackends: f.app.modelBackends,
+    input: { personalSpaceId: 's' } })).reach, reach);
+  // A scope run by an opted-in CLI sends nothing to Tonborg's model, so it is not skipped.
+  f.service.store().setPolicy('s', 'beta', { mode: 'autonomous', quality: 'quality', client: 'codex', backend: 'legacy_cli' }, 0);
+  for (let round = 5; round <= 7; round++) {
+    await f.service.reviewAutomatic({ personalSpaceId: 's', requestId: `scheduled-${round}`, limit: 10 });
+  }
+  assert.ok(f.prompts.some(call => call.scope.personalProjectId === 'beta'));
 });
 
 test('the person undoes a Tonborg confirmation with its review receipt, and it leaves the list', async t => {

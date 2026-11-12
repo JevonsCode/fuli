@@ -351,9 +351,15 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
     // disabled or no longer allowed the operation allows nothing.
     allowsEgress(request) {
       const settings = this.operationSettings(request.role, request.operation);
-      if (!settings) return false;
-      return MODEL_ADAPTERS[settings.connection.protocol].local === true
-        || egressAllowed(request.texts ? embeddingEgress(request) : request, settings.egress);
+      return Boolean(settings) && sendsAllowed(settings, request);
+    },
+    // Whether the role's own model, as configured now, would stop this request
+    // at egress before any attempt (prepare's egress_not_approved). A role
+    // without a model for the operation refuses nothing here: its work goes
+    // to the current session.
+    refusesEgress(request) {
+      const settings = this.operationSettings(request.role, request.operation);
+      return Boolean(settings) && !sendsAllowed(settings, request);
     },
     // What Settings shows of the local build behind a role's latest answer
     // on its configured endpoint and model (rec#10 D-32). An observation of
@@ -409,6 +415,12 @@ export function createModelBackendPort({ readConfig, secrets, ledger, fetchImpl 
           estimatedCost: pricing ? roundCost(window.estimatedCost) : null, cost: pricing ? 'estimate' : 'unknown' };
       });
   }
+}
+
+// A model on this computer sends nothing out; any other needs the request approved.
+function sendsAllowed(settings, request) {
+  return MODEL_ADAPTERS[settings.connection.protocol].local === true
+    || egressAllowed(request.texts ? embeddingEgress(request) : request, settings.egress);
 }
 
 function receiptUsage(attempts) {
