@@ -65,19 +65,36 @@ A blocked report should say what it waits for; the Provider records when and in 
 The block clears itself when that same session continues (a checkpoint or a new prompt there) or
 the person answers its request. A checkpoint in another session by one of the task's Agents only
 marks the block probably resolved; the person confirms it in the console. When you have just fixed
-what blocked a task from another session, say so once: as its lead, report the task's next status
-with `record_project_agent_task_activity` (the summary says what you fixed); otherwise call
-`run_delegated_action` with `POST /api/project-agent-tasks/:taskId/blocker/clear`
-(`params.taskId`; body `personalSpaceId`, `personalProjectId`; `reason` = what you fixed). The task
-history keeps the block and records you and your reason. The clear moves the task to running;
-report its next status after it. Any other session's status report on a blocked task is refused and
-the refusal names this route. Never clear or move a block you did not resolve; the person can still
-mark it cleared (「标记为已解除」).
+what blocked a task from another session, say so once: report `running` or `queued` with
+`record_project_agent_task_activity` and your `taskContextToken` (the summary says what you fixed).
+As its lead it simply moves on. Otherwise FULI first checks the report as it will be recorded
+(participating `agentId`, a lead for `running`, your client, `expectedRevision`); a report that
+fails one of those is refused for that reason and nothing is cleared. When it passes, FULI clears
+the block for the person, as the `run_delegated_action` clear on
+`POST /api/project-agent-tasks/:taskId/blocker/clear` with your summary as the reason and the
+revision it checked (a block reported again since is not cleared), then records the report; the
+result's `blockerCleared` names you, the permission and the record. That needs Settings › AI
+permissions › Organisation on; when it is off nothing is cleared or recorded and the refusal names
+the switch. If the report is still refused after the clear (`task_report_refused_after_clear`), the
+block stays cleared: read the task again and report its status. To end a block without a status
+report, call that route yourself (`params.taskId`; body `personalSpaceId`, `personalProjectId`,
+optional `resumeStatus` running|queued and `expectedRevision`; `reason` = what you fixed). The task
+history keeps the block and records you and your reason. Never clear or move a block you did not
+resolve; the person can still mark it cleared (「标记为已解除」).
 
-A task (all but a `default_lead` staffing record) completes only with the `artifactRevision` that
-`record_agent_verification` passed; a refusal names the missing or mismatched revision. Work without
-files names what it delivered (a config digest or evidence ID) as its revision. Without a passing
-verification, report `awaiting_review` for the person instead of claiming completion.
+An Agent completes a task on its own account (all but a `default_lead` staffing record) only with
+its participating `agentId` and the `artifactRevision` that `record_agent_verification` passed; a
+refusal names the missing or mismatched revision. Work without files names what it delivered (a
+config digest or evidence ID) as its revision. A revision that failed verification is fixed and
+verified again, never closed another way. Never borrow another Agent's ID, and never report
+`actorKind` human: the person's own event comes only from the console. When the person themself
+says the task is done or should stop, relay their exact words with `run_delegated_action`
+`POST /api/project-agent-tasks/:taskId/close` (`params.taskId`; body `personalSpaceId`,
+`personalProjectId`, `status` completed|cancelled, optional `note`; `personWords`): their words
+must say it (「这个任务做完了」, "cancel that task"); a bare 好 / 可以 / ok to your question is
+refused (`person_words_not_a_close`). It closes as the person's acceptance, with no verified
+revision, and names you as the relayer (Settings › AI permissions › Relay your decisions).
+Otherwise report `awaiting_review`.
 
 `workerStatus` requires `workerId` and the participating `agentId`. Structured actual executor,
 provider and model form one report and must match authorized preflight evidence. When that

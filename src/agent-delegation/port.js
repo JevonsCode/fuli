@@ -40,7 +40,7 @@ export function createAgentDelegation(dataDir, { now = () => new Date().toISOStr
       if (!agentAccessEnabled) throw agentAccessOffRefusal();
       const entry = delegableEntry(interfaceForRequest(method, pathname));
       if (!policy.read().categories.find((category) => category.id === entry.category)?.enabled) {
-        throw categoryOffRefusal();
+        throw categoryOffRefusal(entry.category);
       }
       if (entry.access === 'agent_relayed' && !call.relayed) throw personWordsRequiredRefusal();
       return entry;

@@ -19,6 +19,7 @@ import { agentNamingStyleAnswer } from '../agent-naming/naming-style.js';
 import { withProviderOutageEntry } from '../graphiti/task-entry-provider-outage.js';
 import { withCheckpointSaveStatus } from '../graphiti/checkpoint-save-status.js';
 import { listProjectAgentTaskSummaries } from '../graphiti/project-agent-task-summaries.js';
+import { recordTaskActivityResumingBlock } from '../task-blockers/agent-resume.js';
 
 // These tools read or change the two local stores that can retain deleted
 // knowledge. Provider-only reads and unrelated tools remain available.
@@ -215,8 +216,7 @@ const HANDLERS = Object.freeze({
   release_runtime_lease: (app, input) => app.releaseRuntimeLease(input),
   submit_project_agent_task: (app, input) => app.submitProjectAgentTask({ ...input, agentInvocation: true }),
   view_project_agent_task: (app, input) => app.viewProjectAgentTask(input),
-  record_project_agent_task_activity: (app, input) =>
-    app.recordProjectAgentTaskActivity(input),
+  record_project_agent_task_activity: (app, input) => recordTaskActivityResumingBlock(app, input),
   view_project_agent_activity: (app, input) => app.viewProjectAgentActivity(input),
   get_project_agent_coordination_policy: (app, input) =>
     app.getProjectAgentCoordinationPolicy(input),

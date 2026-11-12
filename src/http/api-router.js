@@ -22,6 +22,7 @@ import { handleKnowledgeHardDeleteRequest } from './knowledge-hard-delete-api-ro
 import { handleKnowledgeScopeRequest } from './knowledge-scope-api-router.js';
 import { handleProjectHierarchyRequest } from './project-hierarchy-api-router.js';
 import { handleTaskBlockerRequest } from './task-blocker-api-router.js';
+import { handleTaskCloseRequest } from './task-close-api-router.js';
 import { handleKnowledgeTagsRequest } from './knowledge-tags-api-router.js';
 import { handleStandingAssignmentRequest } from './standing-assignment-api-router.js';
 import { handleClientLinksRequest } from './client-links-api-router.js';
@@ -66,6 +67,7 @@ export async function handleApiRequest({
   knowledgeScope = null,
   projectHierarchy = null,
   taskBlockers = null,
+  taskClosing = null,
   knowledgeOwnerReads = null,
   knowledgeTags = null,
   modelRoleSettings = null,
@@ -296,6 +298,7 @@ export async function handleApiRequest({
     await handleKnowledgeScopeRequest({ request, response, url, app, scopeConsole: knowledgeScope, ownerReads: knowledgeOwnerReads }) ||
     await handleProjectHierarchyRequest({ request, response, url, app, hierarchyConsole: projectHierarchy }) ||
     await handleTaskBlockerRequest({ request, response, url, app, blockerConsole: taskBlockers }) ||
+    await handleTaskCloseRequest({ request, response, url, app, closeConsole: taskClosing }) ||
     await handleKnowledgeTagsRequest({ request, response, url, app, tagsConsole: knowledgeTags }) ||
     await handleJudgmentApiRequest({ request, response, url, app, undoConsole: judgmentUndo, ownerReads: knowledgeOwnerReads }) ||
     await handleStandingAssignmentRequest({ request, response, url, app }) ||

@@ -11,14 +11,17 @@ import { projectAgentTaskRecord } from '../graphiti/project-agent-mapping.js';
 
 export function taskBlockerConsole(dataDir, { send = personalHumanReviewChannel(dataDir) } = {}) {
   return {
-    async markUnblocked(taskId, { personalSpaceId, personalProjectId, note, confirmHint = false, agent = null }) {
+    async markUnblocked(taskId, { personalSpaceId, personalProjectId, note, confirmHint = false, agent = null,
+      resumeStatus = null, expectedRevision = null }) {
       const path = `/v1/project-agent-tasks/${encodeURIComponent(taskId)}/blocker/clear`;
       const clearer = agent
         ? { cleared_by: 'agent', agent_id: agent.agentId ?? null, source_application: agent.client ?? null,
           source_session_id: agent.sessionId ?? null }
         : confirmHint ? { confirm_hint: true } : {};
       const { ok, status, payload } = await send(path,
-        { personal_space_id: personalSpaceId, personal_project_id: personalProjectId, note, ...clearer }, { review: true });
+        { personal_space_id: personalSpaceId, personal_project_id: personalProjectId, note, ...clearer,
+          ...(resumeStatus ? { resume_status: resumeStatus } : {}),
+          ...(expectedRevision != null ? { expected_revision: expectedRevision } : {}) }, { review: true });
       if (ok) return projectAgentTaskRecord(payload);
       throw providerRefusal(status, payload);
     }

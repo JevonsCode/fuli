@@ -9,12 +9,15 @@ from test_project_agent_tasks import ActivityStore, task_request
 @pytest.mark.asyncio
 @pytest.mark.parametrize(('gate', 'artifact_revision', 'says'), [
     # No revision: say what to pass, and that a task without files names what it delivered.
-    ('passed', None, r'pass artifactRevision \(the commit, or a digest or ID of what you delivered\)'),
+    ('passed', None, r'Pass the artifactRevision \(commit, or digest/ID of what you delivered\).*'
+                     r'Person themself said it is done\? Relay their words via run_delegated_action, task close route\.$'),
     # Another revision passed: name both, so the Agent completes with the verified one or verifies its own.
     ('passed', 'changed-revision', 'passed for revision previous-revision, not changed-revision'),
     # Nothing passed yet: name the revision, the gate and the tool, or the person's review.
-    ('failed', 'previous-revision', r'previous-revision has no passing verification \(quality gate failed\)'),
-    (None, 'previous-revision', r'\(quality gate not run\).*record_agent_verification.*awaiting_review'),
+    ('failed', 'previous-revision', r'previous-revision not verified \(gate failed\)'),
+    (None, 'previous-revision', r'\(gate not run\).*record_agent_verification.*awaiting_review'),
+    # The longest revisions and gate still fit.
+    ('verification_required', 'r' * 160, r'\(gate verification_required\)'),
 ])
 async def test_new_task_cannot_complete_without_its_exact_verified_revision(gate, artifact_revision, says):
     store = ActivityStore({
@@ -32,6 +35,8 @@ async def test_new_task_cannot_complete_without_its_exact_verified_revision(gate
         await store.record_project_agent_task_activity({'id': 'principal'}, request)
     # The Agent sees at most 240 characters of a refusal.
     assert len(refused.value.detail) <= 240
+    # An Agent whose own revision failed or differs is never pointed past verification (rec#123 review).
+    assert ('close route' in refused.value.detail) is (artifact_revision is None)
     assert store.runtime.driver.event_calls == []
 
 

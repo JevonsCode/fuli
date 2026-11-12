@@ -232,7 +232,8 @@ export const projectAgentTaskActivityInput = objectSchema({
   status: projectAgentTaskStatus,
   summary: shortText,
   agentId: nullableStringSchema(),
-  actorKind: enumSchema(['agent', 'human']),
+  // A person's event comes only from the console (the Provider refuses human here; rec#123).
+  actorKind: enumSchema(['agent']),
   sourceApplication,
   sourceSessionId: nullableStringSchema(),
   sourceSessionUrl: { ...nullableStringSchema(), maxLength: 2048 },
