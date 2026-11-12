@@ -64,8 +64,14 @@ describe('beginner\'s guide', () => {
     expect(dialog()?.querySelector('h2')?.textContent).toBe('新手引导')
     expect(current()?.dataset.tourStep).toBe('what')
     expect(find('[data-whats-new]')).toBeNull()
+    // The notice waiting behind the guide was not on screen, so it is not marked seen:
+    // a console closed now still shows it next time.
+    const seen = () => posts.filter(post => post.url === '/api/system/whats-new/seen')
+    expect(seen()).toEqual([])
 
     await click('[data-tour-skip]')
+    await flushPromises()
+    expect(seen()).toEqual([{ url: '/api/system/whats-new/seen', body: { version: WHATS_NEW.version } }])
     expect(dialog()).toBeNull()
     expect(posts.filter(post => post.url === '/api/first-run-guide/tour')).toEqual([{ url: '/api/first-run-guide/tour', body: { version: 1 } }])
     expect(find('[data-whats-new]')).not.toBeNull()
