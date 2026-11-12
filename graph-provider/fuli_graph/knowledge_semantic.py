@@ -55,17 +55,38 @@ def usable_vector(item_kind: str, record: dict, length: int) -> list[float] | No
     return vector
 
 
-def meaning_matches(candidates: dict, query_vector: list[float], limit: int) -> dict:
-    """{key: cosine} of the candidates ({key: vector}, every in-scope item with
-    a usable vector) that stand out for this query, best first, at most limit."""
-    query_norm = math.sqrt(sum(value * value for value in query_vector))
-    if not query_norm:
-        return {}
-    scores = {}
-    for key, vector in candidates.items():
-        norm = math.sqrt(sum(value * value for value in vector))
-        if norm:
-            scores[key] = sum(a * b for a, b in zip(query_vector, vector)) / (query_norm * norm)
+# Cypher for a search: the stored vector's dot product with the query's and
+# its own squared length, when it has the query's length. The database does
+# the arithmetic so the vectors themselves never travel: reading 5000 of them
+# back cost a search most of its time (rec#126).
+def cosine_parts(vector: str) -> str:
+    return f'''CASE WHEN size({vector}) = $length THEN
+                 reduce(sum = 0.0, i IN range(0, $length - 1) | sum + {vector}[i] * $query_vector[i]) END
+                 AS semantic_dot,
+               CASE WHEN size({vector}) = $length THEN
+                 reduce(sum = 0.0, value IN {vector} | sum + value * value) END
+                 AS semantic_norm2'''
+
+
+def vector_norm(vector: list[float]) -> float:
+    return math.sqrt(sum(value * value for value in vector))
+
+
+def usable_cosine(item_kind: str, record: dict, query_norm: float) -> float | None:
+    """The cosine of the record's stored vector (already read for the query's
+    model) with the query, from cosine_parts: None when the vector has another
+    length or no length at all, or was computed from an earlier text."""
+    dot, norm2 = record.get('semantic_dot'), record.get('semantic_norm2')
+    if dot is None or not norm2 or not query_norm:
+        return None
+    if record.get('semantic_hash') != semantic_hash(semantic_text(item_kind, record)):
+        return None
+    return dot / (query_norm * math.sqrt(norm2))
+
+
+def standing_out(scores: dict, limit: int) -> dict:
+    """{key: cosine} of the scores ({key: cosine}, every in-scope item with a
+    usable vector) that stand out for this query, best first, at most limit."""
     if len(scores) < MIN_IN_SCOPE_ITEMS:
         return {}
     mean = fmean(scores.values())
