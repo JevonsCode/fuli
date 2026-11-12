@@ -128,6 +128,8 @@ const UI_MUTATION_PARITY = Object.freeze([
   agent('POST /api/project-agent-tasks/:taskId/runs/:runId/stop', 'control_project_agent_task_run'),
   agent('POST /api/project-agent-tasks/:taskId/retry', 'control_project_agent_task_run'),
   delegable('organisation', 'POST /api/project-agent-tasks/:taskId/blocker/clear', 'The working Agent reports the block again in its session.'),
+  // The person's own acceptance or cancellation (rec#123): no participating Agent ID, no verified revision.
+  relayed('POST /api/project-agent-tasks/:taskId/close', 'Not reopened; retry a cancelled task with control_project_agent_task_run, or submit new work.'),
   delegable('organisation', 'POST /api/standing-assignments/:assignmentId/retire', 'Register it again with register_standing_assignment.'),
   delegable('organisation', 'POST /api/standing-assignments/:assignmentId/reassign', 'Reassign it back.'),
   delegable('organisation', 'POST /api/standing-assignments/:assignmentId/terms', 'Save the earlier terms again.'),

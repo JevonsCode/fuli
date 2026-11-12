@@ -3,6 +3,7 @@ import { delegatedCall } from './agent-delegation-gate.js';
 import { refuseRemoteDecision } from './request-policy.js';
 import { validationError } from '../app/application-error.js';
 import { requiredString } from '../validation/values.js';
+import { RESUME_STATUSES } from '../task-blockers/resume-status.js';
 
 const CLEAR_PATH = /^\/api\/project-agent-tasks\/([^/]+)\/blocker\/clear$/;
 const MAX_ID = 128;
@@ -36,12 +37,16 @@ export async function handleTaskBlockerRequest({ request, response, url, app, bl
   if (body.confirmHint != null && typeof body.confirmHint !== 'boolean') {
     throw validationError('confirmHint must be true or false');
   }
+  // An FLA resuming the task from its own report may put it back in its queue (rec#123).
+  if (body.resumeStatus != null && !RESUME_STATUSES.has(body.resumeStatus)) {
+    throw validationError('resumeStatus must be running or queued');
+  }
   const call = delegatedCall(request);
   const clearer = call
     ? { agent: { agentId: call.actor.agentId, client: call.actor.client, sessionId: call.actor.sessionId },
       note: note ?? call.reason }
     : { confirmHint: body.confirmHint === true, note };
   sendJson(response, 200, await blockerConsole.markUnblocked(taskId,
-    { personalSpaceId: body.personalSpaceId, personalProjectId, ...clearer }));
+    { personalSpaceId: body.personalSpaceId, personalProjectId, resumeStatus: body.resumeStatus ?? null, ...clearer }));
   return true;
 }

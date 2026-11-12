@@ -56,6 +56,7 @@ from .project_agent_task_models import (
     ProjectAgentTaskBlockerClear,
     ProjectAgentTaskBlockerClearResult,
     ProjectAgentTaskBlockerPersonClear,
+    ProjectAgentTaskPersonClose,
     ProjectAgentTaskBlockerProgress,
     ProjectAgentTaskBlockerProgressResult,
     ProjectAgentTaskRecord,
@@ -426,6 +427,20 @@ def register_project_agent_routes(
     ) -> ProjectAgentTaskRecord:
         """The person's 「标记为已解除」 or an FLA's for them, on the console's human-review channel only."""
         task = await store.clear_task_blocker_by_person(actor, task_id, request)
+        notify_task_change(request.personal_space_id, task_id)
+        return task
+
+    @application.post(
+        '/v1/project-agent-tasks/{task_id}/close',
+        response_model=ProjectAgentTaskRecord,
+    )
+    async def close_task_by_person(
+        task_id: str,
+        request: ProjectAgentTaskPersonClose,
+        actor: HumanReviewer,
+    ) -> ProjectAgentTaskRecord:
+        """The person completes or cancels a task, or an FLA relaying their words; human-review channel only."""
+        task = await store.close_task_by_person(actor, task_id, request)
         notify_task_change(request.personal_space_id, task_id)
         return task
 

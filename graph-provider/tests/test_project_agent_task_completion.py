@@ -9,12 +9,14 @@ from test_project_agent_tasks import ActivityStore, task_request
 @pytest.mark.asyncio
 @pytest.mark.parametrize(('gate', 'artifact_revision', 'says'), [
     # No revision: say what to pass, and that a task without files names what it delivered.
-    ('passed', None, r'pass artifactRevision \(the commit, or a digest or ID of what you delivered\)'),
+    ('passed', None, r'Pass the artifactRevision \(commit, or digest/ID of what you delivered\)'),
     # Another revision passed: name both, so the Agent completes with the verified one or verifies its own.
     ('passed', 'changed-revision', 'passed for revision previous-revision, not changed-revision'),
     # Nothing passed yet: name the revision, the gate and the tool, or the person's review.
-    ('failed', 'previous-revision', r'previous-revision has no passing verification \(quality gate failed\)'),
-    (None, 'previous-revision', r'\(quality gate not run\).*record_agent_verification.*awaiting_review'),
+    ('failed', 'previous-revision', r'previous-revision not verified \(gate failed\)'),
+    (None, 'previous-revision', r'\(gate not run\).*record_agent_verification.*awaiting_review'),
+    # The longest revisions and gate still fit, with the person's own route (rec#123).
+    ('verification_required', 'r' * 160, r'task close route\.$'),
 ])
 async def test_new_task_cannot_complete_without_its_exact_verified_revision(gate, artifact_revision, says):
     store = ActivityStore({

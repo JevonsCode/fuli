@@ -19,11 +19,13 @@ PERSON_CLEAR_SUMMARY = 'Marked as unblocked by the person in FULI.'
 PERSON_CONFIRM_SUMMARY = 'Confirmed as unblocked by the person after the Agent went on in another session.'
 # Why another session's status report cannot move a blocked task on, and what
 # does (rec#123). The Agent-facing message is cut at 240 characters and the
-# Node client turns ':' into ' —', so it names the route without its path.
+# Node client turns ':' into ' —', so it names the route without its path. Its
+# code lets the Agent tool clear the block under the person's AI permission
+# and record the report in one call (src/task-blockers/agent-resume.js).
+BLOCKED_ELSEWHERE_CODE = 'task_blocked_elsewhere'
 BLOCKED_MOVE_GUIDANCE = (
-    'needs the session that reported the block or its lead Agent. Fixed the block? Clear it via '
-    'run_delegated_action, task blocker/clear route (params.taskId, reason = what you fixed), '
-    'then report the status'
+    'needs its reporting session or lead Agent. Fixed it? Resend running/queued with taskContextToken '
+    "(FULI clears it under the person's AI permission) or use run_delegated_action, task blocker/clear route"
 )
 
 

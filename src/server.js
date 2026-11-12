@@ -44,6 +44,7 @@ import { createKnowledgeRecoveryCheck } from './knowledge-hard-delete/recovery-c
 import { knowledgeScopeConsole as createKnowledgeScopeConsole } from './knowledge-scope/console-port.js';
 import { projectHierarchyConsole as createProjectHierarchyConsole } from './project-hierarchy/console-port.js';
 import { taskBlockerConsole as createTaskBlockerConsole } from './task-blockers/console-port.js';
+import { taskCloseConsole as createTaskCloseConsole } from './task-closing/console-port.js';
 import { knowledgeOwnerReads as createKnowledgeOwnerReads } from './knowledge-owner-reads/console-port.js';
 import { reviewUndoConsole } from './judgment/review-undo.js';
 import { knowledgeTagsConsole as createKnowledgeTagsConsole } from './knowledge-tags/console-port.js';
@@ -128,6 +129,9 @@ export async function createServer(options = {}) {
   // A person's 「标记为已解除」 of a blocked task, console only.
   const taskBlockers = options.taskBlockers ?? (localOptions.runtimeConfigPath
     ? createTaskBlockerConsole(dirname(localOptions.runtimeConfigPath)) : null);
+  // The person's own complete or cancel of a task, console only (rec#123).
+  const taskClosing = options.taskClosing ?? (localOptions.runtimeConfigPath
+    ? createTaskCloseConsole(dirname(localOptions.runtimeConfigPath)) : null);
   // The person's full knowledge reads, every FLA's included (console only).
   const knowledgeOwnerReads = options.knowledgeOwnerReads ?? (localOptions.runtimeConfigPath
     ? createKnowledgeOwnerReads(dirname(localOptions.runtimeConfigPath)) : null);
@@ -252,6 +256,7 @@ export async function createServer(options = {}) {
       knowledgeScope,
       projectHierarchy,
       taskBlockers,
+      taskClosing,
       knowledgeOwnerReads,
       knowledgeTags,
       modelRoleSettings,
@@ -388,6 +393,7 @@ async function handleRequest({
   knowledgeScope,
   projectHierarchy,
   taskBlockers,
+  taskClosing,
   knowledgeOwnerReads,
   knowledgeTags,
   modelRoleSettings,
@@ -432,6 +438,7 @@ async function handleRequest({
       knowledgeScope,
       projectHierarchy,
       taskBlockers,
+      taskClosing,
       knowledgeOwnerReads,
       knowledgeTags,
       modelRoleSettings,

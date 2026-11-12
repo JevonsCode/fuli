@@ -498,13 +498,15 @@ class ProjectAgentTaskBlockerPersonClear(StrictModel):
     confirm_hint: the person confirms the block FULI saw as probably resolved.
     cleared_by 'agent' (with the FLA, its client and session when known): an
     FLA made the clear for the person through run_delegated_action; note is
-    then its reason.
+    then its reason. resume_status: the task goes on running, or back to its
+    queue when the clearing Agent's report asks for queued (rec#123).
     """
 
     personal_space_id: str = Field(min_length=1, max_length=128)
     personal_project_id: str = Field(min_length=1, max_length=128)
     note: str | None = Field(default=None, min_length=1, max_length=500)
     confirm_hint: bool = False
+    resume_status: Literal['running', 'queued'] = 'running'
     cleared_by: Literal['person', 'agent'] = 'person'
     agent_id: str | None = Field(default=None, min_length=1, max_length=128)
     source_application: SourceApplication | None = None
@@ -519,6 +521,24 @@ class ProjectAgentTaskBlockerPersonClear(StrictModel):
         if self.cleared_by == 'person' and (self.agent_id or self.source_application or self.source_session_id):
             raise ValueError('an Agent and its session are named only when an Agent clears a block')
         return self
+
+
+class ProjectAgentTaskPersonClose(StrictModel):
+    """The person completes or cancels a task themself (rec#123), on the human-review channel.
+
+    It is the person's acceptance, so it needs no participating Agent and no
+    verified artifact revision. relayed_by names the FLA that relayed the
+    person's words through run_delegated_action, with its client and session;
+    summary carries those words.
+    """
+
+    personal_space_id: str = Field(min_length=1, max_length=128)
+    personal_project_id: str = Field(min_length=1, max_length=128)
+    status: Literal['completed', 'cancelled']
+    summary: str = Field(min_length=1, max_length=2000)
+    relayed_by: str | None = Field(default=None, min_length=1, max_length=128)
+    source_application: SourceApplication | None = None
+    source_session_id: str | None = Field(default=None, min_length=1, max_length=256)
 
 
 class ProjectAgentTaskBlockerProgress(StrictModel):
@@ -746,8 +766,10 @@ class ProjectAgentTaskActivityCreate(StrictModel):
     @model_validator(mode='after')
     def validate_actual_model(self):
         if self.status in {'completed', 'failed'} and not self.agent_id:
+            # Never borrow a participant's ID to close for someone else (rec#123).
             raise ValueError(
-                'completed or failed activity requires the participating Agent ID'
+                'completed or failed activity requires the participating Agent ID. '
+                'The person closing it? Relay their words via run_delegated_action, task close route'
             )
         if bool(self.actual_model_provider) != bool(self.actual_model):
             raise ValueError('actual model provider and model must be reported together')

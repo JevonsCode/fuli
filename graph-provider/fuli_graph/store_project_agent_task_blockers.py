@@ -99,6 +99,7 @@ class StoreProjectAgentTaskBlockers:
         if not await self._clear_task_blocker(
             request.personal_space_id, task_id, cause,
             project_id=request.personal_project_id, note=request.note, clearer=clearer,
+            resume_status=request.resume_status,
         ):
             raise HTTPException(409, 'the task is no longer blocked, or nothing says it is probably resolved; reload it')
         return await self.get_project_agent_task(
@@ -158,9 +159,9 @@ class StoreProjectAgentTaskBlockers:
 
     async def _clear_task_blocker(
         self, space_id: str, task_id: str, cause: BlockerClearCause, *, session=None,
-        project_id=None, note=None, clearer=None,
+        project_id=None, note=None, clearer=None, resume_status='running',
     ) -> bool:
-        """Move one blocked task to running. session, when given, must be the reporting one.
+        """Move one blocked task to running (or queued). session, when given, must be the reporting one.
 
         The person's own clear ('person') is a human event whose summary is
         their note; their confirmation ('person_confirmed') needs the block's
@@ -194,24 +195,25 @@ class StoreProjectAgentTaskBlockers:
                       })
                 CREATE (event:FuliProjectAgentTaskEvent {
                   id: $event_id, event_id: $event_id, task_id: $task_id,
-                  agent_id: $agent_id, status: 'running', actor_kind: $actor_kind,
+                  agent_id: $agent_id, status: $resume_status, actor_kind: $actor_kind,
                   summary: $summary, source_application: $application,
                   source_session_id: $session_id, blocker_cleared_by: $cause,
                   created_at: $updated_at
                 })
                 MERGE (task)-[:HAS_TASK_EVENT]->(event)
-                SET task.status = 'running',
+                SET task.status = $resume_status,
                     task.updated_at = $updated_at,
                     task.revision = coalesce(task.revision, 0) + 1
                 WITH task
                 OPTIONAL MATCH (task)-[participant:HAS_PARTICIPANT]->()
                 WHERE participant.status = 'blocked'
                 FOREACH (_ IN CASE WHEN participant IS NULL THEN [] ELSE [1] END |
-                  SET ''' + running_since_set('participant', "'running'") + '''
-                      participant.status = 'running',
+                  SET ''' + running_since_set('participant', '$resume_status') + '''
+                      participant.status = $resume_status,
                       participant.updated_at = $updated_at
                 )
                 ''',
+                resume_status=resume_status,
                 space_id=space_id, task_id=task_id,
                 event_id=stable_uuid(
                     self.settings.provider_id, space_id, 'project-agent-task-blocker-clear',

@@ -29,13 +29,15 @@ from .store_project_agent_task_staffing import (
 from .store_project_agent_coordination_policy import StoreProjectAgentCoordinationPolicy
 from .store_project_agent_task_activity import StoreProjectAgentTaskActivity, TERMINAL_TASK_STATUSES
 from .store_project_agent_task_blockers import StoreProjectAgentTaskBlockers
+from .store_project_agent_task_person_close import StoreProjectAgentTaskPersonClose
 from .store_transactions import TransactionQueryDriver, query_store_transaction
 from .task_activity_origin import coordination_activity_origin, read_activity_origin
-from .task_blocker import BLOCKED_MOVE_GUIDANCE
+from .task_blocker import BLOCKED_ELSEWHERE_CODE, BLOCKED_MOVE_GUIDANCE
 from .project_agent_hierarchy import reporting_parent, bind_task_coordinator, validate_task_reports
 class StoreProjectAgentTasks(
     StoreProjectAgentTaskActivity,
     StoreProjectAgentTaskBlockers,
+    StoreProjectAgentTaskPersonClose,
     StoreProjectAgentCoordinationPolicy,
     StoreProjectAgentTaskRecruitment,
     StoreProjectAgentTaskReads,
@@ -756,7 +758,8 @@ class StoreProjectAgentTasks(
             if current == 'blocked':
                 # A deliberate boundary (human-authoritative): another session's
                 # word alone does not end a block; the refusal names the way that does.
-                raise HTTPException(409, f'blocked -> {requested} {BLOCKED_MOVE_GUIDANCE}')
+                raise HTTPException(409, {'code': BLOCKED_ELSEWHERE_CODE,
+                                          'message': f'blocked -> {requested} {BLOCKED_MOVE_GUIDANCE}'})
             raise HTTPException(
                 status_code=409,
                 detail=f'illegal project Agent task transition: {current} -> {requested}',

@@ -29,6 +29,10 @@ export const SESSION_FULI_OFF = 'fuli_off';
 // own field and receives it. There is no list to keep: a new tool is
 // attributed unless it is open or names its own token.
 const OWN_TOKEN_FIELDS = Object.freeze(['taskContextToken', 'task_context_token']);
+// Attributed tools that also act as the calling task's FLA in a second step
+// receive the token as well: a blocked task's report clears the block through
+// run_delegated_action, which names the FLA from its task (rec#123).
+const CALLING_TASK_TOOLS = new Set(['record_project_agent_task_activity']);
 // Bare: a value that is not a current task token only leaves the call without a session.
 const TOKEN_FIELD = Object.freeze({ type: 'string' });
 
@@ -44,7 +48,8 @@ export function createSessionGate(definitions) {
       : definition),
     // The input a tool itself receives.
     toolInput(name, input) {
-      if (!attributed.has(name) || !input || typeof input !== 'object' || !Object.hasOwn(input, 'taskContextToken')) return input;
+      if (!attributed.has(name) || CALLING_TASK_TOOLS.has(name) || !input || typeof input !== 'object'
+        || !Object.hasOwn(input, 'taskContextToken')) return input;
       const { taskContextToken: _attribution, ...rest } = input;
       return rest;
     },
