@@ -1,4 +1,4 @@
-import { ApplicationError } from '../app/application-error.js';
+import { ApplicationError, InvalidInputError } from '../app/application-error.js';
 import { modelTier, tierAdvice } from './model-tiers.js';
 import { CONSENT_SOURCES } from './port.js';
 
@@ -17,8 +17,8 @@ const GUIDANCE = 'Follow skills/operating-fuli (Organising a project). Work by y
 const REPEATED_GUIDANCE = ' Run repeated_preference_check once with the subject of this project\'s preferences as query; '
   + 'each candidate found is one line on that list: 「偏好 X 在项目 A、B 里都有，升级成全局吗？」.';
 // 「整理我的偏好」 (rec#121): the person's preferences, whatever folder the session is in.
-const PREFERENCES_GUIDANCE = 'Follow skills/operating-fuli (Organising preferences). Read every page (next_offset) before proposing. '
-  + 'duplicates are copies FULI\'s duplicate rules call one; keep is the copy that stays. Propose in one list: copies to retire, '
+const PREFERENCES_GUIDANCE = 'Follow skills/operating-fuli (Organising preferences). Read every page (offset: next_offset, until none) before proposing. '
+  + 'duplicates (first page only) are copies FULI\'s duplicate rules call one; keep is the copy that stays. Propose in one list: copies to retire, '
   + 'preferences to move between global and a project, stale or contradicting ones to retire, pending ones to confirm. '
   + 'Change only what the person says yes to in this chat: retire or reword with revise_personal_knowledge '
   + '(invalidate, then link_replacement to the kept copy; mark_outdated; update). Confirming and moving scope are the person\'s '
@@ -45,9 +45,12 @@ async function repeatedPreferenceCheck(application, spaceId, projectId = null) {
     arguments: { personalSpaceId: spaceId, personalProjectIds: checked } };
 }
 
-// A page of the person's preferences with the copies the duplicate rules call one;
-// the first page also says how to apply what the person approves.
+// A page of the person's preferences; the first page (the only one with the copies
+// the duplicate rules call one) also says how to apply what the person approves.
 async function organizePreferences(application, offset = 0) {
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new InvalidInputError('offset is a whole number of 0 or more: pass the next_offset of the page before');
+  }
   const spaceId = application.config.personal.spaceId;
   const page = await application.personal.readPreferenceOrganizing({ personalSpaceId: spaceId, offset });
   if (offset) return page;

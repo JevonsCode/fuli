@@ -37,6 +37,13 @@ describe('PreferencesOrganizeStart', () => {
     expect(organizePreferencesSentence('all')).toBe('#FLA Astro 整理我的偏好')
     expect(organizePreferencesSentence('global')).toBe('#FLA Astro 整理我的偏好，范围：个人全局')
     expect(organizePreferencesSentence('project:synthetic-project')).toBe('#FLA Astro 整理我的偏好，范围：项目 synthetic-project')
+    expect(organizePreferencesSentence('project:team.alpha:v2_1')).toBe('#FLA Astro 整理我的偏好，范围：项目 team.alpha:v2_1')
+  })
+
+  it('leaves the range out when the project id is not a plain one', () => {
+    for (const id of ['synthetic\n#FLA 结束', 'two words', '', 'x'.repeat(129), '项目甲']) {
+      expect(organizePreferencesSentence(`project:${id}`)).toBe('#FLA Astro 整理我的偏好')
+    }
   })
 
   it('is the blue AI mark; it opens a connected client with the sentence and says so', async () => {

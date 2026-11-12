@@ -1,10 +1,12 @@
 """The person's current preferences, read for an AI that tidies them with the
-person (rec#121): a page of them, compact, and the copies the duplicate pair
-rules (knowledge_duplicate_rules, through knowledge_duplicates.duplicate_pairs)
-call one. Preferences are never merged automatically (their own conflict
-review), so here a duplicate is only a proposal: the AI asks the person and
-applies a yes with the existing knowledge tools. Copies are compared within
-one aspect and one scope; a preference repeated across projects is the
+person (rec#121): a page of them, compact, and on the first page the copies
+the duplicate pair rules (knowledge_duplicate_rules, through
+knowledge_duplicates.duplicate_pairs) call one. Preferences are never merged
+automatically (their own conflict review), so here a duplicate is only a
+proposal: the AI asks the person and applies a yes with the existing
+knowledge tools. Copies are compared within one aspect and one scope, and a
+relationship also within one relation type and the same two endpoints, as the
+periodic merge compares them; a preference repeated across projects is the
 global-candidate check's (personal_global_preferences). Read only, and as an
 Agent reads: another FLA's own preferences stay hidden (knowledge_visibility).
 """
@@ -27,22 +29,21 @@ MAX_DUPLICATE_GROUPS = 100
 _PLACE = '''item.fuli_profile_aspect AS aspect, coalesce(item.fuli_preference_scope, 'global') AS scope,
        item.fuli_preference_project_id AS project_id, coalesce(item.fuli_preference_project_ids, []) AS project_ids,
        item.fuli_preference_agent_id AS agent_id'''
-# An entity a preference relationship hangs on is that preference's subject, not one of its own (as the console lists them).
 _SCANS = {
     'entity': f'''
         MATCH (item:Entity {{group_id: $group_id}})
         WHERE item.fuli_invalid_at IS NULL AND item.fuli_profile_aspect IS NOT NULL
-          AND NOT EXISTS {{ MATCH (item)-[edge:RELATES_TO {{group_id: $group_id}}]-()
-                            WHERE edge.fuli_profile_aspect IS NOT NULL }}
           AND {fla_visible_cypher('item', 'entity')}
         OPTIONAL MATCH (episode:Episodic {{group_id: $group_id}})-[:MENTIONS]->(item)
         WITH item, max(episode.created_at) AS said_at
         RETURN item {duplicate_item_fields('item', 'said_at')} AS item, {_PLACE}''',
+    # Retired ones too: their endpoints are preference subjects all the same.
     'relationship': f'''
         MATCH (source:Entity {{group_id: $group_id}})-[item:RELATES_TO {{group_id: $group_id}}]->(target:Entity)
-        WHERE item.invalid_at IS NULL AND item.fuli_profile_aspect IS NOT NULL
+        WHERE item.fuli_profile_aspect IS NOT NULL
           AND {fla_relationship_visible_cypher('item', 'source', 'target')}
-        RETURN item {duplicate_item_fields('item')} AS item, {_PLACE}''',
+        RETURN item {duplicate_item_fields('item')} AS item, item.invalid_at IS NULL AS current, item.name AS relation,
+               source.uuid AS source_id, target.uuid AS target_id, {_PLACE}''',
 }
 
 
@@ -74,12 +75,14 @@ class PreferenceDuplicateGroup(StrictModel):
 
 
 class PreferenceOrganizingPage(StrictModel):
+    """Empty fields are left out of the answer: no next_offset on the last
+    page, no duplicates after the first."""
     total: int
     pending: int
     preferences: list[OrganizingPreference]
     next_offset: int | None = None
-    duplicates: list[PreferenceDuplicateGroup]
-    duplicates_truncated: bool = False
+    duplicates: list[PreferenceDuplicateGroup] | None = None
+    duplicates_truncated: bool | None = None
 
 
 async def read_preference_organizing(store, actor, request: PreferenceOrganizingRead) -> PreferenceOrganizingPage:
@@ -88,21 +91,32 @@ async def read_preference_organizing(store, actor, request: PreferenceOrganizing
     if space['kind'] != 'personal':
         raise HTTPException(status_code=422, detail='preference organising is personal-only')
     reader = await knowledge_reader(store, actor, space, personal_project_id=None, project_agent_id=None)
-    preferences, groups = [], []
+    scanned = {}
     for item_kind, scan in _SCANS.items():
         records, _, _ = await store.runtime.driver.execute_query(
             '// preference organising: scan\n' + scan, group_id=space['group_id'],
             reader=reader_parameter(reader), routing_='r')
-        records = [dict(record) for record in records]
-        preferences += [_preference(item_kind, record) for record in records]
-        pairs = await duplicate_pairs(store, space, item_kind, [_comparable(record) for record in records])
-        groups += _duplicate_groups(item_kind, pairs)
-    preferences.sort(key=lambda item: (item.scope != 'global', item.project_id or '', item.aspect, item.text))
+        scanned[item_kind] = [dict(record) for record in records]
+    # As the console lists them: an entity a preference relationship this reader
+    # sees hangs on (current or retired) is that preference's subject, not one of its own.
+    subjects = {record[end] for record in scanned['relationship'] for end in ('source_id', 'target_id')}
+    current = {'entity': [record for record in scanned['entity'] if record['item']['item_id'] not in subjects],
+               'relationship': [record for record in scanned['relationship'] if record['current']]}
+    preferences = sorted((_preference(item_kind, record) for item_kind, records in current.items() for record in records),
+                         key=lambda item: (item.scope != 'global', item.project_id or '', item.aspect, item.text))
     end = request.offset + request.limit
-    return PreferenceOrganizingPage(
+    page = PreferenceOrganizingPage(
         total=len(preferences), pending=sum(item.status == 'pending' for item in preferences),
-        preferences=preferences[request.offset:end], next_offset=end if end < len(preferences) else None,
-        duplicates=groups[:MAX_DUPLICATE_GROUPS], duplicates_truncated=len(groups) > MAX_DUPLICATE_GROUPS)
+        preferences=preferences[request.offset:end], next_offset=end if end < len(preferences) else None)
+    if request.offset:
+        return page
+    groups = []
+    for item_kind, records in current.items():
+        pairs = await duplicate_pairs(store, space, item_kind, [_comparable(item_kind, record) for record in records])
+        groups += _duplicate_groups(item_kind, pairs)
+    page.duplicates = groups[:MAX_DUPLICATE_GROUPS]
+    page.duplicates_truncated = len(groups) > MAX_DUPLICATE_GROUPS
+    return page
 
 
 def _duplicate_groups(item_kind: str, pairs) -> list[PreferenceDuplicateGroup]:
@@ -121,9 +135,14 @@ def _duplicate_groups(item_kind: str, pairs) -> list[PreferenceDuplicateGroup]:
     return [PreferenceDuplicateGroup(item_kind=item_kind, keep=keep, same=same) for keep, same in groups.items()]
 
 
-def _comparable(record: dict) -> dict:
-    """Two preferences are compared only within one aspect and one scope."""
+def _comparable(item_kind: str, record: dict) -> dict:
+    """Two preferences are compared only within one aspect and one scope; two
+    relationships also only with one relation type between the same two
+    entities, as the periodic merge compares them."""
     place = [record['scope'], record['project_id'] or '', ','.join(sorted(record['project_ids'])), record['agent_id'] or '']
+    if item_kind == 'relationship':
+        return {'item': record['item'], 'kind_key': (record['aspect'], record['relation']),
+                'places': [[*place, record['source_id'], record['target_id']]]}
     return {'item': record['item'], 'kind_key': record['aspect'], 'places': [place]}
 
 
@@ -137,6 +156,7 @@ def _preference(item_kind: str, record: dict) -> OrganizingPreference:
 
 
 def register_preference_organizing_routes(application, store, Actor) -> None:
-    @application.post('/v1/knowledge/preferences/organizing', response_model=PreferenceOrganizingPage)
+    @application.post('/v1/knowledge/preferences/organizing', response_model=PreferenceOrganizingPage,
+                      response_model_exclude_none=True)
     async def preference_organizing(request: PreferenceOrganizingRead, actor: Actor):
         return await read_preference_organizing(store, actor, request)
