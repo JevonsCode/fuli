@@ -1,6 +1,6 @@
 import json
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from fastapi import HTTPException
 from .system_hr_identity import resolve_hr_alias
 from .personal_project_access import authorize_personal_project
@@ -31,6 +31,7 @@ from .store_project_agent_task_activity import StoreProjectAgentTaskActivity, TE
 from .store_project_agent_task_blockers import StoreProjectAgentTaskBlockers
 from .store_transactions import TransactionQueryDriver, query_store_transaction
 from .task_activity_origin import coordination_activity_origin, read_activity_origin
+from .task_blocker import BLOCKED_MOVE_GUIDANCE
 from .project_agent_hierarchy import reporting_parent, bind_task_coordinator, validate_task_reports
 class StoreProjectAgentTasks(
     StoreProjectAgentTaskActivity,
@@ -556,7 +557,10 @@ class StoreProjectAgentTasks(
         agent_id: str | None = None,
         status: str | None = None,
         limit: int = 100,
+        after_updated_at: datetime | None = None,
+        after_task_id: str | None = None,
     ) -> list[ProjectAgentTaskRecord]:
+        """The space's tasks, latest change first; after_* continues past one listed task."""
         self._require_personal()
         space = await self.authorize(actor, personal_space_id, 'reader')
         agent_id = await resolve_hr_alias(self, personal_space_id, agent_id)
@@ -586,6 +590,10 @@ class StoreProjectAgentTasks(
                     MATCH (:FuliTaskContext {personal_space_id: $personal_space_id,
                           project_agent_id: $agent_id})-[:COORDINATES_TASK]->(task)
                   })
+                  AND ($after_updated_at IS NULL
+                       OR task.updated_at < datetime($after_updated_at)
+                       OR (task.updated_at = datetime($after_updated_at)
+                           AND task.task_id > $after_task_id))
                 '''
             ) + '\nORDER BY task.updated_at DESC, task.task_id LIMIT $limit',
             personal_space_id=personal_space_id,
@@ -593,6 +601,8 @@ class StoreProjectAgentTasks(
             agent_id=agent_id,
             status=status,
             limit=limit,
+            after_updated_at=after_updated_at.isoformat() if after_updated_at else None,
+            after_task_id=after_task_id,
             routing_='r',
         )
         return [self._task_from_row(row) for row in records]
@@ -743,6 +753,10 @@ class StoreProjectAgentTasks(
                 'completed', 'cancelled', 'failed',
             }
         if requested not in allowed.get(current, set()):
+            if current == 'blocked':
+                # A deliberate boundary (human-authoritative): another session's
+                # word alone does not end a block; the refusal names the way that does.
+                raise HTTPException(409, f'blocked -> {requested} {BLOCKED_MOVE_GUIDANCE}')
             raise HTTPException(
                 status_code=409,
                 detail=f'illegal project Agent task transition: {current} -> {requested}',

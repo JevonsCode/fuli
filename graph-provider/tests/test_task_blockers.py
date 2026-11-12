@@ -90,11 +90,16 @@ async def test_the_blocking_session_moves_its_task_on_and_its_requests_leave_the
 
 
 @pytest.mark.asyncio
-async def test_another_session_cannot_unblock_the_task():
+@pytest.mark.parametrize('status', ['running', 'queued', 'completed'])
+async def test_another_session_cannot_unblock_the_task_and_is_told_how(status):
     store = ActivityStore(blocked_row())
-    with pytest.raises(HTTPException, match='blocked -> running'):
-        await store.record_project_agent_task_activity({'id': 'principal'}, activity('running', SESSION_B, 'resume-b-1'))
+    with pytest.raises(HTTPException, match=f'blocked -> {status}') as refused:
+        await store.record_project_agent_task_activity({'id': 'principal'}, activity(status, SESSION_B, 'resume-b-1'))
     assert store.runtime.driver.event_calls == []
+    # rec#123: the refusal names the step that does end the block, within what the Agent sees.
+    detail = refused.value.detail
+    assert 'run_delegated_action' in detail and 'blocker/clear route' in detail and 'params.taskId' in detail
+    assert ':' not in detail and len(detail) <= 240
 
 
 class BlockerDriver:

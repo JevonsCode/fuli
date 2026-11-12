@@ -348,7 +348,7 @@ test('Agent surface dispatches every tool through the Graphiti facade', async ()
     },
     deferPreferenceConflict: async (input) => calls.push(['defer-preference-conflict', input]),
     listPreferenceConflicts: async (input) => calls.push(['preference-conflicts', input]),
-    listProjectAgentTasks: async (input) => calls.push(['agent-tasks', input]),
+    listProjectAgentTasks: async (input) => { calls.push(['agent-tasks', input]); return []; },
     employees: {
       list: async (input) => calls.push(['employee-list', input]),
       recruit: async (input) => calls.push(['employee-recruit', input]),

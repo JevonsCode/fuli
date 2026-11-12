@@ -291,7 +291,12 @@ def register_project_agent_routes(
         ] = None,
         status: Annotated[str | None, Query()] = None,
         limit: Annotated[int, Query(ge=1, le=200)] = 100,
+        # The last task a caller already listed: its updated_at and task_id.
+        after_updated_at: datetime | None = None,
+        after_task_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
     ) -> list[ProjectAgentTaskRecord]:
+        if (after_updated_at is None) != (after_task_id is None):
+            raise HTTPException(422, 'after_updated_at and after_task_id go together')
         return await store.list_project_agent_tasks(
             actor,
             personal_space_id,
@@ -299,6 +304,8 @@ def register_project_agent_routes(
             agent_id=agent_id,
             status=status,
             limit=limit,
+            after_updated_at=after_updated_at,
+            after_task_id=after_task_id,
         )
 
     @application.get('/v1/project-agent-task-pages', response_model=ProjectAgentTaskPage)
