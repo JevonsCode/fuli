@@ -184,7 +184,7 @@ test('the person undoes a Tonborg confirmation with its review receipt, and it l
 
 test('a batch of many delegated questions reaches the Agent whole', () => {
   const records = Array.from({ length: 7 }, (_, index) => ({ id: `d${index}`, kind: 'review', delegated: true, outcome: 'escalate',
-    target: `entity:${index}`, question: `Keep item ${index}?`, feedback: { revision: 0, vote: null }, execution: { status: 'not_applied' } }));
+    target: `entity:${index}`, title: `Item ${index}`, question: `Keep item ${index}?`, feedback: { revision: 0, vote: null }, execution: { status: 'not_applied' } }));
   const { human_interaction } = judgmentHumanInteraction(records, 's');
   const delivered = successToolResult({ human_interaction }, { preserveHumanInteraction: true, limitBytes: 32 * 1024 });
   assert.deepEqual(delivered.structuredContent.human_interaction.source.batch, records.map(record => record.id));
