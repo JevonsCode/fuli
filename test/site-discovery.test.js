@@ -124,7 +124,8 @@ test('the quick start walks through install, connect, a first task, the console,
     assert.equal(document.querySelector('.guide-hero .button').href, 'https://github.com/JevonsCode/fuli/releases/latest');
     assert.match(document.querySelector('#install').textContent, /FULI-Setup-<.+>.exe/);
     assert.match(document.querySelector('#install').textContent, /fuli-macos-arm64-<.+>.dmg/);
-    assert.ok(document.querySelector('#model').textContent.includes('qwen3-embedding:0.6b'));
+    // Search by meaning starts from the built-in model, named by the console's own button.
+    assert.ok(document.querySelector('#model').textContent.includes(locale === 'en' ? '“Built-in models”' : '「内置模型」'));
     const models = document.querySelector('#model [data-i18n="guide.model.guide"]').href;
     assert.equal(models, base + 'models/' + (locale === 'en' ? 'en/' : ''));
   }, { styles: ['screens.css'] });

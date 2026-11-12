@@ -44,7 +44,7 @@
         <p data-i18n="models.eyebrow" class="eyebrow">模型指南</p>
         <h1 data-i18n-html="models.title" id="models-title">接一个模型，<em>FULI 多一种能力。</em></h1>
         <p data-i18n="models.lead" class="lede">FULI 不接模型也能用。模型是可选的：接上后，FULI 能按意思查找、给项目归类、整理记忆。</p>
-        <p data-i18n="models.choice" class="lede">可以用 Ollama 在本机跑模型，也可以用在线模型；它能看哪些项目，由你批准。</p>
+        <p data-i18n="models.choice" class="lede">语义搜索可以用 FULI 内置的小模型，下载到本机就能用。其他用途接本机 Ollama 或在线模型；它能看哪些项目，由你批准。</p>
       </section>
 
       <section class="guide-section" id="modes" aria-labelledby="modes-title">
@@ -71,8 +71,8 @@
             <h3 data-i18n="models.search">语义搜索</h3>
             <p data-i18n="models.searchBody">把每条知识和每个问题变成向量，按意思找。</p>
             <dl>
-              <div><dt data-i18n="models.enough">够用</dt><dd data-i18n="models.searchEnough">支持中文的小型向量模型，0.3B–0.6B。</dd></div>
-              <div><dt data-i18n="models.examples">示例</dt><dd data-i18n="models.searchExamples">通过 Ollama：qwen3-embedding:0.6b（639 MB）、embeddinggemma-2:270m（304 MB）。在线向量接口也可以。</dd></div>
+              <div><dt data-i18n="models.enough">够用</dt><dd data-i18n="models.searchEnough">支持中文的小型向量模型，内置的就够用。</dd></div>
+              <div><dt data-i18n="models.examples">示例</dt><dd data-i18n="models.searchExamples">内置：GTE Small 中文（推荐，下载约 58 MB）。也可以通过 Ollama 用 qwen3-embedding:0.6b（639 MB）、embeddinggemma-2:270m（304 MB），或接在线向量接口。</dd></div>
               <div>
                 <dt data-i18n="models.measured">实测</dt>
                 <dd>
@@ -144,7 +144,7 @@
         <h2 data-i18n="models.privacy" id="privacy-title">模型能看到什么</h2>
         <ul class="guide-list">
           <li data-i18n="models.privacyProjects">模型只看到你批准的项目。</li>
-          <li data-i18n="models.privacyLocal">用本机的 Ollama 模型，所有内容都留在你的电脑上。</li>
+          <li data-i18n="models.privacyLocal">用内置模型或本机的 Ollama 模型，所有内容都留在你的电脑上。</li>
           <li data-i18n="models.privacyKeys">密钥只保存在这台电脑上。</li>
         </ul>
       </section>

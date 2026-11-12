@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 import { Button } from '@/components/ui/button'
 import { tourHoldsNotices } from '@/features/onboarding-tour/onboarding-tour'
 import { currentLocale, t } from '@/i18n'
 import { UiDialog, UiIcon, UiIconButton } from '@/ui'
-import { linesFor, loadWhatsNew, whatsNew } from './whats-new'
+import { linesFor, loadWhatsNew, markWhatsNewSeen, whatsNew } from './whats-new'
 
 // After FULI updates, one floating glass notice says what is new (Jevons 11-08):
 // 「更新到 x.y.z 了」, the release's first line in the console's language, and
@@ -22,6 +22,8 @@ const skipped = computed(() => current.value?.notice?.skipped ?? 0)
 const skippedLabel = computed(() => skipped.value === 1 ? t('whatsNew.skippedOne') : t('whatsNew.skipped', { count: skipped.value }))
 
 onMounted(() => { loadWhatsNew().catch(() => { /* an older server, or not answering: nothing to say */ }) })
+// Seen means drawn: a notice still waiting behind the guide when the console closes shows next time.
+watch(shown, (visible) => { if (visible) void markWhatsNewSeen() }, { immediate: true })
 </script>
 
 <template>

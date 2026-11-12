@@ -51,7 +51,7 @@ test('稍后处理 snoozes the question for 24 hours, then it is asked again', a
   const record = escalate('later');
   service.store().feedback('s', record.id, null, '稍后处理', 0);
   assert.deepEqual(await ask(), {});
-  const escalation = { id: 'r', kind: 'review', outcome: 'escalate', target: 'entity:item', summary: 'Keep or correct?',
+  const escalation = { id: 'r', kind: 'review', outcome: 'escalate', target: 'entity:item', title: 'Item', summary: 'Keep or correct?',
     evidenceFingerprint: 'e', execution: { status: 'not_applied' } };
   const snoozedAt = hoursAgo => ({ revision: 1, vote: null, reason: '稍后处理', createdAt: new Date(Date.now() - hoursAgo * 3600e3).toISOString() });
   assert.deepEqual(judgmentHumanInteraction([{ ...escalation, feedback: snoozedAt(23) }], 's'), {});
@@ -84,3 +84,16 @@ test('an escalation whose item the person already confirmed elsewhere is not ask
   states.set('entity:item', 'agent_confirmed');
   assert.equal((await ask()).human_interaction.source.id, record.id);
 });
+
+test('a question that cannot name its item is not asked in chat; it waits in the console (rec#99)', () => {
+  const escalation = { id: 'r', kind: 'review', outcome: 'escalate', target: 'entity:item', feedback: { revision: 0, vote: null, reason: '' } };
+  for (const title of [undefined, null, '', '   ']) {
+    assert.deepEqual(judgmentHumanInteraction([{ ...escalation, title }], 's'), {});
+    // The same holds for the batch card of delegated reviews.
+    assert.deepEqual(judgmentHumanInteraction([{ ...escalation, title, delegated: true }], 's'), {});
+  }
+  const asked = judgmentHumanInteraction([{ ...escalation, title: 'Synthetic writing habit' }], 's').human_interaction;
+  assert.match(asked.question, /Synthetic writing habit/);
+  assert.equal(asked.options.length, 2);
+});
+

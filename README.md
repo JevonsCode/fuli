@@ -44,7 +44,7 @@ AI makes starts to carry your taste.
     <td width="50%" valign="top">
       <img src="docs/readme/card-memory-en.webp" alt="Claude Code, Codex and OpenCode connected to one FULI" width="460" />
       <h3 align="center">One memory for every client</h3>
-      Connect Claude Code, Codex, OpenCode or Cursor with one click. A rule you stated in one of them is there in the others.
+      Connect Claude Code, Codex, OpenCode, Cursor, DeepSeek Harness and more with one click. A rule you stated in one of them is there in the others.
     </td>
     <td width="50%" valign="top">
       <img src="docs/readme/card-team-en.webp" alt="Three FLAs review a fix together in the roundtable" width="460" />
@@ -150,8 +150,10 @@ On your computer. Your personal graph and conversation records stay local. Exter
 <details>
 <summary><b>Which clients work with FULI?</b></summary>
 
-Claude Code, Codex, OpenCode, Cursor, DeepSeek Harness and Claude Desktop connect from the console with one click.
-Other MCP clients run `fuli connect` for a standard configuration.
+Claude Code, Codex, OpenCode, Cursor, DeepSeek Harness, Claude Desktop, Gemini CLI, Qwen Code, Kiro
+and Antigravity connect from the console (Settings › Clients) with one click. Other MCP clients run
+`fuli connect` for a standard configuration. What each client supports, such as capturing
+conversations, is in [Connect a client](docs/client-connections.md).
 </details>
 
 <details>
@@ -175,6 +177,24 @@ come back later without a search through the code. The numbers are in the
 
 By default the built-in FLAs work inside your client's session. Only when you connect a model for
 them do they use their own model, so nothing spends money behind your back.
+</details>
+
+<details>
+<summary><b>Do I need to connect a model?</b></summary>
+
+No. Without one, FULI finds knowledge by its words, retrieval terms and relations. To find it by
+meaning, open Models and usage and choose Built-in models on Semantic search: FULI downloads a small
+model (GTE Small 中文 is recommended) and runs it on this computer. It needs no endpoint and no key,
+and your knowledge stays on the computer.
+</details>
+
+<details>
+<summary><b>How does FULI get to know a project I already have?</b></summary>
+
+On the project's page, click Organise and pick one of your connected AI clients. Astro reads the
+project with that client's own model and fills in what is missing. You can add where the existing
+material is: folders, files or links. When several projects share a preference, it asks whether
+that preference should apply everywhere.
 </details>
 
 <details>
