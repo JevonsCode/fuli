@@ -97,8 +97,14 @@ export async function runCodexLifecycleHook(args, dependencies = {}) {
   }
   let app;
   let leases;
-  let closing;
-  const cleanup = () => closing ??= Promise.allSettled([closeQuietly(leases), closeQuietly(app)]);
+  // Also called at the hook's deadline; each is closed once, whichever comes
+  // first, so one opened after an early cleanup still closes.
+  const closing = new Map();
+  const closeOnce = resource => {
+    if (resource && !closing.has(resource)) closing.set(resource, closeQuietly(resource));
+    return closing.get(resource);
+  };
+  const cleanup = () => Promise.allSettled([closeOnce(leases), closeOnce(app)]);
   dependencies.onCleanup?.(cleanup);
   try {
     app = (dependencies.openApplication ?? openFederatedGraphApplication)({
@@ -257,7 +263,7 @@ function codexEntryDeadlineOutput(event, input, budget, cause, recovery = '') {
 
 export async function runCodexLifecycleCommand(args, dependencies = {}) {
   const event = args[args.indexOf('--event') + 1];
-  const timeoutMs = codexHookTimeoutMs(args);
+  const timeoutMs = Math.min(codexHookTimeoutMs(args), dependencies.timeoutMs ?? Infinity);
   const controller = new AbortController();
   let emitted = false;
   const write = value => {
@@ -304,6 +310,7 @@ export async function runCodexLifecycleCommand(args, dependencies = {}) {
       recordHookFailure({ runtimeConfigPath, client: 'codex', event, error, sessionId: input?.session_id, startedAt });
       return { timedOut: false };
     });
+    void running.finally(() => dependencies.onSettled?.());
     return await Promise.race([running, expired]);
   } finally {
     clearTimeout(deadline);
@@ -317,11 +324,13 @@ function debugTurnLog({ log }) { return log ? { log } : {}; }
 // environment it runs with, its working directory and its stdin chunks, to
 // what it prints and its exit code. Nothing here reads this process's argv,
 // environment, working directory or stdin, so the console can run many at once.
-// It answers by the hook's own deadline; work past it is cancelled, not awaited.
-export async function runCodexLifecycleEvent({ argv, env, cwd, stdin }) {
+// It answers by the hook's own deadline (or the shorter timeoutMs left of it);
+// at the deadline the work is cancelled and its lease and stores are closed,
+// not awaited. onSettled runs once the work has ended.
+export async function runCodexLifecycleEvent({ argv, env, cwd, stdin, timeoutMs }, { onSettled } = {}) {
   let stdout = '';
   const stderr = [];
-  await runCodexLifecycleCommand([...argv], { env, cwd, write: value => { stdout += value; },
+  await runCodexLifecycleCommand([...argv], { env, cwd, timeoutMs, onSettled, write: value => { stdout += value; },
     log: line => { stderr.push(`${line}\n`); }, readInput: () => readHookInput(stdin) });
   return { stdout, stderr: stderr.join(''), exitCode: 0 };
 }

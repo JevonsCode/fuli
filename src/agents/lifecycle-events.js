@@ -5,14 +5,18 @@ import { CODEX_HOOK_ENV } from './codex/hook-contract.js';
 // (lifecycle-forwarder.js falls back to it) or by the console for a thin hook
 // entry (http/lifecycle-hooks-api-router.js). Each client's work is loaded on
 // first use, so a hook process loads only its own client.
-//   request: { client, argv, env, cwd, stdin } → { stdout, stderr, exitCode }
+//   request: { client, argv, env, cwd, stdin, timeoutMs? } → { stdout, stderr, exitCode }
 // env holds only the client's named hook variables (hook-contract.js);
 // baseEnv is the environment of the process running the call, which supplies
 // every other variable. stdin is the hook's stdin as Buffer chunks (an array,
-// or a stream in the hook's own process).
+// or a stream in the hook's own process). timeoutMs, when given, shortens the
+// hook's own deadline to what is left of it. The answer comes by the
+// deadline; onSettled is called once the call's work has ended and released
+// what it held, which may be later.
 const CLIENTS = Object.freeze({
   'claude-code': Object.freeze({
     envNames: CLAUDE_HOOK_ENV,
+    sourceApplication: 'claude_code',
     load: async () => {
       const { runClaudeLifecycleEvent, claudeLifecycleEventLost } = await import('./claude-code/lifecycle-event.js');
       return { run: runClaudeLifecycleEvent, lost: claudeLifecycleEventLost };
@@ -20,6 +24,7 @@ const CLIENTS = Object.freeze({
   }),
   codex: Object.freeze({
     envNames: CODEX_HOOK_ENV,
+    sourceApplication: 'codex',
     load: async () => {
       const { runCodexLifecycleEvent, codexLifecycleEventLost } = await import('./codex/lifecycle-event.js');
       return { run: runCodexLifecycleEvent, lost: codexLifecycleEventLost };
@@ -31,9 +36,9 @@ export function lifecycleHookClient(client) {
   return Object.hasOwn(CLIENTS, client) ? CLIENTS[client] : null;
 }
 
-export async function runLifecycleEvent(request, { baseEnv }) {
+export async function runLifecycleEvent(request, { baseEnv, onSettled = () => {} }) {
   const { client, adapter } = await clientAdapter(request.client);
-  return adapter.run(callFor(request, client, baseEnv));
+  return adapter.run(callFor(request, client, baseEnv), { onSettled });
 }
 
 // The hook's answer when its forwarded call may have run and was lost
@@ -49,8 +54,8 @@ async function clientAdapter(id) {
   return { client, adapter: await client.load() };
 }
 
-function callFor({ argv, env, cwd, stdin }, client, baseEnv) {
-  return { argv, env: hookEnvironment(baseEnv, env, client.envNames), cwd, stdin };
+function callFor({ argv, env, cwd, stdin, timeoutMs }, client, baseEnv) {
+  return { argv, env: hookEnvironment(baseEnv, env, client.envNames), cwd, stdin, timeoutMs };
 }
 
 // The hook's named variables exactly as the hook process had them (set or

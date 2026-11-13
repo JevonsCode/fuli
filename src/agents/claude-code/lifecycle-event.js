@@ -167,6 +167,17 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
   }
   let app;
   let leases;
+  const closing = new Map();
+  // Also called at the hook's deadline (runClaudeLifecycleEvent): the lease
+  // and its heartbeat end and the stores close, so work that ignored
+  // cancellation fails at its next use instead of holding them. Each is
+  // closed once, whichever comes first.
+  const closeOnce = resource => {
+    if (resource && !closing.has(resource)) closing.set(resource, close(resource));
+    return closing.get(resource);
+  };
+  const cleanup = () => Promise.allSettled([closeOnce(leases), closeOnce(app)]);
+  dependencies.onCleanup?.(cleanup);
   try {
     app = (dependencies.openApplication ?? openFederatedGraphApplication)({ runtimeConfigPath, env });
     leases = (dependencies.createLeases ?? createRuntimeLeaseClient)({ runtimeConfigPath });
@@ -220,7 +231,7 @@ export async function runClaudeLifecycleHook(args, dependencies = {}) {
       output: { hookFailed: hookFailureCause(error) }, adapter: CLAUDE_TRANSCRIPT }, debugTurnLog(dependencies));
     throw error;
   } finally {
-    await Promise.allSettled([close(leases), close(app)]);
+    await cleanup();
   }
 }
 
@@ -259,12 +270,15 @@ function debugTurnLog({ log }) { return log ? { log } : {}; }
 // environment it runs with, its working directory and its stdin chunks, to
 // what it prints and its exit code. Nothing here reads this process's argv,
 // environment, working directory or stdin, so the console can run many at once.
-// It answers by the hook's own deadline, even when a dependency ignores
-// cancellation or stdin never closes; work past it is cancelled, not awaited.
-export function runClaudeLifecycleEvent({ argv, env, cwd, stdin }) {
+// It answers by the hook's own deadline (or the shorter timeoutMs left of it),
+// even when a dependency ignores cancellation or stdin never closes; at the
+// deadline the work is cancelled and its lease and stores are closed, not
+// awaited. onSettled runs once the work has ended.
+export function runClaudeLifecycleEvent({ argv, env, cwd, stdin, timeoutMs: remainingMs }, { onSettled = () => {} } = {}) {
   const args = [...argv];
   const event = args[args.indexOf('--event') + 1];
-  const timeoutMs = claudeHookTimeoutMs(args);
+  const timeoutMs = Math.min(claudeHookTimeoutMs(args), remainingMs ?? Infinity);
+  let cleanup = async () => {};
   const controller = new AbortController();
   const startedAt = Date.now();
   const stderr = [];
@@ -286,11 +300,12 @@ export function runClaudeLifecycleEvent({ argv, env, cwd, stdin }) {
     const deadline = setTimeout(() => {
       controller.abort();
       emit(claudeEntryDeadlineOutput(event, input, budget, recovery()));
+      void cleanup();
     }, timeoutMs);
     const abort = setTimeout(() => controller.abort(), abortAfterMs);
     runWithEntryBudget(budget, () => runClaudeLifecycleHook(args, { signal: controller.signal, env, cwd,
       captureTimeoutMs: Math.max(1, Math.min(750, Math.floor(timeoutMs / 4))),
-      log: line => { stderr.push(`${line}\n`); },
+      log: line => { stderr.push(`${line}\n`); }, onCleanup: close => { cleanup = close; },
       readInput: async () => { input = await readHookInput(stdin); return input; } }))
       .then(emit, error => {
         emit(controller.signal.aborted ? claudeEntryDeadlineOutput(event, input, budget, recovery())
@@ -301,6 +316,7 @@ export function runClaudeLifecycleEvent({ argv, env, cwd, stdin }) {
       .finally(() => {
         clearTimeout(abort);
         clearTimeout(deadline);
+        onSettled();
       });
   });
 }

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
 import { handleAgentAppPageRequest } from './http/agent-app-page-router.js';
 import { handleApiRequest } from './http/api-router.js';
+import { createLifecycleHookCalls } from './agents/lifecycle-hook-calls.js';
 import { handleDelegatedRequest } from './http/agent-delegation-gate.js';
 import { mapHttpError } from './http/error-mapping.js';
 import { recordHttpFailure } from './diagnostics/failure-records.js';
@@ -165,7 +166,7 @@ export async function createServer(options = {}) {
     ? createAgentDelegation(dirname(localOptions.runtimeConfigPath)) : null);
   // Installed hooks of this data directory hand their calls to this console (lifecycle-hooks-api-router.js).
   const lifecycleHooks = options.lifecycleHooks ?? (localOptions.runtimeConfigPath
-    ? { runtimeConfigPath: localOptions.runtimeConfigPath, baseEnv: options.env ?? process.env } : null);
+    ? createLifecycleHookCalls({ runtimeConfigPath: localOptions.runtimeConfigPath, baseEnv: options.env ?? process.env }) : null);
   knowledgeHardDelete?.reconcile().catch((error) => {
     console.warn(`Permanent deletes were not reconciled: ${error?.message ?? error}`);
   });

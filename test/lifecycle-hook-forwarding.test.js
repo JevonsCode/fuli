@@ -102,8 +102,8 @@ for (const client of Object.keys(CLIENTS)) {
   test(`before it decides, the ${client} entry loads only modules that import nothing but Node built-ins`, () => {
     const { entry } = CLIENTS[client];
     const graph = [...reachableModules(entry, { dynamicImports: false })].map(path => resolve(path));
-    assert.deepEqual(graph.sort(), [entry, resolve(entry, '..', 'hook-contract.js'),
-      resolve('src/agents/lifecycle-forwarder.js'), resolve('src/local-runtime/processes.js')].sort());
+    assert.deepEqual(graph.sort(), [entry, resolve(entry, '..', 'hook-contract.js'), resolve('src/agents/lifecycle-forwarder.js'),
+      resolve('src/local-runtime/processes.js'), resolve('src/local-runtime/console-health.js')].sort());
     for (const path of graph) {
       const specifiers = [...readFileSync(path, 'utf8').matchAll(/^import\s[^'"]*['"]([^'"]+)['"]/gm)].map(match => match[1]);
       assert.ok(specifiers.every(specifier => specifier.startsWith('node:') || specifier.startsWith('.')), path);
@@ -111,38 +111,70 @@ for (const client of Object.keys(CLIENTS)) {
   });
 }
 
-// A console double: answers each hook call with `answer(request, response)`.
-async function consoleDouble(t, answer) {
+// A console double: /api/health answers as `health` (this process's PID and
+// this version by default); each hook call is answered with `answer`.
+async function consoleDouble(t, answer, health = { service: 'fuli-local-console', pid: process.pid, version: VERSION }) {
   let calls = 0;
-  const server = createHttpServer((request, response) => { calls += 1; answer(request, response); });
+  let closed = 0;
+  const server = createHttpServer((request, response) => {
+    if (request.url === '/api/health') {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify(health));
+      return;
+    }
+    calls += 1;
+    request.socket.once('close', () => { closed += 1; });
+    answer(request, response);
+  });
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   t.after(() => new Promise(done => { server.closeAllConnections(); server.close(() => done()); }));
-  return { url: `http://127.0.0.1:${server.address().port}`, calls: () => calls };
+  return { url: `http://127.0.0.1:${server.address().port}`, calls: () => calls, closed: () => closed };
 }
 
-function forwardCall(fixture, { timeoutMs = 2000, isAlive = () => true } = {}) {
+const ranHeaders = response => {
+  response.writeHead(200, { [HOOK_OUTCOME_HEADER]: 'ran', 'content-type': 'application/json' });
+  response.flushHeaders();
+};
+
+function forwardCall(fixture, { deadlineMs = 10_000, isAlive = () => true, budgets } = {}) {
   return forwardLifecycleEvent({ client: 'claude-code', cwd: fixture.root, env: {}, stdin: [Buffer.from('{}')],
-    argv: ['--runtime-config', fixture.runtimeConfigPath, '--event', 'UserPromptSubmit'] }, { timeoutMs, isAlive });
+    argv: ['--runtime-config', fixture.runtimeConfigPath, '--event', 'UserPromptSubmit'] },
+  { deadlineAt: Date.now() + deadlineMs, isAlive, budgets });
 }
 
-test('nothing sent: the hook runs itself without a recorded console, a live PID or a connection', async t => {
+test('nothing sent: the hook runs itself without a recorded console of this version, a live PID or time left', async t => {
   const fixture = syntheticHookDataDirectory(tmpdir(), 'http://127.0.0.1:9');
   t.after(fixture.remove);
   assert.deepEqual(await forwardCall(fixture), { run: 'here', reason: 'no_console' });
   recordConsole(fixture.dataDir, { url: 'http://127.0.0.1:9' });
   assert.deepEqual(await forwardCall(fixture, { isAlive: () => false }), { run: 'here', reason: 'no_console' });
-  recordConsole(fixture.dataDir, { url: 'https://example.invalid' });
-  assert.deepEqual(await forwardCall(fixture), { run: 'here', reason: 'no_console' });
-  // Nothing listens: the connection is refused before anything is sent.
+  // Only the hosts the console's route accepts.
+  for (const url of ['https://example.invalid', 'http://localhost:9']) {
+    recordConsole(fixture.dataDir, { url });
+    assert.deepEqual(await forwardCall(fixture), { run: 'here', reason: 'no_console' }, url);
+  }
+  // Nothing listens: the health check fails before the payload is sent.
   recordConsole(fixture.dataDir, { url: `http://127.0.0.1:${await freePort()}` });
-  assert.deepEqual(await forwardCall(fixture), { run: 'here', reason: 'unreachable' });
+  assert.deepEqual(await forwardCall(fixture), { run: 'here', reason: 'not_this_console' });
+  // A reused PID and port: something else, another PID, another version.
+  for (const health of [{ service: 'synthetic-other' }, { service: 'fuli-local-console', pid: process.pid + 1, version: VERSION },
+    { service: 'fuli-local-console', pid: process.pid, version: '0.0.0-synthetic' }]) {
+    const other = await consoleDouble(t, (_request, response) => { response.end(); }, health);
+    recordConsole(fixture.dataDir, { url: other.url });
+    assert.deepEqual(await forwardCall(fixture), { run: 'here', reason: 'not_this_console' });
+    assert.equal(other.calls(), 0, 'the payload is never sent to it');
+  }
+  const console = await consoleDouble(t, (_request, response) => { response.end(); });
+  recordConsole(fixture.dataDir, { url: console.url });
+  assert.deepEqual(await forwardCall(fixture, { deadlineMs: 1000 }), { run: 'here', reason: 'no_time' });
+  assert.equal(console.calls(), 0);
 });
 
-test('a console that did not run the call lets the hook run it itself', async t => {
+test('a console that did not start the call lets the hook run it itself', async t => {
   const fixture = syntheticHookDataDirectory(tmpdir(), 'http://127.0.0.1:9');
   t.after(fixture.remove);
   const refused = await consoleDouble(t, (_request, response) => {
-    response.writeHead(409, { [HOOK_OUTCOME_HEADER]: 'refused', 'content-type': 'application/json' });
+    response.writeHead(503, { [HOOK_OUTCOME_HEADER]: 'refused', 'content-type': 'application/json' });
     response.end('{}');
   });
   recordConsole(fixture.dataDir, { url: refused.url });
@@ -151,23 +183,26 @@ test('a console that did not run the call lets the hook run it itself', async t 
   const older = await consoleDouble(t, (_request, response) => { response.writeHead(404); response.end('Not found'); });
   recordConsole(fixture.dataDir, { url: older.url });
   assert.deepEqual(await forwardCall(fixture), { run: 'here', reason: 'no_route' });
+  // A console whose JavaScript is blocked after the health check: no headers in time.
+  const blocked = await consoleDouble(t, () => {});
+  recordConsole(fixture.dataDir, { url: blocked.url });
+  assert.deepEqual(await forwardCall(fixture, { budgets: { headers: 200 } }), { run: 'here', reason: 'no_headers' });
+  await new Promise(done => setTimeout(done, 50));
+  assert.equal(blocked.closed(), 1, 'the hook closes the connection, so a late console never starts the call');
 });
 
-test('a call the console may have run is never run again', async t => {
+test('a call the console started is never run again', async t => {
   const fixture = syntheticHookDataDirectory(tmpdir(), 'http://127.0.0.1:9');
   t.after(fixture.remove);
-  const silent = await consoleDouble(t, () => {});
+  const silent = await consoleDouble(t, (_request, response) => ranHeaders(response));
   recordConsole(fixture.dataDir, { url: silent.url });
-  const timedOut = await forwardCall(fixture, { timeoutMs: 100 });
+  const timedOut = await forwardCall(fixture, { deadlineMs: 1600 });
   assert.equal(timedOut.run, 'lost');
   assert.equal(timedOut.error.code, 'lifecycle_forward_timeout');
-  const dropped = await consoleDouble(t, request => request.socket.destroy());
+  const dropped = await consoleDouble(t, (request, response) => { ranHeaders(response); setTimeout(() => request.socket.destroy(), 20); });
   recordConsole(fixture.dataDir, { url: dropped.url });
   assert.equal((await forwardCall(fixture)).run, 'lost');
-  const malformed = await consoleDouble(t, (_request, response) => {
-    response.writeHead(200, { [HOOK_OUTCOME_HEADER]: 'ran', 'content-type': 'application/json' });
-    response.end('{"stdout":1}');
-  });
+  const malformed = await consoleDouble(t, (_request, response) => { ranHeaders(response); response.end('{"stdout":1}'); });
   recordConsole(fixture.dataDir, { url: malformed.url });
   assert.equal((await forwardCall(fixture)).run, 'lost');
 });
@@ -176,10 +211,10 @@ for (const client of Object.keys(CLIENTS)) test(`the installed ${client} hook an
   const provider = await startSyntheticHookProvider();
   const fixture = syntheticHookDataDirectory(tmpdir(), provider.url);
   t.after(async () => { await provider.close(); fixture.remove(); });
-  const silent = await consoleDouble(t, () => {});
+  const silent = await consoleDouble(t, (_request, response) => ranHeaders(response));
   recordConsole(fixture.dataDir, { url: silent.url });
   const result = await runHook(fixture, 'UserPromptSubmit', JSON.stringify({ session_id: 'synthetic-lost-session',
-    cwd: fixture.projectPath, prompt: 'Synthetic prompt' }), { client, timeoutMs: 300 });
+    cwd: fixture.projectPath, prompt: 'Synthetic prompt' }), { client, timeoutMs: 2500 });
   assert.equal(result.exitCode, 0);
   assert.equal(silent.calls(), 1);
   assert.match(JSON.parse(result.stdout).systemMessage, /not verified/);
@@ -203,7 +238,7 @@ function post(url, body, headers = {}) {
 test('the console runs hook calls only for this computer, this data directory and this version', async t => {
   const service = await throwawayConsole(t);
   const { fixture } = service;
-  const call = { version: VERSION, cwd: fixture.root, env: {}, stdin: Buffer.from('{}').toString('base64'),
+  const call = { version: VERSION, cwd: fixture.root, env: {}, timeoutMs: 5000, stdin: Buffer.from('{}').toString('base64'),
     argv: ['--runtime-config', fixture.runtimeConfigPath, '--event', 'UserPromptSubmit'] };
   const authority = new URL(service.url).host;
   for (const [body, headers, status] of [
@@ -212,7 +247,10 @@ test('the console runs hook calls only for this computer, this data directory an
     [{ ...call, version: '0.0.0-synthetic' }, {}, 409],
     [{ ...call, argv: ['--runtime-config', join(fixture.root, 'other', 'graph-runtime.json'), '--event', 'Stop'] }, {}, 409],
     [{ ...call, env: { PATH: 'synthetic' } }, {}, 400],
-    [{ ...call, cwd: 'relative' }, {}, 400]
+    [{ ...call, cwd: 'relative' }, {}, 400],
+    [{ ...call, timeoutMs: undefined }, {}, 400],
+    // A transcript the work would open synchronously must be a file.
+    [{ ...call, stdin: Buffer.from(JSON.stringify({ session_id: 's', transcript_path: fixture.root })).toString('base64') }, {}, 503]
   ]) {
     const answer = await post(service.url, body, headers);
     // The delegation gate refuses a malformed delegated call before this route.

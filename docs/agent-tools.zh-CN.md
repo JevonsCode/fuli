@@ -22,7 +22,11 @@ Claude Code 和 Codex 的 Hook 命令（`src/agents/<client>/lifecycle-hook.js`�
 同一数据目录正在运行的控制台（`POST /api/lifecycle-hooks/<client>`，只接受本机回环地址上的本机 Hook
 进程，不是 Agent 接口），由控制台执行并返回 Hook 要输出的内容。控制台没在运行、版本不同，或在执行前拒绝
 这次调用时，Hook 照旧在自己的进程里执行；控制台可能已经执行过时，Hook 不再重复执行，只回答“不可用”。
-规则和测量见 `src/agents/lifecycle-forwarder.js` 与 `acceptance/hook-forwarding/measure.js`（rec#132）。
+控制台同时最多接 8 个调用；同一会话还有调用超过期限仍在运行时不接；transcript 不是普通文件时也不接，这些都在
+Hook 自己的进程里执行。与 Hook 进程相比有两处小差别：记录“未能保存的采集拒绝”的进程内状态（`unkeptDenials`，
+见 `src/conversations/transcript-capture-gap.js`）现在由控制台执行的各次调用共用；本地存储默认的警告写进控制台日志，
+不再写到 Hook 的 stderr。规则和测量见 `src/agents/lifecycle-forwarder.js`、`src/agents/lifecycle-hook-calls.js` 与
+`acceptance/hook-forwarding/measure.js`（rec#132）。
 
 FULI MCP 还提供只读的 `fuli://` resources：每个本地个人项目和“全局品味”各有一个可选条目。
 支持 MCP mention 的 Agent 可以在 `@` 选择器里选中它们；项目条目只代表一个精确项目，

@@ -3,7 +3,7 @@ import { isAbsolute, resolve } from 'node:path';
 import { isLocalOwnerRequest } from '../../packages/roundtable/src/peer/control.js';
 import { DELEGATION_HEADER } from '../agent-delegation/delegation-header.js';
 import { HOOK_OUTCOME_HEADER, LIFECYCLE_HOOK_ROUTE } from '../agents/lifecycle-forwarder.js';
-import { lifecycleHookClient, runLifecycleEvent } from '../agents/lifecycle-events.js';
+import { lifecycleHookClient } from '../agents/lifecycle-events.js';
 import { FULI_VERSION } from '../package-metadata.js';
 import { JsonBodyTooLargeError, readJson, sendJson } from './response.js';
 
@@ -22,12 +22,18 @@ import { JsonBodyTooLargeError, readJson, sendJson } from './response.js';
 // interface (interface-catalog.js lists it local_user_only).
 //
 // Every answer carries HOOK_OUTCOME_HEADER: "refused" before the call ran, so
-// the hook runs it itself; "ran" once it started, so it never runs twice.
+// the hook runs it itself; "ran" once it starts, so it never runs twice. A
+// call that runs gets its headers (with "ran") flushed in the same turn that
+// starts it, after confirming the hook's connection is still open, so a hook
+// that saw no headers in time can close the connection and run the call
+// itself (lifecycle-forwarder.js). Which calls are taken: lifecycle-hook-calls.js.
 const ROUTE = new RegExp(`^${LIFECYCLE_HOOK_ROUTE}([a-z][a-z0-9-]{0,63})$`);
 // The forwarder sends at most 512 KiB of stdin, base64 in JSON.
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_ARGS = 32;
 const MAX_TEXT = 4096;
+// What is left of the hook's own deadline; no client's hook waits longer.
+const MAX_TIMEOUT_MS = 60_000;
 
 export async function handleLifecycleHookRequest({ request, response, url, lifecycleHooks }) {
   const route = ROUTE.exec(url.pathname);
@@ -66,19 +72,37 @@ export async function handleLifecycleHookRequest({ request, response, url, lifec
     sendJson(response, 409, { error: 'This hook belongs to another FULI version or data directory', code: 'lifecycle_hook_mismatch' });
     return true;
   }
+  const admitted = await lifecycleHooks.admit({ client: route[1], ...call });
+  if (admitted.refused) {
+    sendJson(response, 503, { error: 'The console does not take this hook call now', code: admitted.refused });
+    return true;
+  }
+  // The hook gave up waiting and closed the connection: it runs the call itself.
+  if (request.socket.destroyed || !request.socket.writable) return true;
   response.setHeader(HOOK_OUTCOME_HEADER, 'ran');
-  sendJson(response, 200, await runLifecycleEvent({ client: route[1], ...call }, { baseEnv: lifecycleHooks.baseEnv }));
+  response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+  response.flushHeaders();
+  let result;
+  try {
+    result = await admitted.start();
+  } catch (error) {
+    // The headers already said "ran": the hook answers this turn as lost.
+    response.destroy();
+    throw error;
+  }
+  response.end(JSON.stringify(result));
   return true;
 }
 
 function hookCall(body, envNames) {
-  const { argv, env, cwd, stdin } = body ?? {};
+  const { argv, env, cwd, stdin, timeoutMs } = body ?? {};
   const text = value => typeof value === 'string' && value.length <= MAX_TEXT;
   if (!Array.isArray(argv) || argv.length > MAX_ARGS || !argv.every(text)) return null;
   if (!text(cwd) || !isAbsolute(cwd) || typeof stdin !== 'string') return null;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_TIMEOUT_MS) return null;
   if (!env || typeof env !== 'object' || Array.isArray(env)) return null;
   if (!Object.entries(env).every(([name, value]) => envNames.includes(name) && text(value))) return null;
-  return { argv, env, cwd, stdin: [Buffer.from(stdin, 'base64')] };
+  return { argv, env, cwd, timeoutMs, stdin: [Buffer.from(stdin, 'base64')] };
 }
 
 function runtimeConfigOf({ argv, cwd }) {
