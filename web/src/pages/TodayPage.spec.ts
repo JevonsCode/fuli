@@ -21,7 +21,6 @@ import { router as appRouter } from '@/router'
 import { useConsoleStore } from '@/stores/console'
 import type { ConsoleState } from '@/types'
 import TodayPage from './TodayPage.vue'
-import WorkbenchPage from './WorkbenchPage.vue'
 
 const state = (): ConsoleState => ({
   mode: 'personal_only',
@@ -77,7 +76,8 @@ async function setup(fixture: Fixture = {}) {
   })
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/', component: TodayPage },
-    { path: '/workbench', component: WorkbenchPage },
+    { path: '/project-agents', component: { template: '<div />' } },
+    { path: '/agents/:spaceId/:agentId', component: { template: '<div />' } },
     { path: '/workbench/:list', component: { template: '<div />' } },
     { path: '/inbox', component: { template: '<div />' } },
     { path: '/preferences', component: { template: '<div />' } },
@@ -123,7 +123,31 @@ describe('今天', () => {
     const without = await setup({ tasks: [task('t1', 'running')] })
     expect(sections(without.wrapper)).toEqual(['working'])
     expect(without.wrapper.find('.today-board').classes()).not.toContain('has-statement')
-    expect(without.wrapper.get('[data-today-action="working"]').attributes('href')).toBe('/workbench')
+    expect(without.wrapper.get('[data-today-action="working"]').text()).toBe('全部助手')
+    expect(without.wrapper.get('[data-today-action="working"]').attributes('href')).toBe('/project-agents?view=work&first=working')
+  })
+
+  it('opens a working row on the page of its assistant, and a row with no assistant nowhere', async () => {
+    const { wrapper } = await setup({ tasks: [task('t1', 'running'), { ...task('t2', 'queued'), lead_agent_id: null }] })
+    const [owned, unowned] = wrapper.findAll('[data-today-working-row]')
+    expect(owned!.element.tagName).toBe('A')
+    expect(owned!.attributes('href')).toBe('/agents/space-a/agent-lead')
+    expect(unowned!.element.tagName).toBe('DIV')
+    expect(unowned!.attributes('href')).toBeUndefined()
+  })
+
+  it('shows the client a working task runs in, from the task list', async () => {
+    const session = '00000000-0000-4000-8000-000000000001'
+    const { wrapper } = await setup({ tasks: [{ ...task('t1', 'running'), sessions: [{ client: 'codex', sessionId: session }] }] })
+    expect(wrapper.get('[data-working-client="codex"]').attributes('href')).toBe(`codex://threads/${session}`)
+  })
+
+  it('still shows the client of a task whose records name no session to open, without a link', async () => {
+    // What the task list sends when the only session ID was FULI's own process: the client, no session.
+    const { wrapper } = await setup({ tasks: [{ ...task('t1', 'running'), sessions: [{ client: 'codex', sessionId: null }] }] })
+    const mark = wrapper.get('[data-working-client="codex"]')
+    expect(mark.attributes('href')).toBeUndefined()
+    expect(mark.element.tagName).not.toBe('A')
   })
 
   it('shows five things at most: requests first, then the habits to confirm, then how many more wait', async () => {
@@ -189,21 +213,16 @@ describe('今天', () => {
   })
 })
 
-describe('工作台 at /workbench', () => {
-  it('keeps the old home page there, beside its list pages', () => {
+describe('the old 工作台 address', () => {
+  it('lands on 今天, beside the list pages that stay', () => {
     expect(appRouter.resolve('/').name).toBe('today')
-    expect(appRouter.resolve('/workbench').name).toBe('overview')
     expect(appRouter.resolve('/workbench/running').name).toBe('workbench-list')
     expect(appRouter.resolve('/workbench/notices').name).toBe('workbench-list')
   })
 
-  it('renders the workbench stage and feed', async () => {
-    const { router, pinia } = await setup()
-    await router.push('/workbench')
-    const wrapper = mount(WorkbenchPage, { global: { plugins: [pinia, router] } })
-    mounted.push(wrapper)
-    await flushPromises()
-    expect(wrapper.find('[data-workbench-stage]').exists()).toBe(true)
-    expect(wrapper.find('[data-workbench-feed]').exists()).toBe(true)
+  it('redirects a direct visit to /', async () => {
+    await appRouter.push('/workbench')
+    expect(appRouter.currentRoute.value.name).toBe('today')
+    expect(appRouter.currentRoute.value.redirectedFrom?.path).toBe('/workbench')
   })
 })

@@ -5,7 +5,7 @@ import { defineAsyncComponent, type Component } from 'vue'
 // data and assumes nothing about where it sits. The registry says what each
 // widget is and which slots may hold it; the layout (layout.ts) says what each
 // slot shows. Moving a widget is a layout change, never a page edit.
-export const SLOT_IDS = ['workbench.feed', 'shell.aboveDock', 'fla.overview'] as const
+export const SLOT_IDS = ['shell.aboveDock', 'fla.overview'] as const
 export type SlotId = typeof SLOT_IDS[number]
 
 export interface WidgetDefinition {
@@ -18,7 +18,7 @@ export interface WidgetDefinition {
 export const WIDGETS = {
   'team-cards': {
     component: defineAsyncComponent(() => import('@/features/team-work/TeamCardsWidget.vue')),
-    slots: ['workbench.feed', 'fla.overview'],
+    slots: ['fla.overview'],
   },
   'fla-sheets': {
     component: defineAsyncComponent(() => import('@/features/fla-page/FlaTaskSheets.vue')),
@@ -31,10 +31,6 @@ export const WIDGETS = {
   'fla-kit': {
     component: defineAsyncComponent(() => import('@/features/fla-page/FlaOccupationKit.vue')),
     slots: ['fla.overview'],
-  },
-  'recent-notices': {
-    component: defineAsyncComponent(() => import('@/features/overview/RecentNotices.vue')),
-    slots: ['workbench.feed'],
   },
   'team-island': {
     component: defineAsyncComponent(() => import('@/features/team-work/TeamIsland.vue')),

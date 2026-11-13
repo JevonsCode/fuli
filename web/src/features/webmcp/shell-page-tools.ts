@@ -9,7 +9,7 @@ import { definePageTool } from './page-tool'
 // page, and search the person's knowledge. A page adds its own on top.
 
 const PAGES = {
-  home: 'overview', inbox: 'inbox', knowledge: 'knowledge-default', organize: 'knowledge-organizer', tags: 'tags',
+  home: 'today', inbox: 'inbox', knowledge: 'knowledge-default', organize: 'knowledge-organizer', tags: 'tags',
   workbench: 'project-agents', agents: 'agent-management', occupations: 'occupations', services: 'agent-services',
   apps: 'agent-apps', roundtables: 'roundtables', connections: 'connections',
   models: 'model-settings', settings: 'settings', me: 'personal-profile', howto: 'howto', about: 'about',

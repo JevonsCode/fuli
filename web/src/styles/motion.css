@@ -12,40 +12,7 @@
  * frames, Jevons 11-08). The top bar and dock are outside the page and stay put.
  */
 .page-enter { animation: page-in var(--motion-enter) both; }
-/* The one View Transition left: a workbench card growing into its list page.
-   Named only while it runs (lib/motion.ts): a named element is a backdrop
-   root, so a permanent name stopped the dock's glass from blurring the page. */
-.is-page-changing .app-topbar { view-transition-name: app-topbar; }
-.is-page-changing .app-dock { view-transition-name: app-dock; }
-::view-transition-group(app-topbar), ::view-transition-group(app-dock) { animation: none; }
-/* They show their new state at once. Cross-fading would squeeze the old snapshot
-   into the new box: a dock clicked while open folds afterwards, and its open
-   snapshot showed as a tiny row of icons over the folded button (Jevons 11-01). */
-::view-transition-old(app-topbar), ::view-transition-old(app-dock) { display: none; }
-::view-transition-new(app-topbar), ::view-transition-new(app-dock) { animation: none; }
-/* A workbench list card and its own page (/workbench/<list>) share a name while
-   the page changes, so the card grows into the page and shrinks back on the way
-   home; the frame moves on the shared spring while its contents cross-fade. */
-.is-page-changing [data-list-morph="running"] { view-transition-name: workbench-list-running; }
-.is-page-changing [data-list-morph="done"] { view-transition-name: workbench-list-done; }
-.is-page-changing [data-list-morph="notices"] { view-transition-name: workbench-list-notices; }
-::view-transition-group(workbench-list-running), ::view-transition-group(workbench-list-done), ::view-transition-group(workbench-list-notices) {
-  animation-duration: var(--motion-spring); animation-timing-function: var(--motion-ease-spring);
-}
-::view-transition-old(workbench-list-running), ::view-transition-old(workbench-list-done), ::view-transition-old(workbench-list-notices) {
-  animation: page-out var(--motion-exit) both;
-}
-::view-transition-old(root) { animation: page-out var(--motion-exit) both; }
-::view-transition-new(root) { animation: page-in var(--motion-enter) both; }
-/* The transition's overlay covers the viewport and would swallow clicks while
-   the new page rises; let them through to the page underneath. */
-::view-transition { pointer-events: none; }
-@keyframes page-out { to { opacity: 0; } }
 @keyframes page-in { from { opacity: 0; transform: translateY(10px); } }
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
-}
-:root[data-motion="reduced"]::view-transition-group(*), :root[data-motion="reduced"]::view-transition-old(*), :root[data-motion="reduced"]::view-transition-new(*) { animation: none !important; }
 
 /*
  * Collections (<TransitionGroup name="ui-list">): an item that arrives rises
