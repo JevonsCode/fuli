@@ -66,7 +66,8 @@ async function route(request, url, peer, readJson) {
   if (pathname === '/api/peer/nearby/pair' && method === 'POST') return peer.pairNearby({ fingerprint: (await readJson(request)).fingerprint });
   if (pathname === '/api/peer/nearby/confirm' && method === 'POST') {
     const body = await readJson(request);
-    return peer.confirmPairing({ requestId: body.requestId, code: body.code });
+    return peer.confirmPairing({ requestId: body.requestId, code: body.code,
+      ...(body.fingerprint === undefined ? {} : { fingerprint: body.fingerprint }) });
   }
   if (pathname === '/api/peer/nearby/cancel' && method === 'POST') { await readJson(request); return peer.cancelPairing(); }
   if (pathname === '/api/peer/nearby/attempts/clear' && method === 'POST') { await readJson(request); return peer.clearPairingAttempts(); }

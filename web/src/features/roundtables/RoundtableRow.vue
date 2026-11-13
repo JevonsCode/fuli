@@ -3,6 +3,7 @@ import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
+import { identityKeyOf } from '@/features/agent-profile/remote-faces'
 import { t } from '@/i18n'
 import { UiIcon } from '@/ui'
 import type { ConversationDelivery } from './roundtable-model'
@@ -41,7 +42,7 @@ const foldedName = computed(() => [props.title, props.waiting].filter(Boolean).j
     <RouterLink :to="to" class="rt-row" :class="{ 'is-active': active, 'is-collapsed': collapsed }" :aria-current="active ? 'page' : undefined"
       :aria-label="collapsed ? foldedName : undefined" :title="collapsed ? foldedName : undefined" :data-delivery="delivery">
       <span class="rt-faces" :class="`has-${faces.length}`" aria-hidden="true">
-        <span v-for="face in faces" :key="face.key" class="rt-face" :style="face.agentId ? agentIdentityStyle(face.agentId) : undefined">
+        <span v-for="face in faces" :key="face.key" class="rt-face" :style="face.agentId ? agentIdentityStyle(identityKeyOf(face.agentId)) : undefined">
           <AgentAvatar v-if="face.agentId" :agent-id="face.agentId" />
           <template v-else>{{ face.initial }}</template>
         </span>
