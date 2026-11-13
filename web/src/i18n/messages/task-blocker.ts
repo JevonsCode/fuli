@@ -18,8 +18,6 @@ export const taskBlockerMessages = {
     clearedBy: '阻塞已于 {time} 解除：{cause}',
     clearedByYou: '阻塞已于 {time} 由你手动解除',
     clearNote: '备注：{note}',
-    unblocked: '阻塞已解除：{cause}',
-    unblockedWithNote: '{sentence}（{note}）',
     causes: {
       session_activity: '同一会话继续了这项工作',
       session_reply: '你在同一会话里回复了',
@@ -68,8 +66,6 @@ export const taskBlockerMessages = {
     clearedBy: 'Unblocked {time}: {cause}',
     clearedByYou: 'You marked it unblocked {time}',
     clearNote: 'Note: {note}',
-    unblocked: 'Unblocked: {cause}',
-    unblockedWithNote: '{sentence} ({note})',
     causes: {
       session_activity: 'the same session continued the work',
       session_reply: 'you replied in the same session',

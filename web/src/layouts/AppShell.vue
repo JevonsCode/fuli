@@ -63,7 +63,7 @@ const inboxActive = computed(() => route.path === '/inbox' || route.path.startsW
 const router = useRouter()
 // What every page offers the browser's AI agent (WebMCP) where the browser supports it.
 usePageTools(() => shellPageTools({ router, spaceId: () => activeSpaceId.value }))
-// The mark and the wordmark: on 工作台 they play the mark's effect; on any other
+// The mark and the wordmark: on 今天 they play the mark's effect; on any other
 // page they go back to it (Jevons 11-04).
 const brand = ref<InstanceType<typeof BrandEasterEgg> | null>(null)
 const onHome = computed(() => route.path === '/')

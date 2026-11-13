@@ -74,7 +74,7 @@ usePageRefresh(today.reload)
           <li v-for="item in today.done.value" :key="item.id"><NoticeRow :item="item" /></li>
         </ul>
       </TodaySection>
-      <TodayWorking v-if="shows('working')" :rows="today.working.value" :name="workerName" :project="projectName" />
+      <TodayWorking v-if="shows('working')" :rows="today.working.value" :space-id="activeSpaceId" :name="workerName" :project="projectName" />
       <!-- One indicator for the next section still being read, always below what is shown. -->
       <GrowthLoading v-if="today.pending.value" variant="compact" :label="pendingLabel" />
       <!-- A statement with no list beside it: the right half says the one thing there is to do. -->

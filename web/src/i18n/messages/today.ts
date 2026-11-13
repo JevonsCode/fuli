@@ -4,7 +4,7 @@
 export const todayMessages = {
   'zh-CN': {
     sections: { decisions: '等你拍板', done: '今天做了什么', statement: '这周的复利账单', working: '正在干活' },
-    actions: { all: '全部', earlier: '更早的', details: '查看详情', allTasks: '全部任务', look: '去看看' },
+    actions: { all: '全部', earlier: '更早的', details: '查看详情', allAssistants: '全部助手', look: '去看看' },
     loading: {
       decisions: '正在读取等你拍板的事',
       done: '正在读取今天做了什么',
@@ -68,7 +68,7 @@ export const todayMessages = {
   },
   'en-US': {
     sections: { decisions: 'Waiting for your call', done: 'Done today', statement: 'This week\'s statement', working: 'Working now' },
-    actions: { all: 'All', earlier: 'Earlier', details: 'Details', allTasks: 'All tasks', look: 'Take a look' },
+    actions: { all: 'All', earlier: 'Earlier', details: 'Details', allAssistants: 'All assistants', look: 'Take a look' },
     loading: {
       decisions: 'Reading what waits for your call',
       done: 'Reading what was done today',

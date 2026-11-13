@@ -12,10 +12,9 @@ export const router = createRouter({
     { path: '/roundtables/:threadId?', name: 'roundtables', component: () => import('@/features/roundtables/RoundtablesPage.vue'), meta: { title: 'routes.roundtable.title' } },
     // 今天: what waits for the person's call, what was done today, the week's statement, who is working.
     { path: '/', name: 'today', component: () => import('@/pages/TodayPage.vue'), meta: { title: 'routes.today.title' } },
-    // 工作台, the home page until 今天 took its place; reached from 今天's 全部任务. The old page read
-    // no query, so no link to / carried one to forward here.
-    { path: '/workbench', name: 'overview', component: () => import('@/pages/WorkbenchPage.vue'), meta: { title: 'routes.overview.title' } },
-    // The workbench's lists, each on its own page with search and filters in the query (Jevons 11-06).
+    // The old 工作台 page is gone; 今天 took its place, so an old link lands there.
+    { path: '/workbench', redirect: '/' },
+    // The lists 今天 links to, each on its own page with search and filters in the query (Jevons 11-06).
     { path: '/workbench/:list(running|done|notices)', name: 'workbench-list', component: () => import('@/features/workbench-lists/WorkbenchListPage.vue'), meta: { title: 'routes.overview.title', detail: true } },
     {
       path: '/preferences',

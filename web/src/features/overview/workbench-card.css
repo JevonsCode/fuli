@@ -1,4 +1,4 @@
-/* The workbench right column's cards and rows (WorkbenchFeed and the widgets in its slot share them). */
+/* The rows of 今天's lists and of the list pages it links to. */
 .workbench-card {
   display: grid; gap: 6px; padding: 14px 18px; border-radius: var(--radius-panel);
   background: var(--surface-panel-glass); -webkit-backdrop-filter: var(--filter-panel); backdrop-filter: var(--filter-panel); box-shadow: 0 0 0 1px var(--color-border);
