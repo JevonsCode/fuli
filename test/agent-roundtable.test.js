@@ -86,15 +86,18 @@ test('a woken answer keeps the model and tokens its client reported; wake usage 
     assert.equal((await roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code',
       to: 'Nova Lane', body })).status, 'answered');
   }
-  // A reply FULI did not wake a client for (an inbox answer) is not a wake.
-  const queued = fixture({ wake: async () => { throw Object.assign(new Error('offline'), { code: 'client_unavailable' }); } });
+  // A wake that failed counts as failed, with what its client reported before failing;
+  // the inbox reply that answered the ask afterwards is not a wake.
+  const queued = fixture({ wake: async () => { throw Object.assign(new Error('no answer'), { code: 'wake_failed',
+    reported: { model: 'synthetic-model-b', usage: { inputTokens: 40, outputTokens: 2 } } }); } });
   const sent = await queued.roundtable.messageAgent({ taskContextToken: 'token-milo', sourceApplication: 'claude_code', to: 'Nova Lane', body: 'x' });
   await queued.roundtable.replyMessage({ taskContextToken: 'token-nova', sourceApplication: 'codex', messageId: sent.messageId, body: 'y' });
   const window = { from: '2000-01-01T00:00:00.000Z', to: '2999-01-01T00:00:00.000Z' };
-  assert.deepEqual(queued.roundtable.wakeUsage(window), []);
+  assert.deepEqual(queued.roundtable.wakeUsage(window),
+    [{ client: 'codex', model: 'synthetic-model-b', wakes: 0, failedWakes: 1, inputTokens: 40, outputTokens: 2, tokenWakes: 1 }]);
   assert.deepEqual(roundtable.wakeUsage(window), [
-    { client: 'codex', model: 'synthetic-model-a', wakes: 2, inputTokens: 120, outputTokens: 35, tokenWakes: 2 },
-    { client: 'codex', model: null, wakes: 1, inputTokens: null, outputTokens: null, tokenWakes: 0 }]);
+    { client: 'codex', model: 'synthetic-model-a', wakes: 2, failedWakes: 0, inputTokens: 120, outputTokens: 35, tokenWakes: 2 },
+    { client: 'codex', model: null, wakes: 1, failedWakes: 0, inputTokens: null, outputTokens: null, tokenWakes: 0 }]);
   assert.deepEqual(roundtable.wakeUsage({ from: '2999-01-01T00:00:00.000Z', to: '2999-01-02T00:00:00.000Z' }), []);
 });
 

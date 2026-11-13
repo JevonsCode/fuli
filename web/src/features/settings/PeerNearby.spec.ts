@@ -46,6 +46,10 @@ it('confirms only after the person ticked that both screens show the same digits
   expect(wrapper.text()).toContain('配对后由 Laptop 负责协调')
   // Said before the confirm control: confirming shares the leads of the projects both computers have.
   expect(wrapper.get('[data-share-on-pair]').text()).toBe('确认后，对方说它也有的项目（最多 8 个），两边负责人可以互相提问。其他项目不会共享。')
+  // The other computer will coordinate: this one is told what that means, above the confirm control.
+  const trust = wrapper.get('[data-member-trust]')
+  expect(trust.text()).toBe('对方电脑负责转交消息，也由它决定组里还有哪些电脑。只和你信得过的电脑配对。')
+  expect(trust.element.compareDocumentPosition(wrapper.get('[data-pairing-confirm]').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(wrapper.get('[data-pairing-confirm]').attributes('disabled')).toBeDefined()
   await wrapper.get('[data-pairing-confirm]').trigger('click')
   expect(fetch).toHaveBeenCalledTimes(1)
@@ -114,4 +118,15 @@ it('reads codes in two groups and maps each ending to one message', () => {
   expect(pairingOutcome({ ...waiting, state: 'cancelled', reason: 'cancelled_there' })).toBe('cancelled')
   expect(pairingOutcome({ ...waiting, state: 'failed', reason: 'coordinator_unreachable' })).toBe('failed')
   expect(pairingOutcome(waiting)).toBe(null)
+})
+
+it('does not tell the computer that will coordinate what the other one decides', async () => {
+  const wrapper = mount(PeerNearby, { props: { nearby: { ...listed, pairing: { ...waiting, coordinator: 'this' } }, coordinatorName: 'Desk' } })
+  expect(wrapper.find('[data-pairing-confirm]').exists()).toBe(true)
+  expect(wrapper.find('[data-member-trust]').exists()).toBe(false)
+  expect(wrapper.get('[data-pairing-code] .peer-actions').element.previousElementSibling)
+    .toBe(wrapper.get('[data-share-on-pair]').element)
+  // On the joining side the line sits right above the confirm controls; it is there from the block's first render.
+  const member = mount(PeerNearby, { props: { nearby: { ...listed, pairing: waiting }, coordinatorName: 'Desk' } })
+  expect(member.get('[data-pairing-code] .peer-actions').element.previousElementSibling).toBe(member.get('[data-member-trust]').element)
 })

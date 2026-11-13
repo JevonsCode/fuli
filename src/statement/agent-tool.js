@@ -18,9 +18,9 @@ const PROVENANCE = Object.freeze({
   done: ['done.finished, done.failed: reported, the status Agents gave their tasks'],
   answered: ['answered.questions: observed, Agent questions you answered in FULI'],
   usage: ['usage.rows[].taskEntries: observed, task entries FULI recorded from that client (each that carried knowledge or a habit)',
-    'usage.rows[].wakes: observed, answers of clients FULI woke',
+    'usage.rows[].wakes, usage.rows[].failedWakes: observed, wakes FULI started that answered / did not',
     'usage.rows[].model: reported, as the client named it; null means no client reported it, never a guess',
-    'usage.rows[].tokens: reported (client_reported), what woken clients reported for tokens.answers answers; absent = none reported']
+    'usage.rows[].tokens: reported (client_reported), what woken clients reported for tokens.wakes wakes; absent = none reported']
 });
 
 export const STATEMENT_HANDLERS = Object.freeze({

@@ -56,6 +56,7 @@ export async function runPeerControlCommand(args, { baseUrl, command, notRunning
       if (!/^\d{6}$/.test(code)) throw new Error('Pass the 6-digit code shown on the other computer.');
       const pairing = (await call('GET', '/api/peer')).nearby?.pairing;
       if (!pairing?.requestId || pairing.state !== 'confirm') throw new Error('No pairing is waiting for confirmation here.');
+      if (pairing.coordinator === 'other') write(MEMBER_TRUST);
       return printNearby(await call('POST', '/api/peer/nearby/confirm', { requestId: pairing.requestId, code }), write, command);
     }
     case 'cancel': return printNearby(await call('POST', '/api/peer/nearby/cancel', {}), write, command);
@@ -78,6 +79,7 @@ export async function runPeerControlCommand(args, { baseUrl, command, notRunning
       if (!invitation) throw new Error('Pass --invitation or --invitation-file.');
       // Joining is the consent to share the common projects' leads: said first, as the console does.
       write(SHARE_ON_PAIRING);
+      write(MEMBER_TRUST);
       return printStatus(await call('POST', '/api/peer/join', { invitation, name: option(rest, '--name') }), write);
     }
     case 'share': {
@@ -167,12 +169,14 @@ function printNearby(status, write, command) {
     write(`Pairing with ${device}: code ${pairing.code}. ${pairing.coordinator === 'this' ? 'This computer' : 'The other computer'} will coordinate.`);
     write(pairing.confirmedHere
       ? `Confirmed here; waiting for the person on the other computer${pairing.confirmedThere ? ' (confirmed there too, finishing)' : ''}. \`${command} peer status\` then lists what was shared.`
-      : `Compare it with the code on the other computer; if they match, run \`${command} peer confirm <the code shown there>\` before ${pairing.expiresAt}.\n${SHARE_ON_PAIRING}`);
+      : `Compare it with the code on the other computer; if they match, run \`${command} peer confirm <the code shown there>\` before ${pairing.expiresAt}.\n${SHARE_ON_PAIRING}${pairing.coordinator === 'other' ? `\n${MEMBER_TRUST}` : ''}`);
   } else write(`Pairing with ${device}: ${pairing.state}${pairing.reason ? ` (${pairing.reason})` : ''}`);
 }
 
 // Said before the person confirms a pairing or joins with an invitation.
 const SHARE_ON_PAIRING = 'Once confirmed, leads of up to 8 projects the other computer says it has too can talk. Nothing else.';
+// Said to the side that will join another computer's group, when it consents.
+const MEMBER_TRUST = 'The other computer relays messages and decides who else is in the group. Pair only if you trust it.';
 
 // Why nearby pairing turned itself off, or what it last did.
 const NEARBY_ENDED = {

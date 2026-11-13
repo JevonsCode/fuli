@@ -246,7 +246,7 @@ test('标准输入输出 MCP 应暴露有界图谱工具并静默路由个人知
     'revise_personal_knowledge', 'reassign_personal_knowledge',
     'preview_personal_project_action', 'apply_personal_project_action',
     'get_graphiti_status',
-    'agent_chat', 'group_discussion', 'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
+    'agent_chat', 'group_discussion', 'find_agents', 'message_agent', 'visit_shared_lead', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
     'get_agent_message_status', 'cancel_agent_message'
   ]);
   const preferencesTool = listed.tools.find(

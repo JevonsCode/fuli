@@ -53,8 +53,8 @@
       "fingerprint": "49aaea129bdbd051a4046e7bfa38a7652da87ad54a893ce25e1deb0d9688dbe3"
     },
     "roundtable": {
-      "version": 10,
-      "fingerprint": "88fbe923c9e653ff70088a03303941d39333a11b828ed03b2e31d1ff369d79ee"
+      "version": 11,
+      "fingerprint": "5b4238b628905e8d073403ae8891eda185b92bfdef2cf9bd1e712c8487e52014"
     },
     "recall-impressions": {
       "version": 3,
@@ -90,7 +90,7 @@
     },
     "visitor-access": {
       "version": 1,
-      "fingerprint": "db2949d4d11b598c5f75367ad0775d9e08a217f2c9cacd720b0ba1d3851eaf7d"
+      "fingerprint": "017b131079363494708af4b48293ce646ff6195d7ffdcea180ced4add45e7926"
     }
   }
 }

@@ -4,8 +4,13 @@ import { join } from 'node:path';
 import { firstField, listDirectory } from '../session-log.js';
 import { reportedWakeUsage } from '../wake-usage.js';
 
-// The tools a read-only wake may not use: every file edit and the shell.
-const READ_ONLY_DENIED_TOOLS = Object.freeze(['Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'Bash']);
+// A read-only wake has only the built-in tools that read. Whatever edits a file, runs a command
+// (Bash, PowerShell), fetches from the web or starts another agent is not there; the edit and
+// shell tools are denied as well, since a deny rule wins over any allow rule the person keeps.
+// Tools of MCP servers the person configured are not built in: they still follow that person's
+// own allow rules (docs/agent-roundtable.md).
+const READ_ONLY_TOOLS = Object.freeze(['Read', 'Grep', 'Glob']);
+const READ_ONLY_DENIED_TOOLS = Object.freeze(['Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'Bash', 'PowerShell']);
 
 // Wakes Claude Code headlessly. Resuming forks the session, so an open window is
 // never written concurrently while the answer still has that conversation's context.
@@ -20,14 +25,14 @@ export const claudeCodeWake = Object.freeze({
   // delegated wake names the (forked) session up front and binds it first.
   plansSession: true,
 
-  // readOnly (a group discussion turn) keeps the same non-interactive mode
-  // and denies the file-editing and shell tools; a deny rule wins over any
-  // allow rule, so the woken session can read and answer but not change files
-  // or run commands. (Plan mode is avoided: headless it may end with a plan
-  // or an empty answer instead of the member's view.)
+  // readOnly (a group discussion turn, an ask from another computer) keeps the
+  // same non-interactive mode with the reading tools only, so the woken session
+  // can read and answer but not change files or run commands. (Plan mode is
+  // avoided: headless it may end with a plan or an empty answer instead of the
+  // member's view.)
   args({ sessionId, plannedSessionId = null, readOnly = false }) {
     return ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk',
-      ...(readOnly ? ['--disallowedTools', READ_ONLY_DENIED_TOOLS.join(',')] : []),
+      ...(readOnly ? ['--tools', READ_ONLY_TOOLS.join(','), '--disallowedTools', READ_ONLY_DENIED_TOOLS.join(',')] : []),
       ...(sessionId ? ['--resume', sessionId, '--fork-session'] : []),
       ...(plannedSessionId ? ['--session-id', plannedSessionId] : [])];
   },

@@ -7,8 +7,8 @@ import type { ConversationSourceApplication } from '@/types'
 import type { StatementWeek } from './statement'
 
 // 用了哪些客户端和模型: GET /api/statement/usage for one week. Each row is a
-// client and the model it reported (null: none did); task entries and woken
-// answers are what FULI saw, tokens only what a client reported. Nothing here
+// client and the model it reported (null: none did); task entries and wakes
+// (answered or not) are what FULI saw, tokens only what a client reported. Nothing here
 // is estimated, and a failed read shows nothing.
 const count = z.number()
 const usageSchema = z.looseObject({
@@ -17,7 +17,8 @@ const usageSchema = z.looseObject({
     model: z.string().nullable(),
     taskEntries: count,
     wakes: count,
-    tokens: z.looseObject({ input: count.nullable(), output: count.nullable(), answers: count }).nullable(),
+    failedWakes: count,
+    tokens: z.looseObject({ input: count.nullable(), output: count.nullable(), wakes: count }).nullable(),
   })),
   more: z.boolean(),
 })
@@ -37,7 +38,7 @@ export interface UsageRow { key: string; client: ConversationSourceApplication; 
 
 /** One line per client and model with its counts and who saw them; rows with nothing to count are left out. */
 export function usageRows(usage: StatementUsage | null): UsageRow[] {
-  return (usage?.rows ?? []).filter(row => row.taskEntries || row.wakes).map((row) => {
+  return (usage?.rows ?? []).filter(row => row.taskEntries || row.wakes || row.failedWakes).map((row) => {
     const client = sourceApplication({ source_application: row.client })
     const tokens = reportedTokens(row.tokens)
     return {
@@ -47,9 +48,10 @@ export function usageRows(usage: StatementUsage | null): UsageRow[] {
       model: row.model ?? t('today.usage.unknownModel'),
       counts: [row.taskEntries ? t('today.usage.entries', { count: row.taskEntries }) : '',
         row.wakes ? t('today.usage.wakes', { count: row.wakes }) : '',
+        row.failedWakes ? t('today.usage.failedWakes', { count: row.failedWakes }) : '',
         tokens === null ? '' : t('today.usage.tokens', { count: tokens })].filter(Boolean).join(' · '),
       source: tokens === null ? t('today.statement.source.seen')
-        : t('today.usage.tokensSource', { seen: t('today.statement.source.seen'), answers: row.tokens?.answers ?? 0 }),
+        : t('today.usage.tokensSource', { seen: t('today.statement.source.seen'), wakes: row.tokens?.wakes ?? 0 }),
     }
   })
 }

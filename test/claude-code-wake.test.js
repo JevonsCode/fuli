@@ -14,10 +14,10 @@ test('Claude Code resumes by forking, so an open window is never written', () =>
     ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk']);
 });
 
-test('a read-only (group discussion) wake keeps the non-interactive mode and denies file edits and the shell', () => {
+test('a read-only wake keeps the non-interactive mode with the reading tools only, and denies file edits and both shells', () => {
   assert.deepEqual(wakeArguments('claude_code', { readOnly: true, plannedSessionId: 'planned-1' }),
     ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk',
-      '--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit,Bash', '--session-id', 'planned-1']);
+      '--tools', 'Read,Grep,Glob', '--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell', '--session-id', 'planned-1']);
   assert.ok(!wakeArguments('claude_code', { readOnly: true }).includes('plan'));
 });
 
@@ -38,6 +38,13 @@ test('Claude Code answers come from the final result event', () => {
   assert.deepEqual(parseFinalAnswer('claude_code', { code: 0, stdout: result({ input_tokens: 10, output_tokens: 7 }) }).usage,
     { inputTokens: null, outputTokens: 7 });
   assert.equal('usage' in parseFinalAnswer('claude_code', { code: 0, stdout: result(undefined) }), false);
+  // A failed run keeps what it reported before failing, for its wake record.
+  assert.throws(() => parseFinalAnswer('claude_code', { code: 1, stdout: [
+    JSON.stringify({ type: 'system', subtype: 'init', session_id: 'fork-3', model: 'synthetic-model-a' }),
+    JSON.stringify({ type: 'result', result: '', is_error: true, usage: { input_tokens: 5, cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0, output_tokens: 1 } })].join('\n') }),
+  error => error.code === 'wake_failed' && error.reported.model === 'synthetic-model-a'
+    && error.reported.usage.inputTokens === 5 && error.reported.usage.outputTokens === 1);
   assert.throws(() => parseFinalAnswer('claude_code', { code: 0, stdout: JSON.stringify({ type: 'result', result: 'x', is_error: true }) }),
     /did not return an answer/);
 });

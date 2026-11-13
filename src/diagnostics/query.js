@@ -13,8 +13,8 @@ export const MAX_DIAGNOSTIC_LIMIT = 100;
 const MAX_CODE_GROUPS = 50;
 const CODE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const CURSOR = /^(\d{1,15})\.([0-9a-f-]{36})$/;
-const NOT_COVERED = 'Only failures caught at FULI\'s lifecycle hooks, HTTP API errors, native Graph Provider start '
-  + 'and MCP tool errors are recorded. A hard power loss, a process killed before it wrote, and failures outside '
+const NOT_COVERED = 'Only failures caught at FULI\'s lifecycle hooks, HTTP API errors, native Graph Provider start, '
+  + 'MCP tool errors and roundtable wakes that did not answer are recorded. A hard power loss, a process killed before it wrote, and failures outside '
   + 'these seams leave no event.';
 
 export function diagnosticEventsAnswer(log, input = {}) {

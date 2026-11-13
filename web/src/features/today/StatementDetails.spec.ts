@@ -46,9 +46,9 @@ describe('StatementDetails', () => {
 
   it('lists each client and model with its counts; a model nobody reported reads unknown, tokens only as reported', async () => {
     const fetch = vi.fn((_url: string) => Promise.resolve(json(usage([
-      { client: 'codex', model: 'synthetic-model-a', taskEntries: 3, wakes: 0, tokens: null },
-      { client: 'claude_code', model: null, taskEntries: 1, wakes: 2, tokens: { input: 300, output: 20, answers: 1 } },
-      { client: 'claude_code', model: 'synthetic-model-b', taskEntries: 0, wakes: 1, tokens: { input: null, output: 5, answers: 1 } },
+      { client: 'codex', model: 'synthetic-model-a', taskEntries: 3, wakes: 0, failedWakes: 0, tokens: null },
+      { client: 'claude_code', model: null, taskEntries: 1, wakes: 2, failedWakes: 1, tokens: { input: 300, output: 20, wakes: 1 } },
+      { client: 'claude_code', model: 'synthetic-model-b', taskEntries: 0, wakes: 1, failedWakes: 0, tokens: { input: null, output: 5, wakes: 1 } },
     ]))))
     vi.stubGlobal('fetch', fetch)
     const wrapper = mount(StatementDetails, { props: { open: true, statement: statement(42) }, attachTo: document.body })
@@ -57,7 +57,7 @@ describe('StatementDetails', () => {
     expect(document.body.querySelector('[data-statement-usage] h3')?.textContent).toBe('用了哪些客户端和模型')
     expect(usageRows()).toEqual([
       'Cx Codex · synthetic-model-a 3 次对话 FULI 亲眼看到的',
-      'CC Claude Code · 模型未知 1 次对话 · 叫醒 2 次 · 320 Token FULI 亲眼看到的；Token 是客户端在 1 次回答里自己报告的',
+      'CC Claude Code · 模型未知 1 次对话 · 叫醒 2 次 · 1 次没答上 · 320 Token FULI 亲眼看到的；Token 是客户端在 1 次叫醒里自己报告的',
       // Only an output count was reported: no total is shown rather than a partial one.
       'CC Claude Code · synthetic-model-b 叫醒 1 次 FULI 亲眼看到的',
     ])

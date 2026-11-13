@@ -212,12 +212,14 @@ function usageApp({ wakes = true } = {}) {
   if (!wakes) return app;
   const store = createRoundtableStore(':memory:', { clock: () => at });
   store.createThread({ id: 'thread-1', spaceId: SPACE, subject: 'Synthetic ask' });
-  const reply = (id, via, client, model, usage) => store.appendMessage('thread-1', { id, kind: 'reply', body: 'ok', status: 'sent',
-    via, from: { agentId: 'synthetic-fla', name: 'Synthetic', client, session: 'synthetic-session', model, usage } });
-  reply('wake-1', 'claude_code:new', 'claude_code', 'synthetic-model-b', { inputTokens: 300, outputTokens: 20 });
-  reply('wake-2', 'claude_code:resume', 'claude_code', null, null);
-  reply('inbox-1', 'codex:inbox', 'codex', null, null);
-  app.roundtable = { wakeUsage: ({ from, to }) => store.wakeUsageBetween(SPACE, from, to) };
+  store.appendMessage('thread-1', { id: 'ask-1', kind: 'ask', body: 'Synthetic', status: 'answered' });
+  const wake = (outcome, client, model, tokens = {}) => store.wakeAttempts.record('ask-1', { client, sessionMode: 'new', outcome,
+    code: outcome === 'answered' ? null : 'wake_failed', detail: null, exitCode: null, signal: null, durationMs: 1,
+    outputSummary: null, model, ...tokens });
+  wake('answered', 'claude_code', 'synthetic-model-b', { inputTokens: 300, outputTokens: 20 });
+  wake('answered', 'claude_code', null);
+  wake('failed', 'claude_code', 'synthetic-model-b', { inputTokens: 50, outputTokens: 5 });
+  app.roundtable = { wakeUsage: ({ from, to }) => store.wakeAttempts.usageBetween(SPACE, from, to) };
   return app;
 }
 
@@ -227,10 +229,11 @@ test('usage counts task entries and woken answers by client and model; unknown s
   assert.deepEqual(body, {
     window: { from: FROM, to: TO },
     rows: [
-      { client: 'claude_code', model: null, taskEntries: 1, wakes: 1, tokens: null },
-      { client: 'codex', model: 'synthetic-model-a', taskEntries: 2, wakes: 0, tokens: null },
-      { client: 'claude_code', model: 'synthetic-model-b', taskEntries: 0, wakes: 1,
-        tokens: { input: 300, output: 20, answers: 1, source: 'client_reported' } }
+      { client: 'claude_code', model: null, taskEntries: 1, wakes: 1, failedWakes: 0, tokens: null },
+      // A wake that failed still counts, and so do the tokens its client reported.
+      { client: 'claude_code', model: 'synthetic-model-b', taskEntries: 0, wakes: 1, failedWakes: 1,
+        tokens: { input: 350, output: 25, wakes: 2, source: 'client_reported' } },
+      { client: 'codex', model: 'synthetic-model-a', taskEntries: 2, wakes: 0, failedWakes: 0, tokens: null }
     ],
     more: false,
     unavailable: []
@@ -263,5 +266,5 @@ test('read_compounding_statement adds usage with its provenance only when asked'
   const answer = await callAgentTool(app, 'read_compounding_statement', { from: FROM, to: TO, usage: true });
   assert.equal(answer.usage.rows.length, 3);
   assert.deepEqual(answer.provenance.filter(line => line.startsWith('usage.')).map(line => line.split(':')[0]),
-    ['usage.rows[].taskEntries', 'usage.rows[].wakes', 'usage.rows[].model', 'usage.rows[].tokens']);
+    ['usage.rows[].taskEntries', 'usage.rows[].wakes, usage.rows[].failedWakes', 'usage.rows[].model', 'usage.rows[].tokens']);
 });

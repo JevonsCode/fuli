@@ -53,6 +53,8 @@ const TOOL_RESULT_LIMIT_BYTES = Object.freeze({
   read_agent_messages: 1024 * 1024,
   read_agent_thread: 600 * 1024,
   find_agents: 128 * 1024,
+  // A paired device's answer: at most 16 KB of shared knowledge (48 KB on the wire).
+  visit_shared_lead: 48 * 1024,
   read_agent_conversation: 600 * 1024,
   list_agent_conversations: 32 * 1024,
   resume_agent_conversation: 24 * 1024,

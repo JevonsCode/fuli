@@ -164,7 +164,23 @@ test('fuli peer join says what joining shares before it joins', async () => {
     notRunning: 'not running', write: (line) => lines.push(line),
     fetchImpl: async (url) => { paths.push([lines.length, new URL(url).pathname]); return new Response(JSON.stringify({ role: null, addresses: [] })); } });
   assert.equal(lines[0], 'Once confirmed, leads of up to 8 projects the other computer says it has too can talk. Nothing else.');
-  assert.deepEqual(paths, [[1, '/api/peer/join']], 'the sentence comes before the join request');
+  // The joining side is always the member: told what the other computer decides.
+  assert.equal(lines[1], MEMBER_TRUST);
+  assert.deepEqual(paths, [[2, '/api/peer/join']], 'both sentences come before the join request');
+});
+
+const MEMBER_TRUST = 'The other computer relays messages and decides who else is in the group. Pair only if you trust it.';
+
+test('fuli peer confirm tells the side that will join the other computer\'s group what that computer decides, and only that side', async () => {
+  for (const [coordinator, told] of [['other', true], ['this', false]]) {
+    const lines = [];
+    const status = { role: null, addresses: [], nearby: { on: true, devices: [], pairing: { requestId: 'request-1', state: 'confirm',
+      code: '123456', coordinator, device: { name: 'Desk' }, confirmedHere: true, expiresAt: '2026-11-14T00:00:00.000Z' } } };
+    await runPeerControlCommand(['confirm', '123456'], { baseUrl: () => 'http://127.0.0.1:1', command: 'fuli',
+      notRunning: 'not running', write: (line) => lines.push(line),
+      fetchImpl: async () => new Response(JSON.stringify(status)) });
+    assert.equal(lines.includes(MEMBER_TRUST), told, coordinator);
+  }
 });
 
 test('a confirmed nearby pairing shares only the common project on both computers, once, and an untick stays', { timeout: 40_000 }, async () => {

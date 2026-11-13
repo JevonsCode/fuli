@@ -13,7 +13,7 @@ import { utf8Preview } from '../text/utf8-preview.js';
 // caller and never repeating a value); never a raw exception message.
 
 export const DIAGNOSTIC_EVENT_VERSION = 1;
-export const DIAGNOSTIC_COMPONENTS = Object.freeze(['hook', 'http', 'provider', 'mcp']);
+export const DIAGNOSTIC_COMPONENTS = Object.freeze(['hook', 'http', 'provider', 'mcp', 'roundtable']);
 export const DIAGNOSTIC_LEVELS = Object.freeze(['error', 'warning']);
 // failed: FULI could not do it. refused: FULI answered the caller with an error it can act on.
 const LEVEL_OF_OUTCOME = Object.freeze({ failed: 'error', refused: 'warning' });

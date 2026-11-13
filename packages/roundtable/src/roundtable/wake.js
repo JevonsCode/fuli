@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { StringDecoder } from 'node:string_decoder';
 
 import { WAKE_CLIENTS, wakeAdapter } from '../agents/wake-registry.js';
+import { wakeFailure } from './wake-failure.js';
 
 // Wakes the recipient Agent in its own client, headlessly and read-only, and
 // returns its final answer with that conversation's full context. Each client's
@@ -13,6 +14,8 @@ import { WAKE_CLIENTS, wakeAdapter } from '../agents/wake-registry.js';
 export { WAKE_CLIENTS };
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9-]{7,127}$/;
 const MODEL_LIMIT = 120;
+// The last part of a client's stderr and stdout a failed wake keeps, never more.
+const OUTPUT_TAIL_CHARS = 4096;
 
 function adapterFor(client) {
   const adapter = wakeAdapter(client);
@@ -46,7 +49,7 @@ export function sessionTurnRunning(client, sessionId, { home = homedir(), env = 
 export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeoutMs = 300_000,
   delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn, onSession, readOnly = false } = {}) {
   const command = resolveClientCommand(client, { env });
-  if (!command) throw Object.assign(new Error(`${client} is not installed on this machine`), { code: 'client_unavailable' });
+  if (!command) throw wakeFailure('client_unavailable', 'client_not_found', `${client} is not installed on this machine`);
   const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('FULI_ROUNDTABLE_')));
   if (delegationToken) childEnv.FULI_ROUNDTABLE_DELEGATION = delegationToken;
   if (peerDepth) childEnv.FULI_ROUNDTABLE_PEER_DEPTH = String(peerDepth);
@@ -75,7 +78,8 @@ export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeout
   return answer;
 }
 
-export function parseFinalAnswer(client, { code, stdout }) {
+// code/signal: how the client exited; stderr: the tail runProcess kept.
+export function parseFinalAnswer(client, { code, signal = null, stdout, stderr = '' }) {
   const adapter = adapterFor(client);
   const state = adapter.initialState();
   let sessionId = null;
@@ -85,32 +89,45 @@ export function parseFinalAnswer(client, { code, stdout }) {
     sessionId ??= event.thread_id ?? event.session_id ?? null;
     adapter.readEvent(event, state);
     if (event.error === 'authentication_failed') {
-      throw Object.assign(new Error(`${client} is not logged in on this machine`), { code: 'client_login_required' });
+      throw wakeFailure('client_login_required', 'login_required', `${client} is not logged in on this machine`,
+        { exitCode: code, signal, output: { stderr } });
     }
   }
-  if (code !== 0 || state.failed || !state.completed || !state.body.trim()) {
-    throw Object.assign(new Error(`${client} did not return an answer`), { code: 'wake_failed' });
-  }
   // model and usage: as the client reported them, only where its adapter reads them.
-  return { body: state.body.trim(), sessionId, ...(state.model ? { model: state.model.slice(0, MODEL_LIMIT) } : {}),
+  const reported = { ...(state.model ? { model: state.model.slice(0, MODEL_LIMIT) } : {}),
     ...(state.usage ? { usage: state.usage } : {}) };
+  if (code !== 0 || state.failed || !state.completed || !state.body.trim()) {
+    // A failed run keeps what its client reported before it failed (wake_attempts).
+    throw Object.assign(wakeFailure('wake_failed', code !== 0 ? 'client_exit_nonzero' : 'no_final_answer', `${client} did not return an answer`,
+      { exitCode: code, signal, output: { stderr, stdout: stdout.slice(-OUTPUT_TAIL_CHARS) } }), { reported });
+  }
+  return { body: state.body.trim(), sessionId, ...reported };
 }
 
 // Owns exactly one child process tree and never touches unrelated clients.
 export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutputBytes = 4_000_000, signal, onSpawn, onEvent }) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
-      reject(Object.assign(new Error('The delivery was cancelled before it started'), { code: 'cancelled', started: false }));
+      reject(Object.assign(wakeFailure('cancelled', 'cancelled', 'The delivery was cancelled before it started'), { started: false }));
       return;
     }
-    const child = spawn(command, args, { cwd, env, shell: false, windowsHide: true,
-      detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'ignore'] });
+    let child;
+    // Windows refuses some files at once (EFTYPE); other systems report it as an error event.
+    try {
+      child = spawn(command, args, { cwd, env, shell: false, windowsHide: true,
+        detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (error) { reject(startFailure(error)); return; }
     const closed = new Promise((resolve) => child.once('close', resolve));
     // The PID is known as soon as spawn() returns: record it before anything can
     // lose the console, not on the later spawn event (rec#97).
     if (Number.isSafeInteger(child.pid)) onSpawn?.(child.pid);
-    let output = '', pending = '', bytes = 0, settled = false, childClosed = false;
+    let output = '', pending = '', bytes = 0, settled = false, childClosed = false, exitSignal = null;
     const decoder = new StringDecoder('utf8');
+    // Only the last part of stderr is kept, so a chatty client never grows memory.
+    const errorDecoder = new StringDecoder('utf8');
+    let stderr = '';
+    const keepStderr = text => { stderr = (stderr + text).slice(-OUTPUT_TAIL_CHARS); };
+    const captured = () => ({ stderr, stdout: output.slice(-OUTPUT_TAIL_CHARS) });
     const callbacks = new Set();
     let eventFailure = null;
     const emit = line => {
@@ -165,26 +182,30 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
       if (error) {
+        error.output ??= captured();
         if (child.pid && !childClosed) {
           try { await kill(); }
           catch (cleanupError) { error.cleanup = { status: 'unconfirmed', code: cleanupError.code }; }
         }
         reject(error);
-      } else resolve({ code, stdout: output });
+      } else resolve({ code, signal: exitSignal, stdout: output, stderr });
     };
-    const abort = () => finish(Object.assign(new Error('The delivery was cancelled'),
-      { code: 'cancelled', reason: String(signal.reason ?? 'cancelled') }));
-    const timer = setTimeout(() => finish(Object.assign(new Error('The woken Agent did not answer in time'), { code: 'wake_timeout' })), timeoutMs);
+    const abort = () => finish(Object.assign(wakeFailure('cancelled', 'cancelled', 'The delivery was cancelled'),
+      { reason: String(signal.reason ?? 'cancelled') }));
+    const timer = setTimeout(() => finish(wakeFailure('wake_timeout', 'timed_out', 'The woken Agent did not answer in time')), timeoutMs);
     signal?.addEventListener('abort', abort, { once: true });
     child.stdout.on('data', (chunk) => {
       if (settled) return;
       bytes += chunk.length;
-      if (bytes > maxOutputBytes) finish(Object.assign(new Error('The woken Agent produced too much output'), { code: 'wake_failed' }));
+      if (bytes > maxOutputBytes) finish(wakeFailure('wake_failed', 'output_too_large', 'The woken Agent produced too much output'));
       else append(decoder.write(chunk));
     });
-    child.on('error', () => finish(Object.assign(new Error('The client could not be started'), { code: 'client_unavailable' })));
-    child.on('close', async (code) => {
+    child.stderr.on('data', (chunk) => keepStderr(errorDecoder.write(chunk)));
+    child.on('error', (error) => finish(startFailure(error)));
+    child.on('close', async (code, closeSignal) => {
       childClosed = true;
+      exitSignal = closeSignal ?? null;
+      keepStderr(errorDecoder.end());
       if (settled) return;
       append(decoder.end());
       if (pending) emit(pending);
@@ -194,6 +215,11 @@ export function runProcess(command, args, { cwd, env, input, timeoutMs, maxOutpu
     child.stdin.on('error', () => {});
     child.stdin.end(input);
   });
+}
+
+function startFailure(error) {
+  return wakeFailure('client_unavailable', error.code === 'ENOENT' ? 'client_not_found' : 'spawn_error',
+    'The client could not be started');
 }
 
 // SIGKILL is delivered asynchronously and orphaned descendants are reaped by
