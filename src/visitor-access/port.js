@@ -151,18 +151,25 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
       if (!requests) return refused('requests_unavailable');
       if (!searchableProject(projectId) || typeof agentId !== 'string' || !agentId) return refused('project_invalid');
       try {
+        // The visitor limits a card or search meets come first; a request itself is recorded as its own row.
+        const limited = rateLimitRefusal(store, who.requesterKey, projectId, now());
+        if (limited) return refused(limited);
         return requests.submit({ requester: { key: who.requesterKey, label: who.requesterLabel, agentName: who.agentName },
           source: who.requesterKey.startsWith('peer:') ? 'peer' : 'guest', projectId, agentId,
           projectFolder: typeof projectFolder === 'string' && projectFolder ? projectFolder : null, request });
       } catch { return refused(UNAVAILABLE); }
     },
 
-    // The state of one request, only to the requester that made it.
+    // The state of one request, only to the requester that made it: checked
+    // against the visitor limits, and nothing is written.
     requestStatus({ requester, requestId } = {}) {
       const who = requesterOf(requester);
       if (!who) return refused('requester_invalid');
       if (!requests) return refused('requests_unavailable');
-      try { return requests.requesterStatus({ requesterKey: who.requesterKey, requestId }); }
+      try {
+        const limited = rateLimitRefusal(store, who.requesterKey, '', now());
+        return limited ? refused(limited) : requests.requesterStatus({ requesterKey: who.requesterKey, requestId });
+      }
       catch { return refused(UNAVAILABLE); }
     },
 

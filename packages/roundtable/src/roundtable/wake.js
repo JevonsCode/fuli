@@ -30,13 +30,16 @@ export function resolveClientCommand(client, { env = process.env, platform = pro
 
 // What a woken session may do, each adapter mapping it to its client's own
 // switches: answer (the person's own rules), read_only (read and answer only),
-// worktree_edit (also edit files in the folder it was woken in; no shell, no web).
+// worktree_edit (also edit files in the folder it was woken in; each adapter constrains
+// it its own way). mcpServer: FULI's own MCP server entry; given, a read_only or
+// worktree_edit wake loads only that MCP server.
 export const WAKE_MODES = Object.freeze(['answer', 'read_only', 'worktree_edit']);
 
-export function wakeArguments(client, { sessionId = null, cwd, delegated = false, plannedSessionId = null, mode = 'answer' } = {}) {
+export function wakeArguments(client, { sessionId = null, cwd, delegated = false, plannedSessionId = null, mode = 'answer',
+  mcpServer = null } = {}) {
   if (sessionId !== null && !SESSION_ID.test(sessionId)) throw new TypeError('Invalid client session id');
   if (!WAKE_MODES.includes(mode)) throw new TypeError('Invalid wake mode');
-  return adapterFor(client).args({ sessionId, cwd, delegated, plannedSessionId, mode });
+  return adapterFor(client).args({ sessionId, cwd, delegated, plannedSessionId, mode, mcpServer });
 }
 
 // Clients only resume a conversation from the directory it started in.
@@ -53,7 +56,8 @@ export function sessionTurnRunning(client, sessionId, { home = homedir(), env = 
 }
 
 export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeoutMs = 300_000,
-  delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn, onSession, mode = 'answer' } = {}) {
+  delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn, onSession, mode = 'answer',
+  mcpServer = null } = {}) {
   const command = resolveClientCommand(client, { env });
   if (!command) throw wakeFailure('client_unavailable', 'client_not_found', `${client} is not installed on this machine`);
   const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('FULI_ROUNDTABLE_')));
@@ -64,7 +68,7 @@ export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeout
   const plannedSessionId = onSession && adapterFor(client).plansSession ? randomUUID() : null;
   if (plannedSessionId) await onSession(plannedSessionId);
   let observedSession = null;
-  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken), plannedSessionId, mode }),
+  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken), plannedSessionId, mode, mcpServer }),
     { cwd, env: childEnv, input: prompt, timeoutMs, signal, onSpawn, onEvent: event => {
       const observed = adapterFor(client).nativeSessionId(event);
       if (!observed) return;

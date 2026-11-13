@@ -52,7 +52,8 @@ function service(t, { root, repository }, edit, { plan = SAFE_PLAN, mode = 'trus
     } });
   let sequence = 0;
   const port = createVisitorAccess({ application: {},
-    requests: ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner, idFactory: () => `visitreq-${++sequence}` }) });
+    requests: ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner, platform: 'linux',
+      leads: { confirm: async () => true, constrainedClients: async () => ['claude_code'] }, idFactory: () => `visitreq-${++sequence}` }) });
   t.after(() => port.close());
   port.setRequesterMode({ key: PEER, kind: 'peer', label: 'Synthetic laptop', mode, ownDevice: mode === 'trusted' });
   const submit = () => port.submitRequest({ requester: { key: PEER, label: 'Synthetic laptop' }, projectId: 'synthetic-project',
@@ -89,9 +90,9 @@ test('a run edits only its worktree on its branch; the owner\'s working tree and
     assert.deepEqual(request.diffstat, { files: 1, added: 2, removed: 1 });
     const author = git(owner.repository, 'log', '-1', '--format=%an <%ae>', `refs/heads/${request.branch}`).trim();
     assert.equal(author, 'FULI visit <visit@fuli.invalid>');
-    // The planning pass was read-only and capped at 3 minutes; the run edited its own worktree in 15.
+    // The planning pass was read-only in the owner's folder, capped at 3 minutes; the run edited its own worktree in 15.
     assert.deepEqual(f.wakes.map((wake) => [wake.mode, wake.cwd, wake.timeoutMs]),
-      [['read_only', request.worktreePath, 180_000], ['worktree_edit', request.worktreePath, 900_000]]);
+      [['read_only', owner.repository, 180_000], ['worktree_edit', request.worktreePath, 900_000]]);
     assert.match(f.wakes[0].prompt, /<visit-request>\n\{"title":"Port from settings"/);
 
     const card = await f.port.requests.card(requestId);
@@ -133,4 +134,85 @@ test('a run that touches the owner\'s checkout is held as an integrity violation
   const { requestId } = f.submit();
   const request = await reviewed(f.port, requestId);
   assert.deepEqual([request.review, request.holdReason], ['held', 'integrity_violation']);
+});
+
+// ---- Content that would make Git act on its own (security review 1) ----
+
+// A command Git would run as an fsmonitor hook, creating marker when it does.
+const planted = (marker) => `touch "${marker.split('\\').join('/')}"`;
+
+test('a rewritten .git pointer to a Git directory with an fsmonitor runs nothing and holds the result', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const marker = join(owner.root, 'pointer-attack-ran');
+  const evil = join(owner.root, 'evil-git');
+  const f = service(t, owner, (worktree) => {
+    git(owner.root, 'init', '-q', evil);
+    git(evil, 'config', 'core.fsmonitor', planted(marker));
+    writeFileSync(join(worktree, 'src', 'server.js'), 'const port = 4200;\n');
+    rmSync(join(worktree, '.git'), { force: true }); // Git for Windows marks it hidden
+    writeFileSync(join(worktree, '.git'), `gitdir: ${join(evil, '.git').split('\\').join('/')}\n`);
+  });
+  const { requestId } = f.submit();
+  const request = await reviewed(f.port, requestId);
+  assert.deepEqual([request.review, request.holdReason], ['held', 'unsafe_content']);
+  assert.equal(existsSync(marker), false, 'no planted command ran');
+  assert.equal(git(owner.repository, 'rev-parse', `refs/heads/${request.branch}`).trim(), request.baseCommit, 'nothing was committed');
+  // The attack is real: Git discovering that pointer runs the planted command.
+  try { git(request.worktreePath, 'status'); } catch { /* the planted Git directory has no commits */ }
+  assert.equal(existsSync(marker), true, 'the planted pointer would have run it');
+});
+
+test('a nested repository with an fsmonitor in its config runs nothing and holds the result', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const marker = join(owner.root, 'nested-attack-ran');
+  const f = service(t, owner, (worktree) => {
+    git(worktree, 'init', '-q', 'vendor/tool');
+    git(join(worktree, 'vendor', 'tool'), 'config', 'core.fsmonitor', planted(marker));
+    writeFileSync(join(worktree, 'vendor', 'tool', 'index.js'), 'module.exports = 1;\n');
+  });
+  const { requestId } = f.submit();
+  const request = await reviewed(f.port, requestId);
+  assert.deepEqual([request.review, request.holdReason], ['held', 'unsafe_content']);
+  assert.equal(existsSync(marker), false, 'no planted command ran');
+  try { git(join(request.worktreePath, 'vendor', 'tool'), 'status'); } catch { /* nothing committed there */ }
+  assert.equal(existsSync(marker), true, 'the nested repository would have run it');
+});
+
+test('a .gitmodules added by the run holds the result, nothing staged', { timeout: 60_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const f = service(t, owner, (worktree) => writeFileSync(join(worktree, '.gitmodules'), '[submodule "x"]\n\tpath = x\n\turl = ../x\n'));
+  const { requestId } = f.submit();
+  const request = await reviewed(f.port, requestId);
+  assert.deepEqual([request.holdReason, request.files], ['unsafe_content', []]);
+});
+
+test('a run changing more than 2,000 files is held as too large before anything is staged', { timeout: 120_000 }, async (t) => {
+  const owner = ownerRepository(t);
+  const f = service(t, owner, (worktree) => {
+    mkdirSync(join(worktree, 'generated'));
+    for (let index = 0; index <= 2000; index += 1) writeFileSync(join(worktree, 'generated', `${index}.txt`), 'x');
+  });
+  const { requestId } = f.submit();
+  const request = await reviewed(f.port, requestId);
+  assert.deepEqual([request.holdReason, request.files], ['too_large', []]);
+  assert.equal(git(owner.repository, 'rev-parse', `refs/heads/${request.branch}`).trim(), request.baseCommit);
+});
+
+test('the integrity check covers the repository config, its hooks and other visit branches', { timeout: 90_000 }, async (t) => {
+  const common = (repository) => git(repository, 'rev-parse', '--path-format=absolute', '--git-common-dir').trim();
+  const cases = {
+    config: (repository) => git(repository, 'config', 'synthetic.planted', 'yes'),
+    hooks: (repository) => writeFileSync(join(common(repository), 'hooks', 'post-checkout'), '#!/bin/sh\nexit 0\n'),
+    other_visit_branch: (repository) => git(repository, 'branch', 'fuli/visit/someone-else')
+  };
+  for (const [name, tamper] of Object.entries(cases)) {
+    const owner = ownerRepository(t);
+    const f = service(t, owner, (worktree, repository) => {
+      writeFileSync(join(worktree, 'src', 'server.js'), 'const port = 4300;\n');
+      tamper(repository);
+    });
+    const { requestId } = f.submit();
+    const request = await reviewed(f.port, requestId);
+    assert.equal(request.holdReason, 'integrity_violation', name);
+  }
 });

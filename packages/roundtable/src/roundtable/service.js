@@ -225,8 +225,11 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // only authority the woken session receives and is revoked after every attempt.
   // remote ({ deadline }): a paired device's ask wakes at most REMOTE_WAKE_ATTEMPTS
   // times, all within its one execution deadline, and a refused grant ends it.
+  // onlyFuliMcp: the woken session loads only FULI's own MCP server where the
+  // host can name it (host.fuliMcpServer); an ask from another computer and a
+  // visit request run on text from elsewhere, so they never get the person's others.
   async function deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn, peerDepth, remote = null,
-    wakeMode = 'answer', ladder = null }) {
+    wakeMode = 'answer', ladder = null, onlyFuliMcp = false }) {
     const unusable = new Set();
     let failure = 'wake_failed';
     let detail = null;
@@ -253,6 +256,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         woken += 1;
         answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd,
           timeoutMs: waitMs, prompt, delegationToken: grant.token, peerDepth, signal, mode: wakeMode,
+          ...(onlyFuliMcp ? { mcpServer: host.fuliMcpServer?.(delivery.client) ?? null } : {}),
           onSpawn: (pid) => { wakeClaims.recordSpawn(ask.id, pid); onSpawn?.(pid); },
           onSession: session => host.sealDelegation({ token: grant.token, sessionId: session }) });
         const verified = answer.sessionId && await host.verifyDelegation({ token: grant.token, sessionId: answer.sessionId });
@@ -638,7 +642,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     try {
       // A paired device only asks: every client is woken read-only on this computer.
       const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn,
-        peerDepth: assertion.depth, wakeMode: 'read_only', remote: { deadline: now() + timeoutMs } });
+        peerDepth: assertion.depth, wakeMode: 'read_only', onlyFuliMcp: true, remote: { deadline: now() + timeoutMs } });
       finishWake(ask);
       store.updateMessage(ask.id, { status: 'answered', via });
       store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent', inReplyTo: ask.id, via,
@@ -657,14 +661,22 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // grant, as one fresh session of the lead in the request's own worktree
   // (cwd), in the given wake mode. It is an ask like any other: recorded in its
   // own thread, one run of the lead at a time (it waits for an earlier one),
-  // every attempt's grant revoked after it. Answers { body, client } or throws
-  // with the wake's code.
-  async function wakeForVisit({ agentId, projectId, subject, cwd, prompt, mode, timeoutMs, signal }) {
+  // every attempt's grant revoked after it. The woken session loads only FULI's
+  // own MCP server: a worktree_edit wake of a client whose FULI entry the host
+  // cannot name is not started (fuli_mcp_unavailable), a read_only one keeps
+  // the person's configuration. clients: the clients this wake may use.
+  // Answers { body, client } or throws with the wake's code.
+  async function wakeForVisit({ agentId, projectId, subject, cwd, prompt, mode, timeoutMs, signal, clients = null }) {
     if (!host.issueOwnerDelegation) throw Object.assign(new Error('This host cannot grant an owner-approved wake'), { code: 'owner_grant_unavailable' });
     const target = await agentById(agentId);
     if (!target) throw Object.assign(new Error('The lead is no longer active'), { code: 'agent_unavailable' });
-    const attempts = wakeClientsFor(target).map((client) => ({ client, sessionId: null, cwd }));
-    if (!attempts.length) throw Object.assign(new Error('No client of the lead can run on this computer'), { code: 'no_client' });
+    const usable = wakeClientsFor(target).filter((client) => !clients || clients.includes(client));
+    if (!usable.length) throw Object.assign(new Error('No client of the lead can run on this computer'), { code: 'no_client' });
+    const attempts = usable.filter((client) => mode !== 'worktree_edit' || host.fuliMcpServer?.(client))
+      .map((client) => ({ client, sessionId: null, cwd }));
+    if (!attempts.length) {
+      throw Object.assign(new Error('FULI cannot limit the lead\'s session to its own MCP server here'), { code: 'fuli_mcp_unavailable' });
+    }
     const thread = store.createThread({ id: idFactory(), spaceId: spaceId(), projectId, subject: subject.slice(0, 80) });
     const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body: prompt, status: 'delivering',
       from: { agentId: null, name: VISIT_SENDER, client: VISIT_CLIENT }, to: { agentId, name: label(target) } });
@@ -678,7 +690,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       throw Object.assign(new Error('Another run of the lead holds it'), { code: claim.reason });
     }
     try {
-      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, wakeMode: mode,
+      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, wakeMode: mode, onlyFuliMcp: true,
         issueGrant: (delivery, lifetime) => host.issueOwnerDelegation({ projectId, agentId, targetClient: delivery.client,
           targetSessionId: null, lifetimeSeconds: Math.max(30, Math.min(900, Math.round(lifetime))) }) });
       finishWake(ask);
@@ -932,6 +944,8 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   const ownerThread = async ({ threadId }) => ({ ...thread({ threadId }), ...await person.view(threadId) });
   return { ...chat, findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
     messageStatus, cancelMessage, answerRemote, visitSharedLead, wakeForVisit,
+    // The lead's clients a visit wake could use on this computer, in order.
+    visitClients: async ({ agentId }) => { const agent = await agentById(agentId); return agent ? wakeClientsFor(agent) : []; },
     // The folder a fresh wake of this lead would use: its latest session in the project, else the host's.
     knownProjectFolder: ({ agentId, projectId }) => projectFolder({ agentId }, projectId),
     discuss: discussions.discuss,

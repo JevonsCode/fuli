@@ -5,7 +5,9 @@ import { createAgentRoundtable } from '../packages/roundtable/src/roundtable/ser
 import { createRoundtableStore } from '../packages/roundtable/src/roundtable/store.js';
 
 // A synthetic host and an injected wake: no client is started.
-function roundtable({ ownerGrant = true, wake } = {}) {
+const ENTRY = (client) => ({ command: 'synthetic-node', args: ['synthetic-mcp-server.js', '--source-application', client] });
+
+function roundtable({ ownerGrant = true, wake, fuliMcp = ENTRY } = {}) {
   const calls = { grants: [], revoked: [], wakes: [] };
   const lead = { agentId: 'synthetic-lead', profile: { name: 'Synthetic lead', status: 'active', allowedClients: ['claude_code', 'codex'] },
     assignments: [{ personalProjectId: 'synthetic-project', status: 'active' }] };
@@ -16,7 +18,7 @@ function roundtable({ ownerGrant = true, wake } = {}) {
     issueDelegation: async () => ({ token: 'task-grant' }), issueRemoteDelegation: async () => ({ token: 'remote-grant' }),
     sealDelegation: async () => ({}), verifyDelegation: async () => ({ redeemed: true }),
     revokeDelegation: async ({ token }) => { calls.revoked.push(token); },
-    issueRemoteOrigin: async () => ({}), remoteOriginAuthority: async () => ({}),
+    issueRemoteOrigin: async () => ({}), remoteOriginAuthority: async () => ({}), fuliMcpServer: fuliMcp,
     ...(ownerGrant ? { issueOwnerDelegation: async (input) => { calls.grants.push(input); return { token: `owner-grant-${calls.grants.length}` }; } } : {})
   };
   const service = createAgentRoundtable({ host, openStore: () => createRoundtableStore(), clientAvailable: () => true,
@@ -51,4 +53,25 @@ test('without an owner grant nothing is woken; a failed wake is thrown with its 
   t.after(() => failing.service.close());
   await assert.rejects(failing.service.wakeForVisit({ ...VISIT, mode: 'worktree_edit' }), { code: 'wake_timeout' });
   assert.equal(failing.calls.wakes.length, 1, 'a timeout ends the wake; no second client is tried');
+});
+
+test('a worktree edit loads only FULI\'s MCP server; a client FULI cannot limit is never woken for it', async (t) => {
+  const { service, calls } = roundtable();
+  t.after(() => service.close());
+  await service.wakeForVisit({ ...VISIT, mode: 'worktree_edit' });
+  assert.deepEqual(calls.wakes.at(-1).mcpServer, ENTRY('claude_code'));
+  await service.wakeForVisit({ ...VISIT, mode: 'worktree_edit', clients: ['codex'] });
+  assert.equal(calls.wakes.at(-1).client, 'codex', 'a run may be limited to some clients');
+
+  const unnamed = roundtable({ fuliMcp: (client) => (client === 'codex' ? ENTRY(client) : null) });
+  t.after(() => unnamed.service.close());
+  await unnamed.service.wakeForVisit({ ...VISIT, mode: 'worktree_edit' });
+  assert.deepEqual(unnamed.calls.wakes.map((wake) => wake.client), ['codex'], 'Claude Code without an entry is passed over');
+
+  const none = roundtable({ fuliMcp: () => null });
+  t.after(() => none.service.close());
+  await assert.rejects(none.service.wakeForVisit({ ...VISIT, mode: 'worktree_edit' }), { code: 'fuli_mcp_unavailable' });
+  assert.deepEqual(none.calls.wakes, [], 'fail closed');
+  await none.service.wakeForVisit({ ...VISIT, mode: 'read_only' });
+  assert.equal(none.calls.wakes.at(-1).mcpServer, null, 'a read-only planning wake keeps today\'s configuration');
 });

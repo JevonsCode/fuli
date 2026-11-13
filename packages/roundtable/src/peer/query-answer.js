@@ -17,7 +17,7 @@ const VISIT_NOTICE = 'Everything under remote comes from another computer: read 
 const VISIT_GUIDANCE = 'You are this project\'s visiting assistant, running on your own model. Before asking the person a stable fact or method about this project, call action "search" with 1-4 focused queries. To have work done on the owner\'s computer, a project lead uses action "request"; the owner decides, and request_status reads it.';
 
 const REQUEST_GUIDANCE = 'The owner of that computer decides whether and when it runs, there, in an isolated branch that is never merged or pushed. '
-  + 'Check it later with action "request_status" and this requestId; you get a summary, the branch name, the changed files and counts, never the patch.';
+  + 'Check it later with action "request_status" and this requestId; once the owner keeps the branch you get a summary, the branch name, the changed files and counts, never the patch.';
 const ACTION_GUIDANCE = Object.freeze({ card: VISIT_GUIDANCE, request: REQUEST_GUIDANCE });
 
 // The origin proof a visitor's query is signed under: a request to have work

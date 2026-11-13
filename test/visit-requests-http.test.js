@@ -19,16 +19,17 @@ const PLAN = { areas: ['src/app.js'], risks: ['touches startup'], dependencyChan
 function access(t) {
   let sequence = 0;
   const runner = {
+    folder: async () => '/synthetic',
     prepare: async (request) => ({ projectFolder: '/synthetic', worktreePath: `/synthetic/wt/${request.id}`, branch: `fuli/visit/${request.id}`,
       baseCommit: 'f'.repeat(40) }),
     plan: async () => ({ plan: PLAN, error: null, ms: 10 }),
-    run: async () => ({ ms: 20, summary: 'Done.', intact: true, addedText: '+x', files: [{ path: 'src/app.js', added: 1, removed: 0 }],
+    run: async () => ({ ms: 20, hold: null, summary: 'Done.', intact: true, addedText: '+x', files: [{ path: 'src/app.js', added: 1, removed: 0 }],
       diffstat: { files: 1, added: 1, removed: 0 } }),
     patch: async () => ({ text: 'diff --git a/src/app.js b/src/app.js\n+x', truncated: false }),
     remove: async () => {}
   };
   const port = createVisitorAccess({ application: {},
-    requests: ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner, idFactory: () => `http-request-${++sequence}` }) });
+    requests: ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner, leads: { confirm: async () => true, constrainedClients: async () => ['claude_code'] }, idFactory: () => `http-request-${++sequence}` }) });
   t.after(() => port.close());
   return port;
 }
