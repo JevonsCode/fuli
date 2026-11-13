@@ -1,6 +1,8 @@
 import type { ProjectAgentTaskRecord, ProjectAgentTaskStatus } from '@/types'
 import { arrayOf, normalizeTask, unknownRecord } from '@/features/project-agents/task-evidence'
 import type { AgentAttention } from '@/features/project-agents/attention-store'
+import { currentLocale, t } from '@/i18n'
+import { formatDateTime } from '@/lib/date-time'
 
 export const CURRENT_WORK_STATUSES = new Set<ProjectAgentTaskStatus>([
   'awaiting_recruitment',
@@ -35,6 +37,12 @@ export function overviewTaskTitle(task: ProjectAgentTaskRecord) {
   if (title && title !== task.taskId) return title
   const objective = task.objective?.trim()
   return objective && objective !== task.taskId ? objective : ''
+}
+
+/** A request's or task's time on the home pages: month, day and minute, or that it is missing. */
+export function overviewTime(value?: string | null) {
+  return formatDateTime(value, currentLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' },
+    { missing: t('overview.missing.time'), invalid: t('overview.missing.time') })
 }
 
 export function overviewOwnerId(task: ProjectAgentTaskRecord) {

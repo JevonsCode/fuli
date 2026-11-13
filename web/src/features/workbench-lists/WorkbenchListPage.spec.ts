@@ -52,7 +52,7 @@ afterEach(() => mounted.splice(0).forEach(wrapper => wrapper.unmount()))
 
 async function setup(path: string) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    { path: '/', component: { template: '<div>Workbench</div>' } },
+    { path: '/workbench', component: { template: '<div>Workbench</div>' } },
     { path: '/workbench/:list(running|done|notices)', component: WorkbenchListPage },
     { path: '/project-agents/manage', component: { template: '<div>Task</div>' } },
   ] })
