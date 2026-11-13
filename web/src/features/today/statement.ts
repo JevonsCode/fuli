@@ -59,13 +59,13 @@ export interface StatementTile { key: string; value: number; label: string; sub:
 /** The four tiles under the headline; a tile whose number is 0 or missing is left out. */
 export function statementTiles(statement: Statement): StatementTile[] {
   const value = (name: Section, field: string) => statementValue(statement, name, field)
-  const sub = (key: string, amount: number | null, hideZero = false) =>
-    amount === null || (hideZero && amount === 0) ? null : t(`today.statement.tiles.${key}`, { count: amount })
+  // A second line with nothing to count (「跨 0 个客户端」) says nothing, so it is left out.
+  const sub = (key: string, amount: number | null) => (amount ? t(`today.statement.tiles.${key}`, { count: amount }) : null)
   const tiles: Array<StatementTile | null> = [
     tile('carried', value('carried', 'tasks'), sub('carriedSub', value('carried', 'clients'))),
     tile('used', value('used', 'times'), t('today.statement.tiles.usedSub')),
     tile('learned', value('learned', 'captured'), sub('learnedSub', value('learned', 'confirmedByYou'))),
-    tile('decided', value('decided', 'forYou'), sub('decidedSub', value('decided', 'undone'), true)),
+    tile('decided', value('decided', 'forYou'), sub('decidedSub', value('decided', 'undone'))),
   ]
   return tiles.filter((item): item is StatementTile => item !== null)
 }

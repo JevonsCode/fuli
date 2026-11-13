@@ -45,7 +45,7 @@ const detailsOpen = ref(false)
 .statement-total { margin: 0; font-size: var(--text-body); font-weight: var(--weight-medium); }
 .statement-spark { flex: none; color: var(--color-accent); }
 /* Four in a row, two by two on a narrow screen; never page columns. */
-.statement-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 8px 0 12px; padding: 0; list-style: none; }
+.statement-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 8px 0 12px; padding: 0; list-style: none; }
 .statement-tile { display: grid; align-content: start; gap: 2px; min-width: 0; padding: 12px 14px; border-radius: var(--radius-control); background: var(--color-surface-subtle); }
 .statement-number { font-size: var(--text-title); font-weight: var(--weight-strong); font-variant-numeric: tabular-nums; line-height: var(--leading-title); }
 .statement-label { font-size: var(--text-body); font-weight: var(--weight-medium); }
