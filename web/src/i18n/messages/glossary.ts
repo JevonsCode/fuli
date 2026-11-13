@@ -56,7 +56,7 @@ export const glossaryMessages = {
       diagnostics: '一个 JSON 文件，装着开发者排查 FULI 问题需要的东西：版本和安装方式、系统和 Node 版本、不含个人内容的设置、体检结果和每个日志的最后约 400 行。用户目录、用户名、邮箱、令牌、密钥和网址参数在离开这台电脑前就被隐藏；不含知识、对话记录、记忆和项目内容。在设置的「系统」里生成，先预览再导出。',
     },
     destination: {
-      constellation: '打开 FULI 的第一页：当前工作、等你处理的事和最近完成的工作。',
+      constellation: '打开 FULI 的第一页「今天」：等你拍板的事、今天做了什么、复利账单和正在干活的助手。',
       agents: 'FLAs（FuLi Agents）：你的 Agent 团队，包括全部 FLA、编排、服务和职业。悬停可看到你置顶的 FLA。',
       chat: '圆桌：Agent 之间的讨论，以及等你决定的请求。',
       projects: '只在本机的个人项目。',
@@ -180,7 +180,7 @@ export const glossaryMessages = {
       diagnostics: 'One JSON file with what the developers need to diagnose FULI: its version and install kind, the OS and Node versions, settings without personal values, the health check and about the last 400 lines of each log. Home folder, user name, emails, tokens, keys and URL parameters are hidden before anything leaves this computer; it holds no knowledge, conversations, memory or project content. Create it under Settings › System, preview it, then export it.',
     },
     destination: {
-      constellation: 'The first page of FULI: current work, what needs you and what was just finished.',
+      constellation: 'The first page of FULI, Today: what needs your call, what was done today, the statement and who is working.',
       agents: 'FLAs (FuLi Agents): your Agent team, with every FLA, orchestration, services and occupations. Hover to see the FLAs you pinned.',
       chat: 'Roundtable: discussions between Agents, and the requests waiting for your decision.',
       projects: 'Your private projects on this computer.',

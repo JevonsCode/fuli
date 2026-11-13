@@ -14,7 +14,7 @@ import type { NavDestination } from './nav-destinations'
 // The floating dock (sketch 2026-10-31, direction A): round icon buttons in
 // one frosted-glass capsule like the macOS dock, left-aligned with the page.
 // Names show as tooltips and are the links' accessible names. Pinned FLAs rise
-// above the FLAs button. On the workbench the dock stays open; elsewhere it
+// above the FLAs button. On 今天 the dock stays open; elsewhere it
 // folds to the current destination. The pointer opens it at once; a click
 // keeps it open, even onto another folding page, and it folds only once the
 // pointer has left it for the intent delay (Jevons 11-01). Keyboard focus opens

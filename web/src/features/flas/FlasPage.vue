@@ -28,7 +28,7 @@ import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentRecord } from '@/types'
 import { UiIcon, UiNotice, UiSegmented } from '@/ui'
 import FlaRow from './FlaRow.vue'
-import { FLA_GROUP_ORDER, flaGroup, groupFlas, groupFlasByScope, type FlaGroupKey } from './fla-groups'
+import { FLA_GROUP_ORDER, flaGroup, groupFlas, groupFlasByScope, WORKING_FIRST_ORDER, type FlaGroupKey } from './fla-groups'
 import { useFlaLayout, type FlaLayout } from './fla-layout'
 import { lacksOccupation, suggestedOccupation } from './occupation-backfill'
 import { usePageRefresh } from '@/layouts/page-refresh'
@@ -178,7 +178,8 @@ const sections = computed(() => {
       .map(group => ({ key: group.key, label: t(`flas.scopes.${group.key}`), rows: group.rows }))
   }
   if (view.value === 'work') {
-    return groupFlas(rows.value, groupOf).map(group => ({ key: group.key, label: t(`flas.groups.${group.key}`), rows: group.rows }))
+    const order = route.query.first === 'working' ? WORKING_FIRST_ORDER : FLA_GROUP_ORDER
+    return groupFlas(rows.value, groupOf, order).map(group => ({ key: group.key, label: t(`flas.groups.${group.key}`), rows: group.rows }))
   }
   const ids = rows.value.map(agent => agent.agentId)
   const grouped = groupAgentsByProject(ids, id => profileProjectIds(byId.value.get(id)!), id => entries.value[id]?.status, formalProjectIds.value)

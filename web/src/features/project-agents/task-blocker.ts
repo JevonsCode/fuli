@@ -1,7 +1,7 @@
 import { postJson } from '@/api/client'
 import { currentLocale, t } from '@/i18n'
 import { formatElapsed } from '@/lib/elapsed-time'
-import type { BlockerClearCause, ProjectAgentTaskBlocker, ProjectAgentTaskEvent, ProjectAgentTaskRecord } from '@/types'
+import type { BlockerClearCause, ProjectAgentTaskBlocker, ProjectAgentTaskRecord } from '@/types'
 import { formatDate } from './task-labels'
 import { taskReason } from './task-reason'
 import type { TaskScope } from './task-runs'
@@ -52,13 +52,6 @@ export function blockerClearLine(clear: { cause: BlockerClearCause; at: string }
   if (clear.cause === 'person') return t('taskBlocker.clearedByYou', { time })
   const cause = t(`taskBlocker.causes.${clear.cause}`)
   return t(AUTOMATIC.has(clear.cause) ? 'taskBlocker.cleared' : 'taskBlocker.clearedBy', { time, cause })
-}
-
-/** The timeline's sentence for the event that ended a block, with the clearer's note or reason. */
-export function blockerClearSentence(event: Pick<ProjectAgentTaskEvent, 'blockerClearedBy' | 'blockerClearNote'>) {
-  if (!event.blockerClearedBy) return null
-  const sentence = t('taskBlocker.unblocked', { cause: t(`taskBlocker.causes.${event.blockerClearedBy}`) })
-  return event.blockerClearNote ? t('taskBlocker.unblockedWithNote', { sentence, note: event.blockerClearNote }) : sentence
 }
 
 /** The person's 「标记为已解除」; the console accepts it only from this computer. */

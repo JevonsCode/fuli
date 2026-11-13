@@ -34,8 +34,7 @@ import '@/features/overview/workbench-card.css'
 // One workbench list on its own page (Jevons 11-06): 进行中, 最近完成 or
 // 最近你可能需要知道的事. Every list shares the shell (search, time range and
 // sort in one row, a virtual list read a page at a time, the URL as its state);
-// each declares its own filters (list-query.ts), folded under 「筛选」. The
-// workbench card grows into this page (styles/motion.css, data-list-morph).
+// each declares its own filters (list-query.ts), folded under 「筛选」.
 const PAGE_SIZE = 50
 const SEARCH_DELAY_MS = 300
 // Fixed row heights the virtual list lays out by: a task is one title line and
@@ -165,8 +164,8 @@ const statusLabel = (status: string) => taskStatusLabel(status, { unrecognized: 
 
 <template>
   <section class="view workbench-list-view" :data-workbench-list="list">
-    <Breadcrumb :parent="{ label: t('routes.overview.title'), to: '/workbench', from: /^\/workbench(?:[?#]|$)/ }" />
-    <div class="workbench-card workbench-list-card" :data-list-morph="list">
+    <Breadcrumb :parent="{ label: t('routes.today.title'), to: '/', from: /^\/(?:[?#]|$)/ }" />
+    <div class="workbench-card workbench-list-card">
       <div class="workbench-list-bar" role="search">
         <Input v-model="searchInput" type="search" class="workbench-list-search" maxlength="200" data-list-search
           :aria-label="searchLabel" :placeholder="searchLabel" @keydown.enter.prevent="searchSoon.flush()" />

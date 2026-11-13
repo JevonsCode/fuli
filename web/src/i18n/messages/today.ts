@@ -4,7 +4,7 @@
 export const todayMessages = {
   'zh-CN': {
     sections: { decisions: '等你拍板', done: '今天做了什么', statement: '这周的复利账单', working: '正在干活' },
-    actions: { all: '全部', earlier: '更早的', details: '查看详情', allTasks: '全部任务', look: '去看看' },
+    actions: { all: '全部', earlier: '更早的', details: '查看详情', allAssistants: '全部助手', look: '去看看' },
     loading: {
       decisions: '正在读取等你拍板的事',
       done: '正在读取今天做了什么',
@@ -18,6 +18,12 @@ export const todayMessages = {
       more: '还有 {count} 件',
     },
     working: { meta: '{name} · {project}' },
+    clients: {
+      open: '在 {app} 里打开这次会话',
+      app: '这里打不开 {app} 的这次会话，请到 {app} 里找它',
+      none: '在 {app} 里，这里打不开它',
+      more: '还有 {count} 个客户端',
+    },
     statement: {
       headline: '你一共攒下 {count} 条习惯和经验',
       totalCaption: '条习惯和经验，是你一共攒下的',
@@ -68,7 +74,7 @@ export const todayMessages = {
   },
   'en-US': {
     sections: { decisions: 'Waiting for your call', done: 'Done today', statement: 'This week\'s statement', working: 'Working now' },
-    actions: { all: 'All', earlier: 'Earlier', details: 'Details', allTasks: 'All tasks', look: 'Take a look' },
+    actions: { all: 'All', earlier: 'Earlier', details: 'Details', allAssistants: 'All assistants', look: 'Take a look' },
     loading: {
       decisions: 'Reading what waits for your call',
       done: 'Reading what was done today',
@@ -82,6 +88,12 @@ export const todayMessages = {
       more: '{count} more',
     },
     working: { meta: '{name} · {project}' },
+    clients: {
+      open: 'Open this session in {app}',
+      app: "{app} can't open this session from here; find it in {app}",
+      none: 'In {app}; nothing here can open it',
+      more: '{count} more clients',
+    },
     statement: {
       headline: 'You have saved {count} habits and lessons',
       totalCaption: 'habits and lessons saved so far',

@@ -14,6 +14,7 @@ import { handleSessionRecordsRequest } from './session-records-api-router.js';
 import { handleCaptureChangeRequest } from './capture-change-api-router.js';
 import { handleCaptureOnboardingRequest, handleFirstRunGuideRequest } from './capture-onboarding-api-router.js';
 import { PERSON_WRITER } from '../graphiti/project-profile-authors.js';
+import { taskSessions } from '../graphiti/project-agent-task-sessions.js';
 
 // The Provider keeps a confirmer's label of at most this many characters.
 const CONFIRMER_LABEL_LIMIT = 160;
@@ -372,13 +373,15 @@ export async function handleGraphApiRequest({
     return true;
   }
   if (url.pathname === '/api/project-agent-tasks' && request.method === 'GET') {
-    sendJson(response, 200, await app.listProjectAgentTasks({
+    const tasks = await app.listProjectAgentTasks({
       personalSpaceId: url.searchParams.get('personalSpaceId'),
       personalProjectId: url.searchParams.get('personalProjectId'),
       agentId: url.searchParams.get('agentId'),
       status: url.searchParams.get('status'),
       limit: numberParam(url, 'limit', null)
-    }));
+    });
+    // The console shows which client each open task runs in (今天's 正在干活).
+    sendJson(response, 200, tasks.map((task) => ({ ...task, sessions: taskSessions(task) })));
     return true;
   }
   if (url.pathname === '/api/project-agent-task-pages' && request.method === 'GET') {
