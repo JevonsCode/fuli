@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { getJson, postJson, putJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,8 @@ import PeerSharePicker from './PeerSharePicker.vue'
 import { autoSharedNames, peerApiMessage, peerStatusShape, shareRows, unsharedSuggestions, type ClientId, type PeerStatus, type Shareable } from './peer-model'
 import { RECENT_READS, readAsker, readQuestion, visitorReadsShape, type VisitorRead } from './visitor-reads'
 import { formatRelativeTime } from '@/lib/relative-time'
+import RequesterModeSelect from '@/features/visit-requests/RequesterModeSelect.vue'
+import { VISIT_REQUESTS_PATH } from '@/features/visit-requests/useVisitPeek'
 
 type ShareDraft = { selected: boolean; clients: ClientId[]; folder: string }
 
@@ -48,6 +51,13 @@ const sharedAtPairing = computed(() => (status.value
 const paired = computed(() => Boolean(status.value?.role))
 const coordinator = computed(() => status.value?.role === 'coordinator')
 const otherDevices = computed(() => (status.value?.devices ?? []).filter((device) => !device.self))
+// Every other computer this one names, each a requester ('peer:<fingerprint>') with its own trust: the paired
+// devices on the coordinator; on a computer that joined, the coordinator (other members are not listed here).
+const otherComputers = computed(() => (coordinator.value
+  ? otherDevices.value.map((device) => ({ key: `peer:${device.nodeId}`, name: device.name, device }))
+  : status.value?.coordinator?.fingerprint
+    ? [{ key: `peer:${status.value.coordinator.fingerprint}`, name: status.value.coordinator.name, device: null }]
+    : []))
 const projectNames = computed(() => new Map((status.value?.shares ?? []).map((share) => [share.projectId, share.projectName])))
 watch(joinInvitation, () => { joiningDevice.value = null })
 
@@ -400,21 +410,29 @@ function shareState(projectId: string) {
           </template>
         </section>
 
-        <section v-if="coordinator && otherDevices.length" class="peer-block">
+        <section v-if="otherComputers.length" class="peer-block" data-peer-computers>
           <h3 class="ui-group-label">{{ t('settings.peer.devices') }}</h3>
           <ul class="peer-devices">
-            <li v-for="device in otherDevices" :key="device.nodeId">
+            <li v-for="computer in otherComputers" :key="computer.key">
               <div>
-                <strong>{{ device.name }}</strong>
-                <small>{{ device.shortFingerprint }} · {{ device.online ? t('settings.peer.online') : t('settings.peer.offline') }}</small>
+                <strong>{{ computer.name }}</strong>
+                <small v-if="computer.device">{{ computer.device.shortFingerprint }} · {{ computer.device.online ? t('settings.peer.online') : t('settings.peer.offline') }}</small>
+                <small v-else>{{ status.coordinator?.shortFingerprint }}</small>
               </div>
-              <Button size="sm" variant="destructive" :data-revoke="device.nodeId"
-                :loading="busy === `revoke:${device.nodeId}`" :loading-label="t('settings.peer.revoking')"
-                @click="revoke(device.nodeId)">
-                {{ t('settings.peer.revoke') }}
-              </Button>
+              <div class="peer-device-actions">
+                <RequesterModeSelect :requester-key="computer.key" :label="computer.name" />
+                <Button v-if="computer.device" size="sm" variant="destructive" :data-revoke="computer.device.nodeId"
+                  :loading="busy === `revoke:${computer.device.nodeId}`" :loading-label="t('settings.peer.revoking')"
+                  @click="revoke(computer.device.nodeId)">
+                  {{ t('settings.peer.revoke') }}
+                </Button>
+              </div>
             </li>
           </ul>
+          <div class="peer-actions">
+            <p>{{ t('visitRequests.mode.never') }}</p>
+            <Button as-child variant="ghost" size="sm"><RouterLink :to="VISIT_REQUESTS_PATH" data-visit-requests-link>{{ t('visitRequests.list.open') }}</RouterLink></Button>
+          </div>
         </section>
 
         <p>{{ t('settings.peer.disableHint') }}</p>
@@ -466,6 +484,7 @@ function shareState(projectId: string) {
 .peer-shares li > label:not(.peer-share-title), .peer-shares li > p { padding-left: 24px; }
 .peer-shares fieldset label { display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
 .peer-devices li { justify-content: space-between; }
+.peer-device-actions { display: flex; align-items: center; gap: 8px; }
 .peer-devices strong, .peer-devices small { display: block; overflow-wrap: anywhere; }
 /* One line per read: who asked, then what, cut with … (the full text is the title); the time stays whole. */
 .peer-reads { gap: 0; }

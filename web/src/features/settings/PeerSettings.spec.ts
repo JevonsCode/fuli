@@ -1,5 +1,6 @@
-import { flushPromises, mount } from '@vue/test-utils'
-import { afterEach, expect, it, vi } from 'vitest'
+import { config, flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { openCombobox, optionLabels, toggleOption } from '@/test-support/option-pickers'
 import PeerSettings from './PeerSettings.vue'
 
@@ -21,7 +22,14 @@ const paired = {
 const sharedSample = { projectId: 'sample-project', projectName: 'Sample project', agentId: 'lead', clients: ['codex'], state: 'shared' }
 const noResults = { projects: [], more: false }
 
+// The mode controls toast through the console store and link to the list of requests.
+config.global.stubs.RouterLink = RouterLinkStub
+afterAll(() => { delete config.global.stubs.RouterLink })
+beforeEach(() => setActivePinia(createPinia()))
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
+const noModes = { requesters: [], defaultMode: 'plan' }
+const PEER_B = 'peer:' + 'b'.repeat(64)
+const PEER_D = 'peer:' + 'd'.repeat(64)
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -32,7 +40,8 @@ function json(body: unknown, status = 200) {
 function server(routes: Record<string, unknown[]>) {
   const fetch = vi.fn(async (url: string, init?: RequestInit) => {
     const key = `${init?.method ?? 'GET'} ${url.split('?')[0]}`
-    const queue = routes[key] ?? (key.startsWith('GET /api/peer/shareable') && !key.startsWith('GET /api/peer/shareable/') ? [noResults] : undefined)
+    const queue = routes[key] ?? (key.startsWith('GET /api/peer/shareable') && !key.startsWith('GET /api/peer/shareable/') ? [noResults]
+      : key === 'GET /api/visitor-access/requesters' ? [noModes] : undefined)
     if (!queue?.length) throw new Error(`Unexpected request ${key}`)
     return json(queue.length > 1 ? queue.shift() : queue[0])
   })
@@ -214,6 +223,22 @@ it('shows the fingerprint of the other computer only on a computer that joined o
   const member = mount(PeerSettings)
   await flushPromises()
   expect(member.get('[data-other-fingerprint]').text()).toContain('BBBB CCCC DDDD EEEE FFFF 0000')
+  member.unmount()
+})
+
+it('puts a trust control on every other computer it names: each paired device here, the coordinator on a computer that joined', async () => {
+  server({ 'GET /api/peer': [paired] })
+  const host = mount(PeerSettings)
+  await flushPromises()
+  expect(host.findAll('[data-requester-mode]').map(control => control.attributes('data-requester'))).toEqual([PEER_B])
+  expect(host.get('[data-peer-computers]').text()).toContain('无论哪种，都不会合并或推送。')
+  expect(host.getComponent(RouterLinkStub).props('to')).toBe('/visit-requests')
+  host.unmount()
+  server({ 'GET /api/peer': [{ ...paired, role: 'member', devices: [], coordinator: { ...paired.coordinator, fingerprint: 'd'.repeat(64) } }] })
+  const member = mount(PeerSettings)
+  await flushPromises()
+  expect(member.findAll('[data-requester-mode]').map(control => control.attributes('data-requester'))).toEqual([PEER_D])
+  expect(member.find('[data-revoke]').exists()).toBe(false)
   member.unmount()
 })
 

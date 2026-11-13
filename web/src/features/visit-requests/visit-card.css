@@ -1,0 +1,10 @@
+/* The parts of a request's card (VisitRequestCard, VisitRequestReview): a
+   section is a group label over its lines; text the requester or an assistant
+   wrote wraps inside the card and never widens it. */
+.visit-section { display: grid; gap: 8px; min-width: 0; padding-top: 14px; border-top: 1px solid var(--color-border); }
+.visit-section h3, .visit-section h4 { margin: 0; }
+.visit-text { margin: 0; font-size: var(--text-body); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.visit-line { margin: 0; color: var(--color-ink-soft); font-size: var(--text-body); overflow-wrap: anywhere; }
+.visit-note { margin: 0; color: var(--color-muted); font-size: var(--text-meta); overflow-wrap: anywhere; }
+/* A request's leading mark in 等你拍板 and the list: the LAN roundtable it came through. */
+.visit-mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; color: var(--color-ink-soft); background: var(--color-surface-subtle); }

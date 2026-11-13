@@ -104,6 +104,12 @@ export function createVisitorAccess({ path = ':memory:', application, now = () =
       }
     },
 
+    // Every requester with a mode the person set; any other is DEFAULT_MODE.
+    requesters() {
+      try { return { ok: true, requesters: store.requesters(), defaultMode: DEFAULT_MODE }; }
+      catch { return refused(UNAVAILABLE); }
+    },
+
     requesterMode(key) {
       if (!validKey(key)) return refused('requester_invalid');
       try { return { ok: true, mode: store.requester(key)?.mode ?? DEFAULT_MODE }; }

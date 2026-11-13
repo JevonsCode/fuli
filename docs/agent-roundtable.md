@@ -291,7 +291,8 @@ person; raising the mode approves nothing that waits. After a restart a run
 that was going is `unknown` and is not run again.
 
 The console reads `GET /api/visit-requests` (with `awaiting` for 等你拍板) and
-`GET /api/visit-requests/:id` (events, and the patch for the owner), and decides
+`GET /api/visit-requests/:id` (events, and the patch for the owner) and the modes
+set so far with `GET /api/visitor-access/requesters`, and decides
 with `POST /api/visit-requests/:id/{approve,decline,keep,discard,cancel}` and
 `PUT /api/visitor-access/requesters/:key/mode`, all on this computer's loopback
 only. An FLA may decline or cancel for the person (lan_roundtable permission);
