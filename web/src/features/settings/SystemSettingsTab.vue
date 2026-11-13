@@ -17,6 +17,8 @@ import { usePageRefresh } from '@/layouts/page-refresh'
 import { formatDateTime } from '@/lib/date-time'
 import { formatBytes as formatByteCount } from '@/lib/format-bytes'
 import { motionPreference, setMotionPreference } from '@/lib/motion-preference'
+import { pageWidthPreference, setPageWidthPreference, type PageWidthPreference } from '@/lib/page-width-preference'
+import UiSegmented from '@/ui/UiSegmented.vue'
 import type { ResourceComponent, ResourceSnapshot, RuntimeSettings } from '@/types'
 import { FULI_VERSION } from '@/version'
 import DiagnosticsSettings from './DiagnosticsSettings.vue'
@@ -34,6 +36,10 @@ const locale = computed({
   get: () => currentLocale(),
   set: (value: AppLocale) => setLocale(value),
 })
+const pageWidthOptions = computed<Array<{ value: PageWidthPreference; label: string }>>(() => [
+  { value: 'comfortable', label: t('settings.behavior.pageWidthComfortable') },
+  { value: 'full', label: t('settings.behavior.pageWidthFull') },
+])
 const localeOptions = computed(() => [
   { value: 'zh-CN', label: t('settings.behavior.zh') },
   { value: 'en-US', label: t('settings.behavior.en') },
@@ -135,6 +141,11 @@ function formatTime(value: string | undefined) {
             :label="t('settings.behavior.language')"
             @update:model-value="updateLocale"
           />
+        </div>
+        <div class="setting-row select-row">
+          <span><strong>{{ t('settings.behavior.pageWidth') }}</strong><small>{{ t('settings.behavior.pageWidthMeta') }}</small></span>
+          <UiSegmented :model-value="pageWidthPreference" :options="pageWidthOptions" :label="t('settings.behavior.pageWidth')" size="sm"
+            data-page-width @update:model-value="setPageWidthPreference" />
         </div>
         <label class="setting-row">
           <span><strong>{{ t('settings.behavior.reduceMotion') }}</strong><small>{{ t('settings.behavior.reduceMotionMeta') }}</small></span>

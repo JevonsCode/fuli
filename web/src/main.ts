@@ -7,6 +7,7 @@ import { connectDesktopClient } from './lib/desktop-client'
 import { rememberConsoleLanguage } from './features/settings/console-language'
 import { installPageTransitions } from './lib/motion'
 import { initMotionPreference } from './lib/motion-preference'
+import { initPageWidthPreference } from './lib/page-width-preference'
 import { router } from './router'
 // The bundled fonts (SIL OFL 1.1) register before the theme names them.
 import '@fontsource-variable/inter'
@@ -26,6 +27,7 @@ import './styles/primitives.css'
 import './styles/motion.css'
 
 initMotionPreference()
+initPageWidthPreference()
 connectDesktopClient()
 
 const app = createApp(App)
