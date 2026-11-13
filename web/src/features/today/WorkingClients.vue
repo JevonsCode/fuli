@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, watch } from 'vue'
 import { useClientLinks } from '@/features/client-links/client-links-store'
 import { useConversationLauncherConfiguration } from '@/features/knowledge/conversation-launcher-settings'
 import { t } from '@/i18n'
@@ -13,8 +13,13 @@ import { CLIENT_INITIALS, clientMarks, SHOWN_CLIENTS } from './working-clients'
 const props = defineProps<{ sessions: ProjectAgentTaskSession[] }>()
 const launchers = useConversationLauncherConfiguration()
 const links = useClientLinks()
-// The client link list is read once per page load, and only when a row has a session to show.
-onMounted(() => { if (props.sessions.length) links.load().catch(() => {}) })
+// The client link list is read once per page load, when a row first has a session to show.
+let linksRead = false
+watch(() => props.sessions.length, (length) => {
+  if (!length || linksRead) return
+  linksRead = true
+  links.load().catch(() => {})
+}, { immediate: true })
 const marks = computed(() => clientMarks(props.sessions, launchers.value, links.state?.manifest))
 const shown = computed(() => marks.value.slice(0, SHOWN_CLIENTS))
 const more = computed(() => marks.value.length - shown.value.length)

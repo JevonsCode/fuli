@@ -707,14 +707,13 @@ describe('SettingsPage', () => {
         addEventListener: vi.fn(), removeEventListener: vi.fn() })))
     }
 
-    async function mountSettings(path = '/settings') {
+    async function mountSettings(path = '/settings', router = settingsRouter()) {
       const pinia = createPinia()
       setActivePinia(pinia)
       useConsoleStore().runtimeStatus = 'ready'
       vi.stubGlobal('fetch', vi.fn(async (input) => String(input) === '/api/system/settings'
         ? Response.json({ configured, active: configured, restartRequired: false })
         : Response.json({}, { status: 503 })))
-      const router = settingsRouter()
       await router.push(path)
       const wrapper = mount(SettingsPage, { global: { plugins: [pinia, router] }, attachTo: document.body })
       await flushPromises()
@@ -753,6 +752,22 @@ describe('SettingsPage', () => {
       expect(tabs.find('[data-settings-side]').exists()).toBe(false)
       expect(window.localStorage.getItem('fuli.settings.layout')).toBe('side')
       tabs.unmount()
+    })
+
+    it('follows the ?layout= in the address while the page stays open', async () => {
+      windowWide(true)
+      window.localStorage.removeItem('fuli.settings.layout')
+      const router = settingsRouter()
+      const wrapper = await mountSettings('/settings?layout=side', router)
+      expect(wrapper.find('[data-settings-side]').exists()).toBe(true)
+      // A link without ?layout= (or Back after the switch removed it) returns to the stored choice.
+      await router.push('/settings')
+      await flushPromises()
+      expect(wrapper.find('[data-settings-side]').exists()).toBe(false)
+      await router.push('/settings?layout=side')
+      await flushPromises()
+      expect(wrapper.find('[data-settings-side]').exists()).toBe(true)
+      wrapper.unmount()
     })
 
     it('outlines exactly the open topic\'s rendered cards on the left and scrolls to the one clicked', async () => {
@@ -808,6 +823,21 @@ describe('SettingsPage', () => {
       await wrapper.get('.settings-search input').setValue('')
       await flushPromises()
       expect(outlineLabels(wrapper)).toEqual(['自动沉淀', '按项目记录'])
+      wrapper.unmount()
+    })
+
+    it('while searching, a topic on the left scrolls the right side to its own panel', async () => {
+      windowWide(true)
+      const scrolled: Element[] = []
+      vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) { scrolled.push(this) })
+      const wrapper = await mountSettings('/settings?layout=side')
+      await wrapper.get('.settings-search input').setValue('Neo4j Bolt')
+      await flushPromises()
+      scrolled.length = 0
+      await wrapper.get('[data-settings-topic="clients"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-settings-topic="clients"]').attributes('aria-current')).toBe('true')
+      expect(scrolled).toEqual([wrapper.get('[data-settings-tab="clients"]').element])
       wrapper.unmount()
     })
 

@@ -29,7 +29,10 @@ const firstMonday = addDays(thisMonday, -7 * (CALENDAR_WEEKS - 1))
 const days = ref<{ state: 'loading' | 'ready' | 'failed'; value: StatementDays | null }>({ state: 'loading', value: null })
 const byDay = computed(() => new Map((days.value.value?.days ?? []).map(entry => [entry.day, entry])))
 const measures = computed(() => MEASURES.filter(measure => !(days.value.value?.unavailable ?? []).includes(measure)))
-const empty = computed(() => days.value.state === 'ready'
+// Every source failed: the endpoint answers with no days and all four measures unavailable.
+const everythingUnavailable = computed(() => Boolean(days.value.value)
+  && MEASURES.every(measure => (days.value.value!.unavailable ?? []).includes(measure)))
+const empty = computed(() => days.value.state === 'ready' && !everythingUnavailable.value
   && ![...byDay.value.values()].some(entry => measures.value.some(measure => measureOf(entry, measure) > 0)))
 
 const week = computed(() => {
@@ -91,6 +94,7 @@ void readStatementDays(new Date()).then(value => { days.value = { state: value ?
     <GrowthLoading v-if="days.state === 'loading'" :label="t('statementCalendar.loading.days')" />
     <PageStack v-else>
       <UiNotice v-if="days.state === 'failed'" tone="warning" data-calendar-failed>{{ t('statementCalendar.failed') }}</UiNotice>
+      <UiNotice v-else-if="everythingUnavailable" tone="warning" data-calendar-unavailable>{{ t('statementCalendar.unavailable') }}</UiNotice>
       <p v-else-if="empty" class="statement-calendar-empty" data-calendar-empty>{{ t('statementCalendar.empty') }}</p>
       <template v-else>
         <Card as="section" class="statement-calendar-card" :aria-label="t('statementCalendar.calendar')">
