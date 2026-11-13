@@ -51,7 +51,7 @@ export function readWindowsInstallation(packageRoot) {
       || windowsInstallPathsOverlap(installRoot, dataDir)) fail();
   const record = JSON.parse(readFileSync(join(installRoot, 'installation.json'), 'utf8'));
   if (supersedes(record, receipt)) throw new WindowsInstallationSupersededError(record);
-  if (record.status !== 'installed' ||['version', 'kind', 'installationId', 'installRoot', 'packageRoot', 'dataDir', 'inventorySha256']
+  if (record.status !== 'installed' || ['version', 'kind', 'installationId', 'installRoot', 'packageRoot', 'dataDir', 'inventorySha256']
     .some(key => record[key] !== receipt[key])
       || record.applicationVersion !== JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
       || !Array.isArray(record.shortcuts) || record.shortcuts.length !== 2 || !record.shortcuts.every(path => typeof path === 'string' && isAbsolute(path))
