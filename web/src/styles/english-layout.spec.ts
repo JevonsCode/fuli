@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { setLocale, t } from '@/i18n'
 import pageStyles from '../../styles.css?raw'
 import settingsPage from '@/pages/SettingsPage.vue?raw'
+import settingsTabsShell from '@/features/settings/SettingsTabsShell.vue?raw'
 
 // rec#102 (macOS 0.25.0 walk): English labels were cut where widths had been sized to Chinese.
 describe('English layout at the client\'s narrow width', () => {
@@ -20,9 +21,10 @@ describe('English layout at the client\'s narrow width', () => {
 
   it('keeps the settings page from scrolling sideways at 460pt and moves the search under the tabs', () => {
     expect(settingsPage).toContain('.settings-content { grid-template-columns: minmax(0, 1fr); }')
-    expect(settingsPage).toContain('@media (max-width: 520px) { .settings-tabbar :deep([role="tab"]) { padding-inline: 8px; } }')
+    // The tab row is the tabs shell's (layout A, which narrow windows always show).
+    expect(settingsTabsShell).toContain('@media (max-width: 520px) { .settings-tabbar :deep([role="tab"]) { padding-inline: 8px; } }')
     // min(100%, max-content), not flex-shrink 0: a max-content floor widened the whole settings column (rec#102 re-test).
-    expect(settingsPage).toContain('.settings-tabbar > :first-child { flex: 1 1 auto; min-width: min(100%, max-content); }')
+    expect(settingsTabsShell).toContain('.settings-tabbar > :first-child { flex: 1 1 auto; min-width: min(100%, max-content); }')
   })
 
   it('says one thing needs you in the singular', () => {
