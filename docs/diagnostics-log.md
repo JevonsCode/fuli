@@ -22,7 +22,7 @@ what it does not.
 | Field | Meaning |
 | --- | --- |
 | `at` | Local time with its UTC offset, for example `2026-11-05T14:03:00.120+08:00` |
-| `component` | `hook`, `http`, `provider` or `mcp` |
+| `component` | `hook`, `http`, `provider`, `mcp` or `roundtable` |
 | `version` | The FULI version that wrote it |
 | `operation` | What was being done: `codex.Stop`, `GET /api/…` (path only), a tool name, `native.start` |
 | `outcome` / `level` | `failed` / `error` (FULI could not do it) or `refused` / `warning` (FULI answered with an error the caller can act on) |
@@ -47,6 +47,11 @@ user names and passwords are dropped, local paths become `[path]`, and long opaq
   because the native services otherwise did not start.
 - **MCP tool calls**: a tool call that throws, as `refused` with the tool's own code or as `failed` with
   `internal_error`.
+- **Roundtable wakes**: a client woken for an ask (a local one or a paired device's) that did not answer, as `failed`
+  with its detail code (`client_not_found`, `spawn_error`, `login_required`, `client_exit_nonzero`,
+  `no_final_answer`, `output_too_large`, `timed_out`), the client, a resumed or new session, and the exit code and
+  signal. The client's own output is never written here; a redacted summary of at most 600 characters stays in the
+  roundtable store of the computer where it ran. A cancelled wake is not recorded.
 
 Writing an event is a single synchronous append of under 1 KB that catches every error. It never fails, delays or
 changes the operation it describes. When the data directory does not exist, nothing is written and nothing is
@@ -56,7 +61,7 @@ created.
 
 - A **hard power loss** or OS crash, or a process **killed before it wrote** its event (for example a hook that hits
   its client's deadline and is terminated). Such a failure leaves no event.
-- Failures outside the four places above, including a hook that fails before it can find its runtime configuration.
+- Failures outside the five places above, including a hook that fails before it can find its runtime configuration.
 - 4xx answers a route sends directly without raising an error (for example a plain 404 or 405).
 - A Provider that exits **after** it started successfully. Only startup is watched.
 - Events refused at the hard cap while rotation was blocked, and events removed when `.3` is rotated out.

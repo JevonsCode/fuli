@@ -32,6 +32,22 @@ export function recordToolFailure(log, { toolName, error, sessionId = null, star
   }));
 }
 
+// A roundtable wake that did not answer (packages/roundtable wake-failure.js):
+// codes, exit code and signal only. The client's output stays, redacted, in
+// the roundtable store of this computer.
+export function recordWakeFailure(log, { client, sessionMode, code, detail = null, exitCode = null, signal = null,
+  durationMs = null, remote = false }) {
+  return recorded(log, () => ({
+    component: 'roundtable',
+    operation: `wake ${client} ${sessionMode}`,
+    outcome: 'failed',
+    code: detail ?? code,
+    reason: `${remote ? 'A paired device\'s ask' : 'An ask'} could not wake ${client} in a ${sessionMode} session: ${code}`
+      + `${detail ? ` (${detail})` : ''}${exitCode === null ? '' : `, exit code ${exitCode}`}${signal ? `, signal ${signal}` : ''}`,
+    durationMs
+  }));
+}
+
 // Never throws: the caller's answer is already decided.
 function recorded(log, fields) {
   try { return log ? log.record(fields()) : false; } catch { return false; }

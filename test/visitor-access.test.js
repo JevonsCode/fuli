@@ -112,10 +112,9 @@ test('input is refused with plain codes, recorded, and never searched', async (t
   assert.ok(recorded.every(read => read.outcome === 'refused' && read.queries.length === 0));
   assert.deepEqual(recorded.map(read => read.code).sort(), ['project_invalid', 'project_invalid', 'queries_missing',
     'query_invalid', 'query_invalid', 'query_invalid', 'too_many_queries']);
-  // Without a usable requester there is nobody to record it against.
+  // Without a usable key there is nobody to record it against. A label never
+  // decides it (visiting assistant review H1): see the display-name test.
   assert.deepEqual(await search(port, { requester: { key: 'peer:short', label: 'x' } }), { ok: false, code: 'requester_invalid' });
-  assert.deepEqual(await search(port, { requester: { key: PEER, label: '' } }), { ok: false, code: 'requester_invalid' });
-  assert.deepEqual(await search(port, { requester: { key: PEER, label: '\u202e' } }), { ok: false, code: 'requester_invalid' });
   assert.deepEqual(await search(port, { requester: { key: { toString: () => PEER }, label: 'x' } }),
     { ok: false, code: 'requester_invalid' });
   assert.equal(reads(port).length, 7);

@@ -342,12 +342,17 @@ it('previews the device fingerprint before pairing, says what joining shares, an
   const wrapper = mount(PeerSettings)
   await flushPromises()
   expect(wrapper.find('[data-share-on-pair]').exists()).toBe(false)
+  expect(wrapper.find('[data-member-trust]').exists()).toBe(false)
   await wrapper.get('textarea').setValue('first-invitation')
   await wrapper.get('[data-join-peer]').trigger('click')
   await flushPromises()
   expect(fetch.mock.calls[1]?.[0]).toBe('/api/peer/invitations/preview')
   expect(wrapper.get('[data-invitation-preview]').text()).toContain('ABCD 1234')
   expect(wrapper.get('[data-share-on-pair]').text()).toBe('确认后，对方说它也有的项目（最多 8 个），两边负责人可以互相提问。其他项目不会共享。')
+  // The joining computer is always a member of the other's group: told so above the join control.
+  const trust = wrapper.get('[data-member-trust]')
+  expect(trust.text()).toBe('对方电脑负责转交消息，也由它决定组里还有哪些电脑。只和你信得过的电脑配对。')
+  expect(trust.element.compareDocumentPosition(wrapper.get('[data-join-peer]').element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(fetch.mock.calls.some(([url]) => url === '/api/peer/join')).toBe(false)
   await wrapper.get('textarea').setValue('replacement-invitation')
   expect(wrapper.find('[data-invitation-preview]').exists()).toBe(false)
@@ -358,4 +363,73 @@ it('previews the device fingerprint before pairing, says what joining shares, an
   expect(fetch.mock.calls[3]?.[0]).toBe('/api/peer/join')
   expect(JSON.parse(String(fetch.mock.calls[3]?.[1]?.body))).toEqual({ invitation: 'replacement-invitation' })
   wrapper.unmount()
+})
+
+const read = (id: number, changes = {}) => ({ id, requester: 'Laptop', agentName: 'Visitor lead', projectId: 'sample-project',
+  action: 'search', outcome: 'answered', code: null, queries: ['deploy port', 'release steps'], resultsCount: 2, at: new Date(Date.now() - id * 60_000).toISOString(), ...changes })
+
+it('lists 「最近被问」 under the shares: who asked, what, in which project, and when', async () => {
+  const { calls } = server({ 'GET /api/peer': [{ ...paired, shares: [sharedSample] }],
+    'GET /api/visitor-access/reads': [{ reads: [read(1), read(2, { agentName: null, projectId: 'gone-project', queries: ['old question'] }),
+      read(3, { action: 'card', queries: [] }), read(4, { outcome: 'refused', code: 'project_rate_limited_short', queries: [] }),
+      read(5, { outcome: 'refused', code: 'project_invalid', projectId: '', queries: [] })] }] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  expect(calls('GET /api/visitor-access/reads')[0]?.[0]).toBe('/api/visitor-access/reads?limit=5')
+  const rows = wrapper.findAll('[data-recent-reads] li')
+  expect(wrapper.text()).toContain('最近被问')
+  expect(rows).toHaveLength(5)
+  expect(rows[0]!.text()).toContain('Laptop · Visitor lead')
+  expect(rows[0]!.text()).toContain('Sample project：deploy port / release steps')
+  expect(rows[0]!.text()).toContain('1分钟前')
+  // A project this computer no longer shares reads as such, never as its id.
+  expect(rows[1]!.text()).toContain('已不共享的项目：old question')
+  expect(rows[1]!.text()).not.toContain('gone-project')
+  expect(rows[1]!.text()).not.toContain('·')
+  // Every contact shows: a look at the card, and attempts that got no answer.
+  expect(rows[2]!.text()).toContain('Sample project：看了谁负责')
+  expect(rows[3]!.text()).toContain('Sample project：问得太频繁，没有回答')
+  expect(rows[4]!.text()).toContain('已不共享的项目：没有回答')
+  wrapper.unmount()
+})
+
+it('hides 「最近被问」 when nobody asked, says so when it cannot be read, and never asks before pairing', async () => {
+  const empty = server({ 'GET /api/peer': [paired], 'GET /api/visitor-access/reads': [{ reads: [] }] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  expect(wrapper.find('[data-recent-reads]').exists()).toBe(false)
+  expect(wrapper.text()).not.toContain('最近被问')
+  expect(empty.calls('GET /api/visitor-access/reads')).toHaveLength(1)
+  wrapper.unmount()
+
+  server({ 'GET /api/peer': [paired] })
+  const unreadable = mount(PeerSettings)
+  await flushPromises()
+  expect(unreadable.find('[data-recent-reads]').exists()).toBe(false)
+  expect(unreadable.text()).toContain('最近被问')
+  expect(unreadable.get('[data-reads-unavailable]').text()).toBe('暂时读不到最近被问的记录。')
+  expect(unreadable.find('[role="alert"]').exists()).toBe(false)
+  unreadable.unmount()
+
+  const unpaired = server({ 'GET /api/peer': [off] })
+  const before = mount(PeerSettings)
+  await flushPromises()
+  expect(unpaired.calls('GET /api/visitor-access/reads')).toHaveLength(0)
+  before.unmount()
+})
+
+it('reads 「最近被问」 again when the person comes back to the page', async () => {
+  const { calls } = server({ 'GET /api/peer': [paired],
+    'GET /api/visitor-access/reads': [{ reads: [] }, { reads: [read(1)] }] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  expect(wrapper.find('[data-recent-reads]').exists()).toBe(false)
+  window.dispatchEvent(new Event('focus'))
+  await flushPromises()
+  expect(calls('GET /api/visitor-access/reads')).toHaveLength(2)
+  expect(wrapper.findAll('[data-recent-reads] li')).toHaveLength(1)
+  wrapper.unmount()
+  window.dispatchEvent(new Event('focus'))
+  await flushPromises()
+  expect(calls('GET /api/visitor-access/reads')).toHaveLength(2)
 })

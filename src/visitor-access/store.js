@@ -4,12 +4,30 @@ import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../..
 
 // Who may visit this computer's shared project knowledge from another one, in
 // which mode, and every attempt a visitor made (the visiting assistant). A
-// requester is 'peer:<device fingerprint>' or 'guest:<link id>'. A read row is
+// requester is 'peer:<device fingerprint>' or 'guest:<link id>'. A row is one
+// contact: a search, or a look at the shared lead's card. A read row is
 // written before its search runs (outcome 'pending') and settled afterwards
 // as 'answered' or 'failed'; a refused attempt is a 'refused' row with its
 // code. Rows keep the visitor's queries as they were searched (already cut),
 // how many items and bytes went back, never the items themselves. Guest links
 // and visit requests come with their own slices as later versions.
+const READS_TABLE = `
+    CREATE TABLE IF NOT EXISTS visitor_reads(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      requester_key TEXT NOT NULL,
+      requester_label TEXT NOT NULL,
+      agent_name TEXT,
+      project_id TEXT NOT NULL,
+      action TEXT NOT NULL CHECK(action IN ('search', 'card')),
+      outcome TEXT NOT NULL CHECK(outcome IN ('pending', 'answered', 'failed', 'refused')),
+      code TEXT,
+      queries_json TEXT NOT NULL,
+      results_count INTEGER NOT NULL,
+      bytes INTEGER NOT NULL,
+      at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS visitor_reads_at ON visitor_reads(at);
+    CREATE INDEX IF NOT EXISTS visitor_reads_requester_at ON visitor_reads(requester_key, at);`;
+
 export const VISITOR_ACCESS_FORMAT = sqliteFormat({
   store: 'visitor-access',
   schema: `
@@ -21,21 +39,7 @@ export const VISITOR_ACCESS_FORMAT = sqliteFormat({
       own_device INTEGER NOT NULL CHECK(own_device IN (0, 1)),
       mode_updated_at TEXT NOT NULL,
       CHECK(mode <> 'trusted' OR (kind = 'peer' AND own_device = 1)));
-    CREATE TABLE IF NOT EXISTS visitor_reads(
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      requester_key TEXT NOT NULL,
-      requester_label TEXT NOT NULL,
-      agent_name TEXT,
-      project_id TEXT NOT NULL,
-      action TEXT NOT NULL CHECK(action IN ('search')),
-      outcome TEXT NOT NULL CHECK(outcome IN ('pending', 'answered', 'failed', 'refused')),
-      code TEXT,
-      queries_json TEXT NOT NULL,
-      results_count INTEGER NOT NULL,
-      bytes INTEGER NOT NULL,
-      at TEXT NOT NULL);
-    CREATE INDEX IF NOT EXISTS visitor_reads_at ON visitor_reads(at);
-    CREATE INDEX IF NOT EXISTS visitor_reads_requester_at ON visitor_reads(requester_key, at);`
+    ${READS_TABLE}`
 });
 
 // Rows older than this are deleted on the next recorded attempt.
@@ -47,13 +51,24 @@ const RETENTION_MS = RETENTION_DAYS * DAY_MS;
 const REFUSALS_KEPT_PER_DAY = 1000;
 
 export class VisitorAccessStore {
-  constructor(path = ':memory:') {
+  constructor(path = ':memory:', { warn = line => process.stderr.write(line) } = {}) {
     this.path = path;
+    this.warn = warn;
   }
 
   // Opened on the first write; a missing file reads as empty and is never created by a read.
   get db() {
-    this.database ??= openFormattedDatabase(this.path, VISITOR_ACCESS_FORMAT);
+    if (!this.database) {
+      const database = openFormattedDatabase(this.path, VISITOR_ACCESS_FORMAT);
+      try {
+        const kept = setAsidePrereleaseReads(database);
+        if (kept) this.warn(`FULI: visitor reads from a pre-release build were kept as ${kept}; a new list starts.\n`);
+      } catch (error) {
+        database.close();
+        throw error;
+      }
+      this.database = database;
+    }
     return this.database;
   }
 
@@ -81,12 +96,12 @@ export class VisitorAccessStore {
     return this.requester(key);
   }
 
-  // A search about to run, as 'pending'; answers its row id. at is a Date.
-  reserveRead({ requesterKey, requesterLabel, agentName, projectId, queries, at }) {
+  // A search or card about to be answered, as 'pending'; answers its row id. at is a Date.
+  reserveRead({ requesterKey, requesterLabel, agentName, projectId, action, queries, at }) {
     this.#retain(at);
     return Number(this.db.prepare(`INSERT INTO visitor_reads(requester_key, requester_label, agent_name, project_id,
-      action, outcome, code, queries_json, results_count, bytes, at) VALUES (?, ?, ?, ?, 'search', 'pending', NULL, ?, 0, 0, ?)`)
-      .run(requesterKey, requesterLabel, agentName, projectId, JSON.stringify(queries), at.toISOString())
+      action, outcome, code, queries_json, results_count, bytes, at) VALUES (?, ?, ?, ?, ?, 'pending', NULL, ?, 0, 0, ?)`)
+      .run(requesterKey, requesterLabel, agentName, projectId, action, JSON.stringify(queries), at.toISOString())
       .lastInsertRowid);
   }
 
@@ -97,15 +112,23 @@ export class VisitorAccessStore {
 
   // A refused attempt, without its queries; not written past
   // REFUSALS_KEPT_PER_DAY of one requester's refusals in a day.
-  recordRefusal({ requesterKey, requesterLabel, agentName, projectId, code, at }) {
+  recordRefusal({ requesterKey, requesterLabel, agentName, projectId, action, code, at }) {
     const today = new Date(at.getTime() - DAY_MS).toISOString();
     const refused = this.db.prepare(`SELECT COUNT(*) AS count FROM visitor_reads
       WHERE requester_key = ? AND outcome = 'refused' AND at > ?`).get(requesterKey, today).count;
     if (refused >= REFUSALS_KEPT_PER_DAY) return;
     this.#retain(at);
     this.db.prepare(`INSERT INTO visitor_reads(requester_key, requester_label, agent_name, project_id, action,
-      outcome, code, queries_json, results_count, bytes, at) VALUES (?, ?, ?, ?, 'search', 'refused', ?, '[]', 0, 0, ?)`)
-      .run(requesterKey, requesterLabel, agentName, projectId, code, at.toISOString());
+      outcome, code, queries_json, results_count, bytes, at) VALUES (?, ?, ?, ?, ?, 'refused', ?, '[]', 0, 0, ?)`)
+      .run(requesterKey, requesterLabel, agentName, projectId, action, code, at.toISOString());
+  }
+
+  // How many reads of one project, by every requester, ran or are running after
+  // since (an ISO instant); refused attempts are not reads.
+  projectReadsSince(projectId, since) {
+    if (!this.readable) return 0;
+    return this.db.prepare("SELECT COUNT(*) AS count FROM visitor_reads WHERE project_id = ? AND outcome <> 'refused' AND at > ?")
+      .get(projectId, since).count;
   }
 
   // How many attempts, of any outcome, one requester made after since (an ISO instant).
@@ -132,6 +155,29 @@ export class VisitorAccessStore {
   #retain(at) {
     this.db.prepare('DELETE FROM visitor_reads WHERE at < ?').run(new Date(at.getTime() - RETENTION_MS).toISOString());
   }
+}
+
+// PRE-RELEASE REPAIR, delete after the first release that contains this store.
+// Version 1 never shipped in a release, and no release build writes this
+// file; only development builds of the visiting assistant did, with a
+// visitor_reads table without an outcome or without the card action. The
+// format engine has no step that rebuilds a table, so such a table is set
+// aside here, whole, in one transaction (renamed visitor_reads_prerelease_<n>,
+// its indexes dropped), and the current table is created; requesters stay as
+// they are. Answers the name it was kept under, or null when nothing was needed.
+function setAsidePrereleaseReads(database) {
+  const sql = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'visitor_reads'").get()?.sql ?? '';
+  if (/\boutcome\b/.test(sql) && sql.includes("'card'")) return null;
+  return immediateTransaction(database, () => {
+    const taken = new Set(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'visitor_reads_prerelease_%'")
+      .all().map(row => row.name));
+    let index = 1;
+    while (taken.has(`visitor_reads_prerelease_${index}`)) index += 1;
+    const kept = `visitor_reads_prerelease_${index}`;
+    database.exec(`DROP INDEX IF EXISTS visitor_reads_at; DROP INDEX IF EXISTS visitor_reads_requester_at;
+      ALTER TABLE visitor_reads RENAME TO ${kept};${READS_TABLE}`);
+    return kept;
+  });
 }
 
 function requesterView(row) {

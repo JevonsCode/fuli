@@ -2,11 +2,20 @@ import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 
 export const PEER_PROTOCOL = 'peer/1';
+// A visitor's read-only question to a shared lead's project (the visiting
+// assistant): rides the same queue as a message but never wakes a client.
+export const PEER_QUERY_PROTOCOL = 'peer-query/1';
 export const PEER_LIMITS = Object.freeze({
   requestBytes: 64 * 1024,
   responseBytes: 1024 * 1024,
   messageChars: 16_000,
   queuePerNode: 100,
+  queryQueuePerNode: 20,
+  queryQueuePerSender: 4,
+  queryTtlSeconds: 60,
+  queryReplyBytes: 48 * 1024,
+  queryCount: 4,
+  queryChars: 200,
   directoryAgents: 50,
   defaultTtlSeconds: 30 * 60,
   maxTtlSeconds: 30 * 60,
@@ -101,6 +110,12 @@ export function sha256Hex(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
+// Message IDs are chosen by senders, so the coordinator keys them per sending
+// device; a receiving device recomputes the key to tie a claim to its assertion.
+export function peerMessageKey(senderNode, messageId) {
+  return sha256Hex(`${senderNode}:${messageId}`);
+}
+
 export function coordinatorUrl(host, port) {
   if (!isIP(host)) throw new PeerError('invalid_address', 'The coordinator address must be an IP address');
   if (!Number.isSafeInteger(port) || port < 1 || port > 65535) throw new PeerError('invalid_address', 'Invalid coordinator port');
@@ -170,6 +185,46 @@ export function validateAssertion(assertion, { now = Date.now() } = {}) {
   if (!Number.isSafeInteger(assertion.depth) || assertion.depth < 1 || assertion.depth > PEER_LIMITS.maxDepth) {
     throw new PeerError('budget_exceeded', 'This conversation reached its cross-device depth limit');
   }
+  checkOriginAndLifetime(assertion, { now, maxSeconds: PEER_LIMITS.maxTtlSeconds, fail });
+  return assertion;
+}
+
+const QUERY_FIELDS = ['protocol', 'messageId', 'from', 'to', 'query', 'issuedAt', 'expiresAt', 'origin'];
+const QUERY_ACTIONS = new Set(['card', 'search']);
+// Named by the plan for later slices; refused by name until they exist.
+const LATER_QUERY_ACTIONS = new Set(['progress', 'request', 'request_status']);
+const exactKeys = (value, keys) => value && typeof value === 'object' && !Array.isArray(value)
+  && Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+
+// A visitor's question: exactly these fields, no body, depth, conversation or
+// chat wake, a lifetime of at most a minute, and its queries bounded here, so
+// nothing larger reaches the coordinator's queue or the receiving device's search.
+export function validateQuery(assertion, { now = Date.now() } = {}) {
+  const fail = (message) => { throw new PeerError('invalid_query', message); };
+  if (!assertion || typeof assertion !== 'object' || assertion.protocol !== PEER_QUERY_PROTOCOL) fail('Unsupported query protocol');
+  if (!exactKeys(assertion, QUERY_FIELDS)) fail('A query carries exactly its protocol, identity, ends, question, times and origin');
+  if (!isOpaqueId(assertion.messageId)) fail('Invalid query identity');
+  const { from, to, query } = assertion;
+  if (!exactKeys(from, ['node', 'agentId', 'name']) || !isFingerprint(from.node) || !isOpaqueId(from.agentId)
+    || typeof from.name !== 'string' || from.name.length > 120) fail('Invalid sender');
+  if (!exactKeys(to, ['node', 'bindingId', 'agentId']) || !isFingerprint(to.node) || !isOpaqueId(to.bindingId) || !isOpaqueId(to.agentId)) {
+    fail('Invalid recipient');
+  }
+  if (from.node === to.node) fail('A device cannot query itself');
+  if (LATER_QUERY_ACTIONS.has(query?.action)) throw new PeerError('query_action_unsupported', 'This device answers only card and search', 422);
+  if (!QUERY_ACTIONS.has(query?.action)) fail('Unknown query action');
+  if (query.action === 'card' && !exactKeys(query, ['action'])) fail('A card query carries no queries');
+  if (query.action === 'search' && (!exactKeys(query, ['action', 'queries']) || !Array.isArray(query.queries)
+    || query.queries.length < 1 || query.queries.length > PEER_LIMITS.queryCount
+    || !query.queries.every((text) => typeof text === 'string' && text.trim() && text.length <= PEER_LIMITS.queryChars))) {
+    fail(`A search carries 1 to ${PEER_LIMITS.queryCount} queries of at most ${PEER_LIMITS.queryChars} characters`);
+  }
+  checkOriginAndLifetime(assertion, { now, maxSeconds: PEER_LIMITS.queryTtlSeconds, fail });
+  return assertion;
+}
+
+// The origin proof's outer shape and the signed lifetime, shared by messages and queries.
+function checkOriginAndLifetime(assertion, { now, maxSeconds, fail }) {
   const origin = assertion.origin;
   if (!origin || typeof origin.payload !== 'string' || typeof origin.signature !== 'string'
     || origin.payload.length > 4096 || origin.signature.length > 128 || Object.keys(origin).length !== 2) {
@@ -178,9 +233,8 @@ export function validateAssertion(assertion, { now = Date.now() } = {}) {
   const issued = canonicalTime(assertion.issuedAt);
   const expires = canonicalTime(assertion.expiresAt);
   if (issued === null || expires === null) fail('Message times must be canonical UTC ISO timestamps');
-  if (!(issued <= now + 60_000) || !(expires > issued) || expires - issued > PEER_LIMITS.maxTtlSeconds * 1000) fail('Invalid message lifetime');
+  if (!(issued <= now + 60_000) || !(expires > issued) || expires - issued > maxSeconds * 1000) fail('Invalid message lifetime');
   if (expires <= now) throw new PeerError('message_expired', 'This message has expired', 410);
-  return assertion;
 }
 
 export function publicDirectoryEntry(entry) {

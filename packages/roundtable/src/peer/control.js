@@ -8,8 +8,7 @@ const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 export async function handlePeerControlRequest({ request, response, url, peer, readJson, sendJson, unavailableMessage }) {
   if (!url.pathname.startsWith('/api/peer')) return false;
   if (!peer) { sendJson(response, 404, { error: 'peer_unavailable', message: unavailableMessage }); return true; }
-  const host = String(request.headers.host ?? '');
-  if (!LOOPBACK.has(request.socket?.remoteAddress) || !/^(127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host)) {
+  if (!isLocalOwnerRequest(request)) {
     sendJson(response, 403, { error: 'local_owner_only', message: 'LAN roundtable settings can only be changed on this computer' });
     return true;
   }
@@ -24,6 +23,13 @@ export async function handlePeerControlRequest({ request, response, url, peer, r
     sendJson(response, status, { error: error.code, message: error.message });
   }
   return true;
+}
+
+// A request from this computer's own loopback address naming a loopback Host:
+// what every owner-only LAN roundtable page answers, including who visited it.
+export function isLocalOwnerRequest(request) {
+  return LOOPBACK.has(request.socket?.remoteAddress)
+    && /^(127\.0\.0\.1|\[::1\])(:\d+)?$/.test(String(request.headers?.host ?? ''));
 }
 
 async function route(request, url, peer, readJson) {

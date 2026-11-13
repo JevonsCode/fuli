@@ -13,10 +13,12 @@ import { agentDiscoveryProfile, matchesAgentDiscovery } from './discovery.js';
 import { CLIENT_LABELS, deliveryState } from './delivery-state.js';
 
 import { RoundtableError } from '../errors.js';
+import { visitView } from '../peer/query-answer.js';
 import { assertRoundtableHost } from '../host.js';
 import { nearNames } from './near-names.js';
 import { WAKE_CLIENTS, resolveClientCommand, sessionTurnRunning, sessionWorkingDirectory, wakeAgent } from './wake.js';
-import { createWakeLadder, standInAllowed } from './wake-ladder.js';
+import { REMOTE_WAKE_ATTEMPTS, createWakeLadder, standInAllowed } from './wake-ladder.js';
+import { outwardFailureView, wakeAttemptRecord } from './wake-failure.js';
 import { enterStandIn, recordStandInReply, standInState } from './stand-in.js';
 
 const THREAD_MESSAGE_LIMIT = 24;
@@ -25,6 +27,9 @@ const REMOTE_PENDING = new Set(['sent', 'queued', 'claimed', 'running']);
 const REMOTE_FINAL = new Set(['answered', 'failed', 'cancelled', 'expired', 'unknown']);
 // Claim refusals kept on the ask; a chat wait is the chat's own state, not the ask's.
 const RECORDED_REFUSALS = new Set(['execution_claimed', 'cleanup_unconfirmed']);
+// A later wake of a remote ask starts only with this much of its deadline left
+// (the shortest grant lifetime the Provider issues).
+const MIN_REMOTE_WAKE_MS = 30_000;
 
 // Agents talk to each other directly: an ask wakes the recipient in its own
 // client and returns its answer, or waits in its inbox for its next task.
@@ -190,8 +195,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       ladder?.skip('new_session', { client: preferClient,
         reason: permitted.includes(preferClient) ? 'client_unavailable' : 'client_not_allowed' });
     }
+    // A share names its clients in the owner's order.
     const freshClients = explicit ? [resumable.client]
-      : [...new Set([preferClient ?? resumable?.client, ...WAKE_CLIENTS])].filter((client) => allowed.includes(client));
+      : [...new Set([preferClient ?? resumable?.client, ...(clients ?? WAKE_CLIENTS)])].filter((client) => allowed.includes(client));
     // A strict delivery only starts new sessions in a folder known for this project.
     const strictFolder = strictCwd ? freshCwd ?? resumable?.cwd ?? await projectFolder(agent, projectId) : null;
     if (strictCwd && !strictFolder) return resumable ? [resumable] : [];
@@ -213,27 +219,36 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
 
   // Tries each target until one answers as the restored Agent. The grant is the
   // only authority the woken session receives and is revoked after every attempt.
-  async function deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn, peerDepth, oneGrant = false,
+  // remote ({ deadline }): a paired device's ask wakes at most REMOTE_WAKE_ATTEMPTS
+  // times, all within its one execution deadline, and a refused grant ends it.
+  async function deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn, peerDepth, remote = null,
     readOnly = false, ladder = null }) {
     const unusable = new Set();
     let failure = 'wake_failed';
+    let detail = null;
+    let woken = 0;
     let cleanup = null;
     for (const delivery of attempts) {
       if (unusable.has(delivery.client)) continue;
-      if (signal?.aborted) { failure = 'cancelled'; break; }
+      if (signal?.aborted) { failure = 'cancelled'; detail = 'cancelled'; break; }
       // Resuming in place would write into a turn that is still running.
       if (delivery.busy) {
         failure = 'session_busy';
+        detail = null;
         ladder?.skip('resume', { client: delivery.client, session: delivery.sessionId, reason: failure });
         continue;
       }
+      const waitMs = remote ? Math.min(timeoutMs, remote.deadline - now()) : timeoutMs;
+      if (remote && woken && (woken >= REMOTE_WAKE_ATTEMPTS || waitMs < MIN_REMOTE_WAKE_MS)) break;
       store.updateMessage(ask.id, { status: 'delivering', toClient: delivery.client, toSession: delivery.sessionId });
       let answer;
       let grant;
+      const startedAt = now();
       try {
-        grant = await issueGrant(delivery, timeoutMs / 1000);
+        grant = await issueGrant(delivery, waitMs / 1000);
+        woken += 1;
         answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd,
-          timeoutMs, prompt, delegationToken: grant.token, peerDepth, signal, readOnly,
+          timeoutMs: waitMs, prompt, delegationToken: grant.token, peerDepth, signal, readOnly,
           onSpawn: (pid) => { wakeClaims.recordSpawn(ask.id, pid); onSpawn?.(pid); },
           onSession: session => host.sealDelegation({ token: grant.token, sessionId: session }) });
         const verified = answer.sessionId && await host.verifyDelegation({ token: grant.token, sessionId: answer.sessionId });
@@ -242,7 +257,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         store.recordMemoryResult(ask.id, verified.memoryResultCount ?? 0);
       } catch (error) {
         failure = attemptFailure(error);
+        detail = error.detail ?? null;
         ladder?.attempt(delivery, 'failed', failure);
+        if (grant) recordWake(ask, delivery, { startedAt, remote, error });
         // The team rules refused this Agent: no other channel or stand-in may reach it.
         if (failure === 'not_permitted') break;
         // A process that may still be running must not get a sibling on another channel.
@@ -256,19 +273,35 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         if (['client_login_required', 'client_unavailable'].includes(failure)) unusable.add(delivery.client);
         // A timeout already used the caller's wait; a cancellation ends the delivery.
         if (failure === 'wake_timeout' || failure === 'cancelled') break;
-        // A remote attempt receives authority once; a second channel would only be
-        // refused and hide why the first one failed.
-        if (oneGrant) break;
+        // Each wake of a remote ask is authorised as the first one was (its own
+        // grant from the owner's Provider); a refused grant ends the ask.
+        if (remote && !grant) break;
         continue;
       } finally {
         // Even failed or timed-out attempts lose their authority. Expiry remains
         // the fail-closed backstop if the Provider is temporarily unreachable.
         if (grant?.token) await host.revokeDelegation({ token: grant.token }).catch(() => {});
       }
+      recordWake(ask, delivery, { startedAt, remote });
       ladder?.attempt(delivery, 'answered');
       return { answer, delivery, via: `${delivery.client}:${delivery.sessionId ? 'resume' : 'new'}` };
     }
-    throw Object.assign(new Error('No client answered'), { code: failure, ...(cleanup ? { cleanup } : {}) });
+    throw Object.assign(new Error('No client answered'), { code: failure, ...(detail ? { detail } : {}),
+      ...(remote ? { attempts: woken } : {}), ...(cleanup ? { cleanup } : {}) });
+  }
+
+  // Each wake is kept where it ran, its output only as the host redacts it
+  // (wake-failure.js); a failure also reaches the host's diagnostics, without that output.
+  // The record is diagnostics: failing to keep it never changes what the ask answers.
+  function recordWake(ask, delivery, { startedAt, remote, error = null }) {
+    try {
+      const record = wakeAttemptRecord({ client: delivery.client, sessionId: delivery.sessionId, error,
+        durationMs: now() - startedAt, redact: host.redactDiagnostic });
+      store.wakeAttempts.record(ask.id, record);
+      if (!error || record.code === 'cancelled') return;
+      const { client, sessionMode, code, detail, exitCode, signal, durationMs } = record;
+      host.recordWakeFailure?.({ client, sessionMode, code, detail, exitCode, signal, durationMs, remote: Boolean(remote) });
+    } catch { /* the wake's own outcome stands */ }
   }
 
   // While an earlier wake of this Agent may still be running, no new one starts.
@@ -504,6 +537,24 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     return handedOver(remoteView(applyRemote(ask.id, state)), 'message_agent');
   }
 
+  // The visiting assistant: the current task's Agent reads a paired device's
+  // shared project with this client's own model. The other device answers from
+  // its shared knowledge and wakes nothing; message_agent is the path that wakes its lead.
+  async function visitSharedLead({ taskContextToken = null, sourceApplication, address, action, queries, signal }) {
+    if (!peer?.isRemoteAddress(address)) throw validation('Visit a paired device\'s lead by its peer:<device>:<binding> address from find_agents');
+    if (!VISIT_ACTIONS.has(action)) throw validation('action is card or search');
+    if (action === 'search' && (!Array.isArray(queries) || !queries.length || queries.length > 4
+      || !queries.every((query) => typeof query === 'string' && query.trim() && query.length <= 200))) {
+      throw validation('search needs 1-4 focused queries of at most 200 characters');
+    }
+    const from = await sender({ taskContextToken, sourceApplication });
+    if (!from.agent || !from.projectId) throw validation('A visit must come from an active project task of a FULI Agent; pass taskContextToken');
+    const target = await peer.resolveRemote(address);
+    const answer = await peer.query(target, action === 'search' ? { action, queries } : { action }, { taskContextToken,
+      sourceApplication: from.client, from: { agentId: from.agent.agentId, name: label(from.agent) }, signal });
+    return visitView({ address: target.address, device: target.deviceName, action, answer });
+  }
+
   function applyRemote(messageId, state) {
     const ask = store.getMessage(messageId);
     if (!ask || !state || !REMOTE_PENDING.has(ask.status)) return ask;
@@ -528,7 +579,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       ? store.messages(ask.thread_id).find((message) => message.in_reply_to === ask.id) : null;
     return { status: ask.status === 'sent' ? 'queued' : ask.status, threadId: ask.thread_id, messageId: ask.id,
       recipient: { agentId: ask.to_agent, name: ask.to_name }, remote: true,
-      ...(reply ? { reply: reply.body, via: reply.via } : {}), ...(ask.error ? { reason: ask.error } : {}),
+      ...(reply ? { reply: reply.body, via: reply.via } : {}), ...(ask.error ? outwardFailureView(ask.error) : {}),
       ...cleanupView(storedCleanup(ask)),
       ...(REMOTE_FINAL.has(ask.status) ? {} : { guidance: 'The remote device has not answered yet. Check later with get_agent_message_status; it does not mean the work ran.' }),
       ...(ask.status === 'unknown' ? { guidance: 'The remote device lost track of this attempt; it may or may not have run. It is not retried automatically.' } : {}) };
@@ -576,8 +627,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     }
     const prompt = promptOverride ?? wakePrompt({ thread, ask, target, senderName: ask.from_name, senderClient: ask.from_client });
     try {
+      // A paired device only asks: every client is woken read-only on this computer.
       const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn,
-        peerDepth: assertion.depth, oneGrant: true });
+        peerDepth: assertion.depth, readOnly: true, remote: { deadline: now() + timeoutMs } });
       finishWake(ask);
       store.updateMessage(ask.id, { status: 'answered', via });
       store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent', inReplyTo: ask.id, via,
@@ -831,7 +883,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // conversations, who is subscribed and how each one receives a post.
   const ownerThread = async ({ threadId }) => ({ ...thread({ threadId }), ...await person.view(threadId) });
   return { ...chat, findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
-    messageStatus, cancelMessage, answerRemote,
+    messageStatus, cancelMessage, answerRemote, visitSharedLead,
     // The folder a fresh wake of this lead would use: its latest session in the project, else the host's.
     knownProjectFolder: ({ agentId, projectId }) => projectFolder({ agentId }, projectId),
     discuss: discussions.discuss,
@@ -842,7 +894,12 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     groupDiscussionStatus: discussions.ownerStatus,
     joinGroupDiscussion: discussions.ownerJoin,
     groupDiscussionTurns: discussions.ownerSessionTurn,
-    ownerMessageStatus: ({ messageId }) => statusOf(ownedAsk(messageId)),
+    // The owner also sees each wake this computer started for the ask and why it failed.
+    ownerMessageStatus: async ({ messageId }) => {
+      const ask = ownedAsk(messageId);
+      const wakeAttempts = store.wakeAttempts.forMessage(ask.id);
+      return { ...await statusOf(ask), ...(wakeAttempts.length ? { wakeAttempts } : {}) };
+    },
     // Cancelling is not evidence that a possibly running process exited; any cleanup hold stays.
     ownerCancelMessage: ({ messageId }) => cancelAsk(ownedAsk(messageId)),
     pending: (agentId, projectId = undefined) => store.pendingFor(spaceId(), agentId)
@@ -914,6 +971,8 @@ function wakePrompt({ thread, target, senderName, senderClient, ask, targetProje
 function inboxGreeting(target) {
   return `FULI 圆桌会把发给「${label(target)}」的消息排进这个对话。现在只需回复「好」。`;
 }
+
+const VISIT_ACTIONS = new Set(['card', 'search']);
 
 function label(agent) {
   return agent.profile.displayName || agent.profile.name || agent.agentId;

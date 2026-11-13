@@ -303,8 +303,8 @@ caps (fixed members, each consumed once, two response rounds, five follow-ups),
 and with no more authority than `message_agent`.
 
 Each member turn is a real `message_agent` wake in a fresh session (no resume) of
-the member's own allowed client. Claude Code discussion wakes deny file edits and the shell: they keep the
-non-interactive mode and add `--disallowedTools Edit,Write,NotebookEdit,MultiEdit,Bash` (a deny rule wins over any allow rule). Codex runs in its `read-only` sandbox. The prompt holds the
+the member's own allowed client. Claude Code discussion wakes, like asks from another computer, have the reading tools only: they keep the
+non-interactive mode and add `--tools Read,Grep,Glob` with `--disallowedTools Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell` (a deny rule wins over any allow rule). Codex runs in its `read-only` sandbox. Known limit: tools of other MCP servers the person configured in that client are not built-in tools and still follow the person's own allow rules there. The prompt holds the
 question, the member's role line and 800-character excerpts of the other members;
 the member's own FULI entry delivers its preferences and knowledge index. The
 Provider issues and verifies a per-attempt delegation, and only a verified answer

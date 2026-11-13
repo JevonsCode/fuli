@@ -259,7 +259,7 @@ test('external knowledge configuration is controllable through explicit Agent to
 test('Agent interface catalog lists roundtable reads and requested-Agent identity guidance', () => {
   const catalog = agentInterfaceCatalog();
   const roundtable = catalog.readWorkflows.find(({ domain }) => domain === 'roundtable');
-  assert.deepEqual(roundtable.toolNames, ['find_agents', 'agent_chat', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status']);
+  assert.deepEqual(roundtable.toolNames, ['find_agents', 'agent_chat', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status', 'visit_shared_lead']);
   assert.deepEqual(roundtable.readRoutes, ['GET /api/roundtable/agents', 'GET /api/roundtable/chats', 'GET /api/roundtable/chats/:chatId',
     'GET /api/roundtable/threads', 'GET /api/roundtable/threads/:threadId',
     'GET /api/roundtable/messages/:messageId']);
