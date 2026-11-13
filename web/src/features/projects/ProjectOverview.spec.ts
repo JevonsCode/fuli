@@ -33,6 +33,14 @@ vi.mock('@/features/capture/ProjectCaptureSwitch.vue', () => ({
   },
 }))
 
+vi.mock('@/features/guest-links/GuestLinksCard.vue', () => ({
+  default: {
+    name: 'GuestLinksCard',
+    props: ['projectId'],
+    template: '<div data-guest-links-stub :data-project="projectId" />',
+  },
+}))
+
 vi.mock('@/features/judgment/ProjectJudgmentPolicy.vue', () => ({
   default: {
     name: 'ProjectJudgmentPolicy',
@@ -68,6 +76,7 @@ describe('ProjectOverview project history', () => {
     const log = wrapper.get('[data-project-change-log-stub]')
     expect(log.attributes('data-project')).toBe('fuli')
     expect(log.attributes('data-updated')).toBe('2026-11-01T00:00:00.000Z')
+    expect(wrapper.get('[data-guest-links-stub]').attributes('data-project')).toBe('fuli')
   })
 
   it('shows no creation line without a recorded time', () => {

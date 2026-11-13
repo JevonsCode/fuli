@@ -232,6 +232,33 @@ The equivalent local controls are available with `fuli peer --help`. Full databa
 backups contain private device and origin-authority material; keep those backups
 private. Public knowledge exports do not include those keys.
 
+### Guest links: asking without FULI (rec issue 133)
+
+A guest link lets someone on the same network whose computer has no FULI ask one
+project here, read-only, from their own AI client. The person makes it on the
+project page (访客链接 › 生成; 1, 7 or 30 days, 7 by default) and copies one
+sentence for any AI that can run commands. The token (`fgl_` and 32 random bytes)
+is shown only in that dialog; FULI stores its SHA-256 in `visitor-access.sqlite`.
+
+- **Listener.** `src/guest-access/` runs its own HTTP listener on port 2729 of this
+  computer's private and carrier-grade NAT (100.64.0.0/10, used by Tailscale and many
+  company VPNs) addresses, only while a link is live. It never reaches the console's
+  handlers or `/api/*`; the console's LAN access is unchanged and stays off it.
+- **Checks before any route.** A private or carrier-grade NAT source address, a Host
+  naming a bound address, no Origin, and the token in `Authorization: Bearer` only.
+  Missing, wrong, expired and revoked tokens get one `401`; 10 failures from one
+  address in 10 minutes give `429`. Every request reads the link again, so 撤销
+  works on the next request, and the last link's end stops the listener.
+- **Routes.** `GET /guest/1/card` and `POST /guest/1/search { queries: [1-4] }`,
+  the same narrowed visitor search as a paired computer's visiting assistant
+  (`src/visitor-access/`), recorded per attempt under `guest:<linkId>` with its
+  limits. A link only asks; running work on this computer is a later step.
+- **Console.** `GET/POST /api/visitor-access/guest-links` and
+  `DELETE /api/visitor-access/guest-links/:linkId` answer on loopback only. Creating
+  is the person's own; revoking may be delegated (public projects permission).
+- The link travels unencrypted on that network, so links are short-lived and
+  revocable; the card on the project page says so.
+
 ## Chat push and unread delivery (RT-1)
 
 `agent_chat` keeps direct/group messages separate from execution asks. Its `wait`
