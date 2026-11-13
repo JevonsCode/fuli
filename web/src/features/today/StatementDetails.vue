@@ -9,7 +9,10 @@ import { readStatement, statementDetails, statementWeek, type Statement } from '
 
 // 查看详情 of the statement: every number it has, each with one line on what it
 // counts and whether FULI saw it happen or an assistant reported it, for this
-// week or the one before (each switch reads that week again).
+// week or the one before. Each switch reads that week again; the numbers shown
+// stay where they are until the answer arrives, so the dialog never empties,
+// changes height or flashes (Jevons 11-13). The reading mark has its own
+// reserved place beside the switch.
 const props = defineProps<{ open: boolean; statement: Statement }>()
 defineEmits<{ close: [] }>()
 type Week = 'current' | 'previous'
@@ -42,10 +45,14 @@ watch(() => props.open, open => { if (open) { reading++; week.value = 'current';
 <template>
   <UiDialog :open="open" :title="t('today.sections.statement')" :description="range" size="md" @close="$emit('close')">
     <div class="statement-details" data-statement-details>
-      <UiSegmented :model-value="week" :options="weekOptions" :label="t('today.statement.week.label')" size="sm" @update:model-value="choose" />
-      <GrowthLoading v-if="loading" variant="compact" :label="t(week === 'previous' ? 'today.loading.previousStatement' : 'today.loading.statement')" />
-      <p v-else-if="!rows.length" class="statement-details-none">{{ t(`today.statement.unavailable.${week}`) }}</p>
-      <dl v-else class="statement-details-list">
+      <div class="statement-details-head">
+        <UiSegmented :model-value="week" :options="weekOptions" :label="t('today.statement.week.label')" size="sm" @update:model-value="choose" />
+        <span class="statement-details-reading">
+          <GrowthLoading v-if="loading" variant="inline" :label="t(week === 'previous' ? 'today.loading.previousStatement' : 'today.loading.statement')" />
+        </span>
+      </div>
+      <p v-if="!rows.length && !loading" class="statement-details-none">{{ t(`today.statement.unavailable.${week}`) }}</p>
+      <dl v-else-if="rows.length" class="statement-details-list" :aria-busy="loading" data-statement-rows>
         <div v-for="row in rows" :key="row.key" class="statement-details-row" :data-statement-detail="row.key">
           <dt>{{ row.label }}</dt>
           <dd class="statement-details-value">{{ row.value }}</dd>
@@ -58,6 +65,13 @@ watch(() => props.open, open => { if (open) { reading++; week.value = 'current';
 
 <style scoped>
 .statement-details { display: grid; gap: 12px; }
+/* The switch and the reading mark share one line; the mark's place is always there, so nothing moves when it shows. */
+.statement-details-head { display: flex; align-items: center; gap: 12px; min-height: 32px; }
+.statement-details-head > :first-child { flex: 1; min-width: 0; }
+.statement-details-reading { display: inline-flex; flex: none; align-items: center; justify-content: flex-end; min-width: 20px; }
+/* Numbers of the week being left stay readable while the next week is read. */
+.statement-details-list[aria-busy='true'] .statement-details-value { opacity: 0.45; }
+.statement-details-value { transition: opacity 160ms ease; }
 .statement-details-none { margin: 0; color: var(--color-muted); font-size: var(--text-body); }
 .statement-details-list { margin: 0; }
 .statement-details-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px; padding: 8px 0; }
