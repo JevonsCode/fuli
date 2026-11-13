@@ -342,7 +342,8 @@ export function normalizeTask(value: unknown): ProjectAgentTaskRecord | null {
 function normalizeTaskSession(value: unknown): ProjectAgentTaskSession[] {
   const record = unknownRecord(value)
   const client = stringOf(record, 'client', 'client'); const sessionId = stringOf(record, 'sessionId', 'session_id')
-  return client && sessionId ? [{ client: client as ConversationSourceApplication, sessionId }] : []
+  // No session: the client is known, the conversation to open is not; the mark still shows.
+  return client ? [{ client: client as ConversationSourceApplication, sessionId: sessionId || null }] : []
 }
 
 export function workerEventEvidence(task: ProjectAgentTaskRecord) {

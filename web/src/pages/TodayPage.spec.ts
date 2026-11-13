@@ -142,6 +142,14 @@ describe('今天', () => {
     expect(wrapper.get('[data-working-client="codex"]').attributes('href')).toBe(`codex://threads/${session}`)
   })
 
+  it('still shows the client of a task whose records name no session to open, without a link', async () => {
+    // What the task list sends when the only session ID was FULI's own process: the client, no session.
+    const { wrapper } = await setup({ tasks: [{ ...task('t1', 'running'), sessions: [{ client: 'codex', sessionId: null }] }] })
+    const mark = wrapper.get('[data-working-client="codex"]')
+    expect(mark.attributes('href')).toBeUndefined()
+    expect(mark.element.tagName).not.toBe('A')
+  })
+
   it('shows five things at most: requests first, then the habits to confirm, then how many more wait', async () => {
     const few = await setup({ requests: [request('r1'), request('r2')], reviewTotal: 3 })
     expect(few.wrapper.findAll('[data-today-decision]').map(row => row.attributes('data-today-decision'))).toEqual(['request', 'request', 'review'])
