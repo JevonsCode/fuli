@@ -630,6 +630,10 @@ export class GraphitiProviderClient {
   readKnowledgeStatement(input) {
     return this.#request('/v1/knowledge/statement', { method: 'POST', body: input });
   }
+  // The same counts per local day of the range's offset, days with nothing left out.
+  readKnowledgeStatementDays(input) {
+    return this.#request('/v1/knowledge/statement/days', { method: 'POST', body: input });
+  }
   // rec#20: a turn's receipt as an Agent reads it (knowledge-reader.js). The
   // console's item views and full reads use its own port (src/knowledge-owner-reads).
   readTurnReceipt(input) {

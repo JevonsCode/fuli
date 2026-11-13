@@ -101,7 +101,15 @@ class KnowledgeStatement(StrictModel):
     answered: int
 
 
-def items_query(item_kind: str) -> str:
+# The confirmations counted as learned: by the person, by Tonborg, or kept by
+# use (a source's or another Agent's confirmation is not counted).
+COUNTED_CONFIRMERS = "['you', 'tonborg', 'usage']"
+
+
+def item_facts(item_kind: str) -> str:
+    """Per item of the space: who confirmed it and when, when it was created
+    and retired, and the instant it counts from. The weekly and the per-day
+    statement both read items through this, so "learned" means one thing."""
     match = ('MATCH (item:Entity {group_id: $group_id})' if item_kind == 'entity'
              else 'MATCH ()-[item:RELATES_TO {group_id: $group_id}]->()')
     return match + f'''
@@ -124,11 +132,16 @@ def items_query(item_kind: str) -> str:
         WITH item, retired_at, created_at, confirmer, confirmed_at,
              CASE WHEN confirmed_at IS NULL OR created_at > confirmed_at
                   THEN coalesce(created_at, confirmed_at) ELSE confirmed_at END AS counted_from
+        '''
+
+
+def items_query(item_kind: str) -> str:
+    return item_facts(item_kind) + f'''
         WITH collect(CASE WHEN confirmer IS NOT NULL AND counted_from IS NOT NULL
                           THEN [counted_from, retired_at] END) AS confirmed,
              collect(item.fuli_replaced_by_item_id) AS versions,
              collect(CASE WHEN created_at >= $since AND created_at < $until THEN item.uuid END) AS created,
-             collect(CASE WHEN confirmer IN ['you', 'tonborg', 'usage']
+             collect(CASE WHEN confirmer IN {COUNTED_CONFIRMERS}
                                AND confirmed_at >= $since AND confirmed_at < $until
                           THEN [item.uuid, confirmer] END) AS confirmations,
              sum(CASE WHEN retired_at >= $since AND retired_at < $until
@@ -145,9 +158,13 @@ def items_query(item_kind: str) -> str:
         '''
 
 
-USES_QUERY = '''
+# The uses Agents reported in the window, read by the weekly and the per-day statement.
+USES_MATCH = '''
     MATCH (audit:FuliKnowledgeAudit {space_id: $space_id, action: 'knowledge_used'})
     WHERE audit.created_at >= $since AND audit.created_at < $until
+'''
+
+USES_QUERY = USES_MATCH + '''
     RETURN count(audit) AS times, count(DISTINCT audit.task_id) AS tasks,
            sum(CASE audit.use_kind WHEN 'cited' THEN 1 ELSE 0 END) AS cited,
            sum(CASE audit.use_kind WHEN 'applied' THEN 1 ELSE 0 END) AS applied
