@@ -144,7 +144,7 @@ describe('HowtoPage', () => {
 
   it('loops the scenes only while motion is allowed; reduced motion shows the finished picture', async () => {
     const wrapper = mount(HowtoPage)
-    expect(wrapper.findAll('svg.howto-scene.is-animated')).toHaveLength(8)
+    expect(wrapper.findAll('svg.howto-scene.is-animated')).toHaveLength(10)
     setMotionPreference('reduced')
     await wrapper.vm.$nextTick()
     expect(wrapper.findAll('svg.howto-scene.is-animated')).toHaveLength(0)

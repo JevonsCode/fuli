@@ -9,7 +9,7 @@ import { howtoContent } from '../web/src/features/howto/howto-content.ts';
 const NAMES = ['Jamie Ash', 'Nova Lane'];
 const fill = phrase => { let next = 0; return phrase.replace(/‹[^›]*›/gu, () => NAMES[next++ % NAMES.length]); };
 // Moves whose words start with a FULI keyword, and what the parser must see.
-const CALLS_ONE = new Set(['continue', 'relay', 'delegate', 'recruit']);
+const CALLS_ONE = new Set(['continue', 'quotaRanOut', 'relay', 'delegate', 'recruit']);
 
 test('every 常用操作 phrase parses as its move intends, in both languages', () => {
   for (const locale of ['zh-CN', 'en-US']) {
