@@ -9,7 +9,7 @@ const statement = (confirmed: number) => ({
 }) as unknown as Statement
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
-const values = () => [...document.body.querySelectorAll('[data-statement-detail="totalConfirmed"] .statement-details-value')].map(item => item.textContent)
+const values = () => [...document.body.querySelectorAll('[data-statement-detail="totalConfirmed"] .statement-rows-value')].map(item => item.textContent)
 
 afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
 
