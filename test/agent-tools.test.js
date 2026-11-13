@@ -42,7 +42,7 @@ const NAMES = [
   'record_fla_lesson',
   'list_work_surfaces', 'pause_work_surfaces', 'resume_work_surfaces',
   'run_delegated_action',
-  'read_diagnostic_events', 'read_old_data', 'read_occupation_kit',
+  'read_diagnostic_events', 'read_old_data', 'read_compounding_statement', 'read_occupation_kit',
   'read_task_preferences',
   'begin_task_context',
   'checkpoint_task_knowledge',

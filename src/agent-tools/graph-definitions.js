@@ -11,6 +11,7 @@ import { WORK_SURFACE_DEFINITIONS } from './work-surface-definitions.js';
 import { DELEGATION_DEFINITIONS } from './delegation-definitions.js';
 import { DIAGNOSTIC_DEFINITIONS } from './diagnostic-definitions.js';
 import { OLD_DATA_DEFINITIONS } from './old-data-definitions.js';
+import { STATEMENT_DEFINITIONS } from './statement-definitions.js';
 import { TONBORG_QUESTION_DEFINITIONS } from './tonborg-question-definitions.js';
 import { REPLY_ECHO_DEFINITIONS } from './reply-echo-definitions.js';
 import { OCCUPATION_KIT_DEFINITIONS } from './occupation-kit-definitions.js';
@@ -48,6 +49,7 @@ export const GRAPH_TOOL_DEFINITIONS = [
   ...DELEGATION_DEFINITIONS,
   ...DIAGNOSTIC_DEFINITIONS,
   ...OLD_DATA_DEFINITIONS,
+  ...STATEMENT_DEFINITIONS,
   ...OCCUPATION_KIT_DEFINITIONS,
   ...TASK_PREFERENCE_DEFINITIONS,
   ...TASK_ENTRY_DEFINITIONS,

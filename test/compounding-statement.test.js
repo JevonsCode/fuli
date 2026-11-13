@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { DelegatedOperationLog } from '../src/agent-delegation/operation-log.js';
+import { callAgentTool } from '../src/agent-tools.js';
 import { handleStatementRequest } from '../src/http/statement-api-router.js';
 import { JudgmentStore } from '../src/judgment/store.js';
 import { RecallImpressionsStore } from '../src/knowledge-impressions/store.js';
@@ -105,6 +106,20 @@ test('the route reads only on this computer and refuses a window it cannot count
     await assert.rejects(call(app, search), TypeError, JSON.stringify(search));
   }
   assert.deepEqual(calls, []);
+});
+
+test('read_compounding_statement answers this week by default, with one provenance line per section it has', async () => {
+  const { app, calls } = syntheticApp({ provider: async () => { throw new Error('synthetic provider down'); } });
+  const answer = await callAgentTool(app, 'read_compounding_statement', {});
+  assert.deepEqual(answer.window, currentLocalWeek());
+  assert.equal(calls[0].points.length, 8);
+  assert.deepEqual(answer.unavailable, ['total', 'series', 'used', 'learned', 'done', 'answered']);
+  assert.deepEqual(answer.provenance.map(line => line.split(':')[0]),
+    ['carried.tasks, carried.clients, carried.items', 'decided.forYou, decided.undone', 'changed.forYou']);
+  const full = await callAgentTool(syntheticApp().app, 'read_compounding_statement', { from: FROM, to: TO, weeks: 2 });
+  assert.equal(full.series.length, 2);
+  assert.ok(full.provenance.includes('used.times, used.tasks, used.cited, used.applied: reported, Agents\' own claims that knowledge mattered'));
+  await assert.rejects(callAgentTool(app, 'read_compounding_statement', { from: FROM }), /from and to together/);
 });
 
 test('the current local week runs Monday to Monday on this machine', () => {
