@@ -10,8 +10,8 @@ import { useAgentAttention, type AgentAttention } from '@/features/project-agent
 import { setLocale } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ConsoleState, ProjectAgentTaskStatus } from '@/types'
-import overviewSource from './OverviewPage.vue?raw'
-import OverviewPage from './OverviewPage.vue'
+import workbenchSource from './WorkbenchPage.vue?raw'
+import WorkbenchPage from './WorkbenchPage.vue'
 
 const project = (id: string, name: string) => ({
   project_id: id,
@@ -95,7 +95,7 @@ async function setup({
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/', component: OverviewPage },
+      { path: '/workbench', component: WorkbenchPage },
       { path: '/inbox', component: { template: '<div />' } },
       { path: '/knowledge/:scope/:spaceId/:mode', component: { template: '<div />' } },
       { path: '/personal/:spaceId/projects/:mode', component: { template: '<div />' } },
@@ -104,9 +104,9 @@ async function setup({
       { path: '/project-agents/manage', component: { template: '<div />' } },
     ],
   })
-  await router.push('/')
+  await router.push('/workbench')
   await router.isReady()
-  const wrapper = mount(OverviewPage, { global: { plugins: [pinia, router] } })
+  const wrapper = mount(WorkbenchPage, { global: { plugins: [pinia, router] } })
   await flushPromises()
   return { wrapper, router, consoleStore, attentionStore: useAgentAttention() }
 }
@@ -124,7 +124,7 @@ beforeEach(() => {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
 })
 
-describe('OverviewPage', () => {
+describe('WorkbenchPage', () => {
   it('stages the first current task and moves a picked task out of the column', async () => {
     const { wrapper } = await setup({ taskPayload: { items: [
       task('first', 'running', '2026-09-12T00:00:00Z', 'project-a'),
@@ -417,11 +417,11 @@ describe('OverviewPage', () => {
   })
 })
 
-describe('OverviewPage first-load indicator', () => {
+describe('WorkbenchPage first-load indicator', () => {
   it('centres the stage loading in its column instead of keeping the first child\'s bottom margin', () => {
     // `.workbench > :first-child` gives the stage 76px of room above the dock; the loading indicator
     // standing in for the stage needs the same weight to win back margin: auto (seen in the 0.25.0 walk).
-    expect(overviewSource).toContain('.workbench > .workbench-loading { margin: auto; }')
-    expect(overviewSource).not.toMatch(/^\.workbench-loading \{/m)
+    expect(workbenchSource).toContain('.workbench > .workbench-loading { margin: auto; }')
+    expect(workbenchSource).not.toMatch(/^\.workbench-loading \{/m)
   })
 })

@@ -165,7 +165,7 @@ const statusLabel = (status: string) => taskStatusLabel(status, { unrecognized: 
 
 <template>
   <section class="view workbench-list-view" :data-workbench-list="list">
-    <Breadcrumb :parent="{ label: t('routes.overview.title'), to: '/', from: /^\/(?:[?#]|$)/ }" />
+    <Breadcrumb :parent="{ label: t('routes.overview.title'), to: '/workbench', from: /^\/workbench(?:[?#]|$)/ }" />
     <div class="workbench-card workbench-list-card" :data-list-morph="list">
       <div class="workbench-list-bar" role="search">
         <Input v-model="searchInput" type="search" class="workbench-list-search" maxlength="200" data-list-search

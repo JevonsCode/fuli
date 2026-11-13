@@ -11,6 +11,7 @@ import { taskStatusTone } from '@/features/project-agents/task-labels'
 import { t } from '@/i18n'
 import { SPRING } from '@/lib/motion'
 import type { ProjectAgentTaskRecord } from '@/types'
+import AttentionRow from './AttentionRow.vue'
 import OverviewReadStatus from './OverviewReadStatus.vue'
 import WorkbenchListHead from './WorkbenchListHead.vue'
 import { taskKey } from './workbench-model'
@@ -67,14 +68,7 @@ const shownDone = computed(() => props.done.slice(0, FEED_ROWS))
       </header>
       <OverviewReadStatus :state="requestsState" :label="t('overview.attention.loading')" :failed="t('overview.attention.loadFailed')" @retry="emit('retryRequests')" />
       <TransitionGroup name="ui-list" tag="ul" class="workbench-rows">
-        <li v-for="item in requests" :key="item.requestId" class="workbench-row" data-workbench-request>
-          <span class="workbench-face" :style="agentIdentityStyle(item.agentId)"><AgentAvatar :agent-id="item.agentId" :name="agentName(item.agentId)" /></span>
-          <div class="workbench-row-text">
-            <p class="workbench-row-title">{{ item.title?.trim() || t('overview.missing.requestTitle') }}</p>
-            <p class="workbench-meta">{{ t('overview.attention.meta', { name: agentName(item.agentId), time: formatTime(item.createdAt) }) }}</p>
-          </div>
-          <Button as-child variant="outline" size="sm"><RouterLink :to="inboxLocation(item.agentId, item.requestId)">{{ t('overview.attention.respond') }}</RouterLink></Button>
-        </li>
+        <li v-for="item in requests" :key="item.requestId"><AttentionRow :item="item" :name="agentName(item.agentId)" :time="formatTime(item.createdAt)" /></li>
       </TransitionGroup>
     </section>
 

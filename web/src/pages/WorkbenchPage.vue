@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import { agentDisplayName } from '@/features/agent-profile/profile-model'
-import { currentWork, overviewOpenRequest, overviewOwnerId, overviewTaskHref, overviewTaskTitle } from '@/features/overview/overview-data'
+import { currentWork, overviewOpenRequest, overviewOwnerId, overviewTaskHref, overviewTaskTitle, overviewTime } from '@/features/overview/overview-data'
 import { useOverviewData } from '@/features/overview/useOverviewData'
+import { useScopeBootstrap } from '@/features/overview/useScopeBootstrap'
 import ProblemState from '@/features/problem/ProblemState.vue'
 import { recentlyDone, taskKey } from '@/features/overview/workbench-model'
 import WorkbenchFeed from '@/features/overview/WorkbenchFeed.vue'
@@ -11,16 +11,16 @@ import WorkbenchStage from '@/features/overview/WorkbenchStage.vue'
 import { inboxLocation, useAgentAttention } from '@/features/project-agents/attention-store'
 import { taskStatusLabel } from '@/features/project-agents/task-labels'
 import { projectDisplayName } from '@/features/projects/project-origin'
-import { currentLocale, t } from '@/i18n'
-import { formatDateTime } from '@/lib/date-time'
+import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
 import type { ProjectAgentTaskRecord } from '@/types'
 import { usePageRefresh } from '@/layouts/page-refresh'
 
-// 工作台 (client redesign, 2026-11-01): a fixed left stage with the one piece
-// of work you are looking at, and one scrolling right column with what waits
-// for you, the other work in progress and what was just finished. Reads stay
-// page-local and are dropped on a space or permission change (useOverviewData).
+// 工作台 (client redesign, 2026-11-01; at /workbench since 今天 took the home
+// route): a fixed left stage with the one piece of work you are looking at,
+// and one scrolling right column with what waits for you, the other work in
+// progress and what was just finished. Reads stay page-local and are dropped
+// on a space or permission change (useOverviewData).
 const store = useConsoleStore()
 const attentionCache = useAgentAttention()
 const state = computed(() => store.state)
@@ -28,7 +28,7 @@ const activeSpaceId = computed(() => store.activePersonalSpace?.id ?? state.valu
 const projects = computed(() => (state.value?.personalProjects ?? []).filter(project => project.personal_space_id === activeSpaceId.value))
 const projectNames = computed(() => new Map(projects.value.map(project => [project.project_id, projectDisplayName(project)])))
 const data = useOverviewData(activeSpaceId, projects)
-const { tasks, requests, names } = data
+const { tasks, requests, agentName } = data
 watch(data.denied, denied => { if (denied) attentionCache.setSpace('') }, { flush: 'sync' })
 
 const current = computed(() => currentWork(data.taskItems.value, Infinity))
@@ -50,41 +50,13 @@ function select(task: ProjectAgentTaskRecord) {
 }
 watch(() => [activeSpaceId.value, data.denied.value, projects.value.map(item => item.project_id).join('\0')], () => { selectedKey.value = '' })
 
-// Bootstrap is owned by the shared console store. Bound the visible wait and
-// do not accept a late initial result after this page's 30-second budget.
-const scopeTimedOut = ref(false), scopeSlow = ref(false)
-let scopeSlowTimer: ReturnType<typeof setTimeout> | undefined, scopeEndTimer: ReturnType<typeof setTimeout> | undefined
-const bootstrapLoading = computed(() => !scopeTimedOut.value && !state.value && ['idle', 'loading'].includes(store.runtimeStatus))
-function clearScopeTimers() { clearTimeout(scopeSlowTimer); clearTimeout(scopeEndTimer) }
-watch(bootstrapLoading, loading => {
-  clearScopeTimers(); scopeSlow.value = false
-  if (loading) { scopeSlowTimer = setTimeout(() => { scopeSlow.value = true }, 8000); scopeEndTimer = setTimeout(() => { scopeTimedOut.value = true; scopeSlow.value = false }, 30000) }
-}, { immediate: true })
-const scopeRetrying = ref(false)
-async function retryScope() { if (scopeRetrying.value) return; scopeTimedOut.value = false; scopeRetrying.value = true; try { await store.refresh(); if (store.runtimeStatus === 'ready') { attentionCache.setSpace(activeSpaceId.value); data.retryScope() } else if (store.refreshError === 'timeout') scopeTimedOut.value = true } finally { scopeRetrying.value = false } }
-onMounted(() => { if (store.runtimeStatus === 'idle') void store.refresh() })
-onBeforeUnmount(() => { clearScopeTimers(); clearTimeout(flyingTimer) })
+const scope = useScopeBootstrap(data.denied, () => { attentionCache.setSpace(activeSpaceId.value); data.retryScope() })
+onBeforeUnmount(() => { clearTimeout(flyingTimer) })
 
-// The scope could not be read: say why in words, the way the person can act on it.
-const scopeProblem = computed(() => {
-  if (data.denied.value) return { title: t('overview.read.denied'), detail: '' }
-  if (scopeTimedOut.value || store.refreshError === 'timeout') return { title: t('problem.timeout.title'), detail: t('problem.timeout.detail') }
-  if (store.runtimeStatus !== 'ready') return { title: t('problem.serviceDown.title'), detail: t('problem.serviceDown.detail') }
-  return { title: t('problem.failed.title'), detail: t('problem.failed.detail') }
-})
 function projectName(id?: string | null) { return (id && projectNames.value.get(id)) || t('overview.missing.project') }
-function agentName(id?: string | null) {
-  const record = id ? names.data?.records[id] : undefined
-  if (record) { const name = agentDisplayName(record).trim(); if (name && name !== id && !record.legacyAgentIds?.includes(name)) return name }
-  if (names.loading) return t('overview.missing.nameLoading')
-  // 「姓名未提供」 only for an FLA that was read and has no name; one that was not read, or whose read failed, says so.
-  const answered = Boolean(id && names.data?.asked.includes(id) && !names.data.failed.includes(id))
-  return names.error || !answered ? t('overview.missing.nameUnavailable') : t('overview.missing.name')
-}
 function owner(task: ProjectAgentTaskRecord) { const id = overviewOwnerId(task); return id ? agentName(id) : t('overview.missing.owner') }
 function taskTitle(task: ProjectAgentTaskRecord) { return overviewTaskTitle(task) || t('overview.missing.taskTitle') }
 function statusLabel(status: string) { return taskStatusLabel(status, { unrecognized: t('overview.missing.status') }) }
-function formatTime(value?: string | null) { return formatDateTime(value, currentLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }, { missing: t('overview.missing.time'), invalid: t('overview.missing.time') }) }
 // A block the person marked cleared also closes its open decision requests.
 function blockerCleared() { void data.loadTasks(); void data.loadRequests() }
 // The stage's one action: answer the FLA waiting on this work, else open the task.
@@ -101,19 +73,19 @@ usePageRefresh(() => Promise.all([data.loadTasks(), data.loadRequests(), data.lo
 
 <template>
   <section class="view overview-view">
-    <template v-if="bootstrapLoading">
+    <template v-if="scope.loading.value">
       <GrowthLoading :label="t('overview.read.scope')" />
-      <p v-if="scopeSlow" role="status">{{ t('overview.read.slow') }}</p>
+      <p v-if="scope.slow.value" role="status">{{ t('overview.read.slow') }}</p>
     </template>
-    <ProblemState v-else-if="scopeTimedOut || !state || data.denied.value" class="overview-scope-error" :title="scopeProblem.title" :detail="scopeProblem.detail"
-      :error="store.refreshError === 'failed' ? store.refreshMessage || null : null" :retrying="scopeRetrying" :retrying-label="t('overview.read.scope')" @retry="retryScope" />
+    <ProblemState v-else-if="scope.failed.value" class="overview-scope-error" :title="scope.problem.value.title" :detail="scope.problem.value.detail"
+      :error="scope.error.value" :retrying="scope.retrying.value" :retrying-label="t('overview.read.scope')" @retry="scope.retry" />
     <div v-else class="workbench">
       <GrowthLoading v-if="!tasks.data && tasks.loading" class="workbench-loading" variant="compact" :label="t('overview.work.loading')" />
       <WorkbenchStage v-else :task="staged" :space-id="activeSpaceId" :title="taskTitle" :project-name="projectName" :agent-name="agentName"
         :status-label="statusLabel" :next="next" :flying="flying" :partial="tasks.data?.partial === true" @cleared="blockerCleared" />
       <WorkbenchFeed :requests="data.requestItems.value" :requests-state="requests" :request-total="requests.data?.total ?? 0"
         :running="others" :tasks-state="tasks" :done="done" :title="taskTitle" :agent-name="agentName" :owner="owner"
-        :status-label="statusLabel" :format-time="formatTime" @select="select" @retry-requests="data.loadRequests" @retry-tasks="data.loadTasks" />
+        :status-label="statusLabel" :format-time="overviewTime" @select="select" @retry-requests="data.loadRequests" @retry-tasks="data.loadTasks" />
     </div>
   </section>
 </template>

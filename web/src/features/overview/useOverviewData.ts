@@ -3,6 +3,8 @@ import { getJson } from '@/api/client'
 import type { PersonalProject, ProjectAgentRecord, ProjectAgentTaskRecord } from '@/types'
 import type { AgentAttention } from '@/features/project-agents/attention-store'
 import { isAgentTaskDataComplete } from '@/features/agent-profile/agent-work-summary'
+import { agentDisplayName } from '@/features/agent-profile/profile-model'
+import { t } from '@/i18n'
 import { overviewAgentIds, normalizeOverviewTasks } from './overview-data'
 import { overviewResource } from './overview-resource'
 
@@ -106,6 +108,15 @@ export function useOverviewData(spaceId: Ref<string>, projects: Ref<PersonalProj
     names.reset(); void loadNames()
   }, { immediate: true, flush: 'post' })
   function retryScope() { reset(); revoked.reset(); void loadTasks(); void loadRequests() }
+  /** An FLA's shown name, or why the page cannot show one. */
+  function agentName(id?: string | null) {
+    const record = id ? names.state.data?.records[id] : undefined
+    if (record) { const name = agentDisplayName(record).trim(); if (name && name !== id && !record.legacyAgentIds?.includes(name)) return name }
+    if (names.state.loading) return t('overview.missing.nameLoading')
+    // 「姓名未提供」 only for an FLA that was read and has no name; one that was not read, or whose read failed, says so.
+    const answered = Boolean(id && names.state.data?.asked.includes(id) && !names.state.data.failed.includes(id))
+    return names.state.error || !answered ? t('overview.missing.nameUnavailable') : t('overview.missing.name')
+  }
   return { tasks: tasks.state, requests: requests.state, names: names.state, denied, taskItems, requestItems,
-    loadTasks, loadRequests, loadNames, retryScope }
+    loadTasks, loadRequests, loadNames, retryScope, agentName }
 }

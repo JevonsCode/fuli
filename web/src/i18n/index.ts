@@ -58,6 +58,7 @@ import { taskBlockerMessages } from './messages/task-blocker'
 import { taskReasonMessages } from './messages/task-reason'
 import { doctorMessages } from './messages/doctor'
 import { contextMenuMessages } from './messages/context-menu'
+import { todayMessages } from './messages/today'
 
 export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
 export type AppLocale = typeof SUPPORTED_LOCALES[number]
@@ -109,6 +110,7 @@ export const messages = {
     agentPins: agentPinsMessages['zh-CN'],
     ui: uiMessages['zh-CN'],
     overview: overviewMessages['zh-CN'],
+    today: todayMessages['zh-CN'],
     agentRedesign: agentRedesignMessages['zh-CN'],
     agentProfiles: agentProfileMessages['zh-CN'],
     attention: attentionMessages['zh-CN'],
@@ -171,6 +173,7 @@ export const messages = {
     agentPins: agentPinsMessages['en-US'],
     ui: uiMessages['en-US'],
     overview: overviewMessages['en-US'],
+    today: todayMessages['en-US'],
     agentRedesign: agentRedesignMessages['en-US'],
     agentProfiles: agentProfileMessages['en-US'],
     attention: attentionMessages['en-US'],
