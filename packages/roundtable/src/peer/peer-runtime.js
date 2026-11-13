@@ -112,6 +112,8 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     let server = null;
     const service = createCoordinatorService({ store: coordinatorStore, identity: device, authority, name,
       onTrustChange: () => server?.refreshTrust(),
+      // A device that left (or was revoked) ends its pairing's share, as a revoke here does.
+      onRevoked: (nodeId) => pairingShare.forget(nodeId),
       repositoryChanges: { read: () => store().setting('repositoryChanges'), write: (value) => store().setSetting('repositoryChanges', value) } });
     try {
       server = await startServer({ service, identity: device, host: address, port: listenPort, claimWaitMs,
@@ -384,7 +386,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
   async function status() {
     if (!port.configured()) {
       return { beta: true, role: null, device: null, coordinator: null, addresses: localAddresses(), devices: [],
-        openInvitations: 0, shares: [], shareable: [], groupSize: 0, autoShared: [], lastPublish: null, nearby: await nearbyView() };
+        openInvitations: 0, shares: [], shareable: [], groupSize: 0, autoShared: [], autoSharePending: false, lastPublish: null, nearby: await nearbyView() };
     }
     const membership = store().setting('membership');
     const device = membership ? await identity() : null;
@@ -408,6 +410,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
       // This computer and the paired devices it sees: a share reaches every one of them.
       groupSize: membership ? paired.length + 1 : 0,
       autoShared: membership ? pairingShare.view() : [],
+      autoSharePending: membership ? pairingShare.waiting() : false,
       lastPublish: membership ? lastPublish : null,
       nearby: await nearbyView(),
     };
@@ -559,7 +562,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     store().setSetting('coordinator', null);
     store().setSetting('reachedAddresses', null);
     store().setSetting('pendingTrust', null);
-    store().setSetting('autoShared', null);
+    pairingShare.clear();
     store().setSetting('shareTouches', null);
     listenFailure = null;
     if (membership?.role === 'member') store().setSetting('pendingLeave', membership.coordinator);

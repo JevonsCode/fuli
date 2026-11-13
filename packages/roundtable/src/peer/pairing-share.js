@@ -27,58 +27,77 @@ const RECORDS = 'autoShared';
 // prepare(projects), sharedProjectIds(), touchedSince(projectId, since),
 // writeShares(shares), afterWrite().
 export function createPairingShare({ port, clock = Date.now, attemptMs = ATTEMPT_MS, attempts = ATTEMPTS, onError = () => {} }) {
-  const timers = new Set();
-  const running = new Set();
+  // One waiting timer per device, and the pairing (its `since`) an attempt is
+  // running for: a new pairing of the same device runs its own attempt, and
+  // the older one stops at its next check, so nothing waits on a stale run.
+  const timers = new Map();
+  const running = new Map();
   const records = () => port.setting(RECORDS) ?? {};
   const write = (fingerprint, record) => port.setSetting(RECORDS, { ...records(), [fingerprint]: record });
 
   // A new pairing with this device: nothing happens when it already ran.
   function start(fingerprint) {
     if (records()[fingerprint]) return;
+    cancel(fingerprint);
     const since = clock();
     write(fingerprint, { state: 'pending', since, until: since + attemptMs * (attempts - 1) });
     return attempt(fingerprint);
   }
 
+  function cancel(fingerprint) {
+    clearTimeout(timers.get(fingerprint));
+    timers.delete(fingerprint);
+  }
+
   function later(fingerprint) {
+    cancel(fingerprint);
     const timer = setTimeout(() => {
-      timers.delete(timer);
+      timers.delete(fingerprint);
       attempt(fingerprint).catch(onError);
     }, attemptMs);
     timer.unref?.();
-    timers.add(timer);
+    timers.set(fingerprint, timer);
   }
 
   const pending = (fingerprint, since) => {
     const record = records()[fingerprint];
     return record?.state === 'pending' && (since === undefined || record.since === since) ? record : null;
   };
+  // Still this pairing, still paired: checked after every wait.
+  const current = (fingerprint, record) => Boolean(pending(fingerprint, record.since)) && port.paired();
 
   async function attempt(fingerprint) {
     const record = pending(fingerprint);
-    if (!record || running.has(fingerprint) || !port.paired()) return;
-    running.add(fingerprint);
+    if (!record || running.get(fingerprint) === record.since || !port.paired()) return;
+    running.set(fingerprint, record.since);
     try {
       const match = await port.match(fingerprint);
-      if (!pending(fingerprint, record.since) || !port.paired()) return;
-      if (!match.settled) {
-        if (clock() < record.until) later(fingerprint);
-        else finish(fingerprint, record, { projects: [], skipped: 'unanswered' });
-        return;
-      }
+      if (!current(fingerprint, record)) return;
+      if (!match.settled) return waitMore(fingerprint, record);
       if (match.others > 0) return finish(fingerprint, record, { projects: [], skipped: 'group', matched: match.common.length });
       if (match.common.length > AUTO_SHARE_LIMIT) {
         return finish(fingerprint, record, { projects: [], skipped: 'too_many', matched: match.common.length });
       }
       const fresh = (project) => !port.sharedProjectIds().has(project.projectId) && !port.touchedSince(project.projectId, record.since);
       const prepared = await port.prepare(match.common.filter(fresh));
-      // Read again right before writing: a revoke, a turn-off or the person's own save may have come meanwhile.
-      if (!pending(fingerprint, record.since) || !port.paired()) return;
+      if (!current(fingerprint, record)) return;
+      // The group is read again: a device that joined while the shares were prepared would see them too.
+      const again = await port.match(fingerprint);
+      // Checked again right before writing, with no wait in between: a revoke, a
+      // turn-off or the person's own save may have come meanwhile.
+      if (!current(fingerprint, record)) return;
+      if (!again.settled) return waitMore(fingerprint, record);
+      if (again.others > 0) return finish(fingerprint, record, { projects: [], skipped: 'group', matched: match.common.length });
       const added = prepared.filter((entry) => fresh(entry.share));
       if (added.length) port.writeShares(added.map((entry) => entry.share));
       finish(fingerprint, record, { projects: added.map(({ share, projectName }) => ({ projectId: share.projectId, projectName })) });
       if (added.length) await port.afterWrite();
-    } finally { running.delete(fingerprint); }
+    } finally { if (running.get(fingerprint) === record.since) running.delete(fingerprint); }
+  }
+
+  function waitMore(fingerprint, record) {
+    if (clock() < record.until) later(fingerprint);
+    else finish(fingerprint, record, { projects: [], skipped: 'unanswered' });
   }
 
   function finish(fingerprint, record, outcome) {
@@ -90,9 +109,17 @@ export function createPairingShare({ port, clock = Date.now, attemptMs = ATTEMPT
     for (const fingerprint of Object.keys(records())) if (pending(fingerprint)) attempt(fingerprint).catch(onError);
   }
 
+  // A device revoked here or that left: its record and its waiting end.
   function forget(fingerprint) {
+    cancel(fingerprint);
     const { [fingerprint]: gone, ...rest } = records();
     if (gone) port.setSetting(RECORDS, Object.keys(rest).length ? rest : null);
+  }
+
+  // The LAN roundtable turned off: every record and every waiting end.
+  function clear() {
+    close();
+    port.setSetting(RECORDS, null);
   }
 
   // What each finished pairing shared without a separate tick, or why it shared nothing.
@@ -100,10 +127,13 @@ export function createPairingShare({ port, clock = Date.now, attemptMs = ATTEMPT
     .map(([nodeId, record]) => ({ nodeId, at: record.at, projects: record.projects,
       ...(record.skipped ? { skipped: record.skipped, matched: record.matched ?? 0 } : {}) }));
 
+  // A pairing still waiting for the coordinator's answer, so the card keeps reading status.
+  const waiting = () => Object.keys(records()).some((fingerprint) => pending(fingerprint));
+
   function close() {
-    for (const timer of timers) clearTimeout(timer);
+    for (const timer of timers.values()) clearTimeout(timer);
     timers.clear();
   }
 
-  return { start, resume, forget, view, close };
+  return { start, resume, forget, clear, view, waiting, close };
 }

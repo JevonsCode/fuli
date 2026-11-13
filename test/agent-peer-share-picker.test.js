@@ -261,3 +261,18 @@ test('both computers share after a nearby pairing whose coordinator then moves i
     assert.ok(listener.asked.includes('0.0.0.0') && listener.asked.at(-1) === '127.0.0.1', JSON.stringify(listener.asked));
   } finally { await desk.close(); await laptop.close(); }
 });
+
+test('a device that leaves by itself ends the coordinator\'s waiting share for it, as a revoke does', { timeout: 30_000 }, async () => {
+  const [laptop, desk] = await Promise.all([device('laptop', { runtimeOptions: { autoShareRetryMs: 50, autoShareAttempts: 1_000 } }), device('desk')]);
+  try {
+    await laptop.runtime.enableCoordinator({ host: '127.0.0.1', port: 0, name: 'Laptop' });
+    await desk.runtime.join({ invitation: laptop.runtime.createInvitation().invitation, name: 'Desk' });
+    const deskNode = (await laptop.runtime.status()).devices.find((entry) => !entry.self).nodeId;
+    const store = laptop.app.peer.nodeStore();
+    store.setSetting('autoShared', { [deskNode]: { state: 'pending', since: Date.now(), until: Date.now() + 60_000 } });
+    assert.equal((await laptop.runtime.status()).autoSharePending, true);
+    await desk.runtime.disable();
+    await until(laptop.runtime, (status) => !status.autoSharePending, 'the leave to end the waiting');
+    assert.equal(store.setting('autoShared'), null, 'no unanswered record that would block a later pairing');
+  } finally { await desk.close(); await laptop.close(); }
+});

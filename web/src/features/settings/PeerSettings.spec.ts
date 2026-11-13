@@ -231,6 +231,40 @@ it('names what pairing shared, and each stays a row the person can untick', asyn
   wrapper.unmount()
 })
 
+it('on a computer that joined, says the other computer decides who else is in the group', async () => {
+  const autoShared = [{ nodeId: 'b'.repeat(64), at: '2030-01-01T00:00:00.000Z', projects: [{ projectId: 'sample-project', projectName: 'Sample project' }] }]
+  server({ 'GET /api/peer': [{ ...paired, role: 'member', devices: [], shares: [sharedSample], autoShared }] })
+  const member = mount(PeerSettings)
+  await flushPromises()
+  expect(member.get('[data-member-group-limit]').text()).toBe('谁还在这个组里由对方电脑决定；不放心可以取消勾选。')
+  member.unmount()
+  server({ 'GET /api/peer': [{ ...paired, shares: [sharedSample], autoShared }] })
+  const host = mount(PeerSettings)
+  await flushPromises()
+  expect(host.find('[data-auto-shared]').exists()).toBe(true)
+  expect(host.find('[data-member-group-limit]').exists()).toBe(false)
+  host.unmount()
+})
+
+it('keeps reading after nearby pairing turned off until the pairing\'s shares land, then stops', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] })
+  const nearbyOff = { on: false, canPair: false, devices: [], pairing: null }
+  const waiting = { ...paired, nearby: nearbyOff, autoSharePending: true }
+  const landed = { ...paired, nearby: nearbyOff, autoSharePending: false, shares: [sharedSample],
+    autoShared: [{ nodeId: 'b'.repeat(64), at: '2030-01-01T00:00:00.000Z', projects: [{ projectId: 'sample-project', projectName: 'Sample project' }] }] }
+  const { calls } = server({ 'GET /api/peer': [waiting, waiting, landed] })
+  const wrapper = mount(PeerSettings)
+  await flushPromises()
+  expect(wrapper.find('[data-auto-shared]').exists()).toBe(false)
+  await vi.advanceTimersByTimeAsync(4_100)
+  await flushPromises()
+  expect(wrapper.get('[data-auto-shared]').text()).toBe('配对后已共享：Sample project')
+  const reads = calls('GET /api/peer').length
+  await vi.advanceTimersByTimeAsync(6_000)
+  expect(calls('GET /api/peer').length).toBe(reads)
+  wrapper.unmount()
+})
+
 it('says beside the one-click button that the other computers of a larger group can ask too', async () => {
   const laptop = [{ nodeId: 'b'.repeat(64), name: 'Laptop' }]
   server({ 'GET /api/peer': [{ ...paired, groupSize: 3, shareable: [{ ...paired.shareable[0], sameProjectOn: laptop }],

@@ -29,7 +29,7 @@ const DAY_MS = 24 * 60 * 60_000;
 // Routes messages between paired devices. It never executes anything: each
 // receiving device re-checks its own shares and identity authority.
 export function createCoordinatorService({ store, identity, authority, name, clock = Date.now,
-  randomCode = () => randomBytes(32).toString('base64url'), idFactory = randomUUID, onTrustChange = () => {},
+  randomCode = () => randomBytes(32).toString('base64url'), idFactory = randomUUID, onTrustChange = () => {}, onRevoked = () => {},
   repositoryChanges = memoryRecord() }) {
   const iso = (offsetMs = 0) => new Date(clock() + offsetMs).toISOString();
   const pairingFailures = [];
@@ -295,6 +295,8 @@ export function createCoordinatorService({ store, identity, authority, name, clo
     });
     rotateRepositoryKey();
     onTrustChange();
+    // Also when the device itself left (POST /peer/1/leave): the host ends what it kept for that device.
+    onRevoked(nodeId);
     return { revoked: true };
   }
 

@@ -14,7 +14,8 @@ import { autoSharedNames, peerApiMessage, peerStatusShape, shareRows, unsharedSu
 
 type ShareDraft = { selected: boolean; clients: ClientId[]; folder: string }
 
-// While nearby pairing is on, the list and a pairing's state come from the other computer.
+// While nearby pairing is on, the list and a pairing's state come from the other computer;
+// after a pairing, until its shares land (status.autoSharePending).
 const NEARBY_REFRESH_MS = 2_000
 
 const status = ref<PeerStatus | null>(null)
@@ -83,7 +84,7 @@ async function refreshNearby() {
   try { applyStatus(await getJson('/api/peer', peerStatusShape)) } catch { /* the next refresh retries */ }
 }
 
-watch(() => Boolean(status.value?.nearby?.on), (on) => {
+watch(() => Boolean(status.value?.nearby?.on || status.value?.autoSharePending), (on) => {
   if (refresh) clearInterval(refresh)
   refresh = on ? setInterval(refreshNearby, NEARBY_REFRESH_MS) : null
 })
@@ -294,7 +295,9 @@ function shareState(projectId: string) {
           <h3 class="ui-group-label">{{ t('settings.peer.shares') }}</h3>
           <p>{{ t('settings.peer.sharesHint') }}</p>
           <UiNotice v-if="sharedAtPairing" tone="info" data-auto-shared>
-            {{ t('settings.peer.autoShared', { projects: sharedAtPairing }) }}
+            <span class="peer-notice-line">{{ t('settings.peer.autoShared', { projects: sharedAtPairing }) }}</span>
+            <!-- A member cannot check the group: the coordinator says who else is in it. -->
+            <span v-if="status.role === 'member'" class="peer-notice-line" data-member-group-limit>{{ t('settings.peer.memberGroupLimit') }}</span>
           </UiNotice>
           <p v-if="!rows.length" data-shares-empty>{{ t('settings.peer.noProjects') }}</p>
           <div v-if="suggestions.length" class="peer-actions">
@@ -416,4 +419,5 @@ function shareState(projectId: string) {
 .peer-devices li { justify-content: space-between; }
 .peer-devices strong, .peer-devices small { display: block; overflow-wrap: anywhere; }
 .peer-note { color: var(--color-warning); }
+.peer-notice-line { display: block; }
 </style>

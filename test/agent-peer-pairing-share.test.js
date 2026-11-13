@@ -106,3 +106,48 @@ test('a pairing still waiting after a restart asks again', async () => {
   await waitFor(() => second.record('device-a')?.state === 'done');
   assert.deepEqual(second.state.writes, [['p4']]);
 });
+
+test('a third device that joins while the shares are prepared stops them: nothing is shared, the button stays', async () => {
+  const { share, state } = harness({ answers: [settled([project(1)], 0), settled([project(1)], 1)] });
+  await share.start('device-a');
+  assert.deepEqual([state.writes, share.view()[0].skipped, share.view()[0].matched], [[], 'group', 1]);
+});
+
+test('forgetting a device or turning the roundtable off ends its waiting', async () => {
+  const forgotten = harness({ answers: [unsettled] });
+  await forgotten.share.start('device-a');
+  assert.equal(forgotten.share.waiting(), true);
+  forgotten.share.forget('device-a');
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.deepEqual([forgotten.state.matches, forgotten.share.waiting()], [1, false], 'no attempt after the forget');
+
+  const cleared = harness({ answers: [unsettled] });
+  await cleared.share.start('device-a');
+  cleared.share.clear();
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.deepEqual([cleared.state.matches, cleared.settings.has('autoShared')], [1, false]);
+});
+
+test('pairing the same device again while an earlier attempt still waits runs the new pairing', async () => {
+  let release;
+  const first = new Promise((resolve) => { release = resolve; });
+  const h = harness({ answers: [] });
+  const answers = [first, Promise.resolve(settled([project(1)])), Promise.resolve(settled([project(1)]))];
+  let calls = 0;
+  const share = createPairingShare({ clock: () => h.clock.now, attemptMs: 5, attempts: 4, port: {
+    setting: (key) => h.settings.get(key) ?? null,
+    setSetting: (key, value) => (value === null ? h.settings.delete(key) : h.settings.set(key, value)),
+    paired: () => true, match: () => answers[Math.min(calls++, answers.length - 1)],
+    prepare: async (projects) => projects.map((entry) => ({ projectName: entry.name, share: { projectId: entry.projectId } })),
+    sharedProjectIds: () => new Set(), touchedSince: () => false,
+    writeShares: (shares) => h.state.writes.push(shares.map((entry) => entry.projectId)), afterWrite: async () => {},
+  } });
+  const old = share.start('device-a');
+  share.forget('device-a');
+  h.clock.now += 1;
+  await share.start('device-a');
+  release(settled([project(9)]));
+  await old;
+  assert.deepEqual(h.state.writes, [['p1']], 'the new pairing shared; the stale attempt wrote nothing');
+  assert.equal(h.settings.get('autoShared')['device-a'].state, 'done');
+});

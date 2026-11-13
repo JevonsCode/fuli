@@ -137,6 +137,10 @@ function printAutoShared(status, write) {
       ? `Shared after pairing (projects the other computer has too): ${record.projects.map((project) => project.projectName).join(', ')}`
       : 'Shared after pairing: none (no project both computers have that could be shared).');
   }
+  // A member cannot check the group itself: the coordinating computer says who else is in it.
+  if (status.role === 'member' && (status.autoShared ?? []).some((record) => record.projects.length)) {
+    write('The other computer decides who else is in the group; untick any you are unsure of.');
+  }
 }
 
 function printNearby(status, write, command) {

@@ -87,6 +87,8 @@ export type PeerStatus = {
   // or why it shared none: other computers in the group, more than 8, or no answer.
   autoShared?: { nodeId: string; at: string; projects: { projectId: string; projectName: string }[];
     skipped?: 'group' | 'too_many' | 'unanswered'; matched?: number }[]
+  // A pairing still waiting for the coordinator's answer: the card keeps reading until it lands.
+  autoSharePending?: boolean
   lastPublish?: { at: string; agents: number | null; error: string | null; message?: string } | null
   nearby?: Nearby
 }
