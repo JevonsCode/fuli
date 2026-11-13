@@ -69,7 +69,7 @@ watch(activeTab, tab => {
 // Two layouts of the same topics to compare (11-13): tabs on top, or the topics
 // in a fixed column on the left. Both shells take the same search, switch and
 // panels below, so the content, search, autosave and links are written once.
-const layout = useSettingsLayout(route.query.layout)
+const layout = useSettingsLayout(() => route.query.layout)
 const layoutOptions = computed(() => SETTINGS_LAYOUTS.map(value => ({ value, label: t(`settings.layout.${value}`) })))
 const shell = computed(() => layout.shown.value === 'side'
   ? { is: SettingsSideShell, props: { tab: activeTab.value, searching: searching.value, 'onUpdate:tab': (tab: SettingsTab) => { activeTab.value = tab } } }

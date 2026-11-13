@@ -178,6 +178,14 @@ describe('复利账单, day by day', () => {
     expect(wrapper.find('[data-day]').exists()).toBe(false)
     expect(wrapper.find('[data-statement-week]').exists()).toBe(false)
   })
+
+  it('says the statement is unavailable, not empty, when every source failed', async () => {
+    const { wrapper } = await setup({ days: { days: [], unavailable: ['learned', 'confirmed', 'carried', 'used'] } })
+    expect(wrapper.get('[data-calendar-unavailable]').text()).toBe('现在读不到复利账单，稍后再试。')
+    expect(wrapper.find('[data-calendar-empty]').exists()).toBe(false)
+    expect(wrapper.find('[data-day]').exists()).toBe(false)
+    expect(wrapper.find('[data-statement-week]').exists()).toBe(false)
+  })
 })
 
 describe('今天\'s statement card', () => {
