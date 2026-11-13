@@ -36,6 +36,9 @@
 //                                               { agent_id, proof }: signed origin for a cross-device ask or chat
 //   remoteOriginAuthority()                     public keys that verify those origins
 //   recordMemoryUsage(input)                    optional: { recorded, reason? }
+//   agentLooks()                                optional: the faces the person changed, [{ agentId, kind, seed? }];
+//                                               a 'generated' seed is shared with paired devices
+//                                               (LAN directory `look`), nothing else is
 //   projectFolder(projectId)                    optional: the project's known folder for fresh sessions
 //   folderRepository(path)                      optional: the normalised origin address of the Git
 //                                               repository holding path, or null (LAN share folder check)

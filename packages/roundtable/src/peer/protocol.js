@@ -248,5 +248,17 @@ export function publicDirectoryEntry(entry) {
     ...(entry.capabilities !== undefined ? { capabilities: (Array.isArray(entry.capabilities) ? entry.capabilities : [])
       .filter(c => typeof c === 'string').slice(0, 20).map(c => c.slice(0, 128)) } : {}),
     ...(entry.communicationOnly === true ? { communicationOnly: true } : {}),
+    ...(peerLook(entry.look) ? { look: peerLook(entry.look) } : {}),
     clients: (Array.isArray(entry.clients) ? entry.clients : []).filter((client) => isOpaqueId(client)).slice(0, 4) };
+}
+
+// The face a shared Agent has on its own computer, when the person re-rolled it:
+// the drawing's seed, so other computers draw the same face. Absent means its
+// default drawing from its agentId; anything else (an uploaded picture, a long
+// or control-carrying seed, a field an older or newer FULI sent) is dropped.
+const LOOK_SEED_CHARS = 64;
+export function peerLook(look) {
+  const seed = look?.kind === 'generated' ? look.seed : null;
+  if (typeof seed !== 'string' || !seed.trim() || seed.length > LOOK_SEED_CHARS || withoutControls(seed) !== seed) return null;
+  return { kind: 'generated', seed };
 }

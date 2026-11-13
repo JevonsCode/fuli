@@ -6,6 +6,7 @@ import { apiErrorReason } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import MarkdownText from '@/components/MarkdownText.vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
+import { identityKeyOf } from '@/features/agent-profile/remote-faces'
 import { t } from '@/i18n'
 import { postMessage, setThreadMode, type RoundtableDelivery, type RoundtablePerson, type RoundtableThread } from './roundtable-api'
 import { deliveryLabel, deliveryTone, reasonLabel, viaLabel } from './roundtable-delivery'
@@ -97,7 +98,7 @@ watch(() => props.thread.messages.length, async (length, previous) => {
             <p v-if="marks[index]!.separator" class="rt-sep"><time :datetime="bubble.createdAt">{{ time(bubble.createdAt) }}</time></p>
             <div class="rt-msg-row">
               <template v-if="!bubble.mine">
-                <span v-if="marks[index]!.runStart" class="rt-face roundtable-avatar" :style="agentIdentityStyle(bubble.from.agentId)" aria-hidden="true"><AgentAvatar
+                <span v-if="marks[index]!.runStart" class="rt-face roundtable-avatar" :style="agentIdentityStyle(identityKeyOf(bubble.from.agentId))" aria-hidden="true"><AgentAvatar
                   v-if="bubble.from.agentId" :agent-id="bubble.from.agentId" /><template v-else>{{ initial(bubble) }}</template></span>
                 <span v-else class="rt-face-gap" aria-hidden="true" />
               </template>
