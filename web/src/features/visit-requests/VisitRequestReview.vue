@@ -4,7 +4,7 @@ import { useClipboardCopy } from '@/composables/useClipboardCopy'
 import { t } from '@/i18n'
 import UiIconButton from '@/ui/UiIconButton.vue'
 import UiNotice from '@/ui/UiNotice.vue'
-import { shownText } from './visit-request-model'
+import { heldText, shownText } from './visit-request-model'
 import type { VisitRequestCard } from './visit-request-shape'
 import './visit-card.css'
 
@@ -21,8 +21,8 @@ const files = computed(() => result.value?.files ?? [])
 <template>
   <section class="visit-section" data-visit-review-section :aria-label="t('visitRequests.result.title')">
     <h3 class="ui-group-label">{{ t('visitRequests.result.title') }}</h3>
-    <UiNotice v-if="card.review === 'held' && card.holdReason" tone="warning" data-visit-held>
-      <span class="visit-held-line">{{ t(`visitRequests.result.held.${card.holdReason}`) }}</span>
+    <UiNotice v-if="card.review === 'held'" tone="warning" data-visit-held>
+      <span class="visit-held-line">{{ heldText(card.holdReason) }}</span>
       <span class="visit-held-line">{{ t('visitRequests.result.nothingSent') }}</span>
     </UiNotice>
     <p class="visit-text" data-visit-summary>{{ result?.summary ? shownText(result.summary) : t('visitRequests.result.noSummary') }}</p>

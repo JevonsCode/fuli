@@ -74,6 +74,26 @@ describe('a visit request card', () => {
       result: { summary: null, branch: 'fuli/visit/visit-1', files: [], diffstat: null }, diff: null }))
     expect(text('[data-visit-held]')).toContain('改动里有像密钥的东西。')
     expect(text('[data-visit-held]')).toContain('这些都没有发给另一台电脑。')
+    expect(document.querySelector('[data-visit-keep-shares]')?.textContent).toBe('保留后，对方能看到摘要和文件清单，看不到改动内容。')
+  })
+
+  it('shows an unreviewed result that expired with its branch and copy button, and no actions', async () => {
+    await mountCard(visitCard({ state: 'expired', review: 'ready',
+      result: { summary: 'Fixed the typo.', branch: 'fuli/visit/visit-1', files: [{ path: 'src/sample.js', added: 1, removed: 0 }], diffstat: null },
+      diff: { text: '+the', truncated: false } }))
+    expect(text('[data-visit-ending]')).toBe('14 天没看，已过期：副本删了，分支还留着。')
+    expect(text('[data-visit-branch]')).toBe('fuli/visit/visit-1')
+    expect(document.querySelector('[data-visit-copy-branch]')).not.toBeNull()
+    expect(document.querySelector('[data-visit-actions]')).toBeNull()
+  })
+
+  it('says why a request sent under 自动 waits for the person when its client cannot run unwatched', async () => {
+    await mountCard(visitCard({ modeAtReceipt: 'auto', events: [{ from: 'planning', to: 'awaiting_owner', by: 'rule', rule: 'auto_envelope_v1',
+      note: null, at: '2026-11-14T08:01:00.000Z', checks: [{ name: 'constrained_client', ok: false }, { name: 'no_network', ok: true }] }] }))
+    expect(text('[data-visit-constrained]')).toBe('这台电脑上的助手没法在没人看着时安全地自动做，所以等你拍板。')
+    // Before approval there is no copy or branch: no empty rows for them.
+    expect(document.querySelector('[data-visit-review-section]')).toBeNull()
+    expect(document.querySelector('[data-visit-branch]')).toBeNull()
   })
 
   it('sends the optional one-line reason with 拒绝', async () => {

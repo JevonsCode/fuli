@@ -8,7 +8,6 @@ import { shapeOf } from '@/api/response-shape'
 export const VISIT_STATES = ['received', 'refused', 'planning', 'awaiting_owner', 'approved', 'running', 'awaiting_review',
   'declined', 'expired', 'cancelled', 'failed', 'unknown', 'kept', 'discarded'] as const
 export const REQUESTER_MODES = ['ask_only', 'plan', 'auto', 'trusted'] as const
-const HOLD_REASONS = ['integrity_violation', 'secret_found', 'outside_envelope'] as const
 
 const planSchema = z.looseObject({
   areas: z.array(z.string()), risks: z.array(z.string()), dependencyChanges: z.boolean(), configChanges: z.boolean(),
@@ -20,7 +19,7 @@ const visitRequestSchema = z.looseObject({
   id: z.string(),
   state: z.enum(VISIT_STATES),
   review: z.enum(['ready', 'held']).nullable(),
-  holdReason: z.enum(HOLD_REASONS).nullable(),
+  holdReason: z.string().nullable(),
   requester: z.looseObject({ key: z.string(), label: z.string(), agentName: z.string().nullable(), source: z.string() }),
   projectId: z.string(),
   agentId: z.string(),

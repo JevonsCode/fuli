@@ -10,8 +10,8 @@ import { t } from '@/i18n'
 import RequesterModeSelect from './RequesterModeSelect.vue'
 import VisitRequestReview from './VisitRequestReview.vue'
 import type { VisitAction } from './visit-request-api'
-import { askerLine, checkName, decisionText, endingText, eventText, modeName, planErrorText, ruleChecks, shownText, visitActions,
-  visitStateLabel } from './visit-request-model'
+import { askerLine, checkName, decisionText, endingText, eventText, modeName, planErrorText, reviewExpired, ruleChecks, shownText, visitActions,
+  visitStateLabel, waitsForConstrainedClient } from './visit-request-model'
 import type { VisitRequestCard } from './visit-request-shape'
 import './visit-card.css'
 
@@ -30,7 +30,10 @@ const plan = computed(() => props.card.plan)
 const actions = computed(() => visitActions(props.card))
 const checks = computed(() => ruleChecks(props.card))
 const ending = computed(() => endingText(props.card))
-const hasResult = computed(() => Boolean(props.card.result) || ['awaiting_review', 'kept', 'discarded'].includes(props.card.state))
+const hasResult = computed(() => Boolean(props.card.result) || ['awaiting_review', 'kept', 'discarded'].includes(props.card.state)
+  || reviewExpired(props.card))
+// In 计划 and 自动 the other computer sees the summary and file list only once the branch is kept; in 完全信任 it saw them already.
+const keepShares = computed(() => actions.value.includes('keep') && props.card.modeAtDecision !== 'trusted')
 const yesNo = (value: boolean) => t(value ? 'visitRequests.card.yes' : 'visitRequests.card.no')
 </script>
 
@@ -72,6 +75,7 @@ const yesNo = (value: boolean) => t(value ? 'visitRequests.card.yes' : 'visitReq
   <section class="visit-section" data-visit-decision>
     <h3 class="ui-group-label">{{ t('visitRequests.card.decision') }}</h3>
     <p class="visit-line">{{ t('visitRequests.card.modeAtReceipt', { mode: modeName(card.modeAtReceipt) }) }} · {{ decisionText(card) }}</p>
+    <p v-if="waitsForConstrainedClient(card)" class="visit-line" data-visit-constrained>{{ t('visitRequests.card.constrainedClient') }}</p>
     <p v-if="ending" class="visit-line" data-visit-ending>{{ ending }}</p>
     <UiDisclosure v-if="checks.length || card.error" :title="t('visitRequests.card.details')" data-visit-details>
       <p v-if="checks.length" class="visit-note">{{ t('visitRequests.card.checks') }}</p>
@@ -106,6 +110,7 @@ const yesNo = (value: boolean) => t(value ? 'visitRequests.card.yes' : 'visitReq
       :data-visit-action="action" @click="emit('act', action, reason)">
       {{ t(`visitRequests.actions.${action}`) }}
     </Button>
+    <p v-if="keepShares" class="visit-note visit-keep-note" data-visit-keep-shares>{{ t('visitRequests.result.keepShares') }}</p>
   </DialogFooter>
 </template>
 
@@ -122,4 +127,6 @@ const yesNo = (value: boolean) => t(value ? 'visitRequests.card.yes' : 'visitReq
   border-top: 1px solid var(--color-border); background: var(--color-card);
 }
 .visit-reason { flex: 1 1 200px; min-width: 0; }
+/* Under 保留分支: a full line after the buttons, aligned with them. */
+.visit-keep-note { flex-basis: 100%; order: 1; text-align: right; }
 </style>
