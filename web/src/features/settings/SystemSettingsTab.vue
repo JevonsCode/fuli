@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import PageColumns from '@/components/PageColumns.vue'
+import PageStack from '@/components/PageStack.vue'
 import { Button } from '@/components/ui/button'
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { OptionSelect } from '@/components/ui/select'
@@ -121,7 +121,7 @@ function formatTime(value: string | undefined) {
 </script>
 
 <template>
-  <PageColumns>
+  <PageStack>
     <Card as="section" class="settings-card" aria-labelledby="settings-interface-title">
       <CardHeader><CardTitle id="settings-interface-title" as="h2">{{ t('settings.groups.interface') }}<AiHelpButton term="task.interface" /></CardTitle></CardHeader>
       <div class="setting-list">
@@ -210,7 +210,7 @@ function formatTime(value: string | undefined) {
       </div>
     </Card>
     <DiagnosticsSettings />
-    <Card as="section" class="settings-card resource-card" data-span="wide" aria-labelledby="settings-resources-title">
+    <Card as="section" class="settings-card resource-card" aria-labelledby="settings-resources-title">
       <CardHeader>
         <CardTitle id="settings-resources-title" as="h2">{{ t('settings.resources.title') }}</CardTitle>
         <CardDescription v-if="resources">{{ t('settings.resources.measuredAt', { time: formatTime(resources.sampledAt) }) }}</CardDescription>
@@ -263,7 +263,7 @@ function formatTime(value: string | undefined) {
         </div>
       </template>
     </Card>
-  </PageColumns>
+  </PageStack>
 </template>
 
 <style scoped>

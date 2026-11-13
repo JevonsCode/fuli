@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { getJson } from '@/api/client'
 import GrowthLoading from '@/components/GrowthLoading.vue'
-import PageColumns from '@/components/PageColumns.vue'
+import PageStack from '@/components/PageStack.vue'
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import AiHelpButton from '@/features/ai-help/AiHelpButton.vue'
@@ -51,7 +51,7 @@ usePageRefresh(detectClients)
 </script>
 
 <template>
-  <PageColumns>
+  <PageStack>
     <Card as="section" class="settings-card behavior-card" aria-labelledby="settings-capture-title">
       <CardHeader><CardTitle id="settings-capture-title" as="h2">{{ t('settings.groups.capture') }}<AiHelpButton term="task.capture" /></CardTitle></CardHeader>
       <div class="setting-list">
@@ -87,5 +87,5 @@ usePageRefresh(detectClients)
         </label>
       </div>
     </Card>
-  </PageColumns>
+  </PageStack>
 </template>

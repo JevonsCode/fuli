@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import PageColumns from '@/components/PageColumns.vue'
+import PageStack from '@/components/PageStack.vue'
 import { Button } from '@/components/ui/button'
 import AboutSectionHeading from '@/features/about/AboutSectionHeading.vue'
 import HowtoCaseCard from '@/features/howto/HowtoCaseCard.vue'
@@ -26,15 +26,15 @@ const content = computed(() => howtoContent(currentLocale()))
             </Button>
           </template>
         </AboutSectionHeading>
-        <PageColumns>
+        <PageStack>
           <HowtoMoveCard v-for="move in content.moves" :key="move.id" :move="move" />
-        </PageColumns>
+        </PageStack>
       </section>
       <section class="howto-section" aria-labelledby="howto-cases-title">
         <AboutSectionHeading title-id="howto-cases-title" :title="t('howto.cases.title')" :description="t('howto.cases.description')" />
-        <PageColumns>
+        <PageStack>
           <HowtoCaseCard v-for="story in content.cases" :key="story.id" :story="story" />
-        </PageColumns>
+        </PageStack>
       </section>
     </div>
   </section>
