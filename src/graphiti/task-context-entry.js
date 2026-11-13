@@ -107,16 +107,20 @@ export async function beginTaskFromPreferences(application, preferences, {
     entryVia
   });
   // rec#63: record which recalled items the Agent was shown, so ranking can
-  // later learn "shown but not used" from "shown and used". Recording only;
-  // it never fails task entry and is skipped for a resumed task.
-  if (!resumed && preferences.task_knowledge_recall) {
+  // later learn "shown but not used" from "shown and used", and which
+  // preferences the entry delivered from which client, for the compounding
+  // statement. One local write; it never fails task entry and is skipped for
+  // a resumed task.
+  if (!resumed) {
     try {
-      application.recallImpressions?.recordShown({
+      application.recallImpressions?.recordDelivered({
         taskContextToken: task.token,
         personalSpaceId: preferences.context?.personal_space_id,
         personalProjectId: preferences.context?.personal_project_id ?? null,
-        facts: preferences.task_knowledge_recall.facts,
-        entities: preferences.task_knowledge_recall.entities
+        sourceApplication: task.sourceApplication ?? sourceApplication,
+        facts: preferences.task_knowledge_recall?.facts,
+        entities: preferences.task_knowledge_recall?.entities,
+        preferences: preferences.effective_preferences
       });
     } catch {
       // Ignore: the impression must never fail task entry.

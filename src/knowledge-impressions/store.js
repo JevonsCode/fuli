@@ -10,6 +10,20 @@ import { immediateTransaction, openFormattedDatabase, sqliteFormat } from '../..
 // No item text, names or summaries are stored: ids, rank,
 // score and confirmation status only. task_key is a SHA-256 hex of the task
 // context token, so the token itself is never stored.
+// task_deliveries (version 2): per task, the client it entered from and which
+// of the person's effective preferences FULI delivered with its entry, as
+// "kind:id" keys, so the compounding statement can count what was carried
+// into tasks. Tasks before version 2 have recall rows only.
+const TASK_DELIVERIES = `
+  CREATE TABLE IF NOT EXISTS task_deliveries(
+    task_key TEXT PRIMARY KEY,
+    personal_space_id TEXT NOT NULL,
+    source_application TEXT NOT NULL,
+    delivered_at TEXT NOT NULL,
+    preference_keys TEXT NOT NULL);
+  CREATE INDEX IF NOT EXISTS task_deliveries_at ON task_deliveries(delivered_at);
+  CREATE INDEX IF NOT EXISTS recall_impressions_shown_at ON recall_impressions(shown_at);`;
+
 export const RECALL_IMPRESSIONS_FORMAT = sqliteFormat({
   store: 'recall-impressions',
   schema: `
@@ -25,12 +39,19 @@ export const RECALL_IMPRESSIONS_FORMAT = sqliteFormat({
       shown_at TEXT NOT NULL,
       use_kind TEXT CHECK(use_kind IN ('cited','applied')),
       used_at TEXT,
-      PRIMARY KEY(task_key, item_kind, item_id));`
+      PRIMARY KEY(task_key, item_kind, item_id));`,
+  migrations: [{
+    id: 'recall-impressions/2-task-deliveries', to: 2, kind: 'add-table', table: 'task_deliveries',
+    summary: 'per task, its client and the preferences its entry delivered, and a time index for the retention cut',
+    create: TASK_DELIVERIES
+  }]
 });
 
 // Rows older than this are deleted on the next write.
 const RETENTION_DAYS = 180;
 const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
+// A task entry's preference list is bounded by the Provider; this caps what one row keeps.
+const MAX_DELIVERED_PREFERENCES = 100;
 
 export class RecallImpressionsStore {
   constructor(path = ':memory:', now = () => new Date()) {
@@ -52,30 +73,56 @@ export class RecallImpressionsStore {
     return immediateTransaction(this.db, work);
   }
 
-  // facts are relationships, entities are entities; rank is the 1-based
-  // position within each kind as delivered. A second call for the same task
-  // does not duplicate rows. An empty recall records nothing and never opens
-  // the store.
-  recordShown({ taskContextToken, personalSpaceId, personalProjectId, facts, entities }) {
+  // What a task entry delivered: the recalled facts (relationships) and
+  // entities, rank being the 1-based position within each kind, and the
+  // effective preferences ({ id, item_kind }). One transaction; a second call
+  // for the same task does not duplicate rows. An entry that delivered
+  // nothing records nothing and never opens the store.
+  recordDelivered({ taskContextToken, personalSpaceId, personalProjectId, sourceApplication, facts, entities, preferences }) {
     const rows = [
       ...(facts ?? []).map((item, index) => ({ kind: 'relationship', item, rank: index + 1 })),
       ...(entities ?? []).map((item, index) => ({ kind: 'entity', item, rank: index + 1 }))
     ];
-    if (!rows.length) return;
+    const preferenceKeys = [...new Set((preferences ?? []).filter(item => item?.id)
+      .map(item => `${item.item_kind ?? 'entity'}:${item.id}`))].slice(0, MAX_DELIVERED_PREFERENCES);
+    if (!rows.length && !preferenceKeys.length) return;
     const taskKey = taskKeyFor(taskContextToken);
     const now = this.now();
-    const shownAt = now.toISOString();
+    const deliveredAt = now.toISOString();
     const cutoff = new Date(now.getTime() - RETENTION_MS).toISOString();
     this.transaction(() => {
       this.db.prepare('DELETE FROM recall_impressions WHERE shown_at < ?').run(cutoff);
+      this.db.prepare('DELETE FROM task_deliveries WHERE delivered_at < ?').run(cutoff);
       const insert = this.db.prepare(`INSERT INTO recall_impressions
         (task_key, personal_space_id, personal_project_id, item_kind, item_id, rank, score, confirmation_status, shown_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(task_key, item_kind, item_id) DO NOTHING`);
       for (const { kind, item, rank } of rows) {
         insert.run(taskKey, personalSpaceId, personalProjectId ?? null, kind, item.id, rank,
-          item.score ?? null, item.confirmation_status ?? null, shownAt);
+          item.score ?? null, item.confirmation_status ?? null, deliveredAt);
       }
+      this.db.prepare(`INSERT INTO task_deliveries(task_key, personal_space_id, source_application, delivered_at, preference_keys)
+        VALUES (?, ?, ?, ?, ?) ON CONFLICT(task_key) DO NOTHING`)
+        .run(taskKey, personalSpaceId, sourceApplication ?? 'other', deliveredAt, JSON.stringify(preferenceKeys));
     });
+  }
+
+  // What task entries carried in [from, to): distinct tasks that received
+  // recalled knowledge or preferences, their distinct clients and the
+  // distinct items. A task before version 2 counts by its recall alone and
+  // names no client. ISO instants as toISOString() writes them.
+  deliveredBetween({ personalSpaceId, from, to }) {
+    if (!this.readable) return { tasks: 0, clients: 0, items: 0 };
+    const recall = 'FROM recall_impressions WHERE personal_space_id = ? AND shown_at >= ? AND shown_at < ?';
+    const entries = 'FROM task_deliveries WHERE personal_space_id = ? AND delivered_at >= ? AND delivered_at < ?';
+    const window = [personalSpaceId, from, to];
+    const count = sql => this.db.prepare(sql).get(...window, ...window).count;
+    return {
+      tasks: count(`SELECT COUNT(*) AS count FROM (SELECT task_key ${recall} UNION SELECT task_key ${entries})`),
+      clients: this.db.prepare(`SELECT COUNT(DISTINCT source_application) AS count ${entries}`).get(...window).count,
+      items: count(`SELECT COUNT(*) AS count FROM (SELECT item_kind || ':' || item_id ${recall}
+        UNION SELECT key.value FROM task_deliveries, json_each(task_deliveries.preference_keys) AS key
+        WHERE personal_space_id = ? AND delivered_at >= ? AND delivered_at < ?)`)
+    };
   }
 
   // Only updates rows that exist: an item used but never shown is ignored, and a

@@ -34,17 +34,17 @@ const SHOWN = {
   ]
 };
 
-test('recordShown stores ids, rank, score and confirmation status; a second call does not duplicate rows', (t) => {
+test('recordDelivered stores ids, rank, score and confirmation status; a second call does not duplicate rows', (t) => {
   const { store } = storeIn(t);
-  store.recordShown(SHOWN);
-  store.recordShown(SHOWN);
+  store.recordDelivered(SHOWN);
+  store.recordDelivered(SHOWN);
   assert.deepEqual(store.summary({ personalSpaceId: 'space-a', personalProjectId: 'project-a' }),
     { tasks: 1, shown: 4, used: 0, byRank: [{ rank: 1, shown: 2, used: 0 }, { rank: 2, shown: 2, used: 0 }] });
 });
 
 test('markUsed updates only rows that were shown; a used-but-never-shown item is ignored', (t) => {
   const { store } = storeIn(t);
-  store.recordShown(SHOWN);
+  store.recordDelivered(SHOWN);
   store.markUsed({ taskContextToken: SHOWN.taskContextToken, items: [
     { itemId: 'rel-1', itemKind: 'relationship', useKind: 'applied' },
     { itemId: 'missing', itemKind: 'entity', useKind: 'cited' }
@@ -55,8 +55,8 @@ test('markUsed updates only rows that were shown; a used-but-never-shown item is
 
 test('summary groups shown and used by rank and separates projects', (t) => {
   const { store } = storeIn(t);
-  store.recordShown({ ...SHOWN, taskContextToken: 'fuli-task-a' });
-  store.recordShown({ ...SHOWN, taskContextToken: 'fuli-task-b', personalProjectId: 'project-b' });
+  store.recordDelivered({ ...SHOWN, taskContextToken: 'fuli-task-a' });
+  store.recordDelivered({ ...SHOWN, taskContextToken: 'fuli-task-b', personalProjectId: 'project-b' });
   store.markUsed({ taskContextToken: 'fuli-task-a', items: [
     { itemId: 'rel-1', itemKind: 'relationship', useKind: 'applied' }] });
   assert.deepEqual(store.summary({ personalSpaceId: 'space-a', personalProjectId: 'project-a' }),
@@ -70,16 +70,16 @@ test('summary groups shown and used by rank and separates projects', (t) => {
 test('rows older than 180 days are deleted on the next write', (t) => {
   let current = new Date('2026-01-01T00:00:00Z');
   const { store } = storeIn(t, { now: () => current });
-  store.recordShown(SHOWN);
+  store.recordDelivered(SHOWN);
   current = new Date('2026-07-20T00:00:00Z');
-  store.recordShown({ ...SHOWN, taskContextToken: 'fuli-task-later' });
+  store.recordDelivered({ ...SHOWN, taskContextToken: 'fuli-task-later' });
   assert.deepEqual(store.summary({ personalSpaceId: 'space-a', personalProjectId: 'project-a' }),
     { tasks: 1, shown: 4, used: 0, byRank: [{ rank: 1, shown: 2, used: 0 }, { rank: 2, shown: 2, used: 0 }] });
 });
 
 test('the task context token is never stored, only its SHA-256 hex', (t) => {
   const { store, path } = storeIn(t);
-  store.recordShown(SHOWN);
+  store.recordDelivered(SHOWN);
   store.close();
   const database = new DatabaseSync(path, { readOnly: true });
   try {
@@ -128,9 +128,57 @@ test('task entry records the shown recall items, and a resumed entry does not', 
 });
 
 test('a throwing store never breaks task entry', async () => {
-  const app = entryApp({ recordShown: () => { throw new Error('synthetic record failure'); } });
+  const app = entryApp({ recordDelivered: () => { throw new Error('synthetic record failure'); } });
   const result = await beginTaskFromPreferences(app, entryPreferences(), { sessionId: 'session-a', sourceApplication: 'codex' });
   assert.equal(result.taskContextToken, 'fuli-task-entry-1');
+});
+
+const WEEK = { from: '2026-11-09T00:00:00.000Z', to: '2026-11-16T00:00:00.000Z' };
+
+test('deliveredBetween counts the tasks, clients and distinct items entries carried in the window', (t) => {
+  let current = new Date('2026-11-10T08:00:00Z');
+  const { store } = storeIn(t, { now: () => current });
+  const preferences = [{ id: 'pref-1', item_kind: 'entity' }, { id: 'pref-1', item_kind: 'entity' },
+    { id: 'rel-pref', item_kind: 'relationship' }, { id: null }];
+  store.recordDelivered({ ...SHOWN, taskContextToken: 'fuli-task-recall-and-preferences', sourceApplication: 'codex', preferences });
+  store.recordDelivered({ taskContextToken: 'fuli-task-preferences-only', personalSpaceId: 'space-a', sourceApplication: 'claude-code',
+    preferences: [{ id: 'pref-1', item_kind: 'entity' }, { id: 'ent-1', item_kind: 'entity' }] });
+  store.recordDelivered({ ...SHOWN, taskContextToken: 'fuli-task-other-space', personalSpaceId: 'space-b', sourceApplication: 'cursor' });
+  store.recordDelivered({ taskContextToken: 'fuli-task-nothing', personalSpaceId: 'space-a', sourceApplication: 'opencode', preferences: [] });
+  current = new Date('2026-11-16T00:00:00Z');
+  store.recordDelivered({ ...SHOWN, taskContextToken: 'fuli-task-next-week', sourceApplication: 'opencode' });
+  // Recall rel-1, rel-2, ent-1, ent-2 and preferences pref-1, rel-pref (ent-1 again is the same item).
+  assert.deepEqual(store.deliveredBetween({ personalSpaceId: 'space-a', ...WEEK }), { tasks: 2, clients: 2, items: 6 });
+  assert.deepEqual(store.deliveredBetween({ personalSpaceId: 'space-c', ...WEEK }), { tasks: 0, clients: 0, items: 0 });
+});
+
+test('a version 1 store gains task deliveries on open, and its older tasks count by their recall alone', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'fuli-recall-impressions-v1-'));
+  const path = join(directory, 'recall-impressions.sqlite');
+  const old = new DatabaseSync(path);
+  old.exec(`CREATE TABLE recall_impressions(task_key TEXT NOT NULL, personal_space_id TEXT NOT NULL, personal_project_id TEXT,
+    item_kind TEXT NOT NULL CHECK(item_kind IN ('entity','relationship')), item_id TEXT NOT NULL, rank INTEGER NOT NULL,
+    score REAL, confirmation_status TEXT, shown_at TEXT NOT NULL, use_kind TEXT CHECK(use_kind IN ('cited','applied')),
+    used_at TEXT, PRIMARY KEY(task_key, item_kind, item_id));
+    INSERT INTO recall_impressions VALUES ('${'a'.repeat(64)}', 'space-a', NULL, 'entity', 'ent-old', 1, NULL, NULL,
+      '2026-11-10T01:00:00.000Z', NULL, NULL);
+    PRAGMA user_version = 1;`);
+  old.close();
+  const store = new RecallImpressionsStore(path, () => new Date('2026-11-11T00:00:00Z'));
+  t.after(() => { store.close(); rmSync(directory, { recursive: true, force: true }); });
+  assert.deepEqual(store.deliveredBetween({ personalSpaceId: 'space-a', ...WEEK }), { tasks: 1, clients: 0, items: 1 });
+  store.recordDelivered({ taskContextToken: 'fuli-task-new', personalSpaceId: 'space-a', sourceApplication: 'codex',
+    preferences: [{ id: 'pref-1', item_kind: 'entity' }] });
+  assert.deepEqual(store.deliveredBetween({ personalSpaceId: 'space-a', ...WEEK }), { tasks: 2, clients: 1, items: 2 });
+  assert.equal(store.db.prepare('PRAGMA user_version').get().user_version, 2);
+});
+
+test('task entry records the preferences it delivered and its client, even without a recall', async () => {
+  const store = new RecallImpressionsStore(':memory:', () => new Date('2026-11-10T00:00:00Z'));
+  const preferences = { context: { personal_space_id: 'space-a', personal_project_id: 'project-a', project_agent_id: null },
+    effective_preferences: [{ id: 'pref-1', item_kind: 'entity', instruction: 'Synthetic rule' }] };
+  await beginTaskFromPreferences(entryApp(store), preferences, { sessionId: 'session-a', sourceApplication: 'codex' });
+  assert.deepEqual(store.deliveredBetween({ personalSpaceId: 'space-a', ...WEEK }), { tasks: 1, clients: 1, items: 1 });
 });
 
 function checkpointApp(recallImpressions) {

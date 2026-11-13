@@ -45,7 +45,7 @@ function storeIn(t) {
 function showTasks(store, { space = 'space-a', prefix, count, facts = [], entities = [], used = [] }) {
   for (let index = 0; index < count; index += 1) {
     const taskContextToken = `fuli-task-${prefix}-${index}`;
-    store.recordShown({ taskContextToken, personalSpaceId: space, personalProjectId: 'project-a',
+    store.recordDelivered({ taskContextToken, personalSpaceId: space, personalProjectId: 'project-a',
       facts: facts.map(id => ({ id })), entities: entities.map(id => ({ id })) });
     store.markUsed({ taskContextToken, items: used.map(([itemKind, itemId]) => ({ itemKind, itemId, useKind: 'applied' })) });
   }
