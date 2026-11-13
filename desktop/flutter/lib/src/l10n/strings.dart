@@ -109,6 +109,13 @@ class Strings {
   String get movingToApplications => _t('正在移到「应用程序」…', 'Moving to Applications…');
   String get moveFailed => _t('没能移到「应用程序」，这次在这里打开 FULI。', 'Could not move to Applications; open FULI from here this time.');
 
+  // Windows: this window runs a version an update replaced
+  String get oldVersionWindow => _t('这个窗口是旧版本的 FULI。', 'This window is an older version of FULI.');
+  String get openNewVersion => _t('打开新版本', 'Open the new version');
+  String get openingNewVersion => _t('正在打开新版本…', 'Opening the new version…');
+  String get openNewVersionFailed =>
+      _t('没能打开新版本，请从开始菜单打开 FULI。', 'Could not open the new version; open FULI from the Start menu.');
+
   // Data format dialog (the console's 数据格式迁移 page, in short)
   String get migrationTitle => _t('确认数据格式变化', 'Confirm the data format change');
   String get migrationLoading => _t('正在读取要变化的数据…', 'Reading what will change…');
