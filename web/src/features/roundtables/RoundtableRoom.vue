@@ -2,7 +2,7 @@
 import AgentAvatar from '@/features/agent-profile/AgentAvatar.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { agentIdentityStyle } from '@/features/agent-profile/agent-identity-color'
-import { memberFaceId } from '@/features/agent-profile/remote-faces'
+import { identityKeyOf, memberFaceId } from '@/features/agent-profile/remote-faces'
 import { t } from '@/i18n'
 import { Button } from '@/components/ui/button'
 import MarkdownText from '@/components/MarkdownText.vue'
@@ -87,7 +87,7 @@ onBeforeUnmount(() => document.removeEventListener('scroll', reachedEnd, { captu
           :data-message-id="message.messageId" data-roundtable-chat-message>
           <p v-if="marks[index]!.separator" class="rt-sep"><time :datetime="message.createdAt">{{ time(message.createdAt) }}</time></p>
           <div class="rt-msg-row">
-            <span v-if="marks[index]!.runStart" class="rt-face roundtable-chat-avatar" :style="agentIdentityStyle(sender(message.from)?.agentId ?? null)" aria-hidden="true"><AgentAvatar
+            <span v-if="marks[index]!.runStart" class="rt-face roundtable-chat-avatar" :style="agentIdentityStyle(identityKeyOf(senderFace(message.from)))" aria-hidden="true"><AgentAvatar
               v-if="senderFace(message.from)" :agent-id="senderFace(message.from)!" :name="senderName(message.from)" /><template v-else>{{ initial(message.from) }}</template></span>
             <span v-else class="rt-face-gap" aria-hidden="true" />
             <div class="rt-msg-col">

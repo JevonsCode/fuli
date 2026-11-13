@@ -9,7 +9,8 @@ vi.mock('@/api/client', async (original) => ({ ...(await original<typeof import(
 const { default: AgentAvatar } = await import('./AgentAvatar.vue')
 const { agentAvatarUrl, defaultAvatarUrl, generatedAvatarUrl } = await import('./agent-avatar')
 const { agentLooks, forgetAgentLooks } = await import('./agent-looks')
-const { loadRemoteFaces, memberFaceId, remoteAvatarUrl, remoteFaces } = await import('./remote-faces')
+const { identityKeyOf, loadRemoteFaces, memberFaceId, remoteAvatarUrl, remoteFaces, remoteFacesReady } = await import('./remote-faces')
+const { agentIdentityStyle } = await import('./agent-identity-color')
 
 // Synthetic: two paired computers, as the asking computer's GET /api/roundtable/agents lists them.
 const DEVICE = '7fc6a1b2c3d4e5f6'
@@ -140,5 +141,38 @@ describe('faces of FLAs on another computer', () => {
       expect(remoteAvatarUrl(PLAIN)).toBe(defaultAvatarUrl('agent-ivy'))
       expect(decodeURIComponent(remoteAvatarUrl(PLAIN))).not.toContain('@keyframes')
     } finally { setMotionPreference('system') }
+  })
+
+  it('tints a remote frame as its home computer does; a local or unknown id keeps its own key', async () => {
+    const unknown = `peer:${DEVICE}:binding-unknown`
+    const before = { local: agentIdentityStyle(identityKeyOf('agent-own')), unknown: agentIdentityStyle(identityKeyOf(unknown)) }
+    await loaded()
+    expect(identityKeyOf(ROLLED)).toBe('agent-milo')
+    expect(agentIdentityStyle(identityKeyOf(ROLLED))).toEqual(agentIdentityStyle('agent-milo'))
+    expect(agentIdentityStyle(identityKeyOf(`peer:${DEVICE}:agent-ivy`))).toEqual(agentIdentityStyle('agent-ivy'))
+    expect(identityKeyOf('agent-own')).toBe('agent-own')
+    expect(agentIdentityStyle(identityKeyOf('agent-own'))).toEqual(before.local)
+    expect(identityKeyOf(unknown)).toBe(unknown)
+    expect(agentIdentityStyle(identityKeyOf(unknown))).toEqual(before.unknown)
+    expect(identityKeyOf(null)).toBeNull()
+  })
+
+  it('a peer: face has its ring and a plain 「another computer」 name before the paired list arrives; only the name gains the computer', async () => {
+    let answer!: (value: unknown) => void
+    getJson.mockReturnValue(new Promise(resolve => { answer = resolve }))
+    const ready = loadRemoteFaces()
+    // A peer room waits for this same read before it shows (useRoundtable).
+    expect(remoteFacesReady()).toBe(ready)
+    const wrapper = await face({ agentId: ROLLED, name: 'Milo Reed' })
+    const img = wrapper.get('img')
+    expect(img.attributes('data-agent-remote')).toBe('framed')
+    expect(img.attributes('title')).toBe('Milo Reed（另一台电脑）')
+    answer({ agents: [], remoteAgents })
+    await ready
+    await nextTick()
+    expect(img.attributes('data-agent-remote')).toBe('framed')
+    expect(img.attributes('title')).toBe('Milo Reed · FULI 7FC6（另一台电脑）')
+    expect(img.attributes('src')).toBe(generatedAvatarUrl('seed-milo-3'))
+    wrapper.unmount()
   })
 })

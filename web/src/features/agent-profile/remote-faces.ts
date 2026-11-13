@@ -61,11 +61,25 @@ function faces(agents: RemoteAgent[]) {
   return map
 }
 
+/** The key a frame's identity colour uses: a known remote Agent's own agentId, as its home computer keys it; any other id unchanged. */
+export const identityKeyOf = (id: string | null | undefined) => (id && remoteFaces.value.get(id)?.agentId) || id
+
+let latest: Promise<void> | null = null
+
 /** Reads the paired computers' shared Agents; a call while one read runs shares it. A failed read keeps the faces known so far. */
 export function loadRemoteFaces(): Promise<void> {
   reading ??= getJson('/api/roundtable/agents', agentsShape)
     .then(({ remoteAgents, remoteUnavailable }) => { if (remoteAgents && !remoteUnavailable) remoteFaces.value = faces(remoteAgents) })
     .catch(() => {})
     .finally(() => { reading = null })
+  latest = reading
   return reading
 }
+
+/**
+ * Settles once the latest read did (starting one if none ran). A chat room on
+ * paired computers names every member, this computer's own included, by a peer
+ * address; only the map tells which live elsewhere, so a room waits for it and
+ * its faces never change from local to remote under the reader's eyes.
+ */
+export const remoteFacesReady = () => latest ?? loadRemoteFaces()

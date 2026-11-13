@@ -3,7 +3,7 @@ import { useRoute } from 'vue-router'
 import { ApiError } from '@/api/client'
 import { useConsoleStore } from '@/stores/console'
 import { subscribeChatUpdates } from '@/features/project-agents/task-updates'
-import { loadRemoteFaces } from '@/features/agent-profile/remote-faces'
+import { loadRemoteFaces, remoteFacesReady } from '@/features/agent-profile/remote-faces'
 import {
   appendChatPage, listChats, listThreads, readChat, readThread,
   type RoundtableChatPage, type RoundtableChatRoom, type RoundtableThread, type RoundtableThreadSummary,
@@ -28,6 +28,8 @@ export function useRoundtable(hooks: RoundtableHooks = {}) {
   const selectedChatId = computed(() => typeof route.params.chatId === 'string' ? route.params.chatId : '')
   const hasSelection = computed(() => Boolean(selectedId.value || selectedChatId.value))
   const SLOW_MS = 8_000
+  // A room on paired computers is shown once the paired Agents' faces are known (remoteFacesReady).
+  const peerRoom = (item: { transport: string }) => item.transport === 'peer'
   // While a woken FLA is replying, the open thread is read this often.
   const REPLYING_REFRESH_MS = 1_500
 
@@ -82,6 +84,7 @@ export function useRoundtable(hooks: RoundtableHooks = {}) {
     chatsOk = false
     try {
       const page = await scope.read(signal => listChats({}, signal))
+      if (page.chats.some(peerRoom)) await remoteFacesReady()
       if (scope !== lists) return
       const firstLoad = chatsState.value !== 'ready'
       mergeRooms(page.chats, true)
@@ -174,6 +177,7 @@ export function useRoundtable(hooks: RoundtableHooks = {}) {
       } else {
         const id = selectedChatId.value
         const value = await scope.read(signal => readChat(id, 0, signal))
+        if (peerRoom(value)) await remoteFacesReady()
         if (scope === detail) room.value = value
       }
       if (scope === detail) { detailState.value = 'ready'; hooks.detailReady?.() }
