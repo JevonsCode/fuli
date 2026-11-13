@@ -10,12 +10,13 @@ function fixture() {
   const woken = [];
   let project = 'shared-project';
   const peerCalls = [];
+  let remoteState = { status: 'queued' };
   const app = {
     config: { personal: { spaceId: 'fixture-space' } },
     taskContextRegistry: { context: async () => ({ projectAgentId: 'shared-lead', personalProjectId: project, sourceApplication: 'codex', sessionId: 'fixture-session' }) },
     listProjectAgents: async () => [{ agentId: 'shared-lead', profile: { name: 'Shared lead', status: 'active', allowedClients: ['codex'] } }],
     personal: { recentAgentSessions: async () => [], verifyAgentDelegation: async () => ({ redeemed: true }), revokeAgentDelegation: async () => {} },
-    peer: { hasSent: () => true, status: async () => { peerCalls.push('status'); return { status: 'queued' }; }, cancel: async () => { peerCalls.push('cancel'); return { status: 'cancelled' }; } },
+    peer: { hasSent: () => true, status: async () => { peerCalls.push('status'); return remoteState; }, cancel: async () => { peerCalls.push('cancel'); return { status: 'cancelled' }; } },
   };
   const service = createAgentRoundtable({ host: createFuliRoundtableHost(app), peer: app.peer, openStore: () => store, clientAvailable: () => true,
     wake: async input => { woken.push(input); return { body: 'Synthetic reply', sessionId: 'fixture-session' }; } });
@@ -27,7 +28,7 @@ function fixture() {
       issueGrant: async () => ({ token: 'fixture-grant' }), timeoutMs: 1000,
     });
   }
-  return { store, service, woken, peerCalls, ask, setProject: value => { project = value; } };
+  return { store, service, woken, peerCalls, ask, setProject: value => { project = value; }, setRemote: value => { remoteState = value; } };
 }
 
 test('remote IDs cannot select or mutate an existing local thread or ask', async () => {
@@ -78,7 +79,26 @@ test('same Agent in another project cannot read status or cancel this project as
   } finally { f.service.close(); }
 });
 
-test('a remote attempt uses its one grant and reports why that delivery failed', async () => {
+test('the asker reads a remote failure as its code, detail and attempts; an older peer\'s bare code still reads', async () => {
+  for (const [error, view] of [
+    ['wake_failed;detail=client_exit_nonzero;attempts=3', { reason: 'wake_failed', detail: 'client_exit_nonzero', attempts: 3 }],
+    ['wake_failed', { reason: 'wake_failed' }],
+    ['wake_failed;detail=unknown_detail', { reason: 'wake_failed' }],
+  ]) {
+    const f = fixture();
+    try {
+      f.store.createThread({ id: 'task-thread', spaceId: 'fixture-space', projectId: 'shared-project', subject: 'Task fixture' });
+      f.store.appendMessage('task-thread', { id: 'task-ask', kind: 'ask', body: 'Question', status: 'sent', via: 'peer', from: { agentId: 'shared-lead' }, to: { agentId: 'peer-recipient' } });
+      f.setRemote({ status: 'failed', error });
+      const status = await f.service.messageStatus({ taskContextToken: 'synthetic-context', sourceApplication: 'codex', messageId: 'task-ask' });
+      assert.deepEqual({ reason: status.reason, detail: status.detail, attempts: status.attempts },
+        { detail: undefined, attempts: undefined, ...view }, error);
+    } finally { f.service.close(); }
+  }
+});
+
+// The execution deadline (1 s here) leaves no time for a second wake, which needs a 30 s grant.
+test('a later wake of a remote ask starts only while its deadline leaves time, and the first failure is reported', async () => {
   const store = createRoundtableStore();
   const grants = [];
   const app = {

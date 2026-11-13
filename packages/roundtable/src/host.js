@@ -47,6 +47,11 @@
 //   standInScope({ agentId, name, occupation, projectId, text, client, sessionId })
 //                                               optional: the Agent's shareable index for a session that
 //                                               stands in for it (stand-in.js); never its private memory
+//   redactDiagnostic(text)                      optional, sync: a failed wake's captured client output as it
+//                                               may be kept (paths, credentials, secrets removed); without
+//                                               it the output is dropped and only codes are kept
+//   recordWakeFailure({ client, sessionMode, code, detail, exitCode, signal, durationMs, remote })
+//                                               optional, sync, never throws: the host's diagnostics of a failed wake
 //   requestSignal()                             optional, sync: the current request's AbortSignal
 //   inRestrictedWorker()                        optional, sync: true inside a sealed worker run
 export const ROUNDTABLE_HOST_METHODS = Object.freeze([

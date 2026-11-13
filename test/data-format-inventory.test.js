@@ -237,7 +237,9 @@ const SQLITE_OUTSIDE_FORMATS = new Map([
   ['packages/roundtable/src/roundtable/thread-subscriptions.js',
     'the thread subscription table of the roundtable format (migration roundtable/4-thread-subscriptions)'],
   ['packages/roundtable/src/roundtable/desktop-inbox-store.js',
-    'the desktop inbox table of the roundtable format (migration roundtable/5-desktop-inboxes)']
+    'the desktop inbox table of the roundtable format (migration roundtable/5-desktop-inboxes)'],
+  ['packages/roundtable/src/roundtable/wake-attempt-store.js',
+    'the wake attempt table of the roundtable format (migration roundtable/10-wake-attempts)']
 ]);
 
 test('SQLite is opened and shaped only through a declared store format', () => {

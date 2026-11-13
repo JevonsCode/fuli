@@ -9,6 +9,11 @@
 
 const LADDER_TIERS = Object.freeze(['resume', 'new_session', 'stand_in']);
 
+// A paired device's ask wakes at most this many times on the owner's computer
+// (the latest session, a new one in its client, then the share's other
+// clients), each with its own grant; no stand-in answers for a remote ask.
+export const REMOTE_WAKE_ATTEMPTS = 3;
+
 // Why a step did not answer, in words the person reads as they are.
 const REASONS = {
   no_previous_session: '没有可续接的历史会话',

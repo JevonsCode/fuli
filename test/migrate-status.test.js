@@ -134,7 +134,7 @@ test('a store opened and migrated by FULI reports current with its ledger', asyn
     assert.deepEqual(snapshot(root, { skip: (name) => name.endsWith('-shm') }), before);
   } finally { live.close(); }
   const store = byLabel(JSON.parse(output))['agent-roundtable.sqlite'];
-  assert.deepEqual([store.state, store.version, store.target], ['current', 9, 9]);
+  assert.deepEqual([store.state, store.version, store.target], ['current', 10, 10]);
   assert.deepEqual(store.ledger.map((entry) => [entry.migrationId, entry.status]), [['roundtable/created', 'created']]);
 });
 
