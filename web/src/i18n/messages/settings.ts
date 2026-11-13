@@ -322,6 +322,7 @@ export const settingsMessages = {
       },
     },
     tabs: { label: '设置分组', recording: '记录', ai: 'AI 能做什么', clients: '客户端', connections: '连接', system: '系统' },
+    layout: { label: '布局', tabs: '顶部标签', side: '左侧分类' },
     version: {
       title: '版本与更新',
       current: '当前版本',
@@ -747,6 +748,7 @@ export const settingsMessages = {
       },
     },
     tabs: { label: 'Settings sections', recording: 'Recording', ai: 'What AI may do', clients: 'Clients', connections: 'Connections', system: 'System' },
+    layout: { label: 'Layout', tabs: 'Tabs on top', side: 'Topics on the left' },
     version: {
       title: 'Version and updates',
       current: 'This version',

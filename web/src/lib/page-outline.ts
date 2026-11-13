@@ -13,7 +13,7 @@ const READ_LINE = 120
 
 // The heading's own words: a count or button beside them is not part of its name.
 // A heading whose words are split up names itself (data-outline-label).
-function headingLabel(heading: HTMLElement): string {
+export function headingLabel(heading: HTMLElement): string {
   if (heading.dataset.outlineLabel?.trim()) return heading.dataset.outlineLabel.trim()
   const own = [...heading.childNodes].find(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())
   return (own?.textContent ?? heading.textContent ?? '').trim()

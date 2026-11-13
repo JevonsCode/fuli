@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Button } from '@/components/ui/button'
 import PageOutline from '@/components/PageOutline.vue'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent } from '@/components/ui/tabs'
 import GrowthLoading from '@/components/GrowthLoading.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -14,16 +14,20 @@ import ConnectionsSettingsTab from '@/features/settings/ConnectionsSettingsTab.v
 import RecordingSettingsTab from '@/features/settings/RecordingSettingsTab.vue'
 import SystemSettingsTab from '@/features/settings/SystemSettingsTab.vue'
 import SettingsSaveCapsule from '@/features/settings/SettingsSaveCapsule.vue'
+import SettingsSideShell from '@/features/settings/SettingsSideShell.vue'
+import SettingsTabsShell from '@/features/settings/SettingsTabsShell.vue'
+import { SETTINGS_LAYOUTS, useSettingsLayout, type SettingsLayout } from '@/features/settings/settings-layout'
 import { waitForSettingsApply } from '@/features/settings/settings-apply'
 import { useSettingsAutoSave } from '@/features/settings/settings-autosave'
 import { pendingRestartFields, withoutRestartChanges } from '@/features/settings/settings-restart'
 import { fieldErrorMessage } from '@/features/settings/settings-field-error'
 import { linkedCard, settingSearchTerm, useSettingsSearch } from '@/features/settings/settings-search'
-import { DEFAULT_SETTINGS_TAB, SETTINGS_TABS, settingsTabFrom, type SettingsTab } from '@/features/settings/settings-tabs'
+import { DEFAULT_SETTINGS_TAB, settingsTabFrom, type SettingsTab } from '@/features/settings/settings-tabs'
 import { settingsPageTools } from '@/features/settings/settings-page-tools'
 import { usePageTools } from '@/features/webmcp/usePageTools'
 import { t } from '@/i18n'
 import { useConsoleStore } from '@/stores/console'
+import UiSegmented from '@/ui/UiSegmented.vue'
 import type { RuntimeSettings, SystemSettingsResult } from '@/types'
 
 // The settings page composes one tab per subject (features/settings/*SettingsTab.vue)
@@ -62,6 +66,21 @@ watch(activeTab, tab => {
   const { tab: _previous, ...query } = route.query
   void router.replace({ query: tab === DEFAULT_SETTINGS_TAB ? query : { ...query, tab } })
 })
+// Two layouts of the same topics to compare (11-13): tabs on top, or the topics
+// in a fixed column on the left. Both shells take the same search, switch and
+// panels below, so the content, search, autosave and links are written once.
+const layout = useSettingsLayout(route.query.layout)
+const layoutOptions = computed(() => SETTINGS_LAYOUTS.map(value => ({ value, label: t(`settings.layout.${value}`) })))
+const shell = computed(() => layout.shown.value === 'side'
+  ? { is: SettingsSideShell, props: { tab: activeTab.value, searching: searching.value, 'onUpdate:tab': (tab: SettingsTab) => { activeTab.value = tab } } }
+  : { is: SettingsTabsShell, props: {} })
+// The person's own choice is kept; a ?layout= that forced this visit goes from the URL.
+function chooseLayout(next: SettingsLayout) {
+  layout.choose(next)
+  if (!route.query.layout) return
+  const { layout: _visit, ...query } = route.query
+  void router.replace({ query })
+}
 const loadError = ref('')
 const searchRoot = ref<HTMLElement | null>(null)
 const settingsRoot = ref<HTMLElement | null>(null)
@@ -214,48 +233,51 @@ function checkFields(): ValidatedField[] {
 </script>
 
 <template>
-  <section ref="settingsRoot" class="view settings-view" :aria-label="t('settings.aria')">
-    <PageOutline :content="settingsRoot" />
+  <section ref="settingsRoot" class="view settings-view" :aria-label="t('settings.aria')" :data-layout="layout.shown.value">
+    <!-- Layout B lists the open topic's cards in its left column instead. -->
+    <PageOutline v-if="layout.shown.value === 'tabs'" :content="settingsRoot" />
     <div ref="searchRoot" class="settings-content grid w-full gap-4">
       <GrowthLoading v-if="loading && !form" :label="t('settings.loading')" />
       <Tabs v-if="form && settings" v-model="activeTab" :unmount-on-hide="false" class="settings-tabs gap-4" :data-searching="searching || undefined">
-        <div class="settings-tabbar flex flex-wrap items-end gap-x-4 gap-y-2 border-b">
-          <TabsList class="-mb-px w-auto flex-1 border-b-0" :aria-label="t('settings.tabs.label')">
-            <TabsTrigger v-for="tab in SETTINGS_TABS" :key="tab" :value="tab" :data-settings-tab-trigger="tab">
-              {{ t(`settings.tabs.${tab}`) }}
-            </TabsTrigger>
-          </TabsList>
-          <label class="settings-search mb-1.5">
-            <span class="ui-sr-only">{{ t('settings.search.label') }}</span>
-            <input v-model="searchQuery" type="search" maxlength="80" :placeholder="t('settings.search.placeholder')" />
-          </label>
-        </div>
-        <p v-if="searching && searchMatches" class="settings-search-note" role="status">{{ t('settings.searchEverywhere') }}</p>
-        <p v-if="searching && !searchMatches" class="settings-search-empty" role="status">{{ t('settings.search.empty', { query: searchQuery.trim() }) }}</p>
+        <component :is="shell.is" v-bind="shell.props">
+          <template #search>
+            <label class="settings-search">
+              <span class="ui-sr-only">{{ t('settings.search.label') }}</span>
+              <input v-model="searchQuery" type="search" maxlength="80" :placeholder="t('settings.search.placeholder')" />
+            </label>
+          </template>
+          <!-- The choice applies only where layout B fits; a narrow window always shows the tabs. -->
+          <template #layout>
+            <UiSegmented v-if="layout.wide.value" class="settings-layout-switch" :model-value="layout.chosen.value" :options="layoutOptions"
+              :label="t('settings.layout.label')" :size="layout.shown.value === 'side' ? 'sm' : 'md'" data-settings-layout @update:model-value="chooseLayout" />
+          </template>
+          <p v-if="searching && searchMatches" class="settings-search-note" role="status">{{ t('settings.searchEverywhere') }}</p>
+          <p v-if="searching && !searchMatches" class="settings-search-empty" role="status">{{ t('settings.search.empty', { query: searchQuery.trim() }) }}</p>
 
-        <!-- Enter in a field saves at once instead of after the pause. -->
-        <form id="settings-form" ref="formElement" class="settings-form" novalidate :aria-busy="applying"
-          @submit.prevent="autoSave.changed('choice')" @input.capture="noteTyping">
-          <fieldset class="settings-fields" :disabled="applying">
-            <TabsContent value="recording" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="recording">
-              <RecordingSettingsTab v-model:form="form" />
-            </TabsContent>
-            <TabsContent value="ai" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="ai">
-              <AiAccessSettingsTab />
-            </TabsContent>
-            <TabsContent value="clients" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="clients">
-              <ClientsSettingsTab v-model:form="form" :field-errors="fieldErrors" />
-            </TabsContent>
-            <TabsContent value="connections" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="connections">
-              <ConnectionsSettingsTab v-model:form="form" :active="settings.active" :pending-restart="pendingRestart" :applying="applying"
-                :apply-error="applyError" :field-errors="fieldErrors" @apply="applyRestartSettings" />
-            </TabsContent>
-            <TabsContent value="system" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="system">
-              <SystemSettingsTab v-model:form="form" :runtime-mode="settings.active.graphRuntimeMode" :applying="applying" />
-            </TabsContent>
-          </fieldset>
-          <p v-if="loadError" class="settings-error" role="alert">{{ loadError }}</p>
-        </form>
+          <!-- Enter in a field saves at once instead of after the pause. -->
+          <form id="settings-form" ref="formElement" class="settings-form" novalidate :aria-busy="applying"
+            @submit.prevent="autoSave.changed('choice')" @input.capture="noteTyping">
+            <fieldset class="settings-fields" :disabled="applying">
+              <TabsContent value="recording" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="recording">
+                <RecordingSettingsTab v-model:form="form" />
+              </TabsContent>
+              <TabsContent value="ai" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="ai">
+                <AiAccessSettingsTab />
+              </TabsContent>
+              <TabsContent value="clients" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="clients">
+                <ClientsSettingsTab v-model:form="form" :field-errors="fieldErrors" />
+              </TabsContent>
+              <TabsContent value="connections" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="connections">
+                <ConnectionsSettingsTab v-model:form="form" :active="settings.active" :pending-restart="pendingRestart" :applying="applying"
+                  :apply-error="applyError" :field-errors="fieldErrors" @apply="applyRestartSettings" />
+              </TabsContent>
+              <TabsContent value="system" :force-mount="searching || undefined" class="settings-panel" data-settings-tab="system">
+                <SystemSettingsTab v-model:form="form" :runtime-mode="settings.active.graphRuntimeMode" :applying="applying" />
+              </TabsContent>
+            </fieldset>
+            <p v-if="loadError" class="settings-error" role="alert">{{ loadError }}</p>
+          </form>
+        </component>
       </Tabs>
       <SettingsSaveCapsule :state="saveCapsuleState" :failure="saveFailure" @retry="autoSave.retry" />
       <div v-if="!loading && !form" class="settings-load-error" role="alert">
@@ -268,14 +290,14 @@ function checkFields(): ValidatedField[] {
 
 <style scoped>
 .settings-view { scrollbar-gutter: stable; }
-.settings-tabbar { position: relative; }
-/* The tabs keep their row; once the tabs and a 180px search no longer fit side by side, the search wraps under them. */
-.settings-tabbar > :first-child { flex: 1 1 auto; min-width: min(100%, max-content); }
 /* One column no wider than the page: an auto column grew to the English tab row and scrolled the page sideways at 460pt (rec issue 102). */
 .settings-content { grid-template-columns: minmax(0, 1fr); }
-/* The client's narrowest window (460pt): 8px tab padding fits all five English tabs; narrower, the row scrolls on its own. */
-@media (max-width: 520px) { .settings-tabbar :deep([role="tab"]) { padding-inline: 8px; } }
-.settings-search { flex: 0 1 300px; min-width: 180px; }
+/* Layout B: the page fills the window and never scrolls; the cards' half does (as on 今天). */
+.settings-view[data-layout="side"] { display: flex; overflow: hidden; padding-bottom: 20px !important; }
+.settings-view[data-layout="side"] .settings-content { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.settings-view[data-layout="side"] .settings-tabs { flex: 1; min-height: 0; }
+.settings-view[data-layout="side"] .settings-layout-switch { display: flex; width: 100%; }
+.settings-view[data-layout="side"] .settings-layout-switch :deep(button) { flex: 1 1 0; min-width: 0; padding-inline: 6px; white-space: nowrap; }
 .settings-search input { box-sizing: border-box; width: 100%; }
 .settings-search-note, .settings-search-empty { margin: 0; color: var(--color-muted); font-size: 13px; }
 .settings-form { display: grid; min-width: 0; gap: var(--space-4); }

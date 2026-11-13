@@ -699,4 +699,127 @@ describe('SettingsPage', () => {
     expect(update).toHaveBeenLastCalledWith(false)
     wrapper.unmount()
   })
+
+  describe('two layouts to compare', () => {
+    // jsdom has no matchMedia: a test says whether the window is wide enough for the topics on the left.
+    function windowWide(wide: boolean) {
+      vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: wide && query === '(min-width: 861px)', media: query,
+        addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+    }
+
+    async function mountSettings(path = '/settings') {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      useConsoleStore().runtimeStatus = 'ready'
+      vi.stubGlobal('fetch', vi.fn(async (input) => String(input) === '/api/system/settings'
+        ? Response.json({ configured, active: configured, restartRequired: false })
+        : Response.json({}, { status: 503 })))
+      const router = settingsRouter()
+      await router.push(path)
+      const wrapper = mount(SettingsPage, { global: { plugins: [pinia, router] }, attachTo: document.body })
+      await flushPromises()
+      return wrapper
+    }
+    const outlineLabels = (wrapper: VueWrapper) => wrapper.findAll('[data-settings-outline-item]').map(item => item.text())
+    const pressedLayout = (wrapper: VueWrapper) => wrapper.get('[data-settings-layout] [aria-pressed="true"]').attributes('data-value')
+
+    it('opens with the tabs on top, and keeps the topics on the left once the person picks them', async () => {
+      windowWide(true)
+      const first = await mountSettings()
+      expect(first.findAll('[data-settings-tab-trigger]')).toHaveLength(5)
+      expect(first.find('[data-settings-side]').exists()).toBe(false)
+      expect(pressedLayout(first)).toBe('tabs')
+      await first.get('[data-settings-layout] [data-value="side"]').trigger('click')
+      await flushPromises()
+      expect(first.find('[data-settings-side]').exists()).toBe(true)
+      expect(first.find('[data-settings-tab-trigger]').exists()).toBe(false)
+      expect(first.get('[data-settings-topic="recording"]').attributes('aria-current')).toBe('true')
+      first.unmount()
+
+      const again = await mountSettings()
+      expect(again.find('[data-settings-side]').exists()).toBe(true)
+      expect(pressedLayout(again)).toBe('side')
+      again.unmount()
+    })
+
+    it('opens a ?layout= link in that layout for the visit without keeping it', async () => {
+      windowWide(true)
+      const side = await mountSettings('/settings?layout=side')
+      expect(side.find('[data-settings-side]').exists()).toBe(true)
+      expect(window.localStorage.getItem('fuli.settings.layout')).toBeNull()
+      side.unmount()
+      window.localStorage.setItem('fuli.settings.layout', 'side')
+      const tabs = await mountSettings('/settings?layout=tabs')
+      expect(tabs.find('[data-settings-side]').exists()).toBe(false)
+      expect(window.localStorage.getItem('fuli.settings.layout')).toBe('side')
+      tabs.unmount()
+    })
+
+    it('outlines exactly the open topic\'s rendered cards on the left and scrolls to the one clicked', async () => {
+      windowWide(true)
+      const scrolled: Element[] = []
+      vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) { scrolled.push(this) })
+      const wrapper = await mountSettings('/settings?layout=side')
+      // No topic promotion in these settings: its card is not rendered, so it has no entry.
+      expect(wrapper.find('[data-topic-promotion-card]').exists()).toBe(false)
+      expect(outlineLabels(wrapper)).toEqual(['自动沉淀', '按项目记录'])
+      expect(wrapper.get('[data-settings-outline-item][aria-current]').text()).toBe('自动沉淀')
+      await wrapper.findAll('[data-settings-outline-item]')[1]!.trigger('click')
+      expect(scrolled).toEqual([wrapper.get('[data-capture-projects-card]').element])
+      expect(wrapper.get('[data-settings-outline-item][aria-current]').text()).toBe('按项目记录')
+
+      await wrapper.get('[data-settings-topic="connections"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-settings-topic="connections"]').attributes('aria-current')).toBe('true')
+      expect(wrapper.get('[data-settings-tab="connections"]').attributes('hidden')).toBeUndefined()
+      const cards = wrapper.get('[data-settings-tab="connections"]').findAll('.settings-card')
+      expect(outlineLabels(wrapper)).toHaveLength(cards.length)
+      expect(outlineLabels(wrapper)).toContain('服务端口')
+      expect(outlineLabels(wrapper)).not.toContain('自动沉淀')
+      wrapper.unmount()
+    })
+
+    it('opens a linked card\'s topic on the left, scrolls to it and marks it', async () => {
+      windowWide(true)
+      const scrolled: Element[] = []
+      vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(function (this: HTMLElement) { scrolled.push(this) })
+      window.history.replaceState(null, '', '/settings#conversation-launchers')
+      const wrapper = await mountSettings('/settings?layout=side')
+      const launchers = wrapper.get('.conversation-launcher-card')
+      expect(wrapper.get('[data-settings-topic="clients"]').attributes('aria-current')).toBe('true')
+      expect(wrapper.get('[data-settings-tab="clients"]').attributes('hidden')).toBeUndefined()
+      expect(scrolled).toEqual([launchers.element])
+      expect(launchers.attributes('data-settings-linked')).toBe('')
+      wrapper.unmount()
+      window.history.replaceState(null, '', '/')
+    })
+
+    it('shows matches from every topic while searching on the left, with no outline under the topics', async () => {
+      windowWide(true)
+      const wrapper = await mountSettings('/settings?layout=side')
+      expect(outlineLabels(wrapper).length).toBeGreaterThan(0)
+      await wrapper.get('.settings-search input').setValue('Neo4j Bolt')
+      await flushPromises()
+      expect(wrapper.get('.ports-card').attributes('data-search-hidden')).toBeUndefined()
+      expect(wrapper.get('[data-settings-tab="connections"]').attributes('hidden')).toBeUndefined()
+      expect(wrapper.get('.behavior-card').attributes('data-search-hidden')).toBe('')
+      expect(wrapper.find('.settings-search-note').exists()).toBe(true)
+      expect(outlineLabels(wrapper)).toEqual([])
+      await wrapper.get('.settings-search input').setValue('')
+      await flushPromises()
+      expect(outlineLabels(wrapper)).toEqual(['自动沉淀', '按项目记录'])
+      wrapper.unmount()
+    })
+
+    it('shows the tabs on top in a narrow window, even when the topics on the left were chosen', async () => {
+      windowWide(false)
+      window.localStorage.setItem('fuli.settings.layout', 'side')
+      const wrapper = await mountSettings()
+      expect(wrapper.findAll('[data-settings-tab-trigger]')).toHaveLength(5)
+      expect(wrapper.find('[data-settings-side]').exists()).toBe(false)
+      // The choice does not apply here, so no switch offers it.
+      expect(wrapper.find('[data-settings-layout]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+  })
 })
