@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { t } from '@/i18n'
 import StatementDetails from './StatementDetails.vue'
@@ -22,6 +23,7 @@ const detailsOpen = ref(false)
 <template>
   <TodaySection class="statement-stage" :title="t('today.sections.statement')" data-today-section="statement">
     <template #action>
+      <Button as-child variant="ghost" size="sm"><RouterLink to="/statement" :aria-label="t('statementCalendar.open')" data-today-action="statement-all">{{ t('today.actions.all') }}</RouterLink></Button>
       <Button variant="ghost" size="sm" data-today-action="statement" @click="detailsOpen = true">{{ t('today.actions.details') }}</Button>
     </template>
     <p v-if="total !== null" class="statement-total" :aria-label="t('today.statement.headline', { count: total })" data-statement-total>
