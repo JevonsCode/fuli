@@ -66,7 +66,7 @@ test('two computers pair from the nearby list with one 6-digit code and a confir
     assert.deepEqual([here.coordinator, there.coordinator], ['other', 'this']);
     assert.equal(there.device.name, 'Desk');
 
-    await desk.runtime.confirmPairing({ requestId: here.requestId, code: there.code });
+    await desk.runtime.confirmPairing({ requestId: here.requestId, code: there.code, fingerprint: here.device.fingerprint.slice(0, 16) });
     await delay(150);
     assert.equal((await laptop.runtime.status()).devices.filter((entry) => !entry.self).length, 0, 'one confirmation trusts nothing');
     assert.equal((await desk.runtime.status()).role, 'coordinator', 'nothing changes before both confirmed');
@@ -96,6 +96,10 @@ test('a code that differs cancels the pairing on both computers and trusts nothi
     await desk.runtime.nearbyOn({ name: 'Desk' });
     await laptop.runtime.nearbyOn({ name: 'Laptop' });
     const { here, there } = await nearbyPair(desk, laptop);
+    // A confirm that names another device, or too little of this one, is refused and leaves the request as it is.
+    await assert.rejects(laptop.runtime.confirmPairing({ requestId: there.requestId, code: here.code, fingerprint: 'f'.repeat(16) }), { code: 'device_mismatch' });
+    await assert.rejects(laptop.runtime.confirmPairing({ requestId: there.requestId, code: here.code, fingerprint: there.device.fingerprint.slice(0, 8) }), { code: 'device_mismatch' });
+    assert.equal((await laptop.runtime.status()).nearby.pairing.state, 'confirm');
     const wrong = String((Number(here.code) + 1) % 1_000_000).padStart(6, '0');
     await assert.rejects(laptop.runtime.confirmPairing({ requestId: there.requestId, code: wrong }), { code: 'code_mismatch' });
     const ended = await until(desk.runtime, (status) => status.nearby.pairing?.state === 'failed', 'the initiator to see the mismatch');

@@ -174,7 +174,7 @@ test('rec#11 D-81: every delegable entry names a known category, its default and
     assert.equal(entry.toolName ?? entry.toolNames ?? entry.reason, undefined, entry.route);
   }
   assert.deepEqual([catalog.coverage.agentDelegable, catalog.coverage.agentDelegableOff, catalog.coverage.agentRelayed,
-    catalog.coverage.localUserOnly], [58, 12, 18, 33]);
+    catalog.coverage.localUserOnly], [58, 13, 18, 32]);
   const relayed = catalog.uiMutationParity.filter(({ access }) => access === 'agent_relayed');
   assert.deepEqual(new Set(relayed.map(({ route }) => route)), RELAYED_DECISIONS);
   for (const entry of relayed) {
@@ -260,7 +260,7 @@ test('external knowledge configuration is controllable through explicit Agent to
 test('Agent interface catalog lists roundtable reads and requested-Agent identity guidance', () => {
   const catalog = agentInterfaceCatalog();
   const roundtable = catalog.readWorkflows.find(({ domain }) => domain === 'roundtable');
-  assert.deepEqual(roundtable.toolNames, ['find_agents', 'agent_chat', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status']);
+  assert.deepEqual(roundtable.toolNames, ['find_agents', 'agent_chat', 'read_agent_messages', 'read_agent_thread', 'get_agent_message_status', 'visit_shared_lead']);
   assert.deepEqual(roundtable.readRoutes, ['GET /api/roundtable/agents', 'GET /api/roundtable/chats', 'GET /api/roundtable/chats/:chatId',
     'GET /api/roundtable/threads', 'GET /api/roundtable/threads/:threadId',
     'GET /api/roundtable/messages/:messageId']);
@@ -272,11 +272,12 @@ test('Agent interface catalog lists roundtable reads and requested-Agent identit
   // rec#11 D-81: an FLA pairs and shares only after the person turns lan_roundtable on.
   for (const route of ['POST /api/peer/coordinator', 'POST /api/peer/invitations', 'POST /api/peer/join',
     'PUT /api/peer/shares', 'POST /api/peer/devices/:nodeId/revoke', 'POST /api/peer/disable',
-    'POST /api/peer/nearby', 'POST /api/peer/nearby/pair', 'POST /api/peer/nearby/cancel']) {
+    'POST /api/peer/nearby', 'POST /api/peer/nearby/pair', 'POST /api/peer/nearby/cancel',
+    // Test phase (Jevons 11-14, rec issue 135): an FLA may confirm the code for the person.
+    'POST /api/peer/nearby/confirm']) {
     assert.equal(byRoute.get(route)?.access, 'agent_delegable_off', route);
   }
-  // rec#127: the person compares the code on both computers and confirms it themself; never an Agent.
-  assert.equal(byRoute.get('POST /api/peer/nearby/confirm')?.access, 'local_user_only');
+  // Clearing the attempt count stays the person's own step.
   assert.equal(byRoute.get('POST /api/peer/nearby/attempts/clear')?.access, 'local_user_only');
 });
 

@@ -337,10 +337,16 @@ export function createNearbyPairing({ local, attempts, connect, clock = Date.now
 
   // ---- The person's own controls on either computer (local only) ----
 
-  function confirm({ requestId, code }) {
+  // `fingerprint` names the device the caller means (16 or more leading characters). A caller
+  // that did not compare two screens passes it, so a request from another device is refused
+  // and left as it is for the person to see.
+  function confirm({ requestId, code, fingerprint }) {
     const current = open();
     if (!current || current.id !== requestId) throw new PeerError('pairing_not_found', 'No pairing is waiting for confirmation here', 404);
     if (current.state !== 'confirm') throw new PeerError('pairing_not_ready', 'The pairing code is not ready yet', 409);
+    if (fingerprint !== undefined && !namesDevice(fingerprint, current.peer.fingerprint)) {
+      throw new PeerError('device_mismatch', 'The pairing waiting here is with another device; nothing was confirmed', 409);
+    }
     if (String(code ?? '').replace(/\s+/g, '') !== current.code) {
       stop(current, 'code_mismatch');
       throw new PeerError('code_mismatch', 'That code is not the one on this computer; the pairing was cancelled', 409);
@@ -411,6 +417,12 @@ function unknownPath() {
 
 function deviceKey(peer) {
   return `${peer.fingerprint}|${peer.address ?? ''}`;
+}
+
+// Whether the text names this device: at least the 16 characters shown as its short fingerprint.
+function namesDevice(text, fingerprint) {
+  const prefix = String(text ?? '').replace(/\s+/g, '').toLowerCase();
+  return /^[0-9a-f]{16,64}$/.test(prefix) && typeof fingerprint === 'string' && fingerprint.startsWith(prefix);
 }
 
 function commitmentText(nonce) {

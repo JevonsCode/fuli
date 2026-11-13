@@ -69,6 +69,7 @@ export const HOST_TOOL_CATALOG = Object.freeze({
   group_discussion: PEERS,
   find_agents: EGRESS,
   message_agent: PEERS,
+  visit_shared_lead: PEERS,
   read_agent_messages: EGRESS,
   reply_agent_message: PEERS,
   read_agent_thread: EGRESS,

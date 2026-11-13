@@ -142,7 +142,10 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     const device = await identity();
     runnerClient = createPeerClient({ identity: device, coordinator: membership.coordinator });
     runner = createPeerRunner({ store: store(), client: runnerClient, roundtable, host,
-      nodeId: device.fingerprint, spaceId, onError });
+      nodeId: device.fingerprint, spaceId, onError,
+      // Coordinating, this computer knows which devices are paired; a member does not.
+      pairedDevices: () => (coordinator ? new Set(coordinator.service.devices()
+        .filter((entry) => entry.status === 'active' && !entry.self).map((entry) => entry.nodeId)) : null) });
     runner.start().catch(onError);
     await publish().catch(onError);
     publisher = setInterval(() => {
@@ -194,6 +197,17 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
 
   const published = new Map();
 
+  // The seed of each Agent whose face the person re-rolled, so a paired computer
+  // draws the same face. A picture they uploaded is not sent: there the Agent
+  // shows its default drawing from its agentId (a bounded image can follow later).
+  // A host without looks, or looks it cannot read, leaves every face on its default.
+  async function generatedLookSeeds() {
+    try {
+      const looks = await host.agentLooks?.() ?? [];
+      return new Map(looks.filter((look) => look.kind === 'generated' && look.seed).map((look) => [look.agentId, look.seed]));
+    } catch { return new Map(); }
+  }
+
   // What this device offers, sent to the coordinator now and every minute.
   // The outcome is kept for status, so a list the coordinator never got is
   // visible on the card and in `fuli peer status` instead of only in a log.
@@ -201,6 +215,7 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     if (!runnerClient) return;
     try {
       const profiles = await host.listAgents();
+      const seeds = await generatedLookSeeds();
       const agents = (await shareStates()).flatMap((share) => {
         if (share.state === 'team_unreadable') return published.has(share.bindingId) ? [published.get(share.bindingId)] : [];
         if (share.state !== 'shared') return [];
@@ -208,7 +223,8 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
         return [{ bindingId: share.bindingId, agentId: share.agentId, name: share.lead.name, employeeNumber: share.lead.employeeNumber,
           responsibility: share.lead.responsibility, projectName: share.projectName, projectId: share.projectId,
           occupation: profile?.occupation?.role ?? null, capabilities: profile?.profile.capabilities ?? [],
-          ...(share.communicationOnly ? { communicationOnly: true } : {}), clients: share.clients }];
+          ...(share.communicationOnly ? { communicationOnly: true } : {}),
+          ...(seeds.has(share.agentId) ? { look: { kind: 'generated', seed: seeds.get(share.agentId) } } : {}), clients: share.clients }];
       });
       await runner?.reconcileShares(new Set(agents.map((agent) => agent.bindingId)));
       const sent = repositoryKey;
@@ -812,8 +828,8 @@ export function createPeerRuntime({ host, roundtable, port, interfaces = network
     return status();
   }
 
-  async function confirmPairing({ requestId, code }) {
-    pairing.confirm({ requestId, code });
+  async function confirmPairing({ requestId, code, fingerprint }) {
+    pairing.confirm({ requestId, code, fingerprint });
     return status();
   }
 

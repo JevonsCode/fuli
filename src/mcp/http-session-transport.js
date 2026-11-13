@@ -8,7 +8,8 @@ import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 // session limit, idle eviction, in-flight tracking and a graceful close.
 // Each session belongs to the owner that initialized it (a remote connector,
 // one guest link); a request names its owner and never reaches another
-// owner's session, and closeOwner ends every session of one owner at once.
+// owner's session, and closeOwnersExcept ends every session of the owners
+// that are no longer kept (a revoked or expired guest link) at once.
 // The remote MCP connector (remote-http-server.js) and the guest link
 // listener (src/guest-access) share it.
 const MAX_REQUEST_BYTES = 1024 * 1024;
@@ -138,9 +139,9 @@ export function createHttpSessionTransport({ label, maxSessions, sessionIdleTtlM
       pendingSessions: pendingSessions.size,
       closing: closeStarted
     }),
-    // Ends every session of owner now, open streams included.
-    closeOwner(owner) {
-      const owned = [...sessions.values(), ...pendingSessions].filter((entry) => entry.owner === owner);
+    // Ends now every session whose owner is not in kept (a Set), open streams included.
+    closeOwnersExcept(kept) {
+      const owned = [...sessions.values(), ...pendingSessions].filter((entry) => !kept.has(entry.owner));
       for (const entry of owned) {
         pendingSessions.delete(entry);
         if (entry.sessionId) sessions.delete(entry.sessionId);

@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 
+import { DELEGATION_HEADER, encodeDelegation } from '../src/agent-delegation/delegation-header.js';
 import { handlePeerApiRequest } from '../src/agent-peer/http.js';
+import { handleDelegatedRequest } from '../src/http/agent-delegation-gate.js';
 import { createPeerPort } from '../packages/roundtable/src/peer/peer-port.js';
 import { createPeerRuntime } from '../packages/roundtable/src/peer/peer-runtime.js';
 import { runPeerCommand } from '../src/cli/peer-command.js';
@@ -119,6 +121,26 @@ test('the nearby controls answer only on the loopback console too', async () => 
   assert.equal((await call(peer, { method: 'POST', path: '/api/peer/nearby', body: { on: true, name: 'Desk' } })).status, 200);
   assert.equal((await call(peer, { method: 'POST', path: '/api/peer/nearby', body: { on: false } })).status, 200);
   assert.deepEqual(calls, [['on', { name: 'Desk' }], ['off']]);
+});
+
+test('an Agent confirming a pairing must name the device; the person need not', async () => {
+  const calls = [];
+  const peer = { confirmPairing: async (input) => { calls.push(input); return { role: null }; } };
+  const delegation = { authorize: () => ({ route: 'POST /api/peer/nearby/confirm' }), record() {} };
+  async function delegated(body) {
+    const req = request({ method: 'POST', path: '/api/peer/nearby/confirm', body });
+    req.headers[DELEGATION_HEADER] = encodeDelegation({ actor: { client: 'codex' }, reason: 'Synthetic pairing', bodyFields: Object.keys(body) });
+    const res = response();
+    await handleDelegatedRequest({ request: req, response: res, delegation, agentAccessEnabled: () => true,
+      handle: () => handlePeerApiRequest({ request: req, response: res, url: new URL(req.url, 'http://127.0.0.1'), peer }) });
+    return { status: res.statusCode, body: res.body };
+  }
+  const unnamed = await delegated({ requestId: 'request-1', code: '042917' });
+  assert.deepEqual([unnamed.status, unnamed.body.error], [422, 'device_required']);
+  assert.deepEqual(calls, []);
+  assert.equal((await delegated({ requestId: 'request-1', code: '042917', fingerprint: 'abcd1234abcd1234' })).status, 200);
+  assert.equal((await call(peer, { method: 'POST', path: '/api/peer/nearby/confirm', body: { requestId: 'request-1', code: '042917' } })).status, 200);
+  assert.deepEqual(calls, [{ requestId: 'request-1', code: '042917', fingerprint: 'abcd1234abcd1234' }, { requestId: 'request-1', code: '042917' }]);
 });
 
 test('the share search and the picked project read answer only on the loopback console, with the typed text', async () => {

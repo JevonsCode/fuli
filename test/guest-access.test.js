@@ -14,6 +14,7 @@ import { createGuestRoutes } from '../src/guest-access/guest-routes.js';
 import { startGuestListener } from '../src/guest-access/listener.js';
 import { createGuestAccess } from '../src/guest-access/runtime.js';
 import { handleGuestLinksRequest } from '../src/http/guest-links-api-router.js';
+import { handleVisitorAccessRequest } from '../src/http/visitor-access-api-router.js';
 import { discoverGuestAddresses, discoverLanAddresses, isGuestSourceAddress } from '../src/server/lan-access.js';
 import { createVisitorAccess } from '../src/visitor-access/port.js';
 import { reachableModules } from '../test-support/module-graph.js';
@@ -55,8 +56,13 @@ function setup(t, { sourceAllowed = (address) => address === '127.0.0.1' } = {})
   const searches = [];
   const visitorAccess = createVisitorAccess({ path: join(directory, 'visitor-access.sqlite'), application: application(searches), now: time.now });
   const started = [];
+  const keptLinks = [];
   const guestAccess = createGuestAccess({ visitorAccess, host: fakeHost(), port: 0, discoverAddresses: () => ['127.0.0.1'],
     now: () => time.now().getTime(),
+    createRoutes: (deps) => {
+      const routes = createGuestRoutes(deps);
+      return { ...routes, keepLinks: (ids) => { keptLinks.push(ids); return routes.keepLinks(ids); } };
+    },
     startListener: async (options) => {
       const listener = await startGuestListener({ ...options, sourceAllowed });
       started.push(listener);
@@ -67,7 +73,7 @@ function setup(t, { sourceAllowed = (address) => address === '127.0.0.1' } = {})
     visitorAccess.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  return { directory, time, searches, visitorAccess, guestAccess, started };
+  return { directory, time, searches, visitorAccess, guestAccess, started, keptLinks };
 }
 
 function call(authority, { method = 'GET', path = '/guest/1/card', token, host = authority, headers = {}, body } = {}) {
@@ -116,8 +122,8 @@ test('the listener is absent without a live link and stops when the last one goe
   await assert.rejects(call(authority, { token }), { code: 'ECONNREFUSED' });
 });
 
-test('the card names the project and its lead without local paths, and how to ask', async (t) => {
-  const { guestAccess } = setup(t);
+test('the card names the project and its lead without local paths, and how to ask, and is recorded', async (t) => {
+  const { guestAccess, visitorAccess } = setup(t);
   const { token, link, addresses: [authority] } = await guestAccess.create({ projectId: PROJECT });
   const { status, body } = await call(authority, { token });
   assert.equal(status, 200);
@@ -127,6 +133,29 @@ test('the card names the project and its lead without local paths, and how to as
   assert.equal(body.mode, 'ask_only');
   assert.equal(body.expiresAt, link.expiresAt);
   assert.deepEqual(body.actions.map(({ method, path }) => `${method} ${path}`), ['GET /guest/1/card', 'POST /guest/1/search']);
+  assert.deepEqual(visitorAccess.recentReads({ requesterKey: `guest:${link.id}`, limit: 10 }).reads
+    .map(({ action, outcome, projectId, requesterLabel }) => ({ action, outcome, projectId, requesterLabel })),
+  [{ action: 'card', outcome: 'answered', projectId: PROJECT, requesterLabel: link.label }]);
+  // 「最近被问」 names it as a guest link, by its label, never by its key.
+  const shown = { setHeader() {}, writeHead(status) { this.status = status; }, end(text) { this.body = JSON.parse(text); } };
+  await handleVisitorAccessRequest({ request: { method: 'GET', headers: { host: '127.0.0.1:2828' }, socket: { remoteAddress: '127.0.0.1' } },
+    response: shown, url: new URL('http://127.0.0.1/api/visitor-access/reads'), visitorAccess });
+  assert.deepEqual(shown.body.reads.map(({ requester, requesterKind }) => ({ requester, requesterKind })),
+    [{ requester: link.label, requesterKind: 'guest' }]);
+});
+
+test('a card the project behind it cannot answer is refused in one word and recorded as refused', async (t) => {
+  const { guestAccess, visitorAccess } = setup(t);
+  const { link } = await guestAccess.create({ projectId: PROJECT });
+  const host = fakeHost();
+  host.getProject = async () => { throw new Error('gone'); };
+  const routes = createGuestRoutes({ visitorAccess, host });
+  t.after(() => routes.close());
+  const response = { headers: {}, setHeader() {}, writeHead(status) { this.status = status; }, end(text) { this.body = JSON.parse(text); } };
+  assert.equal(await routes.handle({ method: 'GET' }, response, { link, pathname: '/guest/1/card' }), true);
+  assert.deepEqual({ status: response.status, body: response.body }, { status: 503, body: { error: 'unavailable' } });
+  assert.deepEqual(visitorAccess.recentReads({ requesterKey: `guest:${link.id}`, limit: 10 }).reads
+    .map(({ action, outcome, code }) => ({ action, outcome, code })), [{ action: 'card', outcome: 'refused', code: 'project_unavailable' }]);
 });
 
 test('a search reads only the link\'s project, through the narrowed visitor search, and is recorded', async (t) => {
@@ -268,15 +297,30 @@ test('revoking a link ends its open MCP sessions, and a session is never usable 
   assert.equal((await keptSession.client.callTool({ name: 'guest_card', arguments: {} })).isError, undefined);
 });
 
-test('closing a link\'s sessions makes its session unknown even to that link', async (t) => {
-  const link = { id: 'link-closed', projectId: PROJECT, label: 'guest-closed', expiresAt: '2026-11-08T00:00:00.000Z' };
+test('a link no longer kept loses its sessions even toward that link; a kept link keeps its own', async (t) => {
+  const links = Object.fromEntries(['link-ended', 'link-kept'].map((id) => [`fgl_${id}`,
+    { id, projectId: PROJECT, label: `guest-${id}`, expiresAt: '2026-11-08T00:00:00.000Z' }]));
   const visitorAccess = createVisitorAccess({ application: application([]) });
   const routes = createGuestRoutes({ visitorAccess, host: fakeHost() });
   const listener = await startGuestListener({ addresses: ['127.0.0.1'], port: 0, sourceAllowed: () => true,
-    authenticate: () => ({ ok: true, link }), route: routes.handle });
+    authenticate: (token) => ({ ok: true, link: links[token] }), route: routes.handle });
   t.after(async () => { await routes.close(); await listener.close(); visitorAccess.close(); });
-  const { client } = await connect(t, listener.authorities[0], 'fgl_any');
+  const ended = await connect(t, listener.authorities[0], 'fgl_link-ended');
+  const kept = await connect(t, listener.authorities[0], 'fgl_link-kept');
+  assert.equal((await ended.client.callTool({ name: 'guest_card', arguments: {} })).isError, undefined);
+  await routes.keepLinks(['link-kept']);
+  await assert.rejects(ended.client.callTool({ name: 'guest_card', arguments: {} }), /404|session/i);
+  assert.equal((await kept.client.callTool({ name: 'guest_card', arguments: {} })).isError, undefined);
+});
+
+test('when the listener notices a link expired, it ends that link\'s MCP sessions', async (t) => {
+  const { guestAccess, time, keptLinks } = setup(t);
+  const kept = await guestAccess.create({ projectId: PROJECT, days: 30 });
+  const short = await guestAccess.create({ projectId: PROJECT, days: 1 });
+  const { client } = await connect(t, kept.addresses[0], short.token);
   assert.equal((await client.callTool({ name: 'guest_card', arguments: {} })).isError, undefined);
-  await routes.closeLink(link.id);
-  await assert.rejects(client.callTool({ name: 'guest_card', arguments: {} }), /404|session/i);
+  time.advance(DAY_MS + 1);
+  await guestAccess.start();
+  assert.deepEqual(keptLinks.at(-1), [kept.link.id]);
+  await assert.rejects(client.callTool({ name: 'guest_card', arguments: {} }));
 });

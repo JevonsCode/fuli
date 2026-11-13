@@ -168,7 +168,9 @@ fingerprint and the protocol version, only on physical LAN addresses, and lists 
 others. Click 配对 on one computer; the other shows who asks at once. Both then show
 the same 6-digit code, derived from both certificate fingerprints and a fresh nonce
 from each side. Compare the two screens, tick that they match and click 确认 on each
-computer (`fuli peer confirm <code shown on the other computer>`); no Agent can confirm.
+computer (`fuli peer confirm <code shown on the other computer>`). While FULI is in its
+test phase an Agent you asked to pair the two computers may confirm for you, with the LAN
+roundtable permission on; it tells you which device and digits it confirmed.
 Only then are the devices paired, with the same mutual-TLS trust records an invitation
 writes. A request nobody confirms ends after 2 minutes. Every handshake is counted in the
 computer's own store before any nonce leaves it: at most 3 per device and address and 5
@@ -250,17 +252,18 @@ is shown only in that dialog; FULI stores its SHA-256 in `visitor-access.sqlite`
   Missing, wrong, expired and revoked tokens get one `401`; 10 failures from one
   address in 10 minutes give `429`. Every request reads the link again, so 撤销
   works on the next request, and the last link's end stops the listener.
-- **Routes.** `GET /guest/1/card` and `POST /guest/1/search { queries: [1-4] }`,
-  the same narrowed visitor search as a paired computer's visiting assistant
+- **Routes.** `GET /guest/1/card` (the visiting assistant's card, cleaned and
+  recorded the same way) and `POST /guest/1/search { queries: [1-4] }`, the same narrowed visitor search as a paired computer's visiting assistant
   (`src/visitor-access/`), recorded per attempt under `guest:<linkId>` with its
   limits. The same two are MCP tools at `/guest/1/mcp` (`guest_card`,
   `search_project_knowledge`), on the session plumbing the remote connector uses
   (`src/mcp/http-session-transport.js`); each session belongs to its link, and 撤销
-  closes that link's open sessions. A link only asks; running work on this computer
+  closes that link's open sessions, as does its expiry. Every contact shows under
+  「最近被问」 as 「访客链接 guest-…」. A link only asks; running work on this computer
   is a later step.
 - **Console.** `GET/POST /api/visitor-access/guest-links` and
   `DELETE /api/visitor-access/guest-links/:linkId` answer on loopback only. Creating
-  is the person's own; revoking may be delegated (public projects permission).
+  is the person's own; revoking may be delegated (LAN roundtable permission).
 - The link travels unencrypted on that network, so links are short-lived and
   revocable; the card on the project page says so.
 

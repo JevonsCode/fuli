@@ -84,6 +84,25 @@ test('malformed successful JSON is an error, never an empty success', async () =
   } finally { await harness.close(); }
 });
 
+test('a shared lead carries its re-rolled face seed; a bad or other look is dropped, an old entry has none', async () => {
+  const { coordinator, target, service } = await coordinatorWithTarget();
+  const entry = (bindingId, look) => ({ bindingId, agentId: `agent-${bindingId}`, ...(look === undefined ? {} : { look }) });
+  service.publishDirectory(target.fingerprint, { agents: [
+    entry('generated', { kind: 'generated', seed: 'seed-🌱-7' }),
+    entry('long', { kind: 'generated', seed: 'x'.repeat(65) }),
+    entry('control', { kind: 'generated', seed: 'seed\u001b[31m' }),
+    entry('bidi', { kind: 'generated', seed: 'seed‮' }),
+    entry('blank', { kind: 'generated', seed: '  ' }),
+    entry('image', { kind: 'image', data: 'iVBORw0KGgo=', seed: 'seed-image' }),
+    entry('wrong-type', 'generated'),
+    entry('old'),
+  ] });
+  const looks = Object.fromEntries(service.directory(coordinator.fingerprint).devices
+    .find((device) => device.nodeId === target.fingerprint).agents.map((agent) => [agent.bindingId, agent.look ?? null]));
+  assert.deepEqual(looks, { generated: { kind: 'generated', seed: 'seed-🌱-7' }, long: null, control: null, bidi: null,
+    blank: null, image: null, 'wrong-type': null, old: null });
+});
+
 test('only canonical UTC ISO lifetimes are accepted, so persisted expiry comparisons hold', async () => {
   let now = Date.parse('2026-10-11T00:00:00.000Z');
   const { coordinator, target, store, service } = await coordinatorWithTarget({ clock: () => now });

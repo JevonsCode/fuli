@@ -5,13 +5,13 @@ import { startGuestListener } from './listener.js';
 // The console's guest links (rec issue 133, deliverable B): the person creates,
 // lists and revokes them, and the guest listener runs exactly while at least
 // one link is live. Every change, and each link's expiry, settles the listener
-// again, one settle at a time; revoking a link also ends its MCP sessions.
+// again, one settle at a time, and ends the MCP sessions of links no longer live.
 const GUEST_PORT = 2729;
 // setTimeout cannot wait longer than about 24.8 days; a later expiry is checked again after a day.
 const MAX_WAIT_MS = 24 * 60 * 60 * 1000;
 
 export function createGuestAccess({ visitorAccess, host, port = GUEST_PORT, discoverAddresses = discoverGuestAddresses,
-  startListener = startGuestListener, onError = () => {}, now = Date.now }) {
+  startListener = startGuestListener, createRoutes = createGuestRoutes, onError = () => {}, now = Date.now }) {
   const links = visitorAccess.guestLinks;
   // The listener and its routes (with their MCP sessions), while a link is live.
   let serving = null;
@@ -33,12 +33,15 @@ export function createGuestAccess({ visitorAccess, host, port = GUEST_PORT, disc
   }
 
   async function settleListener() {
-    const live = !closed && links.list().links.length > 0;
+    const liveIds = closed ? [] : links.list().links.map(link => link.id);
+    const live = liveIds.length > 0;
+    // A revoked or expired link's MCP sessions end here, not at their idle timeout.
+    if (live && serving) await serving.routes.keepLinks(liveIds);
     if (live && !serving) {
       const addresses = discoverAddresses();
       if (!addresses.length) problem = 'no_network';
       else {
-        const routes = createGuestRoutes({ visitorAccess, host });
+        const routes = createRoutes({ visitorAccess, host });
         try {
           serving = { routes, listener: await startListener({ addresses, port, route: routes.handle,
             authenticate: token => links.authenticate(token) }) };
@@ -78,10 +81,7 @@ export function createGuestAccess({ visitorAccess, host, port = GUEST_PORT, disc
     },
     async revoke(id) {
       const revoked = links.revoke(id);
-      if (revoked.ok) {
-        await serving?.routes.closeLink(id);
-        await settle();
-      }
+      if (revoked.ok) await settle();
       return revoked;
     },
     // Called once the console listens: a link made before a restart serves again.

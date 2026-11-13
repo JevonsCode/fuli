@@ -36,6 +36,9 @@
 //                                               { agent_id, proof }: signed origin for a cross-device ask or chat
 //   remoteOriginAuthority()                     public keys that verify those origins
 //   recordMemoryUsage(input)                    optional: { recorded, reason? }
+//   agentLooks()                                optional: the faces the person changed, [{ agentId, kind, seed? }];
+//                                               a 'generated' seed is shared with paired devices
+//                                               (LAN directory `look`), nothing else is
 //   projectFolder(projectId)                    optional: the project's known folder for fresh sessions
 //   folderRepository(path)                      optional: the normalised origin address of the Git
 //                                               repository holding path, or null (LAN share folder check)
@@ -47,6 +50,19 @@
 //   standInScope({ agentId, name, occupation, projectId, text, client, sessionId })
 //                                               optional: the Agent's shareable index for a session that
 //                                               stands in for it (stand-in.js); never its private memory
+//   searchSharedProject({ projectId, agentId, requester: { node, name, agentName }, query: { action: 'card' | 'search', queries? } })
+//                                               optional: a paired device's read-only look at one shared project
+//                                               (projectId and agentId from this device's share, never from the
+//                                               asker; node the asking device's verified fingerprint, name and
+//                                               agentName display text), every card and search rate limited and
+//                                               recorded by the host: card { ok: true, name, responsibility,
+//                                               projectName }, search { ok: true, results, truncated }, or
+//                                               { ok: false, code }; without it this device refuses every
+//                                               visitor query (query_unsupported)
+//   refuseSharedQuery({ requester: { node, name, agentName }, action, code })
+//                                               optional: records a visitor query this device refused before
+//                                               searchSharedProject (not shared, a wrong proof, a replay) once
+//                                               the asking device was proven, counted toward its limits
 //   requestSignal()                             optional, sync: the current request's AbortSignal
 //   inRestrictedWorker()                        optional, sync: true inside a sealed worker run
 export const ROUNDTABLE_HOST_METHODS = Object.freeze([

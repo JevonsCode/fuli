@@ -122,7 +122,7 @@ const NAMES = [
   'preview_personal_project_action',
   'apply_personal_project_action',
   'get_graphiti_status',
-  'agent_chat', 'group_discussion', 'find_agents', 'message_agent', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
+  'agent_chat', 'group_discussion', 'find_agents', 'message_agent', 'visit_shared_lead', 'read_agent_messages', 'reply_agent_message', 'read_agent_thread',
     'get_agent_message_status', 'cancel_agent_message'
 ];
 

@@ -6,13 +6,13 @@ import { createGuestMcp } from './guest-mcp.js';
 // What a guest link opens, after the listener checked the source, the Host
 // and the bearer token: the card and the scoped search of the link's one
 // project, as plain JSON routes and as MCP tools at /guest/1/mcp (the same two
-// actions). The search goes through the visitor-access port, which records
-// every attempt (refused ones too) under 'guest:<link id>' and applies that
+// actions). Both go through the visitor-access port (showSharedCard,
+// searchSharedProject), which cleans them and records every attempt (refused ones too) under 'guest:<link id>' and applies that
 // requester's limits. A refusal names its reason in one plain word and never
 // what exists on this computer. Each MCP session belongs to the link that
-// opened it; closeLink ends a revoked link's sessions at once.
+// opened it; keepLinks ends the sessions of every link no longer live.
 const QUERY_REFUSALS = new Set(['queries_missing', 'too_many_queries', 'query_invalid']);
-const RATE_REFUSALS = new Set(['rate_limited_short', 'rate_limited_day']);
+const RATE_REFUSALS = new Set(['rate_limited_short', 'rate_limited_day', 'project_rate_limited_short', 'project_rate_limited_day']);
 const MCP_MAX_SESSIONS = 16;
 const MCP_SESSION_IDLE_MS = 15 * 60 * 1000;
 const MCP_SWEEP_MS = 30 * 1000;
@@ -47,31 +47,37 @@ export function createGuestRoutes({ visitorAccess, host }) {
 
   return {
     handle,
-    closeLink: linkId => mcpSessions.closeOwner(linkId),
+    keepLinks: liveIds => mcpSessions.closeOwnersExcept(new Set(liveIds)),
     close: () => mcpSessions.close(Date.now() + MCP_SHUTDOWN_GRACE_MS)
   };
 }
 
 // The card and the search of one link, each answered as { status, body }.
 function guestActions({ visitorAccess, host }) {
-  // The project's name and its lead as this computer knows them now; null when either cannot be read.
-  const describeProject = projectId => Promise.all([host.getProject(projectId), host.projectTeam(projectId)])
-    .then(([project, team]) => ({ name: project.name, lead: team.lead }), () => null);
+  // The project's name and its lead as this computer knows them now, or a refusal when either cannot be read.
+  const cardFields = projectId => Promise.all([host.getProject(projectId), host.projectTeam(projectId)])
+    .then(([project, team]) => ({ name: team.lead?.name ?? '', responsibility: team.lead?.responsibility ?? '',
+      projectName: project.name ?? '' }), () => ({ code: 'project_unavailable' }));
+  const requester = link => ({ key: `guest:${link.id}`, label: link.label });
 
   return {
     async card(link) {
-      const project = await describeProject(link.projectId);
-      return project ? { status: 200, body: guestCard({ project, link }) } : UNAVAILABLE;
+      const shown = await visitorAccess.showSharedCard({ projectId: link.projectId, requester: requester(link),
+        card: () => cardFields(link.projectId) });
+      return shown.ok ? { status: 200, body: guestCard({ shown, link }) } : refusal(shown.code);
     },
     async search(link, queries) {
-      const answer = await visitorAccess.searchSharedProject({ projectId: link.projectId, queries,
-        requester: { key: `guest:${link.id}`, label: link.label } });
-      if (answer.ok) return { status: 200, body: { results: answer.results, truncated: answer.truncated } };
-      if (QUERY_REFUSALS.has(answer.code)) return { status: 400, body: { error: answer.code } };
-      if (RATE_REFUSALS.has(answer.code)) return { status: 429, body: { error: 'rate_limited' } };
-      return UNAVAILABLE;
+      const answer = await visitorAccess.searchSharedProject({ projectId: link.projectId, queries, requester: requester(link) });
+      return answer.ok ? { status: 200, body: { results: answer.results, truncated: answer.truncated } } : refusal(answer.code);
     }
   };
+}
+
+// A refusal as a guest sees it: what they asked wrong, a limit, or one word for everything else.
+function refusal(code) {
+  if (QUERY_REFUSALS.has(code)) return { status: 400, body: { error: code } };
+  if (RATE_REFUSALS.has(code)) return { status: 429, body: { error: 'rate_limited' } };
+  return UNAVAILABLE;
 }
 
 const UNAVAILABLE = Object.freeze({ status: 503, body: Object.freeze({ error: 'unavailable' }) });

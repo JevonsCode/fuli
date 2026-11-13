@@ -1,4 +1,5 @@
 import { assertRoundtableHost } from '../../packages/roundtable/src/host.js';
+import { QUERY_REFUSED } from '../../packages/roundtable/src/peer/query-answer.js';
 import { loadProjectTeam } from './project-team-view.js';
 import { recordProjectMemoryUsage } from './project-memory-usage.js';
 import { activeAgentRequestSignal, activeSealedWorkerRequest } from '../app/agent-request-context.js';
@@ -8,6 +9,8 @@ import { groupMemberContext } from './group-member-context.js';
 import { localOriginRemoteKey, ownRemotes } from './repository-remote.js';
 import { findRepositoryRoot } from './project-path-context.js';
 
+// What the host refuses on its own (the share's lead): the sender learns only QUERY_REFUSED.
+const LEAD_REFUSALS = new Set(['lead_unreadable', 'lead_changed']);
 const SESSION_PROJECT_ID = /^conversation-[0-9a-f]{64}$/;
 
 // FULI as the Roundtable host: Agents, projects, task identity and wake
@@ -23,6 +26,12 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
     const value = await app.personal.listPersonalProjects(spaceId());
     return Array.isArray(value) ? value : value?.projects ?? [];
   };
+  const visitor = requester => ({ key: `peer:${requester.node}`, label: requester.name, agentName: requester.agentName });
+  // The lead a visit is checked against, as read now; null when it cannot be read.
+  // A card needs the lead's name and responsibility; a search only its id.
+  const currentLead = (projectId, action) => (action === 'card'
+    ? loadProjectTeam(app, spaceId(), projectId).then(team => team?.lead ?? null, () => null)
+    : projectLeadId(projectId).then(agentId => (agentId ? { agentId } : null), () => null));
   const projectLeadId = async projectId =>
     (await app.personal.getProjectAgentCoordinationPolicy(spaceId(), projectId)).team_lead_agent_id ?? null;
   // A standing-assignments store this run cannot read (a newer format, a
@@ -40,6 +49,7 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
   return assertRoundtableHost({
     spaceId,
     listAgents: () => app.listProjectAgents({ personalSpaceId: spaceId() }),
+    agentLooks: () => app.agentAvatars?.list(spaceId()).avatars ?? [],
     async recentSessions({ agentId, projectId = null, limit = 5 }) {
       const sessions = await app.personal.recentAgentSessions({ personalSpaceId: spaceId(), agentId,
         personalProjectId: projectId, limit });
@@ -112,6 +122,37 @@ export function createFuliRoundtableHost(app, { warn = line => process.stderr.wr
         source_application: client, message_id: messageId, digest, target_node: targetNode,
         binding_id: bindingId, expires_at: expiresAt, ...(purpose ? { purpose } : {}) }),
     remoteOriginAuthority: () => app.personal.getRemoteOriginAuthority(spaceId()),
+    // A paired device's visiting assistant reads one shared project (its lead's
+    // card, or a search) through the visitor-access port, which reserves,
+    // records and counts the attempt first; only then are the lead and the
+    // project read, so a device past its limits causes no Provider read. It
+    // answers only while the share's Agent is, as read now, the project's lead:
+    // an id missing on either side or a lead that cannot be read refuses
+    // (recorded with its code; the sender gets the one word every refusal
+    // before the search gets). The requester key is the asking device's
+    // verified fingerprint (requester.node, checked by the runner against its
+    // certificate); name and agentName are display text only.
+    async searchSharedProject({ projectId, agentId, requester, query }) {
+      if (!app.visitorAccess) return { ok: false, code: 'search_unavailable' };
+      const who = visitor(requester);
+      const leadRefusal = lead => (!lead ? 'lead_unreadable' : lead.agentId && lead.agentId === agentId ? null : 'lead_changed');
+      const currentShareLead = () => (typeof agentId === 'string' && agentId ? currentLead(projectId, query.action) : null);
+      const answer = query.action === 'card'
+        ? await app.visitorAccess.showSharedCard({ projectId, requester: who, card: async () => {
+          const lead = await currentShareLead();
+          const code = leadRefusal(lead);
+          if (code) return { code };
+          const project = await app.personal.getPersonalProject(spaceId(), projectId).then(projectView, () => null);
+          return { name: lead.name, responsibility: lead.responsibility, projectName: project?.name };
+        } })
+        : await app.visitorAccess.searchSharedProject({ projectId, queries: query.queries, requester: who,
+          confirm: async () => leadRefusal(await currentShareLead()) });
+      return !answer.ok && LEAD_REFUSALS.has(answer.code) ? { ok: false, code: QUERY_REFUSED } : answer;
+    },
+    // A visiting query the runner refused once the asking device was proven,
+    // with the project of the share it named when that share is known.
+    refuseSharedQuery: ({ requester, action, code, projectId = null }) =>
+      app.visitorAccess?.recordRefusedVisit({ requester: visitor(requester), action, code, projectId }) ?? { ok: false, code: 'search_unavailable' },
     // A stand-in reads what a `#FLG 一起看` session reads of one member: its
     // shareable index, never its working memory (group-member-context.js).
     standInScope: ({ agentId, name, occupation, projectId, text, client, sessionId }) =>
