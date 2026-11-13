@@ -2,8 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { isControlledError } from '../app/application-error.js';
 import { FULI_VERSION } from '../package-metadata.js';
-import { redactSensitiveContent } from '../security/sensitive-content.js';
-import { withoutLocalPaths } from '../text/local-paths.js';
+import { shareableText } from '../text/shareable-text.js';
 import { singleLine } from '../text/single-line.js';
 import { utf8Preview } from '../text/utf8-preview.js';
 
@@ -25,10 +24,6 @@ const OPERATION_BYTES = 120;
 const REASON_BYTES = 240;
 const MAX_DURATION_MS = 24 * 60 * 60 * 1000;
 
-const URL_WITH_PARTS = /\b([a-z][a-z0-9+.-]*:\/\/)(?:[^\s/@]*@)?([^\s?#]*)(\?[^\s#]*)?(#\S*)?/gi;
-// A long opaque value (task token, session secret, signed id) with no name before it.
-const OPAQUE_VALUE = /\b[A-Za-z0-9_-]{32,}\b/g;
-
 // An error's code or class when it is a fixed identifier; null otherwise.
 export function errorCode(error) {
   return [error?.code, error?.name].find(value => typeof value === 'string' && SAFE_CODE.test(value)) ?? null;
@@ -44,10 +39,8 @@ export function failureReason(error, fallback) {
 // Text kept for an Agent to read: one line, URL credentials dropped and query
 // values masked, local paths, secrets and long opaque values replaced.
 function safeText(value, limit = REASON_BYTES) {
-  const text = singleLine(value)
-    .replace(URL_WITH_PARTS, (_url, scheme, rest, query = '') =>
-      `${scheme}${rest}${query && `?${query.slice(1).split('&').map(pair => `${pair.split('=')[0]}=…`).join('&')}`}`);
-  return utf8Preview(redactSensitiveContent(withoutLocalPaths(text)).replace(OPAQUE_VALUE, '[redacted:opaque]'), limit);
+  // An operation names the console's own routes (POST /api/…): only system roots are paths here.
+  return utf8Preview(shareableText(singleLine(value), { posixRoots: 'system' }), limit);
 }
 
 // One event as it is stored. component, outcome and operation are required;

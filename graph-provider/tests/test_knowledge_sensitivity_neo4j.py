@@ -1,4 +1,7 @@
-"""max_sensitivity='normal' against a disposable graph, with synthetic records only."""
+"""max_sensitivity='normal' against a disposable graph, with synthetic records only.
+
+An item reaches a visitor only when every non-edit source of every version
+is explicitly normal (mixed, unset and absorbed private versions stay out)."""
 
 from types import SimpleNamespace
 from uuid import uuid4
@@ -6,7 +9,7 @@ from uuid import uuid4
 from neo4j import AsyncGraphDatabase
 
 from fuli_graph.knowledge_search import _personal_entities
-from fuli_graph.knowledge_sensitivity import normal_safe_ids
+from fuli_graph.knowledge_sensitivity import normal_only_ids
 from fuli_graph.models import SearchRequest
 from test_project_agent_memory_neo4j import fixture_settings
 
@@ -30,8 +33,11 @@ CASES = {
     'private-then-edit': [[capture('private')], [EDIT]],
     'normal-edit-edit': [[capture('normal')], [EDIT], [EDIT]],
     'edits-only': [[EDIT], [EDIT]],
+    # A private item absorbed into a normal one (a merge or supersede), then edited.
+    'private-then-normal': [[capture('private')], [capture('normal')]],
+    'private-normal-edit': [[capture('private')], [capture('normal')], [EDIT]],
 }
-NORMAL_SAFE = {'normal', 'mixed', 'unset', 'normal-then-edit', 'normal-edit-edit'}
+NORMAL_SAFE = {'normal', 'normal-then-edit', 'normal-edit-edit'}
 
 
 async def _write_case(driver, group, project, case, versions):
@@ -84,7 +90,7 @@ async def test_only_items_with_a_normal_source_reach_a_visitor():
         assert found[None] == set(CASES)
         assert found['normal'] == NORMAL_SAFE
 
-        edges = await normal_safe_ids(store, 'relationship', [f'{group}-{case}-edge' for case in CASES])
+        edges = await normal_only_ids(store, 'relationship', [f'{group}-{case}-edge' for case in CASES])
         assert {item.removeprefix(f'{group}-').removesuffix('-edge') for item in edges} == NORMAL_SAFE
     finally:
         # Delete only this test's unique fixture, even on assertion failure.

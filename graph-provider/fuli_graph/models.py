@@ -756,9 +756,15 @@ class SearchRequest(StrictModel):
     inherit_project_knowledge: bool = True
     include_personal_global: bool = False
     semantic: SemanticQuery | None = None
-    # 'normal': leave out every item none of whose source episodes is normal
-    # (a visitor's search). None: no sensitivity filter.
+    # 'normal' (a visitor's search): only items whose every source, in every
+    # version they replaced, is normal, and relationships whose two endpoints
+    # this search may return too (knowledge_sensitivity). None: no such filter.
     max_sensitivity: Literal['normal'] | None = None
+    # False: an item another project defined and this one only references is
+    # not this project's. True keeps every existing caller's view.
+    include_project_references: bool = True
+    # Entity types this search never returns, nor lets a relationship reach.
+    excluded_entity_types: list[str] = Field(default_factory=list, max_length=16)
 
     @field_validator('personal_project_ids')
     @classmethod
@@ -781,6 +787,9 @@ class SearchRequest(StrictModel):
             )
         if self.project_agent_id and not self.active_personal_project_id:
             raise ValueError('project Agent search requires active_personal_project_id')
+        # A relationship's endpoints are checked against one project's scope.
+        if self.max_sensitivity and not self.active_personal_project_id:
+            raise ValueError('a max_sensitivity search requires active_personal_project_id')
         return self
 
 

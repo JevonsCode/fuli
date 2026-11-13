@@ -1,13 +1,19 @@
 """Which knowledge items a visitor's search may return (max_sensitivity='normal').
 
-Sensitivity is stored only on episodes. An item is normal-safe when at least
-one of its source episodes is normal; an episode stored without a
-sensitivity counts as the capture default, normal. An edit episode
-(knowledge_versions._write_edit_episodes) says nothing about how sensitive
-the knowledge is, so it counts neither way: when the item has no other
-episode, the versions it replaced decide, nearest first, following
-fuli_replaced_by_item_id back at most MAX_VERSION_DEPTH steps. An item whose
-whole chain has no episode but edits, or no episode at all, is left out.
+Sensitivity is stored only on episodes (`fuli_sensitivity`). An item reaches
+a visitor only when every source it has, and every source of every version
+it replaced or absorbed (edits, supersedes and duplicate merges all point the
+older item at the newer one with fuli_replaced_by_item_id), is explicitly
+normal, and there is at least one. One private or restricted source anywhere
+in that lineage keeps the item out: an entity a private capture created
+keeps that capture's words even after a normal one mentions it.
+
+An edit episode (knowledge_versions._write_edit_episodes) says nothing about
+how sensitive the knowledge is, so it counts neither way. An episode without
+a stored sensitivity is not normal: every FULI writer has set it since the
+graph's first release, so a missing value is not FULI's capture and is not
+trusted. A lineage longer than MAX_VERSION_DEPTH steps is not read to its
+end, so it is left out too.
 """
 
 MAX_VERSION_DEPTH = 20
@@ -28,27 +34,27 @@ _SOURCES = '''
 '''
 
 
-async def normal_safe_ids(store, item_kind: str, item_ids: list[str]) -> set[str]:
+async def normal_only_ids(store, item_kind: str, item_ids: list[str]) -> set[str]:
+    """The items among item_ids whose whole lineage has only normal sources."""
     if not item_ids:
         return set()
     pattern, episodes = _ITEM[item_kind]
-    current = await _read(store, f'''
+    lineages = {}
+    frontier = _merge(lineages, await _read(store, f'''
         MATCH {pattern} WHERE item.uuid IN $item_ids
-        WITH item.uuid AS origin, item{episodes}{_SOURCES}''', item_ids=list(item_ids))
-    safe, undecided = _decide(current)
+        WITH item.uuid AS origin, item{episodes}{_SOURCES}''', item_ids=list(dict.fromkeys(item_ids))))
     for _ in range(MAX_VERSION_DEPTH):
-        if not undecided:
+        if not frontier:
             break
-        replaced = await _read(store, f'''
+        frontier = _merge(lineages, await _read(store, f'''
             UNWIND $frontier AS row
             MATCH {pattern}
             WHERE item.group_id = row.group_id AND item.fuli_replaced_by_item_id = row.id
               AND coalesce(item.fuli_replaced_by_item_kind, $item_kind) = $item_kind
-            WITH row.origin AS origin, item{episodes}{_SOURCES}''',
-            frontier=undecided, item_kind=item_kind)
-        found, undecided = _decide(replaced)
-        safe |= found
-    return safe
+            WITH row.origin AS origin, item{episodes}{_SOURCES}''', frontier=frontier, item_kind=item_kind))
+    unread = {row['origin'] for row in frontier}
+    return {origin for origin, lineage in lineages.items()
+            if origin not in unread and lineage['sources'] and not lineage['withheld']}
 
 
 async def _read(store, query, **parameters) -> list[dict]:
@@ -56,20 +62,21 @@ async def _read(store, query, **parameters) -> list[dict]:
     return [dict(record) for record in records]
 
 
-def _decide(rows) -> tuple[set[str], list[dict]]:
-    """Per origin item, from one step of its chain: normal-safe, left out, or
-    (no episode but edits at this step) the versions to look behind next."""
-    by_origin = {}
+def _merge(lineages: dict, rows) -> list[dict]:
+    """Adds each version's sources to its origin's lineage; answers the
+    versions whose predecessors are still to read. A version already seen
+    (a cycle) and a lineage already withheld are not followed further."""
+    frontier = []
     for row in rows:
-        by_origin.setdefault(row['origin'], []).append(row)
-    safe, undecided = set(), []
-    for origin, versions in by_origin.items():
-        sources = [source for version in versions for source in version['sources']
-                   if source.get('kind') not in EDIT_SOURCE_KINDS]
-        if sources:
-            if any((source.get('sensitivity') or 'normal') == 'normal' for source in sources):
-                safe.add(origin)
+        lineage = lineages.setdefault(row['origin'], {'seen': set(), 'sources': 0, 'withheld': False})
+        if row['id'] in lineage['seen']:
             continue
-        undecided += [{'origin': origin, 'id': version['id'], 'group_id': version['group_id']}
-                      for version in versions]
-    return safe, undecided
+        lineage['seen'].add(row['id'])
+        for source in row['sources']:
+            if source.get('kind') in EDIT_SOURCE_KINDS:
+                continue
+            lineage['sources'] += 1
+            lineage['withheld'] |= source.get('sensitivity') != 'normal'
+        if not lineage['withheld']:
+            frontier.append({'origin': row['origin'], 'id': row['id'], 'group_id': row['group_id']})
+    return frontier

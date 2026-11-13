@@ -23,7 +23,7 @@ from .search_projection import (
     source_uris_from_references,
 )
 from .knowledge_semantic import cosine_parts, fused_ranking, standing_out, usable_cosine, vector_norm
-from .knowledge_sensitivity import normal_safe_ids
+from .knowledge_sensitivity import normal_only_ids
 from .knowledge_weight import knowledge_weight, ranking_weight
 from .knowledge_tag_ranking import TagRanking
 from .knowledge_visibility import AgentReader, fla_endpoints_visible_cypher, fla_visible, reader_parameter
@@ -89,7 +89,7 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
     if not request.include_historical:
         edges = [edge for edge in edges if edge.invalid_at is None]
     if request.max_sensitivity == 'normal':
-        normal_ids = await normal_safe_ids(store, 'relationship', [edge.uuid for edge in edges])
+        normal_ids = await normal_only_ids(store, 'relationship', [edge.uuid for edge in edges])
         edges = [edge for edge in edges if edge.uuid in normal_ids]
     project_scopes = {}
     if personal_space:
@@ -107,6 +107,11 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
             [edge.uuid for edge in edges],
         )
         edges = [edge for edge in edges if edge.uuid in allowed]
+        if request.max_sensitivity == 'normal':
+            # Before names are read: a hidden endpoint's name takes no part in scoring.
+            visible = await _visible_endpoints(store, personal_space, request, project_scopes, edges)
+            edges = [edge for edge in edges
+                     if edge.source_node_uuid in visible and edge.target_node_uuid in visible]
     epistemic = await read_edge_epistemic_metadata(store, [edge.uuid for edge in edges])
     if personal_space:
         epistemic = {
@@ -176,6 +181,24 @@ async def search_knowledge(store, actor: dict, request: SearchRequest, *, tag_ex
         ],
         entities=entities,
     )
+
+
+async def _visible_endpoints(store, space, request: SearchRequest, project_scopes, edges) -> set[str]:
+    """The endpoints a max_sensitivity search may show as entities itself:
+    defined in the active project (not inherited, referenced or global), not a
+    preference, of no excluded type, current, confirmed unless pending is
+    asked for, and with only normal sources. A relationship reaching any
+    other entity says something about it, so it is left out with it."""
+    endpoint_ids = list(dict.fromkeys(
+        uuid for edge in edges for uuid in (edge.source_node_uuid, edge.target_node_uuid)))
+    if not endpoint_ids:
+        return set()
+    records = await _scoped_entity_records(store, space, request, project_scopes, entity_ids=endpoint_ids)
+    return {
+        record['id'] for record in records
+        if record.get('defined_project_id') == request.active_personal_project_id
+        and not record.get('inherited') and not record.get('profile_aspect')
+    }
 
 
 async def personal_edge_scopes(
@@ -380,7 +403,8 @@ async def _personal_entities(
 
 
 async def _scoped_entity_records(store, space, request: SearchRequest, project_scopes: dict[str, dict],
-                                 *, semantic_model: str | None = None) -> list[dict]:
+                                 *, semantic_model: str | None = None,
+                                 entity_ids: list[str] | None = None) -> list[dict]:
     """The entities this search may return, with their scope. With a
     semantic_model, only those carrying a vector of that model, and what
     its cosine with the query is made of: the same filters decide either way
@@ -388,7 +412,9 @@ async def _scoped_entity_records(store, space, request: SearchRequest, project_s
     records, _, _ = await store.runtime.driver.execute_query(
         '''
         MATCH (node:Entity {group_id: $group_id})
-        WHERE $semantic_model IS NULL OR node.fuli_semantic_model = $semantic_model
+        WHERE ($semantic_model IS NULL OR node.fuli_semantic_model = $semantic_model)
+          AND ($entity_ids IS NULL OR node.uuid IN $entity_ids)
+          AND NOT coalesce(node.fuli_type, 'Entity') IN $excluded_entity_types
         OPTIONAL MATCH (episode:Episodic {group_id: $group_id})-[:MENTIONS]->(node)
         WITH node, collect(DISTINCT episode) AS episodes
         OPTIONAL MATCH (assignment:FuliKnowledgeAssignment {
@@ -495,6 +521,8 @@ async def _scoped_entity_records(store, space, request: SearchRequest, project_s
         project_ids=list(project_scopes),
         include_historical=request.include_historical,
         include_pending=request.include_pending,
+        entity_ids=entity_ids,
+        excluded_entity_types=list(request.excluded_entity_types),
         semantic_model=semantic_model,
         **({'query_vector': request.semantic.vector, 'length': len(request.semantic.vector)} if semantic_model else {}),
         candidate_limit=SEMANTIC_CANDIDATE_LIMIT if semantic_model else store.settings.graph_limit,
@@ -524,7 +552,7 @@ async def _scoped_entity_records(store, space, request: SearchRequest, project_s
         if scope is not None:
             scoped_records.append({**record, **scope})
     if request.max_sensitivity == 'normal':
-        normal_ids = await normal_safe_ids(store, 'entity', [record['id'] for record in scoped_records])
+        normal_ids = await normal_only_ids(store, 'entity', [record['id'] for record in scoped_records])
         scoped_records = [record for record in scoped_records if record['id'] in normal_ids]
     return scoped_records
 
@@ -676,7 +704,10 @@ def _item_scope_metadata(
             project_scopes[request.active_personal_project_id],
             request.project_agent_id,
         )
-    reference_project_ids = list(record.get('reference_project_ids') or [])
+    # A reference shows another project's item here; a search that asks for
+    # only this project's own items leaves it out.
+    reference_project_ids = (list(record.get('reference_project_ids') or [])
+                             if request.include_project_references else [])
     project_ids = (
         [assignment_project_id]
         if assignment_project_id else episode_project_ids
