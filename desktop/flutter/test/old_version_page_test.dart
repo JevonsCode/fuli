@@ -55,7 +55,7 @@ void main() {
     opening.complete(false);
     await tester.pump();
     expect(find.byKey(const Key('open-new-version-failed')), findsOneWidget);
-    expect(find.text('Could not open the new version; open FULI from the Start menu.'), findsOneWidget);
+    expect(find.text('Could not open the new version; close this and open FULI again.'), findsOneWidget);
     // Nothing moved when the loading and the notice came and went.
     expect(tester.getRect(find.byKey(const Key('open-new-version'))), slot);
     expect(tester.getRect(find.byKey(const Key('old-version'))), line);
