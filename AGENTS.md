@@ -4,7 +4,8 @@ Read [coding-taste.md](coding-taste.md) before writing code: it defines reuse, d
 
 ## Product Boundaries
 
-- Prefer plain JavaScript for application code unless another language has a clear technical advantage.
+- Language: where a piece of code is on a path whose speed or start-up time people feel (hooks that run on every prompt, the MCP forwarding shell, parsing and search hot paths, the desktop shell), prefer Rust (Jevons 11-13). Move to it piece by piece: rewrite a part when it is being changed anyway, behind the port it already has, and only with a before/after measurement of the real entry end to end. Everything else stays plain JavaScript (and Python in the Provider); do not rewrite working code only to change its language.
+- A Rust part ships for every platform FULI supports (Windows x64, macOS arm64, Linux for the npm install) or keeps its JavaScript fallback, and its build is part of CI before it is relied on.
 - Keep the local-first, human-authoritative, query-on-demand product principles intact.
 - Preserve temporal history; current answers and historical records are separate concerns.
 
