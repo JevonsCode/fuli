@@ -341,6 +341,9 @@ export async function createServer(options = {}) {
     peer = createPeerRuntime({ host: application.roundtableHost, roundtable: application.roundtable, port: application.peer,
       onError: (error) => console.error(`LAN roundtable: ${error.code ?? error.message}`) });
     peer.resume().catch((error) => console.error(`LAN roundtable could not resume: ${error.code ?? error.message}`));
+    // Visit requests arrive through that runtime and run in this process only.
+    try { application.visitorAccess?.requests?.resume(); }
+    catch (error) { console.error(`Visit requests could not resume: ${error.code ?? error.message}`); }
   }
 
   let closing = null;

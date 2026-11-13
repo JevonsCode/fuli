@@ -341,7 +341,7 @@ export function createGroupDiscussion({ host, store, agents, chat, memberChat, m
     if (!store.discussions.settle(chatId, round, agentId, { status: 'waiting' })) return;
     const unanswered = reason => ({ status: 'failed', reason: signal.aborted ? 'interrupted' : REASONS[reason] ?? reason });
     const ask = conversation => messageAgent({ ...context, to: agentId, body: prompt, wait: true,
-      timeoutSeconds: TURN_SECONDS, conversation, readOnly: true, signal });
+      timeoutSeconds: TURN_SECONDS, conversation, wakeMode: 'read_only', signal });
     const session = lastSession(chatId, agentId);
     let result;
     try {

@@ -62,7 +62,7 @@ function fixture({ answer = null, clientAvailable = () => true, agents = AGENTS,
     // reports its model on its init event; Codex reports none.
     wake: async input => {
       const member = /^#FLA \{([^}]+)\}/u.exec(input.prompt)[1];
-      woken.push({ member, client: input.client, prompt: input.prompt, sessionId: input.sessionId, readOnly: input.readOnly });
+      woken.push({ member, client: input.client, prompt: input.prompt, sessionId: input.sessionId, mode: input.mode });
       const body = answer ? await answer(member, input) : `${member} 的观点`;
       const sessionId = `session-${member}-${woken.length}`;
       sessions.push({ agent: member, client: input.client, sessionId });
@@ -111,7 +111,7 @@ test('every member is woken in a fresh read-only session and replies for itself;
   // Views, then one response round, each member once per round.
   assert.deepEqual(woken.map(call => call.member).sort(), ['dev', 'dev', 'qa', 'qa']);
   // Fresh sessions (no resume of the member's history), read-only.
-  assert.ok(woken.every(call => call.sessionId === null && call.readOnly === true));
+  assert.ok(woken.every(call => call.sessionId === null && call.mode === 'read_only'));
   assert.ok(woken.every(call => /^#FLA \{(dev|qa)\} \[FULI 圆桌/u.test(call.prompt)));
   const view = woken.find(call => call.member === 'dev').prompt;
   assert.match(view, /第 1 轮：各自观点[\s\S]*你是 Jamie Ash（开发），职责：开发的职责[\s\S]*这个方案的产品体验和技术风险/u);
@@ -591,7 +591,7 @@ test('a woken Claude Code member\'s model comes from its client, a Codex one is 
   const done = await settle(chatId);
   assert.deepEqual([member(done, 'dev').client, member(done, 'dev').model], ['claude_code', 'synthetic-model-a']);
   assert.deepEqual([member(done, 'qa').client, member(done, 'qa').model], ['codex', 'unknown']);
-  assert.ok(woken.every(item => item.readOnly === true));
+  assert.ok(woken.every(item => item.mode === 'read_only'));
   assert.match(done.guidance, /authorizes no edits or publishing/u);
 });
 

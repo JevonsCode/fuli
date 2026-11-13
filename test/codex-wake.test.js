@@ -12,9 +12,16 @@ test('Codex runs read-only, resuming a session or starting in the project direct
     ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', 'cx-session-1', '-']);
   assert.deepEqual(wakeArguments('codex', { cwd: '/work/app' }),
     ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', '/work/app', '-']);
-  // A group discussion wake is the same: Codex wakes are always read-only.
-  assert.deepEqual(wakeArguments('codex', { cwd: '/work/app', readOnly: true }),
+  // A group discussion wake is the same: Codex answers in the read-only sandbox.
+  assert.deepEqual(wakeArguments('codex', { cwd: '/work/app', mode: 'read_only' }),
     wakeArguments('codex', { cwd: '/work/app' }));
+});
+
+test('an approved visit request edits only its worktree, in the workspace-write sandbox with the network off', () => {
+  assert.deepEqual(wakeArguments('codex', { cwd: '/data/visit-worktrees/request-1', mode: 'worktree_edit' }),
+    ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'workspace-write', '-C', '/data/visit-worktrees/request-1', '-']);
+  assert.deepEqual(wakeArguments('codex', { sessionId: 'cx-session-1', mode: 'worktree_edit' }),
+    ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="workspace-write"', 'cx-session-1', '-']);
 });
 
 test('Codex answers are the last agent message of a completed turn', () => {

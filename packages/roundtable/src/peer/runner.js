@@ -5,7 +5,7 @@ import { isAuthorityKey, verifyOriginProof } from './origin-proof.js';
 import {
   PEER_LIMITS, PEER_QUERY_PROTOCOL, PeerError, peerCleanup, peerMessageKey, validateAssertion, validateQuery,
 } from './protocol.js';
-import { answerPeerQuery, QUERY_REFUSED, queryCode, requesterLabel } from './query-answer.js';
+import { answerPeerQuery, QUERY_REFUSED, queryCode, queryPurpose, requesterLabel } from './query-answer.js';
 import { outwardFailure } from '../roundtable/wake-failure.js';
 import { REMOTE_WAKE_ATTEMPTS } from '../roundtable/wake-ladder.js';
 
@@ -17,8 +17,9 @@ const REFUSALS_REMEMBERED = 2_000;
 const STARTED_STATES = new Set(['starting', 'running', 'finished']);
 // How each kind of claim is checked: a message may wake the shared lead under
 // an execution proof; a query only reads, under a query proof.
-const MESSAGE = Object.freeze({ validate: validateAssertion, purpose: 'execution', visitor: false });
-const QUERY = Object.freeze({ validate: validateQuery, purpose: 'query', visitor: true });
+const MESSAGE = Object.freeze({ validate: validateAssertion, purpose: () => 'execution', visitor: false });
+// A visitor's request to have work done is signed for its own purpose, which only a project lead's task gets.
+const QUERY = Object.freeze({ validate: validateQuery, purpose: (assertion) => queryPurpose(assertion.query.action), visitor: true });
 
 // Receives asks for this device's shared project leads. Every claim is written
 // down before it is accepted, nothing runs before the coordinator confirmed the
@@ -167,7 +168,7 @@ export function createPeerRunner({ store, client, roundtable, host, nodeId, spac
       throw new PeerError('agent_not_shared', 'That Agent is not shared on this device', 403);
     }
     const authority = pinnedAuthority(sender);
-    const origin = verifyOriginProof(assertion, authority, { now: clock(), purpose });
+    const origin = verifyOriginProof(assertion, authority, { now: clock(), purpose: purpose(assertion) });
     const earlier = store.attemptsFor(claim.messageId)
       .filter((attempt) => attempt.attempt_id !== claim.attemptId && STARTED_STATES.has(attempt.state));
     if (earlier.length) throw new PeerError('already_started', 'This message already started on this device', 409);

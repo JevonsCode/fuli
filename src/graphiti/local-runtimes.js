@@ -31,6 +31,8 @@ import { isLoopbackUrl } from '../external-knowledge/connectors/response-values.
 import { entryPromptRecords } from '../agent-delegation/entry-prompts.js';
 import { createWorkSurfaces } from '../work-surfaces/port.js';
 import { createVisitorAccess } from '../visitor-access/port.js';
+import { createVisitRequests } from '../visit-requests/service.js';
+import { createVisitRunner } from '../visit-requests/runner.js';
 import { createOldDataShelf } from '../old-data/port.js';
 import { createOccupationPlugins } from '../occupation-plugins/port.js';
 import { workSurfaceNames, workSurfaceSources } from '../work-surfaces/sources.js';
@@ -105,7 +107,13 @@ export function openLocalRuntimes(app, { runtimeConfigPath, paths, env, fetchImp
   // Each Agent's look as the person chose it (rec#11 D-89); the file is created by the first choice.
   app.agentAvatars = createAgentAvatars({ path: join(dataDir, 'agent-avatars.sqlite') });
   // What visitors from other computers read of a shared project, and each requester's mode; created by the first one.
-  app.visitorAccess = createVisitorAccess({ path: join(dataDir, 'visitor-access.sqlite'), application: app });
+  app.visitorAccess = createVisitorAccess({ path: join(dataDir, 'visitor-access.sqlite'), application: app,
+    // Work a paired computer asks to have done here, planned and run by the shared lead in its own worktree (seconding C).
+    requests: ({ store, modeOf }) => createVisitRequests({ store, modeOf, runner: createVisitRunner({
+      wake: (input) => app.roundtable.wakeForVisit(input),
+      projectFolder: (input) => app.roundtable.knownProjectFolder(input),
+      verifyFolder: async (folder, projectId) => await app.roundtableHost.projectForPath(folder) === projectId,
+      root: join(dataDir, 'visit-worktrees') }) }) });
   // What changed in each project's profile; the file is created by the first change.
   app.projectChangeLog = createProjectChangeLog({ path: join(dataDir, 'project-change-log.sqlite') });
   // The person's own name and picture (「我」); the file is created by the first change.

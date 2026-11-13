@@ -234,6 +234,69 @@ The equivalent local controls are available with `fuli peer --help`. Full databa
 backups contain private device and origin-authority material; keep those backups
 private. Public knowledge exports do not include those keys.
 
+### Requests run on my computer (seconding, 外派)
+
+A project lead on a paired computer can ask the lead of a project this computer
+shared to do a piece of work here: `visit_shared_lead` `action: "request"` with a
+title (≤160), what to do (≤4000) and up to 10 expected areas, carried as a
+`peer-query/1` assertion signed for the `request` purpose (only a project lead's
+task gets it). The asker keeps the `requestId` and reads progress with
+`action: "request_status"`; only the device that made a request can read it, and
+it gets the state, the summary, the branch name, the changed paths and the
+diffstat, never the patch.
+
+On this computer every request is a row in `visitor-access.sqlite` (format 3)
+with an event row for each change of state:
+
+```
+received ─(ask_only / over budget)→ refused
+received → planning → awaiting_owner ─approve→ approved
+                    └(auto envelope / trusted)→ approved
+awaiting_owner ─decline→ declined | ─7 days→ expired | ─cancel→ cancelled
+approved → running → awaiting_review(ready | held) | failed | cancelled | unknown
+awaiting_review → kept (branch stays) | discarded (worktree and branch removed)
+```
+
+The lead plans each request in a read-only wake (3 minutes) inside a fresh Git
+worktree on the branch `fuli/visit/<id>`, cut from the repository's HEAD commit
+under `<dataDir>/visit-worktrees/`. The requester's text is quoted to it as data.
+What happens next depends on the requester's mode, set per paired computer
+(default 计划): 只能问 refuses requests; 计划 waits for the person; 自动 runs
+only when `auto_envelope_v1` passes (the budget, a plan inside the project with
+no dependency, config or network change) and checks the actual diff after the
+run (paths inside the worktree, no manifests, lockfiles, CI, env, `.git*`,
+`config/` or executables, at most 400 lines in 20 files, no secrets), holding
+the result otherwise; 完全信任 skips only the approval and is meant for the
+person's own computers. A guest link is never 自动 or 完全信任.
+
+The run wakes the lead under the owner's delegation grant, one run per lead at
+a time, for at most 15 minutes, with the `worktree_edit` wake mode: Claude Code
+`--permission-mode acceptEdits` with only Read, Grep, Glob, Edit, Write and
+MultiEdit and with Bash, PowerShell, WebFetch, WebSearch and NotebookEdit denied;
+Codex `exec --sandbox workspace-write -C <worktree>` (network off). FULI then
+commits the worktree on its branch as `FULI visit <visit@fuli.invalid>` (no
+hooks), reads the files and diffstat from Git, scans the summary and the added
+lines for secrets, and compares a digest of the owner's checkout (status,
+tracked changes, untracked files) and every other ref with the one taken before
+the run; a difference holds the result as `integrity_violation`. Work done in
+the owner's own checkout during a run therefore also holds it. FULI never
+merges or pushes.
+
+Budget per requester: 5 requests a day (3 for a guest link, which takes none
+yet), 10 open, 60 minutes of planning and run wakes a day; a request over it is
+refused before any wake. Lowering a requester to 只能问, or revoking its
+pairing, cancels its open requests (a running one through its abort signal);
+lowering to 计划 returns rule-approved requests that have not started to the
+person; raising the mode approves nothing that waits. After a restart a run
+that was going is `unknown` and is not run again.
+
+The console reads `GET /api/visit-requests` (with `awaiting` for 等你拍板) and
+`GET /api/visit-requests/:id` (events, and the patch for the owner), and decides
+with `POST /api/visit-requests/:id/{approve,decline,keep,discard,cancel}` and
+`PUT /api/visitor-access/requesters/:key/mode`, all on this computer's loopback
+only. An FLA may decline or cancel for the person (lan_roundtable permission);
+approving, keeping, discarding and every mode change stay the person's own.
+
 ## Chat push and unread delivery (RT-1)
 
 `agent_chat` keeps direct/group messages separate from execution asks. Its `wait`

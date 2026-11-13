@@ -8,7 +8,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { WAKE_CLIENTS, wakeAdapter } from '../agents/wake-registry.js';
 import { wakeFailure } from './wake-failure.js';
 
-// Wakes the recipient Agent in its own client, headlessly and read-only, and
+// Wakes the recipient Agent in its own client, headlessly in the given mode, and
 // returns its final answer with that conversation's full context. Each client's
 // command, arguments, session lookup and output format live in its adapter.
 export { WAKE_CLIENTS };
@@ -28,9 +28,15 @@ export function resolveClientCommand(client, { env = process.env, platform = pro
   return wakeAdapter(client)?.resolveCommand({ env, platform, fileExists, which }) ?? null;
 }
 
-export function wakeArguments(client, { sessionId = null, cwd, delegated = false, plannedSessionId = null, readOnly = false } = {}) {
+// What a woken session may do, each adapter mapping it to its client's own
+// switches: answer (the person's own rules), read_only (read and answer only),
+// worktree_edit (also edit files in the folder it was woken in; no shell, no web).
+export const WAKE_MODES = Object.freeze(['answer', 'read_only', 'worktree_edit']);
+
+export function wakeArguments(client, { sessionId = null, cwd, delegated = false, plannedSessionId = null, mode = 'answer' } = {}) {
   if (sessionId !== null && !SESSION_ID.test(sessionId)) throw new TypeError('Invalid client session id');
-  return adapterFor(client).args({ sessionId, cwd, delegated, plannedSessionId, readOnly });
+  if (!WAKE_MODES.includes(mode)) throw new TypeError('Invalid wake mode');
+  return adapterFor(client).args({ sessionId, cwd, delegated, plannedSessionId, mode });
 }
 
 // Clients only resume a conversation from the directory it started in.
@@ -47,7 +53,7 @@ export function sessionTurnRunning(client, sessionId, { home = homedir(), env = 
 }
 
 export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeoutMs = 300_000,
-  delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn, onSession, readOnly = false } = {}) {
+  delegationToken = null, peerDepth = null, env = process.env, run = runProcess, signal, onSpawn, onSession, mode = 'answer' } = {}) {
   const command = resolveClientCommand(client, { env });
   if (!command) throw wakeFailure('client_unavailable', 'client_not_found', `${client} is not installed on this machine`);
   const childEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('FULI_ROUNDTABLE_')));
@@ -58,7 +64,7 @@ export async function wakeAgent({ client, sessionId = null, cwd, prompt, timeout
   const plannedSessionId = onSession && adapterFor(client).plansSession ? randomUUID() : null;
   if (plannedSessionId) await onSession(plannedSessionId);
   let observedSession = null;
-  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken), plannedSessionId, readOnly }),
+  const result = await run(command, wakeArguments(client, { sessionId, cwd, delegated: Boolean(delegationToken), plannedSessionId, mode }),
     { cwd, env: childEnv, input: prompt, timeoutMs, signal, onSpawn, onEvent: event => {
       const observed = adapterFor(client).nativeSessionId(event);
       if (!observed) return;

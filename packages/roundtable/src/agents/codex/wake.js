@@ -7,7 +7,7 @@ import { findFile, firstField, lastEntries, listDirectory } from '../session-log
 const TURN_START = 'task_started';
 const TURN_ENDS = new Set(['task_complete', 'turn_aborted']);
 
-// Wakes Codex headlessly with a read-only sandbox. Resuming records the exchange in
+// Wakes Codex headlessly in a sandbox (read-only unless a visit request edits its worktree). Resuming records the exchange in
 // that conversation; Codex refuses while the conversation is open in the app.
 export const codexWake = Object.freeze({
   id: 'codex',
@@ -21,13 +21,18 @@ export const codexWake = Object.freeze({
     return bundled && fileExists(bundled) ? bundled : null;
   },
 
-  args({ sessionId, cwd, delegated = false }) {
+  // mode (roundtable/wake.js WAKE_MODES): answer and read_only run in the
+  // read-only sandbox; worktree_edit (an approved visit request, woken in its
+  // worktree) in the workspace-write sandbox of that folder, network off as
+  // that sandbox has it by default.
+  args({ sessionId, cwd, delegated = false, mode }) {
     // Codex MCP children inherit a filtered environment. Pass variable names,
     // never the private capability itself in argv or persisted client config.
     const authority = delegated ? ['-c', 'mcp_servers.fuli.env_vars=["FULI_ROUNDTABLE_DELEGATION","FULI_ROUNDTABLE_PEER_DEPTH"]'] : [];
+    const sandbox = mode === 'worktree_edit' ? 'workspace-write' : 'read-only';
     return sessionId
-      ? ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', ...authority, sessionId, '-']
-      : ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-C', cwd, ...authority, '-'];
+      ? ['exec', 'resume', '--json', '--skip-git-repo-check', '-c', `sandbox_mode="${sandbox}"`, ...authority, sessionId, '-']
+      : ['exec', '--json', '--skip-git-repo-check', '--sandbox', sandbox, '-C', cwd, ...authority, '-'];
   },
 
   // A session resumes only from the directory it started in.

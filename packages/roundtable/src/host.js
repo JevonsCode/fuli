@@ -50,7 +50,8 @@
 //   standInScope({ agentId, name, occupation, projectId, text, client, sessionId })
 //                                               optional: the Agent's shareable index for a session that
 //                                               stands in for it (stand-in.js); never its private memory
-//   searchSharedProject({ projectId, agentId, requester: { node, name, agentName }, query: { action: 'card' | 'search', queries? } })
+//   searchSharedProject({ projectId, agentId, workingDirectory, requester: { node, name, agentName },
+//                        query: { action: 'card' | 'search' | 'request' | 'request_status', queries?, request?, requestId? } })
 //                                               optional: a paired device's read-only look at one shared project
 //                                               (projectId and agentId from this device's share, never from the
 //                                               asker; node the asking device's verified fingerprint, name and
@@ -58,7 +59,12 @@
 //                                               recorded by the host: card { ok: true, name, responsibility,
 //                                               projectName }, search { ok: true, results, truncated }, or
 //                                               { ok: false, code }; without it this device refuses every
-//                                               visitor query (query_unsupported)
+//                                               visitor query (query_unsupported). request asks for work done
+//                                               here ({ ok: true, requestId, state }); request_status reads one
+//                                               request, only for the device that made it (workingDirectory: the
+//                                               share's folder, or null)
+//   peerDeviceRevoked(nodeId)                   optional: a paired device was revoked or left; the host ends
+//                                               what it kept open for it (its visit requests)
 //   refuseSharedQuery({ requester: { node, name, agentName }, action, code })
 //                                               optional: records a visitor query this device refused before
 //                                               searchSharedProject (not shared, a wrong proof, a replay) once

@@ -74,8 +74,9 @@ export function discoveryBus() {
 
 // search: the Provider search a visitor's query reaches; with it the device
 // answers visiting assistants through a real visitor-access port (in memory).
+// requests: the visit request service factory that port gets (seconding C).
 export async function device(label, { tamper = null, wake = null, discovery = null, repository = null, sessionFolder = null, search = null,
-  runtimeOptions = {} } = {}) {
+  requests = null, runtimeOptions = {} } = {}) {
   const dataDir = await mkdtemp(join(tmpdir(), `fuli-peer-${label}-`));
   await cp(await identityDirectory(label), peerDirectory(dataDir), { recursive: true });
   const spaceId = `${label}-space`;
@@ -127,7 +128,7 @@ export async function device(label, { tamper = null, wake = null, discovery = nu
   };
   if (search) {
     personal.search = search;
-    app.visitorAccess = createVisitorAccess({ application: app });
+    app.visitorAccess = createVisitorAccess({ application: app, ...(requests ? { requests } : {}) });
   }
   app.peer = createPeerPort({ dataDir, host: createFuliRoundtableHost(app), statusPollMs: 50 });
   const until = recordSteps(app.peer, calls, { chatWakeSnapshot: 'snapshots', waitFor: 'settled' });

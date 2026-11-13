@@ -326,9 +326,12 @@ test('a requester\'s mode defaults to plan, and only the person\'s own peer devi
     { ok: false, code: 'requester_invalid' });
   assert.deepEqual(port.requesterMode(PEER), { ok: true, mode: 'plan' });
 
-  const guest = port.setRequesterMode({ key: GUEST, kind: 'guest', label: 'Guest', mode: 'auto', ownDevice: true });
-  assert.deepEqual(guest, { ok: true, requester: { key: GUEST, kind: 'guest', label: 'Guest', mode: 'auto', ownDevice: false,
-    modeUpdatedAt: START.toISOString() } });
+  // A guest link is never run by a rule: neither auto nor trusted (owner decision 2026-11-14).
+  assert.deepEqual(port.setRequesterMode({ key: GUEST, kind: 'guest', label: 'Guest', mode: 'auto', ownDevice: false }),
+    { ok: false, code: 'mode_not_allowed' });
+  const guest = port.setRequesterMode({ key: GUEST, kind: 'guest', label: 'Guest', mode: 'ask_only', ownDevice: true });
+  assert.deepEqual(guest, { ok: true, requester: { key: GUEST, kind: 'guest', label: 'Guest', mode: 'ask_only', ownDevice: false,
+    modeUpdatedAt: START.toISOString() }, effects: { cancelled: [], returned: [] } });
   assert.equal(port.setRequesterMode({ key: PEER, kind: 'peer', label: 'Own laptop', mode: 'trusted', ownDevice: true }).ok, true);
   assert.deepEqual(port.requesterMode(PEER), { ok: true, mode: 'trusted' });
 });

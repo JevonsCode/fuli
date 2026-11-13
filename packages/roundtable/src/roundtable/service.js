@@ -14,6 +14,7 @@ import { CLIENT_LABELS, deliveryState } from './delivery-state.js';
 
 import { RoundtableError } from '../errors.js';
 import { visitView } from '../peer/query-answer.js';
+import { isOpaqueId, validVisitRequest } from '../peer/protocol.js';
 import { assertRoundtableHost } from '../host.js';
 import { nearNames } from './near-names.js';
 import { WAKE_CLIENTS, resolveClientCommand, sessionTurnRunning, sessionWorkingDirectory, wakeAgent } from './wake.js';
@@ -30,6 +31,9 @@ const RECORDED_REFUSALS = new Set(['execution_claimed', 'cleanup_unconfirmed']);
 // A later wake of a remote ask starts only with this much of its deadline left
 // (the shortest grant lifetime the Provider issues).
 const MIN_REMOTE_WAKE_MS = 30_000;
+// Who a visit request's wake is from on the lead's thread: the request, on the owner's grant.
+const VISIT_SENDER = 'FULI visit request';
+const VISIT_CLIENT = 'fuli_visit';
 
 // Agents talk to each other directly: an ask wakes the recipient in its own
 // client and returns its answer, or waits in its inbox for its next task.
@@ -222,7 +226,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // remote ({ deadline }): a paired device's ask wakes at most REMOTE_WAKE_ATTEMPTS
   // times, all within its one execution deadline, and a refused grant ends it.
   async function deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn, peerDepth, remote = null,
-    readOnly = false, ladder = null }) {
+    wakeMode = 'answer', ladder = null }) {
     const unusable = new Set();
     let failure = 'wake_failed';
     let detail = null;
@@ -248,7 +252,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
         grant = await issueGrant(delivery, waitMs / 1000);
         woken += 1;
         answer = await wake({ client: delivery.client, sessionId: delivery.sessionId, cwd: delivery.cwd,
-          timeoutMs: waitMs, prompt, delegationToken: grant.token, peerDepth, signal, readOnly,
+          timeoutMs: waitMs, prompt, delegationToken: grant.token, peerDepth, signal, mode: wakeMode,
           onSpawn: (pid) => { wakeClaims.recordSpawn(ask.id, pid); onSpawn?.(pid); },
           onSession: session => host.sealDelegation({ token: grant.token, sessionId: session }) });
         const verified = answer.sessionId && await host.verifyDelegation({ token: grant.token, sessionId: answer.sessionId });
@@ -313,8 +317,9 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
 
   async function messageAgent({ taskContextToken = null, sourceApplication, to, body, threadId = null,
     conversation = 'auto', wait = true, timeoutSeconds = 300, projectPath = null, roundtableProjectId = null, signal, chatWakeChatId = null, chatWake = null,
-    // readOnly: a group discussion turn, woken where it can change nothing (wake adapters).
-    readOnly = false } = {}) {
+    // wakeMode: read_only for a group discussion turn, woken where it can change nothing (wake adapters).
+    wakeMode = 'answer' } = {}) {
+    const readOnly = wakeMode === 'read_only';
     if (roundtableProjectId && peer?.isRemoteAddress(to)) throw validation('This scoped consultation cannot leave its project');
     if (peer?.isRemoteAddress(to)) {
       return messageRemote({ taskContextToken, sourceApplication, to, body, threadId, conversation, wait, timeoutSeconds, chatWake, signal });
@@ -348,7 +353,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     if (!taskContextToken) return queued(thread, ask, target, 'task_context_required');
     const ladder = createWakeLadder();
     // A task outside every project holds no authority the Provider can pass on.
-    const woken = !from.projectId ? withoutGrant(ask, ladder) : await wakeAsk({ thread, ask, target, chatWakeChatId, signal, readOnly, ladder,
+    const woken = !from.projectId ? withoutGrant(ask, ladder) : await wakeAsk({ thread, ask, target, chatWakeChatId, signal, wakeMode, ladder,
       timeoutMs: Math.min(Math.max(timeoutSeconds, 30), 900) * 1000,
       targets: async () => deliveryTargets(target, conversation, targetProjectId, crossProject ? null : projectPath,
         { preferClient: from.client, ladder,
@@ -391,7 +396,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // verified answer becomes its reply. An ask that is not answered stays queued
   // with the reason, so the recipient still sees it when it next works.
   async function wakeAsk({ thread, ask, target, targets, noTargets, prompt, timeoutMs, signal, issueGrant, replyTo,
-    chatWakeChatId = null, readOnly = false, ladder = null }) {
+    chatWakeChatId = null, wakeMode = 'answer', ladder = null }) {
     await wakeClaims.release(spaceId(), target.agentId);
     const claim = store.claimExecution(spaceId(), target.agentId, ask.id, { chatWakeChatId });
     if (!claim.claimed) {
@@ -409,10 +414,10 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
       return { status: 'queued', reason };
     }
     // A read-only turn cannot go to a desktop conversation, which runs with the person's own settings.
-    const app = readOnly ? null : desktopApp(attempts[0].client);
+    const app = wakeMode === 'read_only' ? null : desktopApp(attempts[0].client);
     if (app) return handToDesktop({ thread, ask, target, delivery: attempts[0], app, timeoutMs, signal, ladder });
     try {
-      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, readOnly, issueGrant, ladder });
+      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, wakeMode, issueGrant, ladder });
       finishWake(ask);
       store.updateMessage(ask.id, { status: 'answered', via });
       const reply = store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent',
@@ -540,17 +545,21 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // The visiting assistant: the current task's Agent reads a paired device's
   // shared project with this client's own model. The other device answers from
   // its shared knowledge and wakes nothing; message_agent is the path that wakes its lead.
-  async function visitSharedLead({ taskContextToken = null, sourceApplication, address, action, queries, signal }) {
+  async function visitSharedLead({ taskContextToken = null, sourceApplication, address, action, queries, request, requestId, signal }) {
     if (!peer?.isRemoteAddress(address)) throw validation('Visit a paired device\'s lead by its peer:<device>:<binding> address from find_agents');
-    if (!VISIT_ACTIONS.has(action)) throw validation('action is card or search');
+    if (!VISIT_ACTIONS.has(action)) throw validation('action is card, search, request or request_status');
     if (action === 'search' && (!Array.isArray(queries) || !queries.length || queries.length > 4
       || !queries.every((query) => typeof query === 'string' && query.trim() && query.length <= 200))) {
       throw validation('search needs 1-4 focused queries of at most 200 characters');
     }
+    if (action === 'request' && !validVisitRequest(request)) {
+      throw validation('request needs request: { title (≤160), what (≤4000), expectedAreas? (≤10 paths of ≤200) }');
+    }
+    if (action === 'request_status' && !isOpaqueId(requestId)) throw validation('request_status needs the requestId request answered');
     const from = await sender({ taskContextToken, sourceApplication });
     if (!from.agent || !from.projectId) throw validation('A visit must come from an active project task of a FULI Agent; pass taskContextToken');
     const target = await peer.resolveRemote(address);
-    const answer = await peer.query(target, action === 'search' ? { action, queries } : { action }, { taskContextToken,
+    const answer = await peer.query(target, visitQuestion({ action, queries, request, requestId }), { taskContextToken,
       sourceApplication: from.client, from: { agentId: from.agent.agentId, name: label(from.agent) }, signal });
     return visitView({ address: target.address, device: target.deviceName, action, answer });
   }
@@ -629,13 +638,52 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
     try {
       // A paired device only asks: every client is woken read-only on this computer.
       const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, issueGrant, signal, onSpawn,
-        peerDepth: assertion.depth, readOnly: true, remote: { deadline: now() + timeoutMs } });
+        peerDepth: assertion.depth, wakeMode: 'read_only', remote: { deadline: now() + timeoutMs } });
       finishWake(ask);
       store.updateMessage(ask.id, { status: 'answered', via });
       store.appendMessage(thread.id, { id: idFactory(), kind: 'reply', body: answer.body, status: 'sent', inReplyTo: ask.id, via,
         from: { agentId: target.agentId, name: label(target), client: delivery.client, session: answer.sessionId },
         to: { agentId: ask.from_agent, name: ask.from_name, client: ask.from_client } });
       return { body: answer.body, via, sessionId: answer.sessionId };
+    } catch (error) {
+      finishWake(ask, error);
+      store.updateMessage(ask.id, { status: error.code === 'cancelled' ? 'cancelled' : 'failed', error: error.code ?? 'wake_failed' });
+      throw error;
+    }
+  }
+
+  // A visit request's wake on this computer (FULI's src/visit-requests): the
+  // person approved it, or the mode they set did, so it runs under the owner's
+  // grant, as one fresh session of the lead in the request's own worktree
+  // (cwd), in the given wake mode. It is an ask like any other: recorded in its
+  // own thread, one run of the lead at a time (it waits for an earlier one),
+  // every attempt's grant revoked after it. Answers { body, client } or throws
+  // with the wake's code.
+  async function wakeForVisit({ agentId, projectId, subject, cwd, prompt, mode, timeoutMs, signal }) {
+    if (!host.issueOwnerDelegation) throw Object.assign(new Error('This host cannot grant an owner-approved wake'), { code: 'owner_grant_unavailable' });
+    const target = await agentById(agentId);
+    if (!target) throw Object.assign(new Error('The lead is no longer active'), { code: 'agent_unavailable' });
+    const attempts = wakeClientsFor(target).map((client) => ({ client, sessionId: null, cwd }));
+    if (!attempts.length) throw Object.assign(new Error('No client of the lead can run on this computer'), { code: 'no_client' });
+    const thread = store.createThread({ id: idFactory(), spaceId: spaceId(), projectId, subject: subject.slice(0, 80) });
+    const ask = store.appendMessage(thread.id, { id: idFactory(), kind: 'ask', body: prompt, status: 'delivering',
+      from: { agentId: null, name: VISIT_SENDER, client: VISIT_CLIENT }, to: { agentId, name: label(target) } });
+    if (!await waitUntilIdle(agentId, signal).catch(() => false)) {
+      store.updateMessage(ask.id, { status: 'failed', error: signal?.aborted ? 'cancelled' : 'cleanup_unconfirmed' });
+      throw Object.assign(new Error('The lead could not be woken now'), { code: signal?.aborted ? 'cancelled' : 'cleanup_unconfirmed' });
+    }
+    const claim = store.claimExecution(spaceId(), agentId, ask.id);
+    if (!claim.claimed) {
+      store.updateMessage(ask.id, { status: 'failed', error: claim.reason });
+      throw Object.assign(new Error('Another run of the lead holds it'), { code: claim.reason });
+    }
+    try {
+      const { answer, delivery, via } = await deliver({ ask, attempts, prompt, timeoutMs, signal, wakeMode: mode,
+        issueGrant: (delivery, lifetime) => host.issueOwnerDelegation({ projectId, agentId, targetClient: delivery.client,
+          targetSessionId: null, lifetimeSeconds: Math.max(30, Math.min(900, Math.round(lifetime))) }) });
+      finishWake(ask);
+      store.updateMessage(ask.id, { status: 'answered', via });
+      return { body: answer.body, client: delivery.client };
     } catch (error) {
       finishWake(ask, error);
       store.updateMessage(ask.id, { status: error.code === 'cancelled' ? 'cancelled' : 'failed', error: error.code ?? 'wake_failed' });
@@ -883,7 +931,7 @@ export function createAgentRoundtable({ host, peer = null, openStore, wake = wak
   // conversations, who is subscribed and how each one receives a post.
   const ownerThread = async ({ threadId }) => ({ ...thread({ threadId }), ...await person.view(threadId) });
   return { ...chat, findAgents, messageAgent, readMessages, replyMessage, threads, thread, refreshRemote, taskEntryDelegation,
-    messageStatus, cancelMessage, answerRemote, visitSharedLead,
+    messageStatus, cancelMessage, answerRemote, visitSharedLead, wakeForVisit,
     // The folder a fresh wake of this lead would use: its latest session in the project, else the host's.
     knownProjectFolder: ({ agentId, projectId }) => projectFolder({ agentId }, projectId),
     discuss: discussions.discuss,
@@ -972,7 +1020,17 @@ function inboxGreeting(target) {
   return `FULI 圆桌会把发给「${label(target)}」的消息排进这个对话。现在只需回复「好」。`;
 }
 
-const VISIT_ACTIONS = new Set(['card', 'search']);
+const VISIT_ACTIONS = new Set(['card', 'search', 'request', 'request_status']);
+
+// Exactly the fields each visit action carries across devices.
+function visitQuestion({ action, queries, request, requestId }) {
+  if (action === 'search') return { action, queries };
+  if (action === 'request') {
+    const { title, what, expectedAreas } = request;
+    return { action, request: { title, what, ...(expectedAreas ? { expectedAreas } : {}) } };
+  }
+  return action === 'request_status' ? { action, requestId } : { action };
+}
 
 function label(agent) {
   return agent.profile.displayName || agent.profile.name || agent.agentId;

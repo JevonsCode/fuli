@@ -113,7 +113,7 @@ test('a refused grant, a cancel or the team rules end a remote ask at once', asy
 test('a remote ask wakes every client read-only, with each adapter\'s read-only arguments', async (t) => {
   const f = fixture(t, { wake: (input, n) => n < 3 ? crash() : { body: 'Synthetic answer', sessionId: 'synthetic-claude-session' } });
   await f.ask();
-  assert.ok(f.woken.every(input => input.readOnly === true));
+  assert.ok(f.woken.every(input => input.mode === 'read_only'));
   const codexResume = wakeArguments('codex', f.woken[0]);
   const codexNew = wakeArguments('codex', f.woken[1]);
   const claude = wakeArguments('claude_code', f.woken[2]);

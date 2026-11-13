@@ -10,6 +10,15 @@ import { firstField, listDirectory } from '../session-log.js';
 // own allow rules (docs/agent-roundtable.md).
 const READ_ONLY_TOOLS = Object.freeze(['Read', 'Grep', 'Glob']);
 const READ_ONLY_DENIED_TOOLS = Object.freeze(['Edit', 'Write', 'NotebookEdit', 'MultiEdit', 'Bash', 'PowerShell']);
+// A worktree edit reads and edits files; it runs no command and fetches nothing.
+const WORKTREE_EDIT_TOOLS = Object.freeze(['Read', 'Grep', 'Glob', 'Edit', 'Write', 'MultiEdit']);
+const WORKTREE_EDIT_DENIED_TOOLS = Object.freeze(['Bash', 'PowerShell', 'WebFetch', 'WebSearch', 'NotebookEdit']);
+const MODE_ARGUMENTS = Object.freeze({
+  answer: ['--permission-mode', 'dontAsk'],
+  read_only: ['--permission-mode', 'dontAsk', '--tools', READ_ONLY_TOOLS.join(','), '--disallowedTools', READ_ONLY_DENIED_TOOLS.join(',')],
+  worktree_edit: ['--permission-mode', 'acceptEdits', '--tools', WORKTREE_EDIT_TOOLS.join(','),
+    '--disallowedTools', WORKTREE_EDIT_DENIED_TOOLS.join(',')],
+});
 
 // Wakes Claude Code headlessly. Resuming forks the session, so an open window is
 // never written concurrently while the answer still has that conversation's context.
@@ -24,14 +33,16 @@ export const claudeCodeWake = Object.freeze({
   // delegated wake names the (forked) session up front and binds it first.
   plansSession: true,
 
-  // readOnly (a group discussion turn, an ask from another computer) keeps the
-  // same non-interactive mode with the reading tools only, so the woken session
-  // can read and answer but not change files or run commands. (Plan mode is
-  // avoided: headless it may end with a plan or an empty answer instead of the
-  // member's view.)
-  args({ sessionId, plannedSessionId = null, readOnly = false }) {
-    return ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk',
-      ...(readOnly ? ['--tools', READ_ONLY_TOOLS.join(','), '--disallowedTools', READ_ONLY_DENIED_TOOLS.join(',')] : []),
+  // mode (roundtable/wake.js WAKE_MODES): answer keeps the person's own rules;
+  // read_only (a group discussion turn, an ask from another computer, a visit
+  // request's planning) keeps the same non-interactive mode with the reading
+  // tools only, so the woken session can read and answer but not change files
+  // or run commands; worktree_edit (an approved visit request, woken in its
+  // worktree) may also edit files there, without asking, and still runs no
+  // shell and reaches no web. (Plan mode is avoided: headless it may end with a
+  // plan or an empty answer instead of the member's view.)
+  args({ sessionId, plannedSessionId = null, mode }) {
+    return ['-p', '--output-format', 'stream-json', '--verbose', ...MODE_ARGUMENTS[mode],
       ...(sessionId ? ['--resume', sessionId, '--fork-session'] : []),
       ...(plannedSessionId ? ['--session-id', plannedSessionId] : [])];
   },

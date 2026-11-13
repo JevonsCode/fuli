@@ -28,6 +28,74 @@ const READS_TABLE = `
     CREATE INDEX IF NOT EXISTS visitor_reads_at ON visitor_reads(at);
     CREATE INDEX IF NOT EXISTS visitor_reads_requester_at ON visitor_reads(requester_key, at);`;
 
+// Version 2 (guest links, src/guest-access): declared here exactly as that
+// change declares it, so version 3 follows it in every build.
+const GUEST_LINK_TABLES = `
+    CREATE TABLE IF NOT EXISTS guest_links(
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      last_used_at TEXT);
+    CREATE INDEX IF NOT EXISTS guest_links_live ON guest_links(revoked_at, expires_at);`;
+
+// Version 3: requests a visitor sent to be done on this computer
+// (src/visit-requests). One row per request, its state as of now; every
+// change of state is one event row, kept with the request. The requester's
+// own text (title, what, areas) is kept as it came, already bounded; the
+// lead's assessment (plan_json) beside it, never mixed in. A refused request
+// is a row too, so the owner sees what was asked.
+const VISIT_REQUEST_TABLES = `
+    CREATE TABLE IF NOT EXISTS visit_requests(
+      id TEXT PRIMARY KEY,
+      requester_key TEXT NOT NULL,
+      requester_label TEXT NOT NULL,
+      agent_name TEXT,
+      source TEXT NOT NULL CHECK(source IN ('peer', 'guest')),
+      project_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      project_folder TEXT,
+      title TEXT NOT NULL,
+      what TEXT NOT NULL,
+      requester_areas_json TEXT NOT NULL,
+      plan_json TEXT,
+      plan_error TEXT,
+      state TEXT NOT NULL CHECK(state IN ('received', 'refused', 'planning', 'awaiting_owner', 'approved', 'running',
+        'awaiting_review', 'declined', 'expired', 'cancelled', 'failed', 'unknown', 'kept', 'discarded')),
+      review TEXT CHECK(review IN ('ready', 'held')),
+      hold_reason TEXT,
+      mode_at_receipt TEXT NOT NULL,
+      mode_at_decision TEXT,
+      decided_by TEXT CHECK(decided_by IN ('owner', 'rule')),
+      reason TEXT,
+      branch TEXT,
+      worktree_path TEXT,
+      base_commit TEXT,
+      result_summary TEXT,
+      files_json TEXT,
+      diffstat_json TEXT,
+      planning_ms INTEGER NOT NULL,
+      run_ms INTEGER NOT NULL,
+      error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS visit_requests_requester ON visit_requests(requester_key, created_at);
+    CREATE INDEX IF NOT EXISTS visit_requests_state ON visit_requests(state, updated_at);
+    CREATE TABLE IF NOT EXISTS visit_request_events(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id TEXT NOT NULL REFERENCES visit_requests(id),
+      from_state TEXT,
+      to_state TEXT NOT NULL,
+      by TEXT NOT NULL CHECK(by IN ('requester', 'owner', 'rule', 'system')),
+      rule TEXT,
+      checks_json TEXT,
+      note TEXT,
+      at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS visit_request_events_request ON visit_request_events(request_id, id);`;
+
 export const VISITOR_ACCESS_FORMAT = sqliteFormat({
   store: 'visitor-access',
   schema: `
@@ -39,7 +107,15 @@ export const VISITOR_ACCESS_FORMAT = sqliteFormat({
       own_device INTEGER NOT NULL CHECK(own_device IN (0, 1)),
       mode_updated_at TEXT NOT NULL,
       CHECK(mode <> 'trusted' OR (kind = 'peer' AND own_device = 1)));
-    ${READS_TABLE}`
+    ${READS_TABLE}`,
+  migrations: [{
+    id: 'visitor-access/2-guest-links', to: 2, kind: 'add-table', table: 'guest_links',
+    summary: 'guest links: one project a person without FULI may ask from the same network', create: GUEST_LINK_TABLES
+  }, {
+    id: 'visitor-access/3-visit-requests', to: 3, kind: 'add-table', table: 'visit_requests',
+    summary: 'visit requests: work a paired computer asked to have done here, and every change of its state',
+    create: VISIT_REQUEST_TABLES
+  }]
 });
 
 // Rows older than this are deleted on the next recorded attempt.

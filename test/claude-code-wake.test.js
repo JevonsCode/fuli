@@ -15,10 +15,18 @@ test('Claude Code resumes by forking, so an open window is never written', () =>
 });
 
 test('a read-only wake keeps the non-interactive mode with the reading tools only, and denies file edits and both shells', () => {
-  assert.deepEqual(wakeArguments('claude_code', { readOnly: true, plannedSessionId: 'planned-1' }),
+  assert.deepEqual(wakeArguments('claude_code', { mode: 'read_only', plannedSessionId: 'planned-1' }),
     ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'dontAsk',
       '--tools', 'Read,Grep,Glob', '--disallowedTools', 'Edit,Write,NotebookEdit,MultiEdit,Bash,PowerShell', '--session-id', 'planned-1']);
-  assert.ok(!wakeArguments('claude_code', { readOnly: true }).includes('plan'));
+  assert.ok(!wakeArguments('claude_code', { mode: 'read_only' }).includes('plan'));
+});
+
+test('a worktree edit accepts file edits without asking, with no shell and no web, and an unknown mode is refused', () => {
+  assert.deepEqual(wakeArguments('claude_code', { mode: 'worktree_edit', cwd: '/data/visit-worktrees/request-1' }),
+    ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits',
+      '--tools', 'Read,Grep,Glob,Edit,Write,MultiEdit', '--disallowedTools', 'Bash,PowerShell,WebFetch,WebSearch,NotebookEdit']);
+  assert.deepEqual(wakeArguments('claude_code', { mode: 'answer' }), wakeArguments('claude_code', {}));
+  assert.throws(() => wakeArguments('claude_code', { mode: 'write_anywhere' }), /Invalid wake mode/);
 });
 
 test('Claude Code answers come from the final result event', () => {
