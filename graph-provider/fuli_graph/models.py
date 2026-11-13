@@ -756,6 +756,15 @@ class SearchRequest(StrictModel):
     inherit_project_knowledge: bool = True
     include_personal_global: bool = False
     semantic: SemanticQuery | None = None
+    # 'normal' (a visitor's search): only items whose every source, in every
+    # version they replaced, is normal, and relationships whose two endpoints
+    # this search may return too (knowledge_sensitivity). None: no such filter.
+    max_sensitivity: Literal['normal'] | None = None
+    # False: an item another project defined and this one only references is
+    # not this project's. True keeps every existing caller's view.
+    include_project_references: bool = True
+    # Entity types this search never returns, nor lets a relationship reach.
+    excluded_entity_types: list[str] = Field(default_factory=list, max_length=16)
 
     @field_validator('personal_project_ids')
     @classmethod
@@ -778,6 +787,22 @@ class SearchRequest(StrictModel):
             )
         if self.project_agent_id and not self.active_personal_project_id:
             raise ValueError('project Agent search requires active_personal_project_id')
+        # A visitor's search reads one project's own current, confirmed items
+        # only; the search enforces that scope anyway, and a request that asks
+        # for anything wider is a caller's mistake worth refusing.
+        if self.max_sensitivity:
+            widened = [name for name, wide in (
+                ('include_project_references', self.include_project_references),
+                ('inherit_project_knowledge', self.inherit_project_knowledge),
+                ('include_personal_global', self.include_personal_global),
+                ('include_pending', self.include_pending),
+                ('include_historical', self.include_historical),
+                ('project_agent_id', self.project_agent_id is not None),
+            ) if wide]
+            if not self.active_personal_project_id:
+                raise ValueError('a max_sensitivity search requires active_personal_project_id')
+            if widened:
+                raise ValueError(f'a max_sensitivity search requires {", ".join(widened)} to be off')
         return self
 
 

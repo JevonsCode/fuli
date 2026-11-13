@@ -176,6 +176,11 @@ GRAPH_MIGRATIONS = (
         "and the task's probably-resolved evidence (blocker_hint_*)",
         fields_only=True,
     ),
+    GraphMigration(
+        'graph/20-restricted-source-marker', 20, 'schema',
+        'an optional marker on entities and relationships that a private or restricted source of theirs was deleted',
+        fields_only=True,
+    ),
 )
 
 GRAPH_FORMAT_VERSION = GRAPH_MIGRATIONS[-1].to_version

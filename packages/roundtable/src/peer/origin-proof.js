@@ -2,13 +2,26 @@ import { createPublicKey, verify } from 'node:crypto';
 
 import { canonicalJson, canonicalTime, PeerError, sha256Hex } from './protocol.js';
 
-const PROOF_VERSION = 'fuli-remote-origin/1';
+// Each purpose signs under its own version, so a verifier that knows only some
+// purposes rejects the others. Execution keeps the version and wire shape it had
+// before purposes existed; every other proof also signs its purpose.
+const PROOF_VERSIONS = Object.freeze({
+  execution: 'fuli-remote-origin/1',
+  chat: 'fuli-chat-origin/1',
+  query: 'fuli-query-origin/1',
+  request: 'fuli-request-origin/1'
+});
 const CLOCK_SKEW_MS = 60_000;
 
 // The digest the sending Provider signs: the whole message except the proof itself.
 export function assertionDigest(assertion) {
   const { origin: _origin, ...signed } = assertion;
   return sha256Hex(canonicalJson(signed));
+}
+
+// The version a proof for purpose signs under, or null for a purpose no FULI issues.
+export function originProofVersion(purpose) {
+  return Object.hasOwn(PROOF_VERSIONS, purpose) ? PROOF_VERSIONS[purpose] : null;
 }
 
 export function isAuthorityKey(value) {
@@ -29,6 +42,8 @@ export function authorityFromProvider(response) {
 // and purpose until a short expiry. Execution keeps its project-lead restriction.
 export function verifyOriginProof(assertion, authority, { now = Date.now(), purpose = 'execution' } = {}) {
   const fail = (message) => { throw new PeerError('origin_rejected', message, 403); };
+  const version = originProofVersion(purpose);
+  if (!version) fail('The origin proof was checked for an unknown purpose');
   if (!isAuthorityKey(authority)) fail('No origin authority was bound when this device was paired');
   const proof = assertion?.origin;
   if (typeof proof?.payload !== 'string' || typeof proof?.signature !== 'string'
@@ -40,8 +55,8 @@ export function verifyOriginProof(assertion, authority, { now = Date.now(), purp
   if (!valid) fail('The origin proof signature is invalid');
   let claims;
   try { claims = JSON.parse(payload.toString('utf8')); } catch { fail('The origin proof is malformed'); }
-  const version = purpose === 'chat' ? 'fuli-chat-origin/1' : PROOF_VERSION;
   if (claims?.version !== version || claims.key_id !== authority.keyId) fail('The origin proof uses another authority or purpose');
+  // An execution proof signs no purpose; every other one signs exactly its own.
   if ((claims.purpose ?? 'execution') !== purpose) fail('The origin proof has a different purpose');
   if (claims.digest !== assertionDigest(assertion)) fail('The origin proof covers a different message');
   if (claims.message_id !== assertion.messageId || claims.agent_id !== assertion.from.agentId

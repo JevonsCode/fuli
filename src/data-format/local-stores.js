@@ -15,6 +15,7 @@ import { RECALL_IMPRESSIONS_FORMAT } from '../knowledge-impressions/store.js';
 import { AGENT_AVATARS_FORMAT } from '../agent-avatars/store.js';
 import { PROJECT_CHANGE_LOG_FORMAT } from '../project-change-log/store.js';
 import { WORK_SURFACES_FORMAT } from '../work-surfaces/store.js';
+import { VISITOR_ACCESS_FORMAT } from '../visitor-access/store.js';
 import { EMPLOYEE_MANAGEMENT_FORMAT } from '../employees/management-policy.js';
 import { JEFA_BOARD_FORMAT } from '../employees/builtin/jefa/board-store.js';
 import { PREFERENCE_SESSION_FORMAT } from '../conversations/preference-session.js';
@@ -99,6 +100,8 @@ const sqliteStores = () => [
   ['work-surfaces.sqlite', WORK_SURFACES_FORMAT],
   // Each console change an FLA made for the person under their AI permissions (rec#11 D-81); never pruned.
   ['agent-delegation.sqlite', AGENT_DELEGATION_FORMAT],
+  // Each visiting requester's mode and every read a visitor made of a shared project; reads kept 90 days.
+  ['visitor-access.sqlite', VISITOR_ACCESS_FORMAT],
   ['employees/data/management.sqlite', EMPLOYEE_MANAGEMENT_FORMAT],
   // Jefa's built-in task board: tasks, their revisions, sharing and session titles.
   ['employees/data/jefa/board.sqlite', JEFA_BOARD_FORMAT],
