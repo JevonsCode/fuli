@@ -34,7 +34,7 @@ import {
 } from './tool-result.js';
 import { jsonSchemaToZod, openObjectSchema } from './tool-schema.js';
 import { assertToolInputWithinBudget, createToolInputValidator } from './tool-input-budget.js';
-import { nativeSessionFromEnv } from '../agents/native-session-env.js';
+import { hostNamesSessions, nativeSessionFromEnv } from '../agents/native-session-env.js';
 import { callSourceApplication } from '../agents/call-source.js';
 import {
   isFuliProcessSession,
@@ -282,7 +282,7 @@ function createToolMap(
         const prepared = prepareToolInput(definition.name, input);
         const callSource = await callSourceApplication(app, sourceApplication, prepared);
         const normalized = normalizeAgentSessionInput(definition.name, prepared,
-          requestNative, requestHost, callSource);
+          requestNative, requestHost, callSource, { hostNamesSessions: hostNamesSessions(sourceApplication) });
         onSession(callingSession(definition.name, normalized, requestNative));
         return invokeAgentTool(app, definition.name, normalized, projectActionPreviews,
           agentHostRequestContext({ ...requestContext, testToolsEnabled: includeTestTools }, requestHost, callSource));

@@ -62,10 +62,10 @@ is no frame, so nothing is confirmed and every turn resends the whole entry.
 Its adapter therefore bounds the UserPromptSubmit task entry to 9,000
 characters, label included (`CLAUDE_ENTRY_INLINE_CHARS`, rec#11 D-54); the
 rest of the 10,000 leaves room for an appended notice. The mechanism is
-`src/conversations/entry-inline-budget.js`. Every other Agent, every entry
-that fits, and the full-frame SessionStart restore and in-place refresh are
-unchanged, byte for byte. Known limit: those two still send their whole
-frame, so one longer than the preview is not confirmed.
+`src/conversations/entry-inline-budget.js`. The SessionStart restore after a
+compaction and the in-place refresh of a host-notification turn are bounded
+the same way, from what `read_task_preferences` returns. Every other Agent
+and every entry that fits are unchanged, byte for byte.
 
 An entry over the budget is reduced in this order, each step only while the
 frame this session would get (a delta where one applies) is still too long.
@@ -123,6 +123,29 @@ sentence: if they are not already in this conversation, read the omitted ones
 once with `read_task_preferences` before acting; they stay in force. A delta
 repeats the label every turn, so it asks for one read, not one per turn.
 
+An entry whose rest does not fit even with every detail reduced (a role
+longer than the budget: the role is never cut) is the blocked frame
+(`inline_budget`). It used to list no preference at all (rec#128). It now
+lists the largest prefix of the same ranking that fits beside the token,
+closing fields and identity (hard rules first, most specific scope first,
+then the ranked rest), with `preferences_omitted` counting the rest. Its
+lead, above the frame and in its guidance, says to apply them while
+recovering the rest and not to finish the task on them alone. Every blocked
+frame counts the active conflicts it leaves out as `active_conflicts_omitted`.
+A blocked frame is never a delta base.
+
+Every read an entry names is one the reader can serve (rec#128).
+`read_task_preferences` replays the task Agent, so an entry without a task
+token or task Agent names no `read` in `preferences_omitted` or
+`active_conflicts_omitted`; its label then says the task cannot read them and
+to ask the person before acting where one may apply. A blocked entry frame
+says `same_task_recovery_available` from the same rule: `true` with
+`token_use: ["read_task_preferences", "checkpoint_task_knowledge"]` and the
+recovery guidance, or `false` with `token_use: ["checkpoint_task_knowledge"]`
+and guidance that does not mention the reader. A blocked result of the
+reader itself (one instruction past its page budget, a source window, an
+unsafe projection) is always `false`: reading again cannot recover it.
+
 A bounded entry is still a complete, confirmable frame:
 
 - Its revision and the producer's pending snapshot hash cover exactly the set
@@ -177,7 +200,21 @@ relying on it. No body and no source marker.
 ## Same-task reader pages
 
 `read_task_preferences({ taskContextToken, cursor? })` reads current preferences
-for the original owned task. Small results retain the existing `complete`
+for the original owned task. The session it reads for is never the caller's:
+a host that names a session (Codex's thread, Claude Code's
+`CLAUDE_CODE_SESSION_ID`, a sealed worker) binds it, and a token of another
+session is refused; a process started before `/clear` or an in-app resume
+still names the earlier session, and the reader refuses it as such (tell the
+person, checkpoint as incomplete). A process of a client that names no
+sessions at all (Cursor and the other clients without a session reader in
+`agents/native-session-env.js`, and Claude Desktop's connector, `claude`,
+also when it serves its Code tab, rec#107) reads the session of the task the
+token names while that is its client's current, unfinished task (rec#128).
+So two windows of such a client can read each other's current task
+preferences given the token, as they can already checkpoint with it. A
+process of Codex or Claude Code that does not prove its session (the variable
+unset, as in `fuli mcp --call read_task_preferences --source-application
+claude_code`) is refused: its token alone never binds. Small results retain the existing `complete`
 response. Larger results use `preference_delivery.status = paginated`, a full
 projection `revision`, zero-based `page_index`, `page_count`, collection `totals`
 and opaque `next_cursor`. Only the final page has `preferences_complete=true`.

@@ -1,6 +1,6 @@
 import { copyPreferenceScope, entryWorkKind } from './preference-snapshot.js';
 import { preferenceAlwaysInline, preferenceNamesWorkKind, preferenceSceneReplaceable } from '../graphiti/preference-task-scope.js';
-import { blockedByDeliveryBudget, blockedPreferenceDelivery } from '../mcp/preference-delivery.js';
+import { blockedByDeliveryBudget, blockedPreferenceDelivery, taskPreferenceRead } from '../mcp/preference-delivery.js';
 import { managerRead, memoryRead, teamRead } from './entry-detail-readers.js';
 
 // The blocked reason of an entry that does not fit its host's inline limit.
@@ -16,6 +16,11 @@ export const OMITTED_PREFERENCES_LABEL = 'More preferences apply than this entry
 export const ALWAYS_INLINE_OMITTED_LABEL = 'Hard rules are among them (preferences_omitted.includes_always_inline): '
   + 'if they are not already in this conversation, read the omitted ones once with read_task_preferences before acting; '
   + 'they stay in force.';
+
+// Instead of the sentences above when the task's reader cannot serve them
+// (no read named, rec#128): nothing points at a read that would be refused.
+export const OMITTED_UNREADABLE_LABEL = 'More preferences or conflicts apply than this entry lists (preferences_omitted, '
+  + 'active_conflicts_omitted) and this task cannot read them: before acting where one may apply, tell the person and ask.';
 
 // Added when the active conflicts are left out (D-72).
 export const OMITTED_CONFLICTS_LABEL = 'Unresolved preference conflicts apply that this entry does not list (active_conflicts_omitted): '
@@ -64,7 +69,9 @@ export function fitUncached(fit, value, render) {
 // Code's preview they were never seen. Closing fields and identity always
 // stay. An entry that does not fit even so is never sent past the limit: it is
 // the blocked frame (inline_budget) that keeps the token, closing fields and
-// identity and recovers through read_task_preferences.
+// identity, lists the largest prefix of the same ranking that fits beside them
+// with the rest counted, and recovers through read_task_preferences where the
+// reader can serve the task (taskPreferenceRead).
 export function inlineEntryFit(limit, length) {
   return (whole, { deliver, complete }) => {
     // A frame the renderer blocked as over its own delivery budget is short,
@@ -120,7 +127,22 @@ export function inlineEntryFit(limit, length) {
       }
       return best;
     }
-    return deliver(blockedPreferenceDelivery(value, INLINE_BUDGET));
+    // Not even the leanest entry fits beside the hard rules (a long role,
+    // which is never cut): the blocked frame keeps the token, closing fields
+    // and identity, and lists the largest prefix of the same ranking that
+    // still fits beside them, rather than none (rec#128).
+    if (!preferences.length) return deliver(blockedPreferenceDelivery(value, INLINE_BUDGET));
+    const ordered = [...kept, ...ranked];
+    const blocked = count => blockedPreferenceDelivery(value, INLINE_BUDGET,
+      selectedPreferences(value, new Set(ordered.slice(0, count)), preferences.length));
+    let listed = 0;
+    let most = ordered.length;
+    while (listed < most) {
+      const middle = Math.ceil((listed + most) / 2);
+      if (fits(deliver(blocked(middle)))) listed = middle;
+      else most = middle - 1;
+    }
+    return deliver(blocked(listed));
   };
 }
 
@@ -159,12 +181,18 @@ function withoutPreferenceIds(value) {
 }
 
 function withPreferences(level, selected, total) {
-  return copyPreferenceScope(level, { ...withoutCompleteClaims(level),
-    effective_preferences: level.effective_preferences.filter((_, index) => selected.has(index)),
+  return copyPreferenceScope(level, { ...withoutCompleteClaims(level), ...selectedPreferences(level, selected, total) });
+}
+
+// The listed subset and what it leaves out. The read is named only where the
+// reader can serve it (taskPreferenceRead, rec#128).
+function selectedPreferences(value, selected, total) {
+  const read = taskPreferenceRead(value);
+  return { effective_preferences: value.effective_preferences.filter((_, index) => selected.has(index)),
     preferences_omitted: { count: total - selected.size,
-      ...(level.effective_preferences.some((item, index) => !selected.has(index) && preferenceAlwaysInline(item))
+      ...(value.effective_preferences.some((item, index) => !selected.has(index) && preferenceAlwaysInline(item))
         ? { includes_always_inline: true } : {}),
-      read: { tool: 'read_task_preferences', arguments: { taskContextToken: level.taskContextToken } } } });
+      ...(read ? { read } : {}) } };
 }
 
 // The entry, then each smaller context: the recall as a pointer, then the
@@ -231,9 +259,11 @@ const DETAIL_STEPS = [
         title_mode: manager.title_mode, suggested_match: manager.suggested_match, guidance: manager.guidance,
         read: managerRead(manager) })) } } : null;
   },
-  ({ active_conflicts: conflicts, ...value }) => conflicts?.length ? { ...withoutCompleteClaims(value),
-    active_conflicts_omitted: { count: conflicts.length,
-      read: { tool: 'read_task_preferences', arguments: { taskContextToken: value.taskContextToken } } } } : null
+  ({ active_conflicts: conflicts, ...value }) => {
+    const read = taskPreferenceRead(value);
+    return conflicts?.length ? { ...withoutCompleteClaims(value),
+      active_conflicts_omitted: { count: conflicts.length, ...(read ? { read } : {}) } } : null;
+  }
 ];
 
 // A layer's preview without its notes: its scope, revision and rules stay,

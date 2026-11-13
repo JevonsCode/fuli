@@ -196,7 +196,9 @@ test('incomplete preference sources or necessary fields fail closed without part
     const result = hookAdditionalContextToolResult(value, { ...options, ...overrides, label: 'Apply effective_preferences.' });
     const data = result.structuredContent;
     assert.equal(data.preferences_complete, false);
-    assert.equal(data.same_task_recovery_available, false);
+    // The entry's task and Agent let the same-task reader recover it (rec#128).
+    assert.equal(data.same_task_recovery_available, true);
+    assert.deepEqual(data.preference_delivery.token_use, ['read_task_preferences', 'checkpoint_task_knowledge']);
     assert.equal(data.preference_delivery.status, 'blocked');
     assert.equal(data.preference_delivery.reason, reason);
     assert.equal(Object.hasOwn(data, 'effective_preferences'), false);
